@@ -206,22 +206,47 @@ by import graph plus naming convention, not by execution."
                (:language   keyword :one-of *source-languages*)))
 
 (defentity :document
-  :documentation "Prose about the system: a design document, a README, an
-architecture note."
+  :documentation "Prose about the system: an architecture note, a README.
+Read from a YAML file under docs/ whose subdirectory names no registered type
+(SS10.1) -- such a file is indexed as a generic Document and reported, rather
+than silently skipped, because \"a documentation directory that Loom is
+quietly skipping is exactly the kind of thing that erodes trust in the
+graph.\""
   :natural-key (:path)
   :properties ((:path   string :required t)
                (:title  string)
-               (:format keyword :one-of (:markdown :docx :org :text))))
+               (:category string
+                :documentation "The docs/ subdirectory the file was found in.")
+               (:format keyword :one-of (:markdown :docx :org :text :yaml))
+               (:body   string
+                :documentation "The prose blocks, joined.  What an agent reads
+when it wants the reasoning rather than the metadata.")
+               (:mentions list
+                :documentation "Entity names found in the prose.  Raw text
+until the workspace resolves them (SS10.3); resolution turns each into an
+:inferred edge and drops it from here.")
+               (:unresolved-references list
+                :documentation "Declared references that named nothing in the
+index.  SS10.3: not dropped silently -- this is the documentation staleness
+detector, and a decision naming a function that no longer exists is
+detectably rotten.")))
 
 (defentity :concept
   :documentation "A domain-aware architectural abstraction indexed as a
 first-class entity rather than left as text -- a drawing lifecycle, a
 separation between UI and interaction layers.  These are what let a planner
-query architecture directly instead of rediscovering it from source."
-  :properties ((:summary  string :required t)
+query architecture directly instead of rediscovering it from source.  Read
+from docs/concepts (SS10.1)."
+  :natural-key (:doc-id)
+  :properties ((:doc-id   string :required t)
+               (:title    string)
+               (:summary  string)
+               (:body     string)
                (:evidence list
                 :documentation "Entity ids the concept was drawn from.  A
-concept is usually :inferred, so this is what its DERIVED-FROM tracks.")))
+concept is usually :inferred, so this is what its DERIVED-FROM tracks.")
+               (:mentions list)
+               (:unresolved-references list)))
 
 (defentity :decision
   :documentation "A recorded decision: what was chosen, why, and what it
@@ -242,6 +267,19 @@ watcher index it like any other."
                (:rationale     string)
                (:consequences  string)
                (:tags          list)
+               (:date          string
+                :documentation "The date: field, verbatim.  Kept as written
+rather than parsed: it is provenance for a human, not something to compute on.")
+               (:body          string)
+               (:affects       list
+                :documentation "The affects: field -- names this decision
+governs.  Raw text until the workspace resolves it into :DECIDES edges
+(SS10.3); resolution removes what it linked and leaves the rest here.")
+               (:supersedes    list
+                :documentation "The supersedes: field -- doc-ids of decisions
+this one replaces.")
+               (:mentions      list)
+               (:unresolved-references list)
                (:lessons       list
                 :documentation "Learnings worth carrying forward -- the
 \"avoid nested providers\" line of a decision record.")
@@ -266,6 +304,12 @@ rules is reported, so prose-only drift stays visible rather than comfortable."
                (:severity  keyword :one-of (:error :warning :advisory)
                 :default :error)
                (:statement string)
+               (:body      string)
+               (:applies-to list
+                :documentation "Names this rule constrains.  Resolved into
+:APPLIES-TO edges by the workspace, same as a decision's affects:.")
+               (:mentions   list)
+               (:unresolved-references list)
                (:check     list
                 :documentation "The compiled check clause, or NIL when the
 rule is advisory prose.  A plist: :kind plus the keys that kind needs.")))
