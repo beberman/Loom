@@ -229,7 +229,28 @@ until the workspace resolves them (SS10.3); resolution turns each into an
                 :documentation "Declared references that named nothing in the
 index.  SS10.3: not dropped silently -- this is the documentation staleness
 detector, and a decision naming a function that no longer exists is
-detectably rotten.")))
+detectably rotten.")
+               (:analysis-error string
+                :documentation "Set when the YAML would not parse.  The
+document is indexed anyway, for the SS9.3 reason: a known unknown beats an
+absence an agent cannot distinguish from an empty directory.")))
+
+(defentity :rule-violation
+  :documentation "One current breach of a rule's check clause (SS10.4):
+\"Violations are asserted into the graph as entities, so an agent can ask what
+the current tree violates and get an answer with the same query machinery as
+everything else.\"
+
+Derived from the tree rather than read from a file, so unlike every other
+knowledge entity it is genuinely re-derivable and carries the rule document as
+its origin -- reindexing rebuilds it, and a fixed violation simply stops being
+asserted."
+  :natural-key (:rule-id :subject)
+  :properties ((:rule-id  string  :required t)
+               (:subject  string  :required t
+                :documentation "Id of the entity or relationship in breach.")
+               (:severity keyword :one-of (:error :warning :advisory) :default :error)
+               (:detail   string)))
 
 (defentity :concept
   :documentation "A domain-aware architectural abstraction indexed as a
