@@ -110,7 +110,12 @@ registry can be served as a schema; DEFAULT-THUNK is the compiled artifact."
   (key nil :type keyword)
   (class-name nil :type symbol)
   (documentation nil)
-  (properties '() :type list))
+  (properties '() :type list)
+  ;; SS4.4: "Assert operations are upserts keyed by a natural key (for a
+  ;; function: file plus qualified name), so re-analyzing an unchanged file is
+  ;; idempotent."  A list of property keys, plus the pseudo-key :NAME for the
+  ;; entity's name slot.  NIL means the type has no identity beyond its id.
+  (natural-key '() :type list))
 
 (defstruct (relationship-type-spec (:conc-name relationship-type-))
   "Relationship metadata, including the two fields the impact engine needs
@@ -324,9 +329,22 @@ bare keyword is shorthand for an untyped property."
         :one-of ,(one-of-form one-of)
         :documentation ,documentation
         :default-form ',default
-        :default-thunk ,(property-thunk default)))))
+        :default-thunk ,(property-thunk default))))
 
-(defmacro defentity (type-key &key documentation properties)
+  (defun check-natural-key (type-key natural-key properties)
+    "Reject a :NATURAL-KEY naming something the type does not have.
+Caught at compile time, because a key referring to an absent property yields
+NIL for every instance -- silently collapsing every entity of the type onto
+one another at upsert, which is the worst way to find this out."
+    (let ((known (cons :name (mapcar (lambda (spec) (if (consp spec) (car spec) spec))
+                                     properties))))
+      (dolist (key natural-key)
+        (unless (member key known)
+          (error "~s natural key names ~s, which is neither :name nor one of ~
+its declared properties ~{~s~^, ~}."
+                 type-key key (rest known)))))))
+
+(defmacro defentity (type-key &key documentation properties natural-key)
   "Declare entity type TYPE-KEY, generating its class, typed accessors, and
 its registry entry.  TYPE-KEY is the keyword that appears on the wire as
 entityType; the class it generates is <TYPE-KEY>-ENTITY.
@@ -345,8 +363,15 @@ like a slot :initform, and anything else is stored as data -- so
 :default (get-universal-time) stamps each entity, while :default (:a :b)
 stores that list without needing a quote.
 
+NATURAL-KEY is the type's content-derived identity, used to upsert (SS4.4):
+a list of property keys, plus :name for the name slot.  Declare one for any
+type an analyzer re-derives from source, or every analysis pass will insert
+duplicates instead of updating what is already there.  Omit it for knowledge
+that is minted once rather than rediscovered -- a decision, a concept.
+
   (defentity :function
     :documentation \"A named callable unit in source code.\"
+    :natural-key (:file :name)
     :properties ((:file       string  :required t)
                  (:start-line integer :required t)
                  (:exported-p boolean :default nil)
@@ -358,6 +383,7 @@ Manager, GET /ontology/schema, and the MCP tool descriptions all read one
 schema.  The class and its accessors are exported: they are the public API of
 the type, and listing them by hand in a package definition would be a second
 place to keep the taxonomy in sync."
+  (check-natural-key type-key natural-key properties)
   (let* ((class-name (entity-class-name type-key))
          (accessors (loop for spec in properties
                           collect (property-accessor-name
@@ -380,6 +406,7 @@ place to keep the taxonomy in sync."
          :key ,type-key
          :class-name ',class-name
          :documentation ,documentation
+         :natural-key ',natural-key
          :properties (list ,@(mapcar #'parse-property-spec properties))))
        ,type-key)))
 
@@ -434,6 +461,7 @@ Contains no closures, so it round-trips."
               for spec = (find-entity-type key)
               collect (list :key key
                             :documentation (entity-type-documentation spec)
+                            :natural-key (entity-type-natural-key spec)
                             :properties (mapcar #'property-schema
                                                 (entity-type-properties spec))))
         :relationship-types

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -)",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\bsebe\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\b--home-beberman-lisp-Loom\\\\752f9323-2d3a-43f5-ad0a-8de1df587831\\\\scratchpad\\\\selfcheck.lisp\" \"B:\\\\home\\\\beberman\\\\lisp\\\\selfcheck.lisp\" -Force)",
+      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"sbcl --script selfcheck.lisp 2>&1 | grep -v '^; \\\\|^$\\\\|fasl'\")"
+    ]
+  }
+}

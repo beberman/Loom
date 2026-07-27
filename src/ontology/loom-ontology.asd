@@ -16,6 +16,7 @@
    (:file "package")
    (:file "root-ontology")
    (:file "code-ontology")
+   (:file "ontology-ops")
    )
   :in-order-to ((test-op (test-op :loom-ontology/test)))
   )

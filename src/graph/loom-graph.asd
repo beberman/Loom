@@ -11,6 +11,7 @@
   (
    (:file "package")
    (:file "graph-manager")
+   (:file "transaction")
    )
   :in-order-to ((test-op (test-op :loom-graph/test)))
   )

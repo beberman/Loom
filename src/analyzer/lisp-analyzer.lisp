@@ -1,30 +1,39 @@
-;;;; A reader-based Lisp analyzer: walks a single source file and writes the
-;;;; :function, :variable, and :file entities (plus :contains/:calls edges)
-;;;; it finds directly into a Graph Manager. Implements the "reader-based
-;;;; Lisp analyzer" named in Phase 1 Overview -- the Tree-sitter/LSP analyzer
-;;;; for other languages is separate future work.
+;;;; A reader-based Common Lisp analyzer: walks a single source file and emits
+;;;; the ontology operations describing the :file, :function and :variable
+;;;; entities (plus :contains/:calls edges) it finds. Implements the analyzer
+;;;; Phase 1 Software Architecture SS8.2 calls for -- "The Lisp analyzer does
+;;;; not need Tree-sitter at all -- the reader plus a walk of top-level forms
+;;;; yields functions, classes, packages, and call sites more reliably than any
+;;;; grammar" -- behind the generic protocol in analyzer.lisp.
 ;;;;
-;;;; Scope of this first pass: top-level DEFUN and DEFVAR/DEFPARAMETER forms
-;;;; only, and :CALLS edges only between functions defined in the *same*
-;;;; file. A call to anything else -- a function defined elsewhere in the
-;;;; workspace, or the standard library -- is indistinguishable from here
-;;;; without a cross-file symbol index, so it is silently not recorded
-;;;; rather than guessed at or dumped into :unresolved-calls. Cross-file
-;;;; resolution is a follow-on step once more than one file has been
-;;;; analyzed into the same graph.
+;;;; It emits operations and never touches a graph (SS8.1), so it has no way to
+;;;; know what a previous pass found. Everything that needs that knowledge --
+;;;; recognising an entity it already made, retiring one that is gone -- is the
+;;;; Graph Manager's, via the natural keys of SS4.4.
+;;;;
+;;;; Scope of this pass: top-level DEFUN and DEFVAR/DEFPARAMETER forms only,
+;;;; and :CALLS edges only between functions defined in the *same* file. A call
+;;;; to anything else -- a function defined elsewhere in the workspace, or the
+;;;; standard library -- is indistinguishable from here without a cross-file
+;;;; symbol index, so it is silently not recorded rather than guessed at or
+;;;; dumped into :unresolved-calls. Cross-file resolution is a follow-on step
+;;;; once more than one file has been analyzed into the same graph.
 
 (in-package :loom-analyzer)
+
+(defclass lisp-analyzer (analyzer)
+  ()
+  (:default-initargs
+   :language :lisp
+   ;; .asd included deliberately: system definitions are Lisp, and indexing
+   ;; them is what lets the SS12.3 dependency-direction invariants be asked
+   ;; about the declared graph as well as the code.
+   :file-types '("lisp" "lsp" "cl" "asd"))
+  (:documentation "A reader-based analyzer for Common Lisp source files."))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Reading forms with source spans
 ;;;; ------------------------------------------------------------------
-
-(defun slurp-file (path)
-  "The full contents of the file at PATH as a string."
-  (with-open-file (in path :direction :input)
-    (let* ((buffer (make-string (file-length in)))
-           (count (read-sequence buffer in)))
-      (subseq buffer 0 count))))
 
 (defun skip-whitespace-and-comments (string pos)
   "The offset of the first character in STRING at or after POS that is
@@ -36,10 +45,6 @@ neither whitespace nor part of a line comment."
           ((char= (char string pos) #\;)
            (setf pos (or (position #\Newline string :start pos) (length string))))
           (t (return pos)))))
-
-(defun offset-line (string offset)
-  "The 1-based line number of OFFSET in STRING."
-  (1+ (count #\Newline string :end (min offset (length string)))))
 
 (defun read-forms-with-spans (content)
   "Every top-level form in CONTENT, read with *READ-EVAL* disabled and in a
@@ -90,11 +95,18 @@ quoted data so a literal list is never mistaken for a call site."
     names))
 
 ;;;; ------------------------------------------------------------------
-;;;; Entity extraction
+;;;; Entity construction
 ;;;; ------------------------------------------------------------------
 
 (defun definition-p (form head)
   (and (consp form) (symbolp (car form)) (string= (token-name (car form)) head)))
+
+(defun make-file-entity (path contents)
+  (let ((e (make-instance 'file-entity :name path)))
+    (setp e :path path)
+    (setp e :language :lisp)
+    (setp e :line-count (line-count contents))
+    e))
 
 (defun make-function-entity (form start end path)
   (let ((e (make-instance 'function-entity :name (token-name (second form)))))
@@ -114,40 +126,52 @@ quoted data so a literal list is never mistaken for a call site."
     (setp e :language :lisp)
     e))
 
-(defun analyze-lisp-file (graph path)
-  "Analyze the Lisp source file at PATH and write what it finds into GRAPH:
-a :FILE entity; a :FUNCTION entity per top-level DEFUN and a :VARIABLE
-entity per top-level DEFVAR/DEFPARAMETER, each with a :CONTAINS edge from
-the file; and a :CALLS edge between two functions defined in this file
-whenever one's body references the other. Returns the :FILE entity."
-  (let* ((path-string (namestring path))
-         (content (slurp-file path))
-         (forms (read-forms-with-spans content))
-         (file-entity (make-instance 'file-entity :name path-string)))
-    (setp file-entity :path path-string)
-    (setp file-entity :language :lisp)
-    (add-entity graph file-entity)
-    (let ((functions '()))  ; alist: name -> (entity . defun-form)
-      (dolist (spec forms)
+;;;; ------------------------------------------------------------------
+;;;; The protocol method
+;;;; ------------------------------------------------------------------
+
+(defmethod analyze-file ((analyzer lisp-analyzer) path contents workspace-id)
+  "Ontology operations for the Lisp source in CONTENTS at PATH: a :FILE
+entity; a :FUNCTION entity per top-level DEFUN and a :VARIABLE entity per
+top-level DEFVAR/DEFPARAMETER, each with a :CONTAINS edge from the file; and a
+:CALLS edge between two functions defined in this file whenever one's body
+references the other.
+
+Asserts precede the edges that name them, because the Graph Manager resolves
+an edge's endpoints against the asserts it has already planned in the same
+transaction."
+  (declare (ignore analyzer))
+  (let* ((file (make-file-entity path contents))
+         (ops '())                 ; built reversed, NREVERSEd on the way out
+         (functions '()))          ; alist: name -> (entity . defun-form)
+    (flet ((emit (op) (push op ops))
+           (contained (entity)
+             (assert-edge :contains file entity :workspace-id workspace-id)))
+      (emit (assert-entity file workspace-id))
+      (dolist (spec (read-forms-with-spans contents))
         (destructuring-bind (form start end) spec
           (cond
             ((definition-p form "defun")
-             (let ((e (make-function-entity form start end path-string)))
-               (add-entity graph e)
-               (add-relationship graph (make-instance 'relationship :rel-type :contains
-                                                        :from-id (id file-entity) :to-id (id e)))
-               (push (cons (token-name (second form)) (cons e form)) functions)))
+             (let ((e (make-function-entity form start end path)))
+               (emit (assert-entity e workspace-id))
+               (emit (contained e))
+               (push (cons (name e) (cons e form)) functions)))
             ((or (definition-p form "defvar") (definition-p form "defparameter"))
-             (let ((e (make-variable-entity form start end path-string)))
-               (add-entity graph e)
-               (add-relationship graph (make-instance 'relationship :rel-type :contains
-                                                        :from-id (id file-entity) :to-id (id e))))))))
-      (dolist (fn functions)
-        (destructuring-bind (entity . form) (cdr fn)
-          (dolist (callee-name (remove-duplicates (collect-call-names (cdddr form)) :test #'string=))
+             (let ((e (make-variable-entity form start end path)))
+               (emit (assert-entity e workspace-id))
+               (emit (contained e)))))))
+      ;; Calls, once every local definition is known: a name resolves only if
+      ;; it was defined in this same file.
+      (dolist (entry functions)
+        (destructuring-bind (caller . form) (cdr entry)
+          (dolist (callee-name (remove-duplicates (collect-call-names (cdddr form))
+                                                  :test #'string=))
             (let ((callee (assoc callee-name functions :test #'string=)))
               (when callee
-                (add-relationship graph (make-instance 'relationship :rel-type :calls
-                                                         :from-id (id entity)
-                                                         :to-id (id (cadr callee))))))))))
-    file-entity))
+                (emit (assert-edge :calls caller (cadr callee)
+                                   :workspace-id workspace-id))))))))
+    (nreverse ops)))
+
+;;;; The one registered instance. Stateless, so one serves every file and
+;;;; every workspace.
+(register-analyzer (make-instance 'lisp-analyzer))

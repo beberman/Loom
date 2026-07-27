@@ -39,6 +39,31 @@
    #:rel-type
    #:from-id
    #:to-id
+   #:rebind-relationship
+
+   ;; ontology operations (SS4.4) -- the vocabulary analyzers emit
+   #:ontology-op
+   #:assert-entity-op
+   #:assert-relationship-op
+   #:retract-op
+   #:mark-stale-op
+   #:update-properties-op
+   #:workspace-id
+   #:op-entity
+   #:op-rel
+   #:target-id
+   #:reason
+   #:changes
+   #:assert-entity
+   #:assert-relationship
+   #:assert-edge
+   #:retract
+   #:mark-stale
+   #:update-properties
+
+   ;; natural keys -- upsert identity
+   #:entity-natural-key
+   #:relationship-natural-key
 
    ;; type registry -- the single source of the schema
    #:*entity-type-registry*
@@ -59,6 +84,7 @@
    #:entity-type-class-name
    #:entity-type-documentation
    #:entity-type-properties
+   #:entity-type-natural-key
 
    ;; property-spec
    #:property-spec

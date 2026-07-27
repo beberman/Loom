@@ -26,6 +26,7 @@ pushing its keyword here and writing the analyzer.")
   :documentation "An open working tree carrying its own overlay of
 uncommitted edits.  Repository graphs hold committed state; a workspace holds
 the delta, and a graph view composes base plus overlay with overlay winning."
+  :natural-key (:root-path)
   :properties ((:root-path       string  :required t
                 :documentation "Absolute path of the working tree.")
                (:repository-id   string)
@@ -52,6 +53,7 @@ snapshots are dropped to one per commit when a workspace closes.")))
 (defentity :repository
   :documentation "A Git repository.  Git metadata is attached to ontology
 objects rather than defining them."
+  :natural-key (:root-path)
   :properties ((:root-path      string :required t)
                (:remote-url     string)
                (:default-branch string :default "main")))
@@ -59,12 +61,14 @@ objects rather than defining them."
 (defentity :branch
   :documentation "A Git branch.  Switching branches resets the overlay rather
 than diffing it, accepting a re-analysis pass."
+  :natural-key (:repository-id :name)
   :properties ((:repository-id string :required t)
                (:head-commit   string)))
 
 (defentity :commit
   :documentation "A Git commit.  Distinct from a snapshot: commits are Git
 history, snapshots are workspace history, and the system tracks both."
+  :natural-key (:repository-id :sha)
   :properties ((:repository-id string  :required t)
                (:sha           string  :required t)
                (:author        string)
@@ -83,6 +87,7 @@ history, snapshots are workspace history, and the system tracks both."
   :documentation "One source file on disk, and the unit the analyzer works
 on: a pass over a file asserts this entity plus CONTAINS edges to every
 definition found inside it."
+  :natural-key (:path)
   :properties ((:path         string  :required t
                 :documentation "Workspace-relative, forward-slashed.")
                (:language     keyword :one-of *source-languages*)
@@ -94,6 +99,7 @@ hash is what lets re-analysis of an untouched file apply as a no-op.")))
 (defentity :package
   :documentation "A namespace: a Lisp package, an npm package, a Python
 package."
+  :natural-key (:qualified-name)
   :properties ((:qualified-name string :required t)
                (:exports        list   :documentation "Exported symbol names.")
                (:language       keyword :one-of *source-languages*)))
@@ -102,12 +108,14 @@ package."
   :documentation "The logical unit definitions are grouped under -- a Lisp
 package's file, an ES module.  Distinct from :file, which is the artifact on
 disk: a module may span files, and a file need not declare one."
+  :natural-key (:qualified-name)
   :properties ((:qualified-name string :required t)
                (:file           string)
                (:language       keyword :one-of *source-languages*)))
 
 (defentity :class
   :documentation "A class definition."
+  :natural-key (:file :name)
   :properties ((:file       string  :required t)
                (:start-line integer :required t)
                (:end-line   integer :required t)
@@ -119,6 +127,7 @@ disk: a module may span files, and a file need not declare one."
 (defentity :interface
   :documentation "A contract without implementation: a TypeScript interface,
 or a Lisp generic-function protocol treated as one."
+  :natural-key (:file :name)
   :properties ((:file       string  :required t)
                (:start-line integer :required t)
                (:end-line   integer :required t)
@@ -128,6 +137,7 @@ or a Lisp generic-function protocol treated as one."
 
 (defentity :function
   :documentation "A named callable unit in source code."
+  :natural-key (:file :name)
   :properties ((:file       string  :required t)
                (:start-line integer :required t)
                (:end-line   integer :required t)
@@ -143,6 +153,7 @@ workspace.  Recorded as a property, never as a dangling edge.")))
 
 (defentity :method
   :documentation "A method on a class, or a CLOS method on a generic function."
+  :natural-key (:file :name :qualifier :specializers)
   :properties ((:file             string  :required t)
                (:start-line       integer :required t)
                (:end-line         integer :required t)
@@ -159,6 +170,7 @@ workspace.  Recorded as a property, never as a dangling edge.")))
 (defentity :variable
   :documentation "A named binding: a constant, a special variable, a
 module-level declaration."
+  :natural-key (:file :name)
   :properties ((:file       string  :required t)
                (:start-line integer :required t)
                (:end-line   integer)
@@ -168,11 +180,18 @@ module-level declaration."
 
 ;;;; ==================================================================
 ;;;; Knowledge -- the part that cannot be recovered by re-reading source
+;;;;
+;;;; :CONCEPT and :ARCHITECTURE-DECISION deliberately declare no natural key,
+;;;; as :SNAPSHOT does not.  A natural key exists so an analyzer re-deriving a
+;;;; fact from source lands on the entity it made last time; knowledge that is
+;;;; asserted once by a human or a planner is never re-derived, so its id is
+;;;; its only identity and every assert of one is an insert.
 ;;;; ==================================================================
 
 (defentity :test
   :documentation "A test.  TESTS edges to the units it exercises are matched
 by import graph plus naming convention, not by execution."
+  :natural-key (:file :name)
   :properties ((:file       string  :required t)
                (:start-line integer :required t)
                (:end-line   integer :required t)
@@ -183,6 +202,7 @@ by import graph plus naming convention, not by execution."
 (defentity :document
   :documentation "Prose about the system: a design document, a README, an
 architecture note."
+  :natural-key (:path)
   :properties ((:path   string :required t)
                (:title  string)
                (:format keyword :one-of (:markdown :docx :org :text))))

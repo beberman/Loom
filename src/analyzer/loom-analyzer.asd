@@ -1,15 +1,20 @@
 (in-package :asdf-user)
 
 (defsystem :loom-analyzer
-  :description "Reader-based Lisp analyzer: walks source files and writes entities/relationships into the Graph Manager."
+  :description "Analyzer protocol and per-language analyzers, emitting ontology operations."
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  :depends-on (#:loom-ontology #:loom-graph)
+  ;; SS3: loom-analyzer depends on loom-ontology, and on nothing else.
+  ;; Analyzers emit operations rather than writing to storage (SS8.1), so
+  ;; loom-graph must not appear here -- SS12.3 asserts its absence as an
+  ;; architectural invariant.
+  :depends-on (#:loom-ontology)
   :serial t
   :components
   (
    (:file "package")
+   (:file "analyzer")
    (:file "lisp-analyzer")
    )
   :in-order-to ((test-op (test-op :loom-analyzer/test)))
