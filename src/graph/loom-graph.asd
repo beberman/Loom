@@ -14,6 +14,7 @@
    (:file "transaction")
    (:file "query")
    (:file "resolve")
+   (:file "rules")
    )
   :in-order-to ((test-op (test-op :loom-graph/test)))
   )

@@ -37,6 +37,27 @@
    #:callable-index
    #:*callable-types*
 
+   ;; document link resolution (SS10.3)
+   #:resolve-document-links
+   #:unresolved-references
+   #:linkable-index
+   #:*document-types*
+   #:*mention-confidence*
+
+   ;; rules as executable checks (SS10.4)
+   #:run-check
+   #:check-rules
+   #:violation-ops
+   #:violations-of
+   #:active-rules
+   #:unenforced-rules
+   #:enforceable-rule-p
+   #:violation
+   #:violation-rule-id
+   #:violation-severity
+   #:violation-subject
+   #:violation-detail
+
    ;; queries -- read-only (SS6.3)
    #:find-entities
    #:entity-system
