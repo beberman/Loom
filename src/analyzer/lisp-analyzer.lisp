@@ -55,8 +55,11 @@ END-LINE)."
          (loop
            (setf pos (skip-whitespace-and-comments content pos))
            (when (>= pos len) (return))
+           ;; READ-PRESERVING-WHITESPACE, not READ: plain READ consumes one
+           ;; trailing whitespace char it never needed, which would throw
+           ;; off END-POS by one whenever a form is followed by a newline.
            (let* ((stream (make-string-input-stream content pos len))
-                  (form (read stream nil :eof)))
+                  (form (read-preserving-whitespace stream nil :eof)))
              (when (eq form :eof) (return))
              (let ((end-pos (+ pos (file-position stream))))
                (push (list form (offset-line content pos) (offset-line content end-pos))
