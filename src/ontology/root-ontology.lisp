@@ -1,20 +1,37 @@
 ;;;; Core ontology classes, the type registry, and the declaration macros.
-;;;; Implements Phase 1 Software Architecture SS4.1 - SS4.3.
+;;;; Implements Phase 1 Software Architecture (Revision 2) SS5.1 - SS5.3.
 
 (in-package :loom-ontology)
 
 ;;;; ==================================================================
-;;;; Core classes (SS4.1)
+;;;; Core classes (SS5.1)
 ;;;; ==================================================================
 
 (defclass identified ()
   ((id   :initarg :id :reader id
-	 :initform (random-uuid:to-string (random-uuid:make-uuid))
-         :documentation "Stable UUID, assigned at creation, never reused.
-Self-assigned for new objects; supplied explicitly when replaying the
-operation log or loading a snapshot, so ids survive a backend migration.")
+         :documentation "Stable id, derived from the natural key, not random.
+
+Deliberately not a uuid. SS5.1: ids are \"derived deterministically from the
+natural key ... so that a full rebuild produces the same ids as an incremental
+update\" -- the property SS14.4 tests by asserting that an incrementally
+updated index and an independently rebuilt one are identical, not merely
+equivalent. A random id could only ever satisfy the weaker claim.
+
+Unbound until INITIALIZE-INSTANCE derives one, or until a caller supplies one
+explicitly when replaying the operation log.")
    (name :initarg :name :accessor name)
-   ))
+   (id-derived-p :initform nil :accessor id-derived-p
+                 :documentation "True while this id is still a function of the
+natural key rather than a value in its own right.
+
+The hazard it guards against: a derived id is computed from properties, and a
+caller who constructs an entity and then fills its properties in with SETP has
+already had the id computed from the values it did not yet have -- silently,
+and producing something that looks like a real id. While this flag is set,
+writing a natural-key property re-derives the id. LOOM-GRAPH:ADD-ENTITY clears
+it on the way into the index, after which the id is fixed and moving it is the
+Graph Manager's business, not a property write's."))
+  )
 
 (defclass provenanced ()
   ((source        :initarg :source :accessor source
@@ -25,9 +42,15 @@ operation log or loading a snapshot, so ids survive a backend migration.")
    (derived-from  :initarg :derived-from :accessor derived-from
                   :initform '()
                   :documentation "Entity ids whose modification invalidates this fact.")
-   (last-verified :initarg :last-verified :accessor last-verified
+   (origin-file   :initarg :origin-file :accessor origin-file
                   :initform nil
-                  :documentation "Snapshot id at which this fact was last confirmed.")
+                  :documentation "The file this fact was read from. Every fact has one.
+
+SS5.1 makes this mandatory, and SS14.3 asserts its presence as an
+architectural invariant. It is what files-as-truth rests on: reanalyzing a
+file is only a well-defined operation if the index can name the facts that
+came from it, and a fact with no origin is by definition not derivable from
+the repository -- which under SS2.1 means it is not knowledge, it is cache.")
    (stale-p       :initarg :stale-p :initform nil :accessor stale-p)))
 
 (defclass entity (identified provenanced)
@@ -239,9 +262,16 @@ an analyzer populating a freshly parsed entity from extracted properties."
 
 (defun (setf getp) (value entity key)
   "SETF-able counterpart to GETP. Validates VALUE the same way the
-type-specific accessors do, via CHECK-PROPERTY-VALUE."
+type-specific accessors do, via CHECK-PROPERTY-VALUE.
+
+Writing a natural-key property on an entity whose id is still derived moves
+the id with it -- see ID-DERIVED-P. That keeps construct-then-populate honest
+instead of silently wrong, and stops once the entity is in the index."
   (check-property-value (entity-type entity) key value)
-  (setf (gethash key (properties entity)) value))
+  (setf (gethash key (properties entity)) value)
+  (when (and (id-derived-p entity) (natural-key-property-p entity key))
+    (rederive-id entity))
+  value)
 
 (defun setp (entity key value)
   "Function-call form of (SETF (GETP ENTITY KEY) VALUE), for callers that
@@ -285,7 +315,74 @@ only judges them, so the ontology stays free of storage concerns."
                             (format nil "~s cannot terminate at ~s" rel-type to-type)))))))))
 
 ;;;; ==================================================================
-;;;; Instantiation -- defaults come from the registry, not per-class code
+;;;; Natural keys and derived ids (SS4.4, SS5.1)
+;;;; ==================================================================
+;;;;
+;;;; An analyzer is stateless and builds fresh objects on every pass. The
+;;;; natural key is the content-derived identity that lets the Graph Manager
+;;;; recognise one of those objects as something it already holds -- and,
+;;;; since SS5.1, it is also where the id itself comes from, so a rebuilt
+;;;; index and an incrementally updated one agree down to the ids.
+
+(defun entity-natural-key (e)
+  "The upsert identity of entity E, or NIL if its type declares none.
+Compare with EQUAL. A type without a natural key is identified only by its
+id, so every assert of one inserts -- right for knowledge minted once by a
+human or an agent, wrong for anything an analyzer re-derives from source."
+  (let ((spec (find-entity-type (entity-type e))))
+    (when (and spec (entity-type-natural-key spec))
+      (cons (entity-type e)
+            (loop for key in (entity-type-natural-key spec)
+                  collect (if (eq key :name)
+                              (and (slot-boundp e 'name) (name e))
+                              (gethash key (properties e))))))))
+
+(defun relationship-natural-key (r)
+  "The upsert identity of relationship R: its type and its two endpoints.
+Universal rather than declared -- an edge is fully described by what it
+connects, so there is nothing per-type to say."
+  (list (rel-type r) (from-id r) (to-id r)))
+
+(defun render-key-part (value)
+  "One natural-key component as a string, for embedding in an id."
+  (typecase value
+    (null      "")
+    (string    value)
+    (keyword   (string-downcase (symbol-name value)))
+    (cons      (format nil "~{~a~^,~}" (mapcar #'render-key-part value)))
+    (t         (princ-to-string value))))
+
+(defun derive-id (natural-key)
+  "An id string for NATURAL-KEY, or NIL when there is no key to derive from.
+
+Readable by design -- \"function:src/graph/query.lisp:impact-set\" rather than
+a uuid -- because these ids appear in API responses, in impact paths, and in
+whatever an agent quotes back at a human. The type leads: SS12's wire example
+omits it, but :FILE and :DOCUMENT both key on a path, and :MODULE and :PACKAGE
+both on a qualified name, so without the type those pairs would collide."
+  (when natural-key
+    (format nil "~(~a~)~{:~a~}"
+            (first natural-key) (mapcar #'render-key-part (rest natural-key)))))
+
+(defun fresh-id ()
+  "A random id, for facts that have no natural key to derive one from."
+  (random-uuid:to-string (random-uuid:make-uuid)))
+
+(defun properties-table (plist)
+  "A property table built from PLIST.
+
+The way to give an entity its natural-key properties: they have to be present
+before INITIALIZE-INSTANCE derives the id, so passing them as :PROPERTIES is
+not a convenience but a requirement. Properties set with SETP afterwards do
+not affect the id, which is correct for anything outside the natural key and
+a bug waiting to happen for anything inside it."
+  (let ((table (make-hash-table :test #'equal)))
+    (loop for (key value) on plist by #'cddr
+          do (setf (gethash key table) value))
+    table))
+
+;;;; ==================================================================
+;;;; Instantiation -- defaults and ids come from the registry
 ;;;; ==================================================================
 
 (defmethod initialize-instance :after ((e entity) &key)
@@ -298,7 +395,36 @@ only judges them, so the ontology stays free of storage concerns."
             (declare (ignore value))
             (unless presentp
               (setf (gethash (property-key p) table)
-                    (funcall (property-default-thunk p))))))))))
+                    (funcall (property-default-thunk p)))))))))
+  ;; Defaults first, then the id: a natural key may name a property that only
+  ;; the registry supplies.
+  (unless (slot-boundp e 'id)
+    (let ((derived (derive-id (entity-natural-key e))))
+      (setf (slot-value e 'id) (or derived (fresh-id))
+            (id-derived-p e)   (and derived t)))))
+
+(defmethod initialize-instance :after ((r relationship) &key)
+  (unless (slot-boundp r 'id)
+    ;; An edge's key is its endpoints, which are readers -- there is no
+    ;; property write that could move it, so nothing to guard.
+    (setf (slot-value r 'id) (derive-id (relationship-natural-key r)))))
+
+(defmethod (setf name) :after (value (e entity))
+  "A rename moves a derived id too, for types keyed on :NAME."
+  (declare (ignore value))
+  (when (and (id-derived-p e) (natural-key-property-p e :name))
+    (rederive-id e)))
+
+(defun natural-key-property-p (e key)
+  "True when KEY is one of the properties E's type derives its identity from."
+  (let ((spec (find-entity-type (entity-type e))))
+    (and spec (member key (entity-type-natural-key spec)) t)))
+
+(defun rederive-id (e)
+  "Recompute E's id from its natural key. Only meaningful while ID-DERIVED-P."
+  (let ((derived (derive-id (entity-natural-key e))))
+    (when derived (setf (slot-value e 'id) derived))
+    e))
 
 ;;;; ==================================================================
 ;;;; Declaration macros (SS4.2, SS4.3)
@@ -398,8 +524,9 @@ place to keep the taxonomy in sync."
                append `((defun ,accessor (e)
                           (gethash ,key (properties e)))
                         (defun (setf ,accessor) (value e)
-                          (check-property-value ,type-key ,key value)
-                          (setf (gethash ,key (properties e)) value))))
+                          ;; via (SETF GETP) rather than the table directly, so
+                          ;; a natural-key write re-derives the id here too
+                          (setf (getp e ,key) value))))
        (export '(,class-name ,@accessors))
        (register-entity-type
         (make-entity-type-spec

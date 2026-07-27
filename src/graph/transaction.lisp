@@ -105,7 +105,7 @@ fact has just been re-verified by the analyzer that emitted it."
   (setf (source target)        (source incoming)
         (confidence target)    (confidence incoming)
         (derived-from target)  (derived-from incoming)
-        (last-verified target) (last-verified incoming)
+        (origin-file target)   (origin-file incoming)
         (stale-p target)       (stale-p incoming))
   target)
 
@@ -222,6 +222,45 @@ isn't."
         (add-relationship graph r))))
 
 ;;;; ==================================================================
+;;;; retract-file -- the workhorse of incremental update (SS5.4)
+;;;; ==================================================================
+
+(defmethod plan-op (tx (op retract-file-op))
+  ;; Nothing to check. Retracting a file the index has never seen is a no-op,
+  ;; which is what makes it safe as the opening move of every analysis pass --
+  ;; a first analysis and a reanalysis are then the same transaction shape.
+  (declare (ignore tx op))
+  '())
+
+(defmethod apply-op (tx (op retract-file-op))
+  "Remove every fact read from this file.
+
+SS5.4: \"reanalyzing a changed file is retract-file followed by the fresh
+asserts.\" The pairing is what lets a *deleted* definition leave the index: an
+analyzer reports what it found and never what it stopped finding, so absence
+is only expressible by clearing the file first and letting the asserts put
+back whatever still exists.
+
+Because ids are derived from natural keys (SS5.1), everything that still
+exists comes back with the id it had, so edges from other files that point
+into this one are still pointing at the right entity afterwards. What they
+are not is still *present*: REMOVE-ENTITY drops them along with the entity, so
+a reanalysis loses the inbound cross-file edges until RESOLVE-CALLS runs
+again. That is idempotent and cheap, and the workspace monitor is where the
+two get sequenced once it exists."
+  (let* ((graph (tx-graph tx))
+         (facts (facts-from-file graph (path op)))
+         (entities (remove-if-not (lambda (f) (typep f 'entity)) facts))
+         (edges    (remove-if     (lambda (f) (typep f 'entity)) facts)))
+    ;; Edges first: removing an entity would cascade into them anyway, and
+    ;; doing it explicitly keeps the origin index honest either way.
+    (dolist (edge edges) (remove-relationship graph (id edge)))
+    (dolist (entity entities)
+      (cascade-staleness graph (id entity))
+      (remove-entity graph (id entity)))
+    (length facts)))
+
+;;;; ==================================================================
 ;;;; retract
 ;;;; ==================================================================
 
@@ -286,28 +325,15 @@ isn't."
 ;;;; The transaction itself (SS5.2)
 ;;;; ==================================================================
 
-;;; TODO: deleted definitions are never retracted. An analysis pass upserts
-;;; everything it found, but a definition removed from a file is simply absent
-;;; from the new op list, so the entity it made last time stays in the graph
-;;; forever -- along with its edges, which now describe code that does not
-;;; exist. This is the knowledge-rot failure SS12.4 is aimed at: the graph
-;;; quietly disagreeing with reality, which is what destroys agent trust in it
-;;; fastest.
-;;;
-;;; Not fixable in the analyzer: SS8.1 makes analyzers stateless, so one has no
-;;; way to know what a previous pass found. The reconciliation belongs here.
-;;; The shape it wants is a file-scoped transaction -- "these ops are the
-;;; complete analysis of file F" -- letting the applier diff the entities
-;;; currently reachable by :CONTAINS from F's :FILE entity against the ones
-;;; this batch asserted, and emit a RETRACT for the difference. That needs a
-;;; transaction to carry its scope, which the current bare op list does not:
-;;; probably a TRANSACTION object with a REPLACES-FILE slot rather than a new
-;;; op type, since the claim is about the batch, not about any one operation.
-;;;
-;;; Until then, a stale entity is only cleared by rebuilding the graph. The
-;;; test that will catch the fix working is the SS12.4 incremental-equivalence
-;;; one: full analysis of an edited tree must equal incremental analysis of it,
-;;; and today it would not once a definition is deleted.
+;;; TODO: cross-file edges into a reanalyzed file are lost until RESOLVE-CALLS
+;;; runs again. RETRACT-FILE-OP removes the file's entities, which cascades
+;;; away the inbound :CALLS edges other files contributed; the entities come
+;;; back with the same derived ids on the following asserts, but the edges do
+;;; not come back on their own. Re-running RESOLVE-CALLS restores them and is
+;;; idempotent, so the fix is sequencing rather than logic -- it belongs in
+;;; the workspace monitor of SS8.3, which is what will own "a file changed,
+;;; here is everything that has to happen." Until that exists, a caller
+;;; driving analysis by hand has to run RESOLVE-CALLS after the analysis pass.
 
 (defun apply-transaction (graph ops)
   "Validate every op in OPS against GRAPH, then apply them all, in order.

@@ -37,6 +37,17 @@ endpoint ids may be the ids of entities asserted earlier in the same
 transaction; the Graph Manager resolves them to whatever those asserts
 actually landed on."))
 
+(defclass retract-file-op (ontology-op)
+  ((path :initarg :path :reader path))
+  (:documentation "Retract every fact whose origin-file is PATH.
+
+SS5.4: \"The file-scoped retract is the workhorse of incremental update:
+reanalyzing a changed file is retract-file followed by the fresh asserts,
+which is simple, obviously correct, and cheap at the granularity of one
+file.\" It is also the only mechanism by which a *deleted* definition leaves
+the index -- a stateless analyzer emits what it found, never what it stopped
+finding, so absence can only be expressed by clearing the file first."))
+
 (defclass retract-op (ontology-op)
   ((target-id :initarg :target-id :reader target-id))
   (:documentation "Remove an entity and cascade staleness to the facts
@@ -66,18 +77,27 @@ without re-asserting the whole thing."))
 (defun assert-relationship (rel &optional workspace-id)
   (make-instance 'assert-relationship-op :rel rel :workspace-id workspace-id))
 
-(defun assert-edge (rel-type from to &key workspace-id (source :structural)
+(defun assert-edge (rel-type from to &key workspace-id origin-file
+                                          (source :structural)
                                           (confidence 1.0) derived-from)
   "An ASSERT-RELATIONSHIP-OP for a REL-TYPE edge between entities FROM and TO.
 Takes the entities rather than their ids because that is what an analyzer has
-in hand, and it removes the commonest way to build a broken edge."
+in hand, and it removes the commonest way to build a broken edge.
+
+ORIGIN-FILE defaults to FROM's, which is right for a structural edge: the
+file that says A calls B is the file A is written in, and that is the file
+whose reanalysis should retract the claim."
   (assert-relationship
    (make-instance 'relationship
                   :rel-type rel-type
                   :from-id (id from) :to-id (id to)
+                  :origin-file (or origin-file (origin-file from))
                   :source source :confidence confidence
                   :derived-from derived-from)
    workspace-id))
+
+(defun retract-file (path &optional workspace-id)
+  (make-instance 'retract-file-op :path path :workspace-id workspace-id))
 
 (defun retract (target-id &optional workspace-id)
   (make-instance 'retract-op :target-id target-id :workspace-id workspace-id))
@@ -91,51 +111,24 @@ in hand, and it removes the commonest way to build a broken edge."
                                        :workspace-id workspace-id))
 
 ;;;; ==================================================================
-;;;; Natural keys -- the upsert identity of a fact (SS4.4)
-;;;; ==================================================================
-;;;;
-;;;; An analyzer is stateless, so every pass mints fresh objects with fresh
-;;;; uuids.  Without a second, content-derived identity, re-analysing an
-;;;; unchanged file would double the graph.  The natural key is that identity:
-;;;; entity types declare theirs with DEFENTITY's :NATURAL-KEY, and the Graph
-;;;; Manager upserts onto whatever already carries the same key.
-
-(defun entity-natural-key (e)
-  "The upsert identity of entity E, or NIL if its type declares none.
-Compare with EQUAL.  A type without a natural key is identified only by its
-id, so every assert of one inserts -- right for minted knowledge such as
-decisions, wrong for anything an analyzer re-derives from source."
-  (let ((spec (find-entity-type (entity-type e))))
-    (when (and spec (entity-type-natural-key spec))
-      (cons (entity-type e)
-            (loop for key in (entity-type-natural-key spec)
-                  collect (if (eq key :name)
-                              (and (slot-boundp e 'name) (name e))
-                              (gethash key (properties e))))))))
-
-(defun relationship-natural-key (r)
-  "The upsert identity of relationship R: its type and its two endpoints.
-Universal rather than declared -- an edge is fully described by what it
-connects, so there is nothing per-type to say."
-  (list (rel-type r) (from-id r) (to-id r)))
-
-;;;; ==================================================================
 ;;;; Endpoint rebinding
 ;;;; ==================================================================
 
 (defun rebind-relationship (r &key (from-id (from-id r)) (to-id (to-id r)))
   "A copy of R pointing at FROM-ID and TO-ID.
-The Graph Manager needs this when an assert upserts onto an existing entity:
-edges emitted in the same pass name the freshly minted id, and have to be
-retargeted at the id that survived.  A copy rather than a mutation because
-FROM-ID and TO-ID are readers -- an edge that has been applied does not move."
+The Graph Manager needs this when an assert upserts onto an entity carrying a
+different id from the one the edge named. A copy rather than a mutation
+because FROM-ID and TO-ID are readers -- an edge that has been applied does
+not move -- and the copy deliberately does not carry R's id: an edge's id is
+derived from its endpoints, so moving an endpoint moves the id with it."
   (make-instance 'relationship
-                 :id (id r) :rel-type (rel-type r)
+                 :rel-type (rel-type r)
                  :from-id from-id :to-id to-id
                  :properties (properties r)
+                 :origin-file (origin-file r)
                  :source (source r) :confidence (confidence r)
                  :derived-from (derived-from r)
-                 :last-verified (last-verified r) :stale-p (stale-p r)))
+                 :stale-p (stale-p r)))
 
 ;;;; ==================================================================
 ;;;; Printing -- ops show up in transaction errors and the op log
@@ -149,6 +142,10 @@ FROM-ID and TO-ID are readers -- an edge that has been applied does not move."
   (print-unreadable-object (op stream :type t)
     (format stream "~s ~a -> ~a" (rel-type (op-rel op))
             (from-id (op-rel op)) (to-id (op-rel op)))))
+
+(defmethod print-object ((op retract-file-op) stream)
+  (print-unreadable-object (op stream :type t)
+    (format stream "~a" (path op))))
 
 (defmethod print-object ((op retract-op) stream)
   (print-unreadable-object (op stream :type t)

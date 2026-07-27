@@ -12,6 +12,8 @@
    (:file "package")
    (:file "graph-manager")
    (:file "transaction")
+   (:file "query")
+   (:file "resolve")
    )
   :in-order-to ((test-op (test-op :loom-graph/test)))
   )
@@ -30,6 +32,9 @@
   (
    (:file "suite")
    (:file "graph-manager")
+   (:file "query")
+   (:file "resolve")
+   (:file "retract-file")
    )
   ;; TEST-RUNNER returns NIL when any check fails; turn that into a real
   ;; failure so (asdf:test-system :loom-graph) is usable from CI.

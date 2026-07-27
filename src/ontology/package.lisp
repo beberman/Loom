@@ -20,13 +20,14 @@
 
    ;; identified
    #:id
+   #:id-derived-p
    #:name
 
    ;; provenanced
    #:source
    #:confidence
    #:derived-from
-   #:last-verified
+   #:origin-file
    #:stale-p
 
    ;; entity
@@ -45,6 +46,7 @@
    #:ontology-op
    #:assert-entity-op
    #:assert-relationship-op
+   #:retract-file-op
    #:retract-op
    #:mark-stale-op
    #:update-properties-op
@@ -52,18 +54,24 @@
    #:op-entity
    #:op-rel
    #:target-id
+   #:path
    #:reason
    #:changes
    #:assert-entity
    #:assert-relationship
    #:assert-edge
+   #:retract-file
    #:retract
    #:mark-stale
    #:update-properties
 
-   ;; natural keys -- upsert identity
+   ;; natural keys and derived ids (SS4.4, SS5.1)
    #:entity-natural-key
    #:relationship-natural-key
+   #:derive-id
+   #:fresh-id
+   #:render-key-part
+   #:properties-table
 
    ;; type registry -- the single source of the schema
    #:*entity-type-registry*

@@ -94,7 +94,13 @@ definition found inside it."
                (:line-count   integer)
                (:content-hash string
                 :documentation "Digest of the analyzed contents.  An unchanged
-hash is what lets re-analysis of an untouched file apply as a no-op.")))
+hash is what lets re-analysis of an untouched file apply as a no-op.")
+               (:analysis-failed-p boolean :default nil
+                :documentation "SS9.3: set when the file could not be parsed.
+The file is asserted anyway, because a known unknown is worth more to an agent
+than an absence it cannot distinguish from an empty file.")
+               (:analysis-error string
+                :documentation "The condition text, when :ANALYSIS-FAILED-P.")))
 
 (defentity :package
   :documentation "A namespace: a Lisp package, an npm package, a Python
@@ -217,22 +223,52 @@ query architecture directly instead of rediscovering it from source."
                 :documentation "Entity ids the concept was drawn from.  A
 concept is usually :inferred, so this is what its DERIVED-FROM tracks.")))
 
-(defentity :architecture-decision
-  :documentation "A recorded decision: what changed, why, what it affected,
-and what was learned.  Written by the planner through loom_record_decision."
-  :properties ((:number        integer)
+(defentity :decision
+  :documentation "A recorded decision: what was chosen, why, and what it
+touches.  Read from a YAML file under docs/design (SS10.1), which is what
+makes it survive a restart -- SS2.1: \"anything Loom knows that is not
+derivable from files must be written back to files, or it is not knowledge --
+it is cache, and it will be lost without anyone noticing.\"  Written by an
+agent through loom_record_decision, which writes the file and lets the
+watcher index it like any other."
+  :natural-key (:doc-id)
+  :properties ((:doc-id        string :required t
+                :documentation "The id: field of the YAML document, e.g. DEC-0042.")
+               (:title         string)
                (:status        keyword
                 :one-of (:proposed :accepted :superseded :rejected)
                 :default :proposed)
-               (:decision      string :required t)
+               (:decision      string)
                (:rationale     string)
                (:consequences  string)
+               (:tags          list)
                (:lessons       list
                 :documentation "Learnings worth carrying forward -- the
 \"avoid nested providers\" line of a decision record.")
                (:decided-at    integer :default (get-universal-time))
                (:superseded-by string
-                :documentation "Id of the decision that replaced this one.")))
+                :documentation "Doc-id of the decision that replaced this one.")))
+
+(defentity :rule
+  :documentation "A normative, checkable constraint, read from docs/rules
+(SS10.2).  The point of the type is SS10.4: a rule's CHECK clause compiles to
+the same query form as the architectural invariants of SS14.3, so \"the rule
+is written where a human reads it and enforced from the same text\" -- one
+statement serving the build, the reviewer, and loom_rules.
+
+A rule whose constraint cannot be expressed as a check stays valid as prose
+with severity :advisory.  It is not enforced, and the count of unenforced
+rules is reported, so prose-only drift stays visible rather than comfortable."
+  :natural-key (:doc-id)
+  :properties ((:doc-id    string :required t)
+               (:title     string)
+               (:status    keyword :one-of (:active :retired) :default :active)
+               (:severity  keyword :one-of (:error :warning :advisory)
+                :default :error)
+               (:statement string)
+               (:check     list
+                :documentation "The compiled check clause, or NIL when the
+rule is advisory prose.  A plist: :kind plus the keys that kind needs.")))
 
 ;;;; ==================================================================
 ;;;; Relationships
@@ -300,15 +336,41 @@ container, which is along this edge rather than against it.")
 a distinct tests field rather than mixed into the impact set.")
 
 (defrelationship :documents
-  :from (:document :architecture-decision :concept)
+  :from (:document :decision :rule :concept)
   :to (:function :method :class :interface :module :package :file :concept)
   :transitive-impact nil :impact-direction :reverse :collect-as :documents
   :documentation "One step, applied at the end, gathered into a distinct
 documents field.")
 
-(defrelationship :affects
-  :from (:architecture-decision) :to ()
+;;; SS11's table pairs DECIDES with DOCUMENTS: "One step, at the end --
+;;; Impacted unit -> documents -- Decisions, rules, and notes that reference
+;;; it."  Impact therefore runs from the changed unit back to the decision, and
+;;; the edge runs decision -> unit, so impact travels against it: :REVERSE.
+;;;
+;;; SS5.3's illustrative declaration writes :impact-direction :forward, which
+;;; would send impact from a decision out to the code it governs -- the
+;;; opposite traversal, and one that would put nothing in the decisions field
+;;; of an impact report.  SS11 is the normative impact specification and the
+;;; table is what the engine implements, so :REVERSE is used here.  Worth
+;;; reconciling in the document.
+(defrelationship :decides
+  :from (:decision) :to (:module :class :function :method :file :package)
   :transitive-impact nil :impact-direction :reverse :collect-as :decisions
-  :documentation "What a recorded decision touched.  Beyond the SS9 table:
-collected separately so the decisions bearing on a change reach the agent
-without inflating the impact count.")
+  :documentation "What a recorded decision governs.  Declared by the
+affects: field of a decision document (SS10.3), resolved against the entity
+index, and collected separately from the impact set so the decisions bearing
+on a change reach the agent without inflating the impact count.")
+
+(defrelationship :applies-to
+  :from (:rule) :to (:module :class :function :method :file :package)
+  :transitive-impact nil :impact-direction :reverse :collect-as :rules
+  :documentation "What a rule constrains.  Gathered into its own field so
+loom_rules can answer \"what must I not break here\" without an agent having
+to filter decisions for the normative ones.")
+
+(defrelationship :supersedes
+  :from (:decision) :to (:decision)
+  :transitive-impact nil :impact-direction :reverse
+  :documentation "The supersedes: field of a decision document.  Kept as an
+edge rather than only a property so the chain is walkable in both directions:
+an agent handed a decision needs to know whether something later replaced it.")

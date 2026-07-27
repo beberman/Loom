@@ -50,12 +50,52 @@ that is what makes the idempotence test below meaningful."
     (is (not (null ops)))
     (is (every (lambda (op) (typep op 'ontology-op)) ops)
         "an analyzer's whole output is operations -- SS8.1")
-    (is (typep (first ops) 'assert-entity-op)
-        "the file assert comes first, so edges naming it can resolve")
-    (is (eq :file (entity-type (op-entity (first ops)))))))
+    (is (typep (first ops) 'retract-file-op)
+        "SS5.4: every pass opens by clearing the file, so a deleted definition
+leaves the index")
+    (is (typep (second ops) 'assert-entity-op)
+        "then the file assert, so edges naming it can resolve")
+    (is (eq :file (entity-type (op-entity (second ops)))))))
+
+(test every-fact-records-the-file-it-was-read-from
+  ;; SS5.1 makes origin-file mandatory, and SS14.3 asserts its presence as an
+  ;; architectural invariant.
+  (dolist (op (fixture-ops))
+    (typecase op
+      (assert-entity-op
+       (is (equal *fixture-relative* (origin-file (op-entity op)))
+           "~a has no origin file" (name (op-entity op))))
+      (assert-relationship-op
+       (is (equal *fixture-relative* (origin-file (op-rel op))))))))
+
+(test an-unreadable-file-is-indexed-as-a-known-unknown
+  ;; SS9.3 / SS3.3: a file that could not be parsed is marked, not omitted --
+  ;; and the condition must not escape to take the watcher thread down.
+  (let* ((ops (analyze-file (make-instance 'lisp-analyzer)
+                            "broken.lisp"
+                            "(defun ok () 1)~%(defun broken (" ; unbalanced
+                            "ws-test"))
+         (g (make-graph)))
+    (apply-transaction g ops)
+    (let ((file (find-by-name g :file "broken.lisp")))
+      (is (not (null file)) "the file is asserted even though it did not parse")
+      (is-true (getp file :analysis-failed-p))
+      (is (stringp (getp file :analysis-error)))
+      (is (null (entities-of-type g :function))
+          "and nothing is guessed at from a file that could not be read"))))
 
 (test analyze-file-stamps-the-workspace-onto-every-op
   (is (every (lambda (op) (equal "ws-test" (workspace-id op))) (fixture-ops))))
+
+(test an-entity-id-is-derived-so-a-rebuild-lands-on-the-same-one
+  ;; SS14.4 asserts an incrementally updated index and an independently
+  ;; rebuilt one are identical. Two independent analysis passes are the
+  ;; smallest case of that.
+  (let ((a (make-graph)) (b (make-graph)))
+    (apply-transaction a (fixture-ops))
+    (apply-transaction b (fixture-ops))
+    (is (equal (sort (mapcar #'id (all-entities a)) #'string<)
+               (sort (mapcar #'id (all-entities b)) #'string<)))))
 
 ;;; ------------------------------------------------------------------
 ;;; What the graph makes of them

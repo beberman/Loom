@@ -24,14 +24,49 @@ from an entity id to the relationship ids touching it, so traversal doesn't
 require a scan.
 
 ENTITY-KEYS and REL-KEYS are the second lookup path the upsert semantics of
-SS4.4 need: natural key -> id, so an analyzer's freshly minted object can be
-recognised as something the graph already holds."
+SS5.4 need: natural key -> id, so an analyzer's freshly built object can be
+recognised as something the index already holds.
+
+ORIGIN-INDEX is the third, and it exists because of files-as-truth. SS7: an
+index by origin file \"is what makes file-scoped retraction O(facts in the
+file) rather than a scan\", and file-scoped retraction is what makes
+reanalyzing a changed file a well-defined operation."
   (entities      (make-hash-table :test #'equal) :type hash-table)
   (relationships (make-hash-table :test #'equal) :type hash-table)
   (from-index    (make-hash-table :test #'equal) :type hash-table)
   (to-index      (make-hash-table :test #'equal) :type hash-table)
   (entity-keys   (make-hash-table :test #'equal) :type hash-table)
-  (rel-keys      (make-hash-table :test #'equal) :type hash-table))
+  (rel-keys      (make-hash-table :test #'equal) :type hash-table)
+  (origin-index  (make-hash-table :test #'equal) :type hash-table))
+
+;;;; ------------------------------------------------------------------
+;;;; Origin-file index (SS5.1, SS7)
+;;;; ------------------------------------------------------------------
+
+(defun index-origin (graph fact)
+  (let ((file (origin-file fact)))
+    (when file (push (id fact) (gethash file (graph-origin-index graph))))))
+
+(defun unindex-origin (graph fact)
+  (let ((file (origin-file fact)))
+    (when file
+      (let ((remaining (remove (id fact) (gethash file (graph-origin-index graph))
+                               :test #'equal)))
+        (if remaining
+            (setf (gethash file (graph-origin-index graph)) remaining)
+            (remhash file (graph-origin-index graph)))))))
+
+(defun facts-from-file (graph path)
+  "Every entity and relationship read from PATH.
+Backs RETRACT-FILE-OP, and answers \"what does Loom think this file says\"."
+  (loop for fid in (gethash path (graph-origin-index graph))
+        for fact = (or (gethash fid (graph-entities graph))
+                       (gethash fid (graph-relationships graph)))
+        when fact collect fact))
+
+(defun origin-files (graph)
+  "Every file the index currently holds facts from."
+  (loop for file being the hash-keys of (graph-origin-index graph) collect file))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Entities
@@ -47,9 +82,13 @@ APPLY-TRANSACTION, which is the path analyzers use."
   (let ((problems (validate-entity entity)))
     (when problems
       (error 'graph-error :problems problems)))
+  ;; The id stops tracking the natural key here: from now on it is a value
+  ;; other facts point at, and moving it is the Graph Manager's business.
+  (setf (id-derived-p entity) nil)
   (let ((key (entity-natural-key entity)))
     (when key
       (setf (gethash key (graph-entity-keys graph)) (id entity))))
+  (index-origin graph entity)
   (setf (gethash (id entity) (graph-entities graph)) entity))
 
 (defun get-entity (graph id)
@@ -69,6 +108,7 @@ never holds an edge pointing at an id it no longer stores."
     (remove-relationship graph rid))
   (let ((entity (get-entity graph id)))
     (when entity
+      (unindex-origin graph entity)
       (let ((key (entity-natural-key entity)))
         (when key (remhash key (graph-entity-keys graph))))))
   (remhash id (graph-entities graph))
@@ -106,6 +146,7 @@ here. Signals GRAPH-ERROR, and stores nothing, if either check fails."
         (error 'graph-error :problems problems))))
   (setf (gethash (relationship-natural-key relationship) (graph-rel-keys graph))
         (id relationship))
+  (index-origin graph relationship)
   (setf (gethash (id relationship) (graph-relationships graph)) relationship)
   (push (id relationship) (gethash (from-id relationship) (graph-from-index graph)))
   (push (id relationship) (gethash (to-id relationship) (graph-to-index graph)))
@@ -123,6 +164,7 @@ here. Signals GRAPH-ERROR, and stores nothing, if either check fails."
   (let ((rel (get-relationship graph id)))
     (when rel
       (remhash id (graph-relationships graph))
+      (unindex-origin graph rel)
       (remhash (relationship-natural-key rel) (graph-rel-keys graph))
       (setf (gethash (from-id rel) (graph-from-index graph))
             (remove id (gethash (from-id rel) (graph-from-index graph))))

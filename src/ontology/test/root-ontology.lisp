@@ -33,7 +33,14 @@
                (:stamp   integer :default (incf *stamp-counter*))))
 
 (defentity :test-bare
-  :documentation "Fixture entity type declaring no properties.")
+  :documentation "Fixture entity type declaring no properties, and no natural
+key -- the case where an id has to be minted rather than derived.")
+
+(defentity :test-keyed
+  :documentation "Fixture entity type with a natural key, for the id
+derivation of SS5.1."
+  :natural-key (:file :name)
+  :properties ((:file string :required t)))
 
 (defrelationship :test-links
   :from (:test-widget) :to (:test-bare)
@@ -52,16 +59,48 @@
 ;;; ------------------------------------------------------------------
 
 (test id-can-be-supplied-so-operations-can-be-replayed
-  ;; Without this, replaying the operation log or loading a snapshot would
-  ;; mint fresh uuids and every from-id/to-id in the log would dangle.
+  ;; Without this, replaying the operation log would mint fresh ids and every
+  ;; from-id/to-id in the log would dangle.
   (let ((e (make-instance 'test-bare-entity :id "id-from-the-op-log")))
     (is (string= "id-from-the-op-log" (id e)))))
 
-(test id-is-generated-when-not-supplied
+(test an-id-is-derived-from-the-natural-key
+  ;; SS5.1: ids are "derived deterministically from the natural key ... so
+  ;; that a full rebuild produces the same ids as an incremental update".
+  ;; Two independently built entities describing the same thing must collide
+  ;; on their ids -- that collision *is* the mechanism.
+  (let ((a (make-instance 'test-keyed-entity :name "resolve-overlay"
+                          :properties (properties-table '(:file "src/overlay.lisp"))))
+        (b (make-instance 'test-keyed-entity :name "resolve-overlay"
+                          :properties (properties-table '(:file "src/overlay.lisp")))))
+    (is (string= (id a) (id b))
+        "a rebuild must land on the same id, or SS14.4 cannot assert identity")
+    (is (string= "test-keyed:src/overlay.lisp:resolve-overlay" (id a))
+        "and the id is readable, because it appears in API responses and
+impact paths that humans read")))
+
+(test a-differing-key-derives-a-differing-id
+  (let ((a (make-instance 'test-keyed-entity :name "resolve-overlay"
+                          :properties (properties-table '(:file "src/a.lisp"))))
+        (b (make-instance 'test-keyed-entity :name "resolve-overlay"
+                          :properties (properties-table '(:file "src/b.lisp")))))
+    (is (string/= (id a) (id b)) "same name, different file, different entity")))
+
+(test a-type-with-no-natural-key-still-gets-a-unique-id
+  ;; Nothing re-derives these from source, so there is no key to derive from
+  ;; and a random id is the honest answer.
   (let ((a (make-instance 'test-bare-entity))
         (b (make-instance 'test-bare-entity)))
     (is (random-uuid:valid-string-p (id a)))
-    (is (string/= (id a) (id b)) "ids must never be reused between entities")))
+    (is (string/= (id a) (id b)))))
+
+(test a-relationship-id-is-derived-from-its-endpoints
+  (let ((a (make-instance 'relationship :rel-type :test-links
+                                        :from-id "x" :to-id "y"))
+        (b (make-instance 'relationship :rel-type :test-links
+                                        :from-id "x" :to-id "y")))
+    (is (string= (id a) (id b)))
+    (is (string= "test-links:x:y" (id a)))))
 
 (test name-round-trips
   (let ((e (make-instance 'test-bare-entity :name "widget")))
@@ -79,17 +118,19 @@
         "structural facts are the common case and must not require an initarg")
     (is (= 1.0 (confidence e)))
     (is (null (derived-from e)))
-    (is (null (last-verified e)))
+    (is (null (origin-file e)))
     (is (null (stale-p e)))))
 
 (test provenance-initargs
   (let ((e (make-instance 'test-bare-entity
                           :source :inferred :confidence 0.5
-                          :derived-from '("a" "b") :last-verified "snap-3121")))
+                          :derived-from '("a" "b")
+                          :origin-file "docs/design/DEC-0042.yaml")))
     (is (eq :inferred (source e)))
     (is (= 0.5 (confidence e)))
     (is (equal '("a" "b") (derived-from e)))
-    (is (string= "snap-3121" (last-verified e)))))
+    (is (string= "docs/design/DEC-0042.yaml" (origin-file e))
+        "SS5.1 makes this mandatory: every fact traces to the file it came from")))
 
 ;;; ------------------------------------------------------------------
 ;;; entity / relationship
@@ -108,7 +149,8 @@
     (is (eq :calls (rel-type r)))
     (is (equal "a" (from-id r)))
     (is (equal "b" (to-id r)))
-    (is (random-uuid:valid-string-p (id r)))
+    (is (string= "calls:a:b" (id r))
+        "an edge is identified by what it connects")
     (is (eq :structural (source r)))))
 
 ;;; ------------------------------------------------------------------

@@ -101,34 +101,71 @@ quoted data so a literal list is never mistaken for a call site."
 (defun definition-p (form head)
   (and (consp form) (symbolp (car form)) (string= (token-name (car form)) head)))
 
+(defun standard-operator-p (name)
+  "True when NAME names a symbol in the COMMON-LISP package.
+
+The filter that keeps :UNRESOLVED-CALLS meaningful. Every operator position in
+a body is a call candidate, and most of them are LET, WHEN, FORMAT and the
+rest of the standard library -- recording those as unresolved would bury the
+handful of names that actually point at another file in the workspace. This
+belongs in the Lisp analyzer specifically: knowing what the ambient vocabulary
+of a language is, is exactly the kind of thing a language analyzer knows."
+  (and (find-symbol (string-upcase name) '#:common-lisp) t))
+
+
+;;; Natural-key properties are passed at construction, not set afterwards with
+;;; SETP: SS5.1 derives the id from the natural key, and that derivation runs
+;;; inside INITIALIZE-INSTANCE. A :file or :name arriving later would leave the
+;;; entity carrying an id computed from values it did not yet have.
+
 (defun make-file-entity (path contents)
-  (let ((e (make-instance 'file-entity :name path)))
-    (setp e :path path)
-    (setp e :language :lisp)
-    (setp e :line-count (line-count contents))
-    e))
+  (make-instance 'file-entity
+                 :name path
+                 :origin-file path
+                 :properties (properties-table
+                              (list :path path
+                                    :language :lisp
+                                    :line-count (line-count contents)))))
 
 (defun make-function-entity (form start end path)
-  (let ((e (make-instance 'function-entity :name (token-name (second form)))))
-    (setp e :file path)
-    (setp e :start-line start)
-    (setp e :end-line end)
-    (setp e :arguments (mapcar #'token-name (third form)))
-    (setp e :language :lisp)
-    e))
+  (make-instance 'function-entity
+                 :name (token-name (second form))
+                 :origin-file path
+                 :properties (properties-table
+                              (list :file path
+                                    :start-line start
+                                    :end-line end
+                                    :arguments (mapcar #'token-name (third form))
+                                    :language :lisp))))
 
 (defun make-variable-entity (form start end path)
-  (let ((e (make-instance 'variable-entity :name (token-name (second form)))))
-    (setp e :file path)
-    (setp e :start-line start)
-    (setp e :end-line end)
-    (setp e :kind :special)
-    (setp e :language :lisp)
-    e))
+  (make-instance 'variable-entity
+                 :name (token-name (second form))
+                 :origin-file path
+                 :properties (properties-table
+                              (list :file path
+                                    :start-line start
+                                    :end-line end
+                                    :kind :special
+                                    :language :lisp))))
 
-;;;; ------------------------------------------------------------------
-;;;; The protocol method
-;;;; ------------------------------------------------------------------
+(defun make-unparsable-file-entity (path contents condition)
+  "The entity a file gets when its contents cannot be read.
+
+SS9.3: \"If a file cannot be parsed, the analyzer emits a single assert
+marking the module analysis-failed with the condition text.\" SS3.3 gives the
+reason -- a file that could not be parsed is a known unknown, and an agent
+asking about it deserves to be told so rather than told nothing. Silence would
+be indistinguishable from a file that genuinely defines nothing."
+  (make-instance 'file-entity
+                 :name path
+                 :origin-file path
+                 :properties (properties-table
+                              (list :path path
+                                    :language :lisp
+                                    :line-count (line-count contents)
+                                    :analysis-failed-p t
+                                    :analysis-error (princ-to-string condition)))))
 
 (defmethod analyze-file ((analyzer lisp-analyzer) path contents workspace-id)
   "Ontology operations for the Lisp source in CONTENTS at PATH: a :FILE
@@ -141,35 +178,72 @@ Asserts precede the edges that name them, because the Graph Manager resolves
 an edge's endpoints against the asserts it has already planned in the same
 transaction."
   (declare (ignore analyzer))
-  (let* ((file (make-file-entity path contents))
-         (ops '())                 ; built reversed, NREVERSEd on the way out
-         (functions '()))          ; alist: name -> (entity . defun-form)
-    (flet ((emit (op) (push op ops))
-           (contained (entity)
-             (assert-edge :contains file entity :workspace-id workspace-id)))
-      (emit (assert-entity file workspace-id))
-      (dolist (spec (read-forms-with-spans contents))
-        (destructuring-bind (form start end) spec
-          (cond
-            ((definition-p form "defun")
-             (let ((e (make-function-entity form start end path)))
-               (emit (assert-entity e workspace-id))
-               (emit (contained e))
-               (push (cons (name e) (cons e form)) functions)))
-            ((or (definition-p form "defvar") (definition-p form "defparameter"))
-             (let ((e (make-variable-entity form start end path)))
-               (emit (assert-entity e workspace-id))
-               (emit (contained e)))))))
-      ;; Calls, once every local definition is known: a name resolves only if
-      ;; it was defined in this same file.
+  (let ((file (make-file-entity path contents))
+        (definitions '())       ; entities, in source order
+        (functions '())         ; alist: name -> (entity . defun-form)
+        (ops '())               ; built reversed, NREVERSEd on the way out
+        (forms nil))
+
+    ;; --- pass 0: read, and survive a file that will not read ---------
+    ;; SS3.3: a condition escaping here would take the watcher thread down and
+    ;; leave the process answering queries while silently indexing nothing.
+    (handler-case (setf forms (read-forms-with-spans contents))
+      (error (condition)
+        (return-from analyze-file
+          (list (retract-file path workspace-id)
+                (assert-entity (make-unparsable-file-entity path contents condition)
+                               workspace-id)))))
+
+    ;; --- pass 1: what this file defines -----------------------------
+    (dolist (spec forms)
+      (destructuring-bind (form start end) spec
+        (cond
+          ((definition-p form "defun")
+           (let ((e (make-function-entity form start end path)))
+             (push e definitions)
+             (push (cons (name e) (cons e form)) functions)))
+          ((or (definition-p form "defvar") (definition-p form "defparameter"))
+           (push (make-variable-entity form start end path) definitions)))))
+    (setf definitions (nreverse definitions))
+
+    ;; --- pass 2: who each function calls ----------------------------
+    ;; A name resolves here only if this same file defines it. Anything else
+    ;; that is not standard Common Lisp is recorded on the entity as an
+    ;; unresolved call, per SS8.3: "unresolved calls are recorded as a
+    ;; property, not a dangling edge." LOOM-GRAPH:RESOLVE-CALLS is what turns
+    ;; those into real edges once the whole workspace is in one graph -- the
+    ;; analyzer cannot, because it sees one file and holds no state.
+    (let ((local-calls '()))      ; list of (caller-entity . callee-entity)
       (dolist (entry functions)
         (destructuring-bind (caller . form) (cdr entry)
-          (dolist (callee-name (remove-duplicates (collect-call-names (cdddr form))
-                                                  :test #'string=))
-            (let ((callee (assoc callee-name functions :test #'string=)))
-              (when callee
-                (emit (assert-edge :calls caller (cadr callee)
-                                   :workspace-id workspace-id))))))))
+          (let ((unresolved '()))
+            (dolist (callee-name (remove-duplicates (collect-call-names (cdddr form))
+                                                    :test #'string=))
+              (let ((callee (assoc callee-name functions :test #'string=)))
+                (cond (callee (push (cons caller (cadr callee)) local-calls))
+                      ((standard-operator-p callee-name))
+                      ((string= callee-name (name caller)))   ; direct recursion
+                      (t (push callee-name unresolved)))))
+            (setp caller :unresolved-calls (nreverse unresolved)))))
+
+      ;; --- pass 3: emit ------------------------------------------------
+      ;; RETRACT-FILE leads, per SS5.4: "reanalyzing a changed file is
+      ;; retract-file followed by the fresh asserts." It is what makes a
+      ;; definition deleted from the file leave the index -- the asserts below
+      ;; can only say what is still there. On a file the index has not seen it
+      ;; is a no-op, so a first analysis and a reanalysis are the same shape.
+      ;;
+      ;; Asserts then precede the edges that name them, because the Graph
+      ;; Manager resolves an edge's endpoints against the asserts it has
+      ;; already planned in the same transaction.
+      (push (retract-file path workspace-id) ops)
+      (push (assert-entity file workspace-id) ops)
+      (dolist (e definitions)
+        (push (assert-entity e workspace-id) ops)
+        (push (assert-edge :contains file e :workspace-id workspace-id) ops))
+      (dolist (call (reverse local-calls))
+        (push (assert-edge :calls (car call) (cdr call) :workspace-id workspace-id)
+              ops)))
     (nreverse ops)))
 
 ;;;; The one registered instance. Stateless, so one serves every file and
