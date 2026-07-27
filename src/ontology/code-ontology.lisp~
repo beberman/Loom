@@ -1,0 +1,7 @@
+(defentity function
+  :documentation "A function in a code block as an entity"
+  :properties '((:start-line . nil)
+		(:end-line . nil)
+		(:name . nil)
+		(:arguments . nil))
+  )

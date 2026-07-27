@@ -1,0 +1,19 @@
+;;;
+;;; Main test runner
+;;; Copyright Brian Eberman, Ten Factor Growth 2022
+;;;
+
+(in-package :pursuit-utils-test)
+
+(def-suite all-tests
+  :description "Master suite of all pursuit-utils tests")
+
+(in-suite all-tests)
+
+(defun test-runner ()
+  (run! 'all-tests))
+
+
+
+
+
