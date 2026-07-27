@@ -91,6 +91,8 @@
    #:validate-relationship-endpoints
    #:check-property-value
    #:property-value-problem
+   #:getp
+   #:setp
 
    ;; schema export
    #:ontology-schema

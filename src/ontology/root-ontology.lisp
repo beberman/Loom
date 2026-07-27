@@ -194,6 +194,16 @@ scenarios; DEFRELATIONSHIP forms must be re-run afterward to repopulate it."
                      (property-error-problem c)
                      (property-error-value c)))))
 
+;;; TODO: NIL is overloaded as both "no value stored" and, for BOOLEAN
+;;; properties, the legitimate value false -- GETP and the generated
+;;; per-type accessors return a bare value with no presence flag, so
+;;; VALIDATE-ENTITY below cannot tell a false boolean from an absent one. A
+;;; :REQUIRED BOOLEAN property set to NIL is therefore misreported as
+;;; missing. Latent only: no property in code-ontology.lisp currently marks
+;;; a boolean :REQUIRED. Fixing it means GETP returning (VALUES value
+;;; present-p) and threading presence through PROPERTY-VALUE-PROBLEM and
+;;; VALIDATE-ENTITY's required check, not just a GETP change.
+
 (defun property-value-problem (spec value)
   "A human-readable problem string if VALUE is invalid for SPEC, else NIL.
 NIL passes regardless of declared type: absence is REQUIRED's business."
@@ -214,6 +224,25 @@ Used by the generated typed accessors."
           (error 'property-error :entity-type type-key :key property-key
                                  :value value :problem problem)))))
   value)
+
+(defun getp (entity key)
+  "Generic property reader: the value of property KEY on ENTITY.
+Complement to the per-type accessors DEFENTITY generates -- for code that
+builds or walks entities by key rather than by a known accessor name, such as
+an analyzer populating a freshly parsed entity from extracted properties."
+  (gethash key (properties entity)))
+
+(defun (setf getp) (value entity key)
+  "SETF-able counterpart to GETP. Validates VALUE the same way the
+type-specific accessors do, via CHECK-PROPERTY-VALUE."
+  (check-property-value (entity-type entity) key value)
+  (setf (gethash key (properties entity)) value))
+
+(defun setp (entity key value)
+  "Function-call form of (SETF (GETP ENTITY KEY) VALUE), for callers that
+prefer not to write a SETF form -- e.g. looping SETP over an alist of
+parsed properties."
+  (setf (getp entity key) value))
 
 (defun validate-entity (e)
   "Return a list of problem plists for E; NIL means valid.
