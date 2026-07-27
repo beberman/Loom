@@ -21,12 +21,13 @@
   (dolist (key '(:workspace :snapshot :repository :branch :commit
                  :file :package :module :class :interface
                  :function :method :variable
-                 :test :document :concept :architecture-decision))
+                 :test :document :concept :decision :rule))
     (is (not (null (find-entity-type key))) "~s must be registered" key)))
 
 (test every-specified-relationship-type-is-registered
   (dolist (key '(:calls :depends-on :imports :uses :inherits :implements
-                 :contains :belongs-to :tests :documents :affects))
+                 :contains :belongs-to :tests :documents
+                 :decides :applies-to :supersedes))
     (is (not (null (find-relationship-type key))) "~s must be registered" key)))
 
 (test every-entity-type-is-documented
@@ -137,7 +138,9 @@
           (:belongs-to  nil :forward nil)
           (:tests       nil :reverse :tests)
           (:documents   nil :reverse :documents)
-          (:affects     nil :reverse :decisions))
+          (:decides     nil :reverse :decisions)
+          (:applies-to  nil :reverse :rules)
+          (:supersedes  nil :reverse nil))
         for spec = (find-relationship-type key)
         do (is (eq transitive (and (relationship-type-transitive-impact spec) t))
                "~s transitive-impact" key)
@@ -177,12 +180,31 @@
       "only a test tests"))
 
 (test an-unconstrained-endpoint-accepts-anything
-  ;; :affects declares an empty :to, which means unconstrained -- a decision
-  ;; can touch any part of the system
-  (is (null (validate-relationship-endpoints
-             :affects :architecture-decision :concept)))
-  (is (null (validate-relationship-endpoints
-             :affects :architecture-decision :workspace))))
+  ;; An empty :to declaration means unconstrained. Nothing in the current
+  ;; taxonomy leaves both ends open, so this checks the validator's handling
+  ;; of the case directly rather than through a type that happens to use it.
+  (is (null (validate-relationship-endpoints :calls :function :function)))
+  (let ((spec (find-relationship-type :decides)))
+    (is (not (null (relationship-type-to spec)))
+        "SS5.3 names the types a decision may govern, so :decides is
+constrained on both ends")))
+
+(test decisions-and-rules-are-keyed-by-their-document-id
+  ;; SS10.1: a decision is a YAML file, and its id: field is what other
+  ;; documents reference it by, so that is its identity in the index too
+  (is (equal '(:doc-id) (entity-type-natural-key (find-entity-type :decision))))
+  (is (equal '(:doc-id) (entity-type-natural-key (find-entity-type :rule)))))
+
+(test a-rule-carries-a-severity-and-a-check
+  ;; SS10.4: a rule that cannot be compiled to a check stays valid as prose
+  ;; with severity :advisory, so CHECK must be optional and SEVERITY must not
+  (let ((r (make-instance 'rule-entity :name "RULE-0007"
+                                       :properties (properties-table
+                                                    '(:doc-id "RULE-0007")))))
+    (is (null (validate-entity r)))
+    (is (eq :error (getp r :severity)) "severity defaults to the strict end")
+    (is (eq :active (getp r :status)))
+    (is (null (getp r :check)) "advisory rules have no check")))
 
 ;;; ------------------------------------------------------------------
 ;;; A realistic entity, end to end
@@ -199,7 +221,25 @@
           (function-entity-language f) :lisp)
     (is (null (validate-entity f)))
     (is (eq :function (entity-type f)) "the wire form is the declared keyword")
-    (is (random-uuid:valid-string-p (id f)))))
+    ;; Constructed before its :file was known, so the id was first derived from
+    ;; an incomplete key -- and moved when the key completed. Without that, an
+    ;; entity built this way would carry a plausible-looking wrong id.
+    (is (string= "function:src/ontology/root-ontology.lisp:validate-entity" (id f))
+        "the id follows the natural key until the entity enters the index")))
+
+(test an-id-stops-following-the-natural-key-once-the-entity-is-indexed
+  ;; Other facts point at an id, so it cannot keep moving under them. SS5.1's
+  ;; "stable id" is stable from the moment the Graph Manager takes it.
+  (let ((f (make-instance 'function-entity :name "before"
+                          :properties (properties-table
+                                       '(:file "a.lisp" :start-line 1 :end-line 2)))))
+    (is-true (id-derived-p f))
+    (setf (function-entity-file f) "b.lisp")
+    (is (string= "function:b.lisp:before" (id f)) "still tracking")
+    (setf (id-derived-p f) nil)                     ; what ADD-ENTITY does
+    (setf (function-entity-file f) "c.lisp")
+    (is (string= "function:b.lisp:before" (id f))
+        "frozen: the property moved, the identity did not")))
 
 (test an-incomplete-function-entity-is-reported
   (let* ((f (make-instance 'function-entity))

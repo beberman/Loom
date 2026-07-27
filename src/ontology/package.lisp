@@ -20,13 +20,14 @@
 
    ;; identified
    #:id
+   #:id-derived-p
    #:name
 
    ;; provenanced
    #:source
    #:confidence
    #:derived-from
-   #:last-verified
+   #:origin-file
    #:stale-p
 
    ;; entity
@@ -39,6 +40,38 @@
    #:rel-type
    #:from-id
    #:to-id
+   #:rebind-relationship
+
+   ;; ontology operations (SS4.4) -- the vocabulary analyzers emit
+   #:ontology-op
+   #:assert-entity-op
+   #:assert-relationship-op
+   #:retract-file-op
+   #:retract-op
+   #:mark-stale-op
+   #:update-properties-op
+   #:workspace-id
+   #:op-entity
+   #:op-rel
+   #:target-id
+   #:path
+   #:reason
+   #:changes
+   #:assert-entity
+   #:assert-relationship
+   #:assert-edge
+   #:retract-file
+   #:retract
+   #:mark-stale
+   #:update-properties
+
+   ;; natural keys and derived ids (SS4.4, SS5.1)
+   #:entity-natural-key
+   #:relationship-natural-key
+   #:derive-id
+   #:fresh-id
+   #:render-key-part
+   #:properties-table
 
    ;; type registry -- the single source of the schema
    #:*entity-type-registry*
@@ -59,6 +92,7 @@
    #:entity-type-class-name
    #:entity-type-documentation
    #:entity-type-properties
+   #:entity-type-natural-key
 
    ;; property-spec
    #:property-spec

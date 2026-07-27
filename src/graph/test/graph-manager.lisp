@@ -212,5 +212,5 @@
     (add-entity g a)
     (add-entity g b)
     (add-relationship g edge)
-    (is (equal (list edge) (relationships-from g (id a) :graph-test-edge)))
-    (is (null (relationships-from g (id a) :some-other-type)))))
+    (is (equal (list edge) (relationships-from g (id a) :rel-type :graph-test-edge)))
+    (is (null (relationships-from g (id a) :rel-type :some-other-type)))))
