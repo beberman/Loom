@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat)",
+      "Bash(cp /tmp/ytest.lisp \"B:/home/beberman/lisp/ytest.lisp\")",
+      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"timeout 300 sbcl --script ytest.lisp 2>&1 | tail -20\")"
+    ]
+  }
+}

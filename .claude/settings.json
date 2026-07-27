@@ -12,7 +12,8 @@
       "PowerShell(wsl.exe -d Ubuntu -- bash -lc \"ps -eo pid,etime,pcpu,comm | grep -i sbcl | head\")",
       "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"sbcl --script selfcheck.lisp > /tmp/loom.log 2>&1; grep -v '^; \\\\|fasl' /tmp/loom.log > /tmp/loom-clean.log; echo EXIT=\\\\$?; wc -l /tmp/loom-clean.log\")",
       "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"grep -n -A6 'Failure Details' /tmp/loom-clean.log; echo '=== TOTALS ==='; grep -n 'Pass:\\\\|Fail:\\\\|suites:' /tmp/loom-clean.log\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"sed -n '118,160p' /tmp/loom-clean.log\")"
+      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"sed -n '118,160p' /tmp/loom-clean.log\")",
+      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"ldconfig -p | grep -i yaml; echo '--- dists ---'; ls ~/quicklisp/dists/quicklisp/software/ 2>/dev/null | grep -iE 'yaml|thread|hunchentoot|jonathan|jzon|cl-json' | head -20\")"
     ]
   }
 }
