@@ -1,0 +1,16 @@
+id: RULE-0003
+type: rule
+title: Knowledge Services never write
+status: active
+severity: error
+applies-to: [search-entities, describe-entity, impact-report, build-context]
+statement: |
+  The read side of the graph answers questions and changes nothing. Nothing in
+  the knowledge layer may call apply-transaction or any other function that
+  submits a transaction. A service that can write is a service that can lie
+  about what it read.
+check:
+  kind: no-edge
+  from-system: knowledge
+  to-system: graph
+  rel-types: [calls]

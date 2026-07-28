@@ -84,6 +84,32 @@ leaves the index")
       (is (null (entities-of-type g :function))
           "and nothing is guessed at from a file that could not be read"))))
 
+(test a-foreign-package-prefix-does-not-cost-the-file
+  ;; The analyzer reads source from workspaces this image has never loaded, so
+  ;; a prefix naming an absent package is the normal case. Reading used to
+  ;; signal on the first one and take every definition in the file with it:
+  ;; indexing a 137-file Lisp repository found 128 definitions where 830 were
+  ;; there, and `find' answered "nothing matches" for most of the codebase.
+  (let* ((ops (analyze-file (make-instance 'lisp-analyzer)
+                            "foreign.lisp"
+                            "(defun caller ()
+  (utils:parse-config (log:info \"x\") absent-package::internal))
+(defvar *setting* (config:default))"
+                            "ws-test"))
+         (g (make-graph)))
+    (apply-transaction g ops)
+    (let ((file (find-by-name g :file "foreign.lisp")))
+      (is (not (null file)))
+      (is-false (getp file :analysis-failed-p)
+                "a package this image has not loaded is not a parse failure"))
+    (let ((caller (find-by-name g :function "caller")))
+      (is (not (null caller)) "the definition is indexed, prefixes and all")
+      (is (not (null (find-by-name g :variable "*setting*"))))
+      (is (equal '("info" "internal" "parse-config")
+                 (sort (copy-list (getp caller :call-names)) #'string<))
+          "and the calls survive under their bare names, which is all
+TOKEN-NAME ever reads -- the prefix carries nothing worth failing over"))))
+
 (test analyze-file-stamps-the-workspace-onto-every-op
   (is (every (lambda (op) (equal "ws-test" (workspace-id op))) (fixture-ops))))
 
@@ -127,6 +153,33 @@ leaves the index")
     (let ((summarize (find-by-name g :function "summarize")))
       (is (eql 12 (getp summarize :start-line)))
       (is (eql 14 (getp summarize :end-line))))))
+
+(test every-top-level-form-is-read-not-just-the-first
+  ;; The walk used to read each form from a stream bounded to start at that
+  ;; form and add the offset back to the resulting FILE-POSITION. Whether that
+  ;; double-counts depends on a detail implementations disagree about, so on
+  ;; half of them the second form's end landed past itself and the walk stopped
+  ;; two forms in -- silently, since overshooting the end just ends the loop.
+  ;; The leading comment is the whole point: it puts the first form at a
+  ;; non-zero offset, which is where the two conventions start to differ.
+  ;; Reached into with :: deliberately. The walk is not protocol -- SS8.1 makes
+  ;; ANALYZE-FILE the only coupling an analyzer has -- so this stays a private
+  ;; function that a test may name rather than something the package exports.
+  (let ((forms (loom-analyzer::read-forms-with-spans ";;;; a header comment
+(defparameter *a* 1)
+
+(defun one () 1)
+
+(defun two () (one))
+")))
+    (is (= 3 (length forms)) "every top-level form, not just the ones before
+the first miscounted span")
+    (is (equal '("defparameter" "defun" "defun")
+               (mapcar (lambda (spec) (loom-analyzer::token-name (first (first spec))))
+                       forms)))
+    (is (equal '((2 2) (4 4) (6 6))
+               (mapcar #'rest forms))
+        "and each one spans its own lines")))
 
 (test analyze-file-parses-arguments
   (multiple-value-bind (g file) (analyze-fixture)

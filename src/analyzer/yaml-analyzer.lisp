@@ -15,8 +15,17 @@
 ;;;; names are carried through as properties and LOOM-GRAPH:RESOLVE-DOCUMENT-
 ;;;; LINKS turns them into edges -- the same shape as unresolved calls, and
 ;;;; for the same reason.
+;;;;
+;;;; It lives in LOOM-ANALYZER rather than in a system of its own. SS4 lists a
+;;;; separate loom-docs owning "YAML documentation analyzer ... link
+;;;; resolution; the rule compiler", but link resolution needs the entity
+;;;; index, which would give loom-docs an edge into loom-graph and contradict
+;;;; SS14.3's invariant that it has none. Resolution therefore sits on the
+;;;; graph side, the rule compiler is PARSE-CHECK below, and what remains is
+;;;; one more implementation of the SS9.1 protocol -- which is what this system
+;;;; is for.
 
-(in-package :loom-docs)
+(in-package :loom-analyzer)
 
 (define-condition document-error (error)
   ((path    :initarg :path    :reader document-error-path)
@@ -116,8 +125,15 @@ is what a human writes, and refusing it would be pedantry."
 A document that is not a mapping is a malformed document, not an empty one,
 and saying so with the path is the \"validation error with a line number\"
 half of why SS10.2 chose YAML."
+  ;; YAML.ERROR:YAML-ERROR is named alongside ERROR deliberately. cl-yaml
+  ;; defines its conditions as (define-condition yaml-error () ...) -- direct
+  ;; subtypes of CONDITION, not of ERROR -- so a malformed document sails
+  ;; straight through a handler that names ERROR alone. What that cost is not
+  ;; a bad message: it is the watcher thread, which SS3.3 exists to keep
+  ;; alive, and the console, whose *DEBUGGER-HOOK* turns any escaping
+  ;; condition into an ABORT.
   (let ((parsed (handler-case (yaml:parse contents)
-                  (error (condition)
+                  ((or error yaml.error:yaml-error) (condition)
                     (error 'document-error :path path
                                            :problem (princ-to-string condition))))))
     (unless (hash-table-p parsed)
@@ -294,10 +310,12 @@ analyzer does not have and must not acquire."
                                     :properties (properties-table properties))))
         (list (retract-file path workspace-id)
               (assert-entity entity workspace-id)))
-    (error (condition)
+    ((or error yaml.error:yaml-error) (condition)
       ;; SS3.3 / SS9.3, the same contract the source analyzers honour: a file
       ;; that will not parse is marked, not omitted, and the condition does
-      ;; not escape to take the watcher thread down.
+      ;; not escape to take the watcher thread down. YAML-ERROR is named
+      ;; explicitly for the reason PARSE-DOCUMENT gives: cl-yaml's conditions
+      ;; are not ERROR subtypes, so this guard is only a guard if it says so.
       (list (retract-file path workspace-id)
             (assert-entity
              (make-instance 'document-entity

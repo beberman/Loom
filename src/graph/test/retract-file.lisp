@@ -132,7 +132,7 @@ an analyzer can only report what it found, never what it stopped finding")))
     (rf-populate g "a.lisp" '("caller"))
     (rf-populate g "b.lisp" '("callee"))
     (let ((caller (find "caller" (all-entities g) :key #'name :test #'string=)))
-      (setp caller :unresolved-calls '("callee")))
+      (setp caller :call-names '("callee")))
     (apply-transaction g (resolve-calls g))
     (is (= 1 (count :calls (all-relationships g) :key #'rel-type)))
     ;; b.lisp is reanalyzed; the callee comes back with the same derived id,
@@ -142,7 +142,10 @@ an analyzer can only report what it found, never what it stopped finding")))
         "documented in the TODO on APPLY-TRANSACTION")
     ;; and re-running resolution puts it back, which is why the fix is
     ;; sequencing in the workspace monitor rather than logic here.
-    (let ((caller (find "caller" (all-entities g) :key #'name :test #'string=)))
-      (setp caller :unresolved-calls '("callee")))
+    ;;
+    ;; Nothing re-primes the caller before this second pass, and that is the
+    ;; assertion: a.lisp was not reanalyzed, so if resolution needed its record
+    ;; restored by hand it would need something to restore it, and in the real
+    ;; pipeline there is nothing.
     (apply-transaction g (resolve-calls g))
     (is (= 1 (count :calls (all-relationships g) :key #'rel-type)))))

@@ -3,7 +3,13 @@
     "allow": [
       "Bash(cat)",
       "Bash(cp /tmp/ytest.lisp \"B:/home/beberman/lisp/ytest.lisp\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"timeout 300 sbcl --script ytest.lisp 2>&1 | tail -20\")"
+      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"timeout 300 sbcl --script ytest.lisp 2>&1 | tail -20\")",
+      "Bash(cd /c)",
+      "Bash(wsl.exe -e bash -lc \"timeout 500 sbcl --script /tmp/fulltest.lisp 2>&1 | grep -E '=====|passed|ok  |FAIL|did not run|Did [0-9]+ checks|Pass:|Fail:' | tail -40\")",
+      "Bash(wsl.exe -e bash -lc \"timeout 300 sbcl --script /tmp/runtests.lisp 2>&1 | grep -vE '^; ' | tail -30\")",
+      "Bash(wsl.exe -e bash -lc \"timeout 300 sbcl --script /tmp/runtests3.lisp x loom-analyzer-test::lisp-analyzer 2>&1 | grep -vE '^; ' | tail -25\")",
+      "Bash(wsl.exe -e bash -lc \"timeout 200 sbcl --script /tmp/probe11.lisp 2>&1 | grep -vE '^; ' | tail -10\")",
+      "Bash(wsl.exe -e bash -lc \"timeout 500 sbcl --script /tmp/fulltest.lisp 2>&1 | grep -E '=====|passed|ok  |FAIL|Did [0-9]+ checks|Pass:|Fail:' | tail -40\")"
     ]
   }
 }

@@ -1,0 +1,15 @@
+id: RULE-0001
+type: rule
+title: The ontology layer depends on nothing
+status: active
+severity: error
+statement: |
+  loom-ontology is pure CLOS definitions of the knowledge model. It must be
+  loadable into any image -- an analysis script, a test harness -- without
+  dragging in a server, a store, or an analyzer. No call, import, or
+  dependency may leave it.
+check:
+  kind: no-edge
+  from-system: ontology
+  to-system: outside
+  rel-types: [calls, imports, depends-on]

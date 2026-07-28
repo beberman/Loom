@@ -1,0 +1,23 @@
+id: CON-0001
+type: concept
+title: Resolution pass
+summary: |
+  A read-only sweep over the whole index that turns names an analyzer recorded
+  but could not resolve into real edges.
+body: |
+  Analyzers are file-scoped and stateless, so there are facts none of them can
+  see: the Lisp analyzer reads a call to apply-transaction without knowing which
+  file defines it, and the documentation analyzer reads a decision's affects:
+  field without an entity index to resolve it against.
+
+  Both record the raw names as properties rather than guessing, and a resolution
+  pass links them once the whole repository is in one index. resolve-calls does
+  this for call sites; resolve-document-links does it for declared and mentioned
+  references. Both read a view and return operations rather than writing, so the
+  Graph Manager stays the only writer, and both are idempotent so they can run
+  after every analysis pass.
+
+  The shared judgement is worth stating once: a name matching exactly one
+  definition becomes an edge, and a name matching several is left unresolved. A
+  fabricated edge is worse than a recorded miss, and the record is what makes
+  documentation rot detectable.
