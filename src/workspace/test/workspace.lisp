@@ -121,6 +121,23 @@ check:
       (is (zerop (getf status :unresolved-references)))
       (is (zerop (getf status :errors))))))
 
+(test re-watching-a-registered-repository-starts-watching-it-again
+  ;; The console's lifecycle in a live image: MAIN stops the monitors on its
+  ;; way out but leaves *REPOSITORIES* populated, so the next (main) re-watches
+  ;; a repository that is already registered and not being watched. That branch
+  ;; used to reindex without starting a monitor, which reported `watcher:
+  ;; stopped' for a repository the developer had just asked to watch.
+  (with-workspace-fixture (repository)
+    (start-monitor repository)
+    (is-true (monitor-running-p repository))
+    (stop-monitor repository)                    ; what MAIN does on exit
+    (is-false (monitor-running-p repository))
+    (let ((again (watch-repository *fixture-root* :quiet t)))
+      (is (eq repository again) "the same repository, not a second copy")
+      (is-true (monitor-running-p again)
+               "and watching it means watching it")
+      (stop-monitor again))))
+
 ;;; ------------------------------------------------------------------
 ;;; Change detection (SS8.3)
 ;;; ------------------------------------------------------------------

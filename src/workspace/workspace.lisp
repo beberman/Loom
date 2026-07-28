@@ -26,7 +26,8 @@
   (file-count 0)
   (errors '())                  ; (path . condition-text), most recent first
   (stamps (make-hash-table :test #'equal))   ; relative path -> FILE-STAMP
-  (monitor nil))
+  (monitor nil)
+  (stopping nil))               ; asks the monitor thread to return
 
 (defvar *repositories* '()
   "Watched repositories, most recently registered first.")
@@ -250,21 +251,64 @@ while silently no longer indexing anything\" is the failure to design against.
 Nothing in the developer's experience distinguishes that from a quiet
 afternoon."
   (unless (monitor-running-p repository)
-    (setf (repository-monitor repository)
+    (setf (repository-stopping repository) nil
+          (repository-monitor repository)
           (bt:make-thread
-           (lambda ()
-             (loop
-               (handler-case (poll-once repository :quiet t)
-                 (error (condition) (note-error repository "monitor" condition)))
-               (sleep *poll-interval*)))
+           (lambda () (monitor-loop repository))
            :name (format nil "loom-monitor ~a" (repository-name repository)))))
   repository)
 
+(defun monitor-loop (repository)
+  "Poll until asked to stop.
+
+SERIOUS-CONDITION rather than ERROR, because this thread existing at all is
+SS3.3's answer to a watcher that dies quietly. A library whose conditions are
+not ERROR subtypes -- cl-yaml's are not -- would otherwise end the loop through
+the one path the loop was written to survive."
+  (loop until (repository-stopping repository)
+        do (handler-case (poll-once repository :quiet t)
+             (serious-condition (condition)
+               (note-error repository "monitor" condition)))
+           (monitor-sleep repository *poll-interval*)))
+
+(defun monitor-sleep (repository seconds)
+  "SLEEP, in slices, abandoned as soon as a stop is requested.
+One SLEEP of *POLL-INTERVAL* would make every stop wait out the full interval
+for no reason."
+  (loop with slice = 0.1
+        for remaining = seconds then (- remaining slice)
+        while (and (plusp remaining) (not (repository-stopping repository)))
+        do (sleep (min slice remaining))))
+
+(defparameter *monitor-stop-timeout* 10
+  "Seconds to wait for a monitor to return before destroying it.
+Generous on purpose: the thing being waited for is a poll finishing, and a poll
+that is midway through APPLY-TRANSACTION should be allowed to finish it.")
+
 (defun stop-monitor (repository)
+  "Ask the monitor to return, and wait until it has.
+
+Cooperative rather than a straight BT:DESTROY-THREAD. Destroying a thread
+stops it wherever it happens to be, which for this thread means possibly
+midway through a transaction, holding the graph half-written. Worse, the old
+version dropped the thread reference whether or not the destroy took: a
+monitor that survived it kept polling and kept writing to a graph nobody could
+reach it through, while MONITOR-RUNNING-P reported it stopped. Under
+`sbcl --script' that is invisible, because MAIN returning ends the process.
+Under SLIME the image outlives the console and the thread outlives everything.
+
+The reference is kept when the thread refuses to die, so status keeps telling
+the truth and a later stop can try again."
   (let ((thread (repository-monitor repository)))
-    (when (and thread (bt:thread-alive-p thread))
-      (ignore-errors (bt:destroy-thread thread)))
-    (setf (repository-monitor repository) nil))
+    (setf (repository-stopping repository) t)
+    (when thread
+      (loop repeat (ceiling *monitor-stop-timeout* 0.05)
+            while (bt:thread-alive-p thread)
+            do (sleep 0.05))
+      (when (bt:thread-alive-p thread)
+        (ignore-errors (bt:destroy-thread thread))))
+    (setf (repository-monitor repository)
+          (and thread (bt:thread-alive-p thread) thread)))
   repository)
 
 ;;;; ==================================================================
@@ -274,13 +318,24 @@ afternoon."
 (defun watch-repository (path &key (monitor t) quiet)
   "Register the repository at PATH, index it, and begin watching.
 SS3.2's watch command. Re-watching an already-registered repository reindexes
-it rather than registering a second copy."
+it rather than registering a second copy.
+
+Both branches start the monitor, and the second one has to. MAIN stops every
+monitor when the console exits but leaves the repositories registered, because
+*REPOSITORIES* is a global that outlives one console session -- so the second
+`(main)' in a live image finds the repository already there, took this branch,
+and used to reindex it without ever watching it again. What a developer saw was
+`watcher: stopped' on a repository they had just asked to watch, and watching
+a subdirectory instead appearing to fix it, because a different root is a new
+registration. START-MONITOR is idempotent, so saying it twice costs nothing."
   (let* ((root (normalize-root path))
          (existing (find (namestring root) *repositories*
                          :key (lambda (r) (namestring (repository-root r)))
                          :test #'string=)))
     (if existing
-        (progn (reindex-repository existing :quiet quiet) existing)
+        (progn (reindex-repository existing :quiet quiet)
+               (when monitor (start-monitor existing))
+               existing)
         (let ((repository (make-repository
                            :root root
                            :name (or (car (last (pathname-directory root))) "repository"))))

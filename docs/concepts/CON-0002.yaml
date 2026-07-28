@@ -1,0 +1,30 @@
+id: CON-0002
+type: concept
+title: File stamp
+summary: |
+  What the index records about a file so a later poll can tell whether it
+  changed: its write date and a hash of the contents that were analyzed.
+body: |
+  Files are the system of record, so the monitor's only job is to notice when
+  one stops matching the index. The obvious way to do that is to compare
+  file-write-date against the date recorded at index time, and the obvious way
+  is not sufficient.
+
+  file-write-date counts in whole seconds. A file edited in the same second the
+  index read it carries the same write date afterwards, so the edit is
+  invisible to any comparison of write dates alone. That is not a rare race. It
+  is what happens whenever a developer saves twice quickly, and whenever a test
+  writes a fixture and immediately polls it -- which is why three tests in the
+  workspace suite were passing while detecting nothing.
+
+  A file stamp is therefore a write date and a content hash. The poll compares
+  write dates first, because that costs one stat and settles the common case:
+  an unseen file or a moved date is a change, and an unchanged date older than
+  a couple of seconds is believed. Only inside that settle window, where the
+  clock cannot answer the question, is the file read and hashed. A steady
+  repository costs stats; a repository being actively edited costs one read of
+  the file being edited.
+
+  The hash describes the bytes that were analyzed, not whatever is on disk when
+  the stamp is taken, which is why index-file reads the file once and hands the
+  same text to both the analyzer and the stamp.
