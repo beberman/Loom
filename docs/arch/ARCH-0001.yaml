@@ -5,8 +5,10 @@ status: draft
 date: 2026-07-28
 tags: [analyzer, ontology, clos, multi-dispatch]
 summary: |
-  How defclass, defgeneric and defmethod become entities and edges, and what
-  multiple dispatch costs an ontology that assumes a method belongs to a class.
+  How defclass, defgeneric, defmethod and defstruct become entities and edges,
+  what multiple dispatch costs an ontology that assumes a method belongs to a
+  class, and why the answer has to survive a language without generic
+  functions.
 body: |
   The Lisp analyzer recognises top-level defun and defvar/defparameter and
   nothing else. In one real repository that blind spot is 376 defmethod, 158
@@ -237,12 +239,74 @@ body: |
   mostly plain functions -- which means Loom's own index is a poor test of the
   work. The 137-file CLOS-heavy repository is the one that exercises it.
 
-  DEFERRED
+  REQUIREMENTS
 
-  defmacro is not covered here. A macro is a function by shape but its call
-  sites are compile-time and its expansion is invisible to a reader-based
-  walk, so what a :calls edge into one would mean needs its own answer.
+  Numbered so the implementation can be checked against them, and so the ones
+  deferred are deferred on the record rather than forgotten.
 
-  defstruct is not covered either. It defines a type, a constructor, and one
-  accessor per slot, and whether that is one entity or many is a question the
-  repository that motivated this work does not force -- it contains none.
+  Definitions
+
+    R1  defclass becomes a :class; slot names become :slots; the superclass
+        list becomes :inherits edges resolved from a stable :superclass-names
+        property. define-condition is the same shape.
+    R2  defgeneric becomes an :interface. A generic with no defgeneric form is
+        not synthesised; its methods simply carry no :implements edge.
+    R3  defmethod becomes a :method, keyed by (:file :name :qualifier
+        :specializers), with :implements to its generic when one is declared
+        and :uses to each specialised parameter's class.
+    R4  A dispatched call fans out to every candidate method as an :inferred
+        edge carrying a confidence and :derived-from naming the generic.
+
+  Generated names
+
+    R5  defstruct becomes a :class, with its slots as :slots.
+    R6  Every name a defstruct generates becomes an entity: the accessor per
+        slot, the constructor, the predicate, and the copier. They are
+        :function entities, not :interface -- unlike a defclass :accessor,
+        which is a generic function and becomes an :interface, a defstruct
+        accessor really is a plain function.
+    R7  The defstruct options that rename those must be honoured: :conc-name
+        including :conc-name nil, :constructor in both the plain and BOA forms
+        (:constructor make-file-stamp (write-date content-hash)), :predicate
+        and :copier. Guessing the default names would be wrong for eleven of
+        Loom's sixteen structures.
+    R8  A generated entity is located at the slot or form that generates it and
+        is marked as generated, so `find repository-graph' answers with a real
+        region and an agent can tell a written definition from a derived one.
+
+    R5 through R8 were nearly deferred on the grounds that the repository that
+    motivated this work contains no defstruct at all. Loom does: sixteen
+    structures, thirteen conc-names, and 332 call sites naming an accessor, a
+    constructor, a predicate or a copier -- 70 on repository- alone. Every one
+    of those is a call to something no defun defines, so today it resolves to
+    nothing and sits in :unresolved-calls looking like an external dependency.
+    Self-analysis is the acceptance test for this work, and without defstruct
+    the acceptance test is measuring a graph with a hole in the middle of it.
+
+  Macros
+
+    R9  defmacro becomes a :function entity so that it can be found and
+        documented. What a :calls edge into a macro means is not settled here.
+    R10 Calls made inside a macro body are not attributed to anything today,
+        because the analyzer walks top-level forms and a (test foo ...) form is
+        not a defun. The consequence is larger than it sounds: the :test entity
+        type and the :tests relationship exist in the ontology and are never
+        populated, so impact never reports which tests cover a change. Closing
+        this needs a registry of definition-shaped macro forms -- fiveam's test
+        and def-suite to begin with -- in the spirit of the docs/ directory
+        registry rather than a special case in the walk.
+    R11 `describe apply-transaction' reporting a single caller is expected to
+        be a symptom of R10 and R6 together. It is recorded as an acceptance
+        check rather than a diagnosis: re-run it afterwards and see.
+
+  Retired and untouched
+
+    R12 The TODO on APPLY-TRANSACTION -- cross-file edges lost when a file is
+        reanalyzed -- is answered by the workspace pipeline ordering and by
+        DEC-0003, and the comment in transaction.lisp should be updated to say
+        so rather than left describing a state that no longer holds.
+
+    Recorded and out of scope: NIL overloaded as both "no value" and boolean
+    false (root-ontology.lisp); closures and captured variables for the
+    JS/TS analyzers (code-ontology.lisp); queries scoped across several
+    watched workspaces with an `in:' delimiter.
