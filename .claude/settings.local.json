@@ -14,7 +14,13 @@
       "Bash(wsl.exe -e bash -lc \"timeout 300 sbcl --script /tmp/probe13.lisp 2>&1 | grep -vE '^; ' | tail -6\")",
       "Bash(wsl.exe -e bash -lc \"timeout 400 sbcl --script /tmp/probe14.lisp 2>&1 | grep -vE '^; ' | tail -20\")",
       "Bash(wsl.exe -e bash -lc \"timeout 300 sbcl --script /tmp/probe15.lisp 2>&1 | grep -vE '^; ' | tail -45\")",
-      "Bash(wsl.exe -e bash -lc \"timeout 300 sbcl --script /tmp/probe15.lisp 2>&1 | grep -vE '^; ' | sed -n '/loom> status/,/loom> describe DEC-0003/p' | head -35\")"
+      "Bash(wsl.exe -e bash -lc \"timeout 300 sbcl --script /tmp/probe15.lisp 2>&1 | grep -vE '^; ' | sed -n '/loom> status/,/loom> describe DEC-0003/p' | head -35\")",
+      "Bash(wsl.exe -e bash -lc \"timeout 300 sbcl --script /tmp/probe15.lisp 2>&1 | grep -vE '^; ' | sed -n '/loom> status/,/loom> rules/p' | head -20\")",
+      "Bash(wsl.exe -e bash -lc \"timeout 300 sbcl --script /tmp/probe16.lisp 2>&1 | grep -vE '^; ' | tail -80\")",
+      "Bash(wsl.exe -e bash -lc 'cd ~/lisp/Loom/src && for k in defclass defgeneric defmethod define-condition defun; do printf '\\\\''%-18s %s\\\\n'\\\\'' $k $\\(grep -rhoE \"^\\\\\\($k \" --include='\\\\''*.lisp'\\\\'' . | wc -l\\); done; echo '\\\\''--- accessors/readers in defclass forms:'\\\\''; grep -rhoE '\\\\'':\\(accessor|reader|writer\\) [a-z0-9-]+'\\\\'' --include='\\\\''*.lisp'\\\\'' . | wc -l')",
+      "Bash(wsl.exe -e bash -lc \"timeout 300 sbcl --script /tmp/probe15.lisp 2>&1 | grep -vE '^; ' | sed -n '/loom> status/,/loom> check/p' | head -20\")",
+      "Bash(wsl.exe -e bash -lc \"cd ~/lisp/game-server && grep -rhoE '^\\\\\\(defmethod +[a-z0-9%*+/<>=-]+' --include='*.lisp' . | awk '{print \\\\$2}' | sort | uniq -c | sort -rn > /tmp/mc.txt; echo 'methods per generic, top 12:'; head -12 /tmp/mc.txt; echo '---'; awk '{n++; s+=\\\\$1; if\\(\\\\$1>m\\)m=\\\\$1} END {printf \\\\\"generics=%d methods=%d mean=%.2f max=%d\\\\n\\\\\", n, s, s/n, m}' /tmp/mc.txt; echo 'distribution:'; awk '{print \\\\$1}' /tmp/mc.txt | uniq -c | sort -k2 -n | head -8\")",
+      "Bash(wsl.exe -e bash -lc \"timeout 300 sbcl --script /tmp/probe15.lisp 2>&1 | grep -vE '^; ' | sed -n '/loom> status/,/loom> rules/p' | head -12\")"
     ]
   }
 }
