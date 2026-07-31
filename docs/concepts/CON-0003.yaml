@@ -1,0 +1,31 @@
+id: CON-0003
+type: concept
+title: A test that observes its own precondition
+summary: |
+  A test that mutates state and then asserts a consequence has to assert that
+  the mutation was noticed, or it can pass without ever running the code it
+  names.
+body: |
+  cross-file-edges-survive-a-reanalysis rewrites a source file, calls poll-once,
+  and asserts that an edge into that file survived. It passed for as long as it
+  existed, and it was testing nothing. The rewrite it performs is the same
+  length as the text it replaces and lands in the same second, so change
+  detection did not notice it, no reanalysis happened, and the edge it asserts
+  survived was simply the original edge, never disturbed.
+
+  Fixing change detection made the test start doing its job, and it immediately
+  failed -- exposing that resolve-calls could not rebuild a retracted edge at
+  all. One bug had been hiding another, and the hiding mechanism was a green
+  test.
+
+  The shape to watch for is a test whose setup is supposed to trigger work
+  somewhere else: writing a file so a monitor reanalyzes it, touching an entity
+  so a rule re-runs, invalidating a cache so it refills. In every case the
+  assertion is about what happened afterwards, and in every case the test is
+  vacuous if the trigger silently did not fire. The cheap fix is to assert the
+  trigger as well as the consequence -- poll-once returns the number of files it
+  reindexed, so a test that expects a reanalysis can say so -- and the cheap
+  check is to break the code deliberately and confirm the test notices.
+
+  This generalises past tests. Any assertion that something was preserved
+  across an operation is worthless unless the operation demonstrably ran.

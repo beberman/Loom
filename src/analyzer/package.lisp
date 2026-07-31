@@ -30,4 +30,17 @@
    #:workspace-relative-path
 
    ;; analyzers
-   #:lisp-analyzer))
+   #:lisp-analyzer
+   #:document-analyzer
+
+   ;; the documentation tree (SS10)
+   #:*document-type-directories*
+   #:register-document-type
+   #:document-category
+   #:docs-relative-p
+   #:parse-document
+   #:parse-check
+   #:*check-kinds*
+   #:document-error
+   #:document-error-path
+   #:document-error-problem))

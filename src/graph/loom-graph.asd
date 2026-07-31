@@ -36,6 +36,7 @@
    (:file "query")
    (:file "resolve")
    (:file "retract-file")
+   (:file "rules")
    )
   ;; TEST-RUNNER returns NIL when any check fails; turn that into a real
   ;; failure so (asdf:test-system :loom-graph) is usable from CI.

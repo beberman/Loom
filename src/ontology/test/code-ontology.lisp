@@ -72,7 +72,11 @@
 (test unresolved-calls-are-a-property-not-an-edge
   ;; a callee outside the workspace must never become a dangling relationship
   (dolist (key '(:function :method))
-    (is (eq 'list (property-type (find-property key :unresolved-calls))))))
+    (is (eq 'list (property-type (find-property key :unresolved-calls))))
+    ;; :CALL-NAMES is what the analyzer writes and resolution reads; it is
+    ;; separate from :UNRESOLVED-CALLS precisely so that resolution can derive
+    ;; one from the other every pass instead of consuming its own input.
+    (is (eq 'list (property-type (find-property key :call-names))))))
 
 ;;; ------------------------------------------------------------------
 ;;; Workspace and history

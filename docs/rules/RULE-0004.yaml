@@ -1,0 +1,30 @@
+id: RULE-0004
+type: rule
+title: A handler that guards a long-running thread names serious-condition
+status: active
+severity: error
+applies-to: [monitor-loop, stop-monitor, poll-once, index-file, parse-document]
+statement: |
+  handler-case naming error does not catch everything that unwinds. A
+  condition class defined as (define-condition foo () ...) is a direct subtype
+  of condition, not of error, and signalling it with error still unwinds to the
+  debugger -- straight past every handler that named error. cl-yaml defines its
+  conditions exactly that way, and this is not an unusual thing for a library
+  to do.
+
+  Any handler whose purpose is that something survives -- the monitor thread,
+  an analysis pass over a file that may not parse, a driver running a suite --
+  must name serious-condition or wider. Naming error there is not a narrower
+  guard, it is a guard with a hole in it, and the hole is shaped like whichever
+  dependency was added most recently.
+
+  Two failures made this concrete. A malformed YAML document under docs/ took
+  the whole watcher thread down, and the analyzer that was written to mark
+  unparsable documents rather than drop them could not, because its own guard
+  named error. The failure mode is the one section 3.3 exists to prevent: the
+  process stays alive and answers queries while silently no longer indexing
+  anything, and nothing in the developer's experience distinguishes that from a
+  quiet afternoon.
+lessons:
+  - The set of conditions a handler catches is decided by the libraries you
+    depend on, not by the word you wrote.

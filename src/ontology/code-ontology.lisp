@@ -153,9 +153,18 @@ or a Lisp generic-function protocol treated as one."
                (:generic-p  boolean :default nil
                 :documentation "A CLOS generic function rather than a plain defun.")
                (:language   keyword :one-of *source-languages*)
+               (:call-names list
+                :documentation "Every callee name the analyzer could not
+resolve inside this one file.  Written by the analyzer and never rewritten
+afterwards, which is what makes it the stable input cross-file resolution
+re-derives from: retracting a file destroys the :CALLS edges that pointed into
+it, and the only way the next resolution pass can rebuild them is if the
+callers still record who they call.")
                (:unresolved-calls list
                 :documentation "Callee names that did not resolve inside the
-workspace.  Recorded as a property, never as a dangling edge.")))
+workspace.  Recorded as a property, never as a dangling edge.  Derived from
+:CALL-NAMES on every resolution pass rather than accumulated, so it describes
+the workspace as it stands rather than as it was when a name last resolved.")))
 
 (defentity :method
   :documentation "A method on a class, or a CLOS method on a generic function."
@@ -171,6 +180,7 @@ workspace.  Recorded as a property, never as a dangling edge.")))
                (:generic-function string
                 :documentation "Name of the generic function this method extends.")
                (:language         keyword :one-of *source-languages*)
+               (:call-names       list)
                (:unresolved-calls list)))
 
 (defentity :variable

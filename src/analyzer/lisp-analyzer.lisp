@@ -46,30 +46,70 @@ neither whitespace nor part of a line comment."
            (setf pos (or (position #\Newline string :start pos) (length string))))
           (t (return pos)))))
 
+(defun intern-foreign-symbol-locally (condition)
+  "Absorb a package prefix naming a package this image has never loaded.
+
+The analyzer reads source belonging to workspaces it has not compiled, so
+`utils:parse-config' is the normal case, not the exception: the reader signals
+a PACKAGE-ERROR the moment a prefix names a package that is merely absent, and
+one such form used to cost the whole file -- ANALYZE-FILE would catch it and
+emit a single analysis-failed :FILE entity, so every definition in the file
+became invisible to `find'.
+
+The CONTINUE restart the reader offers here interns the symbol in *PACKAGE*
+instead, which under READ-FORMS-WITH-SPANS is the throwaway package that is
+deleted on the way out. That is exactly what the analyzer wants: nothing
+downstream reads a symbol's home package -- TOKEN-NAME takes SYMBOL-NAME and
+nothing else -- so the package prefix carries no information worth failing
+over.
+
+Only PACKAGE-ERROR is handled, and only when the restart exists. A file with a
+genuinely broken form -- an unbalanced paren, a `#.' under *READ-EVAL* NIL --
+still fails, and should: SS9.3's analysis-failed :FILE entity is the honest
+answer there, where here it was a false report of a file Loom could read."
+  (let ((restart (find-restart 'continue condition)))
+    (when restart (invoke-restart restart))))
+
 (defun read-forms-with-spans (content)
   "Every top-level form in CONTENT, read with *READ-EVAL* disabled and in a
 throwaway package so foreign package prefixes and keywords intern safely
 without touching any real package. Returns a list of (FORM START-LINE
-END-LINE)."
-  (let ((pos 0)
+END-LINE).
+
+One stream over the whole string, seeked with FILE-POSITION, rather than a
+fresh bounded stream per form. A stream made with MAKE-STRING-INPUT-STREAM over
+a sub-range leaves FILE-POSITION ambiguous -- implementations disagree on
+whether it counts from the start of the string or from the start of the range,
+and SBCL builds disagree with each other. Reading a form and adding the offset
+back therefore double-counts on half of them: the first form lands correctly
+because both conventions agree at zero, the second lands past its own end, and
+the walk quietly stops two forms in with no condition signalled. Here the range
+is always the whole string, so there is nothing for the two conventions to
+disagree about."
+  (let ((stream (make-string-input-stream content))
         (len (length content))
         (results '())
         (*package* (make-package (gensym "LOOM-ANALYZER-SCRATCH-") :use nil))
         (*read-eval* nil))
     (unwind-protect
-         (loop
-           (setf pos (skip-whitespace-and-comments content pos))
-           (when (>= pos len) (return))
-           ;; READ-PRESERVING-WHITESPACE, not READ: plain READ consumes one
-           ;; trailing whitespace char it never needed, which would throw
-           ;; off END-POS by one whenever a form is followed by a newline.
-           (let* ((stream (make-string-input-stream content pos len))
-                  (form (read-preserving-whitespace stream nil :eof)))
-             (when (eq form :eof) (return))
-             (let ((end-pos (+ pos (file-position stream))))
-               (push (list form (offset-line content pos) (offset-line content end-pos))
-                     results)
-               (setf pos end-pos))))
+         (handler-bind ((package-error #'intern-foreign-symbol-locally))
+           (loop
+             (let ((start (skip-whitespace-and-comments content (file-position stream))))
+               (when (>= start len) (return))
+               (file-position stream start)
+               ;; READ-PRESERVING-WHITESPACE, not READ: plain READ consumes one
+               ;; trailing whitespace char it never needed, which would throw
+               ;; off the end position by one whenever a form is followed by a
+               ;; newline.
+               (let ((form (read-preserving-whitespace stream nil :eof)))
+                 (when (eq form :eof) (return))
+                 (let ((end (file-position stream)))
+                   (push (list form (offset-line content start) (offset-line content end))
+                         results)
+                   ;; A read that did not advance would spin forever. It should
+                   ;; not happen; costing one comparison to be sure it cannot
+                   ;; is cheaper than a watcher thread that never returns.
+                   (when (<= end start) (return)))))))
       (delete-package *package*))
     (nreverse results)))
 
@@ -208,23 +248,32 @@ transaction."
 
     ;; --- pass 2: who each function calls ----------------------------
     ;; A name resolves here only if this same file defines it. Anything else
-    ;; that is not standard Common Lisp is recorded on the entity as an
-    ;; unresolved call, per SS8.3: "unresolved calls are recorded as a
-    ;; property, not a dangling edge." LOOM-GRAPH:RESOLVE-CALLS is what turns
-    ;; those into real edges once the whole workspace is in one graph -- the
-    ;; analyzer cannot, because it sees one file and holds no state.
+    ;; that is not standard Common Lisp is recorded on the entity as a call
+    ;; name, per SS8.3: "unresolved calls are recorded as a property, not a
+    ;; dangling edge." LOOM-GRAPH:RESOLVE-CALLS is what turns those into real
+    ;; edges once the whole workspace is in one graph -- the analyzer cannot,
+    ;; because it sees one file and holds no state.
+    ;;
+    ;; :CALL-NAMES, not :UNRESOLVED-CALLS. What this pass knows is which names
+    ;; this file does not define; whether they resolve anywhere is a question
+    ;; only the workspace can answer, and RESOLVE-CALLS derives
+    ;; :UNRESOLVED-CALLS from this list every pass. Writing the answer here
+    ;; would destroy the question: resolution used to consume the property, so
+    ;; a caller whose callee had resolved no longer recorded calling it, and
+    ;; an edge destroyed by retracting the callee's file could never be
+    ;; rebuilt.
     (let ((local-calls '()))      ; list of (caller-entity . callee-entity)
       (dolist (entry functions)
         (destructuring-bind (caller . form) (cdr entry)
-          (let ((unresolved '()))
+          (let ((foreign '()))
             (dolist (callee-name (remove-duplicates (collect-call-names (cdddr form))
                                                     :test #'string=))
               (let ((callee (assoc callee-name functions :test #'string=)))
                 (cond (callee (push (cons caller (cadr callee)) local-calls))
                       ((standard-operator-p callee-name))
                       ((string= callee-name (name caller)))   ; direct recursion
-                      (t (push callee-name unresolved)))))
-            (setp caller :unresolved-calls (nreverse unresolved)))))
+                      (t (push callee-name foreign)))))
+            (setp caller :call-names (nreverse foreign)))))
 
       ;; --- pass 3: emit ------------------------------------------------
       ;; RETRACT-FILE leads, per SS5.4: "reanalyzing a changed file is

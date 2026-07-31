@@ -1,0 +1,31 @@
+id: DEC-0001
+type: decision
+title: The repository on disk is the system of record
+status: accepted
+date: 2026-07-26
+supersedes: []
+affects: [apply-transaction, retract-file, facts-from-file]
+tags: [architecture, durability]
+rationale: |
+  The graph is an index over files, not a second copy of the truth. Source,
+  comments, and the YAML documents under docs/ hold the knowledge; the index
+  can be discarded and rebuilt at any time.
+
+  This collapses several problems the design previously carried. The operation
+  log needs no compaction for correctness. Snapshots need no long retention,
+  because Git already holds the history of the truth. Recovery is reindexing,
+  and reindexing is always correct.
+consequences: |
+  The graph carries no independent durability requirement, which retroactively
+  justifies the in-memory decision: Phase 1 does not need persistence, it needs
+  fast rebuild.
+
+  The corollary is a constraint the whole system honours. Anything Loom knows
+  that is not derivable from files must be written back to files, or it is not
+  knowledge -- it is cache, and it will be lost without anyone noticing. This
+  is why documentation is a first-class analyzed source rather than a side
+  feature, and why an agent recording a decision writes a file rather than
+  asserting a node.
+lessons:
+  - A derived index should be cheap to throw away, and saying so out loud
+    removes work rather than adding it.

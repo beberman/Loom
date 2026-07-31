@@ -36,42 +36,54 @@ the same name, and pretending otherwise is how a resolver invents edges."
     index))
 
 (defun resolve-calls (view &key workspace-id)
-  "Operations linking each recorded unresolved call to the definition it names.
+  "Operations linking each recorded call name to the definition it names.
 
-For every callable carrying :UNRESOLVED-CALLS, each name is looked up in the
+For every callable carrying :CALL-NAMES, each name is looked up in the
 workspace:
 
-  exactly one definition  -- assert a :CALLS edge to it, and drop the name
-                             from :UNRESOLVED-CALLS
-  several definitions     -- leave it unresolved rather than guess. Picking
+  exactly one definition  -- assert a :CALLS edge to it
+  several definitions     -- record it unresolved rather than guess. Picking
                              one would be a fabricated edge, and asserting all
                              of them would make every caller of a common name
                              look coupled to code it never touches. Precise
                              disambiguation is what SS8.3 defers to LSP.
-  none                    -- leave it unresolved. It is a genuine external
+  none                    -- record it unresolved. It is a genuine external
                              dependency, and a standing record of one.
 
-Idempotent: an edge that already exists upserts onto itself by natural key,
-and a name that resolved on the last pass is no longer in the property to
-resolve again. Safe to run after every analysis pass."
+:UNRESOLVED-CALLS is rewritten from scratch each pass rather than whittled
+down, and :CALL-NAMES is never touched. That distinction is what makes the
+pipeline's ordering work rather than merely look right. Reanalyzing a file
+retracts it first (SS5.4), which destroys the :CALLS edges pointing *into* it
+from files that did not change. Those files are not reanalyzed, so the only
+record that they call anything is whatever is already on their entities -- and
+while this function consumed that record, resolution could not rebuild what the
+retract had just destroyed. Deriving instead of consuming means every pass sees
+the same question and can answer it again.
+
+Idempotent: an edge that already exists upserts onto itself by natural key, and
+a name that resolved last pass resolves to the same edge this pass. Safe to run
+after every analysis pass."
   (let ((index (callable-index view))
         (ops '()))
     (dolist (type *callable-types*)
       (dolist (caller (entities-of-type view type))
-        (let ((linked '())
+        (let ((names (getp caller :call-names))
+              (linked '())
               (left '()))
-          (dolist (name (getp caller :unresolved-calls))
+          (dolist (name names)
             (let ((candidates (gethash (string-downcase name) index)))
               (if (and candidates
                        (null (rest candidates))
                        (not (eq (first candidates) caller)))
                   (push (first candidates) linked)
                   (push name left))))
-          (when linked
-            (dolist (callee (nreverse linked))
-              (push (assert-edge :calls caller callee :workspace-id workspace-id) ops))
-            ;; What is left stays on the entity: an accurate, shrinking record
-            ;; of what this code depends on that the workspace does not define.
+          (dolist (callee (nreverse linked))
+            (push (assert-edge :calls caller callee :workspace-id workspace-id) ops))
+          ;; Unconditional where it used to be (WHEN LINKED ...): a caller
+          ;; whose every name went external still has to have that written
+          ;; down, and a caller whose callee has since been deleted has to
+          ;; have :UNRESOLVED-CALLS grow back.
+          (when names
             (push (update-properties (id caller)
                                      (list :unresolved-calls (nreverse left))
                                      workspace-id)

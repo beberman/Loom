@@ -1,0 +1,31 @@
+id: DEC-0002
+type: decision
+title: Entity ids are derived from the natural key, not generated
+status: accepted
+date: 2026-07-27
+supersedes: []
+affects: [derive-id, entity-natural-key, id-derived-p, add-entity]
+tags: [ontology, identity]
+rationale: |
+  Analyzers are stateless, so every pass builds fresh objects. With random ids
+  a rebuilt index could only ever be *equivalent* to an incrementally updated
+  one, never identical, and the rebuild-equivalence test -- the highest-value
+  test in the suite -- would have to normalise ids before comparing and would
+  stop catching a whole class of drift.
+
+  Deriving the id from the natural key makes the two indexes identical, and has
+  the side benefit of ids a human can read in an impact path.
+consequences: |
+  An id is a function of properties, so an entity constructed before its
+  natural-key properties are known gets an id computed from values it did not
+  have -- silently, and producing something that looks real. Guarded by
+  id-derived-p: while set, writing a natural-key property moves the id;
+  add-entity clears it on the way into the index, after which identity is
+  fixed.
+
+  The type must lead the id string. Two entity types keying on the same
+  property would otherwise collide: file and document both key on path, module
+  and package both on qualified-name.
+lessons:
+  - A silently-wrong identifier is worse than a missing one, so make the
+    dangerous window explicit and close it at a known boundary.

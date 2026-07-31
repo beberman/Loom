@@ -1,0 +1,50 @@
+id: DEC-0003
+type: decision
+title: A resolution pass derives its output, it never consumes its input
+status: accepted
+date: 2026-07-28
+supersedes: []
+affects: [resolve-calls, resolve-document-links, poll-once]
+tags: [architecture, resolution, incremental]
+rationale: |
+  resolve-calls used to read :unresolved-calls, assert an edge for every name
+  that resolved, and write the remainder back to the same property. That reads
+  as tidy bookkeeping -- the record of what is unresolved shrinks as things
+  resolve -- and it is wrong, because it destroys the question while recording
+  the answer.
+
+  Reanalyzing a file retracts it first, which destroys the :calls edges
+  pointing into it from files that did not change. Those files are not
+  reanalyzed, so the only record that they call anything is what is already on
+  their entities. Once the property had been consumed, that record was gone: a
+  caller whose callee had resolved no longer said it called anything, and the
+  edge could never be rebuilt. The index quietly lost cross-file edges every
+  time a callee's file was touched.
+
+  The analyzer now writes :call-names and never rewrites it, and resolve-calls
+  derives :unresolved-calls from it on every pass. The input is stable, so the
+  same question can be asked again, and it is asked again after every analysis.
+  resolve-document-links already worked this way -- declared names stay in
+  affects: and only the unresolved remainder is derived -- so this makes the
+  two passes agree rather than introducing a new idea.
+consequences: |
+  Any pass that turns recorded names into edges must treat what the analyzer
+  wrote as read-only and recompute its own output from scratch. A pass that
+  cannot be re-run against an unchanged index and produce the same graph is not
+  idempotent, whatever its docstring says.
+
+  The cost is one more property per callable and a resolution pass that does
+  slightly more work each time, since it re-examines names that already
+  resolved. That is the correct trade: the work is proportional to the index,
+  runs once per poll, and buys an invariant that held only by accident before.
+
+  The alternative considered was leaving :unresolved-calls as the analyzer's
+  raw output and not rewriting it at all. That is a one-line change and needs
+  no new property, but it makes the name lie -- the list would include names
+  that do resolve at workspace scope -- and status would have no way to report
+  genuinely external dependencies.
+lessons:
+  - A record that shrinks as work completes is a record that cannot survive the
+    work being undone.
+  - This was found only because change detection was fixed first. The test that
+    guarded it passed for years by never triggering a reanalysis at all.
