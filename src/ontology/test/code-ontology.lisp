@@ -175,6 +175,27 @@
   (is (null (validate-relationship-endpoints :inherits :class :class)))
   (is (null (validate-relationship-endpoints :tests :test :function))))
 
+(test a-generated-definition-can-point-at-what-generated-it
+  ;; ARCH-0002 R4. All three returned a problem list before the widening, and
+  ;; PLAN-OP rejects a whole transaction on one illegal endpoint -- so without
+  ;; these three pairs RESOLVE-GENERATED-DEFINITIONS loses every op it emits,
+  ;; not just the offending one. code-ontology.lisp records that happening
+  ;; before, when :DECIDES did not permit :INTERFACE.
+  (is (null (validate-relationship-endpoints :uses :interface :class))
+      "a DEFCLASS slot accessor is an :interface and must reach its class")
+  (is (null (validate-relationship-endpoints :uses :test :function))
+      "a generated test must reach the macro, which is a :function")
+  (is (null (validate-relationship-endpoints :tests :test :interface))
+      "and a test that calls a slot accessor directly still covers it"))
+
+(test a-document-may-mention-a-test
+  ;; Found by running the pipeline over Loom's own tree the first time :TEST
+  ;; held any facts. fiveam names tests in prose, so a document discussing one
+  ;; mentions it by name and the mention resolves -- and PLAN-OP rejects the
+  ;; whole transaction on one illegal endpoint, so this cost every document
+  ;; link in the repository rather than one edge.
+  (is (null (validate-relationship-endpoints :documents :concept :test))))
+
 (test illegal-edges-are-rejected
   (is (not (null (validate-relationship-endpoints :calls :file :function)))
       "a file does not call")

@@ -7,6 +7,19 @@
    #:graph
    #:make-graph
 
+   ;; a hash table guarded by a shared reentrant lock (ARCH-0003 R2).
+   ;; WITH-GRAPH-LOCK is deliberately absent: R4 keeps it internal, so a
+   ;; caller outside this system cannot open a critical section on a graph.
+   #:make-protected-table
+   #:pt-get
+   #:pt-rem
+   #:pt-clear
+   #:pt-count
+   #:pt-keys
+   #:pt-values
+   #:pt-push
+   #:pt-delete-from-list
+
    ;; entities
    #:add-entity
    #:get-entity
@@ -34,8 +47,23 @@
 
    ;; cross-file resolution (SS8.3) -- reads a view, returns ops
    #:resolve-calls
+   #:resolve-definitions
+   #:resolve-inheritance
+   #:resolve-specializers
+   #:resolve-method-protocols
    #:callable-index
    #:*callable-types*
+
+   ;; generated definitions (ARCH-0002) -- the one pass that mints entities
+   #:resolve-generated-definitions
+   #:structural-generated-uses
+   #:generated-definition-collisions
+   #:unhandled-definer-macros
+   #:*generatable-types*
+
+   ;; test coverage, derived from what a test's body calls (ARCH-0002 R9)
+   #:resolve-tests
+   #:*tested-types*
 
    ;; document link resolution (SS10.3)
    #:resolve-document-links

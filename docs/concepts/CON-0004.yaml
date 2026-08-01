@@ -1,0 +1,109 @@
+id: CON-0004
+title: Workflow of record
+status: accepted
+summary: |
+  The chain a piece of work travels -- requirement, design, plan, code, review
+  -- written as indexed documents that name each other, so the reasoning behind
+  a change is queryable rather than lost in a transcript.
+body: |
+  Loom exists because the knowledge around code does not survive in the code.
+  That applies to Loom's own development, and to the agents doing it: a design
+  argued in a chat window and then implemented is knowledge that was never
+  written back to files, which DEC-0001 says plainly is not knowledge at all --
+  it is cache, and it will be lost without anyone noticing.
+
+  So each stage of work leaves a document, each document names the one it
+  answers, and Loom indexes all of them. The chain is walkable in both
+  directions: from a requirement forward to everything that came of it, and
+  from a plan back to the requirement that justifies it.
+
+  THE CHAIN
+
+    docs/requirements/REQ-nnnn   what is wanted, and why the current behaviour
+                                 is not it
+    docs/arch/ARCH-nnnn          the shape of the answer: entities, ownership,
+                                 boundaries, alternatives rejected
+    docs/design/DEC-nnnn         a decision taken, its rationale and its
+                                 consequences
+    docs/plans/PLAN-nnnn         the ordered steps, the files each touches,
+                                 the risks
+    docs/reviews/REV-nnnn        what a review found, and whether it is safe
+    docs/bugs/BUG-nnnn           a defect worth remembering after it is fixed
+    docs/concepts/CON-nnnn       a recurring idea worth naming once
+    docs/rules/RULE-nnnn         a constraint, enforced as a check where it can
+                                 be expressed as one
+
+  HOW THEY LINK
+
+  Every document may carry refines:, a list of doc-ids naming what it answers.
+  A design refines a requirement; a plan refines a design; a review refines the
+  plan whose work it examined. Resolution turns each into a :refines edge, so
+  `impact REQ-0002' reports the decision that answered it and everything
+  downstream of that.
+
+  Two other fields reach into code rather than into documents. A decision's
+  affects: names the functions it governs; a rule's applies-to: names what it
+  constrains. Both resolve against the index, and a name that resolves to
+  nothing is reported by `check' rather than dropped -- which is the
+  documentation staleness detector, and the reason these fields are worth
+  filling in accurately.
+
+  WHY YAML AND WHY A REGISTERED DIRECTORY
+
+  The analyzer claims .yaml and .yml under docs/ and nothing else, and the
+  directory names the type. A markdown file in docs/plans is invisible to
+  Loom; a YAML file in docs/notes is indexed as an uncategorised document and
+  reported as such. Adding a category means creating a directory and
+  registering it in *document-type-directories*, not changing code.
+
+  A block scalar's content must be indented under its key, and a duplicated
+  id: makes two documents ambiguous to every reference that names it. Both
+  have already cost a document its place in the index.
+
+  THE BUG RECORD
+
+  A defect worth remembering after it is fixed gets docs/bugs/BUG-nnnn.yaml.
+  Worth remembering means the class of mistake will recur; a typo corrected in
+  the same minute does not qualify. Two agents write these and they write
+  different halves of the same shape.
+
+  The tester writes one when a failure it observed turns out to be a defect
+  that predates the change, or when a test is found to have been passing for
+  the wrong reason. It has the failing assertion and it knows the suite, so it
+  is the only one positioned to say why the failure went unseen.
+
+  The reviewer writes one when reading finds a defect no test exercised. It has
+  the diff and the invariants, so it is positioned to say which rule or decision
+  the code contradicts.
+
+  Either way:
+
+    id: BUG-nnnn
+    title: one line naming the defect
+    status: open              # closed once fixed
+    date: YYYY-MM-DD
+    refines: [PLAN-nnnn]      # the work that produced or exposed it
+    affects: [function-name]
+    summary: |
+      What went wrong, in one paragraph.
+    body: |
+      SYMPTOM     what was observed, and what was expected. Quote the failing
+                  assertion verbatim if there was one.
+      CAUSE       the actual mechanism, not the first plausible story.
+      WHY IT HID  what let this survive review, or testing, or both.
+      FIX         what changed, or what should.
+
+  WHY IT HID is the section that earns the document. A defect that a passing
+  test concealed teaches more about the suite than about the defect, and that
+  lesson is the part that would otherwise be lost: the fix lands in the code
+  where anyone can see it, and the reason nobody noticed for a year lands
+  nowhere at all.
+
+  WHAT THIS BUYS AN AGENT
+
+  An agent starting work asks Loom what already exists rather than reading the
+  tree: which rules constrain this area, which decisions govern it, what a
+  previous plan said about the same files. An agent finishing work leaves a
+  document the next one can find. The alternative -- each agent re-deriving
+  context from source every time -- is the problem Loom was built to solve, and
+  it would be strange to solve it for other codebases and not this one.

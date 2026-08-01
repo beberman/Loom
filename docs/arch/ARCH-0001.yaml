@@ -1,5 +1,4 @@
 id: ARCH-0001
-type: document
 title: CLOS definitions in the Lisp analyzer
 status: draft
 date: 2026-07-28
@@ -104,16 +103,48 @@ body: |
     from a generic  reverse :implements, then
                     reverse :calls              reaches its methods' callers
 
-  Both work with the impact metadata exactly as it is declared today. :calls is
-  already :from (:function :method :test) :to (:function :method), so a
-  function calling a method needs no change. Nothing has to become
-  bidirectional, no sibling is dragged in, and a method's callers are exact
-  rather than approximate.
+  Both work with the impact metadata exactly as it is declared today. Nothing
+  becomes bidirectional, no sibling is dragged in, and a method's callers are
+  exact rather than approximate. :calls already permits :function and :method
+  as targets, so a function calling a method needs no change.
 
   The cost is edge count -- roughly two per dispatched call site rather than
   one -- and the loss of the generic from the path, which :derived-from
   recovers, since recording what an inferred edge was derived from is what that
   field is for.
+
+  ONE WIDENED ENDPOINT, AND WHY IT IS NOT THE REJECTED OPTION
+
+  Implementation added :interface to :calls' :to list. That is one of the two
+  changes listed above as a cost of the rejected design, so it deserves saying
+  plainly why accepting it here is not the rejected design arriving by the back
+  door.
+
+  The rejected design routes every dispatched call through the generic. This
+  routes none of them. What it allows for is a protocol with nothing to fan out
+  to, and there are two such cases, both real:
+
+    a DEFCLASS slot accessor, which is a generic function generated from a slot
+    and, in the overwhelming majority of cases, never specialised again, so
+    there is no method anywhere for a call to reach
+
+    a DEFGENERIC whose methods live outside the indexed tree
+
+  With the endpoint forbidden, every call to one of those resolves to nothing.
+  That is not an abstract loss: id-derived-p, the reference DEC-0002 has been
+  unable to resolve and one of the three findings that motivated this document,
+  is exactly a slot accessor. Forbidding the endpoint would mean closing the
+  gap everywhere except at one of the three places that demonstrated it.
+
+  So the rule is about precedence, not permission. Resolution fans out to
+  methods whenever the workspace has any; the edge lands on the interface only
+  when it has none. The generic is still not a hub, and no impact path runs
+  through one.
+
+  Nothing else changed: no new entity type, no new relationship type, no
+  altered impact direction. The remaining additions are properties --
+  :superclass-names and :kind on :class, :generated-by on :function and
+  :interface, :macro-p on :function.
 
   WHY THE GENERIC IS NOT A ROUTING HUB: THE JAVASCRIPT TEST
 
@@ -145,7 +176,7 @@ body: |
   own :implements edges, and a place in `find' and `describe'. It is a declared
   contract worth indexing. It is not where calls terminate.
 
-  AN EXCEPTION TO CON-0001, STATED DELIBERATELY
+  AN EXCEPTION TO CON-0001
 
   CON-0001 records that a name matching several definitions is left unresolved,
   because a fabricated edge is worse than a recorded miss. Fanning out looks

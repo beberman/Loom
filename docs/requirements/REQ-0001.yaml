@@ -1,0 +1,12 @@
+id: REQ-0001
+title: Multiple Workspace Support
+summary: |
+ Currntly we can index multiple workspaces but only query one.  
+ If multiple are being indexed, we currently cannot query at all.
+ Need support for queries restricted to a particular workspace.
+body: |
+  Support queries on multiple watched git workspaces. 
+  Support an in deliminter on queries so that the string 
+  be queried can be restricted to a workspace.
+
+ 

@@ -91,11 +91,18 @@ the transaction, so this may assume its preconditions hold."))
 ;;;; ==================================================================
 
 (defun reindex-entity (graph e old-key)
-  "Move E's natural-key index entry after its properties changed."
-  (let ((new-key (entity-natural-key e)))
-    (unless (equal old-key new-key)
-      (when old-key (remhash old-key (graph-entity-keys graph)))
-      (when new-key (setf (gethash new-key (graph-entity-keys graph)) (id e)))))
+  "Move E's natural-key index entry after its properties changed.
+
+The one function outside graph-manager.lisp that reaches into a graph table,
+which is why it is easy to miss and why it is named here rather than left to a
+grep. Neither ARCH-0003 nor ARCH-0004 lists it, and ARCH-0004's promise to a
+concurrent reader -- \"no entity missing its natural-key index entry\" --
+is exactly what the gap between these two lines would break."
+  (with-graph-lock (graph)
+    (let ((new-key (entity-natural-key e)))
+      (unless (equal old-key new-key)
+        (when old-key (pt-rem (graph-entity-keys graph) old-key))
+        (when new-key (setf (pt-get (graph-entity-keys graph) new-key) (id e))))))
   e)
 
 (defun absorb-provenance (target incoming)
@@ -152,12 +159,17 @@ facts, which is what it is actually protecting.
 
 Linear in the size of the graph -- DERIVED-FROM has no index yet. Adequate at
 the Phase 1 scale of one workspace, and the obvious thing to index when it
-isn't."
-  (flet ((mark (fact)
-           (when (member target-id (derived-from fact) :test #'equal)
-             (setf (stale-p fact) t))))
-    (mapc #'mark (all-entities graph))
-    (mapc #'mark (all-relationships graph)))
+isn't.
+
+Held under the graph lock for its whole scan (ARCH-0003 R4): it reads both
+full tables and writes back into whatever it finds, so run against a
+concurrent writer it would mark a set of facts that never existed together."
+  (with-graph-lock (graph)
+    (flet ((mark (fact)
+             (when (member target-id (derived-from fact) :test #'equal)
+               (setf (stale-p fact) t))))
+      (mapc #'mark (all-entities graph))
+      (mapc #'mark (all-relationships graph))))
   (values))
 
 ;;;; ==================================================================
@@ -248,17 +260,18 @@ are not is still *present*: REMOVE-ENTITY drops them along with the entity, so
 a reanalysis loses the inbound cross-file edges until RESOLVE-CALLS runs
 again. That is idempotent and cheap, and the workspace monitor is where the
 two get sequenced once it exists."
-  (let* ((graph (tx-graph tx))
-         (facts (facts-from-file graph (path op)))
-         (entities (remove-if-not (lambda (f) (typep f 'entity)) facts))
-         (edges    (remove-if     (lambda (f) (typep f 'entity)) facts)))
-    ;; Edges first: removing an entity would cascade into them anyway, and
-    ;; doing it explicitly keeps the origin index honest either way.
-    (dolist (edge edges) (remove-relationship graph (id edge)))
-    (dolist (entity entities)
-      (cascade-staleness graph (id entity))
-      (remove-entity graph (id entity)))
-    (length facts)))
+  (let ((graph (tx-graph tx)))
+    (with-graph-lock (graph)
+      (let* ((facts (facts-from-file graph (path op)))
+             (entities (remove-if-not (lambda (f) (typep f 'entity)) facts))
+             (edges    (remove-if     (lambda (f) (typep f 'entity)) facts)))
+        ;; Edges first: removing an entity would cascade into them anyway, and
+        ;; doing it explicitly keeps the origin index honest either way.
+        (dolist (edge edges) (remove-relationship graph (id edge)))
+        (dolist (entity entities)
+          (cascade-staleness graph (id entity))
+          (remove-entity graph (id entity)))
+        (length facts)))))
 
 ;;;; ==================================================================
 ;;;; retract
@@ -325,15 +338,19 @@ two get sequenced once it exists."
 ;;;; The transaction itself (SS5.2)
 ;;;; ==================================================================
 
-;;; TODO: cross-file edges into a reanalyzed file are lost until RESOLVE-CALLS
-;;; runs again. RETRACT-FILE-OP removes the file's entities, which cascades
-;;; away the inbound :CALLS edges other files contributed; the entities come
-;;; back with the same derived ids on the following asserts, but the edges do
-;;; not come back on their own. Re-running RESOLVE-CALLS restores them and is
-;;; idempotent, so the fix is sequencing rather than logic -- it belongs in
-;;; the workspace monitor of SS8.3, which is what will own "a file changed,
-;;; here is everything that has to happen." Until that exists, a caller
-;;; driving analysis by hand has to run RESOLVE-CALLS after the analysis pass.
+;;; Cross-file edges into a reanalyzed file are lost until resolution runs
+;;; again. RETRACT-FILE-OP removes the file's entities, which cascades away the
+;;; inbound :CALLS edges other files contributed; the entities come back with
+;;; the same derived ids on the following asserts, but the edges do not come
+;;; back on their own.
+;;;
+;;; This is by design rather than outstanding, and two things make it so.
+;;; LOOM-WORKSPACE:RESOLVE-AND-CHECK owns the ordering -- analyze, resolve,
+;;; check -- so no caller has to remember it. And DEC-0003 makes resolution
+;;; able to honour it: a pass derives its output from a property the analyzer
+;;; wrote and never rewrites, so the second pass can answer the same question
+;;; the first one did. While resolution consumed :UNRESOLVED-CALLS, re-running
+;;; it rebuilt nothing, and the sequencing above would have been ceremony.
 
 (defun apply-transaction (graph ops)
   "Validate every op in OPS against GRAPH, then apply them all, in order.
@@ -346,14 +363,29 @@ rather than on a rollback log -- adequate for the in-memory Phase 1 backend,
 and the reason every precondition an op has is checked in PLAN-OP.
 
 Returns the remap table: the id each op named, mapped to the id it landed on.
-A caller that wants the entity it just asserted looks its own id up there."
-  (let ((tx (make-tx graph))
-        (problems '()))
-    (loop for op in ops
-          for index from 0
-          do (dolist (problem (plan-op tx op))
-               (push (list* :index index :op op problem) problems)))
-    (when problems
-      (error 'transaction-error :ops ops :problems (nreverse problems)))
-    (dolist (op ops) (apply-op tx op))
-    (tx-remap tx)))
+A caller that wants the entity it just asserted looks its own id up there.
+
+The whole body is under the graph lock, which extends ARCH-0003 R4 rather than
+following it -- R4 requires the bodies it lists to be wrapped, not that no
+other body may be. Two reasons. It is what makes SS5.2's atomicity true
+against a concurrent *reader* for the first time: without it a reader can
+observe a transaction half applied, the entity present and its edge not, which
+is precisely the guarantee the paragraph above claims. And it turns every pt-
+primitive inside the transaction into a reentrant re-acquisition of a lock
+this thread already holds, which is ARCH-0003 R13's own argument for why
+composing the two mechanisms amortizes cost instead of compounding it.
+
+The cost is worth stating rather than discovering: a knowledge query can now
+wait on a whole transaction rather than one primitive -- one file's operations
+in the common case, at worst one resolution pass's batch."
+  (with-graph-lock (graph)
+    (let ((tx (make-tx graph))
+          (problems '()))
+      (loop for op in ops
+            for index from 0
+            do (dolist (problem (plan-op tx op))
+                 (push (list* :index index :op op problem) problems)))
+      (when problems
+        (error 'transaction-error :ops ops :problems (nreverse problems)))
+      (dolist (op ops) (apply-op tx op))
+      (tx-remap tx))))

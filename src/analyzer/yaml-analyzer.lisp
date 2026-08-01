@@ -38,10 +38,18 @@
 ;;;; ==================================================================
 
 (defparameter *document-type-directories*
-  '(("design"   . :decision)
-    ("rules"    . :rule)
-    ("arch"     . :document)
-    ("concepts" . :concept))
+  ;; The agent workflow's directories are registered here rather than special
+  ;; cased anywhere: a requirement is answered by an architecture note, which a
+  ;; plan sequences, which a review or a bug report closes. All of them index,
+  ;; and refines: is what chains them.
+  '(("design"       . :decision)
+    ("rules"        . :rule)
+    ("arch"         . :document)
+    ("requirements" . :document)
+    ("plans"        . :document)
+    ("reviews"      . :document)
+    ("bugs"         . :document)
+    ("concepts"     . :concept))
   "docs/ subdirectory -> entity type.
 
 A registry rather than content sniffing, so \"adding a category means creating
@@ -192,9 +200,14 @@ against entity names would bury the real hits."
 ;;;; ==================================================================
 
 (defun base-properties (table path category body)
+  ;; :REFINES is read for every kind of document, not just decisions, because
+  ;; the workflow chain runs through all of them: a requirement is answered by
+  ;; a design, sequenced by a plan, and reported on by a review. Any document
+  ;; may name the one it answers.
   (list :title    (as-string (yaml-value table :title))
         :category category
         :body     body
+        :refines  (as-list-of-strings (yaml-value table :refines))
         :mentions (prose-mentions body)
         :unresolved-references '()))
 
@@ -236,8 +249,18 @@ and registering a type\" stays true of the fields as well as the directory."))
                 :summary (as-string (yaml-value table :summary)))))
 
 (defmethod document-properties ((type-key (eql :document)) table path category body)
+  ;; :DOC-ID is read here for the same reason a decision reads it: it is how
+  ;; one document names another. Every workflow category -- arch, requirements,
+  ;; plans, reviews, bugs -- lands on :DOCUMENT, so without this the entire
+  ;; chain is unreachable by id: `describe REQ-0002' finds nothing and a
+  ;; refines: naming it resolves to nothing.
   (append (base-properties table path category body)
-          (list :path path :format :yaml)))
+          (list :doc-id (or (as-string (yaml-value table :id)) path)
+                :status (as-keyword (yaml-value table :status)
+                                    '(:draft :proposed :accepted :final
+                                      :superseded :rejected :open :closed))
+                :path path
+                :format :yaml)))
 
 ;;;; ==================================================================
 ;;;; Rules: compiling the check clause (SS10.4)

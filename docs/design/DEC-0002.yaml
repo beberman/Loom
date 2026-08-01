@@ -1,5 +1,4 @@
 id: DEC-0002
-type: decision
 title: Entity ids are derived from the natural key, not generated
 status: accepted
 date: 2026-07-27

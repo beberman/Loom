@@ -1,0 +1,150 @@
+id: REQ-0005
+title: The impact depth bound must be honest about itself
+status: draft
+date: 2026-07-29
+refines: [REV-0001]
+affects: [impact-set, impact-report]
+tags: [knowledge, console, impact]
+summary: |
+  `impact` accepts a depth, clamps it, and then reports results that contradict
+  it: rows labelled deeper than the bound asked for, a depth of 0 that still
+  returns a row, a truncation flag that says something was cut but never how
+  much, and a non-numeric depth that reaches the traversal as NIL and surfaces a
+  raw Lisp type error. The command is the one an agent trusts to size a change,
+  and every one of these makes the size it reports unreliable in a different
+  direction.
+body: |
+  WHAT IS WRONG
+
+  Four defects in one command, all observed against Loom indexing Loom. They are
+  filed together because three share a cause and the fourth is on the same code
+  path.
+
+  FIRST, THE BOUND IS NOT A BOUND
+
+    loom> impact repository-graph 1
+    8 impacted (truncated):
+      d1 function current-graph        calls>current-graph
+      ... five more d1 rows ...
+      d1 file src/workspace/workspace.lisp    contains>src/workspace/workspace.lisp
+      d2 file src/process/console.lisp        calls>current-graph contains>src/process/console.lisp
+
+  A depth of 1 returned a row labelled d2. The traversal is correct; the
+  labelling is not. impact-set walks the transitive types to the cap, and then
+  applies the one-step types -- :contains, :tests, :documents, those declared
+  :transitive-impact nil -- to every entity already noted. An entity discovered
+  at the cap therefore acquires a one-step neighbour at cap + 1, and that
+  neighbour is reported with a depth the caller excluded.
+
+  This was first recorded in REV-0001 finding 4 as a depth of 3 returning d4,
+  and dismissed there as possibly intended. At depth 1 it is harder to read
+  charitably: the caller asked for immediate neighbours and got a file two hops
+  out.
+
+  SECOND, DEPTH 0 IS NOT EMPTY
+
+    loom> impact repository-graph 0
+    1 impacted (truncated):
+      d1 file src/workspace/workspace.lisp    contains>src/workspace/workspace.lisp
+
+  Same cause, starkest form. The cap is 0, no traversal runs, and a d1 row comes
+  back anyway because the one-step pass is applied to the seed regardless. There
+  is currently no argument that means "the seed and nothing else", which is the
+  natural reading of 0 and a genuinely useful query.
+
+  THIRD, TRUNCATION HAS NO MAGNITUDE
+
+  Every one of the three runs above printed `(truncated)`, and so did the depth-3
+  run in REV-0001. impact-result-truncated-p is `(and frontier t)` -- a boolean
+  meaning the frontier was non-empty when the cap was hit. It cannot distinguish
+  a bound that cut two entities from one that cut two hundred.
+
+  This is the difference between "your change is bigger than this" and a number,
+  and it is exactly the judgement `impact` exists to support. An agent reading
+  `14 impacted (truncated)` cannot tell whether raising the depth is worth doing.
+  CON-0004's promise is that an agent asks Loom instead of guessing; a boolean
+  here sends it back to guessing.
+
+  The pattern to copy is one file over. build-context reports `~d entities,
+  ~~~d/~d tokens (truncated)` -- it names the budget and what was spent against
+  it, so truncation carries a magnitude even though it is also a boolean flag.
+
+  FOURTH, A BAD DEPTH IS A LISP ERROR
+
+    loom> impact repository-graph abc
+    The value
+      NIL
+    is not of type
+      REAL
+
+  The console parses the depth with `parse-integer :junk-allowed t`, which
+  returns NIL for anything non-numeric rather than signalling, and passes NIL
+  through as :max-depth, where `(min max-depth *max-impact-depth*)` fails on it.
+
+  The leaked condition is the visible half. The real problem is that the console
+  is documented as a surface where "a mistyped command should print a message,
+  not drop" -- its own words -- and this is a mistyped command dropping an
+  implementation detail on the user. It is also the one defect here that a test
+  would have caught trivially, which says something about where the test effort
+  went.
+
+  WHAT IS ALREADY TRUE AND SHOULD NOT BE CHANGED
+
+  Depth is already overridable from the command: `impact <name> [<depth>]`, and
+  `help impact` says so. No new capability is needed for that part.
+
+  The default is *default-impact-depth*, which is **5**, not 3. Every example in
+  CLAUDE.md, the loom skill and all five agent definitions writes `impact <name>
+  3`, which is a choice of example and reads as a default to anyone who has not
+  looked. That is a documentation defect, not a code one, but it is why the
+  default was believed to be 3, and the fix belongs with this work.
+
+  *max-impact-depth* is 20 and clamps the request. That is correct and stays.
+
+  WHAT A SOLUTION HAS TO COVER
+
+  R1  A row's reported depth never exceeds the depth the caller asked for.
+      Either the one-step types are applied only to entities strictly inside the
+      cap, or the entities they reach are reported under their own heading rather
+      than as impact rows with a depth. The second reading may be the better
+      one: :tests and :documents are already collected separately by
+      :collect-as, so :contains reaching a file is arguably the same kind of
+      terminal fact and not an impact hop at all. Whichever is chosen, the
+      invariant is that a caller can trust the number.
+
+  R2  A depth of 0 returns the seed and nothing else, and says so rather than
+      returning a row the caller excluded.
+
+  R3  Truncation reports how much was cut, not that something was. At minimum
+      the number of entities left on the frontier when the cap was reached, so
+      `14 impacted, 31 more at depth 4` is available in place of `(truncated)`.
+      Report it in the same breath as the count, the way build-context reports
+      tokens against budget.
+
+      If the frontier count is cheap and the total reachable set is not, say so
+      and report the frontier -- a lower bound that is honest about being one is
+      worth more than an exact number nobody can afford, and CON-0001's
+      preference for a recorded gap over a fabricated fact applies to
+      quantities as much as to names.
+
+  R4  A non-numeric depth prints a message naming the problem and the expected
+      form. No condition from the internals reaches the user, and the command
+      does not run with a substituted default silently -- the caller asked for
+      something specific and got it wrong, and should be told.
+
+  R5  The default depth is stated where it is used. `help impact` names the
+      actual default, and the `impact <name> 3` examples in CLAUDE.md, the loom
+      skill and the five agent definitions either use the real default or say
+      explicitly that 3 is an example.
+
+  WHY THIS IS WORTH A DOCUMENT
+
+  `impact` is the command the whole workflow leans on. ARCH-0001, ARCH-0002 and
+  REQ-0003 all cite an impact result as evidence, and REQ-0003's central argument
+  is built on `impact repository 2` returning one row. A command used that way
+  has to be trustworthy in its own units, and right now the number it prints
+  after `d` is not the number the caller asked about, and the word it prints when
+  it ran out is not a quantity.
+
+  None of this changes what impact traverses or what it means. It is a
+  requirement about a report telling the truth about its own bounds.

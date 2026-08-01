@@ -1,5 +1,4 @@
 id: CON-0003
-type: concept
 title: A test that observes its own precondition
 summary: |
   A test that mutates state and then asserts a consequence has to assert that

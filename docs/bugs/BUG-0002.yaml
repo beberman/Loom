@@ -1,0 +1,93 @@
+id: BUG-0002
+title: find silently caps at twenty hits and cannot enumerate a type
+status: open
+date: 2026-07-29
+refines: [REQ-0003]
+affects: [search-entities, split-command-line]
+summary: |
+  `find` passes :limit 20 to search-entities and prints whatever comes back with
+  no indication that anything was dropped, so a common term returns twenty
+  arbitrary rows that read as a complete answer. The optional type argument
+  cannot be used to enumerate a type either, because an empty quoted term is
+  discarded during parsing and the type slides into the term position. Together
+  these mean the console cannot answer "how many entities of type X are there",
+  which is the acceptance criterion REQ-0003 R5 states for itself.
+body: |
+  SYMPTOM
+
+  Asking which test entities exist, on Loom indexing Loom:
+
+    loom> find test
+    function test-runner  [src/analyzer/test/suite.lisp:16-17]
+    function test-runner  [src/graph/test/suite.lisp:16-17]
+    ... eighteen more rows ...
+    file src/graph/test/graph-manager.lisp  [src/graph/test/graph-manager.lisp]
+
+  Exactly twenty rows, every one a substring match on the name, none of them a
+  :test entity. Nothing says the result was cut off, so twenty rows read as the
+  whole truth. `impact` is honest about the same situation -- it prints
+  `14 impacted (truncated)` -- which makes the silence here an inconsistency
+  inside one interface rather than a missing feature.
+
+  The type argument, which `help` documents as `find <name> [<type>]`, does not
+  provide a way round it:
+
+    loom> find "" test
+    function test-runner  [src/analyzer/test/suite.lisp:16-17]
+    ... the same twenty rows ...
+
+  The empty term was dropped and `test` became the term, so this is
+  indistinguishable from `find test`. The type filter works when both arguments
+  are non-empty, but there is no term that means "any".
+
+  CAUSE
+
+  Two independent mechanisms that happen to meet.
+
+  The cap is console.lisp calling `(search-entities (current-graph) :name term
+  :type ... :limit 20)` and then printing the hits. search-entities honours the
+  limit correctly; the caller never asks whether more existed, and the report
+  format has nowhere to say so. impact-report carries a :truncated flag through
+  to the console for precisely this reason, so the pattern to copy is already in
+  the codebase one command over.
+
+  The empty term is split-command-line discarding a zero-length quoted argument.
+  A comment at that site records `find ""` as a deliberately supported case,
+  which is evidence the intent was the opposite of the behaviour.
+
+  WHY IT HID
+
+  Because both failures produce plausible output. A silent cap looks like a
+  short answer, not a truncated one, and twenty is large enough that a reader
+  scanning for a name they expected will usually find it and stop. Nothing
+  raises a condition and no count disagrees with another count.
+
+  The enumeration gap hid behind the same plausibility. `find "" test` returns
+  rows, so it looks like it ran; it takes reading the parser to see that the
+  type was never applied. Had the empty term reached search-entities the answer
+  would have been an empty list, which is the true and useful answer -- there
+  are no :test entities, which is what REQ-0003 R5 asserts and what this bug
+  prevented anyone from confirming from the console.
+
+  It also hid because the tool was measured on questions it answers well. Every
+  `find` in the sessions that built ARCH-0001 named a specific function and got
+  it back at position one. A cap at twenty is invisible until someone asks a
+  question whose answer is a population rather than a location, and REQ-0003 is
+  the first requirement whose acceptance test is a population count.
+
+  FIX
+
+  Three changes, in increasing order of scope.
+
+  Report the truncation: thread a :truncated flag out of the find path the way
+  impact-report already does, and print it the same way. This is the one that
+  removes a false answer rather than adding a capability.
+
+  Stop dropping an empty quoted argument in split-command-line, so `find ""
+  test` reaches search-entities with a nil-or-empty name and a real type, and
+  enumeration works with no new command.
+
+  Consider a direct count, since "how many of type X" is now a question the
+  project asks of itself: REQ-0003 R5 and R6 both state acceptance in those
+  terms, and R6 wants unhandled definer macros surfaced "the way unresolved
+  references are", which is a count in `status`.

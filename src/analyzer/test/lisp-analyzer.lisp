@@ -105,7 +105,9 @@ leaves the index")
     (let ((caller (find-by-name g :function "caller")))
       (is (not (null caller)) "the definition is indexed, prefixes and all")
       (is (not (null (find-by-name g :variable "*setting*"))))
-      (is (equal '("info" "internal" "parse-config")
+      ;; "internal" is absent deliberately: absent-package::internal sits in an
+      ;; argument position, so it is a variable reference, not a call.
+      (is (equal '("info" "parse-config")
                  (sort (copy-list (getp caller :call-names)) #'string<))
           "and the calls survive under their bare names, which is all
 TOKEN-NAME ever reads -- the prefix carries nothing worth failing over"))))
@@ -221,6 +223,152 @@ the first miscounted span")
     (declare (ignore file))
     (is (null (find-by-name g :function "format")))
     (is (null (find-by-name g :function "incf")))))
+
+;;; ------------------------------------------------------------------
+;;; Definer call sites (ARCH-0002 R2)
+;;;
+;;; Driven by literal source strings rather than by test/fixtures/sample.lisp.
+;;; Several tests above count the entities and ops the shared fixture produces,
+;;; so adding a macro or a call site to it would perturb every one of them for
+;;; no gain -- ANALYZE-FILE takes path and contents, which is exactly the hook
+;;; for handing it something small.
+;;; ------------------------------------------------------------------
+
+(defun analyze-source (source &optional (path "sample.lisp"))
+  "A graph with SOURCE analyzed into it, and the :FILE entity it produced."
+  (let ((g (make-graph)))
+    (apply-transaction g (analyze-file (make-instance 'lisp-analyzer)
+                                       path source "ws-test"))
+    (values g (find-by-name g :file path))))
+
+(test a-top-level-call-is-recorded-as-a-definer-call-site
+  ;; The whole input resolution gets: what was called, where, with what
+  ;; arguments, and what the arguments themselves call. Without this property
+  ;; a macro-defined name is invisible, because it appears nowhere as a defun.
+  (multiple-value-bind (g file)
+      (analyze-source "(struct-simplefn geo \"d\" (compute-area x))")
+    (declare (ignore g))
+    (let ((sites (getp file :definer-call-sites)))
+      (is (= 1 (length sites)))
+      (let ((site (first sites)))
+        (is (string= "struct-simplefn" (getf site :operator)))
+        (is (member "geo" (getf site :arguments) :test #'string=))
+        (is (member 1 (getf site :symbol-arguments))
+            "position 1 held a bare symbol, which is what lets resolution
+name the entity rather than invent a name for it")
+        (is (member "compute-area" (getf site :call-names) :test #'string=)
+            "the argument list is walked for calls, or the generated entity
+would exist with no edges and impact would still report nothing")))))
+
+(test a-definition-is-not-a-call-site
+  (multiple-value-bind (g file)
+      (analyze-source "(in-package :foo)
+(defun alpha (x) (beta x))
+(defparameter *a* 1)
+(declaim (inline alpha))")
+    (declare (ignore g))
+    (is (null (getp file :definer-call-sites))
+        "a defun defines something the analyzer already indexed, and a
+declaration defines nothing; neither is a call to a macro")))
+
+(test a-call-site-argument-that-is-not-a-symbol-is-recorded-as-such
+  ;; Nothing guarantees a call site put a symbol where the registry says the
+  ;; name is. Minting from a computed form would produce a garbage-named
+  ;; entity that resolves nothing and never goes away, so the fact that the
+  ;; position is not a name has to survive into the property.
+  (multiple-value-bind (g file)
+      (analyze-source "(struct-simplefn (derive-name i) \"d\")")
+    (declare (ignore g))
+    (let ((site (first (getp file :definer-call-sites))))
+      (is (not (null site)))
+      (is (null (member 1 (getf site :symbol-arguments)))
+          "position 1 is a form to be computed, not a name that is written")
+      (is (member "derive-name" (getf site :call-names) :test #'string=)
+          "and the site is still recorded and still walked -- the name is
+what resolution has to refuse, not the whole entry"))))
+
+;;; ------------------------------------------------------------------
+;;; Macro template inspection and the registry (ARCH-0002 R1, R3)
+;;; ------------------------------------------------------------------
+
+(test a-macro-that-plainly-defines-a-function-says-so
+  (multiple-value-bind (g file)
+      (analyze-source "(defmacro struct-simplefn (name description &body body)
+  `(defun ,name () ,description ,@body))")
+    (declare (ignore file))
+    (let ((macro (find-by-name g :function "struct-simplefn")))
+      (is (not (null macro)))
+      (is (eq :function (getp macro :generator-entity-type)))
+      (is (eql 1 (getp macro :generator-name-index))
+          "argument 1 names the function, counting the operator as 0")
+      (is (eql 3 (getp macro :generator-body-index))
+          "and the body begins at 3, because &body consumes no argument")
+      (is (null (getp macro :definer-status))
+          "a template that reads cleanly is not an unhandled definer"))))
+
+(test a-macro-whose-defined-name-is-computed-is-reported-not-guessed
+  ;; DEFENTITY's shape: the DEFCLASS is real, but the name is a LET-bound
+  ;; variable, so it exists only once the expander runs. This is the near-miss
+  ;; REQ-0003 draws its line at, and CON-0001 says report it rather than
+  ;; approximate it. It is also nested two forms deep inside the backquote,
+  ;; which is why the template is walked rather than matched at the top.
+  (multiple-value-bind (g file)
+      (analyze-source "(defmacro defentity (key &key properties)
+  (let ((class-name (entity-class-name key)))
+    `(progn (defclass ,class-name (entity) ()) ,properties)))")
+    (declare (ignore file))
+    (let ((macro (find-by-name g :function "defentity")))
+      (is (eq :unhandled (getp macro :definer-status)))
+      (is (null (getp macro :generator-entity-type))
+          "and nothing is recorded that would let resolution mint from it"))))
+
+(test a-wrapper-macro-gets-no-generator-properties-at-all
+  ;; console.lisp's DEFINE-COMMAND expands to a PROGN around a SETF and
+  ;; defines nothing. If this comes out flagged, the template test is matching
+  ;; too loosely, and every WITH-LOCK in a tree lands in a count that exists
+  ;; to be read and acted on.
+  (multiple-value-bind (g file)
+      (analyze-source "(defmacro define-command (name args usage &body body)
+  `(progn (setf *commands* (cons ,usage *commands*))
+          (lambda ,args ,@body)))")
+    (declare (ignore file))
+    (let ((macro (find-by-name g :function "define-command")))
+      (is (not (null macro)) "still indexed as a macro")
+      (is (null (getp macro :definer-status)))
+      (is (null (getp macro :generator-entity-type))))))
+
+(test registering-a-macro-generator-replaces-rather-than-duplicates
+  ;; REGISTER-ANALYZER and REGISTER-DOCUMENT-TYPE both replace, because in a
+  ;; live image the registration form runs again every time the file is
+  ;; recompiled. A registry that accumulated would turn one entry into
+  ;; several, and several matches is what makes a pass leave a call site alone.
+  (let ((*macro-generators* (make-hash-table :test #'equal)))
+    (register-macro-generator "test" :package "fiveam" :entity-type :test
+                                     :name-index 1 :framework :fiveam)
+    (register-macro-generator "test" :package "fiveam" :entity-type :test
+                                     :name-index 2 :framework :fiveam)
+    (is (= 1 (length (macro-generators-for "test"))))
+    (is (eql 2 (getf (first (macro-generators-for "TEST")) :name-index))
+        "the later registration wins, and the lookup is case-insensitive")
+    (register-macro-generator "test" :package "other" :entity-type :function
+                                     :name-index 1)
+    (is (= 2 (length (macro-generators-for "test")))
+        "a different package is a different entry, because two packages may
+name a macro identically and a pass must be able to see the ambiguity")))
+
+(test fiveam-ships-registered
+  ;; The acceptance instrument for the whole of ARCH-0002: TEST and DEF-SUITE
+  ;; are the most common macro calls in this tree, and the :TEST entity type
+  ;; has held zero facts until they were declared here.
+  (let ((entry (first (macro-generators-for "test"))))
+    (is (not (null entry)))
+    (is (eq :test (getf entry :entity-type)))
+    (is (eq :fiveam (getf entry :framework)))
+    (is (eql 1 (getf entry :name-index))))
+  (let ((entry (first (macro-generators-for "def-suite"))))
+    (is (not (null entry)) "registered so it is never reported unhandled")
+    (is (null (getf entry :entity-type))
+        "a suite is not a test, and the ontology declares no :suite type")))
 
 ;;; ------------------------------------------------------------------
 ;;; Determinism (SS12.4)

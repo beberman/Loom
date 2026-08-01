@@ -1,5 +1,4 @@
 id: RULE-0002
-type: rule
 title: Analyzers are storage-agnostic
 status: active
 severity: error

@@ -1,0 +1,32 @@
+id: REQ-0002
+title: Watch and Stop semantic consistency
+status: accepted
+resolution: |
+  Resolved by DEC-0004: name the resting state rather than abolish it. A
+  `pause' command stops watching and keeps the index, `watch' on an already
+  registered repository resumes it, `stop' pauses everything on the way out and
+  says so, and status reports the state as paused rather than stopped.
+summary: |
+  Stopping in SLIME ends the monitor thread but does not remove the workspace
+  from the monitored list. Either stopping should remove it, or there should be
+  a separate command that stops the watching without dropping the index.
+body: |
+  Under sbcl --script the question does not arise: stop exits the console, the
+  process ends, and the threads go with it. Under SLIME the image outlives the
+  console, so the state left behind is visible and has no name.
+
+  What a developer sees is a repository reported as "watcher: stopped" that
+  they never asked to stop, on a repository they did ask to watch. No command
+  produces that state deliberately and no command reports it as intended, so it
+  reads as a fault rather than as a resting state.
+
+  The command surface is currently:
+
+    watch <dir>      register, index, and begin watching. On an already
+                     registered repository, reindex and resume watching.
+    unwatch [<name>] stop watching and drop the index entirely.
+    stop             stop the watchers and leave the console.
+
+  So there is a way to start, a way to discard, and no way to say "keep the
+  index, stop looking at the files" -- which is exactly the state stop leaves
+  behind. The gap is a missing name, not a missing capability.

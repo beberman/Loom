@@ -1,0 +1,467 @@
+id: ARCH-0004
+title: A blocking per-repository lock completes the fix for BUG-0004
+status: draft
+date: 2026-08-01
+refines: [BUG-0004]
+affects: [repository, make-repository, index-repository, poll-once,
+          reindex-repository, index-file, detect-deletions, start-monitor,
+          stop-monitor, monitor-loop, watch-repository, note-error,
+          file-changed-p, origin-files, repository-errors, monitor-running-p,
+          search-entities, describe-entity, impact-report, build-context]
+tags: [workspace, concurrency, threading, layering]
+summary: |
+  ARCH-0003 gives the graph's own hash tables a reentrant lock, closes the
+  SBCL crash for every reader and writer, and states plainly (its R8) that
+  this alone does not close BUG-0004: a resolution pass's read, compute, and
+  submit are three separate lock windows, so a batch can still be computed
+  against a torn view even once nothing can crash. This is the second half
+  ARCH-0003 R9-R10 sketched and deliberately did not design: a lock owned by
+  the repository, not the graph, held across the whole of index-repository,
+  poll-once, and reindex-repository, so a rebuild and a poll serialize rather
+  than interleave. It checks ARCH-0003 R9's named list against the code
+  rather than inheriting it, settles repository-stamps, decides what
+  loom-knowledge's read path is owed, and answers Brian's backoff proposal on
+  the record rather than folding it in unexamined.
+body: |
+  WHERE THIS PICKS UP
+
+  ARCH-0003 is not restated here beyond what following the composition
+  requires. Two of its facts are load-bearing for everything below and are
+  taken as given: R7, that protected-table already stops every reader and
+  writer of a graph from crashing, independent of anything this document
+  adds; and R10, that the graph's own lock and any lock this document defines
+  compose by strict acquisition order -- this document's lock outer, the
+  graph's lock inner -- enforced structurally because loom-graph cannot
+  depend on loom-workspace and so cannot reach the lock this document adds
+  even by accident. Nothing here revises either.
+
+  MEASURED, NOT ESTIMATED
+
+  Every decision below is checked against numbers, not against how long a
+  rebuild feels from a cold `tools/loom.sh` invocation, which is mostly SBCL
+  startup and compile time and says nothing about the lock's actual cost.
+  Measured single-threaded, monitor stopped, /usr/bin/sbcl, current tree (77
+  files, 885 entities, 4004 relationships):
+
+    reindex-repository, full rebuild     196 ms
+    resolve-and-check alone               24 ms
+    poll-once, nothing changed          20-24 ms
+    detect-deletions alone                ~0 ms
+    poll-once, one file touched           56 ms
+
+  Against a 2000 ms poll interval, the longest a repository-level lock would
+  ever make one party wait for another is on the order of 200 ms -- about a
+  tenth of one poll cycle, and only when a poll's attempt and a reindex's
+  hold genuinely overlap in time, which is not the common case even under a
+  watched repository being actively edited. This number is what makes
+  section-by-section design below simple rather than defensive.
+
+  WHAT EACH THING BECOMES
+
+  repository (src/workspace/workspace.lisp, widened)
+
+  Gains one new field, analysis-lock, made once per repository with
+  bt:make-recursive-lock -- one lock per repository, not a process-wide lock
+  covering every watched repository, for the same reason ARCH-0003 rejected a
+  process-wide graph lock: *repositories* can hold more than one entry, and
+  two unrelated repositories share no state, so serializing one repository's
+  rebuild against a different repository's poll would cost real latency for
+  no correctness reason.
+
+  A new internal function or macro, with-repository-lock (repository) &body
+  body, over bt:with-recursive-lock-held on that field. Reentrant, for the
+  same textual reason Brian named for protected-table: reindex-repository
+  calls index-repository, and both wrap their own body in it, so the nested
+  call is a cheap re-entry rather than a second real acquisition or a
+  self-deadlock.
+
+  Blocking, not a try-and-skip acquire. An earlier draft of this design,
+  built on a wrong estimate that a rebuild costs "seconds" against a
+  2-second poll interval, specified a non-blocking attempt for poll-once so
+  a monitor tick would skip rather than queue behind a long rebuild. The
+  measurements above retire that concern outright: the worst-case hold is
+  ~200 ms, roughly a tenth of one poll interval, so a monitor blocking on
+  this lock is cheap and a monitor tick is never meaningfully delayed,
+  let alone skipped. Blocking is also simpler to reason about and to test:
+  nothing is ever skipped, so there is no "did the edit get picked up this
+  tick or the next one" question to answer, and repository-stamps' state
+  (below) is always computed against a fully current table rather than
+  sometimes against one a skipped attempt never got to read. A simpler
+  design the measurements justify is worth more than a configurable one that
+  hedges against a cost that turned out not to exist.
+
+  WHICH FUNCTIONS THE LOCK ACTUALLY WRAPS
+
+  Checked against src/workspace/workspace.lisp as written, not inherited from
+  ARCH-0003 R9's list unexamined:
+
+  reindex-repository -- yes, its entire body: the graph swap, the
+  repository-stamps clrhash that BUG-0004's CAUSE section names as what
+  "opens the window," the error-list clear, and its own nested call into
+  index-repository. This is the function whose first act discards the graph
+  object, which is why ARCH-0003 could not close this half at the graph
+  layer: a lock scoped to "the current graph" does not exist yet at the
+  instant this function needs protection to begin.
+
+  index-repository -- yes, its entire body. It is a real, independent entry
+  point (watch-repository calls it directly on first registration, before
+  any monitor thread exists) as well as reindex-repository's nested call, so
+  it wraps its own body rather than relying on always being called from
+  inside someone else's lock.
+
+  poll-once -- yes, its entire body, not only the tail that calls
+  apply-transaction. The changed-file computation itself -- the loop calling
+  file-changed-p against repository-stamps -- has to be inside the lock too:
+  computed outside it, that loop could read a stamps table reindex-repository
+  is mid-clearing, which is exactly BUG-0004's CAUSE. Locking only the
+  mutating half and leaving the read half outside would reproduce the same
+  window one level down.
+
+  detect-deletions -- no lock of its own. It has exactly one call site, at
+  the tail of poll-once, so it is already covered end to end by poll-once's
+  wrapping. Its call to origin-files -- a full iteration of graph-origin-index
+  on every tick, not only when something changed, measured by Brian at ~0 ms
+  but real work regardless -- is a graph-layer read that ARCH-0003's
+  protected-table already keeps from crashing independent of this document
+  (ARCH-0003 R7). What this document's lock adds on top is not crash-safety,
+  which origin-files already has; it is that the iteration can no longer
+  happen concurrently with a reindex's mutation of the same table, which is
+  what makes detect-deletions' answer -- which files have vanished -- true of
+  a graph that is not simultaneously being rebuilt out from under it.
+
+  index-file -- no lock of its own. Both its call sites (index-repository's
+  file loop, poll-once's changed-file loop) are already inside a locked body
+  per the two entries above.
+
+  start-monitor, stop-monitor, and the repository-monitor / repository-
+  stopping fields they read and write -- no. These coordinate thread
+  lifecycle through a plain thread reference and a boolean, and touch neither
+  the graph nor repository-stamps, so BUG-0004's race -- two threads reading
+  and writing shared index state -- does not reach them. Locking them would
+  add latency without removing a hazard: stop-monitor would have to wait for
+  a whole pass to finish before it could even set the flag asking the pass to
+  stop, which is backwards. FAILURE MODES below covers the one place this
+  boundary and the analysis lock still interact.
+
+  repository-errors -- deliberately left unconverted, and the gap is
+  recorded rather than closed. note-error appends to a plain, 50-entry-
+  bounded list. Every console-thread write to it happens inside this
+  document's lock (via index-file or resolve-and-check's submit, both nested
+  in a locked pass, or reindex-repository's own error-clearing). One
+  monitor-thread write does not: monitor-loop's own handler-case for a
+  serious-condition that escapes poll-once entirely calls note-error *after*
+  poll-once has already unwound and released the lock, per FAILURE MODES
+  below. That leaves a narrow, genuine race on this one list between that
+  path and a concurrent console-thread write -- a lost log entry at worst,
+  never index corruption, and disproportionate to fix by giving a 50-entry
+  human-readable diagnostic list its own protected-table. CON-0001's
+  standing principle applies here in its other direction: a recorded, bounded
+  gap is preferable to a mechanism whose cost exceeds what it protects.
+
+  *repositories* (the list of watched repositories) -- no. Only
+  watch-repository and unwatch-repository mutate it, both console-thread-only
+  and never touched by any monitor thread.
+
+  READS: loom-knowledge STAYS UNLOCKED
+
+  find, describe, impact, and context -- everything services.lisp and
+  context.lisp expose -- do not acquire this lock. Three reasons, one
+  architectural and two practical.
+
+  Architecturally, loom-knowledge depends on loom-ontology and loom-graph
+  only; it cannot depend on loom-workspace, so it cannot reach this lock
+  without inverting a layering boundary RULE-0003 exists to keep closed.
+  Only console.lisp, in loom-process, sits above both loom-knowledge and
+  loom-workspace and could bolt the lock onto a query from outside -- which
+  would mean the discipline lived at the call site rather than being a
+  property of the knowledge layer, exactly the coupling RULE-0003 is written
+  to prevent from creeping back in.
+
+  Practically, forcing a query to wait on this lock would tie the latency of
+  a fast, frequent, agent-facing operation to unrelated background work.
+  services.lisp's own stated design test is tokens an agent spends
+  re-reading code it already asked about; making `context` occasionally
+  block on a monitor's poll or a human's reindex fails that test for a risk
+  that, per the guarantee below, is already bounded and self-correcting.
+
+  What a reader is guaranteed instead, precisely: never a crash (ARCH-0003
+  R7); at every instant it inspects the graph, a graph that is structurally
+  valid -- no dangling edge, no entity missing its natural-key index entry,
+  because every individual mutation that could produce such a thing is
+  applied under the graph's own lock as one atomic step (ARCH-0003 R4). What
+  it is not guaranteed is one consistent snapshot across a query that itself
+  spans more than one graph-manager call -- and both impact's traversal and
+  describe's neighbour grouping are exactly such queries, and resolve-and-
+  check submits six separate transactions per pass (resolve-definitions,
+  resolve-generated-definitions, resolve-calls, resolve-tests, resolve-
+  document-links, check-rules), so a query overlapping an in-progress pass
+  can see part of its output and not the rest. What that produces is always
+  an undercount -- an edge the pass would add a moment later is simply not
+  yet visible -- never a fabricated fact, and the window is bounded by the
+  pass's own measured duration (worst case ~200 ms on this tree). A torn but
+  honest read with a sub-second lifetime is a recorded gap in CON-0001's
+  sense, not an invented fact, and is accepted on that basis rather than
+  closed by making every query pay a lock it structurally cannot see.
+
+  REPOSITORY-STAMPS
+
+  ARCH-0003 R12 scoped this out on the argument that this document's lock
+  would make its corruption impossible and leave only redundant work. Traced
+  against the design above, it does better than that: with poll-once's
+  *entire* body -- read of repository-stamps included -- inside the lock, and
+  reindex-repository's clrhash and re-stamping (via index-file, inside its
+  own locked index-repository call) also inside the lock, the two can never
+  interleave at all. A poll that starts while a reindex holds the lock simply
+  waits; by the time it acquires the lock and reads repository-stamps, the
+  reindex that held it has either not started stamping yet (blocked before
+  it, table untouched) or has completely finished (table fully repopulated,
+  every file re-stamped by index-file). There is no third state a concurrent
+  poll can observe repository-stamps in. Consequently a poll running
+  immediately after a reindex finds nothing changed -- file-changed-p compares
+  against stamps the reindex itself just wrote -- and the redundant full
+  reanalysis ARCH-0003 R12 predicted as the residual cost does not occur.
+  repository-stamps does not become a protected-table: it needs no locking of
+  its own once every one of its readers and writers is already inside this
+  document's lock, which R4 above confirms is true of every access point it
+  has.
+
+  BRIAN'S BACKOFF PROPOSAL
+
+  Considered on the record rather than folded in silently, because the
+  question underneath it -- could a throughput change substitute for the
+  lock -- has a clean answer and is worth stating even where it does not
+  change the design.
+
+  Backoff cannot close BUG-0004, on its own terms. Widening the poll interval
+  after quiet periods reduces how often the monitor's poll and a console
+  reindex are in flight at the same moment; it does not reduce that
+  probability to zero for any finite interval, and a race that fires rarely
+  is worse than one that fires often, not better -- it is the race BUG-0004
+  itself describes surviving in the suite for exactly this reason ("Nothing
+  in the suite runs a monitor and a reindex at once"). The lock is what
+  makes the collision impossible rather than infrequent; a throughput
+  optimization is not a substitute for that, whatever its interval.
+
+  The premise needs a small correction, too. Backoff throttles the monitor's
+  own cadence, on the reasoning that "rebuilds are monitor-triggered anyway."
+  BUG-0004's actual collision is not monitor-against-monitor; it is the
+  console thread running a human- or agent-issued reindex against the
+  monitor thread's ordinary poll. No policy governing how often the monitor
+  wakes changes when a person types `reindex`, so backoff does not remove
+  BUG-0004's specific collision pair by construction, independent of the
+  first argument.
+
+  Where the instinct is right, and the measurements back it directly: the
+  contended hold this document's lock ever produces is ~200 ms worst case,
+  which is why R3 above chooses plain blocking rather than a skip-and-retry
+  scheme -- the read side (a poll) is fast, and a monitor occasionally
+  waiting a fraction of one interval is not a cost worth engineering around.
+
+  Whether backoff is worth doing on its own merits -- as a throughput
+  optimization, once correctness no longer depends on it -- is a real,
+  separate question with a real cost: an edit landing after a long quiet
+  period would wait out however long the interval had grown to before the
+  next poll notices it. Adopting it would need, at minimum, a reset condition
+  (any detected change -- a file added, changed, or removed -- resets the
+  interval to its base value, so backoff only widens genuinely idle gaps
+  rather than ones that just had activity), a cap (an upper bound past which
+  the interval stops growing, so a repository untouched for a long weekend
+  does not silently drift to a poll rate that reads as "stopped" from the
+  outside), and a decision on whether some console command should force an
+  immediate poll rather than wait out a backed-off interval -- none of which
+  exists in the console table today (`help` lists none).
+
+  This document does not adopt it. Mixing a throughput change into a
+  correctness fix makes the acceptance criteria this document owes a
+  reviewer ambiguous -- "did the race stop firing, or did it just get
+  rarer" is exactly the question a reader of this document must never have
+  to ask, and adopting backoff here would make it askable. Recorded as a
+  scoped-out follow-on rather than silently dropped: if adopted, it composes
+  cleanly with everything above, since it changes only how often poll-once is
+  called, never how it behaves once called.
+
+  ALTERNATIVES CONSIDERED
+
+  A non-blocking, skip-and-retry acquire for poll-once. Rejected; superseded
+  by measurement, and the reasoning is recorded above under WHAT EACH THING
+  BECOMES rather than repeated here, because it is the one place this
+  document changed its own mind mid-design and that is worth being visible
+  rather than smoothed over.
+
+  Backoff as a substitute for, or a component of, the correctness fix.
+  Rejected as a substitute for the reason given above (reduces, never
+  removes, the race); scoped out as an independent optimization for the
+  reason given above (ambiguous acceptance criteria for a document whose job
+  is to make a specific race impossible).
+
+  Taking this lock from loom-knowledge's read path, or from console.lisp
+  around every knowledge-service call. Rejected: architecturally unreachable
+  from loom-knowledge itself (RULE-0003's layering), and even bolted on from
+  console.lisp, would tax every query's latency against unrelated background
+  work for a risk the READS section above shows is already bounded to a
+  sub-second, self-correcting window and never produces a fabricated answer.
+
+  Converting repository-stamps to protected-table alongside this lock, on
+  the theory that belt-and-suspenders is free. Rejected once traced: REPOSITORY-STAMPS
+  above shows every access to it is already inside this document's lock, so a
+  second, table-local lock would be redundant machinery guarding an already-
+  excluded resource, adding bordeaux-threads-shaped complexity without
+  removing any remaining hazard.
+
+  REQUIREMENTS
+
+  R1. repository (src/workspace/workspace.lisp) gains a field, analysis-lock,
+      made once per repository via bt:make-recursive-lock -- one lock per
+      repository, not shared across repositories and not a process-wide
+      lock.
+
+  R2. loom-workspace gains an internal (not exported) macro or function,
+      with-repository-lock (repository) &body body, over
+      bt:with-recursive-lock-held on that field. It is a blocking acquire; no
+      non-blocking or timed variant is used anywhere in this design.
+
+  R3. index-repository, poll-once, and reindex-repository each wrap their
+      entire existing body in with-repository-lock -- poll-once's changed-
+      file computation included, not only its mutating tail; reindex-
+      repository's graph swap and repository-stamps clrhash included, not
+      only its call into index-repository.
+
+  R4. No other function gains a lock of its own: detect-deletions and
+      index-file are covered end to end by R3's wrapping of their sole
+      callers; start-monitor, stop-monitor, repository-monitor, repository-
+      stopping, and *repositories* are untouched, per WHAT EACH THING BECOMES
+      above; repository-errors is explicitly left unconverted, with the one
+      narrow residual race it carries recorded rather than closed.
+
+  R5. loom-knowledge's read functions (search-entities, describe-entity,
+      impact-report, build-context, and everything console.lisp's find,
+      describe, impact, and context commands call) do not acquire
+      analysis-lock, directly or via any wrapper added in loom-process. The
+      guarantee they operate under is the one stated in READS above and is
+      not to be silently strengthened later without documenting why the
+      trade-off changed.
+
+  R6. Exponential or otherwise adaptive backoff for *poll-interval* is out of
+      scope for closing BUG-0004 and is not introduced by this document. A
+      future document proposing it must specify a reset-on-change condition,
+      a cap, and whether some command forces an immediate poll, per BRIAN'S
+      BACKOFF PROPOSAL above, and must not claim it as a correctness
+      improvement.
+
+  R7. Acquisition order is unchanged from ARCH-0003 R10 and this document
+      does not introduce a second ordering to reconcile: analysis-lock is
+      always acquired before, and released after, any acquisition of the
+      graph's own lock that happens inside the pass it wraps. loom-graph
+      cannot acquire analysis-lock even by accident, since it does not and
+      cannot depend on loom-workspace.
+
+  R8. Acceptance, in a form a tester can run and that fails without this
+      document's fix:
+        a. `watch`, then `reindex` (no `pause`), then `status`, run
+           repeatedly on Loom's own tree (20 consecutive trials or more) --
+           entity, relationship, test, and tested-unit counts equal the
+           `pause`/`reindex`/`status` baseline exactly, every time, and
+           `errors` stays at 0 with no "Unsafe concurrent operations" text
+           anywhere in `log`. This is PLAN-0001's drift check, restated
+           without the pause it needed before this document, exactly as the
+           coordinator named it.
+        b. A concurrency stress test in loom-workspace/test/workspace.lisp
+           that drives reindex-repository and poll-once from separate
+           threads with no inter-call sleep -- deliberately not relying on
+           the monitor's own 2-second cadence, which at ~200 ms per rebuild
+           would need luck to collide reliably within a short test budget --
+           for enough iterations (on the order of fifty to a few hundred, a
+           few seconds of wall-clock time given the measured costs above) to
+           force many genuine overlaps rather than hope for one. Run once
+           against the pre-fix code to confirm it fails -- CON-0003's
+           standing requirement that a test must fail without the change it
+           covers -- and then pass across several repeated runs post-fix,
+           not merely once, since a lock bug whose test happens to pass on a
+           single run is exactly the trap this criterion exists to catch.
+        c. The same stress test's final state, after joining every thread,
+           matches a fresh reindex taken with the monitor stopped -- the
+           direct check that no batch was lost to a torn view, not only that
+           nothing crashed.
+        d. `pause`, issued on a repository immediately after `reindex`
+           returns, completes within *monitor-stop-timeout* and leaves the
+           repository correctly reporting :paused, without invoking
+           bt:destroy-thread -- the direct check on FAILURE MODES (c) below.
+        e. A version of (a) that additionally edits several files at the
+           moment `reindex` is issued: every edit is reflected in the final
+           index, whether picked up by the reindex itself or by the next
+           poll once the lock frees -- the end-to-end shape of BUG-0004's
+           original reproduction, not only its aggregate counts.
+
+  R9. Failure modes this lock introduces, addressed rather than assumed
+      away:
+        a. Deadlock against the graph's own lock: none, by R7 above and
+           ARCH-0003 R10's structural argument, unchanged here.
+        b. A condition signaled inside a locked pass: with-repository-lock,
+           built on bt:with-recursive-lock-held, releases the lock via the
+           same unwind-protect guarantee any standard lock-holding construct
+           gives, regardless of whether the condition is caught internally
+           by SS3.3's existing handler-case in index-file or resolve-and-
+           check's submit (the common case) or escapes to monitor-loop's
+           outer serious-condition handler or the console's run-command
+           error handler. No new discipline is needed; this falls out of
+           using a standard construct rather than a hand-rolled one.
+        c. stop or pause issued while a rebuild holds the lock: cannot
+           happen from the console side at all -- console.lisp's read loop
+           dispatches one line at a time and does not read the next until
+           the current handler returns, so a human or agent cannot type
+           `pause` while their own `reindex` is still running. The only real
+           interaction is stop-monitor (called by both stop and pause)
+           against the monitor thread possibly waiting for, or briefly
+           holding, this lock. stop-monitor does not itself take the lock
+           (R4), so it can always set repository-stopping immediately, then
+           waits up to *monitor-stop-timeout* (10 s) for the thread to exit.
+           Given the measured ~200 ms worst-case hold, that is a fifty-times
+           margin against the timeout under normal operation, so no change
+           to *monitor-stop-timeout* and no extra responsiveness engineering
+           in poll-once is required.
+        d. A monitor thread destroyed while holding the lock: reachable only
+           if stop-monitor's forced bt:destroy-thread path fires, which per
+           (c) now requires a pass roughly fifty times slower than anything
+           measured on this tree. SBCL's asynchronous thread termination is
+           documented to unwind the target thread's stack, running
+           unwind-protect cleanups -- including this lock's release -- as it
+           goes, so the lock is very likely released correctly even under a
+           forced kill; this is not an airtight guarantee for every possible
+           interruption point (mid-FFI-call, for one), and is recorded as a
+           residual, low-probability risk rather than claimed away. It is
+           new failure surface relative to before this document -- there was
+           no lock to be caught holding -- bounded by the same measurements
+           that justify R3's blocking design, and left for a future document
+           to revisit only if it is ever observed to matter.
+
+  CONSEQUENCES
+
+  index-repository, poll-once, and reindex-repository each gain a single
+  wrapping form around an otherwise unchanged body; no internal control flow
+  in any of the three needs restructuring beyond that wrap, since R3 places
+  the boundary at each function's existing entry and exit rather than partway
+  through it.
+
+  A full watched-repository reindex now costs at most one lock acquisition
+  (~microseconds, uncontended in the common case) plus, rarely, up to the
+  ~200 ms measured worst case if it happens to collide with an in-flight
+  poll -- negligible against the 196 ms the rebuild itself costs and
+  invisible against the SBCL startup and compile time that dominates a cold
+  `tools/loom.sh` invocation.
+
+  loom-workspace/test/workspace.lisp gains the concurrency stress test R8(b)
+  specifies -- the one genuinely new kind of test this document requires,
+  distinct from every existing single-threaded workspace test, none of which
+  need to change.
+
+  PLAN-0001's verification line -- "The `pause` is not optional... run
+  against a watched repository the check fails" -- is retired by this
+  document rather than merely worked around: once R3 lands, `reindex`,
+  `status`, run against a watched repository with no `pause`, is expected to
+  match the paused baseline, which is R8(a) above. A future edit to
+  PLAN-0001 removing the `pause` from its own verification line is a direct
+  consequence of this document, not a separate decision.
+
+  Everything ARCH-0003 already committed to -- protected-table, the graph's
+  own reentrant lock, the acquisition ordering -- is unchanged. This document
+  adds one lock at one new layer and changes no code loom-graph owns.

@@ -1,5 +1,4 @@
 id: DEC-0001
-type: decision
 title: The repository on disk is the system of record
 status: accepted
 date: 2026-07-26

@@ -1,0 +1,575 @@
+id: PLAN-0001
+title: Sequence macro- and structure-generated definitions into the index
+status: final
+date: 2026-07-30
+refines: [ARCH-0002]
+affects: [resolve-and-check, resolve-definitions, resolve-calls, repository-status,
+          print-status, analyze-file, make-macro-entity, class-definition-entities,
+          struct-definition-entities, collect-call-names, callable-index,
+          assert-entity, repository-graph]
+tags: [analyzer, ontology, macros, tests, resolution, plan]
+summary: |
+  Eight steps that land ARCH-0002's R1-R10 in dependency order: the ontology
+  widening first because everything validates against it, then the one change
+  that closes the live defect without touching an analyzer (a :uses edge from
+  every existing :generated-by entity to the class that generated it), then the
+  two analyzer additions, then the resolution pass that mints and retracts
+  generated entities, then the two dependent passes, then the status counts
+  that make self-analysis a console-readable acceptance test. Every step
+  compiles and leaves the full suite runnable; each names a verification that
+  fails without it.
+
+  Out of scope and deliberately so: REQ-0005, REQ-0006 and REQ-0007 (written
+  the day before this plan, no architecture yet); populating a :test entity's
+  :suite property from def-suite/in-suite context, which ARCH-0002 defers;
+  runtime loading of third-party registrations, which REQ-0004 owns; and the
+  wrapper-macro gap (cond-is, with-lock, preflight), which ARCH-0001's R10
+  left open and this plan does not narrow. Nothing here depends on BUG-0002
+  being fixed.
+body: |
+  BASELINE
+
+  Measured with `wsl.exe /home/beberman/lisp/Loom/tools/loom.sh 'status'
+  'impact repository 2' 'find def-suite' 'describe repository-graph'` on
+  2026-07-30, branch analyzer:
+
+    index      : 73 files, 598 entities, 1573 relationships
+    documents  : 24
+    rules      : 0 violations, 1 unenforced
+    unresolved : 0 document references
+
+    impact repository 2        -- 1 impacted: its own file, and nothing else
+    find def-suite             -- Nothing matches "def-suite"
+    describe repository-graph  -- <- calls: current-graph, index-file,
+                                  resolve-and-check, reindex-repository,
+                                  detect-deletions, repository-status
+
+  So the defect ARCH-0002 describes reproduces exactly as written, and the
+  :test entity type holds zero facts. There is no console command that counts
+  entities of a type (BUG-0002), which is why R10's named status counts are the
+  acceptance instrument rather than `find`.
+
+  Two counts worth having before starting, for predicting what self-analysis
+  should produce: 218 top-level `(test ...)` forms across 13 files under
+  src/*/test/, and 19 `(def-suite ...)` forms across 19 files. def-suite mints
+  nothing by design, so the expected :test-entities figure after step 5 is
+  about 218, not 237.
+
+  FILES
+
+  src/ontology/code-ontology.lisp
+      Step 1: declare the new properties -- :definer-call-sites on :file;
+      :generator-entity-type, :generator-name-index, :generator-body-index and
+      :definer-status on :function; :generated-by, :call-names and
+      :unresolved-calls on :test. Widen :uses (:from gains :interface and
+      :test, :to gains :function) and :tests (:to gains :interface).
+      Step 7: correct the :tests relationship's documentation comment.
+
+  src/ontology/test/code-ontology.lisp
+      Step 1: endpoint assertions for the three widened pairs.
+
+  src/ontology/ontology-ops.lisp
+      Step 5: assert-entity-op's docstring, which is written for the
+      analyzer's use alone and stops being true when a resolution pass mints.
+
+  src/analyzer/lisp-analyzer.lisp
+      Step 3: the recognised-head list factored out of analyze-file's cond
+      into a named parameter, and :definer-call-sites recorded on the file
+      entity. Step 4: macro template inspection beside make-macro-entity, and
+      *macro-generators* / register-macro-generator with the two fiveam
+      entries.
+
+  src/analyzer/package.lisp
+      Step 4: export *macro-generators*, register-macro-generator, and
+      whatever reader the registry entries need.
+
+  src/analyzer/test/lisp-analyzer.lisp
+      Steps 3 and 4: new tests, driven by literal source strings rather than
+      by test/fixtures/sample.lisp (see RISKS).
+
+  src/graph/resolve.lisp
+      Step 2: resolve-generated-definitions, R6 half only. Step 5: the mint
+      and retract halves, plus generated-definition-collisions. Step 6:
+      resolve-calls iterates :test. Step 7: resolve-tests.
+
+  src/graph/package.lisp
+      Steps 2, 5, 7: export resolve-generated-definitions, resolve-tests,
+      generated-definition-collisions, unhandled-definer-macros.
+
+  src/graph/test/resolve.lisp
+      Steps 2, 5, 6, 7: unit tests per pass, including the collision test.
+
+  src/workspace/workspace.lisp
+      Step 2: resolve-and-check calls the new pass between
+      resolve-definitions and resolve-calls, and the docstring's "order
+      matters" paragraph names the new stage. Step 5: the registry is passed
+      in from loom-analyzer. Step 7: resolve-tests after resolve-calls, and
+      the comment updated again. Step 8: repository-status gains three counts.
+
+  src/workspace/test/workspace.lisp
+      Step 5: the macro-stops-being-a-definer lifecycle test. Step 8: the
+      status test asserts the three new counts.
+
+  src/process/console.lisp
+      Step 8: print-status prints the three counts; check reports the
+      unhandled and collision totals the way it reports unresolved
+      references.
+
+  docs/concepts/CON-0001.yaml
+      Step 5: the summary line, which calls a resolution pass a read-only
+      sweep that turns recorded names into edges.
+
+  docs/plans/PLAN-0001.yaml
+      This file. status: final when step 8 lands.
+
+  No .asd file changes: both new passes live in src/graph/resolve.lisp, which
+  loom-graph.asd already lists, and no new component or system dependency is
+  introduced. That is not incidental -- see the layering risk below.
+
+  BLAST RADIUS
+
+  What Loom reports (`impact` at depth 2, 2026-07-30):
+
+    resolve-calls       5 impacted, truncated: resolve-and-check, its file,
+                        index-repository, poll-once, workspace.lisp.
+                        decisions: DEC-0003.
+    repository-status   1 impacted: its own file. decisions: DEC-0004.
+    analyze-file        10 impacted, truncated: both methods, analyze-path,
+                        the two analyzer files, and the two analyzer test
+                        files via the fixture-ops/docs-ops helpers.
+    repository          1 impacted: its own file. This is the defect, not a
+                        measurement: step 2 is what makes this number honest.
+
+  What Loom cannot see, and this plan believes anyway:
+
+    Everything reached through a fiveam `test` form. Calls inside a macro body
+    are unattributed (ARCH-0001), so every one of the 218 test bodies that
+    exercises resolve-calls, analyze-file or repository-status is invisible to
+    impact today. resolve-calls' impact set of five is therefore a floor, not
+    a measurement -- the true set includes at least src/graph/test/resolve.lisp
+    and src/workspace/test/workspace.lisp. This is the self-referential part of
+    the work: after step 7 those edges exist, and the same query answers
+    differently.
+
+    Every consumer of a status plist. repository-status' impact set of one is
+    the analyzer being blind to plist keys, not evidence of containment.
+    print-status in console.lisp reads it by getf, which is a call to getf and
+    not an edge to repository-status.
+
+    Endpoint validation. plan-op validates every asserted edge against the
+    ontology and a single problem aborts the whole transaction, so any pass
+    that asserts one illegal edge loses all of its work. code-ontology.lisp
+    records this happening before, when :decides did not permit :interface and
+    the entire resolution transaction was rejected. That coupling does not
+    appear as an edge in the graph at all, and it is the reason step 1 is step
+    one.
+
+  RISKS
+
+  Layering: loom-graph cannot see loom-analyzer. ARCH-0002 says
+  resolve-generated-definitions "builds the effective registry -- the shipped
+  *macro-generators* entries plus every workspace :function entity carrying
+  its own :generator-entity-type". The shipped half lives in
+  lisp-analyzer.lisp, and loom-graph.asd depends on loom-ontology only;
+  referencing loom-analyzer:*macro-generators* from resolve.lisp will not
+  compile, and adding the dependency inverts the layering CLAUDE.md and
+  RULE-0002's sibling rules describe. The plan's mechanism: the pass takes
+  the shipped entries as a keyword argument -- (resolve-generated-definitions
+  view :workspace-id ws :registry registry) -- and loom-workspace, the first
+  system that uses both packages, supplies *macro-generators*. This also makes
+  the pass testable with a synthetic registry, which the collision test needs.
+  Noticed if got wrong at compile time in step 5, or by `check` reporting a
+  RULE-0001/0002 violation.
+
+  How a collision becomes visible. ARCH-0002 requires a collision to be
+  counted rather than merely not crashing, and R10 gives three named status
+  fields without saying which one carries it. Writing :definer-status
+  :collision onto the macro's entity from resolution would overwrite an
+  analyzer-written property, which R1 forbids. So the count is recomputed by a
+  read-only function over the view, generated-definition-collisions, exactly
+  the shape unresolved-references already has, and repository-status folds it
+  into :unhandled-definer-macros. This is the one mechanical choice the plan
+  makes that ARCH-0002 leaves open; it changes no decision in it.
+
+  The lifecycle step is the dangerous one. resolve-generated-definitions owns
+  mint and retract and recomputes its full output every pass, because a macro
+  can stop qualifying as a definer in its own file while the call site's file
+  never changes, and no single retract-file is guaranteed to invalidate the
+  generated entity. Three ways to get it wrong, all silent:
+
+    Retracting too little. An entity minted by a macro that no longer
+    qualifies survives, and the incremental index carries a definition a
+    rebuilt one does not. Caught by the existing workspace tests
+    an-incremental-update-matches-a-full-rebuild and
+    reindexing-produces-an-identical-index only if those tests exercise a
+    definer macro, which today they do not -- which is why step 5 adds a test
+    that edits a macro and asserts the disappearance.
+
+    Retracting too much. The retract predicate is "carries a :generated-by
+    naming a registered macro and is not in this pass's output". A
+    defstruct accessor also carries :generated-by, naming a class rather than
+    a macro; if the predicate does not exclude it, every accessor in the tree
+    is retracted on the first pass and re-minted by nothing. The symptom is
+    a large drop in entity count and a flood of newly unresolved calls, and it
+    would show up on the first `status` after step 5. Worth writing the
+    predicate against the registry rather than against the mere presence of
+    the property.
+
+    Retract-then-assert ordering inside one transaction. A refresh of an
+    entity whose natural key is unchanged is an upsert, not a
+    retract-plus-assert; emitting both for the same entity in one transaction
+    risks the retract removing what the assert just landed depending on op
+    order. Keep refresh as a bare assert-entity and reserve retract for
+    entities absent from the computed set.
+
+  Endpoint rejection aborting a pass. Any of steps 2, 5, 6 or 7 asserting one
+  edge the ontology does not permit loses the whole submitted batch. It is not
+  silent -- resolve-and-check's submit calls note-error and prints -- but the
+  index is then quietly missing a whole class of edge while `status` looks
+  healthy. Run `check` and `log` after each of those steps, not just the
+  suite.
+
+  Tests likely to break, and why:
+
+    src/workspace/test/workspace.lisp watching-a-repository-indexes-source-
+    and-documents-together asserts exactly 3 :function entities, and
+    status-reports-what-a-developer-needs-to-see asserts exactly 4 files.
+    Adding a definer macro to make-fixture-repository breaks both. The step 5
+    test must write its extra files inside its own test body after the fixture
+    is built and then call poll-once, the way a-changed-file-is-reanalyzed
+    already does.
+
+    src/analyzer/test/lisp-analyzer.lisp counts entities and ops from
+    test/fixtures/sample.lisp. Adding a macro or a definer call site to that
+    fixture perturbs every test that counts. analyze-file takes path and
+    contents, so steps 3 and 4 should pass a literal source string and leave
+    the shared fixture alone.
+
+    src/ontology/test/code-ontology.lisp impact-metadata-matches-the-
+    specified-table checks transitive-impact, impact-direction and collect-as
+    for :uses and :tests but not their endpoint lists, so the widening does
+    not break it. Confirmed by reading; do not assume it for a future
+    widening.
+
+    An entity-count or relationship-count assertion anywhere that runs a full
+    self-index. Step 5 is expected to add roughly 218 :test entities plus
+    their :uses edges, and steps 6 and 7 several hundred :calls and :tests
+    edges. Any test asserting an absolute total against Loom's own tree will
+    move.
+
+  Scale and noise. Every test body's :call-names will include fiveam's is,
+  is-true, signals and finishes, which are external and will land in
+  :unresolved-calls on 218 new entities. That is correct behaviour and not
+  reported by `status`, but it does mean the unresolved-call population grows
+  by roughly a thousand names. Separately, :definer-call-sites records
+  argument tokens for every unrecognised top-level form, including large ones
+  -- code-ontology.lisp's defentity forms and root-ontology.lisp's eval-when
+  block -- so the file entities in this tree will carry noticeably more
+  property data. Watch memory and reindex time; if either becomes a problem
+  the tokens, not the pre-walked call names, are the part to trim.
+
+  False positives from in-tree macros. Two shapes in this tree are worth
+  predicting so a surprise is recognisable. console.lisp's define-command
+  expands to a progn around a setf and contains no defun/defclass/defmethod,
+  so it must get no generator properties at all and must not be counted
+  unhandled. root-ontology.lisp's defentity and defrelationship do contain a
+  defclass, but the name position is a let-bound variable rather than a bare
+  macro parameter, so they are R1's near-miss and should be counted
+  :definer-status :unhandled. If define-command comes out flagged, the
+  template test is matching too loosely; if defentity comes out with
+  generator properties, the bare-substitution check is not checking that the
+  substituted symbol is one of the macro's own parameters.
+
+  A definer call site whose name argument is not a symbol. The registry says
+  which argument names the entity; nothing guarantees the call site put a
+  symbol there. Minting from a computed form produces a garbage-named entity
+  that resolves nothing and never goes away. Skip the site, and count it with
+  the collisions rather than inventing a name -- CON-0001.
+
+  Two same-named definer call sites in one file upsert onto one another,
+  because the natural key is (:file :name). Harmless and correct, but it means
+  a count of minted entities is not a count of call sites.
+
+  STEPS
+
+  1. Ontology: widen the two relationships and declare the new properties.
+     src/ontology/code-ontology.lisp. :uses :from gains :interface and :test,
+     :to gains :function. :tests :to gains :interface. Declare
+     :definer-call-sites (list) on :file; :generator-entity-type (keyword),
+     :generator-name-index (integer), :generator-body-index (integer) and
+     :definer-status (keyword) on :function; :generated-by (string),
+     :call-names (list) and :unresolved-calls (list) on :test. The property
+     declarations are not optional bookkeeping: validate-entity only checks
+     declared properties, so an undeclared :call-names on a :test would be
+     stored, unvalidated and absent from the schema the ontology exists to be
+     the single copy of. Nothing else changes in this step and no behaviour
+     moves.
+     This is the first step that can be run, and it is first for a reason
+     given under BLAST RADIUS: plan-op rejects an entire transaction on one
+     illegal endpoint.
+     Verification: add to src/ontology/test/code-ontology.lisp that
+     (validate-relationship-endpoints :uses :interface :class),
+     (... :uses :test :function) and (... :tests :test :interface) each return
+     nil. All three return a problem list before this step, so the test fails
+     without it. Then the ontology suite, then the full suite -- which must be
+     unchanged, since nothing yet asserts any of the new shapes.
+
+  2. R6: the edge that closes the live defect.
+     src/graph/resolve.lisp -- add resolve-generated-definitions, implementing
+     only the R6 half: for every :function and :interface entity carrying a
+     non-nil :generated-by, look the name up in an index of :class entities
+     and, on a unique match, assert a :structural :uses edge from the entity
+     to the class. Zero or several matches: left alone, per CON-0001. Export
+     it from src/graph/package.lisp. Wire it into resolve-and-check in
+     src/workspace/workspace.lisp between resolve-definitions and
+     resolve-calls -- its final position, so no later step moves it -- and add
+     the stage to the docstring paragraph that explains why the order matters.
+     No analyzer change: ARCH-0001 already writes the property, which is why
+     this step is small and why it is second rather than sixth.
+     It cannot be first. The defstruct half asserts :function -> :class, which
+     today's ontology already permits, but the defclass half asserts
+     :interface -> :class, which it does not, and one illegal edge loses the
+     whole batch. Shipping half a loop ahead of a one-form ontology edit buys
+     nothing.
+     Verification: a new test in src/graph/test/resolve.lisp building a
+     :class, a :function carrying :generated-by naming it, and an :interface
+     likewise, asserting one :uses edge from each -- it fails without this
+     step because no pass asserts that edge. Then, on Loom itself,
+     `impact repository 2` must report repository-graph and the six callers
+     `describe repository-graph` already lists, in place of today's single
+     row; and `check` must still report 0 violations.
+
+  3. R2: the analyzer records definer call sites.
+     src/analyzer/lisp-analyzer.lisp. Factor the head names analyze-file's
+     cond already recognises into a named parameter (defun, defvar,
+     defparameter, defclass, define-condition, defstruct, defgeneric,
+     defmethod, defmacro), extend it with the declaration heads that are not
+     definitions but are not call sites either (in-package, defpackage,
+     declaim, eval-when, defconstant, deftype, defsetf), and for every other
+     top-level form record one entry on the file entity's
+     :definer-call-sites: operator name, start line, end line, argument tokens
+     as strings, and the call names from collect-call-names applied to the
+     whole argument list. Analyzer-written, never rewritten. Nothing consumes
+     it yet, so no other behaviour moves.
+     Including a head that could have been excluded is harmless -- an operator
+     matching no registry entry is left alone -- so err toward recording.
+     Verification: new tests in src/analyzer/test/lisp-analyzer.lisp driven by
+     literal strings, not the shared fixture. One asserts that
+     "(struct-simplefn geo \"d\" (compute-area x))" yields a
+     :definer-call-sites entry whose operator is struct-simplefn, whose
+     arguments include geo and whose call names include compute-area; one
+     asserts a defun yields no entry. Both fail without the step, since the
+     property does not exist. Then the analyzer suite and the full suite.
+
+  4. R1 and R3: template inspection and the registry.
+     src/analyzer/lisp-analyzer.lisp. Beside make-macro-entity, inspect the
+     defmacro template against REQ-0003's bare-substitution rule: a defun,
+     defclass or defmethod in the template with the name position a bare
+     substitution of one of the macro's own parameters records
+     :generator-entity-type, :generator-name-index and :generator-body-index;
+     one of those three forms present with the name position anything else
+     records :definer-status :unhandled; none of the three records nothing.
+     Add *macro-generators*, a table keyed by downcased macro name to a list
+     of entries carrying :package, :entity-type, :name-index, :body-index and
+     :framework, plus register-macro-generator, following
+     *document-type-directories* / register-document-type in
+     yaml-analyzer.lisp exactly. Ship two entries: fiveam test (:entity-type
+     :test, :framework :fiveam, name index 1) and fiveam def-suite
+     (:entity-type nil, present only so a def-suite call is never reported
+     unhandled). Export the names from src/analyzer/package.lisp. Still
+     nothing consumes any of it.
+     Verification: three tests, again on literal strings. A macro whose
+     template is `(defun ,name () ,@body) gets :generator-entity-type
+     :function and the right indices; a macro whose template is
+     `(defclass ,class-name ...) with class-name let-bound gets
+     :definer-status :unhandled; a macro whose template is a progn around a
+     setf gets neither property. Each fails without the step. Plus a test that
+     register-macro-generator replaces an entry for the same name rather than
+     duplicating it, mirroring register-document-type's own behaviour.
+
+  5. R5 and R7: mint, refresh, retract -- and the two documents this makes
+     false.
+     src/graph/resolve.lisp -- extend resolve-generated-definitions with a
+     :registry keyword argument and the second half: build the effective
+     registry from the passed entries plus every :function entity carrying
+     its own :generator-entity-type; for each file's :definer-call-sites entry
+     whose operator matches exactly one entry, mint or refresh the generated
+     entity with :origin-file the calling file, :file the calling file,
+     :start-line and :end-line from the call site, :generated-by the macro's
+     name, :call-names the site's pre-walked list, and for a :test entity the
+     :framework the registry entry carries; then assert a :structural :uses
+     edge from it to the macro. Zero or several matches: skipped. Exactly one
+     match whose target natural key already names an entity with no
+     :generated-by: skipped and counted as a collision. Recompute the full
+     output every pass and emit a retract for every entity carrying a
+     :generated-by that names a registered macro and that this pass did not
+     produce -- written against the registry, not against the presence of the
+     property, so defstruct and defclass output is untouched. Add
+     generated-definition-collisions (view registry) as a read-only recount,
+     the shape unresolved-references has, and export both new names.
+     src/workspace/workspace.lisp -- pass *macro-generators* through.
+     Same step, because this is the change that makes them wrong: correct
+     assert-entity-op's docstring in src/ontology/ontology-ops.lisp, which is
+     written for the analyzer's use alone, and CON-0001's summary line, which
+     describes a resolution pass as a read-only sweep turning recorded names
+     into edges. The corrected invariant is ARCH-0002's: every entity comes
+     from an analyzer, or from a resolution pass that owns its full lifecycle
+     -- mint and retract -- and marks what it made with :generated-by.
+     Verification, four parts, each failing without the step:
+       a. A graph test minting: a macro :function with generator properties, a
+          :file with a matching :definer-call-sites entry, and after the pass
+          one new entity of the declared type, named as the site names it,
+          with :generated-by set and a :uses edge to the macro.
+       b. A graph test for the collision: the same setup plus a hand-written
+          :function already occupying the target natural key. Assert the
+          hand-written entity is still there with its own id and no
+          :generated-by, that no entity was overwritten, and that
+          generated-definition-collisions reports exactly one. This is the
+          trigger that can silently not fire, which is why it asserts the
+          count and not just the survival.
+       c. A workspace lifecycle test: build the fixture, then write a file
+          defining a definer macro and a second file calling it, poll-once,
+          assert the generated entity exists; then rewrite the macro so its
+          template no longer qualifies -- a progn, say -- leaving the call
+          site's file untouched, poll-once again, and assert the generated
+          entity is gone. The assertion is the disappearance. Without the
+          retract half it survives, and the index has drifted from a rebuilt
+          one. Write both files inside the test body, not into
+          make-fixture-repository.
+       d. On Loom itself: `status` entity count rises by roughly 218, and
+          `find resolve-links-a-call-to-a-definition-in-another-file` returns
+          a test entity located in src/graph/test/resolve.lisp where today it
+          returns nothing. Then `check` -- still 0 violations, still 0
+          unresolved references -- and `log`, to confirm no submit failed.
+
+  6. R8: resolve-calls iterates :test.
+     src/graph/resolve.lisp -- one change, adding :test to the type list
+     resolve-calls loops over. No new call-resolution logic; :test was already
+     a permitted :calls source and had simply never been fed a :call-names.
+     Verification: a graph test creating a :test entity with :call-names
+     naming a :function in another file, asserting one :calls edge and that
+     the leftover names land in :unresolved-calls. It fails without the step
+     because the loop never visits the entity. On Loom, `describe` on any
+     minted test name shows a -> calls group where step 5 left it bare.
+
+  7. R9: resolve-tests, and the ontology comment it falsifies.
+     src/graph/resolve.lisp -- resolve-tests: for every :test entity, for
+     every :calls edge from it to a :function, :method or :interface, assert a
+     :tests edge to the same target. Export it. src/workspace/workspace.lisp
+     -- call it after resolve-calls and before resolve-document-links, and
+     extend the ordering comment: :calls edges on tests must exist before this
+     pass runs, which is the second half of why the sequence is load-bearing.
+     Same step, because this is what makes it false: correct the :tests
+     relationship's documentation comment in src/ontology/code-ontology.lisp,
+     which says coverage is "matched by import graph plus naming convention,
+     not by execution". Replace it with what Lisp's resolve-tests does --
+     derives from :calls -- while recording that a different analyzer family
+     may feed the same edge from imports, since the better signal genuinely
+     differs by language and the type commits to neither.
+     Verification: a graph test with a :test, a :function it has a :calls edge
+     to, and an :interface likewise, asserting a :tests edge to each -- the
+     :interface case is why step 1 widened :tests, and both fail without this
+     step. On Loom, `impact resolve-calls 2` must print a tests: line naming
+     the tests in src/graph/test/resolve.lisp; today it prints none, because
+     the graph holds no :tests edge at all.
+
+  8. R10: the three counts, and the acceptance check.
+     src/workspace/workspace.lisp -- repository-status gains :test-entities
+     (the :test entity count), :tested-units (distinct entities with an
+     incoming :tests edge) and :unhandled-definer-macros (:function entities
+     carrying :definer-status :unhandled, plus the collisions
+     generated-definition-collisions recounts), following the precedent
+     :documents set: a named sum, not a raw total. src/process/console.lisp --
+     print-status prints them, and check reports the unhandled total the way
+     it already reports unresolved references, so a definer Loom cannot
+     characterise is visible without a suite run.
+     Verification: extend status-reports-what-a-developer-needs-to-see to
+     assert the three keys are present and zero for the fixture, which has no
+     definer calls -- present and zero, so the test distinguishes a key that
+     is absent from a count that is genuinely nought. Then the acceptance
+     check, on Loom itself:
+       wsl.exe /home/beberman/lisp/Loom/tools/loom.sh 'status' 'check'
+     :test-entities about 218, :tested-units in the hundreds, and
+     :unhandled-definer-macros non-zero -- defentity and defrelationship in
+     root-ontology.lisp are the two predicted, and the plan requires the
+     number be reported and non-zero rather than any particular value. All
+     three are zero today, and zero is what they read at every step before
+     this one.
+
+  VERIFICATION
+
+  Per step, as listed above. For the work as a whole:
+
+    wsl.exe /home/beberman/lisp/Loom/tools/loom-test.sh
+        Six systems green. Note this is /usr/bin/sbcl, not the SBCL behind
+        SLIME; the suite Brian runs is the one that counts, so report which
+        was run.
+
+    wsl.exe /home/beberman/lisp/Loom/tools/loom.sh 'status' 'check'
+        Against the baseline at the top of this document: entities up by
+        roughly 218 plus whatever the in-tree definer macros add,
+        relationships up by several hundred, documents up by one (this plan),
+        violations still 0, unresolved still 0, and the three new counts off
+        zero. Rules that are machine-checked do not fail a FiveAM assertion,
+        so `check` is not optional.
+
+    wsl.exe /home/beberman/lisp/Loom/tools/loom.sh 'impact repository 2'
+        The defect this plan opened with. One row today; after step 2 it must
+        report repository-graph and its callers.
+
+    tools/loom.sh 'pause' 'reindex' 'status'
+        The drift check for step 5. A reindex is a full rebuild, so its counts
+        must equal those of the incrementally updated index that preceded it.
+
+        The `pause` is not optional and was not in this line as first written.
+        Run against a watched repository the check fails for a reason that has
+        nothing to do with step 5: reindex races the monitor thread over an
+        unguarded graph. BUG-0004. The sentence that stood here -- "a difference
+        here is the lifecycle bug and there is no other symptom" -- is withdrawn,
+        because it is false in both halves and it pre-assigns blame to a pass
+        that is behaving correctly.
+
+  OUTCOME, 2026-07-31
+
+  All eight steps landed. Measured on branch analyzer with the watcher paused,
+  /usr/bin/sbcl via tools/loom-test.sh, against the BASELINE at the top:
+
+    index      : 75 files, 883 entities, 3956 relationships   (was 73/598/1573)
+    documents  : 26                                           (was 24)
+    tests      : 245 tests covering 167 units                 (was 0 and 0)
+    rules      : 0 violations, 1 unenforced                   (unchanged)
+    unresolved : 0 document references, 1 definer macro       (was 0, --)
+
+    suite                     6 of 6 systems green
+    impact repository 2       repository-graph and its callers, plus a tests:
+                              line and decisions -- one row before step 2
+    find <a test name>        resolves to a :test entity in resolve.lisp --
+                              "Nothing matches" before step 5
+    describe <that test>      has a -> calls group -- bare before step 6
+    impact resolve-calls 2    tests: names 24 tests -- no such line before
+                              step 7, the graph held no :tests edge at all
+    reindex, paused           883/3956/245/167, identical to the incremental
+                              index. Step 5's lifecycle is correct.
+
+  Two predictions in this plan came out wrong, both harmlessly, and both are
+  worth leaving on the record rather than quietly correcting above.
+
+  The expected :test count was "about 218, not 237", from 218 top-level (test
+  ...) forms. The actual figure is 245. The count of forms was taken before
+  steps 1-8 added tests of their own, and this session added more again; the
+  prediction was of the right order and its purpose -- distinguishing 218 from
+  237, and both from zero -- was served.
+
+  The plan predicted two unhandled definer macros, "defentity and
+  defrelationship in root-ontology.lisp". Only defentity is reported.
+  defrelationship expands to a progn around register-relationship-type and
+  contains no defun, defclass or defmethod anywhere in its template, so
+  recording nothing for it is step 4's rule working, not failing. The
+  prediction under RISKS was simply wrong about what that macro expands to. The
+  near-miss shape it was reaching for is real and defentity is the instance of
+  it.
+
+  Not done here, and deliberately: BUG-0004's fix. It is a design choice
+  between stopping the monitor for the duration of a reindex and taking a
+  per-repository lock across a whole analysis pass, and the bug document argues
+  it rather than settling it.

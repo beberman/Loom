@@ -1,5 +1,4 @@
 id: RULE-0004
-type: rule
 title: A handler that guards a long-running thread names serious-condition
 status: active
 severity: error
