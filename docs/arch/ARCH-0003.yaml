@@ -1,6 +1,6 @@
 id: ARCH-0003
 title: A protected-table type guards the graph's hash tables with a shared reentrant lock
-status: draft
+status: implemented
 date: 2026-07-31
 refines: [BUG-0004]
 affects: [graph, make-graph, add-entity, get-entity, remove-entity, all-entities,
@@ -388,3 +388,29 @@ body: |
   leaving that mechanism's full design, and the restatement of PLAN-0001's
   pause-before-drift-check verification line that BUG-0004 already made
   necessary, to a workspace-level document that refines this one.
+
+  IMPLEMENTED, 2026-08-01, BY PLAN-0002
+
+  Steps 3, 4 and 5 of PLAN-0002 landed protected-table, moved all seven tables
+  onto the pt- primitives, and added with-graph-lock. Two of the numbered
+  items above are worth spelling out, because a reader auditing this document
+  against the tree will look for work that was correctly never done:
+
+    R5   satisfied by not acting. R5 requires that tx's three tables stay bare
+         hash tables, and they do. PLAN-0002's summary lists this under "out of
+         scope", which reads at a glance like deferred work and is the
+         opposite -- the requirement was to leave it alone.
+    R12  never a requirement of this document; R12's own text puts it
+         "explicitly out of scope for this document, whose job is the graph
+         layer". It has since been settled against conversion by ARCH-0004's
+         REPOSITORY-STAMPS section, which traced every access and found them
+         all already inside the repository lock. repository-stamps stays a bare
+         hash table, and R12's "cheap, natural follow-on" is withdrawn rather
+         than pending.
+
+  R13's cost prediction was the one thing here that came out wrong: it
+  predicted single-digit milliseconds added to a full rebuild and the measured
+  figure is about twelve, on a 185 ms rebuild. Right order of magnitude,
+  slightly optimistic, nowhere near PLAN-0002's 20 percent fallback threshold.
+  PLAN-0002's STEP 6 has the paired measurements and the reason a single timing
+  run on this machine is not worth quoting.

@@ -37,18 +37,26 @@
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; A second node type rather than graph-manager.lisp's GRAPH-TEST-NODE, and
-;;; the difference is the whole reason it exists: GRAPH-TEST-NODE declares no
-;;; natural key, so every instance takes a random uuid from FRESH-ID -- and
-;;; RANDOM-UUID:MAKE-UUID is not thread-safe. Measured directly: two threads
-;;; generating 20,000 uuids each produced 26,039 distinct strings out of
-;;; 40,000, where one thread generating 40,000 produced 40,000. Built on that
-;;; fixture, the tests below lost a handful of entities per run to duplicate
-;;; ids and read as a graph-locking failure, which they were not.
+;;; the reason it was introduced is now history rather than a live hazard.
+;;; GRAPH-TEST-NODE declares no natural key, so every instance takes a random
+;;; uuid from FRESH-ID -- and FRESH-ID was not thread-safe. Measured directly:
+;;; two threads generating 20,000 uuids each produced 26,039 distinct strings
+;;; out of 40,000, where one thread generating 40,000 produced 40,000. Built on
+;;; that fixture, the tests below lost a handful of entities per run to
+;;; duplicate ids and read as a graph-locking failure, which they were not.
+;;; That figure is kept because it is the record of why this file was reshaped.
 ;;;
-;;; Keying on (:file :name) makes every id derived and the loss impossible, and
-;;; it is also the faithful shape: every entity type an analyzer actually emits
-;;; declares a natural key. The uuid generator's own defect is recorded in
-;;; BUG-0005 and is out of PLAN-0002's scope.
+;;; PLAN-0003 fixed FRESH-ID, closing BUG-0005: it now holds a lock of its own
+;;; across RANDOM-UUID:MAKE-UUID, and the test below,
+;;; TWO-THREADS-MINTING-KEY-LESS-ENTITIES-LOSE-NONE, is the check BUG-0005
+;;; asked for. So GRAPH-TEST-NODE is safe to build concurrently, and this
+;;; fixture is not a workaround for anything.
+;;;
+;;; It stays for the other half of the original reason, which never depended on
+;;; the defect: keying on (:file :name) is the faithful shape, because every
+;;; entity type an analyzer actually emits declares a natural key. The tests
+;;; below are about the graph's locking, and they should exercise the id path
+;;; the graph actually sees.
 
 (defentity :graph-test-keyed-node
   :documentation "Fixture entity type whose id derives from its natural key."
@@ -242,6 +250,55 @@ Returns the SERIOUS-CONDITION this thread caught, or NIL."
     (is (= (* 2 *stress-writes*) (length (all-relationships graph)))
         "relationships: ~d stored of ~d written"
         (length (all-relationships graph)) (* 2 *stress-writes*))))
+
+;;; ------------------------------------------------------------------
+;;; Key-less entities, minted concurrently (BUG-0005, PLAN-0003)
+;;; ------------------------------------------------------------------
+;;;
+;;; The check BUG-0005 names in its own FIX section: "two threads minting
+;;; key-less entities into one graph, asserting the count". GRAPH-TEST-NODE
+;;; rather than GRAPH-TEST-KEYED-NODE, deliberately and uniquely in this file --
+;;; it declares no natural key, so DERIVE-ID returns NIL and every id is a
+;;; FRESH-ID. A duplicate id is a second ADD-ENTITY upserting onto the first,
+;;; with no condition signaled and no error counted: the count is the only
+;;; place the loss is visible.
+;;;
+;;; The weaker of PLAN-0003's two instruments, and known to be: graph work
+;;; between the mints spaces them out, so the losses here are single digits in
+;;; four thousand where the ontology test's tight loop loses thousands in forty.
+;;; Both are required.
+
+(defparameter *keyless-mints* 2000
+  "Key-less entities each thread builds. Two threads make it 4000, matching the
+stress test above, so the two read against the same scale.")
+
+(defun keyless-minter (graph tag n)
+  "Build and add N key-less GRAPH-TEST-NODEs named uniquely under TAG.
+Returns the SERIOUS-CONDITION this thread caught, or NIL. See the file header
+for why it returns rather than signals.
+
+TAG makes the two threads' names disjoint, so a failure can be read for which
+thread's ids survived -- there is no natural key here for a name to collide
+through, and that is the point: a lost entity is a uuid collision and nothing
+else."
+  (handler-case
+      (dotimes (i n nil)
+        (add-entity graph (make-node (format nil "~a-keyless-~d" tag i))))
+    (serious-condition (condition) condition)))
+
+(test two-threads-minting-key-less-entities-lose-none
+  (let* ((graph (make-graph))
+         (one (bt:make-thread (lambda () (keyless-minter graph "one" *keyless-mints*))
+                              :name "keyless-minter-one"))
+         (two (bt:make-thread (lambda () (keyless-minter graph "two" *keyless-mints*))
+                              :name "keyless-minter-two"))
+         (from-one (bt:join-thread one))
+         (from-two (bt:join-thread two)))
+    (is (null from-one) "the first minting thread signaled ~a" from-one)
+    (is (null from-two) "the second minting thread signaled ~a" from-two)
+    (is (= (* 2 *keyless-mints*) (length (all-entities graph)))
+        "entities: ~d stored of ~d minted"
+        (length (all-entities graph)) (* 2 *keyless-mints*))))
 
 ;;; ------------------------------------------------------------------
 ;;; with-graph-lock (ARCH-0003 R4)

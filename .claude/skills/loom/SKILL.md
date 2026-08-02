@@ -18,17 +18,28 @@ almost certainly a real problem rather than a wrong incantation.
 
 ## The console
 
-Drive it through `tools/loom.sh` **using the Bash tool**, which takes console
-commands as separate arguments, watches the tree before the first and stops
-after the last, and filters compile chatter:
+Drive it through `tools/loom.sh` **using the Bash tool**, which takes a whole
+console session as one quoted argument, watches the tree before the first
+command and stops after the last, and filters compile chatter:
 
 ```bash
-tools/loom.sh 'status' 'impact repository 3'
+tools/loom.sh 'status | impact repository 3'
 ```
 
-One console command per argument; quote any containing a space. The script
-`cd`s to the tree itself, so it works from any directory and the absolute form
+Commands are separated by `|` and run in order. The `|` sits inside the quotes,
+so the shell never sees it — it is a separator the script splits on, not a
+pipeline. The older form, one command per argument
+(`tools/loom.sh 'status' 'impact repository 3'`), still works and the two mix;
+each argument is split on `|` in turn. The script `cd`s to the tree itself, so
+it works from any directory and the absolute form
 `/home/beberman/lisp/Loom/tools/loom.sh` is equivalent.
+
+`.claude/settings.json` carries a PreToolUse hook, `tools/allow-loom.py`, that
+decides this script's permission directly. It is needed because Claude Code's
+Bash matcher splits a command on shell operators before matching it, and does
+that even inside single quotes, so `Bash(tools/loom.sh:*)` alone prompts on
+every `|`-separated session. The hook allows only a driver script followed by
+single-quoted arguments; anything else falls through to the normal prompt.
 
 **Do not hand-roll the pipeline.** `bash -lc "printf ... | sbcl --script
 loom.lisp | tail"` needs permission for the pipe, the redirect and the `tail`

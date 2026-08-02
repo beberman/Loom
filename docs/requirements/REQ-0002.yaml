@@ -1,6 +1,6 @@
 id: REQ-0002
 title: Watch and Stop semantic consistency
-status: accepted
+status: implemented
 resolution: |
   Resolved by DEC-0004: name the resting state rather than abolish it. A
   `pause' command stops watching and keeps the index, `watch' on an already

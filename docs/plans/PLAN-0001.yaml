@@ -517,17 +517,24 @@ body: |
         The defect this plan opened with. One row today; after step 2 it must
         report repository-graph and its callers.
 
-    tools/loom.sh 'pause' 'reindex' 'status'
+    tools/loom.sh 'reindex' 'status'
         The drift check for step 5. A reindex is a full rebuild, so its counts
         must equal those of the incrementally updated index that preceded it.
 
-        The `pause` is not optional and was not in this line as first written.
-        Run against a watched repository the check fails for a reason that has
-        nothing to do with step 5: reindex races the monitor thread over an
-        unguarded graph. BUG-0004. The sentence that stood here -- "a difference
-        here is the lifecycle bug and there is no other symptom" -- is withdrawn,
-        because it is false in both halves and it pre-assigns blame to a pass
-        that is behaving correctly.
+        This line carried a `pause` for a time, and no longer needs one. The
+        pause was a workaround for BUG-0004 -- run against a watched repository,
+        reindex raced the monitor thread over an unguarded graph and the check
+        failed for a reason that had nothing to do with step 5. BUG-0004 is
+        closed by PLAN-0002, which put a lock on the repository's analysis pass
+        and converted the graph's tables beneath it, so the check now runs
+        against a watched repository as ARCH-0004 R8(a) requires. Running it
+        watched is the better test of the two: it exercises the drift this step
+        is about and the concurrency guard at the same time.
+
+        The sentence that once stood here -- "a difference here is the lifecycle
+        bug and there is no other symptom" -- stays withdrawn. It was false in
+        both halves for its own reasons and pre-assigned blame to a pass that
+        was behaving correctly; closing BUG-0004 does not make it true again.
 
   OUTCOME, 2026-07-31
 

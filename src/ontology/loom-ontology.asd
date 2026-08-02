@@ -5,11 +5,21 @@
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  ;; SS3: "The ontology system has no dependencies at all -- it is pure CLOS
-  ;; definitions and can be loaded into any image, including analysis scripts
-  ;; and tests, without dragging in a server."  RANDOM-UUID is a leaf library
-  ;; needed to mint ids; nothing else belongs here.
-  :depends-on (#:random-uuid)
+  ;; Two leaf libraries, and no more. SS3 asks that this system load "into any
+  ;; image, including analysis scripts and tests, without dragging in a
+  ;; server", which RULE-0001 restates as no server, no store, no analyzer.
+  ;; RANDOM-UUID mints ids. BORDEAUX-THREADS is here since PLAN-0003 because
+  ;; FRESH-ID has to guard the library's use of CL:*RANDOM-STATE* against its
+  ;; own concurrent callers (BUG-0005) -- an ontology that mints ids for
+  ;; threads is in the threading business whether it declares it or not, and a
+  ;; portability shim over the implementation's own primitives is none of the
+  ;; three things RULE-0001 excludes.
+  ;;
+  ;; RULE-0001's check cannot see a third: its kind is :no-edge over edges
+  ;; between indexed entities, and an external library has no entities and this
+  ;; file is not indexed. The prose is what governs adding one, so argue it in
+  ;; a document rather than reading a green `check` as permission.
+  :depends-on (#:random-uuid #:bordeaux-threads)
   :serial t
   :components
   (
@@ -28,6 +38,10 @@
   :license "MIT"
   :depends-on (#:loom-ontology
 	       #:random-uuid
+	       ;; Declared here as well as in :loom-ontology, on PLAN-0002
+	       ;; TENSIONS item 4's precedent: a test system that spawns threads
+	       ;; should say so rather than rely on a transitive dependency.
+	       #:bordeaux-threads
 	       #:fiveam)
   :serial t
   :pathname "test/"
@@ -36,6 +50,7 @@
    (:file "suite")
    (:file "root-ontology")
    (:file "code-ontology")
+   (:file "concurrency")
    )
   ;; TEST-RUNNER returns NIL when any check fails; turn that into a real
   ;; failure so (asdf:test-system :loom-ontology) is usable from CI.

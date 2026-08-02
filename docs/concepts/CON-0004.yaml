@@ -48,6 +48,33 @@ body: |
   documentation staleness detector, and the reason these fields are worth
   filling in accurately.
 
+  STATUS, AND WHO MOVES IT
+
+  Every document carries status:, and the vocabulary is per type:
+
+    REQ    draft -> accepted -> implemented | partial
+    ARCH   draft -> accepted -> implemented | partial | superseded
+    DEC    accepted | superseded
+    PLAN   draft -> final
+    BUG    open -> closed
+    REV    open -> closed
+    RULE   active | retired
+    CON    accepted | superseded
+
+  The one that is routinely got wrong is the transition out of draft on a REQ
+  or an ARCH, because it is not the document's own author who owes it. A plan
+  reaching final is what makes an architecture's draft status false, so the
+  plan's closing step restates every document it refines -- implemented if all
+  of it landed, partial with an OUTSTANDING section if some of it did not,
+  superseded if a later document overtook it. RULE-0005 states this and
+  explains why it is not machine-checked.
+
+  Nothing in Loom verifies a status. `check' verifies that references resolve,
+  which is a different question: a document can point at all the right things
+  and still describe a tree that stopped existing two commits ago. Status is
+  the one field in this workflow held up by discipline alone, which is the
+  argument for moving it in the same change as the work rather than later.
+
   WHY YAML AND WHY A REGISTERED DIRECTORY
 
   The analyzer claims .yaml and .yml under docs/ and nothing else, and the

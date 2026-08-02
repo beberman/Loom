@@ -1,0 +1,598 @@
+id: PLAN-0003
+title: Guard FRESH-ID with a lock of its own, closing BUG-0005
+status: final
+date: 2026-08-01
+refines: [BUG-0005]
+affects: [fresh-id, derive-id, entity-natural-key, initialize-instance,
+          add-entity, all-entities]
+tags: [ontology, concurrency, threading, identity, plan]
+summary: |
+  Four steps that close BUG-0005 by taking its first option: a dedicated lock
+  around FRESH-ID's call into RANDOM-UUID. The choice is settled by
+  measurement rather than taste -- the lock costs 0.1 microseconds per key-less
+  entity and nothing at all for every entity that has a natural key, where the
+  only form of BUG-0005's second option that needs no per-thread setup costs
+  23.9 microseconds, 240 times more. The price of the lock is one line in
+  loom-ontology.asd: the system that by design depends on nothing gains
+  #:bordeaux-threads. That is the one judgement in this plan a reviewer might
+  take differently, so step 2 states it in full and names the measured fallback
+  if it is rejected.
+
+  Out of scope and deliberately so: BUG-0005's third option -- requiring every
+  entity type to declare a natural key and deleting FRESH-ID -- which BUG-0005
+  rejects in its own FIX section as contradicting ENTITY-NATURAL-KEY's stated
+  design, and which would need a decision document rather than a bug fix.
+  Also out of scope: replacing GRAPH-TEST-KEYED-NODE in
+  src/graph/test/concurrency.lisp, which stays (see FILES); giving
+  src/workspace/test/workspace.lisp's own (RANDOM (EXPT 2 48)) any protection,
+  which is a second consumer of the same shared state and is recorded under
+  RISKS as a residual rather than closed here; and any change to the graph,
+  workspace, knowledge or process layers, none of which this plan touches.
+body: |
+  BASELINE
+
+  Measured today, 2026-08-01, branch analyzer, /usr/bin/sbcl 2.2.9.debian, via
+  `tools/loom.sh 'status | check'`, monitor running:
+
+    index      : 83 files, 938 entities, 4335 relationships
+    documents  : 32
+    tests      : 255 tests covering 186 units
+    rules      : 0 violations, 2 unenforced
+    unresolved : 0 document references, 1 definer macro
+
+  The two unenforced rules are RULE-0004 and RULE-0005, both prose-only by
+  their own reasoning; the one definer macro is DEFENTITY. Both are the
+  standing state PLAN-0001 and PLAN-0002 left and are not this plan's business.
+
+  WHY THE NARROW FIX, IN NUMBERS
+
+  BUG-0005 leaves the choice open between guarding FRESH-ID with a lock and
+  removing its dependence on the library's global state, and says the second
+  "removes the failure mode rather than excluding it". That is true and it is
+  not sufficient to decide, because the second option has three forms and each
+  costs something the first does not.
+
+  What the library actually does, which BUG-0005 does not record and which
+  settles the shape of every option:
+
+    random-uuid/src/uuid.lisp:73-88.  MAKE-UUID takes an optional GENERATOR
+    from the seedable-rng library; with none supplied -- which is how FRESH-ID
+    calls it -- it evaluates (RANDOM (EXPT 2 64)) twice. So the shared state is
+    CL:*RANDOM-STATE*, a global special that SBCL threads inherit by value
+    rather than rebind, and SBCL's MT19937 mutates its state vector and index
+    without atomicity. That is the whole mechanism.
+
+  Measured in a scratchpad script, outside Loom, /usr/bin/sbcl 2.2.9.debian,
+  two threads generating 20,000 ids each:
+
+    variant                          distinct/40000    per id
+    as it stands today                  33971          0.10 us
+    guarded by one BT:MAKE-LOCK         40000          0.20 us
+    (LET ((*RANDOM-STATE* (MAKE-RANDOM-STATE T))) ...)
+                                        40000         23.90 us
+
+  BUG-0005's own measurement of the first line was 26,039 of 40,000. Both are
+  the same phenomenon; the exact figure varies with how the two threads
+  interleave, and neither number is a rate to quote.
+
+  The three forms of option 2, against that:
+
+    A fresh random state per call is the only form that needs no new dependency
+    and no per-thread setup, and it works -- 40,000 of 40,000. It costs 23.9
+    microseconds per key-less entity, 240 times the lock. On a batch of ten
+    thousand key-less entities that is a quarter of a second against a full
+    rebuild of 216 ms. It is the fallback named in step 2 and it is not the
+    first choice.
+
+    A per-thread random state, bound once per thread, is as cheap as the lock.
+    It cannot be established from inside FRESH-ID: a SETF of a global special
+    from a thread that has not bound it writes the global value, so the
+    threads share one state again. It has to be bound at every thread creation
+    site -- BT:*DEFAULT-SPECIAL-BINDINGS*, or by hand in MONITOR-LOOP and in
+    every future thread. That is discipline, not mechanism: nothing checks it,
+    and the silent loss returns the day someone spawns a thread without it.
+    BUG-0004's WHY IT HID section is about exactly that class of fix.
+
+    A seedable-rng generator, which MAKE-UUID supports, adds a larger
+    dependency than BORDEAUX-THREADS *and* leaves a mutable generator object
+    that needs the same per-thread management. It is strictly worse than
+    either of the other two on both axes.
+
+  So the honest statement is not "the lock is cheaper" but "every option that
+  is cheap enough either adds a dependency or adds a discipline, and of those
+  the lock adds the smaller dependency and no discipline at all".
+
+  THE ONE JUDGEMENT, STATED PLAINLY
+
+  loom-ontology.asd:8-12 says, quoting SS3: "The ontology system has no
+  dependencies at all ... RANDOM-UUID is a leaf library needed to mint ids;
+  nothing else belongs here." This plan adds a second leaf library, so that
+  comment becomes false and step 2 rewrites it.
+
+  RULE-0001 is the rule in the area and it survives. Its statement is that
+  loom-ontology "must be loadable into any image -- an analysis script, a test
+  harness -- without dragging in a server, a store, or an analyzer".
+  BORDEAUX-THREADS is a portability shim over the implementation's own
+  threading primitives; it is not a server, a store or an analyzer, and it is
+  already in the image for every system above the ontology since PLAN-0002 put
+  it in loom-graph. An ontology that mints ids for concurrent callers is
+  already in the threading business whether it declares the dependency or not
+  -- BUG-0005 is what that looks like undeclared.
+
+  What must not be mistaken for agreement: `check` will stay at 0 violations
+  through this plan, and that is not evidence. RULE-0001's check kind is
+  :no-edge, and rules.lisp:41-57 runs it over EDGES-BETWEEN-SYSTEMS -- edges
+  in the graph, between indexed entities. RANDOM-UUID and BORDEAUX-THREADS are
+  external libraries with no entities in the index, so no edge to them can
+  exist and no :no-edge check can ever see one. The .asd files are not indexed
+  either. RULE-0001's machine check is blind to this change by construction;
+  the prose is the only thing constraining it, and this section is the argument
+  against the prose rather than a report of a green check.
+
+  A reviewer who reads that argument and disagrees does not need a new plan.
+  Step 2's fallback is the fresh-random-state form, already measured above,
+  which lands in the same one function with no .asd change at all and costs
+  23.9 microseconds per key-less entity.
+
+  WHY THE LOCK IS GLOBAL, AND WHY IT IS NOT RECURSIVE
+
+  Both existing locks in the tree hang off a struct slot -- ARCH-0004's
+  analysis-lock on REPOSITORY, ARCH-0003's lock slot on GRAPH -- because in both
+  cases the resource being guarded is per-object. Here it is not:
+  CL:*RANDOM-STATE* is one object per image, so a per-graph lock would not
+  help. Two graphs' threads share the one random state, which is also why
+  PLAN-0002's per-repository lock does not close this for two watched
+  repositories. The lock has to be as global as the thing it guards.
+
+  It is a plain BT:MAKE-LOCK and not a BT:MAKE-RECURSIVE-LOCK, which is the
+  other deviation from the two existing locks. Those are recursive because
+  their bodies compose -- every pt- primitive inside WITH-GRAPH-LOCK
+  re-acquires the lock the thread already holds. FRESH-ID's body calls two
+  library functions and nothing else, and can never re-enter itself, so there
+  is nothing to compose and a plain mutex says so.
+
+  There is no WITH-FRESH-ID-LOCK macro for the same reason: the lock has
+  exactly one user, in the same file, six lines below its own definition. A
+  macro would be ceremony that suggests the lock is available for wider use,
+  which is the thing WITH-GRAPH-LOCK's docstring goes to some length to deny
+  of itself.
+
+  DEADLOCK: A THIRD LOCK, AND THE ORDER
+
+  PLAN-0002 left two locks with a stated acquisition order -- repository
+  outer, graph inner -- and argued the reverse is structurally unwritable.
+  This adds a third, and the argument for it is stronger rather than weaker:
+  the fresh-id lock is a leaf. Its body calls RANDOM-UUID:MAKE-UUID and
+  RANDOM-UUID:TO-STRING, neither of which acquires any lock or calls back into
+  Loom, so nothing can be acquired while it is held. The order is therefore
+  repository > graph > fresh-id, and no path can take it in reverse, because
+  taking it in reverse would mean FRESH-ID acquiring a graph or repository
+  lock and FRESH-ID calls neither system.
+
+  It is acquired while the graph lock is held -- MAKE-INSTANCE of a key-less
+  entity inside a body wrapped by WITH-GRAPH-LOCK reaches it through
+  INITIALIZE-INSTANCE -- which is exactly why the leaf argument has to be made
+  rather than assumed. The hold is 0.1 microseconds.
+
+  FILES
+
+  src/ontology/root-ontology.lisp
+      Step 2: a DEFVAR holding one BT:MAKE-LOCK, immediately above FRESH-ID,
+      and FRESH-ID's single form wrapped in BT:WITH-LOCK-HELD. FRESH-ID is
+      three lines long (367-369) and has exactly one caller, the
+      INITIALIZE-INSTANCE :AFTER method at 401-404, which reaches it only when
+      DERIVE-ID returned NIL. Nothing else in the file changes.
+
+  src/ontology/loom-ontology.asd
+      Step 2: #:bordeaux-threads added to loom-ontology's :depends-on, and the
+      comment at 8-12 rewritten -- it currently says "nothing else belongs
+      here", which this change makes false. Step 1: #:bordeaux-threads added
+      to loom-ontology/test's :depends-on and a "concurrency" component after
+      "code-ontology". The test system's dependency is declared explicitly
+      even though step 2 makes it available transitively, on PLAN-0002
+      TENSIONS item 4's precedent: a test system that spawns threads should
+      say so, and step 1 lands before step 2 does.
+
+  src/ontology/test/concurrency.lisp  (new)
+      Step 1: the tight instrument. Two threads calling FRESH-ID 20,000 times
+      each, collecting into per-thread lists, joined on the main thread, which
+      then asserts 40,000 distinct strings. This is the unit test of the unit
+      that is broken, and it is below the graph entirely -- no graph, no
+      transaction, no analyzer -- so nothing but FRESH-ID can be what fixed it.
+
+  src/graph/test/concurrency.lisp
+      Step 1: the check BUG-0005 names -- two threads minting key-less entities
+      into one graph, asserting the full count. It goes in this file rather
+      than a new one because the file already carries the two mechanical traps
+      that govern how such a test is written, in the header at lines 11-25.
+      Step 3: the comment block at lines 39-51, which explains why
+      GRAPH-TEST-KEYED-NODE exists and says "the uuid generator's own defect is
+      recorded in BUG-0005 and is out of PLAN-0002's scope", becomes false when
+      BUG-0005 closes and is corrected there.
+
+  docs/bugs/BUG-0005.yaml
+      Step 4: status open -> closed, with a FIX CHOSEN section recording which
+      of its three options was taken, the measurements that decided it, the
+      dependency it cost, and the residual under RISKS below.
+
+  docs/plans/PLAN-0003.yaml
+      This file. status draft -> final at step 4, with an OUTCOME section
+      carrying step 1's pre-fix failure counts and any prediction here that
+      came out wrong.
+
+  Deliberately not changed, each for a stated reason:
+
+    src/graph/test/concurrency.lisp's GRAPH-TEST-KEYED-NODE stays. It is safe
+    to build concurrently after this plan, but it is also the faithful shape --
+    every entity type an analyzer actually emits declares a natural key -- and
+    the tests built on it are green. Removing it would churn working tests to
+    make a point about a fixture.
+
+    src/workspace/test/workspace.lisp:31's (RANDOM (EXPT 2 48)), which names a
+    temp fixture directory, is the tree's only other consumer of
+    CL:*RANDOM-STATE*. It is called on the main thread before any worker
+    starts, and the consequence of a collision there is a shared temp
+    directory rather than a lost entity. Recorded as a residual under RISKS,
+    not closed.
+
+    src/graph/graph-manager.lisp, src/graph/protected-table.lisp,
+    src/graph/transaction.lisp, all of src/workspace, src/knowledge,
+    src/process and src/analyzer. This plan changes one function in the
+    ontology and adds two tests.
+
+    CLAUDE.md and .claude/skills/loom/SKILL.md. Checked: neither mentions
+    FRESH-ID, uuids or id minting. Recorded as a checked negative so the next
+    agent does not re-grep.
+
+  BLAST RADIUS
+
+  What Loom reports, measured today via
+  `tools/loom.sh 'describe fresh-id | impact fresh-id 3'`:
+
+    fresh-id    2 impacted, both d1: the INITIALIZE-INSTANCE method that calls
+                it, and the file that contains it.
+                documents: BUG-0005, PLAN-0002.
+
+  That is a genuinely small set and, unusually for this tree, it is not an
+  artefact of a blind spot. FRESH-ID is called from exactly one place
+  (root-ontology.lisp:403), a grep across src/ confirms it, and the function's
+  contract -- return a fresh unique string -- does not change. What changes is
+  when two callers may be inside it at once.
+
+  What Loom cannot see, and this plan believes anyway:
+
+    Every entity constructed anywhere. INITIALIZE-INSTANCE is reached by every
+    MAKE-INSTANCE of an entity in the tree, which is most of the analyzer, all
+    of the fixtures, and every test that builds a graph. Impact reports one
+    edge into INITIALIZE-INSTANCE, not the hundreds of MAKE-INSTANCE forms
+    behind it, because a MAKE-INSTANCE is not a call edge to a method. The
+    reason this does not widen the risk is that the branch being changed is
+    reached only when DERIVE-ID returns NIL, and BUG-0005's WHY IT IS NOT LIVE
+    TODAY section enumerates the types for which that is true: :snapshot, which
+    nothing emits, and the two test fixtures.
+
+    The failure mode itself, as with PLAN-0002: nothing in the graph is an edge
+    from "two threads" to anything. The impact set bounds what the code change
+    touches, not what the bug touches.
+
+    The library. RANDOM-UUID is not indexed, so FRESH-ID shows no outgoing call
+    at all -- the two calls that are the entire subject of this plan are
+    invisible to `describe`. Read from the source at
+    ~/quicklisp/dists/quicklisp/software/random-uuid-20220707-git/src/uuid.lisp.
+
+  RISKS
+
+  A test that passes because the race did not fire. CON-0003 applies and both
+  new tests are probabilistic. The mitigation is the same as PLAN-0002's and is
+  mandatory: each is run against the unfixed tree in step 1 and its failure
+  recorded in OUTCOME with a count, five runs of five; if either fails in zero
+  of five, it is not an instrument and the iteration count is raised until it
+  fails, before any fix is written. The ontology test is expected to be the
+  robust one -- a tight loop with no work between calls lost 15 percent of its
+  ids in the measurement above -- and the graph test the marginal one, since
+  PLAN-0002's OUTCOME records losses of four to ten entities in four thousand
+  when graph work sits between the mints.
+
+  FiveAM assertions do not work from a spawned thread. `is` records into
+  special variables that SBCL makes thread-local, so a check evaluated in a
+  worker is lost and the test passes unconditionally. Every assertion in both
+  new tests runs on the main thread after BT:JOIN-THREAD.
+  src/graph/test/concurrency.lisp's header states this; the new ontology test
+  file is the first threaded test in loom-ontology/test and its header must
+  state it too, because a reader of that file has no other place to learn it.
+
+  A worker that dies takes the run down rather than failing a test. Each worker
+  body wraps itself in HANDLER-CASE for SERIOUS-CONDITION -- not ERROR, per
+  RULE-0004 -- and returns what it caught, so the main thread can assert on it.
+  Neither new worker is expected to signal; the wrapper is there so that a
+  surprise reports as a red test rather than as a suite that fell over.
+
+  The residual this fix excludes rather than removes, which is BUG-0005's own
+  framing of option 1 and must not be lost when the bug closes. The lock
+  serializes FRESH-ID's use of CL:*RANDOM-STATE* against other calls to
+  FRESH-ID, and against nothing else. Any other code in the image that calls
+  CL:RANDOM concurrently still races the same state. Today there is exactly one
+  such caller, src/workspace/test/workspace.lisp:31, and it runs on the main
+  thread at fixture-build time; the day a second appears on a worker thread,
+  this fix does not cover it. The general form -- take the random source out of
+  the shared global entirely -- remains available, is measured above at 23.9
+  microseconds per id, and would be the right answer if that day comes.
+
+  Cost on the hot path: none, and this is a prediction worth stating so it can
+  be wrong. FRESH-ID is not called at all during an index of this tree, because
+  every entity type the analyzer emits declares a natural key, so DERIVE-ID
+  returns non-NIL and the FRESH-ID branch is never taken. The predicted change
+  to the 216 ms rebuild is zero milliseconds -- not "small", zero -- and step 2
+  checks it. A measurable change would mean something is minting key-less
+  entities that this plan does not know about, which is worth stopping for.
+
+  Tests likely to break, and why:
+
+    None of the existing 255. The change is confined to one three-line function
+    whose contract is unchanged, and no existing test asserts anything about
+    ids other than that derived ones are derived. If an existing test moves,
+    that is evidence FRESH-ID's contract changed and is worth stopping for
+    rather than editing the test.
+
+    The two candidates to watch, both in loom-graph/test and both green today:
+    anything in src/graph/test/graph-manager.lisp that builds a GRAPH-TEST-NODE
+    -- the key-less fixture, and therefore the only existing tests that reach
+    FRESH-ID at all -- and the concurrency tests on GRAPH-TEST-KEYED-NODE,
+    which reach it never. Both are single-threaded with respect to minting and
+    must stay green throughout.
+
+    Load order. The new DEFVAR's initform calls BT:MAKE-LOCK at load time, so
+    loom-ontology must have bordeaux-threads loaded before root-ontology.lisp
+    is compiled. That is what the :depends-on line does, and the tripwire if it
+    is forgotten is a compile failure on the first build, which is the loud
+    kind.
+
+  STEPS
+
+  1. The two failing tests, seen failing.
+     src/ontology/test/concurrency.lisp (new) -- a file header stating the two
+     mechanical traps (FiveAM assertions are thread-local; a worker's condition
+     must be returned rather than signaled), a suite `concurrency` declared
+     :in all-tests so root-ontology-test:test-runner picks it up, and one test:
+     two BT threads calling FRESH-ID 20,000 times each into per-thread lists,
+     both bodies wrapped in HANDLER-CASE for SERIOUS-CONDITION, joined on the
+     main thread, which asserts neither returned a condition and that the
+     40,000 strings are 40,000 distinct strings.
+     src/ontology/loom-ontology.asd -- loom-ontology/test gains
+     #:bordeaux-threads and the "concurrency" component after "code-ontology".
+     src/graph/test/concurrency.lisp -- the check BUG-0005 names, in the
+     existing `concurrency` suite: one graph, two threads each building 2,000
+     GRAPH-TEST-NODE entities with MAKE-NODE from graph-manager.lisp's fixtures
+     (key-less, so every id is a FRESH-ID) and ADD-ENTITY-ing them into it,
+     both bodies wrapped as above; joined on the main thread, which asserts
+     neither returned a condition and that (ALL-ENTITIES g) has exactly 4,000
+     entries. Give the two threads disjoint name prefixes so a failure names
+     which ids survived.
+     This is the first step that can be run, and it is the one step that
+     deliberately leaves the suite red -- two systems, loom-ontology and
+     loom-graph, go from green to failing. A reviewer seeing red here is seeing
+     the plan work; the commit message should say so.
+     Verification, which is the point of the step: `tools/loom-test.sh` five
+     times, recording how many of the five each new test failed in, into this
+     document's OUTCOME. "Seen failing" is concrete and is a count, not a
+     condition: fewer than 40,000 distinct ids, and fewer than 4,000 entities.
+     If either fails in zero of five it is not yet an instrument -- raise the
+     iteration count until it does, before writing any fix. Then
+     `tools/loom.sh 'check'`, because this step edits an .asd file and
+     RULE-0001 to RULE-0003 are checked by the rule engine and not by
+     assertions.
+
+  2. The lock.
+     src/ontology/root-ontology.lisp -- immediately above FRESH-ID, a DEFVAR
+     *FRESH-ID-LOCK* whose initform is (BT:MAKE-LOCK "loom-fresh-id"), with a
+     docstring saying what it guards and that the guarded resource is
+     CL:*RANDOM-STATE* inside RANDOM-UUID rather than anything of Loom's own.
+     Then FRESH-ID's body wrapped in BT:WITH-LOCK-HELD. Plain lock, not
+     recursive, and no WITH- macro; see WHY THE LOCK IS GLOBAL for both.
+     src/ontology/loom-ontology.asd -- #:bordeaux-threads added to
+     loom-ontology's :depends-on, and the comment at 8-12 rewritten to say that
+     the ontology now depends on two leaf libraries, why the second is here,
+     and that RULE-0001's prose rather than its check is what governs adding a
+     third.
+     Do not export *FRESH-ID-LOCK* from src/ontology/package.lisp. It has one
+     user six lines below it, and a caller outside loom-ontology holding it
+     across work of its own is a deadlock no rule check would catch -- the same
+     argument WITH-GRAPH-LOCK's docstring makes about itself.
+     Verification, four parts:
+       a. Both step-1 tests now pass, in five consecutive runs of
+          `tools/loom-test.sh`, having failed in step 1. That pairing is this
+          step's CON-0003 evidence and it is a clean one for the ontology test,
+          which touches no graph and no lock but this one.
+       b. Full suite green, all six systems, with no existing test edited. An
+          existing test needing an edit is evidence FRESH-ID's contract moved.
+       c. `tools/loom.sh 'status | check'` -- 83 files, 938 entities, 4335
+          relationships, 0 violations, 0 unresolved document references. The
+          counts must not move: this plan changes no fact the analyzer records.
+          Note explicitly, in OUTCOME, that a green `check` is not evidence
+          about RULE-0001 here, for the reason under THE ONE JUDGEMENT.
+       d. The zero-millisecond prediction. A full `reindex` timed against
+          PLAN-0002's re-measured 216 ms, three runs, median. FRESH-ID is not
+          on this path at all, so anything but noise means a type is minting
+          key-less entities that this plan does not know about -- stop and find
+          it rather than accepting the number.
+     If the dependency is rejected on review, the fallback is the same one
+     function with (LET ((*RANDOM-STATE* (MAKE-RANDOM-STATE T))) ...) in place
+     of the lock and no .asd change: measured 40,000 of 40,000 at 23.9
+     microseconds per id, so both step-1 tests still pass and (d) still holds,
+     because FRESH-ID is still not on the indexing path.
+
+  3. The comment that stops being true.
+     src/graph/test/concurrency.lisp -- the block at lines 39-51 explains that
+     GRAPH-TEST-KEYED-NODE exists because GRAPH-TEST-NODE takes a FRESH-ID and
+     "RANDOM-UUID:MAKE-UUID is not thread-safe", and ends "the uuid generator's
+     own defect is recorded in BUG-0005 and is out of PLAN-0002's scope". After
+     step 2 the second half is false in a way that matters: a reader takes it as
+     a live reason not to use the obvious fixture. Rewrite it to say that
+     FRESH-ID was unsafe, that PLAN-0003 fixed it, that the keyed fixture stays
+     because a derived id is the faithful shape and not because a random one is
+     unsafe, and keep the measured 26,039-of-40,000 figure as the record of why
+     the file was reshaped.
+     This is a comment-only step and is separate from step 2 on purpose: it is
+     the step most easily dropped, and a source comment that contradicts a
+     closed bug is exactly the false statement RULE-0005 is about, one layer
+     down.
+     Verification: `tools/loom-test.sh` still green -- a comment edit in a test
+     file should move nothing, and if it does, the edit went into code.
+
+  4. The documents this work makes false.
+     docs/bugs/BUG-0005.yaml -- status open -> closed, with a FIX CHOSEN
+     section recording: that option 1 was taken; the three measured variants
+     and the numbers that decided it; the mechanism BUG-0005 did not have,
+     namely that MAKE-UUID falls back to (RANDOM (EXPT 2 64)) on
+     CL:*RANDOM-STATE*; the dependency it cost loom-ontology and the argument
+     for it; and the residual, that the lock excludes FRESH-ID's own callers
+     from each other and does not protect any other consumer of
+     CL:*RANDOM-STATE*.
+     docs/plans/PLAN-0003.yaml -- this file: status draft -> final, plus an
+     OUTCOME section with step 1's failure counts, step 2's measured rebuild
+     time, and any prediction here that came out wrong.
+     Nothing walks upward. RULE-0005's upward walk continues only on
+     implemented, and BUG-0005's only parent is BUG-0004, which PLAN-0002 has
+     already closed; a closed bug does not change status because a bug refining
+     it closed.
+     Verification: `tools/loom.sh 'status | check'` -- documents 32 -> 33 (this
+     plan; BUG-0005 is an edit, not an addition), 0 violations, 0 unresolved
+     document references. Then `tools/loom.sh 'impact BUG-0005 2'`, which must
+     report this plan, since refines: makes the chain walkable from the defect
+     forward to the work that closed it.
+
+  VERIFICATION
+
+  Per step, as listed above. For the work as a whole:
+
+    tools/loom-test.sh
+        Six systems green, /usr/bin/sbcl and not the SBCL behind SLIME; say
+        which was run. Five consecutive runs, not one: both new tests are
+        probabilistic and a single green run is weak evidence about either.
+
+    tools/loom.sh 'status | check'
+        Against the BASELINE: 83 files, 938 entities, 4335 relationships, 0
+        violations, 0 unresolved document references, 1 definer macro, 2
+        unenforced rules, documents 32 -> 33. The entity and relationship
+        counts will rise by whatever the two new test files add and must
+        otherwise be stable; nothing else in this plan moves a count. Read the
+        `check` result as evidence about RULE-0002 and RULE-0003 and not about
+        RULE-0001, which cannot see this change.
+
+    The two new tests, specifically
+        The ontology test is the one that proves the fix: 40,000 distinct ids
+        from two threads, having produced 33,971 before it. The graph test is
+        the one BUG-0005 names and is the weaker instrument of the two; both
+        are required.
+
+    Rule checks are not assertions. This plan touches an .asd file at steps 1
+    and 2, which is exactly the change RULE-0001 exists to catch and exactly
+    the change its check kind cannot see. `check` is not optional at either
+    step, and its passing is not the argument -- THE ONE JUDGEMENT is.
+
+  OUTCOME
+
+  All four steps done, 2026-08-01, branch analyzer, /usr/bin/sbcl 2.2.9.debian
+  via tools/loom-test.sh and tools/loom.sh -- not the SBCL behind SLIME. Six
+  systems green. The plan was followed as written; nothing in it had to be
+  reopened. Two predictions were wrong and both are recorded below.
+
+  STEP 1. BOTH INSTRUMENTS FAILED 5 OF 5.
+
+  Not "at least once in five": every run, both tests, which makes the pairing
+  in step 2 clean CON-0003 evidence rather than the marginal kind. The counts
+  are the ones the step asked for and not merely a red mark:
+
+    test                                       runs failed   count seen
+    two-threads-minting-ids-produce-no-duplicates    5 of 5   28,092 of 40,000
+    two-threads-minting-key-less-entities-lose-none  5 of 5    3,961 of 4,000
+
+  RISKS predicted the ontology test would be the robust instrument and the
+  graph test the marginal one, and that is exactly how they behaved -- the
+  tight loop lost 30 percent of its ids, the graph test 39 entities in 4,000,
+  which is the same single-digit-to-low-double-digit band PLAN-0002's OUTCOME
+  recorded. Neither needed its iteration count raised. The suite read 4 of 6
+  systems, loom-ontology and loom-graph failing, which is what the step says a
+  reviewer should see. `check` after the .asd edit: 0 violations, 0 unresolved
+  document references.
+
+  One deviation from the letter of the step, in the ontology test: distinctness
+  is counted with a hash table rather than REMOVE-DUPLICATES. REMOVE-DUPLICATES
+  is quadratic and over 40,000 ids takes longer than the minting it is
+  checking, which would have made the instrument slower than the defect it
+  measures.
+
+  STEP 2. THE FIX, AND THE ZERO-MILLISECOND PREDICTION, WHICH HELD.
+
+  (a) Both step-1 tests passed in five consecutive runs, having failed in five
+  consecutive runs before. (b) Six systems green in all five, no existing test
+  edited and none needed editing, so no evidence that FRESH-ID's contract
+  moved. (c) `status | check`: 0 violations, 0 unresolved document references,
+  1 definer macro (DEFENTITY), 2 unenforced rules (RULE-0004, RULE-0005). And,
+  as the step requires stating explicitly: a green `check` is not evidence
+  about RULE-0001 here. Its check kind is :no-edge over edges between indexed
+  entities, external libraries have no entities, and .asd files are not
+  indexed, so it could not have gone any other way. THE ONE JUDGEMENT is the
+  argument; this line is not.
+
+  The counts did move, and the plan expected that -- 83 files, 938 entities,
+  4335 relationships at BASELINE against 85 files, 948 entities, 4367
+  relationships now. The two new test files and the *FRESH-ID-LOCK* defvar are
+  the whole of it. Documents 32 -> 33, this plan.
+
+  (d) The prediction was zero milliseconds and the honest answer is better than
+  a timing: FRESH-ID is called ZERO times during a full reindex of this tree.
+  Measured by rebinding its symbol-function to a counting wrapper across one
+  complete REINDEX-REPOSITORY. That is deterministic and settles what the
+  timing was only ever a proxy for -- no type is minting key-less entities that
+  this plan did not know about, so there is nothing to stop and find.
+
+  The timing itself is reported for completeness and is worth less than the
+  count. Paired A/B in one image, alternating the locked FRESH-ID against the
+  pre-PLAN-0003 body, seven runs each, medians: 139 ms locked, 135 ms unlocked.
+  A 4 ms difference on a path the function is never called from is noise, and
+  PLAN-0002's OUTCOME already warns that a single median on this machine moved
+  between 196 ms and 260 ms for identical code.
+
+  FIRST PREDICTION THAT CAME OUT WRONG: THE 216 MS BASELINE DOES NOT REPRODUCE.
+
+  Step 2(d) says to compare against PLAN-0002's re-measured 216 ms. The full
+  rebuild measures 135-143 ms today, roughly 35 percent faster, on a tree that
+  has grown since. This is not the lock and cannot be -- FRESH-ID is not called
+  -- and it is not a regression in anyone's favour worth chasing; it is the
+  machine, which is the caution PLAN-0002's OUTCOME closes with. What it means
+  for anyone re-reading this: 216 ms is not a number to compare a future
+  measurement against, and a paired invocation in one image, as used here, is
+  the only shape that says anything.
+
+  SECOND PREDICTION THAT CAME OUT WRONG: A PROXY THAT LOOKED LIKE A DEFECT.
+
+  Recorded because it will cost the next person the same twenty minutes.
+  ID-DERIVED-P is NIL for every entity in the indexed graph -- all 948 of them,
+  including entities whose ids plainly are derived, like
+  "document:docs/arch/ARCH-0001.yaml". It reads as a defect and is not one:
+  GRAPH-MANAGER.LISP:131's ADD-ENTITY clears the flag deliberately, with a
+  comment saying why ("the id stops tracking the natural key here"). So
+  ID-DERIVED-P on a stored entity is not a proxy for "was this id derived", and
+  counting it is not a way to check whether anything reached FRESH-ID. Counting
+  FRESH-ID's calls is, which is what (d) above does.
+
+  STEP 3. Comment only, as intended. The block now says FRESH-ID *was* unsafe,
+  that PLAN-0003 fixed it, and that GRAPH-TEST-KEYED-NODE stays because a
+  derived id is the faithful shape rather than because a random one is unsafe.
+  The 26,039-of-40,000 figure is kept as the record of why the file was
+  reshaped. Suite still green, so the edit stayed in the comment.
+
+  STEP 4. BUG-0005 open -> closed with a FIX CHOSEN section carrying the option
+  taken, the mechanism the bug did not have, the three measured variants, the
+  dependency and its argument, and the residual. This file draft -> final.
+  Nothing walked upward, as the step predicted: BUG-0005's only parent is
+  BUG-0004, already closed by PLAN-0002.
+
+  WHAT A REVIEWER SHOULD LOOK AT FIRST
+
+  The .asd line, not the lock. The lock is three lines and the tests bracket
+  it. The judgement is that loom-ontology may depend on BORDEAUX-THREADS, it is
+  argued under THE ONE JUDGEMENT, no machine check can confirm or deny it, and
+  if it is rejected the fallback lands in the same one function with no .asd
+  change and both tests still pass at 23.9 microseconds per key-less id.

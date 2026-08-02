@@ -1,6 +1,6 @@
 id: ARCH-0004
 title: A blocking per-repository lock completes the fix for BUG-0004
-status: draft
+status: implemented
 date: 2026-08-01
 refines: [BUG-0004]
 affects: [repository, make-repository, index-repository, poll-once,
@@ -465,3 +465,11 @@ body: |
   Everything ARCH-0003 already committed to -- protected-table, the graph's
   own reentrant lock, the acquisition ordering -- is unchanged. This document
   adds one lock at one new layer and changes no code loom-graph owns.
+
+  IMPLEMENTED, 2026-08-01, BY PLAN-0002
+
+  R1 through R7 landed in PLAN-0002 step 2, and the R8 acceptance criteria all
+  pass -- R8(a) re-run after steps 4, 5 and 7. R6 scoped adaptive backoff for
+  *poll-interval* out of this document and it remains undone by intent; the
+  terms a future document proposing it must specify are in R6 itself.
+  BUG-0004 is closed.

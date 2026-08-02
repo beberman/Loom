@@ -17,7 +17,7 @@ tools/loom.sh 'impact <name> 3'       # what a change reaches, plus decisions
                                       #   3 is a narrowing; the default is 5
 tools/loom.sh 'rules'                 # constraints, and which are machine-checked
 tools/loom.sh 'check'                 # violations and unresolved doc references
-tools/loom.sh 'status' 'find foo'     # several commands, run in order
+tools/loom.sh 'status | find foo'     # several commands, run in order
 tools/loom.sh 'help'                  # the authoritative table; trust it first
 ```
 
@@ -32,8 +32,10 @@ tools/loom.sh 'impact repository 3'
 tools/loom-test.sh
 ```
 
-One console command per argument; quote any that contains a space. Nothing else
-belongs on the line — no pipe, no redirect, no `tail`. The equivalent
+Several commands go in one quoted argument separated by `|`, or one per
+argument; the two forms mix. The `|` is inside the quotes, so the shell never
+sees it — it is a separator the script splits on, not a pipeline. Nothing
+unquoted belongs on the line: no pipe, no redirect, no `tail`. The equivalent
 hand-rolled `bash -lc "printf ... | sbcl --script loom.lisp | tail"` prompts
 every time, because the pipe, the redirect and the `tail` each need permission
 of their own, and a prompt inside a subagent is a stall nobody sees.
@@ -108,3 +110,7 @@ resolves to nothing is reported by `check` rather than dropped.
 - **Guard with the condition type the library actually signals.** `error` does
   not catch a condition defined as a direct subtype of `condition`. RULE-0004.
 - **A test must fail without the change it covers.** CON-0003.
+- **Finishing a plan means restating what it implemented.** A plan reaching
+  `final` makes the `draft` status of every document it refines false, so mark
+  those `implemented`, or `partial` with an OUTSTANDING section. Nothing checks
+  this. RULE-0005, and CON-0004 for the status vocabulary.

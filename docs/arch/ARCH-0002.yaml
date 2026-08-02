@@ -1,6 +1,6 @@
 id: ARCH-0002
 title: Macro- and structure-generated definitions reach the index
-status: draft
+status: implemented
 date: 2026-07-29
 refines: [REQ-0003]
 affects: [resolve-calls, resolve-definitions, resolve-and-check, make-macro-entity,
@@ -350,3 +350,10 @@ body: |
   across every src/*/test/*.lisp in this tree, so R10's three counts moving
   off zero when Loom indexes itself is the concrete, checkable result R5
   itself asks for.
+
+  IMPLEMENTED, 2026-07-31, BY PLAN-0001
+
+  All ten requirements landed across PLAN-0001's eight steps. Its OUTCOME
+  section carries the measured result and two predictions that came out wrong
+  (the :test count, and defrelationship being reported as an unhandled definer
+  macro when it expands to no definition at all).

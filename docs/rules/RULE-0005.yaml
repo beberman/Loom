@@ -1,0 +1,101 @@
+id: RULE-0005
+title: A plan reaching final restates every document it implements
+status: active
+severity: error
+refines: [CON-0004]
+statement: |
+  When a plan reaches status: final, every document it refines must be moved
+  out of draft in the same change. A plan that fully implements an
+  architecture or a requirement makes that document's draft status false, and
+  a document whose status is false is worse than one with no status at all --
+  it is a claim, and the next agent will believe it.
+
+  The plan's author does not get to leave this to whoever comes next. The
+  evidence for the restatement is in the plan's own OUTCOME section and
+  nowhere else; a later reader has to reconstruct it from the diff, which is
+  precisely the reconstruction CON-0004 exists to make unnecessary.
+
+  Three outcomes are available for each refined document, and the choice is a
+  judgement the plan must record rather than a lookup:
+
+    implemented   every requirement the document states is now true of the
+                  tree. Deliberately rejected items count as settled; silently
+                  skipped ones do not.
+    partial       some requirements landed and others did not. The document
+                  gains an OUTSTANDING section naming each one that remains,
+                  what deferred it, and where the decision was taken. Without
+                  that section the status is not partial, it is vague.
+    superseded    a later document overtook it. It names the successor.
+
+  The walk continues upward only on implemented. If a plan implements an
+  architecture and that architecture was the last outstanding child of a
+  requirement, the requirement is implemented too. If any sibling is still
+  open -- another architecture, an unfixed bug, an unanswered review -- the
+  parent stays where it is. Marking a requirement implemented while a bug
+  refining it is still open is the same false claim in the other direction.
+
+rationale: |
+  This rule exists because it was broken. PLAN-0001 reached final on
+  2026-07-31 having landed all ten of ARCH-0002's requirements, and ARCH-0002
+  sat in draft for two days afterwards. PLAN-0002 reached final on 2026-08-01
+  and left ARCH-0003 and ARCH-0004 in draft the same way. Nothing reported it,
+  because nothing was looking: `check` verifies that document references
+  resolve, not that their statuses tell the truth.
+
+  The cost is not tidiness. An agent starting work asks Loom what already
+  exists -- CON-0004's whole argument for the document chain. Four
+  architecture documents in draft say "this is proposed, not built", so an
+  agent reading them either re-derives what landed by reading the tree, which
+  is the problem Loom was built to solve, or proposes work that is already
+  done. Both failures are silent and both are expensive.
+
+  The three-way choice is a judgement and not a lookup, and ARCH-0003 is the
+  worked example of why. Applying this rule for the first time, it was read as
+  partial on the strength of PLAN-0002's summary, which lists ARCH-0003 R5
+  under "out of scope and deliberately so". Reading R5 itself reverses that:
+  R5 requires that transaction.lisp's tx tables stay bare hash tables, so
+  leaving them alone is the requirement being met, not skipped. R12 turned out
+  not to be a requirement of ARCH-0003 at all -- its own text puts it out of
+  scope -- and had since been settled against by ARCH-0004. ARCH-0003 is
+  implemented.
+
+  The general trap: a plan's scope-out list mixes two different things under
+  one heading -- work deferred, and work an architecture requires not be done
+  -- and only the first bears on status. The requirement text decides this,
+  not the plan's summary of it. An author who marks a document partial from
+  the plan's scope-out list alone will get it wrong in the direction that
+  looks conservative and is merely inaccurate.
+
+  Where partial is genuinely right, the OUTSTANDING section is what makes it
+  usable: each requirement that remains, what deferred it, and where that was
+  decided. A partial with no such section states only that someone was unsure,
+  which is not knowledge and does not survive being read six months later.
+
+  WHY THIS RULE HAS NO CHECK CLAUSE
+
+  Deliberately absent, and the reasoning is recorded so it is not rediscovered
+  from scratch. The claim is a constraint on a property of a document at the
+  far end of an edge -- a :plan whose status is final must have no :refines
+  neighbour whose status is draft. None of the three check kinds in rules.lisp
+  reaches across an edge to test a property: :no-edge tests for an edge's
+  existence, :requires-edge for its absence, and :property-constraint for a
+  property on one entity in isolation.
+
+  Adding a fourth kind is cheap by design -- rules.lisp says one defmethod
+  plus one entry in *check-kinds* -- and was considered and declined. SS10.4
+  scopes the check kinds to "the layering and single-writer rules Loom needs
+  on itself", and this is neither; it is a workflow rule about documents.
+  Widening the engine for it means a general query language arriving through
+  the back door, one rule at a time.
+
+  The price is paid openly: this rule is counted among the unenforced rules
+  `status` reports, which is the mechanism SS10.4 built for exactly this case
+  -- "so that prose-only drift stays visible rather than comfortable". The
+  count goes from one to two. If it reaches five, that is evidence the engine
+  is too narrow and this argument should be re-opened.
+
+lessons:
+  - A status that no longer describes the tree is not a stale label, it is a
+    false statement that the next reader has no reason to doubt.
+  - The evidence for marking a document implemented is at its thinnest the
+    moment after the work lands, and never gets stronger.

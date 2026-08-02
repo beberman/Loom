@@ -1,6 +1,6 @@
 id: PLAN-0002
 title: Sequence the graph lock and the repository lock into one fix for BUG-0004
-status: draft
+status: final
 date: 2026-08-01
 refines: [ARCH-0003, ARCH-0004]
 affects: [graph, make-graph, add-entity, get-entity, remove-entity, all-entities,
@@ -733,9 +733,8 @@ body: |
 
   OUTCOME
 
-  Steps 1 to 6 executed 2026-08-01, /usr/bin/sbcl via tools/loom-test.sh and
-  tools/loom.sh, not the SBCL behind SLIME. Step 7's three status changes are
-  held pending review; everything else below is measured.
+  All seven steps executed 2026-08-01, /usr/bin/sbcl via tools/loom-test.sh and
+  tools/loom.sh, not the SBCL behind SLIME.
 
   The baseline moved before any of it, because the tree gained this plan and
   then gained the files the plan calls for. What must be compared is not the
@@ -886,6 +885,41 @@ body: |
   entities, 4323 relationships, 255 tests covering 186 units, no errors line,
   no concurrency text in `log`, `check` clean.
 
-  The three status changes step 7 calls for -- BUG-0004 open to closed,
-  PLAN-0001's drift-check line losing its `pause`, this file draft to final --
-  are held for review rather than taken. The evidence for all three is above.
+  STEP 7. The three status changes were held for review after step 6 and taken
+  on review the same day. BUG-0004 open to closed, with a CLOSED section
+  recording which of R8(a) to R8(e) earned it, the one-in-three pre-fix failure
+  rate of the acceptance instrument, and the two findings that were not this
+  defect -- SBCL detecting mutation rather than read-during-write, and BUG-0005.
+  PLAN-0001's drift-check line becomes `tools/loom.sh 'reindex' 'status'`, with
+  the paragraph explaining the `pause` replaced by one recording that it was a
+  BUG-0004 workaround now closed by this plan; the withdrawal of "a difference
+  here is the lifecycle bug and there is no other symptom" stays withdrawn, as
+  step 7 required. This file draft to final. CLAUDE.md and
+  .claude/skills/loom/SKILL.md unchanged, as the checked negative under FILES
+  said they would be.
+
+  Step 7's own verification: documents unchanged at 31 -- all three changes are
+  edits, not additions -- 0 violations and 0 unresolved document references, and
+  `impact BUG-0004 2` reports ARCH-0003 and ARCH-0004 at depth 1 and this plan
+  at depth 2, so the chain is walkable from the defect forward to the work that
+  closed it.
+
+  ONE PREDICTION IN THIS SECTION THAT CAME OUT WRONG
+
+  Step 7's verification predicted "documents 29 -> 30". Both numbers are stale:
+  the count was 29 when this plan was drafted and is 31 now, because the tree
+  gained this plan and then gained BUG-0005 while the work was in flight. The
+  substance of the prediction -- that step 7 adds no document and moves the
+  total by nothing -- held. Recorded because a reader checking the literal
+  number against `status` would otherwise think something had gone wrong.
+
+  ARCH-0003 and ARCH-0004 were left at status: draft when step 7 was first
+  taken, on the reasoning that this plan had not said it would change them.
+  That was wrong, and it is now RULE-0005: a plan reaching final is exactly
+  what makes the draft status of the documents it implements false, and the
+  plan's author is the only one holding the evidence. Both are now
+  status: implemented, and ARCH-0003 carries a section explaining why its R5
+  and R12 are satisfied rather than skipped -- a distinction this plan's own
+  scope-out list obscures by filing "work deferred" and "work the architecture
+  requires not be done" under one heading. CON-0004 now carries the status
+  vocabulary that was missing.

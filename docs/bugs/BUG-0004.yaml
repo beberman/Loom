@@ -1,6 +1,6 @@
 id: BUG-0004
 title: reindex races the monitor thread and can leave a third of the index missing
-status: open
+status: closed
 date: 2026-07-31
 refines: [PLAN-0001]
 affects: [reindex-repository, index-repository, poll-once, index-file,
@@ -148,3 +148,71 @@ body: |
   Whichever is chosen, PLAN-0001's drift check needs restating so that it is
   run against a paused watcher, or the difference it detects is no longer
   attributable to the lifecycle it was written to test.
+
+  CLOSED, 2026-08-01
+
+  The general fix was taken, not the narrow one. ARCH-0004 designed the
+  per-repository lock this section asked for and ARCH-0003 designed the
+  graph-layer protected-table beneath it; PLAN-0002 sequenced both, deliberately
+  in the reverse of their document order, and executed them.
+
+  What earned the close, in the order the evidence arrived:
+
+    ARCH-0004 R8(a)   twenty reindex/status pairs in one invocation, monitor
+                      alive throughout, every status block identical, no errors
+                      line, no "Unsafe concurrent operations" anywhere in the
+                      output or in `log`. First passed at PLAN-0002 step 2 and
+                      re-run after steps 4 and 5, and again at step 7.
+    ARCH-0004 R8(b)   the workspace concurrency stress test -- one thread in
+                      reindex-repository, one in poll-once, no sleep -- went
+                      from failing 4 of 5 runs pre-fix to 0 of 5 after step 2,
+                      and is in the suite.
+    ARCH-0004 R8(c)   the state the racing threads leave equals a fresh
+                      monitor-stopped rebuild of the same fixture.
+    ARCH-0004 R8(d)   a pause issued the instant a reindex returned completed in
+                      48 ms against *monitor-stop-timeout*'s 10 s, no forced
+                      thread destroy.
+    ARCH-0004 R8(e)   four files written by a second thread at the moment a
+                      reindex was issued were all present in the final index.
+    ARCH-0003 R7      the graph concurrency test from PLAN-0002 step 1 -- two
+                      writers and a reader against one graph -- failed 5 of 5
+                      runs from step 1 through step 3 and has passed 5 of 5
+                      since step 4.
+
+  The close waited for step 4 rather than being taken at step 2 on R8's letter.
+  R8 was satisfied by the repository lock alone, but the SYMPTOM section above
+  quotes a condition a console query racing a poll could still produce until the
+  graph layer was converted, and a bug whose quoted symptom is still reachable
+  is not closed.
+
+  HOW MUCH POWER THE ACCEPTANCE CHECK HAD
+
+  Recorded because a clean run of a probabilistic instrument means only as much
+  as its pre-fix failure rate. Re-measured on 2026-08-01 before any fix, on a
+  tree of 78 files, the R8(a) command failed one invocation in three -- and the
+  failure was not the shape this document captured. The entity count was
+  correct at 886; the damage was entirely in relationships (1263 against 4035)
+  and tested units (0 against 167). An acceptance check comparing entity counts
+  alone would have passed that run, which is why R8(a) compares all four
+  numbers and the errors line. Against a one-in-three failure rate, twenty
+  clean trials is a strong result rather than a lucky one.
+
+  The two tests in the suite are stronger instruments still: 4 of 5 and 5 of 5
+  pre-fix respectively, each re-verified against a copy of the tree with its own
+  fix reversed rather than assumed from the pre-fix state.
+
+  TWO THINGS FOUND ON THE WAY, NEITHER OF THEM THIS DEFECT
+
+  SBCL detects concurrent *mutation* of a hash table, not a read overlapping a
+  write. A one-writer/one-reader test never signals however long it runs; two
+  writers signal within a few hundred puthashes, every time. The first shape of
+  the graph test was therefore not an instrument at all, and the collision pair
+  in this document -- a console thread in reindex-repository against a monitor
+  thread in poll-once -- is two writers, which is what the test now models.
+
+  random-uuid:make-uuid is not thread-safe: two threads generating 20,000 uuids
+  each produced 26,039 distinct strings of 40,000. Duplicate ids, second write
+  wins, entities silently gone. After step 4 this presented as the graph test
+  losing four to ten entities of four thousand with nothing signaled -- the
+  exact shape of ARCH-0003 R8's stated residual, and not that. It is BUG-0005
+  and it is not this defect.

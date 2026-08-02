@@ -1,12 +1,12 @@
 {
   "permissions": {
-    "defaultMode": "dontAsk",
     "allow": [
       "Skill(update-config:*)",
       "Edit(/home/beberman/lisp/Loom/.claude/**)",
       "Write(/home/beberman/lisp/Loom/.claude/**)",
       "WebSearch",
-      "Bash(/usr/bin/sbcl --script /tmp/claude-1000/-home-beberman-lisp-Loom/08a422ad-3675-4cc8-8fae-1324a9e38b46/scratchpad/probe5.lisp)"
+      "Skill(update-config)",
+      "Read(/home/beberman/quicklisp/dists/quicklisp/software/**)"
     ],
     "defaultMode": "dontAsk"
   }
