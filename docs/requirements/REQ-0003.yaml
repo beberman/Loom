@@ -1,7 +1,14 @@
 id: REQ-0003
 title: Definitions created by macros must reach the index
-status: draft
+status: implemented
 date: 2026-07-29
+resolution: |
+  Resolved by ARCH-0002 and implemented by PLAN-0001, final 2026-07-31: all
+  ten requirements landed, including the :test-entities, :tested-units and
+  :unhandled-definer-macros counts R10 asked for as the acceptance check.
+  Loading additional macro-generator registrations for third-party packages
+  without rebuilding Loom was scoped out of this requirement at the time it
+  was written ("deferred to REQ-0004") and stays open there, still draft.
 tags: [analyzer, macros, tests]
 summary: |
   A macro that expands into a defun or a test creates a named definition that

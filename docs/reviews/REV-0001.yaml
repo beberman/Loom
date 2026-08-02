@@ -1,7 +1,20 @@
 id: REV-0001
 title: Dogfooding the workflow of record on REQ-0003
-status: open
+status: closed
 date: 2026-07-29
+resolution: |
+  Findings 1, 2 and 2b (broken invocation, agent definitions read at spawn,
+  no agent had a shell that could reach Loom) were fixed within this same
+  run, as the body already states. Finding 3 (context undocumented) was
+  fixed the same way. Finding 4 (impact's d<n> label and the truncation
+  boolean) was forked into REQ-0005, still draft. Finding 5 (mention-inferred
+  edges rendered as declared ones) was forked into REQ-0006, still draft.
+  Finding 7 (describe reprints a document's whole body) was forked into
+  REQ-0007, still draft. Finding 6 (REQ-0003's own acceptance count is not
+  expressible in the console) was not forked into its own requirement; it is
+  the console-enumeration gap BUG-0002 already names, and stays open there.
+  Closing this review records that every finding has a home to be tracked
+  under; it does not mean REQ-0005 through REQ-0007 or BUG-0002 are resolved.
 refines: [CON-0004, REQ-0003]
 affects: [search-entities, resolve-document-links, impact-report, entity-summary]
 tags: [workflow, agents, console, dogfood]
