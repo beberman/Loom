@@ -1,0 +1,362 @@
+id: ARCH-0005
+title: describe on a document renders a bounded summary, not the concatenated body
+status: draft
+date: 2026-08-02
+refines: [REQ-0007]
+affects: [describe-entity, document-properties, base-properties, collect-body,
+          entity-summary, print-summary-line, group-neighbors, neighbor-summary,
+          *prose-fields*]
+tags: [knowledge, console, documents, ontology, analyzer]
+summary: |
+  describe-entity already returns structured data; the console prints the
+  wrong slice of it. This gives every document-bearing entity type (:document,
+  :decision, :rule, alongside :concept, which already has the shape) an
+  individually stored :summary property, adds a small bounded-text budget next
+  to *context-token-budget*'s, and moves the console's describe command from
+  printing :statement/:rationale/:body in sequence to printing title, status,
+  and a budgeted summary before the neighbours. *prose-fields* and the
+  concatenated :body it feeds keep working exactly as they do today -- this is
+  additive, not a rewrite of the resolution path DEC-0003 governs.
+body: |
+  PROBLEM, MEASURED
+
+  `describe REQ-0003` prints the file's 250 lines (wc -l) before its two lines
+  of neighbours. `describe ARCH-0004`, the document this file's own precedent
+  is drawn from, would print 475. `describe DEC-0004` and `describe RULE-0004`
+  print 57 and 29 lines respectively -- short enough that the same defect is
+  invisible, which is exactly REQ-0007 R5's point: the bug is in the shape,
+  not in any one document's length.
+
+  The mechanism, read from src/process/console.lisp and src/knowledge/
+  services.lisp as they stand:
+
+    (define-command describe (term)
+      ...
+      (let ((body (getf (getf detail :properties) :body))
+            (statement (getf (getf detail :properties) :statement))
+            (rationale (getf (getf detail :properties) :rationale)))
+        (dolist (text (remove nil (list statement rationale body)))
+          (format t "~&~%~a~%" text)))
+      (dolist (group (getf detail :neighbors)) ...))
+
+  Three faults, not one:
+
+  It prints :body unbounded -- :body is *prose-fields*'s concatenation of up
+  to eight fields (src/analyzer/yaml-analyzer.lisp COLLECT-BODY), so its
+  length is however long the document's author made it, with no cap.
+
+  For a :decision it is worse than a body dump: DOCUMENT-PROPERTIES for
+  :decision already stores :rationale as its own property (line 226), and
+  COLLECT-BODY has already folded that same text into :body (via
+  *PROSE-FIELDS*, which lists :rationale). The console prints both, so a
+  decision's rationale appears twice in one `describe` call -- once under its
+  own name, once buried inside :body with no separator from :consequences and
+  :decision beside it. This is a second, smaller defect the same code path
+  produces; fixing the render path fixes it as a side effect rather than
+  needing its own document.
+
+  :title and :status are never printed. Both are declared properties on
+  :document, :decision, and :rule (DEFENTITY, src/ontology/code-ontology.lisp)
+  and are populated by BASE-PROPERTIES and DOCUMENT-PROPERTIES on every
+  analysis pass. `describe` reads neither. ENTITY-SUMMARY -- the plist
+  PRINT-SUMMARY-LINE renders -- carries :id, :type, :name, :location,
+  :language, :source, :confidence, :stale: none of those are :title or
+  :status, because ENTITY-SUMMARY is deliberately "what is true of every
+  entity" (its own docstring), and title and status are not true of a
+  function or a file.
+
+  WHY :SUMMARY EXISTS FOR :CONCEPT ALONE
+
+  DOCUMENT-PROPERTIES has one method per document type (a DEFGENERIC
+  dispatching on the directory-derived type-key, exactly the "adding a
+  category means creating a directory and registering a type" shape SS10.1
+  wants). Only the :concept method adds a :summary property of its own,
+  reading `summary:` from the YAML table directly:
+
+    (defmethod document-properties ((type-key (eql :concept)) ...)
+      (append (base-properties ...) (list :doc-id ... :summary (as-string
+      (yaml-value table :summary)))))
+
+  BASE-PROPERTIES, which every type's method calls first, does not do this --
+  it stores :title, :category, :body, :refines, :mentions,
+  :unresolved-references, and nothing else prose-shaped. So :document,
+  :decision, and :rule fold `summary:` into :body along with every other
+  prose field and never keep it on its own, while :concept's author-visible
+  behaviour (`describe` on a concept already shows a short, useful summary
+  today, because CONCEPT-ENTITY-SUMMARY exists and nothing currently prints
+  it either -- but at least the data is there to fix from) proves the shape
+  costs nothing extra to have.
+
+  WHAT EACH THING BECOMES
+
+  loom-analyzer / src/analyzer/yaml-analyzer.lisp
+
+    BASE-PROPERTIES gains one line: :summary (as-string (yaml-value table
+    :summary)), read from the raw table exactly as :title already is. This
+    applies to every document type uniformly, because base-properties is
+    called by every DOCUMENT-PROPERTIES method, so :document, :decision, and
+    :rule all gain an individually stored :summary property for free and
+    :concept's method drops its now-redundant :summary line (CONSEQUENCES
+    below).
+
+    *PROSE-FIELDS* and COLLECT-BODY are untouched. :summary stays in
+    *PROSE-FIELDS*, so it still folds into :body exactly as before -- the
+    concatenation an agent explicitly asking for the full text still gets the
+    summary paragraph in its natural place, and the mention-scanning
+    PROSE-MENTIONS still scans it. This is the DEC-0003 discipline applied
+    correctly: COLLECT-BODY reads the raw YAML table, the same input on every
+    pass, and recomputes :body from it every time. Adding a second reader of
+    the same table that stores :summary on its own does not touch that
+    input or that derivation -- it is one more independent read of unchanged
+    source data, not a rewrite of the existing one. Nothing is consumed.
+
+    No synthesis when `summary:` is absent. SS10.2's own stated reason for
+    choosing YAML -- "parse into structured data with no heuristic
+    extraction" (this file's header comment) -- is a standing argument
+    against inventing a summary from the first paragraph of :body when an
+    author did not write one: that would be exactly the guessing SS10.2
+    rejected, applied one property later than the file where it is written
+    down. :summary is NIL until an author adds `summary:` to the file, and
+    that NIL is a real, recorded gap (CON-0001's "a fabricated edge is worse
+    than a recorded miss," read here as a fabricated field), not a bug to
+    paper over with inference.
+
+    :summary is declared on :document, :decision, and :rule in DEFENTITY
+    (src/ontology/code-ontology.lisp), a string property alongside :title,
+    with documentation matching :concept's existing one. This is a property
+    addition to three already-existing entity types -- the cheap kind of
+    ontology change, not a new entity or relationship type, and VALIDATE-
+    ENTITY needs no change since the property is not :required.
+
+  loom-knowledge / src/knowledge/services.lisp
+
+    A new parameter, *summary-fields-by-type*, an alist of entity-type keyword
+    to an ordered list of property keys to try:
+
+      ((:document . (:summary))
+       (:concept  . (:summary))
+       (:decision . (:summary :rationale))
+       (:rule     . (:summary :statement)))
+
+    :decision and :rule list a second candidate because every existing DEC
+    and RULE document predates the :summary field (grepped: none of
+    docs/design/*.yaml or docs/rules/*.yaml carries a top-level `summary:`
+    key today) and :rationale / :statement are each type's own primary prose
+    property -- already individually stored, never :body. Falling back to a
+    real, named, already-addressable property is not synthesis; it is
+    choosing which existing fact to show, the same judgement ENTITY-SUMMARY
+    already makes when it picks :id over the whole property table. R5 asks
+    for "the same treatment," not for :decision and :rule to stay dump-only
+    until every existing file is edited by hand.
+
+    A new function, SUMMARY-FIELD-AND-TEXT (entity), returning two values --
+    the property key actually shown, and its text -- or (values nil nil) when
+    none of the type's candidates has content. Callers can tell a real
+    :summary from a fallback and label it, which is what keeps the fallback
+    from reading as a fabricated summary: DOCUMENT-SUMMARY below always
+    reports which field it used.
+
+    A new parameter, *summary-token-budget* (120, next to
+    *CONTEXT-TOKEN-BUDGET*'s 2000 in context.lisp -- an order of magnitude
+    smaller because a summary is meant to be one paragraph, not a bundle of
+    entities), and a new function BOUNDED-TEXT (text budget), reusing
+    ESTIMATE-TOKENS from context.lisp (both in loom-knowledge; no new
+    dependency). Returns (values shown-text truncated-p): the longest prefix
+    of TEXT whose estimated token count is at most BUDGET, backed off to the
+    nearest preceding whitespace so no word is split, TRUNCATED-P true when
+    the prefix is shorter than TEXT. This is BUILD-CONTEXT's own precedent
+    (RENDER-CONTEXT's "~d entities, ~~d/~d tokens~@[ (truncated)~]") applied
+    to one string instead of a list of admitted items: report what was shown
+    against the budget, say when something was cut, never cut silently and
+    never overflow.
+
+    A new function, DOCUMENT-SUMMARY (entity), returning NIL for an entity
+    whose type is not in *SUMMARY-FIELDS-BY-TYPE*, and otherwise a plist:
+
+      (:title <getp :title> :status <getp :status>
+       :field <key from SUMMARY-FIELD-AND-TEXT, or NIL>
+       :text <bounded text, or NIL> :truncated <bool>
+       :full-tokens <estimate-tokens of the untruncated field text, or NIL>)
+
+    DESCRIBE-ENTITY gains one new key in its returned plist, :document, set to
+    (DOCUMENT-SUMMARY entity). Nothing else about DESCRIBE-ENTITY's contract
+    changes: :entity is still ENTITY-SUMMARY, :properties is still the
+    complete raw property table with :body, :statement, :rationale and every
+    other field intact, and :neighbors is still GROUP-NEIGHBORS's grouping.
+    describe-includes-the-type-specific-properties, the existing test
+    asserting `(search "reset the overlay" (getf (getf detail :properties)
+    :decision))`, keeps passing unchanged, because :properties is untouched --
+    this is an addition to DESCRIBE-ENTITY's result, not a narrowing of it.
+
+    This is also what answers R3. REQ-0008 (a service boundary over MCP and
+    REST, sitting above this same DESCRIBE-ENTITY) already observes that "the
+    underlying data is already structured; only the console's formatting step
+    is prose." Because :properties keeps carrying the full :body, an MCP or
+    REST caller reached through that future boundary gets full-fidelity data
+    with no extra argument needed on this end -- the summarising happens only
+    where a human terminal is the consumer, which is loom-process, not here.
+    For the console specifically, the full text is one Read of the path
+    ENTITY-LOCATION already names in :entity, and no new command or flag is
+    added to fetch it a second way through Loom itself. This was the cheapest
+    of REQ-0007's three named options and it costs literally nothing:
+    ENTITY-LOCATION already reports the path for every document today, Read
+    already exists for an agent to act on it, and CLAUDE.md already tells an
+    agent to prefer Loom's answers over rereading the tree but never claims
+    Loom replaces Read for a file an agent has explicitly decided to open in
+    full.
+
+  loom-process / src/process/console.lisp
+
+    The describe command's body changes from the three-line dolist quoted
+    under PROBLEM to:
+
+      (print-summary-line (getf detail :entity))
+      (let ((doc (getf detail :document)))
+        (when doc
+          (format t "~&~@[title: ~a~%~]~@[status: ~(~a~)~%~]"
+                  (getf doc :title) (getf doc :status))
+          (if (getf doc :text)
+              (format t "~&summary~@[ (via ~(~a~))~](~d~@[/~d~] tokens~:[~; , truncated~]):~%  ~a~%"
+                      (and (not (eq (getf doc :field) :summary)) (getf doc :field))
+                      (estimate-tokens (getf doc :text)) (getf doc :full-tokens)
+                      (getf doc :truncated) (getf doc :text))
+              (format t "~&summary: (none written)~%"))))
+      (dolist (group (getf detail :neighbors)) ...)   ; unchanged
+
+    A code entity's :document key is NIL (its type is not in
+    *SUMMARY-FIELDS-BY-TYPE*), so the WHEN's body never runs for it and the
+    command's output for a function, class, or file is exactly what it is
+    today -- REQ-0007's explicit "not a regression" line, satisfied because
+    the branch does not exist for those types rather than because it happens
+    to print nothing.
+
+  WHAT THIS LEAVES ALONE
+
+  ENTITY-SUMMARY is not widened to carry :title or :status. Its docstring's
+  claim -- "what is true of every entity" -- stays true; a function has
+  neither, and DOCUMENT-SUMMARY is the place those two belong precisely
+  because it only exists for entities where they mean something.
+
+  *PROSE-FIELDS*, COLLECT-BODY, and PROSE-MENTIONS are unchanged. REQ-0006 is
+  the document that owns mention-edge confidence; nothing here touches how a
+  name in prose becomes an :inferred edge or how confident Loom is about it.
+
+  ALTERNATIVES CONSIDERED
+
+  Synthesize a summary from the first paragraph of :body when `summary:` is
+  absent, so every document -- including the DEC and RULE files that predate
+  this property -- shows something under a :summary label from day one.
+  Rejected: this file's own header comment states SS10.2's reason for
+  choosing YAML as "no heuristic extraction," and inventing structure a human
+  did not write is exactly that, one property downstream of where the
+  document says it will not happen. The chosen fallback -- show the type's
+  actual primary field, labelled with which field it is -- gives the same
+  practical result (something to read) without fabricating a fact SUMMARY-
+  FIELD-AND-TEXT cannot tell apart from an author's real summary.
+
+  Widen ENTITY-SUMMARY with :title and :status instead of adding a separate
+  DOCUMENT-SUMMARY. Rejected: every caller of ENTITY-SUMMARY -- SEARCH-
+  ENTITIES, GROUP-NEIGHBORS, IMPACT-ENTRY-SUMMARY, BUILD-CONTEXT's CONTEXT-
+  ITEM -- would carry two more, almost-always-NIL keys on every function,
+  file, and test in every bundle a context request returns, which is exactly
+  the "bundle spends its budget on a directory listing" failure CONTEXT.LISP's
+  own SEED-TYPE-RANK comment already argues against for files. A summary
+  belongs where only document-shaped entities pay for it.
+
+  A `describe <name> full` console argument, or a separate command, to reach
+  the untruncated text through Loom rather than through Read. Rejected per R3
+  and the point made under loom-process above: ENTITY-LOCATION already names
+  the path in every describe call, in a fraction of a line, and adding a
+  second in-Loom path to the same file content is exactly the kind of
+  mechanism CON-0001's "a recorded gap is preferable to a mechanism whose
+  cost exceeds what it protects" (as ARCH-0004 restates it) argues against
+  building for a need Read already meets. If a future protocol boundary
+  (REQ-0008's MCP/REST layer) turns out to want a typed "give me the full
+  document" call distinct from Read, that is REQ-0008's decision to make
+  against real callers, not one to pre-build here against a hypothetical one.
+
+  A fixed character or line cap on :body instead of a token budget on a named
+  :summary field. Rejected: a character cap cuts wherever it lands, mid-word
+  or mid-sentence, and cutting :body specifically keeps the exact duplication
+  bug described under PROBLEM (a decision's rationale appearing once under
+  its own key and once inside the truncated blob). Budgeting a single,
+  individually-addressed field is both the R6 precedent (BUILD-CONTEXT
+  budgets named items, not an undifferentiated stream) and the fix for the
+  duplication, in one change.
+
+  REQUIREMENTS
+
+  R1  describe-entity's :document key, combined with the console's new
+      rendering, prints type, doc-id, location (all three already in
+      :entity), title, status where present, and a budgeted summary before
+      the neighbour groups -- nothing else. Bounded regardless of document
+      length: DOCUMENT-SUMMARY's :text is bounded by *SUMMARY-TOKEN-BUDGET*
+      to at most ~120 tokens output regardless of whether :body is 29 lines
+      or 475.
+
+  R2  Neighbours are the second thing describe prints after a summary
+      bounded to a small, fixed budget -- never after a variable-length
+      body -- so reaching them costs a small, predictable amount of
+      scrolling regardless of document length, satisfied structurally by
+      R1's bound rather than by any heuristic about where prose ends.
+
+  R3  The full text stays reachable: :properties in describe-entity's result
+      is unchanged and still carries the complete :body, and ENTITY-LOCATION
+      in :entity still names the file Read can open. No new command or
+      argument is added; ALTERNATIVES CONSIDERED records why.
+
+  R4  :summary and :title are individually stored properties on :document,
+      :decision, and :rule (matching :concept, which already had both), via
+      one addition to BASE-PROPERTIES rather than a per-type special case.
+      The :body concatenation stays derived from the same raw YAML table on
+      every pass, via the unmodified COLLECT-BODY -- nothing is removed from
+      *PROSE-FIELDS*, nothing is read from an already-derived property
+      instead of the source, and DEC-0003's discipline is unaffected because
+      no existing derivation was touched, only a second independent one
+      added beside it.
+
+  R5  :decision and :rule describe output goes through the same DOCUMENT-
+      SUMMARY / *SUMMARY-FIELDS-BY-TYPE* path as :document and :concept, with
+      :rationale and :statement respectively as their named fallback field
+      until their files gain a `summary:` of their own. This also fixes the
+      rationale-shown-twice defect recorded under PROBLEM, as a consequence
+      of no longer printing :body at all by default.
+
+  R6  A long summary is bounded by *SUMMARY-TOKEN-BUDGET* and the console
+      reports what it showed against that budget and says "truncated" when
+      it cut something, via BOUNDED-TEXT and the format directive shown
+      above -- BUILD-CONTEXT's own precedent, applied to one field instead
+      of a list of items.
+
+  CONSEQUENCES
+
+  Three files change: src/ontology/code-ontology.lisp (three new :summary
+  property declarations), src/analyzer/yaml-analyzer.lisp (one new line in
+  BASE-PROPERTIES; the :concept method's now-redundant :summary line is
+  removed as a cleanup, not a behaviour change -- BASE-PROPERTIES supplies
+  the same value from the same YAML key), and src/knowledge/services.lisp
+  plus src/process/console.lisp for DOCUMENT-SUMMARY, BOUNDED-TEXT, and the
+  describe command's rendering.
+
+  Every DEC and RULE document written before this change shows its fallback
+  field (:rationale or :statement) labelled as such, not a blank, until an
+  author adds `summary:` -- expected, not a regression, since today's
+  behaviour for those types is the full, unbounded, duplicated dump this
+  document replaces.
+
+  Any future document type registered under SS10.1's
+  *document-type-directories* that wants a bounded describe output adds one
+  line to *summary-fields-by-type* rather than a new code path; a type left
+  out of that alist keeps the code-entity behaviour (no :document key, no
+  summary line) by default, which is the correct default for a type nobody
+  has designed a summary shape for yet.
+
+  describe-includes-the-type-specific-properties and describe-groups-
+  neighbors-by-direction-and-type, the two existing tests naming DESCRIBE-
+  ENTITY's shape, need no change: both read :properties and :neighbors, and
+  neither is touched by this design. New tests are owed for DOCUMENT-SUMMARY
+  (the fallback field selection, the NIL case for an entity type with no
+  summary shape, and the truncated/untruncated boundary at
+  *SUMMARY-TOKEN-BUDGET*) and for the console's rendering of a :document
+  entity versus a code entity, per CON-0003 -- each failing against the
+  current code before this document's change lands.
