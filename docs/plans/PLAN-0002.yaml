@@ -1,0 +1,925 @@
+id: PLAN-0002
+title: Sequence the graph lock and the repository lock into one fix for BUG-0004
+status: final
+date: 2026-08-01
+refines: [ARCH-0003, ARCH-0004]
+affects: [graph, make-graph, add-entity, get-entity, remove-entity, all-entities,
+          entities-of-type, find-entity-by-key, add-relationship, remove-relationship,
+          relationships-from, relationships-to, find-relationship-by-key,
+          edges-matching, index-origin, unindex-origin, facts-from-file, origin-files,
+          reindex-entity, cascade-staleness, apply-transaction,
+          repository, index-repository, poll-once, reindex-repository, index-file,
+          detect-deletions, start-monitor, stop-monitor, monitor-loop,
+          watch-repository, file-changed-p, repository-status]
+tags: [graph, workspace, concurrency, threading, locking, plan]
+summary: |
+  Seven steps that land ARCH-0004's repository lock and ARCH-0003's
+  protected-table in one sequence, closing BUG-0004. The order is deliberately
+  the reverse of the document numbers: the two tests that must be seen failing
+  are written first, against the unfixed tree; then the small repository-level
+  lock, which is what actually closes the reported defect and which leaves the
+  tree in a state that is strictly better than today at every measure; then the
+  large, mechanical graph-layer conversion, guarded by the tests step 1 wrote.
+  Steps 6 and 7 re-measure the four timings ARCH-0004 based its blocking design
+  on, and correct the three documents this work makes false.
+
+  Out of scope and deliberately so: adaptive backoff for *poll-interval*
+  (ARCH-0004 R6 scopes it out and names what a future document proposing it
+  must specify); converting repository-stamps to a protected-table (ARCH-0004's
+  REPOSITORY-STAMPS section settles this against ARCH-0003 R12 -- see the
+  TENSIONS section, this is the one place the two documents disagree);
+  converting tx's three tables (ARCH-0003 R5); giving repository-errors any
+  protection (ARCH-0004 R4 records the residual race rather than closing it);
+  and any change to loom-knowledge, which ARCH-0004 R5 requires to stay
+  lock-free.
+body: |
+  BASELINE
+
+  Measured today, 2026-08-01, branch analyzer, /usr/bin/sbcl via
+  `tools/loom.sh 'status' 'check' 'rules'`, monitor running:
+
+    index      : 78 files, 886 entities, 4035 relationships
+    documents  : 29
+    tests      : 245 tests covering 167 units
+    rules      : 0 violations, 1 unenforced
+    unresolved : 0 document references, 1 definer macro
+    suite      : 6 of 6 systems green
+
+  That is what must survive every step. The one definer macro (defentity, in
+  root-ontology.lisp) and the one unenforced rule (RULE-0004) are the standing
+  state PLAN-0001 left and are not this plan's business.
+
+  Timings, from ARCH-0004's MEASURED, NOT ESTIMATED section -- single-threaded,
+  monitor stopped, /usr/bin/sbcl, on a tree of 77 files / 885 entities / 4004
+  relationships:
+
+    reindex-repository, full rebuild     196 ms
+    resolve-and-check alone               24 ms
+    poll-once, nothing changed         20-24 ms
+    poll-once, one file touched           56 ms
+
+  Step 6 re-takes all four.
+
+  THE DEFECT, REPRODUCED TODAY
+
+  Worth having verbatim, because the acceptance instrument in step 2 is built
+  around its exact shape and because it is not quite the shape BUG-0004
+  recorded. One invocation, three watched reindexes:
+
+    tools/loom.sh 'reindex' 'status' 'reindex' 'status' 'reindex' 'status'
+
+  The second of the three drifted:
+
+    Indexing Loom (78 files)...
+      ! resolve-calls: Unsafe concurrent operations on
+        #<HASH-TABLE :TEST EQUAL :COUNT 1262 {1006473723}> detected.
+      ! resolve-document-links: Unsafe concurrent operations on
+        #<HASH-TABLE :TEST EQUAL :COUNT 1262 {1006473723}> detected.
+    Loom  /home/beberman/lisp/Loom/
+      index      : 78 files, 886 entities, 1263 relationships
+      documents  : 29
+      tests      : 245 tests covering 0 units
+      ...
+      errors     : 4, last: Unsafe concurrent operations on ...
+
+  One failure in three, which is enough power for the acceptance check to be
+  worth running. Note what is different from BUG-0004's captured run: the
+  entity count is *correct* here (886), and the damage is entirely in
+  relationships (1263 against 4035) and tested units (0 against 167). An
+  acceptance check that compares entity counts alone would have passed this
+  run. R8(a) is therefore to be run comparing all four numbers plus the errors
+  line, not entities alone. This is recorded because the plan's own instrument
+  is the thing most easily written to pass for the wrong reason.
+
+  `tools/loom.sh` is already exactly R8(a)'s shape: it issues `watch` before
+  the first command and `stop` after the last, so the monitor thread is alive
+  and polling throughout every command in between. No special harness is
+  needed for R8(a); the harness is the tool everyone already uses.
+
+  WHY THIS ORDER, AND WHAT IS TRUE AFTER EACH STEP
+
+  The two architecture documents are two halves of one fix and each leaves a
+  gap the other closes. There is no order in which both locks appear at once,
+  so the question is which intermediate state is safe to leave the tree in
+  overnight. They are not symmetric.
+
+  After the repository lock alone (step 2): BUG-0004's reproduction above is
+  closed -- a rebuild and a poll serialize and cannot interleave. What remains
+  open is ARCH-0003 R7: a console `find`, `describe`, `impact` or `context`
+  iterating the graph while the monitor thread writes it can still trip SBCL's
+  detection. That is a *loud* residual. It signals a condition, the console's
+  run-command handler catches and prints it, the query returns nothing, and
+  nothing has been written. It is also a residual that exists today, unchanged.
+  So the tree after step 2 is strictly better than the tree before it at every
+  measure, and worse at none.
+
+  After the graph lock alone (the order the document numbers suggest): the
+  crash stops, and ARCH-0003 R8 says plainly that a resolution pass's
+  read-compute-submit can still be computed against a torn view and submitted.
+  The observable result would be an index that is quietly missing a batch, with
+  no printed condition and no non-zero errors line -- because the printed
+  condition was the only tell BUG-0004's WHY IT HID section could find, and
+  protected-table removes it. That is BUG-0004's concealment made permanent for
+  as long as the intermediate state lasts. It is not a state to leave the tree
+  in, and it is the reason this plan inverts the numbering.
+
+  The second reason is test coverage of the risky work. Step 1's stress test
+  passes from step 2 onward, so it stands as a regression net across steps 4
+  and 5, which rewrite twenty functions in the layer everything else sits on.
+  Written in the other order, the largest change in the plan would land with no
+  concurrency test in the suite at all.
+
+  The acquisition order ARCH-0003 R10 and ARCH-0004 R7 share -- repository lock
+  outer, graph lock inner -- is not at risk in either sequence, because with
+  only one lock in existence there is no order to get wrong, and because
+  loom-graph cannot name a loom-workspace lock even deliberately. Nothing in
+  this plan creates a path that could acquire them in the other order.
+
+  One thing this order does risk, and the plan states it rather than relying on
+  discipline: after step 2, ARCH-0004 R8(a) through R8(e) all pass. A reader
+  who stops there has a green acceptance suite and an unfixed read path. Step 3
+  is therefore not optional, BUG-0004 is not closed until step 7, and step 1
+  lands a graph-layer test that keeps failing until step 4 precisely so the
+  suite says out loud that the work is unfinished.
+
+  FILES
+
+  src/graph/test/concurrency.lisp  (new)
+      Step 1: two threads against one graph -- one writing entities and edges
+      through add-entity/add-relationship, one iterating through all-entities,
+      all-relationships and relationships-from -- asserting no serious-condition
+      was signaled in either. Fails today. Step 3: a test of protected-table's
+      own primitives, including the two read-modify-write ones. Step 5: the
+      with-graph-lock reentrancy test and the torn-view test.
+
+  src/graph/loom-graph.asd
+      Step 1: loom-graph/test gains the "concurrency" component and
+      #:bordeaux-threads in :depends-on. It is transitively available after
+      step 3, but a test system that spawns threads should say so. Step 3:
+      loom-graph gains #:bordeaux-threads and the "protected-table" component,
+      listed *before* "graph-manager" (ARCH-0003 R1, R6). The system is
+      :serial t, so position in the component list is load order.
+
+  src/graph/protected-table.lisp  (new)
+      Step 3: the type and the nine primitives of ARCH-0003 R2 --
+      make-protected-table with its :lock argument, pt-get and (setf pt-get),
+      pt-rem, pt-clear, pt-count, pt-keys, pt-values, pt-push,
+      pt-delete-from-list.
+
+  src/graph/package.lisp
+      Step 3: export make-protected-table and the pt- primitives. Not
+      with-graph-lock, which ARCH-0003 R4 requires to stay internal. See
+      TENSIONS -- neither document decides this and the test in
+      src/graph/test/concurrency.lisp needs it decided.
+
+  src/graph/graph-manager.lisp
+      Step 4: an eighth slot, lock; the seven table slots become
+      protected-table instances sharing it; make-graph stops being defstruct's
+      constructor and becomes a defun. Every gethash, (setf gethash), remhash,
+      push and hash-values loop in index-origin, unindex-origin,
+      facts-from-file, origin-files, add-entity, get-entity, find-entity-by-key,
+      remove-entity, all-entities, add-relationship, get-relationship,
+      find-relationship-by-key, remove-relationship, all-relationships,
+      relationships-from and relationships-to moves onto the pt- primitives.
+      Step 5: the with-graph-lock macro, and the wrapping of add-entity,
+      remove-entity, add-relationship and remove-relationship.
+
+  src/graph/transaction.lisp
+      Step 4: reindex-entity, which is the one function outside
+      graph-manager.lisp that touches a graph table's hash directly
+      (transaction.lisp:97-98, remhash and (setf gethash) on
+      graph-entity-keys). Neither architecture document names it. Step 5:
+      with-graph-lock around reindex-entity, cascade-staleness, the
+      retract-file-op apply-op method, and apply-transaction's whole body.
+
+  src/workspace/workspace.lisp
+      Step 2: the repository struct gains an analysis-lock slot with a
+      bt:make-recursive-lock initform; with-repository-lock is defined; the
+      entire bodies of index-repository, poll-once and reindex-repository are
+      wrapped in it (ARCH-0004 R1-R3). Nothing else in the file changes --
+      R4 lists what deliberately does not get a lock.
+
+  src/workspace/test/workspace.lisp
+      Step 1: the concurrency stress test of ARCH-0004 R8(b) and R8(c).
+
+  docs/bugs/BUG-0004.yaml
+      Step 7: status open -> closed, with a section recording which criteria
+      earned it and the measured pre-fix failure rate of the instrument.
+
+  docs/plans/PLAN-0001.yaml
+      Step 7: the VERIFICATION drift-check line loses its `pause` and the
+      paragraph explaining why the pause was needed is replaced by one saying
+      it no longer is, naming this plan. ARCH-0004's CONSEQUENCES calls this a
+      direct consequence rather than a separate decision.
+
+  docs/plans/PLAN-0002.yaml
+      This file. status: final when step 7 lands, with an OUTCOME section
+      carrying the re-measured timings and any prediction that came out wrong.
+
+  Checked and *not* changed: CLAUDE.md and .claude/skills/loom/SKILL.md say
+  nothing about pausing before a reindex -- SKILL.md's command table describes
+  `pause` and `reindex` independently and never sequences them, and CLAUDE.md
+  does not mention pause at all. Grepping docs/ for "pause" finds only
+  DEC-0004 and REQ-0002 (which describe the lifecycle, correctly and still
+  truly), BUG-0004 and ARCH-0003/ARCH-0004 (which describe this defect), and
+  PLAN-0001's verification line. PLAN-0001 is the only place in the tree that
+  instructs a reader to work around BUG-0004, which is why step 7 has exactly
+  one correction to make and not three. Recorded as a checked negative so the
+  next agent does not re-grep.
+
+  No changes to: src/knowledge (ARCH-0004 R5 requires it), src/process
+  (nothing in the console changes; `reindex` and `status` mean what they
+  meant), src/analyzer, src/ontology (RULE-0001 -- the ontology stays
+  dependency-free, and nothing in this plan gives it a reason not to).
+
+  BLAST RADIUS
+
+  What Loom reports, measured today:
+
+    make-graph          154 impacted (truncated). Almost all of it is d1
+                        :test entities -- every test in loom-graph/test,
+                        loom-analyzer/test and loom-knowledge/test builds a
+                        graph. Plus reindex-repository, watch-repository, the
+                        four fixture builders (make-k-fixture, make-q-fixture,
+                        analyze-fixture, analyze-source, docs-entity) and
+                        five test files. tests: 137 named. decisions: DEC-0004.
+                        This is the honest measure of step 4's reach and the
+                        reason make-graph's signature must not change.
+    apply-transaction   48 tests, and callers detect-deletions,
+                        resolve-and-check, index-file, rf-populate,
+                        docs-entity, analyze-source, analyze-fixture.
+                        decides: DEC-0001. documents: BUG-0004, ARCH-0003,
+                        ARCH-0004, ARCH-0001, CON-0001, RULE-0003.
+    index-repository    10 impacted: reindex-repository, watch-repository, the
+                        workspace file, and five tests via the fixture.
+    poll-once           13 impacted: monitor-loop, start-monitor,
+                        watch-repository, and nine tests.
+    reindex-repository  10 impacted: watch-repository, three drift tests, and
+                        the fixture chain.
+
+  What Loom cannot see, and this plan believes anyway:
+
+    The whole of the read path. loom-knowledge's find, describe, impact and
+    context reach the graph through all-entities, relationships-from and
+    relationships-to, which step 4 rewrites. Loom reports those as called by
+    knowledge services, so this half *is* visible -- but the console commands
+    that drive them are define-command forms, and ARCH-0001 records that calls
+    inside a macro body are unattributed. `impact all-entities` will not name
+    the console. Every console command that reads is nonetheless in step 4's
+    blast radius.
+
+    The failure mode itself. Nothing in the graph is an edge from "two threads"
+    to anything. The entire defect is invisible to impact by construction: it
+    is a property of when two call paths run, not of which calls which. The
+    impact sets above bound what the *code change* touches, not what the *bug*
+    touches, and only the first is measurable.
+
+    make-graph's 154 is a floor for a second reason: it is truncated, and
+    `(truncated)` is a boolean (REQ-0005), so it cannot say by how much.
+
+    Struct accessors. graph-entities and the other six slot readers are
+    generated by defstruct and are :generated-by entities; a call to
+    (graph-entities g) resolves to the accessor, not to the graph struct, so
+    "who touches the tables" is not answerable by impact. It was answered by
+    grepping the seven accessor names across src/, which found exactly one call
+    site outside graph-manager.lisp: transaction.lisp:97-98. That grep is the
+    evidence for step 4's file list, not impact.
+
+  TENSIONS AND GAPS IN THE TWO ARCHITECTURE DOCUMENTS
+
+  Six things a coder executing these two documents literally would get wrong or
+  have to decide unaided. Each is resolved in the steps below.
+
+  1. reindex-entity is missing from ARCH-0003 R4 and from its CONSEQUENCES
+     list, and it is the one function outside graph-manager.lisp that touches a
+     graph table directly. It does remhash of the old natural key and (setf
+     gethash) of the new one on graph-entity-keys -- a two-step move of an index
+     entry. Two consequences. First, if step 4 misses it, the build compiles
+     and then dies at runtime the first time an upsert changes an entity's
+     natural key, because (graph-entity-keys graph) is no longer a hash-table.
+     Second, and more interesting: ARCH-0004's READS section promises a reader
+     "no entity missing its natural-key index entry, because every individual
+     mutation that could produce such a thing is applied under the graph's own
+     lock as one atomic step (ARCH-0003 R4)". reindex-entity is precisely a
+     mutation that produces exactly that, for the window between the remhash
+     and the setf, and it is not in R4's list. ARCH-0004's stated guarantee
+     depends on a function ARCH-0003 forgot. Step 5 adds it to the wrapped set;
+     the guarantee then holds as written.
+
+  2. make-graph cannot stay a defstruct constructor. The graph's tables are
+     slot initforms, and a slot initform cannot see another slot's value, so
+     ARCH-0003 R3's "make-graph constructs one lock ... and passes it as :lock
+     to all seven make-protected-table calls" is not expressible with
+     (:constructor make-graph). The struct constructor has to be renamed
+     (%make-graph) and make-graph written as a defun. The seven slots' :type
+     hash-table declarations have to become protected-table at the same time or
+     the constructor signals a type error. Neither is stated. Both are
+     mechanical, and 154 call sites pass no arguments, so the signature is
+     compatible.
+
+  3. ARCH-0003 R12 and ARCH-0004 disagree about repository-stamps. R12 calls
+     converting it "a cheap, natural follow-on"; ARCH-0004's REPOSITORY-STAMPS
+     section traces every access to it, shows all of them are inside the
+     repository lock, and rejects conversion as "redundant machinery guarding
+     an already-excluded resource". ARCH-0004 is the later document and reasons
+     from the design that actually landed, so it wins: repository-stamps stays
+     a bare hash table. A coder reading in numeric order and stopping at
+     ARCH-0003 would do the wrong thing, which is why this is written down
+     rather than assumed.
+
+  4. loom-graph/test does not depend on bordeaux-threads. ARCH-0003's
+     CONSEQUENCES says the new two-thread test "belongs in loom-graph/test now
+     that bordeaux-threads is available there" -- it is available only
+     transitively, via loom-graph after R6. Step 1 declares it explicitly,
+     because step 1's test spawns threads and lands *before* R6 does.
+
+  5. Neither document says whether the pt- surface is exported from loom-graph.
+     R4 says with-graph-lock is not exported and R2 says nothing either way
+     about the primitives. It has to be decided, because loom-graph-test uses
+     the loom-graph package and would otherwise have to write loom-graph::pt-get
+     to test the type at all. Decision: export make-protected-table and the nine
+     primitives; keep with-graph-lock internal. The cost is that loom-workspace
+     can now see the type and might be tempted to convert repository-stamps --
+     which item 3 above forbids, and which this plan's summary scopes out.
+
+  6. Transaction atomicity. ARCH-0003 R4 wraps four graph-manager mutations,
+     cascade-staleness and one apply-op method, and stops. It does not wrap
+     apply-transaction, so a reader can observe a transaction half applied --
+     entity present, its edge not yet -- even though transaction.lisp's own
+     docstring quotes SS5.2's "a transaction either applies atomically or is
+     rejected". Step 5 wraps apply-transaction's whole body in with-graph-lock.
+     This *extends* ARCH-0003 R4 rather than contradicting it: R4 says the
+     listed bodies must be wrapped, not that no other body may be. Two reasons.
+     It makes the SS5.2 guarantee true against a concurrent reader for the
+     first time; and it makes every pt- primitive inside a transaction a cheap
+     reentrant re-acquisition of a lock the thread already holds, which is
+     ARCH-0003 R13's own argument for why composing the mechanisms amortizes
+     cost. It is also the named fallback if step 6's measurement contradicts
+     R13. The cost is bounded and worth stating: a knowledge query can now wait
+     on one whole transaction rather than one primitive -- a single file's
+     ops in the common case, and at worst one resolution pass's batch, which
+     the 24 ms resolve-and-check figure bounds.
+
+  RISKS
+
+  A concurrency test that passes because the race did not fire. CON-0003 is the
+  house rule and this is where it bites hardest: both new tests are
+  probabilistic instruments, and a green run proves nothing on its own. Three
+  mitigations, all mandatory. Each test is run against the unfixed tree before
+  its fix lands and its failure recorded in this document's OUTCOME with a
+  count (how many runs of how many failed). Each is run repeatedly after -- not
+  once -- per ARCH-0004 R8(b). And if a test fails to fail pre-fix, it is not
+  strengthened until it does *before* the fix is written; a test first seen
+  failing after someone has already tried the fix is worthless as evidence.
+
+  The pre-fix failure is not an assertion failure, and can abort the run.
+  index-file wraps analysis in handler-case, and resolve-and-check's submit
+  wraps each transaction, so most concurrent-operations conditions are swallowed
+  into repository-errors and printed rather than signaled to the caller. But
+  detect-deletions calls apply-transaction directly with no handler
+  (workspace.lisp:271), and poll-once's own file loop is unguarded -- which is
+  exactly why monitor-loop has a serious-condition handler. So in the stress
+  test, a condition can escape poll-once entirely and kill the worker thread,
+  and bt:join-thread will then signal it in the main thread. The worker bodies
+  must wrap themselves in handler-case for serious-condition and *return* what
+  they caught, so the main thread can assert on it. Written any other way, the
+  pre-fix run reports as a suite that fell over rather than as a test that
+  failed, which is a much weaker record.
+
+  fiveam assertions do not work from a spawned thread. `is` and its relatives
+  record into special variables that are thread-local under SBCL, so a check
+  evaluated inside a worker thread is at best lost and at worst signals. Every
+  assertion in both new tests must run on the main thread after every worker
+  has been joined. This is a mechanical trap with a silent failure mode -- a
+  test whose assertions all live in worker threads passes unconditionally.
+
+  A step-1 test that fails for a reason unrelated to the race. The stress test
+  drives reindex-repository and poll-once against a four-file fixture with no
+  sleep. Two ordinary, non-race reasons it could report a difference: the
+  *mtime-settle-seconds* window makes a file written and immediately polled
+  read as changed, which is correct behaviour and not drift; and detect-deletions
+  runs on every tick over a graph a reindex has just replaced. The assertion
+  must therefore be on the R8(c) shape -- final state equals a fresh
+  monitor-stopped reindex of the same fixture -- plus the absence of any
+  repository-errors entry whose text contains "Unsafe concurrent operations",
+  and not on the count returned by any single call.
+
+  The observability regression between steps. Stated under WHY THIS ORDER and
+  repeated here because it is the risk that argues for the whole sequence: any
+  ordering that lands protected-table before the repository lock silences the
+  printed condition that is currently the only symptom, while ARCH-0003 R8 says
+  the underlying pass-level tear survives. This plan does not take that
+  ordering, and a coder who reorders steps 2 and 3 for convenience takes it
+  without noticing.
+
+  Step 4 is a twenty-function mechanical rewrite with one compile-time
+  tripwire and one runtime one. Compile-time: nothing. Runtime: any missed
+  gethash on a slot that is now a protected-table is a type error on first use.
+  The tripwire that catches it is not the compiler -- it is the existing 245
+  tests, which is why the whole suite must be run at step 4 and not only the
+  graph suite. The one call site outside graph-manager.lisp is named above;
+  the grep that found it should be re-run after step 4 as a check that nothing
+  was reintroduced.
+
+  Deadlock. Two locks now exist, and ARCH-0003 R10 argues the ordering is
+  structurally unwritable in reverse. Believed, but the argument rests on
+  loom-graph never depending on loom-workspace, which RULE-0001 to RULE-0003
+  do not actually state -- they cover ontology, analyzers and knowledge
+  services. Nothing machine-checks the direction of this particular edge. The
+  practical guard is that with-repository-lock is unexported and lives in a
+  system loom-graph cannot see; `check` will not catch a violation of it.
+
+  Latency, in two places the documents do not price. cascade-staleness is a
+  full scan of every entity and relationship, called once per retracted entity
+  inside retract-file-op's loop; after step 5 it runs with the graph lock held.
+  Because retract-file-op's own body is wrapped, the inner acquisitions are
+  reentrant and cheap, but the *hold* is now the whole retraction of a file
+  rather than each individual removal. And apply-transaction's wrap (item 6
+  above) holds the graph lock across a whole batch. Both are bounded by the
+  24 ms resolve-and-check figure and both are what step 6 measures.
+
+  Tests likely to break, and why:
+
+    Nothing in the existing 245 should change behaviour. ARCH-0003's own
+    CONSEQUENCES says protected-table's single-threaded contract matches a bare
+    hash table's, and that is the claim step 4 tests by running the full suite
+    unchanged. If any existing test needs editing to pass after step 4, that
+    is evidence the contract diverged and is worth stopping for rather than
+    editing the test.
+
+    The exceptions to watch, all in loom-graph/test: any test that inspects a
+    graph's slots rather than going through the accessor functions. Grepping
+    the seven slot accessors across src/ found none in test code, so this is
+    predicted to be empty -- recorded so that a surprise is recognisable.
+
+    reindexing-produces-an-identical-index and
+    an-incremental-update-matches-a-full-rebuild are the two existing tests
+    closest to what step 1's stress test does. They are single-threaded and
+    must stay green throughout; if they go red at step 2, the repository lock
+    has changed sequential behaviour, which it must not.
+
+  Performance regression from lock overhead. ARCH-0003 R13 predicts single-digit
+  milliseconds added to a 196 ms rebuild. Step 6 tests the prediction rather
+  than restating it. If a full rebuild has grown by more than 20 percent
+  (roughly 235 ms), the fallback, in order: confirm apply-transaction's wrap
+  from step 5 is present, since without it every pt- call inside a transaction
+  is a fresh acquisition rather than a re-entry; then wrap index-file's
+  analysis-and-submit in one with-graph-lock for the same reason; and only then
+  reconsider the primitive surface. What is *not* a fallback is removing a lock
+  from any of the three functions ARCH-0004 R3 names, because that reopens
+  BUG-0004.
+
+  STEPS
+
+  1. The two failing tests, seen failing.
+     src/graph/test/concurrency.lisp (new) -- a test that builds one graph,
+     starts two bt threads, and runs them for a fixed iteration count with no
+     sleep: the writer calls add-entity and add-relationship in a loop, the
+     reader calls all-entities, all-relationships and relationships-from in a
+     loop. Each thread body is wrapped in handler-case for serious-condition
+     and returns the condition it caught, or nil. The main thread joins both
+     and asserts both returned nil. src/graph/loom-graph.asd -- loom-graph/test
+     gains the "concurrency" component and #:bordeaux-threads.
+     src/workspace/test/workspace.lisp -- the stress test of ARCH-0004 R8(b)
+     and R8(c): build the fixture with :monitor nil, start one thread calling
+     reindex-repository in a loop and one calling poll-once in a loop, no sleep
+     between calls, on the order of a hundred iterations each, both bodies
+     wrapped as above; join both; then, on the main thread, assert that neither
+     returned a condition, that repository-errors contains no entry whose text
+     matches "Unsafe concurrent operations", and that a fresh
+     reindex-repository taken after the threads are joined produces the same
+     entity count, relationship count and tested-unit count as the state the
+     threads left behind.
+     This is the first step that can be run, and it is the one step that
+     deliberately leaves the suite red. Two systems go from green to failing:
+     loom-graph and loom-workspace. A reviewer seeing red here is seeing the
+     plan work, not the plan break, and the commit message should say so.
+     Verification, which is the point of the step: run
+     `tools/loom-test.sh` five times and record how many of the five each new
+     test failed in. "Seen failing" means, concretely, one of three observable
+     things and not a clean assertion message: a serious-condition returned
+     from a joined thread whose report text contains "Unsafe concurrent
+     operations"; a repository-errors entry with the same text; or a
+     relationship or tested-unit count below the reference rebuild. Record the
+     count in this document's OUTCOME. If either test fails in zero of five
+     runs, it is not yet an instrument -- raise the iteration count and the
+     thread count until it fails, before writing any fix. Do not proceed to
+     step 2 on an untriggered test.
+
+  2. The repository lock. ARCH-0004 R1-R3.
+     src/workspace/workspace.lisp -- the repository defstruct gains an
+     analysis-lock slot with a (bt:make-recursive-lock) initform, which is safe
+     here in a way it is not on the graph struct because it references no other
+     slot. Define with-repository-lock (repository) &body body over
+     bt:with-recursive-lock-held on that slot, internal and not exported. Wrap
+     the entire existing body of index-repository, of poll-once -- the
+     changed-file loop included, not only the mutating tail -- and of
+     reindex-repository, including its graph swap and its repository-stamps
+     clrhash. Nothing else in the file changes: ARCH-0004 R4 lists what
+     deliberately gets no lock and repository-errors' residual race is recorded
+     rather than closed.
+     After this step, BUG-0004's reported defect is closed and the read path
+     is not. Do not stop here; see WHY THIS ORDER.
+     Verification, four parts:
+       a. The step-1 workspace stress test now passes, in five consecutive
+          runs of the full suite, having failed in step 1. That pairing is the
+          CON-0003 evidence for this step and the only part of it that is not
+          merely an observation.
+       b. The step-1 graph concurrency test still fails. This is expected and
+          is what keeps the suite honest about the unfinished half.
+       c. ARCH-0004 R8(a), on Loom itself, in one invocation so the monitor
+          stays alive throughout:
+            tools/loom.sh 'reindex' 'status' 'reindex' 'status' ...
+          twenty pairs. All twenty status blocks must read 886 entities, 4035
+          relationships, 245 tests, 167 tested units, no errors line, and no
+          "Unsafe concurrent operations" text anywhere in the output. Against
+          the one-in-three failure rate measured today, twenty clean trials is
+          a strong result rather than a lucky one. Follow with
+          `tools/loom.sh 'reindex' 'log' 'check'` and confirm log is empty of
+          concurrency text and check still reports 0 violations and 0
+          unresolved references.
+       d. ARCH-0004 R8(d) and R8(e). For (d):
+            tools/loom.sh 'reindex' 'pause' 'status'
+          must return promptly -- well inside *monitor-stop-timeout*'s 10
+          seconds -- and report `watcher: paused`. For (e): with a watched
+          repository, touch several files at the moment `reindex` is issued and
+          confirm every edit is present in the final index, whether the reindex
+          or the following poll picked it up.
+
+  3. protected-table, used by nothing.
+     src/graph/protected-table.lisp (new) -- the struct wrapping one hash-table
+     and one lock reference, with make-protected-table taking :test and :lock,
+     the lock defaulting to a fresh bt:make-recursive-lock only when none is
+     supplied (ARCH-0003 R1). The nine primitives of R2: pt-get returning
+     (values value present-p) like gethash, (setf pt-get), pt-rem, pt-clear,
+     pt-count, pt-keys, pt-values -- each building its fresh list under the
+     lock -- and the two read-modify-write primitives, pt-push and
+     pt-delete-from-list, each performing the whole read-modify-write inside
+     one critical section rather than composing a locked read with a locked
+     write. src/graph/loom-graph.asd -- #:bordeaux-threads in loom-graph's
+     :depends-on, and "protected-table" as a component immediately before
+     "graph-manager". src/graph/package.lisp -- export the constructor and the
+     nine primitives, per TENSIONS item 5.
+     Nothing constructs a protected-table outside its own tests yet, so no
+     behaviour moves and the suite's state is unchanged from step 2.
+     Verification: single-threaded tests in
+     src/graph/test/concurrency.lisp that each primitive matches its hash-table
+     counterpart, including pt-get's second value on a missing key and
+     pt-delete-from-list removing the key entirely when the list empties. Then
+     the one that earns the design: two protected-tables constructed with the
+     same :lock, two threads each pt-push-ing a thousand values onto the same
+     key, and an assertion that the resulting list has exactly two thousand
+     elements. That fails against a naive implementation composing a locked
+     read with a locked write, which is the trap ARCH-0003 names, and it fails
+     without this step because the type does not exist. Then `check` -- RULE-0001
+     is the one this step could break and it is machine-checked, so run it
+     rather than inferring it from a green suite.
+
+  4. The graph converts. ARCH-0003 R3 and R11.
+     src/graph/graph-manager.lisp -- rename the struct constructor to
+     %make-graph, add a lock slot holding one bt:make-recursive-lock, change
+     the seven table slots' :type from hash-table to protected-table, and
+     define make-graph as a defun that makes the lock, then makes seven
+     protected-tables with :test #'equal and :lock that lock, then calls
+     %make-graph. One shared lock, not seven. Then move every table access in
+     the file onto the pt- primitives: index-origin's push becomes pt-push,
+     unindex-origin's remove-then-conditionally-remhash becomes
+     pt-delete-from-list, the hash-values loops in all-entities and
+     all-relationships and the hash-keys loop in origin-files become pt-values
+     and pt-keys, and every remaining gethash, (setf gethash) and remhash
+     becomes pt-get, (setf pt-get) or pt-rem. src/graph/transaction.lisp --
+     reindex-entity's remhash and (setf gethash) on graph-entity-keys, which is
+     the only such call site outside graph-manager.lisp and which neither
+     architecture document names.
+     This is one step and cannot be split: the moment the slots change type,
+     every direct access in the file is a runtime type error, so partial
+     conversion does not leave a runnable tree.
+     Verification, three parts, in this order:
+       a. The step-1 graph concurrency test now passes, having failed in steps
+          1, 2 and 3. This is this step's CON-0003 pairing, and it is a clean
+          one: the test is below the workspace layer entirely, so the
+          repository lock from step 2 cannot be what fixed it. Run the graph
+          suite five times.
+       b. The full suite, all six systems green, with no existing test edited.
+          An existing test that needs editing to pass is evidence the type's
+          single-threaded contract diverged from a hash table's; stop and fix
+          the type, not the test.
+       c. Re-run the grep for the seven slot accessor names across src/ and
+          confirm the only hits are inside graph-manager.lisp. Then
+          `tools/loom.sh 'status' 'check'` -- 886 / 4035 / 245 / 167 and 0
+          violations, which is Loom self-indexing through the rewritten layer.
+
+  5. with-graph-lock, and the compound mutations. ARCH-0003 R4.
+     src/graph/graph-manager.lisp -- define with-graph-lock (graph) &body body
+     over bt:with-recursive-lock-held on the graph's lock slot, internal to
+     loom-graph and not exported, and wrap the existing bodies of add-entity,
+     remove-entity, add-relationship and remove-relationship.
+     src/graph/transaction.lisp -- wrap cascade-staleness, the retract-file-op
+     apply-op method, reindex-entity (TENSIONS item 1, not in R4's list), and
+     apply-transaction's whole body (TENSIONS item 6, an extension of R4 with
+     its reasons recorded there).
+     Every pt- primitive called inside these bodies re-acquires the same lock
+     the thread already holds, which is what the lock being recursive is for.
+     Verification, three parts:
+       a. A deterministic test in src/graph/test/concurrency.lisp: call
+          add-relationship from inside a with-graph-lock on the same graph and
+          assert it returns rather than deadlocking, and that a nested
+          with-graph-lock on the same graph runs its body. This fails without
+          the step because the macro does not exist, and it fails loudly
+          against a non-reentrant lock rather than hanging the suite -- give it
+          a bounded timeout, since a self-deadlock in a test is a hung run,
+          which is worse than a red one.
+       b. A torn-view test: one thread calling add-relationship in a loop,
+          another asserting that every relationship all-relationships returns
+          is also reachable through relationships-from on its own from-id.
+          Honest caveat, and it must go in the OUTCOME rather than be quietly
+          dropped: the window between add-relationship's store and its two
+          index pushes is nanoseconds wide, so this test may well pass before
+          the step as well as after. Run it against the pre-step code and
+          record the failure count. If it is zero, say so and do not claim it
+          as CON-0003 evidence for this step -- the evidence is then (a) plus a
+          reading of the diff confirming no multi-table mutation is left
+          unwrapped, and this plan would rather record a weak instrument than
+          dress it up as a strong one.
+       c. Full suite green, `check` clean, and the step-1 tests from both
+          systems still passing.
+
+  6. Re-measure, and test ARCH-0003 R13's prediction.
+     No source changes. A one-off script in the scratchpad, using the registry
+     preamble from the loom skill, loading loom-process, watching Loom's own
+     tree with :monitor nil, and timing the same four operations the baseline
+     names: a full reindex-repository, resolve-and-check alone, poll-once with
+     nothing changed, and poll-once with one file touched. Single-threaded,
+     monitor stopped, /usr/bin/sbcl, so the numbers are comparable to
+     ARCH-0004's. Take three runs of each and report the median, since a single
+     timing on a 20 ms operation is noise.
+     Verification: the four numbers, written into this document's OUTCOME
+     beside the baseline, with the delta. ARCH-0003 R13 predicts single-digit
+     milliseconds added to the rebuild. If the rebuild has grown by more than
+     20 percent -- past roughly 235 ms -- apply the fallback ladder under RISKS
+     and re-measure before proceeding. If R13's prediction is wrong, say so in
+     the OUTCOME in the terms PLAN-0001's OUTCOME used for its own two wrong
+     predictions: what was predicted, what was measured, and what it means.
+
+  7. The documents this work makes false.
+     docs/bugs/BUG-0004.yaml -- status open -> closed, with a short section
+     recording what earned it: ARCH-0004 R8(a) through R8(e), first passing at
+     step 2 and re-run at this step to confirm steps 4 and 5 did not undo them,
+     plus the graph concurrency test from step 1 passing since step 4. The
+     close waits until here rather than being taken at step 2 on R8's letter,
+     because BUG-0004's SYMPTOM section quotes a condition -- "Unsafe
+     concurrent operations" -- that a console query racing a poll could still
+     produce until step 4 landed, and a bug whose quoted symptom is still
+     reachable is not closed. Record the pre-fix failure rate measured under
+     THE DEFECT, REPRODUCED TODAY, so a future reader can tell how much power
+     the acceptance check had.
+     docs/plans/PLAN-0001.yaml -- the drift-check line in VERIFICATION becomes
+     `tools/loom.sh 'reindex' 'status'`, and the paragraph beginning "The
+     `pause` is not optional" is replaced by one saying the pause was a
+     workaround for BUG-0004, that BUG-0004 is closed by PLAN-0002, and that
+     the check now runs against a watched repository -- which is ARCH-0004
+     R8(a). The withdrawal of "a difference here is the lifecycle bug and there
+     is no other symptom" stays withdrawn: it was false for its own reasons and
+     closing BUG-0004 does not make it true again.
+     docs/plans/PLAN-0002.yaml -- this file: status draft -> final, plus the
+     OUTCOME section carrying the step-1 failure counts, the step-5 torn-view
+     test's honest verdict, the re-measured timings, and any prediction here
+     that came out wrong.
+     No change to CLAUDE.md or .claude/skills/loom/SKILL.md: neither instructs
+     a reader to pause before reindexing, checked and recorded under FILES.
+     Verification: `tools/loom.sh 'status' 'check'` -- documents 29 -> 30 (this
+     plan; BUG-0004 and PLAN-0001 are edits, not additions), unresolved
+     document references still 0, violations still 0. Then
+     `tools/loom.sh 'impact BUG-0004 2'`, which must report ARCH-0003,
+     ARCH-0004 and this plan, since refines: makes the chain walkable from the
+     defect forward to the work that closed it.
+
+  VERIFICATION
+
+  Per step, as listed above. For the work as a whole:
+
+    tools/loom-test.sh
+        Six systems green, /usr/bin/sbcl and not the SBCL behind SLIME; say
+        which was run. Run five consecutive times, not once: two of the tests
+        in this plan are probabilistic and a single green run is weak evidence
+        about both of them.
+
+    tools/loom.sh 'status' 'check'
+        Against the BASELINE: 78 files, 886 entities, 4035 relationships, 245
+        tests covering 167 units, 0 violations, 0 unresolved document
+        references, 1 definer macro, documents 29 -> 30. Nothing in this plan
+        should move any count except the document total. A count that moved is
+        a bug in the locking, not a success.
+
+    tools/loom.sh 'reindex' 'status'   x20, in one invocation
+        ARCH-0004 R8(a). Every one of the twenty must match the baseline on all
+        four numbers and print no errors line. This same command failed one run
+        in three on 2026-08-01 before the work, which is what makes twenty
+        clean trials mean something.
+
+    tools/loom.sh 'reindex' 'pause' 'status'
+        R8(d): prompt return, `watcher: paused`, no forced thread destroy.
+
+    The scratchpad timing script from step 6
+        Four numbers against 196 / 24 / 20-24 / 56 ms. The number that must not
+        have moved much is the 196; R13 predicts single-digit milliseconds
+        added, and a measurement is what settles it.
+
+    Rule checks are not assertions. RULE-0001 to RULE-0003 are machine-checked
+    by the rule engine and do not fail a FiveAM check, and this plan adds a
+    system dependency (#:bordeaux-threads on loom-graph) which is exactly the
+    kind of change RULE-0001 exists to catch. `check` is not optional at any
+    step that touches an .asd file -- steps 1 and 3.
+
+  OUTCOME
+
+  All seven steps executed 2026-08-01, /usr/bin/sbcl via tools/loom-test.sh and
+  tools/loom.sh, not the SBCL behind SLIME.
+
+  The baseline moved before any of it, because the tree gained this plan and
+  then gained the files the plan calls for. What must be compared is not the
+  numbers in BASELINE above but each step against the step before it:
+
+    at start of work   79 files, 887 entities, 4085 relationships, 30 documents
+    after step 5       81 files, 936 entities, 4323 relationships, 30 documents
+
+  0 violations and 0 unresolved document references at every step.
+
+  STEP 1 FAILURE COUNTS, AND ONE CORRECTION TO THE TEST'S SHAPE
+
+  The graph test as this plan specified it -- one writer, one reader -- failed
+  in 0 of 10 runs. It was not an instrument, and raising the iteration count
+  would not have made it one, because the reason is not sensitivity. SBCL
+  2.1.11 detects concurrent *mutation* of a hash table and not a read
+  overlapping a write. Measured on a bare EQUAL table: one writer against a
+  thread iterating it while 100,000 keys went in never signals; two writers
+  signal within the first few hundred puthashes, every run.
+
+  The test was therefore given a second writer, which is what this plan's own
+  RISKS section directs ("raise the iteration count and the thread count until
+  it fails, before writing any fix"), and which is the more faithful model of
+  BUG-0004 in any case -- its collision pair is the console thread inside
+  REINDEX-REPOSITORY against the monitor thread inside POLL-ONCE, and both of
+  those write. The reader thread was kept, because ARCH-0003 R7 claims a
+  benefit for it that would otherwise have no test.
+
+    graph concurrency test      5 of 5 runs failed, pre-fix
+    workspace stress test       4 of 5 runs failed, pre-fix, at 200 iterations
+                                1 of 5 at the 60 iterations first tried
+    full suite, unfixed tree    4 of 4 completed runs failed in exactly the two
+                                systems predicted, loom-graph and loom-workspace
+
+  The pre-fix graph failures were not only the expected condition. Across five
+  runs: "Unsafe concurrent operations", an SBCL internal AVER failure
+  (= HWM (HASH-TABLE-SIZE TABLE)), "Invalid index 2 for (SIMPLE-ARRAY
+  (UNSIGNED-BYTE 32) (1))", and a generic function receiving 0 where an entity
+  was expected -- a hash table torn far enough to hand out its own internal
+  vectors. Entity counts landed at 1743, 30, 2002, 2026 and 2 of 4000.
+
+  The workspace test needed one correction the plan did not anticipate.
+  REINDEX-REPOSITORY clears the error list as its third act, so a collision
+  INDEX-FILE recorded during one iteration is erased by the next, and a check
+  made only after both threads have joined sees an empty list however bad the
+  run was. Each worker now samples REPOSITORY-ERRORS after every call and
+  returns what it saw. Without that sampling the test was reporting on the
+  last iteration only.
+
+  STEP 2. All four verifications passed. The workspace stress test went from
+  4 of 5 failing to 0 of 5; the graph test stayed at 5 of 5 failing, which is
+  the point of the ordering. R8(a): twenty reindex/status pairs in one
+  invocation, monitor alive throughout -- all 41 status blocks identical, no
+  errors line, no "Unsafe concurrent operations" anywhere. R8(d): the pause
+  issued the instant a reindex returned completed in 48 ms against
+  *monitor-stop-timeout*'s 10 s, a two-hundred-fold margin, with no forced
+  destroy. R8(e): four files written by a second thread at the moment a
+  reindex was issued were all present in the final index.
+
+  STEP 3. The lost-update test earns its place: against a naive PT-PUSH
+  composing a locked read with a locked write, two threads pushing 2000 values
+  each produced 3252 of 4000. `check` clean, so RULE-0001 is untroubled by
+  loom-graph's new bordeaux-threads dependency, as ARCH-0003 R6 argued.
+
+  STEP 4. The graph test went from failing to 0 of 5. The pairing was
+  re-established after the fixture correction below rather than assumed: the
+  reshaped test was run against a copy of the tree with step 4 reversed and
+  failed 5 of 5 there. Full suite green, no existing test edited -- so
+  protected-table's single-threaded contract does match a bare hash table's,
+  which was the claim. The accessor grep finds pt- primitives at every one of
+  the 30 call sites and REINDEX-ENTITY as the only one outside
+  graph-manager.lisp, as TENSIONS item 1 predicted.
+
+  A FIXTURE DEFECT THAT LOOKED LIKE A LOCKING DEFECT
+
+  Worth recording because it cost real time and would cost the next person the
+  same. After step 4 the graph test still lost four to ten entities of four
+  thousand, every run, with nothing signaled. That is the exact shape of
+  ARCH-0003 R8's stated residual, and it was not that.
+
+  The fixture built its nodes with graph-manager.lisp's GRAPH-TEST-NODE, which
+  declares no :natural-key, so every instance took a random uuid from
+  FRESH-ID -- and RANDOM-UUID:MAKE-UUID is not thread-safe. Two threads
+  generating 20,000 uuids each produced 26,039 distinct strings of 40,000;
+  one thread generating 40,000 produced 40,000. Duplicate ids, second write
+  wins, entities gone. Repointing the test at a fixture keyed on (:file :name)
+  took the loss to zero and made the test measure the graph and nothing else.
+  The uuid generator's own defect is BUG-0005 and is out of scope here.
+
+  STEP 5. The reentrancy test passes and cannot compile without the step. The
+  torn-view test is better than this plan feared: run against a copy with the
+  wrapper stripped from ADD-ENTITY and ADD-RELATIONSHIP it failed 2 of 5,
+  catching a relationship reachable through ALL-RELATIONSHIPS but not yet
+  through RELATIONSHIPS-FROM on its own from-id. It is real CON-0003 evidence
+  and not the formality the plan expected to have to apologise for. Full suite
+  green, `check` clean, both step-1 tests still passing.
+
+  STEP 6. ARCH-0003 R13 PREDICTED SINGLE-DIGIT MILLISECONDS. IT IS LOW DOUBLE
+  DIGITS.
+
+  Absolute numbers first, on the real tree, single-threaded, monitor stopped,
+  median of three, beside ARCH-0004's baseline:
+
+    operation                     ARCH-0004    now
+    reindex-repository, rebuild      196 ms   216 ms
+    resolve-and-check alone           24 ms    24 ms
+    poll-once, nothing changed     20-24 ms    28 ms
+    poll-once, one file changed       56 ms    52 ms
+
+  Those are not a measurement of the lock. The tree grew about 7 percent in
+  entities between the two, and a first attempt to control for that compared
+  the working tree against a copy -- which was wrong for a reason worth
+  writing down: REPOSITORY-FILES calls DIRECTORY over "**/*.*", which descends
+  .git even though the results are filtered out afterwards, so a copy made
+  without .git polls three times faster than the original. The idle poll
+  appearing to go from 8 ms to 28 ms was that, not locking.
+
+  The controlled comparison is copy against copy, both without .git, the two
+  differing only in whether graph-manager.lisp and transaction.lisp use the
+  pt- primitives and with-graph-lock. Three paired invocations, seven runs
+  each, medians:
+
+    operation                     no graph lock   with graph lock   delta
+    reindex-repository, rebuild    184 176 208     196 188 208       +12 ms
+    resolve-and-check alone         24  20  28      32  28  28        +4 ms
+    poll-once, nothing changed       8   8   8       8   8   8         0 ms
+    poll-once, one file changed     32  28  36      36  32  40        +4 ms
+
+  About 12 ms added to a 185 ms rebuild, roughly 6 percent, of which perhaps
+  2 ms is the locked copy's 1 percent extra content. R13 predicted single-digit
+  milliseconds; the measurement is twelve. The prediction was the right order
+  of magnitude and slightly optimistic, and it is nowhere near the 20 percent
+  threshold that would trigger this plan's fallback ladder, so no fallback was
+  applied. What it means practically: nothing. Twelve milliseconds on an
+  operation a human types by hand, against a poll interval of two seconds.
+
+  One caution for whoever re-measures. This machine is noisy enough that a
+  single seven-run median moved between 196 ms and 260 ms for the same code,
+  and an early three-run pass reported the locked tree at 200 ms and a later
+  seven-run pass at 260 ms. Only the paired, alternated invocations above are
+  worth quoting; a single run of a timing script on a 200 ms operation says
+  very little here.
+
+  ACCEPTANCE, AND WHAT IS DELIBERATELY NOT DONE
+
+  ARCH-0004 R8(a) through R8(e) all pass, R8(a) re-run after steps 4 and 5 as
+  this plan requires: twenty pairs, 41 identical status blocks, 81 files, 936
+  entities, 4323 relationships, 255 tests covering 186 units, no errors line,
+  no concurrency text in `log`, `check` clean.
+
+  STEP 7. The three status changes were held for review after step 6 and taken
+  on review the same day. BUG-0004 open to closed, with a CLOSED section
+  recording which of R8(a) to R8(e) earned it, the one-in-three pre-fix failure
+  rate of the acceptance instrument, and the two findings that were not this
+  defect -- SBCL detecting mutation rather than read-during-write, and BUG-0005.
+  PLAN-0001's drift-check line becomes `tools/loom.sh 'reindex' 'status'`, with
+  the paragraph explaining the `pause` replaced by one recording that it was a
+  BUG-0004 workaround now closed by this plan; the withdrawal of "a difference
+  here is the lifecycle bug and there is no other symptom" stays withdrawn, as
+  step 7 required. This file draft to final. CLAUDE.md and
+  .claude/skills/loom/SKILL.md unchanged, as the checked negative under FILES
+  said they would be.
+
+  Step 7's own verification: documents unchanged at 31 -- all three changes are
+  edits, not additions -- 0 violations and 0 unresolved document references, and
+  `impact BUG-0004 2` reports ARCH-0003 and ARCH-0004 at depth 1 and this plan
+  at depth 2, so the chain is walkable from the defect forward to the work that
+  closed it.
+
+  ONE PREDICTION IN THIS SECTION THAT CAME OUT WRONG
+
+  Step 7's verification predicted "documents 29 -> 30". Both numbers are stale:
+  the count was 29 when this plan was drafted and is 31 now, because the tree
+  gained this plan and then gained BUG-0005 while the work was in flight. The
+  substance of the prediction -- that step 7 adds no document and moves the
+  total by nothing -- held. Recorded because a reader checking the literal
+  number against `status` would otherwise think something had gone wrong.
+
+  ARCH-0003 and ARCH-0004 were left at status: draft when step 7 was first
+  taken, on the reasoning that this plan had not said it would change them.
+  That was wrong, and it is now RULE-0005: a plan reaching final is exactly
+  what makes the draft status of the documents it implements false, and the
+  plan's author is the only one holding the evidence. Both are now
+  status: implemented, and ARCH-0003 carries a section explaining why its R5
+  and R12 are satisfied rather than skipped -- a distinction this plan's own
+  scope-out list obscures by filing "work deferred" and "work the architecture
+  requires not be done" under one heading. CON-0004 now carries the status
+  vocabulary that was missing.

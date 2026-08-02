@@ -1,19 +1,51 @@
 {
   "permissions": {
+    "defaultMode": "dontAsk",
     "allow": [
+      "Bash(tools/loom.sh:*)",
+      "Bash(tools/loom-test.sh:*)",
+      "Bash(tools/next-doc-id.sh:*)",
+      "Bash(./tools/loom.sh:*)",
+      "Bash(./tools/loom-test.sh:*)",
+      "Bash(./tools/next-doc-id.sh:*)",
+      "Bash(/home/beberman/lisp/Loom/tools/loom.sh:*)",
+      "Bash(/home/beberman/lisp/Loom/tools/loom-test.sh:*)",
+      "Bash(/home/beberman/lisp/Loom/tools/next-doc-id.sh:*)",
+      "Bash(sbcl --script:*)",
+      "Bash(/usr/bin/sbcl --script:*)",
+      "Bash(/usr/bin/sbcl:*)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(grep:*)",
+      "Bash(printf:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(python3 -)",
       "Bash(python -)",
-      "PowerShell(Copy-Item \"C:\\\\Users\\\\bsebe\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\b--home-beberman-lisp-Loom\\\\752f9323-2d3a-43f5-ad0a-8de1df587831\\\\scratchpad\\\\selfcheck.lisp\" \"B:\\\\home\\\\beberman\\\\lisp\\\\selfcheck.lisp\" -Force)",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"sbcl --script selfcheck.lisp 2>&1 | grep -v '^; \\\\|^$\\\\|fasl'\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"sbcl --script selfcheck.lisp 2>&1 | grep -v '^; \\\\|fasl'\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"sbcl --script selfcheck.lisp 2>&1 | grep -E 'suites:|Pass:|Fail:|Failure|compile warnings|^  ' | head -60\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp/Loom -- bash -lc \"git status --short\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp/Loom -- bash -lc \"git log --oneline -4\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"sbcl --script selfcheck.lisp 2>&1 | grep -v '^; \\\\|fasl' | head -120\")",
-      "PowerShell(wsl.exe -d Ubuntu -- bash -lc \"ps -eo pid,etime,pcpu,comm | grep -i sbcl | head\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"sbcl --script selfcheck.lisp > /tmp/loom.log 2>&1; grep -v '^; \\\\|fasl' /tmp/loom.log > /tmp/loom-clean.log; echo EXIT=\\\\$?; wc -l /tmp/loom-clean.log\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"grep -n -A6 'Failure Details' /tmp/loom-clean.log; echo '=== TOTALS ==='; grep -n 'Pass:\\\\|Fail:\\\\|suites:' /tmp/loom-clean.log\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"sed -n '118,160p' /tmp/loom-clean.log\")",
-      "PowerShell(wsl.exe -d Ubuntu --cd /home/beberman/lisp -- bash -lc \"ldconfig -p | grep -i yaml; echo '--- dists ---'; ls ~/quicklisp/dists/quicklisp/software/ 2>/dev/null | grep -iE 'yaml|thread|hunchentoot|jonathan|jzon|cl-json' | head -20\")"
+      "Skill(loom)",
+      "Read(/home/beberman/lisp/Loom/**)",
+      "Edit(/home/beberman/lisp/Loom/**)",
+      "Write(/home/beberman/lisp/Loom/docs/**)",
+      "Write(/home/beberman/lisp/Loom/src/**)",
+      "Write(/home/beberman/lisp/Loom/tools/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 /home/beberman/lisp/Loom/tools/allow-loom.py"
+          }
+        ]
+      }
     ]
   }
 }

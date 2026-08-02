@@ -1,9 +1,9 @@
 id: CON-0001
-type: concept
 title: Resolution pass
 summary: |
-  A read-only sweep over the whole index that turns names an analyzer recorded
-  but could not resolve into real edges.
+  A sweep over the whole index that turns names an analyzer recorded but could
+  not resolve into real facts: edges for the most part, and, where the name is
+  a definition no file-scoped analyzer could see, the entity itself.
 body: |
   Analyzers are file-scoped and stateless, so there are facts none of them can
   see: the Lisp analyzer reads a call to apply-transaction without knowing which
@@ -16,6 +16,27 @@ body: |
   references. Both read a view and return operations rather than writing, so the
   Graph Manager stays the only writer, and both are idempotent so they can run
   after every analysis pass.
+
+  One pass creates entities rather than only edges, and it is worth knowing why
+  the exception exists. A call to a definer macro -- fiveam's test, or an
+  in-tree macro expanding to a defun -- brings a named definition into existence
+  that appears nowhere in the source as a definition. Deciding that it did needs
+  the macro, which is routinely in another file or outside the tree entirely,
+  so it is not something an analyzer can know: resolve-generated-definitions is
+  where that decision belongs, and minting the entity is the only way to record
+  it. The invariant that used to read "every entity comes from an analyzer" now
+  reads "every entity comes from an analyzer, or from a resolution pass that
+  owns its full lifecycle -- mint and retract -- and marks what it made with
+  :generated-by."
+
+  The retract half is the price of the exception, not an extra. Every other pass
+  gets cleanup for free: retract-file clears the origin file's facts and the
+  next analysis simply does not reassert what is gone. A generated entity has no
+  single file whose reanalysis is guaranteed to invalidate it, because the macro
+  can stop qualifying as a definer in its own file while the call site's file
+  never changes. So the pass recomputes its full output every time and takes
+  back the difference, which is what keeps it a derivation rather than an
+  accumulation (DEC-0003).
 
   The shared judgement is worth stating once: a name matching exactly one
   definition becomes an edge, and a name matching several is left unresolved. A

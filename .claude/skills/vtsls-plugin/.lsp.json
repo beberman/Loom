@@ -1,0 +1,12 @@
+{
+  "javascript": {
+    "command": "vtsls",
+    "args": ["--stdio"],
+    "extensionToLanguage": {
+      ".js": "javascript",
+      ".jsx": "javascriptreact"
+    },
+    "transport": "stdio",
+    "diagnostics": true
+  }
+}

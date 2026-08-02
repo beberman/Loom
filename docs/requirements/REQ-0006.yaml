@@ -1,0 +1,156 @@
+id: REQ-0006
+title: An inferred mention must not be reported as a documented relationship
+status: draft
+date: 2026-07-29
+refines: [REV-0001]
+affects: [resolve-document-links, impact-set, impact-report]
+tags: [knowledge, console, documents, confidence]
+summary: |
+  Every :documents edge in the graph is inferred from prose at 0.5 confidence --
+  no document field declares one -- yet the console reports them under a heading
+  that reads as settled fact, and in the document-to-code direction that means a
+  requirement is presented as governing code it merely mentioned in passing. The
+  edge should say it is a mention: related documents when read from code, and
+  potentially impacted when read from a document, with neither claiming the
+  authority of a declared link.
+body: |
+  WHAT IS WRONG
+
+  REV-0001 finding 5 reported that mention-inferred edges are rendered
+  identically to declared ones. Examining the resolution pass makes the situation
+  simpler and worse than that.
+
+  *declared-link-fields* maps the fields a document may declare:
+
+    affects:     -> :decides
+    applies-to:  -> :applies-to
+    supersedes:  -> :supersedes
+    refines:     -> :refines
+
+  :documents is not in that list. Nothing a document author writes produces a
+  :documents edge. Every one of them comes from the mention branch of
+  resolve-document-links, asserted with :source :inferred and :confidence
+  *mention-confidence*, which is 0.5. So there is no mixing of declared and
+  inferred edges under one heading, because there are no declared ones: the
+  entire `documents:` heading is inference, presented in the same shape and with
+  the same weight as `decisions:`, which is entirely declared.
+
+  The observable consequence, from this session:
+
+    loom> describe REQ-0003
+      -> documents: assert-entity, resolve-calls, register-document-type,
+                    analyzer, register-analyzer, repository-status,
+                    detect-deletions, reindex-repository, ... 19 in all
+
+  REQ-0003 names `analyzer` and `register-analyzer` in a paragraph explaining
+  what the word "registry" means in this codebase. It has nothing to say about
+  either. But the edge exists, so `impact analyzer` attaches REQ-0003 as a
+  document bearing on it, and every agent definition instructs its agent to read
+  the documents an impact result attaches before acting. The failure mode is an
+  agent reading a requirement that does not concern the code in front of it and
+  treating it as governing.
+
+  THE SAME EDGE READS TWO WAYS, AND ONLY ONE OF THEM MISLEADS
+
+  :documents is declared :impact-direction :reverse, so traversal follows it
+  backwards, and that direction is genuinely useful:
+
+    loom> impact repository-graph 3
+    documents: CON-0002, BUG-0002, ARCH-0001, ARCH-0002, REQ-0003, REV-0001
+
+  "Which documents talk about this function" is a good question, cheaply
+  answered, and a mention is exactly the right signal for it -- an author who
+  wrote a function's name in prose was saying something about it. Nothing here
+  needs to change except the honesty of the label.
+
+  Read the other way -- document to code, which is what `describe` on a document
+  shows -- the same edge asserts that a document bears on nineteen functions,
+  which is the claim that is wrong. The mention branch already refuses to point
+  at other documents (it excludes *document-types* targets), so this direction
+  only ever names code.
+
+  So one edge, two readings, and the fix is to name each reading for what it is
+  rather than to weaken the edge everywhere.
+
+  DECIDED: WHAT THE TWO READINGS ARE CALLED
+
+  From code, looking back at documents: related documents. These are documents
+  that mention this entity. Useful, weaker than a declared link, and the heading
+  should not be the same word as a declared relationship.
+
+  From a document, looking at code: mentions. The document named these in prose;
+  that is all the edge knows. It is a suggestion to look, not a statement that
+  the document governs them.
+
+  A "potentially impacted" heading was considered for this direction and dropped.
+  Loom already has impact-result-possibly-affected, which means "reached only
+  through a stale edge" and which the console prints with that reason attached. A
+  second, similarly-named bucket for a different weakness -- a stale edge means
+  reindex, a mention means read and judge -- would put two unrelated
+  uncertainties behind one word and destroy the reason a reader needs. `mentions`
+  says what the edge actually is and collides with nothing.
+
+  Both headings show only what they name -- related documents shows documents,
+  mentions shows code entities -- so a reader never has to work out which kind of
+  thing a name in a list is.
+
+  WHAT A SOLUTION HAS TO COVER
+
+  R1  A mention-derived edge is distinguishable from a declared one at every
+      point where a reader sees it, not only in the graph. The graph already
+      records :source :inferred and :confidence 0.5 correctly; entity-summary
+      carries confidence for entities and neighbour edges are summarised without
+      it, so the distinction is currently discarded exactly at the point of
+      display.
+
+  R2  `impact <code-entity>` reports documents that mention it under a heading
+      naming the relationship as a mention -- related-documents -- separate from
+      `decisions:`, which stays as it is because it is declared.
+
+  R3  `describe <document>` and `impact <document>` report the code a document
+      mentions under a heading naming it as a mention, not as documented. Nothing
+      in that list may be presented as governed by the document.
+
+  R4  The two lists are type-homogeneous: related-documents contains only
+      document entities, mentions only code entities.
+
+  R5  Whether this is a new relationship type or a renaming is left to the
+      architect, but the cheap reading should be considered first, per
+      ARCH-0001's standing preference for widening or renaming over adding a
+      type. Since :documents is only ever inferred, renaming the type to say so
+      -- and giving it a :collect-as that produces the related-documents field --
+      may cost nothing but a rename plus two console headings. Adding a second,
+      weaker type alongside :documents only earns its keep if a declared
+      documents field is also wanted, and no field asks for one today.
+
+  R6  impact-result-possibly-affected is left alone. It means "reached only
+      through a stale edge", the console prints it with that reason attached, and
+      nothing in this requirement belongs in it.
+
+  R7  *mention-confidence* stays where it is, or the value is argued about
+      separately. Its docstring already says the value is chosen so that "a
+      caller filtering on confidence drops them" while "what decisions touch
+      this?" still answers. That reasoning is sound and this requirement does
+      not disturb it; the defect is that no caller was filtering or displaying,
+      not that the number is wrong.
+
+  WHY NOT JUST MARK THEM
+
+  REV-0001 offered marking inferred edges at print time as the cheap fix. It is
+  not enough on its own, for a reason ARCH-0002 supplied while rejecting
+  :inferred for a different edge: a confidence marker only carries information if
+  markers are rare and mean something. A `documents:` list in which every entry
+  is marked inferred teaches a reader to ignore the marker, and the list is
+  already entirely inferred.
+
+  The heading is the right place because the heading is what a reader uses to
+  decide whether to look. `decisions:` means these govern this code. Something
+  that means these mentioned this code needs its own word, and a word is cheaper
+  to read than a per-entry annotation.
+
+  CON-0001 is the standing principle and it is worth stating exactly how it
+  applies, because the graph is not at fault here. Nothing is fabricated: the
+  mention is real, the confidence is recorded, the pass is honest. The
+  fabrication happens in the rendering, where a 0.5-confidence inference is
+  printed in the shape of a fact. A recorded gap that is displayed as a certainty
+  is not a recorded gap.

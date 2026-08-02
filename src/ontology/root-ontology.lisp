@@ -364,9 +364,33 @@ both on a qualified name, so without the type those pairs would collide."
     (format nil "~(~a~)~{:~a~}"
             (first natural-key) (mapcar #'render-key-part (rest natural-key)))))
 
+(defvar *fresh-id-lock* (bt:make-lock "loom-fresh-id")
+  "Serializes FRESH-ID's callers against one another.
+
+What it guards is not Loom's: RANDOM-UUID:MAKE-UUID, called with no generator,
+evaluates (RANDOM (EXPT 2 64)) twice against CL:*RANDOM-STATE* -- one global
+object per image that SBCL threads inherit by value and whose MT19937 state
+vector it mutates without atomicity. Two threads inside it interleave and mint
+the same id, which BUG-0005 measured at 26,039 distinct strings out of 40,000.
+
+Global rather than hung off a graph or a repository as ARCH-0003's and
+ARCH-0004's locks are, because the resource is: one random state per image, so
+a per-object lock would not help two graphs' threads. Plain and not recursive
+because FRESH-ID's body calls two library functions and can never re-enter
+itself, so there is nothing to compose. It is a leaf in the acquisition order
+repository > graph > fresh-id -- neither library function acquires a lock or
+calls back into Loom -- which is what makes it safe to take while the graph
+lock is held, as MAKE-INSTANCE of a key-less entity inside WITH-GRAPH-LOCK
+does.
+
+Not exported, and not wrapped in a WITH- macro: it has one user six lines
+below, and a caller outside loom-ontology holding it across work of its own
+would be a deadlock no rule check could catch.")
+
 (defun fresh-id ()
   "A random id, for facts that have no natural key to derive one from."
-  (random-uuid:to-string (random-uuid:make-uuid)))
+  (bt:with-lock-held (*fresh-id-lock*)
+    (random-uuid:to-string (random-uuid:make-uuid))))
 
 (defun properties-table (plist)
   "A property table built from PLIST.

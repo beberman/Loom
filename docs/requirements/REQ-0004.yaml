@@ -1,0 +1,82 @@
+id: REQ-0004
+title: Analyzer extensions for third-party packages load without rebuilding Loom
+status: draft
+date: 2026-07-29
+refines: [REQ-0003]
+tags: [analyzer, extensibility, macros]
+summary: |
+  REQ-0003 ships a registry of definer macros with the common frameworks
+  already entered. A repository that leans on a framework Loom has never heard
+  of gets nothing, and the only remedy is editing Loom's source. A developer
+  should be able to teach Loom about their own frameworks without that.
+body: |
+  WHY THIS IS SEPARATE
+
+  REQ-0003 is satisfiable with a table compiled into the analyzer, and shipping
+  fiveam already registered covers this repository and most Lisp codebases that
+  test. That is worth having before this exists, which is why the two are
+  separate documents rather than one.
+
+  What it does not cover is a repository built on something Loom does not ship
+  knowledge of -- a house test framework, a DSL, an ORM whose defining macros
+  are the entire vocabulary of the codebase. For those, indexing degrades
+  exactly where the code is densest, and the developer's only recourse is to
+  patch a table inside Loom and rebuild it.
+
+  DECIDED: NAMED AT LAUNCH, NOT DISCOVERED ON WATCH
+
+  Extensions are ordinary Lisp files, named on the command line and loaded once
+  at startup:
+
+    loom --extensions my-framework.lisp [repository ...]
+
+  There is no discovery. Loom never looks inside a repository for something to
+  execute, and watching an unfamiliar tree runs nothing that came out of it.
+
+  That is what makes arbitrary Lisp acceptable here, and it is worth being
+  precise about why, because the obvious alternative fails on exactly this
+  point. A file discovered inside a watched repository is trusted on the
+  strength of its filename -- the intent behind it is real but unenforceable,
+  and `watch' on someone else's repository would execute whatever it carried. A
+  file named on the command line is chosen by the person who typed the command,
+  in the same breath as choosing to start Loom at all. The trust decision is
+  made by a human, once, explicitly, and never inferred.
+
+  It is also the same trust boundary Lisp developers already work inside: a file
+  named on a command line is loaded, and that is unremarkable. Nothing new has
+  to be reasoned about.
+
+  The cost is that registrations no longer travel with the repository in version
+  control, which is a real loss against DEC-0001's preference for knowledge
+  living in files beside the code. It buys the one property that matters more:
+  indexing a repository is never a reason to run any of it.
+
+  WHAT A SOLUTION HAS TO COVER
+
+  R1  A file named by --extensions is loaded once at startup, before any
+      repository is indexed, so registrations are in place for the first pass.
+
+  R2  The flag may be given more than once, and loading is ordered, so a later
+      file can override an earlier registration -- the registries already work
+      by replacement rather than accumulation.
+
+  R3  Loading is visible. Which files were loaded and what they registered is
+      reportable, because an index that behaves differently on account of a
+      forgotten file is worse than one that behaves plainly. `rules' and
+      `status' are the precedents for making the active configuration legible.
+
+  R4  A file that fails to load reports the condition and leaves Loom running
+      with the registrations that did load. A broken extension degrades the
+      index; it does not prevent one.
+
+  R5  Reindexing does not reload extensions, and says so if asked. A registry
+      that changes underneath an index without the index being rebuilt is the
+      staleness this system exists to detect, not to introduce.
+
+  WHAT THIS TOUCHES
+
+  Small. Loom is a live image that already loads code -- systems arrive through
+  ASDF and the registries are populated by evaluating register- forms at load
+  time -- so the loading mechanism exists. What is missing is argument parsing:
+  loom.lisp today passes every command-line argument to main as a repository to
+  watch, so the launcher has to learn the difference between a flag and a path.

@@ -1,0 +1,416 @@
+id: ARCH-0003
+title: A protected-table type guards the graph's hash tables with a shared reentrant lock
+status: implemented
+date: 2026-07-31
+refines: [BUG-0004]
+affects: [graph, make-graph, add-entity, get-entity, remove-entity, all-entities,
+          entities-of-type, find-entity-by-key, add-relationship, remove-relationship,
+          relationships-from, relationships-to, find-relationship-by-key,
+          cascade-staleness, index-repository, poll-once, reindex-repository,
+          repository]
+tags: [graph, concurrency, threading, ontology-adjacent, layering]
+summary: |
+  graph-manager.lisp's seven hash tables are read and written with no lock at
+  all, from a console thread and a per-repository monitor thread that share one
+  graph object. BUG-0004 shows the consequence: SBCL detects the collision,
+  every in-flight resolution pass aborts, and a rebuild that should produce 883
+  entities lands at 650 with `status` reporting nothing wrong. This defines
+  protected-table -- a hash table guarded by a reentrant lock shared across all
+  seven of the graph's tables -- and states plainly what it closes (the crash,
+  for every reader and writer of a graph) and what it does not (BUG-0004's
+  actual corruption, which is a pass-level race that per-operation locking
+  cannot reach). Closing BUG-0004 in full needs a second, separate lock at the
+  workspace layer; this document specifies enough of that second lock's shape
+  to show the two compose without deadlock, and leaves its full design to a
+  workspace-level follow-on.
+body: |
+  PROBLEM
+
+  `grep -rn "make-lock\|with-lock\|mutex" src/graph src/workspace` returns
+  nothing (BUG-0004). Two threads -- the console, running reindex-repository or
+  index-repository, and a per-repository monitor thread, running poll-once --
+  read and write the same graph struct's seven hash tables
+  (graph-manager.lisp:21-40: entities, relationships, from-index, to-index,
+  entity-keys, rel-keys, origin-index) with plain gethash/setf/remhash/clrhash/
+  maphash and no exclusion of any kind. SBCL's hash tables detect structural
+  concurrent modification and signal "Unsafe concurrent operations on
+  #<HASH-TABLE ...>". BUG-0004 reproduces this live: a reindex on a watched
+  repository crashes three resolution passes mid-flight, and because a pass
+  emits its whole output as one transaction, an aborted pass contributes
+  nothing. The result: 650 entities and 42 tests where a clean, monitor-paused
+  rebuild gives 883 and 245 -- a third of the index missing -- while `status`
+  reports 0 violations and 0 unresolved references, because the passes that
+  would have populated those counts never ran. Three consecutive runs produced
+  three different entity counts (848, 883-with-0-tested-units, 883 correct),
+  which is the race showing through: the damage depends on exactly where the
+  monitor was when the collision landed.
+
+  Brian's guidance is the starting point: define a protected hash table type,
+  guard all CRUD with a reentrant lock, and design the graph's tables in terms
+  of it. This document does that, and confronts the five questions the task
+  poses in the order asked.
+
+  WHAT EACH THING BECOMES
+
+  protected-table (new, src/graph/protected-table.lisp, loom-graph)
+
+  Owns: one hash-table and a reference to a bordeaux-threads recursive lock.
+  The lock is a constructor argument, not a private field the type creates for
+  itself -- make-protected-table accepts :lock, defaulting to a fresh
+  bt:make-recursive-lock only when none is given. That one choice is what lets
+  several protected-table instances share a single lock (see LOCK GRANULARITY
+  below); a type that always minted its own lock could not be composed that
+  way without a second layer on top of it.
+
+  Primitive operations, each acquiring the referenced lock for exactly the
+  duration of that one call and releasing it before returning:
+
+    pt-get (pt key &optional default)       -- mirrors gethash's contract,
+                                                 including (values value
+                                                 present-p).
+    (setf pt-get)                            -- unconditional store.
+    pt-rem (pt key)                          -- mirrors remhash.
+    pt-clear (pt)                            -- mirrors clrhash.
+    pt-count (pt)                            -- mirrors hash-table-count.
+    pt-keys (pt), pt-values (pt)             -- a fresh list, built under the
+                                                 lock, mirroring the
+                                                 loop-collect idiom
+                                                 all-entities/all-relationships/
+                                                 origin-files use today.
+    pt-push (pt key value)                   -- read the list at key, cons
+                                                 VALUE onto it, store the
+                                                 result, as one critical
+                                                 section.
+    pt-delete-from-list (pt key value &key test) -- remove VALUE from the list
+                                                 at key by TEST, remhash the
+                                                 key entirely if the result is
+                                                 empty, as one critical
+                                                 section.
+
+  pt-push and pt-delete-from-list exist because a protected-table whose
+  contract stopped at "gethash and setf are each individually safe" would
+  still race on the read-modify-write idioms graph-manager.lisp actually uses:
+  index-origin's (push (id fact) (gethash file ...)), add-relationship's two
+  pushes onto from-index and to-index, and unindex-origin/remove-relationship's
+  remove-then-conditionally-remhash. Composing "locked read" followed by
+  "locked write" as two separate calls is exactly the per-operation-locking
+  trap the task warns about, restated at the smallest possible scale: two
+  threads each doing a locked read then a locked write of the same key can
+  still lose one push. The primitive has to be the whole read-modify-write,
+  not the gethash and the setf around it.
+
+  Invariant: no code outside protected-table's own file ever calls gethash,
+  (setf gethash), remhash, clrhash, maphash, or push directly against the
+  hash-table a protected-table wraps. Every table graph-manager.lisp owns is a
+  protected-table after this lands, and every access to it goes through the
+  primitives above.
+
+  graph (src/graph/graph-manager.lisp, widened)
+
+  Owns an eighth field, lock, made once per graph with bt:make-recursive-lock,
+  and all seven existing fields become protected-table instances constructed
+  with :lock (graph-lock graph) -- one shared lock, not seven. graph-manager.lisp
+  gains an internal macro, with-graph-lock (graph) &body body, wrapping
+  bt:with-recursive-lock-held on that field. It is not exported outside
+  loom-graph: it is for graph-manager.lisp's own compound, multi-step
+  mutations -- add-entity, remove-entity, add-relationship, remove-relationship,
+  and transaction.lisp's cascade-staleness and retract-file's apply-op --
+  each of which today performs several gethash/setf/push/remhash calls across
+  more than one table in sequence and must appear atomic to a concurrent
+  reader. Wrapping each of those bodies in with-graph-lock, using the *same*
+  lock object the individual pt- primitives inside them acquire, is safe by
+  construction because the lock is reentrant: a compound function holding the
+  lock, calling a pt- primitive that reentrantly re-acquires the same lock, is
+  the literal case Brian named -- "a guarded operation calls another guarded
+  operation."
+
+  Concretely, add-relationship touches four of the seven tables in one call
+  (relationships, rel-keys, origin-index, from-index, to-index counts as
+  five instances across four distinct tables plus entities read twice); add-
+  entity touches three (entities, entity-keys, origin-index). Without
+  with-graph-lock, a concurrent reader could observe a relationship present in
+  relationships but absent from from-index -- individually safe per pt-
+  operation, jointly a torn view, and a torn view is precisely what BUG-0004's
+  own FIX section names as the thing per-operation locking does not prevent.
+
+  ALTERNATIVES CONSIDERED
+
+  SBCL's :synchronized t hash tables. Rejected on four separate grounds, any
+  one of which would be enough alone. First, it is SBCL-specific: the
+  project's one existing threading dependency, bordeaux-threads, is chosen for
+  portability, and :synchronized has no bordeaux-threads or ANSI counterpart.
+  Second, each :synchronized table gets its own private, SBCL-managed lock
+  with no supported way to hand it a lock object shared with six others, which
+  forecloses exactly the graph-wide sharing this design needs for
+  with-graph-lock to protect a multi-table compound mutation or a whole pass.
+  Third -- flagged explicitly in the brief and confirmed against SBCL's own
+  documentation -- :synchronized makes each individual operation atomic but
+  does *not* make iteration safe against concurrent modification, and
+  all-entities plus every resolution pass's traversal is exactly iteration:
+  adopting :synchronized alone would leave the single riskiest operation in
+  BUG-0004's own trace unprotected. Fourth, it gives no caller-controlled
+  critical section spanning several primitive calls, which both
+  with-graph-lock's compound operations and the pass-level lock below need.
+
+  One lock per table (seven locks). Rejected on the deadlock argument the task
+  poses directly: add-relationship alone needs four tables held together, so
+  seven separate locks would force every multi-table operation to acquire
+  several locks in some order, and two operations acquiring the same locks in
+  different orders deadlock -- silently, with no error message, which BUG-0004
+  itself calls a worse failure than the crash being fixed. A single shared
+  lock removes the ordering question by construction: there is only one lock,
+  so there is no order to get wrong. The workload does not pay for this in
+  parallelism given up -- see COST -- because two threads (one console, one
+  monitor per repository) already share the resource, and the tables that
+  would benefit from independent locks (say, entities versus relationships)
+  are exactly the tables every compound mutation touches together.
+
+  A private lock owned by each protected-table instance, rather than a lock
+  reference supplied at construction. Rejected: it is the same one-lock-per-
+  table shape by another route, and forecloses graph-wide sharing (R3 below)
+  without buying anything a shared-by-default, overridable-lock design does
+  not already offer more cheaply.
+
+  A single process-wide lock covering every repository's graph, rather than
+  one lock per graph. Rejected: *repositories* is a list, and Loom can watch
+  more than one repository at once; a process-wide lock would serialize a
+  reindex of one repository against an unrelated poll of a second one, for no
+  correctness reason -- the two graphs share no state. Per-graph is the
+  natural boundary matching the unit of genuinely shared mutable state.
+
+  Fixing only the two tables named in BUG-0004's captured stack trace (a count
+  of 651 and a count of 1227). Rejected as the textbook version of "silencing
+  the loudest symptom" the task warns against: BUG-0004's own three-runs-three-
+  outcomes evidence shows which table's rehash a given interleaving happens to
+  catch is nondeterministic, so protecting only the two tables that happened
+  to be caught this time would relocate the next crash to origin-index or
+  entity-keys rather than remove it.
+
+  Closing BUG-0004 with the workspace-level lock alone (R9, below) and
+  skipping protected-table entirely. Rejected: loom-knowledge's read path
+  (find, describe, impact, context) calls graph-manager functions directly and
+  correctly never participates in whatever exclusion loom-workspace builds
+  around index-repository/poll-once/reindex-repository -- RULE-0003 says
+  knowledge services never write, and giving them an obligation to acquire a
+  workspace lock before reading would make them aware of monitor-thread
+  plumbing they have no architectural business knowing about. Without
+  protected-table, a console `describe` racing a monitor's poll-once still
+  crashes; a workspace-only fix protects three call sites and leaves every
+  other reader of a graph exposed. This is the reason the fix belongs at the
+  graph layer at all, not only at the workspace layer BUG-0004's FIX section
+  discusses.
+
+  REQUIREMENTS
+
+  R1. protected-table is defined in a new file, src/graph/protected-table.lisp,
+      loaded by loom-graph.asd before graph-manager.lisp. It wraps one
+      hash-table and accepts a :lock at construction, defaulting to a fresh
+      bt:make-recursive-lock when none is supplied.
+
+  R2. The primitive surface is exactly pt-get, (setf pt-get), pt-rem,
+      pt-clear, pt-count, pt-keys, pt-values, pt-push, and
+      pt-delete-from-list, as specified above. No other function in loom-graph
+      touches a protected-table's underlying hash-table directly.
+
+  R3. make-graph constructs one bt:make-recursive-lock, stores it in a new
+      lock field on the graph struct, and passes it as :lock to all seven
+      make-protected-table calls that replace the bare (make-hash-table
+      :test #'equal) defaults on entities, relationships, from-index,
+      to-index, entity-keys, rel-keys, and origin-index. One shared lock, not
+      seven.
+
+  R4. graph-manager.lisp gains an internal macro, with-graph-lock (graph)
+      &body body, over bt:with-recursive-lock-held on the graph's lock field.
+      It is not exported from loom-graph's package. add-entity, remove-entity,
+      add-relationship, and remove-relationship, plus transaction.lisp's
+      cascade-staleness and the retract-file-op apply-op method, each wrap
+      their existing body in it, so a multi-table or multi-step mutation is
+      atomic with respect to any concurrent reader, not merely crash-safe
+      per individual primitive call.
+
+  R5. transaction.lisp's tx struct (remap, keys, types) is explicitly NOT
+      converted to protected-table. Each is created fresh inside one
+      apply-transaction call, never escapes that call's dynamic extent, and is
+      never referenced by more than one thread; wrapping it would add lock
+      overhead with no safety benefit and would misstate, by its mere
+      presence, that tx is shared state.
+
+  R6. loom-graph.asd's loom-graph system gains #:bordeaux-threads in
+      :depends-on. This is a real, accepted layering cost, not an oversight:
+      RULE-0001 (ontology depends on nothing) is untouched because the type
+      lives in loom-graph, never loom-ontology; RULE-0002 (analyzers are
+      storage-agnostic) is untouched because loom-analyzer neither depends on
+      protected-table nor gains bordeaux-threads; RULE-0003 (knowledge
+      services never write) is untouched because loom-knowledge's services
+      keep calling the same read functions and gain thread-safety as a side
+      effect of the layer beneath them changing, without adding one call to
+      apply-transaction or acquiring any lock themselves. bordeaux-threads
+      becomes a transitive load-time dependency of loom-knowledge and (already
+      true today) loom-workspace and loom-process; this is a load-time cost
+      only, since nothing in loom-knowledge spawns a thread.
+
+  R7. This design closes the SBCL crash for every consumer of a graph, not
+      only the resolution passes BUG-0004 names: a console `find`, `describe`,
+      `impact`, or `context` call, running on the console thread while a
+      monitor thread's poll-once mutates the same graph, stops crashing too.
+      Worth recording as a real benefit distinct from R8-R10 below, which is
+      the part that actually matters to BUG-0004.
+
+  R8. protected-table does not, by itself, close BUG-0004. State the gap
+      explicitly: a resolution pass's shape is read (all-entities /
+      entities-of-type, a snapshot built under the lock, but only for the
+      duration of that one call), compute (a list of ops built in the calling
+      thread against that snapshot, with no lock held at all), submit (one
+      apply-transaction, itself now internally lock-protected per op). Between
+      read and submit there is a window, unbounded in wall-clock time by
+      anything protected-table does, during which a concurrent writer's
+      mutation is invisible to the pass computing its batch. protected-table
+      guarantees every individual primitive call is crash-safe and every
+      compound graph-manager mutation (R4) is atomic to a reader; it does not
+      guarantee that a pass's read-compute-submit sequence, spanning many
+      separate lock acquisitions, observed one consistent graph throughout.
+      The observable damage BUG-0004 measured -- a whole pass's batch computed
+      against assumptions a concurrent write invalidated -- can therefore
+      still occur after this design lands, in a form that no longer crashes
+      SBCL but can still submit a transaction computed against a torn view.
+
+  R9. Closing BUG-0004 in full additionally needs a second lock, owned by
+      loom-workspace (which already depends on bordeaux-threads today), held
+      across the *entire* body of index-repository, poll-once, and
+      reindex-repository -- not the graph's lock, and not reachable by simply
+      calling with-graph-lock from R4, because reindex-repository's first act
+      is to discard the graph object and replace it (repository.lisp:224,
+      (setf (repository-graph repository) (make-graph))). A lock scoped to
+      "the current graph" cannot protect a rebuild whose defining feature is
+      that there is no current graph yet at the moment protection has to
+      start. The lock therefore has to be a property of the repository, not
+      of any one graph object: a new field on the repository struct, e.g.
+      analysis-lock, made via bt:make-recursive-lock -- reentrant for the
+      same reason Brian named for protected-table, since reindex-repository
+      calls index-repository internally and both may need to hold it.
+      This document specifies R9's shape because BUG-0004's own FIX section
+      already commits to it ("a per-repository lock held across a whole
+      analysis pass by all three of index-repository, poll-once and
+      reindex-repository") and because without stating it, R8's gap would be
+      left open with no answer at all. Its full design -- exact field
+      placement, how stop-monitor/pause-repository interact with a held lock,
+      whether reindex should abort or wait if a poll is already inside its
+      critical section -- belongs to a workspace-level document and is
+      deliberately not settled here.
+
+  R10. The graph-internal lock (R3/R4) and the repository-level lock (R9) are
+      two separate lock objects at two separate layers, and they compose by
+      strict acquisition order rather than by shared reentrancy: any code path
+      that holds both always acquires the repository lock first and the graph
+      lock second. This is not merely a convention -- loom-graph does not and
+      cannot depend on loom-workspace, so code inside protected-table or
+      graph-manager.lisp has no way to reference, let alone acquire, a
+      repository-level lock. The reverse ordering is structurally unwritable,
+      not merely undisciplined.
+
+  R11. All seven of the graph's tables get protected-table -- entities,
+      relationships, from-index, to-index, entity-keys, rel-keys, and
+      origin-index -- with no partial coverage. Every one of them is reachable
+      from both the console thread (via loom-knowledge reads, or a directly
+      invoked index/reindex) and the monitor thread (via poll-once), and the
+      compound operations that most need atomicity already span most of them
+      in one call (add-relationship touches four; add-entity touches three),
+      so "protect only the tables observed crashing so far" would just move
+      the next crash to a table this design left bare -- the alternative
+      rejected above.
+
+  R12. repository-stamps (loom-workspace/workspace.lisp:29) has the identical
+      shape to the seven graph tables -- an unguarded hash table read by
+      file-changed-p and written by index-file on the monitor thread, cleared
+      by reindex-repository on the console thread -- and BUG-0004's CAUSE
+      section names its clrhash as the step that "opens the window" the race
+      exploits. It is not required in order to close the crash or the
+      corruption once R9's repository lock lands (R9 fully serializes the
+      three entry points against each other, so a poll racing a reindex's
+      stamp-clear can at worst compute a spuriously large changed-file list
+      and redo a wasted-but-harmless reanalysis once R9's lock lets it
+      proceed, rather than corrupt anything). Recorded here as a cheap,
+      natural follow-on -- loom-workspace already depends on both loom-graph
+      and bordeaux-threads, so reusing protected-table there costs nothing new
+      -- and explicitly out of scope for this document, whose job is the graph
+      layer.
+
+  R13. Cost. protected-table's per-primitive overhead is one reentrant lock
+      acquire/release per call, on the order of the cost of a single
+      uncontended mutex operation -- negligible next to a gethash itself, and
+      the workload has at most two threads contending for one repository's
+      lock (one console, one monitor), so contention, as opposed to bare
+      acquire/release overhead, is rare by construction. A full reindex of
+      Loom's own tree (76 files, 883 entities, 3956 relationships) performs
+      tens of thousands of table operations across analysis and resolution;
+      at low-hundreds-of-nanoseconds per operation that is single-digit
+      milliseconds added to a pass whose wall-clock cost is dominated by
+      reading and parsing 76 files from disk. When with-graph-lock (R4) or the
+      repository lock (R9) is already held across a whole compound operation
+      or a whole pass, every pt- primitive invoked inside it is a reentrant
+      re-acquisition of a lock the current thread already owns -- cheaper than
+      a fresh acquisition, not more expensive -- so composing the two
+      mechanisms amortizes cost rather than compounding it.
+
+  CONSEQUENCES
+
+  Every function in graph-manager.lisp and transaction.lisp that today
+  performs gethash, (setf gethash), remhash, clrhash, a hash-values/hash-keys
+  loop, or a push directly on one of the graph's seven slots must be rewritten
+  onto the pt- primitives: add-entity, get-entity, find-entity-by-key,
+  remove-entity, all-entities, entities-of-type, add-relationship,
+  get-relationship, find-relationship-by-key, remove-relationship,
+  all-relationships, edges-matching, relationships-from, relationships-to,
+  index-origin, unindex-origin, facts-from-file, origin-files, and
+  cascade-staleness. This is total but mechanical: the type's single-threaded
+  contract matches a bare hash table's, so no existing test's expected
+  behaviour changes and none of the current graph-manager or transaction test
+  suites need rewriting for correctness -- only a genuinely new kind of test
+  is needed, one that runs two threads against a shared protected-table and
+  asserts SBCL never signals the concurrent-operations condition, which
+  belongs in loom-graph/test now that bordeaux-threads is available there.
+
+  Every function added to graph-manager.lisp from now on inherits the
+  obligation to route table access through pt- primitives and to wrap any
+  multi-step mutation in with-graph-lock; this is a standing invariant of the
+  layer, the same way "an analyzer returns operations rather than writing" is
+  already one for loom-analyzer (RULE-0002).
+
+  loom-graph.asd, and every system depending on it, now load bordeaux-threads
+  even in an image that never spawns a thread -- a one-off analysis script
+  loading only loom-ontology and loom-graph pays this for the first time;
+  everything depending on loom-workspace or loom-process already paid it.
+
+  BUG-0004 is not closed by this document alone. R8 states precisely what
+  remains, and R9-R10 commit to the shape of the second mechanism -- a
+  repository-level lock in loom-workspace, composing with this document's
+  graph-level lock by strict, structurally-enforced acquisition order -- while
+  leaving that mechanism's full design, and the restatement of PLAN-0001's
+  pause-before-drift-check verification line that BUG-0004 already made
+  necessary, to a workspace-level document that refines this one.
+
+  IMPLEMENTED, 2026-08-01, BY PLAN-0002
+
+  Steps 3, 4 and 5 of PLAN-0002 landed protected-table, moved all seven tables
+  onto the pt- primitives, and added with-graph-lock. Two of the numbered
+  items above are worth spelling out, because a reader auditing this document
+  against the tree will look for work that was correctly never done:
+
+    R5   satisfied by not acting. R5 requires that tx's three tables stay bare
+         hash tables, and they do. PLAN-0002's summary lists this under "out of
+         scope", which reads at a glance like deferred work and is the
+         opposite -- the requirement was to leave it alone.
+    R12  never a requirement of this document; R12's own text puts it
+         "explicitly out of scope for this document, whose job is the graph
+         layer". It has since been settled against conversion by ARCH-0004's
+         REPOSITORY-STAMPS section, which traced every access and found them
+         all already inside the repository lock. repository-stamps stays a bare
+         hash table, and R12's "cheap, natural follow-on" is withdrawn rather
+         than pending.
+
+  R13's cost prediction was the one thing here that came out wrong: it
+  predicted single-digit milliseconds added to a full rebuild and the measured
+  figure is about twelve, on a 185 ms rebuild. Right order of magnitude,
+  slightly optimistic, nowhere near PLAN-0002's 20 percent fallback threshold.
+  PLAN-0002's STEP 6 has the paired measurements and the reason a single timing
+  run on this machine is not worth quoting.

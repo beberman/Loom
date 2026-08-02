@@ -90,6 +90,35 @@
   (is (string= "" (with-output-to-string (*standard-output*)
                     (run-command "")))))
 
+(test a-numeric-argument-that-is-not-a-number-names-itself
+  ;; REV-0001 finding 4: `impact <name> abc' printed "The value NIL is not of
+  ;; type REAL", because parse-integer :junk-allowed returns NIL instead of
+  ;; signalling and the NIL reached MIN. The message names neither the command
+  ;; nor the argument, which is the whole of what the developer needs.
+  (is (= 3 (loom-process::resolve-count "3" "depth")))
+  (is (= 0 (loom-process::resolve-count "0" "depth")))
+  (dolist (bad '("abc" "" "-1" "3x" "1.5"))
+    (let ((condition (handler-case (progn (loom-process::resolve-count bad "depth") nil)
+                       (error (c) c))))
+      (is-true condition "resolve-count accepted ~s" bad)
+      (when condition
+        (let ((text (princ-to-string condition)))
+          (is (search "depth" text) "~s: message does not name the argument" bad)
+          (is (search (prin1-to-string bad) text)
+              "~s: message does not quote what was typed" bad))))))
+
+(test an-unparseable-count-is-refused-rather-than-defaulted
+  ;; The same parse in `log' failed the other way: the NIL was swallowed by an
+  ;; OR, so a typo silently printed the default twenty as though it had been
+  ;; asked for. Quietly doing something else is worse than a message.
+  (let* ((*log* '())
+         (output (progn (log-event "test" "an event")
+                        (with-output-to-string (*standard-output*)
+                          (run-command "log abc")))))
+    (is (search "non-negative integer" output))
+    (is-false (search "an event" output)
+              "log ran with a defaulted count instead of refusing")))
+
 (test a-failed-command-is-logged
   (let ((*log* '()))
     (with-output-to-string (*standard-output*) (run-command "impact whatever"))

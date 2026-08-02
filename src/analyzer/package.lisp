@@ -33,6 +33,12 @@
    #:lisp-analyzer
    #:document-analyzer
 
+   ;; what a macro call defines (ARCH-0002) -- read by LOOM-WORKSPACE, which
+   ;; hands it to the resolution pass LOOM-GRAPH cannot reach this package from
+   #:*macro-generators*
+   #:register-macro-generator
+   #:macro-generators-for
+
    ;; the documentation tree (SS10)
    #:*document-type-directories*
    #:register-document-type

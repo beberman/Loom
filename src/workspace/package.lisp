@@ -26,6 +26,7 @@
 
    ;; lifecycle
    #:watch-repository
+   #:pause-repository
    #:unwatch-repository
    #:index-repository
    #:reindex-repository

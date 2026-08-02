@@ -1,5 +1,4 @@
 id: RULE-0003
-type: rule
 title: Knowledge Services never write
 status: active
 severity: error

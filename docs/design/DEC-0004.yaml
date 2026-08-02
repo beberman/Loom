@@ -1,0 +1,57 @@
+id: DEC-0004
+title: Watching is a state a repository is in, not an effect the console has
+status: accepted
+date: 2026-07-29
+supersedes: []
+refines: [REQ-0002]
+affects: [watch-repository, pause-repository, unwatch-repository, stop-monitor,
+          start-monitor, repository-status]
+tags: [console, lifecycle, workspace]
+rationale: |
+  Leaving the console stopped every monitor and left every repository
+  registered, which produced a state with no name: indexed, listed by status,
+  and not being watched. Nothing could produce it deliberately and nothing
+  reported it as intended, so a developer met it as "watcher: stopped" on a
+  repository they had just asked to watch, and reasonably read that as a fault.
+
+  Under sbcl --script the state is unreachable, because stop ends the process
+  and the threads go with it. It is only visible in a live image, which is
+  where Loom is actually used.
+
+  Two ways out. Abolish the state -- stop unwatches everything, so a fresh
+  console starts empty and every state is one somebody asked for. Or name it,
+  and give it the command it was missing.
+
+  Naming it wins because the index is worth keeping. The whole argument for an
+  in-memory graph over a persisted one (DEC-0001) is that rebuilding is cheap
+  and correct, but cheap is not free: a hundred-and-thirty-file repository
+  takes seconds, and discarding it every time a developer leaves the console
+  in a long-running image spends those seconds repeatedly for nothing. The
+  console session and the index have different lifetimes, and pretending
+  otherwise is what created the unnamed state in the first place.
+consequences: |
+  A repository is now in one of two states, both of them named:
+
+    watched   the monitor thread is polling
+    paused    registered and indexed, nothing polling
+
+  and three commands move between them. `pause' stops watching and keeps the
+  index. `watch' starts, and on an already registered repository reindexes and
+  resumes -- so it is also the resume command and needs no second name.
+  `unwatch' remains the way to discard: stop watching and drop the index.
+
+  `stop' pauses everything and leaves, and its help says so rather than saying
+  it stops watchers. That is the same behaviour it always had, described
+  honestly for the first time.
+
+  status reports paused rather than stopped, which is the point of the whole
+  change: the word now names a state the developer can reach on purpose.
+
+  The cost is one more command on a surface that is deliberately small, and one
+  more word a reader of status has to know. Both are cheaper than a state that
+  looks like a bug.
+lessons:
+  - A state that no command produces and no word describes will be read as a
+    fault, however correct the behaviour behind it is.
+  - Two things with different lifetimes -- here a console session and an index
+    -- should not be tied together by the command that ends one of them.

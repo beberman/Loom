@@ -1,0 +1,336 @@
+id: REV-0001
+title: Dogfooding the workflow of record on REQ-0003
+status: closed
+date: 2026-07-29
+resolution: |
+  Findings 1, 2 and 2b (broken invocation, agent definitions read at spawn,
+  no agent had a shell that could reach Loom) were fixed within this same
+  run, as the body already states. Finding 3 (context undocumented) was
+  fixed the same way. Finding 4 (impact's d<n> label and the truncation
+  boolean) was forked into REQ-0005, still draft. Finding 5 (mention-inferred
+  edges rendered as declared ones) was forked into REQ-0006, still draft.
+  Finding 7 (describe reprints a document's whole body) was forked into
+  REQ-0007, still draft. Finding 6 (REQ-0003's own acceptance count is not
+  expressible in the console) was not forked into its own requirement; it is
+  the console-enumeration gap BUG-0002 already names, and stays open there.
+  Closing this review records that every finding has a home to be tracked
+  under; it does not mean REQ-0005 through REQ-0007 or BUG-0002 are resolved.
+refines: [CON-0004, REQ-0003]
+affects: [search-entities, resolve-document-links, impact-report, entity-summary]
+tags: [workflow, agents, console, dogfood]
+summary: |
+  CON-0004 argues that Loom's own development should run through Loom. This is
+  the first attempt to do that on a real requirement, with the five agents
+  driving. The index earns its keep -- impact and context both answered
+  questions that would otherwise have cost a tree read -- but the run spent more
+  effort on getting Loom to run than on REQ-0003, and every minute of that was
+  spent on documentation that told agents to invoke it a way that cannot work.
+body: |
+  WHAT WAS RUN
+
+  REQ-0003 chosen as the subject: nothing downstream of it existed, so the chain
+  requirement -> arch -> plan -> code was empty and the workflow had somewhere
+  to go. The architect was launched against it. Loom was queried directly
+  throughout, as the check on what an agent starting this work actually gets.
+
+  FINDING 1  Every document told agents to invoke Loom in a way that fails
+
+  CLAUDE.md, the loom skill and all five agent definitions opened with
+
+    wsl sbcl --script loom.lisp
+    loom> watch "~/lisp/Loom"
+
+  as though an agent could type at a prompt. An agent cannot; it has one argv
+  and no stdin. The skill's suggested form for a non-interactive run,
+
+    wsl.exe -e bash -lc "cd ~/lisp/Loom && sbcl --script loom.lisp"
+    ... | grep -E 'ok  |FAIL|passed'
+
+  needs a pipe, a redirect and a `tail` or `grep`, each of which is a separate
+  permission decision, so it prompts on every variation of the command.
+
+  Worse, the Bash tool cannot run it at all. Bash on this machine is Git Bash,
+  whose MSYS path translation rewrites a Unix-looking argument before wsl.exe
+  sees it:
+
+    $ wsl.exe /home/beberman/lisp/Loom/tools/loom.sh 'status'
+    wsl: Failed to translate 'B:\home\beberman\lisp\Loom'
+    /bin/bash: C:/Program Files/Git/home/beberman/lisp/Loom/tools/loom.sh:
+        No such file or directory
+
+  So the documented invocation is not a permissions inconvenience that an
+  allowlist entry fixes. It is a broken command, and it was the first thing
+  every agent was told to do.
+
+  tools/loom.sh and tools/loom-test.sh already existed to solve exactly this --
+  loom.sh's own header comment says `bash -lc "... | ..."` trips the prompt
+  every time -- and no document mentioned them. The scripts were written, the
+  lesson was learned, and it was recorded in a comment inside the artifact
+  rather than anywhere an agent reads. That is the failure DEC-0001 describes:
+  knowledge that exists but is not where it is needed.
+
+  Fixed in this run. CLAUDE.md, the skill and all five agents now specify the
+  PowerShell tool calling tools/loom.sh, one console command per argument.
+
+  FINDING 2  Agent definitions are read at spawn, so a fix mid-run does not land
+
+  The architect was launched before finding 1 was understood. It spent its run
+  shelling out -- a `for f in ...; do cat ...; done` loop over four rule files,
+  then `powershell -Command "Select-String ..."` -- and stalled on a permission
+  prompt each time, because a compound command and a nested interpreter call are
+  both opaque to the matcher. Rewriting the agent definitions did not reach it.
+
+  Two lessons, and the second is the general one. An agent should read files with
+  the Read tool and never through a shell: it is faster, it cannot prompt, and
+  the instruction is now in all five definitions. And a workflow whose agents
+  carry their own copies of the environment instructions has five places for that
+  knowledge to go stale, which is the argument for those five files pointing at
+  the skill rather than restating it.
+
+  A prompt inside a subagent is invisible to the agent and to the transcript. It
+  presents as an agent that has simply stopped, so this class of defect is
+  expensive out of proportion to its size.
+
+  FINDING 2b  No agent could run Loom at all, because none had a shell that can
+
+  This is the finding the others were symptoms of. All five agent definitions
+  granted Bash:
+
+    architect  tools: Read, Write, Glob, Grep, Bash, WebSearch
+    planner    tools: Read, Write, Glob, Grep, Bash, WebSearch
+    reviewer   tools: Read, Write, Glob, Grep, Bash
+    tester     tools: Read, Edit, Write, Bash, Grep, Glob
+    coder      tools: Read, Edit, Write, Bash, Grep, Glob
+
+  Bash is the one shell on this machine that cannot invoke wsl.exe, per finding
+  1. None of the five had PowerShell. So every agent in a workflow whose central
+  instruction is "ask Loom before reading the tree" was equipped with no way to
+  ask Loom, and the tester and coder had no way to run the test suite either.
+
+  The second architect run demonstrated it precisely. Told to query Loom through
+  the PowerShell tool, it reported back that Bash reproduced finding 1's path
+  translation verbatim, that no PowerShell tool existed in its toolset, and that
+  its one workaround -- MSYS2_ARG_CONV_EXCL -- it declined as an unrequested
+  deviation. It then verified its document by reading source with Read and Grep
+  and said plainly which check it could not run. That is the right behaviour from
+  the agent and a total failure of the harness around it.
+
+  Every agent produced work anyway, by reading the tree. Which means the
+  workflow has been running with its central premise switched off, and nothing
+  reported it, because an agent that cannot use Loom degrades silently into an
+  agent that reads files -- the exact behaviour CON-0004 says Loom exists to
+  replace. A capability that fails open is worse than one that fails closed:
+  nobody noticed for the entire life of these definitions.
+
+  Fixed: all five now grant PowerShell instead of Bash.
+
+  FINDING 3  context is the best command in the tool and nothing mentions it
+
+  `context <task words>` returns a token-budgeted bundle of the entities that
+  matter with edges attached:
+
+    loom> context macro definitions
+    # Context for: macro definitions
+    # 12 entities, ~862/2000 tokens
+    function make-macro-entity  [src/analyzer/lisp-analyzer.lisp:297-310]
+        -> calls properties-table
+        <- calls analyze-file
+    function resolve-definitions  [src/graph/resolve.lisp:115-119]
+        <- documents BUG-0001
+
+  That is the answer to "what should I read before editing", in one call, and it
+  found both the function REQ-0003 has to change and the bug document bearing on
+  the pass it runs in. It appears in no agent definition, not in CLAUDE.md, and
+  not in the skill; all six documents named find, describe, impact, rules and
+  check and stopped there. `reindex`, `log` and the `find` type argument were
+  undocumented the same way. `help` prints the authoritative table and no
+  document said to run it.
+
+  A command an agent is never told about is a command that does not exist. Fixed
+  in the skill; the agent definitions should follow.
+
+  FINDING 4  impact is the payoff, and it works
+
+    loom> impact repository-graph 3
+    14 impacted (truncated):
+      d1 function current-graph      calls>current-graph
+      ...
+      d2 function poll-once          calls>detect-deletions calls>poll-once
+      d4 file src/workspace/test/workspace.lisp  calls>reindex-repository ...
+    documents: CON-0003, CON-0002, ARCH-0001, REQ-0003
+    decisions: DEC-0003, DEC-0004
+
+  Fourteen entities with the path each was reached by, the governing decisions
+  attached. Nothing in a tree read gives that, and the decisions line is the
+  thing CON-0004 was written to buy. This is the part of Loom that is already
+  worth the build.
+
+  Two blemishes on it, both now specified as REQ-0005, and worse on closer
+  examination than they looked here.
+
+  A max-depth of 3 returned rows labelled d4. This was written up as reading like
+  a bug whether or not it was one; pushing on it settled the question. At depth 1
+  the command returns a d2 row, and at depth 0 it still returns a d1 row, because
+  the one-step types are applied to every noted entity after traversal and land
+  at cap + 1 regardless of the cap. There is no argument that means "the seed
+  alone". So the number after `d` is not the number the caller asked about.
+
+  And `14 impacted (truncated)` gives no way to tell how much was cut, because
+  impact-result-truncated-p is a boolean -- the frontier was non-empty -- and
+  cannot distinguish two cut entities from two hundred. That is the difference
+  between "your change is bigger than this" and a number, which is the judgement
+  the command exists to support.
+
+  A third defect turned up while checking the first two: `impact repository-graph
+  abc` prints `The value NIL is not of type REAL`. The console parses depth with
+  parse-integer :junk-allowed t, which returns NIL rather than signalling, and
+  NIL reaches `min`. The console's own comment says a mistyped command should
+  print a message and not drop.
+
+  Also worth correcting on the record: the default depth is 5, not 3. Every
+  example in CLAUDE.md, the skill and the five agent definitions writes `impact
+  <name> 3`, which reads as a default to anyone who has not looked at
+  *default-impact-depth*.
+
+  FINDING 5  Mention-inferred edges are presented as though they were structural
+
+  Now specified as REQ-0006, and the finding as written below understates it. It
+  says mentions render identically to declared edges; in fact *declared-link-
+  fields* maps affects: to :decides, applies-to:, supersedes: and refines: to
+  their own types, and **:documents is not in that list**. No document field
+  declares one. Every :documents edge in the graph is a prose mention at 0.5
+  confidence, so the whole heading is inference presented in the same shape as
+  `decisions:`, which is entirely declared. There is no mixing, because there is
+  nothing to mix with.
+
+  REQ-0006 also separates the two directions, which this finding ran together.
+  Read from code the edge answers "which documents mention this", which is
+  useful and only needs an honest heading; read from a document it asserts that
+  the document bears on nineteen functions, which is the claim that is wrong.
+
+  resolve-document-links turns a prose mention into a :documents edge at
+  :source :inferred and *mention-confidence*. The console renders it in the same
+  shape as a declared relationship:
+
+    loom> describe REQ-0003
+      -> documents: assert-entity, resolve-calls, register-document-type,
+                    analyzer, register-analyzer, repository-status, ...
+
+  REQ-0003 names `analyzer` and `register-analyzer` only as examples of existing
+  registries, in a paragraph explaining what the word registry means here. It
+  does not govern them. But the edge is now in the graph at the same visual
+  weight as a declared `affects:`, so `impact analyzer` will attach REQ-0003 as a
+  governing document, and an agent that reads governing documents before acting
+  -- which is the behaviour every agent definition asks for -- will read a
+  requirement that has nothing to say about the code in front of it.
+
+  entity-summary carries confidence for entities. Neighbour edges are summarised
+  without it, so the distinction the graph carefully records is discarded at the
+  point of display. This sits badly with CON-0001: the fabrication is not in the
+  graph, which is honest, but in the rendering, which is where the agent reads.
+
+  The cheap fix is to mark inferred edges when printing. The question worth
+  deciding is whether a mention should be a :documents edge at all, or a
+  separate weaker relationship that impact reports under its own heading.
+
+  FINDING 6  Loom cannot measure REQ-0003's acceptance criterion
+
+  R5 states the payoff as a count: :test entities and :tests edges are populated,
+  "today the count is zero". There is no console command that returns it. `find`
+  matches substrings, caps at twenty without saying so, and its type argument
+  cannot be used to enumerate because an empty term is dropped in parsing.
+  BUG-0002 records the mechanism.
+
+  So the requirement's own acceptance test is not expressible in the tool whose
+  behaviour it specifies, and `status` reports one entity total across all types.
+
+  Related, and confirmed live: `find def-suite` returns "Nothing matches", though
+  every src/*/test/suite.lisp contains def-suite forms. The blind spot REQ-0003
+  exists to close is visible from the console in one command, which is a good
+  sign for the requirement and a bad one for anyone trusting a `find` miss to
+  mean absence.
+
+  FINDING 7  describe on a document prints the entire body
+
+  Now specified as REQ-0007, which found the cause. *prose-fields* concatenates
+  eight fields -- :rationale :consequences :statement :summary :description
+  :notes :body :lessons -- into the single :body property, because that same blob
+  is what mention scanning runs over. So a document's summary is not a field on
+  the entity, it is the first paragraph of one string, and there is no summary
+  for describe to print on its own. Meanwhile :title is parsed and stored on
+  every document and no command displays it.
+
+  `describe REQ-0003` printed roughly 240 lines -- the whole requirement -- and
+  put the edge list, the thing describe is documented to produce, at the bottom.
+  For an agent this is the opposite of the intended trade: a command whose
+  purpose is to avoid reading a file instead injects the file plus a summary. A
+  document's describe should print title, summary and edges, with the body
+  behind an explicit request.
+
+  The same defect sits under decisions and rules, which describe also prints in
+  full via :statement and :rationale. It is invisible only because DEC-0004 and
+  RULE-0004 are short.
+
+  WHAT THE CHAIN PRODUCED
+
+  ARCH-0002, refining REQ-0003, written by the architect on its second run. It
+  is worth recording that the chain closed on itself within the session: the
+  architect read REV-0001 finding 5 and BUG-0002 -- both written an hour earlier
+  -- and argued against both on the record rather than inheriting them.
+
+  On finding 5 it declined to mark the generator-to-generated edge :inferred,
+  and gave a reason worth keeping: :inferred is for a name matching several
+  genuine possibilities, a registry match is not a guess, and marking a certain
+  fact as a guess "would make REV-0001 finding 5's problem worse, not better",
+  since it teaches an agent to distrust confidence markers generally. That is a
+  sharper reading of the finding than the finding had.
+
+  On BUG-0002 it routed around rather than depending on it -- three named counts
+  on repository-status, following the :documents precedent, instead of waiting
+  for a general enumerate-by-type -- and said explicitly that BUG-0002 stays
+  open and worth fixing on its own.
+
+  This is the mechanism CON-0004 predicted and the first evidence it works: a
+  document written by one agent changed what the next one decided, without
+  anyone carrying it between them in a chat window.
+
+  PLAN-0001 followed, sequencing ARCH-0002 into eight steps. It is the first
+  agent to run with the corrected definitions -- PowerShell rather than Bash,
+  Read rather than a shell loop, `context` documented -- and it completed without
+  a single permission stall, which is the evidence findings 1, 2, 2b and 3 were
+  the whole of that problem.
+
+  It also earned the stage. The planner found a constraint ARCH-0002 does not
+  mention and could not have seen from the design alone: loom-graph.asd depends
+  on loom-ontology and nothing else, so resolve.lisp cannot reference
+  loom-analyzer's *macro-generators* -- it would not compile, and it would invert
+  the layering RULE-0001 to RULE-0003 exist to protect. Its answer is a :registry
+  keyword argument supplied by loom-workspace, the first system that uses both
+  packages. It sequenced around the constraint rather than redesigning, which is
+  the division of labour the workflow assumes.
+
+  A second catch of the same kind: validate-entity iterates only *declared*
+  properties, so an undeclared :call-names on a :test would be stored and never
+  validated. So step one declares the new properties as well as widening the two
+  relationships. Neither of these is visible in an architecture document, and
+  both would have surfaced as a compile error or a silent gap during
+  implementation. That is what the planning stage is for, and it is the first
+  time in this run that a stage justified itself rather than merely working.
+
+  WHAT THIS SAYS ABOUT THE WORKFLOW
+
+  The index is good and the instructions around it were the bottleneck. Every
+  finding above except 5 and 6 is a documentation or plumbing defect, none needed
+  a design change, and all of them cost more of this run than REQ-0003 did.
+
+  The ranking, if only some get fixed: 2b first, because until the agents have a
+  shell that reaches wsl.exe nothing else in this list matters. Then 1 and 3,
+  which are the same defect -- the instructions named a broken invocation and
+  omitted the best command. Then 5, which is the only one that can mislead an
+  agent into acting on a document that does not govern the code in front of it.
+
+  The uncomfortable part is that CON-0004's own argument predicted it. Knowledge
+  that lives in a comment inside tools/loom.sh, or in a `help` table nobody is
+  told to run, is knowledge that was never written back to where it is read --
+  which is the thing Loom is for. Dogfooding found it in an hour because
+  dogfooding is the only thing that could have.

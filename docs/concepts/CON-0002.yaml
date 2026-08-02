@@ -1,5 +1,4 @@
 id: CON-0002
-type: concept
 title: File stamp
 summary: |
   What the index records about a file so a later poll can tell whether it

@@ -1,5 +1,4 @@
 id: DEC-0003
-type: decision
 title: A resolution pass derives its output, it never consumes its input
 status: accepted
 date: 2026-07-28

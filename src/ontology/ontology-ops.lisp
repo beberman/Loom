@@ -28,7 +28,18 @@ against the committed base graph."))
   ((entity :initarg :entity :reader op-entity))
   (:documentation "Upsert an entity, keyed by its natural key (see
 ENTITY-NATURAL-KEY).  Re-asserting an unchanged entity applies as a no-op,
-which is what makes re-analysing an untouched file idempotent."))
+which is what makes re-analysing an untouched file idempotent.
+
+Emitted by an analyzer, and -- since ARCH-0002 -- by a resolution pass as
+well.  A definer macro's call site brings a name into existence that appears
+nowhere in the source as a definition, and the decision that it did needs the
+whole workspace, which no file-scoped analyzer has.  So \"every entity comes
+from an analyzer\" is no longer true; the invariant that replaced it is
+\"every entity comes from an analyzer, or from a resolution pass that owns its
+full lifecycle -- mint and retract -- and marks what it made with
+:GENERATED-BY.\"  The second clause is what the first bought: an analyzer's
+entities are cleaned up by RETRACT-FILE, and a pass that mints has no single
+file whose reanalysis would do the same."))
 
 (defclass assert-relationship-op (ontology-op)
   ((rel :initarg :rel :reader op-rel))

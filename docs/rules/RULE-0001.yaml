@@ -1,5 +1,4 @@
 id: RULE-0001
-type: rule
 title: The ontology layer depends on nothing
 status: active
 severity: error

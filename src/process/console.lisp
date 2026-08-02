@@ -140,6 +140,26 @@ demanded an id would send the developer to `find` first every single time."
         (when hits (get-entity graph (getf (first hits) :id))))
       (error "Nothing in the index matches ~s." term)))
 
+(defun resolve-count (text what)
+  "TEXT as a non-negative integer, or an error naming WHAT and what was typed.
+
+`parse-integer :junk-allowed t' returns NIL for an unparseable argument rather
+than signalling, so the NIL travelled on into arithmetic and surfaced as \"The
+value NIL is not of type REAL\" -- a message that names neither the command nor
+the argument that was wrong. SS3.3 asks for the opposite: a mistyped command
+tells the developer what to type instead. Run-command prints the condition, so
+the text here is what they read.
+
+Junk after the digits is refused rather than silently truncated. `impact foo
+3x' meaning depth 3 is a guess about intent, and a wrong guess about a bound is
+invisible in the output -- the report is simply smaller than the caller asked
+for. REV-0001 finding 4 is about exactly that class of quiet dishonesty in this
+command."
+  (multiple-value-bind (n end) (parse-integer text :junk-allowed t)
+    (unless (and n (= end (length text)) (not (minusp n)))
+      (error "~a must be a non-negative integer, not ~s." what text))
+    n))
+
 ;;;; ==================================================================
 ;;;; Output helpers
 ;;;; ==================================================================
@@ -163,11 +183,17 @@ demanded an id would send the developer to `find` first every single time."
   (format t "  documents  : ~d~@[, ~d uncategorized~]~%"
           (getf status :documents)
           (let ((n (getf status :uncategorized-documents))) (and (plusp n) n)))
+  ;; Printed unconditionally, zero included. A count that vanishes when it is
+  ;; nought cannot be told from a count nobody computes, and these three exist
+  ;; precisely to be read as zero-or-not (ARCH-0002 R10).
+  (format t "  tests      : ~d test~:p covering ~d unit~:p~%"
+          (getf status :test-entities) (getf status :tested-units))
   (format t "  watcher    : ~(~a~)~%" (getf status :monitor))
   (format t "  rules      : ~d violation~:p, ~d unenforced~%"
           (getf status :violations) (getf status :unenforced-rules))
-  (format t "  unresolved : ~d document reference~:p~%"
-          (getf status :unresolved-references))
+  (format t "  unresolved : ~d document reference~:p, ~d definer macro~:p~%"
+          (getf status :unresolved-references)
+          (getf status :unhandled-definer-macros))
   (when (plusp (getf status :errors))
     (format t "  errors     : ~d, last: ~a~%"
             (getf status :errors) (cdr (getf status :last-error)))))
@@ -187,9 +213,20 @@ demanded an id would send the developer to `find` first every single time."
 
 (define-command watch (path)
     "watch \"<directory>\""
-    "Register a repository, index it, and begin watching."
+    "Register a repository, index it, and begin watching. Resumes a paused one."
   (let ((repository (watch-repository path)))
     (log-event "watch" "~a" (repository-root repository))
+    (print-status (repository-status repository))))
+
+(define-command pause (&optional designator)
+    "pause [<name>]"
+    "Stop watching but keep the index. Resume with watch."
+  ;; DEC-0004: a console session and an index have different lifetimes, so
+  ;; there has to be a way to stop the polling that does not spend the seconds
+  ;; the graph cost to build.
+  (let ((repository (pause-repository
+                     (repository-name (current-repository designator)))))
+    (log-event "pause" "~a" (repository-root repository))
     (print-status (repository-status repository))))
 
 (define-command unwatch (&optional designator)
@@ -245,12 +282,18 @@ demanded an id would send the developer to `find` first every single time."
 
 (define-command impact (term &optional depth)
     "impact <name> [<depth>]"
-    "What may need attention if this changes, with paths and depths."
+    ;; Built from the variable rather than written out, because the number in a
+    ;; docstring is the first thing to go stale: REQ-0005 R5 records that every
+    ;; example in CLAUDE.md and the agent definitions passes 3, and that the
+    ;; default was believed to be 3 for exactly as long as nothing printed it.
+    (format nil "What may need attention if this changes, with paths and ~
+                 depths. Depth defaults to ~d."
+            *default-impact-depth*)
   (let* ((graph (current-graph))
          (entity (resolve-entity graph term))
          (report (impact-report graph (id entity)
                                 :max-depth (if depth
-                                               (parse-integer depth :junk-allowed t)
+                                               (resolve-count depth "depth")
                                                *default-impact-depth*))))
     (format t "~&~a~@[  [~a]~]~%"
             (getf (getf report :seed) :name) (getf (getf report :seed) :location))
@@ -293,6 +336,22 @@ demanded an id would send the developer to `find` first every single time."
       (when unresolved
         (format t "~&~d unresolved document reference~:p:~%" (length unresolved))
         (dolist (pair unresolved)
+          (format t "  ~a -> ~a~%" (car pair) (cdr pair)))))
+    ;; ARCH-0002 R6/R10, reported the way an unresolved reference is and for
+    ;; the same reason: a definer Loom cannot characterise is a definition the
+    ;; index knows it is missing, and it should be visible here rather than
+    ;; only after a suite run.
+    (let ((unhandled (unhandled-definer-macros graph))
+          (collisions (generated-definition-collisions graph *macro-generators*)))
+      (when unhandled
+        (format t "~&~d definer macro~:p whose expansion could not be read:~%"
+                (length unhandled))
+        (dolist (macro unhandled)
+          (format t "  ~a  [~a:~a]~%" (name macro) (getp macro :file)
+                  (getp macro :start-line))))
+      (when collisions
+        (format t "~&~d definer call site~:p left alone:~%" (length collisions))
+        (dolist (pair collisions)
           (format t "  ~a -> ~a~%" (car pair) (cdr pair)))))))
 
 (define-command rules (&optional designator)
@@ -306,7 +365,10 @@ demanded an id would send the developer to `find` first every single time."
 (define-command log (&optional count)
     "log [n]"
     "Recent events and errors."
-  (let ((n (or (and count (parse-integer count :junk-allowed t)) 20)))
+  ;; The same parse as `impact', and it failed the other way: the NIL from an
+  ;; unparseable count was swallowed by the OR, so `log abc' quietly printed the
+  ;; default twenty as though that had been asked for.
+  (let ((n (if count (resolve-count count "count") 20)))
     (dolist (entry (subseq *log* 0 (min n (length *log*))))
       (destructuring-bind (at label text) entry
         (multiple-value-bind (second minute hour) (decode-universal-time at)
@@ -328,7 +390,10 @@ demanded an id would send the developer to `find` first every single time."
 
 (define-command stop ()
     "stop"
-    "Stop watchers and exit."
+    "Pause every repository and leave the console. Indexes are kept."
+  ;; The behaviour has not changed; the description has. DEC-0004: what this
+  ;; always did was pause, and calling it "stop watchers" is what made the
+  ;; state it left behind read as a fault.
   (dolist (repository (all-repositories)) (stop-monitor repository))
   (throw 'quit-console t))
 
@@ -376,5 +441,5 @@ repository\", so `loom /path/to/repo` indexes it and hands over a prompt."
       (error (condition) (format t "~&~a~%" condition))))
   (console)
   (dolist (repository (all-repositories)) (stop-monitor repository))
-  (format t "~&Stopped.~%")
+  (format t "~&Paused ~d repositor~:@p; indexes kept.~%" (length (all-repositories)))
   (values))
