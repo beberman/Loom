@@ -269,11 +269,34 @@ command."
          (entity (resolve-entity graph term))
          (detail (describe-entity graph (id entity))))
     (print-summary-line (getf detail :entity))
-    (let ((body (getf (getf detail :properties) :body))
-          (statement (getf (getf detail :properties) :statement))
-          (rationale (getf (getf detail :properties) :rationale)))
-      (dolist (text (remove nil (list statement rationale body)))
-        (format t "~&~%~a~%" text)))
+    ;; A document's :BODY is its author's whole concatenation, so printing it
+    ;; put the neighbours below an unbounded amount of prose, and for a
+    ;; decision printed the rationale twice -- once under its own key and once
+    ;; buried inside :BODY. One named, labelled, budgeted field instead. The
+    ;; full text is still one Read of the path already named on the line above.
+    (let ((doc (getf detail :document)))
+      ;; NIL for a code entity, so this branch does not exist for a function,
+      ;; class or file rather than happening to print nothing there.
+      (when doc
+        (format t "~&~@[title: ~a~%~]~@[status: ~(~a~)~%~]"
+                (getf doc :title) (getf doc :status))
+        (if (getf doc :text)
+            ;; ", truncated" is a two-clause ~:[~;~] and not a ~@[~]: an ~@[
+            ;; whose clause contains no directive does not use up the argument
+            ;; it tested, so the flag survived into the following ~a and the
+            ;; summary of every truncated document printed as "T".
+            (format t "~&summary~@[ (via ~(~a~))~] (~d~@[/~d~] tokens~:[~;, truncated~]):~%  ~a~%"
+                    ;; Labelled only when it is a fallback: naming the field on
+                    ;; an author's real summary would be noise, and not naming
+                    ;; it on a fallback would be a fabrication.
+                    (and (not (eq (getf doc :field) :summary)) (getf doc :field))
+                    (estimate-tokens (getf doc :text))
+                    ;; The full size prints only when something was cut;
+                    ;; "(24/24 tokens)" reads as though something happened.
+                    (and (getf doc :truncated) (getf doc :full-tokens))
+                    (getf doc :truncated)
+                    (getf doc :text))
+            (format t "~&summary: (none written)~%"))))
     (dolist (group (getf detail :neighbors))
       (format t "~&  ~a ~(~a~): ~{~a~^, ~}~%"
               (if (eq :out (getf group :direction)) "->" "<-")

@@ -1,0 +1,763 @@
+id: PLAN-0004
+title: Sequence a bounded describe for document entities
+status: final
+date: 2026-08-02
+refines: [ARCH-0005]
+affects: [describe-entity, base-properties, document-properties, entity-summary,
+          print-summary-line, estimate-tokens, collect-body, "*prose-fields*",
+          document-summary, bounded-text]
+tags: [knowledge, console, documents, ontology, analyzer, plan]
+summary: |
+  Seven steps that land ARCH-0005's R1-R6 in dependency order: ARCH-0005's own
+  YAML is repaired first because it does not parse and nothing can refine a
+  document Loom has not read; then the ontology property everything validates
+  against; then the one analyzer line that stores it; then the four new
+  functions in loom-knowledge; then the single key they hang off DESCRIBE-
+  ENTITY; then the console rendering that is the whole visible point; then the
+  documents this makes false. Every step compiles and leaves the full suite
+  runnable, and each names a verification that fails without it.
+
+  Two things ARCH-0005 does not mention are added here with their reasons
+  stated: `status: implemented` and `status: partial` are outside the :document
+  type's :one-of vocabulary, so AS-KEYWORD drops them and every document in
+  this tree that already says `implemented` carries :status NIL -- which would
+  make ARCH-0005 R1's "status where present" dead on arrival for exactly the
+  documents whose status matters; and ARCH-0005 line 8 is unparseable YAML, so
+  the design being sequenced here is currently indexed as an error blob with no
+  id, no title, no body and no refines edge.
+
+  Out of scope and deliberately so: any change to *PROSE-FIELDS*, COLLECT-BODY
+  or PROSE-MENTIONS, which ARCH-0005 requires be left alone and DEC-0003
+  explains why; widening ENTITY-SUMMARY with :title and :status, which ARCH-0005
+  rejects in ALTERNATIVES CONSIDERED; any new console command or argument for
+  the untruncated text, rejected under R3; a status count for documents that
+  failed to parse, which is the mechanism that hid the ARCH-0005 defect and
+  belongs to ARCH-0002's status contract rather than to this plan (recorded
+  under BLAST RADIUS so the next person filing it does not rediscover it); and
+  REQ-0008's MCP/REST boundary, which this plan leaves exactly as ARCH-0005
+  found it.
+body: |
+  BASELINE
+
+  Measured today, 2026-08-02, branch analyzer, /usr/bin/sbcl, via
+  `tools/loom.sh 'status | check'` with the monitor running, immediately before
+  this document was written:
+
+    index      : 87 files, 950 entities, 4378 relationships
+    documents  : 35
+    tests      : 257 tests covering 189 units
+    watcher    : watching
+    rules      : 0 violations, 2 unenforced
+    unresolved : 0 document references, 1 definer macro
+
+  The two unenforced rules are RULE-0004 and RULE-0005; the one definer macro
+  is DEFENTITY. Both are the standing state PLAN-0001 to PLAN-0003 left and are
+  not this plan's business.
+
+  Re-measured immediately after writing this document, because writing it moves
+  three of those numbers and a step that predicts "unchanged" has to know from
+  what:
+
+    index      : 88 files, 951 entities, 4420 relationships
+    documents  : 36
+    unresolved : 1 document reference, 1 definer macro
+      PLAN-0004 -> ARCH-0005
+
+  That single unresolved reference is this plan pointing at a design Loom
+  cannot read, and step 1 is what clears it. It is the plan's first measured
+  prediction and it came true before the first step ran.
+
+  `tools/loom-test.sh`, same SBCL, six of six systems green:
+
+    loom-ontology    291      loom-workspace    51
+    loom-analyzer    134      loom-knowledge    51
+    loom-graph       206      loom-process      79
+
+  Those six numbers are the instrument for "which suite moved" at every step
+  below. A movement in loom-graph or loom-workspace is unexplained by this plan
+  and is worth stopping for.
+
+  FINDING 1: ARCH-0005 DOES NOT PARSE, AND NOTHING SAID SO
+
+  `find ARCH-0005` returns:
+
+    document docs/arch/ARCH-0005.yaml  [docs/arch/ARCH-0005.yaml]
+
+  The name is the path, which is the fallback ANALYZE-FILE uses in its
+  handler-case branch when the YAML will not read. Compare `find ARCH-0004`,
+  which returns `document ARCH-0004`. So ARCH-0005 is indexed as an entity
+  carrying :path, :category, :format and :analysis-error and nothing else: no
+  :doc-id, no :title, no :status, no :body, no :refines. `impact REQ-0007 2`
+  reports 0 impacted -- REQ-0007 looks like a requirement nobody has answered.
+
+  The mechanism, confirmed by parsing the file directly:
+
+    ScannerError while scanning an alias, line 8, column 11:
+    expected alphabetic or numeric character, but found '*'
+
+  Line 8 is the tail of the affects: flow sequence, `*prose-fields*]`. Inside a
+  YAML flow sequence an unquoted token beginning with `*` is an alias node, so
+  the scanner reads `*prose-fields` as an alias name and chokes on the closing
+  star. The fix is two quote characters. It is step 1 because this plan's own
+  `refines: [ARCH-0005]` resolves to nothing until it lands.
+
+  Worth stating because it generalises: CON-0004's conventions warn about an
+  unindented block scalar and a duplicated id:. This is a third way to lose a
+  document, it is invisible to `check` and to `status`, and it will recur every
+  time a document names a Lisp special variable in a list field. Quote them --
+  this plan's own affects: quotes "*prose-fields*" for that reason.
+
+  FINDING 2: `status: implemented` IS NOT IN THE VOCABULARY THE CODE ACCEPTS
+
+  CON-0004 gives the per-type status vocabulary as `REQ draft -> accepted ->
+  implemented | partial` and `ARCH draft -> accepted -> implemented | partial |
+  superseded`, and RULE-0005 requires a plan reaching final to move every
+  document it refines to implemented, partial or superseded. Five documents in
+  the tree already say `status: implemented`: ARCH-0002, ARCH-0003, ARCH-0004,
+  REQ-0002, REQ-0003.
+
+  Neither :implemented nor :partial is in the :one-of list on the :document
+  type's :status property (src/ontology/code-ontology.lisp), nor in the list
+  DOCUMENT-PROPERTIES passes to AS-KEYWORD for :document
+  (src/analyzer/yaml-analyzer.lisp). AS-KEYWORD returns NIL for a value outside
+  its allowed list rather than signalling, so all five of those documents carry
+  :status NIL in the index today. Nothing reports it, because until this plan
+  nothing printed a document's status at all.
+
+  ARCH-0005 R1 requires describe to print "status where present". Without the
+  two keywords, status is never present for a document that has actually
+  landed, and step 7 of this plan would mark ARCH-0005 `implemented` and
+  thereby make its own status invisible in the very command this plan is
+  fixing. So the widening is in scope: two keywords in two lists, in steps 2
+  and 3, each with its own verification.
+
+  ONE DEVIATION FROM ARCH-0005, STATED PLAINLY
+
+  ARCH-0005 places *SUMMARY-TOKEN-BUDGET* "next to *CONTEXT-TOKEN-BUDGET*'s
+  2000 in context.lisp". This plan puts it, and BOUNDED-TEXT, in services.lisp
+  instead. The reason is load order, not taste: loom-knowledge.asd is :serial
+  with components package, services, context -- services.lisp compiles first.
+  DOCUMENT-SUMMARY lives in services.lisp because DESCRIBE-ENTITY calls it
+  there, and a compile-time reference to a DEFPARAMETER that has not been seen
+  yet is a full WARNING in SBCL, which sets COMPILE-FILE's failure-p, which
+  ASDF turns into a build failure. A forward reference to a *function* is only
+  a STYLE-WARNING and is deferred and resolved inside ASDF's compilation unit,
+  so ESTIMATE-TOKENS stays in context.lisp and BOUNDED-TEXT calls it across the
+  file boundary.
+
+  What is preserved of ARCH-0005's intent: context.lisp gains one comment line
+  beside *CONTEXT-TOKEN-BUDGET* naming the smaller budget and where it lives,
+  so the two are still read together. The alternative -- moving ESTIMATE-TOKENS
+  into services.lisp -- is the named fallback in step 4 if the forward call
+  turns out to warn on this SBCL. What must not be done instead is moving
+  DOCUMENT-SUMMARY into context.lisp: DESCRIBE-ENTITY calls it from
+  services.lisp and the same problem returns one function later.
+
+  FILES
+
+  docs/arch/ARCH-0005.yaml
+      Step 1: line 8, `*prose-fields*]` becomes `"*prose-fields*"]`. Nothing
+      else in the file changes. Step 7: status draft -> implemented.
+
+  src/ontology/code-ontology.lisp
+      Step 2: (:summary string) declared on :document, :decision and :rule,
+      beside each type's existing :title, with documentation matching the role
+      :concept's already has. Same step: the :document type's :status :one-of
+      gains :implemented and :partial.
+
+  src/ontology/test/code-ontology.lisp
+      Step 2: two new tests, next to the-function-type-matches-the-specified-
+      shape.
+
+  src/analyzer/yaml-analyzer.lisp
+      Step 3: one new line in BASE-PROPERTIES; the :concept method's now-
+      redundant :summary line removed in the same edit; the :document method's
+      AS-KEYWORD allowed list gains :implemented and :partial. *PROSE-FIELDS*,
+      COLLECT-BODY and PROSE-MENTIONS are not touched.
+
+  src/analyzer/test/yaml-analyzer.lisp
+      Step 3: three new tests, driven by literal YAML strings rather than by
+      Loom's own docs/ tree (see RISKS).
+
+  src/knowledge/services.lisp
+      Step 4: a new section above DESCRIBE-ENTITY holding
+      *SUMMARY-FIELDS-BY-TYPE*, SUMMARY-FIELD-AND-TEXT, *SUMMARY-TOKEN-BUDGET*,
+      BOUNDED-TEXT and DOCUMENT-SUMMARY. Step 5: one key added to
+      DESCRIBE-ENTITY's returned plist.
+
+  src/knowledge/package.lisp
+      Step 4: five new exports.
+
+  src/knowledge/context.lisp
+      Step 4: one comment line beside *CONTEXT-TOKEN-BUDGET*. No code.
+
+  src/knowledge/test/services.lisp
+      Step 4: five new tests in a new section after the describe-entity
+      section. Step 5: two more.
+
+  src/process/console.lisp
+      Step 6: the describe command's body -- the three-line dolist becomes
+      PRINT-SUMMARY-LINE plus the document block, with the neighbour loop
+      unchanged.
+
+  src/process/test/console.lisp
+      Step 6: a fixture macro and four tests, at the end of the file (see
+      RISKS).
+
+  docs/requirements/REQ-0007.yaml
+      Step 7: status draft -> implemented, conditional on the check step 7
+      names.
+
+  docs/plans/PLAN-0004.yaml
+      This file. status draft -> final at step 7, with an OUTCOME section.
+
+  No .asd changes and no new files: every new definition and every new test
+  goes into a file the systems already list. That is a prediction, not an
+  aside -- `status` must still report 88 files at the end, and a rise means a
+  component was added that this plan does not name.
+
+  Deliberately not changed, each for a stated reason:
+
+    *PROSE-FIELDS* and COLLECT-BODY. ARCH-0005 R4 requires :summary keep
+    folding into :body, and a-decision-keeps-its-prose in the analyzer suite is
+    the existing guard that it does.
+
+    ENTITY-SUMMARY, GROUP-NEIGHBORS, NEIGHBOR-SUMMARY, PRINT-SUMMARY-LINE,
+    IMPACT-REPORT, BUILD-CONTEXT, RENDER-CONTEXT. ARCH-0005's WHAT THIS LEAVES
+    ALONE section, and the console's neighbour loop and its `find` command both
+    read PRINT-SUMMARY-LINE's output shape.
+
+    src/graph and src/workspace entirely. This plan asserts no new edge, adds
+    no resolution pass and changes no status count.
+
+    CLAUDE.md and .claude/skills/loom/SKILL.md. SKILL.md line 112 says
+    "`describe` on a document prints the entire body ... expect to scroll",
+    which step 6 makes false. Correcting it is right and it is not this plan's
+    call to make silently: recorded here as a known-false line for whoever
+    lands step 6 to raise, since the skill file is the agent-facing contract
+    and editing it is a change to how every future session behaves.
+
+  BLAST RADIUS
+
+  What Loom reports, measured today at depth 3:
+
+    describe-entity   4 impacted, all d1: describe-includes-the-type-specific-
+                      properties, describe-groups-neighbors-by-direction-and-
+                      type, describe-returns-nil-for-an-unknown-id, and its own
+                      file. documents: ARCH-0004, REQ-0008.
+
+    base-properties   17 impacted (truncated). d1: the four DOCUMENT-PROPERTIES
+                      methods and its own file. d2: ANALYZE-FILE. d3-d4: the
+                      analyzer test helpers DOCS-OPS, FIXTURE-OPS,
+                      ANALYZE-SOURCE, ANALYZE-PATH and the files holding them.
+                      documents: ARCH-0001, PLAN-0001, PLAN-0002, REQ-0007.
+
+    collect-body      31 impacted (truncated). Listed only to say what is not
+                      being touched: the whole analyzer test surface hangs off
+                      it, and step 3 must not perturb any of it.
+
+  What Loom cannot see, and this plan believes anyway:
+
+    The console. `impact describe-entity 3` does not name src/process/
+    console.lisp, and the console is the one consumer this entire plan exists
+    to change. The describe command's body sits inside a DEFINE-COMMAND macro
+    expansion and calls made in a macro body are unattributed (ARCH-0001), so
+    no :calls edge exists from it to DESCRIBE-ENTITY. The impact set of four is
+    a floor.
+
+    Every plist consumer. DESCRIBE-ENTITY returns a plist and its callers read
+    it with GETF; a GETF is a call to GETF and not an edge to DESCRIBE-ENTITY.
+    The same blindness that made repository-status report an impact set of one
+    in PLAN-0001.
+
+    Property declarations. Nothing in the graph links BASE-PROPERTIES' :summary
+    line to the :summary declaration in code-ontology.lisp. VALIDATE-ENTITY
+    only checks *declared* properties, so an undeclared :summary would be
+    stored, silently unvalidated, and absent from the schema the ontology
+    exists to be the single copy of. That coupling is invisible to `impact` and
+    is why step 2 is step two.
+
+    ARCH-0005 itself, for a different reason: a document whose YAML fails to
+    parse is indexed with :analysis-error, and neither `status` nor `check`
+    counts those. `check` reports unresolved references, not unreadable files.
+    A count of :analysis-error documents belongs in REPOSITORY-STATUS beside
+    :uncategorized-documents; that is a change to ARCH-0002's status contract
+    and is out of scope here, recorded so the next person filing it starts from
+    the mechanism rather than from the symptom.
+
+  RISKS
+
+  The load-order failure, and it is a build failure rather than a red test.
+  Covered in full under ONE DEVIATION above; the tripwire is a clean-fasl
+  rebuild in step 4 and the fallback is named there.
+
+  The console fixture leaking a watched repository. src/process/test/
+  console.lisp has never built a repository. Two existing tests --
+  a-command-that-signals-prints-and-continues, which asserts the output
+  contains "Nothing is being watched", and an-unparseable-count-is-refused-
+  rather-than-defaulted -- assume a console with nothing watched. FiveAM runs a
+  suite in definition order, so the new tests go at the end of the file, and
+  the fixture macro must unwatch by name and delete its tree in an
+  UNWIND-PROTECT. If the first of those two goes red, the fixture leaked.
+
+  Removing the :concept method's :summary line without adding the
+  BASE-PROPERTIES line deletes the property for every concept document. The two
+  edits are one step for that reason. Between them the value would simply be
+  written twice -- PROPERTIES-TABLE lets a later duplicate key win and the
+  string is identical -- so the ordering within the step is free, but splitting
+  the step across a commit is not.
+
+  A test that passes for the wrong reason, three named instances. (a)
+  `(is (null (getf detail :document)))` for a code entity passes today, before
+  the key exists; it is a regression guard, not step 5's CON-0003 evidence, and
+  the plan says so at the step. (b) The same is true of
+  describe-of-a-function-is-unchanged in step 6. (c) The fallback tests must
+  assert :field, not merely that some text came back: a fallback that does not
+  report which field it showed is indistinguishable from an author's real
+  summary, which is the fabrication CON-0001 forbids and the reason
+  SUMMARY-FIELD-AND-TEXT returns two values instead of one.
+
+  The K-FIXTURE must not gain entities. search-ranks-an-exact-name-above-a-
+  substring asserts exactly 2 hits, search-honours-a-limit asserts 1, and
+  impact-report-separates-tests-and-decisions-from-the-impact-set asserts a
+  count of 3. DOCUMENT-SUMMARY takes an entity rather than a view, so every new
+  test in step 4 can MAKE-INSTANCE what it needs locally and none of them needs
+  to touch the shared fixture. Step 4's reuse of K-ADR is read-only.
+
+  ESTIMATE-TOKENS is four characters to the token by its own docstring's
+  admission. *SUMMARY-TOKEN-BUDGET* 120 is therefore about 480 characters, not
+  120 tokens any tokenizer would agree with. Every assertion about the budget
+  must be written against ESTIMATE-TOKENS, never against a real token count,
+  or the test will start lying the day the estimate is replaced.
+
+  The status widening needs a reindex to be visible. Adding :implemented and
+  :partial to the :one-of changes what VALIDATE-ENTITY accepts and what
+  AS-KEYWORD returns from that point on; the five documents already saying
+  `implemented` keep :status NIL in the running index until their files are
+  re-analyzed. `reindex` is what makes the acceptance check honest, and its
+  absence is the likeliest explanation for a step-6 check that looks wrong.
+
+  Tests likely to break, and why:
+
+    None outside the four test files this plan edits, and that is a prediction
+    worth being wrong about loudly. loom-graph/test (206) and
+    loom-workspace/test (51) must not move at all.
+
+    a-decision-keeps-its-prose, in the analyzer suite, asserts the rationale
+    text is inside :body. It is the sharpest existing guard that step 3 left
+    *PROSE-FIELDS* and COLLECT-BODY alone. If it goes red, step 3 edited
+    COLLECT-BODY.
+
+    describe-includes-the-type-specific-properties and describe-groups-
+    neighbors-by-direction-and-type must stay green and unedited. ARCH-0005
+    states this as a consequence of :properties being untouched; if either
+    needs an edit, the change narrowed DESCRIBE-ENTITY's result instead of
+    adding to it, which is a different design than the one being sequenced.
+
+    Any analyzer test asserting an exact property count on a document entity.
+    Grepped: there is none. Recorded as a checked negative.
+
+  STEPS
+
+  1. Make ARCH-0005 readable, because nothing can refine a document Loom has
+     not read.
+     docs/arch/ARCH-0005.yaml line 8: `*prose-fields*]` becomes
+     `"*prose-fields*"]`. Nothing else in the file changes; no code changes.
+     This is the first step that can be run and it needs no build.
+     Verification: `tools/loom.sh 'find ARCH-0005 | impact REQ-0007 2 | check'`.
+     `find ARCH-0005` must print `document ARCH-0005  [docs/arch/
+     ARCH-0005.yaml]` -- the doc-id as the name, which is only reachable
+     through the successful branch of ANALYZE-FILE, where today it prints the
+     path. `impact REQ-0007 2` must report ARCH-0005 where today it reports 0
+     impacted. `check` must report 0 unresolved document references, down from
+     the 1 that writing this plan created and that BASELINE records:
+     PLAN-0004 -> ARCH-0005 resolves to nothing while ARCH-0005 has no :doc-id.
+     Record while here, so it is not rediscovered: a :document's `affects:` is
+     not read by the analyzer at all. DOCUMENT-PROPERTIES reads :affects in the
+     :decision method only, so ARCH-0005's nine affects: names -- and this
+     plan's ten -- produce no edges and no unresolved references. CLAUDE.md's
+     claim that affects: resolves is true of a DEC and not of an ARCH, REQ or
+     PLAN. Out of scope to fix; the fields are filled accurately anyway,
+     against the day it becomes true.
+
+  2. Ontology: the property everything else validates against, and the status
+     vocabulary the workflow already uses.
+     src/ontology/code-ontology.lisp.
+     (a) Declare (:summary string) on :document, :decision and :rule, beside
+     each type's existing :title, with a documentation string saying what
+     :concept's already implies: the author's own one-paragraph statement of
+     the document, stored on its own as well as folded into :body.
+     (b) The :document type's :status :one-of gains :implemented and :partial,
+     completing CON-0004's vocabulary. See FINDING 2.
+     Nothing else changes and no behaviour moves: nothing writes :summary yet
+     and no document is re-analyzed by an ontology edit.
+     This is first among the code steps for the reason under BLAST RADIUS:
+     VALIDATE-ENTITY checks only declared properties, so a :summary written by
+     step 3 into an undeclared slot would appear to work while being outside
+     the schema.
+     Verification: two new tests in src/ontology/test/code-ontology.lisp.
+       a. every-document-shaped-type-can-carry-a-summary: for :document,
+          :decision, :rule and :concept, (find-property key :summary) is
+          non-NIL and (property-type ...) is 'string. Fails today for the first
+          three -- FIND-PROPERTY returns NIL.
+       b. a-document-status-covers-the-workflow-vocabulary: :implemented and
+          :partial are both members of (property-one-of (find-property
+          :document :status)). Fails today.
+     Then loom-ontology/test, which must go 291 -> 293, and the full suite,
+     which must be otherwise unchanged.
+
+  3. Analyzer: one line that stores what the ontology now declares.
+     src/analyzer/yaml-analyzer.lisp.
+     (a) BASE-PROPERTIES gains `:summary (as-string (yaml-value table
+     :summary))`, read from the raw table exactly as :title is on the line
+     above it. Every DOCUMENT-PROPERTIES method calls BASE-PROPERTIES, so
+     :document, :decision and :rule gain the property with no per-type case.
+     (b) The :concept method's own :summary line is removed in the same edit --
+     BASE-PROPERTIES now supplies the same value from the same YAML key. Doing
+     (b) without (a) deletes the property for concepts; see RISKS.
+     (c) The :document method's AS-KEYWORD allowed list gains :implemented and
+     :partial, matching step 2(b).
+     *PROSE-FIELDS*, COLLECT-BODY and PROSE-MENTIONS are untouched, and this is
+     the DEC-0003 point rather than an omission: COLLECT-BODY reads the raw
+     YAML table, the same input on every pass, and recomputes :body from it
+     every time. (a) adds a second independent read of that same unchanged
+     input. A reviewer checking DEC-0003 compliance should confirm the new
+     line's argument is `table` -- not `body`, and not any property computed
+     earlier in the function. A pass that read a derived property here would be
+     the consuming shape DEC-0003 exists to forbid, and it would look almost
+     identical.
+     No synthesis when `summary:` is absent: :summary is NIL, and that NIL is a
+     recorded gap (CON-0001), not a hole to fill from the first paragraph of
+     :body.
+     Verification: three new tests in src/analyzer/test/yaml-analyzer.lisp,
+     driven by literal YAML strings rather than Loom's own docs/ tree, so they
+     do not move when a document is edited.
+       a. a-summary-is-stored-on-its-own-and-still-folds-into-the-body: a
+          decision document with both `summary:` and `rationale:`. (getp e
+          :summary) is exactly the summary text -- fails today, it is NIL. Two
+          further assertions in the same test are the R4/DEC-0003 guard and
+          pass both before and after: the summary phrase is still findable in
+          :body, and so is the rationale phrase. Say so in the test's
+          docstring; they are not the CON-0003 witness, they are what makes the
+          witness safe.
+       b. a-concept-summary-survives-the-cleanup: a concept document, (getp e
+          :summary) is the text. Passes before and after. It is what makes (b)
+          a cleanup rather than a change.
+       c. a-document-status-outside-the-old-vocabulary-is-kept: an arch-shaped
+          document with `status: implemented`, asserting (eq :implemented (getp
+          e :status)). Fails today: AS-KEYWORD drops it and the property is
+          NIL.
+     Then loom-analyzer/test, 134 -> 137, and the full suite. Then on Loom
+     itself `tools/loom.sh 'reindex | status | check'`: 0 violations, 0
+     unresolved, and the relationship count unchanged. A rise in relationships
+     here means mention scanning moved, which this step forbids -- :summary was
+     already inside :body and PROSE-MENTIONS already read it.
+
+  4. Knowledge: the four definitions, and the one deviation.
+     src/knowledge/services.lisp, a new section above DESCRIBE-ENTITY headed
+     for what it is -- a bounded answer for a document-shaped entity:
+       *SUMMARY-FIELDS-BY-TYPE*, the alist ARCH-0005 specifies:
+         ((:document . (:summary)) (:concept . (:summary))
+          (:decision . (:summary :rationale)) (:rule . (:summary :statement)))
+       SUMMARY-FIELD-AND-TEXT (entity) -> (values field text): the first of the
+       type's candidates whose property holds a non-empty string, or
+       (values nil nil). Two values, not one, so a caller can label a fallback.
+       *SUMMARY-TOKEN-BUDGET*, 120, with a docstring naming *CONTEXT-TOKEN-
+       BUDGET*'s 2000 and why this is an order of magnitude smaller: a summary
+       is one paragraph, not a bundle of entities.
+       BOUNDED-TEXT (text budget) -> (values shown truncated-p): the whole
+       string and NIL when its ESTIMATE-TOKENS is within budget; otherwise the
+       longest prefix within budget backed off to the nearest preceding
+       whitespace, and T. No word is split. A budget of 0 yields the empty
+       string and T.
+       DOCUMENT-SUMMARY (entity): NIL when the entity's type is not a key of
+       *SUMMARY-FIELDS-BY-TYPE*; otherwise the plist (:title :status :field
+       :text :truncated :full-tokens), where :full-tokens is ESTIMATE-TOKENS of
+       the *untruncated* field text, and :field, :text and :full-tokens are all
+       NIL when the type has a summary shape but this entity fills none of it.
+     src/knowledge/package.lisp: export the five names, in a block of their own
+     after the services block.
+     src/knowledge/context.lisp: one comment line beside *CONTEXT-TOKEN-BUDGET*
+     naming the smaller budget and the file it lives in. No code.
+     Placement is the plan's one deviation from ARCH-0005 and the reasoning is
+     under ONE DEVIATION above. The tripwire is a clean rebuild -- delete the
+     fasl cache for loom-knowledge, or `tools/loom-test.sh` after touching both
+     files -- and the fallback, if BOUNDED-TEXT's forward call to
+     ESTIMATE-TOKENS produces a full WARNING rather than a STYLE-WARNING on
+     this SBCL, is to move ESTIMATE-TOKENS (seven lines, same package) into
+     services.lisp beside BOUNDED-TEXT and leave a comment where it was.
+     Nothing calls any of this yet, so no behaviour moves.
+     Verification: five new tests in a new section of src/knowledge/test/
+     services.lisp, after the describe-entity section. They build their
+     entities with MAKE-INSTANCE locally -- DOCUMENT-SUMMARY takes an entity,
+     not a view -- so the shared K-FIXTURE is not modified.
+       a. document-summary-prefers-the-authors-own-summary: a :document entity
+          with :title, :status :draft and :summary. :field is :summary, :text
+          is the summary, :truncated is NIL, :title and :status come through.
+       b. document-summary-names-the-fallback-field-it-showed: the fixture's
+          K-ADR, a :decision with :rationale and no :summary. :field is
+          :rationale and :text contains "Diffing an overlay". Asserting :field
+          is the point of the test.
+       c. document-summary-tells-two-kinds-of-nothing-apart: (document-summary
+          (k-resolve f)) is NIL for a :function, and a :rule entity with
+          neither :summary nor :statement yields a plist whose :field and :text
+          are NIL. The two NILs mean different things -- "no summary shape for
+          this type" and "a summary shape nobody filled" -- and the test says
+          which is which.
+       d. bounded-text-cuts-at-a-word-boundary-and-says-it-did: a generated
+          string of several hundred words. (bounded-text s 120) returns a
+          prefix of s with truncated T, its ESTIMATE-TOKENS is at most 120, and
+          the character of s immediately after the prefix is whitespace -- so
+          no word was split. Paired with (bounded-text "short" 120), which
+          returns the string itself and NIL. The pair is the boundary ARCH-0005
+          asks be tested.
+       e. document-summary-reports-the-full-size-of-what-it-cut: a :rule entity
+          whose :statement is that long string. :truncated is T, :full-tokens
+          exceeds *SUMMARY-TOKEN-BUDGET*, and ESTIMATE-TOKENS of :text does
+          not. This is R6 -- report what was shown against the budget.
+     All five fail before this step, and the honest form of that statement is:
+     src/knowledge/test/services.lisp will not compile, because
+     DOCUMENT-SUMMARY and BOUNDED-TEXT are undefined. The CON-0003 evidence for
+     this step is that pairing plus the individually-named assertions in (b),
+     (c) and (e), each of which would fail against a plausible wrong
+     implementation -- one that drops the field label, one that conflates the
+     two NILs, one that truncates without reporting.
+     Then loom-knowledge/test, 51 -> 56, and the full suite green.
+
+  5. The single key that connects them.
+     src/knowledge/services.lisp: DESCRIBE-ENTITY's returned plist gains
+     `:document (document-summary entity)`, added last so the existing three
+     keys keep their order in a diff. :entity, :properties and :neighbors are
+     unchanged -- this is an addition to the result, not a narrowing of it.
+     Verification: two new tests in src/knowledge/test/services.lisp beside the
+     existing describe tests.
+       a. describe-carries-a-bounded-summary-alongside-the-full-properties: on
+          K-ADR, (getf detail :document) is non-NIL with :field :rationale,
+          *and* (getf (getf detail :properties) :rationale) is still the full
+          untruncated text. The second half is R3 and it is the assertion that
+          fails if someone later "fixes" describe by truncating :properties.
+          Fails today: the key does not exist.
+       b. describe-of-a-code-entity-has-no-document-key: on K-RESOLVE, (getf
+          detail :document) is NIL. This passes today, vacuously, and it is a
+          regression guard rather than this step's witness -- (a) is the
+          witness. Say so in the test.
+     The two existing describe tests must be green and unedited. Then
+     loom-knowledge/test, 56 -> 58, and the full suite.
+
+  6. The console: the change anyone can see.
+     src/process/console.lisp, the describe command. The three-line dolist over
+     :statement, :rationale and :body is replaced by PRINT-SUMMARY-LINE, then
+     the document block, then the neighbour loop exactly as it stands:
+
+       (print-summary-line (getf detail :entity))
+       (let ((doc (getf detail :document)))
+         (when doc
+           (format t "~&~@[title: ~a~%~]~@[status: ~(~a~)~%~]"
+                   (getf doc :title) (getf doc :status))
+           (if (getf doc :text)
+               (format t "~&summary~@[ (via ~(~a~))~] (~d~@[/~d~] tokens~@[, truncated~]):~%  ~a~%"
+                       (and (not (eq (getf doc :field) :summary)) (getf doc :field))
+                       (estimate-tokens (getf doc :text))
+                       (and (getf doc :truncated) (getf doc :full-tokens))
+                       (getf doc :truncated)
+                       (getf doc :text))
+               (format t "~&summary: (none written)~%"))))
+
+     Two corrections to ARCH-0005's illustrative snippet, both cosmetic, both
+     named so nobody reads them as drift: the snippet has no space between the
+     field parenthetical and `(~d`, and its `~:[~; , truncated~]` prints a
+     space before the comma. And :full-tokens prints only when something was
+     actually cut -- when nothing was, it equals the shown count and
+     "(24/24 tokens)" reads as though something happened.
+     A code entity's :document is NIL, so the WHEN's body never runs and the
+     output for a function, class or file is what it is today. That is
+     REQ-0007's "not a regression" line satisfied structurally: the branch does
+     not exist for those types rather than happening to print nothing.
+     Verification: a fixture and four tests at the END of src/process/test/
+     console.lisp -- at the end because FiveAM runs a suite in definition order
+     and two existing tests assume nothing is watched (see RISKS).
+     The fixture, modelled on src/workspace/test/workspace.lisp:28-73, which is
+     the working copy of this pattern: a temp directory holding src/alpha.lisp,
+     a docs/design/DEC-0001.yaml with a `rationale:` and a `consequences:`
+     containing a sentinel phrase that appears nowhere else, and a
+     docs/arch/ARCH-0001.yaml with a `summary:` and a `body:` likewise carrying
+     its own sentinel; watched with (loom-workspace:watch-repository root
+     :monitor nil :quiet t) -- qualified, because loom-process-test :use's only
+     :cl, :fiveam and :loom-process -- inside an UNWIND-PROTECT that unwatches
+     by name and deletes the tree.
+       a. describe-of-a-document-summarises-instead-of-reprinting-it: the
+          output of (run-command "describe ARCH-0001") contains the title,
+          contains the summary's opening words, and does NOT contain the body
+          sentinel. The negative is the witness: today :body prints in full and
+          the sentinel is in it.
+       b. describe-of-a-decision-labels-the-field-it-fell-back-to: for
+          DEC-0001, the output contains "via rationale" and the rationale text
+          and not the consequences sentinel. Today the label is absent and the
+          sentinel is present, twice over -- this is also the fix for the
+          rationale-printed-twice defect ARCH-0005 records under PROBLEM.
+       c. describe-says-when-it-cut-something: the same document inside
+          (let ((loom-knowledge:*summary-token-budget* 5)) ...), asserting
+          "truncated" appears and the printed text is shorter than the stored
+          property. Rebinding the parameter beats writing a 500-word fixture
+          summary and tests the boundary the console reports.
+       d. describe-of-a-function-is-unchanged: for alpha, the output contains
+          no "title:", no "summary" and its first line is PRINT-SUMMARY-LINE's
+          form. This passes before and after. It is REQ-0007's not-a-regression
+          line as a guard and it is deliberately not this step's CON-0003
+          evidence.
+     Then loom-process/test, 79 -> 83, and the full suite. Then the acceptance
+     check the plan exists for, on Loom itself:
+       tools/loom.sh 'describe REQ-0003 | describe DEC-0004 | describe RULE-0004 | describe repository-graph'
+     REQ-0003 prints a title, a status, a summary of at most about 120 tokens
+     and its neighbour groups, where today it prints the file's 250 lines
+     first. DEC-0004 prints its rationale once, labelled, where today it
+     appears twice. RULE-0004 prints its statement labelled as the fallback.
+     repository-graph's output is what it is today, character for character.
+
+  7. The documents this work makes false.
+     docs/arch/ARCH-0005.yaml: status draft -> implemented. R1 through R6 land
+     in steps 2 to 6; the two additions this plan makes beyond ARCH-0005 -- the
+     status vocabulary and the parse fix -- leave no part of it unbuilt, so the
+     judgement RULE-0005 asks for is implemented and not partial. Record in the
+     document that its CONSEQUENCES section named three changed files and the
+     work touched five plus four test files, which is more files rather than
+     less architecture: package.lisp for the exports and context.lisp for the
+     cross-reference comment.
+     docs/requirements/REQ-0007.yaml: status draft -> implemented, but only
+     after confirming ARCH-0005 is its only outstanding child. `impact REQ-0007
+     2`, which step 1 made informative, is what answers that; if it reports any
+     other document refining REQ-0007, or an open bug, REQ-0007 stays where it
+     is and this step records why. RULE-0005's walk continues upward only on
+     implemented and only when no sibling is still open.
+     docs/plans/PLAN-0004.yaml: this file, draft -> final, with an OUTCOME
+     section carrying the measured counts against BASELINE, the six per-system
+     test numbers before and after, and any prediction here that came out
+     wrong.
+     Verification: `tools/loom.sh 'reindex | status | check'` -- 88 files,
+     documents 36, 0 violations, 0 unresolved document references, 2 unenforced
+     rules, 1 definer macro. Then `tools/loom.sh 'impact ARCH-0005 2'`, which
+     must report this plan: refines: is what makes the chain walkable from the
+     design forward to the work that landed it. Then `describe ARCH-0005`,
+     which now prints a bounded summary and a status line reading
+     "implemented" -- the two things steps 2(b) and 6 were for, on the document
+     that specified them.
+
+  VERIFICATION
+
+  Per step, as listed above. For the work as a whole:
+
+    tools/loom-test.sh
+        Six systems green, /usr/bin/sbcl and not the SBCL behind SLIME; say
+        which was run. Against the per-system baseline: ontology 291 -> 293,
+        analyzer 134 -> 137, graph 206 unchanged, workspace 51 unchanged,
+        knowledge 51 -> 58, process 79 -> 83. The two unchanged numbers are as
+        much a result as the four that move -- this plan asserts no edge and
+        changes no indexing pipeline, so any movement there is unexplained.
+
+    tools/loom.sh 'reindex | status | check'
+        Against BASELINE as re-measured after this document was written: 88
+        files exactly -- no new component, no new file -- entities up by
+        roughly the eight new definitions and their tests, documents 36
+        (ARCH-0005 is already counted, as a broken entity today and a whole one
+        after step 1), 0 violations, 0 unresolved document references, 1
+        definer macro, 2 unenforced rules. The reindex is not optional: step
+        2(b) and 3(c) only change what a *re-analysis* produces, and the five
+        documents already saying `implemented` keep :status NIL until their
+        files are read again.
+
+    The command itself, before and after
+        `describe REQ-0003` is the measurement ARCH-0005 opens with: 250 lines
+        of body before two lines of neighbours today. After, a title, a status,
+        at most ~120 tokens of summary, then the neighbours. `describe DEC-0004`
+        stops printing its rationale twice. `describe repository-graph` is
+        unchanged. Those four commands are the acceptance test; the suite says
+        the parts work, and only these say the defect is gone.
+
+    Rule checks are not assertions
+        RULE-0001 to RULE-0003 are enforced by the rule engine and fail no
+        FiveAM assertion, so `check` is run at steps 1, 3 and 7 and its result
+        read separately from the suite. This plan adds no edge between systems
+        and none of the three should have anything to say; a violation
+        appearing means a new call crossed a layer, most plausibly the console
+        reaching past loom-knowledge, and it is worth stopping for rather than
+        explaining.
+
+  OUTCOME, 2026-08-02
+
+  All seven steps landed. Measured on branch analyzer, /usr/bin/sbcl via
+  tools/loom-test.sh and tools/loom.sh, against BASELINE as re-measured after
+  this document was written:
+
+    index      : 89 files, 980 entities, 4620 relationships  (was 88/951/4420)
+    documents  : 37                                          (was 36)
+    tests      : 273 tests covering 196 units                (was 257/189)
+    rules      : 0 violations, 2 unenforced                  (unchanged)
+    unresolved : 0 document references, 1 definer macro      (was 1 and 1)
+
+    suite                     6 of 6 systems green
+    ontology  291 -> 301      analyzer  134 -> 139
+    graph     206 unchanged   workspace  51 unchanged
+    knowledge  51 ->  77      process    79 ->  92
+
+  The two numbers that had to hold did: graph and workspace did not move, and
+  no .asd changed. `check` reported no violation at any step.
+
+  Four predictions came out wrong, none of them harmfully, and one of them was
+  a defect in this document's own code.
+
+  The baseline's "88 files exactly" was 89 before step 1 ran. ARCH-0006 landed
+  in the tree from another task while this plan was being written. The
+  prediction that mattered -- no new file beyond what FILES names -- held: the
+  count was 89 at step 1 and 89 at step 7, and every definition went into a
+  file the systems already listed.
+
+  The per-step test-count predictions were all low, because FiveAM reports
+  assertions and this plan counted tests. Ontology went 291 -> 301 where 293
+  was predicted (two tests, ten assertions); analyzer 134 -> 139 for three
+  tests; knowledge 51 -> 77 for seven; process 79 -> 92 for four. The
+  instrument was still the right one -- every number moved in the system that
+  was edited and nowhere else.
+
+  Step 6's format string, as written in this document, was wrong, and its
+  first test passed anyway. `~@[, truncated~]` does not use up the argument it
+  tested: an ~@[ leaves the argument for its clause, and a clause containing
+  no directive therefore consumes nothing, so the flag survived into the
+  following ~a and every truncated summary printed as "T". ARCH-0005's
+  original `~:[~; , truncated~]` is a two-clause conditional and does consume
+  it; this document's "correction" of the space before the comma silently
+  swapped one directive for another. The fix is `~:[~;, truncated~]`, which
+  keeps the intended spacing and consumes the argument.
+
+  It was caught by the acceptance command at the end of step 6 and not by the
+  suite. describe-says-when-it-cut-something asserted that "truncated"
+  appeared and that the tail of the summary did not -- both true of a summary
+  printing as the single character T. That is CON-0003's failure mode exactly,
+  in a test this document's own RISKS section had named three other instances
+  of. The test now also asserts the head of the summary is present, which is
+  what a summary printing as its own flag cannot satisfy.
+
+  The console fixture named its source file src/alpha.lisp, and
+  `describe alpha` then resolved to the file rather than to the function:
+  SIGNIFICANT-NAME strips a file's directory and extension, so a file of that
+  name answers to the same term. The fixture file is src/code.lisp. Worth
+  recording because the fixture was copied from
+  src/workspace/test/workspace.lisp, where the collision is harmless because
+  nothing there resolves a bare name.
+
+  Two smaller notes for whoever is next.
+
+  RISKS predicted the console fixture might leak a watched repository and turn
+  a-command-that-signals-prints-and-continues red. It did not; the
+  UNWIND-PROTECT held across four tests including one that rebinds a special.
+
+  The plan's macro for that fixture took a repository variable no test used,
+  which put a DECLARE IGNORE inside the UNWIND-PROTECT's PROGN rather than at
+  the head of a LET. It takes no argument now. Not a design point -- recorded
+  only because the error it produced ("There is no function named DECLARE")
+  names nothing about the cause.
+
+  Not done here, and deliberately: SKILL.md line 112, "`describe` on a
+  document prints the entire body ... expect to scroll", is now false. FILES
+  records why this plan does not edit it -- the skill file is the agent-facing
+  contract and changing it changes how every future session behaves -- and it
+  is raised here as this plan's one outstanding hand-off.

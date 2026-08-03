@@ -1,6 +1,6 @@
 id: REQ-0007
 title: describe on a document must summarise it, not reprint it
-status: draft
+status: implemented
 date: 2026-07-29
 refines: [REV-0001]
 affects: [describe-entity, document-properties, print-summary-line]
@@ -117,3 +117,42 @@ body: |
   useful and which REQ-0006 is separately making honest about its confidence.
   R4's point is only that the display path and the scanning path want different
   things from the same source, and one property is currently serving both.
+
+  RESOLUTION, 2026-08-02
+
+  Answered by ARCH-0005 and landed by PLAN-0004. `impact REQ-0007 2` reports
+  those two and nothing else -- no sibling design, no open bug -- which is what
+  RULE-0005's upward walk asks be confirmed before a requirement moves.
+
+  R1, R2  describe on a document prints type, doc-id, location, title, status
+          and a summary bounded to *SUMMARY-TOKEN-BUDGET* (120 tokens), then
+          the neighbour groups. `describe REQ-0003` was 250 lines of body
+          before two lines of neighbours; it is now six lines of summary
+          before them, and the bound does not depend on the document.
+
+  R3      The full text is untouched and reached by Read: describe-entity's
+          :properties still carries the complete :body, and :entity still
+          names the path. No new command and no new argument -- ARCH-0005's
+          ALTERNATIVES CONSIDERED records why that was the cheapest of the
+          three options this document left open.
+
+  R4      :summary and :title are individually stored on :document, :decision
+          and :rule, via one line in BASE-PROPERTIES rather than a per-type
+          case. *PROSE-FIELDS* and COLLECT-BODY are unchanged, so :body is
+          still derived from the raw YAML table on every pass and DEC-0003 is
+          undisturbed -- a second independent read of the same input, not a
+          rewrite of the existing derivation.
+
+  R5      :decision and :rule go through the same path, falling back to
+          :rationale and :statement and labelling which field they showed.
+          The rationale-printed-twice defect this document did not name is
+          gone as a consequence of no longer printing :body at all.
+
+  R6      BOUNDED-TEXT cuts at a word boundary and reports what it showed
+          against the budget, and the console prints "(120/312 tokens,
+          truncated)" -- build-context's precedent, which R6 named, applied
+          to one field.
+
+  What this document asked not be regressed was not: a code entity's
+  :document key is NIL, so the branch does not exist for a function, class or
+  file rather than happening to print nothing there.

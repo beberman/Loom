@@ -29,6 +29,13 @@
    #:describe-entity
    #:impact-report
 
+   ;; a bounded answer for a document-shaped entity (ARCH-0005)
+   #:*summary-fields-by-type*
+   #:summary-field-and-text
+   #:*summary-token-budget*
+   #:bounded-text
+   #:document-summary
+
    ;; context building -- SS11's loom_context
    #:build-context
    #:render-context

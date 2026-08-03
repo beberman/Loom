@@ -69,6 +69,26 @@
     (is (null (property-default-form (find-property :function :exported-p))))
     (is (eq 'function-entity (entity-type-class-name spec)))))
 
+(test every-document-shaped-type-can-carry-a-summary
+  ;; :SUMMARY started on :CONCEPT alone, which is why BASE-PROPERTIES had no
+  ;; line for it and three of the four types folded summary: into :BODY and
+  ;; kept nothing addressable.  Declared here first because VALIDATE-ENTITY
+  ;; only checks *declared* properties: an undeclared :SUMMARY would be stored
+  ;; and silently unvalidated, outside the schema the ontology exists to be.
+  (dolist (key '(:document :decision :rule :concept))
+    (let ((p (find-property key :summary)))
+      (is (not (null p)) "~a has no :summary property" key)
+      (is (eq 'string (property-type p))))))
+
+(test a-document-status-covers-the-workflow-vocabulary
+  ;; CON-0004's vocabulary has REQ and ARCH reaching implemented or partial,
+  ;; and RULE-0005 requires a plan reaching final to move them there.  Outside
+  ;; the :one-of list AS-KEYWORD returns NIL rather than signalling, so every
+  ;; already-landed document carried :status NIL and nothing said so.
+  (let ((allowed (property-one-of (find-property :document :status))))
+    (is (member :implemented allowed))
+    (is (member :partial allowed))))
+
 (test unresolved-calls-are-a-property-not-an-edge
   ;; a callee outside the workspace must never become a dangling relationship
   (dolist (key '(:function :method))

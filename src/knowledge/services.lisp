@@ -114,6 +114,100 @@ as \"calls: these; called-by: those\" rather than as a flat edge dump."
                         :rel-type  (second key)
                         :entities  (reverse entities)))))
 
+;;;; ------------------------------------------------------------------
+;;;; A bounded answer for a document-shaped entity (ARCH-0005)
+;;;;
+;;;; A document's :BODY is however long its author made it -- COLLECT-BODY
+;;;; concatenates up to eight prose fields with no cap -- so a caller that
+;;;; prints it has no bound on its output. What follows picks one named field
+;;;; and budgets it, and always reports which field it picked: a fallback that
+;;;; did not say it was a fallback would be indistinguishable from a summary
+;;;; the author actually wrote, which is the fabrication CON-0001 forbids.
+;;;;
+;;;; *SUMMARY-TOKEN-BUDGET* and BOUNDED-TEXT sit here rather than beside
+;;;; *CONTEXT-TOKEN-BUDGET* in context.lisp, which is where ARCH-0005 put them,
+;;;; for a load-order reason: loom-knowledge.asd is :serial with services
+;;;; before context, and a compile-time reference to a DEFPARAMETER not yet
+;;;; seen is a full WARNING in SBCL, which sets COMPILE-FILE's failure-p and so
+;;;; fails the build. A forward reference to a *function* is only a
+;;;; STYLE-WARNING, deferred and resolved inside ASDF's compilation unit, so
+;;;; ESTIMATE-TOKENS stays in context.lisp and is called across the boundary.
+;;;; ------------------------------------------------------------------
+
+(defparameter *summary-fields-by-type*
+  '((:document . (:summary))
+    (:concept  . (:summary))
+    (:decision . (:summary :rationale))
+    (:rule     . (:summary :statement)))
+  "Per document type, the properties to try for a summary, best first.
+
+:DECISION and :RULE list a second candidate because every DEC and RULE
+document predates the :SUMMARY field, and :RATIONALE and :STATEMENT are each
+type's own primary prose property -- individually stored, never a slice of
+:BODY. Choosing which existing fact to show is not synthesis; inventing one
+from the first paragraph of :BODY would be, and is why no such fallback exists.
+
+A type absent from this alist has no summary shape and gets none: that is the
+correct default for a type nobody has designed one for yet.")
+
+(defun summary-field-and-text (entity)
+  "(values field text): the first of ENTITY's type's candidates holding a
+non-empty string, or (values nil nil).
+
+Two values rather than one so a caller can label a fallback. See
+*SUMMARY-FIELDS-BY-TYPE*."
+  (loop for key in (cdr (assoc (entity-type entity) *summary-fields-by-type*))
+        for text = (getp entity key)
+        when (and (stringp text) (plusp (length (string-trim '(#\Space #\Tab #\Newline)
+                                                             text))))
+          return (values key text)
+        finally (return (values nil nil))))
+
+(defparameter *summary-token-budget* 120
+  "How much of a document's summary a bounded answer may show, in tokens.
+
+An order of magnitude under *CONTEXT-TOKEN-BUDGET*'s 2000 because the two are
+budgeting different things: a context bundle is a set of entities, a summary is
+one paragraph.")
+
+(defun bounded-text (text budget)
+  "(values shown truncated-p): TEXT whole when it fits BUDGET, else its longest
+prefix within BUDGET backed off to the nearest preceding whitespace.
+
+No word is split, so the cut reads as a sentence stopping rather than as
+corruption. BUILD-CONTEXT's discipline applied to one string: report what was
+shown against the budget, never cut silently and never overflow."
+  (if (<= (estimate-tokens text) budget)
+      (values text nil)
+      ;; ESTIMATE-TOKENS is four characters to the token by its own admission,
+      ;; so the budget is inverted the same way rather than by a search: any
+      ;; other arithmetic would disagree with the function callers report
+      ;; against.
+      (let* ((limit (min (length text) (* 4 budget)))
+             (space (position-if (lambda (c) (member c '(#\Space #\Tab #\Newline)))
+                                 text :end limit :from-end t)))
+        (values (subseq text 0 (or space limit)) t))))
+
+(defun document-summary (entity)
+  "A bounded, self-describing summary of ENTITY, or NIL if its type has none.
+
+The plist is (:title :status :field :text :truncated :full-tokens). The NIL
+result and a plist whose :FIELD is NIL mean different things -- \"no summary
+shape for this type\" and \"a summary shape nobody filled\" -- and a caller
+that conflates them reports a gap it has not checked for."
+  (when (assoc (entity-type entity) *summary-fields-by-type*)
+    (multiple-value-bind (field text) (summary-field-and-text entity)
+      (multiple-value-bind (shown truncated)
+          (if text (bounded-text text *summary-token-budget*) (values nil nil))
+        (list :title       (getp entity :title)
+              :status      (getp entity :status)
+              :field       field
+              :text        shown
+              :truncated   truncated
+              ;; The size of what was cut, not of what was shown: R6 asks the
+              ;; caller be told how much it is not seeing.
+              :full-tokens (and text (estimate-tokens text)))))))
+
 (defun describe-entity (view id)
   "Full detail for one entity: its own properties plus its neighbours grouped
 by edge type -- the \"tell me about this function\" call. NIL when ID is
@@ -124,7 +218,12 @@ unknown."
             :properties (loop for key being the hash-keys of (properties entity)
                                 using (hash-value value)
                               unless (null value) append (list key value))
-            :neighbors  (group-neighbors (neighbors view id))))))
+            :neighbors  (group-neighbors (neighbors view id))
+            ;; Added rather than substituted: :PROPERTIES still carries the
+            ;; complete untruncated table, so a caller wanting the full text
+            ;; has lost nothing. NIL for a code entity, whose type has no
+            ;; summary shape.
+            :document   (document-summary entity)))))
 
 ;;;; ==================================================================
 ;;;; impact-report -- SS11 loom_impact

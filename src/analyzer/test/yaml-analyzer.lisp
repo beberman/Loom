@@ -136,6 +136,67 @@ check:
       (is (eq :advisory (getp e :severity))))))
 
 ;;; ------------------------------------------------------------------
+;;; A summary stored on its own (ARCH-0005 R4)
+;;;
+;;; Driven by literal YAML rather than by Loom's own docs/ tree, unlike the
+;;; tests above: these assert on exact field text, and a document edited for an
+;;; unrelated reason must not turn them red.
+;;; ------------------------------------------------------------------
+
+(defun literal-entity (path contents type)
+  "The TYPE entity analyzed out of CONTENTS at PATH."
+  (let ((g (make-graph)))
+    (apply-transaction g (analyze-file (make-instance 'document-analyzer)
+                                       path contents "ws-test"))
+    (first (entities-of-type g type))))
+
+(test a-summary-is-stored-on-its-own-and-still-folds-into-the-body
+  ;; The first assertion is the witness: before BASE-PROPERTIES read summary:,
+  ;; a decision's summary existed only inside the :BODY concatenation and had
+  ;; no addressable property. The other two pass before and after -- they are
+  ;; not the witness, they are the guard that makes it safe: ARCH-0005 R4 and
+  ;; DEC-0003 require COLLECT-BODY's derivation to be untouched, so :SUMMARY
+  ;; must still fold into :BODY alongside :RATIONALE.
+  (let ((e (literal-entity "docs/design/DEC-9001.yaml"
+                           "id: DEC-9001
+title: Keep the overlay
+status: accepted
+summary: |
+  Bounded output beats a faithful dump.
+rationale: |
+  Diffing an overlay is cheaper than rebuilding.
+"
+                           :decision)))
+    (is (search "Bounded output beats a faithful dump" (getp e :summary)))
+    (is (search "Bounded output beats a faithful dump" (getp e :body)))
+    (is (search "Diffing an overlay is cheaper" (getp e :body)))))
+
+(test a-concept-summary-survives-the-cleanup
+  ;; Passes before and after by design: the :CONCEPT method's own :SUMMARY line
+  ;; was removed in the same edit that added BASE-PROPERTIES', and this is what
+  ;; makes that a cleanup rather than a deletion.
+  (let ((e (literal-entity "docs/concepts/CON-9001.yaml"
+                           "id: CON-9001
+title: Recorded gaps
+summary: |
+  A fabricated fact is worse than a recorded gap.
+"
+                           :concept)))
+    (is (search "A fabricated fact is worse" (getp e :summary)))))
+
+(test a-document-status-outside-the-old-vocabulary-is-kept
+  ;; AS-KEYWORD returns NIL for a value outside its allowed list rather than
+  ;; signalling, so `status: implemented' -- what RULE-0005 requires of a
+  ;; landed document -- was silently dropped by every ARCH and REQ in the tree.
+  (let ((e (literal-entity "docs/arch/ARCH-9001.yaml"
+                           "id: ARCH-9001
+title: A landed design
+status: implemented
+"
+                           :document)))
+    (is (eq :implemented (getp e :status)))))
+
+;;; ------------------------------------------------------------------
 ;;; Malformed input (SS3.3, SS9.3)
 ;;; ------------------------------------------------------------------
 

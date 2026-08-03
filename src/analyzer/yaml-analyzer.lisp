@@ -204,7 +204,13 @@ against entity names would bury the real hits."
   ;; the workflow chain runs through all of them: a requirement is answered by
   ;; a design, sequenced by a plan, and reported on by a review. Any document
   ;; may name the one it answers.
+  ;; :SUMMARY is read from TABLE, the raw parse -- not from BODY and not from
+  ;; any property computed above. COLLECT-BODY reads the same table and folds
+  ;; summary: into :BODY as it always did; this is a second independent read of
+  ;; unchanged source, which is what DEC-0003 permits and distinguishes from a
+  ;; pass that rewrites its own input.
   (list :title    (as-string (yaml-value table :title))
+        :summary  (as-string (yaml-value table :summary))
         :category category
         :body     body
         :refines  (as-list-of-strings (yaml-value table :refines))
@@ -245,8 +251,9 @@ and registering a type\" stays true of the fields as well as the directory."))
 
 (defmethod document-properties ((type-key (eql :concept)) table path category body)
   (append (base-properties table path category body)
-          (list :doc-id  (or (as-string (yaml-value table :id)) path)
-                :summary (as-string (yaml-value table :summary)))))
+          ;; No :SUMMARY line here: BASE-PROPERTIES now supplies the same value
+          ;; from the same YAML key for every document type.
+          (list :doc-id  (or (as-string (yaml-value table :id)) path))))
 
 (defmethod document-properties ((type-key (eql :document)) table path category body)
   ;; :DOC-ID is read here for the same reason a decision reads it: it is how
@@ -257,8 +264,15 @@ and registering a type\" stays true of the fields as well as the directory."))
   (append (base-properties table path category body)
           (list :doc-id (or (as-string (yaml-value table :id)) path)
                 :status (as-keyword (yaml-value table :status)
+                                    ;; :IMPLEMENTED and :PARTIAL complete
+                                    ;; CON-0004's vocabulary. Without them
+                                    ;; AS-KEYWORD returned NIL for every
+                                    ;; document that had actually landed, so
+                                    ;; the status of the work that was done was
+                                    ;; the one status the index never held.
                                     '(:draft :proposed :accepted :final
-                                      :superseded :rejected :open :closed))
+                                      :superseded :rejected :open :closed
+                                      :implemented :partial))
                 :path path
                 :format :yaml)))
 

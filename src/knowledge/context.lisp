@@ -21,6 +21,11 @@
 (defparameter *context-token-budget* 2000
   "Default size of a context bundle, in tokens.")
 
+;; The other budget in this system is *SUMMARY-TOKEN-BUDGET* (120), in
+;; services.lisp -- one document's summary rather than a bundle of entities.
+;; It lives there rather than here because services.lisp compiles first and
+;; DOCUMENT-SUMMARY reads it; see the section comment beside it.
+
 (defun estimate-tokens (string)
   "A rough token count for STRING: four characters to the token.
 

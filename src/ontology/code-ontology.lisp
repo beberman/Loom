@@ -326,12 +326,21 @@ one, and what `describe REQ-0002' looks up.  Every workflow category -- arch,
 requirements, plans, reviews, bugs -- is a :DOCUMENT, so this is what makes
 the chain reachable by id rather than only by title.")
                (:title  string)
+               (:summary string
+                :documentation "The author's own one-paragraph statement of the
+document, stored on its own as well as folded into :BODY.  Kept separately so a
+reader can be given the paragraph the author wrote rather than the whole
+concatenation -- :BODY answers \"what does it say\", this answers \"what is it
+about\".")
                (:status keyword
                 :one-of (:draft :proposed :accepted :final :superseded
-                         :rejected :open :closed)
+                         :rejected :open :closed :implemented :partial)
                 :documentation "Where the document is in its own life.  A plan
 is draft until the work starts and final when it lands; a bug is open until it
-is closed.")
+is closed.  :IMPLEMENTED and :PARTIAL complete CON-0004's per-type vocabulary --
+what RULE-0005 requires a plan reaching final to move the documents it refines
+to -- and without them AS-KEYWORD dropped the status of every document that had
+actually landed.")
                (:category string
                 :documentation "The docs/ subdirectory the file was found in.")
                (:format keyword :one-of (:markdown :docx :org :text :yaml))
@@ -408,6 +417,12 @@ watcher index it like any other."
   :properties ((:doc-id        string :required t
                 :documentation "The id: field of the YAML document, e.g. DEC-0042.")
                (:title         string)
+               (:summary       string
+                :documentation "The author's own one-paragraph statement of the
+document, stored on its own as well as folded into :BODY.  Kept separately so a
+reader can be given the paragraph the author wrote rather than the whole
+concatenation -- :BODY answers \"what does it say\", this answers \"what is it
+about\".")
                (:status        keyword
                 :one-of (:proposed :accepted :superseded :rejected)
                 :default :proposed)
@@ -453,6 +468,12 @@ rules is reported, so prose-only drift stays visible rather than comfortable."
   :natural-key (:doc-id)
   :properties ((:doc-id    string :required t)
                (:title     string)
+               (:summary   string
+                :documentation "The author's own one-paragraph statement of the
+document, stored on its own as well as folded into :BODY.  Kept separately so a
+reader can be given the paragraph the author wrote rather than the whole
+concatenation -- :BODY answers \"what does it say\", this answers \"what is it
+about\".")
                (:status    keyword :one-of (:active :retired) :default :active)
                (:severity  keyword :one-of (:error :warning :advisory)
                 :default :error)

@@ -1,11 +1,11 @@
 id: ARCH-0005
 title: describe on a document renders a bounded summary, not the concatenated body
-status: draft
+status: implemented
 date: 2026-08-02
 refines: [REQ-0007]
 affects: [describe-entity, document-properties, base-properties, collect-body,
           entity-summary, print-summary-line, group-neighbors, neighbor-summary,
-          *prose-fields*]
+          "*prose-fields*"]
 tags: [knowledge, console, documents, ontology, analyzer]
 summary: |
   describe-entity already returns structured data; the console prints the
@@ -337,6 +337,40 @@ body: |
   the same value from the same YAML key), and src/knowledge/services.lisp
   plus src/process/console.lisp for DOCUMENT-SUMMARY, BOUNDED-TEXT, and the
   describe command's rendering.
+
+  AS BUILT, 2026-08-02, via PLAN-0004
+
+  That count was low. Five source files changed, plus four test files:
+  src/knowledge/package.lisp for the five new exports, and
+  src/knowledge/context.lisp for a comment cross-referencing the smaller
+  budget. Neither is more architecture -- both are bookkeeping this section
+  did not think to count -- and R1 through R6 landed as written.
+
+  Two things this document did not say, both added by PLAN-0004 with its
+  reasons recorded there:
+
+  This file did not parse. Line 8's affects: sequence ended `*prose-fields*]`,
+  and inside a YAML flow sequence an unquoted token beginning with `*` is an
+  alias node, so the scanner failed and the whole document was indexed as an
+  error blob with no id, no title and no refines edge. Quoting the name fixed
+  it. It is a third way to lose a document, alongside CON-0004's unindented
+  block scalar and duplicated id, and it is invisible to both `check` and
+  `status`.
+
+  `status: implemented` was outside the :document type's :one-of vocabulary,
+  so AS-KEYWORD returned NIL for every document that had actually landed. R1's
+  "status where present" would have been dead on arrival for exactly the
+  documents whose status matters -- including this one. :implemented and
+  :partial were added to the ontology and to the analyzer's allowed list.
+
+  One deviation from WHAT EACH THING BECOMES, for load order rather than
+  taste: *SUMMARY-TOKEN-BUDGET* and BOUNDED-TEXT are in services.lisp, not
+  beside *CONTEXT-TOKEN-BUDGET* in context.lisp. loom-knowledge.asd is :serial
+  with services before context, and a compile-time reference to a
+  DEFPARAMETER not yet seen is a full WARNING in SBCL, which fails the build.
+  A forward reference to a function is only a STYLE-WARNING, so
+  ESTIMATE-TOKENS stayed put and is called across the boundary; context.lisp
+  carries a comment naming where the smaller budget went.
 
   Every DEC and RULE document written before this change shows its fallback
   field (:rationale or :statement) labelled as such, not a blank, until an
