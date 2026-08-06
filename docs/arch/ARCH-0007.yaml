@@ -10,49 +10,66 @@ affects: [poll-once, repository-indexed-at, start-server, stop-server,
 tags: [process, service, mcp, lifecycle, workspace, prototype]
 summary: |
   REQ-0010 asks for the minimum that lets an agent get a running, current
-  loom-serve without a human at a shell. Three pieces answer it, each reusing
-  something ARCH-0006 or loom-workspace already built rather than adding a new
-  mechanism: a one-line fix to poll-once so repository-indexed-at stops
-  under-reporting what the monitor thread already knows; a small, fixed,
-  non-eval :write-tier operation, reload-code, that force-reloads the nine
-  systems' worth of code the register already runs on rather than repurposing
-  the REPL tier's arbitrary-eval danger for a job that needs none of it; and
-  tools/loom-serve.sh, a sixth script beside tools/loom.sh, which starts
-  loom-serve headless, lets a losing race stop cleanly instead of crashing,
-  tracks the process with a pidfile under /tmp rather than in a source tree
-  it cannot assume is writable or the only checkout on the machine, cleans up
-  after a process a signal never reached, and drives reload-code with a
-  restart fallback when a reload signals or does not answer. Four findings
-  surfaced only by testing, or by re-tracing a design already written, rather
-  than by reading: ASDF's own incremental build already reaches every
-  dependency on an ordinary, unforced reload -- the risk :force :all actually
-  closes is the same same-second write/reload race *mtime-settle-seconds*
-  already names elsewhere in this tree, not the sweeping six-of-nine-systems
-  gap a first reading of REQ-0010's own :force t sketch suggested; reload-code
-  has to report its own completion time, because comparing indexed-at only
-  against the server's own :started-at would read as permanently stale after
-  the first successful reload ever happens; a pidfile written before its own
-  process is confirmed to have won the port, deleted unconditionally by
-  whichever process loses, can be clobbered and then wrongly deleted out from
-  under the actual winner if two start attempts overlap -- closed by writing
-  it only once success is confirmed, never speculatively; and writing it only
-  once success is confirmed cannot be done from inside serve-forever's own
-  unmodified body, because that body already calls start-server unconditionally
-  before blocking, and a caller that pre-called start-server itself to catch
-  that exact success would make serve-forever's own internal call fail against
-  its own already-running guard -- closed by the one addition this document
-  makes to any of loom-serve's four lifecycle primitives, a single optional
-  keyword on serve-forever rather than a change to what any existing caller
-  already gets. All four are recorded under PROBLEM and fixed under WHAT EACH
-  THING BECOMES rather than assumed away. Three of the four lifecycle
-  primitives (start-server, stop-server, server-status) are untouched; every
-  new behaviour lives in new operations beside them, in the one additive
-  keyword serve-forever gains, in the entry script that already wraps them,
-  or in the new tools/ script -- REQ-0010's own line, "this document asks for
-  the calling convention around them, not new behaviour inside them," is read
-  here as permitting exactly that kind of widening while forbidding a change
-  to what an existing caller already gets, and is a constraint this design
-  checks itself against rather than restates.
+  loom-serve without a human at a shell. Read it with ARCH-0008 in hand: of
+  the three pieces below, two are the running design and one is gone. Live:
+  the one-line poll-once fix, and tools/loom-serve.sh. Removed: reload-code,
+  R3's in-place reload, deleted by ARCH-0008 -- a restart is now the only
+  thing that changes running code. Hence `partial', not `implemented' -- R3 is
+  gone, R1, R2, R4 and R5 stand, and OUTSTANDING has the evidence.
+
+  The two that stand, in full. A one-line fix to poll-once, so
+  repository-indexed-at stops under-reporting what the monitor thread already
+  knows. And tools/loom-serve.sh, a sixth script beside tools/loom.sh, which
+  starts loom-serve headless, lets a losing race stop cleanly instead of
+  crashing, tracks the process with a pidfile under /tmp rather than in a
+  source tree it cannot assume is writable or the only checkout on the
+  machine, and cleans up after a process a signal never reached. Its `reload'
+  verb survives as a documented alias for `restart'.
+
+  Four findings surfaced only by testing, or by re-tracing a design already
+  written, rather than by reading. Three of them stand. A pidfile written
+  before its own process is confirmed to have won the port, deleted
+  unconditionally by whichever process loses, can be clobbered and then
+  wrongly deleted out from under the actual winner if two start attempts
+  overlap -- closed by writing it only once success is confirmed, never
+  speculatively. Writing it only once success is confirmed cannot be done from
+  inside serve-forever's own unmodified body, because that body already calls
+  start-server unconditionally before blocking, and a caller that pre-called
+  start-server itself to catch that exact success would make serve-forever's
+  own internal call fail against its own already-running guard -- closed by
+  the one addition this document makes to any of loom-serve's four lifecycle
+  primitives, a single optional keyword on serve-forever rather than a change
+  to what any existing caller already gets. And reload-code has to report its
+  own completion time, because comparing indexed-at only against the server's
+  own :started-at would read as permanently stale after the first successful
+  reload ever happens -- correct about the mechanism as designed, and moot now
+  that the mechanism is gone: with restart the only path, :started-at is once
+  again always the moment the running code was loaded.
+
+  The fourth finding is the one the implementation overturned, and the reason
+  this document is `partial'. It argued that ASDF's own incremental build
+  already reaches every dependency on an ordinary, unforced reload, so the
+  risk `:force :all' actually closes is the same-second write/reload race
+  *mtime-settle-seconds* already names elsewhere in this tree, not the
+  sweeping six-of-nine-systems gap a first reading of REQ-0010's own `:force
+  t' sketch suggested. Half of that survived contact: the race is real and
+  forcing was the fix, but the scope was wrong. `:force :all' forces the
+  entire transitive plan, third-party systems included, which in this tree
+  crashes rather than slowly no-ops. PROBLEM's second finding, WHAT EACH THING
+  BECOMES, and R3 itself all still argue for it below, left standing rather
+  than rewritten so the correction and the argument it corrects stay legible
+  next to each other. OUTSTANDING carries the measurements -- which ARCH-0008
+  then weighed in deciding the mechanism had failed three separate ways, so
+  they are still doing work even though the code they describe is gone.
+
+  Three of the four lifecycle primitives (start-server, stop-server,
+  server-status) are untouched; every new behaviour lives in new operations
+  beside them, in the one additive keyword serve-forever gains, in the entry
+  script that already wraps them, or in the new tools/ script -- REQ-0010's
+  own line, "this document asks for the calling convention around them, not
+  new behaviour inside them," is read here as permitting exactly that kind of
+  widening while forbidding a change to what an existing caller already gets,
+  and is a constraint this design checks itself against rather than restates.
 body: |
   PROBLEM, CHECKED AGAINST THE ACTUAL CODE RATHER THAN ASSUMED
 
