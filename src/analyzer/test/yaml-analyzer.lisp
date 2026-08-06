@@ -108,9 +108,38 @@ knowledge would be worse than ignoring it")
     (is (eq :active (getp e :status)))
     (let ((check (getp e :check)))
       (is (eq :no-edge (getf check :kind)))
-      (is (eq :ontology (getf check :from-system)))
+      ;; ARCH-0009 R8: the real package name, not the path segment. This
+      ;; assertion is what ties the document's text to what ENTITY-SYSTEM
+      ;; answers -- the two sides of one EQ comparison.
+      (is (eq :loom-ontology (getf check :from-system)))
       (is (eq :outside (getf check :to-system)))
       (is (equal '(:calls :imports :depends-on) (getf check :rel-types))))))
+
+(test rule-0002-and-rule-0003-also-compile-to-the-real-package-names
+  ;; The other half of ARCH-0009 R8: RULE-0001 above pins one side of one
+  ;; :no-edge comparison against the real YAML on disk, but RULE-0002 and
+  ;; RULE-0003 each changed *two* fields (from-system: and to-system:), and
+  ;; between them they account for every violation `check` currently reports
+  ;; against this tree. Nothing before this test read either file's real
+  ;; contents: a revert or a typo in either YAML -- from-system: analyzer
+  ;; instead of loom-analyzer, say -- would compile silently to a keyword no
+  ;; analyzed entity's :system property can ever equal, and `check` would
+  ;; report 0 for that rule from then on. That is the exact vacuous-zero
+  ;; failure BUG-0006 closed, reachable again through the YAML alone, and
+  ;; nothing but a human reading the console's printed count would have
+  ;; caught it without this test.
+  (let ((rule-0002 (docs-entity "docs/rules/RULE-0002.yaml")))
+    (is (string= "RULE-0002" (getp rule-0002 :doc-id)))
+    (let ((check (getp rule-0002 :check)))
+      (is (eq :no-edge (getf check :kind)))
+      (is (eq :loom-analyzer (getf check :from-system)))
+      (is (eq :loom-graph (getf check :to-system)))))
+  (let ((rule-0003 (docs-entity "docs/rules/RULE-0003.yaml")))
+    (is (string= "RULE-0003" (getp rule-0003 :doc-id)))
+    (let ((check (getp rule-0003 :check)))
+      (is (eq :no-edge (getf check :kind)))
+      (is (eq :loom-knowledge (getf check :from-system)))
+      (is (eq :loom-graph (getf check :to-system))))))
 
 (test a-rule-with-no-recognisable-check-stays-prose
   ;; SS10.4: such a rule "remains valid as prose with severity advisory; it is
@@ -195,6 +224,29 @@ status: implemented
 "
                            :document)))
     (is (eq :implemented (getp e :status)))))
+
+(test a-document-carries-the-system-its-path-names
+  ;; ARCH-0009 R3. A document has no IN-PACKAGE to read, so the shared path
+  ;; default is the whole answer and every document in docs/ lands on :DOCS.
+  (let ((e (literal-entity "docs/arch/ARCH-9999.yaml"
+                           "id: ARCH-9999
+title: A design with a system
+"
+                           :document)))
+    (is (eq :docs (getp e :system)))))
+
+(test a-rule-document-carries-no-system-at-all
+  ;; R1 gives :RULE no :SYSTEM property, so writing one here would be dropped
+  ;; by DECLARED-PROPERTIES-ONLY's equivalent and read by nothing. ENTITY-SYSTEM
+  ;; already answered NIL for a rule and has to keep doing so -- a rule that
+  ;; classified into a system would start matching the layering checks it is
+  ;; the subject of.
+  (let ((e (literal-entity "docs/rules/RULE-9999.yaml"
+                           "id: RULE-9999
+title: A rule with no system
+"
+                           :rule)))
+    (is (null (getp e :system)))))
 
 ;;; ------------------------------------------------------------------
 ;;; Malformed input (SS3.3, SS9.3)

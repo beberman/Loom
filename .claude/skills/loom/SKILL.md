@@ -108,10 +108,56 @@ Three things to know before trusting a `find`:
   entity of a type. `find "" test` does not do it — the empty term is dropped
   and `test` becomes the term.
 
-`describe` on a document prints the **entire body**, which for a long
-requirement is hundreds of lines with the edge list at the very bottom. Read the
-file with Read if you want the text; use `describe` on a document only when you
-want its edges, and expect to scroll.
+`describe` on a document prints type, doc-id, title, status, and a summary
+bounded to 120 tokens (marked `truncated` if the document's own `summary:`
+ran over), then the edges — bounded output regardless of document length, per
+REQ-0007. The full body is not printed; read the file with Read if you want
+the text describe deliberately leaves out.
+
+## Running it as a service
+
+    sbcl --script loom-serve.lisp [/path/to/repo ...]              console + listener
+    sbcl --script loom-serve.lisp --headless [/path/to/repo ...]   listener alone
+
+An addition, not a replacement — `tools/loom.sh` and the console above are
+unchanged and still how an agent in this tree reaches Loom (`.claude/agents/
+tools.md` says so explicitly). This runs Loom as a standing process reachable
+over REST (`/v1/...`) and MCP (`/mcp`) on `127.0.0.1:4780`, for a caller that
+needs one resident graph shared across many requests instead of a fresh index
+per call. REQ-0008 and ARCH-0006 are the design; CLAUDE.md's own "Running it
+as a service" section is the other copy of this table.
+
+Do not run either invocation by hand. `tools/loom-serve.sh` owns the lifecycle,
+and it is what the allowlist and the SessionStart hook both name:
+
+```bash
+tools/loom-serve.sh status     running? and is its loaded code current
+tools/loom-serve.sh start      spawn it headless and detached
+tools/loom-serve.sh stop       SIGTERM it and wait for it to go
+tools/loom-serve.sh restart    stop, then start
+tools/loom-serve.sh reload     stop, then start (an alias for restart)
+tools/loom-serve.sh update     start / restart / nothing, whichever applies
+```
+
+`update` is the one verb worth reaching for. It pays a restart's cost only when
+something actually changed — a no-op in ~30ms on the common case, a ~4.5s
+restart when the tree has moved, and a start when nothing is up. There is no
+in-place reload any more: ARCH-0008 removed it, because reloading nine systems
+under live request threads produced a reproducible 500 (BUG-0008), and a restart
+was already measured at the same cost. ARCH-0007 is the rest of the design; the
+two files it tracks live under `/tmp`, named from the watched root
+(`/tmp/loom-serve-home-beberman-lisp-Loom.{pid,log}`), so a second checkout
+never collides with this one.
+
+A `SessionStart` hook in `.claude/settings.json` runs `update` before the
+session's first tool call, which is what makes the MCP surface reachable at
+all: Claude Code's `initialize`/`tools/list` handshake runs once and early, and
+a service that was down when it ran offers no `loom_*` tools for the rest of
+the session. **What the hook does not cover, and the one manual fallback:** an
+edit landing *after* the hook has run is invisible to the running image until
+someone says so. If an MCP or REST call fails mid-session, or answers against
+code you know you just changed, run `tools/loom-serve.sh update` and retry.
+`tools/loom.sh` never has this problem — it keeps no state to go stale.
 
 ## The test suite
 
@@ -122,8 +168,10 @@ tools/loom-test.sh        # summary only
 tools/loom-test.sh -v     # with compile output
 ```
 
-Six systems, per-system pass/fail summary. Note this is `/usr/bin/sbcl`, not the
-SBCL behind SLIME; where the two could disagree, say which one you ran.
+Nine systems, per-system pass/fail summary — the original six (ontology,
+analyzer, graph, workspace, knowledge, process) plus loom-serve, loom-rest and
+loom-mcp, added by PLAN-0005. Note this is `/usr/bin/sbcl`, not the SBCL
+behind SLIME; where the two could disagree, say which one you ran.
 
 The script writes and runs this driver, which is also the preamble any one-off
 script needs:
@@ -133,7 +181,7 @@ script needs:
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 (let ((here #p"/home/beberman/lisp/Loom/"))
   (dolist (system '("ontology/" "graph/" "analyzer/" "knowledge/"
-                    "workspace/" "process/"))
+                    "workspace/" "process/" "serve/" "rest/" "mcp/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
              asdf:*central-registry* :test #'equal)))
 (handler-bind ((warning #'muffle-warning))
@@ -142,6 +190,13 @@ script needs:
 (load "/home/beberman/lisp/Loom/src/full-test.lisp")
 (funcall (read-from-string "loom-test:full-test"))
 ```
+
+`hunchentoot` and `cl-json`, which loom-serve/rest/mcp depend on, are not in
+that explicit quickload list and do not need to be: once quicklisp/setup.lisp
+is loaded, `asdf:load-system` resolves a system's own `:depends-on` through
+quicklisp automatically, and `loom-test:full-test` loads all nine systems by
+name. The explicit list above is only for libraries no `.asd` in the tree
+names as a dependency.
 
 
 **Run `check` in the console as well.** RULE-0001 to RULE-0003 are enforced by
@@ -174,6 +229,18 @@ message are faster and never prompt.
 - **Files ending in `~` are Emacs backups.** Ignore them. Files beginning with
   `.#` are Emacs lock symlinks and are skipped by the indexer.
 - **Compile output goes to stdout**, so grep it away rather than reading it.
+- **A running loom-serve goes stale mid-session and nothing tells you.** The
+  SessionStart hook makes it current once, at the start; every edit after that
+  is invisible to the resident image until `tools/loom-serve.sh update` runs
+  again. ARCH-0007 names this as accepted rather than solved.
+- **The pidfile check under `tools/loom-serve.sh` is Linux-specific.** It reads
+  `/proc/<pid>/cmdline` to tell loom-serve from whatever the OS may have
+  recycled that pid to, which matches WSL Ubuntu and nothing else.
+- **Bringing the service up to date loses any repository added at runtime.** A
+  restart re-watches only this tree's root and whatever was on the command line,
+  so a repository an agent added through `watch` is gone. That was already true
+  of `restart` and `stop`; after ARCH-0008 it is true of `update` and `reload`
+  as well, because every path that changes running code is a fresh process.
 
 # Writing documents
 

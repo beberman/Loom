@@ -1,6 +1,6 @@
 id: ARCH-0006
 title: A shared loom-serve layer puts MCP and REST on one Hunchentoot listener over the same live graph
-status: draft
+status: implemented
 date: 2026-08-02
 refines: [REQ-0008]
 affects: [main, console, run-command, current-repository, current-graph,

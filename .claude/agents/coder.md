@@ -31,46 +31,27 @@ and stop rather than quietly implementing something else.
 
 ## Environment
 
-Use the **Bash** tool. Never add a pipe or a `tail`; each needs its own
-permission, and a prompt inside a subagent is a stall nobody sees.
+`.claude/agents/tools.md` has the Bash invocation, the Read-tool discipline,
+the command table, and the layering — the single copy every agent definition
+in this directory points to rather than restates. Read it before your first
+`tools/loom.sh` or `tools/loom-test.sh` call.
 
 ```bash
-tools/loom-test.sh                       # the full suite
+tools/loom-test.sh                       # the full suite, nine systems
 tools/loom.sh 'check'                    # query the index
 tools/loom.sh 'context <task words>'     # what to read before editing
 ```
 
-`context` is the command most easily missed and usually the right first call:
-given a task in words it returns the entities that matter with their edges
-attached. `help` prints the authoritative command table.
+## Rules that are machine-checked, and one that only looks like it
 
-Read files with the **Read** tool, never `cat` and never a shell loop over
-several files: the compound command prompts whatever the allowlist says. Several
-Read calls in one message are faster and silent.
-
-In a live image the suite is:
-
-```lisp
-(load "src/full-test.lisp")
-(loom-test:full-test)          ; 6 systems, prints a per-system summary
-```
-
-Systems are found through `asdf:*central-registry*`; `tools/loom-test.sh`
-contains the registry preamble any one-off script needs. Files ending in `~` are
-Emacs backups — ignore them.
-
-## Rules that are machine-checked
-
-RULE-0001 through RULE-0003 are enforced by `check`. Violating one is a build
-failure, not a style disagreement:
-
-- `loom-ontology` depends on nothing.
-- Analyzers receive a path and contents and return operations. They never touch
-  the graph.
-- The knowledge layer never writes.
-
-Run `check` after substantive work, not just the test suite. A rule violation
-does not fail a FiveAM assertion.
+RULE-0001 through RULE-0003 are meant to be enforced by `check`, not a FiveAM
+assertion — run it after substantive work, not just the suite. BUG-0006
+(closed) fixed `check`'s blindness to loom-ontology's boundary specifically:
+a nonzero RULE-0001 count is now real. RULE-0002 and RULE-0003 are not yet
+trustworthy the other way — per tools.md, BUG-0009 (open) found both report
+false positives against this tree today, so a nonzero count for either is not
+yet confirmation your change crossed an analyzer's or loom-knowledge's
+boundary; read the relevant `.asd` to confirm that instead until it closes.
 
 ## Code shape
 

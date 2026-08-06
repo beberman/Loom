@@ -301,7 +301,18 @@ it."
       (dolist (path changed) (index-file repository path :quiet quiet))
       (let ((removed (detect-deletions repository)))
         (when (or changed removed)
-          (resolve-and-check repository :quiet quiet)))
+          (resolve-and-check repository :quiet quiet)
+          ;; ARCH-0007: until this line, INDEX-REPOSITORY (line 241) was the
+          ;; only writer of this slot, so REPOSITORY-STATUS reported "last
+          ;; indexed" as the time of the last explicit watch or reindex, and a
+          ;; caller comparing it against a process start time would read
+          ;; "current" for a tree the monitor had silently absorbed a dozen
+          ;; edits from -- CON-0001's fabricated fact, arrived at by omission.
+          ;; Inside the `when` and not above it: the slot means "when this
+          ;; index last changed", so a poll that found nothing must leave it
+          ;; alone. `now' rather than a fresh GET-UNIVERSAL-TIME, because it is
+          ;; the instant the change was observed at.
+          (setf (repository-indexed-at repository) now)))
       (length changed))))
 
 (defun detect-deletions (repository)

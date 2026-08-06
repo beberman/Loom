@@ -395,6 +395,130 @@ name a macro identically and a pass must be able to see the ambiguity")))
           "ids are stable across re-analysis, so nothing pointing at them breaks"))))
 
 ;;; ------------------------------------------------------------------
+;;; System identity (ARCH-0009 R4, R5)
+;;;
+;;; Reached as LOOM-ANALYZER::, not through the export list: these two are
+;;; Lisp specifics a Java analyzer has no use for, and R2 asks only for
+;;; DEFAULT-SYSTEM-FOR-PATH to be exported.
+;;; ------------------------------------------------------------------
+
+(defun normalized-in-package (source)
+  "The :system keyword SOURCE, one IN-PACKAGE form, names."
+  (loom-analyzer::normalize-system-name
+   (loom-analyzer::in-package-argument-name (read-from-string source))))
+
+(test every-in-package-designator-folds-to-one-system-keyword
+  ;; A keyword, a string literal and an escaped mixed-case symbol are three
+  ;; spellings of one package, so they have to be one :system value or a rule
+  ;; naming loom-graph would match some of a file's definitions and not others.
+  (is (eq :loom-graph (normalized-in-package "(in-package :loom-graph)")))
+  (is (eq :loom-graph (normalized-in-package "(in-package \"loom-graph\")")))
+  (is (eq :loom-graph (normalized-in-package "(in-package :|Loom-Graph|)"))))
+
+(test a-slash-structured-package-name-is-one-token
+  ;; ~/lisp/game-server's live convention, verified at a REPL in ARCH-0009:
+  ;; `/` is an ordinary constituent character to the reader, not a macro
+  ;; character, so nothing here has to know the name is hierarchical.
+  (is (eq :game/game (normalized-in-package "(in-package :game/game)")))
+  (is (eq :game/game (loom-analyzer::normalize-system-name "game/game"))))
+
+(test an-absent-package-designator-normalizes-to-nil
+  ;; NIL is what the caller tests before overwriting CURRENT-SYSTEM, so an
+  ;; IN-PACKAGE with nothing readable in it must leave the path default alone
+  ;; rather than replace it with a keyword named "".
+  (is (null (loom-analyzer::normalize-system-name nil)))
+  (is (null (loom-analyzer::normalize-system-name "")))
+  (is (null (loom-analyzer::in-package-argument-name (read-from-string "(in-package)")))))
+
+(test the-analyzer-and-the-rule-reader-fold-case-identically
+  ;; ARCH-0009 risk 7, stated as an assertion. NORMALIZE-SYSTEM-NAME produces
+  ;; one side of every :no-edge comparison and yaml-analyzer's AS-KEYWORD
+  ;; produces the other, from a rule's from-system: scalar. If a later edit
+  ;; moves one fold, `check` goes quiet rather than wrong -- which reads as
+  ;; success and is the failure BUG-0006 existed to close.
+  (is (eq (loom-analyzer::as-keyword "loom-graph")
+          (loom-analyzer::normalize-system-name "loom-graph")))
+  (is (eq (loom-analyzer::as-keyword "loom-graph")
+          (normalized-in-package "(in-package :loom-graph)"))))
+
+(test a-definition-carries-the-package-its-file-declared
+  (multiple-value-bind (g file) (analyze-source "(in-package :loom-graph)
+(defun f (x) x)" "anywhere/at/all.lisp")
+    (declare (ignore file))
+    (is (eq :loom-graph (getp (find-by-name g :function "f") :system))
+        "the IN-PACKAGE form is the fact, not the path it was found under")))
+
+(test a-definition-with-no-in-package-falls-through-to-the-path
+  ;; The seed value, unmodified: an analyzer with nothing stronger than a path
+  ;; is exactly what DEFAULT-SYSTEM-FOR-PATH is for, and a Lisp file that
+  ;; declares no package is that analyzer for the length of the file.
+  (multiple-value-bind (g file) (analyze-source "(defun f (x) x)"
+                                                "src/graph/query.lisp")
+    (declare (ignore file))
+    (is (eq :graph (getp (find-by-name g :function "f") :system)))))
+
+(test each-definition-takes-the-in-package-lexically-nearest-above-it
+  ;; Literal CL semantics, and not hypothetical: ~/lisp/game-server's
+  ;; server/content.lisp switches package mid-file at line 179, so every
+  ;; definition after it really does belong to the second package. Nothing in
+  ;; Loom's own tree has two IN-PACKAGE forms, so without this test the walk's
+  ;; per-entity granularity is uncovered.
+  (multiple-value-bind (g file) (analyze-source "(in-package :server/content)
+(defun early (x) x)
+(in-package :media.service)
+(defun late (x) x)" "server/content.lisp")
+    (declare (ignore file))
+    (is (eq :server/content (getp (find-by-name g :function "early") :system)))
+    (is (eq :media.service (getp (find-by-name g :function "late") :system)))))
+
+(test the-file-entity-takes-the-last-in-package-in-the-file
+  ;; The documented approximation, asserted so a later change cannot quietly
+  ;; make it per-entity and leave ARCH-0009's disclosure stale. One :FILE
+  ;; entity cannot carry two packages; this is which one it carries.
+  (multiple-value-bind (g file) (analyze-source "(in-package :server/content)
+(defun early (x) x)
+(in-package :media.service)
+(defun late (x) x)" "server/content.lisp")
+    (declare (ignore g))
+    (is (eq :media.service (getp file :system)))))
+
+(test a-class-and-its-slot-accessors-carry-the-package
+  ;; The CLASS-DEFINITION-ENTITIES path -- an intermediate builder ARCH-0009's
+  ;; CONSEQUENCES paragraph does not name, which is why it is covered on its
+  ;; own rather than through the DEFUN case above.
+  (multiple-value-bind (g file)
+      (analyze-source "(in-package :loom-ontology)
+(defclass widget () ((size :accessor widget-size)))" "anywhere.lisp")
+    (declare (ignore file))
+    (is (eq :loom-ontology (getp (find-by-name g :class "widget") :system)))
+    (is (eq :loom-ontology (getp (find-by-name g :interface "widget-size") :system)))))
+
+(test a-struct-a-generic-and-a-method-carry-the-package
+  ;; STRUCT-DEFINITION-ENTITIES, GENERIC-DEFINITION-ENTITY and
+  ;; METHOD-DEFINITION-ENTITY, the other three intermediate builders.
+  (multiple-value-bind (g file)
+      (analyze-source "(in-package :loom-ontology)
+(defstruct hop entity-id)
+(defgeneric render (x))
+(defmethod render ((x hop)) x)" "anywhere.lisp")
+    (declare (ignore file))
+    (is (eq :loom-ontology (getp (find-by-name g :class "hop") :system)))
+    (is (eq :loom-ontology (getp (find-by-name g :function "hop-entity-id") :system))
+        "a DEFSTRUCT accessor is generated, and generated is not unplaceable")
+    (is (eq :loom-ontology (getp (find-by-name g :interface "render") :system)))
+    (is (eq :loom-ontology (getp (find-by-name g :method "render") :system)))))
+
+(test a-real-file-with-no-in-package-gets-its-path-segment-throughout
+  ;; test/fixtures/sample.lisp declares no package, so the seed default is what
+  ;; every entity it produces carries -- the path rule exercised against a real
+  ;; file rather than an inline string.
+  (multiple-value-bind (g file) (analyze-fixture)
+    (is (eq :test (getp file :system)))
+    (dolist (type '(:function :variable))
+      (dolist (e (entities-of-type g type))
+        (is (eq :test (getp e :system)) "~a carries ~s" (name e) (getp e :system))))))
+
+;;; ------------------------------------------------------------------
 ;;; Dispatch (SS8.1)
 ;;; ------------------------------------------------------------------
 

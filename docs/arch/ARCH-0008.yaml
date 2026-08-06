@@ -1,0 +1,534 @@
+id: ARCH-0008
+title: Retire in-place code reload for a soft-drained restart run outside the request path, closing BUG-0008
+status: implemented
+date: 2026-08-04
+refines: [REQ-0010, ARCH-0007]
+affects: [stop-server, start-server, serve-forever,
+          install-signal-handlers, resolve-caller-grants, invoke-operation,
+          register-operation, define-operation, repl-open]
+tags: [service, concurrency, lifecycle, rest, mcp, prototype]
+summary: |
+  BUG-0008 reproduced a real HTTP 500 -- NO-APPLICABLE-METHOD-ERROR against
+  LOOM-ONTOLOGY:NAME, a generic function ASDF had momentarily emptied of its
+  methods -- in one of six concurrent requests during a 4.4s RELOAD-CODE run,
+  and named the reason no split-the-nine-systems fix can close it: the hazard
+  is "is any thread executing anywhere in these nine systems while ASDF
+  redefines them," and RELOAD-CODE is itself invoked over REST, so it already
+  runs inside a worker thread on the acceptor whose code it redefines --
+  meaning a fix that drains in-flight requests to zero before reloading would
+  have to wait on itself.
+
+  This document does not solve that self-wait. It removes the thing that would
+  need to. RELOAD-CODE, *RELOAD-SYSTEMS*, *RELOAD-FORCE-SYSTEMS*,
+  *RELOAD-FUNCTION*, FORCE-LOAD-SYSTEMS and *RELOAD-LOCK* (src/serve/
+  server.lisp:160-277) are deleted; bringing the running image's code up to
+  date becomes exclusively a full process restart, driven the same way R2 of
+  REQ-0010 already made `start` safe to call blind -- SIGTERM and a fresh
+  spawn from tools/loom-serve.sh, entirely outside the acceptor whose code is
+  changing, never a REST- or MCP-reached operation asking its own process to
+  replace itself. STOP-SERVER (server.lisp:132-138) gains the drain that
+  makes that restart lose no in-flight work: `(hunchentoot:stop *server*
+  :soft t)`, already built into Hunchentoot 1.3.1 (acceptor.lisp:319-336) and
+  unused today, bounded by a timeout so one stuck request cannot block a
+  shutdown forever. That closes BUG-0008's own named smaller defect --
+  today's stop-server drops in-flight requests -- for every caller of
+  stop-server, not only the one this bug happened to be found on.
+
+  REQ-0010 R3's own text -- "the Lisp-native mechanism is the one to prefer
+  over a full process restart" -- is amended, not merely reinterpreted, and
+  the reasons it gave for preferring reload are checked against the running
+  code rather than re-asserted: open REPL sessions cannot exist under today's
+  capability stub at all (resolve-caller-grants, capability.lisp:33-48, never
+  grants :repl to any caller), so "REPL sessions survive" protects an
+  always-empty set today, and watched-repository loss on restart is not a new
+  cost this document introduces -- it is the cost `restart`, `stop`, and a
+  crash already had, and the one `reload` itself already fell back to on its
+  own documented failure path. What is new is closing a reproduced 500 and a
+  named-but-unclosed defstruct-layout hazard (ARCH-0007 CONSEQUENCES) that no
+  amount of draining a reload in place would ever close, because draining
+  only removes the concurrency window; it does nothing for a live struct
+  instance built under a layout a restart discards for free.
+body: |
+  PROBLEM, GROUNDED IN THE THREE FILES BUG-0008 NAMES
+
+  BUG-0008's own reproduction: a background POST /v1/reload-code running
+  4.41s, six POST /v1/reindex at 0.7s intervals across it, and the third one
+  back 500 with NO-APPLICABLE-METHOD-ERROR against
+  LOOM-ONTOLOGY:NAME "(0)" -- zero methods, the instant a worker thread called
+  it, because ASDF's own top-level form order (CLHS 7.6.6: re-evaluating a
+  DEFGENERIC clears the methods a previous DEFGENERIC established) has a
+  window between clearing and refilling that summed over nine systems' worth
+  of definitions across 4.4s is wide enough for a request to land in one in
+  six.
+
+  Read literally, RELOAD-CODE (server.lisp:258-277) has no defence against
+  this at all. *RELOAD-LOCK* (247-256) is a recursive lock serializing
+  RELOAD-CODE against a second RELOAD-CODE and against nothing else; nothing
+  in FORCE-LOAD-SYSTEMS (195-223) or the DEFINE-OPERATION body it runs inside
+  pauses, drains, or even checks for another thread anywhere in the nine
+  systems it is about to reload. The reproduction hit loom-ontology, the
+  deepest and least service-like of the nine, which is BUG-0008's own proof
+  that no split by "computation system" versus "service wrapper" closes this:
+  every one of the nine defines at least one generic function or class, so
+  every one of the nine has this window.
+
+  Hunchentoot 1.3.1 already ships the primitive a drain needs, read directly
+  rather than assumed from the bug doc's citation:
+
+    acceptor.lisp:130-146   ACCEPTOR-SHUTDOWN-P, ACCEPTOR-REQUESTS-IN-PROGRESS
+                            (an integer, incremented and decremented under
+                            ACCEPTOR-SHUTDOWN-LOCK at 384-391, once per
+                            request -- ordinary Hunchentoot request handling,
+                            not code this design adds), and
+                            ACCEPTOR-SHUTDOWN-QUEUE, a condition variable.
+    acceptor.lisp:319-336   (STOP ACCEPTOR &KEY SOFT). Sets SHUTDOWN-P (new
+                            connections stop being accepted -- see the
+                            SHUTDOWN-P check inside the accept loop at 460 and
+                            638), and when SOFT is true, blocks on
+                            SHUTDOWN-QUEUE until REQUESTS-IN-PROGRESS reaches
+                            zero, *then* shuts the taskmaster down and closes
+                            the listening socket.
+
+  The acceptor is the stock ONE-THREAD-PER-CONNECTION-TASKMASTER (ARCH-0006),
+  so REQUESTS-IN-PROGRESS is a real count of live worker threads and draining
+  it to zero really does mean no thread is running inside any of the nine
+  systems -- the one state a reload has no thread left to race.
+
+  The catch BUG-0008 names and does not resolve: RELOAD-CODE is itself
+  reached over REST (routes.lisp derives its route from the registry
+  automatically, per loom-rest's own design), so a caller invoking it is
+  already one of ACCEPTOR-REQUESTS-IN-PROGRESS. A RELOAD-CODE that called
+  `(hunchentoot:stop *server* :soft t)` on its own acceptor would block
+  waiting for its own request to finish, which cannot happen until the call
+  that is doing the waiting returns. Self-wait, not a race to be fixed by a
+  bigger lock.
+
+  A SECOND, UNRELATED HAZARD DRAINING DOES NOT TOUCH
+
+  REQ-0010 R3 and ARCH-0007's CONSEQUENCES both already name it, and it is
+  worth restating here because it is the argument that decides between
+  draining a reload and abandoning reload altogether, not a footnote: a live
+  `operation`, `repl-session`, or repository/entity struct built before a
+  reload keeps its old slot layout after the reload, because redefining a
+  DEFSTRUCT with a changed layout is implementation-defined for instances
+  that already exist (REQ-0010 R3's own text). Nothing about draining
+  in-flight requests to zero before reloading touches this at all -- the
+  hazard is not about a thread executing during the reload, it is about a
+  struct instance that predates it and survives it unexamined. RELOAD-CODE's
+  `:reloaded t` answer, today and under any drained version of it, only ever
+  means "the load forms did not signal," never "every live structure is
+  still valid" (server.lisp:258-277's own comment says as much). A full
+  process restart closes this by construction: nothing survives it, so
+  nothing can be built under a layout the new code no longer has.
+
+  A THIRD, MEASURED HAZARD: THE MECHANISM ITSELF HAS ALREADY FAILED TWICE
+
+  Not a hypothesis -- ARCH-0007's own OUTSTANDING section records it.
+  `:force :all`, ARCH-0007's original prescription, forced the entire
+  transitive plan including already-loaded quicklisp systems and crashed:
+  string-case (reached through cl-yaml -> serapeum) died with "overwriting
+  old FUN-INFO ... for STRING-CASE::NUMERIC-CHAR=", taking a live reload down
+  with it, and the fallback restart that followed did not come back inside
+  its own poll window either -- "the worst of the three outcomes R3 can
+  produce: slower than a restart and reported as a failure." The fix,
+  *RELOAD-FORCE-SYSTEMS* naming Loom's own nine systems explicitly rather
+  than `:all`, uncovered a second failure on the very next file it touched:
+  forcing loom-ontology recompiles a DEFPACKAGE form that is permanently at
+  variance with the live package by design (DEFENTITY exports symbols at
+  load time that the DEFPACKAGE form does not name), which SBCL signals as a
+  full WARNING and ASDF raises as COMPILE-FILE-ERROR -- closed only by a
+  HANDLER-BIND muffling exactly SB-INT:PACKAGE-AT-VARIANCE and nothing
+  broader (FORCE-LOAD-SYSTEMS, server.lisp:195-223). BUG-0008 is the third
+  defect this same mechanism has produced against this codebase's actual
+  dependency graph, not the first. Three fixes to keep one mechanism alive
+  is a track record, not bad luck, and it is evidence this document weighs
+  directly against continuing to patch it.
+
+  WHY THE REPL-SESSION AND WATCHED-REPOSITORY ARGUMENTS FOR RELOAD DO NOT
+  HOLD TODAY, CHECKED RATHER THAN RESTATED
+
+  REQ-0010 R3's own stated reason to prefer reload: "watched repositories
+  stay watched... open REPL sessions survive... the listening port is never
+  closed and reopened." Checked against capability.lisp and repl.lisp rather
+  than accepted at face value:
+
+    REPL sessions. repl.lisp:195-205 declares :repl-open, :repl-eval and
+    :repl-close at the :repl tier. capability.lisp:23-48's
+    RESOLVE-CALLER-GRANTS -- the single seam every request's grants come
+    from, over both REST and MCP -- returns *STATIC-GRANTS*, `(:read
+    :write)`, for every credential, unconditionally, and its own comment
+    states this is deliberate: ":repl can reach beneath every safety
+    property ARCH-0003 and ARCH-0004 built." CHECK-CAPABILITY
+    (capability.lisp:50-60) refuses any caller lacking the required tier.
+    Composed: no caller reachable today, over REST or MCP, can ever open a
+    REPL session at all. "Open REPL sessions survive a reload" is protecting
+    a set that is provably empty under the code as it stands. If a future
+    document ever makes RESOLVE-CALLER-GRANTS grant :repl to some
+    credential, this argument needs revisiting -- named under CONSEQUENCES,
+    not assumed to stay true forever.
+
+    Watched repositories. loom-serve.lisp's HEADLESS mode (44-57, 84-147)
+    always self-watches its own root and whatever paths were named on its
+    own command line, and nothing else; tools/loom-serve.sh's `start` names
+    exactly one path, the Loom root (`$root`). A repository an agent added at
+    runtime through the :watch operation is not on that command line and is
+    not re-watched by any restart today -- not `stop`, not `restart`, not a
+    crash, and, per the paragraph below, not even today's `reload` on its own
+    documented failure path. ARCH-0006 already named persisting the watched
+    set across a restart as deferred future work, unrelated to this
+    document's scope, and this document does not reopen it. Moving the
+    stale-code path from `reload` to `restart` does not create this cost; it
+    generalizes a cost every other lifecycle path already has.
+
+    The failure path already pays this cost today. tools/loom-serve.sh's
+    `cmd_reload` (tools/loom-serve.sh) already falls back to `cmd_restart`
+    whenever /v1/reload-code does not answer `:reloaded true`, or a
+    follow-up /v1/server-status stops answering after a reload that claimed
+    success. So the watched-repository loss this document makes the only
+    outcome is already, today, an outcome `reload` sometimes produces
+    silently on its own failure branch -- this document makes it
+    deterministic rather than introducing it.
+
+  WHAT EACH THING BECOMES
+
+  src/serve/server.lisp -- five definitions removed, one primitive edited
+
+    RELOAD-CODE (258-277), *RELOAD-SYSTEMS* (160-170), *RELOAD-FORCE-SYSTEMS*
+    (172-193), FORCE-LOAD-SYSTEMS (195-223), *RELOAD-FUNCTION* (225-245) and
+    *RELOAD-LOCK* (247-256) are deleted outright, not deprecated in place.
+    Leaving a known-hazardous, three-times-patched mechanism in the tree
+    unused is a worse invitation than removing it: a future caller finding
+    RELOAD-CODE registered and reachable has no way to see BUG-0008 without
+    reading this document first, and DERIVE-NEVER-CONSUME's own reasoning
+    (DEC-0003) argues against keeping a mechanism around that this document
+    has already shown cannot be made correct without solving a self-wait no
+    part of this design solves. The route loom-rest derives for it
+    disappears automatically, by the same registry-driven mechanism that
+    created it (routes.lisp: "deriving the paths from the registry is within
+    the design") -- no route table edit needed. Not registered for MCP
+    today, so no MCP-side removal either.
+
+    STOP-SERVER (132-138) changes from `(hunchentoot:stop *server*)` to a
+    soft, bounded stop: request the shutdown, wait for
+    ACCEPTOR-REQUESTS-IN-PROGRESS to reach zero via Hunchentoot's own
+    `:soft t`, but not unboundedly -- a caller of STOP-SERVER (the SIGTERM
+    handler's own shutdown sequence in SERVE-FOREVER, the interactive
+    console's `stop`, and any future caller) must not be able to hang
+    forever on one request that never finishes. Bounded by a timeout after
+    which STOP-SERVER completes the stop unconditionally (closing the
+    listening socket and shutting the taskmaster down the way today's
+    unconditional stop already does), trading "wait for this one straggler"
+    for "the operator asked this process to end and it is going to end." The
+    exact mechanism and the exact bound are left to the implementing plan --
+    SBCL's own SB-THREAD:JOIN-THREAD supports a :TIMEOUT argument, matching
+    the #+sbcl conditionals FORCE-LOAD-SYSTEMS itself already used --  the
+    requirement this document fixes is only that a bound exists and that
+    stop-server never becomes an indefinite block. This closes BUG-0008's
+    own named smaller defect (today's stop-server drops every in-flight
+    request, so does every `stop` and `restart`) uniformly, for every caller
+    of STOP-SERVER, not as a special case for a restart path alone.
+
+    START-SERVER, SERVER-STATUS, and SERVE-FOREVER are unedited. R2's
+    already-running guard, the pidfile discipline, and the shutdown sequence
+    (stop every monitor, then STOP-SERVER) all keep working exactly as
+    ARCH-0006 and ARCH-0007 built them; the only change any of them
+    experiences is that the STOP-SERVER call at the end of SERVE-FOREVER's
+    body now drains before it returns, which was already true in spirit --
+    "pause every repository, keeping its index, then stop listening" already
+    reads as an orderly shutdown, and it now is one all the way down.
+
+  src/serve/package.lisp -- two exports removed
+
+    #:*reload-function* and #:*reload-systems* (86-90) are removed; nothing
+    outside server.lisp names either today (grepped directly: their only
+    other referents are the test files named under CONSEQUENCES, which this
+    document's implementing plan removes alongside them).
+
+  tools/loom-serve.sh -- six verbs stay six, `reload` becomes `restart`'s
+  name rather than its own mechanism
+
+    `cmd_reload`'s POST to /v1/reload-code, its `:reloaded` and
+    `:reloaded-at` parsing, and its write to `$reloaded_at_file` are all
+    removed. `reload` becomes a documented alias that calls `cmd_restart`
+    directly -- kept as a verb, not deleted, so a script, a memory, or this
+    document's own predecessor's habit of typing `tools/loom-serve.sh
+    reload` keeps working rather than becoming a silent no-op or a usage
+    error. `cmd_update`'s `stale)` branch calls the same restart path.
+    `probe`'s staleness comparison drops the "later of :started-at and
+    .reloaded-at" logic (PROBLEM's third finding in ARCH-0007) entirely: a
+    fresh process's own :started-at is, after this document, always the
+    moment the running code was loaded, because the only mechanism left that
+    changes running code is a fresh process. `$reloaded_at_file` is never
+    written or read again.
+
+  WHAT THIS DOES NOT TOUCH
+
+  START-SERVER's re-entrant guard, the pidfile's write-only-after-success
+  discipline, the live-pid-and-identity check, and R4's "no Lisp of its own
+  in tools/loom-serve.sh" property are all ARCH-0007's and unedited here.
+  RESOLVE-CALLER-GRANTS and CHECK-CAPABILITY are untouched; this document
+  reads their existing behaviour (no :repl ever granted) as part of its
+  argument rather than changing it. install-signal-handlers is unedited;
+  its own comment -- "doing the shutdown here would run stop-server and a
+  monitor join inside a [handler] context, which is a place to do as little
+  as possible" -- is exactly the discipline this document leans on for R3's
+  new shape: the process that stops the acceptor and the process that starts
+  a new one are never the request-handling thread itself.
+
+  A NAMED INTERACTION WITH BUG-0007, NOT SOLVED HERE
+
+  BUG-0007, open, filed the same day as BUG-0008: a freshly started
+  loom-serve reports its own code stale within roughly one second, over a
+  tree nothing has touched, because POLL-ONCE counts at least one file as
+  changed on its first pass regardless -- a settle-window boundary or a `>=`
+  where a `>` belongs, unconfirmed, and located in loom-workspace's
+  POLL-ONCE, not in anything this document touches. Today that costs "one
+  redundant ~4.4s reload, once, ever, self-healing" (BUG-0007's own words),
+  because a reload's own `:reloaded-at` becomes a new, permanent baseline
+  ahead of the one-time false bump, and every `status` after that first
+  self-heal reads correctly.
+
+  This document removes that self-heal. After it, the action `update` takes
+  on a false "stale" is a restart, which produces a brand-new process with
+  its own fresh :started-at -- and POLL-ONCE's bug, being a property of a
+  fresh start rather than of any particular process's history, reproduces on
+  that new process too. Nothing left in this design writes a baseline ahead
+  of POLL-ONCE's bump the way `.reloaded-at` used to, so the false "stale"
+  becomes permanent for the life of that process rather than self-healing on
+  the second check. Traced through the actual consequence rather than left
+  implicit: every `tools/loom-serve.sh update` call after the first one that
+  hits this -- in practice, every SessionStart hook after the first, for as
+  long as BUG-0007 stays open -- pays an unnecessary ~4.3s restart rather
+  than the ~30ms no-op R1 was designed to cost, because there is no longer
+  any cheaper self-healing action to take once "stale" is (wrongly) reported.
+
+  This is a real cost this document introduces, not a hypothetical one, and
+  it is named here rather than discovered later precisely because BUG-0008's
+  own correctness cost -- a visible 500 to a caller who did nothing wrong --
+  is the worse of the two failure modes CON-0001 would rank between: an
+  honest-but-wrong "stale" that costs seconds and nothing else is a
+  degraded-performance defect, not a fabricated fact or a corrupted answer.
+  It does not block this document, and it is not fixed by this document,
+  because its root cause is in a different system this document's scope does
+  not reach. It does raise BUG-0007's priority: under this design BUG-0007's
+  cost is paid on every session rather than once, ever, and closing BUG-0007
+  is recorded here as a prerequisite worth landing alongside or ahead of the
+  plan that implements this document, not merely a nice-to-have filed
+  separately.
+
+  ALTERNATIVES CONSIDERED
+
+  Draining in place: a dedicated thread (spawned by RELOAD-CODE, not run on
+  the requesting thread) calls `(hunchentoot:stop *server* :soft t)`,
+  reloads once REQUESTS-IN-PROGRESS reaches zero, then restarts listening on
+  the same acceptor, with RELOAD-CODE itself answering asynchronously or
+  before the drain begins. Considered first, as BUG-0008's own "WHAT THE FIX
+  PROBABLY IS" section names it. Rejected for three compounding reasons, not
+  one. First, it still does not close the defstruct-layout hazard REQ-0010 R3
+  and ARCH-0007 already name -- draining removes the concurrency window, not
+  the surviving-old-layout instance, so it is strictly a partial fix to the
+  class of problem it is being built to solve. Second, it introduces a new
+  hazard that plain in-place reload never had: SERVER.LISP itself, including
+  the DEFCLASS for LOOM-ACCEPTOR and the DEFVAR for *SERVER* that holds the
+  live acceptor instance being reused across the reload, is one of the nine
+  systems the reload recompiles -- redefining the class of a live object
+  while planning to keep using that exact object, and resuming a listening
+  socket Hunchentoot's own STOP already closed, are both new pieces of
+  correctness the tree does not need today and this alternative would need
+  to invent from scratch. Third, RELOAD-CODE's caller is still owed an
+  answer on a connection that a drain, by definition, is trying to close --
+  either the answer changes shape (accepted asynchronously, checked later,
+  which is new API surface this design would have to build and REQ-0010 R4
+  never asked for) or the drain has to make an exception for the one
+  connection asking for it, which is the self-wait BUG-0008 already showed
+  does not work. Measured against all three costs, against a restart
+  measured at 4.3s versus a reload measured at 4.4s (ARCH-0007 OUTSTANDING)
+  and a REPL-session benefit proven unreachable above, the complexity this
+  alternative buys is not worth what it buys.
+
+  A REST- or MCP-reached "please restart yourself" operation, so an agent
+  never has to shell out to tools/loom-serve.sh at all. Rejected for the same
+  self-wait BUG-0008 already demonstrates: the code that decides to end the
+  process is still running inside the process it is ending, on a connection
+  that has to be answered before the process can safely disappear, and R2's
+  own start-safety already depends on the starting actor being a process
+  distinct from the one whose port it is racing for. Nothing about this
+  design needs a network-reachable restart trigger that tools/loom-serve.sh's
+  existing SIGTERM path does not already provide more simply.
+
+  An opt-in keyword on STOP-SERVER, `&key (soft nil)`, defaulting to today's
+  hard stop so a caller that does not ask for a drain gets identical
+  behaviour -- preserving REQ-0010's "not a change to loom-serve's own
+  lifecycle primitives" line literally, the way ARCH-0007's `already-started`
+  keyword on SERVE-FOREVER did. Rejected, deliberately, rather than followed
+  as precedent: BUG-0008 itself names STOP-SERVER's unconditional hard stop
+  as "a smaller, related defect" and puts closing it explicitly in this
+  design's scope ("in scope for you to decide whether closing this is
+  required by whatever design you choose"). An opt-in default that stays
+  hard leaves that defect open for every caller that does not know to ask
+  otherwise -- the SIGTERM path, which is every `stop` and `restart`
+  tools/loom-serve.sh performs -- which is exactly the caller this document
+  most wants draining for. This is the one place this document accepts
+  REQ-0010's "no change to lifecycle primitives" line does not survive
+  intact, named as such rather than obscured, matching ARCH-0007's own
+  practice of qualifying "unedited" rather than leaving a reader to find the
+  exception.
+
+  Debouncing `update`'s staleness check -- require two consecutive `probe`
+  calls to agree before acting -- as a cheap mitigation for the BUG-0007
+  interaction above. Rejected: BUG-0007's own text says the false "stale"
+  moves the baseline once and then holds permanently until something writes
+  a newer one, so a second probe reads exactly as stale as the first one did
+  and a debounce catches nothing. A real fix belongs in POLL-ONCE, where
+  BUG-0007 already locates it, not in a comparison layered on top of a
+  permanently-wrong input.
+
+  REQUIREMENTS
+
+  R1  No thread ever executes inside any of Loom's nine systems while ASDF
+      is redefining them, closing BUG-0008 structurally rather than
+      probabilistically. Achieved by removing the only path that redefined
+      code inside a running acceptor's request path: RELOAD-CODE,
+      *RELOAD-SYSTEMS*, *RELOAD-FORCE-SYSTEMS*, *RELOAD-FUNCTION*,
+      FORCE-LOAD-SYSTEMS and *RELOAD-LOCK* (server.lisp:160-277) are
+      deleted, and their exports (package.lisp:86-90) removed with them.
+      Nothing in the surviving design calls ASDF:LOAD-SYSTEM against a
+      running image again.
+
+  R2  Bringing loom-serve's own running code up to date is exclusively a
+      full process restart, performed the way R2 of REQ-0010 already made
+      `start` safe against a race: from outside the process being replaced,
+      by SIGTERM and a fresh spawn, never by a request handler asking its
+      own process to end. tools/loom-serve.sh's existing `restart` verb
+      (stop, then start) is that mechanism; nothing new is invented for it.
+
+  R3  STOP-SERVER (server.lisp:132-138) drains rather than drops: it stops
+      accepting new connections and waits for ACCEPTOR-REQUESTS-IN-PROGRESS
+      to reach zero (Hunchentoot's own `(hunchentoot:stop *server*
+      :soft t)`, acceptor.lisp:319-336) before completing the shutdown,
+      bounded by a timeout after which it force-closes rather than blocking
+      the calling thread -- and, transitively, SIGTERM handling and
+      tools/loom-serve.sh's own poll -- indefinitely. This applies to every
+      caller of STOP-SERVER (the SIGTERM path, the interactive console's
+      `stop`), not only the restart path this bug was found on, closing
+      BUG-0008's own named smaller defect as one change rather than two.
+
+  R4  tools/loom-serve.sh keeps six verbs. `reload` becomes a documented
+      alias for `restart` -- no POST to any code-reloading route, since none
+      exists after R1 -- rather than being removed or becoming an error, so
+      existing usage keeps working. `update`'s `stale` branch calls the
+      restart path. The `.reloaded-at` file and the "later of :started-at
+      and .reloaded-at" comparison in `probe` are removed: after R1 and R2,
+      :started-at is always the moment the running code was loaded.
+
+  R5  REQ-0010 R3 is amended, not merely reinterpreted: "reload preferred
+      over restart" no longer holds. Bringing code up to date is a restart,
+      always, and the reasons R3 gave for preferring reload are checked
+      rather than restated -- open REPL sessions cannot exist under today's
+      RESOLVE-CALLER-GRANTS stub (capability.lisp:33-48 never grants :repl),
+      so nothing of value is lost there today; watched-repository loss on
+      restart is the cost every non-reload lifecycle path already had, not
+      a new one. Whoever lands the plan implementing this document updates
+      REQ-0010's own status and R3 text to match, per RULE-0005's own
+      obligation that a plan reaching `final` makes the status of what it
+      refines honest -- not done by this document, which only designs the
+      change.
+
+  R6  The interaction with BUG-0007 is named, not solved: after R1-R4, a
+      false "stale" reading (BUG-0007) triggers a restart rather than
+      self-healing via a reload's own completion timestamp, so its cost
+      changes from "once, ever" to "once per `update` call for as long as
+      BUG-0007 stays open." This document does not fix BUG-0007 -- its root
+      cause is in loom-workspace's POLL-ONCE, outside this document's scope
+      -- but records BUG-0007 as a prerequisite worth landing alongside or
+      ahead of the plan implementing this document rather than a
+      independent, lower-priority item.
+
+  R7  Documentation catches up: CLAUDE.md's "Running it as a service"
+      section, the loom skill, and .claude/agents/tools.md's "Loom is also a
+      standing service" section all currently describe `reload` as
+      force-reloading code in place; each is corrected to describe a
+      soft-drained restart instead, matching ARCH-0007 R5's own precedent
+      that a doc update this document's own text requires is named as an
+      obligation rather than left implicit (CON-0004).
+
+  CONSEQUENCES
+
+  src/serve/server.lisp loses five definitions (RELOAD-CODE,
+  *RELOAD-SYSTEMS*, *RELOAD-FORCE-SYSTEMS*, FORCE-LOAD-SYSTEMS,
+  *RELOAD-FUNCTION*) and the RELOAD-CODE-specific lock (*RELOAD-LOCK*), and
+  gains a bounded soft drain inside STOP-SERVER. src/serve/package.lisp loses
+  two exports. tools/loom-serve.sh loses `cmd_reload`'s own REST call and the
+  `.reloaded-at` file, and gains nothing new -- `reload` becomes a name for
+  `cmd_restart` rather than a body of its own. Net: this document deletes
+  more code than it adds, and the deleted code is the code BUG-0008 and
+  ARCH-0007's OUTSTANDING section both show has failed three separate ways
+  against this tree's actual dependency graph.
+
+  Two test files need the coverage they wrote for the removed mechanism
+  removed with it, named here so the implementing plan does not have to
+  rediscover them: src/serve/test/server.lisp:146-225 (five tests exercising
+  RELOAD-CODE, *RELOAD-FUNCTION*, *RELOAD-SYSTEMS*, and
+  loom-serve::*reload-force-systems*) and src/rest/test/routes.lisp:129-152
+  (the REST route test exercising :reload-code's REST shape). Per CON-0003 --
+  a test must fail without the change it covers -- the implementing plan adds
+  in their place: a test that STOP-SERVER drains an in-flight request rather
+  than dropping it (a request started before STOP-SERVER is called must still
+  complete and be answered); a test that a soft stop bounded by its timeout
+  force-closes rather than blocking forever, so R3's bound is asserted rather
+  than hoped; and a test that :reload-code is no longer a name FIND-OPERATION
+  resolves, so a future re-addition is a visible, deliberate act rather than
+  a silent regression back to the code this document removes.
+
+  A residual gap this document accepts rather than closes: R3's bound on
+  STOP-SERVER's drain means a request still running when the bound elapses
+  is still dropped, exactly as every stop drops it today -- draining with a
+  bound trades "always drop in-flight work" for "usually finish it," not for
+  "never drop it." This is a smaller window than today's, not a zero one, and
+  is recorded as accepted rather than implied to be solved.
+
+  Every future write-tier operation that changes the running process's own
+  lifecycle (a future analogue of RELOAD-CODE, should one ever be proposed
+  again) inherits this document's own argument as the thing it has to answer
+  first: whether the action it performs can be performed by the thread
+  handling the very request that asked for it, and if not, whether the
+  answer is "move the action outside the request path" (R2's own choice
+  here) rather than "invent a way for a thread to wait on itself."
+
+  BUG-0008 is resolved by this document's own argument, not merely narrowed:
+  after R1, there is no code path left in loom-serve, loom-rest, or loom-mcp
+  that redefines Loom's own systems while any request thread might be
+  running inside them, because the only thing left that redefines them is a
+  process that has not yet started accepting requests at all. BUG-0007
+  remains open and is not touched by this document; R6 records the sharper
+  reason to close it.
+
+  AS IMPLEMENTED
+
+  PLAN-0007 landed R1-R7 on 2026-08-04, and three things in this document
+  turned out not to be true. Recorded here rather than silently corrected,
+  because each was reasoned rather than measured and that is the pattern.
+
+  R6 locates BUG-0007's root cause in loom-workspace's POLL-ONCE, "outside
+  this document's scope." It is not there. POLL-ONCE was run in isolation
+  with the monitor off and found 0 changed files on repeated passes; what
+  moved :indexed-at was SERVE-FOREVER re-watching -- and therefore
+  reindexing -- paths loom-serve.lisp had already watched, after START-SERVER
+  had recorded :started-at. The fix was one form in SERVE-FOREVER, inside
+  this document's own scope, and PLAN-0007 landed it first. BUG-0007 is
+  closed, so the "once per `update` call" cost R6 names was never paid.
+
+  R7 names CLAUDE.md as one of three documents describing `reload`. It does
+  not: the string does not occur in that file, and its "Running it as a
+  service" section lists two `sbcl --script` invocations and no verbs.
+  .claude/agents/tools.md and the loom skill were the two that needed
+  correcting, and both were.
+
+  R3's bound is 5 seconds, chosen so that SERVE-FOREVER's own
+  *MONITOR-STOP-TIMEOUT* (10s) plus this fits inside tools/loom-serve.sh's
+  ~20s pidfile wait with margin. The mechanism is a BT thread running
+  `:soft t` with SB-THREAD:JOIN-THREAD's :TIMEOUT applied to it -- this
+  document suggested exactly that -- rather than anything inside Hunchentoot,
+  because acceptor.lisp:319-336's wait takes no timeout argument and waits
+  once rather than in a loop. Both properties are now cited by line in
+  DRAIN-AND-STOP's own docstring.

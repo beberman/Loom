@@ -25,7 +25,7 @@ That is the whole point: deterministic, and enumerable by reading this file.
 
 What it allows.
 
-  1. One of the three driver scripts, by relative, ./-relative or absolute
+  1. One of the four driver scripts, by relative, ./-relative or absolute
      path, with single-quoted arguments or -v.
   2. sbcl, bare or as /usr/bin/sbcl, with the argument forms Loom actually
      uses: --script, --load, --eval, --non-interactive and friends.
@@ -59,7 +59,7 @@ SAFE_ARG = r"""(?:'[^']*'|[A-Za-z0-9_./=+:@,~-]+)"""
 DRIVER = re.compile(
     r"""^\s*
         (?:\./|/home/beberman/lisp/Loom/)?
-        tools/(?:loom|loom-test|next-doc-id)\.sh
+        tools/(?:loom|loom-test|loom-serve|next-doc-id)\.sh
         (?:\s+(?:-v|'[^']*'))*
         \s*$""",
     re.VERBOSE,

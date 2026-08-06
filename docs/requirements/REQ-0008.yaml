@@ -1,6 +1,6 @@
 id: REQ-0008
 title: Loom must run as a long-lived service, reachable over MCP and later REST
-status: draft
+status: implemented
 date: 2026-08-02
 affects: [main, console, run-command, current-repository, current-graph]
 tags: [process, service, mcp, rest, agents, interface]

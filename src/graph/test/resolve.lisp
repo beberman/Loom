@@ -258,6 +258,27 @@ the retract half can recognise what it made")
           "no edge, because there is no macro entity to reach -- the
 :generated-by property still records what made it"))))
 
+(test a-minted-entity-inherits-the-system-of-the-file-that-called-the-macro
+  ;; ARCH-0009 R6. A macro-minted entity has no form of its own to read a
+  ;; package from, so the calling file's is the only fact available -- and
+  ;; without it every :TEST in the tree would be unplaceable, which
+  ;; EDGES-BETWEEN-SYSTEMS reads as "not evidence of a violation" rather than
+  ;; as a gap. This test is also why :SYSTEM had to be declared on :TEST first:
+  ;; DECLARED-PROPERTIES-ONLY drops an undeclared key without a word.
+  (let ((g (make-graph))
+        (registry (make-hash-table :test #'equal)))
+    (setf (gethash "test" registry)
+          (list (list :name "test" :package "fiveam" :entity-type :test
+                      :name-index 1 :body-index 2 :framework :fiveam)))
+    (let ((file (r-file g "src/analyzer/test/lisp-analyzer.lisp"
+                        :call-sites (list (r-call-site "test" "alpha-works")))))
+      (setp file :system :loom-analyzer-test))
+    (apply-transaction g (resolve-generated-definitions g :registry registry))
+    (let ((minted (first (entities-of-type g :test))))
+      (is (not (null minted)))
+      (is (eq :loom-analyzer-test (getp minted :system))
+          "the file's package, not the path it sits under"))))
+
 (test a-call-site-matching-several-registry-entries-is-left-alone
   ;; Two packages may name a macro identically, which is why the table holds a
   ;; list. Picking one would be the fabricated fact CON-0001 forbids.

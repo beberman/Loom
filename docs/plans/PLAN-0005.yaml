@@ -1,0 +1,1203 @@
+id: PLAN-0005
+title: Sequence loom-serve, loom-rest and loom-mcp into a standing service beside the console
+status: final
+date: 2026-08-03
+refines: [ARCH-0006]
+affects: [main, console, run-command, current-repository, resolve-entity,
+          search-entities, describe-entity, impact-report, build-context,
+          repository-status, watch-repository, pause-repository,
+          unwatch-repository, reindex-repository, active-rules, unenforced-rules,
+          unresolved-references, unhandled-definer-macros,
+          generated-definition-collisions, entity-system, install-debugger-hook,
+          monitor-sleep, parse-document, "*repositories*"]
+tags: [process, service, mcp, rest, concurrency, permissions, json, plan]
+summary: |
+  Ten steps that land ARCH-0006's R1-R9 in dependency order: loom-serve first
+  and in four slices, because everything else calls it -- the operation registry
+  with its permission tier and error contract, then the fourteen operations
+  themselves, then the REPL session store, then the JSON encoder, then the
+  acceptor and its registration seam; then loom-rest, which is the first thing
+  that produces real Hunchentoot worker threads; then R3's concurrency
+  verification, placed immediately after the step that first makes concurrent
+  callers possible rather than at the end; then loom-mcp; then the loom-serve.lisp
+  entry script with both lifecycle modes; then the documents this makes false.
+  Every step compiles, leaves the full suite runnable, and names a verification
+  that fails without it.
+
+  Three things ARCH-0006 does not settle are decided here with their reasons
+  stated, because a coder cannot proceed without them: who owns the Hunchentoot
+  acceptor when loom-serve may not name loom-rest and loom-rest may not name
+  loom-mcp (a registration seam in loom-serve, not a reference in either
+  direction); which JSON library and, more importantly, what a nested plist
+  becomes, since cl-json's plist encoder is measured here as non-recursive and
+  its default key naming camelCases every key; and where the new lock goes that
+  concurrent `watch` and `unwatch` need, given loom-workspace's `*repositories*`
+  is an unguarded global that a single stdin loop made safe by construction and
+  N worker threads do not.
+
+  Out of scope and deliberately so: the auth model behind `resolve-caller-grants`
+  (REQ-0008 excludes it; the seam is built and returns a static answer), the
+  exact REST route table and the MCP tool JSON Schemas beyond the shape every
+  one shares (ARCH-0006 excludes both), the four write-tier MCP tools (ARCH-0006
+  rejects them under ALTERNATIVES CONSIDERED), a config file remembering watched
+  repositories across a restart (ARCH-0006 defers it), SSE streaming for MCP
+  (ARCH-0006 implements the single-response subset), any edit to loom-process,
+  loom-workspace, loom-knowledge, loom-graph, loom-analyzer or loom-ontology,
+  and any request-latency benchmark, which ARCH-0006 says explicitly belongs to
+  a future document once there is a listener to measure.
+body: |
+  BASELINE
+
+  Measured today, 2026-08-03, branch server, /usr/bin/sbcl, via
+  `tools/loom.sh 'status | check'` and `tools/loom-test.sh`, immediately before
+  this document was written:
+
+    index      : 90 files, 981 entities, 4621 relationships
+    documents  : 38
+    tests      : 273 tests covering 196 units
+    watcher    : watching
+    rules      : 0 violations, 2 unenforced
+    unresolved : 0 document references, 1 definer macro
+
+    suite                     6 of 6 systems green
+    ontology  301             analyzer  139
+    graph     206             workspace  51
+    knowledge  77             process    92
+
+  The two unenforced rules are RULE-0004 and RULE-0005; the one definer macro is
+  DEFENTITY. Both are the standing state PLAN-0001 to PLAN-0004 left and are not
+  this plan's business.
+
+  Those six numbers are the instrument for "which suite moved". This plan adds
+  three test systems and edits none of the six existing ones, so every one of
+  those numbers must be unchanged at every step. A movement in any of them is
+  unexplained by this plan and is worth stopping for -- it means a file under
+  src/ontology, src/graph, src/analyzer, src/knowledge, src/workspace or
+  src/process was edited, which REQ-0008 and ARCH-0006 both forbid.
+
+  Writing this document moves `documents` to 39 and adds one unresolved
+  reference only if ARCH-0006 cannot be read; it can -- `impact
+  reindex-repository 3` already lists ARCH-0006 among the documents it reaches,
+  which is only reachable through the successful branch of ANALYZE-FILE. So the
+  prediction here is `documents: 39, unresolved: 0` after this file lands, not
+  PLAN-0004's step-1 repair.
+
+  WHAT LOOM SAID, AND WHAT IT COULD NOT
+
+  `context MCP REST server operation registry permission tier` returns 24
+  entities and none of them is relevant: it matched CLEAR-ENTITY-REGISTRY,
+  EFFECTIVE-GENERATOR-REGISTRY, "*ENTITY-TYPE-REGISTRY*" and three tests with
+  "registry" in their names. That is not a defect in `context`; it is the
+  correct answer to a question about code that does not exist yet, and it is
+  recorded so nobody runs it again expecting more. For a plan that creates three
+  systems from nothing, the index has nothing to say about the new code and
+  everything to say about the boundary it must not cross.
+
+  `impact main 3` reports 1 impacted -- its own containing file, nothing else.
+  That is the macro blindness of ARCH-0001 plus the fact that loom.lisp reaches
+  MAIN through READ-FROM-STRING, so no :calls edge exists from the launcher to
+  the entry point it launches. Read it as a floor and not as evidence that
+  wrapping MAIN is free; the evidence for that is R5's structural argument (the
+  file is not edited), not the impact set.
+
+  `impact reindex-repository 3` reports 14 impacted (truncated), 21 tests and
+  13 documents. That is the honest measure of what the write tier reaches, and
+  it is why step 7 exists.
+
+  FINDING 1: `check` CANNOT SEE A LAYERING VIOLATION, SO IT CANNOT CONFIRM ONE
+
+  The obvious exit criterion for "loom-serve, loom-rest and loom-mcp stayed
+  peers of loom-process" is `tools/loom.sh 'check'` staying clean. It is
+  worthless for that purpose, and this was measured rather than assumed.
+
+  RULE-0001 to RULE-0003 are :no-edge checks keyed on `from-system` and
+  `to-system`. Those resolve through LOOM-GRAPH:ENTITY-SYSTEM
+  (src/graph/query.lisp:75-81), which returns "the leading path segment of a
+  fact's file" -- the text before the *first* slash. Every source entity in this
+  tree carries a :file like "src/knowledge/services.lisp", so the leading
+  segment is "src". Confirmed by running it against a freshly watched index of
+  this tree:
+
+    entity-system tally    :SRC 942   :DOCS 25   NIL 14
+    search-entities :file = "src/knowledge/services.lisp"  system = :SRC
+    edges-between-systems :knowledge :graph :calls  ->  0
+    edges-between-systems :src :src :calls          ->  2126
+
+  So RULE-0001's `from-system: ontology`, RULE-0002's `from-system: analyzer`
+  and RULE-0003's `from-system: knowledge` each match zero entities and produce
+  zero violations for every possible input. "No violations." is a vacuous pass,
+  which is CON-0003's failure mode at the rule level rather than the test level.
+  Nothing in the tree records this; it is not filed as a bug because filing one
+  is not this plan's job, and it is stated here at length so that whoever files
+  it (BUG-0006 is free) starts from the mechanism and not the symptom.
+
+  What this plan does about it: nothing to the mechanism, and everything to the
+  verification that depended on it. `check` is still run at every step -- an
+  unresolved document reference is real and this plan creates several
+  opportunities for one -- but the layering claim is verified structurally
+  instead, by step 1's load test: a fresh image that loads :loom-serve and
+  asserts (find-package "LOOM-PROCESS") is NIL. That test fails the day someone
+  adds #:loom-process to loom-serve.asd, which is the only failure mode worth
+  guarding, and it does not depend on a rule engine that cannot see the systems
+  it names.
+
+  FINDING 2: `*repositories*` IS AN UNGUARDED GLOBAL, AND ONE STDIN LOOP IS WHY
+
+  ARCH-0006's CONCURRENCY UNDER THE NEW CALLER SHAPE traces both locks against
+  Hunchentoot worker threads and finds no assumption violated. That trace is
+  correct for both locks and it does not cover the workspace registry, because
+  the registry is not behind either lock.
+
+    src/workspace/workspace.lisp:52   (defvar *repositories* '())
+    src/workspace/workspace.lisp:424  (push repository *repositories*)
+    src/workspace/workspace.lisp:446  (setf *repositories* (remove repository *repositories*))
+
+  `with-repository-lock` (line 40) is per-repository and takes the lock out of a
+  repository struct, so it cannot guard the moment a repository is being added
+  to or removed from the list -- at line 424 the struct exists but nothing else
+  can name it, and at line 446 the point of the operation is that it stops
+  existing. Neither PUSH nor SETF is atomic on SBCL. Under the console this can
+  never fire: one stdin loop dispatches one line at a time, so no two `watch`
+  calls overlap. Under N worker threads two concurrent `watch` calls on two
+  different paths can lose one registration, and two concurrent `unwatch` calls
+  can resurrect one.
+
+  This is a gap in ARCH-0006's "no new locking obligation", not in ARCH-0003 or
+  ARCH-0004, both of which are about a repository's own contents and remain
+  exactly as sound as ARCH-0006 says. The fix is available without touching
+  loom-workspace, which REQ-0008 forbids: loom-serve owns a lock of its own and
+  holds it across the two registry-mutating write operations. Step 2 builds it,
+  step 7 verifies it, and the acquisition order is stated there because adding a
+  lock above ARCH-0004's is only safe if it is always the outer one.
+
+  FINDING 3: THE LIBRARIES ARE PRESENT, AND ONE OF THEM ENCODES SURPRISINGLY
+
+  ARCH-0006 says hunchentoot, cl-json and jonathan are in this machine's
+  quicklisp cache. Verified by loading each in a fresh `sbcl --script`, offline:
+
+    OK hunchentoot 1.3.1    OK cl-json    OK jonathan    OK drakma 2.0.10
+
+  drakma is added to that list by this plan; it is not named in ARCH-0006 and it
+  is needed only by the three new test systems, as the HTTP client that makes an
+  end-to-end route test an end-to-end route test rather than a direct function
+  call wearing one's clothes.
+
+  Four facts about the encoder, measured rather than assumed, because they
+  decide code a coder would otherwise write twice:
+
+    (json:encode-json-to-string :rule-violation)         => "ruleViolation"
+    (json:encode-json-plist-to-string '(:a 1 :b "x"))    => {"a":1,"b":"x"}
+    (json:encode-json-plist-to-string '(:outer (:inner 1) :n 2))
+                                                         => {"outer":["inner",1],"n":2}
+    (json:encode-json-to-string nil)                     => null
+
+  The second line is why cl-json is chosen over jonathan: it has a plist encoder
+  at all, and loom-serve returns plists. The third line is why that is not
+  enough: it is *not recursive*, and DESCRIBE-ENTITY's result has a plist under
+  :entity, a plist under :properties, a plist under :document, and a list of
+  plists under :neighbors -- every one of which would come out as a JSON array
+  of alternating keys and values. The first line is why the key naming has to be
+  pinned: `:full-tokens` would reach a client as "fullTokens" and `:rel-type` as
+  "relType", which is a vocabulary nobody wrote down and nobody can predict from
+  the console. The fourth is why an empty impact set and an absent one are the
+  same JSON value unless something distinguishes them.
+
+  Two further Hunchentoot facts that bear directly on R3 and R8:
+
+    Hunchentoot depends on bordeaux-threads, and its workers are ordinary
+    BT:MAKE-THREAD threads. ARCH-0006's reentrancy argument -- "a recursive
+    lock's reentrancy test is is the calling thread already the holder, which
+    Hunchentoot's worker threads satisfy identically" -- is therefore true of
+    the actual library and not only of the abstraction. Verified from
+    hunchentoot.asd's :depends-on.
+
+    ONE-THREAD-PER-CONNECTION-TASKMASTER's :max-thread-count has :initform NIL
+    (unbounded) but a :default-initargs of *DEFAULT-MAX-THREAD-COUNT*, which is
+    100 (taskmaster.lisp:145, 175-239). So ARCH-0006's "bounded by Hunchentoot's
+    own taskmaster/thread-pool size" is true, and the bound is 100 by default.
+    That number is the ceiling on R3's queue-depth cost: up to 99 callers ahead
+    of you at ARCH-0004's ~200 ms worst-case hold each.
+
+    Hunchentoot's own safety net is `handler-bind ((error ...))`
+    (acceptor.lisp:674), and `*catch-errors-p*` defaults to T. It is narrower
+    than R8 requires and narrower than RULE-0004 demands. A condition that is
+    not an ERROR subtype escapes it into WITH-DEBUGGER, and under `sbcl
+    --script` -- which implies --disable-debugger -- an unhandled condition ends
+    the *process*, not the worker thread. That is the RULE-0004 failure mode
+    with the whole service as the blast radius, and it is the concrete reason
+    R8's wrapper must be inside the handler rather than relying on the server.
+
+  DECISIONS THIS PLAN MAKES THAT ARCH-0006 LEFT OPEN
+
+  Four, each stated plainly so a reviewer can tell a decision from a drift.
+
+  1. Who owns the acceptor. ARCH-0006 says `start-server` "builds one
+  Hunchentoot acceptor carrying both loom-rest's routes and loom-mcp's single
+  JSON-RPC endpoint", and also that loom-serve depends on exactly the five
+  systems loom-process depends on -- which excludes loom-rest and loom-mcp. Read
+  literally those are circular. The resolution, and it is the only one that
+  keeps all three peers: loom-serve owns the acceptor and a registration seam,
+  `register-handler (name prefix function)`, and loom-rest and loom-mcp each
+  push their handlers onto it in a top-level form at load time. `start-server`
+  starts an acceptor whose dispatcher walks whatever is registered. The acceptor
+  therefore does carry both, exactly as ARCH-0006 says, without loom-serve
+  naming either -- and an image that loads only loom-serve gets a listener that
+  answers 404 to everything, which is a coherent state and the one step 5 tests.
+
+  2. Which JSON library, and what a nested plist becomes. cl-json, for the
+  reason under FINDING 3, plus a recursive walker in loom-serve --
+  `json-value` -- because cl-json's own plist encoder is one level deep. The
+  walker lives in loom-serve and not in loom-rest, against ARCH-0006's sentence
+  placing JSON encoding in loom-rest, because loom-mcp needs byte-identical
+  encoding and must not depend on loom-rest; the alternatives are duplicating
+  the walker or making the two skins non-peers, and both are worse than moving
+  one function one system down. ARCH-0006's own words allow it -- loom-mcp uses
+  "whichever JSON library loom-rest uses" -- and the substance it commits to,
+  that neither protocol system contains business logic, is unaffected: a
+  data-shape translation shared by both skins is exactly what loom-serve is for.
+
+  3. What the walker guesses, and what it refuses to. A Lisp list is either a
+  plist or a sequence and nothing in the value says which. The rule: a non-empty
+  list of even length whose every even-indexed element is a keyword is an
+  object; anything else is an array. Measured against the real data this holds
+  -- a rule's :check property is `(:kind :no-edge :from-system :ontology
+  :to-system :outside :rel-types (:calls :imports :depends-on))`, whose outer
+  form is an object and whose :rel-types is a 3-element array. It has one known
+  hole, named here rather than discovered later: a two-element list of keywords,
+  such as a future rule with `rel-types: [calls, contains]`, satisfies the rule
+  and would encode as `{"calls":"contains"}`. No such value exists in the tree
+  today; step 4's tests include it as a documented misencoding with the key
+  named in `*array-valued-keys*` as the escape hatch, which is the CON-0001
+  posture -- record the ambiguity and name the instance rather than pretend the
+  heuristic is sound.
+
+  4. Where the new lock goes. loom-serve owns `*workspace-registry-lock*`, a
+  BT:MAKE-RECURSIVE-LOCK held across the whole body of the `watch` and `unwatch`
+  registry entries, for FINDING 2's reason. Acquisition order, stated because
+  ARCH-0004 states one and a new lock above it is only safe if it never inverts:
+  loom-serve's registry lock is always acquired *before* any repository's
+  analysis-lock and never from inside one. Nothing in loom-serve calls back into
+  loom-workspace while holding it except the one WATCH-REPOSITORY or
+  UNWATCH-REPOSITORY call it exists to serialize, and both of those take a
+  repository lock beneath it, never above.
+
+  FILES
+
+  Nine new files under src/serve/, five under src/rest/, five under src/mcp/,
+  one new script at the tree root, and three existing files edited -- none of
+  them under a system this plan may not touch.
+
+  src/serve/loom-serve.asd
+      New. :depends-on (#:loom-ontology #:loom-graph #:loom-analyzer
+      #:loom-workspace #:loom-knowledge #:hunchentoot #:cl-json
+      #:bordeaux-threads). Exactly loom-process.asd's five plus three
+      libraries, and conspicuously not #:loom-process. :serial t, components
+      package, registry, capability, errors, operations, repl, json, server.
+      A second system :loom-serve/test, modelled on loom-knowledge/test, adding
+      #:fiveam and #:drakma.
+
+  src/serve/package.lisp
+      New. (:use #:cl #:loom-ontology #:loom-graph #:loom-analyzer
+      #:loom-workspace #:loom-knowledge) -- loom-process's own use list, which
+      is known conflict-free because loom-process compiles with it. Exports
+      grouped by step so a reader can see the shape: registry, capability,
+      errors, operations, repl, json, lifecycle.
+
+  src/serve/registry.lisp
+      Step 1. The `operation` struct (name, tier, function, arg-shape,
+      summary), "*operations*", `define-operation`, `find-operation`,
+      `all-operations`, and `invoke-operation`, the one function both skins call.
+
+  src/serve/capability.lisp
+      Step 1. `resolve-caller-grants`, `check-capability`, the
+      `capability-error` condition.
+
+  src/serve/errors.lisp
+      Step 1. `operation-error->plist`, `malformed-request` and
+      `unknown-operation` conditions, and the `serious-condition` guard.
+
+  src/serve/operations.lisp
+      Step 2. The eleven read- and write-tier entries, the check/rules
+      assembly, `require-repository`, "*workspace-registry-lock*".
+
+  src/serve/repl.lisp
+      Step 3. The session struct, the session table and its lock,
+      "*max-repl-sessions*", "*repl-session-idle-timeout*", `repl-open`,
+      `repl-eval`, `repl-close`, `sweep-repl-sessions`, and the three repl-tier
+      registry entries.
+
+  src/serve/json.lisp
+      Step 4. `json-value`, `encode-result`, `plist-shaped-p`,
+      "*array-valued-keys*", "*json-key-name*".
+
+  src/serve/server.lisp
+      Step 5, extended in step 9. `register-handler`, "*handlers*",
+      `dispatch-request`, `start-server`, `stop-server`, `server-status`,
+      "*server*"; step 9 adds `serve-forever`, `install-service-debugger-hook`
+      and the signal handler.
+
+  src/serve/test/suite.lisp, test/registry.lisp, test/operations.lisp,
+  test/repl.lisp, test/json.lisp, test/server.lisp
+      Steps 1-5. `loom-serve-test` package, one master suite, one file per
+      source file it covers.
+
+  src/rest/loom-rest.asd, package.lisp, routes.lisp, test/suite.lisp,
+  test/routes.lisp
+      Step 6. :depends-on (#:loom-serve #:hunchentoot #:cl-json) and nothing
+      else -- notably not loom-mcp and not loom-process.
+
+  src/rest/test/concurrency.lisp
+      Step 7. The R3 verification, over real HTTP against a running acceptor.
+
+  src/mcp/loom-mcp.asd, package.lisp, jsonrpc.lisp, tools.lisp,
+  test/suite.lisp, test/tools.lisp
+      Step 8. :depends-on (#:loom-serve #:hunchentoot #:cl-json). Not
+      loom-rest.
+
+  loom-serve.lisp
+      Step 9. New, at the tree root, parallel to loom.lisp. Pushes nine system
+      directories onto asdf:*central-registry* rather than loom.lisp's six,
+      quickloads the same four libraries plus hunchentoot, cl-json and drakma's
+      absence (drakma is a test-only dependency and is not loaded here), loads
+      :loom-serve, :loom-rest, :loom-mcp and :loom-process, and dispatches on
+      argv into one of the two modes.
+
+  src/full-test.lisp
+      Steps 1, 6 and 8: one entry added to "*test-systems*" each time. This file
+      is under src/ but not under any of the six systems REQ-0008 protects, and
+      it is not a component of any of them -- it is the driver, loaded by path.
+      Editing it is in scope; editing anything under src/process/ is not.
+
+  tools/loom-test.sh
+      Steps 1, 6 and 8: "serve/", "rest/", "mcp/" added to the registry list in
+      the heredoc, and the header comment's "six systems" corrected as each one
+      lands. The `grep -E` filter needs no change.
+
+  CLAUDE.md
+      Step 10. The Layering block lists six systems and ends at loom-process;
+      after this work it is incomplete, which for the file every session reads
+      first is worse than out of date.
+
+  docs/arch/ARCH-0006.yaml, docs/requirements/REQ-0008.yaml
+      Steps 1 and 10. Status draft -> accepted at step 1, since the design is
+      settled and being sequenced and CON-0004 puts `accepted` between the two;
+      -> implemented or partial at step 10, per RULE-0005.
+
+  docs/plans/PLAN-0005.yaml
+      This file. draft -> final at step 10, with an OUTCOME section.
+
+  Deliberately not changed, each for a stated reason:
+
+    src/process/console.lisp, src/process/package.lisp,
+    src/process/loom-process.asd, loom.lisp. ARCH-0006 R5 makes zero edits the
+    mechanism by which the console cannot regress. If any of the four needs an
+    edit, the boundary has moved and this plan is the wrong document to do it
+    under.
+
+    src/workspace/, src/knowledge/, src/graph/, src/analyzer/, src/ontology/.
+    REQ-0008's explicit exclusion. FINDING 2 is a live reason to want an edit
+    to src/workspace/workspace.lisp and the answer is still no: the lock goes
+    in loom-serve.
+
+    tools/loom.sh and tools/allow-loom.py. No new driver script is added, so
+    the DRIVER regex (which names loom.sh, loom-test.sh and next-doc-id.sh
+    exactly) needs nothing. `sbcl --script loom-serve.lisp` is already allowed
+    by the SBCL rule, since its arguments contain no shell metacharacter. If a
+    later document adds tools/loom-serve.sh, allow-loom.py:62 is the line.
+
+    .claude/skills/loom/SKILL.md. Its test-suite section says "Six systems,
+    per-system pass/fail summary" and its driver preamble lists six directories;
+    both become false at step 8. Raised as this plan's outstanding hand-off
+    rather than edited silently, following PLAN-0004's precedent: the skill file
+    is the agent-facing contract and changing it changes how every future
+    session behaves.
+
+    .claude/agents/*.md. All five (architect, coder, planner, reviewer, tester)
+    independently repeat the same few lines telling an agent how to reach Loom
+    through `tools/loom.sh` -- confirmed by grep, not assumed: each file names
+    the script and a slightly different subset of console commands, with no
+    single place any of them refers back to. Once loom-mcp lands (step 8) an
+    agent has a second way to reach Loom, and five separately drifting copies of
+    "how to call Loom" is the wrong place to add a second option to -- each
+    edit either happens five times or the copies disagree.
+    Best done as its own follow-on after step 10's acceptance demonstration
+    confirms the MCP surface actually answers, not as a step of this plan:
+    factor the shared instructions into one file, .claude/agents/tools.md, and
+    have each of the five agent definitions reference it rather than restate
+    it -- the same centralizing move SKILL.md already is for the loom skill's
+    own instructions. Raised here as this plan's second outstanding hand-off
+    and not edited here, for the same reason as SKILL.md above: these are
+    agent-facing contracts, and changing what five running agent definitions
+    say is a decision for whoever owns them to make deliberately once there is
+    a second way to reach Loom worth documenting, not a side effect of landing
+    loom-mcp.
+
+  BLAST RADIUS
+
+  What Loom reports, measured today:
+
+    main                1 impacted, d1, its own file. No caller is visible;
+                        loom.lisp reaches it through READ-FROM-STRING.
+    reindex-repository  14 impacted (truncated), 21 tests, 13 documents,
+                        1 decision (DEC-0004). d1 includes WATCH-REPOSITORY and
+                        four workspace tests; d2-d3 the two fixture builders and
+                        the files holding them.
+    context <task>      nothing relevant; see WHAT LOOM SAID above.
+
+  What Loom cannot see, and this plan believes anyway:
+
+    Every new system. Loom indexes what is in the tree, and three of these
+    systems are not. The impact set for this plan is empty by construction and
+    stays empty until step 1 lands and a reindex runs. Nothing about the size of
+    today's impact set is evidence about the size of this change.
+
+    The .asd dependency graph. Loom has no :depends-on edge between systems --
+    ARCH-0001's blind spots plus the fact that an .asd is not a file the
+    analyzer claims. So the single most important structural property this plan
+    asserts, that loom-serve/rest/mcp never depend on loom-process, is invisible
+    to `impact`, invisible to `describe`, and (FINDING 1) invisible to `check`.
+    Step 1's load test is the only instrument for it.
+
+    Every plist consumer, as in PLAN-0001 and PLAN-0004. loom-serve reads
+    DESCRIBE-ENTITY's and IMPACT-REPORT's results with GETF, and a GETF is a
+    call to GETF. A change to the shape of either plist would break loom-rest
+    with no edge to say so.
+
+    Calls made from a Hunchentoot handler. Route handlers will be defined
+    inside a `define-route` macro if step 6 writes one, which puts their calls
+    inside a macro body and therefore unattributed, exactly as console.lisp's
+    commands are today. Expect `impact search-entities` to be as quiet about
+    loom-rest as it currently is about the console.
+
+  RISKS
+
+  The circular dependency, which is a build failure and the likeliest way to
+  lose an afternoon. If step 5 writes `start-server` to reference loom-rest's
+  routes directly, loom-serve.asd needs #:loom-rest, which needs #:loom-serve,
+  and ASDF will say so in a message that names the cycle but not the sentence in
+  ARCH-0006 that suggested it. The registration seam under DECISIONS 1 is the
+  design that prevents it; the tripwire is that step 5 lands and its tests pass
+  with *no* loom-rest in the tree at all.
+
+  Accidentally depending on loom-process. Three ways it can happen and all
+  three look reasonable at the time: reusing `log-event` for the service's own
+  log (it lives in loom-process; loom-serve needs its own three-line
+  equivalent), reusing `install-debugger-hook` for HEADLESS mode (same problem,
+  and step 9 says so), and reusing `resolve-entity` or `current-repository` from
+  console.lisp (the first is re-implemented in loom-serve, deliberately, per
+  ARCH-0006; the second must not be, since refusing to guess is the whole
+  point). Step 1's load test catches all three, which is why it is in step 1 and
+  not in step 9.
+
+  The REPL bypassing every lock this system has. ARCH-0006's final CONCURRENCY
+  paragraph is not a caveat, it is the specification: CL:EVAL through
+  `repl-eval` can call APPLY-TRANSACTION directly and get the graph's own lock
+  but not ARCH-0004's repository-level torn-view protection. Three concrete
+  consequences for step 3. The repl tier must never be reachable from a grant
+  set that a read or write caller can hold -- the test for that is a grant set
+  of {:read :write} being refused `repl-open`, and it is CON-0003 evidence
+  because a tier system implemented as an ordered level would pass every other
+  test in this plan and fail that one. `repl-eval` must not be wrapped in any
+  repository lock, because a submitted form that itself calls
+  `reindex-repository` would then deadlock or worse. And the session package
+  must not :use #:loom-process, both because loom-serve may not depend on it and
+  because a form typed at a REST REPL that calls `console` would hand the
+  service's stdin to a caller who does not have one.
+
+  Getting `repl-eval`'s two kinds of failure backwards. ARCH-0006 names this
+  risk itself and this plan repeats it because it is the one mistake that makes
+  the feature useless while every test still passes: a condition signalled by
+  the *submitted form* is the answer, returned as `:condition` inside a
+  successful result; only an unknown session id, a READ that fails before EVAL,
+  or a missing argument is an R8 request-level error. A step-3 test that
+  submits `(error "boom")` and asserts an HTTP 200 with a `:condition` plist is
+  the guard, and it fails against the natural wrong implementation.
+
+  The R3 test passing for the wrong reason. The existing concurrency test,
+  a-reindex-and-a-poll-do-not-corrupt-the-index
+  (src/workspace/test/workspace.lisp:382-420), is the template and its comments
+  explain the trap: INDEX-FILE and RESOLVE-AND-CHECK's SUBMIT catch and record
+  rather than signal, so both threads can return NIL with a third of the index
+  missing, and REINDEX-REPOSITORY clears the error list as its third act so a
+  check made after joining sees nothing. Step 7's test must sample
+  REPOSITORY-ERRORS between iterations (STRESS-CALL's shape) and must compare
+  STRESS-COUNTS against a quiet rebuild taken after joining, not merely assert
+  that no request returned 500. A version that only counts HTTP statuses is the
+  test this risk exists to forbid.
+
+  The R3 test finding FINDING 2 rather than confirming ARCH-0006. Concurrent
+  `watch` and `unwatch` of *different* repositories is the case
+  "*repositories*" does not survive, and it is a different question from the
+  one ARCH-0006 R3 answers. Step 7 covers both and labels them separately: the
+  single-repository read/write/monitor case is R3 as ARCH-0006 states it and
+  must pass unchanged, and the multi-repository registry case is FINDING 2 and
+  passes only because step 2 added the lock. If the second is written before
+  step 2's lock exists it should fail -- and running it that way once, before
+  wiring the lock, is the cheapest CON-0003 evidence available for step 2.
+
+  Port collision in the test suite. Every test that starts an acceptor must use
+  a port that is not 4780, must stop it in an UNWIND-PROTECT, and must not
+  assume the previous test's acceptor is gone. A leaked acceptor makes the next
+  run fail in a way that looks like a code defect and is not. Steps 5-8 each
+  start a server; one fixture macro, written once in step 5 and reused, is the
+  answer.
+
+  A test that reaches the operation directly instead of over HTTP. The whole
+  claim of loom-rest is that a request arriving over TCP produces the plist; a
+  test calling `invoke-operation` and then encoding the result verifies loom-serve
+  twice and loom-rest not at all. Step 6's tests use drakma against a running
+  acceptor for that reason, and step 7's must, since a direct call does not run
+  in a Hunchentoot worker thread and therefore does not test the thing R3 is
+  about.
+
+  cl-json's key naming, silently. If "*json-key-name*" is not bound, the
+  encoder camelCases and nothing fails -- every test written against the
+  encoder's own output agrees with itself. The guard is that step 4 asserts a
+  literal JSON string containing "full-tokens", not that a decode round-trips.
+
+  Tests likely to break, and why:
+
+    None. That is a prediction worth being wrong about loudly. All six existing
+    per-system counts must be exactly what BASELINE records at every step, and
+    the three new systems only ever add. If loom-process/test moves, something
+    edited console.lisp; if loom-workspace/test moves, something edited
+    workspace.lisp; either is a boundary violation and not a test failure.
+
+    The one honest exception is the whole-suite runtime, which grows by however
+    long step 7's stress test takes. Keep it in the same order as
+    a-reindex-and-a-poll-do-not-corrupt-the-index rather than scaling it up
+    until it is convincing.
+
+  STEPS
+
+  1. loom-serve exists, builds, is in the harness, and provably does not know
+     about loom-process.
+     ARCH-0006 status draft -> accepted, first, because the rest of this step
+     depends on a design that is settled and CON-0004's vocabulary has a word
+     for that.
+     src/serve/loom-serve.asd, src/serve/package.lisp, src/serve/registry.lisp,
+     src/serve/capability.lisp, src/serve/errors.lisp; src/serve/test/suite.lisp
+     and test/registry.lisp; src/full-test.lisp and tools/loom-test.sh gain one
+     entry each.
+     registry.lisp: an `operation` defstruct (name, tier, function, arg-shape,
+     summary) in the shape console.lisp's `command` struct already has;
+     "*operations*"; `define-operation`, which pushes onto it, replacing any
+     entry of the same name so a reload does not double it; `find-operation`;
+     `all-operations`; and `invoke-operation (operation grants args)`, which
+     checks the tier, validates the args against arg-shape, calls the function,
+     and returns either the plist or an error plist. No operations are defined
+     yet -- the tests define fixture ones.
+     capability.lisp: `resolve-caller-grants (credential)` returning
+     '(:read :write) for now with a comment naming REQ-0008's exclusion of the
+     auth model and ARCH-0006's naming of this exact function as the seam;
+     `check-capability (grants required-tier &key operation)` signalling
+     `capability-error`; grants are a *set*, tested with MEMBER, never compared
+     with a magnitude.
+     errors.lisp: `operation-error->plist (condition)` returning
+     (:name (string (type-of condition)) :message (princ-to-string condition)),
+     and the handler-case inside `invoke-operation` naming
+     `(or serious-condition yaml.error:yaml-error)`. The second disjunct is
+     not decoration: RULE-0004 and src/analyzer/yaml-analyzer.lisp:143-146 both
+     record that cl-yaml's conditions are direct subtypes of CONDITION, so
+     `serious-condition` alone has the hole RULE-0004 is about, and FINDING 3
+     records that Hunchentoot's own net is narrower still and that an escape
+     under `sbcl --script` ends the process. This is R8 satisfied rather than
+     merely spelled.
+     This is the first step that can be run.
+     Verification: `tools/loom-test.sh` shows seven systems, loom-serve green,
+     and the other six exactly at BASELINE. Tests in test/registry.lisp:
+       a. an-unknown-tier-is-refused-rather-than-ranked: a fixture :repl
+          operation invoked with grants '(:read :write) signals
+          capability-error. Fails against any implementation that treats the
+          tiers as an ordered level, which is the plausible wrong design and the
+          CON-0003 witness for R6.
+       b. a-condition-becomes-a-name-and-a-message: a fixture operation whose
+          function signals (error "boom") yields (:name "SIMPLE-ERROR"
+          :message "boom") and no condition escapes.
+       c. a-condition-that-is-not-an-error-is-still-caught: a fixture operation
+          whose function signals a condition defined as a direct subtype of
+          CONDITION. Names RULE-0004 in its docstring. Fails against a
+          handler-case naming ERROR, and fails against one naming
+          SERIOUS-CONDITION alone if the fixture condition is shaped like
+          cl-yaml's -- write it that way, and say in the test why.
+       d. a-missing-required-argument-is-a-malformed-request: arg-shape
+          validation refuses before the function is called, verified by the
+          function setting a flag it never gets to set.
+     Then the structural check FINDING 1 explains `check` cannot make. A
+     one-off script under /tmp with the standard preamble: push only the six
+     source directories plus serve/, `(asdf:load-system :loom-serve)`, then
+     assert (null (find-package "LOOM-PROCESS")) and print the result. It must
+     print T. Keep the script; steps 6 and 8 re-run it for :loom-rest and
+     :loom-mcp. Then `tools/loom.sh 'reindex | status | check'`: file count up
+     by the seven new files, 0 violations, 0 unresolved.
+
+  2. The eleven read- and write-tier operations, and the lock FINDING 2 needs.
+     src/serve/operations.lisp, src/serve/package.lisp, src/serve/test/
+     operations.lisp.
+     `require-repository (designator)`: FIND-REPOSITORY or a `malformed-request`
+     naming the designator. No default, no fallback to a sole watched
+     repository, no CURRENT-REPOSITORY -- ARCH-0006 is explicit that a program
+     either knows which repository it means or should ask first, and this
+     function is where that is enforced once instead of eleven times.
+     Read tier, seven entries, each a thin call: :find -> SEARCH-ENTITIES,
+     :describe -> DESCRIBE-ENTITY over a loom-serve-local `resolve-entity`
+     (id first, then best name match, then a malformed-request -- console.lisp's
+     shape, re-implemented rather than reached for), :impact -> IMPACT-REPORT,
+     :context -> BUILD-CONTEXT with no RENDER-CONTEXT step, :status ->
+     REPOSITORY-STATUS, or with no designator the list over ALL-REPOSITORIES
+     that doubles as repository discovery, :check and :rules -> the assembly
+     ARCH-0006 names and CONSEQUENCES records as accepted duplication:
+     ACTIVE-RULES, ENFORCEABLE-RULE-P, UNENFORCED-RULES,
+     (ENTITIES-OF-TYPE graph :rule-violation), UNRESOLVED-REFERENCES,
+     UNHANDLED-DEFINER-MACROS, (GENERATED-DEFINITION-COLLISIONS graph
+     "*macro-generators*"). Returned as data -- a plist of lists of plists --
+     never as console.lisp's formatted lines. Note while here: this is the one
+     place in the plan where a future document adding `check-report` to
+     loom-knowledge would delete code, and the comment should say so.
+     Write tier, four entries: :watch -> WATCH-REPOSITORY, :pause ->
+     PAUSE-REPOSITORY, :unwatch -> UNWATCH-REPOSITORY, :reindex ->
+     REINDEX-REPOSITORY, called exactly as console.lisp calls them, each
+     returning the repository's status plist rather than a struct.
+     "*workspace-registry-lock*", a BT:MAKE-RECURSIVE-LOCK, held across the
+     whole body of :watch and :unwatch only, with a comment carrying FINDING 2's
+     file and line numbers and DECISIONS 4's acquisition order. :pause and
+     :reindex do not take it -- they mutate no list -- and a comment says that
+     too, because taking it there would look consistent and would widen a lock
+     for no reason.
+     Verification: tests in test/operations.lisp over a fixture repository built
+     the way src/process/test/console.lisp builds one -- a temp tree with a
+     source file and two documents, watched with :monitor nil :quiet t, torn
+     down in an UNWIND-PROTECT that unwatches by name.
+       a. every-operation-names-its-repository: each of the eleven invoked with
+          no designator is a malformed-request, except :status, which returns
+          every watched repository. This is the R2/"no guessing" witness and it
+          fails against any implementation that reached for a default.
+       b. a-read-operation-returns-the-plist-the-console-would-have-formatted:
+          :describe on a known entity returns a plist with :entity, :properties,
+          :neighbors and :document, and asserts a specific property value
+          survives untruncated. Fails today; there is no operation.
+       c. check-reports-the-same-counts-the-console-prints: on the fixture, the
+          :check entry's violation and unresolved-reference counts equal what
+          ENTITIES-OF-TYPE and UNRESOLVED-REFERENCES return directly. It is the
+          duplication's only guard, and it is worth having precisely because the
+          duplication is accepted.
+       d. a-write-operation-is-refused-to-a-read-only-caller: :reindex with
+          grants '(:read) signals capability-error and the repository's
+          :indexed-at is unchanged. The second half is the point -- a tier check
+          that signals after doing the work is not a tier check.
+     Then the full suite, six systems at BASELINE and loom-serve up.
+
+  3. The REPL: a stateful session, its bounds, and the distinction that makes it
+     useful.
+     src/serve/repl.lisp, package exports, src/serve/test/repl.lisp.
+     `repl-session` struct: opaque id (RANDOM-UUID, as the graph already mints
+     ids), package, created-at, last-used. A session table plus its own
+     BT:MAKE-RECURSIVE-LOCK -- new state that N worker threads share, so it
+     needs a lock of its own; this is not the "no new locking code" ARCH-0006
+     rules out, which is about loom-workspace and loom-graph.
+     The session package is made fresh per session with a generated name, :use
+     '(#:cl #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace
+     #:loom-knowledge) -- the same list loom-serve's own package uses, which is
+     known conflict-free, and deliberately without #:loom-process for the reason
+     under RISKS.
+     `repl-open`: sweep first, then refuse past "*max-repl-sessions*" with a
+     structured error naming the limit, then mint. `repl-eval (session-id
+     text)`: look up or malformed-request; bind "*package*" to the session's
+     package; READ from TEXT, and a READ failure is an R8 request error;
+     EVAL inside handler-case naming `(or serious-condition
+     yaml.error:yaml-error)`; capture "*standard-output*" into a string;
+     re-store whatever "*package*" ended as, so a submitted `(in-package
+     :loom-workspace)` sticks for the next call; return (:output ... :values ...
+     :condition ...) with :condition NIL on success. `repl-close`: sweep, drop,
+     and DELETE-PACKAGE the session's package -- ARCH-0006 does not say to, and
+     leaving it interned leaks a package per session for the life of the
+     process, which is exactly the bounded cost the cap exists to bound.
+     Sweeping is lazy, on every repl-tier operation, against
+     "*repl-session-idle-timeout*"; no supervising thread, per ARCH-0006.
+     Three registry entries at :repl tier.
+     Verification, tests in test/repl.lisp:
+       a. in-package-persists-between-calls: open, eval "(in-package
+          :loom-workspace)", eval "*package*", and the second call reports
+          LOOM-WORKSPACE. This is R9's whole argument for a session over a
+          stateless eval and it fails against the stateless design by
+          construction.
+       b. a-defparameter-persists-and-a-let-does-not: eval "(defparameter *x*
+          1)" then "*x*" gives 1; eval "(let ((y 2)) y)" then "y" gives a
+          :condition, not 2. The negative half is what makes the test a
+          description of a real REPL rather than of an aspiration.
+       c. a-form-that-signals-is-an-answer-not-a-failure: eval "(error
+          \"boom\")" returns a successful result whose :condition names
+          SIMPLE-ERROR and whose session is still usable on the next call.
+          Fails against the natural wrong implementation, which is this step's
+          CON-0003 witness.
+       d. an-unknown-session-id-is-a-request-error: distinct from (c) in the
+          shape it returns, and the test asserts both shapes in one place so the
+          difference is visible to a reader.
+       e. the-cap-is-refused-and-says-what-it-is: bind "*max-repl-sessions*" to
+          2, open three, and the third is an error naming the limit.
+       f. an-idle-session-is-swept-by-the-next-call: bind
+          "*repl-session-idle-timeout*" to 0, open one, call repl-open again,
+          and the first id is gone -- and (find-package <its name>) is NIL,
+          which is the DELETE-PACKAGE half.
+       g. repl-is-never-implied-by-write: grants '(:read :write) is refused
+          repl-open. Overlaps step 1(a) deliberately: that one tests the
+          mechanism with a fixture, this one tests the real entry, and R9 is
+          explicit enough about it to deserve both.
+
+  4. JSON, and the two things it gets wrong by default.
+     src/serve/json.lisp, package exports, src/serve/test/json.lisp.
+     `plist-shaped-p (list)`: non-empty, even length, every even-indexed element
+     a keyword. `json-value (x &optional key)`: keyword -> its downcased
+     symbol-name as a string; string, number -> itself; T -> true; NIL -> an
+     empty array if KEY is in "*array-valued-keys*", otherwise null; hash table
+     -> object; plist-shaped list -> object, recursing with each key passed
+     down; any other list -> array; anything else -> its PRINC-TO-STRING, with a
+     comment that a value reaching that branch is a shape loom-knowledge was not
+     supposed to return.
+     "*json-key-name*" bound so cl-json emits the keyword's own name downcased,
+     not camelCase. "*array-valued-keys*" holds :impacted, :tests, :documents,
+     :decisions, :possibly-affected, :neighbors, :entities, :violations, :rules,
+     :unresolved, :repositories, :values, :rel-types -- the last one for
+     DECISIONS 3's named hole rather than for an empty-list case.
+     `encode-result (plist)`: json-value then cl-json, returning a string.
+     Verification, tests in test/json.lisp, every one asserting a literal JSON
+     string rather than a decode round-trip, for the reason under RISKS:
+       a. a-nested-plist-is-an-object-not-an-array: '(:outer (:inner 1) :n 2)
+          encodes to {"outer":{"inner":1},"n":2}. FINDING 3 measured cl-json
+          producing {"outer":["inner",1],"n":2} on its own, so this is the
+          witness for the walker existing at all.
+       b. a-key-keeps-the-name-it-has-in-lisp: a plist with :full-tokens encodes
+          containing "full-tokens" and not "fullTokens".
+       c. a-list-of-keywords-is-an-array-and-a-two-element-one-is-the-known-hole:
+          '(:calls :imports :depends-on) is an array; '(:calls :contains) under
+          a key not in "*array-valued-keys*" comes out as an object, asserted as
+          such with a docstring naming it a recorded misencoding, and the same
+          value under :rel-types comes out as an array. A test that asserts the
+          wrong answer on purpose is worth more than a comment nobody runs, and
+          it is the CON-0001 posture: the gap is recorded, not papered over.
+       d. an-empty-impact-set-is-an-empty-array: (:impacted nil) encodes to
+          {"impacted":[]} while (:stale nil) encodes to {"stale":null}.
+       e. a-real-describe-result-encodes: build a fixture entity, run the
+          :describe operation, encode it, and assert the string parses back to
+          an object with the four expected keys. The only round-trip in the
+          file, and it is an integration check rather than an encoder check.
+     No behaviour moves; nothing calls this yet.
+
+  5. The acceptor, and the seam that lets two systems share it without either
+     knowing about the other.
+     src/serve/server.lisp, package exports, src/serve/test/server.lisp,
+     loom-serve.asd's test system gains #:drakma.
+     "*handlers*", an ordered list of (name prefix function); `register-handler
+     (name prefix function)`, replacing any entry of the same name;
+     `dispatch-request`, which walks it and returns 404 when nothing matches.
+     `start-server (&key (port 4780) (address "127.0.0.1"))` builds one
+     HUNCHENTOOT:EASY-ACCEPTOR bound to the address, stores it in "*server*"
+     with a started-at timestamp, and starts it. The 127.0.0.1 default is a
+     requirement and not an example, for the reason ARCH-0006 gives: R6's
+     credential story is deliberately unfinished, so a service listening on
+     every interface would be the one unsafe part of the design. `stop-server`.
+     `server-status` returning (:running :port :address :started-at), itself a
+     :read-tier registry entry so it is reachable over both protocols.
+     Calling `start-server` twice is refused with a structured error naming the
+     running port rather than leaking the first acceptor.
+     Verification, tests in test/server.lisp, all through a fixture macro that
+     starts on a test port well away from 4780 and stops in an UNWIND-PROTECT:
+       a. an-acceptor-with-nothing-registered-answers-404: drakma GET to
+          /anything returns 404. This is the step's real content -- it proves
+          the listener runs with no loom-rest in the image, which is the
+          circular-dependency tripwire under RISKS.
+       b. a-registered-handler-answers: register a handler returning a fixed
+          string, GET it, assert 200 and the body.
+       c. server-status-tells-running-from-not: :running is T while up and the
+          entry is reachable at :read tier; after stop-server it is NIL. The
+          negative half of ARCH-0006 R7 -- a refused TCP connection -- is
+          asserted by drakma signalling a connection error against the stopped
+          port, and the test says in its docstring that this is deliberately the
+          only place a Lisp-level answer is not expected.
+       d. starting-twice-is-refused-rather-than-leaked: the second call errors
+          and the first acceptor is still answering.
+     Then the full suite; six systems at BASELINE, loom-serve green.
+
+  6. loom-rest: fourteen routes, one shape.
+     src/rest/loom-rest.asd, package.lisp, routes.lisp; test/suite.lisp,
+     test/routes.lisp; src/full-test.lisp and tools/loom-test.sh gain one entry
+     each.
+     Every route does exactly the five steps ARCH-0006 commits to and nothing
+     else: decode the request into the arguments the entry wants; resolve the
+     caller's grants from the Authorization header via `resolve-caller-grants`;
+     `invoke-operation`, which checks the tier and guards the condition;
+     `encode-result`; set the HTTP status -- 200, 400 for malformed-request, 403
+     for capability-error, 404 for an unknown operation or entity, 500 for
+     anything else -- and write the JSON. Reads take path and query parameters;
+     writes and repl-eval take a JSON body. A top-level form registers the
+     routes with loom-serve's seam at load time.
+     Verification, tests in test/routes.lisp, every one over drakma against a
+     running acceptor rather than by calling the handler:
+       a. a-read-route-returns-the-operations-plist-as-json: GET the describe
+          route for a fixture entity, assert 200 and a body whose decoded object
+          has the four keys, with "full-tokens" spelled that way.
+       b. a-write-route-changes-what-status-reports: POST reindex, then GET
+          status, and :indexed-at moved. Two requests, because a write whose
+          effect is only visible to the same request has not been tested.
+       c. a-read-only-caller-gets-403-not-500: the tier refusal must arrive as
+          403 with the error plist's :name and :message, which is R8 crossing
+          the protocol boundary intact.
+       d. an-unknown-repository-is-400-with-a-message-naming-it: not a stack
+          trace and not Hunchentoot's own HTML error page. Assert the body is
+          JSON.
+       e. all-fourteen-operations-are-routed: iterate `all-operations` and
+          assert every one has a route registered. It fails the day someone adds
+          an operation and forgets the route, which is the failure a
+          hand-maintained route table has.
+     Then the load test from step 1 re-run for :loom-rest -- (find-package
+     "LOOM-PROCESS") NIL -- and the full suite, now eight systems.
+
+  7. R3, verified under the caller shape that only now exists.
+     src/rest/test/concurrency.lisp.
+     This step is here and not at the end because step 6 is the first thing in
+     the tree that can produce two simultaneous callers, and a verification run
+     later would be verifying loom-mcp's arrival rather than the property.
+     Modelled directly on a-reindex-and-a-poll-do-not-corrupt-the-index
+     (src/workspace/test/workspace.lisp:343-420), reusing its instrument rather
+     than inventing one: an iteration count chosen by measurement, sampling of
+     REPOSITORY-ERRORS between iterations because REINDEX-REPOSITORY clears the
+     list, and a final comparison of entity, relationship and tested-unit counts
+     against a quiet rebuild taken after every thread has joined.
+       a. concurrent-rest-callers-do-not-corrupt-one-repository: a fixture
+          repository watched with its monitor *running*, several client threads
+          issuing POST reindex and GET impact/describe/context concurrently
+          through drakma, for enough iterations to be evidence. Asserts no
+          request returned 500, no recorded error text matches "Unsafe
+          concurrent operations", and the three counts equal a quiet rebuild's.
+          This is ARCH-0006 R3 exactly as stated, and it passes without any new
+          locking code, which is the claim.
+       b. concurrent-watch-and-unwatch-do-not-lose-a-registration: several
+          client threads watching and unwatching *distinct* temp repositories
+          concurrently; afterwards, every repository that was watched and not
+          unwatched appears exactly once in the :status listing. This is
+          FINDING 2 and it passes only because step 2 took
+          "*workspace-registry-lock*". Run it once with the lock commented out
+          before committing: it should fail, and that is this step's CON-0003
+          evidence. If it does not fail, the test is not exercising enough
+          concurrency and the iteration count is the thing to raise -- not the
+          assertion to weaken.
+     Record the measured worst-case latency observed for a write-tier request
+     under load in the step's own notes. ARCH-0006 declines to estimate it and
+     says a future document should measure it; this is the first opportunity,
+     and one number written down is worth more than the paragraph explaining
+     why nobody has one.
+
+  8. loom-mcp: JSON-RPC 2.0, single response, ten tools.
+     src/mcp/loom-mcp.asd, package.lisp, jsonrpc.lisp, tools.lisp;
+     test/suite.lisp, test/tools.lisp; src/full-test.lisp and tools/loom-test.sh
+     gain one entry each.
+     jsonrpc.lisp: one POST endpoint registered on loom-serve's seam; decode a
+     JSON-RPC 2.0 request, dispatch on `method`, answer with a single JSON
+     response body and never an SSE stream, per ARCH-0006. `initialize`,
+     `tools/list` and `tools/call` are the three methods; anything else is a
+     JSON-RPC method-not-found error with the correct code. A JSON-RPC error and
+     an R8 operation error are different things and the file must say which is
+     which: a malformed envelope is a JSON-RPC error object; an operation that
+     refused is a `tools/call` result carrying isError with the R8 plist as
+     content.
+     tools.lisp: exactly ten tools -- loom_find, loom_describe, loom_impact,
+     loom_context, loom_status, loom_check, loom_rules, loom_repl_open,
+     loom_repl_eval, loom_repl_close -- each a thin call to the same registry
+     entry loom-rest's route calls. The four write tools are deliberately absent
+     and a comment says so, naming ARCH-0006's ALTERNATIVES CONSIDERED and the
+     four-thin-wrappers cost of reversing it. Tool schemas beyond what
+     `tools/list` must return are out of scope per ARCH-0006.
+     Verification, tests in test/tools.lisp, over drakma against a running
+     acceptor:
+       a. initialize-answers-with-a-protocol-version-and-capabilities.
+       b. tools-list-returns-exactly-ten-and-no-write-tool: assert the count and
+          assert loom_watch is absent. The negative is the witness for
+          ARCH-0006's deliberate asymmetry; without it, a later well-meaning
+          symmetry restoration is invisible.
+       c. tools-call-returns-the-same-data-the-rest-route-does: call
+          loom_describe over MCP and GET the equivalent REST route in the same
+          test, and assert the two decoded results are EQUAL. This is the "one
+          registry, two skins" claim as an assertion, and it is the strongest
+          single test in this plan.
+       d. an-mcp-caller-with-only-read-cannot-open-a-repl: isError with the R8
+          plist, not a JSON-RPC transport error.
+       e. one-listener-serves-both: the REST route and the MCP endpoint answer
+          on the same port in the same test, which is ARCH-0006's WHY ONE
+          LISTENER as a fact rather than an intention.
+     Then the load test for :loom-mcp, and the full suite, nine systems.
+
+  9. The entry script, and the mode that exists because stdin might not.
+     loom-serve.lisp at the tree root; src/serve/server.lisp gains
+     `serve-forever` and `install-service-debugger-hook`.
+     The script pushes nine directories onto asdf:*central-registry*,
+     quickloads cl-yaml, bordeaux-threads, fiveam, random-uuid, hunchentoot and
+     cl-json, loads :loom-serve, :loom-rest, :loom-mcp and :loom-process, and
+     then dispatches:
+       INTERACTIVE-WITH-SERVICE, the default: `start-server`, then
+       (loom-process:main <paths>) completely unmodified, then `stop-server`
+       when main returns. R5 holds by construction -- main's body is not
+       touched, it is wrapped.
+       HEADLESS, selected by a --headless argument: `loom-serve:serve-forever`,
+       which watches the given paths through WATCH-REPOSITORY directly, installs
+       its own debugger hook, starts the server, installs a SIGTERM/SIGINT
+       handler that pauses every repository and stops the server, and blocks in
+       a loop sleeping in slices -- MONITOR-SLEEP's shape
+       (src/workspace/workspace.lisp:356-363), for MONITOR-SLEEP's reason: a
+       single long SLEEP makes a stop request wait out the interval.
+     `install-service-debugger-hook` is loom-serve's own, not
+     loom-process:install-debugger-hook, because HEADLESS never enters `main`
+     and loom-serve may not depend on loom-process. Same shape --- log, write to
+     *error-output*, and do not block --- with one difference worth a comment:
+     `main`'s hook calls (abort), which in a Hunchentoot worker thread may find
+     no ABORT restart, so the service's hook must not assume one.
+     Verification, and this step is the one whose verification is not a FiveAM
+     test, which is worth saying rather than hiding:
+       a. HEADLESS with stdin closed stays up. Start it in the background with
+          stdin from /dev/null, wait, curl the status route, assert 200, then
+          send SIGTERM and assert the process exits and the port stops
+          answering. That the process is still alive after several seconds is
+          the whole point of the mode: ARCH-0006 predicts that a naive script
+          calling `main` would exit within its first second because READ-LINE
+          returns :eof immediately, and a run of this test against the
+          interactive mode with stdin closed should show exactly that. Run it
+          both ways once; the contrast is the evidence.
+       b. INTERACTIVE-WITH-SERVICE still gives a console. Start it at a
+          terminal, type `status`, see the console's own output, curl the REST
+          status route from another shell and see the same repository, type
+          `stop`, and confirm the port stops answering.
+       c. `tools/loom.sh 'status'` and `sbcl --script loom.lisp` are unchanged.
+          R5's acceptance check, and it is a real check rather than a formality
+          because the three new systems now sit in the same tree and the same
+          quicklisp cache.
+     Note for whoever runs (a): a foreground Bash call that starts a server
+     blocks until it is killed. Use a background run, or `nohup`, and read the
+     log afterwards.
+
+  10. The documents this work makes false.
+     docs/arch/ARCH-0006.yaml: accepted -> implemented if R1-R9 all landed;
+     partial with an OUTSTANDING section naming what did not, if any did not.
+     The judgement is not automatic: R6's `resolve-caller-grants` ships as a
+     seam returning a static answer, which is what ARCH-0006 commits to and
+     REQ-0008 excludes the rest of, so it does not make the document partial --
+     but if step 8 shipped fewer than ten tools, or step 7's second test was
+     weakened rather than made to pass, it does.
+     docs/requirements/REQ-0008.yaml: draft -> implemented or partial, and only
+     after `impact REQ-0008 2` confirms ARCH-0006 is its only outstanding child.
+     RULE-0005's walk continues upward only on implemented and only when no
+     sibling is still open.
+     CLAUDE.md: the Layering block gains loom-serve, loom-rest and loom-mcp as
+     peers of loom-process, with one line saying that none of the three is
+     depended on by anything below it, and the "Ask Loom before reading the
+     tree" section is left exactly as it is -- tools/loom.sh is unchanged and
+     still the way to query.
+     tools/loom-test.sh's header comment: "six systems" -> nine.
+     docs/plans/PLAN-0005.yaml: this file, draft -> final, with an OUTCOME
+     section carrying the measured counts against BASELINE, the nine per-system
+     test numbers, the latency number step 7 measured, and every prediction here
+     that came out wrong.
+     Verification: `tools/loom.sh 'reindex | status | check'` -- file count up
+     by the new files and no more, documents 39, 0 violations, 0 unresolved
+     document references, 2 unenforced rules, 1 definer macro. Then
+     `tools/loom.sh 'impact ARCH-0006 2'`, which must report this plan.
+     Then, as the acceptance demonstration the whole plan exists for, with the
+     service running: the same question asked three ways -- `tools/loom.sh
+     'describe describe-entity'`, a GET to the REST describe route, and an MCP
+     loom_describe tools/call -- returning the same entity, from one resident
+     graph, with no reindex between them.
+     Raise, do not edit: .claude/skills/loom/SKILL.md's "Six systems" and its
+     six-directory driver preamble are now false. It is the agent-facing
+     contract, and PLAN-0004 left the same kind of line alone for the same
+     reason. Raise alongside it, also unedited here: .claude/agents/*.md's
+     five independent copies of "how to reach Loom" (see FILES above), now
+     genuinely stale rather than merely due for a refresh, since a second
+     protocol exists and none of the five says so -- the argument for the
+     tools.md follow-on this step's own existence does not settle.
+
+  VERIFICATION
+
+  Per step, as listed above. For the work as a whole:
+
+    tools/loom-test.sh
+        Nine systems green, /usr/bin/sbcl and not the SBCL behind SLIME; say
+        which was run. Against BASELINE: ontology 301, analyzer 139, graph 206,
+        workspace 51, knowledge 77, process 92 -- all six unchanged, which is
+        as much a result as the three new numbers. Any movement in the six means
+        a file this plan may not touch was touched.
+
+    The structural check `check` cannot make
+        The /tmp load script from step 1, run for all three new systems: each
+        loads and (find-package "LOOM-PROCESS") is NIL. FINDING 1 explains why
+        this is the instrument and RULE-0001 to RULE-0003 are not. Worth keeping
+        the script somewhere a later document can find it; a plan that adds a
+        fourth peer system will want it.
+
+    tools/loom.sh 'reindex | status | check'
+        Documents 39. Zero violations and zero unresolved document references at
+        every step, not only at the end -- `check` is cheap and an unresolved
+        reference introduced at step 2 is much harder to find at step 10. The
+        two unenforced rules and the one definer macro are unchanged; this plan
+        adds no rule and no definer macro.
+
+    The service answering, which is the only thing that says the defect is gone
+        REQ-0008's complaint is that every call pays a cold reindex and no two
+        callers share a graph. The acceptance demonstration in step 10 is the
+        direct answer: three callers, two protocols, one resident graph, no
+        rebuild between them. The suite says the parts work; only that says the
+        requirement is met.
+
+    Rule checks are not assertions, and here they are not evidence either
+        `check` is still run at every step for unresolved references, which are
+        real. It says nothing about layering (FINDING 1). Do not report a clean
+        `check` as confirmation that the three systems stayed peers.
+
+  OUTCOME
+
+  All ten steps landed. Measured 2026-08-03, branch server, /usr/bin/sbcl.
+
+    index      : 120 files, 1252 entities, 5534 relationships
+    documents  : 39
+    tests      : 334 tests covering 232 units
+    rules      : 0 violations, 2 unenforced
+    unresolved : 0 document references, 1 definer macro
+
+    suite                     9 of 9 systems green
+    ontology  301             workspace  51             serve  117
+    analyzer  139             knowledge  77             rest    79
+    graph     206             process    92             mcp     23
+
+  The six existing per-system counts are exactly BASELINE's, which is as much a
+  result as the three new ones: nothing under src/ontology, src/graph,
+  src/analyzer, src/knowledge, src/workspace or src/process was touched, and
+  console.lisp, loom.lisp, loom-process.asd and src/process/package.lisp have
+  zero edits. `tools/load-test.lisp` loads each of :loom-serve, :loom-rest and
+  :loom-mcp into a fresh image and reports LOOM-PROCESS absent from all three.
+
+  The acceptance demonstration ran: `sbcl --script loom-serve.lisp --headless`,
+  then the same question three ways -- GET /v1/describe?repository=Loom&term=
+  describe-entity, an MCP loom_describe tools/call, and `tools/loom.sh 'describe
+  describe-entity'`. All three named function describe-entity at
+  src/knowledge/services.lisp:211-226. The first two came from one resident
+  graph with no rebuild between them, which is REQ-0008's complaint answered
+  directly rather than by proxy.
+
+  MEASURED, WHERE THE PLAN ASKED FOR A NUMBER
+
+  Worst write-tier request under concurrent load: 8 ms, over four client
+  threads issuing 20 requests each against a three-file fixture with its
+  monitor running. ARCH-0006 declined to estimate this and asked that it be
+  measured once a listener existed. Read it as a floor rather than a figure for
+  this tree: a reindex of Loom itself is PLAN-0003's 135-143 ms, and ARCH-0004's
+  ~200 ms contended hold is per caller ahead of you in the queue.
+
+  Both lifecycle modes were run with stdin from /dev/null, and the contrast is
+  the evidence ARCH-0006 predicted. HEADLESS stayed up 45 s, answered 200 on
+  both the REST route and the MCP endpoint, exited on SIGTERM, and the port
+  refused afterwards. The default mode with the same stdin ran 2 s and exited,
+  which is exactly the READ-LINE-returns-:EOF path that made the second mode
+  necessary. INTERACTIVE-WITH-SERVICE was driven through a fifo: `status`
+  printed the console's own output while a REST call reported the same
+  repository from another process, and `stop` ended both.
+
+  PREDICTIONS THAT CAME OUT WRONG
+
+  1. "Fourteen registry entries." Fifteen. ARCH-0006 R4 counts fourteen and R7
+  separately asks that server-status be a read-tier entry reachable over both
+  protocols, so the arithmetic in step 6's test name was wrong rather than the
+  design. The test is named every-operation-is-routed and iterates
+  ALL-OPERATIONS, which is what the plan actually wanted from it.
+
+  2. "Step 7(b) fails with the lock commented out, and that is the CON-0003
+  evidence." It does not fail, and the plan's own instruction -- raise the
+  iteration count rather than weaken the assertion -- does not rescue it. Run
+  with *WORKSPACE-REGISTRY-LOCK* removed from both entries, 6 threads x 20
+  watch/unwatch cycles passed twice. The reason is arithmetic: the unguarded
+  region in WATCH-REPOSITORY is a read, a CONS and a write -- tens of
+  nanoseconds -- inside a cycle that spends ~200 ms indexing and stopping a
+  monitor, so two threads overlapping inside it is a one-in-ten-million event
+  per cycle and the count needed is millions, which is not a test. FINDING 2 is
+  still real; it is simply rare enough that the symptom cannot be reproduced on
+  demand. The assertion stays, and a second test was added that fails the
+  moment the lock is removed:
+  the-registry-entries-serialize-on-the-registry-lock holds the lock from
+  another thread for 500 ms and asserts the watch waited. Without the lock it
+  measures 0.000 s. That is the CON-0003 witness, and it tests the mechanism
+  rather than the symptom because the symptom is not testable.
+
+  3. "Concurrent REST callers all return 200." They do not: a read arriving
+  between REINDEX-REPOSITORY's graph swap and the moment a file is re-analyzed
+  sees an index that does not hold the term yet and answers 404. That is
+  ARCH-0004 R5's lock-free read path working as designed, not a torn view -- the
+  count comparison against a quiet rebuild is what would catch one. The
+  assertion is now 200-or-404, with no 500, which is what ARCH-0006 R3 actually
+  states.
+
+  4. "cl-json's key naming, if unbound, camelCases silently." True, and the fix
+  went further than the plan's: nothing in the walker ever hands cl-json a
+  symbol, so no special variable of cl-json's is load-bearing and no caller can
+  change the spelling of :full-tokens by rebinding one. The emitter also writes
+  its own braces rather than handing cl-json a hash table, because MAPHASH order
+  is implementation-defined and a JSON answer whose key order changes between
+  runs of the same request is a diff nobody can read.
+
+  DECISIONS TAKEN DURING IMPLEMENTATION THAT THE PLAN DID NOT STATE
+
+  Five, each small, each with its reason in the file that carries it.
+
+  1. A REQUEST-ERROR condition family. The plan has INVOKE-OPERATION signalling
+  a refused tier and a missing argument while returning an error plist for
+  anything the operation signalled -- which works only while the check happens
+  before the call. REQUIRE-REPOSITORY and RESOLVE-ENTITY signal from *inside*
+  the operation, so the first draft returned an unknown repository through the
+  same path as an analyzer blowing up, and the skin had nothing left to tell 400
+  from 500 with. MALFORMED-REQUEST, UNKNOWN-ENTITY and CAPABILITY-ERROR are now
+  subtypes of one REQUEST-ERROR class that INVOKE-OPERATION re-signals ahead of
+  the guard. UNKNOWN-ENTITY is a subtype of MALFORMED-REQUEST for the same
+  reason: step 2 wants an unresolvable term to be a malformed request and step 6
+  wants 404 for it and 400 for an unknown repository, and subtyping satisfies
+  both without a third rule.
+
+  2. GUARDED-CONDITION as a DEFTYPE rather than WITH-CONDITION-GUARD as a macro.
+  Four handlers name the type list and it must not drift; a type is what
+  HANDLER-CASE already accepts, and a macro would have forced errors.lisp ahead
+  of registry.lisp in the .asd for no other reason. The component order is
+  errors, capability, registry regardless, because a type must exist when the
+  file naming it compiles.
+
+  3. Routes derived from the registry rather than a hand-written table. Every
+  route does the same five steps, REQ-0008 excludes the exact route table, and
+  ARCH-0006 commits only to the shape. /v1/<operation-name>, GET for read
+  entries and POST for write and repl ones. The failure the plan's step 6(e)
+  guards against -- an operation with no route -- cannot occur, and the test
+  asserts it by issuing a real request for every entry rather than by inspecting
+  a table.
+
+  4. DEFAULT-JSON-KEY-NAME downcases only an all-uppercase symbol name. MCP's
+  schema keys are camelCase and are not this system's to rename, and the reader
+  upcases an ordinary keyword. So :full-tokens becomes "full-tokens" and
+  :|inputSchema| stays "inputSchema", and one encoder still serves both skins,
+  which was the reason for putting the walker in loom-serve at all.
+
+  5. *STATIC-GRANTS* as a variable behind RESOLVE-CALLER-GRANTS. The refusal
+  path is the half of a capability system that has to be tested, and a test
+  cannot exercise it by binding a special -- grants are resolved in a
+  Hunchentoot worker thread and a binding made in the test thread is invisible
+  there. The same trap applies to *HANDLERS*, and both test macros say so.
+
+  OUTSTANDING, AND HANDED OFF RATHER THAN DONE
+
+  .claude/skills/loom/SKILL.md still says "Six systems, per-system pass/fail
+  summary" and its driver preamble still lists six directories. Both are now
+  false. Left alone deliberately, following PLAN-0004's precedent: the skill
+  file is the agent-facing contract, and changing it changes how every future
+  session behaves.
+
+  BUG-0006 is still free, and FINDING 1 is still unfiled: ENTITY-SYSTEM returns
+  the path segment before the first slash, so RULE-0001 to RULE-0003 match zero
+  entities and pass vacuously for every possible input. tools/load-test.lisp is
+  the workaround this plan built; the mechanism is untouched.
+
+  R6's credential story is a seam returning a static answer, which is what
+  ARCH-0006 commits to and REQ-0008 excludes the rest of, so it does not make
+  either document partial. The consequence worth knowing is that no caller is
+  granted :repl today: the REPL is implemented, tested and routed, and answers
+  403 over both protocols until a future document decides what a credential is.

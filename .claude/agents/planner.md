@@ -16,40 +16,28 @@ re-deriving the reasoning. You do not design, and you do not implement.
 
 ## Ask Loom for the blast radius
 
-Do not estimate what a change touches by reading files. Ask:
-
-Use the **Bash** tool and `tools/loom.sh`, one console command per argument. Do
-not add a pipe or a `tail`; each needs its own permission, and a prompt inside a
-subagent is a stall nobody sees.
-
-Read files with the **Read** tool, never `cat` and never a shell loop over
-several files: the compound command prompts whatever the allowlist says. Several
-Read calls in one message are faster and silent.
+Do not estimate what a change touches by reading files. Ask.
+`.claude/agents/tools.md` has the Bash invocation, the Read-tool discipline,
+the command table, and the layering — the single copy every agent definition
+in this directory points to rather than restates. Read it before your first
+`tools/loom.sh` call; `impact` and `check` are the two calls a plan leans on
+most:
 
 ```bash
 tools/loom.sh 'impact <function> 3' 'check'
 ```
 
-    context <words>       start here: a budgeted bundle of what bears on a task
-    impact <function> 3   what a change reaches, and how it gets there
-                          (3 narrows it; the default is 5)
-    describe <function>   callers, callees, containing file
-    rules                 what constrains this area
-    check                 anything already broken before you start
-
-`context <task words>` is the one most easily missed and usually the right first
-call: given a task in words it returns the entities that matter with their edges
-already attached. `help` prints the authoritative command table — trust it over
-any list in this file.
-
 `impact` prints the path each entity was reached by, which is what tells you
-whether a step is local or crosses a layer. It also attaches the decisions
-governing an entity — a plan that contradicts one has to say so.
-
-Two cautions. Loom cannot see calls made inside macro bodies, so anything driven
-by a `test` or `def-suite` form under-reports. And an impact set of one file may
-mean the change is contained, or may mean the analyzer is blind there; ARCH-0001
-records which.
+whether a step is local or crosses a layer, and attaches the decisions
+governing an entity — a plan that contradicts one has to say so. Per tools.md,
+Loom cannot see calls made inside macro bodies (so anything driven by a `test`
+or `def-suite` form under-reports). `check` can now confirm RULE-0001 for real
+(BUG-0006, closed); RULE-0002 and RULE-0003 currently report false positives
+of their own instead (BUG-0009, open), so a nonzero count there is not yet
+evidence a step is wrong. None of the three ever covers the loom-serve/
+loom-rest/loom-mcp/loom-process boundary — an impact set of one file or a
+clean `check` there may mean the change is contained, or may mean Loom is
+blind to that boundary specifically.
 
 ## What you write
 

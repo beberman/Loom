@@ -60,7 +60,7 @@ Full suite, in a live image:
 
 ```lisp
 (load "src/full-test.lisp")
-(loom-test:full-test)      ; six systems, per-system summary
+(loom-test:full-test)      ; nine systems, per-system summary
 ```
 
 or `tools/loom-test.sh` from outside one — note that is `/usr/bin/sbcl`, not the
@@ -74,9 +74,44 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
     loom-knowledge  read-only services: find, describe, impact, context.
     loom-workspace  indexing pipeline and file monitor.
     loom-process    the console.
+    loom-serve      the operation registry, tiers, REPL sessions, the listener.
+    loom-rest       HTTP/JSON over that registry.
+    loom-mcp        MCP's JSON-RPC over the same listener.
+
+The last four are peers, not a stack: loom-serve, loom-rest and loom-mcp depend
+on the same five systems loom-process does and on nothing above loom-knowledge,
+and nothing below any of them depends on any of them. ARCH-0006 R5 makes that
+structural rather than a habit — console.lisp, loom.lisp, loom-process.asd and
+src/process/package.lisp are unedited by all of it.
 
 RULE-0001 to RULE-0003 enforce parts of this and are machine-checked. They do
-not fail a FiveAM assertion, so run `check` as well as the suite.
+not fail a FiveAM assertion, so run `check` as well as the suite — and note
+that they cannot see the peer property above at all regardless: they key on
+LOOM-GRAPH:ENTITY-SYSTEM, which reads the segment after `src/` (BUG-0006 fixed
+it to do that; it used to read the segment before the first slash, so every
+file in the tree was system "src" and every layering rule matched nothing —
+`check`'s own layering output was accordingly always vacuous, not just for the
+peer property). `sbcl --script tools/load-test.lisp loom-serve` is still the
+instrument for the peer property specifically; no rule names loom-serve,
+loom-rest, loom-mcp or loom-process, so `check` has nothing to say about them
+either way. Since BUG-0006's fix, `check` **can** report a real RULE-0001
+violation — but RULE-0002 and RULE-0003 currently report 72 false positives of
+their own (BUG-0009): a test file resolves to the same system as the
+production code it tests, and RULE-0003's check clause bans every call from
+loom-knowledge to loom-graph rather than only a write. Read `check`'s own
+output for RULE-0001 as real; read a RULE-0002 or RULE-0003 line as BUG-0009
+until that closes.
+
+## Running it as a service
+
+    sbcl --script loom-serve.lisp [/path/to/repo ...]              console + listener
+    sbcl --script loom-serve.lisp --headless [/path/to/repo ...]   listener alone
+
+Both bind 127.0.0.1:4780 and carry the REST routes under `/v1/` and the MCP
+endpoint at `/mcp`. The first hands over the same `loom>` console `loom.lisp`
+does; the second exists because `main` returns immediately when stdin is closed,
+which under a supervisor would take the listener down with it. REQ-0008 and
+ARCH-0006 are the reasoning.
 
 ## Where the knowledge lives
 

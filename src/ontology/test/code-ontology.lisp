@@ -137,6 +137,26 @@
         (is (eq *source-languages* (property-one-of p))
             "~s :language does not share the vocabulary" key)))))
 
+(test the-system-property-is-declared-on-exactly-the-types-that-can-carry-one
+  ;; ARCH-0009 R1. Asserted through FIND-PROPERTY rather than by round-tripping
+  ;; an entity because getting this wrong is silent: VALIDATE-ENTITY only walks
+  ;; declared properties, so an undeclared :SYSTEM would be stored and never
+  ;; complained about -- everywhere except DECLARED-PROPERTIES-ONLY, which
+  ;; filters a generated entity's plist against this exact set and would drop
+  ;; the value without a word.
+  (dolist (key '(:file :function :variable :class :interface :method
+                 :test :document))
+    (let ((p (find-property key :system)))
+      (is (not (null p)) "~s has no :system property" key)
+      (is (eq 'keyword (property-type p)) "~s :system must be a keyword" key)
+      (is (null (property-one-of p))
+          "~s :system must have no :one-of -- the vocabulary is open" key)))
+  ;; :RULE, :DECISION and :CONCEPT declare no :PATH, so ENTITY-SYSTEM already
+  ;; answers NIL for them and R1 makes that absence part of the requirement.
+  (dolist (key '(:rule :decision :concept))
+    (is (null (find-property key :system))
+        "~s must not declare :system" key)))
+
 (test the-language-vocabulary-covers-the-phase-one-analyzers
   (dolist (lang '(:lisp :typescript))
     (is-true (member lang *source-languages*) "~s must be analyzable" lang)))

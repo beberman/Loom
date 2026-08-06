@@ -153,3 +153,40 @@ OFFSET-LINE hands out."
     (cond ((zerop length) 0)
           ((char= #\Newline (char string (1- length))) (count #\Newline string))
           (t (1+ (count #\Newline string))))))
+
+;;;; ------------------------------------------------------------------
+;;;; The system a path belongs to, for an analyzer with nothing stronger
+;;;;
+;;;; ARCH-0009 R2: this is BUG-0006's fix, relocated from LOOM-GRAPH's
+;;;; ENTITY-SYSTEM rather than reimplemented. Deciding what a path means in a
+;;;; given language is an analyzer's job and not the query layer's -- the query
+;;;; layer is the one place in the stack that structurally cannot know -- but a
+;;;; path convention is language-neutral, so it lives here beside OFFSET-LINE
+;;;; rather than in one language's analyzer. An analyzer whose language has a
+;;;; real grouping construct (Lisp's IN-PACKAGE) overrides this; one that has
+;;;; none calls it and stops.
+;;;;
+;;;; The body is unchanged from what BUG-0006 already proved against this tree,
+;;;; deliberately: a rewrite would have to reprove the same claim.
+;;;; ------------------------------------------------------------------
+
+(defparameter *src-prefix* "src/"
+  "The one directory a tree's layering rules look inside. A path outside it
+keeps DEFAULT-SYSTEM-FOR-PATH's older, shallower convention -- see its own
+docstring.")
+
+(defun default-system-for-path (path)
+  "The system PATH belongs to, as a keyword, or NIL.
+
+The segment after \"src/\" for a source file, so \"src/knowledge/services.lisp\"
+is :KNOWLEDGE, and the leading one for anything else, so
+\"docs/rules/RULE-0001.yaml\" stays :DOCS. NIL when no further slash exists --
+a file directly under src/ names no system."
+  (when (stringp path)
+    (let* ((prefix-length (length *src-prefix*))
+           (under-src (and (>= (length path) prefix-length)
+                           (string= *src-prefix* path :end2 prefix-length)))
+           (start (if under-src prefix-length 0))
+           (slash (position #\/ path :start start)))
+      (when slash
+        (intern (string-upcase (subseq path start slash)) :keyword)))))

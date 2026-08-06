@@ -29,6 +29,12 @@
    #:slurp-file
    #:workspace-relative-path
 
+   ;; the system a path belongs to (ARCH-0009 R2) -- exported because every
+   ;; analyzer with no grouping construct of its own calls it, not because
+   ;; anything above LOOM-ANALYZER does
+   #:default-system-for-path
+   #:*src-prefix*
+
    ;; analyzers
    #:lisp-analyzer
    #:document-analyzer

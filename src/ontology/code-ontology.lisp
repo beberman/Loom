@@ -91,6 +91,17 @@ definition found inside it."
   :properties ((:path         string  :required t
                 :documentation "Workspace-relative, forward-slashed.")
                (:language     keyword :one-of *source-languages*)
+               (:system       keyword
+                :documentation "The system this file belongs to, decided by the
+analyzer that parsed it: the LAST IN-PACKAGE binding in a Lisp file, and
+DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
+The last one, not the only one -- a file with two IN-PACKAGE sections gets one
+value here that does not describe all of it, while its definitions each carry
+the binding lexically nearest them. ARCH-0009 discloses that approximation
+against a real two-package file and
+THE-FILE-ENTITY-TAKES-THE-LAST-IN-PACKAGE-IN-THE-FILE asserts it. No :one-of --
+unlike :LANGUAGE the vocabulary is open, since it is whatever the indexed
+workspace's own packages and directories happen to be named.")
                (:line-count   integer)
                (:content-hash string
                 :documentation "Digest of the analyzed contents.  An unchanged
@@ -152,7 +163,14 @@ defstruct is a class whose accessors are plain functions; a define-condition
 is a class that is signalled rather than instantiated.  Worth telling apart
 without reopening the file.")
                (:exported-p boolean :default nil)
-               (:language   keyword :one-of *source-languages*)))
+               (:language   keyword :one-of *source-languages*)
+               (:system     keyword
+                :documentation "The system this belongs to, decided by the
+analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
+DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
+No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
+the indexed workspace's own packages and directories happen to be named.
+ARCH-0009.")))
 
 (defentity :interface
   :documentation "A contract without implementation: a TypeScript interface,
@@ -169,7 +187,14 @@ defines a generic function that appears nowhere else in the source; it is
 indexed so calls to it resolve, and marked so an agent can tell a derived
 name from one someone wrote.")
                (:exported-p boolean :default nil)
-               (:language   keyword :one-of *source-languages*)))
+               (:language   keyword :one-of *source-languages*)
+               (:system     keyword
+                :documentation "The system this belongs to, decided by the
+analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
+DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
+No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
+the indexed workspace's own packages and directories happen to be named.
+ARCH-0009.")))
 
 (defentity :function
   :documentation "A named callable unit in source code."
@@ -191,6 +216,13 @@ name, when it was generated rather than written -- a DEFSTRUCT accessor,
 constructor, predicate or copier.  Unlike a DEFCLASS accessor, which is a
 generic function and so an :INTERFACE, these really are plain functions.")
                (:language   keyword :one-of *source-languages*)
+               (:system     keyword
+                :documentation "The system this belongs to, decided by the
+analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
+DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
+No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
+the indexed workspace's own packages and directories happen to be named.
+ARCH-0009.")
                (:call-names list
                 :documentation "Every callee name the analyzer could not
 resolve inside this one file.  Written by the analyzer and never rewritten
@@ -242,6 +274,13 @@ and reported by status the way an unresolved document reference is.")))
                (:generic-function string
                 :documentation "Name of the generic function this method extends.")
                (:language         keyword :one-of *source-languages*)
+               (:system           keyword
+                :documentation "The system this belongs to, decided by the
+analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
+DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
+No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
+the indexed workspace's own packages and directories happen to be named.
+ARCH-0009.")
                (:call-names       list)
                (:unresolved-calls list)))
 
@@ -254,7 +293,14 @@ module-level declaration."
                (:end-line   integer)
                (:kind       keyword :one-of (:constant :special :parameter :lexical))
                (:exported-p boolean :default nil)
-               (:language   keyword :one-of *source-languages*)))
+               (:language   keyword :one-of *source-languages*)
+               (:system     keyword
+                :documentation "The system this belongs to, decided by the
+analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
+DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
+No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
+the indexed workspace's own packages and directories happen to be named.
+ARCH-0009.")))
 
 ;;;; ==================================================================
 ;;;; Knowledge -- the part that cannot be recovered by re-reading source
@@ -290,6 +336,13 @@ whichever signal the language actually offers."
                (:suite      string)
                (:framework  keyword :one-of (:fiveam :vitest :jest :pytest))
                (:language   keyword :one-of *source-languages*)
+               (:system     keyword
+                :documentation "The system this belongs to, decided by the
+analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
+DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
+No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
+the indexed workspace's own packages and directories happen to be named.
+ARCH-0009.")
                ;; A test is almost never written as its own form -- it is a
                ;; call to a framework macro -- so unlike every other definition
                ;; entity this one is usually minted by a resolution pass rather
@@ -320,6 +373,12 @@ quietly skipping is exactly the kind of thing that erodes trust in the
 graph.\""
   :natural-key (:path)
   :properties ((:path   string :required t)
+               (:system keyword
+                :documentation "The system this belongs to, decided by the
+analyzer that parsed the file: a document has no grouping construct of its
+own, so this is always DEFAULT-SYSTEM-FOR-PATH's path segment -- :DOCS for
+everything under docs/. No :one-of, for the same reason the code entity types
+give. ARCH-0009.")
                (:doc-id string
                 :documentation "The id: field.  How other documents name this
 one, and what `describe REQ-0002' looks up.  Every workflow category -- arch,

@@ -1,0 +1,661 @@
+id: ARCH-0009
+title: System identity becomes an analyzer-written :system property, computed from IN-PACKAGE for Lisp and from path for everything else
+status: implemented
+date: 2026-08-05
+refines: [REQ-0011]
+affects: [entity-system, edges-between-systems, in-system-p, entities-in-system,
+          analyze-file, analyzer-handles-p, make-file-entity, make-function-entity,
+          make-variable-entity, make-class-entity, make-interface-entity,
+          make-method-entity, make-generated-function-entity, make-macro-entity,
+          class-definition-entities, struct-definition-entities,
+          generic-definition-entity, method-definition-entity,
+          make-unparsable-file-entity, generated-entity, token-name,
+          definition-p, document-properties]
+tags: [rules, layering, analyzer, ontology, generality]
+summary: |
+  REQ-0011 asks that "what system does this belong to" stop being a path guess
+  made in loom-graph and become a fact the analyzer that parsed the language
+  asserts, with a path-based default where no stronger construct exists and
+  the real IN-PACKAGE binding for Lisp. This is the shape: a plain :system
+  property, keyword-valued, declared on the same seven entity types that
+  already carry :language plus the generic :document type; computed by
+  ANALYZE-FILE itself (no separate pass, no new entity type); tracked as
+  mutable state across a file's top-level forms for Lisp, defaulting to a path
+  rule relocated verbatim from loom-graph into loom-analyzer for every
+  analyzer that has nothing stronger; and read by ENTITY-SYSTEM as a bare
+  property lookup, with EDGES-BETWEEN-SYSTEMS' contract, including its
+  keyword-EQ comparison and its :OUTSIDE sentinel, unchanged. Verified against
+  a second real Lisp codebase, ~/lisp/game-server, as well as Loom's own tree:
+  `/`-hierarchical package names, pervasive nicknames, and a real multi-
+  IN-PACKAGE file are live conventions there, addressed below with concrete
+  evidence rather than deferred to an abstract future analyzer.
+body: |
+  PROBLEM, IN THE SHAPE THE MEASUREMENTS LEFT IT
+
+  BUG-0006 fixed ENTITY-SYSTEM to read the path segment after "src/" instead
+  of the leading one, which is what let RULE-0001 to RULE-0003 see any system
+  at all. BUG-0009's own measurement -- 72 violations, all RULE-0002 or
+  RULE-0003, all false positives, none of RULE-0001 -- is evidence of exactly
+  what REQ-0011 predicts a path convention gets wrong: every one of the 34
+  RULE-0002 violations is a defun in src/analyzer/test/*.lisp, a file that
+  sits one directory below the production code it exercises and is
+  indistinguishable from it under "the segment after src/", even though the
+  two are different Lisp packages (loom-analyzer vs. loom-analyzer-test) and
+  always have been. The path was never the fact that mattered; it happened to
+  agree until a directory layout (src/<system>/test/) put two packages under
+  one path segment.
+
+  Two things this document does NOT attempt, both stated in REQ-0011's own
+  "WHAT THIS IS NOT" and repeated here because they bound the design: it does
+  not populate code-ontology.lisp's :PACKAGE/:MODULE/:REPOSITORY entity types
+  with real entities and edges, and it does not fix RULE-0003's second, unrelated
+  cause -- the :no-edge check kind's inability to say "no write" instead of "no
+  call" -- which stays broken by design after this lands (see CONSEQUENCES).
+
+  A SECOND REAL CODEBASE, NOT HYPOTHETICAL: ~/lisp/game-server
+
+  Everything above was checked against Loom's own tree, which is one Lisp
+  codebase written by one author under one convention. ~/lisp/game-server --
+  a separate, real Lisp codebase, same author (Brian Eberman) -- is Loom's
+  second real test case, and reading it directly (not inferring from a
+  description) surfaces facts this design has to answer rather than defer as
+  future-analyzer territory, since the "future" is this tree.
+
+  `/`-separated hierarchical package names are the live, idiomatic convention
+  for two of its subsystems, not a hypothetical. `game/*.lisp` and
+  `mpackage/*.lisp` both declare packages via `uiop/package:define-package`
+  with slash-structured names -- fourteen files in `game/` and fourteen in
+  `mpackage/`, counted directly rather than assumed
+  (`grep -l define-package ~/lisp/game-server/game/*.lisp | wc -l` and the
+  same for `mpackage/` both return 14): `game/capability`, `game/description`,
+  `game/media`, `game/graphics`, `game/default`, `game/system` (declared in
+  game-system.lisp), `game/geometry`, `game/piece`, `game/gen-map`,
+  `game/map`, `game/game`, `game/spatial-geom`, `game/rules`, `game/player`;
+  and fourteen more under `mpackage/base-types`, `mpackage/object`,
+  `mpackage/obj-types`, and so on. A cross-package call reads exactly the way
+  any other symbol does -- `mpackage/object:id`, `game/game:gid` both appear
+  literally in this codebase's source. Checked directly at a REPL rather than
+  assumed: `/` is an ordinary constituent character to the Lisp reader, not a
+  macro character, so `(read-from-string "(in-package :game/game)")` returns
+  `(IN-PACKAGE :GAME/GAME)` with `(symbol-name (second form))` giving
+  `"GAME/GAME"` as one token, exactly the way `(in-package :loom-graph)`
+  gives `"LOOM-GRAPH"`. TOKEN-NAME and NORMALIZE-SYSTEM-NAME need no change to
+  read this correctly -- the problem this codebase raises is not parsing, it
+  is what a rule author can say once fourteen distinct, EQ-incomparable
+  :system values exist for what this codebase's own author plainly treats as
+  one subsystem. See R10 below.
+
+  Nicknames are pervasive here, not absent. Of the 14 `game/*` and 14
+  `mpackage/*` package declarations plus `server/content.lisp`'s (29 total,
+  all via `uiop/package:define-package`), 28 declare exactly one nickname
+  each -- verified by direct count, not estimated -- and only
+  `game/gen-map.lisp` declares none. The nicknames split into three shapes:
+  dash-form that echoes the slash structure (`game-map`, `game-rules`,
+  `game-piece`, `game-capability`, `game-graphics`, `game-geometry`,
+  `game-media`, `game-player`, `game-description`, `game-default`,
+  `game-base`), dot-form (`mpackage.object`, `mpackage.filter`), and bare
+  forms that drop the family prefix entirely (`base-types`, `namespace`,
+  `cache-namespace`, `collection-types`, `derived-types`, `reference-types`,
+  `struct-types`, `obj-sys`, `obj-types`, `operator`, `mpackage`,
+  `obj-namespace`, `content`). One is sharper than the rest and worth naming
+  on its own: `game/system` (game-system.lisp), canonically :GAME/SYSTEM,
+  declares the nickname `:game` -- the short, umbrella-sounding name a reader
+  would guess belongs to `game/game.lisp` (canonically :GAME/GAME, itself
+  nicknamed :GAME-BASE) belongs to a different file entirely. A nickname is
+  not guaranteed to be a shortened spelling of its own package's slash path,
+  so a future prefix-aware scheme (R10) could not assume nicknames follow the
+  canonical hierarchy even if it wanted to key on them.
+
+  Multiple IN-PACKAGE forms in one file is a live case, not a Loom-tree
+  absence generalized into "does not happen." server/content.lisp declares
+  `(in-package :server/content)` at line 17 and, at line 179, mid-file under
+  a comment reading ";;;; media/service.lisp ... add to the package exports",
+  switches to `(in-package :media.service)` -- a package this repository
+  declares nowhere else (checked: grepping the whole tree for
+  `media.service`/`media/service` finds nothing but this one file), reading
+  as an orphaned block of code pasted in from a different, historical file
+  and never cleaned up. It parses without incident either way (*READ-EVAL*
+  NIL, a keyword designator, no PACKAGE-ERROR risk), and every definition
+  after line 179 genuinely is read with `:media.service` as the nearest
+  preceding IN-PACKAGE -- which is exactly R3/R4's per-entity lexical
+  semantics, now confirmed against a real occurrence of the case it was
+  designed for rather than only its own literal wording. See CONSEQUENCES for
+  what this means for the :FILE entity's own :system value.
+
+  Mixed conventions live side by side in the same repository. `utils/`,
+  `data-api/`, `server/package.lisp`, and `media/test/` all declare flat
+  packages with plain `defpackage #:name` (`#:utils`, `#:data-api`,
+  `#:game-server`, `#:media-test`); `media/media.lisp` uses
+  `uiop/package:define-package` but with a flat, unslashed name (`:media`);
+  `game/*` and `mpackage/*` use the slash-hierarchy-plus-nicknames convention
+  above. R3/R4's design reads whatever a file's own IN-PACKAGE form says
+  rather than assuming one repository-wide convention, so this needs no
+  additional case: a flat-package file and a slash-hierarchy file sitting in
+  the same repository each produce exactly the :system value their own
+  IN-PACKAGE form declares, with nothing keying on which convention is in
+  play.
+
+  WHAT EACH THING BECOMES
+
+  ==  :SYSTEM, a property, not a new entity type or edge  ==
+
+  A new property, :system (type keyword, no :one-of -- unlike :language, the
+  vocabulary is unbounded, since any workspace can have any package or any
+  path segment), declared on exactly the entity types that already declare
+  :language: :function, :variable, :class, :interface, :method, :test, plus
+  :file (which does not carry :language today but does carry :path, the other
+  fact ENTITY-SYSTEM has always read), and :document (the generic docs/ catch-
+  all -- arch, requirements, plans, reviews, bugs -- which is the only
+  document-shaped entity type with a :path property; :rule, :decision and
+  :concept declare none and so already resolve to NIL under today's
+  ENTITY-SYSTEM, unaffected by this change either way). This is the cheap
+  option REQ-0011's "WHAT THIS IS NOT" names and leaves open, chosen over a
+  real :PACKAGE entity with :contains edges for the reason DEC-0001 and CON-
+  0004 already give generally: a property is a fact an analyzer writes and a
+  query reads, with nothing to keep synchronized across two representations
+  of the same value; a graph entity would need natural-key derivation, upsert,
+  and retraction semantics that :PACKAGE and :MODULE do not have today and
+  that nothing in REQ-0011 asks for building. If a future document wants
+  :PACKAGE populated for its own reasons (browsing a package's exports, say),
+  :system is not lost by that work -- the property stays exactly what the
+  analyzer already knows, and a later pass mints :PACKAGE entities from it the
+  same way RESOLVE-GENERATED-DEFINITIONS mints :TEST entities from properties
+  another pass already wrote.
+
+  ==  loom-analyzer: the default, shared, and unconditional  ==
+
+  DEFAULT-SYSTEM-FOR-PATH(path) moves into src/analyzer/analyzer.lisp's
+  "Shared text utilities" section (alongside OFFSET-LINE and LINE-COUNT,
+  language-neutral utilities every analyzer may call) and is exported. Its
+  body is BUG-0006's fix, relocated rather than reimplemented: a path under
+  "src/" takes the segment after that prefix; any other path takes its
+  leading segment; a path with no further segment (src/full-test.lisp, this
+  tree's one case) returns NIL. *SRC-PREFIX* moves with it. This satisfies R2
+  literally -- "must not regress for any analyzer that is not given a
+  stronger rule" -- because it is the identical computation BUG-0006 already
+  proved correct against this tree's own layout and its four tests, not a
+  rewrite that has to reprove the same claim.
+
+  Every analyzer calls this for every entity it is not overriding: DOCUMENT-
+  ANALYZER calls it once per file, unconditionally, and stamps the result onto
+  the :document entity's :system property in DOCUMENT-PROPERTIES (:rule,
+  :decision and :concept documents are untouched, per the audit above). LISP-
+  ANALYZER calls it once, as the seed value entities take before any IN-
+  PACKAGE form has been seen, and again as the fallback whenever a file (or
+  the run of forms before its first IN-PACKAGE) supplies no stronger signal.
+  MAKE-UNPARSABLE-FILE-ENTITY -- the entity a file gets when it will not read
+  at all -- also gets only this: a file the reader failed on before any form,
+  including any IN-PACKAGE, could be seen has nothing stronger to fall back
+  from.
+
+  ==  lisp-analyzer: IN-PACKAGE tracked as ANALYZE-FILE walks, not skipped  ==
+
+  ANALYZE-FILE's pass-1 loop already walks every top-level form in source
+  order, dispatching on DEFINITION-P. It gains one piece of local state,
+  CURRENT-SYSTEM, seeded from DEFAULT-SYSTEM-FOR-PATH(path), and one new COND
+  clause:
+
+    ((definition-p form "in-package")
+     (let ((named (normalize-system-name (in-package-argument-name form))))
+       (when named (setf current-system named))))
+
+  IN-PACKAGE stays in *DECLARATION-HEADS* exactly as today -- this clause
+  fires before the loop's final catch-all, which is guarded by (not (call-
+  site-head-p ...)), so an IN-PACKAGE form still mints no entity and is still
+  excluded from :DEFINER-CALL-SITES. What changes is that it is no longer a
+  complete no-op: it updates CURRENT-SYSTEM, and every MAKE-*-ENTITY call for
+  a definition read after it -- MAKE-FUNCTION-ENTITY, MAKE-VARIABLE-ENTITY,
+  MAKE-MACRO-ENTITY, and the CLASS-DEFINITION-ENTITIES / STRUCT-DEFINITION-
+  ENTITIES / GENERIC-DEFINITION-ENTITY / METHOD-DEFINITION-ENTITY family --
+  takes CURRENT-SYSTEM as an added argument and stamps it into the entity's
+  properties, precisely the way PATH is already threaded through every one of
+  those constructors today. This is R3, done with the parsing capability the
+  analyzer already has: no new reader behaviour, one new state variable, one
+  new cond clause.
+
+  IN-PACKAGE-ARGUMENT-NAME(form) is (and (consp form) (rest form) (token-name
+  (second form))) -- TOKEN-NAME, unchanged, already turns a keyword, a bare
+  symbol, or a string literal into one plain string, which is exactly what
+  REQ-0011 R3 asks for ("not for new parsing capability").
+
+  After the pass-1 loop, (setp file :system current-system) stamps the FILE
+  entity with whatever package was in effect at the *end* of the file -- the
+  same shortcut RESOLVE-GENERATED-DEFINITIONS already takes for :LANGUAGE
+  (GENERATED-ENTITY in src/graph/resolve.lisp reads (getp file :language), not
+  a per-call-site value), applied here for the same reason. GENERATED-ENTITY
+  needs exactly one line added -- :system (getp file :system) -- alongside
+  its existing :language line, so a fiveam TEST call site's minted :TEST
+  entity inherits the file's package the same way it already inherits its
+  language. A file with more than one IN-PACKAGE section gets one :system
+  value on its own :FILE entity that is not fully representative of the file
+  -- see Multiple IN-PACKAGE forms below for what this costs on a real file.
+
+  ==  NORMALIZE-SYSTEM-NAME: the three questions REQ-0011 left open  ==
+
+  NORMALIZE-SYSTEM-NAME(raw) is (and raw (plusp (length raw)) (intern
+  (string-upcase raw) :keyword)) -- one function, answering all three:
+
+  Case folding: uppercase, unconditionally, regardless of how the source
+  spelled the designator. (in-package :loom-graph), (in-package "loom-graph"),
+  and (in-package :|Loom-Graph|) all normalize to :LOOM-GRAPH. This matches,
+  rather than invents: AS-KEYWORD (src/analyzer/yaml-analyzer.lisp:124-128)
+  already folds a rule document's from-system:/to-system: scalar the same way
+  before ENTITY-SYSTEM's old code compared it, so keeping the analyzer's fold
+  identical is what keeps the two sides of every comparison produced by the
+  same rule rather than two independently-chosen ones that happen to agree
+  today.
+
+  The "loom-" prefix: NOT stripped. :system holds the real package name
+  verbatim -- :LOOM-GRAPH, :LOOM-KNOWLEDGE-TEST, :ROOT-ONTOLOGY-TEST -- because
+  stripping a fixed prefix inside a general-purpose Lisp analyzer is exactly
+  the kind of hardcoded, tree-specific guess REQ-0011 is asking out of
+  loom-graph; relocating it into loom-analyzer would not remove the guess, it
+  would move it one file over. A repository Loom indexes that is not itself
+  is never going to name its packages "loom-something", and a stripped prefix
+  that only ever fires on this tree's own packages is not a general rule, it
+  is this tree's convention wearing a general-sounding name. See R8 below for
+  what this costs the three RULE documents.
+
+  Nicknames: not resolved by this pass. A package's nicknames are declared by
+  DEFPACKAGE or DEFINE-PACKAGE, which in this tree (and idiomatically, in
+  general) lives in a different file from where a later IN-PACKAGE names it
+  -- package.lisp declares #:loom-graph, and transaction.lisp says
+  (in-package :loom-graph), never the nickname, but the shape "a form in one
+  file settles what a form in another file means" is exactly the cross-file
+  knowledge RULE-0002 forbids an analyzer from holding, the same boundary
+  that already defers definer-macro resolution (ARCH-0002) and call
+  resolution (:CALL-NAMES / RESOLVE-CALLS) to LOOM-GRAPH. Recording a guessed
+  canonical form here would be exactly CON-0001's fabricated fact -- an
+  analyzer collapsing "lg" to "loom-graph" without ever having read the
+  DEFPACKAGE that says so. The literal designator is recorded instead, gap
+  and all, and if a future workspace actually uses nicknames, a LOOM-GRAPH
+  resolution pass -- RESOLVE-PACKAGE-NICKNAMES, alongside RESOLVE-CALLS and
+  RESOLVE-GENERATED-DEFINITIONS -- can fold them into a canonical value by
+  reading every :DEFPACKAGE-carrying property across the whole graph, without
+  the analyzer changing at all: DEC-0003's derive-never-consume shape,
+  because the analyzer's raw fact is never destroyed by writing a canonical
+  one over it.
+
+  No package in Loom's own tree declares a nickname today (checked: grep -rn
+  nicknames src/*/package.lisp is empty), but this is not the general case,
+  and calling it "a recorded gap with zero live cases" would understate it:
+  ~/lisp/game-server, Loom's second real test case, declares a nickname on 28
+  of its 29 `game/*`, `mpackage/*` and server/content.lisp packages (see A
+  SECOND REAL CODEBASE above), so the deferral above is a known, live,
+  current-state limitation, not a zero-instance one. A rule author on that
+  codebase writing `from-system: game-map` today -- the nickname every
+  cross-reference a human would reach for -- matches nothing, because every
+  entity defined in game/map.lisp carries :system :GAME/MAP, the canonical
+  designator, never :GAME-MAP. game-system.lisp's :game nickname (see above)
+  makes the same point sharper: a nickname is not even guaranteed to be a
+  derivable transform of its own package's canonical name, so any future
+  nickname-folding pass has to treat it as an independent fact requiring its
+  own resolution, never a string transform of :system's value. The cross-file
+  reason for deferring resolution here -- a nickname is declared by
+  DEFPACKAGE/DEFINE-PACKAGE, which RULE-0002 forbids an analyzer from reading
+  beyond its own file -- still holds and is not reversed by this evidence;
+  what changes is not calling this a gap with nothing behind it.
+
+  ==  Multiple IN-PACKAGE forms in one file  ==
+
+  Literal CL semantics, per-entity: whichever IN-PACKAGE was lexically nearest
+  before a definition is what that definition's :system carries, because that
+  is the actual language rule (R3's own phrasing) and the walk that already
+  exists costs nothing extra to make exact at this granularity. A definition
+  read before any IN-PACKAGE form in its file gets DEFAULT-SYSTEM-FOR-PATH's
+  answer, the same value any analyzer with no stronger rule would produce --
+  not a special case, the ordinary default falling through because no
+  stronger fact is available yet. This is no longer only a claim about the
+  walk's own correctness in the abstract: ~/lisp/game-server/server/
+  content.lisp declares `(in-package :server/content)` at line 17 and, mid-
+  file at line 179, `(in-package :media.service)` -- a package this
+  repository declares nowhere else, reading as an orphaned block pasted in
+  from a different, historical file. Under R3/R4, every definition after
+  line 179 correctly carries :system :MEDIA.SERVICE, not :SERVER/CONTENT,
+  exactly per-entity and exactly as literal CL semantics require.
+
+  The one place this is coarser than the literal semantics is the :FILE
+  entity's own :system (see above): one value per file, taken from whatever
+  was in effect at the end, which server/content.lisp now demonstrates is a
+  real, misleading approximation on a real file rather than a theoretical
+  one -- that file's own :FILE entity would carry :system :MEDIA.SERVICE
+  (the last, orphaned IN-PACKAGE) rather than :SERVER/CONTENT (the package
+  every other definition in the file, and the file's own name, actually
+  belong to). No file in Loom's own tree has more than one IN-PACKAGE
+  section, so nothing in R1-R9's acceptance criteria against Loom's own tree
+  is affected by this today; the approximation is disclosed here because the
+  very next real codebase Loom points at already exercises it, not because
+  it is expected to matter for Loom's own source.
+
+  ==  Mixed-language presentation  ==
+
+  No change to `check`'s output or `rules`' listing. A rule author who writes
+  `from-system: loom-graph` already has to know that names a Lisp package and
+  would classify nothing in a hypothetical TypeScript file grouped by path
+  instead -- the same single-language assumption RULE-0001 to RULE-0003
+  already make today, which REQ-0011 itself names ("the same way RULE-0001 to
+  RULE-0003 already only ever meant Lisp systems"). Building presentation
+  machinery to reconcile two grouping conventions with zero current instances
+  of the case -- no second analyzer exists yet -- would be exactly the kind
+  of speculative generality this project has elsewhere refused to build ahead
+  of a real second language landing (the CLAUDE.md principle this document's
+  own instructions restate: "a model that only works for Lisp will not survive
+  the TypeScript analyzer" is a question to ask of the *model*, not a mandate
+  to build TypeScript-specific presentation before a TypeScript analyzer
+  exists to need it).
+
+  ==  loom-graph: ENTITY-SYSTEM becomes a property read  ==
+
+  ENTITY-SYSTEM(entity) becomes (getp entity :system) -- nothing else. No
+  path parsing, no knowledge of "src/", no per-language special case: the
+  query layer holds none of that any more, which is R1's whole point ("the
+  query layer is the one place in the five-system stack that structurally
+  cannot know what a path means in a given language"). EDGES-BETWEEN-SYSTEMS,
+  IN-SYSTEM-P and ENTITIES-IN-SYSTEM are unchanged in signature, contract, and
+  body: they call ENTITY-SYSTEM and compare its result with EQ exactly as
+  today, including the :OUTSIDE sentinel meaning "any system other than this
+  one." The query.lisp header comment already predicted this exact shape --
+  "the obvious thing to replace once :REPOSITORY and :PACKAGE entities are
+  actually populated -- at which point this function changes and no caller
+  does" -- and that holds here even though :PACKAGE stays unpopulated, because
+  the caller-facing contract was never about where the value came from.
+
+  ==  System families sharing a `/`-prefix: named as a real limitation, not solved here  ==
+
+  A `/`-structured canonical package name is, in the canonical-name sense R5
+  settles on, exactly as many EQ-incomparable :system values as there are
+  packages -- fourteen for game-server's `game/` directory alone, verified
+  directly above -- even though the codebase's own author plainly treats
+  `game/*` as one subsystem: every one of those fourteen files' packages
+  :USEs or :IMPORT-FROMs another `game/*` or `mpackage/*` package, and the
+  family reads as one architectural unit to a human. A rule author on that
+  codebase who wants RULE-0002's exact claim -- "nothing outside this family
+  may reach its internals" -- cannot write it as one from-system:/to-system:
+  value under R7's EQ comparison; they would have to write fourteen separate
+  :no-edge rules, one per member package, and keep the list in sync by hand
+  as files are added. That is worse than what the old, path-based
+  ENTITY-SYSTEM gave a rule author by accident: every one of those fourteen
+  files sits under one `game/` directory, so the pre-REQ-0011 path
+  convention happened to group them correctly, for the wrong reason -- a
+  coarser, wrong-in-general mechanism that happened to be right for this
+  codebase's own layout, the mirror image of BUG-0006's own "why it hid"
+  problem.
+
+  This document does not solve that; R10 records it instead. Building
+  `/`-prefix-aware comparison into EDGES-BETWEEN-SYSTEMS/IN-SYSTEM-P is the
+  same shape of gap as BUG-0009's still-open second cause, for a different
+  dimension of the same check kind: RULE-0003 needs "no write", not "no
+  call"; RULE-0002 on a codebase shaped like game-server needs "no call from
+  outside this family", not "no call from outside this one package". Both
+  are the :no-edge check kind's vocabulary being narrower than what a real
+  rule author wants to say, not a defect in where :system's value comes
+  from, which is this document's actual scope -- and REQ-0011 already
+  declined to ask this document to redesign check kinds. R5's choice not to
+  strip the "loom-" prefix or fold nicknames matters more in light of this:
+  :system's value has to stay the literal, un-rewritten canonical
+  designator for a future prefix scheme to have a stable, meaningful string
+  to match against -- a property that silently canonicalized names would
+  make a later family-matching scheme less trustworthy, not more.
+
+  ALTERNATIVES CONSIDERED
+
+  A real :PACKAGE entity per package, with :CONTAINS edges from it to every
+  member definition, and ENTITY-SYSTEM changed to a graph traversal (follow
+  :BELONGS-TO to a :PACKAGE, read its name) instead of a property read. Closer
+  to what code-ontology.lisp's :PACKAGE type was declared for, and REQ-0011
+  leaves it as a live option. Rejected for now because it is strictly more
+  machinery for the same answer: a :PACKAGE entity needs its own natural key,
+  upsert-by-key across every file that reopens the package, and a retraction
+  story for a package no file mentions any more, none of which REQ-0011 asks
+  for and none of which any current rule needs. A property is derived exactly
+  as much as an edge would be -- both come from the same IN-PACKAGE read -- so
+  nothing about "derive, never consume" favors the heavier shape here. If a
+  future need (browsing a package's members, say) wants :PACKAGE entities for
+  its own reasons, the :system property this document adds is not thrown away
+  by that work: it is the fact a later pass mints :PACKAGE entities from,
+  which is the same relationship RESOLVE-GENERATED-DEFINITIONS already has to
+  :DEFINER-CALL-SITES.
+
+  Comparing full path prefixes rather than one interned segment, generalizing
+  BUG-0006's fix without moving it out of loom-graph. REQ-0011's own body
+  raises and sets this aside, and this document agrees with the reason given
+  there: no path-based scheme, however configurable, is right for a language
+  where the grouping is not path-shaped, so improving the path guess does not
+  answer what IN-PACKAGE already answers exactly.
+
+  Stripping a "loom-" prefix inside the analyzer, so RULE-0001 to RULE-0003
+  need no edits. Rejected above (NORMALIZE-SYSTEM-NAME section) for
+  generality: it purchases zero rule-document edits at the cost of making the
+  Lisp analyzer secretly aware of this one tree's naming habit, which is the
+  same complaint REQ-0011 opened with about loom-graph's "src/" guess, just
+  relocated. Three one-line YAML edits (R8 below) are cheaper than that
+  coupling and leave the analyzer meaning what it says: the real package name,
+  nothing folded out of it.
+
+  Resolving nicknames within DOCUMENT-TYPE-FOR / a single-file heuristic (e.g.
+  "if this file has both a DEFPACKAGE with :nicknames and a later IN-PACKAGE
+  naming one of them, canonicalize"). Rejected because the case that would
+  make it worth building -- a nickname declared in one file and used in
+  another -- is exactly the case a single-file heuristic cannot reach, and the
+  case it *can* reach (both forms in one file) does not occur in idiomatic
+  Lisp, where DEFPACKAGE and the IN-PACKAGE that follows it are almost always
+  the same three lines in the same file, at which point the analyzer is
+  reading its own package's canonical name directly and has no nickname to
+  resolve in the first place. game-server's own DEFPACKAGE/DEFINE-PACKAGE
+  forms confirm this shape rather than complicating it: every nickname
+  checked is declared in the same file, at the top, alongside the IN-PACKAGE
+  that follows it -- the cross-file case this alternative could not reach is
+  still the only case worth resolving, and it still does not occur here.
+
+  Building `/`-prefix family comparison into EDGES-BETWEEN-SYSTEMS/IN-SYSTEM-P
+  now, since game-server demonstrates a real cost to not having it. Considered
+  and rejected for this document specifically, not for all time: the concrete
+  shape such a scheme would need (what a rule writes to mean "family" versus
+  "one package"; whether every from-system:/to-system: value becomes a prefix
+  match uniformly, which would change RULE-0001 to RULE-0003's own semantics
+  on Loom's tree too; how a nickname that does not echo its canonical prefix,
+  like game-system.lisp's :game, interacts with any prefix rule) is exactly
+  the kind of design question this document's own scope -- where :system's
+  value comes from, not what the :no-edge check kind can express with it --
+  is not the place to answer under revision pressure. Recorded as R10 instead
+  of designed here, alongside BUG-0009's still-open second cause, which is
+  the same class of gap.
+
+  REQUIREMENTS
+
+  R1  :system is declared on :file, :function, :variable, :class, :interface,
+      :method, :test (the seven types already carrying :language) and on
+      :document (the one docs/ type with a :path property); type keyword, no
+      :one-of. :rule, :decision, :concept declare no :path today and gain no
+      :system -- ENTITY-SYSTEM already returns NIL for them and continues to.
+
+  R2  DEFAULT-SYSTEM-FOR-PATH moves from src/graph/query.lisp (as ENTITY-
+      SYSTEM's body) to src/analyzer/analyzer.lisp, exported from
+      LOOM-ANALYZER, with *SRC-PREFIX* moving with it. Its behaviour on every
+      path this tree contains is unchanged from BUG-0006's fix -- verified by
+      porting BUG-0006's four query.lisp tests and three rules.lisp tests to
+      exercise the relocated function rather than duplicating new ones, so a
+      regression in the move is caught the way the original defect was not.
+
+  R3  DOCUMENT-ANALYZER's ANALYZE-FILE calls DEFAULT-SYSTEM-FOR-PATH once per
+      file and stamps the result onto :document entities' :system property
+      (only; :rule/:decision/:concept untouched, per R1).
+
+  R4  LISP-ANALYZER's ANALYZE-FILE tracks CURRENT-SYSTEM across its existing
+      pass-1 walk, seeded from DEFAULT-SYSTEM-FOR-PATH and updated by a new
+      COND clause recognising IN-PACKAGE (which stays in *DECLARATION-HEADS*
+      and stays out of :DEFINER-CALL-SITES). Every definition-making
+      function -- MAKE-FUNCTION-ENTITY, MAKE-VARIABLE-ENTITY, MAKE-MACRO-
+      ENTITY, MAKE-CLASS-ENTITY (via CLASS-DEFINITION-ENTITIES), MAKE-
+      INTERFACE-ENTITY, MAKE-METHOD-ENTITY (via METHOD-DEFINITION-ENTITY and
+      GENERIC-DEFINITION-ENTITY), MAKE-GENERATED-FUNCTION-ENTITY (via
+      STRUCT-DEFINITION-ENTITIES) -- takes CURRENT-SYSTEM as an added argument
+      and stores it as :system. The :FILE entity's own :system is set once,
+      after the pass-1 loop, to CURRENT-SYSTEM's value at that point (the
+      last IN-PACKAGE seen, or the default if none) -- confirmed against a
+      real multi-IN-PACKAGE file (server/content.lisp) to produce exactly the
+      coarser-than-per-entity :FILE value described under Multiple IN-PACKAGE
+      forms above. MAKE-UNPARSABLE-FILE-ENTITY gets DEFAULT-SYSTEM-FOR-PATH
+      only, since no form was read.
+
+  R5  NORMALIZE-SYSTEM-NAME uppercases whatever TOKEN-NAME renders an IN-
+      PACKAGE argument as (keyword, symbol, or string designator alike) and
+      interns it as a keyword. No "loom-" stripping. No nickname resolution
+      -- the literal canonical designator is what gets recorded, not a
+      package's nickname, and this is a known, current limitation rather
+      than a hypothetical one: ~/lisp/game-server declares a nickname on 28
+      of its 29 `game/`, `mpackage/` and server/content.lisp packages
+      (verified by direct count), so a rule author there writing
+      `from-system: game-map` -- the nickname every cross-reference a human
+      would reach for -- matches nothing today, because every entity in
+      game/map.lisp carries :system :GAME/MAP, the canonical designator,
+      never :GAME-MAP. The cross-file reason for deferring resolution (a
+      nickname is declared by DEFPACKAGE/DEFINE-PACKAGE, which RULE-0002
+      forbids an analyzer from reading beyond its own file, per CON-0001)
+      still holds and is not reversed by this evidence; what changes is not
+      calling this a gap with nothing behind it.
+
+  R6  GENERATED-ENTITY (src/graph/resolve.lisp) reads (getp file :system) into
+      the plist it builds for a macro-minted entity (a :TEST, today),
+      alongside its existing (getp file :language) line, so a fiveam TEST
+      call site's generated entity carries the file's package.
+
+  R7  ENTITY-SYSTEM (src/graph/query.lisp) becomes (getp entity :system).
+      EDGES-BETWEEN-SYSTEMS, IN-SYSTEM-P, ENTITIES-IN-SYSTEM keep their
+      current signatures, bodies, and EQ-based :outside semantics unchanged;
+      only what ENTITY-SYSTEM's answer is derived from moves. This EQ-only
+      contract is exactly what R10 records as unable to express family
+      grouping on a codebase shaped like game-server; it is kept unchanged
+      here anyway, because widening it is a check-kind design question this
+      document does not take on (see R10).
+
+  R8  RULE-0001 to RULE-0003's from-system:/to-system: values change from the
+      short names ("ontology", "analyzer", "knowledge", "graph") to the real
+      package names ("loom-ontology", "loom-analyzer", "loom-graph",
+      "loom-knowledge"), because :system now holds real package names rather
+      than path segments and nothing normalizes one into the other (R5). This
+      is R4's open question in REQ-0011, resolved: full package names, not a
+      stripped convention. `check`'s behaviour against a real cross-system
+      call must not regress from what BUG-0006's own three RULE-0001 to
+      RULE-0003 tests established -- those three tests are the acceptance
+      check for this requirement, ported to assert against package-tagged
+      fixtures rather than path-tagged ones.
+
+  R9  BUG-0009's cause one -- a src/<system>/test/*.lisp helper function
+      classified into the same system as the production code beside it -- is
+      not separately fixed by this document, but is predicted, not merely
+      hoped, to close as a side effect: every test file in this tree already
+      declares its own IN-PACKAGE naming a *-test package distinct from the
+      package under test (loom-graph-test vs. loom-graph, loom-analyzer-test
+      vs. loom-analyzer, loom-knowledge-test vs. loom-knowledge,
+      root-ontology-test with no "loom-" prefix at all), so under R4/R7 a
+      helper defun in one of those files carries :system :LOOM-ANALYZER-TEST
+      or :ROOT-ONTOLOGY-TEST, not :LOOM-ANALYZER or :LOOM-ONTOLOGY, and
+      RULE-0002's :no-edge check (from-system: loom-analyzer) stops matching
+      it. This is a prediction from the mechanism, not a measurement -- REQ-
+      0011's own R5 asks only that it be checked, not assumed, once this
+      lands, and it should be checked by rerunning `tools/loom.sh 'reindex |
+      check'` against this tree after R1-R8 are implemented. BUG-0009's
+      cause two -- RULE-0003's check clause forbidding every call into
+      loom-graph rather than only a write -- is untouched by anything in this
+      document and will still report every real SEARCH-ENTITIES/DESCRIBE-
+      ENTITY/etc. call as a violation after this lands, exactly as it does
+      today, because loom-knowledge and loom-graph are different packages
+      under any naming scheme this document considers; closing that is
+      BUG-0009's own, separate, :no-edge check-kind problem.
+
+  R10 Explicitly out of scope, recorded rather than solved: comparing
+      :system values by `/`-prefix family membership, not only by EQ.
+      ~/lisp/game-server's `game/` directory is fourteen distinct packages
+      (verified by direct count, not estimated) that its own author treats
+      as one subsystem; R7's EQ-only comparison cannot express "nothing
+      outside this family" as one rule on a codebase shaped like that one,
+      only as one rule per member package. This is the same class of gap as
+      BUG-0009's still-open second cause -- the :no-edge check kind's
+      vocabulary being narrower than what a rule author wants to say -- and
+      this document declines to design a fix for the same reason REQ-0011
+      already declined to ask for one: check-kind expressiveness is a
+      separate design question from where :system's value comes from. A
+      follow-up requirement, taken up alongside or after BUG-0009's cause
+      two, should decide whether from-system:/to-system: gain an explicit
+      prefix-match variant, whether every :system value is compared as a
+      prefix uniformly (which would change RULE-0001 to RULE-0003's own
+      semantics on Loom's tree, not only game-server's), or whether this
+      stays a per-rule, name-every-package cost indefinitely. R5's decision
+      to keep :system as the literal, un-rewritten canonical designator is
+      what keeps this option open for whoever takes it up.
+
+  CONSEQUENCES
+
+  src/graph/query.lisp loses *SRC-PREFIX* and the path-parsing body of
+  ENTITY-SYSTEM; REQ-0011's "WHAT THIS IS NOT" explicitly declines to mandate
+  removing *SRC-PREFIX* "immediately", but once ENTITY-SYSTEM no longer calls
+  it, it is dead code in loom-graph and its natural home, if it is kept at
+  all, is the copy this document already relocates to loom-analyzer -- so the
+  expected end state has one copy, not two.
+
+  Every MAKE-*-ENTITY constructor in lisp-analyzer.lisp gains an argument.
+  This touches every call site inside ANALYZE-FILE and nowhere else -- these
+  functions are internal to lisp-analyzer.lisp and not called from
+  loom-graph, loom-knowledge, or any test fixture that constructs entities by
+  hand (those use PROPERTIES-TABLE directly, unaffected).
+
+  docs/rules/RULE-0001.yaml, RULE-0002.yaml and RULE-0003.yaml each need a
+  one-line edit (R8). Their `statement:` prose already says "loom-ontology",
+  "analyzers", "loom-knowledge" in places -- the `check:` clause is what is
+  out of step with the prose it is meant to compile, and this brings the two
+  back into agreement rather than introducing a new inconsistency.
+
+  Every future analyzer (a Java analyzer reading a `package` clause, a Go
+  analyzer reading a `package` clause) follows the same shape R3/R4
+  established: call DEFAULT-SYSTEM-FOR-PATH for the fallback, override with
+  the language's own binding where CON-0004's generality principle says a
+  language has one. REQ-0011's "WHAT THIS IS NOT" declines to build that for
+  Java or Go now; this document leaves the seam (one shared default, one
+  per-language override point in ANALYZE-FILE) in the place a later analyzer
+  would naturally reach for it, without committing to what that override
+  looks like for either language.
+
+  Every future :no-edge rule inherits the same normalization: writing
+  from-system: means naming the target language's real binding (a Lisp
+  package, verbatim) or a path segment (for a language with none), never a
+  loom-graph-side convention -- there is no longer a convention on that side
+  to lean on.
+
+  Two vocabularies inside one language, which the mixed-language section above
+  does not cover. A Lisp file with no IN-PACKAGE form never leaves the seed
+  value, so it lands in path vocabulary -- src/knowledge/package.lisp carries
+  :KNOWLEDGE -- while every rule document after R8 names package vocabulary,
+  :LOOM-KNOWLEDGE. R7's comparison is EQ, so those two never match, and a
+  layering violation originating in a package-less Lisp file is invisible to
+  `check`. That is a real loss against the pre-change scheme, which caught it:
+  both sides of the comparison were path-derived there, so the fallback and
+  the rule spoke one vocabulary by construction. "Mixed-language presentation"
+  above declines to reconcile two grouping conventions on the grounds that no
+  second analyzer exists to produce the second one; this is the same
+  reconciliation problem reached without a second language, from the seam
+  between R2's path default and R4's IN-PACKAGE override.
+
+  The live instances are the nine src/*/package.lisp files -- checked by
+  direct listing, not estimated: every other .lisp file under src/ declares an
+  IN-PACKAGE, including each test suite.lisp. None of the nine defines a
+  callable, so no :calls, :imports or :depends-on edge can originate in one and
+  nothing is missed today. (loom.lisp, loom-serve.lisp and tools/load-test.lisp
+  also declare no package, but sit at paths with no further slash, so
+  DEFAULT-SYSTEM-FOR-PATH answers NIL for them and they are unplaceable rather
+  than mis-placed -- which EDGES-BETWEEN-SYSTEMS already treats as no evidence
+  of a violation.) Recorded rather than closed, per CON-0001: making the seed
+  agree with the override for Lisp specifically would mean either reading the
+  DEFPACKAGE that a sibling file holds, which is the cross-file knowledge
+  RULE-0002 forbids an analyzer and R5 already refuses for nicknames, or
+  reconciling the two vocabularies in loom-graph, which is R10's shape of
+  question rather than this document's.
+
+  A real, demonstrated limitation this document does not close: R10 records
+  that `/`-prefix family comparison -- "nothing outside game/* may reach game
+  internals," expressible as one rule on a codebase shaped like
+  ~/lisp/game-server -- is not something R7's EQ-only ENTITY-SYSTEM
+  comparison can express, and that fixing it is deferred alongside BUG-0009's
+  still-open second cause rather than designed here. Whoever picks either of
+  those up should read them together: both are the same check-kind
+  limitation, reached from two different real repositories.

@@ -1,0 +1,178 @@
+id: BUG-0009
+title: RULE-0002 and RULE-0003, now that check can see them, report 72 false positives
+status: open
+date: 2026-08-05
+refines: [BUG-0006, PLAN-0008]
+affects: [entity-system, edges-between-systems, run-check]
+tags: [rules, layering, check, false-positive]
+summary: |
+  BUG-0006 fixed `entity-system` to classify a source file by the segment
+  after `src/` rather than the leading one, which is what made RULE-0001 to
+  RULE-0003 able to match anything at all. Running `check` against the real
+  tree with that fix in place, for the first time, reports 72 violations --
+  every one of RULE-0002 or RULE-0003, none of RULE-0001 -- and every one
+  inspected is a false positive. Two separate causes, neither the kind of
+  thing BUG-0006's own fix should have carried: a test file is classified
+  into the same system as the production code it tests, so a test fixture
+  that legitimately builds and inspects a graph trips a rule aimed at
+  production reachability; and RULE-0003's machine-checked form forbids any
+  call from loom-knowledge into loom-graph, when the rule it is meant to
+  enforce -- and its own prose -- is only about a call that writes.
+
+  Half fixed as of 2026-08-06: PLAN-0008 landed ARCH-0009 and cause one closed
+  as a side effect, taking the count from 72 to 32. The title's 72 is the
+  original measurement and is kept as such. See MEASURED AGAIN below. Cause two
+  is untouched, which is why this stays open.
+body: |
+  WHAT WAS MEASURED
+
+  /usr/bin/sbcl, branch server, 2026-08-05, `tools/loom.sh 'reindex | check'`
+  immediately after BUG-0006's fix landed:
+
+    72 violations: 0 of RULE-0001, ~34 of RULE-0002, ~38 of RULE-0003
+
+  Every RULE-0002 violation traces to a named `defun` under
+  src/analyzer/test/*.lisp -- FIND-BY-NAME, ANALYZE-FIXTURE, DOCS-ENTITY,
+  LITERAL-ENTITY and others -- calling ENTITIES-OF-TYPE, APPLY-TRANSACTION,
+  ALL-ENTITIES or MAKE-GRAPH to build or inspect a fixture graph. None of
+  these are production analyzer code: src/analyzer/lisp-analyzer.lisp and
+  src/analyzer/yaml-analyzer.lisp, checked directly, contain no call into
+  loom-graph at all, exactly as RULE-0002 asks.
+
+  Every RULE-0003 violation traces to one of two places. Most are real
+  production functions in src/knowledge/services.lisp and context.lisp --
+  SEARCH-ENTITIES, DESCRIBE-ENTITY, BUILD-CONTEXT, IMPACT-REPORT,
+  NEIGHBOR-SUMMARY, GROUP-NEIGHBORS, CONTEXT-ITEM, RENDER-PATH,
+  DECISIONS-TOUCHING -- calling loom-graph's *read* API: NEIGHBORS,
+  GET-ENTITY, FIND-ENTITIES, IMPACT-SET, NEIGHBOR-ENTITY, NEIGHBOR-RELATIONSHIP,
+  NEIGHBOR-DIRECTION. That is not a violation of the rule RULE-0003 states --
+  "the read side of the graph answers questions and changes nothing... nothing
+  in the knowledge layer may call apply-transaction or any other function that
+  submits a transaction" -- it is the read side doing exactly its job. A
+  smaller remainder traces to K-EDGE and MAKE-K-FIXTURE in
+  src/knowledge/test/suite.lisp, calling ADD-RELATIONSHIP and ADD-ENTITY
+  directly to build a fixture graph -- a genuine write, but a test fixture's
+  write to its own throwaway graph, not loom-knowledge writing to the graph it
+  is supposed to be answering questions about.
+
+  RULE-0001 shows none of this, and checking why matters: src/ontology/test/'s
+  own helper functions (TREE-CONTAINS-FUNCTION-P, MINT-IDS, COUNT-DISTINCT)
+  happen not to call anything outside :ontology. RULE-0001 is not immune to
+  either cause below; it has simply not been unlucky enough to hit them yet.
+
+  CAUSE ONE: A TEST FILE IS THE SAME SYSTEM AS THE CODE IT TESTS
+
+  ENTITY-SYSTEM (post-BUG-0006) reads the segment right after `src/`, and
+  every test file lives at `src/<system>/test/<file>.lisp` -- the segment
+  right after `src/` is the system under test, not "test". So
+  src/analyzer/test/lisp-analyzer.lisp and src/analyzer/lisp-analyzer.lisp
+  both resolve to :ANALYZER, and a helper `defun` in the former that builds a
+  graph to check what the latter produced is indistinguishable, to
+  EDGES-BETWEEN-SYSTEMS, from production analyzer code reaching the graph
+  itself. RULE-0002 and RULE-0003 both have test suites (necessarily, since
+  testing an analyzer or a knowledge-layer function means building a graph and
+  looking at it) with named helper functions outside any `test` or `def-suite`
+  macro body -- ARCH-0001's macro blindness hides calls *inside* those bodies,
+  which is very likely why this was not tripped by every call in every test,
+  only by the helpers factored out as ordinary functions.
+
+  CAUSE TWO: RULE-0003's CHECK CLAUSE IS BROADER THAN ITS OWN STATEMENT
+
+  docs/rules/RULE-0003.yaml's `check:` is `from-system: knowledge, to-system:
+  graph, rel-types: [calls]` -- any call at all. Its own `statement:` and
+  `applies-to:` both say the actual claim is narrower: "nothing in the
+  knowledge layer may call apply-transaction or any other function that
+  submits a transaction." loom-knowledge's whole reason for depending on
+  loom-graph is to call its read API (NEIGHBORS, GET-ENTITY, FIND-ENTITIES,
+  IMPACT-SET, and the small NEIGHBOR-* accessors) -- that dependency is by
+  design, stated in src/graph/query.lisp's own header ("Read-only, always...
+  the split between this file and transaction.lisp is what makes it askable
+  of the graph") and in loom-knowledge.asd. The `:no-edge` check kind has no
+  way to say "except these functions" or "only these", so RULE-0003 as
+  written cannot express its own prose at all: it either matches nothing
+  (before BUG-0006) or matches everything loom-knowledge legitimately does
+  (after).
+
+  WHY THIS IS NOT BUG-0006's TO FIX
+
+  BUG-0006 was ENTITY-SYSTEM misclassifying every source file as :SRC. It is
+  fixed: :ANALYZER, :KNOWLEDGE and :ONTOLOGY are now real, distinct values,
+  and the three tests BUG-0006 added prove RULE-0001 to RULE-0003 catch a
+  real cross-system call under the real "src/<system>/..." layout. Both
+  causes above are about what counts as "the same system" and what a rule's
+  check clause is allowed to say once systems can be told apart at all --
+  neither is a misclassification of :SRC, and a fix for either is a design
+  decision this document does not make: whether a rule-checking pass should
+  ever look at src/<system>/test/ (an ADDITIONAL-EXCLUSIONS keyword on
+  EDGES-BETWEEN-SYSTEMS? a different treatment of ENTITY-SYSTEM for a path
+  containing a `/test/` segment? something in the check kind itself?), and
+  what shape a check kind needs to express "no call to these specific
+  functions" rather than "no call to this whole system" for RULE-0003 without
+  weakening RULE-0001 or RULE-0002, which really do mean the whole system.
+
+  WHAT THIS COSTS UNTIL IT IS FIXED
+
+  `tools/loom.sh check` no longer reports "No violations." against this tree,
+  which every other document's own verification section (PLAN-0007's,
+  CLAUDE.md's own examples) has always been able to assume. Anyone running
+  `check` after this lands sees 72 violations and, without this document,
+  would reasonably conclude something regressed. It did not: RULE-0001 is now
+  actually enforced and reports honestly (zero), and the 72 are RULE-0002 and
+  RULE-0003 telling the truth about a check clause that does not say what it
+  means. CON-0001's ranking applies here too -- a loud false positive that
+  points at the right two causes is better than the silent vacuous pass
+  BUG-0006 closed, but it is not nothing, and it should not sit past whatever
+  is the next work that touches src/graph/rules.lisp or the two rule
+  documents.
+
+  MEASURED AGAIN, AFTER ARCH-0009
+
+  /usr/bin/sbcl, branch server, 2026-08-06, `tools/loom.sh 'reindex | check'`
+  with PLAN-0008 steps 1-7 landed:
+
+    32 violations: 0 of RULE-0001, 0 of RULE-0002, 32 of RULE-0003
+
+  Against 72 before -- 0 / 37 / 35, PLAN-0008's own count, which corrects the
+  ~34 / ~38 estimate above without moving the total. This document's refines:
+  names PLAN-0008 alongside BUG-0006 for that reason, per CON-0004's "the work
+  that produced or exposed it": BUG-0006 is what exposed these 72 and PLAN-0008
+  is what took 40 of them away, so the chain is walkable from either end
+  without reading prose.
+
+  CAUSE ONE IS CLOSED, and not by being fixed. ARCH-0009 replaced the path
+  guess with the analyzer-written :system property, so a helper defun in
+  src/analyzer/test/lisp-analyzer.lisp carries :LOOM-ANALYZER-TEST -- the
+  package its own file declares -- rather than :ANALYZER, the directory
+  segment it shares with the production code it exercises. RULE-0002's
+  from-system: is loom-analyzer after ARCH-0009 R8, so it no longer matches
+  those files: all 37 went. The same mechanism took the three RULE-0003
+  violations that came from src/knowledge/test/suite.lisp -- K-EDGE calling
+  ADD-RELATIONSHIP, MAKE-K-FIXTURE calling ADD-ENTITY and MAKE-GRAPH -- since
+  that file declares (in-package :loom-knowledge-test). 35 - 3 = 32.
+
+  Nothing here decided that a test file should be exempt from a layering rule,
+  which is the design question WHY THIS IS NOT BUG-0006's TO FIX declined to
+  answer. It stopped being a question: the two files were always different
+  packages, the path convention could not see that, and the property can. A
+  test file whose package genuinely is the production one would still be
+  reported, correctly.
+
+  CAUSE TWO IS UNTOUCHED, exactly as ARCH-0009 R9 predicted. All 32 surviving
+  violations are the production reads this document already named:
+  SEED-ENTITIES and SEARCH-ENTITIES to FIND-ENTITIES; DESCRIBE-ENTITY,
+  BUILD-CONTEXT, CONTEXT-ITEM, GROUP-NEIGHBORS, NEIGHBOR-SUMMARY and
+  DECISIONS-TOUCHING to NEIGHBORS and the NEIGHBOR-* accessors; RENDER-PATH to
+  GET-ENTITY and the HOP-* accessors; IMPACT-REPORT to IMPACT-SET and the
+  IMPACT-RESULT-* accessors. loom-knowledge and loom-graph are different
+  packages under every scheme ARCH-0009 considered, so no naming change could
+  have moved them. The defect is still the :no-edge check kind's inability to
+  say "no write" where the rule's own statement says only writes are forbidden,
+  and closing it means widening what a check kind can express -- the same class
+  of gap ARCH-0009 R10 records for "no call from outside this family". Whoever
+  takes either should read them together.
+
+  A 0 here would not have been success. Both sides of a :no-edge comparison
+  moved vocabulary in PLAN-0008 step 7, and a mismatch between them reports
+  zero violations for every rule, which is BUG-0006's vacuous pass reached by a
+  different route. 32 is the number that says the vocabularies agree; the
+  32 named calls above are what it is made of.

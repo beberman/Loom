@@ -9,6 +9,6 @@ statement: |
   dependency may leave it.
 check:
   kind: no-edge
-  from-system: ontology
+  from-system: loom-ontology
   to-system: outside
   rel-types: [calls, imports, depends-on]

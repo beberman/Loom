@@ -1,0 +1,724 @@
+id: PLAN-0008
+title: Sequence ARCH-0009 -- :system becomes an analyzer-written property, read by ENTITY-SYSTEM as a bare property lookup
+status: final
+date: 2026-08-06
+refines: [ARCH-0009]
+affects: [entity-system, edges-between-systems, in-system-p, entities-in-system,
+          run-check, check-rules, generated-entity, analyze-file,
+          document-properties, make-file-entity, make-function-entity,
+          make-variable-entity, make-class-entity, make-interface-entity,
+          make-method-entity, make-macro-entity, make-generated-function-entity,
+          make-unparsable-file-entity, class-definition-entities,
+          struct-definition-entities, generic-definition-entity,
+          method-definition-entity, token-name, definition-p]
+tags: [analyzer, ontology, rules, layering, plan]
+summary: |
+  Eight steps implementing ARCH-0009 R1 through R9. The order is forced by three
+  real dependencies: the ontology must declare :system before DECLARED-PROPERTIES-
+  ONLY will let a generated entity carry it (R1 before R6); the analyzer must
+  write :system before the query layer can read it (R3/R4 before R7); and the
+  query layer's switch to a property read and the three RULE document edits must
+  land in one step (R7 with R8), because either one alone leaves both sides of
+  every :no-edge comparison naming different vocabularies and `check` reporting a
+  vacuous "No violations." -- exactly the silent failure BUG-0006 closed. R10 is
+  not implemented: it is recorded in ARCH-0009 and stays recorded. R9 is not
+  implemented either: it is step 8, a measurement, and the number it must produce
+  is 72 violations becoming 32.
+body: |
+  FILES
+
+  Created:
+
+    src/analyzer/test/analyzer.lisp
+        New test file for the shared, language-neutral utilities in
+        src/analyzer/analyzer.lisp. Holds BUG-0006's three path tests, ported
+        from src/graph/test/query.lisp to exercise DEFAULT-SYSTEM-FOR-PATH
+        where it now lives. Step 2.
+
+  Changed:
+
+    src/ontology/code-ontology.lisp
+        Eight DEFENTITY forms gain a (:system keyword) property: :file,
+        :function, :variable, :class, :interface, :method, :test, :document.
+        No :one-of -- the vocabulary is unbounded. :rule, :decision and
+        :concept are deliberately untouched. Step 1.
+
+    src/ontology/test/code-ontology.lisp
+        One test asserting FIND-PROPERTY answers for :system on each of the
+        eight, and NIL on the three that must not gain it. Step 1.
+
+    src/analyzer/analyzer.lisp
+        Gains *SRC-PREFIX* and DEFAULT-SYSTEM-FOR-PATH in the "Shared text
+        utilities" section, beside OFFSET-LINE and LINE-COUNT. Body relocated
+        verbatim from src/graph/query.lisp's ENTITY-SYSTEM, not rewritten.
+        Step 2.
+
+    src/analyzer/package.lisp
+        Exports #:default-system-for-path and #:*src-prefix* (R2 asks for the
+        function exported; the special moves with it). Step 2.
+
+    src/analyzer/loom-analyzer.asd
+        The :loom-analyzer/test system gains (:file "analyzer") between
+        "suite" and "lisp-analyzer". Step 2.
+
+    src/analyzer/lisp-analyzer.lisp
+        Step 3 adds NORMALIZE-SYSTEM-NAME and IN-PACKAGE-ARGUMENT-NAME.
+        Step 4 threads CURRENT-SYSTEM: seven MAKE-*-ENTITY constructors and
+        four intermediate builders gain an argument, ANALYZE-FILE gains one
+        LET binding, one COND clause and one SETP.
+
+    src/analyzer/test/lisp-analyzer.lisp
+        Unit tests for the two new functions (step 3) and seven ANALYZE-SOURCE
+        tests for the IN-PACKAGE walk (step 4).
+
+    src/analyzer/yaml-analyzer.lisp
+        DOCUMENT-PROPERTIES's (eql :document) method gains one line:
+        :system (default-system-for-path path). Step 5.
+
+    src/analyzer/test/yaml-analyzer.lisp
+        Two tests: a :document entity carries :system; a :rule entity does
+        not. Step 5.
+
+    src/graph/resolve.lisp
+        GENERATED-ENTITY gains one line, :system (getp file :system), beside
+        its existing :language line. Step 6.
+
+    src/graph/test/resolve.lisp
+        One test: a minted :TEST entity inherits its file's :system. Step 6.
+
+    src/graph/query.lisp
+        ENTITY-SYSTEM becomes (getp entity :system). *SRC-PREFIX* and the
+        path-parsing body are deleted -- ARCH-0009's CONSEQUENCES says the
+        expected end state is one copy, and step 2 already made the other one.
+        The SS6.3 header comment is rewritten: the paragraph describing the
+        path convention and the BUG-0006 paragraph both become false the
+        moment this lands. Step 7.
+
+    src/graph/test/query.lisp
+        SYS-FUNCTION gains a SYSTEM argument that stamps :system. The three
+        BUG-0006 path tests are replaced by one property test (the ported
+        originals live in src/analyzer/test/analyzer.lisp as of step 2).
+        EDGES-BETWEEN-SYSTEMS-FINDS-A-REAL-CROSS-SYSTEM-CALL keeps its shape
+        with explicit :system values. Step 7.
+
+    src/graph/test/rules.lisp
+        RULES-FUNCTION gains a SYSTEM argument; nine call sites updated. The
+        four BUG-0006 fixtures move from :ontology/:analyzer/:knowledge/:graph
+        to :loom-ontology/:loom-analyzer/:loom-knowledge/:loom-graph, matching
+        R8's edit to the real rule documents. Step 7.
+
+    docs/rules/RULE-0001.yaml, RULE-0002.yaml, RULE-0003.yaml
+        One line each: from-system:/to-system: change from the short names to
+        the real package names. Step 7, in the same commit as query.lisp.
+
+    docs/bugs/BUG-0009.yaml
+        A measured section recording cause one closed and cause two open, with
+        the before/after counts. Stays status: open. Step 8.
+
+    docs/arch/ARCH-0009.yaml, docs/requirements/REQ-0011.yaml
+        status: draft -> implemented, per RULE-0005. Step 8.
+
+  Not touched, and deliberately: src/serve/, src/rest/, src/mcp/, src/process/,
+  loom.lisp, loom-serve.lisp. Entities in those systems will start carrying
+  :system :LOOM-SERVE and so on, but no rule names them and nothing there reads
+  ENTITY-SYSTEM.
+
+  BLAST RADIUS
+
+  What Loom says, asked directly rather than inferred:
+
+    tools/loom.sh 'impact entity-system 3'
+
+  reports 11 impacted entities, truncated. The path each was reached by matters
+  more than the count: IN-SYSTEM-P, ENTITIES-IN-SYSTEM and EDGES-BETWEEN-SYSTEMS
+  reach it at d1 by a direct call; RUN-CHECK reaches EDGES-BETWEEN-SYSTEMS at d2
+  and CHECK-RULES at d3, both inside src/graph/rules.lisp. That is the whole
+  downstream surface, and it is one file plus one function. A grep over the tree
+  agrees and adds one fact the index does not present as such: IN-SYSTEM-P and
+  ENTITIES-IN-SYSTEM appear nowhere outside src/graph/package.lisp's export list
+  -- they are exported API with no caller in this tree, so R7's promise that
+  their bodies are unchanged costs nothing to keep and proves nothing either.
+  EDGES-BETWEEN-SYSTEMS has exactly one caller, RUN-CHECK at src/graph/rules.lisp:49.
+
+    tools/loom.sh 'describe make-class-entity' (and the other seven)
+
+  Loom's index confirms the containment ARCH-0009's CONSEQUENCES paragraph
+  claims, and corrects its wording. Every caller of every MAKE-*-ENTITY function
+  is inside src/analyzer/lisp-analyzer.lisp -- no test fixture, no other system.
+  But they are not all called from ANALYZE-FILE. Loom names four intermediate
+  callers that ARCH-0009's sentence "this touches every call site inside
+  ANALYZE-FILE and nowhere else" does not:
+
+    make-class-entity             <- class-definition-entities, struct-definition-entities
+    make-interface-entity         <- class-definition-entities, generic-definition-entity
+    make-method-entity            <- method-definition-entity
+    make-generated-function-entity <- struct-definition-entities
+    make-file-entity, make-function-entity, make-variable-entity,
+    make-macro-entity, make-unparsable-file-entity <- analyze-file
+
+  So four more functions in the same file must thread the argument through:
+  CLASS-DEFINITION-ENTITIES, STRUCT-DEFINITION-ENTITIES, GENERIC-DEFINITION-ENTITY
+  and METHOD-DEFINITION-ENTITY. The file boundary ARCH-0009 asserts holds; the
+  function boundary it asserts does not, and step 4 is sized for the real one.
+
+  Is that confirmation trustworthy here? Yes, and it is worth saying why rather
+  than leaning on it. Loom's known blind spot is calls made inside a DEFMACRO
+  body (ARCH-0001) -- an expansion's calls are unattributed. Every relationship
+  above is between two ordinary DEFUNs, recorded by the analyzer's own pass-2
+  walk, so no macro body is involved and the index is reporting first-hand
+  evidence. The blind spot could still hide a use of one of these constructors
+  from inside a macro template; a grep for all nine names across every .lisp in
+  the tree returns only lisp-analyzer.lisp's own definitions and calls, which is
+  the evidence for that half, not the index.
+
+  What Loom cannot see, stated as such:
+
+  - `check` says nothing about loom-serve, loom-rest, loom-mcp or loom-process:
+    no rule names them. That is unchanged by this work and is not evidence the
+    change is contained there -- it is evidence `check` is silent there.
+  - RULE-0002 and RULE-0003's current 72 violations are BUG-0009 false
+    positives, so a nonzero count from `check` is not by itself evidence that a
+    step went wrong. The count is only meaningful against the specific numbers
+    step 8 names.
+  - Every indexed entity of the eight affected types gains a property. Natural
+    keys are untouched (:system is in no :natural-key), so ids are stable and a
+    rebuild still lands on the same entities. The first reindex after step 4
+    rewrites the property table of roughly every entity in the graph; that is
+    expected churn, not a defect.
+
+  Two reclassifications that follow from the mechanism and are not defects:
+
+  - Every .asd file in the tree opens with (in-package :asdf-user), so under R4
+    a .asd's :FILE entity moves from :GRAPH / :ANALYZER / etc. to :ASDF-USER.
+    Nothing reads that today. A future rule about the declared dependency graph
+    would have to name :asdf-user.
+  - src/full-test.lisp currently resolves to NIL (no path segment after src/)
+    and will resolve to :LOOM-TEST. That is strictly better and is why the
+    ported "bare src file" test asserts about the path function, not about the
+    real file.
+
+  RISKS
+
+  1. The vacuous-zero window between R7 and R8. This is the one that can waste a
+     day. ENTITY-SYSTEM's answer and a rule's from-system: value are the two
+     sides of one EQ comparison. After step 4 the entities carry :LOOM-ANALYZER;
+     the rules still say :ANALYZER. If step 7 lands ENTITY-SYSTEM's property read
+     without the three YAML edits, or the three YAML edits without the property
+     read, every :no-edge check matches nothing and `check` prints "No
+     violations." That reads as complete success and is the exact failure mode
+     BUG-0006 existed to close. Mitigation: step 7 is one step and one commit,
+     and step 8 checks for 32, not for 0.
+
+  2. Nine tests in src/graph/test/rules.lisp depend on ENTITY-SYSTEM parsing a
+     fixture's path, and six of them fail loudly at step 7 while three pass for
+     the wrong reason. Failing: THE-NO-EDGE-CHECK-FINDS-A-LAYERING-VIOLATION,
+     RULE-0001-CATCHES-ONTOLOGY-CALLING-OUTSIDE-UNDER-THE-REAL-SRC-LAYOUT,
+     RULE-0002-CATCHES-AN-ANALYZER-REACHING-THE-GRAPH-UNDER-THE-REAL-SRC-LAYOUT,
+     RULE-0003-CATCHES-KNOWLEDGE-WRITING-UNDER-THE-REAL-SRC-LAYOUT,
+     VIOLATIONS-ARE-ASSERTED-SO-THEY-CAN-BE-QUERIED,
+     A-FIXED-VIOLATION-STOPS-BEING-ASSERTED -- each asserts a violation count of
+     1 and would get 0. Silently passing: THE-NO-EDGE-CHECK-PASSES-A-CLEAN-TREE,
+     THE-REAL-RULES-STILL-PASS-A-CLEAN-REAL-LAYOUT, A-RETIRED-RULE-IS-NOT-CHECKED
+     -- each asserts NULL, which an ENTITY-SYSTEM returning NIL for every fixture
+     also satisfies. CON-0003: those three are the dangerous ones, and step 7's
+     RULES-FUNCTION change is what keeps them meaningful rather than merely
+     green. In src/graph/test/query.lisp the same applies to
+     EDGES-BETWEEN-SYSTEMS-FINDS-A-REAL-CROSS-SYSTEM-CALL.
+
+  3. Getting step 1 wrong is silent, not loud. An undeclared property does not
+     signal: VALIDATE-ENTITY only walks the properties a type declares, and
+     CHECK-PROPERTY-VALUE returns the value untouched when FIND-PROPERTY finds no
+     spec. So writing :system before declaring it appears to work everywhere
+     except one place -- DECLARED-PROPERTIES-ONLY in src/graph/resolve.lisp
+     filters a generated entity's plist against the declared set, so step 6's
+     line would be silently discarded and every :TEST entity would carry no
+     system. That is why step 1 is first, and why its test asserts through
+     FIND-PROPERTY rather than by round-tripping an entity.
+
+  4. Two copies of DEFAULT-SYSTEM-FOR-PATH exist between step 2 and step 7. That
+     is deliberate -- ENTITY-SYSTEM still needs the path logic until step 7, and
+     loom-graph must not depend on loom-analyzer to get it -- but ARCH-0009's
+     CONSEQUENCES is explicit that the end state is one copy. If step 7 lands the
+     property read without deleting *SRC-PREFIX* and the old body, the plan is
+     not finished. Step 7's verification checks for the absence.
+
+  5. src/graph/test/ cannot call LOOM-ANALYZER:DEFAULT-SYSTEM-FOR-PATH to build a
+     fixture. loom-graph/test depends on loom-graph, loom-ontology,
+     bordeaux-threads and fiveam, and adding loom-analyzer to it to let a graph
+     test compute a system from a path would invert the layering for a test
+     helper's convenience. Fixtures state their :system literally instead, which
+     also makes each rule fixture say what it means rather than encode it in a
+     path.
+
+  6. The :FILE entity's own :system is the last IN-PACKAGE in the file, which
+     ARCH-0009 discloses as coarser than per-entity and demonstrates against
+     ~/lisp/game-server/server/content.lisp. No file in this tree has two
+     IN-PACKAGE forms, so nothing here would catch a regression in that
+     behaviour by accident. Step 4 writes it as an explicit ANALYZE-SOURCE test
+     over inline two-package source rather than leaving it uncovered.
+
+  7. NORMALIZE-SYSTEM-NAME and AS-KEYWORD (src/analyzer/yaml-analyzer.lisp:124)
+     must fold case identically, because they produce the two sides of every
+     :no-edge comparison. Both uppercase and intern into :keyword. If a later
+     edit changes one, `check` goes quiet rather than wrong, which is failure
+     mode 1 again by a different route. Step 3's tests state the fold
+     explicitly.
+
+  STEPS
+
+  Step 1 is the first that can be run: it compiles and its test executes with
+  nothing else in place. Every step below ends with a tree that compiles and a
+  full suite that passes.
+
+  1. R1 -- declare :system in the ontology.
+
+     src/ontology/code-ontology.lisp: add (:system keyword :documentation "...")
+     to the :properties list of :file, :function, :variable, :class, :interface,
+     :method, :test and :document. Type keyword, no :one-of, not :required, no
+     :default. Place it beside the existing (:language ...) line on the seven
+     that have one; on :file and :document place it beside (:path ...). Do not
+     add it to :rule, :decision or :concept -- ARCH-0009 R1 makes their absence
+     part of the requirement, since ENTITY-SYSTEM already returns NIL for them
+     and must continue to.
+
+     The docstring should say where the value comes from and that the
+     vocabulary is open: the analyzer that parsed the file decides it, from the
+     language's own grouping construct where it has one and from
+     DEFAULT-SYSTEM-FOR-PATH where it does not.
+
+     Verify: a new test in src/ontology/test/code-ontology.lisp asserting
+     (find-property :function :system) is non-NIL for each of the eight and NIL
+     for :rule, :decision and :concept. It fails before this step because
+     FIND-PROPERTY returns NIL for all eight. Run the ontology suite.
+
+  2. R2 -- relocate DEFAULT-SYSTEM-FOR-PATH into loom-analyzer, with its tests.
+
+     src/analyzer/analyzer.lisp, "Shared text utilities" section at the end of
+     the file: add *SRC-PREFIX* and DEFAULT-SYSTEM-FOR-PATH. The body is
+     src/graph/query.lisp:89-99's, relocated verbatim -- under "src/", the
+     segment after it; otherwise the leading segment; NIL when no further slash
+     exists and NIL when the argument is not a string. Do not improve it. R2's
+     whole claim is that it is the identical computation BUG-0006 already proved
+     against this tree, and a rewrite would have to reprove that.
+
+     src/analyzer/package.lisp: export #:default-system-for-path and
+     #:*src-prefix*.
+
+     src/analyzer/loom-analyzer.asd: add (:file "analyzer") to the
+     :loom-analyzer/test components, between "suite" and "lisp-analyzer".
+
+     src/analyzer/test/analyzer.lisp, new: (in-package :loom-analyzer-test), a
+     (def-suite analyzer :in all-tests), and BUG-0006's three path assertions
+     ported -- not duplicated, ported: the same three claims, now made about
+     DEFAULT-SYSTEM-FOR-PATH taking a string rather than about ENTITY-SYSTEM
+     taking an entity.
+
+       :knowledge, :ontology, :serve from the three src/<system>/ paths
+       :docs from "docs/rules/RULE-0001.yaml"
+       NIL from "src/loose.lisp" and NIL from NIL
+
+     Leave src/graph/query.lisp entirely alone in this step. ENTITY-SYSTEM still
+     needs its own copy until step 7, and loom-graph must not gain a dependency
+     on loom-analyzer to avoid the duplication.
+
+     Verify: the three new tests fail before this step with an undefined
+     function. Run the analyzer suite. `check` still reports 72 -- nothing has
+     changed what ENTITY-SYSTEM reads.
+
+  3. R5 -- NORMALIZE-SYSTEM-NAME and IN-PACKAGE-ARGUMENT-NAME.
+
+     src/analyzer/lisp-analyzer.lisp, near TOKEN-NAME and DEFINITION-P:
+
+       NORMALIZE-SYSTEM-NAME (raw) -- (and raw (plusp (length raw))
+       (intern (string-upcase raw) :keyword)). Uppercase unconditionally. No
+       "loom-" stripping. No nickname resolution.
+
+       IN-PACKAGE-ARGUMENT-NAME (form) -- (and (consp form) (rest form)
+       (token-name (second form))). TOKEN-NAME is unchanged and already renders
+       a keyword, a bare symbol or a string literal as one plain string.
+
+     Both stay internal to LOOM-ANALYZER. R2 asks for DEFAULT-SYSTEM-FOR-PATH
+     exported because a second analyzer will need it; these two are Lisp
+     specifics a Java analyzer has no use for, so the tests reach them as
+     loom-analyzer::normalize-system-name rather than widening the export list
+     past what the architecture asks for.
+
+     Verify: new tests in src/analyzer/test/lisp-analyzer.lisp -- (in-package
+     :loom-graph), (in-package "loom-graph") and (in-package :|Loom-Graph|) all
+     normalize to :LOOM-GRAPH; "game/game" normalizes to :GAME/GAME as one token
+     (the ~/lisp/game-server case ARCH-0009 verified at a REPL); NIL and "" both
+     give NIL; and :LOOM-GRAPH is EQ to what src/analyzer/yaml-analyzer.lisp's
+     AS-KEYWORD produces from the string "loom-graph", which is risk 7 stated as
+     an assertion. All fail before this step with undefined functions.
+
+  4. R4 -- track CURRENT-SYSTEM across ANALYZE-FILE's pass-1 walk.
+
+     All in src/analyzer/lisp-analyzer.lisp. One convention, applied
+     everywhere: the new argument is named SYSTEM and sits immediately after
+     PATH.
+
+     Constructors gaining it, each storing it as :system in its properties list
+     beside the existing :language:
+
+       make-function-entity (form start end path system)
+       make-variable-entity (form start end path system)
+       make-macro-entity (form start end path system)
+       make-class-entity (name kind slots superclasses start end path system)
+       make-interface-entity (name start end path system &key members generated-by)
+       make-method-entity (name qualifier specializers generic arguments start end path system)
+       make-generated-function-entity (name start end path system generated-by)
+
+     Intermediate builders gaining it and passing it through -- the four Loom
+     named that ARCH-0009's CONSEQUENCES paragraph does not:
+
+       class-definition-entities (form kind start end path system)
+       struct-definition-entities (form start end path system)
+       generic-definition-entity (form start end path system)
+       method-definition-entity (form start end path system)
+
+     MAKE-UNPARSABLE-FILE-ENTITY takes no new argument: it adds
+     :system (default-system-for-path path) to its own properties list. R4 is
+     explicit that a file the reader failed on before any form could be seen has
+     nothing stronger to fall back from.
+
+     MAKE-FILE-ENTITY also takes no new argument. The :FILE entity's :system is
+     set after the pass-1 loop, not at construction, because it is the value in
+     effect at the end of the file. :system is in no natural key, so SETP after
+     construction does not move the id.
+
+     ANALYZE-FILE:
+
+       - add (current-system (default-system-for-path path)) to the opening LET,
+         beside FILE and DEFINITIONS.
+       - add a COND clause as the first clause of the pass-1 dispatch:
+
+           ((definition-p form "in-package")
+            (let ((named (normalize-system-name (in-package-argument-name form))))
+              (when named (setf current-system named))))
+
+         First rather than last so it cannot be shadowed. "in-package" stays in
+         *DECLARATION-HEADS*, so the catch-all clause's
+         (not (call-site-head-p ...)) guard still keeps IN-PACKAGE out of
+         :DEFINER-CALL-SITES and it still mints no entity. Do not add it to
+         *DEFINITION-HEADS*.
+       - pass CURRENT-SYSTEM at every constructor and builder call site in the
+         dispatch.
+       - after the loop, beside the existing
+         (setp file :definer-call-sites (nreverse call-sites)), add
+         (setp file :system current-system).
+
+     Verify: seven tests in src/analyzer/test/lisp-analyzer.lisp, six of them
+     through the existing ANALYZE-SOURCE helper, which already takes inline
+     source and an arbitrary path.
+
+       a. "(in-package :loom-graph) (defun f (x) x)" at any path -> the
+          :FUNCTION entity carries :system :LOOM-GRAPH. Fails before this step:
+          the property is absent, so GETP returns NIL.
+       b. "(defun f (x) x)" with no IN-PACKAGE, at path
+          "src/graph/query.lisp" -> :GRAPH, the path default falling through.
+       c. Two IN-PACKAGE forms, the second mid-file -- server/content.lisp's
+          real shape -- with a defun after each: the first carries the first
+          package, the second carries the second. This is R3/R4's per-entity
+          lexical semantics and nothing else in this tree exercises it.
+       d. Same source, the :FILE entity: it carries the *second* package. The
+          documented approximation, asserted so a later change cannot make it
+          per-entity by accident and leave ARCH-0009's disclosure stale.
+       e. A DEFCLASS with an :accessor slot after an IN-PACKAGE: both the
+          :CLASS and the accessor's :INTERFACE carry the package. This is the
+          CLASS-DEFINITION-ENTITIES path.
+       f. A DEFSTRUCT after an IN-PACKAGE: the :CLASS and at least one
+          generated :FUNCTION carry it. This is the STRUCT-DEFINITION-ENTITIES
+          path. Cover DEFGENERIC/DEFMETHOD in the same test or one beside it.
+       g. The existing test/fixtures/sample.lisp has no IN-PACKAGE and is
+          analyzed at "test/fixtures/sample.lisp", so every entity it produces
+          carries :system :TEST -- the seed default, unmodified, on a real file.
+
+     Run the analyzer suite and the full suite. `check` still reports 72:
+     ENTITY-SYSTEM is still parsing paths and has not been told about any of
+     this.
+
+  5. R3 -- the document analyzer stamps :system.
+
+     src/analyzer/yaml-analyzer.lisp, the DOCUMENT-PROPERTIES method
+     specialized on (eql :document): add :system (default-system-for-path path)
+     to the plist, beside the existing :path. One line. Do not touch the
+     :decision, :rule or :concept methods -- R1 gives those types no :system
+     property, so a value written there would be dropped by nothing and read by
+     nothing.
+
+     Verify: two tests in src/analyzer/test/yaml-analyzer.lisp -- a document at
+     "docs/arch/ARCH-9999.yaml" produces a :DOCUMENT entity with :system :DOCS;
+     a rule at "docs/rules/RULE-9999.yaml" produces a :RULE entity whose
+     (getp e :system) is NIL. The first fails before this step. `check` still
+     reports 72.
+
+  6. R6 -- generated entities inherit their file's system.
+
+     src/graph/resolve.lisp, GENERATED-ENTITY: add :system (getp file :system)
+     to the plist handed to DECLARED-PROPERTIES-ONLY, immediately after the
+     existing :language (getp file :language). One line, and the same shortcut
+     for the same reason: a macro-minted entity has no form of its own to read a
+     package from, so it takes the file's.
+
+     This step is why step 1 is first. DECLARED-PROPERTIES-ONLY filters the
+     plist against the type's declared properties, so without :system on :test
+     this line would be discarded without a word.
+
+     Verify: a test in src/graph/test/resolve.lisp -- a :FILE fixture carrying
+     :system :LOOM-ANALYZER-TEST plus a definer call site for a registered macro
+     produces a :TEST entity whose :system is :LOOM-ANALYZER-TEST. It fails
+     before this step because the property is absent from the minted entity.
+     Run the graph suite. `check` still reports 72.
+
+  7. R7 and R8 together -- the switch. One step, one commit.
+
+     This is the step that must not be split. Read risk 1 before starting.
+
+     src/graph/query.lisp:
+       - ENTITY-SYSTEM becomes (defun entity-system (entity) (getp entity :system))
+         and nothing else. No path parsing, no "src/", no fallback to :path.
+       - delete *SRC-PREFIX* and its docstring.
+       - rewrite the SS6.3 header comment. The paragraph beginning "A system is
+         identified by a path segment" and the BUG-0006 paragraph both become
+         false here; replace them with what is now true -- the analyzer decides,
+         ENTITY-SYSTEM reads, and the header's own prediction ("this function
+         changes and no caller does") is what happened, citing ARCH-0009.
+       - EDGES-BETWEEN-SYSTEMS, IN-SYSTEM-P and ENTITIES-IN-SYSTEM: signature,
+         body and :OUTSIDE semantics unchanged. Do not touch them.
+       - src/graph/package.lisp is unchanged: ENTITY-SYSTEM is still exported,
+         *SRC-PREFIX* never was.
+
+     docs/rules/RULE-0001.yaml: from-system: ontology -> loom-ontology.
+     docs/rules/RULE-0002.yaml: from-system: analyzer -> loom-analyzer, and
+       to-system: graph -> loom-graph.
+     docs/rules/RULE-0003.yaml: from-system: knowledge -> loom-knowledge, and
+       to-system: graph -> loom-graph.
+     RULE-0001's to-system: outside is a sentinel, not a system name, and stays.
+
+     src/graph/test/query.lisp:
+       - SYS-FUNCTION gains a SYSTEM argument and stamps :system into the
+         properties table it builds. The :file property stays -- other tests use
+         the helper.
+       - delete ENTITY-SYSTEM-READS-THE-SEGMENT-AFTER-SRC-NOT-THE-LEADING-ONE,
+         ENTITY-SYSTEM-OUTSIDE-SRC-KEEPS-ITS-OWN-LEADING-SEGMENT and
+         ENTITY-SYSTEM-IS-NIL-FOR-A-BARE-SRC-FILE-AND-FOR-NO-FILE-AT-ALL. They
+         are about path parsing, which is no longer this file's job; step 2
+         already ported all three to src/analyzer/test/analyzer.lisp, so nothing
+         is lost. Deleting rather than leaving them is what makes ARCH-0009's
+         "one copy, not two" true of the tests as well as the function.
+       - add one test in their place: ENTITY-SYSTEM returns the :system property
+         verbatim, and NIL for an entity that carries none. Both halves matter --
+         the second is what keeps EDGES-BETWEEN-SYSTEMS' "an unplaceable
+         endpoint is not evidence of a violation" clause honest.
+       - EDGES-BETWEEN-SYSTEMS-FINDS-A-REAL-CROSS-SYSTEM-CALL: fixtures get
+         :system :loom-ontology and :loom-graph; the query becomes
+         (edges-between-systems g :loom-ontology :outside :rel-types '(:calls)).
+         Keep the real file paths in the fixtures. They no longer drive the
+         classification, and leaving them makes the test still read as a
+         statement about this tree.
+
+     src/graph/test/rules.lisp:
+       - RULES-FUNCTION gains a SYSTEM argument, stamped as :system. Nine call
+         sites: THE-NO-EDGE-CHECK-FINDS-A-LAYERING-VIOLATION,
+         THE-NO-EDGE-CHECK-PASSES-A-CLEAN-TREE, the four BUG-0006 tests,
+         THE-REQUIRES-EDGE-CHECK-CATCHES-AN-UNCONNECTED-ENTITY (any value; the
+         check kind does not read it), A-RETIRED-RULE-IS-NOT-CHECKED,
+         VIOLATIONS-ARE-ASSERTED-SO-THEY-CAN-BE-QUERIED and
+         A-FIXED-VIOLATION-STOPS-BEING-ASSERTED.
+       - the four BUG-0006 tests move to the real package names, matching the
+         rule documents exactly: :loom-ontology, :loom-analyzer, :loom-knowledge,
+         :loom-graph. R8 names these three tests as its acceptance check, so
+         they have to assert against package-tagged fixtures or they are not
+         checking R8 at all.
+       - the BUG-0006 comment block above them (lines 135-142) explains the
+         src/-shaped fixtures. Rewrite it: what these tests now guard is that a
+         rule's from-system: value and the analyzer's :system value are the same
+         vocabulary, which is the failure mode this step could introduce.
+
+     Verify, in order:
+       - full suite green. The six count-asserting tests in risk 2 are the ones
+         that would fail if RULES-FUNCTION's stamping is wrong; they failed
+         before this step's fixture edits, which is what makes them evidence.
+       - tools/loom.sh 'reindex | check' reports 32 violations, all RULE-0003.
+         Not 0. A 0 here means one half of step 7 did not land -- see risk 1.
+       - grep confirms *SRC-PREFIX* appears in src/analyzer/analyzer.lisp and
+         nowhere in src/graph/.
+
+     What `check` reports at each point up to here, stated so no intermediate
+     number is mistaken for a regression or a success:
+
+       after step 1   72  (37 RULE-0002, 35 RULE-0003) -- unchanged
+       after step 2   72  -- unchanged; ENTITY-SYSTEM untouched
+       after step 3   72  -- unchanged; the new functions have no caller
+       after step 4   72  -- unchanged; entities now carry :system, but
+                            ENTITY-SYSTEM is still parsing paths and ignores it
+       after step 5   72  -- unchanged
+       after step 6   72  -- unchanged
+       after step 7   32  -- all RULE-0003, all BUG-0009 cause two
+       if step 7 is split, at the midpoint: 0, vacuously. Not success.
+
+  8. R9 -- measure, do not assume. This step writes no code.
+
+     Run tools/loom.sh 'reindex | check' against this tree and record the
+     result. ARCH-0009 R9 is a prediction from the mechanism and REQ-0011 R5
+     asks only that it be checked. The prediction, with the numbers measured on
+     this branch on 2026-08-06 before any of this landed:
+
+       before: 72 violations -- 37 RULE-0002, 35 RULE-0003, 0 RULE-0001
+       after:  32 violations -- 0 RULE-0002, 32 RULE-0003, 0 RULE-0001
+
+     Cause one, expected to close: all 37 RULE-0002 violations originate in
+     src/analyzer/test/*.lisp -- the named helpers FIND-BY-NAME,
+     ANALYZE-FIXTURE, ANALYZE-SOURCE, DOCS-ENTITY, LITERAL-ENTITY, plus twelve
+     :TEST entities minted from `test` call sites in the same files. Every one
+     of those files declares (in-package :loom-analyzer-test), so under R4 they
+     carry :system :LOOM-ANALYZER-TEST and RULE-0002's from-system:
+     loom-analyzer stops matching them. Expect 37 to become 0. If any RULE-0002
+     violation survives, it is either a real one -- check it against
+     src/analyzer/lisp-analyzer.lisp and yaml-analyzer.lisp, which BUG-0009
+     confirmed contain no call into loom-graph -- or a file missing an
+     IN-PACKAGE form.
+
+     Cause one in RULE-0003: three of the 35 come from
+     src/knowledge/test/suite.lisp -- K-EDGE calling ADD-RELATIONSHIP, and
+     MAKE-K-FIXTURE calling ADD-ENTITY and MAKE-GRAPH. That file declares
+     (in-package :loom-knowledge-test), so those three drop too.
+
+     Cause two, expected to persist: the remaining 32 RULE-0003 violations are
+     real production functions in src/knowledge/services.lisp and context.lisp
+     -- SEED-ENTITIES, SEARCH-ENTITIES, DESCRIBE-ENTITY, BUILD-CONTEXT,
+     IMPACT-REPORT, NEIGHBOR-SUMMARY, GROUP-NEIGHBORS, CONTEXT-ITEM,
+     RENDER-PATH, DECISIONS-TOUCHING, IMPACT-ENTRY-SUMMARY -- calling
+     loom-graph's read API. loom-knowledge and loom-graph are different
+     packages under any scheme ARCH-0009 considers, so these must still be
+     reported. If they are not, something is wrong: a 0 total means the
+     vocabularies do not match, not that the layering is clean.
+
+     Then, per RULE-0005 and CON-0004:
+       - docs/bugs/BUG-0009.yaml: status stays open. Add a section recording
+         the measurement -- 72 -> 32, cause one closed by PLAN-0008 as a side
+         effect of ARCH-0009, cause two untouched and still the :no-edge check
+         kind's inability to say "no write" rather than "no call". Add
+         PLAN-0008 to its refines: or name it in the body so the chain is
+         walkable.
+       - docs/arch/ARCH-0009.yaml: status draft -> implemented.
+       - docs/requirements/REQ-0011.yaml: status draft -> implemented. R1-R4
+         are built and R5 is verified by this step. R10 stays recorded in
+         ARCH-0009 and is a follow-up requirement, not an outstanding part of
+         this one.
+       - this document: status draft -> final.
+       - run status and confirm the document count did not fall and
+         `unresolved` did not rise.
+
+  What this plan deliberately does not do:
+
+  - R10. `/`-prefix family comparison in EDGES-BETWEEN-SYSTEMS and IN-SYSTEM-P
+    stays unbuilt. ARCH-0009 records it; recording it is the whole requirement.
+  - BUG-0009's cause two. RULE-0003 will still report 32 real read calls as
+    violations after this lands. That is a check-kind expressiveness problem,
+    named in ARCH-0009 R9 and BUG-0009, and fixing it here would mean
+    redesigning what :no-edge can say.
+  - Nickname resolution. RESOLVE-PACKAGE-NICKNAMES is sketched in ARCH-0009's
+    NORMALIZE-SYSTEM-NAME section as a future loom-graph pass and is not built.
+    Loom's own tree declares no nicknames; ~/lisp/game-server declares 28, so
+    this is a live gap, not a hypothetical one.
+  - A :PACKAGE entity per package. ARCH-0009's ALTERNATIVES rejected it for
+    now; the :system property is what a later pass would mint them from.
+  - Any change to `check`'s or `rules`' presentation for a mixed-language
+    repository. ARCH-0009 declines it and no second analyzer exists.
+  - Any change to loom-serve, loom-rest, loom-mcp or loom-process. They gain
+    :system values and read none.
+
+  VERIFICATION
+
+  Suites. tools/loom-test.sh, all nine systems green. The systems that should
+  show new tests: loom-ontology (step 1), loom-analyzer (steps 2, 3, 4, 5),
+  loom-graph (steps 6, 7). Note whether the run was /usr/bin/sbcl or the SBCL
+  behind SLIME; the numbers below were taken with /usr/bin/sbcl.
+
+  Console. tools/loom.sh 'reindex | check'. The number that must move is 72 to
+  32. Broken out: RULE-0002 from 37 to 0, RULE-0003 from 35 to 32, RULE-0001
+  from 0 to 0. RULE-0001 staying at 0 is not a null result -- it is the check
+  that this did not break the one rule that was already reporting honestly.
+
+  Console, spot checks that the property is real and not merely declared:
+
+    tools/loom.sh 'describe entity-system'
+        should still show its callers unchanged: in-system-p,
+        entities-in-system, edges-between-systems.
+
+    tools/loom.sh 'find loom-graph' / 'describe apply-transaction'
+        an entity from src/graph/ should carry a system of :LOOM-GRAPH rather
+        than :GRAPH if inspected through the graph; `describe` does not print
+        properties, so the direct check is the rules tests plus the violation
+        counts above.
+
+  Negative checks, each of which would otherwise pass quietly:
+
+  - `check` reporting 0 violations at any point after step 7 means the two
+    sides of the comparison disagree, not that the tree is clean.
+  - `check` reporting 72 after step 7 means ENTITY-SYSTEM is still parsing
+    paths -- the old body was left in place or the property read did not
+    compile in.
+  - grep for *src-prefix*: exactly one definition, in src/analyzer/analyzer.lisp.
+  - The three tests in src/graph/test/rules.lisp asserting NULL
+    (THE-NO-EDGE-CHECK-PASSES-A-CLEAN-TREE,
+    THE-REAL-RULES-STILL-PASS-A-CLEAN-REAL-LAYOUT,
+    A-RETIRED-RULE-IS-NOT-CHECKED) pass under a broken ENTITY-SYSTEM too. Their
+    evidence value comes entirely from the six count-asserting tests beside them
+    failing when the fixtures are wrong. Do not read a green suite as covering
+    them on their own.
+
+  Not needed here: sbcl --script tools/load-test.lisp loom-serve. Nothing in
+  this plan edits src/serve, src/rest, src/mcp or src/process, so ARCH-0006 R5's
+  peer property is untouched.
+
+  OUTCOME, 2026-08-06
+
+  All eight steps landed. Measured on branch server, /usr/bin/sbcl via
+  tools/loom-test.sh and tools/loom.sh 'reindex | check':
+
+    index      : 134 files, 1341 entities, 6085 relationships
+    documents  : 52
+    tests      : 364 tests covering 244 units
+    rules      : 32 violations, 2 unenforced      (was 72 and 2)
+    unresolved : 0 document references, 1 definer macro   (unchanged)
+
+    suite                     9 of 9 systems green
+    check, broken out         0 RULE-0001, 0 RULE-0002, 32 RULE-0003
+                              (was 0 / 37 / 35)
+
+  The number step 8 named is the number that came out, on both halves: RULE-
+  0002 to zero, RULE-0003 to 32, RULE-0001 unmoved at zero. The 32 are the
+  loom-knowledge production reads BUG-0009 cause two names, one for one --
+  SEED-ENTITIES and SEARCH-ENTITIES into FIND-ENTITIES, DESCRIBE-ENTITY /
+  BUILD-CONTEXT / CONTEXT-ITEM / GROUP-NEIGHBORS / NEIGHBOR-SUMMARY /
+  DECISIONS-TOUCHING into NEIGHBORS and the NEIGHBOR-* accessors, RENDER-PATH
+  into GET-ENTITY and the HOP-* accessors, IMPACT-REPORT into IMPACT-SET and
+  the IMPACT-RESULT-* accessors. Risk 1's vacuous zero did not occur.
+
+  One defect this plan caused and did not catch: BUG-0010. Every hop of
+  ARCH-0009's seam was unit-tested in the suite that owns it, and step 7's
+  fixture edits left both of the tests that had spanned the whole of it --
+  loom-workspace's THE-PIPELINE-RUNS-THE-RULE-CHECKS and A-RULE-VIOLATION-IS-
+  DETECTED-AND-RECORDED -- naming a system no file in their fixture could be
+  classified into, so both went green by construction. The composition was
+  left to this step's console measurement, which is a number a human reads
+  once rather than an assertion that runs again. Fixed under BUG-0010 by
+  giving the fixture's src/alpha.lisp an (in-package :kernel) and putting the
+  real analyzed ALPHA back on the violating end; the numbers above are
+  unchanged by that fix, since the fixture is a temp directory rather than a
+  file in this tree. The general lesson is BUG-0010's closing paragraph and
+  belongs wherever a fixture rule is written next: a :no-edge rule that
+  matches no entity is indistinguishable, in every output, from one that
+  matched entities and found nothing.
+
+  One prediction came out wrong and is left on the record rather than
+  corrected above. The BLAST RADIUS section says IN-SYSTEM-P and
+  ENTITIES-IN-SYSTEM "appear nowhere outside src/graph/package.lisp's export
+  list -- they are exported API with no caller in this tree". True when
+  written; BUG-0010's fix made THE-PIPELINE-RUNS-THE-RULE-CHECKS the first
+  caller of ENTITIES-IN-SYSTEM, using it to assert that a fixture rule's
+  from-system: names a system something actually lands in. R7's promise that
+  its body is unchanged still costs nothing to keep and now proves slightly
+  more than nothing.

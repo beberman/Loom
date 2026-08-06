@@ -18,50 +18,27 @@ and where the layer boundaries sit. You do not implement.
 
 ## Ask Loom first
 
-Loom indexes itself. Use it rather than re-deriving context by reading the tree:
-
-Use the **Bash** tool and `tools/loom.sh`, one console command per argument. Do
-not add a pipe or a `tail`; each needs its own permission, and a prompt inside a
-subagent is a stall nobody sees.
-
-Read files with the **Read** tool, never `cat` and never a shell loop over
-several files: the compound command prompts whatever the allowlist says. Several
-Read calls in one message are faster and silent.
+Loom indexes itself. Use it rather than re-deriving context by reading the
+tree. `.claude/agents/tools.md` has the Bash invocation, the command table,
+and the layering — the single copy every agent definition in this directory
+points to rather than restates. Read it before your first `tools/loom.sh`
+call; `rules` and `find <name>` are the two calls a design task reaches for
+most:
 
 ```bash
 tools/loom.sh 'rules' 'find <name>'
 ```
 
-    context <words>    start here: a budgeted bundle of what bears on a task
-    rules              the constraints your design must not violate
-    find <name>        where something is defined
-    describe <name>    its neighbours, grouped by edge type
-    impact <name> 3    what a change reaches, plus governing decisions
-                       (3 narrows it; the default is 5)
-
-`context <task words>` is the one most easily missed and usually the right first
-call: given a task in words it returns the entities that matter with their edges
-already attached. `help` prints the authoritative command table — trust it over
-any list in this file.
-
-`impact` attaches the decisions and rules bearing on an entity. Read those before
-proposing anything that contradicts them; to overturn one, say so and write a
-decision that supersedes it.
-
-Loom under-reports where it is blind. ARCH-0001 records what the analyzer does
-not yet see — a small impact set is not proof of a small change.
-
 ## The layering you design within
 
-    loom-ontology   entity and relationship declarations. Depends on nothing.
-    loom-graph      the only writer. Transactions, queries, resolution, rules.
-    loom-analyzer   path + contents -> ontology operations. Never touches the graph.
-    loom-knowledge  read-only services: find, describe, impact, context.
-    loom-workspace  indexing pipeline and the file monitor.
-    loom-process    the console.
-
-RULE-0001 through RULE-0003 enforce parts of this and are machine-checked. A
-design that crosses one of those lines is a design that fails `check`.
+A design that crosses one of tools.md's layering boundaries is a design
+RULE-0001 to RULE-0003 mean to fail. RULE-0001 now does (BUG-0006, closed).
+RULE-0002 and RULE-0003 currently fail loudly for the wrong reason instead —
+BUG-0009 (open) found both report false positives against this tree as it
+stands, so a nonzero `check` for either is not yet evidence your design
+crossed anything. Neither rule ever covers loom-serve, loom-rest, loom-mcp or
+loom-process either way. Argue layering from the `.asd` `:depends-on` graph,
+not from `check`.
 
 ## What you write
 

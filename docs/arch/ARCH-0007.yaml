@@ -1,0 +1,893 @@
+id: ARCH-0007
+title: A tools/ lifecycle script and a self-watch timestamp make loom-serve reachable and honestly current without a human
+status: partial
+date: 2026-08-03
+refines: [REQ-0010]
+affects: [poll-once, repository-indexed-at, start-server, stop-server,
+          server-status, serve-forever, main, watch-repository, all-repositories,
+          register-operation, define-operation, check-capability,
+          resolve-caller-grants, dispatch-request]
+tags: [process, service, mcp, lifecycle, workspace, prototype]
+summary: |
+  REQ-0010 asks for the minimum that lets an agent get a running, current
+  loom-serve without a human at a shell. Three pieces answer it, each reusing
+  something ARCH-0006 or loom-workspace already built rather than adding a new
+  mechanism: a one-line fix to poll-once so repository-indexed-at stops
+  under-reporting what the monitor thread already knows; a small, fixed,
+  non-eval :write-tier operation, reload-code, that force-reloads the nine
+  systems' worth of code the register already runs on rather than repurposing
+  the REPL tier's arbitrary-eval danger for a job that needs none of it; and
+  tools/loom-serve.sh, a sixth script beside tools/loom.sh, which starts
+  loom-serve headless, lets a losing race stop cleanly instead of crashing,
+  tracks the process with a pidfile under /tmp rather than in a source tree
+  it cannot assume is writable or the only checkout on the machine, cleans up
+  after a process a signal never reached, and drives reload-code with a
+  restart fallback when a reload signals or does not answer. Four findings
+  surfaced only by testing, or by re-tracing a design already written, rather
+  than by reading: ASDF's own incremental build already reaches every
+  dependency on an ordinary, unforced reload -- the risk :force :all actually
+  closes is the same same-second write/reload race *mtime-settle-seconds*
+  already names elsewhere in this tree, not the sweeping six-of-nine-systems
+  gap a first reading of REQ-0010's own :force t sketch suggested; reload-code
+  has to report its own completion time, because comparing indexed-at only
+  against the server's own :started-at would read as permanently stale after
+  the first successful reload ever happens; a pidfile written before its own
+  process is confirmed to have won the port, deleted unconditionally by
+  whichever process loses, can be clobbered and then wrongly deleted out from
+  under the actual winner if two start attempts overlap -- closed by writing
+  it only once success is confirmed, never speculatively; and writing it only
+  once success is confirmed cannot be done from inside serve-forever's own
+  unmodified body, because that body already calls start-server unconditionally
+  before blocking, and a caller that pre-called start-server itself to catch
+  that exact success would make serve-forever's own internal call fail against
+  its own already-running guard -- closed by the one addition this document
+  makes to any of loom-serve's four lifecycle primitives, a single optional
+  keyword on serve-forever rather than a change to what any existing caller
+  already gets. All four are recorded under PROBLEM and fixed under WHAT EACH
+  THING BECOMES rather than assumed away. Three of the four lifecycle
+  primitives (start-server, stop-server, server-status) are untouched; every
+  new behaviour lives in new operations beside them, in the one additive
+  keyword serve-forever gains, in the entry script that already wraps them,
+  or in the new tools/ script -- REQ-0010's own line, "this document asks for
+  the calling convention around them, not new behaviour inside them," is read
+  here as permitting exactly that kind of widening while forbidding a change
+  to what an existing caller already gets, and is a constraint this design
+  checks itself against rather than restates.
+body: |
+  PROBLEM, CHECKED AGAINST THE ACTUAL CODE RATHER THAN ASSUMED
+
+  REQ-0010's own text sketches two mechanisms without checking them against
+  the tree or against ASDF's own behaviour, and one of those sketches turns
+  out to be subtly wrong where a first reading would call it merely
+  illustrative. Checking is where this document starts, because "measure
+  before designing" applies to a requirement's own illustrative code exactly
+  as it applies to a fresh guess -- and, in this case, to what an earlier
+  draft of this document itself assumed about that code, corrected below
+  rather than left standing.
+
+  First. REQ-0010 R1 says "is loom-serve current" reduces to "does the
+  self-watched repository's own status show a file changed since the process
+  started," reusing watch-repository/poll-once rather than inventing a
+  fingerprint. Read literally against src/workspace/workspace.lisp, this does
+  not hold today: repository-indexed-at is set in one place only --
+  index-repository, line 241, called at initial watch-repository and at an
+  explicit reindex -- and poll-once (line 279) never touches it, even though
+  it calls index-file on every changed path and folds the result into the
+  repository's graph. The monitor thread already keeps the self-watched
+  repository's *graph* honest every *poll-interval* seconds; the one field
+  repository-status exposes that looks like a timestamp for "when did this
+  repository last change" does not move when that happens. A design that
+  compared :started-at to :indexed-at as REQ-0010 describes would report
+  "current" for the entire span between one explicit reindex and the next,
+  even while the monitor had silently absorbed a dozen edits -- a fabricated
+  "current" answer, which CON-0001 names as worse than an honest "stale" or
+  "unknown."
+
+  Second, corrected here from an earlier draft's own reading of ASDF's
+  documentation, after actually building a two-system ASDF fixture on this
+  machine and reloading across an edited dependency three separate ways
+  rather than trusting a first reading of the manual. `asdf:load-system`'s
+  ordinary, unforced incremental build already walks the *whole* dependency
+  plan and recompiles any component -- in any system -- whose source is
+  newer than what this image last loaded: `(asdf:load-system :loom-mcp)`, no
+  force argument at all, correctly picks up an edit made seconds earlier to
+  a file three systems away in loom-ontology, verified directly rather than
+  assumed. `:force t` on the named system does not change that either way;
+  ASDF's own documented contract for it is "force the inside of the
+  specified system to be rebuilt... without recursively forcing the other
+  systems we depend on" -- its dependencies still get the same ordinary,
+  unforced check the paragraph above just showed already works, in the
+  ordinary case.
+
+  What actually fails, reproduced directly rather than inferred from the
+  documentation, is the race this tree already has a name for:
+  *mtime-settle-seconds* (src/workspace/workspace.lisp:112) exists because
+  file-write-date counts in whole seconds, so a file written and then
+  reloaded within the same clock second carries an unchanged write date and
+  reads as unmodified. Editing a dependency and reloading its dependent in
+  the same second, with no force at all or with :force t on the dependent,
+  leaves the dependency's old definition in place; only :force :all -- which
+  rebuilds every component in the plan regardless of what its own timestamp
+  says -- picks up a same-second edit reliably, also verified directly. This
+  is the real, narrow reason reload-code below uses :force :all rather than
+  REQ-0010's own :force t sketch: not because the sketch would leave most of
+  the tree stale in the ordinary case (measured above to be false), but
+  because an agent invoking `reload` moments after finishing an edit is
+  exactly the same-second case this codebase already treats as a real risk
+  elsewhere, and :force :all's cost -- recompiling nine systems' worth of
+  code that is mostly already current -- is the same few seconds PLAN-0005
+  already measured for a cold start, paid once to close a race rather than
+  assumed away.
+
+  Third, a consequence of R3's own reload-preferred-over-restart design that
+  an earlier draft of this document missed by comparing indexed-at only
+  against *server-started-at*. A reload changes what code is running
+  without restarting the process, so *server-started-at* -- correct as R1's
+  baseline for a process that has never been reloaded -- stops being the
+  moment "the currently running code was loaded" the instant a reload
+  succeeds. Left uncorrected, every staleness check after the first
+  successful reload would keep comparing against the original process start
+  time, report stale forever regardless of how current the code actually
+  is, and drive `update` into reloading again on every single call from
+  then on -- exactly the cost this document argues `update` should avoid
+  paying on the common case (WHY A SESSIONSTART HOOK, below), silently
+  defeated by its own R3 the first time R3 is ever used. Traced through a
+  concrete sequence rather than discovered by running it, since reproducing
+  "the process has been up for days and reloaded once" is not practical to
+  test directly; the trace is recorded here as the reason reload-code's own
+  answer carries a completion time, below, rather than only a boolean.
+
+  Fourth, a structural gap rather than a wrong sketch or a missed trace.
+  loom-serve exposes no REST- or MCP-reachable way to reload code into
+  itself at all -- R3 needs one and none exists today. stop-server exists as
+  a Lisp function (src/serve/server.lisp:132) with no registered operation
+  calling it either, but R2's race-safety does not need one added: the
+  tools/ script below reaches it the same way a human at a terminal would,
+  by signal, not by request, so this gap is named and left rather than
+  closed by this document.
+
+  Fifth, three problems found together while re-examining the pidfile design
+  already written above -- where it lives, how it is written, and what
+  writing it that way actually requires of serve-forever -- rather than
+  found separately, since each fix changes what the next one has to be
+  argued against.
+
+  Where: an intermediate version of this document put the pidfile, the
+  spawned process's log, and the reload-completion record all at the watched
+  tree's own root. Two problems with that. A source tree is not guaranteed
+  writable independent of whether Loom's own checkout happens to be --
+  nothing about tools/loom-serve.sh should assume every tree loom-serve is
+  ever pointed at is -- and a fixed name anywhere in that tree collides the
+  moment a second Loom checkout runs its own loom-serve on the same machine,
+  which REQ-0010's single-machine, single-person scope does not rule out:
+  one person can have more than one checkout, or point loom-serve at more
+  than one codebase over time.
+
+  How: the same intermediate version had the entry script write its own pid
+  *speculatively* -- before knowing whether its own start-server call would
+  win the port -- relying on an unwind-protect to delete it again if the
+  race was lost. Traced through two processes starting within the same
+  second rather than assumed safe: if process B writes its own pid to the
+  file after process A already has, overwriting A's entry, and A then wins
+  the bind while B loses it, B's own unconditional cleanup deletes the file
+  it finds -- which by then holds A's pid, the actual winner's, not B's own
+  -- leaving a live, listening process with no pidfile naming it at all. The
+  interleaving needed to trigger this is exactly the two-concurrent-`start`
+  case R2 exists to make safe, so it is not a corner this design can leave
+  unclosed. Writing only once START-SERVER has already returned success,
+  rather than speculatively, removes the race by construction: a process
+  that has not won never touches the file, so there is nothing for it to
+  overwrite or wrongly delete.
+
+  What writing it that way actually requires: fixing How exposed a third
+  problem rather than merely restating the first two. "Write it only once
+  START-SERVER has succeeded" sounds like it can be satisfied inside
+  HEADLESS mode's own existing call to serve-forever, since ARCH-0006 already
+  built serve-forever to call start-server as its own first act -- but
+  serve-forever's body has no seam for "do one more thing right after that
+  call succeeds and before the blocking loop begins," and loom-serve.lisp
+  calling start-server itself first, to get that seam, would make
+  serve-forever's own subsequent, unconditional `(start-server ...)` call
+  fail against START-SERVER's own re-entrant guard: a second acceptor is
+  refused with "a Loom service is already running," which is correct
+  behaviour for that guard and exactly wrong for a caller that started the
+  first acceptor on purpose one line earlier. The fix, under WHAT EACH THING
+  BECOMES, is the one addition this document makes to any of loom-serve's
+  four lifecycle primitives.
+
+  None of these three was found by running anything -- all are argued from
+  reading a design already on the page, the same discipline PROBLEM's second
+  and third findings apply to REQ-0010's own text applied here to this
+  document's own earlier draft.
+
+  WHAT EACH THING BECOMES
+
+  loom-workspace (src/workspace/workspace.lisp) -- one field, corrected
+
+    poll-once gains one line: when its own `changed` or `removed` list is
+    non-empty, it sets repository-indexed-at to the `now` it already
+    computed for the settle-window comparison, exactly as index-repository
+    already does at line 241, from a second call site. No new field, no new
+    struct slot, no new timestamp source -- get-universal-time is called
+    once more per poll where something moved, using a value poll-once was
+    already holding. repository-indexed-at's meaning becomes what its name
+    already claimed -- "when this repository's index last changed for any
+    reason" -- for every caller of repository-status, not only the one this
+    document adds. Checked against the tests that read it
+    (src/serve/test/operations.lisp:190,199, src/rest/test/routes.lisp:59):
+    all three assert behaviour around reindex, none assert poll-once leaves
+    it unmoved, so the fix does not falsify an existing guarantee.
+
+  src/serve/server.lisp -- two new definitions beside three untouched
+  primitives, and one additive keyword on the fourth
+
+    reload-code (new operation, :write tier, no repository argument -- the
+    same exception server-status already has, for the same reason: a
+    process-wide action has nothing to select a repository from).
+    Force-reloads :loom-process, :loom-rest and :loom-mcp in that order,
+    each with `:force :all`, closing the same-second race PROBLEM's second
+    finding names rather than a gap plain loading already handles -- three
+    calls, not one, because loom-process is not a dependency of loom-rest or
+    loom-mcp (ARCH-0006 keeps them peers) and would not be reached by
+    forcing either. The union of the three calls' transitive plans is
+    exactly the nine systems R1 defines staleness against, checked against
+    every .asd's own :depends-on rather than assumed: loom-process depends
+    on the five foundational systems directly; loom-rest and loom-mcp each
+    depend on loom-serve, which depends on the same five. Wrapped in a
+    dedicated recursive lock, *reload-lock*, matching
+    *workspace-registry-lock*'s own reasoning (src/serve/operations.lisp:
+    21-42): ASDF's own `operate` is not documented as safe for two
+    concurrent plans over the same registry, and nothing else in this
+    design can guarantee two reload-code calls never overlap without one. A
+    condition signalled by any of the three loads is caught -- serious-
+    condition, R8's own net -- and returned as data, `(:reloaded nil
+    :systems (...) :name ... :message ...)`; success returns `(:reloaded t
+    :systems (...) :reloaded-at <universal-time>)`. That timestamp is not
+    decoration: it is PROBLEM's third finding's fix. server-status's own
+    :started-at is the right baseline only until the first successful
+    reload; from then on, whoever is asking "is the code current" has to
+    compare against the more recent of the two, and reload-code's own
+    answer is the only place that later moment is ever recorded, since
+    server-status itself is not edited to track it. tools/loom-serve.sh
+    keeps that later moment in a small file under /tmp, described below,
+    rather than loom-serve gaining a second piece of server-side state to do
+    the same job server-status's own :started-at already almost does. Not
+    registered as an MCP tool, matching the four existing write-tier
+    operations R2/ARCH-0006 keeps REST-only: this document does not reopen
+    that scoping.
+
+    What reload-code does not solve, stated rather than implied. A
+    successfully reloaded defstruct with a changed slot layout does not
+    retroactively fix a live instance built under the old one, and neither
+    ASDF nor this operation can detect that a form now returns a subtly
+    wrong answer without signalling anything at all -- REQ-0010's own risk
+    paragraph, restated here because reload-code's `:reloaded t` result is
+    only ever a report that the load forms ran without signalling, never a
+    verification that every live structure survived it. tools/loom-serve.sh's
+    post-reload health probe, below, catches a process that stops answering;
+    it cannot catch one that answers wrong.
+
+    serve-forever gains one optional, additive keyword, `&key
+    already-started`, defaulting to NIL. When true, it skips its own
+    `(start-server ...)` call and proceeds directly to installing the
+    debugger hook, the signal handlers, and the blocking loop, on the
+    assumption a caller who passed it already has a listener running. This
+    is PROBLEM's fifth finding's own fix, and it is named here as an edit
+    to a lifecycle primitive rather than folded silently into "unedited" --
+    every existing call to serve-forever (there is exactly one, in
+    loom-serve.lisp's HEADLESS mode, described below) is a call this
+    document itself changes to pass the new argument, so the honest claim
+    is "the one caller this document has always had to touch anyway now
+    passes one more keyword," not "nothing about serve-forever changed."
+    What does not change is what a caller who omits the keyword gets: the
+    exact behaviour serve-forever has always had, since NIL is both the
+    default and the meaning of every line of code before this addition.
+    Read against REQ-0010's own line -- "this document asks for the calling
+    convention around them, not new behaviour inside them" -- this document
+    treats an optional keyword no existing caller is forced to pass as
+    within that boundary, and a change to what any existing call already
+    produces as the thing the boundary actually forbids; this addition is
+    the former.
+
+  WHY NOT THE REPL TIER FOR THIS
+
+  R9's REPL was the obvious place to look first -- ARCH-0006 already built
+  arbitrary-eval-in-the-live-image and already argues its use case is
+  "inspect a stuck watcher thread or a bad graph state," which reloading
+  code resembles. Two reasons it is not used here. Grants: resolve-caller-
+  grants today hands out {:read :write} to any credential and deliberately
+  withholds :repl -- src/serve/capability.lisp:33-48's own comment gives the
+  reason, that :repl "can reach beneath every safety property ARCH-0003 and
+  ARCH-0004 built." REQ-0010's own point 4 says resolve-caller-grants "stays
+  the existing stub," which this document reads as forbidding new
+  differentiated credential logic, not as license to widen what the one
+  static answer grants -- and widening it to include :repl for every
+  credential, just so this one fixed action can run, is the same
+  least-privilege reasoning ARCH-0006 R9 already used to keep :repl
+  ungranted by default in the first place, applied a second time rather
+  than quietly set aside for convenience. Shape: what R3 needs is one fixed
+  sequence of three ASDF calls, never a caller-supplied form. A :write-tier
+  operation whose body is that fixed sequence is narrower than the REPL
+  tier in the way that matters -- it cannot be asked to do anything else --
+  and it is no more exposure than the *existing* :write-tier watch
+  operation, which already takes an arbitrary caller-supplied filesystem
+  path today. reload-code taking no argument at all is strictly less
+  exposure than an operation this design does not need to touch.
+
+  loom-serve.lisp (the entry script, not one of the four primitives) --
+  unconditional self-watch, a pidfile written only once it is true, and a
+  clean answer to a lost race
+
+    Both lifecycle modes gain one more watched path, always, first: the
+    script's own root -- already computed as `here` for the ASDF registry
+    pushes at the top of the file -- prepended to whatever paths the caller
+    supplied. INTERACTIVE-WITH-SERVICE hands the full list to
+    `loom-process:main`, unedited, whose own `(dolist (path arguments)
+    (run-command "watch ..."))` already does the watching. HEADLESS is
+    restructured around PROBLEM's fifth finding's own fix rather than
+    handing the list to serve-forever as a single call: it watches each
+    path itself, in the same order serve-forever's own body would have, by
+    calling watch-repository directly (exactly as serve-forever already
+    does, so no watching behaviour changes, only which frame performs it);
+    calls `loom-serve:start-server` itself, wrapped in a handler-case naming
+    usocket:address-in-use-error -- the same condition INTERACTIVE-WITH-
+    SERVICE already catches around its own direct call to the same function,
+    verified directly on this machine to be what a lost bind race actually
+    produces, unwrapped, since Hunchentoot does not catch or translate it
+    and start-server is not edited to either; and, once that call returns
+    without signalling, writes the pidfile (below) before calling
+    `(loom-serve:serve-forever paths :already-started t)` for the blocking
+    loop and shutdown sequence. On a caught usocket:address-in-use-error,
+    HEADLESS prints one line ("another Loom service is already listening;
+    exiting") and returns without writing a pidfile and without calling
+    serve-forever at all -- there is no listener for it to block on. In
+    neither branch does loom-serve.lisp duplicate serve-forever's own
+    watching loop's *logic*, only its call to watch-repository per path,
+    which is the one line serve-forever's own body already is; nothing
+    about how a path becomes a watched repository changes.
+    INTERACTIVE-WITH-SERVICE's own direct call to start-server, and its own
+    handler-case around it, are unchanged from before this finding -- it
+    never called serve-forever and was never part of the problem. `usocket`
+    needs no new dependency declaration anywhere: it is already loaded
+    transitively through hunchentoot by the time either handler-case runs,
+    and loom-serve.lisp is a script rather than an ASDF component, so it
+    carries no :depends-on of its own to widen.
+
+    The pidfile itself, written only in HEADLESS mode, only by the entry
+    script's own logic, only once its own call to start-server has already
+    returned success -- never speculatively, per PROBLEM's fifth finding's
+    first two problems: a path computed the same way for every run against
+    this tree, the absolute root's own namestring with any leading or
+    trailing `/` trimmed and every remaining `/` replaced with `-`, under
+    /tmp -- for this tree, /tmp/loom-serve-home-beberman-lisp-Loom.pid.
+    Nothing under /tmp is ever inside a watched repository, so unlike a
+    tree-root file this needs no dot-prefix or other exclusion rule to keep
+    the self-watch from indexing it; it is simply never in
+    repository-files' own search path (src/workspace/workspace.lisp:
+    85-104). Deleted by an unwind-protect around the `serve-forever
+    :already-started t` call, on a clean stop (serve-forever returning
+    normally) or a caught, ordinary Lisp-level error; it cannot and does not
+    run on a `kill -9`, an OOM kill, or a crash the SBCL runtime itself does
+    not survive -- no process-level cleanup can run once the process has
+    been ended without its own cooperation, which is exactly why the
+    pidfile is treated everywhere it is read, below, as a claim to be
+    checked rather than a fact to be trusted.
+
+  tools/loom-serve.sh -- the R4 script, six verbs, no Lisp of its own
+
+    Path bookkeeping, computed once, by this script alone, using the same
+    rule loom-serve.lisp uses for the pidfile above so both sides agree on
+    one location without either passing the other an argument: /tmp,
+    named from the watched tree's own absolute root with its leading and
+    trailing `/` trimmed and every remaining `/` replaced with `-`. Three
+    files for this tree: /tmp/loom-serve-home-beberman-lisp-Loom.pid
+    (written by loom-serve.lisp, read by this script), .log (spawned
+    process output, written by this script's own redirect when it spawns
+    `start`), and .reloaded-at (the completion timestamp PROBLEM's third
+    finding requires, written by this script's own `reload` verb after a
+    successful POST). All three are ordinary files under /tmp rather than
+    inside the tree, for PROBLEM's fifth finding's own reason: a source tree
+    is not guaranteed writable, and a fixed name anywhere in one collides
+    across more than one checkout of Loom on the same machine, neither of
+    which /tmp's own per-root naming has either problem.
+
+    A pid on disk naming a process that is not loom-serve is a real hazard
+    once a pidfile can outlive the process it named -- which it always
+    could the moment something ends loom-serve without going through its
+    own cleanup, a `kill -9`, an OOM kill, or a crash, none of which this
+    script can see happen. A dead pid can be recycled by the OS to an
+    unrelated process before anyone runs this script again, and `kill -0
+    $pid` alone cannot tell that process apart from loom-serve. One check,
+    shared rather than duplicated per verb: a pid counts as loom-serve's own
+    only when `kill -0` succeeds *and* /proc/<pid>/cmdline names
+    loom-serve.lisp -- Linux-specific, matching this environment's own
+    stated platform (WSL Ubuntu) and named here as a boundary rather than a
+    portability promise this document does not need to make. Any pidfile
+    that fails either half is stale and is deleted on the spot by whichever
+    verb finds it first; `status`, `start`, `stop` and `restart` all route
+    through this one check rather than four separate readings of the file,
+    the same "resolve once, use everywhere" discipline require-repository
+    and check-capability already apply on the Lisp side of this system.
+    `start` cleaning up a stale pidfile before spawning -- the case a
+    process ended by a signal this script never saw makes possible -- is
+    this check's first and most important use; the other three verbs
+    inherit the same cleanup for free by sharing it rather than by each
+    remembering to perform it separately.
+
+    status    Two curl(1) calls against /v1/server-status and, if that
+              answers, /v1/status?repository=Loom -- both existing, unedited
+              read-tier operations. Not running: says so, non-zero exit.
+              Running: compares the self-watched Loom repository's
+              :indexed-at against the later of :started-at and whatever
+              timestamp .reloaded-at holds, and reports current or stale.
+              If /v1/status answers "no repository named Loom" -- the
+              service was started by hand against a different tree, or
+              something unwatched it -- reports "running, self-watch not
+              registered; staleness unknown" rather than guessing current,
+              CON-0001's discipline applied to an operational answer rather
+              than a resolved name.
+
+    start     Runs the shared pidfile check first, deleting anything stale
+              it finds, then spawns `sbcl --script loom-serve.lisp
+              --headless <path-to-Loom>` detached, stdout and stderr
+              appended to the matching /tmp .log, then polls
+              /v1/server-status for up to a few seconds. Writes no pidfile
+              itself -- the spawned process writes its own, and only once
+              its own start-server call has actually succeeded (loom-
+              serve.lisp above; PROBLEM's fifth finding is why this is
+              stated as a requirement rather than an implementation detail):
+              a process that loses the bind race never touches the file at
+              all, so two concurrent `start` calls, however their spawns
+              interleave, leave exactly one pidfile once the dust settles,
+              naming exactly the process that is actually listening.
+
+    stop      Runs the shared pidfile check; if it names a live, verified
+              pid, sends SIGTERM (the exact path serve-forever's already-
+              built install-signal-handlers exists for) and waits for the
+              pidfile to disappear. If /v1/server-status answers but the
+              check finds no live, verified pid -- someone started
+              loom-serve by hand, or a previous instance ended without this
+              script's knowledge and something else now holds the port --
+              refuses with a clear message rather than guessing at a pid to
+              kill; a human ends that instance from its own terminal.
+
+    restart   `stop`, then `start`.
+
+    reload    Requires the service already running (points at `start`
+              otherwise, rather than silently doing both). POSTs
+              /v1/reload-code. On `:reloaded t`, writes the returned
+              :reloaded-at to the matching /tmp .reloaded-at file -- this
+              file, not any new loom-serve state, is what keeps `status`'s
+              comparison correct after a reload. If the result carries a
+              non-nil :name/:message pair, or a follow-up GET
+              /v1/server-status fails to answer, falls back to `restart` --
+              REQ-0010's own suggested strategy, "attempting a reload and
+              falling back to a restart if one signals," chosen over a
+              static classification of which file changes are safe to
+              reload: a classifier would need to encode CL semantics per
+              form (a defstruct slot change is dangerous, a function body
+              change is not, a defmacro change is dangerous only for a
+              caller already compiled against the old expansion) for a
+              correctness question this document has no measured cases to
+              build one from -- disproportionate design work for a
+              single-developer prototype against a strategy that costs
+              nothing extra when it is right and pays one restart (already
+              measured at seconds, PLAN-0005) when it is wrong.
+
+    update    The single verb meant to be invoked before relying on MCP or
+              REST (R5's own documentation obligation, below). Not running:
+              `start`. Running and current or unknown: no-op, reports
+              which. Running and stale: `reload`. This is R1's check used
+              to *avoid* paying a reload's cost on the common case -- most
+              sessions start with nothing having changed since the last one
+              -- rather than REQ-0010's own alternative of collapsing R1
+              through R3 into one always-reload step; that alternative
+              stays one command away (`restart`) for anyone who would
+              rather not trust the check, or who already knows their own
+              edit touched a defstruct or a definer macro (defentity,
+              def-suite) and wants the safe-by-construction path directly.
+
+  WHY A SESSIONSTART HOOK, DECIDED HERE
+
+  REQ-0010 names three candidates and declines to choose. This document
+  chooses SESSIONSTART, for a reason none of REQ-0010's own three paragraphs
+  states but that settles the question once noticed: an MCP tool over
+  Streamable HTTP is only callable after Claude Code's own `initialize` and
+  `tools/list` handshake against loom-serve succeeds, and that handshake runs
+  once, early, independent of any single tool call. A PreToolUse hook fires
+  *after* Claude Code has already decided which tools exist for this session;
+  if loom-serve was down when the handshake ran, the loom_* tools may never
+  appear as candidates at all, and a hook gating the call that never gets
+  offered cannot recover the session. SessionStart is the only one of the
+  three mechanisms that can be true *before* the handshake it is protecting
+  runs. Its cost is paid once per session rather than once per call --
+  cheaper than a PreToolUse hook on every one of ten tools, and the
+  concurrency it must tolerate (two sessions starting together, both calling
+  `update`) is exactly R2's race, already handled.
+
+  What it does not close, named rather than hidden: a source edit landing
+  after a session's SessionStart hook has already run is invisible until the
+  next session, the gap REQ-0010's own LEFT OPEN names for a SessionStart
+  hook specifically. The fallback is R5's documentation obligation below, not
+  new code: an MCP call failing with a connection error mid-session means
+  "run `tools/loom-serve.sh update` and retry," and `tools/loom.sh` remains,
+  as it does today, a caller that never has this problem because it never
+  keeps state to go stale.
+
+  ALTERNATIVES CONSIDERED
+
+  Comparing repository-indexed-at to :started-at without fixing poll-once,
+  reading staleness instead from a snapshot of entity/relationship counts
+  taken at start and diffed against the current graph. Rejected: two
+  different edits can produce the same counts (a renamed function, a
+  rewritten docstring with an unchanged call graph), which would report
+  "current" for a source tree that had in fact changed -- the same
+  fabricated-fact failure PROBLEM opens with, arrived at by a different
+  road. A timestamp answers "did anything change" honestly; a count answers
+  "did the *shape* of the graph change," a different and noisier question.
+
+  A new :read-tier operation, self-status, folding :indexed-at, :started-at
+  and the reload baseline into one server-side answer, rather than having
+  the script compare two existing operations' output itself. Considered,
+  since it would move the comparison off the script and into Lisp, where it
+  is more testable. Rejected because it does not remove the need for
+  reload-code to report its own completion time either way -- server-status
+  still cannot be edited to track it -- so the new operation would only be
+  reading the same local /tmp state the script already has to keep for the
+  pidfile, adding a network round trip to reach data that already has to
+  live on the machine running the script. Reversible cheaply if a future
+  MCP-driven caller (rather than a shell script) needs the comparison
+  server-side instead: one operation, reading the same .reloaded-at file the
+  script does today.
+
+  A PreToolUse hook on the MCP tool calls, REQ-0010's own first-named
+  option and the one with a working precedent already in this tree
+  (tools/allow-loom.py). Considered as the trigger for `update`. Set aside
+  in favour of documenting `update` as a manual and SessionStart-eligible
+  step rather than proposing a hook here: an MCP tool is only callable
+  after Claude Code's own `initialize` and `tools/list` handshake against
+  loom-serve succeeds, and that handshake runs once, early, independent of
+  any single tool call; if loom-serve was down when it ran, the loom_* tools
+  may never appear as candidates for that session at all, and a per-call
+  hook gating a tool that was never offered cannot recover it -- an
+  argument in SessionStart's favour that a per-call hook does not share.
+  Which Claude Code mechanism, if any, ultimately calls `update`
+  automatically stays exactly as open as REQ-0010 left it; this document
+  commits only to `update` existing and being documented (R5), not to what
+  invokes it without being asked.
+
+  Persisting the set of watched repositories across a restart, so `restart`
+  could re-watch everything a session had added rather than only the Loom
+  root. Considered, and left exactly where ARCH-0006 left it -- "a config
+  file remembering which repositories to auto-watch... is new persisted
+  state with no analogue in the tree today... left as a plainly named,
+  deferred follow-on" -- because nothing about this document's scope
+  changes that argument. What this document adds instead costs no new
+  persisted state for that purpose: the Loom root survives every restart
+  for free, because tools/loom-serve.sh's `start` always names it, the same
+  way tools/loom.sh's own first command always does.
+
+  A REST route that stops the acceptor from inside a request it is itself
+  serving, instead of SIGTERM handled by serve-forever's already-built
+  loop. Rejected: hunchentoot:stop called from a worker thread that is
+  mid-response on the very acceptor being stopped is a self-inflicted
+  version of the problem install-signal-handlers' own comment names for a
+  different case -- "doing the shutdown here would run stop-server and a
+  monitor join inside a [handler] context, which is a place to do as little
+  as possible" -- and the signal path already exists, is already exercised
+  by nothing crashing today, and needs no new code at all.
+
+  The pidfile, its log, and the reload-completion record at the watched
+  tree's own root rather than under /tmp. An earlier draft of this document,
+  changed here rather than after implementation found the two problems
+  PROBLEM's fifth finding states in full: a tree is not guaranteed writable
+  the way Loom's own checkout happens to be, and a fixed name anywhere in it
+  collides across more than one checkout on the same machine. /tmp with
+  per-root naming has neither problem.
+
+  Writing the pidfile speculatively, before start-server's own outcome is
+  known, relying on an unwind-protect to remove it on the losing path.
+  Also an earlier draft, also changed here rather than found later: traced
+  through two overlapping `start` attempts under PROBLEM's fifth finding,
+  a losing process's own unconditional delete can remove a pidfile the
+  winner already overwrote its own pid into, leaving a live, listening
+  process with nothing naming it. Writing only once success is confirmed
+  removes the race by construction rather than by getting the interleaving
+  argument right, which is the kind of argument this document would rather
+  not need to make at all when a simpler sequencing avoids it.
+
+  A second thread inside loom-serve.lisp, started before calling
+  serve-forever unmodified, polling `loom-serve:server-running-p` (already
+  exported, already unedited) until true and writing the pidfile from there
+  -- avoiding any edit to serve-forever at the cost of a second thread with
+  its own lifecycle. Considered as the alternative to the `already-started`
+  keyword once PROBLEM's fifth finding's third problem was found. Rejected:
+  the poller thread is not nested inside the main thread's own dynamic
+  extent, so when the main thread's handler-case catches
+  usocket:address-in-use-error from inside serve-forever's own failed
+  start-server call, nothing automatically stops the poller -- it would need
+  its own shared flag, its own timeout for "give up," and explicit joining
+  or killing on every exit path this design already has to reason about for
+  the main thread alone, which is real, ongoing complexity purchased to keep
+  one function's signature literally unchanged. A single optional keyword,
+  read and returned to in one thread with an ordinary call and return, has
+  none of that -- the smaller change by the measure that matters here, even
+  though it is the one that touches serve-forever and the rejected
+  alternative is not.
+
+  REQUIREMENTS
+
+  R1  "Is loom-serve running, and is it current." Running: server-status,
+      unchanged (ARCH-0006). Current: poll-once now bumps
+      repository-indexed-at whenever it finds a change, so the self-watched
+      Loom repository's own status honestly reports the last moment its
+      source was observed to move; loom-serve.lisp unconditionally
+      self-watches its own root in both lifecycle modes, so the comparison
+      always has data to read once the service is up. tools/loom-serve.sh
+      `status` (and `update`, internally) compares :indexed-at against the
+      later of :started-at and a local reload-completion record kept under
+      /tmp -- needed because :started-at alone stops being the right
+      baseline the moment a reload succeeds, PROBLEM's third finding -- and
+      reports current, stale, or, when the self-watch was never registered,
+      unknown, never a guessed "current." Detection stays separate from
+      action: nothing in poll-once, the monitor thread, or `status` triggers
+      a reload; only `reload`, `restart`, and `update`'s own explicit branch
+      do, and `update` is only ever invoked by a human or an agent choosing
+      to run it, never by the watcher itself.
+
+  R2  "Safe to call when it might already be running." start-server is
+      unedited and still signals the same usocket:address-in-use-error a
+      lost bind race has always produced, verified directly on this machine
+      rather than assumed from a manual. loom-serve.lisp catches it around
+      its own two direct calls to it -- INTERACTIVE-WITH-SERVICE's own,
+      unchanged, and HEADLESS's own, now direct rather than nested inside
+      serve-forever, per PROBLEM's fifth finding -- logs one line, and in
+      headless mode never writes a pidfile at all on that path, because the
+      pidfile is written only after start-server has already succeeded
+      rather than speculatively. tools/loom-serve.sh `start` polls for the
+      result rather than assuming it, and clears any stale pidfile it finds
+      before spawning -- the case where a previous instance ended by
+      `kill -9` or a crash, outside this script's knowledge, leaves a pid
+      the OS is free to recycle to something unrelated. The shared
+      liveness-and-identity check under tools/loom-serve.sh (`kill -0`
+      succeeding is not, by itself, evidence the pid names loom-serve) is
+      what R2's safety actually rests on once a pidfile can silently outlive
+      the process it named, and every verb that reads the pidfile shares it
+      rather than trusting mere existence.
+
+  R3  "Bring loom-serve's own running code up to date, reload preferred
+      over restart." A new :write-tier operation, reload-code, force-
+      reloads :loom-process, :loom-rest and :loom-mcp with `:force :all` --
+      not because REQ-0010's own :force t sketch would leave most of the
+      tree stale in the ordinary case (measured under PROBLEM to be false),
+      but because only :force :all closes the same-second write-then-
+      reload race *mtime-settle-seconds* already names elsewhere in this
+      tree, reproduced directly against a two-system ASDF fixture rather
+      than assumed. Its success answer carries the completion time, which
+      tools/loom-serve.sh `reload` records under /tmp so later staleness
+      checks stay correct past the first reload (PROBLEM's third finding).
+      `tools/loom-serve.sh reload` falls back to `restart` when the
+      operation reports a condition or a post-reload health probe fails to
+      answer, matching REQ-0010's own "attempt and fall back" suggestion
+      over a static safe/unsafe classification this document found no
+      measured basis to build (ALTERNATIVES CONSIDERED). The residual risk
+      REQ-0010 names -- a defstruct or macro-expansion change that reload
+      cannot retroactively fix in a live instance and that signals nothing
+      when it fails -- is not solved here and is recorded as such under
+      CONSEQUENCES, not implied to be covered by the health probe.
+
+  R4  tools/loom-serve.sh, a sixth script beside tools/loom.sh,
+      tools/loom-test.sh and tools/next-doc-id.sh: `status`, `start`,
+      `stop`, `restart`, `reload`, `update`. It contains no Lisp of its
+      own; every check and action against an already-running process goes
+      over the REST surface loom-rest already derives automatically for
+      any registered operation (routes.lisp: "deriving the paths from the
+      registry is within the design"), so reload-code needed no hand-
+      written route to become reachable this way. tools/allow-loom.py's
+      DRIVER pattern gains this script's name alongside the three it
+      already matches, and .claude/settings.json's allow list gains the
+      same path forms (bare, ./-relative, absolute) the other three
+      scripts already carry -- R4's own text, "the same Claude Code
+      permission story... extends to this one rather than needing its own
+      exception," satisfied by widening one regex and one list rather than
+      writing a second hook.
+
+  R5  .claude/agents/tools.md's "Loom is also a standing service" section
+      and the loom skill both gain: tools/loom-serve.sh's six verbs, and
+      the instruction to run `update` before relying on MCP or REST in a
+      session where it has not already been run -- replacing only the
+      framing that today says the service "does not change how an agent in
+      this directory reaches Loom," since it now can, once R1 through R4
+      exist; tools/loom.sh remains correct and unchanged as the console
+      path, and this section is additive to it, not a replacement. Which
+      Claude Code mechanism, if any, calls `update` automatically stays
+      exactly as open as REQ-0010 left it and as ALTERNATIVES CONSIDERED
+      restates; this document makes the manual call available and
+      documented, which is what R5 itself asks for.
+
+  CONSEQUENCES
+
+  Four files change outside docs/: src/workspace/workspace.lisp (poll-once,
+  one new assignment), src/serve/server.lisp (two new definitions,
+  reload-code and *reload-lock*, plus one new optional keyword on
+  serve-forever, `&key already-started`, defaulting to NIL and changing
+  nothing about a call that omits it -- WHAT EACH THING BECOMES states why
+  this is the one place this document edits a lifecycle primitive rather
+  than only adding beside one), src/serve/package.lisp (one new export,
+  *reload-lock*, matching *workspace-registry-lock*'s own precedent), and
+  loom-serve.lisp (unconditional self-watch via the paths list both
+  lifecycle entry points iterate, HEADLESS mode calling watch-repository and
+  start-server directly rather than through an unmodified serve-forever, a
+  pidfile written entirely by the entry script's own logic strictly after
+  that call succeeds, and usocket:address-in-use-error caught the same way
+  around both lifecycle modes' own direct calls to start-server -- no new
+  condition type, no new .asd dependency). Plus one new file,
+  tools/loom-serve.sh, which owns the /tmp location and naming of every
+  piece of process-tracking state this design needs and the
+  liveness-and-identity check that replaces mere pidfile existence as R2's
+  safety argument. tools/allow-loom.py's DRIVER regex and
+  .claude/settings.json's allow list gain the new script's name. No edit to
+  console.lisp, loom.lisp, loom-process.asd, or src/process/package.lisp --
+  ARCH-0006 R5's zero-edit boundary holds, since everything here is new code
+  in loom-serve, in the entry script, or in a new tools/ script, never a
+  change to what the console already does. And, checked explicitly against
+  REQ-0010's own line: start-server, stop-server and server-status are none
+  of them edited by this document; serve-forever gains one optional
+  keyword, argued under WHAT EACH THING BECOMES to be a widened calling
+  convention rather than new behaviour for any caller that does not opt in
+  -- the one place this document's own claim needs qualifying rather than
+  stated flatly, and it is qualified here rather than left for a reader to
+  find the difference between "unedited" and "unedited except."
+
+  resolve-caller-grants and check-capability are untouched, exactly as
+  REQ-0010's point 4 requires: reload-code sits at :write, a tier every
+  credential already carries under today's stub, so no grant is widened and
+  no credential logic is added to reach it.
+
+  Three small pieces of state that did not exist before this document, all
+  living under /tmp rather than inside the tree or inside loom-serve, named
+  from the watched root so a second checkout never collides with this one's:
+  a pidfile (written by loom-serve.lisp, read and cleaned up by
+  tools/loom-serve.sh), a log (spawned process output, for a human or agent
+  diagnosing a failed `start` or `reload`), and a reload-completion record
+  (PROBLEM's third finding's fix). None of the three is committed or
+  shared, and none is guaranteed to survive a reboot -- both are treated as
+  a feature rather than a gap: a machine that clears /tmp on restart clears
+  every stale record this design would otherwise need its own liveness
+  check to catch, for free, on top of the check this document builds
+  anyway for the case a reboot does not cover.
+
+  Every future write-tier operation with no repository argument -- a
+  process-wide action rather than one scoped to a repository -- inherits
+  the shape this document's own reload-code and ARCH-0006's own
+  server-status already share: no require-repository call, no designator
+  argument, a plist answer describing what the process itself did.
+
+  A residual, named gap: reload-code reports whether its three load forms
+  signalled, not whether every live struct instance survived the reload
+  intact. A future document minting per-file "safe to reload"
+  classification, or moving Loom's own live-critical structures (operation,
+  repl-session, a repository's own struct) toward a representation less
+  sensitive to defstruct redefinition, would close it; this document does
+  not attempt either, matching REQ-0010's own scope note that a full
+  restart remains the fallback for exactly this reason.
+
+  A second, smaller residual gap, named for the same reason: the pidfile's
+  /proc/<pid>/cmdline identity check is Linux-specific, matching this
+  environment's own stated platform throughout CLAUDE.md, but a future port
+  of tools/loom-serve.sh to a non-Linux, /proc-less environment would need a
+  different identity check, not merely a different path separator, and this
+  document does not attempt to anticipate one.
+
+  OUTSTANDING
+
+  PLAN-0006 landed all six of its steps and every one of R1 through R5 works
+  end to end -- `update` no-ops in ~30ms when current, reloads in place in
+  ~5s when stale, the pid unchanged across it. This document is `partial`
+  rather than `implemented` for one reason, and it is a reason internal to
+  this document rather than a piece of work left undone: R3's own
+  prescription, `:force :all', is wrong, was implemented differently, and the
+  text above still argues for it in four places (summary; PROBLEM's second
+  finding; WHAT EACH THING BECOMES, reload-code; R3 itself). Recorded here
+  rather than rewritten in place so the correction and the argument it
+  corrects stay legible next to each other.
+
+  What was measured, after PROBLEM's second finding's own two-system ASDF
+  fixture turned out not to be representative of a nine-system image with
+  quicklisp dependencies already loaded in it. `:force :all' forces the
+  *entire transitive plan*, third-party systems included. Recompiling an
+  already-loaded quicklisp system is not a slow no-op; in this tree it is a
+  crash -- string-case, reached through cl-yaml -> serapeum, dies with
+  "overwriting old FUN-INFO ... for STRING-CASE::NUMERIC-CHAR=". A live
+  `tools/loom-serve.sh reload' failed with exactly that, then fell back to a
+  restart that did not come back inside its own poll window either, which is
+  the worst of the three outcomes R3 can produce: slower than a restart and
+  reported as a failure. The fixture that argued for `:force :all' had two
+  systems and no third-party dependencies, so it could not have seen this;
+  the gap between "measured" and "measured against something representative"
+  is the lesson worth keeping from it.
+
+  What is implemented instead: `:force <list>', naming Loom's own nine
+  systems explicitly (*RELOAD-FORCE-SYSTEMS*, src/serve/server.lisp). ASDF
+  forces exactly the systems named and leaves the rest of the plan to its
+  ordinary timestamp comparison, so the same-second write/reload race
+  PROBLEM's second finding correctly identifies is still closed for every
+  file this design cares about, and nothing already loaded from quicklisp is
+  touched. That much of PROBLEM's second finding survives intact -- the race
+  is real and forcing is the fix; only the scope of the forcing was wrong.
+
+  A second, smaller correction found the same way, invisible to the
+  two-system fixture for the same reason. Forcing loom-ontology recompiles
+  src/ontology/package.lisp, whose DEFPACKAGE form is permanently at variance
+  with the live package by design: DEFENTITY exports each entity class and
+  its accessors at load time, so a loaded LOOM-ONTOLOGY exports hundreds of
+  symbols its own DEFPACKAGE does not name. SBCL signals that as a full
+  WARNING, COMPILE-FILE sets failure-p, and ASDF raises COMPILE-FILE-ERROR --
+  so a correctly scoped force still failed on the first file it touched until
+  FORCE-LOAD-SYSTEMS muffled SB-INT:PACKAGE-AT-VARIANCE specifically. Narrow
+  on purpose: muffling WARNING wholesale would let a reload report
+  `:reloaded t' over an edit that did not compile, which is the fabricated
+  fact CON-0001 rules out and the exact property that makes a reload worth
+  believing. This is a consequence of this tree's own DEFENTITY design that
+  no reading of ASDF's documentation would have predicted, and it means any
+  future design that force-recompiles loom-ontology in a live image inherits
+  it.
+
+  One documentation discrepancy, noted rather than silently corrected:
+  CONSEQUENCES above says src/serve/package.lisp gains "one new export,
+  *reload-lock*." PLAN-0006 reversed that -- *RELOAD-FUNCTION* and
+  *RELOAD-SYSTEMS* are exported and *RELOAD-LOCK* stays internal, matching
+  WITH-REPOSITORY-LOCK's own precedent -- and the implementation follows the
+  plan. *RELOAD-FORCE-SYSTEMS* and FORCE-LOAD-SYSTEMS, neither of which this
+  document anticipated, are likewise internal.
+
+  One gap in R3 this document does not address at all, found by running the
+  reload against concurrent traffic after the two corrections above landed:
+  BUG-0008. A request served during a reload can come back HTTP 500 --
+  reproduced, one in six inside a 4.4s window, NO-APPLICABLE-METHOD-ERROR
+  against a generic function ASDF had momentarily emptied of its methods.
+  This design has no concurrency story for R3: *RELOAD-LOCK* serializes
+  RELOAD-CODE against a second RELOAD-CODE and against nothing else, and
+  RELOAD-CODE is reached over REST, so it already runs inside a worker thread
+  on the acceptor whose code it redefines. The distinct hazard CONSEQUENCES
+  above already names -- a live struct instance under a changed layout -- is
+  not this one: this needs no old instance and no changed layout, only a
+  thread running while the reload passes through its intermediate states.
+  Filed rather than fixed here because the fix changes what R3 is: a drain to
+  zero in-flight requests (which hunchentoot:stop's own `:soft t` already
+  implements) cannot be performed by an operation that is itself one of the
+  requests being drained, so either the reload leaves the request path or R3
+  becomes a soft stop and restart. BUG-0008 records the evidence and the
+  constraints; it does not choose.
+
+  Nothing else is outstanding. A successor document correcting R3's text in
+  place -- both the `:force' scope and the concurrency gap -- would let this
+  one move to `implemented'; the two residual gaps above (a struct layout a
+  reload cannot fix, and the Linux-specific identity check) are unchanged by
+  any of this and remain what they were -- named, accepted, not closed here.
+
+  SUPERSEDED IN PART BY ARCH-0008
+
+  That successor arrived, and it did not correct R3's text: it removed the
+  mechanism. ARCH-0008, landed by PLAN-0007 on 2026-08-04, deletes RELOAD-CODE
+  and its five supporting definitions outright and makes bringing running code
+  up to date exclusively a full process restart, run from outside the process
+  being replaced. So R3's in-place reload, the `.reloaded-at` file, and the
+  "later of :started-at and .reloaded-at" comparison in `probe` that PROBLEM's
+  third finding argued for are all gone; :started-at is once again always the
+  moment the running code was loaded, because the only thing that changes
+  running code is a new process. `reload` survives as a documented alias for
+  `restart` so existing usage keeps working.
+
+  R1, R2, R4 and R5 stand unchanged and are still the running design -- the
+  staleness question, the safe-to-call-blind start, the one script with no Lisp
+  of its own, and the documentation obligation. This document stays `partial`
+  rather than becoming `superseded` for that reason: most of it is still true.
+
+  Two things above are worth reading with the successor in hand. The reload
+  measurements -- 4.4s in place against 4.3s for a restart, the `:force :all'
+  crash, the PACKAGE-AT-VARIANCE muffle -- are the evidence ARCH-0008 weighed
+  in deciding the mechanism had failed three separate ways against this tree's
+  real dependency graph, so they are still doing work even though the code they
+  describe is gone. And BUG-0008, filed above as an open gap, is closed by that
+  removal.

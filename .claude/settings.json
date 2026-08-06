@@ -4,12 +4,15 @@
     "allow": [
       "Bash(tools/loom.sh:*)",
       "Bash(tools/loom-test.sh:*)",
+      "Bash(tools/loom-serve.sh:*)",
       "Bash(tools/next-doc-id.sh:*)",
       "Bash(./tools/loom.sh:*)",
       "Bash(./tools/loom-test.sh:*)",
+      "Bash(./tools/loom-serve.sh:*)",
       "Bash(./tools/next-doc-id.sh:*)",
       "Bash(/home/beberman/lisp/Loom/tools/loom.sh:*)",
       "Bash(/home/beberman/lisp/Loom/tools/loom-test.sh:*)",
+      "Bash(/home/beberman/lisp/Loom/tools/loom-serve.sh:*)",
       "Bash(/home/beberman/lisp/Loom/tools/next-doc-id.sh:*)",
       "Bash(sbcl --script:*)",
       "Bash(/usr/bin/sbcl --script:*)",
@@ -36,6 +39,17 @@
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/beberman/lisp/Loom/tools/loom-serve.sh update",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",

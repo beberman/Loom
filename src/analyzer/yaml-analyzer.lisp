@@ -274,6 +274,12 @@ and registering a type\" stays true of the fields as well as the directory."))
                                       :superseded :rejected :open :closed
                                       :implemented :partial))
                 :path path
+                ;; ARCH-0009 R3. A document has no grouping construct of its
+                ;; own to read, so it gets the shared default and nothing
+                ;; stronger. Only here: :RULE, :DECISION and :CONCEPT declare
+                ;; no :SYSTEM property, so a value written on one of those
+                ;; would be dropped by nothing and read by nothing.
+                :system (default-system-for-path path)
                 :format :yaml)))
 
 ;;;; ==================================================================

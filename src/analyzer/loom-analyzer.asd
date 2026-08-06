@@ -42,6 +42,7 @@
   :components
   (
    (:file "suite")
+   (:file "analyzer")
    (:file "lisp-analyzer")
    (:file "yaml-analyzer")
    )

@@ -324,7 +324,12 @@ belongs."
                              :generated-by (getf entry :name)
                              :call-names (getf site :call-names)
                              :framework (getf entry :framework)
-                             :language (getp file :language))))))))
+                             :language (getp file :language)
+                             ;; ARCH-0009 R6, and the same shortcut :LANGUAGE
+                             ;; takes one line up, for the same reason: a
+                             ;; macro-minted entity has no form of its own to
+                             ;; read a package from, so it takes its file's.
+                             :system (getp file :system))))))))
 
 (defun known-generator-names (view registry)
   "Downcased names this pass owns the lifecycle of: every shipped REGISTRY

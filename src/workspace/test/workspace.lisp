@@ -31,8 +31,16 @@
         (merge-pathnames (format nil "loom-fixture-~36r/" (random (expt 2 48)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
+  ;; The IN-PACKAGE is load-bearing, not decoration (BUG-0010). RULE-0001 below
+  ;; names :KERNEL, and after ARCH-0009 that is a package name rather than a
+  ;; path segment: without this form src/alpha.lisp falls through to
+  ;; DEFAULT-SYSTEM-FOR-PATH, which answers NIL for a path with no segment after
+  ;; "src/", and the fixture's rule matches nothing whatever the pipeline does.
+  ;; It mints no entity of its own, so the exact counts asserted below --
+  ;; 3 :FUNCTION entities, 4 files -- are unchanged by its presence.
   (write-file "src/alpha.lisp"
-              "(defun alpha (x) (+ x 1))
+              "(in-package :kernel)
+(defun alpha (x) (+ x 1))
 (defun alpha-twice (x) (alpha (alpha x)))
 ")
   (write-file "src/beta.lisp"
@@ -50,12 +58,12 @@ rationale: |
   (write-file "docs/rules/RULE-0001.yaml"
               "id: RULE-0001
 type: rule
-title: Nothing in src may call into docs
+title: Nothing in kernel may call into docs
 status: active
 severity: error
 check:
   kind: no-edge
-  from-system: src
+  from-system: kernel
   to-system: docs
   rel-types: [calls]
 ")
@@ -109,6 +117,14 @@ check:
 (test the-pipeline-runs-the-rule-checks
   (with-workspace-fixture (repository)
     (let ((g (repository-graph repository)))
+      ;; BUG-0010, and CON-0003's question asked of the assertion below: a rule
+      ;; whose from-system: matches no entity reports zero exactly the way a
+      ;; rule that matched entities and found nothing does. The NULL assertion
+      ;; alone cannot tell "checked and clean" from "never checked", so the
+      ;; premise gets asserted first -- something has to be in :KERNEL for the
+      ;; fixture's RULE-0001 to have had anything to say.
+      (is (plusp (length (entities-in-system g :kernel)))
+          "nothing landed in the system the fixture's rule names")
       (is (null (entities-of-type g :rule-violation))
           "the fixture is clean, and a clean tree must report nothing"))))
 
@@ -220,6 +236,37 @@ check:
                                  (relationships-to g (id alpha) :rel-type :calls))
                   :test #'string=)
           "beta -> alpha was destroyed by the retract and rebuilt by resolution"))))
+
+(test poll-once-that-finds-a-change-moves-indexed-at
+  ;; ARCH-0007 R1: staleness is answered by comparing REPOSITORY-INDEXED-AT
+  ;; against a process's own start time, and that comparison is a fabricated
+  ;; "current" unless the monitor's own path writes the slot too. Before the
+  ;; fix INDEX-REPOSITORY was its only writer.
+  (with-workspace-fixture (repository)
+    (let ((before (repository-indexed-at repository)))
+      ;; GET-UNIVERSAL-TIME counts whole seconds, so a poll in the same second
+      ;; as the initial index would move the slot to a value EQL to the old one
+      ;; and the first assertion would fail for a reason that is not the code's
+      ;; -- the same whole-second fact *MTIME-SETTLE-SECONDS* records one
+      ;; system down.
+      (loop while (<= (get-universal-time) before) do (sleep 0.2))
+      (write-file "src/gamma.lisp" "(defun gamma (x) (beta x))
+")
+      (let ((written (get-universal-time)))
+        (poll-once repository :quiet t)
+        (is (> (repository-indexed-at repository) before)
+            "a poll that reindexed a file left indexed-at at the last reindex")
+        (is (>= (repository-indexed-at repository) written)))
+      ;; The pairing CON-0003 asks for. "Just set it every time" passes the
+      ;; assertions above and fails this one, and it is the first fix a reader
+      ;; reaches for -- it would make every poll of an idle tree report the
+      ;; index as having just moved, which is the same fabricated answer in the
+      ;; other direction.
+      (let ((after (repository-indexed-at repository)))
+        (loop while (<= (get-universal-time) after) do (sleep 0.2))
+        (poll-once repository :quiet t)
+        (is (eql after (repository-indexed-at repository))
+            "a poll that found nothing moved indexed-at anyway")))))
 
 ;;; ------------------------------------------------------------------
 ;;; Rebuild equivalence (SS14.4)
@@ -437,20 +484,34 @@ files: ~a against ~a" after-threads (stress-counts repository)))))
 
 (test a-rule-violation-is-detected-and-recorded
   (with-workspace-fixture (repository)
-    ;; Make src call into docs, which RULE-0001 forbids. A decision entity is
-    ;; not callable, so the violation is manufactured directly on the graph.
+    ;; Make kernel call into docs, which the fixture's RULE-0001 forbids. The
+    ;; caller is the real ALPHA the pipeline analyzed, which is what makes this
+    ;; the one assertion in the nine suites that spans the whole of ARCH-0009's
+    ;; seam: LISP-ANALYZER reading (in-package :kernel), LOOM-ONTOLOGY having
+    ;; declared :system so PROPERTIES-TABLE keeps it, the transaction carrying
+    ;; it through the upsert, and ENTITY-SYSTEM handing it to a rule compiled
+    ;; out of YAML by AS-KEYWORD. BUG-0010: with both endpoints manufactured
+    ;; this tested VIOLATION-OPS and nothing the analyzer or the pipeline does.
+    ;; Only the target is built by hand -- no docs/ file in the fixture defines
+    ;; a callable for the edge to land on -- and it says its system as a
+    ;; property rather than through its path because ENTITY-SYSTEM stopped
+    ;; parsing paths (ARCH-0009 R7).
     (let* ((g (repository-graph repository))
-           (alpha (find "alpha" (entities-of-type g :function)
-                        :key #'name :test #'string=))
+           (caller (find "alpha" (entities-of-type g :function)
+                         :key #'name :test #'string=))
            (target (make-instance 'function-entity
                                   :name "doc-helper"
-                                  :origin-file "docs/design/DEC-0001.yaml"
+                                  :origin-file "docs/design/helper.lisp"
                                   :properties (properties-table
                                                '(:file "docs/design/helper.lisp"
-                                                 :start-line 1 :end-line 2)))))
+                                                 :start-line 1 :end-line 2
+                                                 :system :docs)))))
+      (is (eq :kernel (getp caller :system))
+          "ALPHA carries the package its file declares, or the rule below is
+comparing against nothing and its silence would mean nothing")
       (add-entity g target)
       (add-relationship g (make-instance 'relationship :rel-type :calls
-                                         :from-id (id alpha) :to-id (id target)
+                                         :from-id (id caller) :to-id (id target)
                                          :origin-file "src/alpha.lisp"))
       (apply-transaction g (violation-ops g))
       (is (= 1 (length (entities-of-type g :rule-violation))))

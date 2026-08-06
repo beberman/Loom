@@ -158,6 +158,33 @@ generic would manufacture edges to all of it."
 (defun definition-p (form head)
   (and (consp form) (symbolp (car form)) (string= (token-name (car form)) head)))
 
+(defun normalize-system-name (raw)
+  "RAW, a package designator as TOKEN-NAME rendered it, as a :system keyword.
+
+Uppercased unconditionally, so (in-package :loom-graph), (in-package
+\"loom-graph\") and (in-package :|Loom-Graph|) all name one system. The fold
+matches AS-KEYWORD's in yaml-analyzer.lisp deliberately: those two produce the
+two sides of every :no-edge rule's comparison, and a rule whose sides fold
+differently reports no violations rather than wrong ones -- silence that reads
+as success (ARCH-0009, risk 7).
+
+No \"loom-\" stripping and no nickname resolution. Stripping a fixed prefix
+would make this analyzer secretly aware of one tree's naming habit, which is
+the guess ARCH-0009 is taking out of loom-graph rather than relocating; and a
+nickname is declared by a DEFPACKAGE that RULE-0002 forbids an analyzer from
+reading beyond its own file, so folding one here would be CON-0001's
+fabricated fact. The literal canonical designator is recorded, gap and all."
+  (and raw (plusp (length raw)) (intern (string-upcase raw) :keyword)))
+
+(defun in-package-argument-name (form)
+  "The package FORM, an (IN-PACKAGE ...) form, names -- as a plain string.
+
+TOKEN-NAME already renders a keyword, a bare symbol or a string literal as one
+token, which is all an IN-PACKAGE argument can be, so this needs no new parsing
+capability. A `/`-structured name reads as one token too: `/` is an ordinary
+constituent to the reader, so :game/game arrives as \"game/game\"."
+  (and (consp form) (rest form) (token-name (second form))))
+
 (defun standard-operator-p (name)
   "True when NAME names a symbol in the COMMON-LISP package.
 
@@ -282,7 +309,7 @@ Indices count the operator as 0, so they line up with a registry entry's
                                     :language :lisp
                                     :line-count (line-count contents)))))
 
-(defun make-function-entity (form start end path)
+(defun make-function-entity (form start end path system)
   (make-instance 'function-entity
                  :name (token-name (second form))
                  :origin-file path
@@ -291,9 +318,10 @@ Indices count the operator as 0, so they line up with a registry entry's
                                     :start-line start
                                     :end-line end
                                     :arguments (mapcar #'token-name (third form))
-                                    :language :lisp))))
+                                    :language :lisp
+                                    :system system))))
 
-(defun make-variable-entity (form start end path)
+(defun make-variable-entity (form start end path system)
   (make-instance 'variable-entity
                  :name (token-name (second form))
                  :origin-file path
@@ -302,7 +330,8 @@ Indices count the operator as 0, so they line up with a registry entry's
                                     :start-line start
                                     :end-line end
                                     :kind :special
-                                    :language :lisp))))
+                                    :language :lisp
+                                    :system system))))
 
 ;;;; ------------------------------------------------------------------
 ;;;; CLOS and structure definitions (ARCH-0001)
@@ -340,7 +369,7 @@ a setf method keeps an identity distinct from its reader."
       (format nil "(~{~a~^ ~})" (mapcar #'token-name designator))
       (token-name designator)))
 
-(defun make-class-entity (name kind slots superclasses start end path)
+(defun make-class-entity (name kind slots superclasses start end path system)
   (make-instance 'class-entity
                  :name name
                  :origin-file path
@@ -351,9 +380,10 @@ a setf method keeps an identity distinct from its reader."
                                     :kind kind
                                     :slots slots
                                     :superclass-names superclasses
-                                    :language :lisp))))
+                                    :language :lisp
+                                    :system system))))
 
-(defun make-interface-entity (name start end path &key members generated-by)
+(defun make-interface-entity (name start end path system &key members generated-by)
   "A generic function: a declared protocol with no implementation of its own."
   (make-instance 'interface-entity
                  :name name
@@ -364,9 +394,11 @@ a setf method keeps an identity distinct from its reader."
                                     :end-line end
                                     :members members
                                     :generated-by generated-by
-                                    :language :lisp))))
+                                    :language :lisp
+                                    :system system))))
 
-(defun make-method-entity (name qualifier specializers generic arguments start end path)
+(defun make-method-entity (name qualifier specializers generic arguments start end
+                           path system)
   (make-instance 'method-entity
                  :name name
                  :origin-file path
@@ -378,7 +410,8 @@ a setf method keeps an identity distinct from its reader."
                                     :specializers specializers
                                     :generic-function generic
                                     :arguments arguments
-                                    :language :lisp))))
+                                    :language :lisp
+                                    :system system))))
 
 ;;; --- what a macro's template says it defines (ARCH-0002 R1) --------
 ;;;
@@ -516,7 +549,7 @@ count that exists to be read and acted on."
                   :generator-body-index (macro-body-index (third form)))
             (list :definer-status :unhandled))))))
 
-(defun make-macro-entity (form start end path)
+(defun make-macro-entity (form start end path system)
   "A macro, indexed as a :FUNCTION carrying :MACRO-P.
 Findable and documentable; what a :CALLS edge into one means is left open by
 ARCH-0001, and calls made inside its expansion remain unattributed.
@@ -534,7 +567,8 @@ right answer and not an omission."
                                      :end-line end
                                      :macro-p t
                                      :arguments (mapcar #'token-name (third form))
-                                     :language :lisp)
+                                     :language :lisp
+                                     :system system)
                                (macro-generator-properties form)))))
 
 (defun method-body (form)
@@ -545,7 +579,7 @@ site -- ((stream stream) (object entity)) is full of symbols in car position."
     (when (and (first tail) (symbolp (first tail))) (pop tail))
     (rest tail)))
 
-(defun make-generated-function-entity (name start end path generated-by)
+(defun make-generated-function-entity (name start end path system generated-by)
   "An accessor, constructor, predicate or copier a DEFSTRUCT defines.
 
 A plain function, unlike a DEFCLASS accessor, which is a generic function and
@@ -560,7 +594,8 @@ told from a written one."
                                     :start-line start
                                     :end-line end
                                     :generated-by generated-by
-                                    :language :lisp))))
+                                    :language :lisp
+                                    :system system))))
 
 ;;; --- defclass / define-condition ----------------------------------
 
@@ -577,7 +612,7 @@ DEC-0002's mention of id-derived-p is exactly this."
                             :test #'string=))
             collect (token-name value))))
 
-(defun class-definition-entities (form kind start end path)
+(defun class-definition-entities (form kind start end path system)
   "The :CLASS for a DEFCLASS or DEFINE-CONDITION, and an :INTERFACE for each
 accessor its slots declare."
   (let* ((name (definition-name (second form)))
@@ -586,11 +621,12 @@ accessor its slots declare."
                                     (fourth form)))
          (class (make-class-entity name kind
                                    (mapcar #'token-name slot-specs)
-                                   superclasses start end path)))
+                                   superclasses start end path system)))
     (cons class
           (loop for slot in slot-specs
                 append (loop for accessor in (slot-accessor-names slot)
                              collect (make-interface-entity accessor start end path
+                                                            system
                                                             :generated-by name))))))
 
 ;;; --- defstruct ----------------------------------------------------
@@ -657,23 +693,23 @@ resolves to nothing exactly where the real one is called most."
               (let ((include (defstruct-option-value options "include" nil)))
                 (and include (list (token-name include))))))))
 
-(defun struct-definition-entities (form start end path)
+(defun struct-definition-entities (form start end path system)
   "The :CLASS for a DEFSTRUCT, and a :FUNCTION for every name it generates."
   (multiple-value-bind (name slots generated superclasses)
       (defstruct-generated-names form)
-    (cons (make-class-entity name :struct slots superclasses start end path)
+    (cons (make-class-entity name :struct slots superclasses start end path system)
           (loop for generated-name in generated
                 collect (make-generated-function-entity generated-name start end path
-                                                        name)))))
+                                                        system name)))))
 
 ;;; --- defgeneric / defmethod ---------------------------------------
 
-(defun generic-definition-entity (form start end path)
-  (make-interface-entity (definition-name (second form)) start end path
+(defun generic-definition-entity (form start end path system)
+  (make-interface-entity (definition-name (second form)) start end path system
                          :members (mapcar #'token-name
                                           (lambda-list-parameters (third form)))))
 
-(defun method-definition-entity (form start end path)
+(defun method-definition-entity (form start end path system)
   "The :METHOD for a DEFMETHOD, keyed by name, qualifier and specializers.
 
 The qualifier is whatever sits between the name and the lambda list, which is
@@ -690,7 +726,7 @@ so an empty lambda list is not mistaken for one."
                         (mapcar #'specializer-name parameters)
                         name                    ; the generic it implements
                         (mapcar #'token-name lambda-list)
-                        start end path)))
+                        start end path system)))
 
 (defun make-unparsable-file-entity (path contents condition)
   "The entity a file gets when its contents cannot be read.
@@ -706,6 +742,10 @@ be indistinguishable from a file that genuinely defines nothing."
                  :properties (properties-table
                               (list :path path
                                     :language :lisp
+                                    ;; The path default and nothing stronger:
+                                    ;; the reader failed before any form, so no
+                                    ;; IN-PACKAGE was ever seen (ARCH-0009 R4).
+                                    :system (default-system-for-path path)
                                     :line-count (line-count contents)
                                     :analysis-failed-p t
                                     :analysis-error (princ-to-string condition)))))
@@ -722,6 +762,11 @@ an edge's endpoints against the asserts it has already planned in the same
 transaction."
   (declare (ignore analyzer))
   (let ((file (make-file-entity path contents))
+        ;; The package in effect at the form being read (ARCH-0009 R4). Seeded
+        ;; from the path because a definition read before the file's first
+        ;; IN-PACKAGE has no stronger fact available -- that is the ordinary
+        ;; default falling through, not a special case.
+        (current-system (default-system-for-path path))
         (definitions '())       ; every entity, in source order
         (local-functions '())   ; alist: name -> entity, for exact local calls
         (callables '())         ; list of (entity . body), things with bodies
@@ -752,31 +797,46 @@ transaction."
       (dolist (spec forms)
         (destructuring-bind (form start end) spec
           (cond
+            ;; First, so no later clause can shadow it -- which also means this
+            ;; clause, and not the catch-all's CALL-SITE-HEAD-P guard, is what
+            ;; keeps IN-PACKAGE out of :DEFINER-CALL-SITES and mints no entity
+            ;; for it: the form never reaches the catch-all, so for IN-PACKAGE
+            ;; that guard is unreachable. Leaving "in-package" in
+            ;; *DECLARATION-HEADS* is belt and braces should the ordering ever
+            ;; change. What changes is that it is no longer a complete no-op.
+            ((definition-p form "in-package")
+             (let ((named (normalize-system-name (in-package-argument-name form))))
+               (when named (setf current-system named))))
             ((definition-p form "defun")
-             (note-definition (make-function-entity form start end path)
+             (note-definition (make-function-entity form start end path current-system)
                               :local t :body (cdddr form)))
             ((definition-p form "defmacro")
-             (note-definition (make-macro-entity form start end path)
+             (note-definition (make-macro-entity form start end path current-system)
                               :local t :body (cdddr form)))
             ((or (definition-p form "defvar") (definition-p form "defparameter"))
-             (note-definition (make-variable-entity form start end path)))
+             (note-definition (make-variable-entity form start end path current-system)))
             ((definition-p form "defclass")
-             (dolist (e (class-definition-entities form :class start end path))
+             (dolist (e (class-definition-entities form :class start end path
+                                                   current-system))
                (note-definition e)))
             ((definition-p form "define-condition")
-             (dolist (e (class-definition-entities form :condition start end path))
+             (dolist (e (class-definition-entities form :condition start end path
+                                                   current-system))
                (note-definition e)))
             ((definition-p form "defstruct")
-             (let ((entities (struct-definition-entities form start end path)))
+             (let ((entities (struct-definition-entities form start end path
+                                                         current-system)))
                (note-definition (first entities))
                ;; The generated names are ordinary functions defined by this
                ;; file, so a call to one inside it resolves here rather than
                ;; waiting for the workspace.
                (dolist (e (rest entities)) (note-definition e :local t))))
             ((definition-p form "defgeneric")
-             (note-definition (generic-definition-entity form start end path)))
+             (note-definition (generic-definition-entity form start end path
+                                                         current-system)))
             ((definition-p form "defmethod")
-             (note-definition (method-definition-entity form start end path)
+             (note-definition (method-definition-entity form start end path
+                                                        current-system)
                               :body (method-body form)))
             ;; Everything else is a call, and may be a call to a definer
             ;; macro. Recorded, never judged: the judgement needs the whole
@@ -786,6 +846,12 @@ transaction."
              (push (definer-call-site form start end) call-sites))))))
     (setf definitions (nreverse definitions))
     (setp file :definer-call-sites (nreverse call-sites))
+    ;; Whatever package was in effect at the end of the file -- coarser than
+    ;; the per-entity value above, and deliberately so: one :FILE entity cannot
+    ;; carry two. ARCH-0009 discloses what that costs on a real multi-IN-PACKAGE
+    ;; file. SETP rather than a constructor argument because :system is in no
+    ;; natural key, so writing it here does not move the id.
+    (setp file :system current-system)
 
     ;; --- pass 2: who each function calls ----------------------------
     ;; A name resolves here only if this same file defines it. Anything else

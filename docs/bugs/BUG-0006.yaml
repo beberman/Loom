@@ -1,0 +1,119 @@
+id: BUG-0006
+title: RULE-0001 to RULE-0003 pass vacuously because every entity resolves to the same system
+status: closed
+date: 2026-08-03
+refines: [PLAN-0005]
+affects: [entity-system, edges-between-systems, run-check]
+tags: [rules, layering, check, false-negative]
+summary: |
+  `check` reporting "No violations." for RULE-0001 to RULE-0003 has never been
+  evidence that loom-ontology, loom-analyzer or loom-knowledge respect their
+  own layering, because the function those rules key on cannot see the
+  systems they name. Discovered while planning PLAN-0005, which needed to
+  confirm three new systems stayed peers of loom-process and could not use
+  `check` to do it.
+body: |
+  SYMPTOM
+
+  `tools/loom.sh 'check'` has reported "No violations." throughout this tree's
+  history, for RULE-0001 (`from-system: ontology, to-system: outside`),
+  RULE-0002 (`from-system: analyzer, to-system: graph`) and RULE-0003
+  (`from-system: knowledge, to-system: graph`). Measured against a live index
+  while writing PLAN-0005:
+
+    entity-system tally    :SRC 942   :DOCS 25   NIL 14
+    edges-between-systems :knowledge :graph :calls  ->  0
+    edges-between-systems :src :src :calls          ->  2126
+
+  No entity in the tree is ever classified as :ontology, :analyzer or
+  :knowledge. All 942 source entities are :src.
+
+  CAUSE
+
+  `entity-system` (src/graph/query.lisp:75-81) takes "the leading path segment
+  of a fact's file" as the system name -- the text before the *first* slash.
+  Every source entity's :file looks like "src/knowledge/services.lisp", so the
+  leading segment is always "src", never "knowledge". RULE-0001 to RULE-0003's
+  `:no-edge` checks (run-check, src/graph/rules.lisp:41) ask
+  `edges-between-systems` for edges from a `from-system` that no entity is ever
+  tagged with, so the edge set is empty and the check passes for every
+  possible input, including a deliberately introduced violation.
+
+  The query.lisp header comment already names the convention as provisional
+  ("obvious thing to replace once :REPOSITORY and :PACKAGE entities are
+  actually populated"), but nothing signals that the provisional version does
+  not work at the depth these three rules need -- it needs the *second*
+  segment (`src/knowledge/...` -> `knowledge`), not the first.
+
+  WHY IT HID
+
+  `check` has always printed "No violations." because the loom-graph/loom-
+  analyzer/loom-knowledge layering the rules describe has, in fact, always
+  been respected -- by discipline, the same way CON-0004 records status is.
+  A true positive and a vacuous pass produce identical output, so there was
+  never a moment where the rules said something false loudly enough to
+  notice. It surfaced only because PLAN-0005 needed `check` to serve as
+  evidence for a *new* claim (three new systems never depending on
+  loom-process) and measured what the existing rules could and could not
+  confirm, rather than assuming a clean `check` meant more than it does.
+  RULE-0001 to RULE-0003 have no test of their own that plants a violation and
+  confirms the rule catches it -- the CON-0003 witness this class of defect
+  needs -- which is the same gap by a different name.
+
+  FIX
+
+  Not fixed here. PLAN-0005 worked around it for its own new systems with a
+  structural instrument instead (tools/load-test.lisp: load a system into a
+  fresh image and assert the one it must not depend on is absent), which
+  verifies a dependency the rule engine cannot see at all and does not
+  generalize to RULE-0001 to RULE-0003's existing claims about code already in
+  the tree.
+
+  What a fix needs: `entity-system` (or a rule-specific variant) reading the
+  segment after `src/` rather than before the first slash, so
+  "src/knowledge/services.lisp" resolves to :knowledge and "src/serve/registry.lisp"
+  to :serve; and, per WHY IT HID, a test per rule that plants a call crossing
+  the forbidden boundary in a fixture graph and asserts `run-check` reports
+  it, so a future regression in the fix has a chance of being caught the way
+  the original defect was not.
+
+  FIX
+
+  `entity-system` (src/graph/query.lisp) now checks whether a file starts with
+  "src/" and, when it does, takes the segment *after* that prefix rather than
+  the leading one -- "src/knowledge/services.lisp" resolves to :KNOWLEDGE,
+  "src/serve/registry.lisp" to :SERVE. A file outside src/ keeps the original,
+  shallower convention (its own leading segment), so "docs/rules/RULE-0001.yaml"
+  is still :DOCS; nothing asked for that to change and RULE-0001 to RULE-0003
+  do not name :DOCS. A file directly under src/ with no further subdirectory
+  (this tree has exactly one, src/full-test.lisp) now resolves to NIL rather
+  than :SRC -- unclassified is the honest answer for a file with no subsystem,
+  and CON-0001 prefers that to inventing one.
+
+  Four new tests in src/graph/test/query.lisp exercise ENTITY-SYSTEM and
+  EDGES-BETWEEN-SYSTEMS directly against "src/..." paths, which nothing did
+  before this fix -- every existing fixture in this suite and in test/rules.lisp
+  used a path like "ontology/root-ontology.lisp", with no "src/" prefix, so all
+  of them passed identically under the buggy reading and the fixed one and none
+  would have caught a regression. Three more tests in src/graph/test/rules.lisp
+  repeat RULE-0001 to RULE-0003 verbatim -- same rule id, same check clause --
+  against that real "src/<system>/..." layout, and fail without this fix
+  exactly as `check` did against the real tree.
+
+  One casualty, found by running the suite rather than anticipated: src/
+  workspace/test/workspace.lisp's A-RULE-VIOLATION-IS-DETECTED-AND-RECORDED
+  fixture wrote its files at "src/alpha.lisp" and "src/beta.lisp" -- no
+  subdirectory -- and its own synthetic rule (also named "RULE-0001", a
+  same-tree coincidence with no cross-reference) used `from-system: src`.
+  Under the old convention that resolved; under the fixed one a bare src/ file
+  is unclassified, so the fixture's own rule went vacuous the same way the
+  real ones had. Fixed by fabricating a caller entity under "src/kernel/..."
+  rather than reusing the real, now-unclassified ALPHA, and renaming the
+  fixture's synthetic system from "src" to "kernel" to match.
+
+  A NEW, DEEPER PROBLEM THIS FIX EXPOSED, NOT CLOSED BY IT
+
+  Running `tools/loom.sh 'reindex | check'` against the real tree with the fix
+  in place reports 72 violations of RULE-0002 and RULE-0003 -- the first time
+  `check` has ever reported a nonzero count for either. Every one is a false
+  positive, and neither cause is this document's to fix: see BUG-0009.
