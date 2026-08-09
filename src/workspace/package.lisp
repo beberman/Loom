@@ -20,6 +20,7 @@
    #:repository-indexed-at
    #:repository-file-count
    #:repository-errors
+   #:repository-enrichment
    #:*repositories*
    #:find-repository
    #:all-repositories
@@ -31,6 +32,10 @@
    #:index-repository
    #:reindex-repository
    #:repository-status
+
+   ;; the second pass (ARCH-0011). On explicit demand only -- nothing in
+   ;; POLL-ONCE, the monitor, watch or reindex reaches it.
+   #:enrich-repository
 
    ;; monitoring
    #:start-monitor

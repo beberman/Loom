@@ -1,0 +1,733 @@
+id: PLAN-0009
+title: Sequence ARCH-0010 -- inline DEFGENERIC methods become :METHOD entities through a shared DEFMETHOD tail parser
+status: final
+date: 2026-08-06
+refines: [ARCH-0010]
+affects: [generic-definition-entities, method-entity-from-tail,
+          method-body-from-tail, element-spans, method-definition-entity,
+          method-body, read-forms-with-spans, analyze-file, make-method-entity,
+          make-interface-entity, collect-call-names, skip-whitespace-and-comments]
+tags: [analyzer, lisp, clos, plan, blind-spot]
+summary: |
+  Nine steps implementing ARCH-0010 R1 through R8. The order is forced by one
+  rule: the refactor that makes DEFMETHOD parsing shareable must land, and be
+  proven inert, before any new behaviour exists to blame a later failure on.
+  So step 1 records a bit-identical fingerprint of today's DEFMETHOD entities
+  while the production code is still untouched, step 2 does the extraction and
+  must not touch step 1's file, and only then do the tuple widening (step 3),
+  ELEMENT-SPANS standalone (step 4) and the DEFGENERIC fan-out (step 5) go in.
+  Everything is confined to src/analyzer/lisp-analyzer.lisp and its test file;
+  no ontology change, no graph change. Two corrections to ARCH-0010 are carried
+  and both are measured, not argued: READ-FORMS-WITH-SPANS has two consumers,
+  not one -- the second is a test that asserts on the tuple shape and will
+  break; and R7's acceptance cannot include the call name make-selector,
+  because that name appears in game-server only under #' and COLLECT-CALL-NAMES
+  does not record a function quotation. Out of scope, deliberately: ambiguous
+  call resolution (REQ-0013, REQ-0015), describe's tie-breaking between an
+  :INTERFACE and a same-named :METHOD (ARCH-0010 leaves it to loom-knowledge),
+  and the #' blind spot itself, which gets a BUG document and no code.
+body: |
+  FILES
+
+  Changed:
+
+    src/analyzer/lisp-analyzer.lisp
+        The only production file this plan touches. READ-FORMS-WITH-SPANS
+        widens its tuple (step 3); ELEMENT-SPANS is added beside it (step 4);
+        METHOD-ENTITY-FROM-TAIL and METHOD-BODY-FROM-TAIL are extracted and
+        METHOD-DEFINITION-ENTITY / METHOD-BODY become wrappers (step 2);
+        GENERIC-DEFINITION-ENTITY becomes GENERIC-DEFINITION-ENTITIES and
+        ANALYZE-FILE's defgeneric branch fans out (step 5); ANALYZE-FILE's
+        pass-1 DESTRUCTURING-BIND takes the fourth element (step 3).
+
+    src/analyzer/test/lisp-analyzer.lisp
+        All new tests. The DEFMETHOD fingerprint guard and its corpus (step 1),
+        the updated span assertions in
+        EVERY-TOP-LEVEL-FORM-IS-READ-NOT-JUST-THE-FIRST (step 3), the
+        ELEMENT-SPANS tests (step 4), the inline-method tests R6 asks for
+        (step 5).
+
+    docs/arch/ARCH-0010.yaml, docs/requirements/REQ-0012.yaml
+        affects: lists lose GENERIC-DEFINITION-ENTITY and gain
+        GENERIC-DEFINITION-ENTITIES (step 6); status restated (step 9).
+
+  Created:
+
+    docs/bugs/BUG-0011.yaml
+        A function quotation is not recorded as a call name (step 8). Filed,
+        not fixed -- see RISKS.
+
+  Not changed, and it is worth saying so: no file under src/ontology/,
+  src/graph/, src/knowledge/, src/workspace/ or src/process/. :METHOD already
+  declares every property this needs, RESOLVE-CALLS already walks :METHOD
+  callers, and RESOLVE-IMPLEMENTS and RESOLVE-SPECIALIZERS already derive from
+  :generic-function and :specializers. The fixture
+  src/analyzer/test/fixtures/sample.lisp is deliberately untouched: several
+  tests assert its entity counts and two assert absolute line numbers in it, so
+  every new case goes through ANALYZE-SOURCE on a literal string, which is the
+  convention the test file's own comment at line 230 already states.
+
+  BLAST RADIUS
+
+  What Loom says, from `impact read-forms-with-spans 3` and
+  `impact method-definition-entity 3` (both truncated at 44 and 43 entities):
+
+    read-forms-with-spans   two direct callers -- ANALYZE-FILE, and the test
+                            EVERY-TOP-LEVEL-FORM-IS-READ-NOT-JUST-THE-FIRST
+                            at src/analyzer/test/lisp-analyzer.lisp:159.
+    method-definition-entity  one direct caller -- ANALYZE-FILE.
+    generic-definition-entity one direct caller -- ANALYZE-FILE.
+
+  Everything past d1 in both sets is reached only through ANALYZE-FILE, which
+  is the analyzer's whole contract (SS8.1), so the transitive set is "every
+  test of the analyzer, plus INDEX-FILE and ANALYZE-TREE" and carries no
+  information a plan can act on. The actionable finding is the first line:
+
+  ARCH-0010 R1 states "No other consumer exists" for READ-FORMS-WITH-SPANS.
+  That is wrong, and Loom found it. The test at line 159 asserts
+
+      (is (equal '((2 2) (4 4) (6 6)) (mapcar #'rest forms)))
+
+  which reads the tuple's tail directly and fails the moment a fourth element
+  appears. Step 3 owns it.
+
+  Where Loom is blind here, stated as blindness rather than as a clean bill:
+
+  - Calls made inside a DEFMACRO body are unattributed (ARCH-0001), so a macro
+    expanding into READ-FORMS-WITH-SPANS or METHOD-BODY would not appear in
+    either impact set. Grep over src/ and tools/ finds exactly the textual
+    references Loom reported and no others, which is the independent check --
+    not a second opinion from the same index.
+  - `check` reports 32 rule violations today, every one of them a RULE-0003
+    line and every one a BUG-0009 false positive (BUG-0009 predicts RULE-0002
+    false positives too; none appear in the current output, so 32 RULE-0003
+    lines and no RULE-0002 line is the shape to compare against, not just the
+    total). That number is a constant to
+    compare against, not evidence of anything. RULE-0001 through RULE-0003 name
+    no analyzer-internal property, so none of them has anything to say about
+    this change either way.
+  - No rule and no impact query covers the loom-serve / loom-rest / loom-mcp /
+    loom-process boundary. This change does not reach it -- loom-analyzer is
+    below all four -- but that is read off the layering, not off a tool.
+
+  Measured baselines, taken today against unmodified code with a census script
+  (watch-repository, then count entities by type and relationships by type):
+
+    Loom          1348 entities, 6137 relationships
+                  :method 32, :interface 40, :function 597, :test 364
+                  :calls 2615, :implements 22, :uses 228
+                  `status` unresolved: 0 document references, 1 definer macro
+    game-server   2151 entities, 9931 relationships
+                  :method 376, :interface 318
+                  :calls 5152, :implements 222, :uses 484
+
+  The game-server :CALLS figure reproduces REQ-0012's 5,152 exactly, so that
+  document's baseline is confirmed rather than assumed.
+
+  RISKS
+
+  R-1  The fingerprint guard passes for the wrong reason. It is an inverted
+       test: it must pass BEFORE and AFTER step 2, so "it passes" proves
+       nothing on its own. CON-0003 is satisfied differently here -- by
+       deliberately breaking the extracted core once and observing the guard
+       fail. Step 2's verification names the mutation and the assertions that
+       must go red. Without that, a fingerprint recorded from a helper that
+       silently normalises something is a guard over its own output.
+
+  R-2  ELEMENT-SPANS is the piece most likely to be wrong in a way tests do not
+       catch, because it re-reads text a second time with a second reader. The
+       specific hazard READ-FORMS-WITH-SPANS's docstring records is a sub-range
+       string stream: FILE-POSITION is ambiguous across SBCL builds over such a
+       stream, and the earlier version of the walk silently stopped two forms in
+       with no condition signalled. ELEMENT-SPANS must therefore take the whole
+       content string and seek within it, exactly as READ-FORMS-WITH-SPANS
+       does, and must never construct a stream over a substring. A regression
+       here is silent by construction -- wrong line numbers, no error -- which
+       is why step 4 tests it standalone against known-good spans before
+       anything consumes it.
+
+  R-3  The second reader environment diverges from the first. Different
+       *PACKAGE*, a live *READ-EVAL*, or a missing PACKAGE-ERROR handler makes
+       ELEMENT-SPANS signal or read differently on exactly the foreign source
+       INTERN-FOREIGN-SYMBOL-LOCALLY exists for, and the failure shows up only
+       on someone else's repository. Step 4 asserts a foreign package prefix
+       inside a clause survives.
+
+  R-4  A fabricated span. If the element sequence and the form's own elements
+       disagree in length, zipping them positionally attributes one clause's
+       range to another -- a fabricated fact, which CON-0001 forbids. The
+       fallback (whole-DEFGENERIC range on every inline method) is a wider
+       truth and therefore allowed. Step 5 tests the fallback as a case, not as
+       an unexercised safety net.
+
+  R-5  R7's acceptance criterion cannot be met as written, and this was
+       measured rather than reasoned about. ARCH-0010 R7 requires the
+       dhandler-delete :METHOD to carry the call name make-selector, and it is
+       R7's criterion alone: REQ-0012 R5 asks only for dhandler-delete-all and
+       dhandler-delete-selector, and names make-selector only in prose,
+       describing the source rather than stating an acceptance test. It
+       will not. In game-server's source the name appears only as
+       (apply #'make-selector args), and COLLECT-CALL-NAMES walks operator
+       positions: #'make-selector reads as (function make-selector), whose
+       operator is FUNCTION and whose tail element is a bare symbol, which the
+       walk does not record. Running the current analyzer over that exact body
+       today yields :call-names ("dhandler-delete-selector"
+       "dhandler-delete-all" "selector") -- "selector" being the LET binding's
+       head, a separate pre-existing imprecision. Step 8 amends the criterion
+       to the two names that are genuinely recoverable and files BUG-0011 for
+       the #' gap. Fixing #' inside this plan is refused deliberately: it would
+       add call names across both codebases and confound the very :CALLS delta
+       R7 exists to measure.
+
+  R-6  "Entity count rises by exactly 2" is not measurable the way R7 phrases
+       it, because this change adds functions and tests to the tree Loom
+       indexes, so the total entity count rises by more than 2 for reasons that
+       have nothing to do with inline methods. The attributable measurement is
+       the :METHOD-type count: 32 -> 34. It is attributable because this plan
+       adds no DEFMETHOD form anywhere -- every new definition is a DEFUN or a
+       FiveAM TEST. Step 7 states that as a precondition to check, not as an
+       assumption.
+
+  R-7  Doc references dangle in the interval. Renaming GENERIC-DEFINITION-ENTITY
+       lands in step 5; ARCH-0010's and REQ-0012's affects: lists still name the
+       old symbol until step 6. `check` will report exactly 2 unresolved
+       document references in between (0 today). That is the staleness detector
+       working. It must be back to 0 before step 7's measurement, or step 7
+       cannot tell a stale reference from a new one.
+
+  R-8  Tests likely to break, and why:
+         EVERY-TOP-LEVEL-FORM-IS-READ-NOT-JUST-THE-FIRST -- asserts on
+           (mapcar #'rest forms); the fourth tuple element breaks the EQUAL.
+           Step 3 updates it in the same step that widens the tuple.
+         A-STRUCT-A-GENERIC-AND-A-METHOD-CARRY-THE-PACKAGE (test file line 496)
+           -- analyzes "(defgeneric render (x))" and a standalone DEFMETHOD.
+           No inline clause, so it should be untouched; if it moves, the
+           interface path regressed and step 5 is wrong.
+         Every fixture-counting test (ANALYZE-FILE-RETURNS-ONTOLOGY-OPERATIONS,
+           AN-ENTITY-ID-IS-DERIVED..., ANALYZE-FILE-RECORDS-CORRECT-LINE-SPANS)
+           -- untouched only because sample.lisp is untouched. If a step edits
+           the fixture, all of them move at once.
+         src/graph/test/resolve.lisp and the workspace tests -- these index
+           Loom's own tree in places. Two new :METHOD entities appear in
+           src/graph/rules.lisp and src/analyzer/analyzer.lisp after step 5;
+           any test asserting an exact count over that tree moves by 2.
+
+  STEPS
+
+  Step 1 is the first that can be run, and it runs against completely
+  unmodified production code -- that is its purpose.
+
+  1. RECORD WHAT A DEFMETHOD PRODUCES TODAY, BIT FOR BIT.
+
+     File: src/analyzer/test/lisp-analyzer.lisp only. No production file is
+     touched in this step.
+
+     Add a helper and one test in the literal-source section (after
+     ANALYZE-SOURCE, near line 242):
+
+       (defun method-fingerprint (entity)
+         "Everything about ENTITY that must not move: its type, name, id,
+     origin file, and every property with its value, in a stable order."
+         (list (entity-type entity)
+               (name entity)
+               (id entity)
+               (origin-file entity)
+               (let ((pairs '()))
+                 (maphash (lambda (k v) (push (list k v) pairs))
+                          (properties entity))
+                 (sort pairs #'string< :key (lambda (p) (princ-to-string (first p)))))))
+
+     Note what this deliberately does NOT do: it does not name the properties
+     it expects. It walks the whole table, so a property silently gained or
+     lost in step 2 changes the fingerprint. A spot check of :qualifier and
+     :specializers would not catch a dropped :signature or a :system that
+     stopped defaulting.
+
+     The corpus is seven DEFMETHOD source strings, each analyzed with
+     ANALYZE-SOURCE and fingerprinted, chosen to cover every branch of the tail
+     parsing that step 2 extracts:
+
+       a  (defmethod render ((x hop)) x)                    plain specializer
+       b  (defmethod render :around ((x hop)) x)            qualifier
+       c  (defmethod render ((x (eql :oneof))) x)           EQL specializer
+       d  (defmethod (setf render) (v (x hop)) v)           (setf f) name
+       e  (defmethod render () 1)                           empty lambda list,
+                                                            which must NOT be
+                                                            read as a qualifier
+       f  (defmethod render ((x hop) &rest args) args)      & marker stops the
+                                                            specializer walk
+       g  (defmethod render (a b) (helper a b))             wholly unspecialized
+
+     Each fingerprint is asserted against a literal recorded from today's code.
+     Obtain the literals mechanically, not by hand: write a throwaway script
+     under the scratchpad using the registry preamble from the loom skill, load
+     :loom-analyzer and :loom-graph, print (method-fingerprint e) for each
+     corpus entry with ~s, and paste the printed forms into the test as quoted
+     literals. Do not hand-type an id -- id derivation renders an empty
+     qualifier as an empty segment (case a yields
+     "method:sample.lisp:render::hop"), and a hand-typed guess at that is a
+     guard over a guess.
+
+     Add a second test over the same corpus asserting
+     (loom-analyzer::method-body form) for each, against literals recorded the
+     same way. METHOD-BODY is extracted in step 2 alongside the entity
+     constructor and needs its own guard; case e is the one that matters, since
+     an empty lambda list is the input that distinguishes a correct qualifier
+     test from (when (first tail) ...) written the obvious wrong way.
+
+     Verification: tools/loom-test.sh is green and the two new tests pass
+     against unmodified src/analyzer/lisp-analyzer.lisp. Passing here is the
+     evidence that the literals describe today's behaviour; step 2 is what
+     turns them into a guard.
+
+  2. EXTRACT THE SHARED CORES. NO BEHAVIOUR CHANGE.
+
+     File: src/analyzer/lisp-analyzer.lisp only. src/analyzer/test/
+     lisp-analyzer.lisp must not appear in this step's diff -- if it does, the
+     guard was adjusted to fit the refactor and proves nothing.
+
+     Add METHOD-ENTITY-FROM-TAIL (name tail start end path system), holding
+     exactly the body of today's METHOD-DEFINITION-ENTITY from the qualifier
+     detection through the MAKE-METHOD-ENTITY call, with the name and tail
+     arriving as arguments instead of being read off the form. Keep the
+     qualifier test verbatim -- (and (first tail) (symbolp (first tail))) --
+     including the NIL guard, which is what makes case e above pass.
+
+     Add METHOD-BODY-FROM-TAIL (tail): pop the qualifier when present, then
+     (rest tail).
+
+     Rewrite METHOD-DEFINITION-ENTITY as
+     (method-entity-from-tail (definition-name (second form)) (cddr form)
+                              start end path system)
+     and METHOD-BODY as (method-body-from-tail (cddr form)). Move the
+     explanatory docstrings onto the cores, where the logic now lives, and
+     leave the wrappers with one line each saying they are the DEFMETHOD
+     spelling of a shared core.
+
+     Verification, in this order:
+       (a) tools/loom-test.sh green, step 1's two tests among the passes.
+       (b) Falsification, which is the step's real verification: temporarily
+           delete the qualifier detection from METHOD-ENTITY-FROM-TAIL so
+           QUALIFIER is always NIL, re-run tools/loom-test.sh, and confirm the
+           fingerprint test fails on corpus case b -- both in the :QUALIFIER
+           property and in the id, since :qualifier is a natural-key component.
+           Revert. Record the observed failure text in the step's completion
+           note. A guard that cannot be made to fail on demand is not a guard.
+       (c) tools/loom.sh 'status' -- :method count unchanged at 32 (the census
+           script, or `find run-check method` and eyeballing, both work); the
+           entity total rises only by the DEFUNs and TESTs steps 1 and 2 added.
+
+  3. WIDEN THE READ-FORMS-WITH-SPANS TUPLE TO FOUR ELEMENTS.
+
+     Files: src/analyzer/lisp-analyzer.lisp, src/analyzer/test/
+     lisp-analyzer.lisp.
+
+     In READ-FORMS-WITH-SPANS, the PUSH becomes
+     (push (list form (offset-line content start) (offset-line content end)
+                 start) results).
+     START is already computed by SKIP-WHITESPACE-AND-COMMENTS and is the
+     character offset of the form's first character; nothing new is calculated.
+     Extend the docstring's "Returns a list of (FORM START-LINE END-LINE)"
+     sentence to name the fourth element and say what it is for -- the
+     re-read ELEMENT-SPANS performs -- and add the obligation ARCH-0010 records:
+     anything touching this function must preserve both the offset and the
+     whole-content-stream property.
+
+     In ANALYZE-FILE, (destructuring-bind (form start end) spec ...) becomes
+     (destructuring-bind (form start end start-offset) spec ...). START-OFFSET
+     is unused until step 5; declare it ignorable rather than leaving a style
+     warning, and remove the declaration in step 5.
+
+     Update EVERY-TOP-LEVEL-FORM-IS-READ-NOT-JUST-THE-FIRST. Its
+     (mapcar #'rest forms) assertion becomes four-element tuples. The expected
+     offsets for that test's own source string are 22, 44 and 62 -- derive them
+     rather than trusting this plan: the header comment is 21 characters plus a
+     newline, and each following form is separated by a newline and a blank
+     line. Add one assertion that makes the offsets self-checking rather than
+     magic:
+
+       each offset O must satisfy (char content O) => #\(
+
+     so a future edit to the test's source string cannot leave the numbers
+     silently wrong.
+
+     Verification: tools/loom-test.sh green. The updated test fails without the
+     production change (the tuple has three elements, the EQUAL against
+     four-element lists fails) and fails with the production change if the
+     offsets are wrong -- confirm both directions by running it once before
+     editing lisp-analyzer.lisp.
+
+  4. ELEMENT-SPANS, STANDALONE, WITH NOTHING CONSUMING IT.
+
+     Files: src/analyzer/lisp-analyzer.lisp (new function in the "Reading forms
+     with source spans" section, immediately after READ-FORMS-WITH-SPANS),
+     src/analyzer/test/lisp-analyzer.lisp.
+
+     (defun element-spans (content start-offset) ...) returns a list of
+     (element start-line end-line), one per element of the form that begins at
+     START-OFFSET, or NIL if anything signals or the offset does not name a
+     list.
+
+     Mechanism, and every clause of it is load-bearing:
+       - Guard first: return NIL unless START-OFFSET is inside CONTENT and
+         (char content start-offset) is #\(. Without this an offset naming an
+         atom seeks into the middle of a token and returns plausible garbage.
+       - One stream over the whole of CONTENT, seeked to (1+ start-offset).
+         Never a stream over a substring -- see R-2.
+       - The same reader environment as READ-FORMS-WITH-SPANS: *PACKAGE* bound
+         to a fresh (make-package (gensym ...) :use nil), *READ-EVAL* NIL, and
+         a HANDLER-BIND of PACKAGE-ERROR to INTERN-FOREIGN-SYMBOL-LOCALLY, with
+         the package deleted in an UNWIND-PROTECT cleanup.
+       - Loop: SKIP-WHITESPACE-AND-COMMENTS from (file-position stream); stop
+         at end of content; stop when the character there is #\); otherwise
+         seek, READ-PRESERVING-WHITESPACE, record (offset-line content start)
+         and (offset-line content end), and stop if the position did not
+         advance.
+       - Wrap the whole body so that any signalled condition yields NIL. Guard
+         with the type the reader actually signals: END-OF-FILE and
+         READER-ERROR are ERROR subtypes, but per RULE-0004 do not assume every
+         condition a foreign form can raise is one -- handle CONDITION, or
+         handle ERROR and say in a comment why nothing else can reach here.
+
+     This mechanism was run against real source before this plan was written,
+     and the results are the expected values step 4's tests should reproduce.
+     On game-server's data-api/handler.lisp at the offset of
+     "(defgeneric dhandler-delete (handler" it returns five elements, the last
+     being the (:method ...) clause spanning 158-166 -- exactly the range
+     ARCH-0010 R7 asks for. All three failure modes returned NIL.
+
+     Tests, all reaching in with loom-analyzer:: as the existing
+     READ-FORMS-WITH-SPANS test already does:
+
+       (a) A one-line (defgeneric g (x)) -- three elements, each spanning 1-1.
+       (b) The multi-line case, verified: source
+
+             (defgeneric g (x)
+               (:documentation "d")
+               (:method :around ((x foo))
+                 (call-next-method))
+               (:method ((primary (eql :oneof)) &key k)
+                 (helper primary k)))
+
+           yields six elements; the two clauses span lines 3-4 and 5-6, and the
+           :documentation clause spans 2-2. This is the assertion that proves
+           per-clause ranges are real rather than the whole form's.
+       (c) Alignment: for the same source, (length (element-spans ...)) equals
+           (length form) where FORM is what READ-FORMS-WITH-SPANS read. This is
+           the invariant step 5's zip depends on, tested where it is cheap.
+       (d) The head of a clause is EQ to the keyword :method -- keywords intern
+           in KEYWORD regardless of *PACKAGE*, which is why step 5 may compare
+           heads across two reads at all. Non-keyword symbols come back in the
+           throwaway package, so nothing else may be compared with EQ.
+       (e) A foreign package prefix inside a clause body -- for example
+           (:method ((x foo)) (utils:parse-config x)) -- returns spans rather
+           than NIL. This is R-3: without the PACKAGE-ERROR handler it signals.
+       (f) Three fallback cases, each asserting NIL: an offset that does not
+           point at #\(, an offset past the end of the content, and a form with
+           an unbalanced paren. All three were confirmed to return NIL by the
+           probe above; they are tested, not assumed.
+
+     Verification: tools/loom-test.sh green. Every one of these tests fails
+     without the step, because the function does not exist -- confirm by
+     running the suite once with the tests added and the function absent, and
+     note that the failure is a compile-time undefined-function error, not a
+     silent skip.
+
+  5. GENERIC-DEFINITION-ENTITIES, AND ANALYZE-FILE FANS OUT. THE BEHAVIOUR
+     CHANGE.
+
+     Files: src/analyzer/lisp-analyzer.lisp, src/analyzer/test/
+     lisp-analyzer.lisp.
+
+     Rename GENERIC-DEFINITION-ENTITY to GENERIC-DEFINITION-ENTITIES with
+
+       (defun generic-definition-entities (form start end path system
+                                           &key contents start-offset)
+
+     returning an ordered list of (entity . body) pairs. PATH and SYSTEM stay
+     positional and in that order, per ARCH-0009's convention; CONTENTS and
+     START-OFFSET are keywords precisely so a test can call it without them and
+     exercise the fallback, and so a caller that has no contents is not
+     required to lie about them.
+
+     Body:
+       - First pair: the :INTERFACE exactly as today -- MAKE-INTERFACE-ENTITY
+         with (definition-name (second form)), :members from
+         (lambda-list-parameters (third form)), the whole form's START and END
+         -- consed with NIL. Nothing about the interface changes; this is
+         REQ-0012 R2 and the reason the rename is the only visible difference
+         for a DEFGENERIC with no inline clause.
+       - Spans: when CONTENTS and START-OFFSET are both supplied, call
+         (element-spans contents start-offset) and use its result only if its
+         length equals (length form). On NIL or on a length mismatch, use NIL
+         and let every clause fall back to START and END. Comment the mismatch
+         branch with why it exists: zipping two sequences of different lengths
+         attributes one clause's range to another, which is a fabricated fact
+         (CON-0001), and the whole form's range is a wider truth that contains
+         the clause.
+       - Then, for each element of (cdddr form) with its index, when the
+         element is a CONS whose head is a symbol and (token-name head) is
+         "method": take TAIL as (rest element) and cons
+         (method-entity-from-tail (definition-name (second form)) tail
+                                  clause-start clause-end path system)
+         with (method-body-from-tail tail). CLAUSE-START and CLAUSE-END come
+         from the aligned element span at the same index, or from START and END
+         under the fallback.
+       - Every other clause -- (:documentation ...), (:method-combination ...),
+         (declare ...), (:argument-precedence-order ...) -- is skipped, as
+         today.
+
+     In ANALYZE-FILE's defgeneric branch:
+
+       (dolist (pair (generic-definition-entities form start end path
+                                                  current-system
+                                                  :contents contents
+                                                  :start-offset start-offset))
+         (note-definition (car pair) :body (cdr pair)))
+
+     NOTE-DEFINITION already treats a NIL :body as "no body", so the interface
+     pair needs no special case. Do not pass :local -- the comment already in
+     pass 1 gives the reason for DEFMETHOD and it applies unchanged: a call
+     names the generic, and which method runs is a runtime question. Remove the
+     IGNORABLE declaration step 3 put on START-OFFSET.
+
+     Tests (this is ARCH-0010 R6 / REQ-0012 R6), all through ANALYZE-SOURCE:
+
+       (a) An inline method exists and carries its own range. Source with a
+           DEFGENERIC on line 1 whose clause starts on line 3: assert a :METHOD
+           entity named for the generic exists, that its :start-line is the
+           clause's line and not the form's, and that the :INTERFACE entity of
+           the same name still exists with the whole form's range. Asserting
+           both halves in one test is deliberate -- "the method got the right
+           range" and "the interface kept its own" are the pair REQ-0012 R3
+           asks for.
+       (b) A qualified and an unqualified clause on one generic are two
+           entities. Assert two :METHOD entities, differing in :qualifier
+           (:AROUND and NIL) and therefore in id. Assert the ids differ
+           explicitly: the natural key is (:file :name :qualifier
+           :specializers) and this is the test that the qualifier survives into
+           it rather than merely into a property.
+       (c) The :CALLS edge exists after resolution. A fixture with a DEFUN and
+           a DEFGENERIC whose inline clause body calls that DEFUN by name in
+           operator position; apply the ops to a graph, run the resolution the
+           other analyzer tests use, and assert the edge from the :METHOD to
+           the :FUNCTION. This is the test REQ-0012 R6 names and the one that
+           returns nothing today -- confirm that by running it before step 5's
+           production edit and observing it fail for the right reason (no
+           :METHOD entity at all, not a missing edge).
+       (d) The fallback is a tested path. Call
+           (loom-analyzer::generic-definition-entities form start end path
+           system) directly with no :contents -- every :METHOD carries the
+           whole form's START and END. Then call it again with :contents and a
+           :start-offset naming a different form in the same string, so the
+           element count mismatches, and assert the same whole-form ranges.
+           Two calls, because "no spans available" and "spans available but
+           misaligned" reach the fallback by different branches.
+       (e) A DEFGENERIC with no inline clause still produces exactly one
+           entity, the :INTERFACE, with the members it has today. The
+           regression guard for REQ-0012 R2 and for the seven-DEFGENERIC
+           majority in Loom's own tree.
+
+     Verification: tools/loom-test.sh green; (a) through (e) all fail without
+     the production change in this step -- (a), (b), (c) and (e for the count)
+     because no :METHOD entity is minted at all, (d) because the function does
+     not exist under that name.
+
+  6. CLOSE THE DANGLING REFERENCES THE RENAME CREATES.
+
+     Files: docs/arch/ARCH-0010.yaml, docs/requirements/REQ-0012.yaml.
+
+     Both name GENERIC-DEFINITION-ENTITY in affects:. Replace with
+     GENERIC-DEFINITION-ENTITIES in both. ARCH-0010's CONSEQUENCES section
+     already predicts this and requires the implementing plan to do it.
+
+     Verification: tools/loom.sh 'status | check'. Before this step -- that is,
+     with step 5 landed and this one not -- `check` reports exactly 2 unresolved
+     document references, one per document; after it, 0, which is where the
+     baseline was. Run `check` between step 5 and step 6 and record the 2, so
+     the mechanism is observed working rather than merely believed in. Rule
+     violations stay at 32 throughout; they are BUG-0009's false positives and
+     nothing in this plan can move them.
+
+  7. MEASURE LOOM.
+
+     No file changes. Reindex and count.
+
+     Precondition to state explicitly before measuring: this plan added no
+     DEFMETHOD form to the tree. Every definition steps 1 through 5 added is a
+     DEFUN or a FiveAM TEST. Confirm with a grep for "(defmethod" over the
+     diff; if that is false, the :METHOD delta below is not attributable and
+     the measurement has to be redone against a git worktree of the pre-change
+     tree.
+
+     Run the census (a throwaway script using the loom skill's registry
+     preamble: watch-repository on /home/beberman/lisp/Loom with :monitor nil,
+     then count entities by ENTITY-TYPE and relationships by REL-TYPE), and
+     compare against today's baseline:
+
+       :method       32 -> 34    exactly, and this is R7's real form
+       :interface    40 -> 40    unchanged; no interface is lost or gained
+       :implements   22 -> 24    expected: each new method implements a generic
+                                 that exists in the same tree, so UNIQUE-MATCH
+                                 should resolve both. If it is 22, resolution
+                                 did not see the :generic-function property and
+                                 step 5 is wrong.
+       :calls        2615 -> at least 2615; record the number, do not predict
+                                 it
+       :uses         228 -> 228 or 229; the analyzer-handles-p clause
+                                 specializes on ANALYZER, the run-check clause
+                                 on nothing
+
+     And name the two entities, which is the check that the count is the right
+     count:
+
+       tools/loom.sh 'find run-check method | find analyzer-handles-p method'
+
+     must show a :METHOD at src/graph/rules.lisp:34-39 and one at
+     src/analyzer/analyzer.lisp:53-59 -- the two inline clauses in Loom's tree,
+     independently located before this plan was written. The line ranges are
+     the assertion that matters: if either reads 30-39 or 43-59, the span
+     fallback is being taken where the real range was available.
+
+     Verification: tools/loom-test.sh green (nine systems); tools/loom.sh
+     'status | check' shows 0 unresolved document references and 32 rule
+     violations; the counts above.
+
+  8. MEASURE GAME-SERVER, AND FILE WHAT IT REVEALS.
+
+     Creates docs/bugs/BUG-0011.yaml. No source changes.
+
+     find, describe and impact take no repository argument and refuse while two
+     repositories are watched, so the query session is:
+
+       tools/loom.sh 'watch "~/lisp/game-server" | unwatch Loom | find dhandler-delete method | impact dhandler-delete 2'
+
+     and afterwards, to leave the tree as it was found:
+
+       tools/loom.sh 'watch "~/lisp/Loom" | unwatch game-server'
+
+     What must be true (ARCH-0010 R8 -- through find-by-type and impact, never
+     through describe-by-name, because an exact-name tie between the :INTERFACE
+     and the new same-named :METHOD falls to index order and ARCH-0010
+     deliberately leaves describe's tie-breaking to loom-knowledge):
+
+       - `find dhandler-delete method` returns a :METHOD at
+         data-api/handler.lisp:158-166. Not 156-166, which is the enclosing
+         form and would mean the fallback was taken.
+       - describe by that entity's id shows outgoing calls including
+         dhandler-delete-all and dhandler-delete-selector.
+       - `impact dhandler-delete 2` reaches dhandler-delete-all and
+         dhandler-delete-selector.
+
+     What must NOT be claimed, and the amendment this step owns: make-selector
+     will not appear among the call names. Measured today against the current
+     analyzer on that exact body, the recorded names are
+     ("dhandler-delete-selector" "dhandler-delete-all" "selector").
+     make-selector appears in the source only as (apply #'make-selector args),
+     and COLLECT-CALL-NAMES records operator positions -- #'make-selector reads
+     as (function make-selector), whose operator is FUNCTION and whose tail is a
+     bare symbol the walk does not record. "selector" is the head of a LET
+     binding pair, a separate pre-existing imprecision. Write BUG-0011 for the
+     #' gap: SYMPTOM (the name a function quotation designates is never
+     recorded, so a callee reached only through #'f, mapcar or apply has no
+     incoming edge from its caller), CAUSE (COLLECT-CALL-NAMES walks operator
+     positions and (function f) puts f in an argument position), WHY IT HID
+     (the names it drops are exactly the ones a reader would not think to look
+     for, and no test covers a function quotation), FIX (record the argument of
+     a FUNCTION form as a call name -- and note the measurement obligation: it
+     will move :calls on both codebases, which is why it is not folded in
+     here). refines: [PLAN-0009], affects: [collect-call-names].
+
+     Then the census on game-server, against today's baseline:
+
+       :calls    5152 -> record the number. This is the fact that replaces
+                 REQ-0012's "~500 additional edges" estimate. Write the
+                 measured number into REQ-0012 in step 9, next to the estimate,
+                 rather than deleting the estimate -- the gap between the two
+                 is the lesson.
+       :method   376 -> expect 623 (376 + 247 inline clauses). A shortfall is
+                 not automatically a bug: ARCH-0010 R4 discloses that an inline
+                 method and a standalone DEFMETHOD with identical name,
+                 qualifier and specializers in the SAME file collide into one
+                 id and the later assert wins. If the number is below 623,
+                 count the collisions rather than explaining them -- a script
+                 that groups clauses by (file, name, qualifier, specializers)
+                 and reports duplicates says whether the shortfall is the
+                 disclosed case or a new one.
+       entities  2151 -> 2151 + (the :method delta), nothing else moving
+
+     Verification: the three R8 queries above, the two census deltas, and
+     BUG-0011 present in docs/bugs/ with `status` showing the document count
+     risen by one and unresolved still 0.
+
+  9. RESTATE STATUS (RULE-0005).
+
+     Files: docs/arch/ARCH-0010.yaml, docs/requirements/REQ-0012.yaml,
+     docs/plans/PLAN-0009.yaml.
+
+     ARCH-0010: draft -> implemented. All of R1 through R8 landed.
+
+     REQ-0012: draft -> partial, with an OUTSTANDING section, because two of
+     its requirements are not met as written and a status of "implemented"
+     would make both invisible:
+       - R5's "describe dhandler-delete must report outgoing calls" is not
+         promised. ARCH-0010's CONSEQUENCES explains why (SEARCH-ENTITIES'
+         first hit, exact-name tie, index order) and R8 restates the acceptance
+         through find-by-type and impact. Whether describe should prefer, merge
+         or disambiguate same-named entities is a loom-knowledge question.
+       - The call name make-selector is not recorded, for the #' reason
+         BUG-0011 now records. Attribute it correctly when writing the
+         OUTSTANDING entry: it is ARCH-0010 R7's acceptance criterion, not
+         R5's -- R5 asks only for dhandler-delete-all and
+         dhandler-delete-selector, both of which are recorded, and names
+         make-selector only in prose describing the method's body.
+       Also replace R5's "~500 additional edges" estimate with the number step
+       8 measured, keeping the estimate beside it.
+
+     PLAN-0009: draft -> final, and its affects: list updated to the
+     post-rename symbol set -- generic-definition-entities,
+     method-entity-from-tail, method-body-from-tail, element-spans added,
+     generic-definition-entity removed.
+
+     Verification: tools/loom.sh 'status | check' -- 0 unresolved document
+     references, and every name in every affects: list touched by this plan
+     resolves. `describe ARCH-0010` shows status implemented; `describe
+     REQ-0012` shows partial.
+
+  VERIFICATION
+
+  The whole plan is finished when all of the following hold at once:
+
+    tools/loom-test.sh            nine systems green. The analyzer system
+                                  carries every new test; a green analyzer with
+                                  a red graph or workspace means the two new
+                                  :METHOD entities in Loom's own tree moved a
+                                  count somewhere, which R-8 predicts as a
+                                  possibility.
+    tools/loom.sh 'status'        unresolved: 0 document references. The
+                                  definer-macro unresolved count stays 1;
+                                  nothing here touches it.
+    tools/loom.sh 'check'         32 rule violations, unchanged, and all 32
+                                  RULE-0003 lines -- that is today's exact
+                                  output, and all of it is BUG-0009 false
+                                  positives. Compare the shape, not only the
+                                  total; any movement in either is a finding to
+                                  investigate rather than a pass.
+    census on Loom                :method 32 -> 34, :interface 40 -> 40,
+                                  :implements 22 -> 24.
+    tools/loom.sh 'find run-check method | find analyzer-handles-p method'
+                                  two :METHOD entities at src/graph/rules.lisp
+                                  :34-39 and src/analyzer/analyzer.lisp:53-59.
+    game-server, R8 queries       a :METHOD dhandler-delete at
+                                  data-api/handler.lisp:158-166, describe by id
+                                  showing dhandler-delete-all and
+                                  dhandler-delete-selector, and
+                                  `impact dhandler-delete 2` reaching both.
+    census on game-server         :calls recorded against the 5152 baseline;
+                                  :method 376 -> 623 or a counted shortfall.
+    docs                          ARCH-0010 implemented, REQ-0012 partial with
+                                  OUTSTANDING, PLAN-0009 final, BUG-0011 open.
+
+  The number that must move, if only one is checked: :method on Loom, 32 to 34.
+  It is the smallest measurement that cannot be true for any reason other than
+  inline methods now producing entities.

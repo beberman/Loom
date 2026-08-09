@@ -17,6 +17,12 @@ tools/loom.sh 'impact <name> 3'       # what a change reaches, plus decisions
                                       #   3 is a narrowing; the default is 5
 tools/loom.sh 'rules'                 # constraints, and which are machine-checked
 tools/loom.sh 'check'                 # violations and unresolved doc references
+tools/loom.sh 'enrich'                # ask the toolchain what the text pass
+                                      #   cannot see. Optional, on demand only,
+                                      #   and self-aging: an index nobody has
+                                      #   re-enriched gives today's text answer
+                                      #   rather than yesterday's image answer.
+                                      #   ARCH-0011.
 tools/loom.sh 'status | find foo'     # several commands, run in order
 tools/loom.sh 'help'                  # the authoritative table; trust it first
 ```

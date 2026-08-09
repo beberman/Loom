@@ -1,0 +1,140 @@
+id: BUG-0013
+title: affects: is read only on a decision, so 44 of 63 documents declare references that resolve to nothing and are never reported
+status: open
+date: 2026-08-06
+refines: [PLAN-0009]
+affects: [document-properties, resolve-document-links, analyze-file]
+tags: [analyzer, documents, staleness, blind-spot]
+summary: |
+  DOCUMENT-PROPERTIES is a generic function dispatching on a document's type
+  key, and only its (eql :decision) method reads affects: out of the parsed
+  YAML. Every workflow category -- arch, requirements, plans, bugs, reviews --
+  lands on the catch-all :document method, which reads doc-id, status, path,
+  system and format and nothing else. RESOLVE-DOCUMENT-LINKS then looks for a
+  :AFFECTS property that was never written, so an affects: list on an ARCH, a
+  REQ, a PLAN or a BUG produces no :DECIDES edge, and a name in it that
+  resolves to nothing is not counted as an unresolved reference either: the
+  staleness detector SS10.3 describes is silently off for those documents.
+  Counted today: 44 of the 63 documents under docs/ carry an affects: list and
+  only 4 of them (the design decisions) are read. Found while reviewing
+  PLAN-0009, whose ARCH-0010 predicted `check` would flag the rename of
+  GENERIC-DEFINITION-ENTITY and whose step 6 was written to observe exactly two
+  unresolved references appear and then go away. Neither can happen.
+body: |
+  SYMPTOM
+
+  A document that is not a decision may declare any affects: list at all,
+  including names that exist nowhere, with no visible consequence.
+
+  Measured, /usr/bin/sbcl, 2026-08-06, against this tree:
+
+      tools/loom.sh 'status | describe ARCH-0010 | describe DEC-0003'
+
+  ARCH-0010 declares eight names in affects:, every one of which resolves --
+  GENERIC-DEFINITION-ENTITIES, METHOD-DEFINITION-ENTITY, METHOD-BODY,
+  READ-FORMS-WITH-SPANS, ANALYZE-FILE, MAKE-METHOD-ENTITY,
+  MAKE-INTERFACE-ENTITY. `describe ARCH-0010` shows `-> refines: REQ-0012`
+  and a long `-> documents:` list, and no `-> decides:` line at all. DEC-0003,
+  a decision, shows `-> decides: poll-once, resolve-document-links,
+  resolve-calls` from the same field. The names on ARCH-0010 do appear under
+  `-> documents:`, but that is RESOLVE-DOCUMENT-LINKS' prose-mention path --
+  :INFERRED edges at confidence 0.5 derived from the body text, which go stale
+  by design -- not the :STRUCTURAL edge at confidence 1.0 that a declared
+  reference is supposed to produce.
+
+  The other half is the one that costs something. PLAN-0009's affects: still
+  names GENERIC-DEFINITION-ENTITY, the pre-rename symbol, which no longer
+  exists under that name anywhere in the tree. `status` reports
+  `unresolved : 0 document references`. A dangling declared reference is
+  exactly what that counter exists to show, and it shows nothing.
+
+  Counted by category, documents carrying an affects: list:
+
+      arch          9 of 10     never read
+      requirements 13 of 18     never read
+      plans         9 of  9     never read
+      bugs         12 of 12     never read
+      reviews       1 of  1     never read
+      design        4 of  4     read
+      concepts      0 of  4
+      rules         0 of  5     (rules use applies-to:, which IS read)
+
+  CAUSE
+
+  src/analyzer/yaml-analyzer.lisp. DOCUMENT-PROPERTIES is a generic function
+  on the type key (line 220), with four methods. :DECISION (line 225) appends
+  :AFFECTS and :SUPERSEDES; :RULE (line 240) appends :APPLIES-TO; :CONCEPT
+  (line 252) appends nothing; and :DOCUMENT (line 258), the method every
+  workflow category resolves to, appends :DOC-ID, :STATUS, :PATH, :SYSTEM and
+  :FORMAT. BASE-PROPERTIES (line 202), shared by all four, reads title,
+  summary, category, body, refines and prose mentions -- so :REFINES is
+  universal and :AFFECTS is not.
+
+  src/graph/resolve.lisp:637, *DECLARED-LINK-FIELDS*, maps :AFFECTS ->
+  :DECIDES, :APPLIES-TO -> :APPLIES-TO, :SUPERSEDES -> :SUPERSEDES and
+  :REFINES -> :REFINES, and RESOLVE-DOCUMENT-LINKS walks that table for every
+  document entity. It is correct and complete; it is reading a property the
+  analyzer never wrote. Nothing anywhere signals "this document declared a
+  field its type does not carry" -- an absent property and an empty list are
+  the same thing to GETP, so a whole field vanishing between the parse and the
+  entity is indistinguishable from a document that declared nothing.
+
+  WHY IT HID
+
+  Three things kept it invisible at once, and each would have been enough.
+
+  The prose-mention path forges an alibi. Any name a document declares in
+  affects: is, almost always, also written in that document's body -- the two
+  say the same thing. PROSE-MENTIONS picks it up and RESOLVE-DOCUMENT-LINKS
+  turns it into a :DOCUMENTS edge, so `describe` on the code shows the
+  document among its neighbours and `impact` reaches it. The answer looks
+  right. What is lost is the confidence and the type: a declared fact recorded
+  as an inferred one, and a mistyped name recorded as nothing rather than as a
+  miss. Neither is visible from the query that a person actually runs.
+
+  The failure is silence in the one counter built to break silence. SS10.3's
+  unresolved-references mechanism is what would ordinarily catch a stale
+  affects: entry, and it reports 0 -- which reads as "every reference is
+  good", not as "no reference was examined". A detector that is off and a
+  detector that finds nothing print the same number.
+
+  And the generic function looked like the guard. DOCUMENT-PROPERTIES'
+  docstring says it is a generic function "so SS10.1's 'adding a category
+  means creating a directory and registering a type' stays true of the fields
+  as well as the directory" -- the shape that makes adding a category safe is
+  the same shape that lets a field silently apply to one type only. The
+  :DOCUMENT method's own comment explains at length why :DOC-ID has to be read
+  there, having noticed exactly this class of omission once, for one field,
+  and not generalised it. ANALYZE-FILE's docstring at line 336 meanwhile still
+  claims "Declared references (affects:, supersedes:, applies-to:) and prose
+  mentions are carried as properties", which is true of no single document
+  type: no type carries all three, and the type that 44 of 63 documents get
+  carries none of them.
+
+  No test covers it. The document tests assert on refines: -- universal, and
+  therefore working -- and on decisions' affects:, which is the one place it
+  is read.
+
+  FIX
+
+  Move :AFFECTS out of the :DECISION method and into BASE-PROPERTIES, beside
+  :REFINES, for the reason :REFINES is already there: the field is about the
+  workflow, not about one category, and every category's documents use it.
+  :SUPERSEDES and :APPLIES-TO are genuinely category-specific and should stay
+  where they are.
+
+  Then expect the unresolved count to rise, and treat that as the mechanism
+  working rather than as a regression: 44 documents' worth of affects: lists
+  have never been checked against the index, and some of them name symbols
+  that were renamed since. PLAN-0009's own affects: is one -- it still names
+  GENERIC-DEFINITION-ENTITY. Whoever lands this owes a pass over the reported
+  names before, not after, deciding the number is acceptable.
+
+  Two things to settle while writing it. First, the :DECIDES edge type is
+  named for decisions; an ARCH or a PLAN declaring affects: will produce
+  :DECIDES edges from a document that decides nothing, which is either
+  acceptable (the edge means "declared reference to code") or an argument for
+  a second edge type -- decide it explicitly rather than by default. Second,
+  the endpoint validation in the ontology must already permit a :DOCUMENT ->
+  code :DECIDES edge, or every one of the 44 will fail its plan-op; check
+  before, not after.

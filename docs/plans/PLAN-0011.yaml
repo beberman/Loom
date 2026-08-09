@@ -1,0 +1,759 @@
+id: PLAN-0011
+title: Record the name a function quotation designates, and measure what it adds
+status: final
+date: 2026-08-08
+refines: [BUG-0011]
+affects: [collect-call-names, definition-name, definer-call-site, analyze-file]
+tags: [analyzer, lisp, calls, measurement]
+summary: |
+  BUG-0011: COLLECT-CALL-NAMES records a symbol only in operator position, so
+  #'f -- which reads as (FUNCTION F), with F in an argument position -- is
+  dropped, and every callee designated rather than called has no incoming
+  :CALLS edge. This plan adds one special case for one operator, settles the
+  two shapes BUG-0011 names as unsettled ((SETF FOO) and (LAMBDA ...)), and
+  discharges BUG-0011's measurement obligation on both indexed trees. BUG-0011
+  is small enough that no architecture document was written; its FIX section is
+  the design and this plan does not revisit it.
+
+  Explicitly out of scope, and each is a decision rather than an omission: the
+  head-only walk stays head-only -- this is one special case, not a policy
+  change, and COLLECT-CALL-NAMES' docstring records why walking every tail
+  symbol became harmful; the "selector" imprecision BUG-0011 mentions (the head
+  of a LET binding pair, and equally the head of a lambda list, read as an
+  operator) is pre-existing, unrelated, and fixing it here would confound the
+  measurement; (funcall 'f x) -- a QUOTE rather than a FUNCTION form -- is not
+  covered, because the quote branch skips its tail entirely and widening that
+  is a different change with a different blast radius; and the new :TESTS edges
+  this produces (R-5 below) are recorded, not suppressed.
+body: |
+  FILES
+
+  src/analyzer/lisp-analyzer.lisp
+    COLLECT-CALL-NAMES (lines 218-247). One clause added inside WALK, plus a
+    docstring paragraph saying what the clause is and what it is not. The only
+    production file this plan touches.
+
+  src/analyzer/test/lisp-analyzer.lisp
+    Four new tests in the literal-source section that ANALYZE-SOURCE (line 332)
+    serves, and one in the definer-call-site section below it. No existing test
+    is edited.
+
+  src/analyzer/test/fixtures/sample.lisp
+    NOT edited. Several tests count the entities, ops and line spans that
+    fixture produces, so adding a #' to it would move all of them at once for
+    no gain -- the same reasoning the definer-call-site section header already
+    records.
+
+  docs/bugs/BUG-0011.yaml            open -> fixed, with the measured numbers.
+  docs/requirements/REQ-0012.yaml    OUTSTANDING item 2 rewritten as resolved.
+  docs/arch/ARCH-0010.yaml           one line: R7's criterion now met.
+  docs/plans/PLAN-0011.yaml          draft -> final.
+
+  BLAST RADIUS
+
+  What Loom says. `impact collect-call-names 2` returns 20 entities
+  (truncated), and it carries almost no information: COLLECT-CALL-NAMES has
+  two callers, DEFINER-CALL-SITE and ANALYZE-FILE, and ANALYZE-FILE is the
+  analyzer's front door, so the set is "everything reached through
+  ANALYZE-FILE" -- 41 tests and 12 documents. The actionable question is
+  narrower and is answered below by grep rather than by impact.
+
+  The two consumers, and both matter:
+
+    ANALYZE-FILE pass 2 (line 1041). Names not defined in the same file land
+    on the caller's :CALL-NAMES; names defined in the same file become
+    :CALLS edges emitted directly by the analyzer. A DEFMETHOD is deliberately
+    not in LOCAL-FUNCTIONS (line 948-951), so a quotation naming a method
+    resolves at the graph layer through RESOLVE-CALLS, not here.
+
+    DEFINER-CALL-SITE (line 389). The :CALL-NAMES of a top-level call site,
+    which LOOM-GRAPH:RESOLVE-GENERATED-DEFINITIONS copies onto the entity a
+    definer macro mints (resolve.lisp:337) -- in practice, every FiveAM
+    (test ...) form. This is the path with the largest and least obvious
+    consequence; see R-5.
+
+  Which existing tests move. None, and this was checked rather than assumed:
+  no source analyzed anywhere in the suite contains a function quotation.
+  `grep -rn "#'"` over src/*/test/ returns only harness idioms (:test #'string=,
+  mapcar #'id and the like) in test code, never inside a source string handed
+  to ANALYZE-FILE or ANALYZE-SOURCE; the four files under
+  src/analyzer/test/fixtures/, including the inspect/ fixtures the real-child
+  enrich test analyzes, contain none either. The exact-fingerprint corpus
+  *DEFMETHOD-CORPUS* (test file lines 424-507) is the most brittle thing in
+  range -- eight rows of literal property plists compared with EQUAL -- and no
+  row contains a #', so none of them moves. Every test that counts edges
+  (src/graph/test/{resolve,enrich,retract-file,rules}.lisp,
+  src/workspace/test/workspace.lisp) builds its graph by hand or from short
+  literal sources without quotations. If any of those goes red, it is a
+  finding, not an expected update.
+
+  Where Loom is blind here, and it is blind in a way that matters to step 7:
+
+    - Calls inside macro bodies are unattributed (ARCH-0001), so anything
+      driven by a `test' or `def-suite' form under-reports. That is why the
+      DEFINER-CALL-SITE path exists and why R-5's effect will not show up in
+      an impact query.
+    - RULE-0001 through RULE-0003 name no analyzer-internal property and have
+      nothing to say about this change either way. `check` currently reports
+      32 violations, all RULE-0003 lines, all BUG-0009 false positives. That
+      is a constant to compare against, not evidence.
+    - No rule and no impact query covers the loom-serve / loom-rest / loom-mcp
+      / loom-process boundary. This change is below all four; that is read off
+      the layering, not off a tool.
+    - `tools/loom.sh` never enriches, so its answers are the text pass alone.
+      The enriched numbers in step 7 come from a script that calls
+      ENRICH-REPOSITORY explicitly.
+
+  RISKS
+
+  R-1  A fabricated name (CON-0001). The (SETF FOO) case is the hazard, and
+       the naive implementation of it is the one a coder will reach for first:
+       calling DEFINITION-NAME on whatever cons sits in the FUNCTION form's
+       argument position. DEFINITION-NAME maps TOKEN-NAME over every element,
+       so #'(lambda (item) (helper item)) renders as the string
+       "(lambda item helper)" -- a name that STANDARD-OPERATOR-P does not
+       filter, that resolves to nothing, and that would sit in :CALL-NAMES and
+       :UNRESOLVED-CALLS forever. The fix must gate on the cons being exactly
+       (setf <non-keyword-symbol>) and nothing else. Step 4's mutation check
+       exists for precisely this.
+
+  R-2  The lambda guard cannot fail without the change, so it is an inverted
+       test and CON-0003 is satisfied differently. Note carefully that the
+       obvious hazard BUG-0011 warns about -- "a fix that pushes the tail
+       element unconditionally would record lambda as a callee" -- is already
+       neutralised downstream: TOKEN-NAME of (LAMBDA ...) is "lambda", and both
+       consumers filter through STANDARD-OPERATOR-P, which finds CL:LAMBDA. So
+       a test asserting "lambda" is absent passes today, passes after a correct
+       fix, and passes after the naive one. It is worthless as written. The
+       guard that has teeth is the exact-list assertion in test D plus the
+       named mutation in step 4: implement the setf branch as an unguarded
+       DEFINITION-NAME, observe test D go red on "(lambda item helper)", then
+       write the guarded version. Without that observation, test D is a guard
+       over its own output.
+
+  R-3  The measurement is confounded by enrichment. ARCH-0011's second pass
+       adds :CALLS edges on demand, and PLAN-0010 already ran one against this
+       tree. BUG-0011's baselines (Loom :calls 2666, game-server :calls 7242,
+       2026-08-06) are text-pass-only numbers. The rule for this plan, and it
+       is not negotiable: every unenriched census runs in a fresh SBCL process
+       that calls WATCH-REPOSITORY and nothing else -- never ENRICH-REPOSITORY,
+       never against a repository some earlier step enriched in the same image.
+       `tools/loom.sh` is safe by construction (it never enriches, and `status`
+       prints "enrichment: never run" to prove it). The enriched measurement in
+       step 7 is a separate process with its own baseline, and its numbers are
+       never subtracted from the unenriched ones.
+
+  R-4  The delta is confounded by the plan's own new test code. The tests added
+       in step 2 are indexed by Loom like any other file, and their harness
+       idioms (:key #'name, mapcar #'id) become recorded call names the moment
+       the fix lands. So a delta measured against the step-1 baseline mixes two
+       causes. The fix is step 3: re-take the census with the new tests present
+       and the production change absent. A census indexes files and does not
+       run tests, so the tests being red at that moment is irrelevant. Step 6's
+       delta is then attributable to exactly one edit.
+
+  R-5  New :TESTS edges, some of them arguably spurious, and nobody predicted
+       them. LOOM-GRAPH derives :TESTS from a :TEST entity's :CALLS, and after
+       this change a FiveAM test containing (mapcar #'to-id ...) records a call
+       to TO-ID and therefore a claim to test it. `status`'s "440 tests
+       covering 298 units" will rise, and some of the rise is a :key argument
+       rather than a subject under test. This plan records the movement and
+       does not suppress it: suppressing it means either a per-operator
+       exclusion list, which is a policy change of the kind this plan refuses,
+       or teaching the :TESTS derivation about argument position, which is a
+       loom-graph question. If the noise is judged unacceptable when the number
+       is seen, file a bug in step 9 rather than widening this plan.
+
+  R-6  Tests likely to break, and why. None is predicted -- see BLAST RADIUS --
+       which makes any red test a finding. The three to look at first if one
+       appears:
+         A-DEFMETHOD-PRODUCES-THE-SAME-ENTITY-IT-ALWAYS-HAS -- eight exact
+           property plists. A red here means the fix is recording something on
+           a body that contains no quotation at all, which would mean the
+           FUNCTION test is matching a form it should not.
+         ANALYZE-FILE-CREATES-CALLS-EDGES-BETWEEN-LOCAL-FUNCTIONS and every
+           other test over sample.lisp -- red only if someone edited the
+           fixture, which step 2 forbids.
+         src/graph/test/enrich.lisp's real-child test
+           (THE-REAL-CHILDS-FILE-STRING-AGREES-WITH-THE-REAL-TEXT-PASSS) --
+           it asserts (<= 3 confirmed), a lower bound, so more agreement
+           cannot break it. A red here means the text pass changed a natural
+           key, which this change cannot do.
+
+  R-7  A package-blind name test. The new clause tests (string= (token-name
+       head) "function"), so a foreign FOO:FUNCTION would match it. Accepted
+       deliberately: the QUOTE test one line above is written the same way, for
+       the same reason -- TOKEN-NAME reads SYMBOL-NAME and nothing else, and
+       the analyzer has no package knowledge to do better with (RULE-0002).
+       Diverging from the neighbouring test would be the surprise.
+
+  STEPS
+
+  Step 1 is the first that can be run, and it runs against completely
+  unmodified code -- that is its purpose. Steps 1, 3, 5, 6, 7 and 8 change no
+  file at all.
+
+  The census script every measurement step uses. Write it once, to the
+  scratchpad, and reuse it: the loom skill's eleven-line registry preamble,
+  then
+
+    (asdf:load-system :loom-workspace)
+    (in-package :loom-workspace)   ; uses loom-ontology, loom-graph, loom-analyzer,
+                                   ; so rel-type, source, getp and
+                                   ; all-relationships need no prefix
+    (defun census (root &key enrich)
+      (let ((repo (watch-repository root :monitor nil :quiet t)))
+        (when enrich (enrich-repository repo :quiet t))
+        (let ((g (repository-graph repo))
+              (by-type (make-hash-table))
+              (by-sources (make-hash-table :test #'equal)))
+          (dolist (r (all-relationships g))
+            (incf (gethash (rel-type r) by-type 0))
+            (when (eq :calls (rel-type r))
+              (incf (gethash (or (getp r :sources) (list (source r)))
+                             by-sources 0))))
+          (values by-type by-sources))))
+
+  :MONITOR NIL matters -- a monitor thread left running in a census process
+  can reindex underneath the count. Print the entity counts by ENTITY-TYPE the
+  same way. ENRICH is NIL everywhere except step 7.
+
+  1. BASELINE, ON UNMODIFIED CODE.
+
+     No file changes.
+
+     (a) The live demonstration, recorded red. Run
+
+           tools/loom.sh 'describe intern-foreign-symbol-locally'
+
+         It prints today, and this exact output is the thing step 6 overturns:
+
+           function intern-foreign-symbol-locally  [src/analyzer/lisp-analyzer.lisp:49-71]
+             <- documents: PLAN-0009
+             <- contains: src/analyzer/lisp-analyzer.lisp
+
+         Zero incoming :CALLS. The function is installed as a handler at
+         lisp-analyzer.lisp line 104 and line 189 and is called in operator
+         position nowhere in the tree. Those two sites sit inside
+         READ-FORMS-WITH-SPANS (lines 73-124) and ELEMENT-SPANS (lines
+         126-209) -- confirmed by reading the file, not assumed. Both are in
+         the same file as the callee, so after the fix these are local calls
+         ANALYZE-FILE emits directly in pass 2; no graph-layer resolution is
+         involved, which is what makes this the cheapest possible acceptance
+         criterion.
+
+     (b) The unenriched census on Loom, ENRICH NIL. Record :calls, :tests,
+         :contains, :implements, :uses and the total, plus entity counts by
+         type. BUG-0011's reference figure is :calls 2666 on 2026-08-06;
+         `status` today reports 163 files / 1579 entities / 7413
+         relationships, and PLAN-0010 landed between the two, so do not expect
+         2666 and do not treat a difference as a defect. What this step
+         produces is today's number, which is the only one step 3 and step 6
+         compare against.
+
+     (c) The enriched baseline, in a SEPARATE process, ENRICH T, primary unit
+         set (INCLUDE-TEST-UNITS defaults to NIL, which is what PLAN-0010's
+         recorded run used -- do not override it, or the comparison below is
+         meaningless). PLAN-0010's COMPLETION recorded, on this tree today:
+
+           768 :CALLS edges  (:structural :introspected)
+           215 :CALLS edges  (:introspected)          <- the BUG-0011-shaped set
+           2295 :CALLS edges (:structural)
+           541 :CALLS edges  (:inferred)
+
+         Reproduce those four numbers before trusting step 7's comparison. If
+         they differ, record the new ones as the baseline and say so; PLAN-0010
+         ran on a tree that has since gained files.
+
+     Verification: the three recorded outputs above, with numbers rather than
+     adjectives. Nothing is asserted; this step exists to make later steps
+     attributable.
+
+  2. THE FAILING TESTS.
+
+     File: src/analyzer/test/lisp-analyzer.lisp only. No production file is
+     touched, and src/analyzer/test/fixtures/sample.lisp is not touched.
+
+     Four tests in the literal-source section, after ANALYZE-SOURCE (line 332),
+     and one in the definer-call-site section. ANALYZE-SOURCE returns (values
+     graph file-entity); FIND-BY-NAME, GETP, RELATIONSHIPS-FROM and TO-ID are
+     already in scope, used by the neighbouring tests.
+
+     A. A quotation naming a function defined in the same file becomes an edge.
+
+          (defun render (item) item)
+          (defun run (items) (mapcar #'render items))
+
+        Assert RUN has exactly one outgoing :CALLS edge and its TO-ID is
+        RENDER's id. RED today: zero edges. This is the core regression.
+
+     B. A quotation naming something outside the file lands in :CALL-NAMES.
+
+          (defun run (args) (apply #'make-selector args))
+
+        Assert (getp run :call-names) contains "make-selector". RED today.
+        This is game-server's DHANDLER-DELETE shape, reduced to one line, and
+        it is the assertion that makes step 8's acceptance reproducible without
+        game-server present.
+
+     C. A (SETF f) quotation records the name DEFINITION-NAME renders.
+
+          (defmethod (setf render) (v (x hop)) v)
+          (defun install (x) (funcall #'(setf render) 1 x))
+
+        Assert (getp install :call-names) contains the string "(setf render)".
+        RED today. Assert on :CALL-NAMES and not on an edge: a DEFMETHOD is
+        deliberately absent from LOCAL-FUNCTIONS (lisp-analyzer.lisp:948-951),
+        so the edge is RESOLVE-CALLS' job at the graph layer, and asserting one
+        here would be asserting against the wrong layer. The name is worth
+        recording precisely because it is the same string DEFINITION-NAME gives
+        the DEFMETHOD -- "(setf render)" -- so the callable index can match it;
+        the corpus row d in *DEFMETHOD-CORPUS* is the existing proof of that
+        rendering.
+
+     D. A lambda quotation records no name and loses no call. THE GUARD.
+
+          (defun helper (x) x)
+          (defun run (items) (mapcar #'(lambda (item) (helper item)) items))
+
+        Assert (a) RUN has an outgoing :CALLS edge to HELPER -- the body must
+        still be walked -- and (b) (getp run :call-names) is EQUAL to the exact
+        list ("item"), nothing more. Write the comment: "item" is the head of
+        the lambda list, the same pre-existing imprecision that records
+        "selector" for a LET binding head; BUG-0011 says not to fix it here and
+        an exact-list assertion is how this test notices if someone does.
+
+        This test passes today (R-2). It is not evidence of anything until
+        step 4's mutation check makes it fail.
+
+     E. The definer-call-site path, which is the other consumer.
+
+        In the definer-call-site section (after line 339), a top-level call
+        with a quotation among its arguments -- e.g.
+
+          (deftest checks-it (verify #'target 1))
+
+        Assert the recorded site's :call-names contains "target". RED today.
+        Without this, half of COLLECT-CALL-NAMES' consumers is untested and
+        R-5's whole effect is unmeasured.
+
+     Verification: run the analyzer system alone and confirm exactly A, B, C
+     and E are red and D is green, with the failure messages saying the name
+     is missing rather than that something signalled. Then `tools/loom-test.sh`
+     and confirm the other eight systems are green -- adding a test file must
+     not move anything else. Four red assertions here is the CON-0003 evidence
+     for this plan; record the four names.
+
+  3. THE ATTRIBUTABLE BASELINE.
+
+     No file changes. The tests from step 2 are present; the fix is not.
+
+     Re-run step 1(b)'s unenriched census. This is the number step 6 subtracts
+     from, and the reason it exists is R-4: measuring against step 1(b) instead
+     would attribute the new test file's own quotations to the fix.
+
+     Verification: the census printed, and the difference from step 1(b) stated
+     explicitly. It should be small and entirely explicable as new test code
+     (new :TEST entities, new :contains edges); if :calls moved at all here,
+     something other than this plan changed the tree and steps 6 and 7 are
+     already confounded.
+
+  4. THE FIX.
+
+     File: src/analyzer/lisp-analyzer.lisp, COLLECT-CALL-NAMES only.
+
+     Inside WALK, in the UNLESS-quote branch, after the existing
+     (when (symbolp head) (push (token-name head) names)) and before the
+     (when (consp head) ...) line, add one clause:
+
+       (when (and (symbolp head)
+                  (string= (token-name head) "function")
+                  (consp (cdr form))
+                  (null (cddr form)))
+         (let ((designator (second form)))
+           (cond ((and designator (symbolp designator) (not (keywordp designator)))
+                  (push (token-name designator) names))
+                 ((and (consp designator)
+                       (symbolp (car designator))
+                       (string= (token-name (car designator)) "setf")
+                       (consp (cdr designator))
+                       (null (cddr designator))
+                       (second designator)
+                       (symbolp (second designator))
+                       (not (keywordp (second designator))))
+                  (push (definition-name designator) names)))))
+
+     Five things about it, each of which a reader will otherwise ask:
+
+       - The existing tail loop stays exactly as it is. It is what walks a
+         lambda body for the calls inside it, and it is a harmless no-op on the
+         bare symbol in #'f (WALK returns immediately on a non-cons).
+       - "function" is still pushed as the head, as before, and still filtered
+         by STANDARD-OPERATOR-P in both consumers. COLLECT-CALL-NAMES' own
+         return value is unfiltered, so a unit test written directly against it
+         would see "function"; both real callers filter.
+       - The (null (cddr form)) guard is what confines this to a real
+         quotation. The keyword and NIL exclusions are BUG-0011's, kept
+         literally.
+       - The COND's second clause is deliberately narrow (R-1). Anything else
+         in the argument position -- a lambda, anything unexpected -- records
+         nothing and is still walked.
+       - DEFINITION-NAME is defined at line 460, below this function. Same file
+         and therefore the same compilation unit, so SBCL resolves it with no
+         style warning. If one appears, move DEFINITION-NAME above
+         COLLECT-CALL-NAMES rather than duplicating the rendering.
+
+     Add a docstring paragraph naming the case and its boundary: one special
+     case for one operator, because FUNCTION is the form whose argument
+     position holds a name rather than a value; the head-only discipline is
+     unchanged and must stay unchanged, for the reason the paragraph above it
+     already gives.
+
+     THE MUTATION CHECK (R-2), and it is part of this step rather than optional
+     colour. Before writing the guarded version, write the setf branch as
+     (push (definition-name designator) names) for ANY cons, run test D, and
+     confirm it fails with a :call-names of ("(lambda item helper)" "item") or
+     equivalent. Record the observed string in the completion note. Then write
+     the guarded version above and confirm D is green again. Test D asserts
+     nothing until this has been observed once.
+
+     Verification: A, B, C and E from step 2 go green; D stays green and has
+     been observed red under the named mutation; the analyzer system is green
+     as a whole.
+
+  5. THE SUITE AND THE RULES.
+
+     No file changes.
+
+       tools/loom-test.sh        nine systems green.
+       tools/loom.sh 'status | check'
+
+     Expected: `check` reports 32 violations, all RULE-0003 lines, zero
+     RULE-0001 -- unchanged, because they are BUG-0009 false positives and
+     nothing here can move them. Compare the shape, not only the total.
+     `status` reports 0 unresolved document references (the definer-macro
+     unresolved count stays 1; nothing here touches it).
+
+     What is expected to have MOVED in `status`, and this is R-5 arriving:
+     "tests covering N units" rises from 298. Record the new number. A test
+     whose only connection to a function is (:key #'name) now claims to test
+     it; that is the honest consequence of the change and step 9 decides
+     whether it deserves a bug of its own.
+
+     Verification: the above, with the two numbers that moved written down.
+
+  6. MEASURE LOOM, UNENRICHED, AND SHOW THE DEMONSTRATION GREEN.
+
+     No file changes.
+
+     (a) The headline acceptance criterion. Run
+
+           tools/loom.sh 'describe intern-foreign-symbol-locally'
+
+         It must now list, under `<- calls`, both READ-FORMS-WITH-SPANS and
+         ELEMENT-SPANS -- the two functions whose HANDLER-BIND forms at lines
+         104 and 189 install it. Anything less than both means the walk is not
+         reaching a handler binding: the shape is
+         (handler-bind ((package-error #'f)) ...), where the binding list's
+         element is a cons in the head position, reached through the existing
+         (when (consp head) (walk head)) line. If only one appears, one of the
+         two enclosing forms differs and the difference is the finding.
+
+     (b) Re-run the census. Compare against STEP 3, not step 1:
+
+           :calls    record the number and the delta. Do not predict it.
+           :tests    record it; R-5 says it rises.
+           entities  should not move at all -- this change mints no entity.
+                     If it did, a name is being recorded where a definition
+                     is being read, and that is a defect.
+
+     (c) One spot check that the delta is the right delta rather than the right
+         size: `tools/loom.sh 'describe standard-operator-p'` should now show
+         callers it did not before, because production code calls it through
+         (remove-if (lambda ...)) and through direct calls -- name whichever
+         entity actually moved rather than predicting one, and name it
+         concretely in the completion note.
+
+     Verification: both READ-FORMS-WITH-SPANS and ELEMENT-SPANS present under
+     `<- calls` on INTERN-FOREIGN-SYMBOL-LOCALLY; the census delta recorded
+     against step 3; entity count unmoved.
+
+  7. MEASURE LOOM, ENRICHED: THE TWO PASSES AGREEING.
+
+     No file changes. Separate process, ENRICH T, primary unit set, exactly as
+     step 1(c).
+
+     This is the cheapest available check that the text pass and the image pass
+     agree where they overlap. A #'f edge can only ever have been image-only
+     before this change, so some share of step 1(c)'s 215 (:introspected) edges
+     must migrate into (:structural :introspected) or (:inferred
+     :introspected). Record all four buckets and the migration.
+
+     Be honest about what is unknown before the run, and do not turn any of it
+     into a prediction:
+
+       - The exact split is unknown. "215 goes down and the confirmed bucket
+         goes up by a comparable amount" is the shape; the numbers are the
+         measurement.
+       - It will NOT go to zero. The 215 also contains calls xref sees for
+         reasons that have nothing to do with #' -- funcall on a symbol, a
+         call inside a macro expansion, a call the text walk cannot attribute
+         (ARCH-0001).
+       - The primary unit set does not load test systems, so xref never saw the
+         quotations in Loom's own test files. Those become new (:structural)
+         edges rather than confirmations, so the (:structural) bucket grows
+         from two causes at once and only the 215 -> confirmed movement is
+         evidence of agreement.
+       - PLAN-0010's R7 guard (APPLY-TRANSACTION's inbound :TESTS and :CALLS
+         counts, recorded as 66 and 77) is expected to MOVE now, upward, and
+         that is R-5 rather than a regression. It was an equality guard across
+         one enrich, not a constant across a code change. Record the new pair.
+
+     Verification: the four :SOURCES buckets before and after, side by side
+     with step 1(c)'s, and one sentence saying whether the migration happened.
+
+  8. MEASURE GAME-SERVER, AND CLOSE ARCH-0010 R7.
+
+     No file changes. /home/beberman/lisp/game-server exists and
+     data-api/handler.lisp is present -- checked.
+
+     find, describe and impact take no repository argument and refuse while two
+     repositories are watched, so the query session is:
+
+       tools/loom.sh 'watch "~/lisp/game-server" | unwatch Loom | find dhandler-delete method | impact dhandler-delete 2'
+
+     and afterwards, to leave the tree as it was found:
+
+       tools/loom.sh 'watch "~/lisp/Loom" | unwatch game-server'
+
+     What must now be true, and it is the criterion PLAN-0009 R-5 could not
+     meet: the :METHOD DHANDLER-DELETE at data-api/handler.lisp:158-166 records
+     MAKE-SELECTOR among its call names, because the source writes
+     (apply #'make-selector args). ARCH-0010 R7 required exactly this;
+     REQ-0012's OUTSTANDING item 2 records it as unmet. DHANDLER-DELETE-ALL and
+     DHANDLER-DELETE-SELECTOR must still be there. "selector" will still be
+     there too -- the LET binding head, out of scope by decision, and its
+     continued presence is confirmation that nothing else was touched.
+
+     Then the unenriched census on game-server, ENRICH NIL, against BUG-0011's
+     2026-08-06 baseline of :calls 7242. Record the number and the delta. As
+     with Loom, do not predict it. Note that game-server has not been re-indexed
+     by this plan before now, so a difference from 7242 may be the tree having
+     moved rather than the fix; say which if it can be told, and say it cannot
+     if it cannot.
+
+     Verification: MAKE-SELECTOR present in the method's call names; the two
+     names from REQ-0012 R5 still present; the census delta recorded.
+
+  9. STATUSES AND DOCUMENTS (RULE-0005).
+
+     Files: docs/bugs/BUG-0011.yaml, docs/requirements/REQ-0012.yaml,
+     docs/arch/ARCH-0010.yaml, docs/plans/PLAN-0011.yaml.
+
+     BUG-0011: open -> fixed. Add a RESOLUTION section carrying the numbers
+     rather than a claim: the Loom and game-server :calls before and after from
+     steps 3, 6 and 8; the enriched :SOURCES migration from step 7; the two
+     settled cases and how each was settled ((setf f) recorded via
+     DEFINITION-NAME under a narrow guard, (lambda ...) recorded as nothing and
+     still walked); and the mutation that was observed to make test D fail.
+     Its measurement obligation is discharged by this, and saying so is the
+     point of the section.
+
+     REQ-0012: stays `partial`. Rewrite OUTSTANDING item 2 to say the call name
+     MAKE-SELECTOR is now recorded, with the date and the fix, and keep item 1
+     (describe's same-name tie-breaking) untouched -- that is still open and is
+     a loom-knowledge question. Do not promote the document to `implemented`:
+     one of the two items is still outstanding.
+
+     ARCH-0010: already `implemented`. Add one line to its CONSEQUENCES saying
+     R7's MAKE-SELECTOR criterion, recorded there as unmet, is met as of this
+     plan.
+
+     PLAN-0011: draft -> final.
+
+     If step 5's coverage number is judged to have gone materially noisy (R-5),
+     file a bug for the :TESTS derivation treating a quotation in an argument
+     position as a subject under test, and reference it from BUG-0011's
+     RESOLUTION. Deciding it is acceptable is equally a decision -- write down
+     which one was made and the number it was made on.
+
+     Verification: tools/loom.sh 'status | check' -- 0 unresolved document
+     references, 32 violations all RULE-0003. `describe BUG-0011` shows status
+     fixed; `describe REQ-0012` still shows partial.
+
+  VERIFICATION
+
+  The work is finished when all of these hold at once:
+
+    tools/loom-test.sh          nine systems green, with the five new analyzer
+                                tests among them.
+    the mutation observed       test D recorded red under the unguarded
+                                DEFINITION-NAME, and the fabricated string it
+                                produced written into the completion note. This
+                                is the only evidence test D asserts anything.
+    tools/loom.sh 'describe intern-foreign-symbol-locally'
+                                lists READ-FORMS-WITH-SPANS and ELEMENT-SPANS
+                                under `<- calls`. Zero before, two after.
+    tools/loom.sh 'status | check'
+                                0 unresolved document references; 32 violations,
+                                all RULE-0003, zero RULE-0001; "tests covering
+                                N units" moved and the new N recorded.
+    census, Loom, unenriched    :calls delta recorded against STEP 3's number,
+                                not step 1's; entity count unmoved.
+    census, Loom, enriched      four :SOURCES buckets against step 1(c)'s
+                                768 / 215 / 2295 / 541, with the migration out
+                                of (:introspected) stated as a number.
+    game-server                 MAKE-SELECTOR among DHANDLER-DELETE's call
+                                names; :calls delta recorded against 7242.
+    docs                        BUG-0011 fixed with its RESOLUTION numbers,
+                                REQ-0012 still partial with item 2 rewritten,
+                                ARCH-0010 R7 noted as met, PLAN-0011 final.
+
+  The number that must move, if only one is checked: incoming :CALLS on
+  INTERN-FOREIGN-SYMBOL-LOCALLY, 0 to 2. It cannot be non-zero for any reason
+  other than a function quotation now being recorded -- the function is called
+  in operator position nowhere in the tree, which is why it was chosen. The
+  number that must NOT move, if only one is checked: the entity count on Loom's
+  index. This change records names; it mints nothing.
+
+  COMPLETION
+
+  Completed 2026-08-08, /usr/bin/sbcl throughout -- not the SBCL behind SLIME,
+  which was not run.
+
+  WHAT WAS EXECUTED
+
+  All nine steps in order. One clause added to COLLECT-CALL-NAMES inside WALK,
+  as step 4 specified and with no deviation from the code it gave; five tests
+  added to src/analyzer/test/lisp-analyzer.lisp (four in the literal-source
+  section, one in the definer-call-site section); src/analyzer/test/fixtures/
+  sample.lisp untouched, as step 2 required. No other production file changed.
+
+  The four predicted-red tests (A, B, C, E) were red before the fix and green
+  after; test D was green throughout and was made to mean something by step 4's
+  mutation check. No test anywhere else moved -- BLAST RADIUS predicted none,
+  including the eight exact property plists of *DEFMETHOD-CORPUS*, and none did.
+
+  Every acceptance number:
+
+    intern-foreign-symbol-locally   incoming :CALLS 0 -> 2, both present:
+                                    read-forms-with-spans and element-spans.
+    Loom, unenriched                :calls +79 against step 3's attributable
+                                    baseline. Entity count unmoved, as required.
+    Loom, enriched                  :CALLS (:introspected) 215 -> 194;
+                                    (:structural :introspected) 768 -> 790.
+                                    21 edges left the image-only bucket; the
+                                    confirmed bucket rose by 22, and the extra
+                                    edge is not accounted for by migration and
+                                    was not chased.
+    game-server, unenriched         :calls 7242 -> 7314, +72, wholly
+                                    attributable -- see the second finding
+                                    below for how that was established.
+    game-server, describe           make-selector recorded on the
+                                    DHANDLER-DELETE :METHOD, with
+                                    dhandler-delete-all, dhandler-delete-selector
+                                    and the out-of-scope "selector" all still
+                                    present. ARCH-0010 R7 is met.
+    suite                           nine systems green.
+    check                           32 violations, all RULE-0003, zero
+                                    RULE-0001 -- unchanged, as predicted, and
+                                    they are BUG-0009 false positives either way.
+    status                          0 unresolved document references; the
+                                    definer-macro unresolved count still 1.
+
+  WHERE THE PLAN WAS WRONG
+
+  Three, and each was a prediction rather than an instruction, so none of them
+  changed what was implemented.
+
+  1. Step 3's verification said "if :calls moved at all here, something other
+     than this plan changed the tree and steps 6 and 7 are already confounded".
+     It moved, and nothing was confounded. The reasoning behind the clause was
+     R-4's, which is about the new tests' *quotations* -- :key #'name and the
+     like -- and those genuinely contribute nothing until the fix lands. What
+     the clause forgot is that the new test file also contains ordinary
+     operator-position calls (analyze-source, find-by-name, getp,
+     relationships-from, to-id), and those are recorded by the walk that has
+     always existed. Adding test code adds :calls edges. Step 3 exists precisely
+     so that movement is on the far side of the subtraction, which is what it
+     did; the verification sentence contradicted the step's own purpose.
+
+  2. Step 7 predicted PLAN-0010's R7 guard -- APPLY-TRANSACTION's inbound
+     :TESTS and :CALLS counts, 66 and 77 -- "is expected to MOVE now, upward".
+     It did not move. The counts are of distinct callers, and every test that
+     now designates #'apply-transaction was already calling it in operator
+     position in the same body, so the new call name resolves to an edge that
+     already existed. This is not a failed acceptance -- the guard was an
+     equality check and it held -- but the prediction was wrong, and wrong in a
+     way worth keeping: "a new call name" and "a new edge" are different
+     things, and a fix that records more names will move a count of edges much
+     less than a count of names.
+
+  3. BUG-0011's FIX section warned that "a fix that pushes the tail element
+     unconditionally would record lambda as a callee". R-2 had already worked
+     out that this hazard was neutralised downstream by STANDARD-OPERATOR-P,
+     and that turned out to be right -- but the plan then carried BUG-0011's
+     framing far enough that the lambda test was written as the guard. The real
+     hazard was one clause over, in the setf branch: an unguarded
+     (definition-name designator) on any cons fabricates "(lambda item helper)"
+     from #'(lambda (item) (helper item)), a name no filter removes and nothing
+     resolves. That string was observed on :CALL-NAMES under the step 4
+     mutation and is recorded in BUG-0011's RESOLUTION. A fourth thing the
+     plan did not see at all, found only in review of the finished code: the
+     same guard's (consp (cdr designator)) is what keeps a dotted #'(setf . g)
+     away from DEFINITION-NAME, whose MAPCAR signals on a dotted list. The
+     stake on that branch was an error out of ANALYZE-FILE, not just a bad
+     name, and nothing in the plan or the bug records it. It is now a comment
+     in the source.
+
+  THE R-5 DECISION
+
+  `status`'s tested-unit count went 298 -> 302, and R-5 reserved the right to
+  file a bug on seeing it. A bug was filed: BUG-0018. What it is about is the
+  derivation and the label, not quotations -- R-5 refuses a per-operator
+  exclusion list and is right to.
+
+  The four new units are HOP-REL-TYPE, HOP-ENTITY-ID and PROPERTY-KEY, each
+  reached through a (mapcar #'accessor ...) inside a real assertion, and
+  CONCURRENCY-TEXT-P, a two-line predicate defined at
+  src/workspace/test/workspace.lisp:763 and reached at line 800 through
+  (remove-if-not #'concurrency-text-p ...). The first three are weak but
+  arguably real -- the assertion does depend on the accessor. The fourth is a
+  test file credited with testing its own private filtering helper, and is not
+  defensible on any reading.
+
+  Only some of this is new, and that is the finding rather than the number.
+  STRESS-COUNTS, eight lines below CONCURRENCY-TEXT-P in the same file and
+  equally private to it, is called in operator position at line 791 and has
+  carried a `<- tests` edge by the ordinary head-only walk for as long as that
+  walk has existed. So this change added an instance to a category that was
+  already there; it did not create the category. That is what makes a
+  quotation-shaped fix wrong -- it would leave STRESS-COUNTS counted and
+  CONCURRENCY-TEXT-P not, which is worse than either consistent answer -- and
+  what makes the honest complaint a different one: RESOLVE-TESTS
+  (resolve.lisp:591) states exactly what it derives and derives exactly that,
+  while PRINT-STATUS (console.lisp:189) renders it as "covering", which claims
+  a subject under test that reachability does not establish. BUG-0018 carries
+  both candidate fixes, the cheap relabel and the loom-graph derivation change,
+  and says which to do if only one is done.
+
+  TWO THINGS THIS PLAN DID NOT SCOPE, ADDED IN CLOSE-OUT
+
+  BUG-0017, and it is the more serious of the two. BUG-0011's SYMPTOM named
+  three shapes and this plan fixed two: "a callback stored in a slot" is
+  outside COLLECT-CALL-NAMES' reach entirely, because ANALYZE-FILE hands no
+  :body for DEFVAR, DEFPARAMETER, DEFCLASS or DEFINE-CONDITION and a DEFUN's
+  body is (cdddr form), which excludes the lambda list. Neither the bug's FIX,
+  nor this plan's eight steps, nor its seven risks noticed that the third case
+  could not be reached by the change being planned -- and step 4's new
+  docstring paragraph repeated the three-item list verbatim, so the source
+  briefly carried a comment claiming a recovery the code did not perform. Both
+  the docstring and BUG-0011's RESOLUTION now name the residue explicitly.
+  Live evidence: src/serve/json.lisp:76 designates DEFAULT-JSON-KEY-NAME from a
+  DEFPARAMETER initform and the callee still has zero incoming :CALLS.
+
+  A vocabulary correction. Step 9 says BUG-0011 goes "open -> fixed". CON-0004's
+  status vocabulary for a bug is open/closed and every other bug in docs/bugs/
+  uses one of those two, so it was closed as `closed`. Recorded rather than
+  silently corrected because the plan is the document a reader checks the
+  close-out against.

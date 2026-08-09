@@ -74,7 +74,16 @@ answer there, where here it was a false report of a file Loom could read."
   "Every top-level form in CONTENT, read with *READ-EVAL* disabled and in a
 throwaway package so foreign package prefixes and keywords intern safely
 without touching any real package. Returns a list of (FORM START-LINE
-END-LINE).
+END-LINE START-OFFSET).
+
+START-OFFSET is the character offset of the form's first character -- already
+computed here, and formerly discarded once it had been turned into a line. It
+is kept because line numbers are lossy: ELEMENT-SPANS re-reads a DEFGENERIC's
+elements one at a time to recover per-clause ranges, and it has to seek to the
+form to do that.
+
+Two properties anything touching this function has to preserve, per ARCH-0010:
+the START-OFFSET element, and the whole-content stream below.
 
 One stream over the whole string, seeked with FILE-POSITION, rather than a
 fresh bounded stream per form. A stream made with MAKE-STRING-INPUT-STREAM over
@@ -104,7 +113,8 @@ disagree about."
                (let ((form (read-preserving-whitespace stream nil :eof)))
                  (when (eq form :eof) (return))
                  (let ((end (file-position stream)))
-                   (push (list form (offset-line content start) (offset-line content end))
+                   (push (list form (offset-line content start) (offset-line content end)
+                               start)
                          results)
                    ;; A read that did not advance would spin forever. It should
                    ;; not happen; costing one comparison to be sure it cannot
@@ -112,6 +122,91 @@ disagree about."
                    (when (<= end start) (return)))))))
       (delete-package *package*))
     (nreverse results)))
+
+(defun element-spans (content start-offset)
+  "The elements of the list form beginning at START-OFFSET in CONTENT, each as
+(ELEMENT START-LINE END-LINE), or NIL when no such reading is possible.
+
+The reader reports positions for the top-level forms READ-FORMS-WITH-SPANS
+walks and for nothing nested inside them, so a DEFGENERIC's inline
+(:method ...) clause has no range of its own. This recovers one by reading the
+form's elements one at a time with the identical reader settings, on the
+identical text -- which is what makes the second read's element sequence match
+the first's structurally, read-time conditionals included, since *FEATURES*
+has not moved between them.
+
+Three things here are load-bearing and none is incidental:
+
+The guard. An offset that does not name an open paren would otherwise seek
+into the middle of a token and return plausible garbage, which is worse than
+returning nothing: the caller's fallback is the whole form's range, a wider
+truth that genuinely contains every clause, where a misread span is a
+fabricated fact (CON-0001).
+
+The whole-content stream. This is READ-FORMS-WITH-SPANS's technique and its
+docstring holds the reasoning: FILE-POSITION over a stream bounded to a
+sub-range is ambiguous across SBCL builds, and the walk that relied on it
+stopped two forms in with nothing signalled. A stream over a substring here
+would reintroduce exactly that, and its symptom would again be silence.
+
+The reader environment. Same throwaway package, same *READ-EVAL* NIL, same
+PACKAGE-ERROR handler, because this reads the same foreign source the first
+read did. Diverging would signal on a `utils:parse-config' inside a clause and
+cost the file's per-clause ranges on someone else's repository only.
+
+Two shapes of real source reach the NIL fallback, both found by probe rather
+than by reading, and both occurring zero times in either indexed tree today: a
+#|...|# block comment sitting before the form's closing paren, which
+SKIP-WHITESPACE-AND-COMMENTS does not skip (it knows `;' and not `#|'), so the
+loop reads on into the paren and the whole form yields NIL; and a top-level
+DEFGENERIC preceded by any # reader macro -- #+sbcl, say -- whose recorded
+start offset names the # rather than a paren, so the guard above refuses it and
+every clause in it takes the whole-form range."
+  (when (and (< -1 start-offset (length content))
+             (char= #\( (char content start-offset)))
+    ;; CONDITION, not ERROR. END-OF-FILE and READER-ERROR are ERROR subtypes,
+    ;; so ERROR would cover what the reader is known to raise -- but RULE-0004
+    ;; is that a guard naming ERROR is a guard with a hole in it whenever the
+    ;; thing being guarded is a library reading input nobody controls. Trace
+    ;; where an escaping condition would actually go, because nothing downstream
+    ;; stops it: this runs in ANALYZE-FILE's pass 1, and ANALYZE-FILE's only
+    ;; HANDLER-CASE wraps the READ-FORMS-WITH-SPANS call in pass 0, so a
+    ;; condition raised here leaves ANALYZE-FILE entirely rather than marking the
+    ;; file unparsable; and INDEX-FILE's guard (src/workspace/workspace.lisp)
+    ;; names ERROR, so a condition that is not an ERROR passes through that too
+    ;; and reaches the watcher thread -- the SS3.3 failure RULE-0004 exists to
+    ;; prevent. The cost of catching too much is one DEFGENERIC's clauses taking
+    ;; the whole-form range; the cost of catching too little is the indexer. So
+    ;; the guard is deliberately wider than the reader's known conditions rather
+    ;; than fitted to them.
+    (handler-case
+        (let ((stream (make-string-input-stream content))
+              (len (length content))
+              (results '())
+              (*package* (make-package (gensym "LOOM-ANALYZER-SPANS-") :use nil))
+              (*read-eval* nil))
+          (unwind-protect
+               (handler-bind ((package-error #'intern-foreign-symbol-locally))
+                 (file-position stream (1+ start-offset))
+                 (loop
+                   (let ((start (skip-whitespace-and-comments
+                                 content (file-position stream))))
+                     (when (>= start len) (return))
+                     (when (char= #\) (char content start)) (return))
+                     (file-position stream start)
+                     (let ((element (read-preserving-whitespace stream nil :eof)))
+                       (when (eq element :eof) (return))
+                       (let ((end (file-position stream)))
+                         (push (list element (offset-line content start)
+                                     (offset-line content end))
+                               results)
+                         ;; The same non-advance guard READ-FORMS-WITH-SPANS
+                         ;; carries, for the same reason: a watcher thread that
+                         ;; never returns costs more than one comparison.
+                         (when (<= end start) (return)))))))
+            (delete-package *package*))
+          (nreverse results))
+      (condition () nil))))
 
 (defun token-name (x)
   "A plain, package-independent lowercase name for a symbol or a lambda-list
@@ -134,13 +229,81 @@ were itself a form -- (cdr '(f x)) is (x), whose head is x -- reports every
 argument as a call, so (repo-graph r) claimed a call to r. Harmless while the
 names went nowhere; not harmless once dispatched calls fan out to every
 candidate method, because a parameter that happens to share a name with a
-generic would manufacture edges to all of it."
+generic would manufacture edges to all of it.
+
+One operator is excepted, and one only: FUNCTION. #'f reads as (FUNCTION F),
+which is the single form whose argument position holds a name rather than a
+value, so the rule above dropped it and left the callee with no incoming edge
+at all (BUG-0011). What that exception recovers is exactly one thing -- a
+quotation appearing anywhere inside a body that reaches this function, so
+(apply #'make-selector args) and (sort xs #'less-p) now each contribute a name.
+The head-only discipline is otherwise unchanged and must stay unchanged, for
+the reason the paragraph above gives: this is one special case, not a policy.
+Two shapes of argument are names, a bare symbol and (setf f); everything else,
+a lambda above all, contributes no name and is still walked for the calls
+inside it.
+
+What it does not recover, because the designator never arrives here at all: a
+callback stored in a slot. ANALYZE-FILE hands NOTE-DEFINITION no :body for
+DEFVAR, DEFPARAMETER, DEFCLASS or DEFINE-CONDITION, and a DEFUN's body is
+(cdddr form), which excludes the lambda list -- so a quotation in an initform
+or in a lambda-list default is invisible to every clause below, and no wording
+of this one can change that. BUG-0017."
   (let ((names '()))
     (labels ((walk (form)
                (when (consp form)
                  (let ((head (car form)))
                    (unless (and (symbolp head) (string= (token-name head) "quote"))
                      (when (symbolp head) (push (token-name head) names))
+                     ;; The one exception to head-only, and only for FUNCTION.
+                     ;; (consp (cdr form)) with (null (cddr form)) is an arity
+                     ;; test and nothing else: one argument and no more, which
+                     ;; is what a quotation has and what an ftype specifier's
+                     ;; (function (arg) result) does not. It emphatically does
+                     ;; not establish that the head is CL:FUNCTION -- a
+                     ;; one-argument (some-pkg:function g) matches and records
+                     ;; "g". Accepted deliberately (PLAN-0011 R-7): TOKEN-NAME
+                     ;; reads SYMBOL-NAME and nothing else, the analyzer holds
+                     ;; no package knowledge to do better with (RULE-0002), and
+                     ;; the QUOTE test on the line above is package-blind in
+                     ;; exactly the same way. Diverging from it here would be
+                     ;; the surprise.
+                     (when (and (symbolp head)
+                                (string= (token-name head) "function")
+                                (consp (cdr form))
+                                (null (cddr form)))
+                       (let ((designator (second form)))
+                         (cond ((and designator (symbolp designator)
+                                     (not (keywordp designator)))
+                                (push (token-name designator) names))
+                               ;; Exactly (setf <non-keyword-symbol>) and
+                               ;; nothing else. DEFINITION-NAME maps TOKEN-NAME
+                               ;; over every element, so handed any other cons
+                               ;; it renders a name nobody wrote --
+                               ;; #'(lambda (item) (helper item)) becomes
+                               ;; "(lambda item helper)", which no filter
+                               ;; removes, which resolves to nothing, and which
+                               ;; would then sit in :CALL-NAMES and
+                               ;; :UNRESOLVED-CALLS forever. CON-0001: a
+                               ;; recorded gap beats a fabricated fact, so
+                               ;; anything not of this exact shape records no
+                               ;; name and is still walked by the tail loop
+                               ;; below. (consp (cdr designator)) earns its
+                               ;; place twice: besides refusing a longer list,
+                               ;; it is the only thing keeping a dotted
+                               ;; #'(setf . g) away from DEFINITION-NAME, whose
+                               ;; MAPCAR signals on a dotted list rather than
+                               ;; rendering one. The stake there is an error
+                               ;; out of ANALYZE-FILE, not merely a bad name.
+                               ((and (consp designator)
+                                     (symbolp (car designator))
+                                     (string= (token-name (car designator)) "setf")
+                                     (consp (cdr designator))
+                                     (null (cddr designator))
+                                     (second designator)
+                                     (symbolp (second designator))
+                                     (not (keywordp (second designator))))
+                                (push (definition-name designator) names)))))
                      (when (consp head) (walk head))   ; ((lambda ...) x)
                      ;; The arguments are forms in their own right. LOOP over
                      ;; the tail rather than recursing on it, and stop at a
@@ -571,13 +734,18 @@ right answer and not an omission."
                                      :system system)
                                (macro-generator-properties form)))))
 
-(defun method-body (form)
-  "The body of a DEFMETHOD: everything after the qualifier and lambda list.
+(defun method-body-from-tail (tail)
+  "The body of a method whose TAIL is everything after its name: the optional
+qualifier, the lambda list, then the body.
+
 The lambda list has to go, or every specialised parameter would read as a call
 site -- ((stream stream) (object entity)) is full of symbols in car position."
-  (let ((tail (cddr form)))
-    (when (and (first tail) (symbolp (first tail))) (pop tail))
-    (rest tail)))
+  (when (and (first tail) (symbolp (first tail))) (pop tail))
+  (rest tail))
+
+(defun method-body (form)
+  "The body of a DEFMETHOD -- the (DEFMETHOD name . tail) spelling of a tail."
+  (method-body-from-tail (cddr form)))
 
 (defun make-generated-function-entity (name start end path system generated-by)
   "An accessor, constructor, predicate or copier a DEFSTRUCT defines.
@@ -704,20 +872,23 @@ resolves to nothing exactly where the real one is called most."
 
 ;;; --- defgeneric / defmethod ---------------------------------------
 
-(defun generic-definition-entity (form start end path system)
-  (make-interface-entity (definition-name (second form)) start end path system
-                         :members (mapcar #'token-name
-                                          (lambda-list-parameters (third form)))))
+(defun method-entity-from-tail (name tail start end path system)
+  "The :METHOD for a method named NAME whose TAIL is everything after the
+name, keyed by name, qualifier and specializers.
 
-(defun method-definition-entity (form start end path system)
-  "The :METHOD for a DEFMETHOD, keyed by name, qualifier and specializers.
+The single copy of the method-tail grammar (ARCH-0010 R3). A DEFMETHOD form is
+(DEFMETHOD name . tail) and an inline DEFGENERIC clause is (:METHOD . tail):
+the tails are the same grammar, and the only thing the clause lacks is the
+name, which the enclosing DEFGENERIC supplies. Extracting this rather than
+fabricating a DEFMETHOD form per clause keeps one parser honest instead of
+consing a synthesized head that nothing ever reads.
 
 The qualifier is whatever sits between the name and the lambda list, which is
 how a method is told from an :AROUND on the same specializers. NIL is a list,
-so an empty lambda list is not mistaken for one."
-  (let* ((name (definition-name (second form)))
-         (tail (cddr form))
-         (qualifier (when (and (first tail) (symbolp (first tail))) (first tail)))
+so an empty lambda list is not mistaken for one -- and it is a symbol, so
+dropping the NIL guard would read () as a qualifier and shift the whole tail
+by one."
+  (let* ((qualifier (when (and (first tail) (symbolp (first tail))) (first tail)))
          (lambda-list (if qualifier (second tail) (first tail)))
          (parameters (lambda-list-parameters lambda-list)))
     (make-method-entity name
@@ -727,6 +898,62 @@ so an empty lambda list is not mistaken for one."
                         name                    ; the generic it implements
                         (mapcar #'token-name lambda-list)
                         start end path system)))
+
+(defun method-definition-entity (form start end path system)
+  "The :METHOD for a DEFMETHOD -- the (DEFMETHOD name . tail) spelling of a
+tail."
+  (method-entity-from-tail (definition-name (second form)) (cddr form)
+                           start end path system))
+
+(defun generic-definition-entities (form start end path system
+                                    &key contents start-offset)
+  "The :INTERFACE for a DEFGENERIC and a :METHOD for each of its inline
+(:method ...) clauses, as an ordered list of (ENTITY . BODY) pairs.
+
+Plural, like CLASS-DEFINITION-ENTITIES and STRUCT-DEFINITION-ENTITIES, because
+a DEFGENERIC can define more than the protocol: game-server writes 247 inline
+clauses across 158 forms, every one of which used to be discarded here, so
+every body they contain contributed no call names and no edges in either
+direction (ARCH-0010). The interface itself is untouched by all of this -- same
+name, same :members, same whole-form range -- which is why a DEFGENERIC with no
+clause still produces exactly what it always did.
+
+CONTENTS and START-OFFSET are keywords rather than positional so a caller that
+has none is not required to lie about them, and so the fallback below is
+reachable from a test. PATH and SYSTEM stay positional in that order, per
+ARCH-0009's convention.
+
+Per-clause ranges come from ELEMENT-SPANS and are used only when its element
+count matches the form's own. Zipping two sequences of different lengths
+positionally would hand one clause another's range, which is a fabricated fact
+(CON-0001); the whole DEFGENERIC's range is a wider truth that genuinely
+contains the clause, so a mismatch falls back to it rather than misattributing."
+  (let* ((name (definition-name (second form)))
+         (spans (when (and contents start-offset)
+                  (let ((candidate (element-spans contents start-offset)))
+                    (when (= (length candidate) (length form)) candidate)))))
+    (cons (cons (make-interface-entity
+                 name start end path system
+                 :members (mapcar #'token-name
+                                  (lambda-list-parameters (third form))))
+                nil)
+          ;; (:documentation ...), (:method-combination ...), (declare ...) and
+          ;; (:argument-precedence-order ...) are skipped, as they always were.
+          (loop for element in (cdddr form)
+                for index from 3
+                when (and (consp element) (symbolp (car element))
+                          (string= "method" (token-name (car element))))
+                  collect (let ((span (nth index spans))
+                                ;; A DEFMETHOD is (DEFMETHOD name . tail) and a
+                                ;; clause is (:METHOD . tail): the same grammar,
+                                ;; minus the name the enclosing form supplies.
+                                (tail (rest element)))
+                            (cons (method-entity-from-tail
+                                   name tail
+                                   (if span (second span) start)
+                                   (if span (third span) end)
+                                   path system)
+                                  (method-body-from-tail tail)))))))
 
 (defun make-unparsable-file-entity (path contents condition)
   "The entity a file gets when its contents cannot be read.
@@ -795,7 +1022,7 @@ transaction."
              (when local (push (cons (name entity) entity) local-functions))
              (when body (push (cons entity body) callables))))
       (dolist (spec forms)
-        (destructuring-bind (form start end) spec
+        (destructuring-bind (form start end start-offset) spec
           (cond
             ;; First, so no later clause can shadow it -- which also means this
             ;; clause, and not the catch-all's CALL-SITE-HEAD-P guard, is what
@@ -832,8 +1059,14 @@ transaction."
                ;; waiting for the workspace.
                (dolist (e (rest entities)) (note-definition e :local t))))
             ((definition-p form "defgeneric")
-             (note-definition (generic-definition-entity form start end path
-                                                         current-system)))
+             ;; NOTE-DEFINITION already treats a NIL :body as "no body", so the
+             ;; interface pair needs no special case. No :local for the inline
+             ;; methods either, for the reason stated above for DEFMETHOD.
+             (dolist (pair (generic-definition-entities form start end path
+                                                        current-system
+                                                        :contents contents
+                                                        :start-offset start-offset))
+               (note-definition (car pair) :body (cdr pair))))
             ((definition-p form "defmethod")
              (note-definition (method-definition-entity form start end path
                                                         current-system)

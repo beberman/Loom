@@ -1,0 +1,141 @@
+id: REQ-0014
+title: Markdown documentation must be indexed, asserting only the references it literally contains
+status: draft
+date: 2026-08-06
+affects: [analyzer-handles-p, analyze-file, document-properties, document-type-for,
+          resolve-document-references, unresolved-references]
+tags: [analyzer, documents, markdown, generality, con-0001]
+summary: |
+  Loom's document analyzer claims `.yaml` and `.yml` under `docs/` and nothing
+  else, so a repository that documents itself in markdown has no documents in
+  the graph at all. ~/lisp/game-server is that repository: 3,906 lines across
+  twelve markdown files under `docs/` and `design/`, and Loom reports
+  `documents : 0`. Everything `impact` offers beyond a call graph -- the
+  decisions and rules bearing on an entity, which is the feature that
+  distinguishes it from grep -- is therefore unavailable on that codebase and
+  on every codebase not already written to Loom's own YAML conventions. The
+  material is richer than its absence suggests: game-server's markdown is full
+  of backticked identifiers that exist in the graph (`dhandler-get`,
+  `model-handler`, `media-remap-id-clause`) and relative links to real files
+  (`../data-api/`, `../media/media-handler.lisp`). This asks that markdown
+  under a documentation directory be indexed and that those references become
+  edges -- but as a new, deliberately weaker relationship, :MENTIONS, never as
+  the :AFFECTS a YAML document earns by declaring it. A backtick is evidence
+  that a file names something. It is not evidence that the file governs it.
+body: |
+  WHAT IS WRONG
+
+  DOCUMENT-ANALYZER claims `.yaml` and `.yml` under `docs/`. Under that rule a
+  repository documenting itself in markdown contributes zero documents, and
+  `impact` degenerates to a call-graph query. Measured against game-server:
+
+      index      : 134 files, 2,151 entities, 9,931 relationships
+      documents  : 0
+
+  against twelve markdown files totalling 3,906 lines, four of which are
+  explicitly requirements or architecture by their own titles
+  (design/HexGridRequirements.md, design/piece-editor-req.md,
+  design/semantic-validators.md, docs/data-layer.md).
+
+  This is a generality failure of the same family REQ-0011 identified for
+  system identity: a convention that is correct for the tree Loom was written
+  against, applied as though it were a general rule. Loom's documents are YAML
+  because CON-0004 chose YAML. No other repository is under that obligation,
+  and markdown is what most of them use.
+
+  WHAT THE MATERIAL ACTUALLY LOOKS LIKE
+
+  docs/data-layer.md, read directly rather than assumed:
+
+      ## The two layers
+
+      mpackage namespace  --(dhandler-* generics)-->  data-api handler  --> cl-dbi --> DB
+
+      - **`data-api` handlers** ([`data-api/`](../data-api/), [`media/`](../media/))
+        own SQL. Each handler knows a table, an encode function (obj -> columns) and a
+        decode function (row -> obj), and implements the `dhandler-*` CRUD generics
+        (`dhandler-get`, `dhandler-put`, `dhandler-update`, `dhandler-delete`, ...)
+
+  Every backticked token there is either an entity Loom has already indexed or a
+  path that exists on disk. The links are ordinary markdown link syntax with
+  relative targets. None of this needs natural-language understanding to
+  extract; it is the same class of parse the YAML analyzer already performs on
+  an `affects:` list, applied to a different serialization.
+
+  WHY :MENTIONS AND NOT :AFFECTS
+
+  A YAML document's `affects:` field is an author's explicit claim that this
+  decision governs that code. A backtick in a paragraph is an author writing a
+  name. Recording the second as though it were the first would fabricate
+  governance the document never asserted, and `impact` would then attach a
+  README to an entity as a decision bearing on it. CON-0001 rules that out
+  directly: an inferred fact recorded as a declared one is worse than a
+  recorded gap.
+
+  A distinct, weaker edge type solves this honestly. :MENTIONS claims exactly
+  what is true -- this document names this entity -- and a consumer can weight
+  it accordingly. `impact` can list mentions separately from governing
+  decisions; `context` can prefer a mentioning document over an unrelated one
+  without treating it as authoritative. The distinction also survives the case
+  that matters most: a markdown file that has gone stale still mentions what it
+  mentions, and the mention is still the right pointer for a human deciding
+  whether to update it.
+
+  WHAT THIS IS NOT
+
+  This does not ask for markdown to be converted into REQ or ARCH documents.
+  That is a separate and much riskier proposal, asked in REQ-0017, and this
+  requirement is deliberately the cheaper half: indexing what is there, with no
+  generation and no inference. REQ-0014 should land first and independently,
+  because a generated requirement cannot be checked against its source unless
+  the source is in the graph.
+
+  It does not ask for prose understanding, summarization, or heading-structure
+  interpretation beyond what is needed to identify the document and its
+  references. A markdown file's title is its first H1; that is the extent of
+  the semantics required.
+
+  It does not ask that markdown replace YAML for Loom's own documents. CON-0004
+  stands. This is about repositories Loom did not write.
+
+  REQUIREMENTS
+
+  R1  A markdown analyzer claims `.md` (and `.markdown`) under the repository's
+      documentation directories, producing a :DOCUMENT entity per file with
+      :path, :title (the first H1, or the filename where there is none) and the
+      :system property ARCH-0009 R1 gives every :DOCUMENT.
+
+  R2  Which directories count must not be hardcoded to `docs/`. game-server
+      keeps requirements in `design/` and reference material in `docs/`, and
+      Loom's own convention is neither general nor discoverable from a foreign
+      tree. The rule should admit both, and a repository that documents itself
+      in a directory named something else again is the case that decides
+      whether this is configuration or convention -- the decision belongs in
+      the architecture document, not here.
+
+  R3  Backticked tokens and markdown link targets that resolve to an indexed
+      entity or an indexed file become :MENTIONS edges from the document to
+      that entity. A token that resolves to nothing is dropped silently rather
+      than reported: unlike a YAML `affects:` value, prose contains ordinary
+      words in backticks (`nil`, `id`, a SQL column name) and reporting each as
+      an unresolved reference would bury the document-reference signal that
+      staleness detection depends on.
+
+  R4  An ambiguous token -- one matching several entities, which prose produces
+      far more often than a curated `affects:` list does -- follows
+      RESOLVE-CALLS' rule and asserts no edge rather than guessing. Whether it
+      is instead reported, or asserted at low confidence, is governed by
+      REQ-0013 and REQ-0015 respectively and should be answered the same way
+      for both call names and mentions.
+
+  R5  :MENTIONS is a new relationship type in the ontology, distinct from
+      :AFFECTS and :REFINES, and must be presented as distinct. `impact` must
+      not list a mentioning markdown file among the decisions governing an
+      entity; `describe` must group it under its own heading.
+
+  R6  Acceptance is measured on game-server: `documents` rises from 0 to 12,
+      `impact dhandler-delete 3` reports docs/data-layer.md among the documents
+      mentioning it, and `unresolved` does not rise. On Loom's own tree the
+      document count must not change -- docs/TODO.md is the one markdown file
+      under docs/ and indexing it must not disturb the 52 YAML documents or the
+      zero unresolved references.

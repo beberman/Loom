@@ -19,6 +19,7 @@
    (:file "transaction")
    (:file "query")
    (:file "resolve")
+   (:file "enrich")
    (:file "rules")
    )
   :in-order-to ((test-op (test-op :loom-graph/test)))
@@ -33,8 +34,16 @@
   ;; threads, and after ARCH-0003 R6 it would arrive transitively through
   ;; loom-graph anyway -- but a test system that spawns threads should say so
   ;; rather than depend on a neighbour's dependency list not changing.
+  ;; LOOM-ANALYZER is here for one test and it is worth saying which.
+  ;; ARCH-0011 R5 requires a fixture that runs *both* passes over one
+  ;; definition set and asserts their natural keys meet -- the text pass being
+  ;; the analyzer's, which this system cannot otherwise reach. The direction is
+  ;; already precedented in the other direction (loom-analyzer/test depends on
+  ;; loom-graph) and creates no cycle: neither production system depends on the
+  ;; other, and the layering table is unchanged.
   :depends-on (#:loom-graph
 	       #:loom-ontology
+	       #:loom-analyzer
 	       #:bordeaux-threads
 	       #:fiveam)
   :serial t
@@ -45,6 +54,7 @@
    (:file "graph-manager")
    (:file "query")
    (:file "resolve")
+   (:file "enrich")
    (:file "retract-file")
    (:file "rules")
    (:file "concurrency")

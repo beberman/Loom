@@ -1,0 +1,128 @@
+id: REQ-0017
+title: A requirement derived from prose must carry its provenance and must not be authoritative until a human says so
+status: draft
+date: 2026-08-06
+affects: [document-properties, document-type-for, resolve-document-references,
+          unresolved-references, run-check, describe-entity, impact-set]
+tags: [documents, markdown, generation, con-0001, dec-0001, risk]
+summary: |
+  A repository that documents itself in markdown holds real requirements and
+  real architecture in prose -- ~/lisp/game-server has design/
+  HexGridRequirements.md at 400 lines, design/piece-editor-req.md at 230, and
+  docs/data-layer.md describing a layered handler architecture with named
+  participants. Converting those into REQ and ARCH documents would let Loom's
+  whole document apparatus work on a codebase it did not write, and is
+  mechanically within reach. It is also the most dangerous thing proposed in
+  this round of requirements, for a reason the project has already written
+  down twice: a generated requirement asserts structure its source never
+  committed to, and once indexed the graph lends it an authority it did not
+  earn -- `impact` will report it as a decision governing an entity, with a
+  `refines:` edge making it look sourced. This requirement therefore asks for
+  the generation, and asks that it be built so that its output can never be
+  mistaken for a human's. Provenance on every generated document, a status the
+  rest of the system refuses to treat as settled, and no silent regeneration.
+body: |
+  WHY THIS IS WORTH DOING
+
+  game-server's markdown is not scratch notes. Two files name themselves
+  requirements (design/HexGridRequirements.md, 400 lines;
+  design/piece-editor-req.md, 230), one is an architecture description with a
+  layer diagram and named participants (docs/data-layer.md, 121), and
+  design/semantic-validators.md (270) reads as a specification. Loom's document
+  machinery -- `refines:` chains, `affects:` resolution, staleness detection
+  through unresolved references, `impact` attaching governing decisions -- is
+  the part of the tool that distinguishes it from a call-graph browser, and on
+  that codebase it currently has nothing to work with.
+
+  WHY IT IS DANGEROUS, STATED PLAINLY
+
+  Three specific hazards, each traceable to a principle already recorded here.
+
+  First, fabricated structure. Prose does not have R1 through R9. A generator
+  asked for a requirements document will produce them anyway, and the numbered
+  requirements will read exactly like the ones a human wrote and argued for.
+  CON-0001's rule is that a fabricated fact is worse than a recorded gap, and
+  this is fabrication at scale with the graph's authority behind it: `impact`
+  presents a REQ as a decision bearing on an entity, and nothing in that
+  presentation distinguishes a requirement someone committed to from one a
+  model inferred from a paragraph.
+
+  Second, two truths that drift. DEC-0001 says files are truth and the graph is
+  an index that can be discarded and rebuilt. A generated YAML is a file, so it
+  satisfies that literally -- and that is the problem. The markdown is truth
+  and the YAML is truth, neither is derivable from the other, and the
+  rebuild-from-disk property quietly weakens: rebuilding reproduces the same
+  documents only if the same model, at the same temperature, produces the same
+  text. When the markdown is later edited, the generated document is stale in a
+  way `check` cannot see, because nothing links them.
+
+  Third, not all of it is requirements. design/pieces.md (716 lines) and
+  docs/api.md (716) are reference documentation. Converting those would
+  manufacture requirements out of a manual, and a generator with a quota will
+  do exactly that unless something stops it.
+
+  WHAT MAKES IT ACCEPTABLE
+
+  Provenance and a status gate, together. A generated document that names its
+  source file, and that carries a status the rest of the system treats as
+  unsettled, is not a fabricated fact -- it is a reviewable proposal, which is
+  a genuinely useful artifact. The distinction is the same one REQ-0014 draws
+  between :MENTIONS and :AFFECTS: record what is actually known, at the
+  strength it is actually known, and let the consumer weight it.
+
+  This also means REQ-0014 must land first. A generated requirement cannot be
+  checked against its source unless the source is in the graph, and a reviewer
+  promoting a draft needs to be able to ask what the markdown said.
+
+  WHAT THIS IS NOT
+
+  It is not a request to convert Loom's own documents, or to change CON-0004.
+
+  It is not a request for the generator to run automatically -- on indexing, on
+  a watch event, or on a schedule. A document that appears without someone
+  asking for it is the case where the provenance marker will be least noticed.
+
+  It is not a claim that the generated documents will be good. The requirement
+  is that a bad one is visibly a draft rather than invisibly authoritative.
+
+  REQUIREMENTS
+
+  R1  Every generated document carries a field naming its source -- the
+      markdown file and, where the generator can identify it, the heading or
+      line range the content came from. The field must be part of the document
+      schema, not a comment, so it resolves and is queryable.
+
+  R2  Every generated document carries a status distinct from `draft`.
+      CON-0004's vocabulary is draft -> accepted -> implemented | partial, all
+      of which describe a document a human wrote. A generated document has not
+      entered that lifecycle. `proposed` is the suggested name; the
+      architecture document decides.
+
+  R3  `check`, `impact` and `describe` must not treat a document at that status
+      as authoritative. Specifically, `impact` must not list it among the
+      decisions governing an entity without marking it as derived and
+      unreviewed. This is the requirement that makes the rest safe, and it is
+      the one to test hardest.
+
+  R4  Promotion is a human act. Moving a generated document to `draft` or
+      `accepted` is an edit a person makes; nothing in the pipeline may do it,
+      and the generator may not overwrite a document that has been promoted.
+
+  R5  Regeneration must not silently replace. If the source markdown changes,
+      the system may report that a generated document is out of date -- which
+      is exactly the staleness signal `check` exists for -- but must not
+      rewrite a document in place. Derive, never consume (DEC-0003) applies
+      here for the same reason it applies to resolution passes.
+
+  R6  The generator must be able to decline. A markdown file that is reference
+      documentation rather than a requirement should produce no REQ, and
+      producing nothing must be a supported outcome rather than a failure. A
+      generator that always emits something will convert docs/api.md.
+
+  R7  Acceptance is judged by review, not by count. The measure is whether a
+      person reading a generated REQ against its source markdown agrees it
+      states what the source states -- not how many documents were produced.
+      design/HexGridRequirements.md and docs/data-layer.md are the two worth
+      trying first, being the clearest requirement and the clearest
+      architecture respectively; docs/api.md is the negative case R6 must
+      decline.

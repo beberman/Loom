@@ -1,0 +1,129 @@
+id: BUG-0012
+title: A collided entity's outgoing edges are a union of every colliding definition's edges, not the surviving one's
+status: open
+date: 2026-08-06
+refines: [PLAN-0009, ARCH-0010]
+affects: [generic-definition-entities, method-entity-from-tail, absorb-entity]
+tags: [analyzer, graph, lisp, clos, blind-spot]
+summary: |
+  ARCH-0010 R4 discloses that an inline (:method ...) clause and a standalone
+  DEFMETHOD with identical name, qualifier and specializers in the same file
+  collide into one entity id, and that ABSORB-ENTITY makes the later
+  definition's properties win outright. That much is true and is now tested
+  (AN-INLINE-METHOD-AND-A-STANDALONE-DEFMETHOD-COLLIDE-IN-ONE-FILE). What R4
+  does not say is that the :CALLS edges the two colliding
+  definitions each produce do NOT collide the same way: both survive, attached
+  to the one id that outlives them, because a relationship's natural key
+  includes the callee, so two edges from the same id to two different callees
+  are two distinct relationships rather than one the later overwrites. The
+  result is an entity whose own properties (:call-names, :arguments, ...)
+  describe only the surviving definition, but whose outgoing :CALLS edges
+  describe the union of both -- a call attributed to a body that, by every
+  other property on the entity, does not exist. Measured against real code:
+  PLAN-0009's step 8 found two instances of this exact collision shape in
+  ~/lisp/game-server (mpackage/obj-types.lisp ADD-DEFN, mpackage/object.lisp
+  COMPUTED-ID-P), so this is not a constructed edge case.
+body: |
+  SYMPTOM
+
+  A fixture with a standalone DEFMETHOD and a colliding inline clause, both
+  calling a locally-defined function unique to each:
+
+      (defun first-callee (x) x)
+      (defun second-callee (x) x)
+      (defmethod render ((x hop)) (first-callee x))
+      (defgeneric render (x)
+        (:method ((x hop)) (second-callee x)))
+
+  produces exactly one :METHOD entity (id method:sample.lisp:render::hop,
+  start-line 3, the inline clause's own line -- the later definition, as R4
+  predicts). Its :CALL-NAMES property is empty, because both callees are
+  locally defined and therefore resolve to direct :CALLS edges rather than
+  unresolved names. 
+  The second defgeneric definition results in the lisp compiler issuing a redefinition warning 
+  for the earlier defined defmethod but it will compile and the first definition is overwritten.
+  
+  Querying those edges:
+
+      calls -> function:sample.lisp:first-callee
+      calls -> function:sample.lisp:second-callee
+
+  Both are present. FIRST-CALLEE is a call the DEFMETHOD body made; the
+  DEFMETHOD's entity was overwritten by the inline clause's entity and no
+  longer exists under any name. Nothing about the surviving entity's own
+  properties -- not :call-names, not :arguments, not :start-line -- says
+  FIRST-CALLEE was ever in its body. `impact render` or `describe render`
+  (by id) would report it anyway. This is now recorded as
+  A-COLLIDED-METHODS-CALLS-EDGES-ARE-A-UNION-NOT-A-REPLACEMENT in
+  src/analyzer/test/lisp-analyzer.lisp, which documents the behaviour as it
+  stands rather than asserting the fix -- there is something for a fix to
+  turn red.
+
+  CAUSE
+
+  Worth ruling out first, so a future fixer does not spend the afternoon there:
+  ASSERT-EDGE (src/ontology/ontology-ops.lisp) does bake FROM-ID and TO-ID into
+  the op at construction time, via (ID FROM) and (ID TO), before the transaction
+  runs -- and that is inert here. src/graph/transaction.lisp:205's TX-REBOUND-REL
+  re-resolves both endpoints through the transaction's remap (TX-RESOLVE) at
+  apply time, so the ids the op was built with are not necessarily the ids it
+  lands with; and both colliding definitions
+  derive the same natural key anyway, so late binding would produce exactly the
+  same two edges. The early binding is not the cause and changing it fixes
+  nothing.
+
+  The cause is on the relationship side of apply.
+
+  src/graph/transaction.lisp APPLY-OP for ASSERT-ENTITY-OP calls ABSORB-ENTITY
+  when an entity already occupies the target id, replacing its properties
+  wholesale -- this is R4's "later assert wins," and it is correct for
+  properties. APPLY-OP for ASSERT-RELATIONSHIP-OP has no equivalent absorption
+  by FROM-ID alone: it looks up FIND-RELATIONSHIP-BY-KEY on the relationship's
+  own natural key, which includes the TO-ID, so a :CALLS edge to
+  FIRST-CALLEE and a :CALLS edge to SECOND-CALLEE are two distinct
+  relationships regardless of how their shared FROM-ID got there. Nothing
+  retracts the earlier definition's edges when its entity is absorbed,
+  because ABSORB-ENTITY has no way to know which relationships in the graph
+  were derived from the entity it is replacing rather than from the one that
+  is replacing it -- both are recorded only as "edges from this id."
+
+  WHY IT HID
+
+  Before PLAN-0009, the only way to reach this collision at all was two
+  standalone DEFMETHOD forms in one file with identical name, qualifier and
+  specializers -- a redefinition a Lisp programmer would notice, because CL
+  itself warns about it at load time, and not a shape any existing test or
+  either indexed codebase's ordinary style produces. PLAN-0009 makes it
+  common by design: any inline clause and any standalone DEFMETHOD sharing a
+  generic's name, qualifier and specializers in the same file now collide
+  silently, with no compiler warning, because they are two different pieces
+  of syntax and CL's own redefinition warning does not fire across them.
+  ARCH-0010's CONSEQUENCES section reasons about the collision at the level
+  of "which properties win" and states the analogy to CL's load-order
+  semantics, which is accurate for properties -- but a `describe` or `impact`
+  query surfaces edges, not the property table, and nothing in the design or
+  in PLAN-0009's step 6 tests (R6 a/b/c, the fallback tests, the no-clause
+  regression guard) constructs a case where the two colliding definitions
+  call different things. The fingerprint corpus (step 1) and the collision
+  test this bug's own test sits beside are both about one definition at a
+  time; nothing exercised two colliding definitions with different bodies
+  until this review.
+
+  FIX
+
+  Not attempted here, and deliberately: fixing it changes the graph's general
+  relationship-absorption semantics (ASSERT-RELATIONSHIP-OP's APPLY-OP), which
+  is outside src/analyzer -- PLAN-0009's stated blast radius -- and touches
+  behaviour every other analyzer and every existing :CALLS/:CONTAINS/
+  :IMPLEMENTS edge relies on, so it needs its own design rather than a
+  same-plan patch. Two shapes worth weighing: (a) when ABSORB-ENTITY replaces
+  an entity, retract every relationship in the graph whose FROM-ID is that
+  entity's id and whose origin-file matches the file being reanalyzed, before
+  the fresh asserts land -- mirroring RETRACT-FILE's own "clear then reassert"
+  shape, but scoped to one id instead of one file; or (b) accept the union as
+  correct for the general redefinition case (CL's own semantics genuinely
+  permit two same-key methods calling different things across reloads) and
+  instead make the collision itself loud -- a rule or a `check` finding
+  wherever two distinct source locations produce the same natural key in one
+  file, which is the actual defect PLAN-0009 measured as present in
+  game-server today.

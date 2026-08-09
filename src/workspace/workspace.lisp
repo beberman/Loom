@@ -28,6 +28,11 @@
   (stamps (make-hash-table :test #'equal))   ; relative path -> FILE-STAMP
   (monitor nil)
   (stopping nil)                ; asks the monitor thread to return
+  ;; ARCH-0011 R8: per-unit statuses, inspector absences, drop counts and a run
+  ;; counter from the last ENRICH-REPOSITORY, or NIL if there has not been one.
+  ;; In memory only, and DEC-0001 is satisfied rather than bent: the report is
+  ;; derivable by re-running the pass, so it is cache and says so.
+  (enrichment nil)
   ;; ARCH-0004 R1. One lock per repository rather than a process-wide one:
   ;; *REPOSITORIES* can hold more than one entry and two repositories share no
   ;; state, so serializing one's rebuild against another's poll would cost
@@ -45,7 +50,19 @@ ARCH-0004 R5 requires loom-knowledge's read path to stay lock-free, and the
 only way to keep that true is for the lock to be unreachable from outside this
 file. A blocking acquire, with no timed or non-blocking variant anywhere in
 the design -- the measured worst-case hold is around a tenth of one poll
-interval, which is what retired the earlier skip-and-retry draft."
+interval, which is what retired the earlier skip-and-retry draft.
+
+One holder is outside that measurement by orders of magnitude and is named
+here rather than left for a reader to discover: ENRICH-REPOSITORY holds it
+across one child SBCL per unit, each bounded by the inspector's own
+TIMEOUT-SECONDS (300 by default), so the monitor thread can park for minutes
+on a tree that builds slowly. Accepted rather than fixed. The hold is bounded
+by a timeout the caller sets, an enrich is explicit and rare (ARCH-0011 R9),
+and what a parked monitor costs is a delayed poll rather than a wrong index.
+The alternative -- hold the lock only around the merge and let the read-only
+out-of-process inspection run outside it -- would let a poll reindex between
+the two, so the facts would be read against one tree state and merged into
+another; the shorter hold is not worth buying with that."
   `(bt:with-recursive-lock-held ((repository-analysis-lock ,repository))
      ,@body))
 
@@ -261,6 +278,188 @@ would belong to does not exist yet at the instant protection has to begin."
     (clrhash (repository-stamps repository))
     (setf (repository-errors repository) '())
     (index-repository repository :quiet quiet)))
+
+;;;; ==================================================================
+;;;; Enrichment (ARCH-0011)
+;;;; ==================================================================
+;;;;
+;;;; The second pass, and the second thing this system exists to own an
+;;;; ordering for. It is not part of the pipeline above and nothing on a timer
+;;;; calls it: a run loads the whole target in a fresh process, seconds to
+;;;; minutes, where a poll cycle is designed to cost milliseconds. ARCH-0008 is
+;;;; the precedent and BUG-0008 is the trap -- a heavyweight lifecycle
+;;;; operation wired into a path that runs on a clock.
+;;;;
+;;;; What makes that affordable is that an un-rerun pass is never wrong, only
+;;;; old: image facts carry an origin file like every other fact, so
+;;;; RETRACT-FILE ages them out as their files are edited and the index
+;;;; degrades toward today's text index rather than keeping a claim nobody
+;;;; re-verified.
+
+(defparameter *enrichment-count-keys*
+  '(:confirmed :added :dropped-no-location :dropped-not-under-root
+    :dropped-unknown-kind :edges-confirmed :edges-added :edges-dropped)
+  "The ENRICH-OPS report keys that are counts, and so can be summed across
+inspectors. Named once because a key missing from this list would be silently
+dropped from a multi-inspector report rather than mis-added.")
+
+(defun add-enrichment-counts (accumulated report)
+  "The element-wise sum of two ENRICH-OPS reports. NIL is the empty sum."
+  (loop for key in *enrichment-count-keys*
+        append (list key (+ (or (getf accumulated key) 0)
+                            (or (getf report key) 0)))))
+
+(defun repository-languages (repository)
+  "Every language the index has :FILE facts for."
+  (remove-duplicates
+   (remove nil (mapcar (lambda (file) (getp file :language))
+                       (entities-of-type (repository-graph repository) :file)))))
+
+(defun inspectors-for-repository (repository inspectors)
+  "Two values: the inspectors to run, and the absences to record.
+
+INSPECTORS overrides the registry entirely, which is what lets a caller ask one
+toolchain and a test run a stub. Otherwise every language the index has facts
+for is looked up, and a language with no inspector is REQ-0018 R2's recorded
+absence -- reported with a reason, never as an error, and never as silence."
+  (if inspectors
+      (values inspectors '())
+      (let ((found '())
+            (absent '()))
+        (dolist (language (repository-languages repository))
+          (let ((candidates (find-inspectors language)))
+            (if candidates
+                (setf found (append found candidates))
+                (push (list :language language
+                            :reason (format nil "no inspector for ~(~a~)" language))
+                      absent))))
+        (values found (nreverse absent)))))
+
+(defun enrich-repository (repository &key quiet inspectors)
+  "Ask each language's toolchain to enrich the index, and return the report.
+
+The order is a chain of dependencies rather than a preference, exactly as
+RESOLVE-AND-CHECK's is:
+
+  find inspectors -> INSPECTOR-AVAILABLE-P -> INSPECT-REPOSITORY
+  -> ENRICH-OPS -> APPLY-TRANSACTION -> RESOLVE-AND-CHECK
+  -> ENRICH-OPS -> APPLY-TRANSACTION
+
+RESOLVE-AND-CHECK in the middle and not first, which is where the two passes
+compose. An image-minted definition is exactly what an unresolved text call
+name has been waiting for, so a text-recorded call to a DEFENTITY accessor
+becomes a :structural edge in the same run the accessor appears. Running it
+first would defer every such edge to the next poll.
+
+The merge again after it, which is BUG-0015 and is explained where it happens
+below: resolution re-asserts every text-derivable edge, which clears the
+agreement the merge just recorded on the ones both passes see.
+
+Locked for its whole body (ARCH-0004 R3), for INDEX-REPOSITORY's reason: this
+writes to the graph, and a poll running concurrently would interleave two
+writers.
+
+CONDITION and not INDEX-FILE's ERROR -- BUG-0014, and RULE-0004 read against
+what is actually being guarded: a subprocess, a reader over its output, and a
+per-language inspector nobody in this file wrote. The comment on the handler
+has the measurement, and the HANDLER-BIND inside it is the other half, since
+CONDITION reaches warnings too."
+  (with-repository-lock (repository)
+    (let* ((started (get-internal-real-time))
+           (graph (repository-graph repository))
+           (root (repository-root repository))
+           (workspace (repository-name repository))
+           (previous (repository-enrichment repository))
+           (units '())
+           (inspections '())
+           (counts nil))
+      (multiple-value-bind (found absences) (inspectors-for-repository repository inspectors)
+        (dolist (inspector found)
+          (handler-case
+              ;; Inside the guard and around the whole body, so it runs first.
+              ;; BUG-0014 widened the guard below to CONDITION, which is right
+              ;; for cl-yaml's shape and wrong in the other direction: WARNING
+              ;; is a CONDITION too, and HANDLER-CASE unwinds on any match, so
+              ;; an inspector that merely calls WARN mid-INSPECT-REPOSITORY
+              ;; would have its whole inspection discarded and the warning text
+              ;; filed as the reason it was absent. Muffling here keeps the
+              ;; guard's RULE-0004 width without treating a warning as fatal.
+              (handler-bind ((warning #'muffle-warning))
+                (multiple-value-bind (available reason) (inspector-available-p inspector root)
+                  (if (not available)
+                      (push (list :language (inspector-language inspector) :reason reason)
+                            absences)
+                      (let ((inspection (inspect-repository inspector root)))
+                        (setf units (append units (inspection-units inspection)))
+                        (push inspection inspections)
+                        (multiple-value-bind (ops report)
+                            (enrich-ops graph inspection :workspace-id workspace)
+                          (apply-transaction graph ops)
+                          ;; The parent refused some definitions a range before
+                          ;; ENRICH-OPS ever saw them; both refusals are the same
+                          ;; fact to a reader, so they are one count.
+                          (incf (getf report :dropped-no-location)
+                                (or (getf inspection :dropped-no-location) 0))
+                          (setf counts (add-enrichment-counts counts report)))))))
+            ;; CONDITION, not SERIOUS-CONDITION -- measured, not assumed.
+            ;; RULE-0004's own example is a library that defines its
+            ;; conditions as (define-condition foo () ...), a direct subtype
+            ;; of CONDITION and of neither ERROR nor SERIOUS-CONDITION; probed
+            ;; directly under /usr/bin/sbcl, a HANDLER-CASE naming
+            ;; SERIOUS-CONDITION does not catch an instance of such a type
+            ;; even when it is signalled with ERROR the function, because
+            ;; HANDLER-CASE matches on the condition's own class and not on
+            ;; how it was raised. "A per-language inspector nobody in this
+            ;; file wrote" is exactly RULE-0004's case, so the guard has to be
+            ;; RULE-0004's "or wider": CONDITION, the only type a
+            ;; hand-written inspector cannot fail to be an instance of.
+            (condition (condition)
+              (note-error repository "enrich" condition)
+              (unless quiet
+                (format *standard-output* "~&  ! enrich: ~a~%" condition))
+              (push (list :language (inspector-language inspector)
+                          :reason (princ-to-string condition))
+                    absences))))
+        (resolve-and-check repository :quiet quiet)
+        ;; BUG-0015, and the reason the merge runs twice rather than once.
+        ;; RESOLVE-AND-CHECK's RESOLVE-CALLS re-derives every text-derivable
+        ;; :CALLS edge and re-asserts it through ASSERT-EDGE, which takes no
+        ;; properties and defaults :SOURCE to :STRUCTURAL -- so the absorb that
+        ;; lands on a confirmed edge CLRHASHes the :SOURCES union the merge just
+        ;; wrote, and ARCH-0011 R6 is inert for the majority case. Measured
+        ;; before this line existed: source=:INTROSPECTED sources=(:STRUCTURAL
+        ;; :INTROSPECTED) after the merge, source=:STRUCTURAL sources=NIL after
+        ;; resolution.
+        ;;
+        ;; RESOLVE-CALLS is not the thing to change. Rebuilding its whole output
+        ;; on every run is DEC-0003's derive-never-consume, and it is what lets
+        ;; an edge a retract destroyed come back at all; teaching it about
+        ;; provenance would trade that away for this. So the merge is re-derived
+        ;; against the graph resolution left behind. Re-derived rather than
+        ;; re-applied: the ops hold relationship instances, and re-applying an
+        ;; instance the graph already stores would absorb it onto itself and
+        ;; CLRHASH its own table.
+        ;;
+        ;; The second run adds nothing new by construction -- every definition
+        ;; it names is now present, so it emits no ASSERT-ENTITY -- and computes
+        ;; the same union it computed the first time, because the edge it reads
+        ;; is the :STRUCTURAL edge resolution has just restored. That stability
+        ;; is what makes this a second transaction rather than two passes
+        ;; fighting.
+        (dolist (inspection inspections)
+          (apply-transaction graph (enrich-ops graph inspection
+                                               :workspace-id workspace)))
+        (setf (repository-enrichment repository)
+              (append (list :runs (1+ (or (getf previous :runs) 0))
+                            :at (get-universal-time)
+                            :duration (/ (- (get-internal-real-time) started)
+                                         internal-time-units-per-second)
+                            :units units
+                            :absences (nreverse absences))
+                      (or counts (add-enrichment-counts nil nil))))))))
+
+(defun enrichment-unit-count (report status)
+  (count status (getf report :units) :key (lambda (unit) (getf unit :status))))
 
 ;;;; ==================================================================
 ;;;; Monitoring (SS8.3)
@@ -509,5 +708,25 @@ the last error per thread.\""
                              (not (assoc category *document-type-directories*
                                          :test #'string-equal)))))
                     (entities-of-type graph :document))
+          ;; ARCH-0011 R8, and four scalars rather than the report itself. The
+          ;; constraint is not style: loom-serve's :STATUS operation
+          ;; (src/serve/operations.lisp) serializes this plist to JSON for REST
+          ;; and MCP callers, no rule covers that boundary and no impact query
+          ;; reports it, and a nested plist is the shape most likely to
+          ;; serialize into something a client cannot read. The report itself is
+          ;; on the repository for the console to print.
+          ;;
+          ;; :ENRICHMENT-AT is what tells "never run" from "run and found
+          ;; nothing"; the three counts are always numbers, on ARCH-0002 R10's
+          ;; precedent that a count which vanishes when it is nought cannot be
+          ;; told from a count nobody computed.
+          :enrichment-runs (or (getf (repository-enrichment repository) :runs) 0)
+          :enriched-units (enrichment-unit-count
+                           (repository-enrichment repository) :loaded)
+          :enrichment-gaps (+ (enrichment-unit-count
+                               (repository-enrichment repository) :failed)
+                              (length (getf (repository-enrichment repository)
+                                            :absences)))
+          :enrichment-at (getf (repository-enrichment repository) :at)
           :errors (length (repository-errors repository))
           :last-error (first (repository-errors repository)))))

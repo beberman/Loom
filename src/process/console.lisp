@@ -194,6 +194,15 @@ command."
   (format t "  unresolved : ~d document reference~:p, ~d definer macro~:p~%"
           (getf status :unresolved-references)
           (getf status :unhandled-definer-macros))
+  ;; ARCH-0011. "never run" is spelled out rather than left as three zeroes,
+  ;; because enrichment is optional and on demand: a reader who sees zeroes
+  ;; cannot tell a tree the image agreed with completely from one nobody has
+  ;; asked about, and only one of those is worth doing something about.
+  (if (plusp (getf status :enrichment-runs))
+      (format t "  enrichment : ~d unit~:p loaded, ~d gap~:p, ~d run~:p~%"
+              (getf status :enriched-units) (getf status :enrichment-gaps)
+              (getf status :enrichment-runs))
+      (format t "  enrichment : never run~%"))
   (when (plusp (getf status :errors))
     (format t "  errors     : ~d, last: ~a~%"
             (getf status :errors) (cdr (getf status :last-error)))))
@@ -251,6 +260,47 @@ command."
   (let ((repository (current-repository designator)))
     (reindex-repository repository)
     (print-status (repository-status repository))))
+
+(define-command enrich (&optional designator)
+    "enrich [<name>]"
+    "Ask each language's toolchain to enrich the index. On demand only."
+  ;; On demand and nowhere else (ARCH-0011 R9). Nothing in POLL-ONCE, the
+  ;; monitor, watch or reindex reaches ENRICH-REPOSITORY: a run loads the whole
+  ;; target in a fresh process, which is seconds to minutes against a poll cycle
+  ;; designed to cost milliseconds. ARCH-0008 is the precedent and BUG-0008 is
+  ;; the trap.
+  (let* ((repository (current-repository designator))
+         (report (enrich-repository repository)))
+    (log-event "enrich" "~a" (repository-root repository))
+    (print-enrichment report)
+    (print-status (repository-status repository))))
+
+(defun print-enrichment (report)
+  "What one enrichment run did, zeros included.
+
+The per-unit lines are the primary output and the counts are secondary, which
+is the inverse of what it looks like. A pass whose child died on its first unit
+adds nothing, drops nothing and signals nothing -- indistinguishable from a
+tree the image agrees with completely -- so what has to be printed
+unconditionally is which units were attempted and what became of them
+(REQ-0018 R4, and ARCH-0002 R10's precedent for printing a nought)."
+  (format t "~&enriched in ~,1fs~%" (getf report :duration))
+  (dolist (unit (getf report :units))
+    (format t "  ~(~a~) ~a~@[: ~a~]~%"
+            (getf unit :status) (getf unit :unit) (getf unit :error)))
+  (dolist (absence (getf report :absences))
+    (format t "  absent ~(~a~): ~a~%"
+            (getf absence :language) (getf absence :reason)))
+  (format t "  entities   : ~d added, ~d confirmed~%"
+          (getf report :added) (getf report :confirmed))
+  (format t "  edges      : ~d added, ~d confirmed~%"
+          (getf report :edges-added) (getf report :edges-confirmed))
+  (format t "  dropped    : ~d without a location, ~d outside the root, ~
+~d of an unknown kind, ~d edge~:p with an unresolved endpoint~%"
+          (getf report :dropped-no-location)
+          (getf report :dropped-not-under-root)
+          (getf report :dropped-unknown-kind)
+          (getf report :edges-dropped)))
 
 (define-command find (term &optional type)
     "find <name> [<type>]"

@@ -49,7 +49,8 @@
 (test every-documented-command-is-registered
   ;; SS3.2's table, minus the two that need the HTTP listener.
   (dolist (name '("watch" "unwatch" "status" "reindex" "impact" "check"
-                  "log" "repl" "stop" "help" "find" "describe" "context" "rules"))
+                  "log" "repl" "stop" "help" "find" "describe" "context" "rules"
+                  "enrich"))
     (is (not (null (loom-process::find-command name)))
         "~a must be a command" name)))
 
@@ -264,3 +265,41 @@ misused conditional directive hid, printing the flag itself as the text")
       (is-false (search "summary" output))
       (is (search "function alpha" output)
           "the first line is PRINT-SUMMARY-LINE's form, as it is today"))))
+
+;;; ------------------------------------------------------------------
+;;; enrich (ARCH-0011)
+;;; ------------------------------------------------------------------
+;;;
+;;; Driven against the real registered LISP-INSPECTOR rather than a stub, and
+;;; no child process is spawned by either test: the console fixture is a
+;;; directory with no .asd file in it, so INSPECTOR-AVAILABLE-P answers NIL
+;;; before anything is run. That makes REQ-0018 R2's recorded absence the case
+;;; the console is tested on, which is the one a developer pointing Loom at an
+;;; arbitrary tree will actually meet.
+
+(test enrich-reports-a-recorded-absence-rather-than-failing
+  (with-console-fixture
+    (let ((output (with-output-to-string (*standard-output*)
+                    (run-command "enrich"))))
+      (is (search "absent" output))
+      (is (search "no .asd files" output)
+          "the reason, not merely the fact: \"no\" alone is unactionable")
+      (is (search "0 added" output)
+          "the zeros print, or a pass that did nothing looks like no pass")
+      (is (search "enrichment :" output)
+          "and status carries the run forward"))))
+
+(test status-says-never-run-before-any-enrichment
+  ;; Three zeroes would read as "the image agreed with everything", which is
+  ;; the one thing a tree nobody has enriched has not been shown to be.
+  (with-console-fixture
+    (let ((output (with-output-to-string (*standard-output*)
+                    (run-command "status"))))
+      (is (search "enrichment : never run" output)))))
+
+(test enrich-on-a-repository-that-is-not-watched-says-so
+  (with-console-fixture
+    (let ((output (with-output-to-string (*standard-output*)
+                    (run-command "enrich no-such-repository"))))
+      (is (search "no-such-repository" output)
+          "the message CURRENT-REPOSITORY already produces, unchanged"))))

@@ -16,12 +16,20 @@
   ;; is packaged, and Windows will want the DLL on the path. The document
   ;; subset Loom actually writes is small enough to read directly if that ever
   ;; becomes friction.
-  :depends-on (#:loom-ontology #:cl-yaml)
+  ;;
+  ;; UIOP is not a new dependency in the sense that matters: it ships with
+  ;; ASDF, which is already required to load any of this, so it adds no system
+  ;; to the layering table. The inspector uses it to run a child process
+  ;; (ARCH-0011 R3), which is SS9.2's stated preference for subprocesses over
+  ;; FFI exercised rather than merely agreed with.
+  :depends-on (#:loom-ontology #:cl-yaml #:uiop)
   :serial t
   :components
   (
    (:file "package")
    (:file "analyzer")
+   (:file "inspector")
+   (:file "lisp-inspector")
    (:file "lisp-analyzer")
    (:file "yaml-analyzer")
    )
@@ -43,6 +51,7 @@
   (
    (:file "suite")
    (:file "analyzer")
+   (:file "inspector")
    (:file "lisp-analyzer")
    (:file "yaml-analyzer")
    )

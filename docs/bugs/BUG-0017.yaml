@@ -1,0 +1,142 @@
+id: BUG-0017
+title: A function designated in an initform or a lambda-list default is still invisible, because its body never reaches the call walk
+status: open
+date: 2026-08-08
+refines: [BUG-0011]
+affects: [analyze-file, collect-call-names]
+tags: [analyzer, lisp, calls, blind-spot]
+summary: |
+  BUG-0011 fixed COLLECT-CALL-NAMES to record the name a function quotation
+  designates, and its SYMPTOM section named three shapes: (apply #'make-selector
+  args), (mapcar #'render items), and "a callback stored in a slot". The first
+  two are now recorded; the third is not, and no clause inside
+  COLLECT-CALL-NAMES can make it so, because the designator never reaches that
+  function. ANALYZE-FILE selects what counts as a body before calling it, and
+  the selection excludes every place an initform or a lambda-list default lives:
+  DEFVAR, DEFPARAMETER, DEFCLASS and DEFINE-CONDITION are handed no :body at
+  all, and a DEFUN's body is (cdddr form), which starts after the lambda list.
+  So (defparameter *hook* #'default-hook) records nothing about DEFAULT-HOOK,
+  and neither does (defun f (&key (fn #'default-fn)) ...). This is the residue
+  of BUG-0011 rather than a new defect, and it is filed separately because the
+  fix is in a different function and has a different blast radius.
+body: |
+  SYMPTOM
+
+  A function that is only ever designated from an initform or from a
+  lambda-list default has no incoming :CALLS edge from the code that installs
+  it, exactly as BUG-0011 described -- `describe` on the callee shows no
+  caller, and `impact` on it never reaches the installing site. The fix for
+  BUG-0011 did not change this.
+
+  Measured, /usr/bin/sbcl, 2026-08-08, on Loom's own tree with BUG-0011's fix
+  in place:
+
+      src/serve/json.lisp:59-74   (defun default-json-key-name (name) ...)
+      src/serve/json.lisp:76      (defparameter *json-key-name*
+                                    #'default-json-key-name ...)
+
+      describe default-json-key-name
+        function default-json-key-name  [src/serve/json.lisp:59-74]
+          <- documents: PLAN-0005
+          <- contains: src/serve/json.lisp
+
+  Zero incoming :CALLS, on a tree where the identically-shaped
+  (handler-bind ((package-error #'intern-foreign-symbol-locally)) ...) now
+  produces two. The difference is not the quotation -- both are (FUNCTION
+  <symbol>) -- it is which enclosing form the quotation sits in.
+
+  CAUSE
+
+  Upstream of COLLECT-CALL-NAMES, in ANALYZE-FILE's pass-1 body selection
+  (src/analyzer/lisp-analyzer.lisp, ANALYZE-FILE at line 980). Each branch
+  decides what to hand NOTE-DEFINITION as :body, and NOTE-DEFINITION is what
+  later hands that body to COLLECT-CALL-NAMES. Three ranges account for the
+  whole gap:
+
+    1037-1039  ((definition-p form "defun")
+                 (note-definition (make-function-entity ...)
+                                  :local t :body (cdddr form)))
+
+               (cdddr form) is (DEFUN name lambda-list . body) minus the first
+               three cells, so the lambda list is deliberately not part of the
+               body. That is right for the ordinary case -- a lambda list is
+               parameters, not calls, and walking it as a body would record
+               every default expression's operator as a call from the function
+               to itself's arguments -- and it is exactly what hides a
+               designator in a &key or &optional default.
+
+    1043-1044  ((or (definition-p form "defvar")
+                    (definition-p form "defparameter"))
+                 (note-definition (make-variable-entity ...)))
+
+               No :body argument at all. The initform is read for nothing.
+
+    1045-1052  defclass and define-condition, both via
+               CLASS-DEFINITION-ENTITIES, both (note-definition e) with no
+               :body. A slot's :initform is therefore never walked, which is
+               the literal "callback stored in a slot" of BUG-0011's SYMPTOM.
+
+  COLLECT-CALL-NAMES itself is not implicated and must not be changed for this:
+  handed any of those forms it would do the right thing, because its walk
+  descends into every non-quoted subform and the FUNCTION clause fires wherever
+  it finds one. The defect is that it is never handed them.
+
+  WHY IT HID
+
+  This is the interesting part, and it is not the usual "nobody looked". Someone
+  did look, and wrote it down. BUG-0011's own SYMPTOM section lists "a callback
+  stored in a slot" as one of the three shapes it was filed about, alongside the
+  two that were fixed. Its FIX section then addresses only the walk, and neither
+  the FIX, nor ARCH-0010, nor PLAN-0011's eight steps and seven recorded risks
+  noticed that the third shape was outside the reach of the change being
+  planned. PLAN-0011's docstring for the new clause even repeated the three-item
+  list verbatim, so the source acquired a comment claiming a recovery the code
+  did not perform. It was caught in review of the finished work, by asking what
+  the clause actually recovers rather than what the bug it closes was about.
+
+  The general shape, worth carrying: a bug document's SYMPTOM is a list of
+  observations and its FIX is a change to one function, and nothing checks that
+  the second covers the first. A measurement obligation does not catch it
+  either -- BUG-0011's numbers all moved, correctly, and every one of them is
+  consistent with two of three cases being fixed. The check that would have
+  caught it is enumerating the SYMPTOM's cases against the FIX's reach before
+  writing the plan, which costs one paragraph.
+
+  A second reason it survived measurement: the cases it misses are rare enough
+  in both indexed trees not to dent a total. Loom writes exactly one
+  designator-in-an-initform that matters (json.lisp:76); a census moving by 79
+  edges says nothing about one.
+
+  FIX
+
+  Not yet designed, and the choice between these is the open question. All three
+  are in ANALYZE-FILE, not in COLLECT-CALL-NAMES.
+
+  Hand the initform to NOTE-DEFINITION as a body. For DEFVAR and DEFPARAMETER
+  that is (cdddr form) minus the docstring, or just (list (third form)); for
+  DEFCLASS and DEFINE-CONDITION it means CLASS-DEFINITION-ENTITIES returning
+  slot initforms alongside its entities, which widens that function's contract.
+  The consequence to think about first is directional: the recorded caller
+  becomes the variable or the class, and a :VARIABLE entity as the source of a
+  :CALLS edge may or may not be something the ontology and RESOLVE-CALLS
+  (which walks :FUNCTION, :METHOD and :TEST callers only) should accept.
+  That question is the reason this is not a five-line change.
+
+  Walk the lambda list's default expressions, but not its parameter names, for
+  DEFUN, DEFMACRO and the method paths. Narrower, and the direction is
+  unproblematic -- the function is a fine source for the edge. Note it composes
+  badly with a pre-existing imprecision PLAN-0011 left alone: the walk reads a
+  binding pair's head as an operator, so a lambda list handed in whole records
+  every parameter name as a call. Only the defaults may be walked, which means
+  parsing the lambda list rather than passing it.
+
+  Do nothing, and record the gap. Defensible: BUG-0011's own measurement shows
+  the missed cases are a handful in two real trees, and CON-0001 prefers a
+  recorded gap to a fabricated fact -- a recorded gap is what this document is.
+  Choosing this means saying so here rather than letting the bug sit open by
+  default.
+
+  Whichever is chosen, a test must fail without it (CON-0003), and the shape is
+  a literal source handed to ANALYZE-SOURCE: (defun target (x) x) beside
+  (defparameter *hook* #'target), asserting the edge or the call name exists.
+  It returns nothing today.

@@ -167,21 +167,116 @@ TOKEN-NAME ever reads -- the prefix carries nothing worth failing over"))))
   ;; Reached into with :: deliberately. The walk is not protocol -- SS8.1 makes
   ;; ANALYZE-FILE the only coupling an analyzer has -- so this stays a private
   ;; function that a test may name rather than something the package exports.
-  (let ((forms (loom-analyzer::read-forms-with-spans ";;;; a header comment
+  (let* ((content ";;;; a header comment
 (defparameter *a* 1)
 
 (defun one () 1)
 
 (defun two () (one))
-")))
+")
+         (forms (loom-analyzer::read-forms-with-spans content)))
     (is (= 3 (length forms)) "every top-level form, not just the ones before
 the first miscounted span")
     (is (equal '("defparameter" "defun" "defun")
                (mapcar (lambda (spec) (loom-analyzer::token-name (first (first spec))))
                        forms)))
-    (is (equal '((2 2) (4 4) (6 6))
+    ;; Four elements, not three: the fourth is the character offset of the
+    ;; form's first character, which ELEMENT-SPANS seeks to when it re-reads a
+    ;; DEFGENERIC's clauses one at a time (ARCH-0010 R1).
+    (is (equal '((2 2 22) (4 4 44) (6 6 62))
                (mapcar #'rest forms))
-        "and each one spans its own lines")))
+        "and each one spans its own lines and knows where it starts")
+    ;; The offsets above are derived -- 21 characters of header comment plus a
+    ;; newline, then a newline and a blank line between each pair of forms --
+    ;; but a derivation is only as good as the string it was derived from, and
+    ;; that string is three lines above. This makes them self-checking: every
+    ;; recorded offset must land on the open paren it claims to name, so an
+    ;; edit to the source above cannot leave the numbers silently wrong.
+    (dolist (spec forms)
+      (is (char= #\( (char content (fourth spec)))
+          "offset ~a does not name the start of a form" (fourth spec)))))
+
+;;; ------------------------------------------------------------------
+;;; Per-element source spans (ARCH-0010 R2)
+;;;
+;;; The reader hands out positions for top-level forms and nothing else, so a
+;;; DEFGENERIC's inline (:method ...) clause has no range of its own until one
+;;; is recovered by re-reading the form's elements one at a time. That re-read
+;;; is the piece of this machinery most likely to be wrong in a way nothing
+;;; notices: a mistake produces wrong line numbers and signals nothing. Hence
+;;; the spans are asserted here, standalone, against sources small enough to
+;;; count lines in by eye, before anything consumes them.
+;;;
+;;; Reached into with :: for the reason the READ-FORMS-WITH-SPANS test above
+;;; gives -- SS8.1 makes ANALYZE-FILE an analyzer's only coupling, so this is
+;;; a private function a test may name, not something the package exports.
+;;; ------------------------------------------------------------------
+
+(defparameter *span-fixture* "(defgeneric g (x)
+  (:documentation \"d\")
+  (:method :around ((x foo))
+    (call-next-method))
+  (:method ((primary (eql :oneof)) &key k)
+    (helper primary k)))"
+  "Six elements over six lines: the head, the name, the lambda list, an option
+clause and two method clauses, one qualified and one with an EQL specializer.")
+
+(test element-spans-of-a-one-line-form-are-all-that-line
+  (is (equal '((1 1) (1 1) (1 1))
+             (mapcar #'rest (loom-analyzer::element-spans "(defgeneric g (x))" 0)))
+      "three elements -- defgeneric, g and the lambda list"))
+
+(test element-spans-give-each-clause-its-own-range-not-the-forms
+  ;; The assertion the whole design rests on. If these came back as six copies
+  ;; of 1-6 the machinery would still "work" -- every inline method would just
+  ;; point at its DEFGENERIC's first line, which is the fallback ARCH-0010
+  ;; keeps for when the re-read fails, silently standing in for the real thing.
+  (let ((spans (loom-analyzer::element-spans *span-fixture* 0)))
+    (is (= 6 (length spans)))
+    (is (equal '((1 1) (1 1) (1 1) (2 2) (3 4) (5 6))
+               (mapcar #'rest spans)))))
+
+(test element-spans-align-one-to-one-with-the-forms-own-elements
+  ;; The invariant the clause walk zips against. Tested here, where it is one
+  ;; comparison, rather than discovered downstream as a clause wearing its
+  ;; neighbour's line numbers.
+  (let* ((form (first (first (loom-analyzer::read-forms-with-spans *span-fixture*))))
+         (spans (loom-analyzer::element-spans *span-fixture* 0)))
+    (is (= (length form) (length spans)))))
+
+(test a-clause-head-read-a-second-time-is-eq-to-the-keyword
+  ;; Why the clause walk may compare heads across two separate reads at all:
+  ;; a keyword interns in KEYWORD whatever *PACKAGE* is, so :method survives
+  ;; the throwaway package both reads use. Nothing else does -- an ordinary
+  ;; symbol comes back interned in a package that is deleted on the way out --
+  ;; which is why every other comparison goes through TOKEN-NAME.
+  (let ((spans (loom-analyzer::element-spans *span-fixture* 0)))
+    (is (eq :method (first (first (fifth spans)))))
+    (is (eq :method (first (first (sixth spans)))))))
+
+(test a-foreign-package-prefix-inside-a-clause-still-yields-spans
+  ;; The second reader must establish the same environment as the first, or it
+  ;; signals on exactly the foreign source INTERN-FOREIGN-SYMBOL-LOCALLY
+  ;; exists for -- and the damage shows up only on someone else's repository,
+  ;; as every inline method in it quietly taking the whole-form range.
+  (let ((spans (loom-analyzer::element-spans
+                "(defgeneric g (x)
+  (:method ((x foo)) (utils:parse-config x)))"
+                0)))
+    (is (= 4 (length spans)))
+    (is (equal '(2 2) (rest (fourth spans))))))
+
+(test element-spans-refuses-rather-than-guesses
+  ;; Three ways of being asked for spans that do not exist. NIL from all three,
+  ;; because the caller's fallback -- the whole form's range on every clause --
+  ;; is a wider truth that contains the clause, where a span read out of the
+  ;; middle of a token would be a fabricated one (CON-0001).
+  (is (null (loom-analyzer::element-spans "(defgeneric g (x))" 1))
+      "an offset naming an atom, not a list")
+  (is (null (loom-analyzer::element-spans "(defgeneric g (x))" 99))
+      "an offset past the end of the content")
+  (is (null (loom-analyzer::element-spans "(defgeneric g (x" 0))
+      "an element that runs off the end of the content"))
 
 (test analyze-file-parses-arguments
   (multiple-value-bind (g file) (analyze-fixture)
@@ -286,6 +381,427 @@ declaration defines nothing; neither is a call to a macro")))
       (is (member "derive-name" (getf site :call-names) :test #'string=)
           "and the site is still recorded and still walked -- the name is
 what resolution has to refuse, not the whole entry"))))
+
+(test a-call-site-argument-that-is-a-function-quotation-is-recorded
+  ;; DEFINER-CALL-SITE is COLLECT-CALL-NAMES' other consumer, and the one whose
+  ;; output RESOLVE-GENERATED-DEFINITIONS copies onto the entity a definer macro
+  ;; mints -- in practice every FiveAM (test ...) form. Testing the quotation
+  ;; only through a DEFUN body would leave half the blast radius of BUG-0011
+  ;; uncovered.
+  (multiple-value-bind (g file)
+      (analyze-source "(deftest checks-it (verify #'target 1))")
+    (declare (ignore g))
+    (let ((site (first (getp file :definer-call-sites))))
+      (is (not (null site)))
+      (is (member "target" (getf site :call-names) :test #'string=)
+          "#'target designates TARGET as surely as calling it does -- BUG-0011"))))
+
+;;; ------------------------------------------------------------------
+;;; Function quotations (BUG-0011)
+;;;
+;;; #'f reads as (FUNCTION F), so the name sits in an argument position and the
+;;; head-only walk dropped it. These four fix the boundary of the one special
+;;; case that recovers it: a bare symbol and a (SETF f) cons are names; anything
+;;; else, a lambda above all, is not a name and must still be walked for the
+;;; calls inside it.
+;;; ------------------------------------------------------------------
+
+(test a-function-quotation-of-a-local-name-becomes-a-calls-edge
+  ;; The core regression: zero edges before the fix. A local callee is asserted
+  ;; as an edge by ANALYZE-FILE's pass 2 rather than left to the graph layer,
+  ;; which is what lets this assert on the edge and not on a property.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun render (item) item)
+(defun run (items) (mapcar #'render items))")
+    (declare (ignore file))
+    (let ((render (find-by-name g :function "render"))
+          (run (find-by-name g :function "run")))
+      (is (equal (list (id render))
+                 (mapcar #'to-id (relationships-from g (id run) :rel-type :calls)))
+          "#'render designates RENDER, so RUN calls it"))))
+
+(test a-function-quotation-of-a-foreign-name-lands-in-call-names
+  ;; game-server's DHANDLER-DELETE shape reduced to one line: the name is
+  ;; defined in another file, so pass 2 records it for RESOLVE-CALLS rather
+  ;; than emitting an edge. This is what ARCH-0010 R7 asked for and BUG-0011
+  ;; found missing.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun run (args) (apply #'make-selector args))")
+    (declare (ignore file))
+    (let ((run (find-by-name g :function "run")))
+      (is (member "make-selector" (getp run :call-names) :test #'string=)))))
+
+(test a-setf-function-quotation-records-the-name-a-defmethod-is-named-by
+  ;; Asserted on :CALL-NAMES and not on an edge, deliberately: a DEFMETHOD is
+  ;; kept out of LOCAL-FUNCTIONS on purpose, so the edge is RESOLVE-CALLS' job
+  ;; at the graph layer and asserting one here would be asserting against the
+  ;; wrong layer. What matters here is that the string recorded is the same one
+  ;; DEFINITION-NAME gives the DEFMETHOD -- otherwise nothing downstream could
+  ;; ever match the two.
+  (multiple-value-bind (g file)
+      (analyze-source "(defmethod (setf render) (v (x hop)) v)
+(defun install (x) (funcall #'(setf render) 1 x))")
+    (declare (ignore file))
+    (let ((install (find-by-name g :function "install")))
+      (is (member "(setf render)" (getp install :call-names) :test #'string=)))))
+
+(test a-lambda-quotation-records-no-name-and-loses-no-call
+  ;; THE GUARD, and it needs its history stated or it reads as vacuous: it
+  ;; passes on unmodified code too. What makes it assert something is the
+  ;; mutation it was observed to fail under -- recording DEFINITION-NAME of any
+  ;; cons in the quotation's argument position, which renders
+  ;; #'(lambda (item) (helper item)) as the fabricated name
+  ;; "(lambda item helper)": unfiltered by STANDARD-OPERATOR-P, resolving to
+  ;; nothing, and permanent. CON-0001. The exact-list assertion is what catches
+  ;; that; asserting merely that "lambda" is absent would not, because
+  ;; TOKEN-NAME of the cons is "lambda" and both consumers already filter it.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun helper (x) x)
+(defun run (items) (mapcar #'(lambda (item) (helper item)) items))")
+    (declare (ignore file))
+    (let ((helper (find-by-name g :function "helper"))
+          (run (find-by-name g :function "run")))
+      (is (equal (list (id helper))
+                 (mapcar #'to-id (relationships-from g (id run) :rel-type :calls)))
+          "the lambda body is still walked -- the quotation must not shadow it")
+      ;; "item" is the head of the lambda list, the same pre-existing
+      ;; imprecision that records "selector" for a LET binding head. BUG-0011
+      ;; puts that out of scope; the exact list is how this test notices if
+      ;; someone fixes it here anyway, or adds a name that is not a name.
+      (is (equal '("item") (getp run :call-names))))))
+
+;;; ------------------------------------------------------------------
+;;; What a DEFMETHOD produces, recorded bit for bit (ARCH-0010 R3)
+;;;
+;;; An inverted guard, and it is worth saying so plainly: these literals were
+;;; recorded mechanically from the analyzer *before* METHOD-DEFINITION-ENTITY
+;;; and METHOD-BODY were split into wrappers over a shared core that the
+;;; inline (:method ...) clause path also uses. Passing on the day they were
+;;; written proves nothing -- it is what makes them a baseline. What makes
+;;; them a guard is that they must still pass after the split, so that a
+;;; property silently gained or lost, or a qualifier that stopped reaching the
+;;; id, cannot hide inside a refactor advertised as inert.
+;;;
+;;; The whole property table is walked rather than a chosen few. A spot check
+;;; of :qualifier and :specializers would not catch a dropped :signature or a
+;;; :system that stopped defaulting.
+;;;
+;;; The corpus is eight sources: one per branch of the tail parsing, plus one
+;;; that repeats a branch at a path carrying a system, because the other seven
+;;; are analyzed where there is none and a dropped SYSTEM argument would leave
+;;; every one of them green. The two
+;;; that matter most are the empty lambda list -- which must NOT be read as a
+;;; qualifier, and is the input that tells a correct qualifier test from
+;;; (when (first tail) ...) written the obvious wrong way -- and the qualified
+;;; case, whose qualifier is a natural-key component and so shows up twice, in
+;;; the property and in the id.
+;;; ------------------------------------------------------------------
+
+(defun method-fingerprint (entity)
+  "Everything about ENTITY that must not move: its type, name, id, origin
+file, and every property with its value, in a stable order."
+  (list (entity-type entity)
+        (name entity)
+        (id entity)
+        (origin-file entity)
+        (let ((pairs '()))
+          (maphash (lambda (k v) (push (list k v) pairs))
+                   (properties entity))
+          (sort pairs #'string< :key (lambda (p) (princ-to-string (first p)))))))
+
+(defparameter *defmethod-corpus*
+  '(;; a  plain specializer
+    ("(defmethod render ((x hop)) x)"
+     (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
+      ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
+       (:generic-function "render") (:language :lisp) (:qualifier nil)
+       (:signature nil) (:specializers ("hop")) (:start-line 1) (:system nil)
+       (:unresolved-calls nil)))
+     (x))
+    ;; b  a qualifier, which is a natural-key component: it must survive into
+    ;;    the :QUALIFIER property AND into the id's third segment
+    ("(defmethod render :around ((x hop)) x)"
+     (:method "render" "method:sample.lisp:render:around:hop" "sample.lisp"
+      ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
+       (:generic-function "render") (:language :lisp) (:qualifier :around)
+       (:signature nil) (:specializers ("hop")) (:start-line 1) (:system nil)
+       (:unresolved-calls nil)))
+     (x))
+    ;; c  EQL specializer, rendered rather than resolved
+    ("(defmethod render ((x (eql :oneof))) x)"
+     (:method "render" "method:sample.lisp:render::(eql oneof)" "sample.lisp"
+      ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
+       (:generic-function "render") (:language :lisp) (:qualifier nil)
+       (:signature nil) (:specializers ("(eql oneof)")) (:start-line 1)
+       (:system nil) (:unresolved-calls nil)))
+     (x))
+    ;; d  a (setf f) name, which DEFINITION-NAME renders rather than flattens
+    ("(defmethod (setf render) (v (x hop)) v)"
+     (:method "(setf render)" "method:sample.lisp:(setf render)::t,hop"
+      "sample.lisp"
+      ((:arguments ("v" "x")) (:call-names nil) (:end-line 1)
+       (:file "sample.lisp") (:generic-function "(setf render)")
+       (:language :lisp) (:qualifier nil) (:signature nil)
+       (:specializers ("t" "hop")) (:start-line 1) (:system nil)
+       (:unresolved-calls nil)))
+     (v))
+    ;; e  an empty lambda list. NIL is a symbol, so a qualifier test written
+    ;;    without the NIL guard reads () as a qualifier, loses the lambda list
+    ;;    and mints an entity with the body where its arguments belong.
+    ("(defmethod render () 1)"
+     (:method "render" "method:sample.lisp:render::" "sample.lisp"
+      ((:arguments nil) (:call-names nil) (:end-line 1) (:file "sample.lisp")
+       (:generic-function "render") (:language :lisp) (:qualifier nil)
+       (:signature nil) (:specializers nil) (:start-line 1) (:system nil)
+       (:unresolved-calls nil)))
+     (1))
+    ;; f  an & marker stops the specializer walk but not the argument list
+    ("(defmethod render ((x hop) &rest args) args)"
+     (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
+      ((:arguments ("x" "&rest" "args")) (:call-names nil) (:end-line 1)
+       (:file "sample.lisp") (:generic-function "render") (:language :lisp)
+       (:qualifier nil) (:signature nil) (:specializers ("hop"))
+       (:start-line 1) (:system nil) (:unresolved-calls nil)))
+     (args))
+    ;; g  wholly unspecialized, and the only entry with a call in its body
+    ("(defmethod render (a b) (helper a b))"
+     (:method "render" "method:sample.lisp:render::t,t" "sample.lisp"
+      ((:arguments ("a" "b")) (:call-names ("helper")) (:end-line 1)
+       (:file "sample.lisp") (:generic-function "render") (:language :lisp)
+       (:qualifier nil) (:signature nil) (:specializers ("t" "t"))
+       (:start-line 1) (:system nil) (:unresolved-calls nil)))
+     ((helper a b)))
+    ;; h  case a again, at a path DEFAULT-SYSTEM-FOR-PATH recognises. Every row
+    ;;    above is analyzed at "sample.lisp", which has no system, so all seven
+    ;;    record (:system nil) and all seven would still pass if SYSTEM stopped
+    ;;    being threaded into METHOD-ENTITY-FROM-TAIL entirely. This is the only
+    ;;    row whose :SYSTEM carries a value, and therefore the only one that can
+    ;;    go red for that.
+    ("(defmethod render ((x hop)) (helper x))"
+     (:method "render" "method:src/graph/foo.lisp:render::hop"
+      "src/graph/foo.lisp"
+      ((:arguments ("x")) (:call-names ("helper")) (:end-line 1)
+       (:file "src/graph/foo.lisp") (:generic-function "render")
+       (:language :lisp) (:qualifier nil) (:signature nil)
+       (:specializers ("hop")) (:start-line 1) (:system :graph)
+       (:unresolved-calls nil)))
+     ((helper x))
+     "src/graph/foo.lisp"))
+  "Source, expected fingerprint, expected METHOD-BODY, and the path to analyze
+at when it is not the default -- one row per branch of the DEFMETHOD tail
+grammar. The fingerprints and bodies were printed from the analyzer with ~S and
+pasted, never hand-typed: id derivation renders an empty qualifier as an empty
+segment (case a is render::hop, case e is render::), and a hand-typed guess at
+that would be a guard over a guess.")
+
+(test a-defmethod-produces-the-same-entity-it-always-has
+  (dolist (row *defmethod-corpus*)
+    (destructuring-bind (source fingerprint body &optional (path "sample.lisp")) row
+      (declare (ignore body))
+      (multiple-value-bind (g file) (analyze-source source path)
+        (declare (ignore file))
+        (let ((methods (entities-of-type g :method)))
+          (is (= 1 (length methods)) "~a produced ~a methods" source
+              (length methods))
+          (is (equal fingerprint (method-fingerprint (first methods)))
+              "~a~%  expected ~s~%  got      ~s"
+              source fingerprint (method-fingerprint (first methods))))))))
+
+(test a-defmethod-body-is-what-it-always-was
+  ;; METHOD-BODY is extracted alongside the entity constructor and needs a
+  ;; guard of its own: an entity can be right while the body handed to pass 2
+  ;; is wrong, and then the :CALL-NAMES are wrong without anything else moving.
+  ;; *PACKAGE* is bound rather than assumed, because READ-FROM-STRING interns
+  ;; into whatever package the test runner happens to be in and the literals
+  ;; below are read at compile time into this one.
+  (let ((*package* (find-package :loom-analyzer-test)))
+    (dolist (row *defmethod-corpus*)
+      (destructuring-bind (source fingerprint body &optional path) row
+        (declare (ignore fingerprint path))
+        (is (equal body (loom-analyzer::method-body (read-from-string source)))
+            "~a" source)))))
+
+;;; ------------------------------------------------------------------
+;;; Inline DEFGENERIC methods (ARCH-0010 R4, R6)
+;;;
+;;; A (:method ...) clause used to be discarded with the rest of a
+;;; DEFGENERIC's options: no :METHOD entity, so no body walk, so no
+;;; :CALL-NAMES, so no edge in either direction. game-server writes 247 of
+;;; them and Loom two, which is why this was invisible here and expensive
+;;; there.
+;;; ------------------------------------------------------------------
+
+(test an-inline-method-gets-its-own-range-and-the-interface-keeps-its
+  ;; Both halves in one test deliberately. "The method got the right range" and
+  ;; "the interface kept its own" are one fact, not two: the interface still
+  ;; spans the bodies it now shares, which is fine because line ranges are
+  ;; display-only, and the way to notice the method quietly taking the whole
+  ;; form's range is to assert the two against each other.
+  (multiple-value-bind (g file)
+      (analyze-source "(defgeneric render (x)
+  (:documentation \"d\")
+  (:method ((x hop))
+    x))")
+    (declare (ignore file))
+    (let ((method (find-by-name g :method "render"))
+          (interface (find-by-name g :interface "render")))
+      (is (not (null method)) "the clause mints a :METHOD entity at all")
+      (is (eql 3 (getp method :start-line))
+          "the clause's own line, not the DEFGENERIC's")
+      (is (eql 4 (getp method :end-line)))
+      (is (equal '("hop") (getp method :specializers)))
+      (is (equal "render" (getp method :generic-function)))
+      (is (not (null interface)) "and the interface is still there")
+      (is (eql 1 (getp interface :start-line)))
+      (is (eql 4 (getp interface :end-line))))))
+
+(test two-clauses-differing-only-in-qualifier-are-two-entities
+  ;; The natural key is (:file :name :qualifier :specializers). Asserting the
+  ;; ids differ is what shows the qualifier reaching the key rather than only
+  ;; the property table -- if it stopped at the property, these two would
+  ;; collide on one id and the second assert would overwrite the first.
+  (multiple-value-bind (g file)
+      (analyze-source "(defgeneric render (x)
+  (:method :around ((x hop)) x)
+  (:method ((x hop)) x))")
+    (declare (ignore file))
+    (let ((methods (entities-of-type g :method)))
+      (is (= 2 (length methods)))
+      (is (equal '(:around nil)
+                 (sort (mapcar (lambda (m) (getp m :qualifier)) methods)
+                       #'string< :key #'princ-to-string)))
+      (is (= 2 (length (remove-duplicates (mapcar #'id methods) :test #'equal)))
+          "two entities, so two ids"))))
+
+(test an-inline-methods-body-resolves-to-a-calls-edge
+  ;; The end of the chain REQ-0012 asks for, and the one that returned nothing
+  ;; before: a clause body's names only become edges if the clause became a
+  ;; :METHOD entity with a body handed to pass 2. RESOLVE-CALLS walks :FUNCTION,
+  ;; :METHOD and :TEST callers, so a name recorded on the :INTERFACE instead
+  ;; would strand.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun helper (x) x)
+(defgeneric render (x)
+  (:method ((x hop))
+    (helper x)))")
+    (declare (ignore file))
+    (apply-transaction g (resolve-calls g))
+    (let ((method (find-by-name g :method "render"))
+          (helper (find-by-name g :function "helper")))
+      (is (not (null method)))
+      (is (member (id helper)
+                  (mapcar #'to-id (relationships-from g (id method) :rel-type :calls))
+                  :test #'equal)
+          "the inline method calls the function defined above it"))))
+
+(test a-defgeneric-with-no-inline-clause-produces-only-its-interface
+  ;; The regression guard for the majority case -- five of Loom's seven
+  ;; DEFGENERIC forms and most of game-server's. If this moves, the rename
+  ;; changed what a plain DEFGENERIC means, which it must not.
+  (multiple-value-bind (g file)
+      (analyze-source "(defgeneric render (x y))")
+    (declare (ignore file))
+    (is (null (entities-of-type g :method)))
+    (let ((interface (find-by-name g :interface "render")))
+      (is (not (null interface)))
+      (is (equal '("x" "y") (getp interface :members))))))
+
+(test an-inline-method-falls-back-to-the-whole-forms-range
+  ;; Two calls, because the fallback has two entrances and only one of them is
+  ;; "no spans". A caller with contents whose element count disagrees with the
+  ;; form's has spans that are real and misaligned, and using them would give a
+  ;; clause its neighbour's line numbers -- worse than a range that is merely
+  ;; wide. Exercised as a case rather than left as an untested safety net.
+  ;; The second form has five elements where the DEFGENERIC has four, which is
+  ;; what makes the second call a mismatch rather than a silent misattribution
+  ;; -- the length comparison is the whole of the alignment check.
+  (let* ((source "(defgeneric render (x)
+  (:method ((x hop)) x))
+(defun elsewhere (a) 1 2)")
+         (form (first (first (loom-analyzer::read-forms-with-spans source))))
+         (other-offset (fourth (second (loom-analyzer::read-forms-with-spans source)))))
+    (flet ((method-range (pairs)
+             (let ((method (car (second pairs))))
+               (list (getp method :start-line) (getp method :end-line)))))
+      (is (equal '(10 20)
+                 (method-range (loom-analyzer::generic-definition-entities
+                                form 10 20 "sample.lisp" :test)))
+          "no contents at all: nothing to re-read, so the form's own range")
+      (is (equal '(10 20)
+                 (method-range (loom-analyzer::generic-definition-entities
+                                form 10 20 "sample.lisp" :test
+                                :contents source
+                                :start-offset other-offset)))
+          "spans of a different form in the same string: real, and misaligned"))))
+
+(test an-inline-method-and-a-standalone-defmethod-collide-in-one-file
+  ;; ARCH-0010 R4's disclosed, not fixed, edge: the natural key is (:file :name
+  ;; :qualifier :specializers), and nothing about it distinguishes a clause
+  ;; from a DEFMETHOD -- so a standalone DEFMETHOD and an inline (:method ...)
+  ;; clause on the same generic, same qualifier, same specializers, in the same
+  ;; file, resolve to one id. Both are ASSERT-ENTITY-OP; the graph applies them
+  ;; in source order, so whichever definition sits later in the file overwrites
+  ;; the other's properties entirely -- not merged, replaced. This mirrors CL's
+  ;; own load-order redefinition semantics, and the coder found two real
+  ;; instances of it in game-server (mpackage/obj-types.lisp ADD-DEFN,
+  ;; mpackage/object.lisp COMPUTED-ID-P).
+  ;;
+  ;; FIRST-CALLEE and SECOND-CALLEE are deliberately undefined anywhere in this
+  ;; source, so each becomes a :CALL-NAMES property rather than a resolved
+  ;; local :CALLS edge (see the next test for what happens when the callees
+  ;; ARE local) -- this isolates the property-collision half of R4's claim.
+  ;; Without ARCH-0010, this source would still produce exactly one :METHOD
+  ;; entity -- the standalone DEFMETHOD, since the inline clause was discarded
+  ;; outright -- so :CALL-NAMES would be ("first-callee"), not
+  ;; ("second-callee"); that is what makes this a test of the collision rather
+  ;; than a restatement of "one method exists".
+  (multiple-value-bind (g file)
+      (analyze-source "(defmethod render ((x hop)) (first-callee x))
+(defgeneric render (x)
+  (:method ((x hop)) (second-callee x)))")
+    (declare (ignore file))
+    (let ((methods (entities-of-type g :method)))
+      (is (= 1 (length methods))
+          "one id, so one entity survives -- the collision, not two distinct
+methods")
+      (is (equal '("second-callee") (getp (first methods) :call-names))
+          "the later definition in source order -- the inline clause -- is the
+one the graph kept; the standalone DEFMETHOD's :call-names are gone entirely,
+not merged"))))
+
+(test a-collided-methods-calls-edges-are-a-union-not-a-replacement
+  ;; A consequence of R4's collision that ARCH-0010's text does not name:
+  ;; "the later assert wins" is true of the surviving entity's OWN properties
+  ;; (the test above), but it is NOT true of the :CALLS edges a *local* callee
+  ;; produces. ASSERT-EDGE bakes FROM-ID in at op-construction time (ID FROM),
+  ;; before the transaction runs, so an edge from the overwritten (earlier)
+  ;; definition and an edge from the surviving (later) definition carry the
+  ;; identical from-id string once the two definitions collide -- and the
+  ;; graph does not deduplicate or replace relationships the way it replaces
+  ;; entities. Both edges land on the one surviving id. The result: the single
+  ;; :METHOD entity that ends up representing only the inline clause's body
+  ;; (per the test above) is shown as calling FIRST-CALLEE too, a call no
+  ;; queryable definition of RENDER actually makes -- `impact render` would
+  ;; report a call site that does not exist in the surviving source. Filed as
+  ;; BUG-0012; this test documents the current, undesirable behaviour so a fix
+  ;; has something to turn red.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun first-callee (x) x)
+(defun second-callee (x) x)
+(defmethod render ((x hop)) (first-callee x))
+(defgeneric render (x)
+  (:method ((x hop)) (second-callee x)))")
+    (declare (ignore file))
+    (let* ((methods (entities-of-type g :method))
+           (method (first methods))
+           (callees (mapcar #'to-id (relationships-from g (id method) :rel-type :calls))))
+      (is (= 1 (length methods)) "still one surviving entity")
+      (is (member (id (find-by-name g :function "second-callee")) callees :test #'equal)
+          "the surviving definition's own call is present, as expected")
+      (is (member (id (find-by-name g :function "first-callee")) callees :test #'equal)
+          "BUG-0012: the OVERWRITTEN definition's call survives as an edge on
+an entity whose properties no longer mention it at all -- a call attributed to
+a body that, from every other query, does not exist"))))
 
 ;;; ------------------------------------------------------------------
 ;;; Macro template inspection and the registry (ARCH-0002 R1, R3)

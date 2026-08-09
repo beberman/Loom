@@ -23,6 +23,29 @@
    #:find-analyzer
    #:analyzable-p
 
+   ;; the inspector protocol (ARCH-0011 R1) -- a second pass that asks the
+   ;; language's own toolchain rather than reading text. The three INSPECTION-
+   ;; readers are exported for LOOM-WORKSPACE's report; LOOM-GRAPH reads the
+   ;; same plist with GETF and names nothing from here.
+   #:inspector
+   #:inspector-language
+   #:inspector-available-p
+   #:inspect-repository
+   #:*inspectors*
+   #:register-inspector
+   #:find-inspectors
+   #:inspection-units
+   #:inspection-definitions
+   #:inspection-calls
+
+   ;; the Common Lisp inspector (ARCH-0011 R3). The four bound slots are
+   ;; exported because they are knobs a caller sets, not internals.
+   #:lisp-inspector
+   #:inspector-timeout-seconds
+   #:inspector-heap-mb
+   #:inspector-isolate-p
+   #:inspector-include-test-units
+
    ;; driving an analyzer over files on disk
    #:analyze-path
    #:analyze-tree

@@ -302,6 +302,37 @@ the retract half can recognise what it made")
     (is (null (find-entity-by-key g '(:function "b.lisp" "workspace"))))
     (is (equal (list macro) (unhandled-definer-macros g)))))
 
+(test an-introspected-entity-does-not-block-the-call-site-that-explains-it
+  ;; The same guard, and the one claim it must not read as a rival. An
+  ;; :INTROSPECTED entity is this very definition seen from the other side --
+  ;; the compiler reporting what the macro call expanded into (ARCH-0011 R6) --
+  ;; and enrichment mints exactly these, since a macro-generated name is what
+  ;; the text pass cannot see and the image can. Counted as hand-written, the
+  ;; first enrich would be the last pass able to mint here: the key would stay
+  ;; occupied, every later pass would report a collision it could do nothing
+  ;; about, and the :USES edge back to the macro would never be drawn -- so
+  ;; `impact' on the macro would stop reaching what it generates, which is the
+  ;; whole of ARCH-0002.
+  (let* ((g (make-graph))
+         (macro (r-macro g "struct-simplefn" "macros.lisp")))
+    (add-entity g (make-instance 'function-entity
+                                 :name "geo" :origin-file "geo.lisp"
+                                 :source :introspected :confidence 1.0
+                                 :properties (properties-table
+                                              (list :file "geo.lisp" :start-line 3
+                                                    :end-line 3 :language :lisp))))
+    (r-file g "geo.lisp"
+            :call-sites (list (r-call-site "struct-simplefn" "geo")))
+    (apply-transaction g (resolve-generated-definitions g :registry nil))
+    (let ((entity (find-entity-by-key g '(:function "geo.lisp" "geo"))))
+      (is (equal "struct-simplefn" (getp entity :generated-by))
+          "the minted account upserts onto the image's, rather than being refused")
+      (is (equal (list (id macro))
+                 (mapcar #'to-id (relationships-from g (id entity) :rel-type :uses)))
+          "and the edge to the generator exists, which is what the refusal cost")
+      (is (null (generated-definition-collisions g nil))
+          "and nothing is reported as a collision, because nothing collided"))))
+
 (test a-hand-written-definition-survives-a-colliding-generated-call-site
   ;; ARCH-0002 R5's collision guard, and the trigger PLAN-0001 step 5b names as
   ;; the one that can silently not fire: a call site whose name matches a

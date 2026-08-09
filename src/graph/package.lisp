@@ -61,6 +61,9 @@
    #:unhandled-definer-macros
    #:*generatable-types*
 
+   ;; image-derived facts merged against what the text pass wrote (ARCH-0011)
+   #:enrich-ops
+
    ;; test coverage, derived from what a test's body calls (ARCH-0002 R9)
    #:resolve-tests
    #:*tested-types*

@@ -1,0 +1,570 @@
+id: ARCH-0011
+title: A per-language inspector runs the toolchain in a bounded child process, and a graph-aware merge pass adds what it learned without touching what the text pass wrote
+status: partial
+date: 2026-08-07
+refines: [REQ-0018]
+affects: [analyzer-handles-p, analyze-file, register-analyzer, find-analyzer,
+          resolve-and-check, index-repository, apply-transaction,
+          absorb-entity, absorb-relationship, absorb-properties,
+          assert-edge, provenanced, source, confidence]
+tags: [analyzer, graph, workspace, introspection, provenance, isolation,
+       multi-language]
+summary: |
+  REQ-0018 asks for a second pass that asks a language's own toolchain what
+  the text analyzer can only infer. This document gives it three parts, each
+  in an existing layer. An INSPECTOR protocol beside the ANALYZER protocol in
+  loom-analyzer: same class-plus-registry shape, but its unit is a loadable
+  system rather than a file and its output is a facts document rather than
+  ontology ops, because ops applied blind would destroy text-derived facts --
+  ABSORB-PROPERTIES replaces a matched entity's property table wholesale, so
+  an image-pass assert landing on a text-pass natural key would wipe
+  :call-names and every other text property, violating R5 in one upsert. The
+  Lisp inspector drives /usr/bin/sbcl --script in a child bounded by timeout
+  and a heap cap, per REQ-0018 R3/R7, writing facts as data the parent reads
+  with *read-eval* nil. A new merge pass, ENRICH-OPS in loom-graph beside
+  resolve.lisp, turns facts plus the current graph into ops: entities only
+  where the natural key is absent, edges everywhere, provenance via the
+  provenanced mixin that already exists -- the whole ontology change is one
+  widened vocabulary, :introspected added to the source slot's member type.
+  Image facts carry origin-file like every other fact, so the existing
+  RETRACT-FILE machinery ages them out on edit with zero new staleness code:
+  an enriched index degrades toward today's text index, never lies. The pass
+  runs only on explicit demand (a console `enrich` verb), never from the file
+  monitor, on the ARCH-0008 principle that work of this weight happens in a
+  fresh process when someone asks.
+body: |
+  PROBLEM
+
+  All measurements below are REQ-0018's, re-verified 2026-08-06 under
+  /usr/bin/sbcl, plus this document's own reads of the tree.
+
+  The text analyzer cannot see what a macro generates (LOOM-ONTOLOGY has 249
+  fbound symbols including every DEFENTITY accessor, none indexed), cannot
+  settle what a name means (REQ-0015: `id` has 7 definitions and 144 dropped
+  call sites in game-server), and re-derives imperfectly what an image holds
+  exactly (SB-INTROSPECT:WHO-CALLS returns 341 caller edges for LOOM-GRAPH
+  alone, including function quotations BUG-0011's text fix has not landed
+  for). The image, conversely, cannot see what never gets a name: a macro
+  expanding to an anonymous lambda -- FiveAM's `test` -- leaves no xref key,
+  so WHO-CALLS APPLY-TRANSACTION returns 8 plain-symbol callers while Loom's
+  text pass attributes ~51 test edges the image cannot produce. Neither pass
+  subsumes the other; the design problem is composing them so each
+  contributes what only it knows and neither destroys the other's facts.
+
+  Four constraints shape everything below:
+
+  - Loading is running (REQ-0018): the pass executes every top-level form in
+    the target, so it must happen in a process that is not Loom's, bounded
+    and killable. ARCH-0008 is the precedent -- every path that runs code
+    outside the current image's control is a fresh process driven from
+    outside.
+  - ABSORB-PROPERTIES (src/graph/transaction.lisp:119-127) replaces a
+    matched entity's property table wholesale, and ABSORB-PROVENANCE
+    overwrites all five provenance slots. Upsert is therefore not a merge,
+    and any pass that asserts onto an existing natural key overwrites the
+    prior pass's facts. This single fact rules out "inspector emits ops like
+    an analyzer does."
+  - RETRACT-FILE removes every fact whose origin-file is the edited path,
+    and REMOVE-ENTITY drops inbound edges with the entity. Anything the
+    image pass writes with an honest origin-file is aged out by machinery
+    that already exists.
+  - The provenanced mixin (src/ontology/root-ontology.lisp:36-54) already
+    carries source, confidence, derived-from, origin-file and stale-p on
+    every entity and relationship, and resolve.lisp already threads
+    :source :inferred with fractional confidence through ASSERT-EDGE. The
+    provenance R6 asks for is a vocabulary entry away, not an ontology
+    redesign away.
+
+  WHAT EACH THING BECOMES
+
+  loom-analyzer gains the inspector protocol (new files inspector.lisp,
+  lisp-inspector.lisp). It OWNS toolchain knowledge: what a loadable unit is
+  for a language, how to drive the toolchain in a child, how to parse what
+  comes back -- including SBCL's (FAST-METHOD g (specializers)) compound
+  caller keys, which never cross into any other system. It may mutate
+  nothing but its own registry. Invariants: never touches any graph (the
+  .asd keeps loom-graph out, SS14.3); never loads target code into its own
+  image; never READs child output with *read-eval* enabled. Contracts:
+
+    INSPECTOR                class; slots LANGUAGE plus per-language config.
+                             Mirrors ANALYZER's "a value that says which
+                             language it speaks," registered in *INSPECTORS*
+                             via REGISTER-INSPECTOR with the same
+                             replace-by-class semantics as
+                             REGISTER-ANALYZER.
+    INSPECTOR-AVAILABLE-P    (inspector root) -> generalized boolean plus a
+                             reason string. Probes cheaply: toolchain binary
+                             present, tree offers at least one unit. NIL is
+                             REQ-0018 R2's recorded absence, never an error.
+    INSPECT-REPOSITORY       (inspector root) -> an INSPECTION: plain data
+                             holding per-unit statuses and the facts
+                             document described under THE CHILD PROTOCOL.
+                             Runs the child processes, enforces the bounds,
+                             maps locations to line ranges. Facts, not ops.
+
+  This deliberately reuses the ANALYZER pattern (class + claims-probe +
+  registry) and deliberately does not reuse its generic functions. Three
+  mismatches, each sufficient: the unit is an ASDF system, not a
+  path-plus-contents; the input is a tree that must build, not text that
+  need not; and the output must be facts rather than ops, because ops go
+  through an upsert whose absorb-replace semantics cannot protect the text
+  pass (the R5 trap above). ARCH-0010 having just made inline (:method ...)
+  clauses first-class in the text pass matters here only as the comparison
+  seam: both passes now describe the same methods, so their outputs can be
+  diffed per R6.
+
+  The Lisp inspector's child: a generated driver script (the
+  tools/load-test.lisp precedent) run as
+
+      timeout <bound> sbcl --dynamic-space-size <cap> --script driver.lisp \
+          <root> <result-file> <unit>...
+
+  wrapped in `unshare --user --net` when a one-time probe finds it working,
+  so the child has no network. Units are the primary systems named by .asd
+  files under the root, loaded in dependency order, each under HANDLER-CASE
+  so one unit's failure is that unit's recorded gap (REQ-0018 R4). The child
+  appends one status form to the result file as each unit settles, then
+  introspects once and appends the facts document; the parent supplies the
+  result-file path precisely because loading foreign code sprays compile
+  chatter on stdout, so stdout is captured for the log and never parsed. A
+  child that dies abnormally leaves the statuses already flushed; the parent
+  re-spawns excluding the unit that was in flight, so a hard crash (heap
+  exhaustion, a load-time segfault) costs one unit, not the pass. Facts are
+  kept only when the definition's source file resolves to a path under the
+  root -- dependency systems' symbols are dropped, matching the text pass's
+  treatment of external names.
+
+  THE CHILD PROTOCOL (REQ-0018 R3, R4)
+
+  One sexp document per run, read by the parent with *read-eval* nil into a
+  scratch package. Every name crosses as a downcased string with its package
+  as a separate string -- no symbol from target code is ever interned into a
+  Loom package. Shape, normative as to fields and value types:
+
+      (:loom-inspection 1
+       :language :lisp
+       :toolchain "SBCL 2.4.10"
+       :root "/home/beberman/lisp/game-server/"
+       :units ((:unit "utils" :status :loaded)
+               (:unit "media" :status :failed :phase :load
+                :error "<condition text>"))
+       :definitions ((:kind :function :name "properties-table"
+                      :package "loom-ontology"
+                      :file "src/ontology/root-ontology.lisp"
+                      :form-path (12))
+                     (:kind :method :name "analyzer-handles-p"
+                      :package "loom-analyzer" :qualifier nil
+                      :specializers ("analyzer" "t")
+                      :generic "analyzer-handles-p"
+                      :file "src/analyzer/analyzer.lisp" :form-path (7)))
+       :calls ((:caller (:function "resolve-and-check" "loom-workspace")
+                :caller-file "src/workspace/workspace.lisp"
+                :callee (:function "apply-transaction" "loom-graph"))
+               (:caller (:method "g" nil ("integer"))
+                :caller-file "src/graph/sample.lisp"
+                :callee (:function "target-d" "loom-graph"))))
+
+  The method caller designator (:method generic qualifiers specializers) is
+  the child's parse of SBCL's compound WHO-CALLS key -- R8 of REQ-0018 names
+  this a parsing obligation, and it is discharged inside the Lisp inspector
+  where SBCL's spelling is allowed to exist. FIND-DEFINITION-SOURCES-BY-NAME
+  is queried once per definition kind, not once per name (REQ-0018's
+  measured limit that :function misses generics). Line ranges: the parent
+  maps each definition's form-path leading index through the same
+  READ-FORMS-WITH-SPANS machinery ARCH-0010 widened, applied to the file's
+  own text -- the defining form's real span, which for a DEFENTITY-generated
+  accessor is the DEFENTITY call site's range, a wider truth in exactly
+  ARCH-0010's sense. A definition whose location cannot be recovered is
+  dropped and counted as a gap, never given a fabricated range (CON-0001) --
+  :start-line is :required on every code entity type, so there is no honest
+  partial assert.
+
+  loom-graph gains the merge pass (new file enrich.lisp, beside resolve.lisp
+  because it is the same kind of thing: a graph-aware derive pass emitting
+  ops). ENRICH-OPS (graph inspection &key workspace-id) OWNS the mapping
+  from facts to ontology ops and the R5 protection. It reads the graph and
+  returns ops; it writes nothing itself. Its invariants:
+
+  - It NEVER emits ASSERT-ENTITY for a natural key the graph already holds.
+    This is the single load-bearing rule of the whole design: an assert on
+    an existing key reaches ABSORB-ENTITY, whose ABSORB-PROPERTIES clears
+    the table -- :call-names, :arguments, everything the text pass wrote --
+    and R5 dies silently. Existing entities contribute lookups only. Keys
+    are computed with the text pass's own renderings of name, qualifier and
+    specializers, verified by a fixture that runs both passes over one
+    definition and asserts key equality (the R8 comparison seam).
+  - A definition absent from the graph becomes ASSERT-ENTITY with
+    :source :introspected, :confidence 1.0, origin-file = its (relative)
+    defining file, and the recovered line range. That is the DEFENTITY
+    accessor case, and the origin-file is what makes the fact age out
+    correctly: edit the DEFENTITY's file and RETRACT-FILE removes the
+    accessor entity until the next enrich.
+  - A call fact whose endpoints both resolve (to graph entities or to
+    entities this same transaction asserts -- the tx remap handles the
+    ordering) becomes ASSERT-EDGE :calls with :source :introspected,
+    :confidence 1.0, :derived-from naming the callee's id, and origin-file =
+    the caller's file. When the same-natural-key edge already exists, the
+    emitted edge additionally carries the property :sources = the union of
+    the existing edge's recorded :sources (or, when absent, the existing
+    edge's source slot as a singleton) with :introspected -- so agreement
+    between the passes is recorded on the surviving edge rather than
+    overwritten by ABSORB-RELATIONSHIP's provenance replacement, and
+    re-running enrich against an unchanged graph is idempotent because the
+    union is stable. Relationship properties are schema-free, so :sources
+    needs no declaration.
+  - A call fact either of whose endpoints resolves to nothing under the
+    root is dropped and counted, per CON-0001's preference for a recorded
+    gap.
+
+  The lifecycle this buys, stated once because it is the R1/R5 staleness
+  answer: text assert (:structural) -> enrich confirms (edge gains
+  :introspected and the :sources union) -> the caller's file is edited ->
+  RETRACT-FILE removes both passes' facts for that file -> the text pass
+  reasserts :structural alone -> the next enrich reconfirms. Between edits
+  and enrich runs the graph is the text index plus image facts whose origin
+  files are untouched -- degraded toward today's baseline, never wrong about
+  provenance, and no new staleness machinery exists anywhere.
+
+  loom-ontology changes one line: the source slot's :type widens from
+  (member :structural :inferred :human-validated) to include :introspected.
+  Naming the change by the house taxonomy: no new entity type, no new
+  relationship type, no widened endpoint; one property-vocabulary widening.
+  That is the entire ontology cost of REQ-0018 R6, because the provenanced
+  mixin already carries everything else, ABSORB-PROVENANCE already
+  propagates it through upsert, and resolve.lisp already sets :inferred
+  with fractional confidence on the edges it derives -- image facts slot
+  into an existing three-way vocabulary as its fourth, highest-confidence
+  member.
+
+  loom-workspace gains ENRICH-REPOSITORY (repository &key quiet): find the
+  available inspectors for the languages present, run each, apply ENRICH-OPS'
+  result via APPLY-TRANSACTION (the same shape RESOLVE-AND-CHECK already
+  has: graph-side pass computes ops, workspace applies them), then run
+  RESOLVE-AND-CHECK -- last, deliberately, because image-minted entities
+  resolve text call-names that were unresolved before, which is where the
+  two passes compose: a text-recorded call to a DEFENTITY accessor becomes a
+  :structural edge the moment the accessor exists. Per-unit gaps, inspector
+  absences, drop counts and durations land on the repository as an in-memory
+  enrichment report -- derivable by re-running, so DEC-0001 does not require
+  writing it to a file -- surfaced by the enrich command's own output and by
+  `status`.
+
+  loom-process gains the `enrich [repo]` console verb and its help row.
+
+  WHEN THE PASS RUNS
+
+  On explicit demand only. Never from POLL-ONCE, never on a watch event, not
+  at watch time. Grounds, in order of weight: a run loads the whole target
+  (seconds to minutes) where a poll cycle is designed to cost milliseconds;
+  ARCH-0008 established that work which executes code beyond the running
+  image's control happens in a fresh process when someone asks, after
+  BUG-0008 showed what interleaving heavyweight redefinition with a live
+  request path costs -- and though the trap's exact mechanism (in-image
+  reload) cannot recur here since every run is already a fresh child, the
+  lifecycle lesson (explicit, external, bounded) transfers whole; and the
+  self-cleaning staleness above means an un-rerun pass never produces a
+  wrong answer, only today's answer, so nothing forces eagerness. Automatic
+  re-run policy stays deferred exactly as REQ-0018's closing paragraph
+  defers it; if one is ever designed, its floor is "a fresh child per run,
+  triggered outside the request path."
+
+  WHERE THIS SITS IN THE LAYERING, ARGUED FROM :DEPENDS-ON
+
+  loom-analyzer keeps :depends-on (loom-ontology cl-yaml); the inspector
+  adds uiop, which ships with ASDF and adds no system. Its own .asd already
+  records SS9.2's stated preference for subprocesses over FFI -- this design
+  is that preference exercised. The "deliberately inert" identity of the
+  text analyzer survives with a sharper statement: Loom's own image still
+  never evaluates a form of target code; the process boundary, not the
+  system boundary, is what enforces it, and R3 makes that structural.
+  loom-graph keeps :depends-on (loom-ontology bordeaux-threads); ENRICH-OPS
+  consumes plain data and the graph it already owns, and loom-graph remains
+  the only writer. loom-workspace already depends on all three. loom-process
+  already depends on loom-workspace. No .asd gains an edge that changes the
+  layering table, and nothing below loom-workspace learns that enrichment
+  exists. RULE-0001's check stays meaningful (no new loom-ontology
+  dependency); RULE-0002/0003 lines remain BUG-0009 noise either way, so
+  acceptance argues from the .asd graph and `sbcl --script
+  tools/load-test.lisp`, not from `check`.
+
+  ALTERNATIVES CONSIDERED
+
+  Inspector emits ontology ops, like an analyzer. Rejected on a mechanism,
+  not a taste: ASSERT-ENTITY onto an existing natural key reaches
+  ABSORB-ENTITY, and ABSORB-PROPERTIES replaces the property table
+  wholesale -- the image pass would erase :call-names from every entity both
+  passes see, destroying the text pass's resolution input and R5's ~51
+  FiveAM edges with it. Protecting R5 requires knowing what the graph
+  already holds, so the op derivation must be graph-aware, so it cannot live
+  behind the analyzer's graph-blind contract. This is the design's sharpest
+  trade: the second pass gives up the first pass's clean "emit blind, upsert
+  reconciles" model in exchange for being unable to destroy what it did not
+  produce.
+
+  A new top-level system, loom-inspect. Workable, and the fallback if a
+  future language's inspector drags heavy dependencies. Rejected for now:
+  loom-analyzer's charter -- language knowledge in, data for the graph out,
+  no graph access -- already covers the inspector; the boundary a tenth
+  system would enforce (no graph writes from the inspector) is already
+  enforced by loom-analyzer's .asd; and the price (a tenth .asd, package,
+  test system, full-test row, layering-table row in three documents) buys
+  no invariant the current placement lacks. Splitting later is cheap
+  because the protocol surface is three names.
+
+  Provenance in the relationship natural key -- one edge per pass. Rejected:
+  every agreed-on fact doubles, every derived edge id changes (breaking
+  SS5.1's rebuild-equals-update property for existing graphs), impact
+  counts inflate with duplicates that mean "we agree," and BUG-0012's union
+  problem gets a second dimension. The :sources union on one edge records
+  the same information at none of that cost.
+
+  Merge-not-replace absorb semantics when sources differ, inside
+  ABSORB-RELATIONSHIP. Rejected: it moves pass-composition policy into the
+  writer's core invariant, which every existing caller of APPLY-TRANSACTION
+  has relied on reading as "replace"; the graph-aware merge pass achieves
+  the same result without changing what an upsert means for anyone else.
+
+  In-image loading with package isolation. Rejected by REQ-0018 itself
+  (a target can mutate shared generics like PRINT-OBJECT; version conflicts
+  with Loom's own dependencies are unresolvable in one image), and by
+  ARCH-0008's precedent. Not revisited.
+
+  Parsing the child's facts from stdout. Rejected after tracing what load
+  actually prints: compile chatter interleaves with protocol text, and a
+  crash mid-form is indistinguishable from a short read. A result file the
+  parent names, appended per unit and flushed, makes partial output
+  well-formed by construction and leaves stdout to the log.
+
+  Running enrichment eagerly at watch time so the index is born enriched.
+  Rejected: `watch` is the command whose seconds-scale budget users already
+  feel (146 files today), and a tree that will not build would make first
+  contact with Loom a wall of unit failures. The text index stands alone
+  first (REQ-0018 R1); enrichment is an explicit second act.
+
+  An earlier draft of this design had the inspector return ops and only the
+  entity-collision case routed through a graph check. Abandoned while
+  tracing BUG-0012's cause through transaction.lisp: the same
+  absorb-replace semantics that unions collided edges also wipes collided
+  properties, and a half-graph-aware pass would have protected entities
+  while still overwriting edge provenance. The uniform rule -- facts in,
+  graph-aware merge, ops out -- fell out of that trace.
+
+  REQUIREMENTS
+
+  R1  loom-analyzer gains INSPECTOR, INSPECTOR-AVAILABLE-P,
+      INSPECT-REPOSITORY, *INSPECTORS*, REGISTER-INSPECTOR and
+      FIND-INSPECTORS, mirroring the analyzer registry's replace-by-class
+      semantics. INSPECT-REPOSITORY returns facts as plain data; no
+      inspector method touches any graph, and loom-analyzer's .asd gains no
+      dependency beyond uiop.
+
+  R2  An unavailable inspector (no toolchain, no units, no inspector for
+      the language at all) yields a recorded absence with a reason string,
+      distinguishable in ENRICH-REPOSITORY's report from a unit that was
+      attempted and failed. Neither is an error and neither disturbs the
+      text index (REQ-0018 R1, R2).
+
+  R3  The Lisp inspector runs /usr/bin/sbcl --script on a generated driver
+      in a child process bounded by `timeout` and --dynamic-space-size
+      (defaults are the implementing plan's to set, as named parameters),
+      wrapped in `unshare --user --net` when a probe finds it functional.
+      The child loads each unit under HANDLER-CASE, appends per-unit status
+      forms and then one facts document to a parent-named result file, and
+      never writes protocol on stdout. The parent reads the result file
+      with *read-eval* nil into a scratch package; every name crosses as a
+      string; abnormal child exit costs at most the in-flight unit, and the
+      parent re-spawns for the remainder with the fatal unit excluded
+      (REQ-0018 R3, R4, R7).
+
+  R4  The facts document follows THE CHILD PROTOCOL's schema: units with
+      statuses, definitions with kind, name, package, file and location,
+      calls with caller designators (plain or method-compound, parsed
+      child-side) and caller files. Facts whose source file does not
+      resolve under the root are dropped. Definitions whose location
+      cannot be recovered are dropped and counted as gaps, never given a
+      fabricated range (CON-0001).
+
+  R5  ENRICH-OPS in loom-graph derives ops from graph plus inspection and
+      never emits ASSERT-ENTITY for a natural key already present. Key
+      computation uses the text pass's renderings; a fixture runs both
+      passes over one definition set and asserts the keys match. Per
+      CON-0003 the fixture must fail if either pass's rendering drifts.
+
+  R6  New entities and edges carry :source :introspected, :confidence 1.0,
+      origin-file = the defining or calling file's workspace-relative path,
+      and derived-from naming what the merge resolved through. The source
+      slot's member type gains :introspected -- the design's only ontology
+      change. An edge both passes assert carries the property :sources as
+      the stable union described above, so agreement survives
+      ABSORB-RELATIONSHIP and re-running enrich is idempotent against an
+      unchanged graph.
+
+  R7  Text-derived facts are never retracted, rewritten or absorbed by the
+      pass. The concrete guard, from REQ-0018 R5: the :tests and :calls
+      edge counts on APPLY-TRANSACTION (the 8 plain callers and the ~51
+      test edges) are identical before and after `enrich` on Loom's own
+      tree, asserted by a test, not observed by hand.
+
+  R8  ENRICH-REPOSITORY orchestrates: inspectors -> ENRICH-OPS ->
+      APPLY-TRANSACTION -> RESOLVE-AND-CHECK, in that order, so
+      image-minted definitions resolve previously unresolved text call
+      names in the same run. It records per-unit gaps, absences, drop
+      counts and a comparison summary (edges confirmed, image-only added,
+      text-only within loaded scope) on the repository, in memory --
+      derivable, so not written to files -- and surfaces them in its own
+      output and `status`.
+
+  R9  The pass runs only via the explicit `enrich [repo]` console verb.
+      Nothing in POLL-ONCE, the monitor, watch, or reindex invokes it.
+      Re-running `enrich` after edits is always safe: stale image facts
+      were already removed by RETRACT-FILE when their origin files
+      changed, and the merge re-derives against whatever stands.
+
+  R10 Acceptance on Loom's tree, measured not assumed: after `enrich`,
+      DEFENTITY-generated accessors exist as :function entities with
+      :source :introspected at the DEFENTITY call sites' real ranges, and
+      `find`/`describe` reach them; ANALYZER-HANDLES-P's inline and
+      standalone methods map onto the two :METHOD entities ARCH-0010's
+      text pass mints, with zero new method entities created for them;
+      R7's edge-count guard holds; the full suite stays green and `check`
+      reports no new unresolved document references beyond BUG-0009's
+      known noise.
+
+  R11 Acceptance on ~/lisp/game-server: all six units report :loaded; the
+      pass records CASCADE-DELETE's true definition set from the image,
+      settling the DEFGENERIC-versus-:accessor question the name-based
+      index cannot represent; the comparison summary is reported with real
+      counts, replacing estimates.
+
+  R12 Documentation catches up in the same plan: CLAUDE.md's layering
+      notes, the loom skill and .claude/agents/tools.md gain the `enrich`
+      verb and the one-line statement that enrichment is optional, on
+      demand, and self-aging -- per ARCH-0008 R7's precedent that doc
+      obligations are named, not implied.
+
+  CONSEQUENCES
+
+  Code that changes: loom-analyzer adds inspector.lisp and
+  lisp-inspector.lisp and touches nothing existing except its .asd
+  component list; loom-graph adds enrich.lisp; loom-ontology widens one
+  slot type; loom-workspace adds ENRICH-REPOSITORY; loom-process adds one
+  verb. No existing function's contract changes -- the design is almost
+  purely additive, which is what placing the merge outside absorb bought.
+
+  What gets simpler later: every future language is one INSPECTOR subclass
+  plus a child speaking the facts schema -- the TypeScript inspector is a
+  node script emitting the same fields over its own wire (the wire is
+  inspector-private; the facts schema is the uniform layer), and ENRICH-OPS,
+  RESOLVE-AND-CHECK and the provenance vocabulary need nothing new. The
+  second-language question is answered structurally: nothing outside
+  lisp-inspector.lisp knows what SBCL is.
+
+  The obligation every future change carries: anything touching the text
+  pass's name, qualifier or specializer renderings now breaks R5's key
+  fixture until the inspector's renderings move with it -- deliberate,
+  since silent key drift would turn upserts into duplicate entities.
+  Anything touching ABSORB-* must preserve "the merge pass is the only
+  protection text facts have"; if absorb ever learns to merge, ENRICH-OPS'
+  never-assert-existing rule should be revisited rather than doubled.
+
+  On the open bugs, none of which this document fixes:
+
+  BUG-0011 (function quotations): unchanged in the text pass, but after
+  `enrich` many of its missing edges exist as :introspected facts -- xref
+  records quotation-reached callees (REQ-0018's probe: #'f under funcall,
+  mapcar and apply each return their caller). The measurement obligation
+  BUG-0011 records must therefore count text-pass edges only (filter
+  :source, or measure on an unenriched index), or the before/after delta
+  is confounded. Slightly easier to live with, slightly easier to
+  mismeasure; recorded here so it is not.
+
+  BUG-0012 (collided entities' edge unions): mechanism unchanged -- both
+  colliding definitions are one pass's :structural facts, and provenance
+  cannot tell them apart. This design cannot create new instances of the
+  shape, because the merge never asserts onto an existing key. It makes
+  BUG-0012's candidate fix (a) -- retract a replaced entity's outgoing
+  edges before reasserting -- both more necessary to scope and newly
+  scopeable: unscoped, that retract would now delete :introspected edges
+  every time a text reanalysis absorbs an entity; scoped by the source
+  slot the edges now reliably carry, it deletes exactly the replaced
+  definition's own pass's edges. Net: unchanged today, and the eventual
+  fix gains the discriminator it was missing.
+
+  BUG-0013 (affects: unread outside decisions): untouched -- this
+  document's own affects: list is currently invisible to `check` like
+  every other ARCH's, which is BUG-0013's point, not this design's
+  concern. Neither easier nor harder.
+
+  On REQ-0015: its confidence field gets the real content REQ-0018 R6
+  promised -- :introspected 1.0 above, :inferred fractions below, and the
+  :sources/confirmation mechanism is exactly the seam a REQ-0015
+  implementation would use to promote one of N candidates when a later
+  enrich confirms it. Enrichment also settles many of REQ-0015's cases
+  outright on trees that build (xref knows which `id` a call reaches), so
+  REQ-0015's residual value concentrates on trees that will not build --
+  REQ-0018's closing paragraph already made that argument, and this
+  design is the mechanism behind it. REQ-0013 is unaffected: names
+  matching nothing remain a different fact with their own reporting.
+
+  Deferred, on the record: automatic re-run policy (REQ-0018 defers it;
+  R9 fixes the floor); exposing `enrich` as a loom-serve operation (the
+  registry makes it one DEFINE-OPERATION when wanted -- note a resident
+  service's enrichment ages exactly like its index and needs no special
+  lifecycle); inclusion of test systems in the default unit set (a plan
+  knob -- the acceptance criteria need only primary systems); persistence
+  of enrichment reports to files (in-memory is DEC-0001-clean because
+  derivable); and any change to how `describe`/`impact` render confidence
+  or :sources, which is REQ-0015 R5's question and stays with it.
+
+  OUTSTANDING
+
+  PLAN-0010 implemented this document in twelve steps. R1, R2, R3, R4, R5,
+  R7, R9, R10 and R12 hold; the status is `partial` for R6, R8 and R11.
+  Measured on this tree 2026-08-08 under /usr/bin/sbcl, primary unit set, all
+  nine systems :loaded, one enrich in 46s: 476 entities minted with :source
+  :introspected, 763 call facts confirmed onto edges the text pass already
+  had, 220 added, 79 dropped, and APPLY-TRANSACTION's 66 inbound :TESTS and
+  77 inbound :CALLS edges unchanged across the pass and across a second one.
+
+  R6, partially. The :SOURCES union is written, and after BUG-0015 it survives
+  the RESOLVE-AND-CHECK that R8 requires ENRICH-REPOSITORY to run after the
+  merge -- 768 edges here read (:structural :introspected). It does not
+  survive the next poll that finds a changed file, because RESOLVE-CALLS
+  re-derives every text-derivable :CALLS edge on every run (DEC-0003) and
+  re-asserts it through ASSERT-EDGE, which carries no properties. The clause
+  above claiming the union is "recorded on the surviving edge rather than
+  overwritten by ABSORB-RELATIONSHIP's provenance replacement" is therefore
+  true of the pass and not yet true of the index between passes. Left as
+  written rather than corrected in place, on ARCH-0007's precedent: the
+  argument and its correction are worth more next to each other than the
+  corrected claim alone. BUG-0015 carries the three candidate fixes; the one
+  taken was (b), and it reaches only the erasure ENRICH-REPOSITORY causes
+  itself.
+
+  R8, partially. The order holds and composes -- an image-minted definition
+  resolves a text call name in the same run, which is what running
+  RESOLVE-AND-CHECK last buys -- and the run now ends with the merge
+  re-derived against what resolution left behind. What the report does not
+  carry is the third column of the comparison summary this requirement names:
+  it counts confirmations, additions and drops, and nothing computes text-only
+  within loaded scope, so the number that would measure one pass's blind spots
+  against the other's does not exist yet.
+
+  R11 is not done. game-server has not been enriched, so its six units are
+  unverified here and CASCADE-DELETE's definition set is still the name-based
+  index's account. The wall-clock figure a future decision about automatic
+  re-runs would need therefore exists only for this tree: 46s, 147 files, nine
+  systems, cold.
+
+  Two implementation details this document does not predict, recorded because
+  they are easy to miss when reading the design against the code. ENRICH-OPS
+  drops a call fact whose callee is a generic function that has implementing
+  methods: the text pass fans a dispatched call out to the methods and reaches
+  the :INTERFACE only when there is nothing to fan out to (ARCH-0001, and the
+  :calls declaration's own "it does not make the generic a hub"), so keeping
+  xref's answer would have given every generic in the tree a caller set the
+  text pass deliberately refuses it, and double-counted every dispatched call
+  in `impact'. And the merge runs twice per ENRICH-REPOSITORY rather than once
+  -- BUG-0015's fix -- as a second derivation and not a second application,
+  because re-applying the same operations would absorb a relationship onto
+  itself and CLRHASH the very properties it was re-applied to preserve.

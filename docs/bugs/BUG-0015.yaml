@@ -1,0 +1,173 @@
+id: BUG-0015
+title: RESOLVE-CALLS erases the :SOURCES union and the :INTROSPECTED source slot from every confirmed edge, in the same ENRICH-REPOSITORY call that wrote them
+status: open
+date: 2026-08-08
+refines: [PLAN-0010]
+affects: [enrich-repository, enrich-ops, enriched-edge, union-sources, resolve-calls,
+          resolve-and-check, absorb-relationship, absorb-properties]
+summary: |
+  ARCH-0011 R6 records agreement between the text pass and the image pass as a
+  :SOURCES property on the one surviving edge, "so agreement between the passes
+  is recorded on the surviving edge rather than overwritten by
+  ABSORB-RELATIONSHIP's provenance replacement". ENRICH-OPS computes that union
+  correctly and APPLY-TRANSACTION writes it. ENRICH-REPOSITORY then calls
+  RESOLVE-AND-CHECK, whose RESOLVE-CALLS re-derives every text-derivable :CALLS
+  edge from :CALL-NAMES and re-asserts it through ASSERT-EDGE -- which carries no
+  properties and :SOURCE :STRUCTURAL. That assert lands on the same natural key,
+  reaches ABSORB-RELATIONSHIP, and ABSORB-PROPERTIES CLRHASHes the table. Measured
+  under /usr/bin/sbcl: immediately after ENRICH-OPS the edge reads
+  source=:INTROSPECTED sources=(:STRUCTURAL :INTROSPECTED); immediately after
+  RESOLVE-CALLS it reads source=:STRUCTURAL sources=NIL. The R6 mechanism is
+  therefore inert for confirmed edges -- the majority case and the only case it
+  exists for -- and is re-erased by every subsequent POLL-ONCE as well.
+body: |
+  SYMPTOM
+
+  Observed, with a two-function graph in exactly the shape src/graph/test/
+  enrich.lisp's ENRICH-FIXTURE builds (a cross-file call resolved by
+  RESOLVE-CALLS), then an inspection naming both definitions and the call
+  between them:
+
+      AFTER ENRICH-OPS   : source=:INTROSPECTED sources=(:STRUCTURAL :INTROSPECTED)
+      AFTER RESOLVE-CALLS: source=:STRUCTURAL   sources=NIL
+
+  Expected, per ARCH-0011 R6 and PLAN-0010 step 3 (a): the union survives on the
+  surviving edge, and re-running enrich against an unchanged graph is idempotent
+  because the union is stable.
+
+  Two downstream consequences follow from the erasure rather than being separate
+  defects. PLAN-0010 step 11 asks for "edges with :source :introspected and no
+  :structural in their :sources" as the measured BUG-0011 side effect; after a
+  real ENRICH-REPOSITORY that query answers about a graph in which no confirmed
+  edge carries either value any more, so the count it returns is not the count
+  it names. And ARCH-0011's CONSEQUENCES paragraph offers the source slot as the
+  discriminator BUG-0012's candidate fix (a) was missing -- "scoped by the source
+  slot the edges now reliably carry, it deletes exactly the replaced
+  definition's own pass's edges". Confirmed edges do not reliably carry it.
+
+  CAUSE
+
+  Not the absorb, and not ENRICH-OPS. It is the ordering ARCH-0011 R8 mandates
+  and PLAN-0010 step 9 implements, meeting DEC-0003's derive-never-consume rule
+  from the other side.
+
+  ENRICH-REPOSITORY runs ENRICH-OPS -> APPLY-TRANSACTION -> RESOLVE-AND-CHECK,
+  and RESOLVE-AND-CHECK is not optional there: it is what makes the two passes
+  compose, since an image-minted definition is what an unresolved text call name
+  has been waiting for. But RESOLVE-CALLS is a derivation, so by DEC-0003 it
+  rebuilds its whole output on every run rather than only the part that changed
+  -- its own docstring says so: "an edge that already exists upserts onto itself
+  by natural key". Upserting onto itself was harmless while one pass owned every
+  :CALLS edge. It is not harmless now: ASSERT-EDGE (ontology-ops.lisp:91) takes
+  no :PROPERTIES parameter and defaults :SOURCE to :STRUCTURAL, so the
+  relationship it builds carries an empty property table, and ABSORB-PROPERTIES
+  (transaction.lisp:119) replaces rather than merges.
+
+  So the exact mechanism ARCH-0011 was designed around -- absorb-replace
+  destroying a prior pass's facts -- arrives from the direction the design did
+  not defend: not an image assert landing on a text key, but a text re-derivation
+  landing on the enriched edge. ENRICH-OPS' never-assert-existing rule protects
+  text facts from the image. Nothing protects image facts from the text pass's
+  own re-derivation, and ENRICH-REPOSITORY invokes that re-derivation itself.
+
+  WHY IT HID
+
+  Every test of the :SOURCES union is a loom-graph unit test that calls
+  ENRICH-OPS and APPLY-TRANSACTION and stops there. A-CALL-THE-TEXT-PASS-
+  ALREADY-RECORDED-IS-CONFIRMED-ON-THE-SAME-EDGE asserts
+  (equal '(:structural :introspected) (getp after :sources)) against a graph on
+  which RESOLVE-CALLS has not been run since the merge, and
+  THE-SOURCES-UNION-IS-STABLE-ACROSS-RUNS compares two ENRICH-OPS runs with
+  nothing between them. Both are true statements about ENRICH-OPS and neither is
+  a statement about the pipeline.
+
+  The workspace tests do drive the real ENRICH-REPOSITORY, and so do run
+  RESOLVE-AND-CHECK -- but the only edge they assert on
+  (ENRICHMENT-ADDS-WHAT-THE-IMAGE-SAW-AND-LEAVES-THE-TEXT-PASS-ALONE) is the
+  image-only one, BETA -> GENERATED-THING, which RESOLVE-CALLS cannot re-derive
+  because the image pass writes no :CALL-NAMES. That edge keeps :INTROSPECTED
+  correctly, which is what makes the suite look like it covers provenance. No
+  test anywhere asserts a *confirmed* edge's provenance after a real
+  ENRICH-REPOSITORY, and the layer boundary is exactly where the two halves of
+  the claim were split: the property is written in loom-graph and destroyed in
+  loom-workspace.
+
+  This is CON-0003's shape with a seam in it. Each test fails without the code
+  it covers. Neither covers the composition, and the composition is where the
+  requirement lives.
+
+  FIX
+
+  Not decided here; three shapes, in decreasing order of how much they move.
+
+  (a) Make RESOLVE-CALLS' re-assert non-destructive of what it does not own --
+      give ASSERT-EDGE the ability to preserve an existing edge's :SOURCES, or
+      have ABSORB-PROPERTIES merge for the keys the asserting pass did not
+      write. ARCH-0011 explicitly rejected changing absorb semantics ("it moves
+      pass-composition policy into the writer's core invariant"), so this is the
+      option that needs the most argument.
+
+  (b) Have ENRICH-REPOSITORY re-apply the enrichment edge ops after
+      RESOLVE-AND-CHECK rather than before it -- ENRICH-OPS already returns them
+      and re-running the union against the just-restored :STRUCTURAL edge is
+      stable by construction. Cheap, and it keeps the compose property R8 asks
+      for, at the cost of a second transaction and of stating the ordering
+      obligation somewhere a future editor of RESOLVE-AND-CHECK will meet it.
+
+  (c) Record agreement somewhere RESOLVE-CALLS does not rewrite -- ARCH-0011
+      rejected provenance in the natural key for good reasons, but a separate
+      derived record is not that.
+
+  Whichever lands, the test that must exist afterwards asserts a confirmed
+  edge's :SOURCES *after* a full ENRICH-REPOSITORY, in the workspace suite, and
+  after a following POLL-ONCE as well -- because the second erasure has a
+  different trigger from the first and a fix for one need not fix the other.
+
+  WHAT LANDED, 2026-08-08
+
+  Option (b), and it fixes the first erasure only. ENRICH-REPOSITORY now
+  re-derives the merge after its own RESOLVE-AND-CHECK and applies it as a
+  second transaction, so a confirmed edge ends the pass carrying
+  (:structural :introspected) again. Measured on this tree under /usr/bin/sbcl,
+  primary unit set: 768 :CALLS edges read (:structural :introspected) after a
+  full enrich, and a second enrich changes none of them.
+
+  Re-derived rather than re-applied, which the FIX section above did not
+  distinguish and which matters. APPLY-OP on an ASSERT-RELATIONSHIP-OP finds
+  the existing edge by natural key and absorbs the incoming one into it --
+  and when the graph is already storing the very instance the op holds, which
+  is the case for an edge the first transaction added, TARGET and INCOMING are
+  EQ, so ABSORB-PROPERTIES CLRHASHes the table and then copies it into itself.
+  Empty. The entity path guards this with an EQ clause and the relationship
+  path does not. Calling ENRICH-OPS again produces fresh instances and avoids
+  the question; it also costs nothing but hash lookups, since every definition
+  is now present and the second run emits edges only.
+
+  The second erasure stands, and this bug stays open for it. A POLL-ONCE that
+  finds any file changed runs RESOLVE-AND-CHECK over the whole index, and
+  RESOLVE-CALLS re-asserts every text-derivable :CALLS edge whether or not the
+  file it came from moved -- so one unrelated edit clears the union from every
+  confirmed edge in the repository. A poll that finds nothing changed does not,
+  because POLL-ONCE calls RESOLVE-AND-CHECK only when something moved:
+  measured, 983 edges carrying :introspected in :SOURCES before and after a
+  no-change poll.
+
+  Neither remaining candidate is cheap. (a) is what ARCH-0011 rejected --
+  pass-composition policy inside the writer's core invariant. (c) needs a
+  record that RESOLVE-CALLS does not rewrite, and the obvious one, keeping the
+  last inspection resident and re-merging it on the poll path, is worse than it
+  looks: it would put enrichment work on the timer path against ARCH-0011 R9,
+  and it would restore image facts for files that had just been retracted,
+  contradicting the tested claim that the text pass alone does not bring an
+  introspected fact back. So what is left is honest degradation, and it is now
+  asserted rather than assumed: A-CONFIRMED-EDGE-KEEPS-ITS-AGREEMENT-RECORD-
+  THROUGH-THE-WHOLE-PASS in the workspace suite covers both triggers -- the
+  union present after ENRICH-REPOSITORY, gone after a poll that changed an
+  unrelated file, and back after the next enrich.
+
+  What that costs a reader of the index, stated so nobody re-derives it: on an
+  index that has been edited since its last enrich, an edge's :SOURCES is
+  evidence of agreement when present and evidence of nothing when absent.
+  Anything measuring the two passes against each other -- BUG-0011's own
+  before/after obligation included -- must enrich immediately before measuring,
+  or measure entity provenance, which no resolution pass rewrites.

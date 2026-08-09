@@ -1,0 +1,143 @@
+id: REQ-0015
+title: An ambiguous call should become several edges a caller can discount, not no edge at all
+status: draft
+date: 2026-08-06
+affects: [resolve-calls, call-targets, callable-index, generated-entity,
+          impact-set, describe-entity]
+tags: [graph, resolution, clos, confidence, con-0001]
+summary: |
+  RESOLVE-CALLS asserts a :CALLS edge when a call name matches exactly one
+  definition and asserts nothing when it matches several. The reasoning given
+  in its own docstring is sound as far as it goes -- picking one would fabricate
+  an edge, and asserting all of them "would make every caller of a common name
+  look coupled to code it never touches." But the conclusion drawn from it,
+  that the only alternative to a fabricated edge is no edge, skips the option
+  the codebase is already equipped for: several edges, each carrying the
+  :CONFIDENCE and :DERIVED-FROM fields RESOLVE-CALLS already threads for other
+  purposes, which a consumer can weight or filter. The cost of the current
+  choice is not evenly spread. It falls entirely on codebases that use CLOS
+  polymorphism heavily, because that is what produces many definitions of one
+  name. In ~/lisp/game-server, `id` has 7 definitions and 144 dropped call
+  sites, `definition` has 3 and 50, `cascade-delete` has 2 and roughly 12 --
+  and `impact cascade-delete 3` consequently reports one impacted entity, that
+  entity's own file. This asks that ambiguity be represented rather than
+  deleted.
+body: |
+  WHAT IS WRONG
+
+  src/graph/resolve.lisp:516-521 states the rule and its justification:
+
+      several definitions     -- record it unresolved rather than guess. Picking
+                                 one would be a fabricated edge, and asserting all
+                                 of them would make every caller of a common name
+                                 look coupled to code it never touches. Precise
+                                 disambiguation is what SS8.3 defers to LSP.
+
+  Both objections are real. Picking one is fabrication, and CON-0001 forbids it.
+  Asserting all of them unweighted would inflate `impact` with false coupling.
+  What does not follow is that the remaining option is silence. A third shape
+  exists and the surrounding code already supports it: RESOLVE-CALLS'
+  destructuring at line 555 binds `callee`, `confidence` and `derived-from`
+  from each target, and the docstring at line 458 describes a resolution
+  returning ":CONFIDENCE and :DERIVED-FROM that say so." The machinery for a
+  qualified edge is present and used; it is simply never reached for the
+  ambiguous case, which returns no targets at all.
+
+  An edge marked "one of 7 candidates for the name `id`" is not a fabricated
+  fact. It is an accurate statement of what the analyzer knows, which is more
+  than nothing and less than certainty. Deleting it does not make the graph
+  more honest -- it makes the graph silent about something it has evidence for,
+  which is the failure REQ-0013 documents from the reporting side.
+
+  WHO PAYS
+
+  Measured 2026-08-06, both trees indexed and counted directly:
+
+                            game-server        Loom
+      call names recorded         6,307        3,884
+      unresolved calls      3,037 (48.2%)  1,859 (47.9%)
+
+  The rates are indistinguishable, which is the interesting part: the raw
+  number is not evidence of a foreign-codebase problem. The composition is.
+  Loom's most-dropped names are FiveAM macro heads and local variables that
+  were never calls -- is (346), g (120), e (64), f (38), is-true (29),
+  signals (21) -- and asserting edges for those would be worse than dropping
+  them. game-server's are accessors and generic functions that are exactly what
+  an impact query is looking for: id (144), game (126), obj (91), connection
+  (58), definition (50), handler (45), cascade-delete.
+
+  The difference is style. Loom is written in a largely functional idiom with
+  unique names, so a rule that discards ambiguity costs it almost nothing.
+  game-server is heavily CLOS, where a dozen classes each having an `id`
+  accessor is not a naming failure but the point of the language feature. The
+  current rule is therefore not neutral across codebases: it silently degrades
+  in proportion to how much a codebase uses polymorphism, and it degrades most
+  where the graph would be most valuable.
+
+  THE SHAPE OF A BETTER ANSWER
+
+  Three things a consumer can do with a low-confidence edge that it cannot do
+  with an absent one: report it as a candidate ("cascade-delete is called from
+  12 sites; the callee is one of 2 definitions"), rank it below certain edges
+  in a bounded output like `context`, and exclude it from a rule check that
+  requires certainty. All three are strictly better than not knowing, and none
+  of them requires the analyzer to guess.
+
+  The natural confidence signal is the candidate count -- an edge to one of two
+  candidates is worth more than one of seven -- and the architecture document
+  should decide whether that is expressed as a number, a bucket, or a candidate
+  list on the edge. Whether ambiguous edges are traversed by `impact` by
+  default, offered behind a flag, or reported separately is likewise an
+  architecture question and not settled here.
+
+  WHAT THIS IS NOT
+
+  This does not ask for real disambiguation. Arity, specializer types and
+  package qualification could each narrow a candidate set, and an LSP could
+  settle it exactly; SS8.3 already defers precise disambiguation to LSP and
+  that deferral stands. This asks only that the candidates Loom has already
+  computed be recorded instead of discarded.
+
+  It does not ask that RULE checks act on low-confidence edges. A layering rule
+  reporting a violation on a maybe-edge would be a false positive of exactly
+  the kind BUG-0009 already demonstrates is expensive, and the safe default is
+  that rule checks continue to consider only certain edges.
+
+  It does not replace REQ-0013. If this is built, the reporting requirement
+  changes shape -- there is something to report *as* rather than only a count
+  of absences -- but a consumer still has to be told which edges are qualified.
+  If this is not built, REQ-0013 stands alone and unchanged.
+
+  REQUIREMENTS
+
+  R1  When a call name matches several definitions, RESOLVE-CALLS asserts a
+      :CALLS edge to each candidate, each carrying a confidence marker
+      recording that it is one of N candidates for that name.
+
+  R2  A single-candidate resolution keeps whatever confidence it has today, and
+      an existing consumer that ignores confidence must see no change in the
+      edges it already relied on. This must be verifiable: the :CALLS edge
+      count between certain-only endpoints should be identical before and
+      after on Loom's own tree.
+
+  R3  :UNRESOLVED-CALLS keeps recording names that match *nothing*, which is a
+      genuinely different fact -- an external dependency -- and is not affected
+      by this change. REQ-0013's reporting obligation for that case stands.
+
+  R4  Rule checking (RUN-CHECK, CHECK-RULES) must not treat a low-confidence
+      edge as a violation. RULE-0001 through RULE-0003's counts on Loom's tree
+      must not move as a side effect of this change; ARCH-0009's measured 32
+      RULE-0003 violations are the baseline.
+
+  R5  `impact` and `describe` must distinguish a qualified edge from a certain
+      one in their output. An impact set silently inflated by candidate edges
+      would trade a false negative for a false positive, which is not an
+      improvement.
+
+  R6  Acceptance is measured on both trees. On game-server,
+      `impact cascade-delete 3` must reach the mpackage files that genuinely
+      call it, marked as candidates. On Loom, the noise names (is, g, e, f)
+      must not produce a flood of spurious edges -- they resolve to nothing
+      rather than to several, so R3 should keep them out, and confirming that
+      empirically is what distinguishes this from a change that merely trades
+      one bad answer for another.

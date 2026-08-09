@@ -1,0 +1,107 @@
+id: BUG-0014
+title: ENRICH-REPOSITORY's SERIOUS-CONDITION guard does not catch the condition shape its own comment names
+status: closed
+date: 2026-08-08
+refines: [PLAN-0010, ARCH-0011]
+affects: [enrich-repository]
+tags: [rule-0004, condition-handling, testing, workspace]
+summary: |
+  ENRICH-REPOSITORY (src/workspace/workspace.lisp) wraps each inspector in a
+  HANDLER-CASE naming SERIOUS-CONDITION rather than INDEX-FILE's ERROR, and its
+  own comment gives the reason: "a per-language inspector nobody in this file
+  wrote," citing MONITOR-LOOP's precedent and RULE-0004. Measured directly
+  under /usr/bin/sbcl, SERIOUS-CONDITION does not in fact catch the shape
+  RULE-0004 itself names as the risk -- a condition class defined as
+  (define-condition foo () ...), a direct subtype of CONDITION and of neither
+  ERROR nor SERIOUS-CONDITION, signalled with the function ERROR. cl-yaml's own
+  conditions are exactly this shape (confirmed by reading
+  cl-yaml/src/error.lisp: `(define-condition yaml-error () ...)`), which is
+  where RULE-0004 draws the example from. A test written to reproduce that
+  exact shape against a stub inspector did not merely fail a FiveAM assertion:
+  it took the whole test process down, unhandled, in --disable-debugger mode --
+  the identical failure shape RULE-0004 exists to name. Fixed in the same
+  session that found it, by widening the guard from SERIOUS-CONDITION to
+  CONDITION, which RULE-0004's own statement explicitly allows ("must name
+  serious-condition or wider").
+body: |
+  SYMPTOM
+
+  A new regression test, ENRICH-REPOSITORY-SURVIVES-AN-INSPECTOR-THAT-SIGNALS-A-BARE-CONDITION
+  in src/workspace/test/workspace.lisp, defines a condition the way cl-yaml
+  does:
+
+    (define-condition bare-condition-toolchain-failure (condition)
+      ((text :initarg :text :reader bare-condition-toolchain-failure-text)) ...)
+
+  and a stub inspector whose INSPECT-REPOSITORY method does
+  `(error 'bare-condition-toolchain-failure :text "toolchain misbehaved, not an error")`.
+  Run against the code as PLAN-0010 shipped it (HANDLER-CASE naming
+  SERIOUS-CONDITION), `tools/loom-test.sh -v` did not report a failed
+  assertion. It printed:
+
+    Unhandled BARE-CONDITION-TOOLCHAIN-FAILURE in thread ... RUNNING
+    0: (SB-DEBUG::DEBUGGER-DISABLED-HOOK #<BARE-CONDITION-TOOLCHAIN-FAILURE ...>
+       #<unused argument> :QUIT T)
+    ...
+    3: (ERROR BARE-CONDITION-TOOLCHAIN-FAILURE :TEXT "toolchain misbehaved, not an error")
+
+  and the whole `tools/loom-test.sh` run exited non-zero, all nine systems'
+  worth of results lost with it -- not a red assertion inside a green run, the
+  run itself.
+
+  CAUSE
+
+  Measured directly (`/usr/bin/sbcl`, a five-line throwaway script):
+
+    (define-condition foo-cond () ())
+    (typep (make-condition 'foo-cond) 'condition)          => T
+    (typep (make-condition 'foo-cond) 'serious-condition)   => NIL
+    (typep (make-condition 'foo-cond) 'error)               => NIL
+    (handler-case (error 'foo-cond) (serious-condition (c) (list :caught c)))
+      => unhandled, enters the debugger exactly as the failing test did
+
+  HANDLER-CASE matches on the signalled condition's own class, not on how it
+  was raised. Calling it with the function ERROR makes SBCL invoke the debugger
+  if nothing handles it, but it does not retroactively make the condition an
+  ERROR or a SERIOUS-CONDITION -- both of which have to be declared ancestors
+  for TYPEP, and thus HANDLER-CASE, to see them. ENRICH-REPOSITORY's own
+  in-code comment cites RULE-0004 and "a per-language inspector nobody in this
+  file wrote" as the reason for guarding wider than ERROR, but SERIOUS-CONDITION
+  is not wide enough to reach the one shape RULE-0004 uses as its own worked
+  example.
+
+  WHY IT HID
+
+  No test exercised this path at all before this session. Every existing
+  ENRICH-REPOSITORY test used a stub inspector that either succeeded or
+  returned NIL/a reason string from INSPECTOR-AVAILABLE-P (REQ-0018 R2's
+  ordinary recorded absence) -- none signalled anything, so the HANDLER-CASE
+  clause's type was never exercised by an actual condition instance. The
+  choice of SERIOUS-CONDITION over ERROR reads, on its own, as the more
+  defensive option and cites a real precedent (MONITOR-LOOP), which is enough
+  to look correct on inspection without a test that actually raises the shape
+  being guarded against. MONITOR-LOOP's own guard has the identical hole, but
+  it is not exercised by cl-yaml's conditions in practice: PARSE-DOCUMENT
+  (src/analyzer/yaml-analyzer.lisp) already catches `(or error
+  yaml.error:yaml-error)` right at the signal site and re-signals as
+  DOCUMENT-ERROR, an ERROR subtype -- so by the time anything reaches
+  MONITOR-LOOP's SERIOUS-CONDITION handler, cl-yaml's own bare-CONDITION shape
+  has already been converted. ENRICH-REPOSITORY has no such inner conversion
+  for an inspector nobody in this file wrote, so its outer guard is the only
+  one, and it needed to be the wide one.
+
+  FIX
+
+  src/workspace/workspace.lisp, ENRICH-REPOSITORY: the HANDLER-CASE clause was
+  widened from SERIOUS-CONDITION to CONDITION, which RULE-0004's own statement
+  permits ("must name serious-condition or wider"). Two tests now cover both
+  directions: ENRICH-REPOSITORY-SURVIVES-AN-INSPECTOR-THAT-SIGNALS-AN-ORDINARY-ERROR
+  (the common case, an ERROR subtype -- already reachable under the old guard,
+  kept as a control) and ENRICH-REPOSITORY-SURVIVES-AN-INSPECTOR-THAT-SIGNALS-A-BARE-CONDITION
+  (the case the old guard missed). Both pass, and `tools/loom-test.sh` is 9/9
+  green with the fix in place. The class of mistake -- citing a handler-naming
+  precedent without measuring whether the precedent's own guard actually
+  reaches the shape being worried about -- is RULE-0004's whole subject, so it
+  is worth recording rather than folding silently into the diff: RULE-0004
+  itself does not currently list ENRICH-REPOSITORY under `applies-to`, and
+  might reasonably gain it.

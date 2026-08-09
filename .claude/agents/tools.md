@@ -37,6 +37,11 @@ quoted form so none of that is needed.
                             explicitly if you mean something else)
     rules                   constraints; "[prose only]" means unenforced
     check                   rule violations and unresolved document references
+    enrich [repo]           what the language's own toolchain knows and the
+                            text pass cannot see. Optional, on explicit demand
+                            only, and self-aging through RETRACT-FILE -- an
+                            index nobody has re-enriched gives today's text
+                            answer, not yesterday's image answer. ARCH-0011.
 
 `impact` attaches the decisions and rules bearing on an entity. Read those
 before proposing or writing anything that contradicts one; to overturn a

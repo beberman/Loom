@@ -36,7 +36,22 @@ Graph Manager's business, not a property write's."))
 (defclass provenanced ()
   ((source        :initarg :source :accessor source
                   :initform :structural
-                  :type (member :structural :inferred :human-validated))
+                  :type (member :structural :inferred :human-validated :introspected)
+                  :documentation "Which pass produced this fact.
+
+:STRUCTURAL   read from the text of a file -- what an analyzer saw written.
+:INFERRED     derived by a resolution pass that had to choose, and so carries
+              a fractional CONFIDENCE saying how much of a choice it was.
+:HUMAN-VALIDATED  asserted by a person, and not re-derivable from anything.
+:INTROSPECTED the language's own toolchain reported it, from an image in which
+              the target was loaded (ARCH-0011). Confidence 1.0: it is not a
+              reading of source but an answer from the compiler.
+
+The fourth member is the whole ontology cost of REQ-0018. Read it as the
+vocabulary rather than as an enforced constraint: SBCL does not check a
+standard-class slot :TYPE at the safety this tree compiles at, measured
+2026-08-07, so this declaration is what a reader and a higher-safety build
+see and not something MAKE-INSTANCE will refuse.")
    (confidence    :initarg :confidence :accessor confidence
                   :initform 1.0 :type (real 0 1))
    (derived-from  :initarg :derived-from :accessor derived-from

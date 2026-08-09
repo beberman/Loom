@@ -68,6 +68,9 @@ impact <name> [<depth>]   what a change reaches, plus governing decisions
 context <task words>      a budgeted bundle: what to know before editing
 rules                     constraints; [prose only] means unenforced
 check                     rule violations and unresolved doc references
+enrich [repo]             load the tree in a bounded child and add what its own
+                          toolchain knows: macro-generated definitions, calls
+                          xref sees and the text walk does not
 log [n]                   recent events and errors
 stop                      pause everything and leave
 ```
@@ -89,6 +92,11 @@ tools/loom.sh 'context macro definitions'
     ...
 
 `find` then narrows, and `describe` and `impact` go deep on one name.
+
+`enrich` is optional, runs on explicit demand only -- never from the monitor,
+never from `watch` -- and ages itself out through RETRACT-FILE, so an index
+nobody has re-enriched gives today's text answer rather than yesterday's image
+answer. ARCH-0011 is the design.
 
 `impact` takes an optional depth. **The default is 5, not 3** — every example
 here and in CLAUDE.md passes an explicit `3`, which is a choice rather than a

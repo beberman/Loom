@@ -271,7 +271,19 @@ the analyzer owns."
                 (t
                  (let ((existing (find-entity-by-key
                                   view (generated-natural-key type path name))))
-                   (if (and existing (null (getp existing :generated-by)))
+                   (if (and existing (null (getp existing :generated-by))
+                            ;; ...unless the image put it there. An
+                            ;; :INTROSPECTED entity is this same definition seen
+                            ;; from the other side -- the compiler reporting
+                            ;; what the macro call expanded into -- so reading
+                            ;; it as a hand-written claim would make the first
+                            ;; enrich the last one that could mint: the key
+                            ;; would stay occupied, every later pass would
+                            ;; report a collision, and the :USES edge back to
+                            ;; the generator would never be drawn. Minting over
+                            ;; it is the upsert the two passes are supposed to
+                            ;; meet in (ARCH-0011 R6).
+                            (not (eq :introspected (source existing))))
                        ;; A hand-written definition already claims this natural
                        ;; key. Left alone and counted: a macro call that happens
                        ;; to name something a real DEFUN already defines must
