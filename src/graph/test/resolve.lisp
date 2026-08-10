@@ -302,6 +302,41 @@ the retract half can recognise what it made")
     (is (null (find-entity-by-key g '(:function "b.lisp" "workspace"))))
     (is (equal (list macro) (unhandled-definer-macros g)))))
 
+(test a-macro-that-defines-nothing-but-swallows-a-body-is-reported
+  ;; BUG-0016. DEFINE-OPERATION's template contains no DEFUN, DEFCLASS or
+  ;; DEFMETHOD, so MACRO-GENERATOR-PROPERTIES records nothing for it and it
+  ;; carries no :DEFINER-STATUS either -- which used to mean `status' said "1
+  ;; definer macro" on a tree where 15 call sites were orphaning 42 names, and
+  ;; the tool whose job is reporting gaps reported this one as no gap.
+  ;;
+  ;; The discriminator is that its calls are top-level forms carrying call
+  ;; names. Decided here rather than in the analyzer because the macro's
+  ;; definition and its call sites are in different files, which a file-scoped
+  ;; analyzer cannot see across (RULE-0002).
+  (let* ((g (make-graph))
+         (macro (r-function g "define-operation" "registry.lisp")))
+    (setp macro :macro-p t)
+    (r-file g "operations.lisp"
+            :call-sites (list (r-call-site "define-operation" "check"
+                                           :call-names '("violation-summary"))))
+    (is (equal (list macro) (unhandled-definer-macros g))
+        "reported, where before it was silently uncharacterised")
+    (is (= 1 (gethash "define-operation" (body-swallowing-macro-names g)))
+        "and the orphan count travels with the name, so the line is actionable")))
+
+(test a-wrapper-macro-is-not-swept-into-the-definer-count
+  ;; The guard MACRO-GENERATOR-PROPERTIES' docstring asks for, and the reason
+  ;; the clause above keys on definer call sites rather than on "template
+  ;; defines nothing": every WITH-LOCK in the tree would otherwise land in a
+  ;; count that exists to be read and acted on, which is what makes BUG-0009's
+  ;; output unreadable. A wrapper is never a top-level form, so it has no
+  ;; definer call site and nothing to orphan.
+  (let* ((g (make-graph))
+         (macro (r-function g "with-lock" "util.lisp")))
+    (setp macro :macro-p t)
+    (r-file g "user.lisp" :call-sites (list (r-call-site "some-other-definer" "thing")))
+    (is (null (unhandled-definer-macros g)))))
+
 (test an-introspected-entity-does-not-block-the-call-site-that-explains-it
   ;; The same guard, and the one claim it must not read as a rival. An
   ;; :INTROSPECTED entity is this very definition seen from the other side --

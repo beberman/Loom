@@ -46,7 +46,30 @@ instance serves every file and every workspace."))
 PATH is workspace-relative and forward-slashed; CONTENTS is its text.
 Implementations must not touch the filesystem or the graph -- everything they
 are allowed to know arrives in these arguments, and everything they have to
-say leaves as operations."))
+say leaves as operations.
+
+One file's op stream must assert each ENTITY-NATURAL-KEY at most once. Two
+asserts on one key in one transaction are a claim that the file defines the
+same thing twice, and the writer has no way to reconcile them: ids are derived
+from the key, so both definitions' edges carry the same endpoint, and by the
+time the graph sees the ops the fact of which definition produced which edge
+has already been destroyed. That is BUG-0012, and ARCH-0012 puts the duty
+here.
+
+Reconciling is the implementer's job because it is the *language's* semantics,
+not the graph's. Common Lisp replaces: among same-key definitions in one file
+the last in source order is the one that loads, and every earlier one is dead
+code -- which is what SUPERSEDE-SHADOWED-DEFINITIONS does in the Lisp
+analyzer, before it walks a body or emits an operation. A TypeScript analyzer
+meeting interface declaration merging or function overloads must MERGE the
+same shape instead. There is no answer the writer could pick that would be
+right for both, which is why it does not try.
+
+ABSORB-ENTITY's later-assert-wins is a disclosed backstop for an
+implementation that breaks this, not a mechanism to lean on: it reconciles the
+properties and leaves the edges unioned. A within-transaction absorb of a code
+entity is evidence of an analyzer violating this contract. Nothing checks it
+-- see CON-0005."))
 
 (defgeneric analyzer-handles-p (analyzer path)
   (:documentation "True when ANALYZER claims PATH.")

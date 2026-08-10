@@ -83,12 +83,33 @@ another; the shorter hold is not worth buying with that."
 
 (defun find-repository (designator)
   "The repository named or rooted at DESIGNATOR.
-Accepts a name, so a developer types \"reindex Loom\" rather than a path."
-  (or (find designator *repositories* :key #'repository-name :test #'string-equal)
-      (find (namestring (pathname-as-directory (pathname designator)))
-            *repositories*
-            :key (lambda (r) (namestring (repository-root r)))
-            :test #'string-equal)))
+Accepts a name, so a developer types \"reindex Loom\" rather than a path.
+
+Three branches, and the middle one is the whole point. A repository's root is
+stored as WATCH-REPOSITORY's NORMALIZE-ROOT left it -- a truename, so `~' is
+already expanded and every symlink already followed -- while a designator
+arrives as whatever was typed. Comparing the two as strings therefore fails on
+exactly the spelling the console encourages: `watch \"~/lisp/Loom\"' registers
+/home/beberman/lisp/Loom/, and `unwatch \"~/lisp/Loom\"' used to match neither
+the name branch (the name is the last path component, \"Loom\") nor the string
+branch, so a repository could be watched by a path it could not be unwatched
+by. Normalising the designator the same way the root was normalised is what
+makes the two comparable.
+
+The raw string branch is kept last rather than replaced, because
+NORMALIZE-ROOT probes the filesystem and a root that has since been deleted
+would otherwise become unreachable by path -- and unwatching a directory that
+is gone is a thing someone will want to do. IGNORE-ERRORS rather than a
+PROBE-FILE test because the designator is usually a name and not a path at
+all, and NORMALIZE-ROOT signals on those."
+  (flet ((rooted-at (namestring)
+           (find namestring *repositories*
+                 :key (lambda (r) (namestring (repository-root r)))
+                 :test #'string-equal)))
+    (or (find designator *repositories* :key #'repository-name :test #'string-equal)
+        (let ((root (ignore-errors (normalize-root designator))))
+          (and root (rooted-at (namestring root))))
+        (rooted-at (namestring (pathname-as-directory (pathname designator)))))))
 
 (defun all-repositories () (reverse *repositories*))
 
@@ -656,6 +677,16 @@ is why there is no separate resume."
       (setf *repositories* (remove repository *repositories*)))
     repository))
 
+(defun count-file-regions (graph property)
+  "How many regions PROPERTY records across every :FILE entity in GRAPH.
+
+Regions rather than files: two suppressed branches in one file are two things
+a reader might go and look at, and reporting it as one file would hide the
+second. The analyzer writes the property only when it has something to say, so
+a file with nothing to report contributes nothing rather than an empty list."
+  (loop for file in (entities-of-type graph :file)
+        sum (length (getp file property))))
+
 (defun repository-status (repository)
   "SS3.2's status, as plain data: \"indexing progress, entity and relationship
 counts, watcher health, unresolved document references, unenforced rules, and
@@ -728,5 +759,19 @@ the last error per thread.\""
                               (length (getf (repository-enrichment repository)
                                             :absences)))
           :enrichment-at (getf (repository-enrichment repository) :at)
+          ;; ARCH-0013, PLAN-0013 step 5. Two scalars, for the reason the
+          ;; enrichment block above gives: this plist is serialized to JSON for
+          ;; REST and MCP callers, so a count travels where a nested region
+          ;; list would not. The regions themselves are on the :FILE entities,
+          ;; which is where a reader who wants the line numbers goes.
+          ;;
+          ;; Always numbers, never absent when nought, on the same ARCH-0002
+          ;; R10 precedent: zero suppressed regions and an indexer that never
+          ;; looked are different facts, and a vanishing count conflates them.
+          ;; Both read zero on this tree, which is what makes them a regression
+          ;; guard as well as a report -- the day one moves, a definition
+          ;; stopped being indexed and this is the only place that says so.
+          :suppressed-regions (count-file-regions graph :suppressed-regions)
+          :recovered-regions (count-file-regions graph :recovered-regions)
           :errors (length (repository-errors repository))
           :last-error (first (repository-errors repository)))))

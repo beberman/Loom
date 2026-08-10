@@ -530,7 +530,7 @@ the result does not depend on how many re-spawns happened to be needed."
 ;;;;
 ;;;; The child reports a file and a form-path; a Loom entity needs a
 ;;;; :START-LINE, which is :REQUIRED on every code entity type. The parent maps
-;;;; one to the other through the same READ-FORMS-WITH-SPANS the text pass uses,
+;;;; one to the other through the same READ-SOURCE the text pass reads through,
 ;;;; applied to the file's own text -- so a definition and its confirmation land
 ;;;; on the same lines by construction rather than by agreement.
 ;;;;
@@ -549,15 +549,31 @@ the result does not depend on how many re-spawns happened to be needed."
 (defun file-form-spans (root file cache)
   "The spans of FILE's top-level forms, read once per file per pass.
 
-CONDITION and not ERROR, on ELEMENT-SPANS' precedent: a file that has changed
-since the child read it, or that will not read at all, costs its own
-definitions their ranges and nothing else."
+CONDITION and not ERROR, on RULE-0004's grounds: a file that has changed since
+the child read it, or that will not read at all, costs its own definitions
+their ranges and nothing else, where a condition escaping into the enrichment
+pass would cost the pass.
+
+A reading with any recovered form in it yields NIL rather than its spans, and
+that guard is what keeps ARCH-0013's recovery from turning into a fabricated
+range here. The child's form-path index counts every top-level form SBCL's
+loader saw; READING-FORMS omits a form the reader had to repair (ARCH-0013 R4),
+so on a damaged file the two sequences disagree from the damage onward and NTH
+would hand a definition some later form's lines. Dropping the file's ranges
+costs its definitions and is counted; misattributing them would send an agent
+to the wrong lines of a real file, which is the fabrication hardest to notice
+(CON-0001). A file the child successfully loaded should have nothing to recover
+from, so this is a guard against the case that should not arise rather than a
+path expected to be taken."
   (multiple-value-bind (spans present) (gethash file cache)
     (if present
         spans
         (setf (gethash file cache)
               (handler-case
-                  (read-forms-with-spans (slurp-file (merge-pathnames file root)))
+                  (let ((reading (read-source
+                                  (slurp-file (merge-pathnames file root)))))
+                    (unless (or (reading-fatal reading) (reading-recovered reading))
+                      (reading-forms reading)))
                 (condition () nil))))))
 
 (defun locate-definitions (root definitions)

@@ -93,6 +93,39 @@ this value. The shape of SS14.3's \"Every fact has an origin file\"."
                        :detail (format nil "~a.~(~a~) ~a"
                                        (name entity) property bad))))))
 
+(defmethod run-check ((kind (eql :property-absent)) view rule check)
+  "No entity may carry this property. The mirror of :PROPERTY-CONSTRAINT, and
+it reads the same way round -- as a constraint, not a query. A rule using it
+says \"this property must be absent\"; every carrier is a violation, and the
+report quotes the value so a reader does not have to go and find it.
+
+:ENTITY-TYPE is optional here, unlike in the two kinds above. Given, only that
+type is scanned; omitted, every entity is, which is what a property declared
+on several types needs in order to be checked with one rule.
+
+The location comes from the entity's own :FILE and :START-LINE rather than
+from ORIGIN-FILE, matching what the console's unhandled-definer report already
+prints: origin-file is the file a fact was read from, which for a derived fact
+is not where a reader should go looking."
+  (let ((entity-type (getf check :entity-type))
+        (property (getf check :property)))
+    (when property
+      (loop for entity in (if entity-type
+                              (entities-of-type view entity-type)
+                              (all-entities view))
+            for value = (getp entity property)
+            when value
+              collect (make-violation
+                       :rule-id (getp rule :doc-id)
+                       :severity (getp rule :severity)
+                       :subject (id entity)
+                       :detail (format nil "~a (~a:~a) carries ~(~a~) ~{~a~^, ~}"
+                                       (entity-name-or-id view (id entity))
+                                       (getp entity :file)
+                                       (getp entity :start-line)
+                                       property
+                                       (if (listp value) value (list value))))))))
+
 (defun entity-name-or-id (view id)
   (let ((entity (get-entity view id)))
     (if (and entity (slot-boundp entity 'name)) (name entity) id)))

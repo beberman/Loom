@@ -68,21 +68,43 @@ leaves the index")
       (assert-relationship-op
        (is (equal *fixture-relative* (origin-file (op-rel op))))))))
 
-(test an-unreadable-file-is-indexed-as-a-known-unknown
-  ;; SS9.3 / SS3.3: a file that could not be parsed is marked, not omitted --
-  ;; and the condition must not escape to take the watcher thread down.
+(test a-broken-form-costs-that-form-and-not-the-file
+  ;; Was AN-UNREADABLE-FILE-IS-INDEXED-AS-A-KNOWN-UNKNOWN, and the change of
+  ;; name is the change of contract. SS9.3 and SS3.3 asked for two things: a
+  ;; file that could not be parsed is marked rather than omitted, and the
+  ;; condition must not escape to take the watcher thread down. Both still
+  ;; hold. What no longer holds is the scope: one unbalanced paren used to cost
+  ;; every definition in the file, including the perfectly readable one above
+  ;; it, and REQ-0019 R3 is that it should not.
+  ;;
+  ;; The recovered form is dropped rather than trusted (ARCH-0013 R4): Eclector
+  ;; repairs an unterminated list by closing it, which on a longer file
+  ;; swallows the NEXT definition into the damaged one's body, so a repaired
+  ;; form must never reach pass 1.
   (let* ((ops (analyze-file (make-instance 'lisp-analyzer)
                             "broken.lisp"
-                            "(defun ok () 1)~%(defun broken (" ; unbalanced
+                            "(defun ok () 1)
+(defun broken ("      ; unbalanced
                             "ws-test"))
          (g (make-graph)))
     (apply-transaction g ops)
     (let ((file (find-by-name g :file "broken.lisp")))
-      (is (not (null file)) "the file is asserted even though it did not parse")
-      (is-true (getp file :analysis-failed-p))
-      (is (stringp (getp file :analysis-error)))
-      (is (null (entities-of-type g :function))
-          "and nothing is guessed at from a file that could not be read"))))
+      (is (not (null file)) "the file is asserted")
+      (is-false (getp file :analysis-failed-p)
+                "and is not marked failed, because most of it read fine")
+      (is (equal '("ok") (mapcar #'name (entities-of-type g :function)))
+          "the readable definition survives, and the damaged one mints nothing"))))
+
+(test a-file-that-cannot-be-read-at-all-is-still-a-known-unknown
+  ;; The failure path R3 narrowed but did not remove. Nothing in this tree
+  ;; reaches it today, which is why it is asserted directly against the
+  ;; unparsable-file entity rather than through a fixture: without this the
+  ;; deletion of the path would be invisible.
+  (let* ((condition (make-condition 'simple-error :format-control "unreadable"))
+         (file (loom-analyzer::make-unparsable-file-entity
+                "broken.lisp" "(((" condition)))
+    (is-true (getp file :analysis-failed-p))
+    (is (stringp (getp file :analysis-error)))))
 
 (test a-foreign-package-prefix-does-not-cost-the-file
   ;; The analyzer reads source from workspaces this image has never loaded, so
@@ -163,7 +185,14 @@ TOKEN-NAME ever reads -- the prefix carries nothing worth failing over"))))
   ;; half of them the second form's end landed past itself and the walk stopped
   ;; two forms in -- silently, since overshooting the end just ends the loop.
   ;; The leading comment is the whole point: it puts the first form at a
-  ;; non-zero offset, which is where the two conventions start to differ.
+  ;; non-zero offset, which is where the two conventions started to differ.
+  ;;
+  ;; ARCH-0013 removed the mechanism the bug lived in -- READ-SOURCE reads one
+  ;; stream straight through and never seeks -- so this is now a regression
+  ;; guard on the tuple's contract rather than on that arithmetic. It stays
+  ;; because the contract is what ARCH-0010 R1 named and what
+  ;; ANALYZE-FILE's DESTRUCTURING-BIND still takes apart.
+  ;;
   ;; Reached into with :: deliberately. The walk is not protocol -- SS8.1 makes
   ;; ANALYZE-FILE the only coupling an analyzer has -- so this stays a private
   ;; function that a test may name rather than something the package exports.
@@ -174,15 +203,18 @@ TOKEN-NAME ever reads -- the prefix carries nothing worth failing over"))))
 
 (defun two () (one))
 ")
-         (forms (loom-analyzer::read-forms-with-spans content)))
+         (forms (loom-analyzer::reading-forms
+                 (loom-analyzer::read-source content))))
     (is (= 3 (length forms)) "every top-level form, not just the ones before
 the first miscounted span")
     (is (equal '("defparameter" "defun" "defun")
                (mapcar (lambda (spec) (loom-analyzer::token-name (first (first spec))))
                        forms)))
     ;; Four elements, not three: the fourth is the character offset of the
-    ;; form's first character, which ELEMENT-SPANS seeks to when it re-reads a
-    ;; DEFGENERIC's clauses one at a time (ARCH-0010 R1).
+    ;; form's first character. ELEMENT-SPANS was its only consumer and it is
+    ;; gone, so the element is vestigial -- but ARCH-0010 R1 named the widened
+    ;; tuple as a requirement, and ARCH-0013 keeps it rather than break that
+    ;; requirement to save one cons per top-level form.
     (is (equal '((2 2 22) (4 4 44) (6 6 62))
                (mapcar #'rest forms))
         "and each one spans its own lines and knows where it starts")
@@ -196,87 +228,6 @@ the first miscounted span")
       (is (char= #\( (char content (fourth spec)))
           "offset ~a does not name the start of a form" (fourth spec)))))
 
-;;; ------------------------------------------------------------------
-;;; Per-element source spans (ARCH-0010 R2)
-;;;
-;;; The reader hands out positions for top-level forms and nothing else, so a
-;;; DEFGENERIC's inline (:method ...) clause has no range of its own until one
-;;; is recovered by re-reading the form's elements one at a time. That re-read
-;;; is the piece of this machinery most likely to be wrong in a way nothing
-;;; notices: a mistake produces wrong line numbers and signals nothing. Hence
-;;; the spans are asserted here, standalone, against sources small enough to
-;;; count lines in by eye, before anything consumes them.
-;;;
-;;; Reached into with :: for the reason the READ-FORMS-WITH-SPANS test above
-;;; gives -- SS8.1 makes ANALYZE-FILE an analyzer's only coupling, so this is
-;;; a private function a test may name, not something the package exports.
-;;; ------------------------------------------------------------------
-
-(defparameter *span-fixture* "(defgeneric g (x)
-  (:documentation \"d\")
-  (:method :around ((x foo))
-    (call-next-method))
-  (:method ((primary (eql :oneof)) &key k)
-    (helper primary k)))"
-  "Six elements over six lines: the head, the name, the lambda list, an option
-clause and two method clauses, one qualified and one with an EQL specializer.")
-
-(test element-spans-of-a-one-line-form-are-all-that-line
-  (is (equal '((1 1) (1 1) (1 1))
-             (mapcar #'rest (loom-analyzer::element-spans "(defgeneric g (x))" 0)))
-      "three elements -- defgeneric, g and the lambda list"))
-
-(test element-spans-give-each-clause-its-own-range-not-the-forms
-  ;; The assertion the whole design rests on. If these came back as six copies
-  ;; of 1-6 the machinery would still "work" -- every inline method would just
-  ;; point at its DEFGENERIC's first line, which is the fallback ARCH-0010
-  ;; keeps for when the re-read fails, silently standing in for the real thing.
-  (let ((spans (loom-analyzer::element-spans *span-fixture* 0)))
-    (is (= 6 (length spans)))
-    (is (equal '((1 1) (1 1) (1 1) (2 2) (3 4) (5 6))
-               (mapcar #'rest spans)))))
-
-(test element-spans-align-one-to-one-with-the-forms-own-elements
-  ;; The invariant the clause walk zips against. Tested here, where it is one
-  ;; comparison, rather than discovered downstream as a clause wearing its
-  ;; neighbour's line numbers.
-  (let* ((form (first (first (loom-analyzer::read-forms-with-spans *span-fixture*))))
-         (spans (loom-analyzer::element-spans *span-fixture* 0)))
-    (is (= (length form) (length spans)))))
-
-(test a-clause-head-read-a-second-time-is-eq-to-the-keyword
-  ;; Why the clause walk may compare heads across two separate reads at all:
-  ;; a keyword interns in KEYWORD whatever *PACKAGE* is, so :method survives
-  ;; the throwaway package both reads use. Nothing else does -- an ordinary
-  ;; symbol comes back interned in a package that is deleted on the way out --
-  ;; which is why every other comparison goes through TOKEN-NAME.
-  (let ((spans (loom-analyzer::element-spans *span-fixture* 0)))
-    (is (eq :method (first (first (fifth spans)))))
-    (is (eq :method (first (first (sixth spans)))))))
-
-(test a-foreign-package-prefix-inside-a-clause-still-yields-spans
-  ;; The second reader must establish the same environment as the first, or it
-  ;; signals on exactly the foreign source INTERN-FOREIGN-SYMBOL-LOCALLY
-  ;; exists for -- and the damage shows up only on someone else's repository,
-  ;; as every inline method in it quietly taking the whole-form range.
-  (let ((spans (loom-analyzer::element-spans
-                "(defgeneric g (x)
-  (:method ((x foo)) (utils:parse-config x)))"
-                0)))
-    (is (= 4 (length spans)))
-    (is (equal '(2 2) (rest (fourth spans))))))
-
-(test element-spans-refuses-rather-than-guesses
-  ;; Three ways of being asked for spans that do not exist. NIL from all three,
-  ;; because the caller's fallback -- the whole form's range on every clause --
-  ;; is a wider truth that contains the clause, where a span read out of the
-  ;; middle of a token would be a fabricated one (CON-0001).
-  (is (null (loom-analyzer::element-spans "(defgeneric g (x))" 1))
-      "an offset naming an atom, not a list")
-  (is (null (loom-analyzer::element-spans "(defgeneric g (x))" 99))
-      "an offset past the end of the content")
-  (is (null (loom-analyzer::element-spans "(defgeneric g (x" 0))
-      "an element that runs off the end of the content"))
 
 (test analyze-file-parses-arguments
   (multiple-value-bind (g file) (analyze-fixture)
@@ -335,6 +286,343 @@ clause and two method clauses, one qualified and one with an EQL specializer.")
     (apply-transaction g (analyze-file (make-instance 'lisp-analyzer)
                                        path source "ws-test"))
     (values g (find-by-name g :file path))))
+
+;;; ------------------------------------------------------------------
+;;; What the reader passed over, on the file entity (ARCH-0013, PLAN-0013 R5)
+;;;
+;;; The mechanism landed with READ-SOURCE; this is the reporting half, and the
+;;; thing it has to get right is which gaps are worth reporting. Comments reach
+;;; the analyzer through the same channel as feature-suppressed code and
+;;; outnumber it 4513 to 2 on this tree, so the assertions below are as much
+;;; about what is absent from the property as about what is in it.
+;;; ------------------------------------------------------------------
+
+(test a-malformed-form-costs-a-form-and-not-the-file
+  ;; REQ-0019 R3, end to end. Before this the reader signalled, ANALYZE-FILE's
+  ;; HANDLER-CASE caught it, and the file became one :ANALYSIS-FAILED-P entity
+  ;; with every definition in it invisible to `find'.
+  ;;
+  ;; The THIRD definition is the assertion that matters. One asserting only
+  ;; that the first survives passes with READ-SOURCE's HANDLER-BIND and
+  ;; HANDLER-CASE nested the wrong way round, whose symptom is not an error but
+  ;; the rest of the file silently not being read.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun a () 1)
+)
+(defun c () 3)")
+    (is-false (getp file :analysis-failed-p)
+              "a file with damage in it is read, not failed")
+    (is (not (null (find-by-name g :function "a"))))
+    (is (not (null (find-by-name g :function "c")))
+        "the definition after the damage is indexed")
+    (let ((recovered (getp file :recovered-regions)))
+      (is (= 1 (length recovered)) "and the damage is one recorded region")
+      (is-true (getf (first recovered) :start-line)
+               "with a line someone can open")
+      (is (eq :nothing (getf (first recovered) :cost))
+          "a stray paren between forms costs no definition"))))
+
+(test a-repaired-form-mints-nothing-and-says-what-it-cost
+  ;; ARCH-0013 R4's other half. Recovering an unterminated list swallows the
+  ;; NEXT definition into the damaged one's body, so a repaired form handed to
+  ;; pass 1 would mint a :FUNCTION named b whose range covers the text defining
+  ;; c -- and c would vanish with no count moving to say so. The entity is
+  ;; wrong rather than missing, which is the fabrication CON-0001 forbids
+  ;; because nothing downstream can detect it.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun a () 1)
+(defun b () (oops
+(defun c () 3)")
+    (is (not (null (find-by-name g :function "a"))))
+    (is (null (find-by-name g :function "b"))
+        "the repaired form mints nothing")
+    (is (null (find-by-name g :function "c"))
+        "and neither does the definition it swallowed -- a recorded gap")
+    (let ((recovered (getp file :recovered-regions)))
+      ;; Two, not one: an unterminated list signals at end of input once for
+      ;; the inner list and once for the outer, and both are damage to the same
+      ;; form. Asserted as two because classifying only one of them as having
+      ;; cost a form -- which is what a single FIND-IF over the repairs did --
+      ;; leaves the other reading as harmless junk in the property an agent
+      ;; consults to find out why a name is missing.
+      (is (= 2 (length recovered)))
+      (is (every (lambda (r) (eq :form (getf r :cost))) recovered)
+          "every repair to this form cost a form, where a stray paren costs
+nothing"))))
+
+(test a-feature-suppressed-branch-is-a-recorded-gap-and-a-comment-is-not
+  ;; The discrimination the property exists for. Both halves are asserted in
+  ;; one test deliberately: recording the branch is worthless if commentary
+  ;; comes with it, since 4513 entries burying 2 is the same failure as
+  ;; recording nothing -- BUG-0009's, in a different place.
+  (multiple-value-bind (g file)
+      (analyze-source ";; an ordinary line comment
+#| and a block comment |#
+(defun a () 1)
+#+no-such-feature (defun b () 2)")
+    (is (not (null (find-by-name g :function "a"))))
+    (is (null (find-by-name g :function "b"))
+        "the branch the feature policy did not take defines nothing")
+    (let ((suppressed (getp file :suppressed-regions)))
+      (is (= 1 (length suppressed))
+          "one region: the branch, and neither comment")
+      (is (string= "sharpsign-plus" (getf (first suppressed) :reason))
+          "named by the marker, not by the uninterned feature symbol after it")
+      (is (= 4 (getf (first suppressed) :start-line))))))
+
+(test a-read-eval-form-is-refused-with-a-line-and-costs-only-itself
+  ;; REQ-0019 R4. Under the host reader with *READ-EVAL* NIL this signalled a
+  ;; READER-ERROR, which reached ANALYZE-FILE's HANDLER-CASE and lost every
+  ;; definition in the file. Refusing the form was always the requirement;
+  ;; losing the file for it never was.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun a () 1)
+(defparameter *x* #.(+ 1 2))
+(defun c () 3)")
+    (is (not (null (find-by-name g :function "a"))))
+    (is (not (null (find-by-name g :function "c"))))
+    (let ((suppressed (getp file :suppressed-regions)))
+      (is (= 1 (length suppressed)))
+      (is (string= "read-eval" (getf (first suppressed) :reason)))
+      (is (eql 2 (getf (first suppressed) :start-line))
+          "the line the refusal happened on, not NIL"))))
+
+(test a-clean-file-carries-neither-property
+  ;; Absent and empty differ. A file with nothing to report must carry no
+  ;; property rather than an empty list, or every one of this tree's 177 files
+  ;; would read as a report that says nothing -- the same discipline
+  ;; :SHADOWED-DEFINITIONS keeps, and what makes a non-NIL value meaningful.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun a () 1)
+;; a comment, which is not a gap in anything")
+    (declare (ignore g))
+    (is (null (getp file :suppressed-regions)))
+    (is (null (getp file :recovered-regions)))))
+
+;;; ------------------------------------------------------------------
+;;; The package prefix a call site wrote (REQ-0019 R2, PLAN-0013 step 6)
+;;;
+;;; Recorded, and read by nothing. The scope discipline is the point of the
+;;; step: whether resolution should prefer a qualified match is REQ-0015's
+;;; question, and answering it here would move edge counts under cover of a
+;;; reader change, leaving a movement nobody could attribute to one or the
+;;; other. So these tests assert both halves -- the fact is recorded, and
+;;; nothing downstream moved.
+;;; ------------------------------------------------------------------
+
+(test a-qualified-call-records-the-prefix-the-site-wrote
+  ;; The fact INTERN-FOREIGN-SYMBOL-LOCALLY destroyed. Before ARCH-0013 the
+  ;; prefix was absorbed into a throwaway package at read time and TOKEN-NAME
+  ;; read SYMBOL-NAME alone, so by the time anything could have recorded it the
+  ;; evidence was gone.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun f () (utils:parse-config) (local-thing))")
+    (declare (ignore file))
+    (let ((f (find-by-name g :function "f")))
+      ;; Reverse source order, which is what :CALL-NAMES has always been --
+      ;; COLLECT-CALL-NAMES pushes as it walks and the list is not re-sorted.
+      ;; Asserted as it is rather than as it reads, because the point of this
+      ;; test is that the first value did not move.
+      (is (equal '("local-thing" "parse-config") (getp f :call-names))
+          "the names are what they always were")
+      (is (equal '((:name "parse-config" :package "utils"))
+                 (getp f :qualified-calls))
+          "and the prefix is recorded beside them, for the one site that wrote
+one"))))
+
+(test two-prefixes-on-one-name-are-two-facts-and-not-one
+  ;; The deduplication has to be on the pair, not the name. Collapsing by name
+  ;; would keep whichever came first and make the surviving prefix look like
+  ;; the only one the file wrote -- a fabricated fact in the shape CON-0001
+  ;; names, since nothing downstream could tell it from a body that really did
+  ;; write only one.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun f ()
+  (utils:parse-config)
+  (config:parse-config)
+  (utils:parse-config))")
+    (declare (ignore file))
+    (let ((qualified (getp (find-by-name g :function "f") :qualified-calls)))
+      (is (= 2 (length qualified))
+          "two distinct prefixes, and the repeat of one of them collapsed")
+      (is (equal '("config" "utils")
+                 (sort (mapcar (lambda (q) (getf q :package)) qualified)
+                       #'string<))))))
+
+(test a-function-quotation-keeps-its-prefix-too
+  ;; #'utils:parse-config is as qualified as (utils:parse-config x). The
+  ;; FUNCTION clause is the one place a name is recovered from an argument
+  ;; position rather than an operator position (BUG-0011), so it needs the
+  ;; recording said separately or it silently would not have it.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun f () (mapcar #'utils:parse-config xs))")
+    (declare (ignore file))
+    (let ((qualified (getp (find-by-name g :function "f") :qualified-calls)))
+      (is (equal '((:name "parse-config" :package "utils")) qualified)))))
+
+(test recording-a-prefix-moves-no-call-name-and-no-edge
+  ;; PLAN-0013 step 6's scope discipline, asserted rather than argued. The
+  ;; second value of COLLECT-CALL-NAMES is additive by construction -- the
+  ;; first is computed exactly as before -- and this is what would go red if a
+  ;; later change made the prefix affect which names are collected or which
+  ;; local calls resolve.
+  (let ((source "(defun helper (x) x)
+(defun f () (helper 1) (utils:helper 2))"))
+    (multiple-value-bind (g file) (analyze-source source)
+      (declare (ignore file))
+      (let ((f (find-by-name g :function "f")))
+        ;; Both sites reduce to "helper" and both resolve to the local
+        ;; definition, which is exactly the ambiguity REQ-0015 exists for and
+        ;; which this step deliberately does NOT fix. Asserted as it stands, so
+        ;; that whoever does fix it has to come here and say so.
+        (is (null (getp f :call-names))
+            "both sites resolved locally, prefix or no prefix")
+        (is (equal '((:name "helper" :package "utils"))
+                   (getp f :qualified-calls))
+            "while the evidence that one of them was qualified is kept")
+        (is (= 1 (count-if (lambda (r) (eq :calls (rel-type r)))
+                           (all-relationships g)))
+            "one :CALLS edge, as before -- the prefix changed no resolution")))))
+
+(test a-clean-body-carries-no-qualified-calls-property
+  ;; Absent rather than empty, the discipline :SHADOWED-DEFINITIONS and
+  ;; :SUPPRESSED-REGIONS both keep. Most bodies write no prefix at all, so an
+  ;; empty list on every one of them is noise that reads as a report.
+  (multiple-value-bind (g file) (analyze-source "(defun f () (bare-call))")
+    (declare (ignore file))
+    (is (null (getp (find-by-name g :function "f") :qualified-calls)))))
+
+;;; ------------------------------------------------------------------
+;;; Reader-produced quotation (ARCH-0013 R12, PLAN-0013 step 8)
+;;;
+;;; The one step that deliberately changes the walk's output, which is why it
+;;; lands after the parity steps rather than inside them. Both cases below were
+;;; disclosed in COLLECT-CALL-NAMES' own docstring and accepted under PLAN-0011
+;;; R-7 because "the analyzer holds no package knowledge to do better"; they
+;;; are here as tests now that it does.
+;;; ------------------------------------------------------------------
+
+(test a-literal-function-call-is-not-a-quotation
+  ;; The visible false positive. (some-pkg:function g) is an ordinary call to
+  ;; something named FUNCTION in someone else's package, and it matched the
+  ;; arity test that recovers #'g -- so "g" appeared in :CALL-NAMES and, once
+  ;; resolution ran, could manufacture an edge to a definition the file never
+  ;; mentions.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun f () (some-pkg:function g))")
+    (declare (ignore file))
+    (let ((names (getp (find-by-name g :function "f") :call-names)))
+      (is (null (member "g" names :test #'string=))
+          "the argument is a value, not a quoted name")
+      ;; "function" itself is absent too, and for an older reason that is not
+      ;; this change's: STANDARD-OPERATOR-P filters every name that finds a
+      ;; symbol in COMMON-LISP, and CL:FUNCTION does. The prefix is recorded
+      ;; even so, which is the evidence a future resolution pass would need to
+      ;; tell this site from a real CL:FUNCTION.
+      (is (equal '((:name "function" :package "some-pkg"))
+                 (getp (find-by-name g :function "f") :qualified-calls))))))
+
+(test a-real-function-quotation-still-contributes-its-name
+  ;; The guard on the test above: refusing (some-pkg:function g) is worthless
+  ;; if it also refuses #'g, which is BUG-0011's whole fix.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun f () (mapcar #'target xs))")
+    (declare (ignore file))
+    (is (member "target" (getp (find-by-name g :function "f") :call-names)
+                :test #'string=))))
+
+(test a-foreign-quote-does-not-suppress-the-walk-of-its-contents
+  ;; The silent miss, and the more damaging of the two: (some-pkg:quote x) was
+  ;; taken for quoted data, so every call inside it went unwalked and the
+  ;; callees simply had no incoming edge -- nothing appeared anywhere to say a
+  ;; body had been skipped.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun f () (some-pkg:quote (inner-call x)))")
+    (declare (ignore file))
+    (let ((names (getp (find-by-name g :function "f") :call-names)))
+      (is (member "inner-call" names :test #'string=)
+          "the contents are walked, because this is not CL:QUOTE"))))
+
+(test real-quoted-data-is-still-not-walked
+  ;; The guard on that one. 'x written as a reader macro and (quote x) written
+  ;; out longhand are both genuinely quoted data, and treating either as a call
+  ;; site is the false positive the head-only discipline exists to prevent.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun f () '(not-a-call x) (quote (also-not-a-call y)))")
+    (declare (ignore file))
+    (let ((names (getp (find-by-name g :function "f") :call-names)))
+      (is (null (member "not-a-call" names :test #'string=))
+          "the reader macro's contents are data")
+      (is (null (member "also-not-a-call" names :test #'string=))
+          "and so are a hand-written CL:QUOTE's"))))
+
+;;; ------------------------------------------------------------------
+;;; Pass 1's dispatch table (ARCH-0013 R13, PLAN-0013 step 9)
+;;;
+;;; Behaviour-preserving, and the only step in the plan that is not about the
+;;; reader at all. What it removes is a synchronisation *DEFINITION-HEADS*'
+;;; own docstring made the reader responsible for.
+;;; ------------------------------------------------------------------
+
+(test the-dispatch-table-refuses-a-duplicate-head
+  ;; The risk ARCH-0013 names, and the reason this table's semantics are the
+  ;; opposite of the four registries REQ-0004 built. Those replace by name,
+  ;; because they exist to be extended by third parties. This one is exhaustive
+  ;; over a fixed set the analyzer owns, so a duplicated head must be a
+  ;; load-time error -- replace-by-name would make it a definition kind that
+  ;; silently stops being indexed in every workspace, with no count moving to
+  ;; say so.
+  (signals error
+    (loom-analyzer::make-definition-dispatch
+     (list (loom-analyzer::definition-handler "defun" #'identity)
+           (loom-analyzer::definition-handler "defclass" #'identity)
+           (loom-analyzer::definition-handler "defun" #'identity))))
+  (finishes
+    (loom-analyzer::make-definition-dispatch
+     (list (loom-analyzer::definition-handler "defvar" #'identity)
+           (loom-analyzer::definition-handler "defparameter" #'identity))))
+  ;; Two heads sharing one handler is ordinary and must stay allowed: DEFVAR
+  ;; and DEFPARAMETER shared a COND clause and now share a function. It is
+  ;; duplicate keys that are refused, not duplicate values.
+  (finishes
+    (let ((one #'identity))
+      (loom-analyzer::make-definition-dispatch
+       (list (loom-analyzer::definition-handler "defvar" one)
+             (loom-analyzer::definition-handler "defparameter" one))))))
+
+(test the-head-set-is-the-tables-keys-and-cannot-drift
+  ;; What replaced *DEFINITION-HEADS*. The failure the old docstring named was
+  ;; "a DEFUN being offered to the macro registry", which is what happens when
+  ;; a head has a clause but no entry in the parallel list -- so the assertion
+  ;; is that every head the table dispatches on is also a head CALL-SITE-HEAD-P
+  ;; accounts for, which is now true by construction rather than by upkeep.
+  (dolist (head '("defun" "defmacro" "defvar" "defparameter" "defclass"
+                  "define-condition" "defstruct" "defgeneric" "defmethod"
+                  "in-package"))
+    (is-true (loom-analyzer::definition-head-p head)
+             "~a has no handler" head)
+    (is-true (loom-analyzer::call-site-head-p head)
+             "~a would be offered to the macro registry" head))
+  (is-false (loom-analyzer::definition-head-p "struct-simplefn")
+            "a definer macro is not a definition head"))
+
+(test in-package-is-no-longer-a-first-clause-defending-its-position
+  ;; The ordering comment step 9 deletes rather than carries forward. A keyed
+  ;; lookup cannot be shadowed, so the property the comment defended has to be
+  ;; asserted somewhere -- here. IN-PACKAGE sets the system, mints nothing, and
+  ;; stays out of :DEFINER-CALL-SITES.
+  (multiple-value-bind (g file)
+      (analyze-source "(in-package :loom-graph)
+(defun f () 1)")
+    (is (eq :loom-graph (getp (find-by-name g :function "f") :system))
+        "the handler's return value is what threads the system through")
+    (is (eq :loom-graph (getp file :system)))
+    (is (null (find-by-name g :function "in-package"))
+        "and it mints nothing itself")
+    (is (null (remove-if-not (lambda (site)
+                               (string= "in-package" (getf site :operator)))
+                             (getp file :definer-call-sites)))
+        "nor reaches :DEFINER-CALL-SITES")))
 
 (test a-top-level-call-is-recorded-as-a-definer-call-site
   ;; The whole input resolution gets: what was called, where, with what
@@ -514,25 +802,26 @@ file, and every property with its value, in a stable order."
     ("(defmethod render ((x hop)) x)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
       ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualifier nil)
-       (:signature nil) (:specializers ("hop")) (:start-line 1) (:system nil)
-       (:unresolved-calls nil)))
+       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier nil)
+       (:shadowed-definitions nil) (:signature nil) (:specializers ("hop"))
+       (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (x))
     ;; b  a qualifier, which is a natural-key component: it must survive into
     ;;    the :QUALIFIER property AND into the id's third segment
     ("(defmethod render :around ((x hop)) x)"
      (:method "render" "method:sample.lisp:render:around:hop" "sample.lisp"
       ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualifier :around)
-       (:signature nil) (:specializers ("hop")) (:start-line 1) (:system nil)
-       (:unresolved-calls nil)))
+       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier :around)
+       (:shadowed-definitions nil) (:signature nil) (:specializers ("hop"))
+       (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (x))
     ;; c  EQL specializer, rendered rather than resolved
     ("(defmethod render ((x (eql :oneof))) x)"
      (:method "render" "method:sample.lisp:render::(eql oneof)" "sample.lisp"
       ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualifier nil)
-       (:signature nil) (:specializers ("(eql oneof)")) (:start-line 1)
+       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier nil)
+       (:shadowed-definitions nil) (:signature nil)
+       (:specializers ("(eql oneof)")) (:start-line 1)
        (:system nil) (:unresolved-calls nil)))
      (x))
     ;; d  a (setf f) name, which DEFINITION-NAME renders rather than flattens
@@ -541,7 +830,8 @@ file, and every property with its value, in a stable order."
       "sample.lisp"
       ((:arguments ("v" "x")) (:call-names nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "(setf render)")
-       (:language :lisp) (:qualifier nil) (:signature nil)
+       (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
+       (:signature nil)
        (:specializers ("t" "hop")) (:start-line 1) (:system nil)
        (:unresolved-calls nil)))
      (v))
@@ -551,16 +841,17 @@ file, and every property with its value, in a stable order."
     ("(defmethod render () 1)"
      (:method "render" "method:sample.lisp:render::" "sample.lisp"
       ((:arguments nil) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualifier nil)
-       (:signature nil) (:specializers nil) (:start-line 1) (:system nil)
-       (:unresolved-calls nil)))
+       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier nil)
+       (:shadowed-definitions nil) (:signature nil) (:specializers nil)
+       (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (1))
     ;; f  an & marker stops the specializer walk but not the argument list
     ("(defmethod render ((x hop) &rest args) args)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
       ((:arguments ("x" "&rest" "args")) (:call-names nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "render") (:language :lisp)
-       (:qualifier nil) (:signature nil) (:specializers ("hop"))
+       (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil) (:signature nil)
+       (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (args))
     ;; g  wholly unspecialized, and the only entry with a call in its body
@@ -568,7 +859,8 @@ file, and every property with its value, in a stable order."
      (:method "render" "method:sample.lisp:render::t,t" "sample.lisp"
       ((:arguments ("a" "b")) (:call-names ("helper")) (:end-line 1)
        (:file "sample.lisp") (:generic-function "render") (:language :lisp)
-       (:qualifier nil) (:signature nil) (:specializers ("t" "t"))
+       (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil) (:signature nil)
+       (:specializers ("t" "t"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      ((helper a b)))
     ;; h  case a again, at a path DEFAULT-SYSTEM-FOR-PATH recognises. Every row
@@ -582,7 +874,8 @@ file, and every property with its value, in a stable order."
       "src/graph/foo.lisp"
       ((:arguments ("x")) (:call-names ("helper")) (:end-line 1)
        (:file "src/graph/foo.lisp") (:generic-function "render")
-       (:language :lisp) (:qualifier nil) (:signature nil)
+       (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
+       (:signature nil)
        (:specializers ("hop")) (:start-line 1) (:system :graph)
        (:unresolved-calls nil)))
      ((helper x))
@@ -707,44 +1000,50 @@ that would be a guard over a guess.")
       (is (equal '("x" "y") (getp interface :members))))))
 
 (test an-inline-method-falls-back-to-the-whole-forms-range
-  ;; Two calls, because the fallback has two entrances and only one of them is
-  ;; "no spans". A caller with contents whose element count disagrees with the
-  ;; form's has spans that are real and misaligned, and using them would give a
-  ;; clause its neighbour's line numbers -- worse than a range that is merely
-  ;; wide. Exercised as a case rather than left as an untested safety net.
-  ;; The second form has five elements where the DEFGENERIC has four, which is
-  ;; what makes the second call a mismatch rather than a silent misattribution
-  ;; -- the length comparison is the whole of the alignment check.
+  ;; ARCH-0010 R4's fallback, which ARCH-0013 R7 keeps as the declared answer
+  ;; while removing one of its two entrances. The mismatch entrance is gone:
+  ;; ELEMENT-SPANS built a parallel sequence to zip against the form's own
+  ;; elements and had to compare lengths before trusting it, where FORM-RANGE
+  ;; asks the clause cons itself and cannot return a neighbour's range. What is
+  ;; left is the caller that has no READING at all, which is why the keyword is
+  ;; a keyword -- a caller with no reading is not made to lie about one.
+  ;;
+  ;; The positive case is asserted beside it, because a fallback test alone
+  ;; would pass just as well if FORM-RANGE never found anything.
   (let* ((source "(defgeneric render (x)
-  (:method ((x hop)) x))
-(defun elsewhere (a) 1 2)")
-         (form (first (first (loom-analyzer::read-forms-with-spans source))))
-         (other-offset (fourth (second (loom-analyzer::read-forms-with-spans source)))))
+  (:method ((x hop)) x))")
+         (reading (loom-analyzer::read-source source))
+         (form (first (first (loom-analyzer::reading-forms reading)))))
     (flet ((method-range (pairs)
              (let ((method (car (second pairs))))
                (list (getp method :start-line) (getp method :end-line)))))
       (is (equal '(10 20)
                  (method-range (loom-analyzer::generic-definition-entities
                                 form 10 20 "sample.lisp" :test)))
-          "no contents at all: nothing to re-read, so the form's own range")
-      (is (equal '(10 20)
+          "no reading at all: nothing to ask, so the form's own range")
+      (is (equal '(2 2)
                  (method-range (loom-analyzer::generic-definition-entities
                                 form 10 20 "sample.lisp" :test
-                                :contents source
-                                :start-offset other-offset)))
-          "spans of a different form in the same string: real, and misaligned"))))
+                                :reading reading)))
+          "and with one, the clause's own line rather than the form's 10-20"))))
 
 (test an-inline-method-and-a-standalone-defmethod-collide-in-one-file
-  ;; ARCH-0010 R4's disclosed, not fixed, edge: the natural key is (:file :name
-  ;; :qualifier :specializers), and nothing about it distinguishes a clause
-  ;; from a DEFMETHOD -- so a standalone DEFMETHOD and an inline (:method ...)
-  ;; clause on the same generic, same qualifier, same specializers, in the same
-  ;; file, resolve to one id. Both are ASSERT-ENTITY-OP; the graph applies them
-  ;; in source order, so whichever definition sits later in the file overwrites
-  ;; the other's properties entirely -- not merged, replaced. This mirrors CL's
-  ;; own load-order redefinition semantics, and the coder found two real
-  ;; instances of it in game-server (mpackage/obj-types.lisp ADD-DEFN,
-  ;; mpackage/object.lisp COMPUTED-ID-P).
+  ;; ARCH-0010 R4's disclosed edge: the natural key is (:file :name :qualifier
+  ;; :specializers), and nothing about it distinguishes a clause from a
+  ;; DEFMETHOD -- so a standalone DEFMETHOD and an inline (:method ...) clause
+  ;; on the same generic, same qualifier, same specializers, in the same file,
+  ;; resolve to one id. The coder found two real instances of it in
+  ;; game-server (mpackage/obj-types.lisp ADD-DEFN, mpackage/object.lisp
+  ;; COMPUTED-ID-P).
+  ;;
+  ;; What this measures changed with PLAN-0012, though every assertion below
+  ;; stands unaltered. It used to measure the *graph* absorbing two
+  ;; ASSERT-ENTITY-OPs, later-wins; ARCH-0012 R1 now supersedes the earlier
+  ;; definition inside ANALYZE-FILE, so the graph is handed one assert and has
+  ;; nothing to absorb. Same one entity, same :CALL-NAMES -- which is why this
+  ;; test is also the check that supersession picked the right survivor. The
+  ;; LAST definition in source order is the one CL leaves in effect, and if
+  ;; that ever inverted, :call-names would read ("first-callee").
   ;;
   ;; FIRST-CALLEE and SECOND-CALLEE are deliberately undefined anywhere in this
   ;; source, so each becomes a :CALL-NAMES property rather than a resolved
@@ -770,21 +1069,21 @@ one the graph kept; the standalone DEFMETHOD's :call-names are gone entirely,
 not merged"))))
 
 (test a-collided-methods-calls-edges-are-a-union-not-a-replacement
-  ;; A consequence of R4's collision that ARCH-0010's text does not name:
-  ;; "the later assert wins" is true of the surviving entity's OWN properties
-  ;; (the test above), but it is NOT true of the :CALLS edges a *local* callee
-  ;; produces. ASSERT-EDGE bakes FROM-ID in at op-construction time (ID FROM),
-  ;; before the transaction runs, so an edge from the overwritten (earlier)
-  ;; definition and an edge from the surviving (later) definition carry the
-  ;; identical from-id string once the two definitions collide -- and the
-  ;; graph does not deduplicate or replace relationships the way it replaces
-  ;; entities. Both edges land on the one surviving id. The result: the single
-  ;; :METHOD entity that ends up representing only the inline clause's body
-  ;; (per the test above) is shown as calling FIRST-CALLEE too, a call no
-  ;; queryable definition of RENDER actually makes -- `impact render` would
-  ;; report a call site that does not exist in the surviving source. Filed as
-  ;; BUG-0012; this test documents the current, undesirable behaviour so a fix
-  ;; has something to turn red.
+  ;; The name is kept, and it is now the opposite of what it says. This test
+  ;; was written to record BUG-0012 as it stood: the surviving :METHOD's own
+  ;; properties were the inline clause's, but its outgoing :CALLS edges were
+  ;; the union of both definitions' bodies, because ASSERT-EDGE bakes FROM-ID
+  ;; in at op-construction time and both colliding definitions derive one id,
+  ;; so the graph -- which replaces entities by key but keys a relationship on
+  ;; its endpoints -- had two distinct edges and nothing to choose between
+  ;; them. It asserted FIRST-CALLEE PRESENT, deliberately, so a fix would have
+  ;; something to turn red (CON-0003).
+  ;;
+  ;; PLAN-0012 inverted it. ARCH-0012 R1 supersedes the standalone DEFMETHOD
+  ;; inside ANALYZE-FILE, between pass 1 and pass 2, so its body is never
+  ;; walked and no edge is ever emitted for it. FIRST-CALLEE is now absent,
+  ;; and it is absent because the op was never built -- not because anything
+  ;; retracted it.
   (multiple-value-bind (g file)
       (analyze-source "(defun first-callee (x) x)
 (defun second-callee (x) x)
@@ -797,11 +1096,108 @@ not merged"))))
            (callees (mapcar #'to-id (relationships-from g (id method) :rel-type :calls))))
       (is (= 1 (length methods)) "still one surviving entity")
       (is (member (id (find-by-name g :function "second-callee")) callees :test #'equal)
-          "the surviving definition's own call is present, as expected")
-      (is (member (id (find-by-name g :function "first-callee")) callees :test #'equal)
-          "BUG-0012: the OVERWRITTEN definition's call survives as an edge on
-an entity whose properties no longer mention it at all -- a call attributed to
-a body that, from every other query, does not exist"))))
+          "the surviving definition's own call is present, as before")
+      (is (not (member (id (find-by-name g :function "first-callee")) callees
+                       :test #'equal))
+          "BUG-0012 fixed: the superseded definition contributes no edge, so
+the entity's edges and its properties now describe the same body"))))
+
+(test two-defuns-of-one-name-leave-only-the-later-ones-calls
+  ;; ARCH-0012 R1 is not method-specific: the key is (:file :name) for a
+  ;; :FUNCTION too, so a redefined DEFUN collides exactly the way the colliding
+  ;; methods above do. Only the mechanism differs -- CL warns about this one at
+  ;; load time, which is why nobody had noticed it in the index.
+  ;;
+  ;; Two distinct defects before supersession, both from walking the dead body:
+  ;;
+  ;;   HELPER -- an edge target -> helper attributed to a body the file does
+  ;;   not define once loaded. The two-definition union of BUG-0012.
+  ;;
+  ;;   TARGET -- a self-edge. The dead body's call to TARGET resolves through
+  ;;   LOCAL-FUNCTIONS to the *survivor* (ASSOC finds the most recently pushed
+  ;;   entry), which is a different object from the caller, so the
+  ;;   (not (eq callee caller)) recursion guard does not fire -- and the edge
+  ;;   it emits runs from the one derived id to itself.
+  ;;
+  ;; The :CALL-NAMES assertion is a guard rather than evidence: ABSORB-ENTITY
+  ;; replaced properties wholesale, so the survivor's empty list already won
+  ;; before this change. It is here because after supersession the property is
+  ;; right by construction instead of by absorption, and that is the property
+  ;; a future analyzer's contract has to keep (ARCH-0012 R3).
+  (multiple-value-bind (g file)
+      (analyze-source "(defun helper (x) x)
+(defun target (x) (helper x) (target x) (only-in-the-dead-body x))
+(defun target (x) x)")
+    (declare (ignore file))
+    (let ((targets (entities-of-type g :function)))
+      (is (= 2 (length targets)) "helper and one target, not two targets"))
+    (let* ((target (find-by-name g :function "target"))
+           (callees (mapcar #'to-id (relationships-from g (id target)
+                                                        :rel-type :calls))))
+      (is (eql 3 (getp target :start-line))
+          "the surviving definition is the last in source order")
+      (is (not (member (id (find-by-name g :function "helper")) callees
+                       :test #'equal))
+          "the dead body's call to HELPER is not attributed to the survivor")
+      (is (not (member (id target) callees :test #'equal))
+          "and the dead body's call to TARGET is not a self-edge")
+      (is (null (getp target :call-names))
+          "and no foreign name reached the survivor from the dead body"))))
+
+(test a-definition-that-shadowed-nothing-has-no-shadowed-definitions
+  ;; ARCH-0012 R2 turns on absent-versus-empty: RULE-0006 reports every carrier
+  ;; of the property, so writing an empty list on the ordinary case would make
+  ;; every definition in every tree a finding.
+  (multiple-value-bind (g file) (analyze-source "(defun ordinary (x) x)")
+    (declare (ignore file))
+    (is (null (getp (find-by-name g :function "ordinary") :shadowed-definitions))
+        "nothing collided, so the property is absent")))
+
+(test a-survivor-records-the-range-of-what-it-shadowed
+  ;; The same source as A-COLLIDED-METHODS-CALLS-EDGES-ARE-A-UNION-NOT-A-
+  ;; REPLACEMENT, asked the other question. That test shows the dead body's
+  ;; edge is gone; this one shows the dead body is not thereby erased -- the
+  ;; standalone DEFMETHOD on line 3 is still a recorded fact, as a line range
+  ;; on the definition that replaced it (CON-0001).
+  (multiple-value-bind (g file)
+      (analyze-source "(defun first-callee (x) x)
+(defun second-callee (x) x)
+(defmethod render ((x hop)) (first-callee x))
+(defgeneric render (x)
+  (:method ((x hop)) (second-callee x)))")
+    (declare (ignore file))
+    (is (equal '("3-3")
+               (getp (find-by-name g :method "render") :shadowed-definitions))
+        "the superseded DEFMETHOD's own extent, not the survivor's")))
+
+(test two-classes-declaring-one-accessor-are-not-a-shadowing
+  ;; The CON-0003 anchor for the carve-out PLAN-0012 adds to ARCH-0012 R2, and
+  ;; the reason RULE-0006 reports nothing on Loom: two classes each declaring
+  ;; :ACCESSOR THING-NAME is one generic function with two methods in CL, not
+  ;; a definition shadowing another, and both bodies are live. Loom's index
+  ;; still collapses them to one :INTERFACE -- asserted below, so this cannot
+  ;; pass by there being no collision to carve out -- but nothing died.
+  ;;
+  ;; The second half is what makes the predicate an AND rather than an OR. A
+  ;; hand-written DEFGENERIC colliding with a generated accessor name IS a
+  ;; real shadowing: one of the two is dead. Recorded blanketly, the first
+  ;; assertion fails; carved out too broadly, the second does.
+  (multiple-value-bind (g file)
+      (analyze-source "(defclass a () ((x :accessor thing-name)))
+(defclass b () ((y :accessor thing-name)))")
+    (declare (ignore file))
+    (let ((interfaces (entities-of-type g :interface)))
+      (is (= 1 (length interfaces)) "the two accessor names do collide on one id")
+      (is (null (getp (first interfaces) :shadowed-definitions))
+          "but a duplicated accessor name is CL semantics, not dead code")))
+  (multiple-value-bind (g file)
+      (analyze-source "(defclass a () ((x :accessor thing-name)))
+(defgeneric thing-name (obj))")
+    (declare (ignore file))
+    (is (equal '("1-1")
+               (getp (find-by-name g :interface "thing-name")
+                     :shadowed-definitions))
+        "one name written by hand is enough to make the shadowing real")))
 
 ;;; ------------------------------------------------------------------
 ;;; Macro template inspection and the registry (ARCH-0002 R1, R3)

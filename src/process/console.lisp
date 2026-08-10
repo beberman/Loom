@@ -194,6 +194,16 @@ command."
   (format t "  unresolved : ~d document reference~:p, ~d definer macro~:p~%"
           (getf status :unresolved-references)
           (getf status :unhandled-definer-macros))
+  ;; ARCH-0013 R11, beside `unresolved' because it answers the same question a
+  ;; reader is asking there: what does this index know it is missing. Printed
+  ;; unconditionally for the reason the tests line above gives -- these are
+  ;; meant to be read as zero-or-not, and both read zero on a healthy tree.
+  ;; "unread" rather than "skipped": a comment is skipped too, and a reader who
+  ;; sees a number here should understand it as source that would have defined
+  ;; something and did not.
+  (format t "  unread     : ~d suppressed region~:p, ~d recovered region~:p~%"
+          (getf status :suppressed-regions)
+          (getf status :recovered-regions))
   ;; ARCH-0011. "never run" is spelled out rather than left as three zeroes,
   ;; because enrichment is optional and on demand: a reader who sees zeroes
   ;; cannot tell a tree the image agreed with completely from one nobody has
@@ -415,13 +425,20 @@ unconditionally is which units were attempted and what became of them
     ;; index knows it is missing, and it should be visible here rather than
     ;; only after a suite run.
     (let ((unhandled (unhandled-definer-macros graph))
+          (swallowed (body-swallowing-macro-names graph))
           (collisions (generated-definition-collisions graph *macro-generators*)))
       (when unhandled
         (format t "~&~d definer macro~:p whose expansion could not be read:~%"
                 (length unhandled))
+        ;; The orphan count travels with the name because the list mixes two
+        ;; populations (BUG-0016, and BODY-SWALLOWING-MACRO-NAMES' docstring):
+        ;; a macro swallowing real call bodies and one whose recorded names are
+        ;; keyword heads. Without the number a reader cannot tell which line to
+        ;; act on, which is the failure BUG-0009 is made of.
         (dolist (macro unhandled)
-          (format t "  ~a  [~a:~a]~%" (name macro) (getp macro :file)
-                  (getp macro :start-line))))
+          (format t "  ~a  [~a:~a]~@[  ~d call name~:p attached to nothing~]~%"
+                  (name macro) (getp macro :file) (getp macro :start-line)
+                  (gethash (string-downcase (name macro)) swallowed))))
       (when collisions
         (format t "~&~d definer call site~:p left alone:~%" (length collisions))
         (dolist (pair collisions)

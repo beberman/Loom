@@ -112,6 +112,33 @@ The file is asserted anyway, because a known unknown is worth more to an agent
 than an absence it cannot distinguish from an empty file.")
                (:analysis-error string
                 :documentation "The condition text, when :ANALYSIS-FAILED-P.")
+               (:suppressed-regions list
+                :documentation "Source in this file the reader passed over
+rather than read -- ARCH-0013. One plist per region: :REASON as a lowercase
+string, :START-LINE, :END-LINE. Two things reach it: a #+ or #- branch the
+feature policy did not take, and a #. the reader refused to evaluate.
+
+Comments are deliberately not here. They come to the analyzer through the
+same channel and outnumber these by three orders of magnitude -- 4513 to 2 on
+this tree -- and a comment is not a gap in what Loom knows, it is what a
+source file is made of. SKIP-SUPPRESSES-SOURCE-P draws the line.
+
+A gap, not a failure: the file is read, its other definitions are indexed,
+and :ANALYSIS-FAILED-P stays NIL. What this records is that something in
+these lines would have defined a thing and did not, so an agent asking why a
+name is missing gets an answer instead of silence (CON-0001).")
+               (:recovered-regions list
+                :documentation "Damage the reader repaired to keep reading --
+ARCH-0013 R4. One plist per repair: :CONDITION as a type name, :TEXT,
+:START-LINE, :END-LINE, and :COST, which is :FORM when the repair corrupted
+the form being built and :NOTHING when it was junk between forms.
+
+A repaired form is dropped rather than handed to the walk, because recovering
+an unterminated list can swallow the next definition whole into the damaged
+one's body -- an entity with a plausible range over text defining something
+else, which is the fabrication no count would reveal. So this property is the
+whole record that the definitions in these lines are missing, and it is why a
+file with damage in it costs a form rather than the file it used to cost.")
                (:definer-call-sites list
                 :documentation "Every top-level form in this file whose
 operator is neither a definition nor a declaration -- ARCH-0002 R2. One plist
@@ -164,6 +191,14 @@ is a class that is signalled rather than instantiated.  Worth telling apart
 without reopening the file.")
                (:exported-p boolean :default nil)
                (:language   keyword :one-of *source-languages*)
+               (:shadowed-definitions list
+                :documentation "Line ranges, each \"start-end\", of the
+definitions this one superseded by sharing its natural key in the same file --
+one string per superseded definition, in source order.  Absent and empty are
+not the same thing: absent means nothing collided, which is the ordinary case.
+The shadowed source has no entity of its own anywhere in the graph, and that is
+deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+a reader who wants its text opens the file at these lines.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
 analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
@@ -188,6 +223,14 @@ indexed so calls to it resolve, and marked so an agent can tell a derived
 name from one someone wrote.")
                (:exported-p boolean :default nil)
                (:language   keyword :one-of *source-languages*)
+               (:shadowed-definitions list
+                :documentation "Line ranges, each \"start-end\", of the
+definitions this one superseded by sharing its natural key in the same file --
+one string per superseded definition, in source order.  Absent and empty are
+not the same thing: absent means nothing collided, which is the ordinary case.
+The shadowed source has no entity of its own anywhere in the graph, and that is
+deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+a reader who wants its text opens the file at these lines.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
 analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
@@ -216,6 +259,14 @@ name, when it was generated rather than written -- a DEFSTRUCT accessor,
 constructor, predicate or copier.  Unlike a DEFCLASS accessor, which is a
 generic function and so an :INTERFACE, these really are plain functions.")
                (:language   keyword :one-of *source-languages*)
+               (:shadowed-definitions list
+                :documentation "Line ranges, each \"start-end\", of the
+definitions this one superseded by sharing its natural key in the same file --
+one string per superseded definition, in source order.  Absent and empty are
+not the same thing: absent means nothing collided, which is the ordinary case.
+The shadowed source has no entity of its own anywhere in the graph, and that is
+deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+a reader who wants its text opens the file at these lines.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
 analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
@@ -230,6 +281,30 @@ afterwards, which is what makes it the stable input cross-file resolution
 re-derives from: retracting a file destroys the :CALLS edges that pointed into
 it, and the only way the next resolution pass can rebuild them is if the
 callers still record who they call.")
+               (:qualified-calls list
+                :documentation "The package prefixes this entity's call sites
+wrote, as a list of plists: :NAME, the call name as it appears in :CALL-NAMES,
+and :PACKAGE, the designator written before it, lowercased. ARCH-0013, and
+REQ-0019 R2 arriving somewhere it can be used.
+
+Only sites that wrote a prefix appear, so this is short where :CALL-NAMES is
+long -- 241 qualified operator occurrences against 4867 call names on this
+tree. A bare name records nothing, because \"no prefix was written\" is what
+absence already means.
+
+Evidence, not an answer, and nothing reads it yet. `utils:parse-config' and a
+local PARSE-CONFIG reduce to one string in :CALL-NAMES, which is why
+RESOLVE-CALLS cannot tell two same-named definitions apart; before ARCH-0013
+the prefix was destroyed at read time by INTERN-FOREIGN-SYMBOL-LOCALLY, so
+there was nothing to record. Whether resolution should prefer a qualified
+match or merely rank candidates by it is REQ-0015's question and is
+deliberately left open -- recording the fact must not move an edge count, or a
+reader change and a resolution change become one movement nobody can
+attribute.
+
+Analyzer-written and never rewritten, the same DEC-0003 discipline
+:CALL-NAMES keeps and for the same reason: a resolution pass that consumed its
+own input could not be re-run.")
                (:unresolved-calls list
                 :documentation "Callee names that did not resolve inside the
 workspace.  Recorded as a property, never as a dangling edge.  Derived from
@@ -274,6 +349,14 @@ and reported by status the way an unresolved document reference is.")))
                (:generic-function string
                 :documentation "Name of the generic function this method extends.")
                (:language         keyword :one-of *source-languages*)
+               (:shadowed-definitions list
+                :documentation "Line ranges, each \"start-end\", of the
+definitions this one superseded by sharing its natural key in the same file --
+one string per superseded definition, in source order.  Absent and empty are
+not the same thing: absent means nothing collided, which is the ordinary case.
+The shadowed source has no entity of its own anywhere in the graph, and that is
+deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+a reader who wants its text opens the file at these lines.")
                (:system           keyword
                 :documentation "The system this belongs to, decided by the
 analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
@@ -282,6 +365,7 @@ No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
 ARCH-0009.")
                (:call-names       list)
+               (:qualified-calls  list)
                (:unresolved-calls list)))
 
 (defentity :variable
@@ -294,6 +378,14 @@ module-level declaration."
                (:kind       keyword :one-of (:constant :special :parameter :lexical))
                (:exported-p boolean :default nil)
                (:language   keyword :one-of *source-languages*)
+               (:shadowed-definitions list
+                :documentation "Line ranges, each \"start-end\", of the
+definitions this one superseded by sharing its natural key in the same file --
+one string per superseded definition, in source order.  Absent and empty are
+not the same thing: absent means nothing collided, which is the ordinary case.
+The shadowed source has no entity of its own anywhere in the graph, and that is
+deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+a reader who wants its text opens the file at these lines.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
 analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
@@ -336,6 +428,14 @@ whichever signal the language actually offers."
                (:suite      string)
                (:framework  keyword :one-of (:fiveam :vitest :jest :pytest))
                (:language   keyword :one-of *source-languages*)
+               (:shadowed-definitions list
+                :documentation "Line ranges, each \"start-end\", of the
+definitions this one superseded by sharing its natural key in the same file --
+one string per superseded definition, in source order.  Absent and empty are
+not the same thing: absent means nothing collided, which is the ordinary case.
+The shadowed source has no entity of its own anywhere in the graph, and that is
+deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+a reader who wants its text opens the file at these lines.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
 analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and

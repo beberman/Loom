@@ -59,6 +59,7 @@
    #:structural-generated-uses
    #:generated-definition-collisions
    #:unhandled-definer-macros
+   #:body-swallowing-macro-names
    #:*generatable-types*
 
    ;; image-derived facts merged against what the text pass wrote (ARCH-0011)

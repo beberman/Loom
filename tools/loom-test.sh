@@ -23,7 +23,8 @@ cat > "$driver" <<'LISP'
              asdf:*central-registry* :test #'equal)))
 (handler-bind ((warning #'muffle-warning))
   (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid") :silent t))
+           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector")
+           :silent t))
 (load "/home/beberman/lisp/Loom/src/full-test.lisp")
 (funcall (read-from-string "loom-test:full-test"))
 LISP

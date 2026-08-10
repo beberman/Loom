@@ -1,0 +1,215 @@
+id: PLAN-0013
+title: Replace the Lisp analyzer's reader with an Eclector client in nine steps, parity first and each capability its own commit
+status: final
+date: 2026-08-09
+refines: [ARCH-0013, REQ-0019]
+tags: [analyzer, lisp, reader, eclector, plan]
+summary: |
+  ARCH-0013 in nine ordered steps. Steps 1-4 land the reader at strict parity:
+  same entities, same natural keys, same ids, same counts, with ELEMENT-SPANS
+  and its three companions deleted and nothing yet behaving differently. Only
+  then do the capabilities land, one commit each, so a count that moves is
+  attributable: recovery and skipped-region reporting (5), package prefixes
+  (6), the feature policy made explicit (7), reader-macro marking (8), and last
+  the dispatch table (9), which is the only step that is not about the reader
+  at all. The design was spiked against Eclector 0.12.0 before this plan was
+  written -- ARCH-0013's VERIFIED BEFORE PLANNING section holds the findings --
+  so the risky unknowns are already retired and the two that bit during the
+  spike are called out as steps rather than left to be rediscovered. Measured
+  baseline to hold at step 4: 174 files, 1609 entities, 7927 relationships, 454
+  tests covering 308 units, 4 definer macros, 32 RULE-0003 lines.
+body: |
+  BEFORE ANYTHING
+
+  The baseline every parity step is checked against, measured 2026-08-09 under
+  /usr/bin/sbcl on this tree with the working tree as it stands:
+
+      files          174        tests            454 covering 308 units
+      entities      1609        definer macros     4
+      relationships 7927        violations        32 (all BUG-0009 RULE-0003)
+      documents       79        unresolved doc refs 0
+
+  Record it again immediately before step 1, because this tree is under active
+  edit and a baseline taken a day early is not a baseline.
+
+  Eclector 0.12.0 is already installed and reachable through the same
+  quicklisp setup loom.lisp loads. No network step is needed.
+
+  THE STEPS
+
+  Step 1 -- the dependency, and nothing else.
+
+  Add #:eclector to loom-analyzer.asd's :depends-on, beside the existing
+  comment flagging cl-yaml's libyaml binding as the only FFI dependency; extend
+  that comment to say Eclector is pure Common Lisp and keeps it the only one.
+  Add "eclector" to the explicit quickload list in tools/loom-test.sh's driver
+  and in loom.lisp, matching how cl-yaml and bordeaux-threads are named there.
+
+  Done when: the full suite is green and `tools/loom.sh status` still reports
+  the baseline. Nothing uses Eclector yet. This step exists alone because a
+  dependency that fails to load in one of the two invocation paths is a
+  confusing failure to debug on top of a reader change.
+
+  Step 2 -- src/analyzer/lisp-reader.lisp, complete but unused.
+
+  The new file: LOOM-LISP-CLIENT, the READING structure, READ-SOURCE,
+  FORM-RANGE, FORM-PACKAGE. Every mechanism ARCH-0013 describes, including the
+  tables that later steps consume, with the client's methods written as the
+  spike verified them:
+
+    - MAKE-EXPRESSION-RESULT returns RESULT; records SOURCE for a cons only,
+      converting the offset pair through OFFSET-LINE.
+    - MAKE-SKIPPED-INPUT-RESULT records (reason start-line end-line) and
+      returns NIL, dropping nested *READ-SUPPRESS* results.
+    - INTERPRET-SYMBOL interns in KEYWORD for a keyword and MAKE-SYMBOLs
+      everything else, recording a written package prefix.
+    - EVALUATE-EXPRESSION refuses and records a :READ-EVAL skip.
+    - The read loop puts HANDLER-BIND INSIDE HANDLER-CASE. This is step 2's one
+      trap and ARCH-0013 records why: the other nesting silently stops reading
+      the file instead of recovering, because handlers run innermost first.
+
+  Unit tests for this file alone, not through ANALYZE-FILE: spans at depth,
+  a package prefix recovered, keywords still keywords, :|Loom-Graph| keeping
+  its case, a read-eval form skipped, a block comment inside a DEFGENERIC not
+  costing the clause spans.
+
+  Done when: the new tests pass and the analyzer still calls none of it, so
+  `status` is unchanged.
+
+  Step 3 -- ANALYZE-FILE reads through READ-SOURCE, recovered forms dropped.
+
+  Pass 0 calls READ-SOURCE and keeps the READING in a local. FORMS keeps the
+  four-element tuple (form start-line end-line start-offset) so ARCH-0010 R1
+  survives and ANALYZE-FILE's DESTRUCTURING-BIND does not move. A form whose
+  read invoked RECOVER is not in FORMS -- ARCH-0013 R4, and the spike's
+  swallowed-definition case is the fixture. The HANDLER-CASE narrows to FATAL.
+
+  Do not delete anything yet. READ-FORMS-WITH-SPANS and friends stay in the
+  file, unreferenced, so this step is revertible by one line.
+
+  Done when: entity count, relationship count and every id match the baseline,
+  and the full suite is green. This is the step where parity is won or lost;
+  if a count moves, find out why here rather than after four more steps.
+
+  Step 4 -- delete the old reader, and move GENERIC-DEFINITION-ENTITIES.
+
+  Delete READ-FORMS-WITH-SPANS, ELEMENT-SPANS, SKIP-WHITESPACE-AND-COMMENTS and
+  INTERN-FOREIGN-SYMBOL-LOCALLY. GENERIC-DEFINITION-ENTITIES drops :CONTENTS
+  and :START-OFFSET and takes the READING, asking FORM-RANGE per clause;
+  ARCH-0010 R4's whole-form fallback stays as the declared answer when
+  FORM-RANGE misses, which it now can only do for shared structure.
+
+  Update the affects: lists naming the deleted functions -- REQ-0019's and
+  ARCH-0013's own -- or `check` reports the dangling references, which is that
+  mechanism working rather than a defect. ARCH-0010 gains an OUTSTANDING note
+  recording that its R2 mechanism was replaced while its requirement stands;
+  its status stays `implemented`.
+
+  Done when: parity again, suite green, `check` unchanged, and 169 lines are
+  gone. Steps 1-4 are one reviewable unit and the natural place to stop if
+  time runs out -- everything after this is additive.
+
+  Step 5 -- recovery reporting (REQ-0019 R3, R4).
+
+  The mechanism landed in step 3; this is the reporting half. Skipped and
+  recovered regions reach the :FILE entity as counts, REPOSITORY-STATUS carries
+  them, and `status` prints them beside the unresolved counts it already has.
+  A file that recovers is not :ANALYSIS-FAILED-P -- that stays for FATAL only.
+
+  Done when: a deliberately malformed fixture yields its other definitions and
+  the damage appears with a line range, and the R4 fixture proves a recovered
+  form mints nothing. Expect the entity count to move on a tree with damage in
+  it and not on this one, which has none.
+
+  Step 6 -- package prefixes reach the graph (REQ-0019 R2).
+
+  FORM-PACKAGE's answers are recorded where a later pass can use them. Scope
+  discipline: this step records the fact and changes no resolution behaviour.
+  RESOLVE-CALLS does not learn to prefer a qualified match here -- that is
+  REQ-0015's question and ARCH-0014's seam, and doing it here would move edge
+  counts under cover of a reader change.
+
+  Done when: 241 qualified operator occurrences on this tree are recorded, 30
+  of them naming in-tree functions, and the :CALLS edge count has not moved.
+
+  Step 7 -- the feature policy becomes explicit (REQ-0019 R5).
+
+  The client's feature list is a parameter defaulting to the host's *FEATURES*,
+  and suppressed regions are reported through step 5's machinery. The default
+  is parity, so nothing moves. Changing the default is explicitly out of scope
+  and ARCH-0013 R6 says so; whoever changes it owns the count movement.
+
+  Done when: this tree's five reader-conditional sites are reported as skips
+  and the entity count is unchanged.
+
+  Step 8 -- reader-macro marking (ARCH-0013 R12).
+
+  The READER-MACRO table is consulted by COLLECT-CALL-NAMES in place of the
+  name comparisons in its quotation and QUOTE clauses. This is the one step
+  that deliberately changes the walk's output: a literal (some-pkg:function g)
+  stops contributing "g", and a (some-pkg:quote x) stops suppressing the walk
+  of its contents.
+
+  Done when: the call-name and :CALLS deltas are measured and reported rather
+  than absorbed. Both are expected to be zero or near it on this tree, which
+  writes neither shape; report the number either way.
+
+  Step 9 -- the dispatch table (ARCH-0013 R13).
+
+  *DEFINITION-DISPATCH*, head name computed once, fall through to the
+  definer-call-site clause on a miss. *DEFINITION-HEADS* becomes the table's
+  keys. The table refuses a duplicate key at construction -- the opposite of
+  the four existing registries' replace-by-name semantics, for the reason
+  ARCH-0013's risk section gives. Delete the IN-PACKAGE-first ordering comment
+  rather than carrying it; a keyed lookup cannot be shadowed.
+
+  Done when: parity asserted a second time, independently of step 4, so a
+  movement is attributable to one change rather than two.
+
+  RISKS, AND WHAT EACH ONE COSTS
+
+  Indexing gets slower and `watch' feels it. ARCH-0013 R10 makes this an
+  acceptance measurement, and the plan's answer is to take it at step 3 rather
+  than at step 9 -- that is the first moment the new reader is doing real work
+  on 174 files, and it is the last cheap moment to turn back. If the regression
+  is bad the fallback is ARCH-0013's: host reader for the FORMS list, Eclector
+  only where sub-ranges are wanted. Deciding that at step 3 costs two steps;
+  deciding it at step 9 costs nine.
+
+  A count moves at step 3 and the cause is not obvious. Most likely sources, in
+  the order worth checking: a reader-conditional read differently, a form that
+  used to fail the whole file now partially recovering, a symbol whose
+  TOKEN-NAME rendering shifted. The diagnostic is a rebuild against a saved
+  baseline of entity ids, not counts -- ARCH-0013 R8 asks for ids for exactly
+  this reason.
+
+  ARCH-0011 R5's key fixture breaks. It asserts the text pass and the image
+  pass compute identical natural keys, so any rendering drift shows there
+  first. It is in the suite and step 3 runs the suite; if it goes red, the
+  parity claim is already false and no later step should be attempted.
+
+  The spike's handler nesting is got wrong again in the real code. Its symptom
+  is not an error but a file that stops being read partway, so the guard is a
+  test that reads a fixture whose second form is malformed and asserts the
+  THIRD definition exists. A test asserting only that the first survives would
+  pass with the nesting inverted.
+
+  WHAT THIS PLAN DOES NOT DO
+
+  It does not touch BUG-0016 or BUG-0017, which REQ-0019's closing section
+  already disclaims. It does not implement ARCH-0014 -- no :CALL-SITE entity
+  appears here -- though step 6 is what makes ARCH-0014's package-prefix
+  composition possible later. It does not change RESOLVE-CALLS at all. And it
+  does not move the feature policy off the host default, which is the one
+  capability REQ-0019 asks for that this plan builds the mechanism for and
+  deliberately leaves switched off.
+
+  ON FINISHING
+
+  RULE-0005 and CON-0004: when this plan reaches `final', REQ-0019 and
+  ARCH-0013 are both `draft' and both become false. Mark them `implemented' if
+  every step landed, or `partial' with an OUTSTANDING section naming what did
+  not -- and the likeliest candidates are step 7's policy switch and step 8's
+  measured deltas, neither of which is load-bearing for the rest. ARCH-0010
+  gains its note at step 4, not at the end, because that is when its mechanism
+  actually goes.

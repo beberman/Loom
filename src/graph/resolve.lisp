@@ -454,15 +454,92 @@ folds it in the same way."
   (nth-value 1 (generated-definition-plan
                 view (effective-generator-registry view registry))))
 
+(defun body-swallowing-macro-names (view)
+  "Downcased names of macros whose calls stand as top-level forms carrying call
+names of their own.
+
+The discriminator BUG-0016 identified and left unused. A macro whose template
+contains no DEFUN, DEFCLASS or DEFMETHOD claims to define nothing, and
+MACRO-GENERATOR-PROPERTIES deliberately records nothing for it -- its docstring
+is right that flagging every wrapper would put every WITH-LOCK in the tree into
+a count that exists to be read and acted on. But a WITH-LOCK is never a
+top-level form, and DEFINE-OPERATION is nothing but: its calls appear in
+:DEFINER-CALL-SITES with non-empty :CALL-NAMES, which is the signature of a
+macro swallowing real bodies whose calls then reach no entity at all.
+
+Read from the whole workspace rather than from one file, because that is where
+the fact lives and it is the reason this is not the analyzer's job.
+DEFINE-OPERATION is defined in src/serve/registry.lisp and called in three
+other files, so no file-scoped analyzer can see both halves (RULE-0002). Of
+BUG-0016's two FIX options for counting, this is why the second -- decide it
+where the whole tree is visible -- is the one taken.
+
+Returns a table of name -> how many distinct call names its sites orphan,
+because the count is what makes the report readable and the bare predicate does
+not separate two populations that look alike from here. Measured on this tree:
+DEFINE-OPERATION 42 and DEFINE-COMMAND 70, both of them real calls into
+loom-knowledge, against DEFRELATIONSHIP's 12 -- which are `decision',
+`document', `file' and the like, the heads of the keyword lists in its :FROM
+and :TO arguments rather than calls to anything. That is COLLECT-CALL-NAMES'
+own imprecision showing through: it reads the head of any non-quoted list as an
+operator, and a keyword is a symbol. Both populations are honest members of
+this count -- a macro whose declarations the ontology cannot model really is a
+gap -- but only the first is a dropped call, so the number travels with the
+name rather than being folded away."
+  (let ((names (make-hash-table :test #'equal)))
+    (dolist (file (entities-of-type view :file))
+      (dolist (site (getp file :definer-call-sites))
+        ;; :OPERATOR is already TOKEN-NAME's downcased rendering, so it is
+        ;; comparable with (STRING-DOWNCASE (NAME macro)) without further folding.
+        (let ((call-names (getf site :call-names)))
+          (when call-names
+            (setf (gethash (getf site :operator) names)
+                  (union call-names (gethash (getf site :operator) names)
+                         :test #'string=))))))
+    (let ((counts (make-hash-table :test #'equal)))
+      (maphash (lambda (operator call-names)
+                 (setf (gethash operator counts) (length call-names)))
+               names)
+      counts)))
+
 (defun unhandled-definer-macros (view)
-  "Every macro whose template names a definition Loom could not characterise.
+  "Every macro whose expansion Loom could not read, in either of the two ways
+that can happen.
 
 ARCH-0002 R6: a macro that looks like a definer and cannot be read statically
 is reported, not guessed at. Counted alongside the collisions, because both
 are the same thing from a reader's point of view -- a definition the index
-knows it is missing."
-  (remove-if-not (lambda (entity) (eq :unhandled (getp entity :definer-status)))
-                 (entities-of-type view :function)))
+knows it is missing.
+
+Two populations, summed into one list because a reader wants one answer to
+\"what is the index missing\":
+
+  :DEFINER-STATUS :UNHANDLED   the template defines something and the name is
+                               computed -- INTERN or FORMAT -- so it cannot be
+                               read without running the code that builds it.
+  a body-swallowing macro      the template defines nothing this ontology
+                               models, and yet the macro's call sites carry
+                               call names, which therefore attach to nothing.
+
+The second population is BUG-0016, and adding it is what stops `status'
+reporting one gap on a tree that has two kinds. Before this, DEFINE-OPERATION's
+15 call sites orphaned 42 distinct names -- every REST route and every MCP tool
+invisible in the call graph -- and the tool whose job is to report gaps
+reported this one as no gap. Silence that reads as success is the failure
+CON-0001 exists to prevent, and it is worse here than a wrong number would be.
+
+Reporting is all this does. What a DEFINE-OPERATION call should actually mint
+is an ontology question BUG-0016 declined to settle inside a bug fix and
+ARCH-0014 answers separately."
+  (let ((swallowing (body-swallowing-macro-names view)))
+    (remove-if-not
+     (lambda (entity)
+       (or (eq :unhandled (getp entity :definer-status))
+           (and (getp entity :macro-p)
+                (null (getp entity :generator-entity-type))
+                (null (getp entity :definer-status))
+                (gethash (string-downcase (name entity)) swallowing))))
+     (entities-of-type view :function))))
 
 (defun call-targets (index name caller)
   "What a call to NAME from CALLER links to: a list of edge plists, each

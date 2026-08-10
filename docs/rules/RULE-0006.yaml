@@ -1,0 +1,108 @@
+id: RULE-0006
+title: A definition is not silently shadowed by a same-key definition in its own file
+status: active
+severity: warning
+refines: [ARCH-0012]
+applies-to: [analyze-file, supersede-shadowed-definitions]
+statement: |
+  Two definitions in one file that derive one natural key are one definition
+  once the file loads. Common Lisp keeps the last in source order and discards
+  the rest, so every earlier one is dead code: text that reads like a
+  definition, is indexed by nothing, and runs never. A file must not contain
+  one.
+
+  What Loom reports is the survivor's own record of what it replaced. The Lisp
+  analyzer supersedes the shadowed definition before emitting any operation
+  (ARCH-0012 R1) and writes the ranges it dropped onto the survivor as
+  :shadowed-definitions; this rule reports every entity carrying that
+  property. The remedy is always in the source, never in the index -- delete
+  the dead definition, or give it the qualifier or specializer that makes it a
+  different one.
+
+rationale: |
+  WHY THE RULE EXISTS AT ALL
+
+  Before ARCH-0012 the collision was not merely unreported, it was
+  unreportable. Two definitions with one key are one entity in the index, so
+  `find`, `describe` and `check` had no way to name the second: it did not
+  exist to be found. BUG-0012 measured the damage the other way round -- the
+  survivor's properties described the later definition while its outgoing
+  :CALLS edges described the union of both, attributing a call to a body that
+  by every other property did not exist. Superseding inside the analyzer fixes
+  the edges; without this rule it would also erase the last evidence that the
+  shadowed source is sitting there in the file.
+
+  WHAT IT FINDS, MEASURED
+
+  Loom: nothing. This tree has three same-key collisions and all three are
+  accessor pairs (see the carve-out below).
+
+  game-server, measured 2026-08-08 by running ANALYZE-FILE over every .lisp
+  file and counting duplicate natural keys per file -- twenty collisions, of
+  which seven are reported:
+
+    db-select            data-api/db/connection.lisp   433 shadowed by 500
+    initialize-instance  data-api/operator-handler.lisp 45 shadowed by 64
+    mp-typename          mpackage/mpackage.lisp        419 shadowed by 651
+    add-defn             mpackage/obj-types.lisp       438 shadowed by 452
+    make-encoded-value   mpackage/obj-types.lisp       904 shadowed by 908
+    computed-id-p        mpackage/object.lisp           54 shadowed by 68
+    restart-server       server/server.lisp             85 shadowed by 133
+
+  ARCH-0012 named two of these from PLAN-0009's earlier reading, ADD-DEFN and
+  COMPUTED-ID-P. The other five were found by the census PLAN-0012 step 1 ran,
+  and six of the seven are dead code a human should delete.
+
+  THE ACCESSOR CARVE-OUT, AND WHY A DUPLICATED ACCESSOR IS NOT REPORTED
+
+  The remaining thirteen collisions on game-server, and all three on Loom, are
+  two DEFCLASS or DEFINE-CONDITION forms in one file each declaring
+  :accessor NAME. In Common Lisp that is one generic function acquiring two
+  methods. Nothing is shadowed and nothing is dead, so a finding would be
+  false. The analyzer therefore records :shadowed-definitions only when at
+  least one of the two names was written by hand -- when both carry
+  :generated-by, marking a name synthesized from a slot declaration, it writes
+  nothing.
+
+  The judgement is recorded here rather than left in the code because it is
+  the thing a reader will want to argue with. Reported verbatim this rule
+  prints seventeen lines on game-server, thirteen of them noise, and a rule
+  whose output has to be read past is BUG-0009 happening again: the thirteen
+  would bury the six that matter. The carve-out is Lisp semantics, so it lives
+  in the Lisp analyzer and not in this rule or in the writer -- a language
+  whose duplicate declarations mean something else reconciles them in its own
+  analyzer (ARCH-0012, ALTERNATIVES).
+
+  The cost, stated plainly: a genuine shadowing between two generated accessor
+  names cannot be reported. That case is a duplicated slot declaration, which
+  is harmless.
+
+  WHY SEVERITY IS WARNING
+
+  RULE-0001 to RULE-0003 are about Loom's own layering; breaking one means the
+  architecture is not what it says. This one is about the source of whatever
+  tree is being indexed, and Loom has no standing to call another project's
+  dead code an error. It also prints as "warning RULE-0006", which
+  distinguishes it at a glance from the thirty-two "error RULE-0003" lines
+  BUG-0009 currently produces.
+
+  THE KNOWN FALSE POSITIVE
+
+  ARCH-0010 captures only one method qualifier, so two DEFMETHOD clauses on
+  one generic differing only in a second qualifier derive the same key and
+  collide spuriously. Before ARCH-0012 they unioned their edges silently;
+  now the earlier is superseded and this rule reports it. That finding is real
+  as a report and wrong as a diagnosis: the remedy is widening the :method
+  natural key, not editing the source. Its appearance is the tell that the
+  narrow key has started to cost something.
+
+check:
+  kind: property-absent
+  property: shadowed-definitions
+
+lessons:
+  - A collision that collapses two things into one is invisible to every query
+    over the result. It has to be recorded at the moment the two are still
+    distinct, or it cannot be reported later at any price.
+  - A rule that reports thirteen false findings alongside six real ones has
+    not made anything louder.

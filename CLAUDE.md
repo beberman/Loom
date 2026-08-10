@@ -53,6 +53,18 @@ Loom has known blind spots — calls inside macro bodies are unattributed, so
 anything driven by a `test` form under-reports. ARCH-0001 records the rest. A
 small impact set is not proof of a small change.
 
+A malformed form costs a form rather than a file. The Lisp analyzer reads
+through Eclector behind a Loom-owned client (ARCH-0013), so a file with damage
+in it still yields its other definitions and the damage is recorded on the
+`:file` entity with a line range. A repaired form is deliberately not indexed:
+recovering an unterminated list can swallow the next definition into the
+damaged one's body, and an entity minted from that would carry a plausible
+range over text defining something else — CON-0001's fabricated fact in the one
+shape no count would reveal. `status`' `unread` line sums what was passed over
+(`#+`/`#-` branches not taken, a refused `#.`) and what was repaired; both read
+zero on a healthy tree, and a number there is the index saying which
+definitions it knows it is missing.
+
 ## Environment
 
 Everything runs natively under WSL Ubuntu: the shell is Linux bash, `sbcl` is
@@ -151,6 +163,11 @@ resolves to nothing is reported by `check` rather than dropped.
 - **Guard with the condition type the library actually signals.** `error` does
   not catch a condition defined as a direct subtype of `condition`. RULE-0004.
 - **A test must fail without the change it covers.** CON-0003.
+- **An analyzer asserts each natural key at most once per file.** Two source
+  definitions deriving one key are reconciled by the analyzer, in its own
+  language's semantics — CL replaces, TypeScript merges — because the writer is
+  language-neutral and by the time it sees the ops the evidence is gone.
+  Nothing checks this. CON-0005.
 - **Finishing a plan means restating what it implemented.** A plan reaching
   `final` makes the `draft` status of every document it refines false, so mark
   those `implemented`, or `partial` with an OUTSTANDING section. Nothing checks

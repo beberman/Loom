@@ -84,6 +84,28 @@ check:
 ;;; Indexing (SS3.4)
 ;;; ------------------------------------------------------------------
 
+(test a-repository-is-found-by-the-path-spelling-a-person-types
+  ;; WATCH-REPOSITORY stores its root as NORMALIZE-ROOT left it -- a truename,
+  ;; so `~' is already expanded -- while a designator arrives as whatever was
+  ;; typed. Comparing the two as strings therefore failed on exactly the
+  ;; spelling CLAUDE.md and the console both encourage: `watch "~/lisp/Loom"'
+  ;; registered the repository and `unwatch "~/lisp/Loom"' could not find it,
+  ;; because the name branch wants "Loom" and the string branch wants the
+  ;; expanded path.
+  ;;
+  ;; No fixture on disk: the home directory is a directory that certainly
+  ;; exists, so a synthetic repository rooted there tests the normalisation
+  ;; without writing anything anywhere.
+  (let* ((home (probe-file (user-homedir-pathname)))
+         (repository (loom-workspace::make-repository :root home :name "home-fixture"))
+         (*repositories* (list repository)))
+    (is (eq repository (find-repository "home-fixture"))
+        "by name, as before")
+    (is (eq repository (find-repository (namestring home)))
+        "by the spelling watch stored, as before")
+    (is (eq repository (find-repository "~/"))
+        "and by the spelling a person types, which is the fix")))
+
 (test watching-a-repository-indexes-source-and-documents-together
   (with-workspace-fixture (repository)
     (let ((g (repository-graph repository)))
@@ -817,16 +839,25 @@ files: ~a against ~a" after-threads (stress-counts repository)))))
 ;;; ------------------------------------------------------------------
 
 (test a-file-that-will-not-parse-does-not-stop-the-pass
+  ;; The containment property SS3.3 asks for, unchanged: damage in one file
+  ;; does not cost the pass. What changed under REQ-0019 R3 is what damage
+  ;; costs within its own file -- here the file's only form is the damaged one,
+  ;; so the file legitimately contributes no definition, and it is no longer
+  ;; marked :ANALYSIS-FAILED-P because the reader did not fail, it repaired and
+  ;; the repair was refused (ARCH-0013 R4). Reporting that refusal on the file
+  ;; entity is PLAN-0013 step 5; until then the gap is in READING-RECOVERED and
+  ;; not yet on the graph, which is a real if brief silence.
   (with-workspace-fixture (repository)
     (write-file "src/gamma.lisp" "(defun gamma (")
     (poll-once repository :quiet t)
     (let* ((g (repository-graph repository))
            (gamma (find "src/gamma.lisp" (entities-of-type g :file)
                         :key #'name :test #'string=)))
-      (is (not (null gamma)) "the file is indexed as a known unknown")
-      (is-true (getp gamma :analysis-failed-p))
+      (is (not (null gamma)) "the file is indexed")
       (is (= 3 (length (entities-of-type g :function)))
-          "and the rest of the repository is still there"))))
+          "and the rest of the repository is still there")
+      (is (null (relationships-from g (id gamma) :rel-type :contains))
+          "the damaged form mints nothing"))))
 
 (test a-rule-violation-is-detected-and-recorded
   (with-workspace-fixture (repository)

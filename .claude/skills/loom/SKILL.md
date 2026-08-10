@@ -61,7 +61,9 @@ watch "~/lisp/Loom"       register, index, and watch. Resumes a paused repo.
 pause                     stop watching, keep the index
 unwatch                   stop watching, drop the index
 reindex                   discard and rebuild from disk. Always safe.
-status                    counts, watcher state, unresolved references
+status                    counts, watcher state, unresolved references, and
+                          the `unread` line: source the reader passed over or
+                          had to repair. Both read zero on a healthy tree.
 find <name> [<type>]      where something is defined
 describe <name>           neighbours grouped by edge type
 impact <name> [<depth>]   what a change reaches, plus governing decisions
@@ -74,6 +76,23 @@ enrich [repo]             load the tree in a bounded child and add what its own
 log [n]                   recent events and errors
 stop                      pause everything and leave
 ```
+
+**A malformed form costs a form, not a file.** The Lisp analyzer reads through
+Eclector behind a Loom-owned client (ARCH-0013), which recovers: a file with a
+stray paren or an unbalanced list in it still yields its other definitions, and
+the damage is recorded on the `:file` entity as a `:recovered-regions` entry
+with a line range. A repaired form is deliberately *not* indexed — recovering
+an unterminated list can swallow the next definition whole into the damaged
+one's body, and an entity minted from that would carry a plausible range over
+text defining something else. So the definitions in a damaged region are a
+recorded gap, never a guess (CON-0001). `:analysis-failed-p`, and the single
+unparsable `:file` entity that goes with it, now means only what it always
+should have: the file could not be read at all.
+
+`:suppressed-regions` is the same idea for source the reader passed over rather
+than repaired — a `#+`/`#-` branch the feature policy did not take, or a `#.`
+it refused to evaluate. Comments are not in it; they are what a source file is
+made of, not a gap in what Loom knows. `status`' `unread` line sums both.
 
 **Start with `context`.** It is the command written for exactly this job and the
 one most easily missed. Given a task in words it returns a token-budgeted bundle

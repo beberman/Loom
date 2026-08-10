@@ -1,18 +1,23 @@
-describe apply-transaction still shows one caller. 
+## Closed, 2026-08-09 — kept briefly so the answers are not re-derived
 
-Calls made from inside (test ...) macro bodies aren't attributed because defmacro is not expanded
+- "describe apply-transaction still shows one caller" — fixed. It now shows
+  68 incoming calls and 68 tests.
 
-TODO: watch already expands ~ to find the file so ~/lisp works.
-However unwatch does not because it pulls the full directory name in
-as the name of the workspace
+- "Calls made from inside (test ...) macro bodies aren't attributed" — fixed
+  by ARCH-0002's definer call sites plus resolve-generated-definitions.
+  451 tests covering 305 units.
 
-I have an unexplained number. Indexing Loom went from 571 entities
-before the resolution passes to 581 after. Resolution creates edges,
-not entities, so that shouldn't move at all. Every suite passes
-including reindexing-produces-an-identical-index, so it isn't drift
-between incremental and rebuilt indexes — but I haven't accounted for
-it, and I'd rather say so than let it pass as noise. Worth me chasing
-before this is called done.
+- "unwatch does not expand ~" — fixed 2026-08-09, and the diagnosis here was
+  slightly off: the name is just the last path component ("Loom"), not the
+  full directory. The cause was find-repository comparing an unnormalised
+  designator against a root that watch had already run through probe-file.
+
+- "571 entities before the resolution passes, 581 after" — answered, not a
+  defect. The premise is false: resolution *does* mint entities.
+  resolve-generated-definitions creates them from definer call sites, and the
+  :test entity's own ontology docstring says so ("unlike every other
+  definition entity this one is usually minted by a resolution pass rather
+  than by an analyzer"). The ten were generated definitions.
 
 ---
 
@@ -91,3 +96,42 @@ Not made into requirements, but found in the same session:
 
 - This file is markdown under docs/, so Loom cannot see any of it.
   That is REQ-0014's argument, sitting in the place that makes it.
+
+---
+
+## Reader and call-site work, 2026-08-09 — now in indexed documents
+
+The long analysis that used to sit here has moved into docs/, which is the
+point of REQ-0014's argument above: it is queryable there and invisible here.
+
+- **REQ-0019** — the Lisp analyzer should read through a conforming,
+  customizable, recovering reader. Measured: 169 lines across four functions,
+  241 package-qualified operators with the prefix discarded, one bad form
+  costing a whole file, the index depending on the analyzing implementation's
+  \*features\*.
+- **ARCH-0013** — Eclector behind a Loom-owned client, raw s-expression
+  unchanged, annotations in EQ-keyed side tables. Also folds in the
+  head-name dispatch table replacing pass 1's ten definition-p calls, and
+  says why definition-p itself survives (no conforming reader knows what a
+  defun is; the CST taxonomy is two classes).
+- **ARCH-0014** — a :call-site entity exactly where a call cannot be an edge
+  from a definition. The uniform reference-node model was priced and refused:
+  4867 call-name occurrences against 1604 entities is 4x for 18 ambiguous
+  occurrences, 42 orphaned names and one initform.
+
+Rejected on the record, in REQ-0019's WHAT THIS IS NOT and ARCH-0013's
+alternatives: Cleavir (macroexpands, so it needs target code loaded in-image),
+a shared cross-language CST as the intermediate representation (the uniform
+layer is the ontology operation, one level up), and hand-rolling or reviving a
+CL parser for TypeScript or Python (nothing exists for TS; parse-js is ES3;
+CLPython is Python 2, unmaintained since 2013).
+
+Still unwritten, both named in ARCH-0014's deferred list:
+
+- A batched, out-of-process analyzer in the analyzer protocol. analyze-file is
+  per-file and stateless, so a Python or Node process per file across 174
+  files destroys the seconds-scale budget watch meets. This is on the critical
+  path for any second language and gates nothing on the Lisp side.
+- Dropping :unresolved-calls as a stored property, and taking generated
+  entities' :system from the call site rather than the file.
+

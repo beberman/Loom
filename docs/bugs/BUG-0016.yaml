@@ -117,3 +117,56 @@ body: |
 
   Out of scope for PLAN-0011, which was explicit that it changes one clause in
   one function.
+
+  FIX PART 1, LANDED 2026-08-09
+
+  The counting half is done and the bug stays open for the second half. Neither
+  of the two options named above is quite what was taken, and the difference is
+  worth recording: extending :DEFINER-STATUS in MACRO-GENERATOR-PROPERTIES
+  cannot work, because DEFINE-OPERATION is defined in src/serve/registry.lisp
+  and called in three other files, so the two halves of the discriminator are
+  never visible to one file-scoped analyzer pass (RULE-0002). The decision
+  therefore lives where the whole tree is visible:
+  BODY-SWALLOWING-MACRO-NAMES in src/graph/resolve.lisp reads every file's
+  :DEFINER-CALL-SITES, and UNHANDLED-DEFINER-MACROS now returns that population
+  alongside the :DEFINER-STATUS :UNHANDLED one. `status', `check', the REST
+  :check operation and the MCP tool all widened for free, since each of them
+  already called that one function.
+
+  What `check' reports on this tree, where it reported one line before:
+
+      4 definer macros whose expansion could not be read:
+        defentity        [src/ontology/root-ontology.lisp:512]  88 call names ...
+        defrelationship  [src/ontology/root-ontology.lisp:579]  12 call names ...
+        define-command   [src/process/console.lisp:92]          72 call names ...
+        define-operation [src/serve/registry.lisp:41]           42 call names ...
+
+  DEFINE-OPERATION's 42 reproduces this document's own measurement exactly,
+  which is the independent check that the mechanism found the thing the bug is
+  about.
+
+  Two findings from the measurement that this document did not predict.
+
+  DEFINE-COMMAND has the identical defect and is larger: 16 call sites orphaning
+  72 distinct names, which is every console verb's body. This document looked at
+  src/serve and concluded loom-serve has no call graph; the same was true of the
+  console and nobody had looked.
+
+  The counts are not all the same kind of thing, and the report says so by
+  carrying the number rather than folding it away. DEFINE-OPERATION's and
+  DEFINE-COMMAND's names are real calls into loom-knowledge. DEFRELATIONSHIP's
+  12 are `decision', `document', `file' and their siblings -- the heads of the
+  keyword lists in its :FROM and :TO arguments, recorded because
+  COLLECT-CALL-NAMES reads the head of any non-quoted list as an operator and a
+  keyword is a symbol. Both are honest members of a count of "declarations the
+  index cannot read", but only the first is a dropped call. Tightening the
+  predicate to exclude the second was tried and rejected: every available
+  discriminator was a heuristic that would have been wrong on some other tree,
+  where the per-macro count is a fact a reader can act on directly. The keyword
+  head imprecision in COLLECT-CALL-NAMES is a separate, pre-existing defect that
+  this measurement surfaced and nobody has filed.
+
+  Still open: what a DEFINE-OPERATION call should mint. ARCH-0014 takes a fourth
+  option this document did not list -- a :CALL-SITE entity modelling the call
+  rather than the registered operation -- and explicitly leaves the :OPERATION
+  entity question, the third option above, unanswered.

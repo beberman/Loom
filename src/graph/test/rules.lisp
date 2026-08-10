@@ -238,6 +238,40 @@ decoration (CON-0003)."
       (is (search "origin-file is missing" (violation-detail (first violations)))))))
 
 ;;; ------------------------------------------------------------------
+;;; property-absent (ARCH-0012 R4)
+;;; ------------------------------------------------------------------
+
+(test the-property-absent-check-reports-every-carrier
+  ;; The kind knows nothing about what any particular property means, which is
+  ;; why the fixture uses :UNRESOLVED-CALLS and not the :SHADOWED-DEFINITIONS
+  ;; that RULE-0006 will point it at. If it passed only for the one property
+  ;; the design was written for, it would not be a check kind.
+  (let* ((g (make-graph))
+         (carrier (rules-function g "carrier" "a.lisp" :loom-graph)))
+    (rules-function g "clean" "b.lisp" :loom-graph)
+    (setp carrier :unresolved-calls '("frobnicate"))
+    (rules-rule g "RULE-ABSENT" '(:kind :property-absent
+                                  :entity-type :function
+                                  :property :unresolved-calls))
+    (let ((violations (check-rules g)))
+      (is (= 1 (length violations)) "the carrier, and only the carrier")
+      (is (equal (id carrier) (violation-subject (first violations))))
+      (is (search "frobnicate" (violation-detail (first violations)))
+          "the value is in the report, so a reader need not go and look it up")
+      (is (search "a.lisp:1" (violation-detail (first violations)))
+          "and so is where to look")))
+  ;; With no :entity-type the check must scan everything rather than nothing:
+  ;; :SHADOWED-DEFINITIONS is declared on six types, and RULE-0006 covers them
+  ;; with one clause.
+  (let* ((g (make-graph))
+         (carrier (rules-function g "carrier" "a.lisp" :loom-graph)))
+    (setp carrier :unresolved-calls '("frobnicate"))
+    (rules-rule g "RULE-ABSENT" '(:kind :property-absent
+                                  :property :unresolved-calls))
+    (is (equal (list (id carrier))
+               (mapcar #'violation-subject (check-rules g))))))
+
+;;; ------------------------------------------------------------------
 ;;; requires-edge (SS10.4)
 ;;; ------------------------------------------------------------------
 

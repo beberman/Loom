@@ -1,0 +1,234 @@
+id: REQ-0019
+title: The Lisp analyzer should read through a conforming, customizable, recovering reader rather than four hand-written functions over the host reader
+status: implemented
+date: 2026-08-09
+refines: [REQ-0012, REQ-0015]
+tags: [analyzer, lisp, reader, spans, provenance, blind-spot]
+summary: |
+  Four functions in src/analyzer/lisp-analyzer.lisp -- 169 lines whose
+  docstrings are mostly warnings about their own failure modes -- exist to get
+  three things the host reader does not give: source ranges, tolerance of
+  packages this image has never loaded, and ranges for nested forms. Each is
+  solved by a technique with a disclosed hole. ELEMENT-SPANS recovers a nested
+  range by re-reading the form and returns NIL on two shapes of real source.
+  Foreign package prefixes are absorbed by interning into a throwaway package,
+  which discards the prefix -- 241 qualified operator occurrences in this tree,
+  30 of them naming in-tree functions, all reduced to a bare name before the
+  walk sees them. A single malformed form costs every definition in its file.
+  Feature conditionals are resolved against whatever image runs the analyzer,
+  so what the index contains depends on a fact nothing records. What is wanted
+  is a reader that supplies all of this as a contract rather than as four
+  techniques with fallbacks: spans on every form at every depth, symbols that
+  cross as a name plus the package written at the site, recovery that costs a
+  form rather than a file, and feature handling that is a stated policy. This
+  requirement is about the reading substrate only. It is not a second pass, it
+  does not replace REQ-0018, and it fixes no filed bug on its own.
+body: |
+  WHY THE CURRENT READER IS NOT WHAT IS WANTED
+
+  All measurements below were taken on 2026-08-09 under /usr/bin/sbcl against
+  this tree, whose index at the time was 171 files, 1602 entities, 7827
+  relationships, 76 documents, 451 tests covering 305 units, 0 unresolved
+  document references and 1 unresolved definer macro.
+
+  Four functions carry the whole reading substrate, and their line counts are
+  worth stating because the argument is partly about weight:
+
+      skip-whitespace-and-comments     lisp-analyzer.lisp:38-47     10 lines
+      intern-foreign-symbol-locally    lisp-analyzer.lisp:49-71     23 lines
+      read-forms-with-spans            lisp-analyzer.lisp:73-124    52 lines
+      element-spans                    lisp-analyzer.lisp:126-209   84 lines
+
+  169 lines, of which the majority is prose explaining what each cannot do.
+  That prose is good work and none of it should be deleted without replacing
+  the thing it warns about. Five distinct gaps, in descending order of what
+  they cost.
+
+  1. A nested form has no range, and the recovery has holes.
+
+  The host reader reports positions for top-level forms and for nothing inside
+  them. ARCH-0010 needed per-clause ranges for inline (:method ...) clauses and
+  recovered them by seeking back to the form's start offset and re-reading its
+  elements one at a time. It works, and its own docstring names two shapes of
+  real source where it returns NIL and every clause silently takes the whole
+  DEFGENERIC's range instead: a block comment before the form's closing paren,
+  which SKIP-WHITESPACE-AND-COMMENTS does not know how to skip because it
+  handles `;' and not the block-comment opener; and a top-level DEFGENERIC
+  preceded by any # reader macro, whose recorded start offset names the # rather
+  than a paren, so the guard refuses it. Both occur zero times in this tree
+  today -- there are 18 DEFGENERIC forms and no block comments anywhere -- which
+  is exactly why this is a requirement rather than a bug: it is correct here and
+  unmeasured everywhere else, which is the recurring shape the game-server
+  evaluation named.
+
+  The deeper cost is not the holes, it is the precedent. Every future container
+  form wanting sub-form ranges -- DEFCLASS slot accessors, MACROLET, FLET and
+  LABELS, anything under EVAL-WHEN or a top-level PROGN -- pays ARCH-0010's
+  design again. A reader that reports a range for every form at every depth
+  makes that a non-question rather than a repeated one.
+
+  2. The package prefix is discarded, and it is evidence.
+
+  INTERN-FOREIGN-SYMBOL-LOCALLY exists because the analyzer reads source
+  belonging to workspaces it has not compiled, so `utils:parse-config' is the
+  normal case: the host reader signals a PACKAGE-ERROR the moment a prefix
+  names a package that is merely absent, and one such form used to cost the
+  whole file. Its remedy is to invoke the CONTINUE restart, interning the
+  symbol into a throwaway package that is deleted on the way out. Its docstring
+  justifies this on the grounds that "nothing downstream reads a symbol's home
+  package -- TOKEN-NAME takes SYMBOL-NAME and nothing else."
+
+  That is true of the code and false as a statement about the information.
+  Measured on this tree: 241 package-qualified operator occurrences, of which
+  30 distinct ones name in-tree functions -- (loom-analyzer::element-spans),
+  (loom-process::split-command-line), (loom-analyzer::normalize-system-name)
+  and so on. Every one of those is a call site that has written down, in the
+  source, exactly which definition it means, and every one of them arrives at
+  RESOLVE-CALLS as a bare name to be matched against every definition of that
+  name in the workspace. Today that costs nothing here because the names happen
+  to be unique. It is precisely REQ-0015's problem: `id' has 7 definitions and
+  144 dropped call sites in game-server, and a qualified call site is a free
+  discriminator that the reader currently throws away before anything can use
+  it. REQ-0018 proposes to recover this class of fact by loading the tree in a
+  child SBCL. For qualified call sites specifically, the source already says
+  it, and no image is needed to find out.
+
+  3. One malformed form costs every definition in the file.
+
+  ANALYZE-FILE wraps pass 0 in a HANDLER-CASE and, on any error, returns a
+  single :FILE entity with :analysis-failed-p and nothing else. SS9.3 asks for
+  that entity and SS3.3 gives the reason -- a known unknown beats an absence
+  indistinguishable from an empty file -- and both are right about the entity
+  and wrong about the scope. A file with one unbalanced paren in one function
+  has, in fact, every other definition in it intact and readable, and Loom
+  reports none of them. This is the all-or-nothing shape REQ-0018 R4 already
+  rejected for the enrichment pass ("failure must be partial rather than
+  total"); the same argument applies to reading, and has not been applied.
+
+  Read-eval is the same defect wearing different clothes and is worth naming
+  separately because refusing to evaluate is correct. *READ-EVAL* is bound to
+  NIL, which is right and must stay right; the host reader's response to a
+  read-eval form under that binding is a READER-ERROR, which propagates to the
+  HANDLER-CASE and costs the file. Refusing the form is the requirement. Losing
+  the file for it is not.
+
+  4. What the index contains depends on which Lisp read it.
+
+  Reader conditionals are resolved against the running image's *FEATURES*, so a
+  form guarded against the host implementation is not read, and nothing anywhere
+  records that something was skipped. This tree has five such sites in three
+  files (src/process/console.lisp:458-459, src/serve/server.lisp:153 and :156,
+  and src/serve/server.lisp:270), all inside function bodies, so what is
+  currently lost here is call names rather than definitions -- AWAIT-THREAD's
+  non-SBCL branch contributes none of its calls to the index. A tree that guards
+  a whole definition behind a conditional loses the definition, silently, with
+  no recorded gap. The index is therefore a function of the analyzing
+  implementation, which is a fact about Loom that appears in no document and
+  that CON-0001 would require reporting if anything noticed it.
+
+  5. Reading mutates the analyzer's image.
+
+  Each call to READ-FORMS-WITH-SPANS creates a package and deletes it under
+  UNWIND-PROTECT, and ELEMENT-SPANS does it again per DEFGENERIC. It works, and
+  the UNWIND-PROTECT is correct. It is still a side effect on global state
+  performed once per file by a function whose whole contract is that it is a
+  pure function of a string, and it is the reason two functions must keep their
+  reader environments in sync by hand -- a coupling ELEMENT-SPANS' docstring has
+  to spend a paragraph on.
+
+  WHAT IS WANTED
+
+  R1  Source ranges come from the reader, for every form, at every depth. No
+      definition's range may be recovered by re-reading the file, by scanning
+      text, or by falling back to a containing form's range. ARCH-0010's
+      declared fallback -- an inline clause taking its DEFGENERIC's whole range
+      when recovery fails -- must become unnecessary rather than merely rare.
+
+  R2  A symbol crosses into the walk as a name plus the package designator
+      written at the site, and the analyzer interns nothing. The prefix is
+      evidence about which definition a call means and must survive to the
+      point where resolution can use it. What resolution then does with it is
+      REQ-0015's question and not this one's; this requirement is that the
+      information stops being destroyed before that question can be asked.
+
+  R3  A malformed form costs that form and not the file. A file whose third
+      definition will not read must still yield the first, second and fourth.
+      The :analysis-failed-p :FILE entity remains the right answer for a file
+      that cannot be read at all, and the count of forms skipped must be
+      recorded and reportable rather than inferred from a hole in the output
+      (CON-0001).
+
+  R4  A read-eval form is refused without costing the file. Nothing in the
+      analyzer's image evaluates a form of target code, which is unchanged and
+      non-negotiable; the form is skipped and recorded under R3.
+
+  R5  Whether a form reaches the index must not depend on which Common Lisp
+      implementation ran the analyzer. Feature-expression handling becomes a
+      stated policy of the analyzer rather than an inherited property of the
+      host, and material skipped under that policy is recorded as a gap.
+
+  R6  Reading does not mutate the analyzer's image. No package is created,
+      interned into, or deleted as a side effect of analyzing a file, and no
+      two functions have to keep a reader environment in sync by hand.
+
+  R7  Parity before capability. On this tree the change must produce the same
+      entities, with the same natural keys and therefore the same ids, as the
+      current reader -- except where a range was previously wrong, which must
+      be enumerated rather than absorbed. Entity count, relationship count and
+      a green suite are the guard, and any movement in either count must be
+      explained before the work is called done.
+
+  R8  The dependency is pure Common Lisp, reachable through Quicklisp, and adds
+      no FFI. loom-analyzer's .asd already carries the only FFI dependency in
+      the system and flags it against SS9.2's stated preference for subprocesses
+      over FFI; acquiring a second one to read Lisp would be indefensible when
+      the language's own reader is available as a library.
+
+  R9  The change is stageable. It must be possible to replace the reader while
+      the existing pass-1 dispatch and COLLECT-CALL-NAMES continue to operate on
+      raw s-expressions, so that R7's parity is demonstrable before any part of
+      the walk is rewritten. A design that requires the whole analyzer to move
+      at once fails this requirement regardless of its other merits.
+
+  R10 Acceptance is measured on both trees, not asserted. On Loom: entity and
+      relationship counts unchanged modulo ranges corrected under R7, the full
+      suite green, `check' unchanged modulo BUG-0009's known false positives,
+      and a deliberately malformed fixture yielding its other definitions per
+      R3. On game-server: all 127 Lisp files still index, and the number of
+      definitions whose recorded range changes is reported with the reason,
+      since that tree has 247 inline clauses in 158 DEFGENERIC forms and is
+      where R1 is actually load-bearing.
+
+  WHAT THIS IS NOT
+
+  It is not a second pass and does not overlap REQ-0018. A reader produces
+  pre-macroexpansion structure, which is what Loom already has; the facts
+  REQ-0018 exists for -- the 249 fbound symbols DEFENTITY generates in
+  LOOM-ONTOLOGY, the 341 xref caller edges in LOOM-GRAPH -- are invisible to
+  any parser of source text, and ARCH-0011's bounded child process remains the
+  only way to reach them. Nothing here changes what the enrichment pass is for.
+
+  It is not a proposal to macroexpand. A compiler front end that expands macros
+  needs the target's macro functions loaded in the expanding image, which is
+  the in-image execution of foreign code that REQ-0018 rejected on stated
+  grounds and ARCH-0008 rejected as a lifecycle. The analyzer's identity --
+  Loom's own image never evaluates a form of target code -- is preserved by
+  this requirement, not weakened by it, and R4 states it directly.
+
+  It is not a cross-language intermediate representation. The uniform layer in
+  this architecture is the ontology operation, which ANALYZE-FILE already
+  returns; a per-language reader is an implementation detail of one analyzer,
+  and a second language's parser is free to be an entirely different mechanism
+  reached over an entirely different boundary. ARCH-0011 settled the general
+  form of that argument for inspectors -- the wire is private, the schema is
+  uniform -- and it holds unchanged for analyzers.
+
+  It fixes no filed bug on its own, and the temptation to claim otherwise
+  should be resisted. BUG-0016 is an ontology question about whether Loom
+  models runtime registrations; BUG-0017 is a body-selection defect in
+  ANALYZE-FILE whose hard part -- whether a :VARIABLE may source a :CALLS edge
+  -- a better reader does not touch. BUG-0012, BUG-0013, BUG-0015 and BUG-0018
+  are all elsewhere. What this requirement buys is the retirement of fragile
+  machinery, the preservation of information currently discarded, and a floor
+  under several things that are today one unmeasured tree away from being
+  wrong.

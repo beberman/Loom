@@ -214,3 +214,32 @@
     (add-relationship g edge)
     (is (equal (list edge) (relationships-from g (id a) :rel-type :graph-test-edge)))
     (is (null (relationships-from g (id a) :rel-type :some-other-type)))))
+
+(test re-applying-one-op-list-keeps-a-relationships-properties
+  ;; ARCH-0012 R6. The op list is built once and applied twice, so the second
+  ;; pass hands APPLY-OP the very relationship object the first pass stored:
+  ;; FIND-RELATIONSHIP-BY-KEY returns it, and ABSORB-RELATIONSHIP is then asked
+  ;; to absorb a fact into itself. Without the EQ guard, ABSORB-PROPERTIES
+  ;; CLRHASHes the table and copies that emptied table back in, so :note is
+  ;; gone -- the trap the PLAN-0010 coder hit re-applying enrichment ops.
+  ;;
+  ;; :GRAPH-TEST-NODE declares no natural key, so neither entity can be
+  ;; remapped onto an existing one; that matters, because a remap would make
+  ;; TX-REBOUND-REL return a *copy* and the two objects would not be EQ, which
+  ;; is the shape in which this test exercises nothing.
+  (let* ((g (make-graph))
+         (a (make-node "a"))
+         (b (make-node "b"))
+         (edge (make-instance 'relationship :rel-type :graph-test-edge
+                                            :from-id (id a) :to-id (id b)
+                                            :origin-file "src/foo.lisp"
+                                            :properties (properties-table
+                                                         '(:note "kept"))))
+         (ops (list (assert-entity a) (assert-entity b)
+                    (assert-relationship edge))))
+    (apply-transaction g ops)
+    (apply-transaction g ops)
+    (let ((stored (get-relationship g (id edge))))
+      (is (not (null stored)) "the edge is still in the graph")
+      (is (equal "kept" (getp stored :note))
+          "a second apply of the same op list must not empty the edge"))))

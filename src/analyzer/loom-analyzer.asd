@@ -22,13 +22,24 @@
   ;; to the layering table. The inspector uses it to run a child process
   ;; (ARCH-0011 R3), which is SS9.2's stated preference for subprocesses over
   ;; FFI exercised rather than merely agreed with.
-  :depends-on (#:loom-ontology #:cl-yaml #:uiop)
+  ;;
+  ;; ECLECTOR is the Common Lisp reader the Lisp analyzer reads through
+  ;; (ARCH-0013). Pure Common Lisp, no foreign code, so cl-yaml above remains
+  ;; the only FFI dependency in the system. It is confined to lisp-reader.lisp
+  ;; on the ARCH-0011 precedent that a library's spelling should be replaceable
+  ;; without touching the code consuming its answers: no other file in the tree
+  ;; names an ECLECTOR package, and ARCH-0013 R1 asserts it.
+  :depends-on (#:loom-ontology #:cl-yaml #:uiop #:eclector)
   :serial t
   :components
   (
    (:file "package")
    (:file "analyzer")
    (:file "inspector")
+   ;; After analyzer, whose OFFSET-LINE it agrees with by construction, and
+   ;; before both callers of READ-SOURCE: lisp-analyzer's pass 0 and
+   ;; lisp-inspector's FILE-FORM-SPANS.
+   (:file "lisp-reader")
    (:file "lisp-inspector")
    (:file "lisp-analyzer")
    (:file "yaml-analyzer")
@@ -52,6 +63,7 @@
    (:file "suite")
    (:file "analyzer")
    (:file "inspector")
+   (:file "lisp-reader")
    (:file "lisp-analyzer")
    (:file "yaml-analyzer")
    )

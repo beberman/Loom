@@ -139,9 +139,21 @@ at the old id."
 (defun absorb-relationship (target incoming)
   "Overwrite TARGET's properties and provenance from INCOMING, keeping its id.
 Endpoints are not absorbed: they are TARGET's natural key, so INCOMING would
-not have matched it if they differed."
-  (absorb-properties target incoming)
-  (absorb-provenance target incoming))
+not have matched it if they differed.
+
+Absorbing a fact into itself is a no-op, and has to be said explicitly:
+ABSORB-PROPERTIES replaces rather than merges, so a self-absorb CLRHASHes
+TARGET's own table and then copies that emptied table back into it, losing
+every property. APPLY-OP for ASSERT-ENTITY-OP has had the same guard since
+SS4.1 (the ((eq existing e) existing) clause below); this one is here rather
+than at the call site so every caller is covered. Re-applying an op list --
+which the PLAN-0010 coder hit and routed around by re-deriving -- is the way
+into it: the second pass finds the very relationship object the first pass
+stored. ARCH-0012 R6."
+  (if (eq target incoming)
+      target
+      (progn (absorb-properties target incoming)
+             (absorb-provenance target incoming))))
 
 (defun cascade-staleness (graph target-id)
   "Mark stale every fact whose DERIVED-FROM names TARGET-ID.

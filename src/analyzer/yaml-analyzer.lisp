@@ -286,9 +286,18 @@ and registering a type\" stays true of the fields as well as the directory."))
 ;;;; Rules: compiling the check clause (SS10.4)
 ;;;; ==================================================================
 
-(defparameter *check-kinds* '(:no-edge :requires-edge :property-constraint)
+(defparameter *check-kinds* '(:no-edge :requires-edge :property-constraint
+                              :property-absent)
   "SS10.4: \"Phase 1 supports a small set of check kinds ... which is enough
-for the layering and single-writer rules Loom needs on itself.\"")
+for the layering and single-writer rules Loom needs on itself.\"
+
+Four now, not SS10.4's original three. :PROPERTY-ABSENT was added by ARCH-0012
+for RULE-0006, and it is the mirror of :PROPERTY-CONSTRAINT rather than a new
+kind of question -- \"this property must be absent\" against \"this property
+must be present\". The list grows when a rule someone wants to write is one a
+generic check can express; the discipline SS10.4 sets is that a rule needing
+more than that stays prose, which PARSE-CHECK enforces by returning NIL for a
+kind not named here.")
 
 (defun parse-check (value)
   "A rule's check: clause as a plist, or NIL.

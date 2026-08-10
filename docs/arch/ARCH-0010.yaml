@@ -4,7 +4,7 @@ status: implemented
 date: 2026-08-06
 refines: [REQ-0012]
 affects: [generic-definition-entities, method-definition-entity, method-body,
-          read-forms-with-spans, analyze-file, make-method-entity,
+          read-source, analyze-file, make-method-entity,
           make-interface-entity]
 tags: [analyzer, lisp, clos, blind-spot]
 summary: |
@@ -318,3 +318,41 @@ body: |
   definitions share a name -- and several of its call sites are both
   inside inline methods and ambiguous, so the two fixes compose but
   neither substitutes for the other.
+
+  OUTSTANDING
+
+  1. R2's mechanism was replaced on 2026-08-09 by ARCH-0013, implemented at
+     PLAN-0013 step 4. The requirement stands and this document stays
+     `implemented': a DEFGENERIC's inline (:method ...) clause still gets a
+     range of its own, and the interface-plus-methods return, the single copy
+     of tail parsing, and R4's whole-form fallback are all untouched. What
+     went is how the range is obtained. ELEMENT-SPANS re-read the form's
+     elements one at a time on the same whole-content stream under the same
+     reader environment, and the clause walk zipped the two sequences after
+     comparing their lengths; READ-SOURCE records a range for every cons at
+     every depth as it reads, and GENERIC-DEFINITION-ENTITIES asks FORM-RANGE
+     for the clause cons itself.
+
+     Three consequences worth having next to the original argument rather
+     than only in ARCH-0013, on the ARCH-0007 precedent that a corrected
+     claim is worth less than the correction beside it:
+
+     - The alignment check is gone because there is nothing to align. A
+       length mismatch was the failure this document spent a paragraph
+       defending against, and it cannot arise from asking an object for its
+       own range. R4's fallback survives for a caller with no READING.
+
+     - The two shapes R2's mechanism returned NIL for -- a #|...|# block
+       comment before the closing paren, a DEFGENERIC behind a # reader macro
+       -- now get per-clause ranges like any other form. Both occurred zero
+       times in either indexed tree, so no line number moved on this tree;
+       the gap closed is in what the mechanism can answer, not in what it
+       was answering wrongly.
+
+     - The obligation under CONSEQUENCES above is half discharged. R1's
+       start-offset element is preserved -- READING-FORMS keeps the
+       four-element tuple, vestigial and documented as such, precisely
+       because R1 named it -- but the whole-content-stream property is moot:
+       there is no second read for FILE-POSITION to be ambiguous about,
+       which is the hazard two of the deleted docstrings spent sixty lines
+       on.

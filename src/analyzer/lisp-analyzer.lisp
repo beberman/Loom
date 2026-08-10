@@ -32,181 +32,15 @@
   (:documentation "A reader-based analyzer for Common Lisp source files."))
 
 ;;;; ------------------------------------------------------------------
-;;;; Reading forms with source spans
+;;;; Naming the things a form mentions
 ;;;; ------------------------------------------------------------------
-
-(defun skip-whitespace-and-comments (string pos)
-  "The offset of the first character in STRING at or after POS that is
-neither whitespace nor part of a line comment."
-  (loop
-    (cond ((>= pos (length string)) (return pos))
-          ((member (char string pos) '(#\Space #\Tab #\Newline #\Return #\Page #\Linefeed))
-           (incf pos))
-          ((char= (char string pos) #\;)
-           (setf pos (or (position #\Newline string :start pos) (length string))))
-          (t (return pos)))))
-
-(defun intern-foreign-symbol-locally (condition)
-  "Absorb a package prefix naming a package this image has never loaded.
-
-The analyzer reads source belonging to workspaces it has not compiled, so
-`utils:parse-config' is the normal case, not the exception: the reader signals
-a PACKAGE-ERROR the moment a prefix names a package that is merely absent, and
-one such form used to cost the whole file -- ANALYZE-FILE would catch it and
-emit a single analysis-failed :FILE entity, so every definition in the file
-became invisible to `find'.
-
-The CONTINUE restart the reader offers here interns the symbol in *PACKAGE*
-instead, which under READ-FORMS-WITH-SPANS is the throwaway package that is
-deleted on the way out. That is exactly what the analyzer wants: nothing
-downstream reads a symbol's home package -- TOKEN-NAME takes SYMBOL-NAME and
-nothing else -- so the package prefix carries no information worth failing
-over.
-
-Only PACKAGE-ERROR is handled, and only when the restart exists. A file with a
-genuinely broken form -- an unbalanced paren, a `#.' under *READ-EVAL* NIL --
-still fails, and should: SS9.3's analysis-failed :FILE entity is the honest
-answer there, where here it was a false report of a file Loom could read."
-  (let ((restart (find-restart 'continue condition)))
-    (when restart (invoke-restart restart))))
-
-(defun read-forms-with-spans (content)
-  "Every top-level form in CONTENT, read with *READ-EVAL* disabled and in a
-throwaway package so foreign package prefixes and keywords intern safely
-without touching any real package. Returns a list of (FORM START-LINE
-END-LINE START-OFFSET).
-
-START-OFFSET is the character offset of the form's first character -- already
-computed here, and formerly discarded once it had been turned into a line. It
-is kept because line numbers are lossy: ELEMENT-SPANS re-reads a DEFGENERIC's
-elements one at a time to recover per-clause ranges, and it has to seek to the
-form to do that.
-
-Two properties anything touching this function has to preserve, per ARCH-0010:
-the START-OFFSET element, and the whole-content stream below.
-
-One stream over the whole string, seeked with FILE-POSITION, rather than a
-fresh bounded stream per form. A stream made with MAKE-STRING-INPUT-STREAM over
-a sub-range leaves FILE-POSITION ambiguous -- implementations disagree on
-whether it counts from the start of the string or from the start of the range,
-and SBCL builds disagree with each other. Reading a form and adding the offset
-back therefore double-counts on half of them: the first form lands correctly
-because both conventions agree at zero, the second lands past its own end, and
-the walk quietly stops two forms in with no condition signalled. Here the range
-is always the whole string, so there is nothing for the two conventions to
-disagree about."
-  (let ((stream (make-string-input-stream content))
-        (len (length content))
-        (results '())
-        (*package* (make-package (gensym "LOOM-ANALYZER-SCRATCH-") :use nil))
-        (*read-eval* nil))
-    (unwind-protect
-         (handler-bind ((package-error #'intern-foreign-symbol-locally))
-           (loop
-             (let ((start (skip-whitespace-and-comments content (file-position stream))))
-               (when (>= start len) (return))
-               (file-position stream start)
-               ;; READ-PRESERVING-WHITESPACE, not READ: plain READ consumes one
-               ;; trailing whitespace char it never needed, which would throw
-               ;; off the end position by one whenever a form is followed by a
-               ;; newline.
-               (let ((form (read-preserving-whitespace stream nil :eof)))
-                 (when (eq form :eof) (return))
-                 (let ((end (file-position stream)))
-                   (push (list form (offset-line content start) (offset-line content end)
-                               start)
-                         results)
-                   ;; A read that did not advance would spin forever. It should
-                   ;; not happen; costing one comparison to be sure it cannot
-                   ;; is cheaper than a watcher thread that never returns.
-                   (when (<= end start) (return)))))))
-      (delete-package *package*))
-    (nreverse results)))
-
-(defun element-spans (content start-offset)
-  "The elements of the list form beginning at START-OFFSET in CONTENT, each as
-(ELEMENT START-LINE END-LINE), or NIL when no such reading is possible.
-
-The reader reports positions for the top-level forms READ-FORMS-WITH-SPANS
-walks and for nothing nested inside them, so a DEFGENERIC's inline
-(:method ...) clause has no range of its own. This recovers one by reading the
-form's elements one at a time with the identical reader settings, on the
-identical text -- which is what makes the second read's element sequence match
-the first's structurally, read-time conditionals included, since *FEATURES*
-has not moved between them.
-
-Three things here are load-bearing and none is incidental:
-
-The guard. An offset that does not name an open paren would otherwise seek
-into the middle of a token and return plausible garbage, which is worse than
-returning nothing: the caller's fallback is the whole form's range, a wider
-truth that genuinely contains every clause, where a misread span is a
-fabricated fact (CON-0001).
-
-The whole-content stream. This is READ-FORMS-WITH-SPANS's technique and its
-docstring holds the reasoning: FILE-POSITION over a stream bounded to a
-sub-range is ambiguous across SBCL builds, and the walk that relied on it
-stopped two forms in with nothing signalled. A stream over a substring here
-would reintroduce exactly that, and its symptom would again be silence.
-
-The reader environment. Same throwaway package, same *READ-EVAL* NIL, same
-PACKAGE-ERROR handler, because this reads the same foreign source the first
-read did. Diverging would signal on a `utils:parse-config' inside a clause and
-cost the file's per-clause ranges on someone else's repository only.
-
-Two shapes of real source reach the NIL fallback, both found by probe rather
-than by reading, and both occurring zero times in either indexed tree today: a
-#|...|# block comment sitting before the form's closing paren, which
-SKIP-WHITESPACE-AND-COMMENTS does not skip (it knows `;' and not `#|'), so the
-loop reads on into the paren and the whole form yields NIL; and a top-level
-DEFGENERIC preceded by any # reader macro -- #+sbcl, say -- whose recorded
-start offset names the # rather than a paren, so the guard above refuses it and
-every clause in it takes the whole-form range."
-  (when (and (< -1 start-offset (length content))
-             (char= #\( (char content start-offset)))
-    ;; CONDITION, not ERROR. END-OF-FILE and READER-ERROR are ERROR subtypes,
-    ;; so ERROR would cover what the reader is known to raise -- but RULE-0004
-    ;; is that a guard naming ERROR is a guard with a hole in it whenever the
-    ;; thing being guarded is a library reading input nobody controls. Trace
-    ;; where an escaping condition would actually go, because nothing downstream
-    ;; stops it: this runs in ANALYZE-FILE's pass 1, and ANALYZE-FILE's only
-    ;; HANDLER-CASE wraps the READ-FORMS-WITH-SPANS call in pass 0, so a
-    ;; condition raised here leaves ANALYZE-FILE entirely rather than marking the
-    ;; file unparsable; and INDEX-FILE's guard (src/workspace/workspace.lisp)
-    ;; names ERROR, so a condition that is not an ERROR passes through that too
-    ;; and reaches the watcher thread -- the SS3.3 failure RULE-0004 exists to
-    ;; prevent. The cost of catching too much is one DEFGENERIC's clauses taking
-    ;; the whole-form range; the cost of catching too little is the indexer. So
-    ;; the guard is deliberately wider than the reader's known conditions rather
-    ;; than fitted to them.
-    (handler-case
-        (let ((stream (make-string-input-stream content))
-              (len (length content))
-              (results '())
-              (*package* (make-package (gensym "LOOM-ANALYZER-SPANS-") :use nil))
-              (*read-eval* nil))
-          (unwind-protect
-               (handler-bind ((package-error #'intern-foreign-symbol-locally))
-                 (file-position stream (1+ start-offset))
-                 (loop
-                   (let ((start (skip-whitespace-and-comments
-                                 content (file-position stream))))
-                     (when (>= start len) (return))
-                     (when (char= #\) (char content start)) (return))
-                     (file-position stream start)
-                     (let ((element (read-preserving-whitespace stream nil :eof)))
-                       (when (eq element :eof) (return))
-                       (let ((end (file-position stream)))
-                         (push (list element (offset-line content start)
-                                     (offset-line content end))
-                               results)
-                         ;; The same non-advance guard READ-FORMS-WITH-SPANS
-                         ;; carries, for the same reason: a watcher thread that
-                         ;; never returns costs more than one comparison.
-                         (when (<= end start) (return)))))))
-            (delete-package *package*))
-          (nreverse results))
-      (condition () nil))))
+;;;;
+;;;; The reader itself lives in lisp-reader.lisp. READ-FORMS-WITH-SPANS,
+;;;; ELEMENT-SPANS, SKIP-WHITESPACE-AND-COMMENTS and
+;;;; INTERN-FOREIGN-SYMBOL-LOCALLY stood here until ARCH-0013 R7 replaced
+;;;; them with READ-SOURCE -- 169 lines whose whole burden was recovering, by
+;;;; re-reading text and counting characters, what a conforming reader
+;;;; reports directly.
 
 (defun token-name (x)
   "A plain, package-independent lowercase name for a symbol or a lambda-list
@@ -215,10 +49,30 @@ element X (which may be a destructuring pair like (KEY DEFAULT))."
         ((consp x) (token-name (car x)))
         (t (princ-to-string x))))
 
-(defun collect-call-names (body)
-  "Every operator-position symbol name appearing anywhere in BODY, a sequence
-of forms, skipping quoted data so a literal list is never mistaken for a call
-site.
+(defun collect-call-names (body &key reading)
+  "Two values: every operator-position symbol name appearing anywhere in BODY,
+a sequence of forms, skipping quoted data so a literal list is never mistaken
+for a call site; and the package prefixes those sites wrote, as a list of
+\(NAME . PACKAGE) conses in the same order.
+
+The second value is REQ-0019 R2 arriving where it can be used, and it is
+evidence rather than an answer. `utils:parse-config' and a local PARSE-CONFIG
+produce the same first value -- TOKEN-NAME reads SYMBOL-NAME and nothing else,
+which is the whole reason RESOLVE-CALLS cannot currently tell two same-named
+definitions apart -- and until now the prefix was destroyed at read time by
+INTERN-FOREIGN-SYMBOL-LOCALLY, so there was nothing to record. What resolution
+does with it is REQ-0015's question and this pass deliberately does not answer
+it: recording the fact must not move an edge count, or a reader change and a
+resolution change become one unattributable movement (PLAN-0013 step 6).
+
+Only sites that wrote a prefix appear, so the list is short where :CALL-NAMES
+is long -- 241 qualified operator occurrences against 4867 call names on this
+tree. A bare name records nothing rather than recording NIL, because \"no
+prefix was written\" is what absence already means.
+
+READING is a keyword because a caller that has none is not made to lie about
+one; with no READING the second value is NIL and the first is exactly what it
+always was.
 
 A sequence of forms, not one form: handed (value) -- the body of a method
 whose whole body is a variable -- treating it as a form claims a call to
@@ -243,39 +97,102 @@ Two shapes of argument are names, a bare symbol and (setf f); everything else,
 a lambda above all, contributes no name and is still walked for the calls
 inside it.
 
+Which forms are quotation is QUOTATIONP's question, and both its clauses are
+ARCH-0013 R12. It asks the reader first -- 'x and #'f are the one class of
+form kind a reader is entitled to know, because they really are syntax where
+DEFUN is not -- and falls back to the name comparison only for a list a
+program wrote out itself, and then only when no site qualified the head. Two
+imprecisions this docstring used to disclose are gone with it: a literal
+(some-pkg:function g) no longer contributes \"g\", and a (some-pkg:quote x) no
+longer suppresses the walk of its own contents. Both were accepted under
+PLAN-0011 R-7 on the grounds that \"the analyzer holds no package knowledge to
+do better\"; REQ-0019 R2 is that it now does.
+
 What it does not recover, because the designator never arrives here at all: a
 callback stored in a slot. ANALYZE-FILE hands NOTE-DEFINITION no :body for
 DEFVAR, DEFPARAMETER, DEFCLASS or DEFINE-CONDITION, and a DEFUN's body is
 (cdddr form), which excludes the lambda list -- so a quotation in an initform
 or in a lambda-list default is invisible to every clause below, and no wording
 of this one can change that. BUG-0017."
-  (let ((names '()))
-    (labels ((walk (form)
+  (let ((names '())
+        (qualified '()))
+    (labels ((note (symbol name)
+               ;; The prefix goes on the list only when the site wrote one.
+               ;; FORM-PACKAGE is already NIL for a bare name and for a symbol
+               ;; from some other read, so this needs no guard of its own.
+               (let ((package (and reading (form-package reading symbol))))
+                 (when package (push (cons name package) qualified))))
+             (unqualified-cl-p (symbol)
+               ;; True when SYMBOL could be the CL operator its name suggests:
+               ;; the site wrote no prefix, or wrote one naming COMMON-LISP.
+               ;; A prefix naming anything else is positive evidence that it is
+               ;; not -- which is the discrimination REQ-0019 R2 bought and
+               ;; ARCH-0013 R12 spends here.
+               (let ((package (and reading (form-package reading symbol))))
+                 (or (null package)
+                     (member package '("cl" "common-lisp") :test #'string=))))
+             (quotationp (form kind)
+               ;; ARCH-0013 R12. Two ways a form is quotation, and the order
+               ;; matters: the reader's own answer first, because it is the one
+               ;; class of form kind a reader is entitled to know -- 'x really
+               ;; did come from a reader macro and no program wrote that list
+               ;; out. Only when the reader has nothing to say does the name
+               ;; comparison run, and then only for a head no site qualified.
+               ;;
+               ;; What this retires is two imprecisions COLLECT-CALL-NAMES has
+               ;; disclosed in its own docstring since PLAN-0011: a literal
+               ;; (some-pkg:function g) matched the quotation test and
+               ;; contributed "g", a visible false positive; and
+               ;; (some-pkg:quote x) was taken for quoted data so everything
+               ;; inside it went unwalked, a silent miss. Both were accepted
+               ;; because "the analyzer holds no package knowledge to do
+               ;; better." It does now.
+               (let ((marked (and reading (form-reader-macro reading form)))
+                     (head (car form)))
+                 (if marked
+                     (eq marked kind)
+                     (and (symbolp head)
+                          (string= (token-name head)
+                                   (ecase kind (:quote "quote") (:function "function")))
+                          (unqualified-cl-p head)))))
+             (walk (form)
                (when (consp form)
                  (let ((head (car form)))
-                   (unless (and (symbolp head) (string= (token-name head) "quote"))
-                     (when (symbolp head) (push (token-name head) names))
+                   (unless (quotationp form :quote)
+                     (when (symbolp head)
+                       (let ((name (token-name head)))
+                         (push name names)
+                         (note head name)))
                      ;; The one exception to head-only, and only for FUNCTION.
                      ;; (consp (cdr form)) with (null (cddr form)) is an arity
                      ;; test and nothing else: one argument and no more, which
                      ;; is what a quotation has and what an ftype specifier's
-                     ;; (function (arg) result) does not. It emphatically does
-                     ;; not establish that the head is CL:FUNCTION -- a
-                     ;; one-argument (some-pkg:function g) matches and records
-                     ;; "g". Accepted deliberately (PLAN-0011 R-7): TOKEN-NAME
-                     ;; reads SYMBOL-NAME and nothing else, the analyzer holds
-                     ;; no package knowledge to do better with (RULE-0002), and
-                     ;; the QUOTE test on the line above is package-blind in
-                     ;; exactly the same way. Diverging from it here would be
-                     ;; the surprise.
-                     (when (and (symbolp head)
-                                (string= (token-name head) "function")
+                     ;; (function (arg) result) does not. The arity test stays
+                     ;; even where the reader marked the form, because #'x can
+                     ;; only ever have one argument and a form that does not is
+                     ;; therefore not one -- belt and braces over a table.
+                     ;;
+                     ;; What no longer holds is the docstring's old admission
+                     ;; that a one-argument (some-pkg:function g) matches and
+                     ;; records "g" because "the analyzer holds no package
+                     ;; knowledge to do better." QUOTATIONP asks the reader
+                     ;; first and the written prefix second, so it does.
+                     (when (and (quotationp form :function)
                                 (consp (cdr form))
                                 (null (cddr form)))
                        (let ((designator (second form)))
                          (cond ((and designator (symbolp designator)
                                      (not (keywordp designator)))
-                                (push (token-name designator) names))
+                                (let ((name (token-name designator)))
+                                  (push name names)
+                                  ;; #'utils:parse-config is as qualified as
+                                  ;; (utils:parse-config x) and wants the same
+                                  ;; evidence recorded. The (setf f) branch
+                                  ;; below does not: DEFINITION-NAME renders a
+                                  ;; two-element list into one string, so
+                                  ;; there is no single symbol whose prefix the
+                                  ;; name belongs to.
+                                  (note designator name)))
                                ;; Exactly (setf <non-keyword-symbol>) and
                                ;; nothing else. DEFINITION-NAME maps TOKEN-NAME
                                ;; over every element, so handed any other cons
@@ -312,7 +229,7 @@ of this one can change that. BUG-0017."
                            while (consp tail)
                            do (walk (car tail))))))))
       (dolist (form body) (walk form)))
-    names))
+    (values names (nreverse qualified))))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Entity construction
@@ -385,15 +302,43 @@ same idea does not need a different rule.")
 ;;;; shape :CALL-NAMES and RESOLVE-CALLS already have, for the same reason.
 ;;;; ------------------------------------------------------------------
 
-(defparameter *definition-heads*
-  '("defun" "defvar" "defparameter" "defclass" "define-condition" "defstruct"
-    "defgeneric" "defmethod" "defmacro")
-  "The heads ANALYZE-FILE's pass-1 COND turns into entities.
+;;; The dispatch table pass 1 runs on, and the head set derived from it.
+;;;
+;;; Until ARCH-0013 R13 this was a ten-clause COND beside a hand-maintained
+;;; list, and *DEFINITION-HEADS*' own docstring made the reader responsible for
+;;; keeping the two in step -- "adding a clause to that COND means adding its
+;;; head here" -- with the failure named as a DEFUN being offered to the macro
+;;; registry. Keying the clauses and deriving the list from the keys makes that
+;;; obligation structurally impossible rather than merely documented.
+;;;
+;;; Two smaller things go with it. The COND computed (TOKEN-NAME (CAR FORM))
+;;; up to ten times per top-level form, on every file, on every reindex, and
+;;; discarded nine of the strings; and its first clause carried a comment
+;;; defending its position, which is an ordering hazard a keyed lookup cannot
+;;; have.
 
-Kept beside the COND rather than inside it because the same list answers a
-second question -- which top-level forms are *not* call sites -- and having
-the two disagree would mean a DEFUN being offered to the macro registry.
-Adding a clause to that COND means adding its head here.")
+(defun definition-handler (name function)
+  "One entry of *DEFINITION-DISPATCH*: NAME is the head as TOKEN-NAME renders
+it, FUNCTION the handler." (cons name function))
+
+(defun make-definition-dispatch (entries)
+  "A head-name table from ENTRIES, refusing a duplicate key.
+
+Refusing rather than replacing, which is the opposite of the four existing
+registries in this tree and deliberately so. Those exist to be extended by
+third parties (REQ-0004), where last-writer-wins is the useful semantics; this
+one exists to be exhaustive over a fixed set the analyzer owns. The two
+semantics differ exactly where it matters: a COND tries its clauses in order,
+so a form matching two heads takes the first, and a replace-by-name table
+would take the last. Getting that backwards would turn a duplicated head from
+a load-time error into a definition kind silently dropped from every file in
+every workspace."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (entry entries table)
+      (destructuring-bind (name . function) entry
+        (when (gethash name table)
+          (error "Duplicate definition head ~s in *DEFINITION-DISPATCH*." name))
+        (setf (gethash name table) function)))))
 
 (defparameter *declaration-heads*
   '("in-package" "defpackage" "declaim" "proclaim" "eval-when"
@@ -405,9 +350,18 @@ Getting this list wrong in the inclusive direction costs nothing -- an
 operator matching no registry entry is left alone -- so it errs toward
 recording, and only the forms that plainly declare rather than call are here.")
 
+(defun definition-head-p (name)
+  "True when NAME has a handler in *DEFINITION-DISPATCH*.
+
+What *DEFINITION-HEADS* used to answer from a parallel list. The list is gone
+and this reads the table's own keys, so the two cannot disagree and the
+obligation its docstring put on the reader -- add a clause, remember to add
+its head -- is discharged by construction rather than restated."
+  (and (gethash name *definition-dispatch*) t))
+
 (defun call-site-head-p (name)
   "True when NAME is a head ANALYZE-FILE already accounts for."
-  (or (member name *definition-heads* :test #'string=)
+  (or (definition-head-p name)
       (member name *declaration-heads* :test #'string=)))
 
 (defun argument-token (x)
@@ -905,8 +859,7 @@ tail."
   (method-entity-from-tail (definition-name (second form)) (cddr form)
                            start end path system))
 
-(defun generic-definition-entities (form start end path system
-                                    &key contents start-offset)
+(defun generic-definition-entities (form start end path system &key reading)
   "The :INTERFACE for a DEFGENERIC and a :METHOD for each of its inline
 (:method ...) clauses, as an ordered list of (ENTITY . BODY) pairs.
 
@@ -918,20 +871,22 @@ direction (ARCH-0010). The interface itself is untouched by all of this -- same
 name, same :members, same whole-form range -- which is why a DEFGENERIC with no
 clause still produces exactly what it always did.
 
-CONTENTS and START-OFFSET are keywords rather than positional so a caller that
-has none is not required to lie about them, and so the fallback below is
-reachable from a test. PATH and SYSTEM stay positional in that order, per
-ARCH-0009's convention.
+READING is a keyword rather than positional so a caller that has none is not
+required to lie about it, and so the fallback below is reachable from a test.
+PATH and SYSTEM stay positional in that order, per ARCH-0009's convention.
 
-Per-clause ranges come from ELEMENT-SPANS and are used only when its element
-count matches the form's own. Zipping two sequences of different lengths
-positionally would hand one clause another's range, which is a fabricated fact
-(CON-0001); the whole DEFGENERIC's range is a wider truth that genuinely
-contains the clause, so a mismatch falls back to it rather than misattributing."
-  (let* ((name (definition-name (second form)))
-         (spans (when (and contents start-offset)
-                  (let ((candidate (element-spans contents start-offset)))
-                    (when (= (length candidate) (length form)) candidate)))))
+Per-clause ranges come from FORM-RANGE, which asks the clause cons itself
+rather than reconstructing a parallel sequence to zip against this one
+(ARCH-0013 R7). That retires ELEMENT-SPANS' alignment condition entirely: there
+is no element count to compare, so there is no mismatch to fall back from, and
+the two shapes ELEMENT-SPANS returned NIL for -- a block comment before the
+closing paren, a DEFGENERIC behind a reader macro -- now each clause its own
+range like any other. ARCH-0010 R4's fallback stays as the declared answer
+where FORM-RANGE misses, which after this it can do only for reader-level
+structure sharing: the whole DEFGENERIC's range is a wider truth that genuinely
+contains the clause, where a misattributed one would be a fabricated fact
+(CON-0001)."
+  (let ((name (definition-name (second form))))
     (cons (cons (make-interface-entity
                  name start end path system
                  :members (mapcar #'token-name
@@ -940,20 +895,20 @@ contains the clause, so a mismatch falls back to it rather than misattributing."
           ;; (:documentation ...), (:method-combination ...), (declare ...) and
           ;; (:argument-precedence-order ...) are skipped, as they always were.
           (loop for element in (cdddr form)
-                for index from 3
                 when (and (consp element) (symbolp (car element))
                           (string= "method" (token-name (car element))))
-                  collect (let ((span (nth index spans))
-                                ;; A DEFMETHOD is (DEFMETHOD name . tail) and a
-                                ;; clause is (:METHOD . tail): the same grammar,
-                                ;; minus the name the enclosing form supplies.
-                                (tail (rest element)))
-                            (cons (method-entity-from-tail
-                                   name tail
-                                   (if span (second span) start)
-                                   (if span (third span) end)
-                                   path system)
-                                  (method-body-from-tail tail)))))))
+                  collect (multiple-value-bind (clause-start clause-end foundp)
+                              (and reading (form-range reading element))
+                            ;; A DEFMETHOD is (DEFMETHOD name . tail) and a
+                            ;; clause is (:METHOD . tail): the same grammar,
+                            ;; minus the name the enclosing form supplies.
+                            (let ((tail (rest element)))
+                              (cons (method-entity-from-tail
+                                     name tail
+                                     (if foundp clause-start start)
+                                     (if foundp clause-end end)
+                                     path system)
+                                    (method-body-from-tail tail))))))))
 
 (defun make-unparsable-file-entity (path contents condition)
   "The entity a file gets when its contents cannot be read.
@@ -977,6 +932,186 @@ be indistinguishable from a file that genuinely defines nothing."
                                     :analysis-failed-p t
                                     :analysis-error (princ-to-string condition)))))
 
+(defun supersede-shadowed-definitions (definitions)
+  "Two values: the definitions in DEFINITIONS this file actually defines, in
+source order, and an alist of (survivor . superseded-entities-in-source-order)
+for those that replaced something.
+
+Common Lisp's reconciliation rule, applied at the one layer where the two
+definitions are still distinct objects (ARCH-0012 R1): among definitions
+sharing one ENTITY-NATURAL-KEY, the last in source order is the one in effect
+once the file loads, and every earlier one is dead code. It belongs here and
+not in the writer because it is the *language's* semantics -- CL replaces,
+while a TypeScript analyzer meeting interface merging would have to merge --
+and the writer must stay language-neutral.
+
+The keys are type-led, so a DEFUN and a DEFCLASS of one name do not collide
+while a DEFUN and a DEFMACRO do: both mint :FUNCTION, and both really do
+define the same name.
+
+A definition whose key is NIL always survives and is never grouped. NIL means
+\"this type declares no upsert identity\", not \"a key these two share\", and
+a table keyed on it would fold unrelated definitions into one."
+  (let ((survivor-of (make-hash-table :test #'equal))
+        (survivors '())
+        (shadowed '()))
+    ;; Last write wins, which for a source-ordered list is last-in-source-order
+    ;; wins -- the same answer ABSORB-ENTITY reaches downstream, reached here
+    ;; while the loser is still an object that can simply be dropped.
+    (dolist (e definitions)
+      (let ((key (entity-natural-key e)))
+        (when key (setf (gethash key survivor-of) e))))
+    (dolist (e definitions)
+      (let* ((key (entity-natural-key e))
+             (survivor (and key (gethash key survivor-of))))
+        (if (or (null survivor) (eq e survivor))
+            (push e survivors)
+            (let ((cell (assoc survivor shadowed :test #'eq)))
+              (if cell
+                  (push e (cdr cell))
+                  (push (list survivor e) shadowed))))))
+    (values (nreverse survivors)
+            (mapcar (lambda (cell) (cons (car cell) (nreverse (cdr cell))))
+                    (nreverse shadowed)))))
+
+(defun shadowing-worth-recording-p (survivor superseded)
+  "True when SURVIVOR replacing SUPERSEDED is a shadowing worth reporting.
+
+Supersession (ARCH-0012 R1) applies to every definition kind without
+exception; this decides only whether the survivor records it. The one case it
+excludes is two DEFCLASS or DEFINE-CONDITION forms in one file each declaring
+:ACCESSOR NAME. That is not a shadowing at all -- in Common Lisp it is one
+generic function acquiring two methods, and both bodies are live -- so
+reporting it would be a false finding. :GENERATED-BY is exactly the marker for
+\"this name was synthesized from a slot declaration rather than written\", so
+the carve-out is: stay quiet only when BOTH names were generated. If either
+was written by hand, one of them really is dead code.
+
+Measured before it was written, which is the only reason it is here:
+recording every collision verbatim gives three findings on Loom and seventeen
+on game-server, of which thirteen are accessor pairs -- burying the six that
+matter. A rule whose output has to be read past is BUG-0009's failure again.
+
+This lives in the Lisp analyzer and not in the rule or the writer because
+\"an accessor name declared twice is one generic function\" is a fact about
+Common Lisp, and language reconciliation is what ARCH-0012 puts here."
+  (not (and (getp survivor :generated-by)
+            (getp superseded :generated-by))))
+
+(defun definition-line-range (e)
+  "E's extent as the \"start-end\" string :SHADOWED-DEFINITIONS records.
+A string rather than the entity, because the shadowed definition deliberately
+has no entity: the graph holds what the file defines, and a reader who wants
+the dead text opens the file at these lines."
+  (format nil "~a-~a" (getp e :start-line) (getp e :end-line)))
+
+;;;; ------------------------------------------------------------------
+;;;; Pass 1's dispatch (ARCH-0013 R13)
+;;;;
+;;;; One handler per definition head. Each takes the form, its range, the path,
+;;;; the system in effect, the READING, and NOTE, the function that records an
+;;;; entity; each returns the system in effect afterwards, which is NIL for
+;;;; every handler but IN-PACKAGE's.
+;;;;
+;;;; Returning the system rather than mutating a closed-over variable is what
+;;;; lets IN-PACKAGE stop being a special case. It was the COND's first clause
+;;;; with a comment defending that position -- "so no later clause can shadow
+;;;; it" -- and it is the only form in the language that changes the state of
+;;;; the walk rather than adding to its output. Making that visible in the
+;;;; protocol every handler shares costs one ignored return value per handler
+;;;; and removes an ordering a keyed lookup could not have honoured anyway.
+;;;; ------------------------------------------------------------------
+
+(defmacro define-definition-handler (name &body body)
+  "A pass-1 handler taking FORM START END PATH SYSTEM READING NOTE and
+returning the system in effect afterwards.
+
+The lambda list is fixed and every parameter is declared IGNORABLE, because
+seven parameters most handlers do not use is the price of one uniform
+protocol -- and the alternative, a signature per definition kind, is the thing
+the table exists to abolish."
+  `(defun ,name (form start end path system reading note)
+     (declare (ignorable form start end path system reading note))
+     ,@body))
+
+(define-definition-handler handle-in-package
+  "The only handler that changes the walk's state rather than its output.
+
+Mints no entity and records no call site: a file's package declaration is not
+a definition this ontology models, and ARCH-0009 makes the IN-PACKAGE chain
+the sole source of :SYSTEM. \"in-package\" stays in *DECLARATION-HEADS* as
+well, which is now belt and braces rather than the mechanism -- a head with a
+handler never reaches the catch-all."
+  (or (normalize-system-name (in-package-argument-name form)) system))
+
+(define-definition-handler handle-defun
+  (funcall note (make-function-entity form start end path system)
+           :local t :body (cdddr form))
+  system)
+
+(define-definition-handler handle-defmacro
+  (funcall note (make-macro-entity form start end path system)
+           :local t :body (cdddr form))
+  system)
+
+(define-definition-handler handle-variable
+  "DEFVAR and DEFPARAMETER, which shared a clause and now share a handler."
+  (funcall note (make-variable-entity form start end path system))
+  system)
+
+(define-definition-handler handle-defclass
+  (dolist (e (class-definition-entities form :class start end path system))
+    (funcall note e))
+  system)
+
+(define-definition-handler handle-define-condition
+  (dolist (e (class-definition-entities form :condition start end path system))
+    (funcall note e))
+  system)
+
+(define-definition-handler handle-defstruct
+  (let ((entities (struct-definition-entities form start end path system)))
+    (funcall note (first entities))
+    ;; The generated names are ordinary functions defined by this file, so a
+    ;; call to one inside it resolves here rather than waiting for the
+    ;; workspace.
+    (dolist (e (rest entities)) (funcall note e :local t)))
+  system)
+
+(define-definition-handler handle-defgeneric
+  ;; NOTE already treats a NIL :body as "no body", so the interface pair needs
+  ;; no special case. No :local for the inline methods either, for the reason
+  ;; DEFMETHOD gives: a call names the generic, and which method runs is a
+  ;; runtime question resolution fans out.
+  (dolist (pair (generic-definition-entities form start end path system
+                                             :reading reading))
+    (funcall note (car pair) :body (cdr pair)))
+  system)
+
+(define-definition-handler handle-defmethod
+  (funcall note (method-definition-entity form start end path system)
+           :body (method-body form))
+  system)
+
+(defparameter *definition-dispatch*
+  (make-definition-dispatch
+   (list (definition-handler "in-package"       #'handle-in-package)
+         (definition-handler "defun"            #'handle-defun)
+         (definition-handler "defmacro"         #'handle-defmacro)
+         (definition-handler "defvar"           #'handle-variable)
+         (definition-handler "defparameter"     #'handle-variable)
+         (definition-handler "defclass"         #'handle-defclass)
+         (definition-handler "define-condition" #'handle-define-condition)
+         (definition-handler "defstruct"        #'handle-defstruct)
+         (definition-handler "defgeneric"       #'handle-defgeneric)
+         (definition-handler "defmethod"        #'handle-defmethod)))
+  "Head name to pass-1 handler. The same set answers DEFINITION-HEAD-P, so
+adding a definition kind is one entry here and nothing else.
+
+Two handlers share a function -- DEFVAR and DEFPARAMETER, which shared a COND
+clause before -- which is why duplicate *keys* are refused while duplicate
+values are ordinary.")
+
 (defmethod analyze-file ((analyzer lisp-analyzer) path contents workspace-id)
   "Ontology operations for the Lisp source in CONTENTS at PATH: a :FILE
 entity; a :FUNCTION entity per top-level DEFUN and a :VARIABLE entity per
@@ -998,18 +1133,30 @@ transaction."
         (local-functions '())   ; alist: name -> entity, for exact local calls
         (callables '())         ; list of (entity . body), things with bodies
         (call-sites '())        ; :DEFINER-CALL-SITES entries, in source order
+        (shadowed '())          ; alist: survivor -> what it superseded
         (ops '())               ; built reversed, NREVERSEd on the way out
+        (reading nil)
         (forms nil))
 
     ;; --- pass 0: read, and survive a file that will not read ---------
     ;; SS3.3: a condition escaping here would take the watcher thread down and
     ;; leave the process answering queries while silently indexing nothing.
-    (handler-case (setf forms (read-forms-with-spans contents))
-      (error (condition)
-        (return-from analyze-file
-          (list (retract-file path workspace-id)
-                (assert-entity (make-unparsable-file-entity path contents condition)
-                               workspace-id)))))
+    ;;
+    ;; READ-SOURCE does not signal for a form it could repair, so what used to
+    ;; be a HANDLER-CASE over the whole read is now a test of one slot
+    ;; (ARCH-0013). The unparsable :FILE entity survives for the case it was
+    ;; always the right answer to -- a file that could not be read at all --
+    ;; and stops being the answer to a file with one bad form in it, which is
+    ;; REQ-0019 R3. A repaired form is already absent from READING-FORMS, so
+    ;; nothing below can mint an entity from text the reader guessed at.
+    (setf reading (read-source contents))
+    (when (reading-fatal reading)
+      (return-from analyze-file
+        (list (retract-file path workspace-id)
+              (assert-entity (make-unparsable-file-entity
+                              path contents (reading-fatal reading))
+                             workspace-id))))
+    (setf forms (reading-forms reading))
 
     ;; --- pass 1: what this file defines -----------------------------
     ;;
@@ -1023,62 +1170,103 @@ transaction."
              (when body (push (cons entity body) callables))))
       (dolist (spec forms)
         (destructuring-bind (form start end start-offset) spec
-          (cond
-            ;; First, so no later clause can shadow it -- which also means this
-            ;; clause, and not the catch-all's CALL-SITE-HEAD-P guard, is what
-            ;; keeps IN-PACKAGE out of :DEFINER-CALL-SITES and mints no entity
-            ;; for it: the form never reaches the catch-all, so for IN-PACKAGE
-            ;; that guard is unreachable. Leaving "in-package" in
-            ;; *DECLARATION-HEADS* is belt and braces should the ordering ever
-            ;; change. What changes is that it is no longer a complete no-op.
-            ((definition-p form "in-package")
-             (let ((named (normalize-system-name (in-package-argument-name form))))
-               (when named (setf current-system named))))
-            ((definition-p form "defun")
-             (note-definition (make-function-entity form start end path current-system)
-                              :local t :body (cdddr form)))
-            ((definition-p form "defmacro")
-             (note-definition (make-macro-entity form start end path current-system)
-                              :local t :body (cdddr form)))
-            ((or (definition-p form "defvar") (definition-p form "defparameter"))
-             (note-definition (make-variable-entity form start end path current-system)))
-            ((definition-p form "defclass")
-             (dolist (e (class-definition-entities form :class start end path
-                                                   current-system))
-               (note-definition e)))
-            ((definition-p form "define-condition")
-             (dolist (e (class-definition-entities form :condition start end path
-                                                   current-system))
-               (note-definition e)))
-            ((definition-p form "defstruct")
-             (let ((entities (struct-definition-entities form start end path
-                                                         current-system)))
-               (note-definition (first entities))
-               ;; The generated names are ordinary functions defined by this
-               ;; file, so a call to one inside it resolves here rather than
-               ;; waiting for the workspace.
-               (dolist (e (rest entities)) (note-definition e :local t))))
-            ((definition-p form "defgeneric")
-             ;; NOTE-DEFINITION already treats a NIL :body as "no body", so the
-             ;; interface pair needs no special case. No :local for the inline
-             ;; methods either, for the reason stated above for DEFMETHOD.
-             (dolist (pair (generic-definition-entities form start end path
-                                                        current-system
-                                                        :contents contents
-                                                        :start-offset start-offset))
-               (note-definition (car pair) :body (cdr pair))))
-            ((definition-p form "defmethod")
-             (note-definition (method-definition-entity form start end path
-                                                        current-system)
-                              :body (method-body form)))
-            ;; Everything else is a call, and may be a call to a definer
-            ;; macro. Recorded, never judged: the judgement needs the whole
-            ;; workspace (ARCH-0002).
-            ((and (consp form) (symbolp (car form)) (car form)
-                  (not (call-site-head-p (token-name (car form)))))
-             (push (definer-call-site form start end) call-sites))))))
+          ;; START-OFFSET is vestigial from here: ELEMENT-SPANS was its only
+          ;; consumer and it is gone, but ARCH-0010 R1 named the widened tuple
+          ;; as a requirement, so the element stays and the bind does not move.
+          (declare (ignore start-offset))
+          ;; The head name, computed once. The COND this replaced asked
+          ;; DEFINITION-P up to ten times per form and DEFINITION-P is
+          ;; (STRING= (TOKEN-NAME (CAR FORM)) HEAD), so the same downcased
+          ;; string was allocated and discarded nine times over -- on every
+          ;; file, on every reindex.
+          (let* ((head (and (consp form) (symbolp (car form)) (car form)
+                            (token-name (car form))))
+                 (handler (and head (gethash head *definition-dispatch*))))
+            (cond
+              (handler
+               ;; Every handler returns the system in effect afterwards, which
+               ;; is how IN-PACKAGE stops being a first clause with a comment
+               ;; defending its position. A keyed lookup cannot be shadowed, so
+               ;; there is no ordering left to defend.
+               (setf current-system
+                     (funcall handler form start end path current-system reading
+                              #'note-definition)))
+              ;; Everything else is a call, and may be a call to a definer
+              ;; macro. Recorded, never judged: the judgement needs the whole
+              ;; workspace (ARCH-0002). HEAD being non-NIL is the same test the
+              ;; catch-all always made -- a cons whose car is a non-NIL symbol.
+              ((and head (not (call-site-head-p head)))
+               (push (definer-call-site form start end) call-sites)))))))
     (setf definitions (nreverse definitions))
+
+    ;; --- supersession: what the file defines once loaded (ARCH-0012 R1) ---
+    ;; Here rather than after pass 2, because the point is that a shadowed
+    ;; definition's body is never walked at all: no :CALL-NAMES, no local
+    ;; :CALLS edge, no entity op, no :CONTAINS. Left to the graph it would be
+    ;; too late -- pass 3 emits every entity before any call edge, so both
+    ;; definitions' edges land after the absorb that was supposed to choose
+    ;; between them, and they are indistinguishable by then (BUG-0012).
+    ;;
+    ;; CALLABLES and LOCAL-FUNCTIONS are filtered rather than rebuilt.
+    ;; LOCAL-FUNCTIONS is an alist searched with ASSOC and pushed in source
+    ;; order, so the survivor is already in front of anything it shadows;
+    ;; removing the losers keeps a body that names one from resolving to an
+    ;; object no op will ever assert.
+    (multiple-value-setq (definitions shadowed)
+      (supersede-shadowed-definitions definitions))
+    (setf callables
+          (remove-if-not (lambda (entry) (member (car entry) definitions :test #'eq))
+                         callables)
+          local-functions
+          (remove-if-not (lambda (entry) (member (cdr entry) definitions :test #'eq))
+                         local-functions))
+
+    ;; ARCH-0012 R2. The shadowed source is real text, so its existence is
+    ;; recorded on the survivor rather than silently dropped (CON-0001) -- and
+    ;; no guess is involved, since source order decides which definition the
+    ;; loaded file contains. Absent and empty differ, which is why the WHEN is
+    ;; there: RULE-0006 reports on presence alone, so writing an empty list
+    ;; where the carve-out filtered everything out would be a false finding.
+    (loop for (survivor . superseded) in shadowed
+          for ranges = (mapcar #'definition-line-range
+                               (remove-if-not
+                                (lambda (e) (shadowing-worth-recording-p survivor e))
+                                superseded))
+          when ranges
+            do (setp survivor :shadowed-definitions ranges))
+
     (setp file :definer-call-sites (nreverse call-sites))
+
+    ;; What the reader passed over or repaired, recorded on the file rather
+    ;; than dropped (ARCH-0013, PLAN-0013 step 5). The WHEN on each is the
+    ;; same discipline :SHADOWED-DEFINITIONS uses: absent and empty differ, so
+    ;; a file with nothing to report carries no property rather than an empty
+    ;; list that reads as a report of nothing.
+    ;;
+    ;; The reason is rendered to a string here and the region's own shape is
+    ;; flattened, because a property is data the graph stores and reloads --
+    ;; an Eclector reason cons holding an uninterned symbol is a different
+    ;; object on every read, so storing it would give two indexings of one
+    ;; unchanged file two different answers.
+    (let ((suppressed (reading-suppressed-regions reading)))
+      (when suppressed
+        (setp file :suppressed-regions
+              (mapcar (lambda (skip)
+                        (list :reason (skip-reason-name (getf skip :reason))
+                              :start-line (getf skip :start-line)
+                              :end-line (getf skip :end-line)))
+                      suppressed))))
+    (let ((recovered (reading-recovered reading)))
+      (when recovered
+        (setp file :recovered-regions
+              (mapcar (lambda (entry)
+                        (list :condition (string-downcase
+                                          (symbol-name (getf entry :condition)))
+                              :text (getf entry :text)
+                              :start-line (getf entry :start-line)
+                              :end-line (getf entry :end-line)
+                              :cost (getf entry :cost)))
+                      recovered))))
     ;; Whatever package was in effect at the end of the file -- coarser than
     ;; the per-entity value above, and deliberately so: one :FILE entity cannot
     ;; carry two. ARCH-0009 discloses what that costs on a real multi-IN-PACKAGE
@@ -1105,17 +1293,41 @@ transaction."
     (let ((local-calls '()))      ; list of (caller-entity . callee-entity)
       (dolist (entry callables)
         (destructuring-bind (caller . body) entry
-          (let ((foreign '()))
-            (dolist (callee-name (remove-duplicates (collect-call-names body)
-                                                    :test #'string=))
-              (let ((callee (cdr (assoc callee-name local-functions :test #'string=))))
-                (cond ((and callee (not (eq callee caller)))
-                       (push (cons caller callee) local-calls))
-                      ((standard-operator-p callee-name))
-                      ((reader-artifact-p callee-name))
-                      ((string= callee-name (name caller)))   ; direct recursion
-                      (t (push callee-name foreign)))))
-            (setp caller :call-names (nreverse foreign)))))
+          (multiple-value-bind (call-names qualified)
+              (collect-call-names body :reading reading)
+            (let ((foreign '()))
+              (dolist (callee-name (remove-duplicates call-names :test #'string=))
+                (let ((callee (cdr (assoc callee-name local-functions :test #'string=))))
+                  (cond ((and callee (not (eq callee caller)))
+                         (push (cons caller callee) local-calls))
+                        ((standard-operator-p callee-name))
+                        ((reader-artifact-p callee-name))
+                        ((string= callee-name (name caller)))   ; direct recursion
+                        (t (push callee-name foreign)))))
+              (setp caller :call-names (nreverse foreign))
+              ;; ARCH-0013, PLAN-0013 step 6. Recorded beside :CALL-NAMES and
+              ;; read by nothing: this step records the fact and changes no
+              ;; resolution behaviour, so the :CALLS edge count must not move.
+              ;;
+              ;; Deduplicated on the whole pair rather than on the name. Two
+              ;; sites writing `utils:parse-config' are one fact; a body
+              ;; calling both `utils:parse-config' and `config:parse-config'
+              ;; is two, and collapsing them by name would silently pick
+              ;; whichever came first -- a fabricated fact in exactly the
+              ;; shape CON-0001 names, since the surviving prefix would look
+              ;; like the only one the file wrote.
+              ;;
+              ;; Absent rather than empty when nothing was qualified, the
+              ;; discipline :SHADOWED-DEFINITIONS and :SUPPRESSED-REGIONS both
+              ;; keep: most bodies write no prefix at all, and an empty list on
+              ;; every one of them is noise that reads as a report.
+              (let ((pairs (remove-duplicates qualified :test #'equal
+                                                        :from-end t)))
+                (when pairs
+                  (setp caller :qualified-calls
+                        (mapcar (lambda (pair)
+                                  (list :name (car pair) :package (cdr pair)))
+                                pairs))))))))
 
       ;; --- pass 3: emit ------------------------------------------------
       ;; RETRACT-FILE leads, per SS5.4: "reanalyzing a changed file is
