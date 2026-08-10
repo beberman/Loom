@@ -10,11 +10,15 @@ summary: |
   definition and asserts nothing when it matches several. The reasoning given
   in its own docstring is sound as far as it goes -- picking one would fabricate
   an edge, and asserting all of them "would make every caller of a common name
-  look coupled to code it never touches." But the conclusion drawn from it,
+  look coupled to code it never touches."
+
+  But the conclusion drawn from it,
   that the only alternative to a fabricated edge is no edge, skips the option
   the codebase is already equipped for: several edges, each carrying the
   :CONFIDENCE and :DERIVED-FROM fields RESOLVE-CALLS already threads for other
-  purposes, which a consumer can weight or filter. The cost of the current
+  purposes, which a consumer can weight or filter.
+
+The cost of the current
   choice is not evenly spread. It falls entirely on codebases that use CLOS
   polymorphism heavily, because that is what produces many definitions of one
   name. In ~/lisp/game-server, `id` has 7 definitions and 144 dropped call
