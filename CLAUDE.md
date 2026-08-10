@@ -50,8 +50,12 @@ of their own, and a prompt inside a subagent is a stall nobody sees.
 contradicting them.
 
 Loom has known blind spots — calls inside macro bodies are unattributed, so
-anything driven by a `test` form under-reports. ARCH-0001 records the rest. A
-small impact set is not proof of a small change.
+anything driven by a `test` form under-reports. A call inside a body-swallowing
+macro is the exception since ARCH-0014: a `define-operation` or `define-command`
+body reaches its callee through a `:call-site` entity, an ambiguous name becomes
+one reportable site with an edge to each candidate rather than a silent drop, and
+`describe` on the callee lists both among its callers with their kind. ARCH-0001
+records the rest. A small impact set is not proof of a small change.
 
 A malformed form costs a form rather than a file. The Lisp analyzer reads
 through Eclector behind a Loom-owned client (ARCH-0013), so a file with damage

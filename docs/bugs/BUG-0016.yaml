@@ -1,6 +1,6 @@
 id: BUG-0016
 title: A definer macro whose template defines nothing is silently uncharacterised, so every DEFINE-OPERATION body's calls are dropped and loom-serve has no call graph
-status: open
+status: closed
 date: 2026-08-08
 refines: [PLAN-0011]
 affects: [macro-generator-properties, template-definer-form, define-operation,
@@ -170,3 +170,40 @@ body: |
   option this document did not list -- a :CALL-SITE entity modelling the call
   rather than the registered operation -- and explicitly leaves the :OPERATION
   entity question, the third option above, unanswered.
+
+  FIX PART 2, LANDED 2026-08-10, AND CLOSED
+
+  PLAN-0014 step 7 mints the call sites. RESOLVE-GENERATED-DEFINITIONS walks
+  every file's :DEFINER-CALL-SITES and, for a site GENERATED-DEFINITION-PLAN
+  produced no entity from, mints one :CALL-SITE per call name that CALL-TARGETS
+  resolves -- owned by the file through :CONTAINS, :referrer-kind :definer-call,
+  :generated-by the site's operator. 124 on this tree: define-command 68,
+  define-operation 50, let* 4, register-handler 2. The SYMPTOM measurement now
+  reads
+
+      tools/loom.sh 'describe violation-summary'
+        function violation-summary  [src/serve/operations.lisp:170-173]
+          -> calls: getp
+          <- documents: PLAN-0014, BUG-0016, ARCH-0014
+          <- calls: violation-summary@src/serve/operations.lisp:186 (definer-call)
+          <- contains: src/serve/operations.lisp
+
+  where it read no incoming :CALLS at all. Line 186 is where the :CHECK
+  operation's DEFINE-OPERATION form begins today, measured 2026-08-10; ARCH-0014
+  and PLAN-0014 both cite 165 for it, which no longer matches the file. 186 is
+  the figure to trust, and a hand-written line number in a document is exactly
+  the fact Loom exists to stop anyone hand-writing.
+
+  A name that resolves to nothing mints no call site -- 142 of the 266 orphaned
+  pairs -- because a node per absent callee is a node per thing that is not
+  there, and where those names went is already recorded on the site's
+  :CALL-NAMES and in `check''s definer-macro report. PLAN-0014 decision 2 and
+  ARCH-0014's OUTSTANDING item 2 carry the reasoning.
+
+  Closed on both halves. The third FIX option -- an :OPERATION entity type
+  modelling the runtime registration -- is neither taken nor refuted: `impact
+  search-entities' now names a call site in operations.lisp at a line rather
+  than the /v1/find route, which is a call graph rather than a model of what
+  loom-serve declares. That stays an open ARCH-level question and is out of
+  scope for this document, which was about the dropped call and no longer has
+  one. Whoever reopens it wants a new REQ, not this bug.

@@ -159,7 +159,17 @@ of this one can change that. BUG-0017."
                (when (consp form)
                  (let ((head (car form)))
                    (unless (quotationp form :quote)
-                     (when (symbolp head)
+                     ;; BUG-0020. A keyword can never name a function in Common
+                     ;; Lisp, so a list whose head is one is a declaration, a
+                     ;; plist entry or a CASE clause -- never a call. The test
+                     ;; is on the symbol rather than on the name because
+                     ;; TOKEN-NAME renders :FILE and FILE identically, which is
+                     ;; why nothing downstream could tell
+                     ;; (:unresolved-references list) from a call and why the
+                     ;; five names DEFENTITY's property declarations orphan
+                     ;; happen to match real functions in loom-analyzer and
+                     ;; loom-graph.
+                     (when (and (symbolp head) (not (keywordp head)))
                        (let ((name (token-name head)))
                          (push name names)
                          (note head name)))
@@ -287,6 +297,81 @@ same idea does not need a different rule.")
 
 (defun reader-artifact-p (name)
   (member name *reader-artifacts* :test #'string=))
+
+;;;; ------------------------------------------------------------------
+;;;; Initform call sites (BUG-0017, ARCH-0014 R3)
+;;;;
+;;;; The one place this analyzer mints a :CALL-SITE. COLLECT-CALL-NAMES' own
+;;;; docstring records why it could not see these: ANALYZE-FILE hands
+;;;; NOTE-DEFINITION no :body for a DEFVAR, DEFPARAMETER, DEFCLASS or
+;;;; DEFINE-CONDITION, so (defparameter *json-key-name* #'default-json-key-name)
+;;;; contributed no name and DEFAULT-JSON-KEY-NAME had no incoming edge at all.
+;;;;
+;;;; Reading the initform is only half of it, and the half BUG-0017's FIX could
+;;;; already see. What blocked the fix is that the recorded caller would be a
+;;;; :VARIABLE, and :CALLS runs from (:function :method :test) -- so there was
+;;;; no edge to assert. ARCH-0014's answer is the node: the caller is a
+;;;; :CALL-SITE the variable or class contains, which is a legal :CALLS source,
+;;;; so the ontology question that stalled the fix does not arise.
+;;;;
+;;;; The other half of BUG-0017 -- a designator in a lambda-list default -- is
+;;;; deliberately still open. It needs the lambda list parsed rather than
+;;;; walked, or every parameter name becomes a call.
+;;;; ------------------------------------------------------------------
+
+(defun slot-initforms (slot)
+  "The :INITFORM value of one DEFCLASS or DEFINE-CONDITION slot specifier, as a
+list of zero or one form.
+
+Read as a plist off the slot spec's cdr, exactly as SLOT-ACCESSOR-NAMES reads
+:ACCESSOR beside it. A slot spec that is a bare symbol declares no options at
+all, so it contributes nothing rather than being taken apart."
+  (when (consp slot)
+    (loop for (key value) on (rest slot) by #'cddr
+          when (and key (symbolp key) (string= (token-name key) "initform"))
+            collect value)))
+
+(defun initform-call-sites (form head reading)
+  "Every call name the initforms of FORM, whose head name is HEAD, contribute.
+
+Names rather than entities, because this knows nothing of the file, the line or
+the system in effect -- INITFORM-CALL-SITE-ENTITIES below is what turns one
+into the other, and it is separate so the walk can be read against
+COLLECT-CALL-NAMES without the entity construction in the way.
+
+Filtered by STANDARD-OPERATOR-P and READER-ARTIFACT-P exactly as pass 2
+filters, which is not a nicety: an unfiltered walk mints a call site for the
+MAKE-HASH-TABLE in most DEFPARAMETERs in a Lisp tree, and that is the uniform
+model ARCH-0014 priced at 4867 entities and refused, arriving by accident."
+  (let ((initforms
+          (cond ((member head '("defvar" "defparameter") :test #'string=)
+                 ;; (defvar *x*) declares the variable and supplies no value.
+                 (when (cddr form) (list (third form))))
+                ((member head '("defclass" "define-condition") :test #'string=)
+                 (loop for slot in (fourth form) append (slot-initforms slot))))))
+    (when initforms
+      (remove-if (lambda (name)
+                   (or (standard-operator-p name) (reader-artifact-p name)))
+                 (remove-duplicates (collect-call-names initforms :reading reading)
+                                    :test #'string=)))))
+
+(defun initform-call-site-entities (form start end path system reading kind)
+  "The :CALL-SITE entities FORM's initforms contribute, owned by the definition
+FORM makes and of KIND :VARIABLE or :CLASS.
+
+START and END are the enclosing form's, not the initform's: ARCH-0013 deleted
+ELEMENT-SPANS, so pass 1 has one range per top-level form and no sub-form
+positions at all, and a DEFPARAMETER's call sites carry the DEFPARAMETER's line
+(PLAN-0014 decision 5).
+
+MAKE-CALL-SITE-ENTITY rather than MAKE-INSTANCE, and this is the seam ARCH-0014
+names as a risk: the graph mints the other two kinds of call site, so the
+natural key has to agree across a system boundary, and two spellings of it
+would grow a duplicate per pass that nothing retracts."
+  (loop for name in (initform-call-sites form (token-name (car form)) reading)
+        collect (make-call-site-entity :file path :start-line start :end-line end
+                                       :call-name name :referrer-kind kind
+                                       :language :lisp :system system)))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Definer call sites (ARCH-0002 R2)
@@ -1056,17 +1141,30 @@ handler never reaches the catch-all."
 
 (define-definition-handler handle-variable
   "DEFVAR and DEFPARAMETER, which shared a clause and now share a handler."
-  (funcall note (make-variable-entity form start end path system))
+  (funcall note (make-variable-entity form start end path system)
+           :call-sites (initform-call-site-entities form start end path system
+                                                    reading :variable))
   system)
 
+;;; The class is (FIRST ENTITIES) and the rest are the :INTERFACE per declared
+;;; accessor, so the two are noted separately rather than in one DOLIST: an
+;;; initform belongs to the class that declares the slot, and hanging it off an
+;;; accessor would put the call under a generic function that never mentions it.
+
 (define-definition-handler handle-defclass
-  (dolist (e (class-definition-entities form :class start end path system))
-    (funcall note e))
+  (let ((entities (class-definition-entities form :class start end path system)))
+    (funcall note (first entities)
+             :call-sites (initform-call-site-entities form start end path system
+                                                      reading :class))
+    (dolist (e (rest entities)) (funcall note e)))
   system)
 
 (define-definition-handler handle-define-condition
-  (dolist (e (class-definition-entities form :condition start end path system))
-    (funcall note e))
+  (let ((entities (class-definition-entities form :condition start end path system)))
+    (funcall note (first entities)
+             :call-sites (initform-call-site-entities form start end path system
+                                                      reading :class))
+    (dolist (e (rest entities)) (funcall note e)))
   system)
 
 (define-definition-handler handle-defstruct
@@ -1133,6 +1231,7 @@ transaction."
         (local-functions '())   ; alist: name -> entity, for exact local calls
         (callables '())         ; list of (entity . body), things with bodies
         (call-sites '())        ; :DEFINER-CALL-SITES entries, in source order
+        (owned-call-sites '())  ; list of (owner . :CALL-SITE entity), ARCH-0014
         (shadowed '())          ; alist: survivor -> what it superseded
         (ops '())               ; built reversed, NREVERSEd on the way out
         (reading nil)
@@ -1164,10 +1263,15 @@ transaction."
     ;; to either names exactly one definition and can be linked here. A
     ;; DEFMETHOD does not: a call names the generic, and which method runs is a
     ;; runtime question, so those edges are left for resolution to fan out.
-    (flet ((note-definition (entity &key local body)
+    (flet ((note-definition (entity &key local body call-sites)
              (push entity definitions)
              (when local (push (cons (name entity) entity) local-functions))
-             (when body (push (cons entity body) callables))))
+             (when body (push (cons entity body) callables))
+             ;; :CALL-SITES is ARCH-0014's addition and the only one of the
+             ;; three that names entities rather than raw material: the handler
+             ;; has already built them, because it is the only place with the
+             ;; form's range and the system in effect at once.
+             (dolist (site call-sites) (push (cons entity site) owned-call-sites))))
       (dolist (spec forms)
         (destructuring-bind (form start end start-offset) spec
           ;; START-OFFSET is vestigial from here: ELEMENT-SPANS was its only
@@ -1197,7 +1301,8 @@ transaction."
               ;; catch-all always made -- a cons whose car is a non-NIL symbol.
               ((and head (not (call-site-head-p head)))
                (push (definer-call-site form start end) call-sites)))))))
-    (setf definitions (nreverse definitions))
+    (setf definitions (nreverse definitions)
+          owned-call-sites (nreverse owned-call-sites))
 
     ;; --- supersession: what the file defines once loaded (ARCH-0012 R1) ---
     ;; Here rather than after pass 2, because the point is that a shadowed
@@ -1212,6 +1317,11 @@ transaction."
     ;; order, so the survivor is already in front of anything it shadows;
     ;; removing the losers keeps a body that names one from resolving to an
     ;; object no op will ever assert.
+    ;;
+    ;; OWNED-CALL-SITES is filtered the same way and for a sharper version of
+    ;; the same reason: a shadowed DEFPARAMETER's initform is dead code, and a
+    ;; call site surviving its owner would be an entity in the graph carrying a
+    ;; :CONTAINS edge from something no assert ever lands.
     (multiple-value-setq (definitions shadowed)
       (supersede-shadowed-definitions definitions))
     (setf callables
@@ -1219,7 +1329,10 @@ transaction."
                          callables)
           local-functions
           (remove-if-not (lambda (entry) (member (cdr entry) definitions :test #'eq))
-                         local-functions))
+                         local-functions)
+          owned-call-sites
+          (remove-if-not (lambda (entry) (member (car entry) definitions :test #'eq))
+                         owned-call-sites))
 
     ;; ARCH-0012 R2. The shadowed source is real text, so its existence is
     ;; recorded on the survivor rather than silently dropped (CON-0001) -- and
@@ -1344,6 +1457,15 @@ transaction."
       (dolist (e definitions)
         (push (assert-entity e workspace-id) ops)
         (push (assert-edge :contains file e :workspace-id workspace-id) ops))
+      ;; After every definition, so an owner's own assert is always already
+      ;; planned when the edge naming it is. No :CONTAINS from the file: the
+      ;; chain ARCH-0014 draws is file contains variable contains call-site, and
+      ;; a second ownership edge would make the file a container of things it
+      ;; does not directly define.
+      (dolist (entry owned-call-sites)
+        (destructuring-bind (owner . site) entry
+          (push (assert-entity site workspace-id) ops)
+          (push (assert-edge :contains owner site :workspace-id workspace-id) ops)))
       (dolist (call (reverse local-calls))
         (push (assert-edge :calls (car call) (cdr call) :workspace-id workspace-id)
               ops)))

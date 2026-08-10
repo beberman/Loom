@@ -1,6 +1,6 @@
 id: REQ-0015
 title: An ambiguous call should become several edges a caller can discount, not no edge at all
-status: draft
+status: partial
 date: 2026-08-06
 affects: [resolve-calls, call-targets, callable-index, generated-entity,
           impact-set, describe-entity]
@@ -141,3 +141,38 @@ body: |
       rather than to several, so R3 should keep them out, and confirming that
       empirically is what distinguishes this from a change that merely trades
       one bad answer for another.
+
+  OUTSTANDING
+
+  ARCH-0014 answered this and PLAN-0014 landed the answer on 2026-08-10, in a
+  shape this document did not name: the N edges run from an :ambiguous
+  :CALL-SITE the caller contains rather than from the caller itself, which is
+  what lets the fan-out happen without the caller looking coupled to code it
+  never touches. Measured on this tree: 18 ambiguous sites, each with
+  :candidate-count 2 and two :CALLS edges at confidence 0.5, and 32 rule
+  violations before and after, so R4's baseline did not move. R1, R2, R3 and
+  R4 are met. Two things are not, and the mechanism being in is not the same
+  as the requirement being met.
+
+  R6, the acceptance criterion, was NOT run. It is game-server's `impact
+  cascade-delete 3' reaching the mpackage files that call it, and `id''s 144
+  dropped sites appearing as ambiguous call sites with 7 candidates each --
+  the numbers this document was written from. That tree was never indexed
+  under the new code. What was demonstrated is Loom's half: 18 occurrences
+  across 4 names, which this document and ARCH-0014 both say is almost nothing
+  and is not where the value is. So the value claimed here is untested, and a
+  reader should treat "ambiguity is now represented" as verified in mechanism
+  and unverified in worth. Nothing prevents running it; nobody has.
+
+  R5 stays open, and it is a real question rather than an oversight. `describe'
+  on a callee now shows an incoming call site with its line and its kind --
+  `<- calls: fixture-inspection@src/graph/test/enrich.lisp:132 (ambiguous)'
+  -- so a qualified edge is distinguishable from a certain one by the presence
+  of the site. It does not show the confidence, and `impact' does not mark a
+  candidate edge at all, which is R5's second sentence: an impact set silently
+  inflated by candidate edges trades a false negative for a false positive.
+  With :candidate-count 2 throughout this tree the distinction costs nothing
+  here and would cost a great deal on game-server at 7. ARCH-0014 defers it on
+  the record and PLAN-0014 restates the deferral; deciding it needs the
+  measurement R6 asks for, so the two are outstanding together rather than
+  separately.

@@ -1,6 +1,6 @@
 id: ARCH-0014
 title: A :CALL-SITE entity exists exactly where a call cannot be an edge from a definition, and nowhere else
-status: draft
+status: implemented
 date: 2026-08-09
 refines: [REQ-0015, BUG-0016, BUG-0017]
 affects: [resolve-calls, call-targets, callable-index, analyze-file,
@@ -408,3 +408,103 @@ body: |
   anchor for the ambiguous cases and still none for the 2292 external ones; and
   whether `describe' should show confidence, which is REQ-0015 R5's question and
   stays with it.
+
+  OUTSTANDING
+
+  Implemented by PLAN-0014 on 2026-08-10, eleven steps, suite green. R1 to R8
+  and R10 are true of the tree; R9's Loom half is measured below and its
+  game-server half was not run, which is why REQ-0015 stays partial. No review
+  was performed, so there is no REV-nnnn for this work.
+
+  Six departures from the text above. Every one is an implementation choice
+  inside the settled design rather than a reopening of it, and each is recorded
+  here because a reader comparing the code against this document would
+  otherwise read it as drift.
+
+  1. The natural key is (:file :start-line :call-name), not R1's (:file
+     :start-line :name), and NAME carries CALL-SITE-LABEL's
+     "<call-name>@<file>:<line>". ENTITY-NATURAL-KEY treats :name as the name
+     *slot*, so R1's spelling forces NAME to be the bare referenced name --
+     and LINKABLE-INDEX keys every named entity while RESOLVE-ONE refuses a
+     name matching several, so 163 call sites named exactly like the functions
+     they call would have turned resolved `affects:' references into
+     unresolved ones. Semantically the key is R1's exactly: a file, a line and
+     a referenced name. PLAN-0014 decision 1.
+
+  2. R4 mints only where the name resolves. Read literally, R4 mints one call
+     site per orphaned name, which is 266 entities on this tree of which 142
+     are nodes for names that resolve to nothing at all -- against this
+     document's own census reasoning ("a node per absent callee is a node per
+     thing that is not there") and its own R9. The predicate is CALL-TARGETS,
+     and 124 is what it mints. The asymmetry with R3, which keeps minting all
+     20 initform sites because the analyzer cannot consult the callable index,
+     is deliberate and costs 7 nodes. PLAN-0014 decision 2.
+
+  3. :CONTAINS :from gains :function, :method and :test as well as R1's
+     :variable. R7 requires `describe' on a *caller* to show an ambiguous site
+     as one neighbour, and there is no edge from the caller to the site
+     without them. PLAN-0014 decision 3.
+
+  4. :CALL-SITE declares two properties R1 does not list, :call-names and
+     :unresolved-calls. They are what let RESOLVE-CALLS treat a call site as
+     one more kind of caller instead of growing a second copy of the
+     confidence handling and the DEC-0003 rebuild property. :CALL-NAMES is
+     declared and never written -- CALLER-CALL-NAMES derives the one-element
+     list from :CALL-NAME -- so the referenced name is stored once. PLAN-0014
+     decision 4.
+
+  5. :BELONGS-TO widened in step with :CONTAINS, which R1's "No other ontology
+     change" did not anticipate and neither did PLAN-0014 step 3. Nothing in
+     the tree asserts a :BELONGS-TO edge, so it buys no behaviour; what it
+     keeps true is BELONGS-TO-IS-THE-INVERSE-OF-CONTAINS, which widening one
+     side alone would have made false. Weakening that test to exempt the new
+     members was the alternative and is the worse trade, since a declared
+     inverse that is quietly not one is a fact the ontology states and does
+     not hold.
+
+  6. SEARCH-RANK demotes a :call-site below every entity that is not one, in
+     loom-knowledge. R7 obliges the consumers to be checked rather than
+     assumed and this is what the check found: a call site's name has its
+     callee as a *prefix*, so it outranked every substring match among the
+     real definitions, and 7 of 86 measured terms lost between one and five
+     real definitions off `find''s silent 20-hit cap -- `id' two interfaces,
+     `name' three functions. Demoted by a whole rank band rather than
+     filtered, because a filtered entity is invisible and this design exists
+     to stop calls being invisible.
+
+  THE NUMBER R9 ASKS FOR
+
+  Measured 2026-08-10 under /usr/bin/sbcl on the whole tree, after step 11.
+  R9 requires this stated exactly by the implementing plan rather than
+  estimated, so "order 100 against 1604" is superseded by:
+
+      files                    178 ->  181
+      entities                1684 -> 1890     +206
+        of which :call-site             162
+          :variable                      20    (R3, the analyzer's)
+          :definer-call                 124    (R4, the graph's)
+          :ambiguous                     18    (R5, the graph's)
+        the other 44 are this work's own documents, tools/call-site-census.lisp,
+        and the functions and tests the eleven steps added
+      relationships           8261 -> 9049     +788
+        of which touch a call site      342
+          :contains into one            162
+          :calls out of one             180    (13 initform + 131 definer-call
+                                                + 36 ambiguous)
+      tests                    481 ->  503     covering 322 -> 325 units
+      documents                 81 ->   83     (BUG-0020, PLAN-0014)
+      rule violations           32 ->   32     all RULE-0003, all BUG-0009
+                                               noise; RULE-0001 empty
+      unresolved doc refs        0 ->    0
+      definer macros             4 ->    3     BUG-0020's fix, not this design
+      unread                     2 suppressed, 0 recovered
+
+  R2's rule holds as a number: 162 call sites against 4867 call-name
+  occurrences, and the 2527 occurrences resolving to exactly one callee from a
+  definition still produce exactly the edges they produced before. The ceiling
+  test in src/workspace/test/workspace.lisp is what keeps that from drifting.
+
+  The 180 :CALLS is the one figure worth reading twice, because it is where
+  decision 6 shows: 7 of the 124 definer-call names are themselves ambiguous
+  and fan out to 2 candidates each from the site that already exists rather
+  than minting a call site from a call site, which is 117 + 14 = 131.

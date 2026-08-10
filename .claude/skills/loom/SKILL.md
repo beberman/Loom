@@ -89,6 +89,13 @@ recorded gap, never a guess (CON-0001). `:analysis-failed-p`, and the single
 unparsable `:file` entity that goes with it, now means only what it always
 should have: the file could not be read at all.
 
+**A call with nowhere to go is an entity, not a drop.** An ambiguous name, a
+call in a body-swallowing macro's body such as `define-operation`'s, and a
+function designated in an initform each mint a `:call-site` (ARCH-0014) rather
+than being discarded, so `describe` on the callee lists them among its callers
+with their kind — `<- calls: violation-summary@src/serve/operations.lisp:186
+(definer-call)`.
+
 `:suppressed-regions` is the same idea for source the reader passed over rather
 than repaired — a `#+`/`#-` branch the feature policy did not take, or a `#.`
 it refused to evaluate. Comments are not in it; they are what a source file is

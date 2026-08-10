@@ -42,6 +42,16 @@ type-specific detail lives."
         :language  (getp entity :language)
         :source    (source entity)
         :confidence (confidence entity)
+        ;; NIL for every type but :CALL-SITE, and read with GETP so it stays
+        ;; that way without a type test here. ARCH-0014 R7 obliges a call site
+        ;; to be shown with its line and kind rather than as a bare id: the line
+        ;; is already in :LOCATION, and the kind is the one fact distinguishing
+        ;; an ambiguous fan-out from a definer body's call, which a reader will
+        ;; otherwise read as a missing edge. It belongs in the summary rather
+        ;; than in DESCRIBE-ENTITY's type-specific detail because the neighbour
+        ;; lines are built from summaries, and the neighbour is exactly where it
+        ;; has to appear.
+        :referrer-kind (getp entity :referrer-kind)
         :stale     (and (stale-p entity) t)))
 
 (defun summarize-entities (entities)
@@ -81,13 +91,34 @@ IMPACT-SET first and IMPACT-SET-TRUNCATED-P second, not both in hash order."
           ((search pattern name :test #'char-equal) 2)
           (t 3))))
 
+(defun search-rank (entity pattern)
+  "MATCH-RANK, with a :CALL-SITE placed below every entity that is not one.
+
+PLAN-0014 step 10's recorded fallback, taken because the measurement it asked
+for showed it was needed. A call site's name is \"<call-name>@<file>:<line>\"
+(ARCH-0014), so the pattern that names its callee matches it as a *prefix* --
+rank 1 -- and it therefore outranks every rank-2 substring match among the real
+definitions. Measured on this tree: 7 of 86 terms lost between one and five real
+definitions off `find''s silent 20-hit cap (REQ-0005), `id' losing two
+interfaces and `name' three functions, all to call sites ranked above them.
+
+Demoting by a whole rank band rather than breaking ties within one is the point:
+at the same match rank the call site was already losing, and interleaving would
+have left every one of those 7 terms displaced. Demoting rather than filtering
+is equally deliberate -- a filtered entity is invisible, and this design exists
+to stop calls being invisible, so a call site still appears whenever the cap
+leaves room, which on this tree is every term with 20 hits or fewer."
+  (let ((rank (match-rank entity pattern)))
+    ;; 4 is one past MATCH-RANK's worst, so the two bands cannot overlap.
+    (if (eq :call-site (entity-type entity)) (+ rank 4) rank)))
+
 (defun search-entities (view &key name type limit property-filters)
   "Entities matching NAME (substring, case-insensitive) and TYPE, best match
 first. Returns summaries."
   (let ((hits (find-entities view :entity-type type :name-like name
                                   :property-filters property-filters)))
     (when name
-      (setf hits (stable-sort hits #'< :key (lambda (e) (match-rank e name)))))
+      (setf hits (stable-sort hits #'< :key (lambda (e) (search-rank e name)))))
     (summarize-entities (if limit (subseq hits 0 (min limit (length hits))) hits))))
 
 ;;;; ==================================================================

@@ -394,6 +394,130 @@ No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
 ARCH-0009.")))
 
+(defentity :call-site
+  :documentation "One call name at one place in one file, as an entity.
+
+Minted exactly where a call name cannot be expressed as a :CALLS edge from an
+existing definition entity, and never otherwise (ARCH-0014). That rule is the
+whole type: a DEFUN calling one uniquely-named function still produces one
+:CALLS edge and no call site, which is 2527 of this tree's 2557 resolving
+call-name occurrences never meeting this type at all. ARCH-0014 priced the
+uniform alternative -- a node per occurrence -- at 4867 entities against 1604
+and refused it, so any change that mints a call site where an edge was
+possible has silently adopted the model that was refused.
+
+Three referrers can be in that position, which is what :REFERRER-KIND
+distinguishes. A designator in an initform, whose enclosing form is a
+:VARIABLE or a :CLASS and so not a legal :CALLS source (BUG-0017). A call in
+the body of a definer macro whose expansion mints no entity, so there is no
+definition to source the edge at (BUG-0016). And a name matching two or more
+plain functions, where the edge exists but the endpoint is plural (REQ-0015) --
+running those from a call site the caller contains is what keeps the caller
+from looking coupled to code it never touches.
+
+The natural key is (:file :start-line :call-name), and it is PLAN-0014
+decision 1 rather than ARCH-0014's literal (:file :start-line :name).
+ENTITY-NATURAL-KEY treats :name as the name *slot*, so keying on it would
+force NAME to be the bare referenced name -- and LINKABLE-INDEX keys every
+named entity, while RESOLVE-ONE refuses a name matching several, so 163 call
+sites named exactly like the functions they call would turn resolved
+`affects:' references into unresolved ones. NAME therefore carries
+CALL-SITE-LABEL's \"<call-name>@<file>:<line>\" and :CALL-NAME carries the
+referenced name. Semantically that is ARCH-0014's key exactly: a file, a line
+and a referenced name."
+  :natural-key (:file :start-line :call-name)
+  :properties ((:file        string  :required t)
+               (:start-line  integer :required t
+                :documentation "The enclosing form's start line, not the call's
+own. ARCH-0013 deleted ELEMENT-SPANS, so pass 1 has one range per top-level
+form and no sub-form positions -- a DEFPARAMETER's call sites carry the
+DEFPARAMETER's line, and an ambiguous site carries its caller's, because
+:CALL-NAMES records no position at all. PLAN-0014 decision 5.")
+               (:end-line    integer)
+               (:call-name   string  :required t
+                :documentation "The name this site references, as written and
+downcased -- the thing RESOLVE-CALLS looks up. A property rather than the NAME
+slot for the reason the type's own documentation gives.")
+               (:referrer-kind keyword
+                :one-of (:variable :class :definer-call :ambiguous)
+                :documentation "Which of the three positions this site is in,
+and so which pass owns it. :VARIABLE and :CLASS are the analyzer's, derived
+from one file and aged out by RETRACT-FILE. :DEFINER-CALL and :AMBIGUOUS are
+the graph's, derived on every resolution pass from :DEFINER-CALL-SITES and
+:CALL-NAMES respectively, and swept by the pass that produces them.")
+               (:candidate-count integer
+                :documentation "How many definitions an :AMBIGUOUS site's name
+matched. NIL for every other kind. The edges from such a site each carry
+1/N as their confidence, so this is what a consumer reads to know how much of
+a guess the fan-out is.")
+               (:call-names  list
+                :documentation "Declared so a call site is a legal member of
+the caller vocabulary RESOLVE-CALLS walks, and deliberately never written.
+PLAN-0014 decision 4 puts it here; step 4 then has CALLER-CALL-NAMES derive the
+one-element list from :CALL-NAME instead of reading this, which is why nothing
+sets it. Storing the name twice is the drift MAKE-CALL-SITE-ENTITY exists to
+prevent, one property over.")
+               (:unresolved-calls list
+                :documentation "Written by RESOLVE-CALLS exactly as it writes
+it on a function: where an initform name that matched nothing is recorded
+rather than dropped, per CON-0001.")
+               (:generated-by string
+                :documentation "For a :DEFINER-CALL site, the macro whose call
+swallowed the body this name was read from -- define-operation, define-command.
+Absent for the other kinds.")
+               (:language    keyword :one-of *source-languages*)
+               (:system      keyword
+                :documentation "The system this belongs to, taken from the
+entity the site was derived from rather than re-decided. What makes
+EDGES-BETWEEN-SYSTEMS see a call site at all, and so what keeps RULE-0001 to
+RULE-0003 from silently ignoring the new edges (ARCH-0014 R7).")))
+
+;;; The one place in this file that is not declaration, and the header above
+;;; says everything here is. It is here anyway because two systems mint this
+;;; type -- the analyzer for initforms, the graph for definer calls and
+;;; ambiguity -- and if the two ever spelled the key differently the graph
+;;; would grow a duplicate per pass that nothing retracts. ARCH-0014's RISKS
+;;; section names a shared key-computing function in loom-ontology as the cheap
+;;; insurance against exactly that; this is it, and neither minting site may
+;;; construct a CALL-SITE-ENTITY directly.
+
+(defun call-site-label (call-name file start-line)
+  "A call site's NAME slot: \"<call-name>@<file>:<line>\".
+
+Carries the referenced name so `find <callee>' still reaches the site, and the
+file and line so a reader is sent somewhere rather than handed a bare name.
+Not the natural key -- that is the three components separately -- but derived
+from the same three, so a label and a key cannot disagree about which site they
+describe."
+  (format nil "~a@~a:~a" call-name file start-line))
+
+(defun make-call-site-entity (&key file start-line end-line call-name
+                                   referrer-kind candidate-count
+                                   language system generated-by)
+  "The one constructor for a :CALL-SITE, used by both systems that mint one.
+
+Natural-key properties are passed at construction and never SETP'd afterwards,
+for the reason lisp-analyzer.lisp's comment gives: SS5.1 derives the id from
+the natural key inside INITIALIZE-INSTANCE, so a :file, :start-line or
+:call-name arriving later would leave the entity carrying an id computed from
+values it did not yet have."
+  (make-instance 'call-site-entity
+                 :name (call-site-label call-name file start-line)
+                 :origin-file file
+                 :properties (properties-table
+                              (list :file file
+                                    :start-line start-line
+                                    :end-line end-line
+                                    :call-name call-name
+                                    :referrer-kind referrer-kind
+                                    :candidate-count candidate-count
+                                    ;; No :call-names. CALLER-CALL-NAMES
+                                    ;; derives it from :CALL-NAME, so the
+                                    ;; referenced name is stored once.
+                                    :generated-by generated-by
+                                    :language language
+                                    :system system))))
+
 ;;;; ==================================================================
 ;;;; Knowledge -- the part that cannot be recovered by re-reading source
 ;;;;
@@ -662,7 +786,7 @@ rule is advisory prose.  A plist: :kind plus the keys that kind needs.")))
 ;;;; ==================================================================
 
 (defrelationship :calls
-  :from (:function :method :test) :to (:function :method :interface)
+  :from (:function :method :test :call-site) :to (:function :method :interface)
   :transitive-impact t :impact-direction :reverse
   :documentation "The core propagation edge: a callee change reaches its callers.
 
@@ -673,7 +797,16 @@ when a protocol has no implementation in the workspace to fan out to: a
 DEFCLASS slot accessor, which is a generic function generated from a slot and
 never specialised again, or a DEFGENERIC whose methods live outside the
 indexed tree. Permitting the endpoint is what keeps those callable; it does
-not make the generic a hub.")
+not make the generic a hub.
+
+:CALL-SITE is the fourth source and the whole of ARCH-0014's ontology cost.
+The edge runs from the call site to the callee, so `describe' on the callee
+shows the site as an incoming caller and `impact' reaches it in one hop rather
+than two. Interposing the node between an existing caller and its callee was
+considered and rejected: every path would have grown a hop, so every depth
+`impact' reports would have changed. A name resolving to exactly one callee
+from a :FUNCTION, :METHOD or :TEST still produces the edge it produces today
+and mints nothing.")
 
 (defrelationship :depends-on
   :from (:module :package :file) :to (:module :package :file)
@@ -721,17 +854,43 @@ would answer a question nobody asks of the edge.")
   :documentation "Contract changes propagate down to implementors.")
 
 (defrelationship :contains
-  :from (:repository :workspace :package :module :file :class)
-  :to (:file :module :class :interface :function :method :variable :test)
+  :from (:repository :workspace :package :module :file :class
+         :variable :function :method :test)
+  :to (:file :module :class :interface :function :method :variable :test
+       :call-site)
   :transitive-impact nil :impact-direction :reverse
-  :documentation "One step only: a changed function marks its file, not the world.")
+  :documentation "One step only: a changed function marks its file, not the world.
+
+The four definition types on the :FROM list are there for one reason and reach
+one target: a :CALL-SITE is a thing its variable, its class or its caller
+contains, so ARCH-0014 needs no ownership edge type of its own. The chain
+reads file contains variable contains call-site calls callee, every link an
+edge type that already existed.
+
+ARCH-0014 R1 lists only :VARIABLE, and the other three are PLAN-0014 decision
+3. R7 requires `describe' on a *caller* to show an ambiguous site as one
+neighbour rather than N couplings, and there is no edge from the caller to the
+site without them -- the same argument R1 makes for the :VARIABLE case, applied
+to the case R1 did not enumerate.")
 
 (defrelationship :belongs-to
-  :from (:file :module :class :interface :function :method :variable :test)
-  :to (:repository :workspace :package :module :file :class)
+  :from (:file :module :class :interface :function :method :variable :test
+         :call-site)
+  :to (:repository :workspace :package :module :file :class
+       :variable :function :method :test)
   :transitive-impact nil :impact-direction :forward
   :documentation "The inverse of CONTAINS.  Impact still runs member to
-container, which is along this edge rather than against it.")
+container, which is along this edge rather than against it.
+
+Widened in step with :CONTAINS for ARCH-0014, and only because it is the
+inverse: nothing in the tree asserts a :BELONGS-TO edge, so this buys no
+behaviour at all. What it keeps true is the property
+BELONGS-TO-IS-THE-INVERSE-OF-CONTAINS asserts -- that the two declarations are
+exact mirrors -- which widening one side alone would have made false. Neither
+ARCH-0014 R1 nor PLAN-0014 step 3 names this widening; both say :CONTAINS and
+stop, and both would have left that test failing. Weakening the test to exempt
+the new members was the alternative and is the worse trade: a declared inverse
+that is quietly not one is a fact the ontology states and does not hold.")
 
 (defrelationship :tests
   :from (:test) :to (:function :method :class :module :file :interface)

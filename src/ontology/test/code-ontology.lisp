@@ -228,6 +228,77 @@
   (is (null (validate-relationship-endpoints :tests :test :interface))
       "and a test that calls a slot accessor directly still covers it"))
 
+(test a-call-site-is-called-from-and-contained-by-what-refers-to-it
+  ;; ARCH-0014 R1, plus PLAN-0014 decision 3 for the caller-side :CONTAINS.
+  ;; PLAN-OP rejects a whole transaction on one illegal endpoint, so each of
+  ;; these missing would cost RESOLVE-CALLS every op it emits rather than one
+  ;; edge -- which is the failure a-generated-definition-can-point-at-what-
+  ;; generated-it records happening before.
+  (is (null (validate-relationship-endpoints :calls :call-site :function))
+      "the edge runs from the call site to the callee, which is the whole
+ontology cost of ARCH-0014")
+  (is (null (validate-relationship-endpoints :contains :variable :call-site))
+      "BUG-0017: an initform's site belongs to the variable that holds it")
+  (is (null (validate-relationship-endpoints :contains :class :call-site))
+      "and a slot initform's to its class")
+  (is (null (validate-relationship-endpoints :contains :file :call-site))
+      "BUG-0016: a definer call site's belongs to the file")
+  (is (null (validate-relationship-endpoints :contains :function :call-site))
+      "REQ-0015: and an ambiguous site to the caller it runs from, or
+`describe' on that caller shows the site as no neighbour at all")
+  ;; The guard on all five. A call site is a call, not a callable: widening
+  ;; :CALLS' :TO as well would let one call site call another, which is the
+  ;; recursion PLAN-0014 decision 6 exists to prevent.
+  (is (not (null (validate-relationship-endpoints :calls :function :call-site)))
+      "nothing calls a call site"))
+
+(test two-constructions-of-one-call-site-agree-on-its-identity
+  ;; The seam ARCH-0014's RISKS section names: the analyzer mints initform
+  ;; sites and the graph mints the other two, so if the two ever spelled the
+  ;; key differently the graph would grow a duplicate per pass that nothing
+  ;; retracts. MAKE-CALL-SITE-ENTITY being the only constructor is the
+  ;; insurance; this asserts the property that makes it worth having.
+  (let ((a (make-call-site-entity :file "a.lisp" :start-line 12
+                                  :call-name "target" :referrer-kind :variable
+                                  :language :lisp :system :demo))
+        (b (make-call-site-entity :file "a.lisp" :start-line 12
+                                  :call-name "target" :referrer-kind :definer-call
+                                  :generated-by "define-operation"
+                                  :language :lisp :system :other)))
+    (is (equal (entity-natural-key a) (entity-natural-key b))
+        "the key is (:file :start-line :call-name) and nothing else -- two
+minting passes disagreeing about the referrer must still land on one entity")
+    (is (equal "call-site:a.lisp:12:target" (id a))
+        "and the derived id reads the way every other derived id here does")
+    (is (equal "call-site:a.lisp:12:target" (id b))))
+  ;; A different line is a different site, which is what lets two colliding
+  ;; definitions produce two call sites rather than one merged set (BUG-0012).
+  (is (not (equal (id (make-call-site-entity :file "a.lisp" :start-line 12
+                                             :call-name "target"))
+                  (id (make-call-site-entity :file "a.lisp" :start-line 13
+                                             :call-name "target"))))))
+
+(test a-call-sites-name-carries-its-referenced-name-and-its-location
+  ;; PLAN-0014 decision 1. NAME cannot be the bare referenced name:
+  ;; LINKABLE-INDEX keys every named entity and RESOLVE-ONE refuses a name
+  ;; matching several, so call sites named exactly like their callees would
+  ;; turn resolved `affects:' references into unresolved ones and move the
+  ;; pinned "0 unresolved document references" off zero.
+  (let ((site (make-call-site-entity :file "src/serve/operations.lisp"
+                                     :start-line 165
+                                     :call-name "violation-summary"
+                                     :referrer-kind :definer-call)))
+    (is (equal "violation-summary@src/serve/operations.lisp:165" (name site)))
+    (is (equal "violation-summary" (getp site :call-name))
+        "the referenced name is the property, so RESOLVE-CALLS looks up the
+callee rather than the label")
+    (is (null (getp site :call-names))
+        "and the name is stored once -- CALLER-CALL-NAMES derives the list
+RESOLVE-CALLS reads, so a second copy here could drift from the key")
+    (is (equal (call-site-label "violation-summary" "src/serve/operations.lisp" 165)
+               (name site))
+        "the label and the entity cannot disagree, because one makes the other")))
+
 (test a-document-may-mention-a-test
   ;; Found by running the pipeline over Loom's own tree the first time :TEST
   ;; held any facts. fiveam names tests in prose, so a document discussing one

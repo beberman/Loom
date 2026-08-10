@@ -35,6 +35,30 @@ costs the agent a read")
     (setf (stale-p (k-resolve f)) t)
     (is-true (getf (entity-summary (k-resolve f)) :stale))))
 
+(test a-call-sites-summary-carries-the-kind-of-referrer-it-came-from
+  ;; ARCH-0014 R7: `describe' on a callee must show an incoming call site with
+  ;; its line and kind rather than a bare id. The line is already in :LOCATION;
+  ;; the kind has nowhere else to come from, because a summary is deliberately
+  ;; not the whole property table.
+  (let ((summary (entity-summary
+                  (make-call-site-entity :file "src/workspace/overlay.lisp"
+                                         :start-line 41 :end-line 53
+                                         :call-name "resolve-overlay"
+                                         :referrer-kind :ambiguous
+                                         :candidate-count 2
+                                         :language :lisp :system :workspace))))
+    (is (eq :ambiguous (getf summary :referrer-kind)))
+    (is (string= "src/workspace/overlay.lisp:41-53" (getf summary :location)))))
+
+(test an-ordinary-entity-carries-a-null-kind-rather-than-no-key-at-all
+  ;; The default argument is the whole test. GETF of an absent key already
+  ;; answers NIL, so asserting (null ...) alone would pass just as well before
+  ;; :REFERRER-KIND was added as after -- CON-0003's test that passes for the
+  ;; wrong reason. :ABSENT distinguishes "present and NIL" from "not there".
+  (let ((summary (entity-summary (k-resolve (make-k-fixture)))))
+    (is (null (getf summary :referrer-kind :absent))
+        "every summary carries the key so a consumer can read it unconditionally")))
+
 ;;; ------------------------------------------------------------------
 ;;; search-entities (loom_find)
 ;;; ------------------------------------------------------------------
@@ -57,6 +81,28 @@ costs the agent a read")
 
 (test search-with-no-match-returns-nothing-rather-than-guessing
   (is (null (search-entities (k-graph (make-k-fixture)) :name "leaflet"))))
+
+(test a-call-site-ranks-below-a-real-definition-it-would-otherwise-outrank
+  ;; PLAN-0014 step 10's fallback. "overlay" is a prefix of the call site's
+  ;; label "overlay-cache@...", so MATCH-RANK alone puts it at 1 and above
+  ;; RESET-OVERLAY's substring match at 2 -- which off the silent 20-hit cap is
+  ;; how a real definition disappears from `find'. Ranked, not filtered: the
+  ;; site is still in the answer, last.
+  (let* ((f (make-k-fixture))
+         (site (make-call-site-entity :file "src/workspace/overlay.lisp"
+                                      :start-line 41 :end-line 53
+                                      :call-name "overlay-cache"
+                                      :referrer-kind :definer-call
+                                      :language :lisp :system :workspace)))
+    (add-entity (k-graph f) site)
+    (let ((types (mapcar (lambda (s) (getf s :type))
+                         (search-entities (k-graph f) :name "overlay"))))
+      (is (= 1 (count :call-site types))
+          "ranked below, never filtered out -- an invisible call site is the
+thing this design exists to stop")
+      (is (eq :call-site (car (last types)))
+          "and below every real definition, not merely below the ones it ties
+with"))))
 
 ;;; ------------------------------------------------------------------
 ;;; describe-entity (loom_describe)

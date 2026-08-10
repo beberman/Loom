@@ -361,7 +361,18 @@ unconditionally is which units were attempted and what became of them
       (format t "~&  ~a ~(~a~): ~{~a~^, ~}~%"
               (if (eq :out (getf group :direction)) "->" "<-")
               (getf group :rel-type)
-              (mapcar (lambda (e) (getf e :name)) (getf group :entities))))))
+              ;; A call site's name already carries its file and line, so the
+              ;; kind is the only part of ARCH-0014 R7's "line and kind rather
+              ;; than a bare id" still missing here. NIL for every other type,
+              ;; so the ~@[ is what keeps this from adding an empty pair of
+              ;; parens to every ordinary neighbour -- and its clause contains
+              ;; a directive, so it consumes the argument it tested rather than
+              ;; leaking it into the next one, which is the trap the document
+              ;; summary above this records.
+              (mapcar (lambda (e)
+                        (format nil "~a~@[ (~(~a~))~]"
+                                (getf e :name) (getf e :referrer-kind)))
+                      (getf group :entities))))))
 
 (define-command impact (term &optional depth)
     "impact <name> [<depth>]"

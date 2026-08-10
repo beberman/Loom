@@ -73,6 +73,14 @@
    #:render-key-part
    #:properties-table
 
+   ;; :CALL-SITE's shared constructor (ARCH-0014). Exported because two systems
+   ;; mint the type -- the analyzer for initforms, the graph for definer calls
+   ;; and ambiguity -- and a key spelled two ways would grow a duplicate per
+   ;; pass that nothing retracts. The DEFENTITY class and its accessors export
+   ;; themselves.
+   #:call-site-label
+   #:make-call-site-entity
+
    ;; type registry -- the single source of the schema
    #:*entity-type-registry*
    #:*relationship-type-registry*

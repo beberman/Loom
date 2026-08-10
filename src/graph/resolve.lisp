@@ -410,6 +410,89 @@ depending on the order the operations happen to be applied in."
             (push (retract (id entity) workspace-id) ops)))))
     (nreverse ops)))
 
+(defun call-site-retractions (view kind produced workspace-id)
+  "Retract every :CALL-SITE of KIND this pass did not produce again.
+
+ARCH-0014 R6 says RETRACT-FILE needs nothing, and that is true of exactly one
+of the three kinds. An initform site is derived from one file, so editing that
+file removes it and the next analysis re-derives it. The graph's two are not:
+an ambiguous site's origin file is the *caller's*, so deleting one of two
+colliding definitions from a third file leaves the site behind with a live edge
+to the survivor while the caller also acquires its own direct edge -- one call
+reported twice, at two different confidences. A definer site's is the calling
+file, so a macro that becomes characterised in its own file leaves the call
+sites its calls used to orphan, beside the definition that now carries the same
+names.
+
+Both traps GENERATED-ENTITY-RETRACTIONS records apply here unchanged. The
+retracts go last in the batch and name only entities no assert in it touches,
+which is what keying on absence from PRODUCED buys: a site this pass did
+produce is a refresh, and a refresh is an upsert by natural key, so emitting a
+retract and an assert for one key in one transaction would risk the retract
+removing what the assert had just landed.
+
+KIND is the third condition and it is not a convenience. Each pass owns exactly
+one referrer kind, and a sweep keyed on absence alone would retract every one
+of the analyzer's sites on its first run and re-mint none of them -- the same
+shape of silent, total loss that reading :GENERATED-BY alone would have had."
+  (let ((ops '()))
+    (dolist (site (entities-of-type view :call-site))
+      (when (and (eq kind (getp site :referrer-kind))
+                 (not (gethash (id site) produced)))
+        (push (retract (id site) workspace-id) ops)))
+    (nreverse ops)))
+
+(defun definer-call-site-entities (view index minted)
+  "One :CALL-SITE per resolving call name on a definer call site that minted no
+definition, as a list of (file . entity) pairs.
+
+BUG-0016's second half. A macro whose expansion is a runtime table entry --
+DEFINE-OPERATION, DEFINE-COMMAND -- swallows a real body, and the names in it
+reach no entity at all: there is no definition to source a :CALLS edge at, so
+every REST route and every MCP tool is invisible in the call graph. The call
+site is the node ARCH-0014 mints to be that source.
+
+MINTED is the set of site plists GENERATED-DEFINITION-PLAN produced an entity
+from, keyed by identity, which is why no second predicate is written: the plan
+already carries the site in its :SITE key, so the two populations cannot
+disagree about which sites minted. That disjointness is also what keeps the two
+kinds of key apart -- a generated definition's start line is its site's start
+line, so ARCH-0014's uniqueness argument (\"a definer call site cannot begin on
+a definition's line\") holds only because a site that mints one never mints the
+other.
+
+Only where CALL-TARGETS returns something, which is PLAN-0014 decision 2 rather
+than R4's literal text. Measured on this tree, R4 read literally is 266 nodes
+of which 142 name something that is not in the workspace at all -- against
+ARCH-0014's own R9 (\"expected order 100\") and against its own census
+reasoning, that a node per absent callee is a node per thing that is not there.
+A name that resolves to nothing carries no edge, and the fact that it went
+nowhere already lives on the site's :CALL-NAMES and in `check''s definer-macro
+report. The asymmetry with the analyzer's initform sites, which mint all 20, is
+deliberate: the analyzer holds no callable index and cannot ask this question."
+  (let ((pairs '()))
+    (dolist (file (entities-of-type view :file))
+      (dolist (site (getp file :definer-call-sites))
+        (unless (gethash site minted)
+          (dolist (name (getf site :call-names))
+            (when (call-targets index name nil)
+              (push (cons file
+                          (make-call-site-entity
+                           :file (getp file :path)
+                           :start-line (getf site :start-line)
+                           :end-line (getf site :end-line)
+                           :call-name name
+                           :referrer-kind :definer-call
+                           :generated-by (getf site :operator)
+                           ;; The file's, not re-decided: a call site read out
+                           ;; of a macro call has no form of its own to take a
+                           ;; package from, the same shortcut GENERATED-ENTITY
+                           ;; takes one function up (ARCH-0009 R6).
+                           :language (getp file :language)
+                           :system (getp file :system)))
+                    pairs))))))
+    (nreverse pairs)))
+
 (defun resolve-generated-definitions (view &key workspace-id registry)
   "Operations for every definition a generator brought into existence.
 
@@ -425,23 +508,43 @@ endpoints against the asserts already planned in the same transaction, and the
 retracts come last, naming only entities no assert in this batch touches."
   (let* ((index (effective-generator-registry view registry))
          (produced (make-hash-table :test #'equal))
+         ;; The sites that minted, keyed by identity, so the call-site half
+         ;; below can tell an orphaned site from an accounted-for one without
+         ;; re-deciding it.
+         (minted (make-hash-table :test #'eq))
+         ;; The call sites this pass produced, for the sweep below. Kept apart
+         ;; from PRODUCED, which GENERATED-ENTITY-RETRACTIONS reads against a
+         ;; different type list and a different predicate.
+         (produced-sites (make-hash-table :test #'equal))
          (asserts '())
          (edges '()))
     (dolist (plan (generated-definition-plan view index))
       (let ((entity (generated-entity plan))
             (macro (getf (getf plan :entry) :macro)))
         (setf (gethash (id entity) produced) t)
+        (setf (gethash (getf plan :site) minted) t)
         (push (assert-entity entity workspace-id) asserts)
         ;; No edge when the macro lives outside the tree -- fiveam's TEST is
         ;; the common case -- because there is no entity to point at. The
         ;; :GENERATED-BY property still records what made it.
         (when macro
           (push (assert-edge :uses entity macro :workspace-id workspace-id) edges))))
+    ;; BUG-0016's second half. CALLABLE-INDEX of this same view is stable
+    ;; between here and RESOLVE-CALLS, because neither pass mints a :FUNCTION,
+    ;; :METHOD or :INTERFACE -- so a name that resolves here resolves there too,
+    ;; and a call site is never minted for an edge that will not be drawn.
+    (let ((callables (callable-index view)))
+      (dolist (pair (definer-call-site-entities view callables minted))
+        (destructuring-bind (file . site) pair
+          (setf (gethash (id site) produced-sites) t)
+          (push (assert-entity site workspace-id) asserts)
+          (push (assert-edge :contains file site :workspace-id workspace-id) edges))))
     (append (structural-generated-uses view :workspace-id workspace-id)
             (nreverse asserts)
             (nreverse edges)
             (generated-entity-retractions
-             view (known-generator-names view registry) produced workspace-id))))
+             view (known-generator-names view registry) produced workspace-id)
+            (call-site-retractions view :definer-call produced-sites workspace-id))))
 
 (defun generated-definition-collisions (view registry)
   "Every definer call site this pass refused, as (file . name).
@@ -561,7 +664,20 @@ The precedence is ARCH-0001's, and the order of the clauses is the design:
                          there is nothing to fan out to, and refusing would
                          make the commonest accessor in a CLOS codebase
                          uncallable.
-  anything else          unresolved, and recorded as such."
+  two or more plain
+  functions              one edge per candidate at 1/N, sourced at a
+                         :CALL-SITE the caller contains rather than at the
+                         caller (REQ-0015, ARCH-0014).
+  anything else          unresolved, and recorded as such.
+
+A target may carry :CALL-SITE, the entity the edge runs from instead of CALLER.
+RESOLVE-CALLS is what asserts it, because only the caller of this function is
+in a transaction.
+
+CALLER may be NIL, which asks the bare question \"does this name reach
+anything\" without a caller to remove from the candidates or to hang a node on.
+RESOLVE-GENERATED-DEFINITIONS asks it that way, so it can decide whether an
+orphaned definer name is worth a call site at all."
   (let* ((candidates (remove caller (gethash (string-downcase name) index)))
          (functions  (remove-if-not (lambda (e) (eq :function  (entity-type e))) candidates))
          (methods    (remove-if-not (lambda (e) (eq :method    (entity-type e))) candidates))
@@ -577,6 +693,45 @@ The precedence is ARCH-0001's, and the order of the clauses is the design:
                                  :derived-from (when generic (list generic))))))
           ((= 1 (length interfaces))
            (list (list :callee (first interfaces))))
+          ;; REQ-0015. The clauses above have already excluded every case with
+          ;; a method or with exactly one interface, so two or more plain
+          ;; functions is all that is left to test -- which is also exactly
+          ;; CLASSIFY-CALL's :AMBIGUOUS clause in tools/call-site-census.lisp,
+          ;; and the two have to keep agreeing for the census to measure this
+          ;; pass rather than something adjacent to it.
+          ;;
+          ;; DISPATCH-CONFIDENCE, the same 1/N the method fan-out uses, but the
+          ;; edges do not mean the same thing and the node is the difference.
+          ;; Dispatch is a union of genuine possibilities, so it runs from the
+          ;; caller; ambiguity is one call the resolver could not place, and
+          ;; running N edges from the caller is what CALL-TARGETS' docstring has
+          ;; always refused -- every caller of a common name looking coupled to
+          ;; code it never touches. One hop away and labelled, it is a report of
+          ;; a guess rather than a fabricated fact (CON-0001).
+          ((>= (length functions) 2)
+           (let ((confidence (dispatch-confidence (length functions)))
+                 ;; Decision 6: a call site is already an anchor for an
+                 ;; ambiguity, so it fans out directly. Minting a second node
+                 ;; from the first one's file and line would recur on every
+                 ;; pass. A NIL caller has nothing to build a node from and is
+                 ;; only asking whether the name reaches anything, so it takes
+                 ;; the same branch.
+                 (directp (or (null caller)
+                              (eq :call-site (entity-type caller)))))
+             (let ((site (unless directp
+                           (make-call-site-entity
+                            :file (getp caller :file)
+                            :start-line (getp caller :start-line)
+                            :end-line (getp caller :end-line)
+                            :call-name name
+                            :referrer-kind :ambiguous
+                            :candidate-count (length functions)
+                            :language (getp caller :language)
+                            :system (getp caller :system)))))
+               (loop for candidate in functions
+                     collect (list :callee candidate
+                                   :confidence confidence
+                                   :call-site site)))))
           (t nil))))
 
 (defparameter *minimum-dispatch-confidence* 0.1
@@ -596,6 +751,22 @@ it can rely on and drops the sixteen-way guesses."
       1.0
       (max *minimum-dispatch-confidence* (/ 1.0 method-count))))
 
+(defun caller-call-names (caller)
+  "The call names CALLER records, whatever kind of caller it is.
+
+A :CALL-SITE is one call, so its names are the one-element list holding its
+:CALL-NAME. Every other caller carries the list the analyzer wrote on it.
+
+Deriving rather than reading a stored :CALL-NAMES is what keeps the referenced
+name in exactly one place on a call site: :CALL-NAME is a natural-key
+component, so a stored copy that drifted from it would leave the entity
+resolving one name while keying on another, and nothing downstream could tell.
+ARCH-0014, PLAN-0014 step 4."
+  (if (eq :call-site (entity-type caller))
+      (let ((name (getp caller :call-name)))
+        (when name (list name)))
+      (getp caller :call-names)))
+
 (defun resolve-calls (view &key workspace-id)
   "Operations linking each recorded call name to the definition it names.
 
@@ -603,11 +774,12 @@ For every callable carrying :CALL-NAMES, each name is looked up in the
 workspace:
 
   exactly one definition  -- assert a :CALLS edge to it
-  several definitions     -- record it unresolved rather than guess. Picking
-                             one would be a fabricated edge, and asserting all
-                             of them would make every caller of a common name
-                             look coupled to code it never touches. Precise
-                             disambiguation is what SS8.3 defers to LSP.
+  several definitions     -- assert an ambiguous :CALL-SITE the caller
+                             contains, and one edge from it to each candidate
+                             at 1/N (REQ-0015). The caller still acquires no
+                             direct edge, which is the false coupling this
+                             clause has always refused; what changes is that
+                             the refusal is now reportable rather than silent.
   none                    -- record it unresolved. It is a genuine external
                              dependency, and a standing record of one.
 
@@ -625,14 +797,25 @@ Idempotent: an edge that already exists upserts onto itself by natural key, and
 a name that resolved last pass resolves to the same edge this pass. Safe to run
 after every analysis pass."
   (let ((index (callable-index view))
+        ;; The ambiguous call sites this pass produced, keyed by id: the
+        ;; dedupe for the asserts below and the produced set for the sweep at
+        ;; the end, which are the same question asked twice.
+        (asserted (make-hash-table :test #'equal))
         (ops '()))
     ;; :TEST alongside the two callables, per ARCH-0002 R8. No new logic: it
     ;; was always a permitted :CALLS source in the ontology and had simply
     ;; never been fed a :CALL-NAMES, because until a resolution pass minted
     ;; one there were no :TEST entities at all.
-    (dolist (type '(:function :method :test))
+    ;;
+    ;; :CALL-SITE is the fourth, and it is the same move for the same reason
+    ;; (ARCH-0014). A call site is one more kind of caller, so the fan-out, the
+    ;; confidence handling, the :UNRESOLVED-CALLS write and DEC-0003's rebuild
+    ;; property all apply to it without a second copy of any of them. The only
+    ;; thing that differs is where the names come from, which is
+    ;; CALLER-CALL-NAMES' whole job.
+    (dolist (type '(:function :method :test :call-site))
       (dolist (caller (entities-of-type view type))
-        (let ((names (getp caller :call-names))
+        (let ((names (caller-call-names caller))
               (linked '())          ; edge plists, reversed
               (left '()))
           (dolist (name names)
@@ -640,16 +823,32 @@ after every analysis pass."
               (if targets
                   (dolist (target targets) (push target linked))
                   (push name left))))
+          ;; A target may name the :CALL-SITE its edge runs from rather than the
+          ;; caller, which is REQ-0015's fan-out. The site is asserted once and
+          ;; its :CONTAINS edge from the caller with it, both before the :CALLS
+          ;; edges naming it, because the Graph Manager resolves an edge's
+          ;; endpoints against the asserts already planned in the same
+          ;; transaction. Keyed on id rather than on identity: CALL-TARGETS
+          ;; builds a fresh entity per name, and two names from one caller are
+          ;; two sites while one name asked twice is one.
           (dolist (target (nreverse linked))
-            (destructuring-bind (&key callee confidence derived-from) target
-              (push (if confidence
-                        (assert-edge :calls caller callee
-                                     :workspace-id workspace-id
-                                     :source :inferred
-                                     :confidence confidence
-                                     :derived-from derived-from)
-                        (assert-edge :calls caller callee :workspace-id workspace-id))
-                    ops)))
+            (destructuring-bind (&key callee confidence derived-from call-site) target
+              (when (and call-site (null (gethash (id call-site) asserted)))
+                (setf (gethash (id call-site) asserted) t)
+                (push (assert-entity call-site workspace-id) ops)
+                (push (assert-edge :contains caller call-site
+                                   :workspace-id workspace-id)
+                      ops))
+              (let ((source (or call-site caller)))
+                (push (if confidence
+                          (assert-edge :calls source callee
+                                       :workspace-id workspace-id
+                                       :source :inferred
+                                       :confidence confidence
+                                       :derived-from derived-from)
+                          (assert-edge :calls source callee
+                                       :workspace-id workspace-id))
+                      ops))))
           ;; Unconditional where it used to be (WHEN LINKED ...): a caller
           ;; whose every name went external still has to have that written
           ;; down, and a caller whose callee has since been deleted has to
@@ -659,7 +858,11 @@ after every analysis pass."
                                      (list :unresolved-calls (nreverse left))
                                      workspace-id)
                   ops)))))
-    (nreverse ops)))
+    ;; The sweep last, so it names only sites no assert above touched. An
+    ;; :UPDATE-PROPERTIES for a site being retracted is emitted above and is
+    ;; harmless: it lands on an entity that is still there when it is applied.
+    (append (nreverse ops)
+            (call-site-retractions view :ambiguous asserted workspace-id))))
 
 (defparameter *tested-types* '(:function :method :interface)
   "What a :TESTS edge may be derived onto: exactly the things a :CALLS edge

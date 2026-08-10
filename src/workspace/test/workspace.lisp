@@ -326,6 +326,57 @@ check:
 the files whichever way it got there"))))
 
 ;;; ------------------------------------------------------------------
+;;; The :CALL-SITE ceiling (ARCH-0014 R2)
+;;; ------------------------------------------------------------------
+
+(defparameter *call-site-ceiling* 178
+  "The most :CALL-SITE entities this tree may hold before something is wrong.
+
+ARCH-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
+entities -- and adopted the sparse form instead. Entity growth is therefore
+bounded by a rule rather than by a number, and ARCH-0014's own RISKS section
+says rules drift: the failure mode if some common case starts minting a call
+site is a graph that quietly quadruples, with nothing failing. This number is
+the guard, and it is meant to fail loudly rather than warn.
+
+162 measured plus 10% headroom. The three generators' populations on this tree,
+counted by tools/call-site-census.lisp after BUG-0020's keyword fix: 20 initform
+pairs, 124 resolving orphaned definer names, 18 ambiguous sites. PLAN-0014 step
+5 says to use step 1's sum, which was 170 -- but step 1 predates step 2, and 8
+of those 170 were the keyword-head orphans BUG-0020 removed. Using the stale
+number would leave 8 counts of slack that stand for nothing, so this is the
+post-step-2 sum; the plan's own step 7 verification makes the same substitution
+when it says \"as step 2 left it\".
+
+Re-measure with the census rather than adjusting this to whatever the suite
+reports. A number edited to match an observation is not a ceiling.")
+
+(test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
+  ;; ARCH-0014 R2, over this tree rather than a fixture, because the ceiling is
+  ;; a whole-tree property and the workspace fixture is four synthetic files.
+  ;;
+  ;; Written before anything mints, which is deliberate rather than premature:
+  ;; it passes trivially at zero today, so every generator step lands against a
+  ;; guard already in place instead of one written afterwards to fit the number
+  ;; it got. That also means this test cannot fail for the right reason yet --
+  ;; the population it bounds is empty until PLAN-0014 step 6. What it does
+  ;; assert today is that the measurement is real: it indexes the actual tree
+  ;; and counts the actual type, so the assertion is wired to something rather
+  ;; than vacuous.
+  (let* ((root (asdf:system-relative-pathname :loom-workspace "../../"))
+         (repository (watch-repository root :monitor nil :quiet t)))
+    (unwind-protect
+         (let ((sites (entities-of-type (repository-graph repository) :call-site)))
+           (is (<= (length sites) *call-site-ceiling*)
+               "~d :CALL-SITE entities against a ceiling of ~d. ARCH-0014: \"A
+:CALL-SITE entity is minted exactly when a call name cannot be expressed as a
+:CALLS edge from an existing definition entity. Never otherwise.\" A count over
+the ceiling means some common case has started minting one, which is the
+uniform model this design priced at 4867 entities and refused."
+               (length sites) *call-site-ceiling*))
+      (unwatch-repository (repository-name repository)))))
+
+;;; ------------------------------------------------------------------
 ;;; Enrichment (ARCH-0011): the orchestration
 ;;; ------------------------------------------------------------------
 ;;;

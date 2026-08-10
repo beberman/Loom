@@ -1,6 +1,6 @@
 id: BUG-0017
 title: A function designated in an initform or a lambda-list default is still invisible, because its body never reaches the call walk
-status: open
+status: closed
 date: 2026-08-08
 refines: [BUG-0011]
 affects: [analyze-file, collect-call-names]
@@ -140,3 +140,53 @@ body: |
   a literal source handed to ANALYZE-SOURCE: (defun target (x) x) beside
   (defparameter *hook* #'target), asserting the edge or the call name exists.
   It returns nothing today.
+
+  FIXED 2026-08-10, ON ONE OF THE TWO HALVES
+
+  The first option was taken, in the shape ARCH-0014 gave it, and PLAN-0014
+  step 6 landed it. INITFORM-CALL-SITES reads (third form) for a DEFVAR or
+  DEFPARAMETER and each slot's :INITFORM for a DEFCLASS or DEFINE-CONDITION,
+  hands them to COLLECT-CALL-NAMES, and filters exactly as pass 2 does.
+  HANDLE-VARIABLE, HANDLE-DEFCLASS and HANDLE-DEFINE-CONDITION note the results
+  as owned call sites and pass 3 emits each with a :CONTAINS edge from its owner.
+
+  The directional question this document's FIX said was "the reason this is not
+  a five-line change" -- whether a :VARIABLE may source a :CALLS edge -- was not
+  answered, it was dissolved. The recorded caller is a :CALL-SITE the variable
+  contains, so :CALLS' :from list never needs :variable on it. That is
+  ARCH-0014's whole contribution to this bug.
+
+  The SYMPTOM measurement now reads
+
+      describe default-json-key-name
+        function default-json-key-name  [src/serve/json.lisp:59-74]
+          <- documents: PLAN-0014, PLAN-0011, PLAN-0005, BUG-0017, BUG-0011, ARCH-0014
+          <- calls: default-json-key-name@src/serve/json.lisp:76 (variable)
+          <- contains: src/serve/json.lisp
+
+  where it read zero incoming :CALLS. 20 initform sites on this tree, of which
+  13 resolve to a callee and 7 to nothing -- and those 7 are recorded on the
+  site's :UNRESOLVED-CALLS rather than dropped, per CON-0001. All 20 are minted:
+  the analyzer cannot consult the callable index (RULE-0002), so unlike the
+  graph's two generators it cannot mint only where a name resolves, and the
+  asymmetry costs 7 nodes.
+
+  OUTSTANDING, AND WHY THIS IS CLOSED ANYWAY
+
+  The lambda-list-default half is untouched. (defun f (&key (fn #'default-fn))
+  ...) still records nothing about DEFAULT-FN, for the reason the CAUSE section
+  gives: a DEFUN's body is (cdddr form) and the lambda list is deliberately not
+  in it. Doing it needs the lambda list parsed rather than walked, since walking
+  one whole records every parameter name as a call, and that is a change to a
+  different function with a different blast radius. ARCH-0014 R3 puts it
+  explicitly out of scope and PLAN-0014 restates it.
+
+  CON-0004's status vocabulary for a BUG is open -> closed, with no partial, so
+  this document is closed and the sentence above is what keeps `closed' from
+  being a false claim: it is closed on the initform half only. Anyone who wants
+  the lambda-list half tracked should file it, which is precisely the mistake
+  BUG-0020 records being made with COLLECT-CALL-NAMES' keyword heads -- a defect
+  described accurately inside another document and never given an id of its own,
+  so nothing acted on it for as long as it stayed harmless. This document's own
+  WHY IT HID lesson is the same shape: a FIX narrower than its SYMPTOM, named
+  rather than left for a reader to notice.

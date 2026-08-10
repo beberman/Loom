@@ -556,6 +556,117 @@ one"))))
       (is (null (member "also-not-a-call" names :test #'string=))
           "and so are a hand-written CL:QUOTE's"))))
 
+(test a-keyword-in-operator-position-is-not-a-call
+  ;; BUG-0020. A keyword can never name a function in Common Lisp, so a list
+  ;; whose head is one is a declaration, a plist or a CASE clause -- never a
+  ;; call. TOKEN-NAME renders :FILE and FILE identically, so nothing downstream
+  ;; can tell the two apart once the name is a string; the test has to be on
+  ;; the symbol, in the walk, before TOKEN-NAME is applied.
+  ;;
+  ;; Both populations are asserted because both mint. The ordinary body is
+  ;; where a CASE clause head lives, and the definer call site is where the
+  ;; five edges that made this urgent live: `(:line-count integer)' inside a
+  ;; DEFENTITY call reads as a call to LINE-COUNT, which is a real function in
+  ;; loom-analyzer -- so PLAN-0014's step 7 would mint a :CALL-SITE for it and
+  ;; hand RULE-0001, the one machine-checked rule whose output is currently
+  ;; trustworthy, a :CALLS edge out of loom-ontology that nobody wrote.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun f () (:file string :required t) (real-call x))
+(defentity thing (:line-count integer))")
+    (let ((names (getp (find-by-name g :function "f") :call-names)))
+      (is (null (member "file" names :test #'string=))
+          "a keyword head is not an operator")
+      (is (member "real-call" names :test #'string=)
+          "and an ordinary head beside it still is"))
+    (let ((site (first (getp file :definer-call-sites))))
+      (is (equal "defentity" (getf site :operator)))
+      (is (null (member "line-count" (getf site :call-names) :test #'string=))
+          "nor is a keyword head inside a definer call site's arguments"))))
+
+;;; ------------------------------------------------------------------
+;;; Initform call sites (BUG-0017, ARCH-0014 R3, PLAN-0014 step 6)
+;;;
+;;; The half of BUG-0017 its own FIX could not choose. A designator in an
+;;; initform never reached COLLECT-CALL-NAMES at all -- ANALYZE-FILE hands
+;;; NOTE-DEFINITION no :body for a DEFVAR, DEFPARAMETER, DEFCLASS or
+;;; DEFINE-CONDITION -- and the reason the fix stalled once it did was that the
+;;; recorded caller would have been a :VARIABLE, which :CALLS refuses as a
+;;; source. ARCH-0014's answer is a :CALL-SITE the variable contains, so the
+;;; ontology question that blocked it does not arise.
+;;; ------------------------------------------------------------------
+
+(test an-initform-designator-reaches-its-callee-through-a-call-site
+  ;; R8's first test, and BUG-0017's SYMPTOM exactly: (defparameter *hook*
+  ;; #'target) beside a DEFUN of TARGET left TARGET with no incoming edge at
+  ;; all, so `describe target' answered as though nothing referenced it.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun target (x) x)
+(defparameter *hook* #'target)")
+    (declare (ignore file))
+    (let ((site (first (entities-of-type g :call-site)))
+          (hook (find-by-name g :variable "*hook*"))
+          (target (find-by-name g :function "target")))
+      (is (not (null site)) "the initform mints one call site")
+      (is (equal "target" (getp site :call-name)))
+      (is (eq :variable (getp site :referrer-kind)))
+      (is (equal (list (id site))
+                 (mapcar #'to-id (relationships-from g (id hook) :rel-type :contains)))
+          "owned by the variable through :CONTAINS -- decision 3's chain, file
+contains variable contains call-site")
+      ;; RESOLVE-CALLS rather than a local edge: the analyzer holds no callable
+      ;; index and a call site is deliberately not short-circuited against
+      ;; LOCAL-FUNCTIONS, so the edge is the graph's to derive like any other.
+      (apply-transaction g (resolve-calls g :workspace-id "ws-test"))
+      (is (equal (list (id target))
+                 (mapcar #'to-id (relationships-from g (id site) :rel-type :calls)))
+          "and the call reaches TARGET once resolution runs"))))
+
+(test a-slot-initform-mints-a-call-site-its-class-contains
+  ;; The DEFCLASS half of R3, which reads the initform off a slot option plist
+  ;; rather than off a fixed position. A slot spec that is a bare symbol
+  ;; declares no options at all and must not be read as one.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun compute-default () 1)
+(defclass thing ()
+  (bare
+   (slot :initarg :slot :initform (compute-default))))")
+    (declare (ignore file))
+    (let ((site (first (entities-of-type g :call-site)))
+          (class (find-by-name g :class "thing")))
+      (is (= 1 (length (entities-of-type g :call-site)))
+          "one call site: the bare slot spec contributes none")
+      (is (equal "compute-default" (getp site :call-name)))
+      (is (eq :class (getp site :referrer-kind)))
+      (is (equal (list (id site))
+                 (mapcar #'to-id (relationships-from g (id class) :rel-type :contains)))))))
+
+(test an-initform-mints-no-call-site-for-the-standard-library
+  ;; The filter pass 2 applies, applied here for the same reason: every
+  ;; operator position is a call candidate, and recording LIST and MAKE-HASH-
+  ;; TABLE would bury the handful of names that point at another file. Also the
+  ;; guard on the ceiling test in src/workspace/test/workspace.lisp -- an
+  ;; unfiltered initform walk mints a call site for most DEFPARAMETERs in the
+  ;; tree, which is the uniform model ARCH-0014 refused arriving by accident.
+  (multiple-value-bind (g file)
+      (analyze-source "(defparameter *table* (make-hash-table :test #'equal))")
+    (declare (ignore file))
+    (is (null (entities-of-type g :call-site))
+        "make-hash-table and equal are both CL, so nothing is minted")))
+
+(test a-superseded-definition-takes-its-call-sites-with-it
+  ;; The supersession trap PLAN-0014 step 6 names. CALLABLES and LOCAL-FUNCTIONS
+  ;; are filtered against the survivors at ANALYZE-FILE's supersession block,
+  ;; and a call site list that is not would leave a site whose owner is never
+  ;; asserted -- an entity in the graph with a :CONTAINS edge from nothing.
+  (multiple-value-bind (g file)
+      (analyze-source "(defparameter *hook* #'dropped-target)
+(defparameter *hook* #'live-target)")
+    (declare (ignore file))
+    (is (equal '("live-target")
+               (mapcar (lambda (e) (getp e :call-name))
+                       (entities-of-type g :call-site)))
+        "the shadowed DEFPARAMETER's initform is dead code and mints nothing")))
+
 ;;; ------------------------------------------------------------------
 ;;; Pass 1's dispatch table (ARCH-0013 R13, PLAN-0013 step 9)
 ;;;
