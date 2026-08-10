@@ -1,0 +1,169 @@
+id: REQ-0020
+title: A generic function that gets its methods from slot accessors is one callee, not N unrelated interfaces, and a call to it should reach them
+status: draft
+date: 2026-08-10
+refines: [REQ-0015, ARCH-0014]
+affects: [call-targets, resolve-calls, slot-accessor-names, class-definition-entities,
+          make-interface-entity, callable-index, dispatch-confidence, impact-set]
+tags: [graph, analyzer, resolution, clos, accessor, generic-function, con-0001,
+       game-server]
+summary: |
+  REQ-0015's acceptance criterion was run on 2026-08-10 and did not pass, and
+  the reason is not the one it looks like. On game-server `id' resolves to
+  nothing and `cascade-delete' resolves to a default method while missing the
+  accessor that matters. Both names are ONE generic function. Loom mints one
+  :INTERFACE entity per `:accessor'/`:reader' slot declaration and another per
+  DEFGENERIC, with no edge tying them together, so mpackage/object's `id'
+  generic -- which mpackage/filter and four other files import by symbol and
+  extend with a reader -- appears in the index as six unrelated protocols.
+  CALL-TARGETS then has no clause that fits: six interfaces, no :METHOD
+  entities, so it falls to (t nil). This is dispatch, which CALL-TARGETS
+  already knows how to represent as a union of genuine possibilities. It is
+  emphatically not ambiguity, and fanning these out at 1/N would assert a
+  mutual exclusivity that does not exist -- the fabricated fact CON-0001
+  forbids. The fix is in how a generic function is modelled, not in the
+  ambiguity clause ARCH-0014 added.
+body: |
+  WHAT IS WRONG
+
+  Measured on ~/lisp/game-server, 134 files, 4121 entities, /usr/bin/sbcl,
+  2026-08-10, with PLAN-0014's code in the image.
+
+      find id             6 :interface, 0 :function, 0 :method
+      describe id         <- contains only. No caller reaches it.
+      impact cascade-delete 3
+                          1 impacted: its own file
+
+  The second line is REQ-0015's stated symptom, unchanged by the work done to
+  fix it.
+
+  The six `id' entities are one generic function. mpackage/object.lisp:73
+  declares (id :initarg :id :accessor id :initform nil) inside DEFCLASS
+  ID-OBJ. mpackage/filter.lisp:31 declares (id :initarg :id :reader id
+  :initform nil) inside DEFCLASS FILTER -- and filter.lisp:14-17 is
+
+      (:import-from :mpackage/object
+       :name
+                    :id
+                    )
+
+  so `id' there is the same symbol, and the reader adds a method to the same
+  generic function. Four more files do the same. There is one generic function
+  named ID in this program and Loom holds six protocol entities for it.
+
+  `cascade-delete' is the same defect wearing different clothes.
+  mpackage/obj-types.lisp:134 is a real DEFGENERIC with a default method:
+
+      (defgeneric cascade-delete (obj)
+        (:documentation "...")
+        (:method (obj) nil))
+
+  and mpackage/reference-types.lisp:104 is
+  (cascade-delete :initform nil :accessor cascade-delete :initarg
+  :cascade-delete) on DEFCLASS REFERENCE-TYPE-DEFN. One generic, two methods:
+  a default that returns NIL and the accessor that actually answers. Loom
+  mints two :INTERFACE entities and one :METHOD, CALL-TARGETS' method clause
+  fires on the single :METHOD, and every call to CASCADE-DELETE is attributed
+  to the default that returns NIL while the accessor -- the method the callers
+  care about -- receives nothing.
+
+  WHY THE OBVIOUS FIX IS WRONG
+
+  The first draft of this document asked for a clause in CALL-TARGETS reading
+  "two or more interfaces, no methods, is an ambiguity". That is wrong and is
+  recorded here so nobody re-proposes it.
+
+  Ambiguity means the resolver cannot tell which of several mutually exclusive
+  definitions a call reaches, and ARCH-0014's answer -- N edges at 1/N from a
+  call site, so the guess is labelled rather than hidden -- is right for that.
+  These are not mutually exclusive. They are one function whose implementation
+  is spread across classes, and at run time a call reaches whichever method the
+  argument selects, exactly as CALL-TARGETS' own docstring says of dispatch:
+  "a union of genuine possibilities, not an ambiguity among mutually exclusive
+  candidates, which is why fanning out is not the fabricated edge CON-0001
+  forbids." Marking them 1/N would state that five of the six are probably
+  wrong. All six are right.
+
+  The distinction is already in the data. :GENERATED-BY marks an entity whose
+  name "was synthesized from a slot declaration rather than written"
+  (lisp-analyzer.lisp:1071), and the analyzer already reasons from it that "an
+  accessor name declared twice is one generic function" when deciding not to
+  report a shadowing. That fact is known in one place and not in the other.
+
+  WHAT IS WANTED
+
+  R1  Same-named :INTERFACE entities that are accessor-generated are one
+      generic function. Whether that is expressed by minting one entity with
+      several definition sites, or by keeping N and linking them, is a design
+      question for an ARCH document; what must stop is N unrelated protocols
+      with no relationship between them.
+
+  R2  A call to such a name resolves as dispatch: an edge to each definition
+      that could serve it, at DISPATCH-CONFIDENCE N, running from the caller
+      as the existing method fan-out does -- not from a :CALL-SITE, because
+      nothing here is ambiguous and no node is needed to anchor a guess.
+
+  R3  An accessor-declared method must be reachable. cascade-delete's accessor
+      on REFERENCE-TYPE-DEFN is the case: today the DEFGENERIC's default
+      method absorbs every call and the accessor is invisible. `impact
+      cascade-delete 3' reaching the mpackage files that call it is the
+      acceptance, and it is REQ-0015 R6's acceptance too.
+
+  R4  A hand-written DEFGENERIC and its accessor-generated extensions are one
+      thing, not two. :GENERATED-BY distinguishes them and both belong to the
+      same generic function; the model must not treat the written one as the
+      protocol and the generated ones as rivals to it.
+
+  R5  Package identity comes FIRST. This is a prerequisite, not a caveat, and
+      R1 to R3 must not land without it. CALLABLE-INDEX keys on
+      (string-downcase name) and is package-blind, and on game-server `id' is
+      not one generic function but at least three: mpackage/object's, which
+      mpackage/filter extends by importing the symbol, and the unrelated `id'
+      accessors in :integration-test and :data-api-test, whose DEFPACKAGE
+      forms import nothing from mpackage. Fanning the six out as dispatch on
+      today's index would assert edges between packages that share nothing but
+      a string -- the fabricated fact of CON-0001, arrived at from the
+      opposite direction to the one ARCH-0014 guarded.
+
+      Note what this needs, because ARCH-0013 does not supply it:
+      :QUALIFIED-CALLS records a *written* prefix and nothing in resolve.lisp
+      reads it yet, but these calls are written (id obj) with no prefix at
+      all. Deciding which `id' is meant requires the file's current package and
+      the :USE / :IMPORT-FROM graph of the tree's DEFPACKAGE forms.
+      HANDLE-IN-PACKAGE exists but feeds :SYSTEM, a different question with a
+      coincidentally similar input. BUG-0021 carries the trace and the
+      ordering argument.
+
+  R6  Measured on both trees before adoption, per ARCH-0014's own precedent.
+      Loom has few generic functions and will barely move; game-server is
+      built on them and already mints 1726 call sites against 4121 entities
+      under PLAN-0014, +42% against Loom's +10%.
+      tools/call-site-census.lisp takes a repository path.
+
+  WHY IT HID
+
+  REQ-0015 says "`id' has 7 definitions" and "`cascade-delete' has 2",
+  counting definitions without asking what kind, and every document downstream
+  inherited the count and the framing. ARCH-0014's census splits its Loom
+  numbers carefully by candidate type and carries game-server's forward as
+  bare prose.
+
+  On Loom the framing happens to be true: all 18 ambiguous occurrences really
+  are plain functions, because Loom is not a CLOS codebase. So ARCH-0014 R8's
+  tests pass, the ceiling test passes, and 503 green tests say nothing about
+  any of this. The suite could not have caught it.
+
+  R6 was the thing that would have caught it, and it was prose in a YAML body
+  rather than a step somebody runs. It stayed unrun through an eleven-step
+  plan that verified everything else it named. ARCH-0014 wrote "This is the
+  third time a mechanism has been correct against Loom and wrong against
+  game-server." This is the fourth, and the second tree should become a
+  checkable step rather than a closing sentence.
+
+  WHAT IS NOT ASKED
+
+  Nothing about ARCH-0014's implemented half, which works: 18 ambiguous sites
+  on Loom, 371 ambiguous occurrences on game-server, every one a genuine
+  two-or-more-plain-functions case that produced no edge before and produces N
+  discountable ones now. That mechanism is not implicated and should not be
+  changed to accommodate this.

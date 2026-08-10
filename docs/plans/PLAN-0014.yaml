@@ -1,6 +1,6 @@
 id: PLAN-0014
 title: Land the sparse :CALL-SITE entity in eleven steps, one generator per step, with the entity delta measured before anything is written
-status: draft
+status: final
 date: 2026-08-09
 refines: [ARCH-0014, REQ-0015, BUG-0016, BUG-0017]
 affects: [collect-call-names, analyze-file, handle-variable, handle-defclass,
@@ -31,6 +31,27 @@ summary: |
   520 and what ARCH-0014's own R9 ("order 100 against 1604") already expects.
   Out of scope: an :OPERATION entity type, the lambda-list-default half of
   BUG-0017, removing :UNRESOLVED-CALLS, and REQ-0013's per-query reporting.
+
+  LANDED 2026-08-10, all eleven steps, suite green at 9 of 9 systems. R9's
+  number, which ARCH-0014 required this plan to state exactly rather than
+  estimate: 162 :CALL-SITE entities on this tree, by kind 20 :variable, 124
+  :definer-call and 18 :ambiguous. The per-step deltas are not that split and
+  the difference is worth keeping straight: steps 6, 7 and 8 minted 20, 117 and
+  25, because 7 of the 124 :definer-call sites carry an ambiguous name and
+  CALL-TARGETS refuses one until step 8's clause exists, so they are minted by
+  step 8 while remaining :definer-call. Against the original 2026-08-09 baseline,
+  entities 1684 -> 1890 and relationships 8261 -> 9065; against step 1's
+  re-baseline, which is the honest comparison because it already contains this
+  plan's own two files, entities 1698 -> 1890. The 206-entity difference is 162
+  call sites and 44 entities of new source and tests, this plan being indexed
+  like anything else. Tests 481 -> 503 covering 325 units, up from 322 by the
+  three units the new code adds and unmoved by call sites, which is where
+  step 4's confirmation that RESOLVE-TESTS is unaffected gets cashed. Documents
+  81 -> 83. Violations 32, every one RULE-0003 and every one BUG-0009's
+  described false positive, with RULE-0001 empty throughout. Unresolved
+  document references 0. Definer macros 4 -> 3, DEFRELATIONSHIP having left the
+  list because all twelve of its apparent call names were keyword heads.
+  No review was performed on this work, so no REV-nnnn exists for it.
 body: |
   BEFORE ANYTHING
 
@@ -148,8 +169,8 @@ body: |
 
      So: property :call-name holds the referenced name and is the key
      component; NAME holds "<call-name>@<file>:<line>", e.g.
-     "violation-summary@src/serve/operations.lisp:165". The derived id is then
-     "call-site:src/serve/operations.lisp:165:violation-summary", which reads
+     "violation-summary@src/serve/operations.lisp:186". The derived id is then
+     "call-site:src/serve/operations.lisp:186:violation-summary", which reads
      the way every other derived id in this codebase reads. Semantically this
      is ARCH-0014's key exactly: a file, a line and a referenced name.
 
@@ -591,7 +612,13 @@ body: |
   -- the caller acquires no false coupling -- is still true and still worth a
   test.
 
-  Verification: entity count rises by 18; :UNRESOLVED-CALLS occurrences fall by
+  Verification: entity count rises by 25. CORRECTED 2026-08-10, the other half
+  of step 7's arithmetic error -- 18 :ambiguous sites plus the 7 :definer-call
+  sites step 7's predicate could not mint before this clause existed. 20 + 117 +
+  25 = 162, which is the census's figure to the unit; the per-step split was
+  wrong and the total was right. Those 7 are minted here but keep
+  :referrer-kind :definer-call, so the by-kind census stays 20 / 124 / 18 while
+  the by-step deltas are 20 / 117 / 25. :UNRESOLVED-CALLS occurrences fall by
   18; `describe fixture-inspection` shows ten incoming ambiguous call sites and
   `describe` on one of their callers shows one outgoing :CONTAINS to a call
   site and no new :CALLS; rule violations re-read and recorded against the
@@ -628,7 +655,7 @@ body: |
   src/process/console.lisp, the describe neighbour line appends " (kind)" when
   a neighbour carries one, so `describe violation-summary` reads
 
-      <- calls: violation-summary@src/serve/operations.lisp:165 (definer-call)
+      <- calls: violation-summary@src/serve/operations.lisp:186 (definer-call)
 
   which is R7's "line and kind rather than a bare id" in one line of output.
 
@@ -668,14 +695,25 @@ body: |
                cannot be demonstrated on this tree. R5's question -- whether
                `describe` should show confidence -- stays open and stays with
                it.
-    BUG-0016   fixed. Both halves: the counting half landed 2026-08-09 and the
+    BUG-0016   closed. Both halves: the counting half landed 2026-08-09 and the
                second half is step 7. The :OPERATION entity type its FIX listed
                third stays unanswered and is recorded in the closing note as
                out of scope rather than resolved.
-    BUG-0017   partial, with an OUTSTANDING section: the initform half is
-               fixed, the lambda-list-default half is untouched and still needs
-               the lambda list parsed rather than walked.
-    BUG-0020   fixed (step 2).
+    BUG-0017   closed, with an OUTSTANDING note: the initform half is fixed,
+               the lambda-list-default half is untouched and still needs the
+               lambda list parsed rather than walked.
+    BUG-0020   closed (step 2).
+
+               CORRECTED 2026-08-10: this step originally wrote "fixed" for the
+               bugs and "partial" for BUG-0017. CON-0004's vocabulary for a BUG
+               is open -> closed, and it has no `partial' and no `fixed'. A
+               status word a document type does not define is worse than a
+               wrong one, because nothing checks status at all (CON-0004 says
+               so) and the only thing holding the vocabulary together is that
+               it is written down in one place. So BUG-0017 is closed and
+               carries its remaining half as prose, which is what closed-with-
+               an-OUTSTANDING-note means for a type whose vocabulary has two
+               values.
     PLAN-0014  final, with the measured entity delta written into its summary.
 
   And the number R9 asks for. Re-run tools/call-site-census.lisp and
@@ -687,24 +725,51 @@ body: |
 
   VERIFICATION
 
-  Per step, above. At the end, all of it together:
+  Per step, above. At the end, all of it together -- predicted on the left as
+  this plan was written, measured on the right on 2026-08-10 under
+  /usr/bin/sbcl:
 
     tools/loom-test.sh
-        Nine systems green. Expect roughly 495 tests: 481 plus the twelve
-        named here.
+        Predicted nine systems green and roughly 495 tests. Measured nine of
+        nine green, 503 tests: 481 plus twenty-two, the plan having named
+        twelve and the implementation having added ten more as each step
+        falsified its own tests rather than asserting they were meaningful.
     tools/loom.sh 'status | check'
         entities        1684 + the measured sum, and nothing else
+                        -> 1890. 162 call sites, 44 entities of new source
+                           and tests, nothing else.
         relationships   8261 + one :CONTAINS per call site + one :CALLS per
                         resolved name + N per ambiguous site
+                        -> 9065.
         tests           481 covering 322 units, unmoved -- RESOLVE-TESTS is
                         confirmed unaffected in step 4 and this is where that
                         confirmation is cashed
+                        -> 503 covering 325. The covered-unit count moved by
+                           the three units the new code adds and by no call
+                           site, which is the confirmation this line wanted.
         documents       81 + 1 (BUG-0020) + 1 (this plan)
+                        -> 83.
         unresolved      0 document references. Not "about 0": decision 1 exists
                         because this number is the one at risk.
+                        -> 0, but not without incident. It read 4 after step
+                           11's own documentation edits, every one of them a
+                           dangling reference to REQ-0015, because an edit to
+                           that file pulled one line of its summary: block
+                           scalar back to column 0 and YAML ended the scalar
+                           there. CON-0004 names this as one of the two
+                           mistakes that has already cost a document its place
+                           in the index; it cost REQ-0015 its place for about
+                           two minutes, and `check` is what found it. The
+                           number is the detector working, not the detector
+                           failing.
         definer macros  as step 2 left it
+                        -> 3.
         violations      32, or explained line by line, with RULE-0001 empty
+                        -> 32, all RULE-0003, all BUG-0009's described false
+                           positive (a call, not a write, from loom-knowledge
+                           into loom-graph). RULE-0001 empty at every step.
         unread          2 suppressed, 0 recovered
+                        -> 2 suppressed, 0 recovered.
     tools/loom.sh 'describe default-json-key-name'
         an incoming call site from src/serve/json.lisp:76. BUG-0017's measured
         symptom was zero incoming :CALLS.

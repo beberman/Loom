@@ -18,7 +18,7 @@ summary: |
   :CONFIDENCE and :DERIVED-FROM fields RESOLVE-CALLS already threads for other
   purposes, which a consumer can weight or filter.
 
-The cost of the current
+  The cost of the current
   choice is not evenly spread. It falls entirely on codebases that use CLOS
   polymorphism heavily, because that is what produces many definitions of one
   name. In ~/lisp/game-server, `id` has 7 definitions and 144 dropped call
@@ -158,15 +158,63 @@ body: |
   R4 are met. Two things are not, and the mechanism being in is not the same
   as the requirement being met.
 
-  R6, the acceptance criterion, was NOT run. It is game-server's `impact
-  cascade-delete 3' reaching the mpackage files that call it, and `id''s 144
-  dropped sites appearing as ambiguous call sites with 7 candidates each --
-  the numbers this document was written from. That tree was never indexed
-  under the new code. What was demonstrated is Loom's half: 18 occurrences
-  across 4 names, which this document and ARCH-0014 both say is almost nothing
-  and is not where the value is. So the value claimed here is untested, and a
-  reader should treat "ambiguity is now represented" as verified in mechanism
-  and unverified in worth. Nothing prevents running it; nobody has.
+  R6, the acceptance criterion, was run on 2026-08-10 and DID NOT PASS. This
+  paragraph previously said it had not been run at all; it has, and the result
+  is worse than the omission. REQ-0020 is the finding and carries the trace.
+
+  game-server indexed under the new code, /usr/bin/sbcl, 134 files, 4121
+  entities: `impact cascade-delete 3' reports one impacted entity, that
+  entity's own file, which is verbatim the symptom this document's own summary
+  quotes as the defect. Nothing moved.
+
+  The cause is a misreading in this document, not a defect in what was built,
+  and the misreading goes deeper than a miscount. "`id' has 7 definitions" and
+  "`cascade-delete' has 2" are both true and neither says what kind, so this
+  document was written as though these were rival definitions among which a
+  resolver must guess. They are not. They are ONE generic function each.
+
+  mpackage/object.lisp:73 declares `:accessor id' on DEFCLASS ID-OBJ;
+  mpackage/filter.lisp:31 declares `:reader id' on DEFCLASS FILTER, and
+  filter.lisp:14 imports the symbol -- (:import-from :mpackage/object :name
+  :id) -- so that reader adds a method to mpackage/object's generic rather
+  than defining a second one. Four more files do the same. `cascade-delete' is
+  a real DEFGENERIC at mpackage/obj-types.lisp:134 with a default method, plus
+  an `:accessor cascade-delete' at mpackage/reference-types.lisp:104 adding a
+  second method to it.
+
+  Loom mints one :INTERFACE per accessor declaration and another per
+  DEFGENERIC, with nothing tying them together, so one generic function is six
+  unrelated protocols in the index. CALL-TARGETS then has no clause that fits:
+  for `id', six interfaces and no :METHOD entities fall past every clause --
+  including the new one at src/graph/resolve.lisp:711, which tests
+  (>= (length functions) 2) against zero functions -- to (t nil). For
+  `cascade-delete' the method clause at line 687 fires on the DEFGENERIC's
+  default method, which returns NIL, and the accessor method that actually
+  answers gets nothing.
+
+  So the 144 dropped call sites are dropped as DISPATCH that Loom cannot see,
+  not as ambiguity it declines to guess at. The mechanism this document asked
+  for is the wrong instrument for its own headline example, and applying it
+  here would be a CON-0001 violation: N edges at 1/N assert that most of the
+  candidates are wrong, when in a generic function all of them are right.
+  REQ-0020 carries the correct diagnosis and the trace.
+
+  What the run did demonstrate: the mechanism is real and fires at scale where
+  the population fits it. 371 ambiguous occurrences on game-server -- `cond-is'
+  276, `symbol-decode' 22, `package-kwd-encode' 16, and fifteen more names --
+  every one a genuine two-or-more-plain-functions ambiguity that produced no
+  edge before and produces N discountable ones now. R1 to R4 are met and are
+  worth something. R6 is not met, and this requirement stays partial until
+  REQ-0020 closes.
+
+  One number the run produced that nobody asked for and everybody should see:
+  game-server mints 1726 call sites against 4121 entities, +42%, against
+  Loom's 162 against 1684, +10%. ARCH-0014 priced the sparse rule at "roughly
+  100 entities on this tree" and refused the uniform model on arithmetic of
+  exactly this kind. The rule is not violated -- every one of the 1726 is a
+  place a :CALLS edge from a definition is impossible -- but the ceiling test
+  guards Loom's tree alone, and a codebase built on generic functions and test
+  macros pays four times the proportional cost the design anticipated.
 
   R5 stays open, and it is a real question rather than an oversight. `describe'
   on a callee now shows an incoming call site with its line and its kind --

@@ -486,7 +486,7 @@ body: |
           :ambiguous                     18    (R5, the graph's)
         the other 44 are this work's own documents, tools/call-site-census.lisp,
         and the functions and tests the eleven steps added
-      relationships           8261 -> 9049     +788
+      relationships           8261 -> 9065     +804
         of which touch a call site      342
           :contains into one            162
           :calls out of one             180    (13 initform + 131 definer-call
