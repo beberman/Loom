@@ -259,3 +259,20 @@ body: |
   method while an accessor method of the same generic goes unreferenced. That
   is cascade-delete's specific wrongness and it does not depend on the package
   question.
+
+  PROGRESS, 2026-08-10. ARCH-0015 and PLAN-0015 landed the first two steps of
+  the sequence above: package identity is modelled and CALLABLE-INDEX is keyed
+  on it. This bug stays OPEN because its symptom is unchanged -- `describe id'
+  still shows no caller and `impact cascade-delete 3' still reports one entity.
+
+  What changed is underneath the symptom, and it is the half this document said
+  had to come first. A caller in MPACKAGE/OBJECT now gets a candidate set of
+  two -- mpackage/object's accessor and mpackage/filter's, collapsed to one
+  home because filter imports the symbol -- instead of six spanning three
+  unrelated generics. CALL-TARGETS then has a clause for exactly one interface
+  and none for two, so the pair falls to (t nil) exactly as six did.
+
+  So what remains is step 3 of the FIX sequence, which is REQ-0020 and nothing
+  else: whether an accessor declaration mints a :METHOD, or whether a generic
+  function becomes one entity with several definition sites. The measurement
+  that made this bug hard to see is now available to whoever answers it.

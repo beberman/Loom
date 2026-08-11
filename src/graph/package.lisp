@@ -52,6 +52,9 @@
    #:resolve-specializers
    #:resolve-method-protocols
    #:callable-index
+   #:callable-lookup
+   #:name-lookup
+   #:candidate-entities
    ;; The package graph (ARCH-0015)
    #:build-package-graph
    #:package-graph-p

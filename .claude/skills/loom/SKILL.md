@@ -96,6 +96,16 @@ than being discarded, so `describe` on the callee lists them among its callers
 with their kind — `<- calls: violation-summary@src/serve/operations.lisp:186
 (definer-call)`.
 
+**A name is resolved as a symbol, not as a string** (ARCH-0015). Two definitions
+spelled alike in different packages are two callables, and a call reaches the one
+its own package makes accessible — imported, inherited through a `:use` of a
+package that exports it, or interned locally. So two `find` hits for one name are
+usually two things rather than a duplicate. Where the package cannot be
+determined, because the file's package uses a library the tree does not declare,
+Loom says so by falling back to matching on the spelling rather than guessing;
+`loom-analyzer:*external-package-names*` is how a library's exports get read from
+the image so its inherited names can be placed.
+
 `:suppressed-regions` is the same idea for source the reader passed over rather
 than repaired — a `#+`/`#-` branch the feature policy did not take, or a `#.`
 it refused to evaluate. Comments are not in it; they are what a source file is

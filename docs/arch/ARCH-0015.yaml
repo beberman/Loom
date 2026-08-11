@@ -1,6 +1,6 @@
 id: ARCH-0015
 title: A callable is identified by the symbol it names, not the string it spells, so package identity is resolved before anything is keyed on a name
-status: draft
+status: implemented
 date: 2026-08-10
 refines: [BUG-0021, REQ-0020]
 affects: [callable-index, call-targets, resolve-calls, normalize-system-name,
@@ -23,10 +23,12 @@ summary: |
   version of this is a regression rather than a fix: keying on the package a
   definition was WRITTEN in would split CL:PRINT-OBJECT's ten definitions
   across seven packages into seven unrelated generics, breaking dispatch that
-  works today. Inheritance is not optional. A second consequence has to be
-  faced rather than discovered: all 18 of Loom's ambiguous call sites, the
-  entire population ARCH-0014 built its REQ-0015 mechanism for on this tree,
-  are package collisions and stop being ambiguous under this design.
+  works today. Inheritance is not optional. This document predicted that all 18
+  of Loom's ambiguous call sites, being package collisions, would stop being
+  minted; measured after implementation, 16 survive, because three of the four
+  names are written in packages that use :FIVEAM and HOME-PACKAGE refuses to
+  place a name it might be inheriting from a package the tree does not declare.
+  The OUTSTANDING section carries that correction and the rest of the numbers.
 body: |
   MEASURED FIRST
 
@@ -385,3 +387,87 @@ body: |
   analyzer, whose module system asks the same question with different answers;
   and REQ-0020's accessor modelling, which is downstream of this and stays
   open.
+
+  OUTSTANDING
+
+  Implemented by PLAN-0015 on 2026-08-10, suite 9/9. R1 to R8 and R10 are true
+  of the tree. R9 is not, and it is this document's error rather than the
+  plan's -- see below.
+
+  Six departures, each measured rather than argued.
+
+  1. :PACKAGE also gained :uses, and :file/:start-line/:end-line/:system. R1
+     lists only :nicknames and :imported-symbols, but HOME-PACKAGE's own
+     inheritance route needs the :use list and there is nowhere else for it to
+     live. R1 is incomplete rather than wrong.
+
+  2. :CONTAINS widened to terminate at :PACKAGE, and :BELONGS-TO with it. Not
+     anticipated here; ANALYZE-FILE emits a containment edge for every entity
+     it notes, so the first run of the new handler was rejected outright.
+
+  3. R3's separate :PACKAGE property on every definition was not built.
+     ENTITY-PACKAGE reads :SYSTEM instead, which ARCH-0009 derives from the
+     IN-PACKAGE chain and NORMALIZE-SYSTEM-NAME uppercases -- so :SYSTEM
+     already is the package name, character for character, and duplicating it
+     onto ~6000 entities across both trees would have built the two-derivations
+     drift this document's own RISKS section warns about.
+
+  4. R10's staged landing was followed, but stage A's :CALL-NAMES format change
+     proved unnecessary and was not made. A call name always sits on an entity
+     carrying its own package; only a definer call site, a plist on the :FILE
+     entity, had nowhere to look, so it gained a :system element. The riskiest
+     step in the plan dissolved.
+
+  5. Common Lisp does not live in loom-graph. The first implementation put
+     (find-package :common-lisp) in the package graph, making loom-graph the
+     only system in the tree that knew what language it was indexing --
+     against ARCH-0012 and CON-0005. BUILD-PACKAGE-GRAPH now takes
+     :EXTERNAL-PACKAGES as data, loom-analyzer reads it from the host image,
+     and loom-workspace hands it across, exactly as it already hands
+     *MACRO-GENERATORS* to RESOLVE-GENERATED-DEFINITIONS.
+
+  6. Scope widened from callables to all five callers of ENTITIES-BY-NAME.
+     Superclasses, specialisers and method protocols go through UNIQUE-MATCH,
+     which returns NIL for several candidates, so a name spanning packages
+     resolved to nothing there too. Fixing only the callable index would have
+     left four known-wrong callers of a fixed function.
+
+  R9 IS WRONG AND IS MOVED. This document adopted BUG-0021's acceptance --
+  `describe id' and `impact cascade-delete 3' answering on game-server --
+  without noticing that BUG-0021's own FIX sequences it third, after the
+  accessor question REQ-0020 asks. Both still report nothing, and correctly so:
+  a caller in MPACKAGE/OBJECT now gets the right candidate set, two accessor
+  definitions of one generic collapsed by the import, and CALL-TARGETS has a
+  clause for exactly one interface and none for two. The criterion belongs to
+  whatever implements REQ-0020. What this design delivers is the precondition:
+  the candidate set is true.
+
+  THE NUMBERS, measured 2026-08-10 under /usr/bin/sbcl.
+
+                                        Loom      game-server
+      :package entities                   25               41
+      names spanning 2+ packages          11               95
+        placed to one home                 1               29
+        genuinely distinct                 2               12
+        unplaceable, falls back            8               54
+      :calls edges           3904 ->    3922    12884 -> 12612
+      edges onto a spanning name  120 ->  84     7085 ->  6813
+      relationships          9626 ->    9632    20317 -> 20346
+      call sites              162 ->     161
+
+  The unplaceable column is the honest limit of a text pass: those packages use
+  :FIVEAM, :DRAKMA and :CL-JSON, which neither tree declares, so HOME-PACKAGE
+  refuses to place their names and they fall back to spelling.
+  LOOM-ANALYZER:*EXTERNAL-PACKAGE-NAMES* is the lever, and ARCH-0011 enrichment
+  is the other one.
+
+  And the prediction this document got wrong, recorded because it was stated
+  confidently. "All 18 ambiguous call sites stop being ambiguous" -- measured,
+  16 survive. Only LOG-EVENT resolved; FIXTURE-INSPECTION, DISCOVER-UNITS and
+  READ-INSPECTION-FILE are unplaceable for the reason above. The ceiling test
+  therefore did not move and says so.
+
+  Deferred: REQ-0020's accessor modelling; shadowing clauses and DEFINE-PACKAGE's
+  :mix and :recycle beyond recording them as unhandled; reading :QUALIFIED-CALLS,
+  which HOME-PACKAGE is now the natural consumer of; and package-aware resolution
+  for the TypeScript analyzer.

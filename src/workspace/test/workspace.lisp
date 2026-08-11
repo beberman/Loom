@@ -349,7 +349,27 @@ post-step-2 sum; the plan's own step 7 verification makes the same substitution
 when it says \"as step 2 left it\".
 
 Re-measure with the census rather than adjusting this to whatever the suite
-reports. A number edited to match an observation is not a ceiling.")
+reports. A number edited to match an observation is not a ceiling.
+
+UNCHANGED BY ARCH-0015, 2026-08-10, and that is the finding rather than an
+omission. Package-aware resolution was expected to empty most of the ambiguous
+population: ARCH-0015 states that all four ambiguous names on this tree are
+package collisions and that all 18 sites would stop being minted. Measured
+after stage C, the tree holds 161 call sites against 162 before, and the
+ambiguous population fell from 18 to 16.
+
+Only LOG-EVENT resolved. FIXTURE-INSPECTION, DISCOVER-UNITS and
+READ-INSPECTION-FILE are unplaceable, because the packages they are written in
+use :FIVEAM, which no declaration in this tree describes, so HOME-PACKAGE
+refuses to place them and they fall back to name-only matching -- CON-0001
+working exactly as designed. Naming :FIVEAM in
+LOOM-ANALYZER:*EXTERNAL-PACKAGE-NAMES* would place them; the default does not,
+because that would make the index depend on what the reading image happens to
+have loaded.
+
+So the ceiling stays at 178. Lowering it to track a fall that did not happen
+would be the mistake the paragraph above warns about, in the other
+direction.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; ARCH-0014 R2, over this tree rather than a fixture, because the ceiling is

@@ -1,6 +1,6 @@
 id: PLAN-0015
 title: Land package-aware resolution in three stages -- record, compute, key -- so that 7085 moving edges move one attributable step at a time
-status: draft
+status: final
 date: 2026-08-10
 refines: [ARCH-0015, BUG-0021, REQ-0020]
 affects: [entities-by-name, callable-index, unique-match, call-targets,

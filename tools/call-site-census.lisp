@@ -49,14 +49,20 @@
 ;;;; What a name resolves to
 ;;;; ------------------------------------------------------------------
 
-(defun classify-call (index name)
+(defun classify-call (index name &optional referrer)
   "CALL-TARGETS' clause order, as a keyword rather than a list of edges.
 
 :FUNCTION, :DISPATCH and :INTERFACE are its three resolving clauses in order.
 :AMBIGUOUS is the clause PLAN-0014 step 8 adds before (t nil) -- two or more
 plain functions, no methods, not exactly one interface -- and :NONE is (t nil)
-as it stands today. Everything but :NONE is a name that reaches something."
-  (let* ((candidates (gethash (string-downcase name) index))
+as it stands today. Everything but :NONE is a name that reaches something.
+
+REFERRER is the entity the name was read from, and it is what makes the
+candidate set the one CALL-TARGETS actually sees after ARCH-0015: a name is
+looked up as the symbol it is in the referrer's package, not as the string it
+is spelled. Passing NIL is the pre-ARCH-0015 answer and is what the initform
+and orphan censuses use where no entity is at hand."
+  (let* ((candidates (candidate-entities index name referrer))
          (functions  (remove-if-not (lambda (e) (eq :function  (entity-type e))) candidates))
          (methods    (remove-if-not (lambda (e) (eq :method    (entity-type e))) candidates))
          (interfaces (remove-if-not (lambda (e) (eq :interface (entity-type e))) candidates)))
@@ -67,6 +73,20 @@ as it stands today. Everything but :NONE is a name that reaches something."
           (t :none))))
 
 (defun resolvingp (kind) (not (eq kind :none)))
+
+(defun definer-site-referrer (file site)
+  "A stand-in entity carrying the package a definer call site was written in.
+
+A definer call site is a plist on the :FILE entity rather than an entity of its
+own, so there is nothing to hand CLASSIFY-CALL as a referrer. PLAN-0015 step 5
+put the package in effect on the site for exactly this reason; this wraps it in
+something ENTITY-PACKAGE can read."
+  (make-instance 'loom-ontology::function-entity
+                 :name (or (getf site :operator) "definer-call-site")
+                 :properties (properties-table
+                              (list :file (getp file :path)
+                                    :start-line (getf site :start-line)
+                                    :system (getf site :system)))))
 
 ;;;; ------------------------------------------------------------------
 ;;;; R3 -- initforms (BUG-0017)
@@ -98,6 +118,9 @@ as it stands today. Everything but :NONE is a name that reaches something."
                       (push (list :file (enough-namestring path root)
                                   :line start
                                   :name name
+                                  ;; No referring entity: pass 1 has a form,
+                                  ;; not an entity, so this is the name-only
+                                  ;; answer and a floor on what resolves.
                                   :kind (classify-call index name))
                             sites))))))))))
     (nreverse sites)))
@@ -126,7 +149,7 @@ and the two populations cannot disagree about which sites minted."
                         :line (getf site :start-line)
                         :name name
                         :operator (getf site :operator)
-                        :kind (classify-call index name))
+                        :kind (classify-call index name (definer-site-referrer file site)))
                   sites)))))
     (nreverse sites)))
 
@@ -144,7 +167,7 @@ tree and will not be on one where a caller names two ambiguous functions."
     (dolist (type '(:function :method :test))
       (dolist (caller (entities-of-type view type))
         (dolist (name (getp caller :call-names))
-          (when (eq :ambiguous (classify-call index name))
+          (when (eq :ambiguous (classify-call index name caller))
             (push (list :file (getp caller :file)
                         :line (getp caller :start-line)
                         :name name
@@ -182,7 +205,13 @@ tree and will not be on one where a caller names two ambiguous functions."
 (defun census-report (root)
   (let* ((repository (watch-repository root :monitor nil :quiet t))
          (view (repository-graph repository))
-         (index (callable-index view))
+         ;; The package-aware lookup, not the bare name index. ARCH-0015 made
+         ;; CALL-TARGETS ask which symbol a name is before asking what it
+         ;; matches, and a census that skipped that step would report the
+         ;; populations of a pass that no longer exists -- the drift this
+         ;; file's own header warned about when step 8 was still ahead of it.
+         (index (callable-lookup
+                 view :external-packages (loom-analyzer:external-package-exports)))
          (initforms (initform-census (repository-root repository) index))
          (orphans (orphaned-definer-census view loom-analyzer:*macro-generators* index))
          (ambiguous (ambiguous-call-census view index))

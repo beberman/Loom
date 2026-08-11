@@ -57,6 +57,19 @@ one reportable site with an edge to each candidate rather than a silent drop, an
 `describe` on the callee lists both among its callers with their kind. ARCH-0001
 records the rest. A small impact set is not proof of a small change.
 
+A callable is identified by the symbol it names, not the string it spells
+(ARCH-0015). Two same-named definitions in different packages are two callables,
+and a call reaches whichever one its own package makes accessible — through an
+`:import-from`, through a `:use` of a package that exports it, or by interning
+its own. So `find` showing two entries for one name is usually two things, not a
+duplicate. When the package cannot be worked out — the file's package `:use`s
+something no declaration in the tree describes, which on game-server is 54 of 95
+same-named callables — Loom refuses to place the name and falls back to matching
+on the spelling, which is the older and blunter answer rather than a wrong one.
+`loom-analyzer:*external-package-names*` is how you narrow that: naming a
+library there lets its exports be read from the image and its inherited names
+placed.
+
 A malformed form costs a form rather than a file. The Lisp analyzer reads
 through Eclector behind a Loom-owned client (ARCH-0013), so a file with damage
 in it still yields its other definitions and the damage is recorded on the
