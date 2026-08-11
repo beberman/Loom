@@ -6,6 +6,13 @@ affects: [resolve-calls, call-targets, callable-index, generated-entity,
           impact-set, describe-entity]
 tags: [graph, resolution, clos, confidence, con-0001]
 summary: |
+  MET EXCEPT R5, 2026-08-10. The mechanism landed (ARCH-0014) and fires 371
+  times on game-server. The two names quoted below as the symptom turned out
+  not to be ambiguous at all -- they were dispatch across accessor-generated
+  generics Loom could not see, fixed by ARCH-0015 and REQ-0020, and that
+  accessor now reaches 307 impacted entities against the 1 recorded here. The
+  measurements below are historical; OUTSTANDING carries both stories.
+
   RESOLVE-CALLS asserts a :CALLS edge when a call name matches exactly one
   definition and asserts nothing when it matches several. The reasoning given
   in its own docstring is sound as far as it goes -- picking one would fabricate
@@ -26,6 +33,7 @@ summary: |
   and `impact cascade-delete 3` consequently reports one impacted entity, that
   entity's own file. This asks that ambiguity be represented rather than
   deleted.
+
 body: |
   WHAT IS WRONG
 
@@ -204,8 +212,46 @@ body: |
   276, `symbol-decode' 22, `package-kwd-encode' 16, and fifteen more names --
   every one a genuine two-or-more-plain-functions ambiguity that produced no
   edge before and produces N discountable ones now. R1 to R4 are met and are
-  worth something. R6 is not met, and this requirement stays partial until
-  REQ-0020 closes.
+  worth something. R6 was not met at the time of that run, and this
+  requirement stayed partial pending REQ-0020.
+
+  R6, SATISFIED LATER THE SAME DAY, and by neither of the two things this
+  document proposed. Everything above stands as the record of what was true
+  between the first run and the fix; this is what is true now.
+
+  ARCH-0015 made resolution package-aware, so `cascade-delete's candidate set
+  stopped spanning unrelated packages, and REQ-0020's first half taught
+  CALL-TARGETS that an accessor-generated :INTERFACE is a dispatch target
+  rather than a rival protocol. Measured on game-server, /usr/bin/sbcl,
+  2026-08-10:
+
+      impact interface:mpackage/reference-types.lisp:cascade-delete 3
+          307 impacted (truncated)
+
+  against the "1 impacted: that entity's own file" this document quotes in its
+  own summary as the defect. The accessor went from 0 incoming :CALLS edges to
+  10, and `id's four mpackage entities -- one symbol reached through imports --
+  hold 64 callers each where REQ-0015 counted 144 dropped call sites. So the
+  value claimed here is no longer untested, and it was real.
+
+  Two honest qualifications on that.
+
+  The bare form `impact cascade-delete 3', which is what R6 literally asks for,
+  now answers "3 things are named cascade-delete. Name one:" and lists them.
+  That is the disambiguation RESOLVE-ENTITY gained when several entities per
+  name became the normal case rather than a defect, and it is a better answer
+  than the arbitrary one it replaced -- but a reader checking R6 by pasting the
+  literal command will not see 307 until they name the accessor. The criterion
+  should have been written against an id.
+
+  And none of it came from this document's mechanism. The ambiguous :CALL-SITE
+  this requirement asked for fires 371 times on game-server and is worth
+  having, but `cascade-delete' and `id' were never ambiguous -- they were
+  dispatch Loom could not see, which is REQ-0020's subject. This document was
+  right that the edges were being dropped and wrong about why, and the
+  distance between those two is the lesson worth keeping.
+
+  R6 is therefore met. This requirement stays partial on R5 alone.
 
   One number the run produced that nobody asked for and everybody should see:
   game-server mints 1726 call sites against 4121 entities, +42%, against
