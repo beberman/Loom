@@ -7,7 +7,7 @@ affects: [resolve-tests, print-status]
 tags: [graph, knowledge, tests, honesty]
 summary: |
   RESOLVE-TESTS derives a :TESTS edge from every :CALLS edge a :TEST entity has
-  to a :FUNCTION, :METHOD or :INTERFACE, and says so plainly (ARCH-0002 R9).
+  to a :FUNCTION, :METHOD or :INTERFACE, and says so plainly (DES-0002 R9).
   PRINT-STATUS then renders the count of distinct targets as "N tests covering M
   units". The derivation is honest and the label is not: "covering" claims a
   subject under test, and reachability from a test body is a weaker fact than
@@ -83,7 +83,7 @@ body: |
 
   WHY IT HID
 
-  The number has only ever been read as a trend. ARCH-0002 R10 asks for these
+  The number has only ever been read as a trend. DES-0002 R10 asks for these
   counts to be printed unconditionally so they can be read as zero-or-not, and
   every use of it since has been "did it move" -- PLAN-0011 step 5 is a fair
   example, treating 298 -> 302 as a delta to explain rather than a total to

@@ -34,7 +34,7 @@ index by origin file \"is what makes file-scoped retraction O(facts in the
 file) rather than a scan\", and file-scoped retraction is what makes
 reanalyzing a changed file a well-defined operation.
 
-All seven tables are PROTECTED-TABLEs sharing the one lock in LOCK (ARCH-0003
+All seven tables are PROTECTED-TABLEs sharing the one lock in LOCK (DES-0003
 R3, R11). One lock and not seven: ADD-RELATIONSHIP alone needs four of these
 tables held together, and four separate locks acquired in whatever order each
 caller happened to write would deadlock the first time two callers disagreed.
@@ -69,7 +69,7 @@ build one."
 
 (defmacro with-graph-lock ((graph) &body body)
   "Run BODY holding GRAPH's lock, so a multi-step mutation appears atomic.
-ARCH-0003 R4.
+DES-0003 R4.
 
 Not exported, and that is the point of it. A protected-table makes each
 primitive call crash-safe; it does not make ADD-RELATIONSHIP's five stores

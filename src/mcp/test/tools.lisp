@@ -40,7 +40,7 @@
         (is (equal "loom" (cdr (assoc :name (cdr (assoc :server-info result))))))))))
 
 (test tools-list-returns-exactly-ten-and-no-write-tool
-  ;; The negative is the witness for ARCH-0006's deliberate asymmetry. Without
+  ;; The negative is the witness for DES-0006's deliberate asymmetry. Without
   ;; it, a later well-meaning restoration of symmetry between the two skins is
   ;; invisible -- the count would simply be fourteen and every other test would
   ;; still pass.
@@ -50,7 +50,7 @@
       (is (= 10 (length tools)) "the tool set is ~a" names)
       (dolist (absent '("loom_watch" "loom_pause" "loom_unwatch" "loom_reindex"))
         (is-false (member absent names :test #'string=)
-                  "~a is exposed; ARCH-0006 rejects the write tools under
+                  "~a is exposed; DES-0006 rejects the write tools under
 ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
                   absent))
       ;; And every tool describes the arguments its entry actually takes,
@@ -118,7 +118,7 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
       (is (= -32602 (cdr (assoc :code (error-of response))))))))
 
 (test one-listener-serves-both
-  ;; ARCH-0006's WHY ONE LISTENER as a fact rather than an intention: the REST
+  ;; DES-0006's WHY ONE LISTENER as a fact rather than an intention: the REST
   ;; route and the MCP endpoint answer on the same port, in one image, over one
   ;; graph.
   (with-operations-fixture (repository)

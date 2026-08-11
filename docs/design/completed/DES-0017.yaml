@@ -1,0 +1,150 @@
+id: DES-0017
+title: Three document tiers with three names that mean what an engineer means, and a completed/ view for the workflow ones
+status: implemented
+date: 2026-08-11
+refines: [CON-0004, BUG-0023]
+affects: [document-type-for, document-properties, document-category,
+          declared-edge-type, resolve-document-links, repository-status]
+tags: [documents, ontology, conventions, naming, migration]
+summary: |
+  docs/arch held sixteen files that were not architecture documents. Every one
+  was titled as a decision, organised as rationale plus rejected alternatives
+  plus OUTSTANDING, and answered "how do we implement this requirement" -- which
+  is a design document. Meanwhile docs/design held four DEC files, which really
+  are decisions. Two directory names were each attached to the wrong genre, and
+  the genre that was missing entirely -- a description of the structure and
+  mechanism of the software as it stands -- had nowhere to live, so Loom's own
+  architecture existed only in the root CLAUDE.md, a file neither analyzer
+  indexes.
+
+  Three tiers now: docs/decisions/DEC-nnnn, docs/design/DES-nnnn, and a new
+  docs/arch/ARCH-nnnn under its own entity type and schema. Plus a completed/
+  subdirectory under the four workflow directories, and not under the five that
+  hold documents which are in force rather than finished.
+body: |
+  WHY THE NAMING WAS NOT A QUIBBLE
+
+  An architecture document describes the structure and mechanism of software.
+  A design document argues how to implement a requirement. Read against that,
+  all sixteen ARCH files were designs -- "System identity becomes an
+  analyzer-written :system property", "Retire in-place code reload for a
+  soft-drained restart", "A callable is identified by the symbol it names".
+  Each names a change and argues for it. None describes standing structure.
+
+  The ontology had quietly agreed all along: docs/design mapped to :DECISION
+  while docs/arch mapped to :DOCUMENT, the generic type whose own docstring
+  says "an architecture note, a README". Loom never modelled ARCH as a distinct
+  kind of thing, which is one reason BUG-0023's silent drop went unnoticed for
+  so long -- the documents carrying the most reasoning were typed as the
+  weakest thing in the vocabulary.
+
+  WHAT EACH TIER IS, AND WHAT IT CLAIMS
+
+      docs/decisions/DEC-nnnn   :decision      affects: -> :decides
+      docs/design/DES-nnnn      :design        affects: -> :decides
+      docs/arch/ARCH-nnnn       :architecture  describes: -> :documents
+
+  :DESIGN and :DECISION both govern, which is why both are in
+  *GOVERNING-DOCUMENT-TYPES* and both land in `impact''s decisions: field. The
+  difference between them is genre rather than strength: a DEC records a choice
+  and its consequences, a DES records the shape of an answer and the
+  alternatives weighed.
+
+  :ARCHITECTURE governs nothing, and the schema enforces that rather than
+  asking for discipline. It reads describes: and does not read affects:, so an
+  affects: written in an architecture document is inert -- deliberately the one
+  place where a field going unread is the design rather than the bug BUG-0023
+  fixed everywhere else. Its status vocabulary is three words, not eight:
+  :DRAFT, :ACCEPTED, :SUPERSEDED. An architecture document is never
+  implemented; it is accurate or it is stale. Offering :IMPLEMENTED would have
+  invited the confusion straight back.
+
+  It also carries invariants:, which is the field that most distinguishes the
+  genre. A design records what was chosen; an architecture document records
+  what may not be broken. It is a prose field, so it folds into :BODY and the
+  mention scan runs over it, and it is the obvious raw material for RULE
+  documents once a check kind can express one.
+
+  IDS: NUMBERS KEPT, RANGE MOVED
+
+  ARCH-nnnn became DES-nnnn with the number preserved -- ARCH-0009 is DES-0009
+  -- so the sweep was a mechanical s/ARCH-(\d{4})/DES-\1/ across 1461
+  references in documents, source comments, CLAUDE.md, the loom skill and the
+  agent definitions. Preserving the number is what made the sweep safe enough
+  to do at all.
+
+  New architecture documents start at ARCH-0101, and that gap is not
+  bookkeeping. Had they started at ARCH-0001, every existing reference to
+  "ARCH-0009" -- in git history, in an old note, in a conversation -- would
+  have silently resolved to a different document rather than failing. A
+  reference that resolves to the wrong thing is worse than a dangling one,
+  because nothing reports it; CON-0001 is the same argument one level up. With
+  the gap, a stale ARCH reference finds nothing, which is honest.
+
+  THE completed/ SUBDIRECTORY, AND WHERE IT DOES NOT GO
+
+  Under docs/requirements, docs/design, docs/plans, docs/bugs and docs/reviews,
+  a document with a terminal status moves to completed/. Fifty-three files
+  moved: 8 implemented requirements, 13 implemented designs, 15 final plans, 16
+  closed bugs, 1 closed review.
+
+  Not under docs/decisions, docs/arch, docs/rules or docs/concepts. An accepted
+  decision, an active rule, a named concept and a current architecture document
+  are in force rather than finished. All four DEC documents are status
+  accepted; a naive rule would have emptied docs/decisions entirely.
+
+  docs/design was initially put on the wrong side of that line, on the reasoning
+  that an implemented design is still in force. It is not, and the correction is
+  what makes the three tiers coherent: a design answers one requirement and is
+  finished when that work lands, exactly like the plan that sequenced it. What
+  stands afterwards is the ARCH document describing the structure the design
+  produced -- which is precisely why :ARCHITECTURE has no terminal status in its
+  vocabulary while :DESIGN has two.
+
+  The objection to encoding state in a directory at all is real and is recorded
+  in RULE-0007 rather than dismissed: `status:' already holds the fact and
+  nothing checks that the placement agrees. It was overruled on ergonomics --
+  the query needs a running Loom, and reading a directory does not.
+
+  WHAT IT COST TO MOVE FORTY FILES: NOTHING MEASURABLE
+
+      before   195 files, 2053 entities, 10536 relationships, 92 documents,
+               13 unresolved
+      after    195 files, 2053 entities, 10536 relationships, 92 documents,
+               13 unresolved
+
+  Identical, because DOCUMENT-CATEGORY returns the first path segment below
+  docs/ and so types a three-segment path exactly as it typed a two-segment
+  one, and because cross-document references resolve through LINKABLE-INDEX on
+  doc-id rather than on path. The one real consequence is that a :DOCUMENT's
+  natural key is (:PATH), so a moved file changes id and every edge endpoint
+  with it -- correct after a full reindex, not to be trusted through an
+  incremental poll.
+
+  TWO THINGS FOUND ON THE WAY
+
+  BUG-0019 carried `status: fixed', which is not in the :DOCUMENT vocabulary,
+  so AS-KEYWORD returned NIL and the document had no status at all. Corrected
+  to `closed'. That an out-of-vocabulary status is dropped in silence is the
+  same shape as BUG-0023 and wants its own bug.
+
+  Adding :ARCHITECTURE to the ontology rejected the whole resolution
+  transaction twice before it settled, both times because a type list had been
+  widened in one place and not another -- :DOCUMENTS admitted the new type
+  while :MENTIONS and :REFINES did not, and an architecture document with
+  backticks in its prose is enough to fail the pass. The lesson is the one
+  ARCH-0101 I1 states: one illegal endpoint rejects everything, so adding an
+  entity type means auditing every relationship that could touch it, not the
+  ones the new feature obviously uses.
+
+  OUTSTANDING
+
+  - RULE-0007 is prose-only. No check kind can compare a path segment against a
+    property value, so directory-versus-status drift is unchecked.
+  - An out-of-vocabulary status: is silently dropped rather than reported.
+  - :UNRESOLVED-REFERENCES cannot distinguish a name that matches nothing from
+    one that matches several; of the 13 currently reported, RESOLVE-ENTITY is
+    ambiguous rather than rotten.
+  - The historical prose in closed BUG and PLAN documents still says
+    "ARCH-level question" in a few places, meaning what is now called DES. Left
+    alone: those documents are closed records of what was thought at the time.

@@ -97,7 +97,7 @@ analyzer that parsed it: the LAST IN-PACKAGE binding in a Lisp file, and
 DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 The last one, not the only one -- a file with two IN-PACKAGE sections gets one
 value here that does not describe all of it, while its definitions each carry
-the binding lexically nearest them. ARCH-0009 discloses that approximation
+the binding lexically nearest them. DES-0009 discloses that approximation
 against a real two-package file and
 THE-FILE-ENTITY-TAKES-THE-LAST-IN-PACKAGE-IN-THE-FILE asserts it. No :one-of --
 unlike :LANGUAGE the vocabulary is open, since it is whatever the indexed
@@ -114,7 +114,7 @@ than an absence it cannot distinguish from an empty file.")
                 :documentation "The condition text, when :ANALYSIS-FAILED-P.")
                (:suppressed-regions list
                 :documentation "Source in this file the reader passed over
-rather than read -- ARCH-0013. One plist per region: :REASON as a lowercase
+rather than read -- DES-0013. One plist per region: :REASON as a lowercase
 string, :START-LINE, :END-LINE. Two things reach it: a #+ or #- branch the
 feature policy did not take, and a #. the reader refused to evaluate.
 
@@ -129,7 +129,7 @@ these lines would have defined a thing and did not, so an agent asking why a
 name is missing gets an answer instead of silence (CON-0001).")
                (:recovered-regions list
                 :documentation "Damage the reader repaired to keep reading --
-ARCH-0013 R4. One plist per repair: :CONDITION as a type name, :TEXT,
+DES-0013 R4. One plist per repair: :CONDITION as a type name, :TEXT,
 :START-LINE, :END-LINE, and :COST, which is :FORM when the repair corrupted
 the form being built and :NOTHING when it was junk between forms.
 
@@ -141,7 +141,7 @@ whole record that the definitions in these lines are missing, and it is why a
 file with damage in it costs a form rather than the file it used to cost.")
                (:definer-call-sites list
                 :documentation "Every top-level form in this file whose
-operator is neither a definition nor a declaration -- ARCH-0002 R2. One plist
+operator is neither a definition nor a declaration -- DES-0002 R2. One plist
 per form: :OPERATOR, :START-LINE, :END-LINE, :ARGUMENTS as rendered strings,
 :SYMBOL-ARGUMENTS naming which of those positions held a bare symbol, and
 :CALL-NAMES pre-walked from the whole argument list.
@@ -159,12 +159,12 @@ at.")))
 package.
 
 :QUALIFIED-NAME is the name the package was DECLARED under. A nickname is an
-alias recorded in :NICKNAMES, never a second :PACKAGE entity -- ARCH-0015, and
+alias recorded in :NICKNAMES, never a second :PACKAGE entity -- DES-0015, and
 the reason is the natural key: two entities for one namespace would each hold
 half its exports and neither would answer correctly.
 
 :NICKNAMES and :IMPORTED-SYMBOLS are properties rather than entities or edges,
-which is ARCH-0014's arithmetic applied again. game-server imports 227 distinct
+which is DES-0014's arithmetic applied again. game-server imports 227 distinct
 symbol names and every package that (:use :cl) inherits on the order of a
 thousand more, so a node or an edge per moved symbol is a node per fact that
 already has somewhere to live. :EXPORTS was already a list property on this
@@ -179,11 +179,11 @@ graph's job, not the analyzer's, because a nickname is declared by a form
 RULE-0002 forbids an analyzer from reading beyond its own file.")
                (:uses           list
                 :documentation "The packages this one inherits from, as
-declared names or nicknames. Route 2 of ARCH-0015's symbol movement: a :USE
+declared names or nicknames. Route 2 of DES-0015's symbol movement: a :USE
 makes every symbol the used package EXPORTS accessible here, which is why
 resolving through it needs both this list and the other package's :EXPORTS.
 
-Not named in ARCH-0015 R1, which lists only :nicknames and :imported-symbols.
+Not named in DES-0015 R1, which lists only :nicknames and :imported-symbols.
 R1 is incomplete rather than wrong -- its own HOME-PACKAGE rule has an
 inheritance route and there is nowhere else for the list to live. PLAN-0015
 step 3 records the addition.")
@@ -242,7 +242,7 @@ definitions this one superseded by sharing its natural key in the same file --
 one string per superseded definition, in source order.  Absent and empty are
 not the same thing: absent means nothing collided, which is the ordinary case.
 The shadowed source has no entity of its own anywhere in the graph, and that is
-deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+deliberate -- it is not what the file defines once loaded (DES-0012 R1) -- so
 a reader who wants its text opens the file at these lines.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
@@ -250,7 +250,7 @@ analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
 DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
-ARCH-0009.")))
+DES-0009.")))
 
 (defentity :interface
   :documentation "A contract without implementation: a TypeScript interface,
@@ -274,7 +274,7 @@ definitions this one superseded by sharing its natural key in the same file --
 one string per superseded definition, in source order.  Absent and empty are
 not the same thing: absent means nothing collided, which is the ordinary case.
 The shadowed source has no entity of its own anywhere in the graph, and that is
-deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+deliberate -- it is not what the file defines once loaded (DES-0012 R1) -- so
 a reader who wants its text opens the file at these lines.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
@@ -282,7 +282,7 @@ analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
 DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
-ARCH-0009.")))
+DES-0009.")))
 
 (defentity :function
   :documentation "A named callable unit in source code."
@@ -310,7 +310,7 @@ definitions this one superseded by sharing its natural key in the same file --
 one string per superseded definition, in source order.  Absent and empty are
 not the same thing: absent means nothing collided, which is the ordinary case.
 The shadowed source has no entity of its own anywhere in the graph, and that is
-deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+deliberate -- it is not what the file defines once loaded (DES-0012 R1) -- so
 a reader who wants its text opens the file at these lines.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
@@ -318,7 +318,7 @@ analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
 DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
-ARCH-0009.")
+DES-0009.")
                (:call-names list
                 :documentation "Every callee name the analyzer could not
 resolve inside this one file.  Written by the analyzer and never rewritten
@@ -329,7 +329,7 @@ callers still record who they call.")
                (:qualified-calls list
                 :documentation "The package prefixes this entity's call sites
 wrote, as a list of plists: :NAME, the call name as it appears in :CALL-NAMES,
-and :PACKAGE, the designator written before it, lowercased. ARCH-0013, and
+and :PACKAGE, the designator written before it, lowercased. DES-0013, and
 REQ-0019 R2 arriving somewhere it can be used.
 
 Only sites that wrote a prefix appear, so this is short where :CALL-NAMES is
@@ -339,7 +339,7 @@ absence already means.
 
 Evidence, not an answer, and nothing reads it yet. `utils:parse-config' and a
 local PARSE-CONFIG reduce to one string in :CALL-NAMES, which is why
-RESOLVE-CALLS cannot tell two same-named definitions apart; before ARCH-0013
+RESOLVE-CALLS cannot tell two same-named definitions apart; before DES-0013
 the prefix was destroyed at read time by INTERN-FOREIGN-SYMBOL-LOCALLY, so
 there was nothing to record. Whether resolution should prefer a qualified
 match or merely rank candidates by it is REQ-0015's question and is
@@ -356,7 +356,7 @@ workspace.  Recorded as a property, never as a dangling edge.  Derived from
 :CALL-NAMES on every resolution pass rather than accumulated, so it describes
 the workspace as it stands rather than as it was when a name last resolved.")
                ;; What a DEFMACRO's template says a call to it defines
-               ;; (ARCH-0002 R1).  Written once from the source text and never
+               ;; (DES-0002 R1).  Written once from the source text and never
                ;; rewritten, like :SUPERCLASS-NAMES: the decision about a call
                ;; site needs the whole workspace, which an analyzer does not
                ;; have, so the analyzer records the shape and
@@ -400,7 +400,7 @@ definitions this one superseded by sharing its natural key in the same file --
 one string per superseded definition, in source order.  Absent and empty are
 not the same thing: absent means nothing collided, which is the ordinary case.
 The shadowed source has no entity of its own anywhere in the graph, and that is
-deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+deliberate -- it is not what the file defines once loaded (DES-0012 R1) -- so
 a reader who wants its text opens the file at these lines.")
                (:system           keyword
                 :documentation "The system this belongs to, decided by the
@@ -408,7 +408,7 @@ analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
 DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
-ARCH-0009.")
+DES-0009.")
                (:call-names       list)
                (:qualified-calls  list)
                (:unresolved-calls list)))
@@ -429,7 +429,7 @@ definitions this one superseded by sharing its natural key in the same file --
 one string per superseded definition, in source order.  Absent and empty are
 not the same thing: absent means nothing collided, which is the ordinary case.
 The shadowed source has no entity of its own anywhere in the graph, and that is
-deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+deliberate -- it is not what the file defines once loaded (DES-0012 R1) -- so
 a reader who wants its text opens the file at these lines.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
@@ -437,16 +437,16 @@ analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
 DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
-ARCH-0009.")))
+DES-0009.")))
 
 (defentity :call-site
   :documentation "One call name at one place in one file, as an entity.
 
 Minted exactly where a call name cannot be expressed as a :CALLS edge from an
-existing definition entity, and never otherwise (ARCH-0014). That rule is the
+existing definition entity, and never otherwise (DES-0014). That rule is the
 whole type: a DEFUN calling one uniquely-named function still produces one
 :CALLS edge and no call site, which is 2527 of this tree's 2557 resolving
-call-name occurrences never meeting this type at all. ARCH-0014 priced the
+call-name occurrences never meeting this type at all. DES-0014 priced the
 uniform alternative -- a node per occurrence -- at 4867 entities against 1604
 and refused it, so any change that mints a call site where an edge was
 possible has silently adopted the model that was refused.
@@ -461,20 +461,20 @@ running those from a call site the caller contains is what keeps the caller
 from looking coupled to code it never touches.
 
 The natural key is (:file :start-line :call-name), and it is PLAN-0014
-decision 1 rather than ARCH-0014's literal (:file :start-line :name).
+decision 1 rather than DES-0014's literal (:file :start-line :name).
 ENTITY-NATURAL-KEY treats :name as the name *slot*, so keying on it would
 force NAME to be the bare referenced name -- and LINKABLE-INDEX keys every
 named entity, while RESOLVE-ONE refuses a name matching several, so 163 call
 sites named exactly like the functions they call would turn resolved
 `affects:' references into unresolved ones. NAME therefore carries
 CALL-SITE-LABEL's \"<call-name>@<file>:<line>\" and :CALL-NAME carries the
-referenced name. Semantically that is ARCH-0014's key exactly: a file, a line
+referenced name. Semantically that is DES-0014's key exactly: a file, a line
 and a referenced name."
   :natural-key (:file :start-line :call-name)
   :properties ((:file        string  :required t)
                (:start-line  integer :required t
                 :documentation "The enclosing form's start line, not the call's
-own. ARCH-0013 deleted ELEMENT-SPANS, so pass 1 has one range per top-level
+own. DES-0013 deleted ELEMENT-SPANS, so pass 1 has one range per top-level
 form and no sub-form positions -- a DEFPARAMETER's call sites carry the
 DEFPARAMETER's line, and an ambiguous site carries its caller's, because
 :CALL-NAMES records no position at all. PLAN-0014 decision 5.")
@@ -515,33 +515,33 @@ Absent for the other kinds.")
                 :documentation "The system this belongs to, taken from the
 entity the site was derived from rather than re-decided. What makes
 EDGES-BETWEEN-SYSTEMS see a call site at all, and so what keeps RULE-0001 to
-RULE-0003 from silently ignoring the new edges (ARCH-0014 R7).")))
+RULE-0003 from silently ignoring the new edges (DES-0014 R7).")))
 
 ;;; The one place in this file that is not declaration, and the header above
 ;;; says everything here is. It is here anyway because two systems mint this
 ;;; type -- the analyzer for initforms, the graph for definer calls and
 ;;; ambiguity -- and if the two ever spelled the key differently the graph
-;;; would grow a duplicate per pass that nothing retracts. ARCH-0014's RISKS
+;;; would grow a duplicate per pass that nothing retracts. DES-0014's RISKS
 ;;; section names a shared key-computing function in loom-ontology as the cheap
 ;;; insurance against exactly that; this is it, and neither minting site may
 ;;; construct a CALL-SITE-ENTITY directly.
 
 (defun entity-package (entity)
   "The Lisp package ENTITY's definition was read in, as an uppercase string,
-or NIL. The namespace half of ARCH-0015: what decides whether two same-named
+or NIL. The namespace half of DES-0015: what decides whether two same-named
 definitions are one callable or two.
 
 Reads :SYSTEM rather than a property of its own, and that is a deliberate
-deviation from ARCH-0015 R3, which asked for a separate :PACKAGE property
+deviation from DES-0015 R3, which asked for a separate :PACKAGE property
 beside it. The two would hold the same value character for character.
-ARCH-0009 makes the IN-PACKAGE chain the sole source of :SYSTEM and
+DES-0009 makes the IN-PACKAGE chain the sole source of :SYSTEM and
 NORMALIZE-SYSTEM-NAME is (INTERN (STRING-UPCASE raw) :KEYWORD) over the
 designator that chain carries, so :SYSTEM already IS the uppercased package
 name -- :LOOM-ANALYZER, :MPACKAGE.FILTER -- with nicknames unresolved, which is
-exactly what this needs and exactly what ARCH-0015 says the graph resolves.
+exactly what this needs and exactly what DES-0015 says the graph resolves.
 
 Duplicating it would put a second copy on every definition in every tree and
-create the failure ARCH-0015's own RISKS section names: two derivations of one
+create the failure DES-0015's own RISKS section names: two derivations of one
 IN-PACKAGE chain, drifting. One value, read through a name that says which
 question is being asked, is the smaller surface.
 
@@ -630,7 +630,7 @@ definitions this one superseded by sharing its natural key in the same file --
 one string per superseded definition, in source order.  Absent and empty are
 not the same thing: absent means nothing collided, which is the ordinary case.
 The shadowed source has no entity of its own anywhere in the graph, and that is
-deliberate -- it is not what the file defines once loaded (ARCH-0012 R1) -- so
+deliberate -- it is not what the file defines once loaded (DES-0012 R1) -- so
 a reader who wants its text opens the file at these lines.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
@@ -638,12 +638,12 @@ analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
 DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
-ARCH-0009.")
+DES-0009.")
                ;; A test is almost never written as its own form -- it is a
                ;; call to a framework macro -- so unlike every other definition
                ;; entity this one is usually minted by a resolution pass rather
                ;; than by an analyzer.  These three are what that costs and
-               ;; what it buys (ARCH-0002 R5, R8).
+               ;; what it buys (DES-0002 R5, R8).
                (:generated-by string
                 :documentation "The macro whose call site brought this test
 into existence.  Set by RESOLVE-GENERATED-DEFINITIONS, and the marker its
@@ -674,7 +674,7 @@ graph.\""
 analyzer that parsed the file: a document has no grouping construct of its
 own, so this is always DEFAULT-SYSTEM-FOR-PATH's path segment -- :DOCS for
 everything under docs/. No :one-of, for the same reason the code entity types
-give. ARCH-0009.")
+give. DES-0009.")
                (:doc-id string
                 :documentation "The id: field.  How other documents name this
 one, and what `describe REQ-0002' looks up.  Every workflow category -- arch,
@@ -707,6 +707,25 @@ when it wants the reasoning rather than the metadata.")
 this one answers.  A design refines the requirement that asked for it, a plan
 refines the design it sequences.  Resolved into :REFINES edges, which is what
 makes the workflow a walkable chain rather than a naming convention.")
+               (:affects list
+                :documentation "The affects: field -- names this document
+bears on.  Declared by the author, so unlike :MENTIONS it is a claim rather
+than an observation, and a name here that resolves to nothing is reported by
+`check' instead of dropped.
+
+Read for every document type, not only for :DECISION, which is what it was
+until this property existed.  Until then a requirement, a plan, a bug report
+and an architecture note could all write affects: and every one of them was
+discarded in silence: DOCUMENT-PROPERTIES read the field only in its
+:DECISION method, this type declared no property to put it in, and so nothing
+resolved and nothing was reported unresolved either.  Measured when it was
+fixed: 67 documents carrying roughly 610 names, of which the four in
+docs/design were the only ones producing an edge.
+
+What the claim *means* depends on who makes it, and RESOLVE-DOCUMENT-LINKS
+decides that rather than this declaration: a decision governs what it affects
+and earns :DECIDES, while a requirement, plan or bug report bears on it and
+earns :DOCUMENTS.")
                (:mentions list
                 :documentation "Entity names found in the prose.  Raw text
 until the workspace resolves them (SS10.3); resolution turns each into an
@@ -810,6 +829,123 @@ makes the workflow a walkable chain rather than a naming convention.")
                (:superseded-by string
                 :documentation "Doc-id of the decision that replaced this one.")))
 
+(defentity :design
+  :documentation "How a requirement gets built: the shape of an answer, the
+alternatives weighed, and what the choice costs.  Read from docs/design as
+DES-nnnn.
+
+Distinct from :DOCUMENT, which it used to be, and from :ARCHITECTURE, which it
+is routinely confused with.  The distinction is the one an engineer means by
+the words: an architecture document describes the structure and mechanism of
+software as it stands, while a design document argues how to implement a
+requirement.  All sixteen of this tree's ARCH-nnnn files were the latter --
+titled as decisions (\"X becomes Y\", \"Retire Z for W\"), organised as
+rationale plus rejected alternatives plus OUTSTANDING -- so they were renamed
+DES-nnnn and given this type, and docs/arch was left for documents that
+actually describe structure.
+
+Governing, like :DECISION: a design document's affects: is a claim to decide
+how that code is shaped, so it earns :DECIDES and `impact' reports it among
+the decisions bearing on an entity.  That is the whole practical difference
+from the :DOCUMENT a requirement or a plan gets, whose affects: merely bears
+on its target.
+
+Keyed on :DOC-ID rather than :PATH, which is what :DECISION does and what
+:DOCUMENT does not.  A document whose identity is its path changes identity
+when the file moves; keying on the id an author wrote means a design document
+can be filed anywhere without its edges being rebuilt."
+  :natural-key (:doc-id)
+  :properties ((:doc-id  string :required t)
+               (:title   string)
+               (:summary string
+                :documentation "The author's own one-paragraph statement.
+:BODY answers \"what does it say\", this answers \"what is it about\".")
+               (:status  keyword
+                :one-of (:draft :proposed :accepted :final :superseded
+                         :rejected :implemented :partial)
+                :default :draft
+                :documentation "CON-0004's vocabulary, and deliberately wider
+than :DECISION's four.  A design is drafted, lands, and is then implemented or
+partial -- and :DECISION's (:proposed :accepted :superseded :rejected) admits
+none of those three, so typing these documents as decisions would have blanked
+twelve `implemented' and two `partial' statuses without an error.")
+               (:date    string
+                :documentation "Kept as written: provenance for a human.")
+               (:tags    list)
+               (:body    string)
+               (:refines list
+                :documentation "The requirement this design answers, and the
+other documents it builds on.  Resolved into :REFINES edges.")
+               (:affects list
+                :documentation "The code this design decides the shape of.
+Resolved into :DECIDES edges, because a design governs -- see the type
+docstring.")
+               (:supersedes list
+                :documentation "Doc-ids of designs this one replaces.")
+               (:mentions list)
+               (:unresolved-references list)
+               (:system keyword
+                :documentation "DES-0009 R3: the shared path default, since a
+document has no grouping construct of its own to read.")))
+
+(defentity :architecture
+  :documentation "The structure and mechanism of the software as it stands:
+what the parts are, what each owns, how they fit, and what must remain true.
+Read from docs/arch as ARCH-nnnn.
+
+The distinction from :DESIGN is the one an engineer means by the words, and it
+is the reason this type exists at all. A design argues *how to implement a
+requirement* -- it has a problem, alternatives, a choice and a cost, and it is
+finished when the work lands. An architecture document describes *what is
+there* -- it is never finished, only accurate or stale, which is why its status
+vocabulary has no :IMPLEMENTED and why it carries :INVARIANTS instead of
+alternatives.
+
+It declares DESCRIBES: rather than AFFECTS:, and the difference is not
+cosmetic. A decision or a design governs the code it names and earns :DECIDES;
+a requirement, plan or bug bears on it and earns :DOCUMENTS; an architecture
+document *describes* it, which is the strongest form of the same claim and
+earns :DOCUMENTS as well. Nothing here governs -- an architecture document that
+told you what to do would be a design document filed in the wrong directory.
+
+Keyed on :DOC-ID, like :DESIGN and :DECISION, so the file can be moved without
+rebuilding its edges."
+  :natural-key (:doc-id)
+  :properties ((:doc-id  string :required t)
+               (:title   string)
+               (:summary string)
+               (:status  keyword
+                :one-of (:draft :accepted :superseded)
+                :default :draft
+                :documentation "Three, not CON-0004's eight. An architecture
+document is not implemented and does not reach final -- the software either
+still looks like this, in which case it is accepted, or it does not, in which
+case something superseded it. Offering :IMPLEMENTED here would invite the
+genre confusion this type was created to end.")
+               (:date    string)
+               (:tags    list)
+               (:body    string)
+               (:invariants string
+                :documentation "What must remain true of this structure, as
+prose. The field that most distinguishes the genre: a design records what was
+chosen, and this records what may not be broken. Folded into :BODY like every
+other prose field, and a candidate for becoming machine-checked RULE documents
+once a check kind can express one.")
+               (:describes list
+                :documentation "The code whose structure this document
+describes. Resolved into :DOCUMENTS edges -- the declared, strong form of
+\"this document is about this code\", as against the :MENTIONS a backtick in
+prose earns.")
+               (:refines list
+                :documentation "Rarely used here, but permitted: an
+architecture document may answer a requirement that asked for one.")
+               (:supersedes list
+                :documentation "Doc-ids of architecture documents this one
+replaces, which is how a structural rewrite retires its predecessor.")
+               (:mentions list)
+               (:unresolved-references list)
+               (:system keyword)))
+
 (defentity :rule
   :documentation "A normative, checkable constraint, read from docs/rules
 (SS10.2).  The point of the type is SS10.4: a rule's CHECK clause compiles to
@@ -863,7 +999,7 @@ rule is advisory prose.  A plist: :kind plus the keys that kind needs.")))
   :documentation "The core propagation edge: a callee change reaches its callers.
 
 :INTERFACE is a permitted target but not the usual one, and the distinction
-matters. ARCH-0001 rejected routing dispatched calls through the generic --
+matters. DES-0001 rejected routing dispatched calls through the generic --
 they fan out to the candidate methods instead -- so an edge lands here only
 when a protocol has no implementation in the workspace to fan out to: a
 DEFCLASS slot accessor, which is a generic function generated from a slot and
@@ -871,7 +1007,7 @@ never specialised again, or a DEFGENERIC whose methods live outside the
 indexed tree. Permitting the endpoint is what keeps those callable; it does
 not make the generic a hub.
 
-:CALL-SITE is the fourth source and the whole of ARCH-0014's ontology cost.
+:CALL-SITE is the fourth source and the whole of DES-0014's ontology cost.
 The edge runs from the call site to the callee, so `describe' on the callee
 shows the site as an incoming caller and `impact' reaches it in one hop rather
 than two. Interposing the node between an existing caller and its callee was
@@ -897,11 +1033,11 @@ and mints nothing.")
   :documentation "Module-level propagation, and the edge from a generated
 definition back to whatever generated it.
 
-The second use is ARCH-0002's, and it is why :INTERFACE and :TEST originate
+The second use is DES-0002's, and it is why :INTERFACE and :TEST originate
 here and :FUNCTION terminates here. A DEFCLASS slot accessor is an :INTERFACE
 and has to reach its class; a macro-generated test is a :TEST and has to reach
 the macro, which is a :FUNCTION carrying :MACRO-P. Widening rather than adding
-a :GENERATES type, for the reason ARCH-0001 gave for not adding :SPECIALIZES:
+a :GENERATES type, for the reason DES-0001 gave for not adding :SPECIALIZES:
 no consumer needs to tell the two apart to get the right answer, because both
 want impact to flow from the generator to the generated, which this type's
 :REVERSE direction already gives. What distinguishes a derived name from a
@@ -935,11 +1071,11 @@ would answer a question nobody asks of the edge.")
 
 The four definition types on the :FROM list are there for one reason and reach
 one target: a :CALL-SITE is a thing its variable, its class or its caller
-contains, so ARCH-0014 needs no ownership edge type of its own. The chain
+contains, so DES-0014 needs no ownership edge type of its own. The chain
 reads file contains variable contains call-site calls callee, every link an
 edge type that already existed.
 
-ARCH-0014 R1 lists only :VARIABLE, and the other three are PLAN-0014 decision
+DES-0014 R1 lists only :VARIABLE, and the other three are PLAN-0014 decision
 3. R7 requires `describe' on a *caller* to show an ambiguous site as one
 neighbour rather than N couplings, and there is no edge from the caller to the
 site without them -- the same argument R1 makes for the :VARIABLE case, applied
@@ -954,12 +1090,12 @@ to the case R1 did not enumerate.")
   :documentation "The inverse of CONTAINS.  Impact still runs member to
 container, which is along this edge rather than against it.
 
-Widened in step with :CONTAINS for ARCH-0014, and only because it is the
+Widened in step with :CONTAINS for DES-0014, and only because it is the
 inverse: nothing in the tree asserts a :BELONGS-TO edge, so this buys no
 behaviour at all. What it keeps true is the property
 BELONGS-TO-IS-THE-INVERSE-OF-CONTAINS asserts -- that the two declarations are
 exact mirrors -- which widening one side alone would have made false. Neither
-ARCH-0014 R1 nor PLAN-0014 step 3 names this widening; both say :CONTAINS and
+DES-0014 R1 nor PLAN-0014 step 3 names this widening; both say :CONTAINS and
 stop, and both would have left that test failing. Weakening the test to exempt
 the new members was the alternative and is the worse trade: a declared inverse
 that is quietly not one is a fact the ontology states and does not hold.")
@@ -971,13 +1107,13 @@ that is quietly not one is a fact the ontology states and does not hold.")
 a distinct tests field rather than mixed into the impact set.")
 
 (defrelationship :documents
-  :from (:document :decision :rule :concept)
-  :to (:function :method :class :interface :module :package :file :concept :test)
+  :from (:document :design :architecture :decision :rule :concept)
+  :to (:function :method :class :interface :variable :module :package :file :concept :test)
   :transitive-impact nil :impact-direction :reverse :collect-as :documents
   :documentation "One step, applied at the end, gathered into a distinct
 documents field.
 
-:TEST joined the list the moment ARCH-0002 gave the type its first facts, and
+:TEST joined the list the moment DES-0002 gave the type its first facts, and
 it is the same oversight the :DECIDES comment above records, found the same
 way. A fiveam test name is prose -- reindexing-produces-an-identical-index --
 so a document discussing that test mentions it by name, RESOLVE-DOCUMENT-LINKS
@@ -986,13 +1122,13 @@ rather than one edge. Nothing noticed while the :TEST type held no facts,
 because no mention could resolve to one.")
 
 (defrelationship :mentions
-  :from (:document :decision :rule :concept)
-  :to (:function :method :class :interface :module :package :file :concept :test)
+  :from (:document :design :architecture :decision :rule :concept)
+  :to (:function :method :class :interface :variable :module :package :file :concept :test)
   :transitive-impact nil :impact-direction :reverse :collect-as :mentions
   :documentation "A document names this entity, and claims nothing further.
 
 The weak half of the pair, and the distinction is the whole point of the type
-(REQ-0014, ARCH-0016 D7). A decision's affects: field is an author's explicit
+(REQ-0014, DES-0016 D7). A decision's affects: field is an author's explicit
 claim that this decision governs that code, and it becomes :DECIDES. A
 backticked token in a paragraph is an author writing a name. Recording the
 second as though it were the first would fabricate governance no document
@@ -1009,7 +1145,7 @@ pointer for a human deciding whether to update it.
 
 Every prose mention lands here -- markdown's inline code spans and link
 targets, and the identifier-shaped tokens PROSE-MENTIONS finds in a YAML
-document's body alike. They are the same fact, and ARCH-0016 D7 records why
+document's body alike. They are the same fact, and DES-0016 D7 records why
 they were not left under two names. :DOCUMENTS above is what remains for a
 declared claim, and has no producer until a field earns it.
 
@@ -1036,8 +1172,8 @@ traversal question is unchanged, only the strength of the claim.")
 ;;; resolving to interfaces and rejecting the whole resolution transaction.
 
 (defrelationship :decides
-  :from (:decision)
-  :to (:module :class :interface :function :method :file :package)
+  :from (:decision :design)
+  :to (:function :method :class :interface :variable :module :package :file :concept :test)
   :transitive-impact nil :impact-direction :reverse :collect-as :decisions
   :documentation "What a recorded decision governs.  Declared by the
 affects: field of a decision document (SS10.3), resolved against the entity
@@ -1046,15 +1182,15 @@ on a change reach the agent without inflating the impact count.")
 
 (defrelationship :applies-to
   :from (:rule)
-  :to (:module :class :interface :function :method :file :package)
+  :to (:function :method :class :interface :variable :module :package :file :concept :test)
   :transitive-impact nil :impact-direction :reverse :collect-as :rules
   :documentation "What a rule constrains.  Gathered into its own field so
 loom_rules can answer \"what must I not break here\" without an agent having
 to filter decisions for the normative ones.")
 
 (defrelationship :refines
-  :from (:document :decision :rule :concept)
-  :to   (:document :decision :rule :concept)
+  :from (:document :design :architecture :decision :rule :concept)
+  :to   (:document :design :architecture :decision :rule :concept)
   :transitive-impact t :impact-direction :reverse
   :documentation "One document answering another: a design refines the
 requirement that asked for it, a plan refines the design it sequences, a bug
@@ -1068,7 +1204,7 @@ chain is the point: a changed requirement has to reach the plan two hops away,
 not just the design one hop away.")
 
 (defrelationship :supersedes
-  :from (:decision) :to (:decision)
+  :from (:decision :design) :to (:decision :design)
   :transitive-impact nil :impact-direction :reverse
   :documentation "The supersedes: field of a decision document.  Kept as an
 edge rather than only a property so the chain is walkable in both directions:

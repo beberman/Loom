@@ -40,7 +40,7 @@
   (write-operations-fixture-file "src/code.lisp" "(defun alpha (x) (+ x 1))
 (defun alpha-twice (x) (alpha (alpha x)))
 ")
-  (write-operations-fixture-file "docs/design/DEC-0001.yaml"
+  (write-operations-fixture-file "docs/decisions/DEC-0001.yaml"
                                  "id: DEC-0001
 type: decision
 title: Alpha stays arithmetic
@@ -76,7 +76,7 @@ check:
   (invoke-operation (find-operation name) grants arguments))
 
 ;;; ------------------------------------------------------------------
-;;; No guessing (R2, and ARCH-0006's repository-selection paragraph)
+;;; No guessing (R2, and DES-0006's repository-selection paragraph)
 ;;; ------------------------------------------------------------------
 
 (test every-operation-names-its-repository
@@ -162,7 +162,7 @@ check:
       (is (listp (getf bundle :items))))))
 
 (test check-reports-the-same-counts-the-console-prints
-  ;; The only guard on the duplication ARCH-0006 accepts under CONSEQUENCES,
+  ;; The only guard on the duplication DES-0006 accepts under CONSEQUENCES,
   ;; and worth having precisely because the duplication is accepted: the
   ;; assembly here and console.lisp's `check` must not drift.
   (with-operations-fixture (repository)

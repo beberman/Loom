@@ -6,10 +6,10 @@ affects: [resolve-calls, call-targets, callable-index, generated-entity,
           impact-set, describe-entity]
 tags: [graph, resolution, clos, confidence, con-0001]
 summary: |
-  MET EXCEPT R5, 2026-08-10. The mechanism landed (ARCH-0014) and fires 371
+  MET EXCEPT R5, 2026-08-10. The mechanism landed (DES-0014) and fires 371
   times on game-server. The two names quoted below as the symptom turned out
   not to be ambiguous at all -- they were dispatch across accessor-generated
-  generics Loom could not see, fixed by ARCH-0015 and REQ-0020, and that
+  generics Loom could not see, fixed by DES-0015 and REQ-0020, and that
   accessor now reaches 307 impacted entities against the 1 recorded here. The
   measurements below are historical; OUTSTANDING carries both stories.
 
@@ -138,7 +138,7 @@ body: |
 
   R4  Rule checking (RUN-CHECK, CHECK-RULES) must not treat a low-confidence
       edge as a violation. RULE-0001 through RULE-0003's counts on Loom's tree
-      must not move as a side effect of this change; ARCH-0009's measured 32
+      must not move as a side effect of this change; DES-0009's measured 32
       RULE-0003 violations are the baseline.
 
   R5  `impact` and `describe` must distinguish a qualified edge from a certain
@@ -156,7 +156,7 @@ body: |
 
   OUTSTANDING
 
-  ARCH-0014 answered this and PLAN-0014 landed the answer on 2026-08-10, in a
+  DES-0014 answered this and PLAN-0014 landed the answer on 2026-08-10, in a
   shape this document did not name: the N edges run from an :ambiguous
   :CALL-SITE the caller contains rather than from the caller itself, which is
   what lets the fan-out happen without the caller looking coupled to code it
@@ -219,7 +219,7 @@ body: |
   document proposed. Everything above stands as the record of what was true
   between the first run and the fix; this is what is true now.
 
-  ARCH-0015 made resolution package-aware, so `cascade-delete's candidate set
+  DES-0015 made resolution package-aware, so `cascade-delete's candidate set
   stopped spanning unrelated packages, and REQ-0020's first half taught
   CALL-TARGETS that an accessor-generated :INTERFACE is a dispatch target
   rather than a rival protocol. Measured on game-server, /usr/bin/sbcl,
@@ -255,7 +255,7 @@ body: |
 
   One number the run produced that nobody asked for and everybody should see:
   game-server mints 1726 call sites against 4121 entities, +42%, against
-  Loom's 162 against 1684, +10%. ARCH-0014 priced the sparse rule at "roughly
+  Loom's 162 against 1684, +10%. DES-0014 priced the sparse rule at "roughly
   100 entities on this tree" and refused the uniform model on arithmetic of
   exactly this kind. The rule is not violated -- every one of the 1726 is a
   place a :CALLS edge from a definition is impossible -- but the ceiling test
@@ -270,7 +270,7 @@ body: |
   candidate edge at all, which is R5's second sentence: an impact set silently
   inflated by candidate edges trades a false negative for a false positive.
   With :candidate-count 2 throughout this tree the distinction costs nothing
-  here and would cost a great deal on game-server at 7. ARCH-0014 defers it on
+  here and would cost a great deal on game-server at 7. DES-0014 defers it on
   the record and PLAN-0014 restates the deferral; deciding it needs the
   measurement R6 asks for, so the two are outstanding together rather than
   separately.

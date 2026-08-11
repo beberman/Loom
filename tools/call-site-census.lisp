@@ -1,4 +1,4 @@
-;;;; What ARCH-0014's three :CALL-SITE generators would mint, counted against
+;;;; What DES-0014's three :CALL-SITE generators would mint, counted against
 ;;;; the current index without writing anything.
 ;;;;
 ;;;;   sbcl --script tools/call-site-census.lisp [/path/to/repo]
@@ -58,9 +58,9 @@ plain functions, no methods, not exactly one interface -- and :NONE is (t nil)
 as it stands today. Everything but :NONE is a name that reaches something.
 
 REFERRER is the entity the name was read from, and it is what makes the
-candidate set the one CALL-TARGETS actually sees after ARCH-0015: a name is
+candidate set the one CALL-TARGETS actually sees after DES-0015: a name is
 looked up as the symbol it is in the referrer's package, not as the string it
-is spelled. Passing NIL is the pre-ARCH-0015 answer and is what the initform
+is spelled. Passing NIL is the pre-DES-0015 answer and is what the initform
 and orphan censuses use where no entity is at hand."
   (let* ((candidates (candidate-entities index name referrer))
          (functions  (remove-if-not (lambda (e) (eq :function  (entity-type e))) candidates))
@@ -205,7 +205,7 @@ tree and will not be on one where a caller names two ambiguous functions."
 (defun census-report (root)
   (let* ((repository (watch-repository root :monitor nil :quiet t))
          (view (repository-graph repository))
-         ;; The package-aware lookup, not the bare name index. ARCH-0015 made
+         ;; The package-aware lookup, not the bare name index. DES-0015 made
          ;; CALL-TARGETS ask which symbol a name is before asking what it
          ;; matches, and a census that skipped that step would report the
          ;; populations of a pass that no longer exists -- the drift this
@@ -256,7 +256,7 @@ tree and will not be on one where a caller names two ambiguous functions."
           do (format t "          ~24a ~5d~%" name n))
     (terpri)
 
-    (format t "  minted by ARCH-0014 as PLAN-0014 implements it:~%")
+    (format t "  minted by DES-0014 as PLAN-0014 implements it:~%")
     (format t "        R3 all pairs + R4 resolving + R5 sites     ~5d~%~%"
             (+ (length initforms) (length resolving) (distinct-keys ambiguous)))))
 

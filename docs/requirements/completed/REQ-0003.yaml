@@ -1,0 +1,250 @@
+id: REQ-0003
+title: Definitions created by macros must reach the index
+status: implemented
+date: 2026-07-29
+resolution: |
+  Resolved by DES-0002 and implemented by PLAN-0001, final 2026-07-31: all
+  ten requirements landed, including the :test-entities, :tested-units and
+  :unhandled-definer-macros counts R10 asked for as the acceptance check.
+  Loading additional macro-generator registrations for third-party packages
+  without rebuilding Loom was scoped out of this requirement at the time it
+  was written ("deferred to REQ-0004") and stays open there, still draft.
+tags: [analyzer, macros, tests]
+summary: |
+  A macro that expands into a defun or a test creates a named definition that
+  appears nowhere in the source as a defun. The analyzer indexes the macro and
+  misses everything it defines, so those names cannot be found, cannot be
+  called, and cannot be reached by impact. The :test entity type and the :tests
+  relationship are declared in the ontology and, because of this, have never
+  held a single fact.
+body: |
+  WHAT IS MISSING
+
+  DES-0001 indexes defmacro as a :function carrying :macro-p, which makes a
+  macro findable and documentable. It deliberately left two things open, and
+  they turn out to be the same thing seen from two ends:
+
+    R9  what a :calls edge into a macro means
+    R10 calls made inside a macro body are attributed to nothing
+
+  Neither is about macros as definitions. This requirement is: a macro that
+  expands into a defun defines a function, and that function must be in the
+  index under the name the call site gives it.
+
+  TWO KINDS OF MACRO, AND ONLY ONE OF THEM IS THIS
+
+  Measured on game-server:
+
+    definers    struct-simplefn expands to (defun ,name () ...)
+                game-system-test expands to (test ,name ...)
+                Each call site brings a new named definition into existence.
+
+    wrappers    cond-is (1393 call sites), with-lock (29), preflight (23)
+                These wrap a body and define nothing. What they cost is R10:
+                the calls inside them are invisible, not the names.
+
+  The requirement is about definers. Wrappers matter because they are why the
+  test graph is empty, and a solution that ignores them leaves :tests empty even
+  after every definer is handled.
+
+  WHY EXPANSION IS NOT AVAILABLE
+
+  The obvious reading -- expand the macro, then index what comes out -- is not
+  something this analyzer can do, and the reasons are structural rather than
+  incidental.
+
+  Expanding a macro means running its expander, which means loading the code
+  being analyzed. The analyzer is specified to receive a path and contents and
+  return operations, touching neither the filesystem nor the graph (RULE-0002),
+  and it reads with *read-eval* disabled into a throwaway package precisely so
+  that analyzing a file cannot execute any of it. Analyzing a repository would
+  become running it: arbitrary code, at index time, in the process that answers
+  queries, on every poll. A malformed macro would take the watcher down; a macro
+  with a side effect would perform it.
+
+  It is also not possible in general. The expander may depend on state the
+  analyzer does not have -- other macros, read-time constructs, packages that
+  exist only once the system is loaded -- and the framework macros that matter
+  most, fiveam's test and def-suite, are defined outside the indexed tree
+  entirely. No amount of expansion inside the workspace will ever see them.
+
+  So whatever satisfies this requirement must derive the definition statically,
+  from the shape of the macro and the shape of the call, without running
+  anything.
+
+  WHAT A SOLUTION HAS TO COVER
+
+  R1  A call to a macro defined in the workspace that expands to a named
+      definition produces that definition as an entity, named as the call site
+      names it, located at the call site to the macro rather than at
+      the macro. There does need to be a reference back to the macro
+      in the loom graph so that something like "created-by" or
+      "defined-by" is linked back to the macro code so that Loom can
+      say that changing the macro will effect certain functions.
+
+  R2  A call to a macro defined outside the workspace -- fiveam's test and
+      def-suite are the cases that matter -- produces the same, which means
+      there has to be a way to declare what such a macro defines without
+      reading its source. These are the two most common so we need a
+      mechanism in lisp-analyzer to add macro expansion rules for
+      specific packages that use macros heavily. 
+
+  R3  The body of a definer call is walked for calls, so what a generated
+      function calls is recorded. Without this, R1 produces entities with no
+      edges and impact still reports nothing.
+
+  R4  A generated definition is marked as generated and located where an agent
+      can act on it. DES-0001 settled half of this shape for defstruct
+      accessors -- :generated-by names the form responsible -- and the missing
+      half is the one R1 asks for.
+
+      :generated-by is a property, a string. It is not an edge, so nothing
+      traverses it, and the consequence is already measurable without a single
+      macro being involved:
+
+        loom> describe repository
+        class repository  [src/workspace/workspace.lisp:20-30]
+          <- contains: src/workspace/workspace.lisp
+
+        loom> impact repository 2
+        1 impacted:
+          d1 file src/workspace/workspace.lisp
+
+        loom> describe repository-graph
+        function repository-graph  [src/workspace/workspace.lisp:20-30]
+          <- calls: current-graph, index-file, resolve-and-check,
+                    reindex-repository, detect-deletions, repository-status
+
+      Changing the repository structure -- adding, renaming or removing a slot
+      -- reaches nothing. Its accessor has six callers. The impact is real,
+      the edges to carry it exist, and the graph simply does not connect the
+      two, because a string property was recorded where a relationship was
+      needed.
+
+      So this requirement is not only about macros. Whatever edge answers R1
+      must also connect a defstruct and a defclass to the names they generate,
+      or the same hole stays open for the forms DES-0001 already handles.
+
+  R5  :test entities and :tests edges are populated, so impact can finally
+      answer which tests cover a change. This is the payoff and the acceptance
+      test: today the count is zero.
+
+  R6  A macro whose expansion cannot be characterised statically is left alone
+      and reported, not guessed at. CON-0001's judgement applies unchanged -- a
+      fabricated definition is worse than a recorded gap -- and the count of
+      unhandled definer macros should be visible the way unresolved references
+      are.
+
+  WHAT "REGISTRY" MEANS HERE
+
+  The word is used loosely above, so: a registry in this codebase is a special
+  variable holding a table, plus a function that adds an entry to it, so that
+  extending behaviour means pushing an entry rather than editing a function.
+  Three already exist and they are the pattern to copy.
+
+    *analyzers* / register-analyzer          analyzer.lisp
+        Which analyzer claims a file. Adding a language is subclassing ANALYZER
+        and calling register-analyzer -- nothing upstream changes.
+
+    *document-type-directories* /
+    register-document-type                   yaml-analyzer.lisp
+        Which docs/ subdirectory means which entity type. Adding a category is
+        creating a directory and registering it, not changing code.
+
+    *reader-artifacts*                       lisp-analyzer.lisp
+        Names that are the implementation's reader rather than the program's
+        vocabulary, filtered out of call names.
+
+  R2 asks for a fourth: a table of macros and what a call to one defines. An
+  entry has to carry at least
+
+    which macro          the name, and ideally the system or package it comes
+                         from, so fiveam's test is not confused with a local
+                         macro of the same name
+    what it defines      the entity type -- :test for fiveam's test, :function
+                         for a macro expanding to defun
+    where the name is    which argument of the call supplies it, since that is
+                         the only way to name the entity without expanding
+    where the body is    which argument begins the body, so R3 can walk it for
+                         calls
+
+  For fiveam that is two entries, test and def-suite, and they would populate
+  the :test entity type that has never held a fact.
+
+  DECIDED: ONE MECHANISM, RESOLVED IN A SECOND PASS
+
+  R1 and R2 are one mechanism, and it runs as a resolution pass rather than
+  inside the analyzer.
+
+  The architecture forces this rather than merely permitting it. A macro and its
+  call sites are routinely in different files, and an analyzer sees one file and
+  holds no state (RULE-0002), so at the moment it reads (struct-simplefn geo
+  "..." ...) it cannot know whether struct-simplefn is a definer, a wrapper, or
+  an ordinary function. The decision needs the whole workspace, which is what a
+  resolution pass is for. The analyzer records the call; the pass decides what
+  it defined.
+
+  This is the shape :call-names and resolve-calls already have, and it inherits
+  their properties for the same reasons. The analyzer's record is written once
+  and never rewritten, so the pass can be re-run and rebuild what a retract
+  destroyed (DEC-0003). A macro-defined entity takes the call site's file as its
+  origin, so retracting that file removes it and the next pass recreates it,
+  which is what keeps an incremental index identical to a rebuilt one.
+
+  One consequence is worth naming for the architect, because it breaks an
+  invariant that has held until now: resolution would begin creating entities.
+  Today every entity comes from an analyzer and resolution only asserts edges
+  and updates properties. Mechanically this is free -- resolution returns
+  operations and assert-entity is one of them -- but "analyzers produce
+  entities" stops being true, and anything that assumed it needs revisiting.
+
+  DECIDED: THE REGISTRY IS LISP, AND SHIPS POPULATED
+
+  The registry is Lisp code in the analyzer, matching the three precedents
+  above, and Loom ships with the common frameworks already registered --
+  fiveam's test and def-suite first, since they are what stands between the
+  ontology's :test type and its first fact.
+
+  In-tree macros feed the same table. Reading (defmacro struct-simplefn (name
+  description &body body) `(defun ,name ...)) yields exactly the facts an entry
+  carries: argument 1 names a :function, the body begins at argument 3. So there
+  is one table and one pass over it; a workspace macro contributes an entry
+  derived from its own template, a framework macro contributes a shipped one,
+  and nothing downstream can tell which is which.
+
+  Loading additional registrations for third-party packages at runtime is
+  deferred to REQ-0004.
+
+  What the generated-definition edge should be. R1 and R4 both need it. :uses
+  is permitted from :class to :function today and would carry impact in the
+  right direction without an ontology addition; a dedicated :generates would
+  say what it means. DES-0001's standing preference is to widen an endpoint
+  before adding a type, and to add a type only when something has to tell the
+  new edge apart from an existing one.
+
+  What a :calls edge into a definer macro means once its expansion is indexed,
+  which is DES-0001's R9 arriving from the other direction.
+
+  DECIDED: WHERE TEMPLATE READING STOPS
+
+  A template is read only when the definition and its name are both plainly
+  visible in the form. Concretely: the template contains a defun, defclass or
+  defmethod, and the name position is a bare substitution of one of the macro's
+  parameters -- `(defun ,name ...)`. Argument 1 names a :function, and that is
+  the whole inference.
+
+  Everything else is out of scope, and the reason is the same one that rules
+  out expansion in the first place. A name assembled with intern or format, a
+  gensym, a #. -- these are not hard to read, they are impossible to read
+  without running the code that computes them. A template that expands into
+  another macro needs that macro expanded to see what it defines. Each of these
+  ends at the same wall, and the wall is that the analyzer does not execute
+  anything.
+
+  So the rule is not a heuristic that could be sharpened later. It is the line
+  between what is present in the source text and what only exists once the
+  program runs, and the analyzer works on the first of those. A macro on the far
+  side of it is reported under R6, not approximated.
+
+  defvar and defparameter are omitted only because nothing has needed them; the
+  table is uniform, so adding a form is adding a row rather than a code path.

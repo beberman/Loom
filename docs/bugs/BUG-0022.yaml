@@ -12,7 +12,7 @@ summary: |
   entity carrying a property its type never declared validates cleanly, reads
   back through GETP, and is invisible to ONTOLOGY-SCHEMA. The practical cost
   is that a test written against a new property passes before the property is
-  declared: the first two tests written for ARCH-0015 step 2 asserted
+  declared: the first two tests written for DES-0015 step 2 asserted
   :nicknames and :imported-symbols round-tripped on a :package and passed with
   the DEFENTITY change stashed, which is CON-0003's "a test must fail without
   the change it covers" violated by a test written to honour it. A typo in a
@@ -23,7 +23,7 @@ body: |
 
   Observed 2026-08-10 while implementing PLAN-0015 step 2. Two tests were
   written asserting a :PACKAGE entity carries the new :nicknames and
-  :imported-symbols properties declared by ARCH-0015 R1. With the DEFENTITY
+  :imported-symbols properties declared by DES-0015 R1. With the DEFENTITY
   change stashed:
 
       git stash push src/ontology/code-ontology.lisp

@@ -50,7 +50,7 @@ id: PLAN-nnnn
 title: one line
 status: draft                              # final once the work has landed
 date: YYYY-MM-DD
-refines: [ARCH-nnnn]                       # the design this sequences
+refines: [DES-nnnn]                        # the design this sequences
 affects: [function-name, other-function]   # real names; they resolve or get reported
 tags: [analyzer, resolution]
 summary: |

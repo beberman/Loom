@@ -6,7 +6,7 @@ refines: [PLAN-0010]
 affects: [enrich-repository, enrich-ops, enriched-edge, union-sources, resolve-calls,
           resolve-and-check, absorb-relationship, absorb-properties]
 summary: |
-  ARCH-0011 R6 records agreement between the text pass and the image pass as a
+  DES-0011 R6 records agreement between the text pass and the image pass as a
   :SOURCES property on the one surviving edge, "so agreement between the passes
   is recorded on the surviving edge rather than overwritten by
   ABSORB-RELATIONSHIP's provenance replacement". ENRICH-OPS computes that union
@@ -31,7 +31,7 @@ body: |
       AFTER ENRICH-OPS   : source=:INTROSPECTED sources=(:STRUCTURAL :INTROSPECTED)
       AFTER RESOLVE-CALLS: source=:STRUCTURAL   sources=NIL
 
-  Expected, per ARCH-0011 R6 and PLAN-0010 step 3 (a): the union survives on the
+  Expected, per DES-0011 R6 and PLAN-0010 step 3 (a): the union survives on the
   surviving edge, and re-running enrich against an unchanged graph is idempotent
   because the union is stable.
 
@@ -40,14 +40,14 @@ body: |
   :structural in their :sources" as the measured BUG-0011 side effect; after a
   real ENRICH-REPOSITORY that query answers about a graph in which no confirmed
   edge carries either value any more, so the count it returns is not the count
-  it names. And ARCH-0011's CONSEQUENCES paragraph offers the source slot as the
+  it names. And DES-0011's CONSEQUENCES paragraph offers the source slot as the
   discriminator BUG-0012's candidate fix (a) was missing -- "scoped by the source
   slot the edges now reliably carry, it deletes exactly the replaced
   definition's own pass's edges". Confirmed edges do not reliably carry it.
 
   CAUSE
 
-  Not the absorb, and not ENRICH-OPS. It is the ordering ARCH-0011 R8 mandates
+  Not the absorb, and not ENRICH-OPS. It is the ordering DES-0011 R8 mandates
   and PLAN-0010 step 9 implements, meeting DEC-0003's derive-never-consume rule
   from the other side.
 
@@ -63,7 +63,7 @@ body: |
   relationship it builds carries an empty property table, and ABSORB-PROPERTIES
   (transaction.lisp:119) replaces rather than merges.
 
-  So the exact mechanism ARCH-0011 was designed around -- absorb-replace
+  So the exact mechanism DES-0011 was designed around -- absorb-replace
   destroying a prior pass's facts -- arrives from the direction the design did
   not defend: not an image assert landing on a text key, but a text re-derivation
   landing on the enriched edge. ENRICH-OPS' never-assert-existing rule protects
@@ -103,7 +103,7 @@ body: |
   (a) Make RESOLVE-CALLS' re-assert non-destructive of what it does not own --
       give ASSERT-EDGE the ability to preserve an existing edge's :SOURCES, or
       have ABSORB-PROPERTIES merge for the keys the asserting pass did not
-      write. ARCH-0011 explicitly rejected changing absorb semantics ("it moves
+      write. DES-0011 explicitly rejected changing absorb semantics ("it moves
       pass-composition policy into the writer's core invariant"), so this is the
       option that needs the most argument.
 
@@ -114,7 +114,7 @@ body: |
       for, at the cost of a second transaction and of stating the ordering
       obligation somewhere a future editor of RESOLVE-AND-CHECK will meet it.
 
-  (c) Record agreement somewhere RESOLVE-CALLS does not rewrite -- ARCH-0011
+  (c) Record agreement somewhere RESOLVE-CALLS does not rewrite -- DES-0011
       rejected provenance in the natural key for good reasons, but a separate
       derived record is not that.
 
@@ -152,11 +152,11 @@ body: |
   measured, 983 edges carrying :introspected in :SOURCES before and after a
   no-change poll.
 
-  Neither remaining candidate is cheap. (a) is what ARCH-0011 rejected --
+  Neither remaining candidate is cheap. (a) is what DES-0011 rejected --
   pass-composition policy inside the writer's core invariant. (c) needs a
   record that RESOLVE-CALLS does not rewrite, and the obvious one, keeping the
   last inspection resident and re-merging it on the poll path, is worse than it
-  looks: it would put enrichment work on the timer path against ARCH-0011 R9,
+  looks: it would put enrichment work on the timer path against DES-0011 R9,
   and it would restore image facts for files that had just been retracted,
   contradicting the tested claim that the text pass alone does not bring an
   introspected fact back. So what is left is honest degradation, and it is now

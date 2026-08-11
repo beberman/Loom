@@ -25,7 +25,7 @@
 code-ontology.lisp.
 
 :INTERFACE is here because a generic function is callable, not because calls
-route through generics -- ARCH-0001 says they do not. It is the target of last
+route through generics -- DES-0001 says they do not. It is the target of last
 resort, taken only when a protocol has no implementation in the workspace to
 fan out to.")
 
@@ -43,7 +43,7 @@ the same name, and pretending otherwise is how a resolver invents edges."
 (defun callable-index (view) (entities-by-name view *callable-types*))
 
 (defstruct (name-lookup (:constructor %make-name-lookup))
-  "Entities under a name, keyed two ways (ARCH-0015).
+  "Entities under a name, keyed two ways (DES-0015).
 
 BY-NAME is CALLABLE-INDEX, name to definitions, and stays the answer whenever
 symbol identity cannot be established. BY-HOME is keyed on (home-package .
@@ -87,7 +87,7 @@ one pass, so the graph is assembled once rather than once per index."
   "The definitions NAME could name, as read from CALLER.
 
 INDEX may be a bare hash table, which is what CALLABLE-INDEX returns and what
-every caller passed before ARCH-0015. That path is the old behaviour exactly,
+every caller passed before DES-0015. That path is the old behaviour exactly,
 which is why tools/call-site-census.lisp keeps working unchanged and why a
 CALLER of NIL -- RESOLVE-GENERATED-DEFINITIONS asking whether a name reaches
 anything at all -- still gets the unrestricted answer."
@@ -104,7 +104,7 @@ anything at all -- still gets the unrestricted answer."
          ;; A caller that fans out across the candidate set needs to know:
          ;; fanning across a set assembled by spelling alone would assert
          ;; edges between definitions that share nothing but a name, which is
-         ;; the fabrication ARCH-0015 exists to stop.
+         ;; the fabrication DES-0015 exists to stop.
          (if placed
              (values placed t)
              (values (gethash key (name-lookup-by-name index)) nil)))))))
@@ -124,7 +124,7 @@ behaviour exactly."
       (first candidates))))
 
 ;;;; ==================================================================
-;;;; Structure: inheritance, dispatch, and protocols (ARCH-0001)
+;;;; Structure: inheritance, dispatch, and protocols (DES-0001)
 ;;;; ==================================================================
 ;;;;
 ;;;; Three more kinds of cross-file name, resolved the same way calls are and
@@ -176,7 +176,7 @@ says nothing worth recording."
   "Operations linking each method to the generic function it implements.
 
 Only a declared generic: a method whose DEFGENERIC is implicit has no protocol
-entity to point at, and ARCH-0001 refuses to synthesise one because there
+entity to point at, and DES-0001 refuses to synthesise one because there
 would be no source region to send an agent to."
   (let ((index (name-lookup view '(:interface) :package-graph package-graph))
         (ops '()))
@@ -199,13 +199,13 @@ three walks of every :PACKAGE entity for one answer."
             (resolve-method-protocols view :workspace-id workspace-id :package-graph pg))))
 
 ;;;; ==================================================================
-;;;; Generated definitions (ARCH-0002)
+;;;; Generated definitions (DES-0002)
 ;;;; ==================================================================
 ;;;;
 ;;;; A name can be brought into existence by a form that does not spell it:
 ;;;; a DEFSTRUCT slot generates an accessor, a DEFCLASS slot generates a
 ;;;; generic function, and a call to a definer macro generates whatever its
-;;;; template defines. ARCH-0001 indexed the first two and marked them with
+;;;; template defines. DES-0001 indexed the first two and marked them with
 ;;;; :GENERATED-BY, but a property is not an edge and nothing traversed it --
 ;;;; measured on Loom's own index, `impact repository 2' reported one row
 ;;;; while `describe repository-graph', its own accessor, listed six callers.
@@ -217,7 +217,7 @@ three walks of every :PACKAGE entity for one answer."
 (defun structural-generated-uses (view &key workspace-id package-graph)
   "Operations linking each DEFSTRUCT or DEFCLASS generated name to its class.
 
-ARCH-0002 R6, and it needs no analyzer change at all: ARCH-0001 was already
+DES-0002 R6, and it needs no analyzer change at all: DES-0001 was already
 writing :GENERATED-BY on every accessor, constructor, predicate and copier.
 Only the edge was missing.
 
@@ -239,7 +239,7 @@ the two halves from crossing."
     (nreverse ops)))
 
 ;;;; ------------------------------------------------------------------
-;;;; Definitions a macro call brings into existence (ARCH-0002 R5, R7)
+;;;; Definitions a macro call brings into existence (DES-0002 R5, R7)
 ;;;;
 ;;;; The registry arrives as an argument rather than being read from
 ;;;; LOOM-ANALYZER, and that is not a style choice. loom-graph.asd depends on
@@ -324,7 +324,7 @@ would never match."
 list of plan plists and a list of (file . name) collisions.
 
 A separate function from the one that emits operations because the collisions
-have to be countable without applying anything -- ARCH-0002 requires a
+have to be countable without applying anything -- DES-0002 requires a
 collision to be counted rather than merely not crashing, and R1 forbids
 recording it by writing :DEFINER-STATUS onto the macro, which is a property
 the analyzer owns."
@@ -362,7 +362,7 @@ the analyzer owns."
                             ;; report a collision, and the :USES edge back to
                             ;; the generator would never be drawn. Minting over
                             ;; it is the upsert the two passes are supposed to
-                            ;; meet in (ARCH-0011 R6).
+                            ;; meet in (DES-0011 R6).
                             (not (eq :introspected (source existing))))
                        ;; A hand-written definition already claims this natural
                        ;; key. Left alone and counted: a macro call that happens
@@ -387,7 +387,7 @@ The cost is worth naming: :GENERATED-BY is declared on :FUNCTION, :INTERFACE
 and :TEST but not on :CLASS or :METHOD, so a macro whose template is a
 DEFCLASS or DEFMETHOD mints an entity the retract half below cannot see -- it
 keys on exactly that property. No macro in this tree takes that shape and
-ARCH-0002 named none, so it is a gap on the record rather than a defect being
+DES-0002 named none, so it is a gap on the record rather than a defect being
 worked around; closing it is two property declarations."
   (loop for (key value) on plist by #'cddr
         when (find-property type key)
@@ -417,7 +417,7 @@ belongs."
                              :call-names (getf site :call-names)
                              :framework (getf entry :framework)
                              :language (getp file :language)
-                             ;; ARCH-0009 R6, and the same shortcut :LANGUAGE
+                             ;; DES-0009 R6, and the same shortcut :LANGUAGE
                              ;; takes one line up, for the same reason: a
                              ;; macro-minted entity has no form of its own to
                              ;; read a package from, so it takes its file's.
@@ -493,7 +493,7 @@ depending on the order the operations happen to be applied in."
 (defun call-site-retractions (view kind produced workspace-id)
   "Retract every :CALL-SITE of KIND this pass did not produce again.
 
-ARCH-0014 R6 says RETRACT-FILE needs nothing, and that is true of exactly one
+DES-0014 R6 says RETRACT-FILE needs nothing, and that is true of exactly one
 of the three kinds. An initform site is derived from one file, so editing that
 file removes it and the next analysis re-derives it. The graph's two are not:
 an ambiguous site's origin file is the *caller's*, so deleting one of two
@@ -530,21 +530,21 @@ BUG-0016's second half. A macro whose expansion is a runtime table entry --
 DEFINE-OPERATION, DEFINE-COMMAND -- swallows a real body, and the names in it
 reach no entity at all: there is no definition to source a :CALLS edge at, so
 every REST route and every MCP tool is invisible in the call graph. The call
-site is the node ARCH-0014 mints to be that source.
+site is the node DES-0014 mints to be that source.
 
 MINTED is the set of site plists GENERATED-DEFINITION-PLAN produced an entity
 from, keyed by identity, which is why no second predicate is written: the plan
 already carries the site in its :SITE key, so the two populations cannot
 disagree about which sites minted. That disjointness is also what keeps the two
 kinds of key apart -- a generated definition's start line is its site's start
-line, so ARCH-0014's uniqueness argument (\"a definer call site cannot begin on
+line, so DES-0014's uniqueness argument (\"a definer call site cannot begin on
 a definition's line\") holds only because a site that mints one never mints the
 other.
 
 Only where CALL-TARGETS returns something, which is PLAN-0014 decision 2 rather
 than R4's literal text. Measured on this tree, R4 read literally is 266 nodes
 of which 142 name something that is not in the workspace at all -- against
-ARCH-0014's own R9 (\"expected order 100\") and against its own census
+DES-0014's own R9 (\"expected order 100\") and against its own census
 reasoning, that a node per absent callee is a node per thing that is not there.
 A name that resolves to nothing carries no edge, and the fact that it went
 nowhere already lives on the site's :CALL-NAMES and in `check''s definer-macro
@@ -567,7 +567,7 @@ deliberate: the analyzer holds no callable index and cannot ask this question."
                            ;; The file's, not re-decided: a call site read out
                            ;; of a macro call has no form of its own to take a
                            ;; package from, the same shortcut GENERATED-ENTITY
-                           ;; takes one function up (ARCH-0009 R6).
+                           ;; takes one function up (DES-0009 R6).
                            :language (getp file :language)
                            :system (getp file :system)))
                     pairs))))))
@@ -576,8 +576,8 @@ deliberate: the analyzer holds no callable index and cannot ask this question."
 (defun resolve-generated-definitions (view &key workspace-id registry external-packages)
   "Operations for every definition a generator brought into existence.
 
-Both halves of ARCH-0002's R4: the edge from a DEFSTRUCT or DEFCLASS generated
-name to its class, which needed no analyzer change because ARCH-0001 was
+Both halves of DES-0002's R4: the edge from a DEFSTRUCT or DEFCLASS generated
+name to its class, which needed no analyzer change because DES-0001 was
 already writing the property; and the entities a definer macro's call sites
 define, which exist nowhere in the source as a DEFUN and so have to be minted.
 
@@ -633,7 +633,7 @@ retracts come last, naming only entities no assert in this batch touches."
   "Every definer call site this pass refused, as (file . name).
 
 Recounted by reading the view rather than recorded while the pass ran, for the
-reason ARCH-0002 R1 gives: the obvious place to put the fact -- :DEFINER-STATUS
+reason DES-0002 R1 gives: the obvious place to put the fact -- :DEFINER-STATUS
 on the macro's entity -- is a property the analyzer owns and resolution must
 not overwrite. Same shape as UNRESOLVED-REFERENCES, and REPOSITORY-STATUS
 folds it in the same way."
@@ -692,7 +692,7 @@ name rather than being folded away."
   "Every macro whose expansion Loom could not read, in either of the two ways
 that can happen.
 
-ARCH-0002 R6: a macro that looks like a definer and cannot be read statically
+DES-0002 R6: a macro that looks like a definer and cannot be read statically
 is reported, not guessed at. Counted alongside the collisions, because both
 are the same thing from a reader's point of view -- a definition the index
 knows it is missing.
@@ -716,7 +716,7 @@ CON-0001 exists to prevent, and it is worse here than a wrong number would be.
 
 Reporting is all this does. What a DEFINE-OPERATION call should actually mint
 is an ontology question BUG-0016 declined to settle inside a bug fix and
-ARCH-0014 answers separately."
+DES-0014 answers separately."
   (let ((swallowing (body-swallowing-macro-names view)))
     (remove-if-not
      (lambda (entity)
@@ -732,7 +732,7 @@ ARCH-0014 answers separately."
 naming a :CALLEE and, when the link is a guess rather than a fact, the
 :CONFIDENCE and :DERIVED-FROM that say so. NIL leaves the name unresolved.
 
-The precedence is ARCH-0001's, and the order of the clauses is the design:
+The precedence is DES-0001's, and the order of the clauses is the design:
 
   one plain function     one structural edge. Nothing is being guessed: the
                          name has exactly one definition and the call reaches
@@ -768,7 +768,7 @@ The precedence is ARCH-0001's, and the order of the clauses is the design:
   two or more plain
   functions              one edge per candidate at 1/N, sourced at a
                          :CALL-SITE the caller contains rather than at the
-                         caller (REQ-0015, ARCH-0014).
+                         caller (REQ-0015, DES-0014).
   anything else          unresolved, and recorded as such.
 
 A target may carry :CALL-SITE, the entity the edge runs from instead of CALLER.
@@ -854,7 +854,7 @@ nothing.")
   "How much to believe one edge of a fan-out across METHOD-COUNT methods.
 
 1/n, which is worth more than it looks: 70% of the generics in the repository
-that motivated ARCH-0001 have exactly one method, and a call to a generic with
+that motivated DES-0001 have exactly one method, and a call to a generic with
 one method reaches it with certainty. The number falls away exactly as the
 real uncertainty rises, so a consumer filtering on confidence keeps the calls
 it can rely on and drops the sixteen-way guesses."
@@ -872,7 +872,7 @@ Deriving rather than reading a stored :CALL-NAMES is what keeps the referenced
 name in exactly one place on a call site: :CALL-NAME is a natural-key
 component, so a stored copy that drifted from it would leave the entity
 resolving one name while keying on another, and nothing downstream could tell.
-ARCH-0014, PLAN-0014 step 4."
+DES-0014, PLAN-0014 step 4."
   (if (eq :call-site (entity-type caller))
       (let ((name (getp caller :call-name)))
         (when name (list name)))
@@ -913,13 +913,13 @@ after every analysis pass."
         ;; the end, which are the same question asked twice.
         (asserted (make-hash-table :test #'equal))
         (ops '()))
-    ;; :TEST alongside the two callables, per ARCH-0002 R8. No new logic: it
+    ;; :TEST alongside the two callables, per DES-0002 R8. No new logic: it
     ;; was always a permitted :CALLS source in the ontology and had simply
     ;; never been fed a :CALL-NAMES, because until a resolution pass minted
     ;; one there were no :TEST entities at all.
     ;;
     ;; :CALL-SITE is the fourth, and it is the same move for the same reason
-    ;; (ARCH-0014). A call site is one more kind of caller, so the fan-out, the
+    ;; (DES-0014). A call site is one more kind of caller, so the fan-out, the
     ;; confidence handling, the :UNRESOLVED-CALLS write and DEC-0003's rebuild
     ;; property all apply to it without a second copy of any of them. The only
     ;; thing that differs is where the names come from, which is
@@ -982,7 +982,7 @@ can terminate at, since that is what this derivation reads.")
 (defun resolve-tests (view &key workspace-id)
   "Operations linking each test to the units its body invokes.
 
-ARCH-0002 R9: a :TESTS edge to every :FUNCTION, :METHOD or :INTERFACE the test
+DES-0002 R9: a :TESTS edge to every :FUNCTION, :METHOD or :INTERFACE the test
 already has a :CALLS edge to. Derived from what the body actually calls, which
 is the choice worth recording because the ontology's own documentation used to
 describe a different one -- \"matched by import graph plus naming
@@ -1034,15 +1034,32 @@ re-run after a retract rebuilds what the retract destroyed (DEC-0003)."
 ;;;;   resolve to :inferred edges at lower confidence with derived-from
 ;;;;   populated, which is what makes them go stale when the code moves.
 
-(defparameter *document-types* '(:decision :rule :concept :document)
+(defparameter *document-types* '(:decision :design :architecture :rule :concept :document)
   "Entity types the documentation analyzer produces.")
+
+(defparameter *governing-document-types* '(:decision :design)
+  "Document types whose affects: is a claim to *govern* rather than to bear on.
+
+A decision's affects: says this decision governs that code, which is what
+:DECIDES means and why `impact' gathers it into the decisions field. Nothing
+else in the workflow makes that claim: a requirement asks for a change, a plan
+sequences one, a bug report locates one. All three bear on the code they name
+without governing it, so they earn :DOCUMENTS instead -- the type declared for
+exactly this since SS11 and, until affects: was read for them, the type with no
+producer at all (DES-0016 D7 recorded that gap and predicted this would close
+it).")
 
 (defparameter *declared-link-fields*
   '((:affects    . :decides)
+    (:describes  . :documents)
     (:applies-to . :applies-to)
     (:supersedes . :supersedes)
     (:refines    . :refines))
   "Document property -> the relationship type it declares.
+
+:AFFECTS is the entry DECLARED-EDGE-TYPE overrides: the value here is what a
+governing document asserts, and every other kind of document asserts
+:DOCUMENTS instead.
 
 :REFINES is the one that points at another document rather than at code, which
 LINKABLE-INDEX already supports: it keys on doc-id as well as on name, so
@@ -1050,6 +1067,19 @@ refines: [REQ-0002] finds the requirement. That is what makes the workflow a
 graph rather than a filing convention -- the design that answers a requirement,
 the plan that sequences the design, and the report of what went wrong are all
 one walkable chain.")
+
+(defun declared-edge-type (field document)
+  "The relationship DOCUMENT's declared FIELD asserts.
+
+Only :AFFECTS depends on the speaker; every other declared field means one
+thing whoever writes it. A rule's applies-to: constrains, a supersedes:
+replaces, a refines: answers -- none of those change meaning with the document
+type, because only one type may write them."
+  (let ((declared (cdr (assoc field *declared-link-fields*))))
+    (if (and (eq field :affects)
+             (not (member (entity-type document) *governing-document-types*)))
+        :documents
+        declared)))
 
 (defparameter *mention-confidence* 0.5
   "Confidence for an edge inferred from prose.
@@ -1098,11 +1128,13 @@ methods resolves to the interface."
   "Operations linking each document's declared and mentioned references.
 
 Declared names that resolve become :structural edges of the type their field
-declares; the rest are collected onto the document's :UNRESOLVED-REFERENCES,
+declares -- DECLARED-EDGE-TYPE, because affects: means :DECIDES from a
+decision and :DOCUMENTS from anything else; the rest are collected onto the
+document's :UNRESOLVED-REFERENCES,
 which is what SS10.3 asks be \"flagged ... counted in status, and exposed
 through the API\" instead of quietly discarded. Prose mentions that resolve
 become :inferred :MENTIONS edges -- the weaker type, which claims that the
-document names the entity and nothing more (ARCH-0016 D7). It was :DOCUMENTS
+document names the entity and nothing more (DES-0016 D7). It was :DOCUMENTS
 until REQ-0014, and this loop was that type's only producer in the tree; a
 markdown backtick and a YAML backtick are the same fact and now say so with
 the same word.
@@ -1116,13 +1148,15 @@ resolved on a previous pass is still in the property, so nothing drifts."
         (let ((unresolved '()))
           ;; --- declared links ------------------------------------------
           (dolist (field-and-type *declared-link-fields*)
-            (dolist (name (getp document (car field-and-type)))
-              (let ((target (resolve-one index name)))
-                (if (and target (not (eq target document)))
-                    (push (assert-edge (cdr field-and-type) document target
-                                       :workspace-id workspace-id)
-                          ops)
-                    (pushnew name unresolved :test #'string=)))))
+            (let* ((field (car field-and-type))
+                   (edge-type (declared-edge-type field document)))
+              (dolist (name (getp document field))
+                (let ((target (resolve-one index name)))
+                  (if (and target (not (eq target document)))
+                      (push (assert-edge edge-type document target
+                                         :workspace-id workspace-id)
+                            ops)
+                      (pushnew name unresolved :test #'string=))))))
           ;; --- mentioned links -----------------------------------------
           (dolist (name (getp document :mentions))
             (let ((target (resolve-one index name)))

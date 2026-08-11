@@ -7,7 +7,7 @@
    #:graph
    #:make-graph
 
-   ;; a hash table guarded by a shared reentrant lock (ARCH-0003 R2).
+   ;; a hash table guarded by a shared reentrant lock (DES-0003 R2).
    ;; WITH-GRAPH-LOCK is deliberately absent: R4 keeps it internal, so a
    ;; caller outside this system cannot open a critical section on a graph.
    #:make-protected-table
@@ -55,7 +55,7 @@
    #:callable-lookup
    #:name-lookup
    #:candidate-entities
-   ;; The package graph (ARCH-0015)
+   ;; The package graph (DES-0015)
    #:build-package-graph
    #:package-graph-p
    #:canonical-package
@@ -63,7 +63,7 @@
    #:entity-home-package
    #:*callable-types*
 
-   ;; generated definitions (ARCH-0002) -- the one pass that mints entities
+   ;; generated definitions (DES-0002) -- the one pass that mints entities
    #:resolve-generated-definitions
    #:structural-generated-uses
    #:generated-definition-collisions
@@ -71,10 +71,10 @@
    #:body-swallowing-macro-names
    #:*generatable-types*
 
-   ;; image-derived facts merged against what the text pass wrote (ARCH-0011)
+   ;; image-derived facts merged against what the text pass wrote (DES-0011)
    #:enrich-ops
 
-   ;; test coverage, derived from what a test's body calls (ARCH-0002 R9)
+   ;; test coverage, derived from what a test's body calls (DES-0002 R9)
    #:resolve-tests
    #:*tested-types*
 

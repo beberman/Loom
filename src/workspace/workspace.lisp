@@ -28,12 +28,12 @@
   (stamps (make-hash-table :test #'equal))   ; relative path -> FILE-STAMP
   (monitor nil)
   (stopping nil)                ; asks the monitor thread to return
-  ;; ARCH-0011 R8: per-unit statuses, inspector absences, drop counts and a run
+  ;; DES-0011 R8: per-unit statuses, inspector absences, drop counts and a run
   ;; counter from the last ENRICH-REPOSITORY, or NIL if there has not been one.
   ;; In memory only, and DEC-0001 is satisfied rather than bent: the report is
   ;; derivable by re-running the pass, so it is cache and says so.
   (enrichment nil)
-  ;; ARCH-0004 R1. One lock per repository rather than a process-wide one:
+  ;; DES-0004 R1. One lock per repository rather than a process-wide one:
   ;; *REPOSITORIES* can hold more than one entry and two repositories share no
   ;; state, so serializing one's rebuild against another's poll would cost
   ;; latency for no correctness reason. Recursive because REINDEX-REPOSITORY
@@ -43,10 +43,10 @@
   (analysis-lock (bt:make-recursive-lock "loom-repository-analysis")))
 
 (defmacro with-repository-lock ((repository) &body body)
-  "Run BODY holding REPOSITORY's analysis lock. ARCH-0004 R2.
+  "Run BODY holding REPOSITORY's analysis lock. DES-0004 R2.
 
 Internal and unexported, and that is load-bearing rather than tidiness:
-ARCH-0004 R5 requires loom-knowledge's read path to stay lock-free, and the
+DES-0004 R5 requires loom-knowledge's read path to stay lock-free, and the
 only way to keep that true is for the lock to be unreachable from outside this
 file. A blocking acquire, with no timed or non-blocking variant anywhere in
 the design -- the measured worst-case hold is around a tenth of one poll
@@ -57,7 +57,7 @@ here rather than left for a reader to discover: ENRICH-REPOSITORY holds it
 across one child SBCL per unit, each bounded by the inspector's own
 TIMEOUT-SECONDS (300 by default), so the monitor thread can park for minutes
 on a tree that builds slowly. Accepted rather than fixed. The hold is bounded
-by a timeout the caller sets, an enrich is explicit and rare (ARCH-0011 R9),
+by a timeout the caller sets, an enrich is explicit and rare (DES-0011 R9),
 and what a parked monitor costs is a delayed poll rather than a wrong index.
 The alternative -- hold the lock only around the merge and let the read-only
 out-of-process inspection run outside it -- would let a poll reindex between
@@ -216,7 +216,7 @@ counted and reported; the pass continues."
 Order matters and is the reason this function exists. Document links resolve
 against entities the code analyzers produced, and the rules of SS10.4 are
 queries over the finished graph, so they run last. Two stages in the middle
-are load-bearing for the same kind of reason (ARCH-0002). A definer macro's
+are load-bearing for the same kind of reason (DES-0002). A definer macro's
 call site mints an entity, and that entity has to exist and carry its
 :CALL-NAMES before RESOLVE-CALLS can turn them into edges; and coverage is
 derived from those edges, so RESOLVE-TESTS has to follow RESOLVE-CALLS rather
@@ -255,7 +255,7 @@ rather than a preference."
       ;; EXTERNAL-PACKAGES is handed in for the same reason *MACRO-GENERATORS*
       ;; above is: loom-graph depends on loom-ontology alone, so it cannot see
       ;; the analyzer's table -- and what COMMON-LISP exports is a fact about a
-      ;; language, which ARCH-0012 puts in an analyzer and CON-0005 keeps out
+      ;; language, which DES-0012 puts in an analyzer and CON-0005 keeps out
       ;; of the writer. This system is the one that may know both.
       (submit "resolve-calls"          (resolve-calls graph :workspace-id workspace
                                                             :external-packages
@@ -274,7 +274,7 @@ rather than a preference."
 SS3.4: \"Because files are truth, this is always available and always correct,
 and its only cost is time.\"
 
-Locked for its whole body (ARCH-0004 R3). It wraps itself rather than relying
+Locked for its whole body (DES-0004 R3). It wraps itself rather than relying
 on REINDEX-REPOSITORY's lock because it is a real independent entry point:
 WATCH-REPOSITORY calls it directly on first registration, before any monitor
 thread exists."
@@ -298,7 +298,7 @@ suspected divergence.\" A fresh graph rather than a cleared one, so nothing
 from the old index can survive by accident.
 
 The graph swap and the stamp clear are inside the lock, not merely the nested
-INDEX-REPOSITORY call (ARCH-0004 R3). BUG-0004's CAUSE names the clrhash as
+INDEX-REPOSITORY call (DES-0004 R3). BUG-0004's CAUSE names the clrhash as
 the step that opens the window: between it and the moment INDEX-FILE re-stamps
 a file, that file reads as changed to a concurrent poll, which then starts its
 own analysis into the graph this function is rebuilding. This is also the
@@ -312,13 +312,13 @@ would belong to does not exist yet at the instant protection has to begin."
     (index-repository repository :quiet quiet)))
 
 ;;;; ==================================================================
-;;;; Enrichment (ARCH-0011)
+;;;; Enrichment (DES-0011)
 ;;;; ==================================================================
 ;;;;
 ;;;; The second pass, and the second thing this system exists to own an
 ;;;; ordering for. It is not part of the pipeline above and nothing on a timer
 ;;;; calls it: a run loads the whole target in a fresh process, seconds to
-;;;; minutes, where a poll cycle is designed to cost milliseconds. ARCH-0008 is
+;;;; minutes, where a poll cycle is designed to cost milliseconds. DES-0008 is
 ;;;; the precedent and BUG-0008 is the trap -- a heavyweight lifecycle
 ;;;; operation wired into a path that runs on a clock.
 ;;;;
@@ -387,7 +387,7 @@ The merge again after it, which is BUG-0015 and is explained where it happens
 below: resolution re-asserts every text-derivable edge, which clears the
 agreement the merge just recorded on the ones both passes see.
 
-Locked for its whole body (ARCH-0004 R3), for INDEX-REPOSITORY's reason: this
+Locked for its whole body (DES-0004 R3), for INDEX-REPOSITORY's reason: this
 writes to the graph, and a poll running concurrently would interleave two
 writers.
 
@@ -458,7 +458,7 @@ CONDITION reaches warnings too."
         ;; :CALLS edge and re-asserts it through ASSERT-EDGE, which takes no
         ;; properties and defaults :SOURCE to :STRUCTURAL -- so the absorb that
         ;; lands on a confirmed edge CLRHASHes the :SOURCES union the merge just
-        ;; wrote, and ARCH-0011 R6 is inert for the majority case. Measured
+        ;; wrote, and DES-0011 R6 is inert for the majority case. Measured
         ;; before this line existed: source=:INTROSPECTED sources=(:STRUCTURAL
         ;; :INTROSPECTED) after the merge, source=:STRUCTURAL sources=NIL after
         ;; resolution.
@@ -517,7 +517,7 @@ never comes up again, which is the one case this misses and the reason
 DETECT-DELETIONS exists below.
 
 Locked for its whole body, changed-file computation included and not only the
-mutating tail (ARCH-0004 R3). The FILE-CHANGED-P loop reads REPOSITORY-STAMPS,
+mutating tail (DES-0004 R3). The FILE-CHANGED-P loop reads REPOSITORY-STAMPS,
 and computed outside the lock it could read a table REINDEX-REPOSITORY is
 midway through clearing -- which is BUG-0004's CAUSE reproduced one level
 down. Locking only the writing half would move the window rather than close
@@ -533,7 +533,7 @@ it."
       (let ((removed (detect-deletions repository)))
         (when (or changed removed)
           (resolve-and-check repository :quiet quiet)
-          ;; ARCH-0007: until this line, INDEX-REPOSITORY (line 241) was the
+          ;; DES-0007: until this line, INDEX-REPOSITORY (line 241) was the
           ;; only writer of this slot, so REPOSITORY-STATUS reported "last
           ;; indexed" as the time of the last explicit watch or reindex, and a
           ;; caller comparing it against a process start time would read
@@ -714,12 +714,14 @@ the last error per thread.\""
           ;; older word described it as something that had gone wrong.
           :monitor (if (monitor-running-p repository) :watching :paused)
           :documents (+ (length (entities-of-type graph :decision))
+                        (length (entities-of-type graph :design))
+                        (length (entities-of-type graph :architecture))
                         (length (entities-of-type graph :rule))
                         (length (entities-of-type graph :concept))
                         (length (entities-of-type graph :document)))
-          ;; ARCH-0002 R10, following the precedent :DOCUMENTS set: a named sum
+          ;; DES-0002 R10, following the precedent :DOCUMENTS set: a named sum
           ;; rather than a raw total. These three are the console-readable
-          ;; acceptance check for the whole of ARCH-0002 -- fiveam's TEST and
+          ;; acceptance check for the whole of DES-0002 -- fiveam's TEST and
           ;; DEF-SUITE are the most common macro calls in every
           ;; src/*/test/*.lisp, so all three read zero until generated
           ;; definitions reach the index and are expected to move when Loom
@@ -736,7 +738,7 @@ the last error per thread.\""
           ;; the same thing from where they stand -- a definition the index
           ;; knows it is missing. The collision half is recounted rather than
           ;; recorded, because the obvious place to store it is a property the
-          ;; analyzer owns (ARCH-0002 R1).
+          ;; analyzer owns (DES-0002 R1).
           :unhandled-definer-macros
           (+ (length (unhandled-definer-macros graph))
              (length (generated-definition-collisions graph *macro-generators*)))
@@ -750,7 +752,7 @@ the last error per thread.\""
                              (not (assoc category *document-type-directories*
                                          :test #'string-equal)))))
                     (entities-of-type graph :document))
-          ;; ARCH-0011 R8, and four scalars rather than the report itself. The
+          ;; DES-0011 R8, and four scalars rather than the report itself. The
           ;; constraint is not style: loom-serve's :STATUS operation
           ;; (src/serve/operations.lisp) serializes this plist to JSON for REST
           ;; and MCP callers, no rule covers that boundary and no impact query
@@ -759,7 +761,7 @@ the last error per thread.\""
           ;; on the repository for the console to print.
           ;;
           ;; :ENRICHMENT-AT is what tells "never run" from "run and found
-          ;; nothing"; the three counts are always numbers, on ARCH-0002 R10's
+          ;; nothing"; the three counts are always numbers, on DES-0002 R10's
           ;; precedent that a count which vanishes when it is nought cannot be
           ;; told from a count nobody computed.
           :enrichment-runs (or (getf (repository-enrichment repository) :runs) 0)
@@ -770,13 +772,13 @@ the last error per thread.\""
                               (length (getf (repository-enrichment repository)
                                             :absences)))
           :enrichment-at (getf (repository-enrichment repository) :at)
-          ;; ARCH-0013, PLAN-0013 step 5. Two scalars, for the reason the
+          ;; DES-0013, PLAN-0013 step 5. Two scalars, for the reason the
           ;; enrichment block above gives: this plist is serialized to JSON for
           ;; REST and MCP callers, so a count travels where a nested region
           ;; list would not. The regions themselves are on the :FILE entities,
           ;; which is where a reader who wants the line numbers goes.
           ;;
-          ;; Always numbers, never absent when nought, on the same ARCH-0002
+          ;; Always numbers, never absent when nought, on the same DES-0002
           ;; R10 precedent: zero suppressed regions and an indexer that never
           ;; looked are different facts, and a vanishing count conflates them.
           ;; Both read zero on this tree, which is what makes them a regression

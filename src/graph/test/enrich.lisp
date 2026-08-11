@@ -1,6 +1,6 @@
 ;;;
 ;;; Tests for src/graph/enrich.lisp -- the graph-aware merge of image-derived
-;;; facts (ARCH-0011).
+;;; facts (DES-0011).
 ;;;
 ;;; The first suite in this file exists for one property: enrichment must not
 ;;; be able to destroy what the text pass wrote. REQ-0018 R5 states it and
@@ -203,7 +203,7 @@ origin file."
                (id (find-entity-by-key graph to-key)))))
 
 (test a-call-the-text-pass-already-recorded-is-confirmed-on-the-same-edge
-  ;; Provenance in the natural key was rejected by ARCH-0011: one edge per pass
+  ;; Provenance in the natural key was rejected by DES-0011: one edge per pass
   ;; doubles every agreed fact and inflates every impact count with duplicates
   ;; that mean "we agree". So agreement lands on the edge that is already there,
   ;; and this is the test that it is the same edge and not a second one.
@@ -308,7 +308,7 @@ origin file."
           "the call reaches the function, not the variable that shares its name"))))
 
 ;;; ------------------------------------------------------------------
-;;; Dispatched calls do not become edges into the generic (ARCH-0001)
+;;; Dispatched calls do not become edges into the generic (DES-0001)
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; The text pass fans a dispatched call out to the candidate methods and lands
@@ -405,7 +405,7 @@ hand because what is under test is a distinction the analyzer draws."
         "and both passes are recorded as having seen it")))
 
 ;;; ------------------------------------------------------------------
-;;; The key-equality fixture (ARCH-0011 R5, REQ-0018 R8's comparison seam)
+;;; The key-equality fixture (DES-0011 R5, REQ-0018 R8's comparison seam)
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; Every component of a natural key is a rendering, and the two passes render
@@ -434,13 +434,13 @@ hand because what is under test is a distinction the analyzer draws."
 "
   "One DEFUN, a qualified DEFMETHOD, a DEFMETHOD with an EQL specializer, and a
 DEFGENERIC with an inline (:method ...) clause -- the four shapes whose
-renderings ARCH-0011 R5 names.")
+renderings DES-0011 R5 names.")
 
 (defparameter *key-fixture-inspection*
   ;; Hand-written as the inspector would report it, and every string here is
   ;; the inspector's obligation. Note "(eql svg)": SPECIALIZER-NAME renders an
   ;; EQL specializer through TOKEN-NAME, which takes SYMBOL-NAME and drops the
-  ;; keyword's colon. PLAN-0010 R-2 and ARCH-0011 both write "(eql :svg)";
+  ;; keyword's colon. PLAN-0010 R-2 and DES-0011 both write "(eql :svg)";
   ;; measured against the analyzer, the colon is not there.
   (list :loom-inspection 1
         :language :lisp
@@ -490,7 +490,7 @@ renderings ARCH-0011 R5 names.")
       (is (= 1 (length ops))))))
 
 ;;; ------------------------------------------------------------------
-;;; Self-aging (ARCH-0011's staleness claim, PLAN-0010 R-4)
+;;; Self-aging (DES-0011's staleness claim, PLAN-0010 R-4)
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; PLAN-0010 puts this in step 8's analyzer tests. It is here instead because
@@ -513,7 +513,7 @@ it -- correctly, and without demonstrating anything."
               :callee (list :function "generated-accessor" "fixture"))))
 
 (test an-introspected-fact-is-aged-out-by-the-machinery-that-already-existed
-  ;; ARCH-0011 claims image facts need no new staleness code: they carry an
+  ;; DES-0011 claims image facts need no new staleness code: they carry an
   ;; origin-file like every other fact, so RETRACT-FILE removes them and
   ;; REMOVE-ENTITY takes their inbound edges with them. Claimed, and until now
   ;; unverified -- which for a claim of the form "degrades rather than lies" is

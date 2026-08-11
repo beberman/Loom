@@ -1,6 +1,6 @@
 ;;;; Package definition for loom-rest: the HTTP/JSON skin.
 ;;;;
-;;;; ARCH-0006: "No route's handler body contains logic beyond this five-step
+;;;; DES-0006: "No route's handler body contains logic beyond this five-step
 ;;;; shape" -- decode, resolve grants, invoke, encode, set the status. Every
 ;;;; name this system needs comes from loom-serve, and that is the check on
 ;;;; whether a piece of logic has drifted into the wrong system: a route

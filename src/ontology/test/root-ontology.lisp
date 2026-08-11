@@ -125,14 +125,14 @@ impact paths that humans read")))
   (let ((e (make-instance 'test-bare-entity
                           :source :inferred :confidence 0.5
                           :derived-from '("a" "b")
-                          :origin-file "docs/design/DEC-0042.yaml")))
+                          :origin-file "docs/decisions/DEC-0042.yaml")))
     (is (eq :inferred (source e)))
     (is (= 0.5 (confidence e)))
     (is (equal '("a" "b") (derived-from e)))
-    (is (string= "docs/design/DEC-0042.yaml" (origin-file e))
+    (is (string= "docs/decisions/DEC-0042.yaml" (origin-file e))
         "SS5.1 makes this mandatory: every fact traces to the file it came from")))
 
-;;; --- the source vocabulary (ARCH-0011 R6) -------------------------
+;;; --- the source vocabulary (DES-0011 R6) -------------------------
 ;;;
 ;;; These read the *declared* type rather than trying to provoke a type error,
 ;;; and the reason is a measurement rather than a preference. PLAN-0010 step 1
@@ -154,7 +154,7 @@ class says rather than what this file remembers it saying."
     (sb-mop:slot-definition-type slot)))
 
 (test the-source-vocabulary-admits-an-introspected-fact
-  ;; ARCH-0011's only ontology change. An image-derived fact has to be
+  ;; DES-0011's only ontology change. An image-derived fact has to be
   ;; expressible before ENRICH-OPS can produce one.
   (is-true (typep :introspected (declared-source-type)))
   (dolist (member '(:structural :inferred :human-validated))

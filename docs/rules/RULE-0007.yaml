@@ -1,0 +1,98 @@
+id: RULE-0007
+title: A workflow document lives in completed/ when its status is terminal, and nowhere else
+status: active
+severity: warning
+date: 2026-08-11
+refines: [CON-0004]
+applies-to: [document-category, repository-status]
+tags: [documents, convention, prose-only, staleness]
+statement: |
+  Under docs/requirements, docs/design, docs/plans, docs/bugs and
+  docs/reviews, a document whose status is terminal -- implemented for a REQ or
+  a DES, final for a PLAN, closed for a BUG or REV -- lives in that directory's
+  completed/ subdirectory, and a document whose status is not terminal lives
+  flat. The two must agree. A partial document stays flat: it has an
+  OUTSTANDING section, which is work.
+
+  Under docs/decisions, docs/arch, docs/rules and docs/concepts there is no
+  completed/ at all. An accepted decision, an active rule, a named concept and
+  a current architecture document are in force rather than finished, and filing
+  them under a name meaning "done with these" would bury exactly the documents
+  `impact' exists to surface.
+
+  A DES belongs with the workflow half rather than the standing half, and the
+  line is worth stating because it was drawn wrongly at first. A design answers
+  one requirement: it is produced by a piece of work and finished when that
+  work lands. What stands after it is the ARCH document describing the
+  structure the design produced -- which is why architecture has no terminal
+  status at all, only accepted or superseded.
+summary: |
+  The convention that makes `ls docs/bugs' readable without loading Loom, and
+  the drift it introduces. Directory placement duplicates the status: field,
+  and nothing checks that the copies agree, so this rule exists to write the
+  invariant down where a human and an agent both meet it.
+body: |
+  WHY A DIRECTORY AND NOT A QUERY
+
+  The honest objection was raised and overruled on ergonomics, and the
+  reasoning is worth keeping because it bounds what this rule is for. Storing
+  state in two places is what Loom exists to argue against: `status:' already
+  holds the fact, a `documents [status]' console command could report it, and a
+  directory that repeats it can disagree with it.
+
+  What settled it is that the query is useless to a human without a running
+  Loom. Loading the image, running the command and then finding the file is
+  slower than reading a directory listing, and an agent working in the tree
+  reaches for `ls' before it reaches for a console. Twenty-two bug documents in
+  one flat directory with no way to see which seven are open is a real cost paid
+  on every visit; the drift this rule guards against is a hypothetical cost paid
+  when someone edits a status and forgets to move the file.
+
+  So: the directory is the view, `status:' is the fact, and when they disagree
+  the fact wins.
+
+  WHAT IT COST TO SET UP
+
+  Nothing in the analyzer. DOCUMENT-CATEGORY returns the first path segment
+  below docs/, guarded by (when (rest below) ...), so docs/bugs/completed/
+  BUG-0001.yaml still types as bugs with three segments exactly as it did with
+  two. Cross-document references resolve through LINKABLE-INDEX on doc-id
+  rather than on path, so refines: and supersedes: survived fifty-three files
+  moving without a single break -- measured across the first forty: 195 files,
+  2053 entities, 10536 relationships and 13 unresolved references before and
+  after, identical.
+
+  The one real consequence is that a :DOCUMENT's natural key is (:PATH), so
+  moving a file changes its id and therefore every edge endpoint. A full
+  reindex rebuilds it correctly. An incremental watcher poll across a bulk
+  `git mv' is not trusted to, which is why the move is followed by a reindex
+  rather than by a poll.
+
+  WHY THIS IS NOT MACHINE-CHECKED
+
+  The check kinds SS10.4 defines -- :no-edge, :requires-edge,
+  :property-constraint, :property-absent -- are about entities and edges. This
+  rule relates a property to a path segment, which none of them can express,
+  and inventing a fifth kind for one convention is the trade SS10.4 explicitly
+  refuses: "a rule needing more than that stays prose".
+
+  So it stays prose with severity warning, and `status' counts it among the
+  unenforced rules, which is the point -- prose-only drift stays visible rather
+  than comfortable. A cheap check kind that compared a path segment against a
+  property value would settle it, and would also close RULE-0005, which is
+  unenforced for a related reason.
+
+  A NEARBY DEFECT THIS SURFACED
+
+  BUG-0019 carried `status: fixed', which is not in the :DOCUMENT status
+  vocabulary. AS-KEYWORD returns NIL for a value outside its allowed list
+  rather than signalling, so the document had no status in the index at all and
+  `describe BUG-0019' printed no status line. It was corrected to `closed'
+  here.
+
+  That is the same silent-drop shape as BUG-0023: a field an author filled in,
+  accepted without complaint by the file format, and discarded on the way to
+  the graph. An out-of-vocabulary status should be reported rather than
+  dropped. Not fixed here -- it wants its own bug -- but it means the count of
+  documents whose status this rule can check is one lower than it looks
+  wherever someone has invented a status word.

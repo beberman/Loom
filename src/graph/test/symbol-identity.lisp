@@ -1,4 +1,4 @@
-;;;; The package graph and symbol identity (ARCH-0015, PLAN-0015 step 7).
+;;;; The package graph and symbol identity (DES-0015, PLAN-0015 step 7).
 ;;;;
 ;;;; Written before anything keys on HOME-PACKAGE, which is the point. The
 ;;;; second test here is the regression guard for the naive implementation --
@@ -43,7 +43,7 @@ properties DEFPACKAGE-shaped forms produce."
                                                     :keyword)))))
 
 (test an-imported-symbol-extended-elsewhere-is-one-callable-not-two
-  ;; ARCH-0015 R7, first half. game-server's `id': mpackage/object declares the
+  ;; DES-0015 R7, first half. game-server's `id': mpackage/object declares the
   ;; accessor and exports the symbol, mpackage/filter imports that symbol and
   ;; declares a reader of the same name. One generic function, two definitions,
   ;; and a resolver that cannot see the import calls them two callables and
@@ -67,7 +67,7 @@ they actually are")
 canonicalisation the analyzer is forbidden to do")))
 
 (test a-generic-inherited-from-cl-stays-one-callable-across-every-user
-  ;; ARCH-0015 R7, second half, and the regression test for the naive design.
+  ;; DES-0015 R7, second half, and the regression test for the naive design.
   ;; game-server has PRINT-OBJECT defined ten times across seven packages. It
   ;; is CL:PRINT-OBJECT, one symbol, reached everywhere by (:use :cl). Today
   ;; the string key merges them and dispatch works by accident; a key on the

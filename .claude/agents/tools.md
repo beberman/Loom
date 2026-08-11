@@ -41,7 +41,7 @@ quoted form so none of that is needed.
                             text pass cannot see. Optional, on explicit demand
                             only, and self-aging through RETRACT-FILE -- an
                             index nobody has re-enriched gives today's text
-                            answer, not yesterday's image answer. ARCH-0011.
+                            answer, not yesterday's image answer. DES-0011.
 
 `impact` attaches the decisions and rules bearing on an entity. Read those
 before proposing or writing anything that contradicts one; to overturn a
@@ -57,7 +57,7 @@ Several Read calls in one message are faster and silent.
 
 ## Loom under-reports where it is blind
 
-ARCH-0001 records the analyzer's known gaps, the one worth carrying into every
+DES-0001 records the analyzer's known gaps, the one worth carrying into every
 task: calls made inside a macro body — which includes every `test` or
 `def-suite` form — are unattributed. A small `impact` set is evidence of a
 small change only once you've ruled out that it is instead evidence of a blind
@@ -100,14 +100,14 @@ it into a fresh image and checks who is and is not present — not with `check`.
 ## Loom is also a standing service
 
 `loom-serve.lisp` runs Loom as a long-lived process reachable over REST
-(`/v1/...`) and MCP (`/mcp`), alongside the console — REQ-0008 and ARCH-0006
+(`/v1/...`) and MCP (`/mcp`), alongside the console — REQ-0008 and DES-0006
 are the design, and CLAUDE.md's "Running it as a service" section has the
 invocation. `tools/loom.sh` still drives the console, still pays a cold reindex
 per call, and is still the correct tool for the queries above; the service is
 for a caller that needs one resident graph shared across many requests, and
 this section is additive to `tools/loom.sh` rather than a replacement for it.
 
-Its lifecycle belongs to one script, `tools/loom-serve.sh`, which ARCH-0007
+Its lifecycle belongs to one script, `tools/loom-serve.sh`, which DES-0007
 adds beside `loom.sh` and which the allowlist and the SessionStart hook both
 name. Never start or stop the service by hand:
 
@@ -130,4 +130,4 @@ tools for the rest of the session, which no per-call hook can recover.
 SessionStart has already run is invisible to the resident image until something
 says so. An MCP or REST call that fails mid-session, or that answers against
 code you know you just changed, means run `tools/loom-serve.sh update` and
-retry — ARCH-0007 names this gap as accepted rather than solved.
+retry — DES-0007 names this gap as accepted rather than solved.

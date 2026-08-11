@@ -7,7 +7,7 @@
   :license "MIT"
   ;; loom-serve and the two libraries the translation needs, and nothing else --
   ;; notably not #:loom-mcp, which is a peer rather than a layer, and not
-  ;; #:loom-process, which ARCH-0006 R5 forbids and tools/load-test.lisp is the
+  ;; #:loom-process, which DES-0006 R5 forbids and tools/load-test.lisp is the
   ;; instrument for.
   :depends-on (#:loom-serve
 	       #:hunchentoot

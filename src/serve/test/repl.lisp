@@ -26,7 +26,7 @@
 
 (test in-package-persists-between-calls
   ;; The argument for a session over a stateless eval, as an assertion. A
-  ;; stateless design fails this by construction, and ARCH-0006's point is
+  ;; stateless design fails this by construction, and DES-0006's point is
   ;; that in-package persisting is baseline terminal-REPL behaviour rather
   ;; than an enhancement over it.
   (with-repl-session (id)
@@ -57,7 +57,7 @@
       (is (equal '("42") (getf result :values))))))
 
 ;;; ------------------------------------------------------------------
-;;; The two kinds of failure (ARCH-0006's named risk)
+;;; The two kinds of failure (DES-0006's named risk)
 ;;; ------------------------------------------------------------------
 
 (test a-form-that-signals-is-an-answer-not-a-failure
@@ -86,7 +86,7 @@
 
 (test text-that-will-not-read-is-a-request-error
   ;; READ fails before EVAL ever runs, so nothing was asked and nothing
-  ;; answered. ARCH-0006 names this case explicitly.
+  ;; answered. DES-0006 names this case explicitly.
   (with-repl-session (id)
     (signals malformed-request (repl-eval id "(+ 1"))))
 
@@ -148,7 +148,7 @@
   ;; Overlaps the fixture test in registry.lisp deliberately: that one tests
   ;; the mechanism, this one tests the entry a caller actually reaches, and
   ;; R9 is explicit enough about it to deserve both. Granting :repl is
-  ;; granting the ability to reach beneath every lock ARCH-0003 and ARCH-0004
+  ;; granting the ability to reach beneath every lock DES-0003 and DES-0004
   ;; built, not merely the four write operations sitting on top of them.
   (signals capability-error
     (invoke-operation (find-operation :repl-open) '(:read :write) '()))

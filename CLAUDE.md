@@ -22,7 +22,7 @@ tools/loom.sh 'enrich'                # ask the toolchain what the text pass
                                       #   and self-aging: an index nobody has
                                       #   re-enriched gives today's text answer
                                       #   rather than yesterday's image answer.
-                                      #   ARCH-0011.
+                                      #   DES-0011.
 tools/loom.sh 'status | find foo'     # several commands, run in order
 tools/loom.sh 'help'                  # the authoritative table; trust it first
 ```
@@ -51,14 +51,14 @@ contradicting them.
 
 Loom has known blind spots — calls inside macro bodies are unattributed, so
 anything driven by a `test` form under-reports. A call inside a body-swallowing
-macro is the exception since ARCH-0014: a `define-operation` or `define-command`
+macro is the exception since DES-0014: a `define-operation` or `define-command`
 body reaches its callee through a `:call-site` entity, an ambiguous name becomes
 one reportable site with an edge to each candidate rather than a silent drop, and
-`describe` on the callee lists both among its callers with their kind. ARCH-0001
+`describe` on the callee lists both among its callers with their kind. DES-0001
 records the rest. A small impact set is not proof of a small change.
 
 A callable is identified by the symbol it names, not the string it spells
-(ARCH-0015). Two same-named definitions in different packages are two callables,
+(DES-0015). Two same-named definitions in different packages are two callables,
 and a call reaches whichever one its own package makes accessible — through an
 `:import-from`, through a `:use` of a package that exports it, or by interning
 its own. So `find` showing two entries for one name is usually two things, not a
@@ -71,7 +71,7 @@ library there lets its exports be read from the image and its inherited names
 placed.
 
 A malformed form costs a form rather than a file. The Lisp analyzer reads
-through Eclector behind a Loom-owned client (ARCH-0013), so a file with damage
+through Eclector behind a Loom-owned client (DES-0013), so a file with damage
 in it still yields its other definitions and the damage is recorded on the
 `:file` entity with a line range. A repaired form is deliberately not indexed:
 recovering an unterminated list can swallow the next definition into the
@@ -115,7 +115,7 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
 
 The last four are peers, not a stack: loom-serve, loom-rest and loom-mcp depend
 on the same five systems loom-process does and on nothing above loom-knowledge,
-and nothing below any of them depends on any of them. ARCH-0006 R5 makes that
+and nothing below any of them depends on any of them. DES-0006 R5 makes that
 structural rather than a habit — console.lisp, loom.lisp, loom-process.asd and
 src/process/package.lisp are unedited by all of it.
 
@@ -146,7 +146,7 @@ Both bind 127.0.0.1:4780 and carry the REST routes under `/v1/` and the MCP
 endpoint at `/mcp`. The first hands over the same `loom>` console `loom.lisp`
 does; the second exists because `main` returns immediately when stdin is closed,
 which under a supervisor would take the listener down with it. REQ-0008 and
-ARCH-0006 are the reasoning.
+DES-0006 are the reasoning.
 
 ## Where the knowledge lives
 
@@ -154,8 +154,9 @@ Not here. This file is a pointer; the reasoning is in `docs/`, indexed and
 cross-referenced. CON-0004 describes the workflow and how documents link.
 
     docs/requirements/  what is wanted           REQ-nnnn
-    docs/arch/          the shape of an answer   ARCH-nnnn
-    docs/design/        decisions and rationale  DEC-nnnn
+    docs/design/        the shape of an answer   DES-nnnn
+    docs/decisions/     decisions and rationale  DEC-nnnn
+    docs/arch/          structure and mechanism  ARCH-nnnn
     docs/plans/         ordered steps            PLAN-nnnn
     docs/reviews/       review findings          REV-nnnn
     docs/bugs/          defects worth keeping    BUG-nnnn
@@ -165,11 +166,14 @@ cross-referenced. CON-0004 describes the workflow and how documents link.
 Loom's own documents are YAML, and writing one is still writing YAML. The
 document analyzer claims `.yaml` and `.yml` under `docs/`, and the directory
 names the type. `refines:` names the document a document answers, `affects:`
-names the code a decision governs, and both resolve against the index; a name
-that resolves to nothing is reported by `check` rather than dropped.
+names the code a document bears on — every document type, not just decisions
+(BUG-0023) — and both resolve against the index; a name that resolves to
+nothing is reported by `check` rather than dropped. A decision's `affects:`
+*governs* and becomes `:decides`; every other document's merely bears on its
+target and becomes `:documents`.
 
 Markdown is indexed too, by a separate analyzer, and it earns weaker edges on
-purpose (REQ-0014, ARCH-0016). A `.md` or `.markdown` file under any directory
+purpose (REQ-0014, DES-0016). A `.md` or `.markdown` file under any directory
 named `docs`, `doc`, `design` or `documentation` becomes a `:document` whose
 title is its first H1 — but never a REQ or a DEC, whatever its directory is
 called, because that mapping is this tree's convention rather than a fact about

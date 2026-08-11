@@ -1,4 +1,4 @@
-;;;; The structured-error contract (ARCH-0006 R8).
+;;;; The structured-error contract (DES-0006 R8).
 ;;;;
 ;;;; Two kinds of failure reach a caller, and keeping them apart is the whole
 ;;;; of this file. A request that cannot be acted on as asked -- a missing
@@ -41,7 +41,7 @@ UNKNOWN-ENTITY and UNKNOWN-OPERATION are 404, CAPABILITY-ERROR is 403."))
              (write-string (request-message condition) stream)))
   (:documentation "A request that cannot be acted on as asked.
 
-R8's request-level error. ARCH-0006 is explicit that an operation invoked
+R8's request-level error. DES-0006 is explicit that an operation invoked
 without the repository it acts on is malformed rather than ambiguous:
 CURRENT-REPOSITORY's convenience of implying the sole watched repository is
 right for a human who forgot to type a name and wrong for a program, which

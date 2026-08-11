@@ -44,7 +44,7 @@ Graph Manager's business, not a property write's."))
               a fractional CONFIDENCE saying how much of a choice it was.
 :HUMAN-VALIDATED  asserted by a person, and not re-derivable from anything.
 :INTROSPECTED the language's own toolchain reported it, from an image in which
-              the target was loaded (ARCH-0011). Confidence 1.0: it is not a
+              the target was loaded (DES-0011). Confidence 1.0: it is not a
               reading of source but an answer from the compiler.
 
 The fourth member is the whole ontology cost of REQ-0018. Read it as the
@@ -388,8 +388,8 @@ object per image that SBCL threads inherit by value and whose MT19937 state
 vector it mutates without atomicity. Two threads inside it interleave and mint
 the same id, which BUG-0005 measured at 26,039 distinct strings out of 40,000.
 
-Global rather than hung off a graph or a repository as ARCH-0003's and
-ARCH-0004's locks are, because the resource is: one random state per image, so
+Global rather than hung off a graph or a repository as DES-0003's and
+DES-0004's locks are, because the resource is: one random state per image, so
 a per-object lock would not help two graphs' threads. Plain and not recursive
 because FRESH-ID's body calls two library functions and can never re-enter
 itself, so there is nothing to compose. It is a leaf in the acquisition order

@@ -1,0 +1,178 @@
+id: BUG-0005
+title: fresh-id mints duplicate uuids when two threads analyze at once
+status: closed
+date: 2026-08-01
+refines: [BUG-0004]
+affects: [fresh-id, derive-id, add-entity, apply-transaction, index-file,
+          poll-once, index-repository]
+tags: [ontology, concurrency, threading, identity, latent]
+summary: |
+  RANDOM-UUID:MAKE-UUID is not thread-safe. Two threads generating 20,000
+  uuids each produced 26,039 distinct strings out of 40,000; one thread
+  generating 40,000 produced 40,000. FRESH-ID is the id path for any entity
+  whose type declares no natural key, so two threads minting such entities at
+  once can derive the same id, and the second ADD-ENTITY overwrites the first
+  in the graph's entity table with no error and no error count. Latent rather
+  than live today -- every entity type an analyzer actually emits declares a
+  natural key -- but it is a silent loss the moment one does not, and it is
+  exactly the class of failure BUG-0004's "WHY IT HID" section is about.
+body: |
+  HOW IT WAS FOUND
+
+  Not by looking for it. PLAN-0002 step 1's graph concurrency test drives two
+  writer threads at one graph and asserts every entity they wrote is present.
+  Against the finished locking of PLAN-0002 it still lost four to ten entities
+  of four thousand, every run, with no condition signaled -- which read as a
+  hole in the graph lock and was not one.
+
+  The fixture built its entities with GRAPH-TEST-NODE, which declares no
+  :natural-key, so ENTITY-NATURAL-KEY returned NIL, DERIVE-ID returned NIL and
+  every instance took a FRESH-ID. Measured directly, outside Loom:
+
+    two threads: generated 40000, distinct 26039
+    one thread : generated 40000, distinct 40000
+
+  Roughly a third of the uuids collided across two threads and none collided
+  within one, which is a shared random state and not chance. The test was
+  repointed at a fixture type keyed on (:file :name) -- src/graph/test/
+  concurrency.lisp's GRAPH-TEST-KEYED-NODE -- and the loss went to zero.
+
+  WHY IT IS NOT LIVE TODAY
+
+  Every entity type in code-ontology.lisp that an analyzer emits declares a
+  natural key: :file on (:path), :function and :variable and :class and :test
+  on (:file :name), :method on (:file :name :qualifier :specializers),
+  :document and :concept and :decision and :rule on their path or doc-id,
+  :rule-violation on (:rule-id :subject). The one type without a natural key
+  is :snapshot, and nothing emits it. Relationship ids derive from
+  (rel-type from-id to-id) universally, so no edge ever reaches FRESH-ID.
+
+  PLAN-0002's repository lock narrows it further: analysis for one repository
+  now runs under that lock, so the console thread and that repository's
+  monitor thread cannot be inside an analyzer at the same time. Two watched
+  repositories still can -- the lock is per repository by design (DES-0004
+  R1) -- so the exposure is not zero even for a type that has a natural key
+  today.
+
+  WHY IT IS WORTH A DOCUMENT ANYWAY
+
+  FRESH-ID exists precisely so that a type may decline a natural key.
+  ENTITY-NATURAL-KEY's own docstring describes that as the right shape for
+  "knowledge minted once by a human or an agent", which is a thing Loom is
+  meant to hold. The first such type added would inherit a silent, rare loss
+  of entities, and the symptom would be a count that is short by a handful --
+  the hardest kind of defect to attribute, and the one CON-0001 is about: a
+  fabricated fact, in this case two different things sharing one id, is worse
+  than a recorded gap.
+
+  It also stands as a trap for the next person who writes a concurrency test.
+  The obvious fixture is the one already in graph-manager.lisp's tests, and
+  building on it produces a test that fails for a reason that has nothing to
+  do with what it is testing.
+
+  FIX
+
+  Not made here, and the choice is a real one.
+
+  The narrow fix is to guard FRESH-ID with a lock of its own, which costs one
+  uncontended acquisition per key-less entity and nothing at all for every
+  entity that has a natural key.
+
+  The alternative is to stop depending on the library's global state: seed a
+  per-thread random state, or generate the uuid from a source that is
+  thread-safe by construction. That is more work and removes the failure mode
+  rather than excluding it.
+
+  A third option is to require every entity type to declare a natural key and
+  delete FRESH-ID. That contradicts ENTITY-NATURAL-KEY's stated design and
+  would need a decision of its own, not a bug fix.
+
+  Whichever is chosen, the check is the one that found it: two threads minting
+  key-less entities into one graph, asserting the count.
+
+  FIX CHOSEN
+
+  Option 1, the narrow one, by PLAN-0003 on 2026-08-01. FRESH-ID holds a
+  dedicated lock across its call into RANDOM-UUID:
+  src/ontology/root-ontology.lisp's *FRESH-ID-LOCK*, a plain BT:MAKE-LOCK,
+  global because the resource it guards is global, unexported because it has
+  exactly one user six lines below it.
+
+  THE MECHANISM THIS DOCUMENT DID NOT HAVE
+
+  Recorded because it settles the shape of every option and was not known when
+  the above was written. random-uuid/src/uuid.lisp:73-88: MAKE-UUID takes an
+  optional GENERATOR from the seedable-rng library, and with none supplied --
+  which is how FRESH-ID calls it -- it evaluates (RANDOM (EXPT 2 64)) twice. So
+  the shared state is CL:*RANDOM-STATE*, one global special that SBCL threads
+  inherit by value rather than rebind, whose MT19937 state vector and index
+  SBCL mutates without atomicity. "RANDOM-UUID:MAKE-UUID is not thread-safe" is
+  true but understates it: the library has no state of its own to make safe.
+
+  WHAT DECIDED IT
+
+  Measured in a scratchpad script, outside Loom, /usr/bin/sbcl 2.2.9.debian,
+  two threads generating 20,000 ids each:
+
+    variant                          distinct/40000    per id
+    as it stood                         33971          0.10 us
+    guarded by one BT:MAKE-LOCK         40000          0.20 us
+    fresh (MAKE-RANDOM-STATE T) per call
+                                        40000         23.90 us
+
+  Option 2 has three forms and each costs something option 1 does not. A fresh
+  random state per call is the only form needing no new dependency and no
+  per-thread setup, and it works -- at 240 times the lock's cost per key-less
+  entity. A per-thread random state is as cheap as the lock but cannot be
+  established from inside FRESH-ID (a SETF of an unbound-in-this-thread global
+  special writes the global value, so the threads share one state again); it
+  has to be bound at every thread creation site, which is discipline rather
+  than mechanism, and BUG-0004's WHY IT HID section is about exactly that class
+  of fix. A seedable-rng generator adds a larger dependency than
+  BORDEAUX-THREADS and still needs the per-thread management. So the honest
+  statement is not "the lock is cheaper" but "every cheap option adds either a
+  dependency or a discipline, and the lock adds the smaller dependency and no
+  discipline".
+
+  WHAT IT COST
+
+  One line in src/ontology/loom-ontology.asd: the system that by design
+  depended on nothing but RANDOM-UUID now also depends on BORDEAUX-THREADS.
+  RULE-0001 survives -- its statement is no server, no store, no analyzer, and
+  BORDEAUX-THREADS is a portability shim over the implementation's own
+  primitives, already in the image for every system above the ontology since
+  PLAN-0002 put it in loom-graph. An ontology that mints ids for concurrent
+  callers is in the threading business whether it declares the dependency or
+  not; this bug is what that looks like undeclared.
+
+  Not evidence, and PLAN-0003 says so in full: `check` stayed at 0 violations
+  throughout, and it could not have done otherwise. RULE-0001's check kind is
+  :no-edge over edges between indexed entities; external libraries have no
+  entities and .asd files are not indexed, so no :no-edge check can ever see
+  this change. The prose is what governs adding a third dependency.
+
+  THE RESIDUAL
+
+  The lock excludes FRESH-ID's callers from one another and protects nothing
+  else. Any other code in the image calling CL:RANDOM concurrently still races
+  the same state. Today there is exactly one other consumer,
+  src/workspace/test/workspace.lisp:31's (RANDOM (EXPT 2 48)) naming a temp
+  fixture directory, which runs on the main thread at fixture-build time and
+  whose worst case is a shared temp directory rather than a lost entity. The
+  day a second appears on a worker thread this fix does not cover it, and the
+  general form -- take the random source out of the shared global entirely --
+  remains available at the 23.9 microseconds measured above.
+
+  THE CHECK, AS ASKED FOR
+
+  Both instruments were seen failing before the fix and passing after, five
+  runs each:
+
+    src/ontology/test/concurrency.lisp
+        TWO-THREADS-MINTING-IDS-PRODUCE-NO-DUPLICATES. The tight one, below
+        the graph entirely. Failed 5 of 5 before, at 28,092 distinct of 40,000.
+
+    src/graph/test/concurrency.lisp
+        TWO-THREADS-MINTING-KEY-LESS-ENTITIES-LOSE-NONE, on GRAPH-TEST-NODE and
+        so on FRESH-ID. This document's own asked-for check. Failed 5 of 5
+        before, at 3,961 entities of 4,000.

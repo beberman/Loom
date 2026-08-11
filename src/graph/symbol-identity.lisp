@@ -1,4 +1,4 @@
-;;;; The package graph, and the symbol identity it exists to answer (ARCH-0015).
+;;;; The package graph, and the symbol identity it exists to answer (DES-0015).
 ;;;;
 ;;;; CALLABLE-INDEX keys candidates on a downcased name, so two definitions are
 ;;;; the same callable when they are spelled the same. In Common Lisp they are
@@ -6,7 +6,7 @@
 ;;;; edges land on a name defined in more than one package, so the difference
 ;;;; is most of that tree's call graph.
 ;;;;
-;;;; This is the assembling half of ARCH-0015's split. The analyzer records
+;;;; This is the assembling half of DES-0015's split. The analyzer records
 ;;;; each declaration as it reads it -- one file at a time, which is all
 ;;;; RULE-0002 allows -- and cannot canonicalise a nickname or follow an
 ;;;; import, because test/fixture.lisp is only (in-package :integration-test)
@@ -45,7 +45,7 @@ the reason workspace.lisp gives about *MACRO-GENERATORS*: loom-graph depends on
 loom-ontology alone, so it cannot see an analyzer's table, and it must not
 reach into the host image either. `(find-package :common-lisp)' lived here
 briefly and was the only place in this system that knew what language it was
-indexing -- which is the thing ARCH-0012 puts in an analyzer and CON-0005 says
+indexing -- which is the thing DES-0012 puts in an analyzer and CON-0005 says
 the writer must not do. The traversal below is namespace-generic; what
 Common Lisp exports is a fact about Common Lisp, and it now arrives as data.
 
@@ -89,7 +89,7 @@ of them is how a workspace turns those recorded gaps into answers."
 (defun home-package (pg name package)
   "Which package's symbol NAME is, when read in PACKAGE. NIL when unknowable.
 
-The three routes of ARCH-0015, in the order Common Lisp applies them:
+The three routes of DES-0015, in the order Common Lisp applies them:
 
   IMPORT       an :IMPORT-FROM naming NAME makes it the exporter's symbol, so
                the answer is that package's -- followed onward, since the
@@ -140,7 +140,7 @@ regress. CON-0001 -- a recorded gap, never a fabricated binding."
 
 (defun entity-home-package (pg entity name)
   "The home package of NAME as ENTITY refers to it, or as ENTITY declares it.
-ENTITY-PACKAGE reads :SYSTEM, which ARCH-0009 derives from the IN-PACKAGE
+ENTITY-PACKAGE reads :SYSTEM, which DES-0009 derives from the IN-PACKAGE
 chain -- PLAN-0015 step 4 records why that is the package rather than a second
 property holding the same string."
   (home-package pg name (entity-package entity)))

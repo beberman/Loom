@@ -36,7 +36,7 @@ test it is written to fail."))
   ;; The CON-0003 witness for R6. A tier system implemented as an ordered
   ;; level -- read < write < repl -- passes every other test in this system
   ;; and fails only this one, because a caller holding the top of the order
-  ;; would be handed the tier that can reach beneath ARCH-0004's locks.
+  ;; would be handed the tier that can reach beneath DES-0004's locks.
   (let ((*operations* '()))
     (define-operation :fixture-repl :repl () "A fixture at the repl tier."
       (list :ran t))
@@ -157,7 +157,7 @@ test it is written to fail."))
 
 (test the-static-grant-set-withholds-repl
   ;; resolve-caller-grants is a seam returning a static answer, which is what
-  ;; ARCH-0006 commits to and REQ-0008 excludes the rest of. The assertion
+  ;; DES-0006 commits to and REQ-0008 excludes the rest of. The assertion
   ;; worth making about it today is the one that is a decision rather than a
   ;; placeholder: no caller is granted :repl while the credential story is
   ;; unfinished.

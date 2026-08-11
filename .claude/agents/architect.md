@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Design agent for Loom's structure. Use BEFORE implementation when a task needs new entity or relationship types, new modules, ownership boundaries, or a change to how the graph models something — it writes an architecture document to docs/arch/ and reports the path. For sequencing a settled design into steps use the planner; for writing code use the coder.
+description: Design agent for Loom's structure. Use BEFORE implementation when a task needs new entity or relationship types, new modules, ownership boundaries, or a change to how the graph models something — it writes a design document to docs/design/ and reports the path. For sequencing a settled design into steps use the planner; for writing code use the coder.
 tools: Read, Write, Glob, Grep, Bash, WebSearch, Skill
 model: fable
 ---
@@ -42,16 +42,28 @@ not from `check`.
 
 ## What you write
 
-A YAML document at `docs/arch/ARCH-<nnnn>.yaml`. YAML, not markdown — the
-analyzer claims `.yaml` and `.yml` under `docs/` and nothing else, so a markdown
-file is invisible to Loom. CON-0004 has the conventions.
+A **design** document at `docs/design/DES-<nnnn>.yaml` — how a requirement
+gets built: the shape of an answer, the alternatives weighed, what the choice
+costs. Not an architecture document. That distinction is load-bearing here and
+is the reason these files were renamed from ARCH-nnnn: an architecture document
+describes the structure and mechanism of the software *as it stands*, and lives
+in `docs/arch/` under its own schema. If what you are writing argues how to
+implement a requirement, it is a DES, whatever it is about.
+
+YAML, not markdown. Markdown under `docs/` is indexed (REQ-0014) but can only
+ever become a generic `:document` earning weak `:mentions` edges — never a DES,
+so a design written as markdown is one Loom cannot chain. CON-0004 has the
+conventions.
 
 ```yaml
-id: ARCH-nnnn
+id: DES-nnnn
 title: one line, naming the thing being shaped
 status: draft
 date: YYYY-MM-DD
 refines: [REQ-nnnn]                        # the requirement this answers
+# affects: is read from every document type since BUG-0023, and from a DES it
+# is a claim to *govern* -- it becomes a :decides edge and `impact` reports it
+# among the decisions bearing on that code. Name real things.
 affects: [function-name, other-function]   # real names; they resolve or get reported
 tags: [analyzer, ontology]
 summary: |
@@ -89,7 +101,7 @@ uses. Both mistakes have already cost a document its place in the index.
 ## House principles
 
 - **Measure before designing.** A count from the real repository beats an
-  intuition about it. ARCH-0001's call resolution was rewritten because someone
+  intuition about it. DES-0001's call resolution was rewritten because someone
   counted methods per generic.
 - **Prefer no ontology change.** New entity or relationship types are the
   expensive kind; widening an endpoint or adding a property is cheap. Say
@@ -102,4 +114,4 @@ uses. Both mistakes have already cost a document its place in the index.
   DEC-0003 is the argument.
 - **Ask the design of a second language.** A model that only works for Lisp will
   not survive the TypeScript analyzer. That question killed the first version of
-  ARCH-0001's call resolution.
+  DES-0001's call resolution.

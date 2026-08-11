@@ -5,7 +5,7 @@
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  ;; ARCH-0006: exactly the five systems loom-process.asd depends on, plus the
+  ;; DES-0006: exactly the five systems loom-process.asd depends on, plus the
   ;; three libraries a listener needs -- and conspicuously not #:loom-process.
   ;; R5 makes zero edits to console.lisp the mechanism by which the console
   ;; cannot regress, and the surest way to keep that true is for nothing here

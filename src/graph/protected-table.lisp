@@ -1,4 +1,4 @@
-;;;; A hash table guarded by a reentrant lock. ARCH-0003 R1 and R2.
+;;;; A hash table guarded by a reentrant lock. DES-0003 R1 and R2.
 ;;;;
 ;;;; The lock is a constructor argument rather than a private field the type
 ;;;; mints for itself, and that one choice is the whole design. Several
@@ -36,7 +36,7 @@ with the same :LOCK are guarded together."
 (defun make-protected-table (&key (test #'equal) lock)
   "A protected table guarded by LOCK, or by a fresh lock of its own.
 Defaulting rather than requiring it keeps a standalone table usable, but every
-table the graph owns is constructed with the graph's lock (ARCH-0003 R3)."
+table the graph owns is constructed with the graph's lock (DES-0003 R3)."
   (%make-protected-table (make-hash-table :test test)
                          (or lock (bt:make-recursive-lock "loom-protected-table"))))
 

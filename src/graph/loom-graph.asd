@@ -6,7 +6,7 @@
   :author "Brian Eberman"
   :license "MIT"
   ;; BORDEAUX-THREADS is an accepted layering cost, not an oversight
-  ;; (ARCH-0003 R6): PROTECTED-TABLE lives here and never in loom-ontology, so
+  ;; (DES-0003 R6): PROTECTED-TABLE lives here and never in loom-ontology, so
   ;; RULE-0001 is untouched, and loom-knowledge gains thread safety from the
   ;; layer beneath it without acquiring a lock or a write path of its own.
   :depends-on (#:loom-ontology #:bordeaux-threads)
@@ -32,11 +32,11 @@
   :author "Brian Eberman"
   :license "MIT"
   ;; BORDEAUX-THREADS is declared rather than inherited: "concurrency" spawns
-  ;; threads, and after ARCH-0003 R6 it would arrive transitively through
+  ;; threads, and after DES-0003 R6 it would arrive transitively through
   ;; loom-graph anyway -- but a test system that spawns threads should say so
   ;; rather than depend on a neighbour's dependency list not changing.
   ;; LOOM-ANALYZER is here for one test and it is worth saying which.
-  ;; ARCH-0011 R5 requires a fixture that runs *both* passes over one
+  ;; DES-0011 R5 requires a fixture that runs *both* passes over one
   ;; definition set and asserts their natural keys meet -- the text pass being
   ;; the analyzer's, which this system cannot otherwise reach. The direction is
   ;; already precedented in the other direction (loom-analyzer/test depends on

@@ -1,6 +1,6 @@
 ;;;; The REPL tier: a stateful session, not a fresh eval per call (R9).
 ;;;;
-;;;; ARCH-0006 traced what a terminal REPL actually preserves between lines and
+;;;; DES-0006 traced what a terminal REPL actually preserves between lines and
 ;;;; found it is less than it looks: no lexical binding survives a form
 ;;;; finishing, and what does survive is only what ordinary Common Lisp already
 ;;;; makes global -- *PACKAGE*, and any symbol a form gave a value through SETQ,
@@ -9,7 +9,7 @@
 ;;;; stateless design cannot give: a package of its own that persists between
 ;;;; calls. Everything else falls out of Lisp.
 ;;;;
-;;;; The distinction this file exists to keep is the one ARCH-0006 names
+;;;; The distinction this file exists to keep is the one DES-0006 names
 ;;;; explicitly so a later implementer does not collapse it: a condition
 ;;;; signalled by the *submitted form* is the answer, returned as :CONDITION
 ;;;; inside a successful result, exactly as a real REPL prints a condition and
@@ -19,8 +19,8 @@
 ;;;; while every other test still passes.
 ;;;;
 ;;;; Granting :repl is not granting a bigger :write. A submitted form can call
-;;;; APPLY-TRANSACTION directly and get the graph's own lock (ARCH-0003) but not
-;;;; ARCH-0004's repository-level torn-view protection, which is a property of
+;;;; APPLY-TRANSACTION directly and get the graph's own lock (DES-0003) but not
+;;;; DES-0004's repository-level torn-view protection, which is a property of
 ;;;; INDEX-REPOSITORY, POLL-ONCE and REINDEX-REPOSITORY rather than of the
 ;;;; graph. That is why the tier is separate and never implied.
 
@@ -48,7 +48,7 @@ package this session minted, and the only one it may delete."
   "Guards *REPL-SESSIONS*.
 
 New state that N Hunchentoot worker threads share, so it needs a lock of its
-own. This is not the \"no new locking code\" ARCH-0006 rules out, which is
+own. This is not the \"no new locking code\" DES-0006 rules out, which is
 about loom-workspace and loom-graph: nothing below this system knows these
 sessions exist.
 
@@ -57,7 +57,7 @@ may run for as long as it likes, and a second caller's REPL-CLOSE should not
 wait for it.")
 
 (defparameter *max-repl-sessions* 8
-  "How many sessions may be open at once. ARCH-0006 asks for a small cap and a
+  "How many sessions may be open at once. DES-0006 asks for a small cap and a
 structured error naming it, rather than an unbounded table.")
 
 (defparameter *repl-session-idle-timeout* 1800
@@ -65,7 +65,7 @@ structured error naming it, rather than an unbounded table.")
 
 Lazily, on every repl-tier operation, and deliberately not by a supervising
 thread. Loom already has one thread pattern needing its own supervision story
-(the per-repository monitor, ARCH-0003/0004), and a session retaining a little
+(the per-repository monitor, DES-0003/0004), and a session retaining a little
 memory until the next repl call sweeps it is a bounded, cheap cost next to a
 second kind of supervised thread with the same RULE-0004 discipline to uphold.")
 
@@ -86,7 +86,7 @@ hand the service's stdin to a caller who does not have one.")
 (defun drop-repl-session (session)
   "Forget SESSION and delete the package it minted.
 
-ARCH-0006 does not say to delete it. Leaving it interned leaks one package per
+DES-0006 does not say to delete it. Leaving it interned leaks one package per
 session for the life of the process, which is exactly the unbounded cost the
 cap exists to prevent."
   (remhash (repl-session-id session) *repl-sessions*)

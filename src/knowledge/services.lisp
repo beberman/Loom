@@ -43,7 +43,7 @@ type-specific detail lives."
         :source    (source entity)
         :confidence (confidence entity)
         ;; NIL for every type but :CALL-SITE, and read with GETP so it stays
-        ;; that way without a type test here. ARCH-0014 R7 obliges a call site
+        ;; that way without a type test here. DES-0014 R7 obliges a call site
         ;; to be shown with its line and kind rather than as a bare id: the line
         ;; is already in :LOCATION, and the kind is the one fact distinguishing
         ;; an ambiguous fan-out from a definer body's call, which a reader will
@@ -96,7 +96,7 @@ IMPACT-SET first and IMPACT-SET-TRUNCATED-P second, not both in hash order."
 
 PLAN-0014 step 10's recorded fallback, taken because the measurement it asked
 for showed it was needed. A call site's name is \"<call-name>@<file>:<line>\"
-(ARCH-0014), so the pattern that names its callee matches it as a *prefix* --
+(DES-0014), so the pattern that names its callee matches it as a *prefix* --
 rank 1 -- and it therefore outranks every rank-2 substring match among the real
 definitions. Measured on this tree: 7 of 86 terms lost between one and five real
 definitions off `find''s silent 20-hit cap (REQ-0005), `id' losing two
@@ -146,7 +146,7 @@ as \"calls: these; called-by: those\" rather than as a flat edge dump."
                         :entities  (reverse entities)))))
 
 ;;;; ------------------------------------------------------------------
-;;;; A bounded answer for a document-shaped entity (ARCH-0005)
+;;;; A bounded answer for a document-shaped entity (DES-0005)
 ;;;;
 ;;;; A document's :BODY is however long its author made it -- COLLECT-BODY
 ;;;; concatenates up to eight prose fields with no cap -- so a caller that
@@ -156,7 +156,7 @@ as \"calls: these; called-by: those\" rather than as a flat edge dump."
 ;;;; the author actually wrote, which is the fabrication CON-0001 forbids.
 ;;;;
 ;;;; *SUMMARY-TOKEN-BUDGET* and BOUNDED-TEXT sit here rather than beside
-;;;; *CONTEXT-TOKEN-BUDGET* in context.lisp, which is where ARCH-0005 put them,
+;;;; *CONTEXT-TOKEN-BUDGET* in context.lisp, which is where DES-0005 put them,
 ;;;; for a load-order reason: loom-knowledge.asd is :serial with services
 ;;;; before context, and a compile-time reference to a DEFPARAMETER not yet
 ;;;; seen is a full WARNING in SBCL, which sets COMPILE-FILE's failure-p and so
@@ -168,6 +168,8 @@ as \"calls: these; called-by: those\" rather than as a flat edge dump."
 (defparameter *summary-fields-by-type*
   '((:document . (:summary))
     (:concept  . (:summary))
+    (:design   . (:summary))
+    (:architecture . (:summary :invariants))
     (:decision . (:summary :rationale))
     (:rule     . (:summary :statement)))
   "Per document type, the properties to try for a summary, best first.

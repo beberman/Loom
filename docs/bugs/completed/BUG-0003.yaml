@@ -1,0 +1,98 @@
+id: BUG-0003
+title: A macro that stops qualifying as a definer never un-mints what it generated
+status: closed
+date: 2026-07-30
+refines: [PLAN-0001]
+affects: [generated-entity-retractions, resolve-generated-definitions]
+summary: |
+  RESOLVE-GENERATED-DEFINITIONS' retract half swept entities against
+  EFFECTIVE-GENERATOR-REGISTRY, which names only macros that qualify as
+  definers *right now*. A macro edited so its template no longer defines
+  anything drops out of that index the same instant it stops qualifying, so
+  the entity it previously minted stopped being retracted -- the predicate
+  reads exactly like "this was never a macro" and "this macro just stopped
+  qualifying" as the same case, and only leaves the second one alone. The
+  incrementally polled index then permanently disagreed with a full rebuild
+  for any repository where an in-tree definer macro is edited into a wrapper
+  without its call sites' own files also changing. PLAN-0001 step 5c named
+  this exact risk in advance and assigned the covering test to the tester,
+  because no existing test exercised a definer macro at all.
+body: |
+  SYMPTOM
+
+  src/workspace/test/workspace.lisp,
+  A-MACRO-THAT-STOPS-BEING-A-DEFINER-UN-MINTS-WHAT-IT-GENERATED: write a
+  macro DEF-WIDGET whose template is `(defun ,name () :widget), call it from
+  a second file, poll -- MY-WIDGET exists as a :function entity carrying
+  :generated-by "def-widget". Rewrite DEF-WIDGET's template into
+  `(progn (setf *last-widget* ',name)) -- no defun/defclass/defmethod, so it
+  no longer qualifies -- leave the calling file untouched, poll again:
+
+    the macro no longer produces it, so this pass's own recomputed
+    output must take it back -- no single file's retraction would have
+
+  MY-WIDGET was still present. A second assertion in the same test, comparing
+  a REINDEX-REPOSITORY rebuild against the incrementally polled index,
+  failed identically:
+
+    a rebuild must not still hold the entity the incremental poll took back
+
+  Both failures reproduced exactly as PLAN-0001's own RISKS section for step
+  5 predicted under "Retracting too little", before any test existed to run
+  it.
+
+  CAUSE
+
+  GENERATED-ENTITY-RETRACTIONS (src/graph/resolve.lisp) decided whether to
+  retract a generated entity with:
+
+    (when (and generator
+               (gethash (string-downcase generator) index)
+               (not (gethash (id entity) produced)))
+      (push (retract (id entity) workspace-id) ops))
+
+  where INDEX was EFFECTIVE-GENERATOR-REGISTRY -- the shipped registry plus
+  every workspace :FUNCTION entity that *currently* carries
+  :GENERATOR-ENTITY-TYPE. :GENERATOR-ENTITY-TYPE is exactly the property a
+  macro loses the moment its template is edited into a wrapper (R1's "none of
+  the three [forms] present: records nothing at all"). Once DEF-WIDGET's
+  reanalysis dropped that property, "def-widget" was no longer a key in
+  INDEX at all, so the membership test failed for the same reason it fails
+  for a name that was never a macro. The predicate could not distinguish
+  "this generator was never ours to sweep" from "this generator was ours and
+  just resigned", and only the first is the case the guard was written to
+  protect (a DEFSTRUCT accessor's :GENERATED-BY naming a class). The second
+  case is precisely the lifecycle event this pass exists to own, per
+  DES-0002's R7, and the predicate silently exempted it.
+
+  WHY IT HID
+
+  Every existing test that exercised the retract half kept the generating
+  macro unchanged and retracted the *call site's* file instead
+  (A-CALL-SITE-THAT-DISAPPEARS-TAKES-ITS-GENERATED-ENTITY-WITH-IT) -- a case
+  RETRACT-FILE already handles on its own, since the entity's origin-file is
+  the calling file. That test's own comment says as much: "the case
+  retract-file cannot handle is the macro changing while the call site's
+  file does not, which needs the workspace pipeline to show." No test drove
+  that second path, so EFFECTIVE-GENERATOR-REGISTRY and
+  GENERATED-ENTITY-RETRACTIONS were never both exercised at a moment when
+  they disagreed. The bug was invisible to `status` too: entity counts still
+  looked plausible with one stale generated function sitting in an otherwise
+  large self-index, and no rule checks a generated entity's provenance
+  against its generator's current shape.
+
+  FIX
+
+  Added KNOWN-GENERATOR-NAMES (src/graph/resolve.lisp), a second index built
+  the same way as EFFECTIVE-GENERATOR-REGISTRY except that a workspace macro
+  contributes its name by carrying :MACRO-P -- set unconditionally by
+  MAKE-MACRO-ENTITY and untouched by whether the template currently
+  qualifies as a definer -- rather than by carrying :GENERATOR-ENTITY-TYPE.
+  GENERATED-ENTITY-RETRACTIONS now sweeps against KNOWN-GENERATOR-NAMES
+  instead of EFFECTIVE-GENERATOR-REGISTRY, so a macro that stops qualifying
+  is still recognised as "ours to sweep" and its orphaned entities are
+  retracted on the next resolve-and-check, while a DEFSTRUCT/DEFCLASS
+  :GENERATED-BY (naming a class, never a :MACRO-P function) is still left
+  alone. GENERATED-DEFINITION-PLAN's minting path is unchanged and
+  deliberately still reads EFFECTIVE-GENERATOR-REGISTRY, since minting must
+  use only currently-qualifying generators.

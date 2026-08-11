@@ -1,5 +1,5 @@
 ;;;
-;;; Tests for src/analyzer/lisp-reader.lisp -- the Eclector client. ARCH-0013.
+;;; Tests for src/analyzer/lisp-reader.lisp -- the Eclector client. DES-0013.
 ;;;
 ;;; These exercise READ-SOURCE directly rather than through ANALYZE-FILE,
 ;;; because the point of the file is that it is a pure function of a string and
@@ -33,7 +33,7 @@
 
 (test every-form-has-a-range-at-every-depth
   ;; What ELEMENT-SPANS existed to produce for one form shape, now true of all
-  ;; of them. ARCH-0013 R1.
+  ;; of them. DES-0013 R1.
   (let* ((reading (rs "(defun foo (x)
   (bar x))"))
          (top (first (first (loom-analyzer::reading-forms reading))))
@@ -48,7 +48,7 @@
       (is (= 2 end)))))
 
 (test an-inline-method-clause-gets-its-own-range
-  ;; ARCH-0010 needed a whole design and a re-read of the file for this, and
+  ;; DES-0010 needed a whole design and a re-read of the file for this, and
   ;; declared the whole DEFGENERIC's range as the fallback when it failed.
   (let* ((reading (rs "(defgeneric g (x)
   (:documentation \"d\")
@@ -155,7 +155,7 @@
               "and the file is not marked unreadable")))
 
 (test a-repaired-form-is-recorded-and-never-handed-on
-  ;; ARCH-0013 R4, and the measured reason it exists: recovering an
+  ;; DES-0013 R4, and the measured reason it exists: recovering an
   ;; unterminated list swallows the NEXT definition into the damaged one's
   ;; body, so a repaired form offered to pass 1 would mint an entity whose
   ;; range covers text defining something else -- with no count moving to say
@@ -204,7 +204,7 @@
         "a branch that was taken is no gap")))
 
 (test a-reader-macro-is-distinguishable-from-a-list-that-looks-like-one
-  ;; ARCH-0013 R12's input. COLLECT-CALL-NAMES cannot tell these apart today
+  ;; DES-0013 R12's input. COLLECT-CALL-NAMES cannot tell these apart today
   ;; and its docstring says so.
   (let* ((reading (rs "(defun f () (mapcar #'target xs) '(not a call))"))
          (top (first (first (loom-analyzer::reading-forms reading))))

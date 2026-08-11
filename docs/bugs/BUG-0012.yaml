@@ -2,11 +2,11 @@ id: BUG-0012
 title: A collided entity's outgoing edges are a union of every colliding definition's edges, not the surviving one's
 status: open
 date: 2026-08-06
-refines: [PLAN-0009, ARCH-0010]
+refines: [PLAN-0009, DES-0010]
 affects: [generic-definition-entities, method-entity-from-tail, absorb-entity]
 tags: [analyzer, graph, lisp, clos, blind-spot]
 summary: |
-  ARCH-0010 R4 discloses that an inline (:method ...) clause and a standalone
+  DES-0010 R4 discloses that an inline (:method ...) clause and a standalone
   DEFMETHOD with identical name, qualifier and specializers in the same file
   collide into one entity id, and that ABSORB-ENTITY makes the later
   definition's properties win outright. That much is true and is now tested
@@ -98,7 +98,7 @@ body: |
   generic's name, qualifier and specializers in the same file now collide
   silently, with no compiler warning, because they are two different pieces
   of syntax and CL's own redefinition warning does not fire across them.
-  ARCH-0010's CONSEQUENCES section reasons about the collision at the level
+  DES-0010's CONSEQUENCES section reasons about the collision at the level
   of "which properties win" and states the analogy to CL's load-order
   semantics, which is accurate for properties -- but a `describe` or `impact`
   query surfaces edges, not the property table, and nothing in the design or

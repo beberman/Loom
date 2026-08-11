@@ -43,7 +43,7 @@
 to be able to ask the same question again")))
 
 (test an-ordinary-resolving-call-mints-no-call-site
-  ;; ARCH-0014 R2, and the test R2 actually turns on: its whole-tree
+  ;; DES-0014 R2, and the test R2 actually turns on: its whole-tree
   ;; counterpart in the workspace suite bounds the population, but this is what
   ;; says the common path is untouched. 2527 of this tree's 2557 resolving
   ;; call-name occurrences look exactly like this one, and every one of them
@@ -59,12 +59,12 @@ to be able to ask the same question again")))
                (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
         "the edge is the one it always was, sourced at the caller")
     (is (null (entities-of-type g :call-site))
-        "and no node is interposed. ARCH-0014: a :CALL-SITE is minted exactly
+        "and no node is interposed. DES-0014: a :CALL-SITE is minted exactly
 when a call name cannot be expressed as a :CALLS edge from an existing
 definition entity -- here it can, so there is nothing for one to carry")))
 
 (test a-call-site-is-a-caller-like-any-other
-  ;; ARCH-0014, PLAN-0014 step 4. RESOLVE-CALLS walked '(:function :method
+  ;; DES-0014, PLAN-0014 step 4. RESOLVE-CALLS walked '(:function :method
   ;; :test), so a :CALL-SITE entity sitting in the graph was simply never
   ;; looked at -- the pass that turns a name into an edge did not know the type
   ;; existed. Nothing mints one yet, which is the point: the plumbing lands
@@ -206,7 +206,7 @@ matching nothing")))
         "still reaching both candidates")))
 
 ;;; ------------------------------------------------------------------
-;;; Definitions: inheritance, dispatch, protocols (ARCH-0001)
+;;; Definitions: inheritance, dispatch, protocols (DES-0001)
 ;;; ------------------------------------------------------------------
 
 (defun r-class (graph name file &key superclasses (kind :class))
@@ -267,18 +267,18 @@ matching nothing")))
 
 (test a-method-with-no-declared-generic-gets-no-protocol-edge
   ;; An implicit generic has no defgeneric form and so no source region.
-  ;; ARCH-0001 refuses to synthesise one rather than invent a location.
+  ;; DES-0001 refuses to synthesise one rather than invent a location.
   (let* ((g (make-graph))
          (method (r-method g "draw" "a.lisp" :specializers '("shape"))))
     (apply-transaction g (resolve-method-protocols g))
     (is (null (relationships-from g (id method) :rel-type :implements)))))
 
 ;;; ------------------------------------------------------------------
-;;; Generated definitions reach their generator (ARCH-0002 R6)
+;;; Generated definitions reach their generator (DES-0002 R6)
 ;;; ------------------------------------------------------------------
 
 (test a-generated-name-points-back-at-the-form-that-generated-it
-  ;; The measured defect ARCH-0002 opens with: :GENERATED-BY was already on
+  ;; The measured defect DES-0002 opens with: :GENERATED-BY was already on
   ;; every DEFSTRUCT accessor and every DEFCLASS slot accessor, but a property
   ;; is not an edge, so changing a structure reached none of its accessors'
   ;; callers. Both entity types are here because they take different shapes --
@@ -310,7 +310,7 @@ matching nothing")))
     (is (null (relationships-from g (id accessor) :rel-type :uses)))))
 
 ;;; ------------------------------------------------------------------
-;;; Definitions a macro call brings into existence (ARCH-0002 R5, R7)
+;;; Definitions a macro call brings into existence (DES-0002 R5, R7)
 ;;; ------------------------------------------------------------------
 
 (defun r-file (graph path &key call-sites)
@@ -384,7 +384,7 @@ the retract half can recognise what it made")
 :generated-by property still records what made it"))))
 
 (test a-minted-entity-inherits-the-system-of-the-file-that-called-the-macro
-  ;; ARCH-0009 R6. A macro-minted entity has no form of its own to read a
+  ;; DES-0009 R6. A macro-minted entity has no form of its own to read a
   ;; package from, so the calling file's is the only fact available -- and
   ;; without it every :TEST in the tree would be unplaceable, which
   ;; EDGES-BETWEEN-SYSTEMS reads as "not evidence of a violation" rather than
@@ -469,7 +469,7 @@ the retract half can recognise what it made")
   ;; names their bodies call attach to nothing -- every REST route and every MCP
   ;; tool invisible in the call graph.
   ;;
-  ;; `not-here' is decision 2 asserted rather than assumed. ARCH-0014 R4 reads
+  ;; `not-here' is decision 2 asserted rather than assumed. DES-0014 R4 reads
   ;; literally as one node per name, which on this tree is 266 nodes of which
   ;; 142 name something that is not there; a node per absent callee is a node
   ;; per thing that does not exist, and the fact that the name went nowhere
@@ -502,7 +502,7 @@ nothing")
             "and the call reaches its callee, which is the whole of BUG-0016")))))
 
 (test a-definer-call-site-that-minted-a-definition-mints-no-call-site
-  ;; ARCH-0014 R4's last clause, and the disjointness the two populations rely
+  ;; DES-0014 R4's last clause, and the disjointness the two populations rely
   ;; on: a site that minted an entity mints no call site, because the entity
   ;; already carries the site's :CALL-NAMES and RESOLVE-CALLS sources the edge
   ;; at it. Minting both would double every fiveam TEST body's calls.
@@ -521,14 +521,14 @@ nothing")
 (test an-introspected-entity-does-not-block-the-call-site-that-explains-it
   ;; The same guard, and the one claim it must not read as a rival. An
   ;; :INTROSPECTED entity is this very definition seen from the other side --
-  ;; the compiler reporting what the macro call expanded into (ARCH-0011 R6) --
+  ;; the compiler reporting what the macro call expanded into (DES-0011 R6) --
   ;; and enrichment mints exactly these, since a macro-generated name is what
   ;; the text pass cannot see and the image can. Counted as hand-written, the
   ;; first enrich would be the last pass able to mint here: the key would stay
   ;; occupied, every later pass would report a collision it could do nothing
   ;; about, and the :USES edge back to the macro would never be drawn -- so
   ;; `impact' on the macro would stop reaching what it generates, which is the
-  ;; whole of ARCH-0002.
+  ;; whole of DES-0002.
   (let* ((g (make-graph))
          (macro (r-macro g "struct-simplefn" "macros.lisp")))
     (add-entity g (make-instance 'function-entity
@@ -550,10 +550,10 @@ nothing")
           "and nothing is reported as a collision, because nothing collided"))))
 
 (test a-hand-written-definition-survives-a-colliding-generated-call-site
-  ;; ARCH-0002 R5's collision guard, and the trigger PLAN-0001 step 5b names as
+  ;; DES-0002 R5's collision guard, and the trigger PLAN-0001 step 5b names as
   ;; the one that can silently not fire: a call site whose name matches a
   ;; natural key a real, hand-written DEFUN already claims must not be
-  ;; overwritten. Two halves are asserted, per ARCH-0002 CONSEQUENCES -- the
+  ;; overwritten. Two halves are asserted, per DES-0002 CONSEQUENCES -- the
   ;; hand-written entity survives untouched, AND the collision is counted,
   ;; because "did not crash" alone is indistinguishable from a guard that
   ;; quietly stopped guarding.
@@ -578,7 +578,7 @@ indistinguishable from nothing having happened")
       (is (null (relationships-from g (id survivor) :rel-type :uses))
           "no edge to the macro, because nothing was minted to carry one")
       (is (= 1 (length (generated-definition-collisions g nil)))
-          "counted rather than merely not crashing -- the trigger ARCH-0002
+          "counted rather than merely not crashing -- the trigger DES-0002
 warns can silently not fire")
       (is (equal (cons "geo.lisp" "geo")
                  (first (generated-definition-collisions g nil)))))))
@@ -614,7 +614,7 @@ not a retract-plus-assert, which could remove what it had just landed")
 does not survive by having been produced once")))
 
 (test a-definer-site-whose-macro-becomes-characterised-loses-its-call-sites
-  ;; PLAN-0014 step 9, and the case ARCH-0014 R6 got wrong. "RETRACT-FILE needs
+  ;; PLAN-0014 step 9, and the case DES-0014 R6 got wrong. "RETRACT-FILE needs
   ;; nothing" is true of the analyzer's initform sites and false of these two
   ;; kinds: the call site's origin file is geo.lisp and geo.lisp never changes,
   ;; so nothing retracts a site that the macro's own file stopped orphaning.
@@ -688,7 +688,7 @@ produced once")))
     (setp accessor :generated-by "repository")
     (apply-transaction g (resolve-generated-definitions g :registry nil))
     (is (not (null (get-entity g (id accessor))))
-        "still there, and the ARCH-0001 output the whole index depends on")))
+        "still there, and the DES-0001 output the whole index depends on")))
 
 (defun r-test (graph name file &key call-names)
   (let ((e (make-instance 'test-entity :name name :origin-file file
@@ -701,7 +701,7 @@ produced once")))
     e))
 
 (test a-test-body-resolves-its-calls-like-any-other-caller
-  ;; ARCH-0002 R8. Without this the minted entities exist with no edges and
+  ;; DES-0002 R8. Without this the minted entities exist with no edges and
   ;; impact still reports nothing, which is the whole payoff missed by one
   ;; missing element of a type list.
   (let* ((g (make-graph))
@@ -716,7 +716,7 @@ produced once")))
 correct rather than a gap: fiveam is external to every indexed tree")))
 
 (test coverage-is-derived-from-what-a-test-body-calls
-  ;; ARCH-0002 R9, and the payoff the whole sequence exists for: until this
+  ;; DES-0002 R9, and the payoff the whole sequence exists for: until this
   ;; ran, the graph held no :tests edge at all and `impact' could not answer
   ;; which tests cover a change. The :interface case is why step 1 widened
   ;; :tests -- a test calling a defclass slot accessor directly still covers it.
@@ -756,7 +756,7 @@ correct rather than a gap: fiveam is external to every indexed tree")))
                  (mapcar #'name (impact-result-tests result)))))))
 
 ;;; ------------------------------------------------------------------
-;;; Dispatched calls fan out (ARCH-0001 R4)
+;;; Dispatched calls fan out (DES-0001 R4)
 ;;; ------------------------------------------------------------------
 
 (test a-dispatched-call-reaches-every-candidate-method
@@ -776,7 +776,7 @@ correct rather than a gap: fiveam is external to every indexed tree")))
           "a name that fanned out is resolved, not outstanding"))))
 
 (test one-method-means-the-dispatch-is-certain
-  ;; 70% of the generics in the repository that motivated ARCH-0001 have
+  ;; 70% of the generics in the repository that motivated DES-0001 have
   ;; exactly one method, so this is the common case and not a corner.
   (let* ((g (make-graph))
          (caller (r-function g "render" "a.lisp" :unresolved '("draw"))))

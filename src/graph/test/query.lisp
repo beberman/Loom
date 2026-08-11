@@ -68,7 +68,7 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
                                :origin-file "notes.md"
                                :properties (properties-table '(:path "notes.md"))))
          (adr   (make-instance 'decision-entity :name "ADR-1"
-                               :origin-file "docs/design/ADR-1.yaml"
+                               :origin-file "docs/decisions/ADR-1.yaml"
                                :properties (properties-table
                                             '(:doc-id "ADR-1"
                                               :decision "Alpha stays synchronous.")))))
@@ -224,7 +224,7 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
         "but what it led to must not silently disappear either")))
 
 ;;; ------------------------------------------------------------------
-;;; entity-system and edges-between-systems (SS6.3, ARCH-0009)
+;;; entity-system and edges-between-systems (SS6.3, DES-0009)
 ;;;
 ;;; A fixture states its :system literally rather than encoding it in a path.
 ;;; That is not a convenience: ENTITY-SYSTEM no longer parses paths at all, so
@@ -236,7 +236,7 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
 ;;;
 ;;; The three path-parsing tests that lived here were ported to
 ;;; src/analyzer/test/analyzer.lisp, where the computation moved. Deleting
-;;; rather than leaving them is what makes ARCH-0009's "one copy, not two"
+;;; rather than leaving them is what makes DES-0009's "one copy, not two"
 ;;; true of the tests as well as of the function.
 ;;; ------------------------------------------------------------------
 

@@ -8,7 +8,7 @@
   ;; Not #:loom-rest. The two protocol skins are peers over one registry, and
   ;; the shared listener is reached through loom-serve's registration seam
   ;; rather than through either naming the other. Not #:loom-process either,
-  ;; for ARCH-0006 R5's reason; tools/load-test.lisp is the instrument.
+  ;; for DES-0006 R5's reason; tools/load-test.lisp is the instrument.
   :depends-on (#:loom-serve
 	       #:hunchentoot
 	       #:cl-json)

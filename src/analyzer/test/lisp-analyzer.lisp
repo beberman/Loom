@@ -77,7 +77,7 @@ leaves the index")
   ;; every definition in the file, including the perfectly readable one above
   ;; it, and REQ-0019 R3 is that it should not.
   ;;
-  ;; The recovered form is dropped rather than trusted (ARCH-0013 R4): Eclector
+  ;; The recovered form is dropped rather than trusted (DES-0013 R4): Eclector
   ;; repairs an unterminated list by closing it, which on a longer file
   ;; swallows the NEXT definition into the damaged one's body, so a repaired
   ;; form must never reach pass 1.
@@ -187,10 +187,10 @@ TOKEN-NAME ever reads -- the prefix carries nothing worth failing over"))))
   ;; The leading comment is the whole point: it puts the first form at a
   ;; non-zero offset, which is where the two conventions started to differ.
   ;;
-  ;; ARCH-0013 removed the mechanism the bug lived in -- READ-SOURCE reads one
+  ;; DES-0013 removed the mechanism the bug lived in -- READ-SOURCE reads one
   ;; stream straight through and never seeks -- so this is now a regression
   ;; guard on the tuple's contract rather than on that arithmetic. It stays
-  ;; because the contract is what ARCH-0010 R1 named and what
+  ;; because the contract is what DES-0010 R1 named and what
   ;; ANALYZE-FILE's DESTRUCTURING-BIND still takes apart.
   ;;
   ;; Reached into with :: deliberately. The walk is not protocol -- SS8.1 makes
@@ -212,8 +212,8 @@ the first miscounted span")
                        forms)))
     ;; Four elements, not three: the fourth is the character offset of the
     ;; form's first character. ELEMENT-SPANS was its only consumer and it is
-    ;; gone, so the element is vestigial -- but ARCH-0010 R1 named the widened
-    ;; tuple as a requirement, and ARCH-0013 keeps it rather than break that
+    ;; gone, so the element is vestigial -- but DES-0010 R1 named the widened
+    ;; tuple as a requirement, and DES-0013 keeps it rather than break that
     ;; requirement to save one cons per top-level form.
     (is (equal '((2 2 22) (4 4 44) (6 6 62))
                (mapcar #'rest forms))
@@ -271,7 +271,7 @@ the first miscounted span")
     (is (null (find-by-name g :function "incf")))))
 
 ;;; ------------------------------------------------------------------
-;;; Definer call sites (ARCH-0002 R2)
+;;; Definer call sites (DES-0002 R2)
 ;;;
 ;;; Driven by literal source strings rather than by test/fixtures/sample.lisp.
 ;;; Several tests above count the entities and ops the shared fixture produces,
@@ -288,7 +288,7 @@ the first miscounted span")
     (values g (find-by-name g :file path))))
 
 ;;; ------------------------------------------------------------------
-;;; Package declarations (ARCH-0015, PLAN-0015 step 3)
+;;; Package declarations (DES-0015, PLAN-0015 step 3)
 
 (test a-defpackage-records-its-aliases-uses-exports-and-every-import-clause
   (multiple-value-bind (g file) (analyze-source "
@@ -356,7 +356,7 @@ the first miscounted span")
         "the DEFPACKAGE between them must not have become the current package")))
 
 ;;; ------------------------------------------------------------------
-;;; What the reader passed over, on the file entity (ARCH-0013, PLAN-0013 R5)
+;;; What the reader passed over, on the file entity (DES-0013, PLAN-0013 R5)
 ;;;
 ;;; The mechanism landed with READ-SOURCE; this is the reporting half, and the
 ;;; thing it has to get right is which gaps are worth reporting. Comments reach
@@ -391,7 +391,7 @@ the first miscounted span")
           "a stray paren between forms costs no definition"))))
 
 (test a-repaired-form-mints-nothing-and-says-what-it-cost
-  ;; ARCH-0013 R4's other half. Recovering an unterminated list swallows the
+  ;; DES-0013 R4's other half. Recovering an unterminated list swallows the
   ;; NEXT definition into the damaged one's body, so a repaired form handed to
   ;; pass 1 would mint a :FUNCTION named b whose range covers the text defining
   ;; c -- and c would vanish with no count moving to say so. The entity is
@@ -479,7 +479,7 @@ nothing"))))
 ;;; ------------------------------------------------------------------
 
 (test a-qualified-call-records-the-prefix-the-site-wrote
-  ;; The fact INTERN-FOREIGN-SYMBOL-LOCALLY destroyed. Before ARCH-0013 the
+  ;; The fact INTERN-FOREIGN-SYMBOL-LOCALLY destroyed. Before DES-0013 the
   ;; prefix was absorbed into a throwaway package at read time and TOKEN-NAME
   ;; read SYMBOL-NAME alone, so by the time anything could have recorded it the
   ;; evidence was gone.
@@ -561,7 +561,7 @@ one"))))
     (is (null (getp (find-by-name g :function "f") :qualified-calls)))))
 
 ;;; ------------------------------------------------------------------
-;;; Reader-produced quotation (ARCH-0013 R12, PLAN-0013 step 8)
+;;; Reader-produced quotation (DES-0013 R12, PLAN-0013 step 8)
 ;;;
 ;;; The one step that deliberately changes the walk's output, which is why it
 ;;; lands after the parity steps rather than inside them. Both cases below were
@@ -652,14 +652,14 @@ one"))))
           "nor is a keyword head inside a definer call site's arguments"))))
 
 ;;; ------------------------------------------------------------------
-;;; Initform call sites (BUG-0017, ARCH-0014 R3, PLAN-0014 step 6)
+;;; Initform call sites (BUG-0017, DES-0014 R3, PLAN-0014 step 6)
 ;;;
 ;;; The half of BUG-0017 its own FIX could not choose. A designator in an
 ;;; initform never reached COLLECT-CALL-NAMES at all -- ANALYZE-FILE hands
 ;;; NOTE-DEFINITION no :body for a DEFVAR, DEFPARAMETER, DEFCLASS or
 ;;; DEFINE-CONDITION -- and the reason the fix stalled once it did was that the
 ;;; recorded caller would have been a :VARIABLE, which :CALLS refuses as a
-;;; source. ARCH-0014's answer is a :CALL-SITE the variable contains, so the
+;;; source. DES-0014's answer is a :CALL-SITE the variable contains, so the
 ;;; ontology question that blocked it does not arise.
 ;;; ------------------------------------------------------------------
 
@@ -714,7 +714,7 @@ contains variable contains call-site")
   ;; TABLE would bury the handful of names that point at another file. Also the
   ;; guard on the ceiling test in src/workspace/test/workspace.lisp -- an
   ;; unfiltered initform walk mints a call site for most DEFPARAMETERs in the
-  ;; tree, which is the uniform model ARCH-0014 refused arriving by accident.
+  ;; tree, which is the uniform model DES-0014 refused arriving by accident.
   (multiple-value-bind (g file)
       (analyze-source "(defparameter *table* (make-hash-table :test #'equal))")
     (declare (ignore file))
@@ -736,7 +736,7 @@ contains variable contains call-site")
         "the shadowed DEFPARAMETER's initform is dead code and mints nothing")))
 
 ;;; ------------------------------------------------------------------
-;;; Pass 1's dispatch table (ARCH-0013 R13, PLAN-0013 step 9)
+;;; Pass 1's dispatch table (DES-0013 R13, PLAN-0013 step 9)
 ;;;
 ;;; Behaviour-preserving, and the only step in the plan that is not about the
 ;;; reader at all. What it removes is a synchronisation *DEFINITION-HEADS*'
@@ -744,7 +744,7 @@ contains variable contains call-site")
 ;;; ------------------------------------------------------------------
 
 (test the-dispatch-table-refuses-a-duplicate-head
-  ;; The risk ARCH-0013 names, and the reason this table's semantics are the
+  ;; The risk DES-0013 names, and the reason this table's semantics are the
   ;; opposite of the four registries REQ-0004 built. Those replace by name,
   ;; because they exist to be extended by third parties. This one is exhaustive
   ;; over a fixed set the analyzer owns, so a duplicated head must be a
@@ -890,7 +890,7 @@ what resolution has to refuse, not the whole entry"))))
 (test a-function-quotation-of-a-foreign-name-lands-in-call-names
   ;; game-server's DHANDLER-DELETE shape reduced to one line: the name is
   ;; defined in another file, so pass 2 records it for RESOLVE-CALLS rather
-  ;; than emitting an edge. This is what ARCH-0010 R7 asked for and BUG-0011
+  ;; than emitting an edge. This is what DES-0010 R7 asked for and BUG-0011
   ;; found missing.
   (multiple-value-bind (g file)
       (analyze-source "(defun run (args) (apply #'make-selector args))")
@@ -938,7 +938,7 @@ what resolution has to refuse, not the whole entry"))))
       (is (equal '("item") (getp run :call-names))))))
 
 ;;; ------------------------------------------------------------------
-;;; What a DEFMETHOD produces, recorded bit for bit (ARCH-0010 R3)
+;;; What a DEFMETHOD produces, recorded bit for bit (DES-0010 R3)
 ;;;
 ;;; An inverted guard, and it is worth saying so plainly: these literals were
 ;;; recorded mechanically from the analyzer *before* METHOD-DEFINITION-ENTITY
@@ -1094,7 +1094,7 @@ that would be a guard over a guess.")
             "~a" source)))))
 
 ;;; ------------------------------------------------------------------
-;;; Inline DEFGENERIC methods (ARCH-0010 R4, R6)
+;;; Inline DEFGENERIC methods (DES-0010 R4, R6)
 ;;;
 ;;; A (:method ...) clause used to be discarded with the rest of a
 ;;; DEFGENERIC's options: no :METHOD entity, so no body walk, so no
@@ -1179,7 +1179,7 @@ that would be a guard over a guess.")
       (is (equal '("x" "y") (getp interface :members))))))
 
 (test an-inline-method-falls-back-to-the-whole-forms-range
-  ;; ARCH-0010 R4's fallback, which ARCH-0013 R7 keeps as the declared answer
+  ;; DES-0010 R4's fallback, which DES-0013 R7 keeps as the declared answer
   ;; while removing one of its two entrances. The mismatch entrance is gone:
   ;; ELEMENT-SPANS built a parallel sequence to zip against the form's own
   ;; elements and had to compare lengths before trusting it, where FORM-RANGE
@@ -1207,7 +1207,7 @@ that would be a guard over a guess.")
           "and with one, the clause's own line rather than the form's 10-20"))))
 
 (test an-inline-method-and-a-standalone-defmethod-collide-in-one-file
-  ;; ARCH-0010 R4's disclosed edge: the natural key is (:file :name :qualifier
+  ;; DES-0010 R4's disclosed edge: the natural key is (:file :name :qualifier
   ;; :specializers), and nothing about it distinguishes a clause from a
   ;; DEFMETHOD -- so a standalone DEFMETHOD and an inline (:method ...) clause
   ;; on the same generic, same qualifier, same specializers, in the same file,
@@ -1217,7 +1217,7 @@ that would be a guard over a guess.")
   ;;
   ;; What this measures changed with PLAN-0012, though every assertion below
   ;; stands unaltered. It used to measure the *graph* absorbing two
-  ;; ASSERT-ENTITY-OPs, later-wins; ARCH-0012 R1 now supersedes the earlier
+  ;; ASSERT-ENTITY-OPs, later-wins; DES-0012 R1 now supersedes the earlier
   ;; definition inside ANALYZE-FILE, so the graph is handed one assert and has
   ;; nothing to absorb. Same one entity, same :CALL-NAMES -- which is why this
   ;; test is also the check that supersession picked the right survivor. The
@@ -1228,7 +1228,7 @@ that would be a guard over a guess.")
   ;; source, so each becomes a :CALL-NAMES property rather than a resolved
   ;; local :CALLS edge (see the next test for what happens when the callees
   ;; ARE local) -- this isolates the property-collision half of R4's claim.
-  ;; Without ARCH-0010, this source would still produce exactly one :METHOD
+  ;; Without DES-0010, this source would still produce exactly one :METHOD
   ;; entity -- the standalone DEFMETHOD, since the inline clause was discarded
   ;; outright -- so :CALL-NAMES would be ("first-callee"), not
   ;; ("second-callee"); that is what makes this a test of the collision rather
@@ -1258,7 +1258,7 @@ not merged"))))
   ;; them. It asserted FIRST-CALLEE PRESENT, deliberately, so a fix would have
   ;; something to turn red (CON-0003).
   ;;
-  ;; PLAN-0012 inverted it. ARCH-0012 R1 supersedes the standalone DEFMETHOD
+  ;; PLAN-0012 inverted it. DES-0012 R1 supersedes the standalone DEFMETHOD
   ;; inside ANALYZE-FILE, between pass 1 and pass 2, so its body is never
   ;; walked and no edge is ever emitted for it. FIRST-CALLEE is now absent,
   ;; and it is absent because the op was never built -- not because anything
@@ -1282,7 +1282,7 @@ not merged"))))
 the entity's edges and its properties now describe the same body"))))
 
 (test two-defuns-of-one-name-leave-only-the-later-ones-calls
-  ;; ARCH-0012 R1 is not method-specific: the key is (:file :name) for a
+  ;; DES-0012 R1 is not method-specific: the key is (:file :name) for a
   ;; :FUNCTION too, so a redefined DEFUN collides exactly the way the colliding
   ;; methods above do. Only the mechanism differs -- CL warns about this one at
   ;; load time, which is why nobody had noticed it in the index.
@@ -1302,7 +1302,7 @@ the entity's edges and its properties now describe the same body"))))
   ;; replaced properties wholesale, so the survivor's empty list already won
   ;; before this change. It is here because after supersession the property is
   ;; right by construction instead of by absorption, and that is the property
-  ;; a future analyzer's contract has to keep (ARCH-0012 R3).
+  ;; a future analyzer's contract has to keep (DES-0012 R3).
   (multiple-value-bind (g file)
       (analyze-source "(defun helper (x) x)
 (defun target (x) (helper x) (target x) (only-in-the-dead-body x))
@@ -1324,7 +1324,7 @@ the entity's edges and its properties now describe the same body"))))
           "and no foreign name reached the survivor from the dead body"))))
 
 (test a-definition-that-shadowed-nothing-has-no-shadowed-definitions
-  ;; ARCH-0012 R2 turns on absent-versus-empty: RULE-0006 reports every carrier
+  ;; DES-0012 R2 turns on absent-versus-empty: RULE-0006 reports every carrier
   ;; of the property, so writing an empty list on the ordinary case would make
   ;; every definition in every tree a finding.
   (multiple-value-bind (g file) (analyze-source "(defun ordinary (x) x)")
@@ -1350,7 +1350,7 @@ the entity's edges and its properties now describe the same body"))))
         "the superseded DEFMETHOD's own extent, not the survivor's")))
 
 (test two-classes-declaring-one-accessor-are-not-a-shadowing
-  ;; The CON-0003 anchor for the carve-out PLAN-0012 adds to ARCH-0012 R2, and
+  ;; The CON-0003 anchor for the carve-out PLAN-0012 adds to DES-0012 R2, and
   ;; the reason RULE-0006 reports nothing on Loom: two classes each declaring
   ;; :ACCESSOR THING-NAME is one generic function with two methods in CL, not
   ;; a definition shadowing another, and both bodies are live. Loom's index
@@ -1379,7 +1379,7 @@ the entity's edges and its properties now describe the same body"))))
         "one name written by hand is enough to make the shadowing real")))
 
 ;;; ------------------------------------------------------------------
-;;; Macro template inspection and the registry (ARCH-0002 R1, R3)
+;;; Macro template inspection and the registry (DES-0002 R1, R3)
 ;;; ------------------------------------------------------------------
 
 (test a-macro-that-plainly-defines-a-function-says-so
@@ -1448,7 +1448,7 @@ the entity's edges and its properties now describe the same body"))))
 name a macro identically and a pass must be able to see the ambiguity")))
 
 (test fiveam-ships-registered
-  ;; The acceptance instrument for the whole of ARCH-0002: TEST and DEF-SUITE
+  ;; The acceptance instrument for the whole of DES-0002: TEST and DEF-SUITE
   ;; are the most common macro calls in this tree, and the :TEST entity type
   ;; has held zero facts until they were declared here.
   (let ((entry (first (macro-generators-for "test"))))
@@ -1486,7 +1486,7 @@ name a macro identically and a pass must be able to see the ambiguity")))
           "ids are stable across re-analysis, so nothing pointing at them breaks"))))
 
 ;;; ------------------------------------------------------------------
-;;; System identity (ARCH-0009 R4, R5)
+;;; System identity (DES-0009 R4, R5)
 ;;;
 ;;; Reached as LOOM-ANALYZER::, not through the export list: these two are
 ;;; Lisp specifics a Java analyzer has no use for, and R2 asks only for
@@ -1507,7 +1507,7 @@ name a macro identically and a pass must be able to see the ambiguity")))
   (is (eq :loom-graph (normalized-in-package "(in-package :|Loom-Graph|)"))))
 
 (test a-slash-structured-package-name-is-one-token
-  ;; ~/lisp/game-server's live convention, verified at a REPL in ARCH-0009:
+  ;; ~/lisp/game-server's live convention, verified at a REPL in DES-0009:
   ;; `/` is an ordinary constituent character to the reader, not a macro
   ;; character, so nothing here has to know the name is hierarchical.
   (is (eq :game/game (normalized-in-package "(in-package :game/game)")))
@@ -1522,7 +1522,7 @@ name a macro identically and a pass must be able to see the ambiguity")))
   (is (null (loom-analyzer::in-package-argument-name (read-from-string "(in-package)")))))
 
 (test the-analyzer-and-the-rule-reader-fold-case-identically
-  ;; ARCH-0009 risk 7, stated as an assertion. NORMALIZE-SYSTEM-NAME produces
+  ;; DES-0009 risk 7, stated as an assertion. NORMALIZE-SYSTEM-NAME produces
   ;; one side of every :no-edge comparison and yaml-analyzer's AS-KEYWORD
   ;; produces the other, from a rule's from-system: scalar. If a later edit
   ;; moves one fold, `check` goes quiet rather than wrong -- which reads as
@@ -1564,7 +1564,7 @@ name a macro identically and a pass must be able to see the ambiguity")))
 
 (test the-file-entity-takes-the-last-in-package-in-the-file
   ;; The documented approximation, asserted so a later change cannot quietly
-  ;; make it per-entity and leave ARCH-0009's disclosure stale. One :FILE
+  ;; make it per-entity and leave DES-0009's disclosure stale. One :FILE
   ;; entity cannot carry two packages; this is which one it carries.
   (multiple-value-bind (g file) (analyze-source "(in-package :server/content)
 (defun early (x) x)
@@ -1574,7 +1574,7 @@ name a macro identically and a pass must be able to see the ambiguity")))
     (is (eq :media.service (getp file :system)))))
 
 (test a-class-and-its-slot-accessors-carry-the-package
-  ;; The CLASS-DEFINITION-ENTITIES path -- an intermediate builder ARCH-0009's
+  ;; The CLASS-DEFINITION-ENTITIES path -- an intermediate builder DES-0009's
   ;; CONSEQUENCES paragraph does not name, which is why it is covered on its
   ;; own rather than through the DEFUN case above.
   (multiple-value-bind (g file)

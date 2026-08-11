@@ -4,7 +4,7 @@
 ;;;
 ;;; The three DEFAULT-SYSTEM-FOR-PATH tests here are BUG-0006's, ported from
 ;;; src/graph/test/query.lisp rather than duplicated: the same three claims,
-;;; made about the function that now owns the computation (ARCH-0009 R2). They
+;;; made about the function that now owns the computation (DES-0009 R2). They
 ;;; state them about a path string rather than an entity, which is the whole
 ;;; move -- a path convention is a fact about a language's layout, and the
 ;;; query layer is structurally unable to know one.
@@ -19,7 +19,7 @@
 (in-suite analyzer)
 
 ;;; ------------------------------------------------------------------
-;;; default-system-for-path (ARCH-0009 R2, BUG-0006)
+;;; default-system-for-path (DES-0009 R2, BUG-0006)
 ;;;
 ;;; This tree's real files are all "src/<system>/...", not "<system>/...".
 ;;; BUG-0006 hid because every fixture used the latter shape, which reads the
@@ -43,7 +43,7 @@
 
 (test default-system-for-path-is-nil-for-a-bare-src-file-and-for-no-path-at-all
   ;; Asserted about the path rather than about src/full-test.lisp itself: that
-  ;; file gains an IN-PACKAGE-derived system under ARCH-0009 R4, so only the
+  ;; file gains an IN-PACKAGE-derived system under DES-0009 R4, so only the
   ;; path function still answers NIL for this shape.
   (is (null (default-system-for-path "src/loose.lisp"))
       "a file directly under src/, with no subdirectory, names no system")

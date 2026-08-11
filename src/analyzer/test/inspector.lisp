@@ -1,6 +1,6 @@
 ;;;
 ;;; Tests for src/analyzer/inspector.lisp and src/analyzer/lisp-inspector.lisp
-;;; -- the inspector protocol, its registry, and the SBCL child (ARCH-0011).
+;;; -- the inspector protocol, its registry, and the SBCL child (DES-0011).
 ;;;
 
 (in-package :loom-analyzer-test)
@@ -73,7 +73,7 @@ real registrations behind it."
 ;;; would rather have no test than one that cannot fail for the right reason.
 
 ;;; ==================================================================
-;;; The Lisp inspector's child (ARCH-0011 R3, R4)
+;;; The Lisp inspector's child (DES-0011 R3, R4)
 ;;; ==================================================================
 
 (def-suite lisp-inspector
@@ -199,7 +199,7 @@ failure here should point at the child rather than at the spawn logic."
           "the DEFUN-to-DEFUN edge both passes can see"))))
 
 (test the-child-sees-a-function-a-macro-generated
-  ;; ARCH-0011 R10's DEFENTITY case in miniature, and the whole argument for
+  ;; DES-0011 R10's DEFENTITY case in miniature, and the whole argument for
   ;; asking the toolchain: GENERATED-READER appears nowhere in the source as a
   ;; DEFUN, and the image knows exactly where it came from.
   (with-child-run (forms (fixture-root "fixture-ok") "fixture-ok")
@@ -207,7 +207,7 @@ failure here should point at the child rather than at the spawn logic."
       (is (not (null definition)))
       (is (equal '(6) (getf definition :form-path))
           "the DEFINE-READER call site's own form, which is where an agent
-should be sent -- ARCH-0010's wider truth"))))
+should be sent -- DES-0010's wider truth"))))
 
 (test the-compound-method-caller-key-is-parsed-inside-the-inspector
   ;; REQ-0018 R8. SBCL reports this caller as
@@ -395,7 +395,7 @@ hang."
       (is (not (null (definition-named inspection "inner-callee")))))))
 
 ;;; ------------------------------------------------------------------
-;;; Line ranges, recovered or refused (ARCH-0011 R4)
+;;; Line ranges, recovered or refused (DES-0011 R4)
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; The numbers below are fixture-ok.lisp's own line numbers. Editing that
@@ -415,7 +415,7 @@ hang."
 (test a-macro-generated-function-is-located-at-the-call-site-that-made-it
   ;; Measured, and worth stating because it is not the tidy answer: the child
   ;; reports form-path (6), which is (define-reader generated-reader) at line
-  ;; 32 -- not the DEFMACRO at 28-30. That is ARCH-0010's wider truth and it is
+  ;; 32 -- not the DEFMACRO at 28-30. That is DES-0010's wider truth and it is
   ;; the right one: the call site is the region an agent has to open to change
   ;; what GENERATED-READER is.
   (let ((definition (definition-named

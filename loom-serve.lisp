@@ -5,7 +5,7 @@
 ;;;;
 ;;;; Parallel to loom.lisp and loading it rather than replacing it: loom.lisp
 ;;;; is still the way to get a console alone, and nothing about it changes.
-;;;; ARCH-0006 R5 makes zero edits to console.lisp, loom.lisp, loom-process.asd
+;;;; DES-0006 R5 makes zero edits to console.lisp, loom.lisp, loom-process.asd
 ;;;; and src/process/package.lisp the mechanism by which the console cannot
 ;;;; regress, so this script wraps MAIN rather than modifying it.
 ;;;;
@@ -28,7 +28,7 @@
 (require :asdf)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 
-;; A top-level parameter rather than the LET this used to be: ARCH-0007 R1 has
+;; A top-level parameter rather than the LET this used to be: DES-0007 R1 has
 ;; both lifecycle modes self-watch this root unconditionally, so the value the
 ;; registry pushes are computed from is needed again further down. *LOAD-TRUENAME*
 ;; is only bound while this file is being loaded, which is why it is captured
@@ -64,7 +64,7 @@ two agree without either passing the other an argument: the root's namestring,
 leading and trailing `/' trimmed, every remaining `/' replaced by `-'. For this
 tree that is /tmp/loom-serve-home-beberman-lisp-Loom.pid.
 
-Under /tmp rather than at the tree's root, per ARCH-0007's fifth PROBLEM
+Under /tmp rather than at the tree's root, per DES-0007's fifth PROBLEM
 finding: a watched tree is not guaranteed writable, and a fixed name inside one
 collides the moment a second checkout of Loom runs its own service on the same
 machine. Nothing under /tmp is ever inside a watched repository either, so this
@@ -83,7 +83,7 @@ needs no dot-prefix or exclusion rule to keep the self-watch from indexing it."
 
 (let* ((arguments (rest sb-ext:*posix-argv*))
        (headless (and (member "--headless" arguments :test #'string=) t))
-       ;; ARCH-0007 R1: this script's own root is watched in both modes, always,
+       ;; DES-0007 R1: this script's own root is watched in both modes, always,
        ;; first. Without it the staleness comparison `tools/loom-serve.sh status'
        ;; makes has no repository to read an :indexed-at from, and would have to
        ;; guess "current" -- CON-0001's fabricated fact in operational clothing.
@@ -92,7 +92,7 @@ needs no dot-prefix or exclusion rule to keep the self-watch from indexing it."
        (paths (cons (namestring *here*)
                     (remove "--headless" arguments :test #'string=))))
   (if headless
-      ;; Not one opaque call to SERVE-FOREVER, for ARCH-0007's fifth PROBLEM
+      ;; Not one opaque call to SERVE-FOREVER, for DES-0007's fifth PROBLEM
       ;; finding: the pidfile must be written strictly after START-SERVER
       ;; succeeds and strictly before the blocking loop, and SERVE-FOREVER's own
       ;; body has no seam there. So the watching and the START-SERVER call are

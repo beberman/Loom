@@ -1,11 +1,11 @@
 ;;;; The generic inspector protocol.
-;;;; Implements ARCH-0011 R1, beside analyzer.lisp and shaped like it on
+;;;; Implements DES-0011 R1, beside analyzer.lisp and shaped like it on
 ;;;; purpose: a class that says which language it speaks, a cheap probe, a
 ;;;; registry with replace-by-class semantics. A reader who knows one should
 ;;;; not have to learn the other.
 ;;;;
 ;;;; What it is not is a second ANALYZE-FILE, and the three mismatches are each
-;;;; sufficient on their own (ARCH-0011). The unit is a loadable system rather
+;;;; sufficient on their own (DES-0011). The unit is a loadable system rather
 ;;;; than a path plus contents. The input is a tree that must build, not text
 ;;;; that need not. And the output is facts rather than ontology operations --
 ;;;; because operations go through an upsert whose absorb-replace semantics
@@ -52,7 +52,7 @@ whole of the distinction R2 asks for."))
 (defgeneric inspect-repository (inspector root &key)
   (:documentation "Run the toolchain against ROOT and return an inspection.
 
-An inspection is plain data -- ARCH-0011's CHILD PROTOCOL plist -- and not
+An inspection is plain data -- DES-0011's CHILD PROTOCOL plist -- and not
 ontology operations. Facts, because the merge that turns them into operations
 has to read the graph first, and an inspector cannot reach one."))
 

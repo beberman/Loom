@@ -1,6 +1,6 @@
 id: CON-0005
 title: One file's op stream asserts each natural key at most once
-refines: [ARCH-0012]
+refines: [DES-0012]
 summary: |
   An analyzer owns reconciling two definitions in one file that derive one
   natural key, because reconciling them is the language's semantics and the
@@ -67,7 +67,7 @@ body: |
   NOTHING CHECKS THIS
 
   There is no rule and no assertion that a new analyzer keeps the contract,
-  and ARCH-0012 records that as its sharpest tradeoff rather than an
+  and DES-0012 records that as its sharpest tradeoff rather than an
   oversight. A check would have to run every analyzer over a corpus and
   compare op streams, which is a test harness rather than a rule. So the
   contract is written in three places, each for a different reader: the

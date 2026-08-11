@@ -1,5 +1,5 @@
 ;;;
-;;; Tests for concurrent access to one graph -- BUG-0004, ARCH-0003.
+;;; Tests for concurrent access to one graph -- BUG-0004, DES-0003.
 ;;;
 ;;; The only tests in the suite that run several threads at once, and they
 ;;; exist because nothing else in it can see this defect: BUG-0004's "WHY IT
@@ -28,7 +28,7 @@
 
 (def-suite concurrency
   :in all-tests
-  :description "Two threads against one graph (BUG-0004, ARCH-0003).")
+  :description "Two threads against one graph (BUG-0004, DES-0003).")
 
 (in-suite concurrency)
 
@@ -77,7 +77,7 @@
                                :from-id (id from-e) :to-id (id to-e)))
 
 ;;; ------------------------------------------------------------------
-;;; protected-table, single-threaded (ARCH-0003 R2)
+;;; protected-table, single-threaded (DES-0003 R2)
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; The type's whole claim is that its single-threaded contract matches a bare
@@ -164,7 +164,7 @@ asserts nothing.")
         "two tables, one lock: sharing it must not cost either of them a push")))
 
 ;;; ------------------------------------------------------------------
-;;; The two-thread stress test (ARCH-0003 R7)
+;;; The two-thread stress test (DES-0003 R7)
 ;;; ------------------------------------------------------------------
 
 ;;; Two writers and one reader, not one writer and one reader. That is a
@@ -177,7 +177,7 @@ asserts nothing.")
 ;;; The two-writer shape is also the more faithful model of BUG-0004, whose
 ;;; collision pair is the console thread inside REINDEX-REPOSITORY and the
 ;;; monitor thread inside POLL-ONCE -- both of which write, through INDEX-FILE
-;;; and RESOLVE-AND-CHECK. The reader is kept because ARCH-0003 R7 claims a
+;;; and RESOLVE-AND-CHECK. The reader is kept because DES-0003 R7 claims a
 ;;; separate benefit for it (a console query racing a poll), and a claim with
 ;;; no thread exercising it is a claim nobody checks.
 
@@ -222,7 +222,7 @@ Returns the SERIOUS-CONDITION this thread caught, or NIL."
 
 (test concurrent-writers-and-a-reader-do-not-corrupt-one-graph
   ;; BUG-0004's whole shape, reduced to the layer that owns the tables. This
-  ;; fails against an unlocked graph and is what ARCH-0003's protected-table
+  ;; fails against an unlocked graph and is what DES-0003's protected-table
   ;; has to make pass; it is deliberately below loom-workspace, so the
   ;; repository lock cannot be what fixed it.
   (let* ((graph (make-graph))
@@ -301,7 +301,7 @@ else."
         (length (all-entities graph)) (* 2 *keyless-mints*))))
 
 ;;; ------------------------------------------------------------------
-;;; with-graph-lock (ARCH-0003 R4)
+;;; with-graph-lock (DES-0003 R4)
 ;;; ------------------------------------------------------------------
 
 (defun call-with-deadline (seconds thunk)

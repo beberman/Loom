@@ -19,7 +19,7 @@ summary: |
   call from loom-knowledge into loom-graph, when the rule it is meant to
   enforce -- and its own prose -- is only about a call that writes.
 
-  Half fixed as of 2026-08-06: PLAN-0008 landed ARCH-0009 and cause one closed
+  Half fixed as of 2026-08-06: PLAN-0008 landed DES-0009 and cause one closed
   as a side effect, taking the count from 72 to 32. The title's 72 is the
   original measurement and is kept as such. See MEASURED AGAIN below. Cause two
   is untouched, which is why this stays open.
@@ -72,7 +72,7 @@ body: |
   itself. RULE-0002 and RULE-0003 both have test suites (necessarily, since
   testing an analyzer or a knowledge-layer function means building a graph and
   looking at it) with named helper functions outside any `test` or `def-suite`
-  macro body -- ARCH-0001's macro blindness hides calls *inside* those bodies,
+  macro body -- DES-0001's macro blindness hides calls *inside* those bodies,
   which is very likely why this was not tripped by every call in every test,
   only by the helpers factored out as ordinary functions.
 
@@ -125,7 +125,7 @@ body: |
   is the next work that touches src/graph/rules.lisp or the two rule
   documents.
 
-  MEASURED AGAIN, AFTER ARCH-0009
+  MEASURED AGAIN, AFTER DES-0009
 
   /usr/bin/sbcl, branch server, 2026-08-06, `tools/loom.sh 'reindex | check'`
   with PLAN-0008 steps 1-7 landed:
@@ -139,12 +139,12 @@ body: |
   is what took 40 of them away, so the chain is walkable from either end
   without reading prose.
 
-  CAUSE ONE IS CLOSED, and not by being fixed. ARCH-0009 replaced the path
+  CAUSE ONE IS CLOSED, and not by being fixed. DES-0009 replaced the path
   guess with the analyzer-written :system property, so a helper defun in
   src/analyzer/test/lisp-analyzer.lisp carries :LOOM-ANALYZER-TEST -- the
   package its own file declares -- rather than :ANALYZER, the directory
   segment it shares with the production code it exercises. RULE-0002's
-  from-system: is loom-analyzer after ARCH-0009 R8, so it no longer matches
+  from-system: is loom-analyzer after DES-0009 R8, so it no longer matches
   those files: all 37 went. The same mechanism took the three RULE-0003
   violations that came from src/knowledge/test/suite.lisp -- K-EDGE calling
   ADD-RELATIONSHIP, MAKE-K-FIXTURE calling ADD-ENTITY and MAKE-GRAPH -- since
@@ -157,18 +157,18 @@ body: |
   test file whose package genuinely is the production one would still be
   reported, correctly.
 
-  CAUSE TWO IS UNTOUCHED, exactly as ARCH-0009 R9 predicted. All 32 surviving
+  CAUSE TWO IS UNTOUCHED, exactly as DES-0009 R9 predicted. All 32 surviving
   violations are the production reads this document already named:
   SEED-ENTITIES and SEARCH-ENTITIES to FIND-ENTITIES; DESCRIBE-ENTITY,
   BUILD-CONTEXT, CONTEXT-ITEM, GROUP-NEIGHBORS, NEIGHBOR-SUMMARY and
   DECISIONS-TOUCHING to NEIGHBORS and the NEIGHBOR-* accessors; RENDER-PATH to
   GET-ENTITY and the HOP-* accessors; IMPACT-REPORT to IMPACT-SET and the
   IMPACT-RESULT-* accessors. loom-knowledge and loom-graph are different
-  packages under every scheme ARCH-0009 considered, so no naming change could
+  packages under every scheme DES-0009 considered, so no naming change could
   have moved them. The defect is still the :no-edge check kind's inability to
   say "no write" where the rule's own statement says only writes are forbidden,
   and closing it means widening what a check kind can express -- the same class
-  of gap ARCH-0009 R10 records for "no call from outside this family". Whoever
+  of gap DES-0009 R10 records for "no call from outside this family". Whoever
   takes either should read them together.
 
   A 0 here would not have been success. Both sides of a :no-edge comparison

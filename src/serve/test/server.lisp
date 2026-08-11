@@ -246,7 +246,7 @@ server can see."
         (stop-server)))))
 
 (test reload-code-is-not-an-operation-any-more
-  ;; ARCH-0008 R1 asks for this by name. Its job is not to describe today's
+  ;; DES-0008 R1 asks for this by name. Its job is not to describe today's
   ;; registry but to make a future re-addition a deliberate act that turns a
   ;; test red, rather than a silent return of the mechanism BUG-0008 closed:
   ;; nothing else in this tree would notice, because loom-rest derives its

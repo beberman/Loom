@@ -37,7 +37,7 @@
 ;;;;
 ;;;; The reader itself lives in lisp-reader.lisp. READ-FORMS-WITH-SPANS,
 ;;;; ELEMENT-SPANS, SKIP-WHITESPACE-AND-COMMENTS and
-;;;; INTERN-FOREIGN-SYMBOL-LOCALLY stood here until ARCH-0013 R7 replaced
+;;;; INTERN-FOREIGN-SYMBOL-LOCALLY stood here until DES-0013 R7 replaced
 ;;;; them with READ-SOURCE -- 169 lines whose whole burden was recovering, by
 ;;;; re-reading text and counting characters, what a conforming reader
 ;;;; reports directly.
@@ -98,7 +98,7 @@ a lambda above all, contributes no name and is still walked for the calls
 inside it.
 
 Which forms are quotation is QUOTATIONP's question, and both its clauses are
-ARCH-0013 R12. It asks the reader first -- 'x and #'f are the one class of
+DES-0013 R12. It asks the reader first -- 'x and #'f are the one class of
 form kind a reader is entitled to know, because they really are syntax where
 DEFUN is not -- and falls back to the name comparison only for a list a
 program wrote out itself, and then only when no site qualified the head. Two
@@ -127,12 +127,12 @@ of this one can change that. BUG-0017."
                ;; the site wrote no prefix, or wrote one naming COMMON-LISP.
                ;; A prefix naming anything else is positive evidence that it is
                ;; not -- which is the discrimination REQ-0019 R2 bought and
-               ;; ARCH-0013 R12 spends here.
+               ;; DES-0013 R12 spends here.
                (let ((package (and reading (form-package reading symbol))))
                  (or (null package)
                      (member package '("cl" "common-lisp") :test #'string=))))
              (quotationp (form kind)
-               ;; ARCH-0013 R12. Two ways a form is quotation, and the order
+               ;; DES-0013 R12. Two ways a form is quotation, and the order
                ;; matters: the reader's own answer first, because it is the one
                ;; class of form kind a reader is entitled to know -- 'x really
                ;; did come from a reader macro and no program wrote that list
@@ -256,11 +256,11 @@ Uppercased unconditionally, so (in-package :loom-graph), (in-package
 matches AS-KEYWORD's in yaml-analyzer.lisp deliberately: those two produce the
 two sides of every :no-edge rule's comparison, and a rule whose sides fold
 differently reports no violations rather than wrong ones -- silence that reads
-as success (ARCH-0009, risk 7).
+as success (DES-0009, risk 7).
 
 No \"loom-\" stripping and no nickname resolution. Stripping a fixed prefix
 would make this analyzer secretly aware of one tree's naming habit, which is
-the guess ARCH-0009 is taking out of loom-graph rather than relocating; and a
+the guess DES-0009 is taking out of loom-graph rather than relocating; and a
 nickname is declared by a DEFPACKAGE that RULE-0002 forbids an analyzer from
 reading beyond its own file, so folding one here would be CON-0001's
 fabricated fact. The literal canonical designator is recorded, gap and all."
@@ -299,7 +299,7 @@ same idea does not need a different rule.")
   (member name *reader-artifacts* :test #'string=))
 
 ;;;; ------------------------------------------------------------------
-;;;; Initform call sites (BUG-0017, ARCH-0014 R3)
+;;;; Initform call sites (BUG-0017, DES-0014 R3)
 ;;;;
 ;;;; The one place this analyzer mints a :CALL-SITE. COLLECT-CALL-NAMES' own
 ;;;; docstring records why it could not see these: ANALYZE-FILE hands
@@ -310,7 +310,7 @@ same idea does not need a different rule.")
 ;;;; Reading the initform is only half of it, and the half BUG-0017's FIX could
 ;;;; already see. What blocked the fix is that the recorded caller would be a
 ;;;; :VARIABLE, and :CALLS runs from (:function :method :test) -- so there was
-;;;; no edge to assert. ARCH-0014's answer is the node: the caller is a
+;;;; no edge to assert. DES-0014's answer is the node: the caller is a
 ;;;; :CALL-SITE the variable or class contains, which is a legal :CALLS source,
 ;;;; so the ontology question that stalled the fix does not arise.
 ;;;;
@@ -342,7 +342,7 @@ COLLECT-CALL-NAMES without the entity construction in the way.
 Filtered by STANDARD-OPERATOR-P and READER-ARTIFACT-P exactly as pass 2
 filters, which is not a nicety: an unfiltered walk mints a call site for the
 MAKE-HASH-TABLE in most DEFPARAMETERs in a Lisp tree, and that is the uniform
-model ARCH-0014 priced at 4867 entities and refused, arriving by accident."
+model DES-0014 priced at 4867 entities and refused, arriving by accident."
   (let ((initforms
           (cond ((member head '("defvar" "defparameter") :test #'string=)
                  ;; (defvar *x*) declares the variable and supplies no value.
@@ -359,12 +359,12 @@ model ARCH-0014 priced at 4867 entities and refused, arriving by accident."
   "The :CALL-SITE entities FORM's initforms contribute, owned by the definition
 FORM makes and of KIND :VARIABLE or :CLASS.
 
-START and END are the enclosing form's, not the initform's: ARCH-0013 deleted
+START and END are the enclosing form's, not the initform's: DES-0013 deleted
 ELEMENT-SPANS, so pass 1 has one range per top-level form and no sub-form
 positions at all, and a DEFPARAMETER's call sites carry the DEFPARAMETER's line
 (PLAN-0014 decision 5).
 
-MAKE-CALL-SITE-ENTITY rather than MAKE-INSTANCE, and this is the seam ARCH-0014
+MAKE-CALL-SITE-ENTITY rather than MAKE-INSTANCE, and this is the seam DES-0014
 names as a risk: the graph mints the other two kinds of call site, so the
 natural key has to agree across a system boundary, and two spellings of it
 would grow a duplicate per pass that nothing retracts."
@@ -374,7 +374,7 @@ would grow a duplicate per pass that nothing retracts."
                                        :language :lisp :system system)))
 
 ;;;; ------------------------------------------------------------------
-;;;; Definer call sites (ARCH-0002 R2)
+;;;; Definer call sites (DES-0002 R2)
 ;;;;
 ;;;; A top-level form that is neither a definition nor a declaration is a call
 ;;;; to something, and it may be a call to a macro that defines a name --
@@ -389,7 +389,7 @@ would grow a duplicate per pass that nothing retracts."
 
 ;;; The dispatch table pass 1 runs on, and the head set derived from it.
 ;;;
-;;; Until ARCH-0013 R13 this was a ten-clause COND beside a hand-maintained
+;;; Until DES-0013 R13 this was a ten-clause COND beside a hand-maintained
 ;;; list, and *DEFINITION-HEADS*' own docstring made the reader responsible for
 ;;; keeping the two in step -- "adding a clause to that COND means adding its
 ;;; head here" -- with the failure named as a DEFUN being offered to the macro
@@ -496,7 +496,7 @@ Indices count the operator as 0, so they line up with a registry entry's
                                   when (and argument (symbolp argument)
                                             (not (keywordp argument)))
                                     collect index)
-          ;; The whole argument list, not a guessed body: ARCH-0002 has the
+          ;; The whole argument list, not a guessed body: DES-0002 has the
           ;; walk happen here precisely so resolution never has to know which
           ;; argument the body starts at. A non-body argument -- a bare name, a
           ;; docstring -- contains no calls to lose.
@@ -546,7 +546,7 @@ Indices count the operator as 0, so they line up with a registry entry's
                                     :system system))))
 
 ;;;; ------------------------------------------------------------------
-;;;; CLOS and structure definitions (ARCH-0001)
+;;;; CLOS and structure definitions (DES-0001)
 ;;;;
 ;;;; Everything here reads one form and returns entities. Nothing resolves a
 ;;;; name: a superclass, a specializer and a generic can each be defined in
@@ -625,7 +625,7 @@ a setf method keeps an identity distinct from its reader."
                                     :language :lisp
                                     :system system))))
 
-;;; --- what a macro's template says it defines (ARCH-0002 R1) --------
+;;; --- what a macro's template says it defines (DES-0002 R1) --------
 ;;;
 ;;; REQ-0003 fixes where template reading stops, and the line is not a
 ;;; heuristic that could be sharpened later: the template contains a DEFUN,
@@ -727,7 +727,7 @@ call form."
 Taken from the &BODY or &REST parameter rather than from wherever the template
 splices, because that is the part the lambda list guarantees: everything from
 that argument on is body. A macro with neither declares no body, and nothing
-downstream needs one -- ARCH-0002 has the analyzer pre-walk the whole argument
+downstream needs one -- DES-0002 has the analyzer pre-walk the whole argument
 list precisely so resolution never has to know where the body starts."
   (let ((index 1))
     (dolist (element lambda-list)
@@ -741,7 +741,7 @@ list precisely so resolution never has to know where the body starts."
 (defun macro-generator-properties (form)
   "What a DEFMACRO's template says a call to it defines, as properties.
 
-Three outcomes, per ARCH-0002 R1, and the third is the one that is easy to get
+Three outcomes, per DES-0002 R1, and the third is the one that is easy to get
 wrong. A match records the three generator properties. A near-miss -- one of
 the three forms present, but the name position something other than a bare
 parameter substitution -- records :DEFINER-STATUS :UNHANDLED, so a definer
@@ -764,7 +764,7 @@ count that exists to be read and acted on."
 (defun make-macro-entity (form start end path system)
   "A macro, indexed as a :FUNCTION carrying :MACRO-P.
 Findable and documentable; what a :CALLS edge into one means is left open by
-ARCH-0001, and calls made inside its expansion remain unattributed.
+DES-0001, and calls made inside its expansion remain unattributed.
 
 The generator properties are appended rather than merged conditionally: a
 macro whose template defines nothing contributes an empty list, which is the
@@ -925,7 +925,7 @@ resolves to nothing exactly where the real one is called most."
   "The :METHOD for a method named NAME whose TAIL is everything after the
 name, keyed by name, qualifier and specializers.
 
-The single copy of the method-tail grammar (ARCH-0010 R3). A DEFMETHOD form is
+The single copy of the method-tail grammar (DES-0010 R3). A DEFMETHOD form is
 (DEFMETHOD name . tail) and an inline DEFGENERIC clause is (:METHOD . tail):
 the tails are the same grammar, and the only thing the clause lacks is the
 name, which the enclosing DEFGENERIC supplies. Extracting this rather than
@@ -962,21 +962,21 @@ Plural, like CLASS-DEFINITION-ENTITIES and STRUCT-DEFINITION-ENTITIES, because
 a DEFGENERIC can define more than the protocol: game-server writes 247 inline
 clauses across 158 forms, every one of which used to be discarded here, so
 every body they contain contributed no call names and no edges in either
-direction (ARCH-0010). The interface itself is untouched by all of this -- same
+direction (DES-0010). The interface itself is untouched by all of this -- same
 name, same :members, same whole-form range -- which is why a DEFGENERIC with no
 clause still produces exactly what it always did.
 
 READING is a keyword rather than positional so a caller that has none is not
 required to lie about it, and so the fallback below is reachable from a test.
-PATH and SYSTEM stay positional in that order, per ARCH-0009's convention.
+PATH and SYSTEM stay positional in that order, per DES-0009's convention.
 
 Per-clause ranges come from FORM-RANGE, which asks the clause cons itself
 rather than reconstructing a parallel sequence to zip against this one
-(ARCH-0013 R7). That retires ELEMENT-SPANS' alignment condition entirely: there
+(DES-0013 R7). That retires ELEMENT-SPANS' alignment condition entirely: there
 is no element count to compare, so there is no mismatch to fall back from, and
 the two shapes ELEMENT-SPANS returned NIL for -- a block comment before the
 closing paren, a DEFGENERIC behind a reader macro -- now each clause its own
-range like any other. ARCH-0010 R4's fallback stays as the declared answer
+range like any other. DES-0010 R4's fallback stays as the declared answer
 where FORM-RANGE misses, which after this it can do only for reader-level
 structure sharing: the whole DEFGENERIC's range is a wider truth that genuinely
 contains the clause, where a misattributed one would be a fabricated fact
@@ -1021,7 +1021,7 @@ be indistinguishable from a file that genuinely defines nothing."
                                     :language :lisp
                                     ;; The path default and nothing stronger:
                                     ;; the reader failed before any form, so no
-                                    ;; IN-PACKAGE was ever seen (ARCH-0009 R4).
+                                    ;; IN-PACKAGE was ever seen (DES-0009 R4).
                                     :system (default-system-for-path path)
                                     :line-count (line-count contents)
                                     :analysis-failed-p t
@@ -1033,7 +1033,7 @@ source order, and an alist of (survivor . superseded-entities-in-source-order)
 for those that replaced something.
 
 Common Lisp's reconciliation rule, applied at the one layer where the two
-definitions are still distinct objects (ARCH-0012 R1): among definitions
+definitions are still distinct objects (DES-0012 R1): among definitions
 sharing one ENTITY-NATURAL-KEY, the last in source order is the one in effect
 once the file loads, and every earlier one is dead code. It belongs here and
 not in the writer because it is the *language's* semantics -- CL replaces,
@@ -1072,7 +1072,7 @@ a table keyed on it would fold unrelated definitions into one."
 (defun shadowing-worth-recording-p (survivor superseded)
   "True when SURVIVOR replacing SUPERSEDED is a shadowing worth reporting.
 
-Supersession (ARCH-0012 R1) applies to every definition kind without
+Supersession (DES-0012 R1) applies to every definition kind without
 exception; this decides only whether the survivor records it. The one case it
 excludes is two DEFCLASS or DEFINE-CONDITION forms in one file each declaring
 :ACCESSOR NAME. That is not a shadowing at all -- in Common Lisp it is one
@@ -1089,7 +1089,7 @@ matter. A rule whose output has to be read past is BUG-0009's failure again.
 
 This lives in the Lisp analyzer and not in the rule or the writer because
 \"an accessor name declared twice is one generic function\" is a fact about
-Common Lisp, and language reconciliation is what ARCH-0012 puts here."
+Common Lisp, and language reconciliation is what DES-0012 puts here."
   (not (and (getp survivor :generated-by)
             (getp superseded :generated-by))))
 
@@ -1101,7 +1101,7 @@ the dead text opens the file at these lines."
   (format nil "~a-~a" (getp e :start-line) (getp e :end-line)))
 
 ;;;; ------------------------------------------------------------------
-;;;; Pass 1's dispatch (ARCH-0013 R13)
+;;;; Pass 1's dispatch (DES-0013 R13)
 ;;;;
 ;;;; One handler per definition head. Each takes the form, its range, the path,
 ;;;; the system in effect, the READING, and NOTE, the function that records an
@@ -1133,22 +1133,22 @@ the table exists to abolish."
   "The only handler that changes the walk's state rather than its output.
 
 Mints no entity and records no call site: a file's package declaration is not
-a definition this ontology models, and ARCH-0009 makes the IN-PACKAGE chain
+a definition this ontology models, and DES-0009 makes the IN-PACKAGE chain
 the sole source of :SYSTEM. \"in-package\" stays in *DECLARATION-HEADS* as
 well, which is now belt and braces rather than the mechanism -- a head with a
 handler never reaches the catch-all."
   (or (normalize-system-name (in-package-argument-name form)) system))
 
 ;;;; ------------------------------------------------------------------
-;;;; Package declarations (ARCH-0015)
+;;;; Package declarations (DES-0015)
 ;;;;
 ;;;; The analyzer records what a declaration says and decides nothing with it.
 ;;;; Canonicalising a nickname, or working out which package a name is homed
 ;;;; in, needs every declaration in the tree at once -- test/fixture.lisp is
 ;;;; only (in-package :integration-test) with the DEFPACKAGE in another file --
 ;;;; and RULE-0002 keeps an analyzer inside its own file. So this is the
-;;;; recording half of ARCH-0015's split, and loom-graph does the assembling,
-;;;; exactly as ARCH-0014 R4 divided definer call sites.
+;;;; recording half of DES-0015's split, and loom-graph does the assembling,
+;;;; exactly as DES-0014 R4 divided definer call sites.
 
 (defparameter *external-package-names* '("COMMON-LISP")
   "Packages a Lisp tree uses but does not declare, named so their exports can
@@ -1172,8 +1172,8 @@ never correctness.")
   "NAMES as (name aliases exports) triples, read from the host image, for
 BUILD-PACKAGE-GRAPH's :EXTERNAL-PACKAGES.
 
-This is the Lisp-specific half of ARCH-0015's symbol identity and it lives here
-because ARCH-0012 puts language reconciliation in the analyzer: that :USE means
+This is the Lisp-specific half of DES-0015's symbol identity and it lives here
+because DES-0012 puts language reconciliation in the analyzer: that :USE means
 \"inherit the exported symbols\" and that COMMON-LISP exports what it does are
 facts about Common Lisp, and loom-graph must not know which language it is
 indexing (CON-0005). The traversal that consumes this is namespace-generic.
@@ -1376,7 +1376,7 @@ an edge's endpoints against the asserts it has already planned in the same
 transaction."
   (declare (ignore analyzer))
   (let ((file (make-file-entity path contents))
-        ;; The package in effect at the form being read (ARCH-0009 R4). Seeded
+        ;; The package in effect at the form being read (DES-0009 R4). Seeded
         ;; from the path because a definition read before the file's first
         ;; IN-PACKAGE has no stronger fact available -- that is the ordinary
         ;; default falling through, not a special case.
@@ -1385,7 +1385,7 @@ transaction."
         (local-functions '())   ; alist: name -> entity, for exact local calls
         (callables '())         ; list of (entity . body), things with bodies
         (call-sites '())        ; :DEFINER-CALL-SITES entries, in source order
-        (owned-call-sites '())  ; list of (owner . :CALL-SITE entity), ARCH-0014
+        (owned-call-sites '())  ; list of (owner . :CALL-SITE entity), DES-0014
         (shadowed '())          ; alist: survivor -> what it superseded
         (ops '())               ; built reversed, NREVERSEd on the way out
         (reading nil)
@@ -1397,7 +1397,7 @@ transaction."
     ;;
     ;; READ-SOURCE does not signal for a form it could repair, so what used to
     ;; be a HANDLER-CASE over the whole read is now a test of one slot
-    ;; (ARCH-0013). The unparsable :FILE entity survives for the case it was
+    ;; (DES-0013). The unparsable :FILE entity survives for the case it was
     ;; always the right answer to -- a file that could not be read at all --
     ;; and stops being the answer to a file with one bad form in it, which is
     ;; REQ-0019 R3. A repaired form is already absent from READING-FORMS, so
@@ -1421,7 +1421,7 @@ transaction."
              (push entity definitions)
              (when local (push (cons (name entity) entity) local-functions))
              (when body (push (cons entity body) callables))
-             ;; :CALL-SITES is ARCH-0014's addition and the only one of the
+             ;; :CALL-SITES is DES-0014's addition and the only one of the
              ;; three that names entities rather than raw material: the handler
              ;; has already built them, because it is the only place with the
              ;; form's range and the system in effect at once.
@@ -1429,7 +1429,7 @@ transaction."
       (dolist (spec forms)
         (destructuring-bind (form start end start-offset) spec
           ;; START-OFFSET is vestigial from here: ELEMENT-SPANS was its only
-          ;; consumer and it is gone, but ARCH-0010 R1 named the widened tuple
+          ;; consumer and it is gone, but DES-0010 R1 named the widened tuple
           ;; as a requirement, so the element stays and the bind does not move.
           (declare (ignore start-offset))
           ;; The head name, computed once. The COND this replaced asked
@@ -1451,7 +1451,7 @@ transaction."
                               #'note-definition)))
               ;; Everything else is a call, and may be a call to a definer
               ;; macro. Recorded, never judged: the judgement needs the whole
-              ;; workspace (ARCH-0002). HEAD being non-NIL is the same test the
+              ;; workspace (DES-0002). HEAD being non-NIL is the same test the
               ;; catch-all always made -- a cons whose car is a non-NIL symbol.
               ((and head (not (call-site-head-p head)))
                (push (definer-call-site form start end current-system)
@@ -1459,7 +1459,7 @@ transaction."
     (setf definitions (nreverse definitions)
           owned-call-sites (nreverse owned-call-sites))
 
-    ;; --- supersession: what the file defines once loaded (ARCH-0012 R1) ---
+    ;; --- supersession: what the file defines once loaded (DES-0012 R1) ---
     ;; Here rather than after pass 2, because the point is that a shadowed
     ;; definition's body is never walked at all: no :CALL-NAMES, no local
     ;; :CALLS edge, no entity op, no :CONTAINS. Left to the graph it would be
@@ -1489,7 +1489,7 @@ transaction."
           (remove-if-not (lambda (entry) (member (car entry) definitions :test #'eq))
                          owned-call-sites))
 
-    ;; ARCH-0012 R2. The shadowed source is real text, so its existence is
+    ;; DES-0012 R2. The shadowed source is real text, so its existence is
     ;; recorded on the survivor rather than silently dropped (CON-0001) -- and
     ;; no guess is involved, since source order decides which definition the
     ;; loaded file contains. Absent and empty differ, which is why the WHEN is
@@ -1506,7 +1506,7 @@ transaction."
     (setp file :definer-call-sites (nreverse call-sites))
 
     ;; What the reader passed over or repaired, recorded on the file rather
-    ;; than dropped (ARCH-0013, PLAN-0013 step 5). The WHEN on each is the
+    ;; than dropped (DES-0013, PLAN-0013 step 5). The WHEN on each is the
     ;; same discipline :SHADOWED-DEFINITIONS uses: absent and empty differ, so
     ;; a file with nothing to report carries no property rather than an empty
     ;; list that reads as a report of nothing.
@@ -1537,7 +1537,7 @@ transaction."
                       recovered))))
     ;; Whatever package was in effect at the end of the file -- coarser than
     ;; the per-entity value above, and deliberately so: one :FILE entity cannot
-    ;; carry two. ARCH-0009 discloses what that costs on a real multi-IN-PACKAGE
+    ;; carry two. DES-0009 discloses what that costs on a real multi-IN-PACKAGE
     ;; file. SETP rather than a constructor argument because :system is in no
     ;; natural key, so writing it here does not move the id.
     (setp file :system current-system)
@@ -1573,7 +1573,7 @@ transaction."
                         ((string= callee-name (name caller)))   ; direct recursion
                         (t (push callee-name foreign)))))
               (setp caller :call-names (nreverse foreign))
-              ;; ARCH-0013, PLAN-0013 step 6. Recorded beside :CALL-NAMES and
+              ;; DES-0013, PLAN-0013 step 6. Recorded beside :CALL-NAMES and
               ;; read by nothing: this step records the fact and changes no
               ;; resolution behaviour, so the :CALLS edge count must not move.
               ;;
@@ -1614,7 +1614,7 @@ transaction."
         (push (assert-edge :contains file e :workspace-id workspace-id) ops))
       ;; After every definition, so an owner's own assert is always already
       ;; planned when the edge naming it is. No :CONTAINS from the file: the
-      ;; chain ARCH-0014 draws is file contains variable contains call-site, and
+      ;; chain DES-0014 draws is file contains variable contains call-site, and
       ;; a second ownership edge would make the file a container of things it
       ;; does not directly define.
       (dolist (entry owned-call-sites)
@@ -1627,7 +1627,7 @@ transaction."
     (nreverse ops)))
 
 ;;;; ------------------------------------------------------------------
-;;;; The macro registry (ARCH-0002 R3)
+;;;; The macro registry (DES-0002 R3)
 ;;;;
 ;;;; The fourth registry in this codebase, and it follows the three that came
 ;;;; before -- *analyzers*/REGISTER-ANALYZER and
@@ -1688,7 +1688,7 @@ make, and for the same reason."
 ;;; DEF-SUITE call mints nothing. Its entry exists only so the call is
 ;;; recognised as accounted for rather than reported as a definer nobody
 ;;; characterised. Populating a :TEST's :SUITE property from DEF-SUITE and
-;;; IN-SUITE context is real work and ARCH-0002 defers it explicitly.
+;;; IN-SUITE context is real work and DES-0002 defers it explicitly.
 (register-macro-generator "test" :package "fiveam" :entity-type :test
                                  :name-index 1 :body-index 2 :framework :fiveam)
 (register-macro-generator "def-suite" :package "fiveam" :entity-type nil

@@ -17,7 +17,7 @@ summary: |
   staleness detector SS10.3 describes is silently off for those documents.
   Counted today: 44 of the 63 documents under docs/ carry an affects: list and
   only 4 of them (the design decisions) are read. Found while reviewing
-  PLAN-0009, whose ARCH-0010 predicted `check` would flag the rename of
+  PLAN-0009, whose DES-0010 predicted `check` would flag the rename of
   GENERIC-DEFINITION-ENTITY and whose step 6 was written to observe exactly two
   unresolved references appear and then go away. Neither can happen.
 body: |
@@ -28,15 +28,15 @@ body: |
 
   Measured, /usr/bin/sbcl, 2026-08-06, against this tree:
 
-      tools/loom.sh 'status | describe ARCH-0010 | describe DEC-0003'
+      tools/loom.sh 'status | describe DES-0010 | describe DEC-0003'
 
-  ARCH-0010 declares eight names in affects:, every one of which resolves --
+  DES-0010 declares eight names in affects:, every one of which resolves --
   GENERIC-DEFINITION-ENTITIES, METHOD-DEFINITION-ENTITY, METHOD-BODY,
   READ-FORMS-WITH-SPANS, ANALYZE-FILE, MAKE-METHOD-ENTITY,
-  MAKE-INTERFACE-ENTITY. `describe ARCH-0010` shows `-> refines: REQ-0012`
+  MAKE-INTERFACE-ENTITY. `describe DES-0010` shows `-> refines: REQ-0012`
   and a long `-> documents:` list, and no `-> decides:` line at all. DEC-0003,
   a decision, shows `-> decides: poll-once, resolve-document-links,
-  resolve-calls` from the same field. The names on ARCH-0010 do appear under
+  resolve-calls` from the same field. The names on DES-0010 do appear under
   `-> documents:`, but that is RESOLVE-DOCUMENT-LINKS' prose-mention path --
   :INFERRED edges at confidence 0.5 derived from the body text, which go stale
   by design -- not the :STRUCTURAL edge at confidence 1.0 that a declared

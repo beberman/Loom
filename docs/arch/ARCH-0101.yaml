@@ -1,0 +1,175 @@
+id: ARCH-0101
+title: Loom is nine systems over one write path, where analyzers propose, the graph manager disposes, and every derived fact is re-derivable from files
+status: accepted
+date: 2026-08-11
+tags: [architecture, layering, systems, invariants]
+describes: [analyze-file, analyzer-handles-p, find-analyzer, register-analyzer,
+            apply-transaction, plan-op, apply-op, validate-relationship-endpoints,
+            resolve-calls, resolve-document-links, retract-file,
+            impact-set, build-context, describe-entity, search-entities,
+            repository-status, default-system-for-path, entity-system]
+summary: |
+  Loom consists of nine ASDF systems in four tiers; one writer; analyzers that
+  propose operations and never touch storage; resolution passes that derive and
+  never consume; and an ontology registry that is the single executable form of
+  what impact traversal does.
+
+  This is not a design record. Desgn decisions for specific requirements
+  live in docs/design as DES-nnnn and in docs/decisions as DEC-nnnn. What
+  follows describes what is there and what must remain true of it.
+invariants: |
+  I1  ONE WRITER. Every mutation of a graph goes through APPLY-TRANSACTION.
+      Nothing else adds, removes or rewrites an entity or a relationship.
+      A transaction plans completely before it applies anything, so it either
+      lands whole or is rejected whole with a structured problem naming the
+      failing operation.
+
+  I2  ANALYZERS CANNOT REACH STORAGE. loom-analyzer depends on loom-ontology
+      and on nothing else in the tree. An analyzer receives a path and the
+      contents of a file and returns a list of operations; it may not read the
+      filesystem, the graph, or anything the caller did not hand it. This is
+      what keeps language independence enforceable rather than aspirational.
+
+  I3  ONE NATURAL KEY PER FILE PER PASS. A file's operation stream asserts each
+      natural key at most once. Two asserts on one key is a claim the file
+      defines the same thing twice, and the writer cannot reconcile them
+      because ids derive from keys and the evidence of which definition
+      produced which edge is gone by then. Reconciliation is the analyzer's
+      job, in its own language's semantics. Nothing checks this (CON-0005).
+
+  I4  DERIVE, NEVER CONSUME. A resolution pass reads a property the analyzer
+      wrote and never rewrites that property. A pass that consumed its own
+      input could not be re-run, so an edge destroyed by a retract would never
+      return (DEC-0003).
+
+  I5  FILES ARE TRUTH. The graph is an index over files and may be discarded
+      and rebuilt at any time. Anything Loom knows that is not derivable from
+      files must be written back to files or it is not knowledge (DEC-0001).
+
+  I6  A GAP IS RECORDED, NEVER GUESSED. An ambiguous name resolves to nothing
+      and is reported. A damaged form costs a form and is recorded with its
+      line range rather than repaired into an entity. A count that would
+      require inventing a fact is not produced (CON-0001).
+
+  I7  THE ONTOLOGY REGISTRY IS THE ONLY EXECUTABLE COPY of what may connect to
+      what and how impact flows. Adding a relationship type teaches the impact
+      engine about it without editing the traversal.
+body: |
+  THE FOUR TIERS
+
+  Read from the .asd :depends-on graph rather than from habit, 2026-08-11:
+
+      loom-ontology    (nothing in-tree)
+      loom-graph       loom-ontology
+      loom-analyzer    loom-ontology
+      loom-knowledge   loom-ontology loom-graph
+      loom-workspace   loom-ontology loom-graph loom-analyzer
+      loom-process     loom-ontology loom-graph loom-analyzer loom-workspace
+                       loom-knowledge
+      loom-serve       loom-ontology loom-graph loom-analyzer loom-workspace
+                       loom-knowledge
+      loom-rest        loom-serve
+      loom-mcp         loom-serve
+
+  Tier 1 is loom-ontology: declarations and nothing else. Entity types,
+  relationship types, natural keys, and the impact metadata each relationship
+  carries. It depends on nothing because everything depends on it.
+
+  Tier 2 is loom-graph and loom-analyzer, siblings that cannot see each other.
+  loom-graph owns storage, transactions, queries and the resolution passes.
+  loom-analyzer turns text into operations. The absence of an edge between them
+  is I2, and it is what makes adding a language a matter of writing one
+  ANALYZE-FILE method rather than touching the graph.
+
+  Tier 3 is loom-knowledge and loom-workspace. loom-knowledge is read-only: it
+  shapes graph answers into what an agent can use -- locations to open, paths
+  to read, budgeted bundles. loom-workspace owns the indexing pipeline and the
+  file monitor, and is the one place that drives an analyzer and submits what
+  it produced.
+
+  Tier 4 is four peers, not a stack. loom-process is the console. loom-serve is
+  the operation registry, tiers, REPL sessions and the listener. loom-rest and
+  loom-mcp are two protocols over that one registry -- HTTP/JSON under /v1/ and
+  MCP's JSON-RPC at /mcp, sharing one Hunchentoot listener on 127.0.0.1:4780.
+  Nothing below any of the four depends on any of them, and the console is
+  reachable with none of them loaded.
+
+  Note the shape of tier 4 precisely: loom-rest and loom-mcp depend on
+  loom-serve, not directly on the five below it. loom-serve is the seam. A
+  third protocol is a fifth peer, and it should need no edit below loom-serve.
+
+  THE WRITE PATH, END TO END
+
+  A file changes. The monitor notices, reads it, and asks the registry which
+  analyzer claims the path -- FIND-ANALYZER takes the first whose
+  ANALYZER-HANDLES-P says yes, so extensions must not overlap between
+  analyzers. ANALYZE-FILE returns a list of operations that always opens with
+  RETRACT-FILE for that path: an incremental update is a full replacement of
+  one file's contribution, which is why a deleted definition leaves the index
+  and why re-analysis is idempotent.
+
+  Those operations go to APPLY-TRANSACTION. It runs PLAN-OP over every
+  operation first, collecting problems -- an unknown endpoint, an endpoint of a
+  type the relationship forbids per VALIDATE-RELATIONSHIP-ENDPOINTS -- and
+  signals with all of them if there are any, having written nothing. Only then
+  does APPLY-OP run. That is I1, and its practical consequence is worth
+  stating: one illegal endpoint rejects a whole pass, so widening a
+  relationship's permitted endpoints is a correctness change and not a
+  convenience.
+
+  Then the resolution passes run over the whole graph, because they are the
+  first thing that needs more than one file at a time. RESOLVE-CALLS turns
+  recorded call names into edges, refusing any name it cannot place to exactly
+  one callable. RESOLVE-DOCUMENT-LINKS turns a document's declared fields into
+  edges and its prose tokens into weaker ones. Each reads properties the
+  analyzers wrote and rewrites none of them (I4).
+
+  THE READ PATH
+
+  IMPACT-SET partitions the registered relationship types into three by reading
+  their declarations: transitive types are traversed to depth, one-step types
+  are applied once at the end, and terminal types -- those with a :COLLECT-AS
+  -- are gathered into their own named fields rather than mixed into the impact
+  set. This is I7 in action: the tests, the documents, the decisions and the
+  mentions attached to an impact report are there because four relationship
+  types declare a collect-as, not because the traversal knows about documents.
+
+  DESCRIBE-ENTITY groups a node's neighbours by (direction, type), so a new
+  relationship type gets its own heading with no edit. SEARCH-ENTITIES matches
+  substrings and ranks by match quality. BUILD-CONTEXT seeds on task words and
+  expands, which is the naive half of the design and the half most obviously
+  worth replacing.
+
+  WHAT THE DOCUMENT TIERS MEAN
+
+  Five genres reach code, and they are ordered by how strong a claim they make:
+
+      ARCH  describes:   -> :documents   this document describes that structure
+      DEC   affects:     -> :decides     this decision governs that code
+      DES   affects:     -> :decides     this design decides that code's shape
+      REQ   affects:     -> :documents   this requirement bears on that code
+      PLAN  affects:     -> :documents
+      BUG   affects:     -> :documents
+      RULE  applies-to:  -> :applies-to  this constraint binds that code
+      any   `backtick`   -> :mentions    this file names that thing
+
+  The weakest is the newest and the reason the ladder is legible: a backticked
+  name in prose is evidence that a file names something and no evidence at all
+  that it governs it. Recording an inference as a declaration is the failure
+  mode I6 exists to prevent, and the edge types are how the distinction
+  survives contact with a consumer.
+
+  WHERE THIS DESCRIPTION IS KNOWN TO BE INCOMPLETE
+
+  :MODULE, :PACKAGE and :REPOSITORY are declared entity types with no
+  populated instances, so the layering rules that would key on them are
+  vacuous. RULE-0001 to RULE-0003 read a :SYSTEM property computed by
+  DEFAULT-SYSTEM-FOR-PATH or from IN-PACKAGE, and RULE-0002 and RULE-0003
+  currently report false positives for reasons BUG-0009 records. The peer
+  property of tier 4 is not expressible as a rule at all and is checked by
+  loading loom-serve alone.
+
+  Enrichment is a second, optional pass that asks a language's own toolchain
+  what the text walk could not see. It runs only on explicit demand and ages
+  itself out, so an index nobody re-enriched gives today's text answer rather
+  than yesterday's image answer.

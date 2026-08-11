@@ -8,7 +8,7 @@
 ;;;;
 ;;;; The four write tools -- loom_watch, loom_pause, loom_unwatch,
 ;;;; loom_reindex -- are deliberately absent, and this comment is the record of
-;;;; that rather than an oversight to be tidied up later. ARCH-0006's
+;;;; that rather than an oversight to be tidied up later. DES-0006's
 ;;;; ALTERNATIVES CONSIDERED works through it: R2 enumerates exactly seven read
 ;;;; tools, R4 uses the open-ended "full console command vocabulary" for REST
 ;;;; alone, and R9 calls the REPL an *addition* to both surfaces rather than

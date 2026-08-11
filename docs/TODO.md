@@ -4,7 +4,7 @@
   68 incoming calls and 68 tests.
 
 - "Calls made from inside (test ...) macro bodies aren't attributed" — fixed
-  by ARCH-0002's definer call sites plus resolve-generated-definitions.
+  by DES-0002's definer call sites plus resolve-generated-definitions.
   451 tests covering 305 units.
 
 - "unwatch does not expand ~" — fixed 2026-08-09, and the diagnosis here was
@@ -109,24 +109,24 @@ point of REQ-0014's argument above: it is queryable there and invisible here.
   241 package-qualified operators with the prefix discarded, one bad form
   costing a whole file, the index depending on the analyzing implementation's
   \*features\*.
-- **ARCH-0013** — Eclector behind a Loom-owned client, raw s-expression
+- **DES-0013** — Eclector behind a Loom-owned client, raw s-expression
   unchanged, annotations in EQ-keyed side tables. Also folds in the
   head-name dispatch table replacing pass 1's ten definition-p calls, and
   says why definition-p itself survives (no conforming reader knows what a
   defun is; the CST taxonomy is two classes).
-- **ARCH-0014** — a :call-site entity exactly where a call cannot be an edge
+- **DES-0014** — a :call-site entity exactly where a call cannot be an edge
   from a definition. The uniform reference-node model was priced and refused:
   4867 call-name occurrences against 1604 entities is 4x for 18 ambiguous
   occurrences, 42 orphaned names and one initform.
 
-Rejected on the record, in REQ-0019's WHAT THIS IS NOT and ARCH-0013's
+Rejected on the record, in REQ-0019's WHAT THIS IS NOT and DES-0013's
 alternatives: Cleavir (macroexpands, so it needs target code loaded in-image),
 a shared cross-language CST as the intermediate representation (the uniform
 layer is the ontology operation, one level up), and hand-rolling or reviving a
 CL parser for TypeScript or Python (nothing exists for TS; parse-js is ES3;
 CLPython is Python 2, unmaintained since 2013).
 
-Still unwritten, both named in ARCH-0014's deferred list:
+Still unwritten, both named in DES-0014's deferred list:
 
 - A batched, out-of-process analyzer in the analyzer protocol. analyze-file is
   per-file and stateless, so a Python or Node process per file across 174

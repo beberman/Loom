@@ -1,7 +1,7 @@
 ;;;; The listener, and the seam that lets two systems share it without either
 ;;;; knowing about the other.
 ;;;;
-;;;; ARCH-0006 says start-server "builds one Hunchentoot acceptor carrying both
+;;;; DES-0006 says start-server "builds one Hunchentoot acceptor carrying both
 ;;;; loom-rest's routes and loom-mcp's single JSON-RPC endpoint", and also that
 ;;;; loom-serve depends on exactly the five systems loom-process depends on --
 ;;;; which excludes loom-rest and loom-mcp. Read literally those are circular:
@@ -13,7 +13,7 @@
 ;;;; loom-serve owns the acceptor and a registration seam, and loom-rest and
 ;;;; loom-mcp each push their handlers onto it in a top-level form at load time.
 ;;;; The acceptor's dispatcher walks whatever is registered. The acceptor
-;;;; therefore does carry both, exactly as ARCH-0006 says, without loom-serve
+;;;; therefore does carry both, exactly as DES-0006 says, without loom-serve
 ;;;; naming either -- and an image holding only loom-serve gets a listener that
 ;;;; answers 404 to everything, which is a coherent state and the one this
 ;;;; step's tests exercise.
@@ -98,7 +98,7 @@ object was expected is a decoding failure rather than a message."
 (defparameter *default-port* 4780)
 
 (defparameter *default-address* "127.0.0.1"
-  "A requirement rather than an example, and ARCH-0006 gives the reason: R6's
+  "A requirement rather than an example, and DES-0006 gives the reason: R6's
 credential story is deliberately unfinished, so a service listening on every
 interface would be the one unsafe part of this design. A caller who wants it
 reachable off-box passes an address explicitly; the default does not decide
@@ -172,7 +172,7 @@ and closing the listening socket. Two properties of that code, read there rather
 than assumed, decide the shape of everything below.
 
 It takes no timeout. The wait at 327-328 is a bare CONDITION-VARIABLE-WAIT with
-no deadline argument, so the bound ARCH-0008 R3 requires cannot live inside the
+no deadline argument, so the bound DES-0008 R3 requires cannot live inside the
 primitive. That is why the soft stop runs on a thread of its own here: a caller
 that ran it in-line and trusted it to return would turn every
 `tools/loom-serve.sh stop' into an indefinite block the moment one request hung.
@@ -180,7 +180,7 @@ that ran it in-line and trusted it to return would turn every
 It waits once rather than in a loop, guarded by a single WHEN at 326. With two
 or more overlapping requests the wait returns when the *first* one finishes
 rather than the last, so `:soft t' is \"wait for an in-flight request\" and not
-\"wait for all of them\". A residual ARCH-0008 records as accepted, not closed.
+\"wait for all of them\". A residual DES-0008 records as accepted, not closed.
 
 When the bound elapses the drain thread is still blocked on that condition
 variable and nothing can wake it but a request completing, so it is left parked
@@ -300,7 +300,7 @@ with it. R7 asks for the lifecycle to be explicit rather than assumed, and
 \"something is always attached to stdin\" is exactly the assumption MAIN makes
 safely today and would make unsafely here.
 
-ALREADY-STARTED skips the START-SERVER call below, for ARCH-0007's fifth
+ALREADY-STARTED skips the START-SERVER call below, for DES-0007's fifth
 PROBLEM finding. A caller that must write a pidfile only once the bind has
 actually succeeded needs a seam between START-SERVER returning and the blocking
 loop beginning, and this body has none; calling START-SERVER itself to get that

@@ -1,6 +1,6 @@
 ;;;
 ;;; Tests for src/analyzer/markdown-analyzer.lisp -- REQ-0014 by way of
-;;; ARCH-0016.
+;;; DES-0016.
 ;;;
 ;;; Fixture strings rather than a second repository. REQ-0014's own acceptance
 ;;; measurement is taken against ~/lisp/game-server, which is not checked out
@@ -53,15 +53,15 @@
               "a file called docs.md is not a docs directory")))
 
 (test the-two-document-analyzers-claim-disjoint-extensions
-  ;; The 88 YAML documents must be undisturbed by any of this (ARCH-0016 D9),
+  ;; The 88 YAML documents must be undisturbed by any of this (DES-0016 D9),
   ;; and FIND-ANALYZER takes the first analyzer that claims a path -- so the
   ;; guarantee has to be that no path is claimed twice.
   (let ((markdown (make-instance 'markdown-analyzer))
         (yaml (make-instance 'document-analyzer)))
-    (is-false (analyzer-handles-p markdown "docs/design/DEC-0001.yaml"))
+    (is-false (analyzer-handles-p markdown "docs/decisions/DEC-0001.yaml"))
     (is-false (analyzer-handles-p yaml "docs/TODO.md"))
     (is (typep (find-analyzer "docs/TODO.md") 'markdown-analyzer))
-    (is (typep (find-analyzer "docs/design/DEC-0001.yaml") 'document-analyzer))))
+    (is (typep (find-analyzer "docs/decisions/DEC-0001.yaml") 'document-analyzer))))
 
 (test a-registered-directory-is-claimed-from-then-on
   (let ((*documentation-directories* (copy-list *documentation-directories*))
@@ -94,7 +94,7 @@
         "with no H1 the filename is the title, and says so rather than guessing")))
 
 (test a-markdown-document-declares-no-references-to-resolve
-  ;; ARCH-0016 D9, and the structural half of R3/R6's "unresolved does not
+  ;; DES-0016 D9, and the structural half of R3/R6's "unresolved does not
   ;; rise": the fields RESOLVE-DOCUMENT-LINKS reports on are the declared ones,
   ;; and markdown supplies none of them.
   (let ((e (md-entity "docs/x.md" "# T
@@ -107,7 +107,7 @@
         "a document with no id: field has no id; the path is already the key")))
 
 (test the-system-property-is-the-path-default
-  ;; ARCH-0009 R1: every :DOCUMENT carries one, and a document has no grouping
+  ;; DES-0009 R1: every :DOCUMENT carries one, and a document has no grouping
   ;; construct of its own to read.
   (is (eq :docs (getp (md-entity "docs/x.md" "# T") :system))))
 
@@ -128,7 +128,7 @@
         "a phrase is not a name, and a two-character span matches half a schema")))
 
 (test a-fenced-block-contributes-nothing
-  ;; ARCH-0016 D5: a fence is the document reproducing something, not naming
+  ;; DES-0016 D5: a fence is the document reproducing something, not naming
   ;; it. game-server's twelve files carry 256 fence delimiters between them.
   (let ((m (md-mentions "docs/x.md"
                         (format nil "prose `real-name` here~%~
@@ -165,7 +165,7 @@
     (is (member "real-name" m :test #'string=))))
 
 ;;; ------------------------------------------------------------------
-;;; Link targets (R3, ARCH-0016 D6)
+;;; Link targets (R3, DES-0016 D6)
 ;;; ------------------------------------------------------------------
 
 (test a-relative-link-normalizes-against-the-documents-own-directory

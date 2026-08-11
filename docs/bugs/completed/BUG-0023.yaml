@@ -1,0 +1,121 @@
+id: BUG-0023
+title: "affects: was read only from a decision, so 63 of 67 documents declared what they touch and nothing recorded it"
+status: closed
+date: 2026-08-11
+refines: [CON-0004]
+affects: [document-properties, resolve-document-links, unresolved-references,
+          declared-edge-type]
+tags: [documents, resolution, staleness, con-0001, silent-failure]
+summary: |
+  DOCUMENT-PROPERTIES read the affects: field in its :DECISION method and
+  nowhere else, and the :DOCUMENT entity type declared no :AFFECTS property to
+  hold it. Every architecture note, requirement, plan, bug report and review
+  in the tree could therefore write affects:, and the field went into the YAML
+  parse and no further -- no edge, and no unresolved report either, because a
+  field that is never read produces no name that can fail to resolve.
+
+  Measured on this tree the day it was fixed: 67 documents carrying roughly
+  610 declared names, of which the four in docs/design were the only ones
+  producing an edge. Fixing it added 603 relationships and moved `unresolved`
+  from 0 to 13 -- thirteen genuinely rotten references that had been invisible
+  since the documents naming them were written.
+body: |
+  HOW IT PRESENTED
+
+  `describe DES-0009' showed refines: and mentions: and no decides:, against
+  an affects: list of twenty real function names. The names appeared under
+  mentions: instead, and only because PROSE-MENTIONS had independently found
+  the same words in the document's body text -- an accident of the names also
+  being written in the prose, not the declared field being read.
+
+  The tell was `status' reporting `unresolved : 0 document references' while
+  REQ-0014's affects: named RESOLVE-DOCUMENT-REFERENCES, which has never
+  existed in this tree; the function is RESOLVE-DOCUMENT-LINKS. That reference
+  had been rotten since 2026-08-06 and the staleness detector had never looked
+  at it.
+
+  THE CHAIN
+
+  1. DOCUMENT-PROPERTIES specialises on the type key. Its :DECISION method
+     reads affects:; its :DOCUMENT, :CONCEPT and :RULE methods do not.
+  2. The :DOCUMENT entity type declared :PATH, :DOC-ID, :TITLE, :SUMMARY,
+     :STATUS, :CATEGORY, :FORMAT, :BODY, :REFINES, :MENTIONS,
+     :UNRESOLVED-REFERENCES and :ANALYSIS-ERROR -- and no :AFFECTS. So even an
+     analyzer that set it would have had the value dropped.
+  3. RESOLVE-DOCUMENT-LINKS iterates *DECLARED-LINK-FIELDS* over every
+     document type, so it did ask each :DOCUMENT for its :AFFECTS. It got NIL,
+     the inner loop never ran, and nothing was asserted and nothing was
+     recorded as unresolved.
+
+  Each step is individually reasonable, which is why this survived: the
+  resolver looks correct in isolation and is correct; it was reading a
+  property nobody filled.
+
+  WHY IT IS A CON-0001 DEFECT AND NOT MERELY A MISSING FEATURE
+
+  The recorded gap is the point of that concept, and here there was no gap
+  recorded. An author wrote a claim, the system accepted the file without
+  complaint, `check' reported nothing, and the claim evaporated. That is worse
+  than the fabricated fact CON-0001 is usually invoked against, because a
+  fabricated fact is at least visible enough to be argued with.
+
+  THE FIX
+
+  :AFFECTS declared on :DOCUMENT, read by DOCUMENT-PROPERTIES' :DOCUMENT
+  method, and a new DECLARED-EDGE-TYPE deciding what the claim means from who
+  makes it: a decision governs what it affects and earns :DECIDES, while a
+  requirement, plan, bug report or review bears on it and earns :DOCUMENTS.
+  *GOVERNING-DOCUMENT-TYPES* is the list, currently :DECISION alone.
+
+  That split is not decoration. :DECIDES is gathered into `impact''s
+  decisions: field, and a plan arriving there would say a plan governs the
+  code it sequences. :DOCUMENTS is the type SS11 declared for exactly this
+  reading and, as DES-0016 D7 recorded, the type left with no producer at all
+  once REQ-0014 moved prose mentions onto :MENTIONS. This closes that
+  OUTSTANDING: the strong/weak pair is now declared affects: against
+  backticked prose, which is the distinction REQ-0014 argued for.
+
+  ONE WIDENING THE FIX FORCED
+
+  Turning the field on immediately failed the whole resolution transaction:
+
+      op 270 :DOCUMENTS document:docs/design/DES-0005.yaml
+             -> variable:src/analyzer/yaml-analyzer.lisp:*prose-fields*
+             :DOCUMENTS cannot terminate at :VARIABLE
+
+  Three documents name a special variable in affects:, and neither :DOCUMENTS
+  nor :DECIDES admitted :VARIABLE as a target. One illegal endpoint rejects
+  the entire transaction, so the index lost every document edge -- 9885
+  relationships down to 7898 -- until the endpoint lists were widened.
+
+  :DOCUMENTS, :MENTIONS, :DECIDES and :APPLIES-TO were all four aligned to one
+  target set rather than only the two that failed. They ask the same question
+  -- what may a document point at -- and had drifted into four answers: two
+  admitted :CONCEPT and :TEST, two did not, none admitted :VARIABLE. Leaving
+  :APPLIES-TO narrow would have left the same landmine for the first rule that
+  constrains a variable, and the failure mode is a whole-index rejection
+  rather than a dropped edge.
+
+  MEASURED
+
+      relationships   9885 -> 10488   (+603)
+      unresolved         0 ->    13
+      documents         91 ->    91   (unchanged)
+      test systems             9 of 9
+
+  The thirteen are not a regression; they are thirteen references that were
+  already rotten and are now reported. Two are REQ-0014 and REQ-0017 naming
+  RESOLVE-DOCUMENT-REFERENCES. Several name functions deleted since
+  (READ-FORMS-WITH-SPANS, ELEMENT-SPANS, DISCOVER-UNITS).
+
+  A KNOWN IMPRECISION IN WHAT `check' NOW SAYS
+
+  RESOLVE-ONE returns NIL both for a name that matches nothing and for one
+  that matches several, and :UNRESOLVED-REFERENCES cannot tell the two apart.
+  Of the thirteen, RESOLVE-ENTITY is not rotten at all -- it names two real
+  functions, LOOM-PROCESS's and LOOM-SERVE's, and DES-0015 says those are two
+  callables rather than a duplicate, so refusing to guess is correct. Reporting
+  it in the same list as a name that resolves to nothing conflates a missing
+  fact with an ambiguous one. Worth separating; not done here, because the
+  report is honest in both cases and the fix belongs with whatever answers
+  REQ-0013.

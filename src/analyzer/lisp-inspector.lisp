@@ -1,8 +1,8 @@
 ;;;; The Common Lisp inspector: what SBCL knows about a tree it has loaded.
-;;;; Implements ARCH-0011 R3 and R4 behind the protocol in inspector.lisp.
+;;;; Implements DES-0011 R3 and R4 behind the protocol in inspector.lisp.
 ;;;;
 ;;;; This is the only file in the tree that knows what SBCL is. That is the
-;;;; whole of ARCH-0011's second-language answer: a TypeScript inspector is a
+;;;; whole of DES-0011's second-language answer: a TypeScript inspector is a
 ;;;; node script emitting the same facts schema over its own wire, and nothing
 ;;;; outside its own file learns what a tsconfig is either. Concretely, the
 ;;;; word FAST-METHOD -- SBCL's spelling of a method in a WHO-CALLS key --
@@ -13,7 +13,7 @@
 ;;;; executes, so it happens in a child process bounded by `timeout' and
 ;;;; --dynamic-space-size, and Loom's own image still never evaluates a form of
 ;;;; target code (REQ-0018 R3). The process boundary is what enforces that; the
-;;;; system boundary could not, and ARCH-0008 is the precedent -- every path
+;;;; system boundary could not, and DES-0008 is the precedent -- every path
 ;;;; that runs code outside the current image's control is a fresh process
 ;;;; driven from outside.
 ;;;;
@@ -48,7 +48,7 @@ binds it to seconds.")
                        :documentation "Whether a tree's test systems are units.
 
 
-NIL by default, which ARCH-0011 left to the implementing plan and PLAN-0010 R-7
+NIL by default, which DES-0011 left to the implementing plan and PLAN-0010 R-7
 settled. It changes the acceptance numbers and so has to be stated with them:
 with primary systems only, SB-INTROSPECT:WHO-CALLS APPLY-TRANSACTION returns 3
 callers; with the test systems loaded it returns 8, the extra five being DEFUNs
@@ -144,7 +144,7 @@ the relative path can answer that."
 ;;;;
 ;;;;   It never writes protocol on stdout. Loading a foreign tree sprays
 ;;;;   compile chatter there, and a crash mid-form would be indistinguishable
-;;;;   from a short read -- which is why ARCH-0011 rejected parsing stdout and
+;;;;   from a short read -- which is why DES-0011 rejected parsing stdout and
 ;;;;   had the parent name a result file instead.
 ;;;;
 ;;;;   It guards each unit with SERIOUS-CONDITION and not ERROR. RULE-0004 with
@@ -526,7 +526,7 @@ the result does not depend on how many re-spawns happened to be needed."
     (nreverse kept)))
 
 ;;;; ------------------------------------------------------------------
-;;;; Line ranges (ARCH-0011 R4)
+;;;; Line ranges (DES-0011 R4)
 ;;;;
 ;;;; The child reports a file and a form-path; a Loom entity needs a
 ;;;; :START-LINE, which is :REQUIRED on every code entity type. The parent maps
@@ -536,7 +536,7 @@ the result does not depend on how many re-spawns happened to be needed."
 ;;;;
 ;;;; The leading index of the form-path is the top-level form, which is what
 ;;;; makes a macro-generated definition point at the *call site* that generated
-;;;; it rather than at the macro. That is ARCH-0010's wider truth and it is the
+;;;; it rather than at the macro. That is DES-0010's wider truth and it is the
 ;;;; right answer here: it is the region an agent has to open to change it.
 ;;;;
 ;;;; A definition whose location cannot be recovered is dropped and counted,
@@ -555,9 +555,9 @@ their ranges and nothing else, where a condition escaping into the enrichment
 pass would cost the pass.
 
 A reading with any recovered form in it yields NIL rather than its spans, and
-that guard is what keeps ARCH-0013's recovery from turning into a fabricated
+that guard is what keeps DES-0013's recovery from turning into a fabricated
 range here. The child's form-path index counts every top-level form SBCL's
-loader saw; READING-FORMS omits a form the reader had to repair (ARCH-0013 R4),
+loader saw; READING-FORMS omits a form the reader had to repair (DES-0013 R4),
 so on a damaged file the two sequences disagree from the damage onward and NTH
 would hand a definition some later form's lines. Dropping the file's ranges
 costs its definitions and is counted; misattributing them would send an agent

@@ -53,7 +53,7 @@ asserts on one key in one transaction are a claim that the file defines the
 same thing twice, and the writer has no way to reconcile them: ids are derived
 from the key, so both definitions' edges carry the same endpoint, and by the
 time the graph sees the ops the fact of which definition produced which edge
-has already been destroyed. That is BUG-0012, and ARCH-0012 puts the duty
+has already been destroyed. That is BUG-0012, and DES-0012 puts the duty
 here.
 
 Reconciling is the implementer's job because it is the *language's* semantics,
@@ -180,7 +180,7 @@ OFFSET-LINE hands out."
 ;;;; ------------------------------------------------------------------
 ;;;; The system a path belongs to, for an analyzer with nothing stronger
 ;;;;
-;;;; ARCH-0009 R2: this is BUG-0006's fix, relocated from LOOM-GRAPH's
+;;;; DES-0009 R2: this is BUG-0006's fix, relocated from LOOM-GRAPH's
 ;;;; ENTITY-SYSTEM rather than reimplemented. Deciding what a path means in a
 ;;;; given language is an analyzer's job and not the query layer's -- the query
 ;;;; layer is the one place in the stack that structurally cannot know -- but a

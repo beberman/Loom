@@ -1,10 +1,10 @@
 ;;;; The operation registry: one table, two protocol skins.
 ;;;;
-;;;; ARCH-0006's central economy. This is not a reimplementation of the
+;;;; DES-0006's central economy. This is not a reimplementation of the
 ;;;; console's command table; it is a small table of (name, permission tier,
 ;;;; underlying function, argument shape) entries that call the *same*
 ;;;; functions console.lisp calls and stop one step short of console.lisp's own
-;;;; formatting. ARCH-0005 already made the argument this leans on: "the
+;;;; formatting. DES-0005 already made the argument this leans on: "the
 ;;;; underlying data is already structured; only the console's formatting step
 ;;;; is prose."
 ;;;;

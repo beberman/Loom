@@ -33,7 +33,7 @@
    #:reindex-repository
    #:repository-status
 
-   ;; the second pass (ARCH-0011). On explicit demand only -- nothing in
+   ;; the second pass (DES-0011). On explicit demand only -- nothing in
    ;; POLL-ONCE, the monitor, watch or reindex reaches it.
    #:enrich-repository
 

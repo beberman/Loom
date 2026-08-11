@@ -29,7 +29,7 @@
    #:describe-entity
    #:impact-report
 
-   ;; a bounded answer for a document-shaped entity (ARCH-0005)
+   ;; a bounded answer for a document-shaped entity (DES-0005)
    #:*summary-fields-by-type*
    #:summary-field-and-text
    #:*summary-token-budget*

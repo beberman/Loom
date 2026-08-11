@@ -138,7 +138,7 @@
             "~s :language does not share the vocabulary" key)))))
 
 (test the-system-property-is-declared-on-exactly-the-types-that-can-carry-one
-  ;; ARCH-0009 R1. Asserted through FIND-PROPERTY rather than by round-tripping
+  ;; DES-0009 R1. Asserted through FIND-PROPERTY rather than by round-tripping
   ;; an entity because getting this wrong is silent: VALIDATE-ENTITY only walks
   ;; declared properties, so an undeclared :SYSTEM would be stored and never
   ;; complained about -- everywhere except DECLARED-PROPERTIES-ONLY, which
@@ -216,7 +216,7 @@
   (is (null (validate-relationship-endpoints :tests :test :function))))
 
 (test a-generated-definition-can-point-at-what-generated-it
-  ;; ARCH-0002 R4. All three returned a problem list before the widening, and
+  ;; DES-0002 R4. All three returned a problem list before the widening, and
   ;; PLAN-OP rejects a whole transaction on one illegal endpoint -- so without
   ;; these three pairs RESOLVE-GENERATED-DEFINITIONS loses every op it emits,
   ;; not just the offending one. code-ontology.lisp records that happening
@@ -229,14 +229,14 @@
       "and a test that calls a slot accessor directly still covers it"))
 
 (test a-call-site-is-called-from-and-contained-by-what-refers-to-it
-  ;; ARCH-0014 R1, plus PLAN-0014 decision 3 for the caller-side :CONTAINS.
+  ;; DES-0014 R1, plus PLAN-0014 decision 3 for the caller-side :CONTAINS.
   ;; PLAN-OP rejects a whole transaction on one illegal endpoint, so each of
   ;; these missing would cost RESOLVE-CALLS every op it emits rather than one
   ;; edge -- which is the failure a-generated-definition-can-point-at-what-
   ;; generated-it records happening before.
   (is (null (validate-relationship-endpoints :calls :call-site :function))
       "the edge runs from the call site to the callee, which is the whole
-ontology cost of ARCH-0014")
+ontology cost of DES-0014")
   (is (null (validate-relationship-endpoints :contains :variable :call-site))
       "BUG-0017: an initform's site belongs to the variable that holds it")
   (is (null (validate-relationship-endpoints :contains :class :call-site))
@@ -253,7 +253,7 @@ ontology cost of ARCH-0014")
       "nothing calls a call site"))
 
 (test two-constructions-of-one-call-site-agree-on-its-identity
-  ;; The seam ARCH-0014's RISKS section names: the analyzer mints initform
+  ;; The seam DES-0014's RISKS section names: the analyzer mints initform
   ;; sites and the graph mints the other two, so if the two ever spelled the
   ;; key differently the graph would grow a duplicate per pass that nothing
   ;; retracts. MAKE-CALL-SITE-ENTITY being the only constructor is the
@@ -300,7 +300,7 @@ RESOLVE-CALLS reads, so a second copy here could drift from the key")
         "the label and the entity cannot disagree, because one makes the other")))
 
 (test a-definitions-package-is-the-in-package-chain-uppercased
-  ;; PLAN-0015 step 4, decided against ARCH-0015 R3's separate property. This
+  ;; PLAN-0015 step 4, decided against DES-0015 R3's separate property. This
   ;; test is the declared dependency: ENTITY-PACKAGE reads :SYSTEM, so if
   ;; :SYSTEM's derivation ever stops being the IN-PACKAGE chain, package
   ;; resolution breaks silently everywhere unless it breaks here first.
@@ -316,7 +316,7 @@ the graph's job because it needs every declaration in the tree at once")
         "and an entity with no package in effect has none, rather than a guess")))
 
 (test a-package-declares-the-properties-symbol-movement-needs
-  ;; ARCH-0015 R1, and this is the assertion that actually binds. The
+  ;; DES-0015 R1, and this is the assertion that actually binds. The
   ;; round-trip test below documents intent but cannot fail without this
   ;; change: PROPERTIES-TABLE accepts any key and VALIDATE-ENTITY does not
   ;; reject an undeclared one, so an entity carrying :nicknames validates
@@ -328,14 +328,14 @@ the graph's job because it needs every declaration in the tree at once")
     (dolist (key '(:qualified-name :exports :nicknames :imported-symbols
                    :unhandled-package-clauses))
       (is (member key declared)
-          "~s must be declared on :package -- ARCH-0015 keys symbol identity
+          "~s must be declared on :package -- DES-0015 keys symbol identity
 on these and an undeclared property is invisible to the published schema" key))
     (is (equal '(:qualified-name) (entity-type-natural-key spec))
         "and the key stays the declared name alone: a nickname is an alias
 recorded on the package, never a second :package entity")))
 
 (test a-package-records-what-it-aliases-and-what-it-takes-from-elsewhere
-  ;; Documents the shape ARCH-0015 R1 asks for. Deliberately noted as a test
+  ;; Documents the shape DES-0015 R1 asks for. Deliberately noted as a test
   ;; that passes without the change it accompanies -- see BUG-0022 -- and kept
   ;; because it is the readable statement of what the properties hold.
   (let ((p (make-instance 'package-entity

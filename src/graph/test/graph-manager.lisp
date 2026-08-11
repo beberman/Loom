@@ -216,7 +216,7 @@
     (is (null (relationships-from g (id a) :rel-type :some-other-type)))))
 
 (test re-applying-one-op-list-keeps-a-relationships-properties
-  ;; ARCH-0012 R6. The op list is built once and applied twice, so the second
+  ;; DES-0012 R6. The op list is built once and applied twice, so the second
   ;; pass hands APPLY-OP the very relationship object the first pass stored:
   ;; FIND-RELATIONSHIP-BY-KEY returns it, and ABSORB-RELATIONSHIP is then asked
   ;; to absorb a fact into itself. Without the EQ guard, ABSORB-PROPERTIES

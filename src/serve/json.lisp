@@ -1,11 +1,11 @@
 ;;;; Turning a loom-knowledge plist into JSON.
 ;;;;
-;;;; This lives in loom-serve rather than in loom-rest, against ARCH-0006's
+;;;; This lives in loom-serve rather than in loom-rest, against DES-0006's
 ;;;; sentence placing JSON encoding in loom-rest, for a structural reason:
 ;;;; loom-mcp needs byte-identical encoding and must not depend on loom-rest.
 ;;;; The alternatives are duplicating the walker or making the two skins
 ;;;; non-peers, and both are worse than moving one function one system down.
-;;;; ARCH-0006's own words allow it -- loom-mcp uses "whichever JSON library
+;;;; DES-0006's own words allow it -- loom-mcp uses "whichever JSON library
 ;;;; loom-rest uses" -- and the substance it commits to, that neither protocol
 ;;;; system contains business logic, is untouched: a data-shape translation
 ;;;; shared by both skins is exactly what loom-serve is for.

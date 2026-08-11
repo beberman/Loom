@@ -1,6 +1,6 @@
 ;;;; Package definition for loom-serve: the substance both protocol skins share.
 ;;;;
-;;;; ARCH-0006: "loom-serve depends on exactly the same five systems
+;;;; DES-0006: "loom-serve depends on exactly the same five systems
 ;;;; loom-process.asd already depends on -- loom-ontology, loom-graph,
 ;;;; loom-analyzer, loom-workspace, loom-knowledge -- and nothing in loom-serve,
 ;;;; loom-rest, or loom-mcp depends on loom-process." The use list below is

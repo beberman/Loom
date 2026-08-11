@@ -1,8 +1,8 @@
 ;;;; The markdown analyzer: prose documentation becomes graph entities.
-;;;; Implements REQ-0014 by way of ARCH-0016.
+;;;; Implements REQ-0014 by way of DES-0016.
 ;;;;
 ;;;; A second analyzer beside the YAML one rather than a widening of it, for
-;;;; the reason SS8.1 gives the protocol at all (ARCH-0016 D1). The two share
+;;;; the reason SS8.1 gives the protocol at all (DES-0016 D1). The two share
 ;;;; nothing below the entity they produce: one parses with cl-yaml and reads
 ;;;; named fields, the other scans text for spans; one has to guard for
 ;;;; YAML.ERROR:YAML-ERROR (RULE-0004) and the other cannot fail to parse.
@@ -26,7 +26,7 @@
 (in-package :loom-analyzer)
 
 ;;;; ==================================================================
-;;;; Which directories count (REQ-0014 R2, ARCH-0016 D2)
+;;;; Which directories count (REQ-0014 R2, DES-0016 D2)
 ;;;; ==================================================================
 
 (defparameter *documentation-directories*
@@ -34,7 +34,7 @@
   "Directory names that mark a tree as documentation.
 
 Convention with a registration seam, deliberately, and not configuration:
-ARCH-0016 D2 records the reasoning and the rejected alternative. Loom keeps its
+DES-0016 D2 records the reasoning and the rejected alternative. Loom keeps its
 own documents in docs/; ~/lisp/game-server keeps requirements in design/ and
 reference material in docs/; a repository that uses a fifth name registers it
 rather than editing this file.
@@ -62,7 +62,7 @@ which directory the file sits in."
          t)))
 
 ;;;; ==================================================================
-;;;; Reading the text: fences, headings, spans, links (ARCH-0016 D5)
+;;;; Reading the text: fences, headings, spans, links (DES-0016 D5)
 ;;;; ==================================================================
 
 (defun text-lines (string)
@@ -89,7 +89,7 @@ Three or more backticks or tildes, per CommonMark. The marker is returned so a
 
 A fence is a transcript or a specimen -- a shell session, a SQL schema, an
 ASCII diagram -- and its tokens are the document reproducing something rather
-than naming it (ARCH-0016 D5). An unterminated fence swallows the rest of the
+than naming it (DES-0016 D5). An unterminated fence swallows the rest of the
 file, which is the correct reading of the text rather than a case to work
 around: the author wrote an opening fence and no closing one, and everything
 after it is inside a code block."
@@ -194,7 +194,7 @@ rather than an inline one."
           collect (string-trim '(#\Space #\Tab) (subseq trimmed (+ close 2)))))
 
 ;;;; ==================================================================
-;;;; Turning a link target into a workspace-relative path (ARCH-0016 D6)
+;;;; Turning a link target into a workspace-relative path (DES-0016 D6)
 ;;;;
 ;;;; The analyzer normalizes and stops. It does not check whether the result
 ;;;; exists: an analyzer has no index and must not acquire one (SS8.1), and the
@@ -322,7 +322,7 @@ keeps design/pieces.md and design/rules.md, and neither is a Loom decision
 record or a Loom rule. That registry is a convention of CON-0004's own
 workflow, and reading a foreign repository's design/ as a directory of DEC
 documents would be the generality failure REQ-0014 was raised about, committed
-one level down (ARCH-0016 D3).
+one level down (DES-0016 D3).
 
 No :DOC-ID, and none of the declared link fields -- affects:, applies-to:,
 supersedes:, refines:. A markdown file declares none of them, and that absence

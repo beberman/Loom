@@ -2,12 +2,12 @@ id: PLAN-0012
 title: Supersede a shadowed same-key definition inside ANALYZE-FILE, record it on the survivor, and report it through RULE-0006
 status: draft
 date: 2026-08-08
-refines: [ARCH-0012]
+refines: [DES-0012]
 affects: [analyze-file, absorb-relationship, run-check, check-rules, parse-check,
           class-definition-entities, generic-definition-entities, entity-natural-key]
 tags: [analyzer, graph, rules, clos, provenance]
 summary: |
-  Sequences ARCH-0012 into twelve steps. The consistency half lands in
+  Sequences DES-0012 into twelve steps. The consistency half lands in
   ANALYZE-FILE: between pass 1 and pass 2, among definitions in one file
   sharing one ENTITY-NATURAL-KEY, only the last in source order survives, so
   no entity op, :CONTAINS edge, body walk, :CALL-NAMES or local :CALLS edge is
@@ -19,13 +19,13 @@ summary: |
   APPLY-OP; any widening of the :method natural key; and same-key collisions
   minted by RESOLVE-GENERATED-DEFINITIONS rather than by an analyzer, which
   R1's contract does not reach. One measured finding forces an amendment to
-  ARCH-0012 R8 and is called out as such rather than absorbed silently: both
+  DES-0012 R8 and is called out as such rather than absorbed silently: both
   trees carry more same-key collisions than R8 predicts, and most of them are
   DEFCLASS accessor names rather than shadowed code.
 body: |
   WHAT MEASUREMENT CHANGED BEFORE THE FIRST STEP
 
-  ARCH-0012 R8 predicts that Loom is collision-free and that game-server has
+  DES-0012 R8 predicts that Loom is collision-free and that game-server has
   exactly two collisions. Both are false, measured today by running
   ANALYZE-FILE over every .lisp file in each tree and counting duplicate
   ENTITY-NATURAL-KEYs within one file's op stream:
@@ -45,8 +45,8 @@ body: |
   Reported verbatim, RULE-0006 would print three findings on Loom and
   seventeen on game-server, of which thirteen would be noise -- burying the
   six real ones, and repeating BUG-0009's pattern of a rule whose output has
-  to be read past. So this plan adds one clause ARCH-0012 does not state, and
-  step 12 amends ARCH-0012 rather than leaving the divergence in code only:
+  to be read past. So this plan adds one clause DES-0012 does not state, and
+  step 12 amends DES-0012 rather than leaving the divergence in code only:
 
     R2-RECORDING: supersession (R1) applies to every definition kind with no
     exception. The :shadowed-definitions property is recorded unless BOTH the
@@ -58,7 +58,7 @@ body: |
   The predicate is Lisp-specific, which is why it lives in the Lisp analyzer
   and not in the writer or the rule: "an accessor name declared twice is one
   generic function" is CL semantics, exactly the kind of reconciliation
-  ARCH-0012's ALTERNATIVES section argues belongs to the analyzer.
+  DES-0012's ALTERNATIVES section argues belongs to the analyzer.
 
   With the clause, the predicted findings are:
 
@@ -123,9 +123,9 @@ body: |
     CLAUDE.md                         one line under "Principles worth
                                       knowing", pointing at CON-0005 (step 9)
     docs/bugs/BUG-0012.yaml           status fixed, WHAT LANDED (step 12)
-    docs/arch/ARCH-0012.yaml          status implemented, R2/R8 amended
+    docs/design/DES-0012.yaml          status implemented, R2/R8 amended
                                       (step 12)
-    docs/arch/ARCH-0010.yaml          one line at its BUG-0012 forward
+    docs/design/DES-0010.yaml          one line at its BUG-0012 forward
                                       reference (step 12)
 
   Deleted: nothing. In particular
@@ -149,7 +149,7 @@ body: |
   (lisp and yaml), the two analyzer source files, and the analyzer suite's own
   helpers -- ANALYZE-SOURCE, ANALYZE-FIXTURE, ANALYZE-PATH, TEXT-INDEXED,
   LITERAL-ENTITY, DOCS-OPS, FIXTURE-OPS. Nothing outside loom-analyzer and its
-  tests, which is what choosing this layer bought and confirms ARCH-0012's
+  tests, which is what choosing this layer bought and confirms DES-0012's
   count.
 
   The 85 around ABSORB-RELATIONSHIP are effectively every test that goes
@@ -239,7 +239,7 @@ body: |
        be the LAST in source order. Its comment becomes wrong either way,
        because it describes the graph absorbing two asserts, and after step 4
        only one assert is emitted.
-     - A-DEFMETHOD-PRODUCES-THE-SAME-ENTITY-IT-ALWAYS-HAS and the ARCH-0010
+     - A-DEFMETHOD-PRODUCES-THE-SAME-ENTITY-IT-ALWAYS-HAS and the DES-0010
        clause tests exercise files with no collisions and must be untouched.
      - THE-REAL-RULES-STILL-PASS-A-CLEAN-REAL-LAYOUT in the graph rules suite
        runs the real rule documents against a synthetic layout; adding
@@ -272,7 +272,7 @@ body: |
      in steps 5, 10, 11 and 12 must be re-derived before proceeding. Keep the
      script; steps 10 and 11 re-run it.
 
-  2. THE EQ GUARD (ARCH-0012 R6). In src/graph/transaction.lisp,
+  2. THE EQ GUARD (DES-0012 R6). In src/graph/transaction.lisp,
      ABSORB-RELATIONSHIP at line 139 gains the clause ABSORB-ENTITY's caller
      has had at line 196: when TARGET and INCOMING are EQ, return TARGET
      unchanged. Put it in ABSORB-RELATIONSHIP itself rather than in APPLY-OP,
@@ -291,7 +291,7 @@ body: |
      systems. This is the step whose blast radius is 85 entities, so the full
      suite here is the point, not a formality.
 
-  3. THE PROPERTY (ARCH-0012 R2, declaration half). In
+  3. THE PROPERTY (DES-0012 R2, declaration half). In
      src/ontology/code-ontology.lisp declare
 
        (:shadowed-definitions list
@@ -301,7 +301,7 @@ body: |
      :variable (287) and :test (315) -- every type the Lisp analyzer mints
      with a :file-bearing natural key. There is no :condition entity type;
      DEFINE-CONDITION mints a :class with :kind :condition, so :class covers
-     it. ARCH-0012's R2 left the exact list to this plan: that is the list.
+     it. DES-0012's R2 left the exact list to this plan: that is the list.
      The docstring must say what the value is (line-range strings "start-end",
      one per superseded definition, in source order), that absent and empty
      differ (absent means nothing collided), and that a reader wanting the
@@ -314,7 +314,7 @@ body: |
      so this step buys schema honesty and UPDATE-PROPERTIES support, not
      enforcement.
 
-  4. SUPERSESSION (ARCH-0012 R1 and R3). In src/analyzer/lisp-analyzer.lisp,
+  4. SUPERSESSION (DES-0012 R1 and R3). In src/analyzer/lisp-analyzer.lisp,
      immediately after `(setf definitions (nreverse definitions))` at line
      1080 and before pass 2 at line 1105:
 
@@ -351,9 +351,9 @@ body: |
      suite green; the lisp-analyzer suite is where any breakage will be. A
      defun/defmacro pair of one name in one file collides too, because both
      mint :FUNCTION -- that is intended, and if it surprises anyone it is
-     ARCH-0012's "keys are type-led" clause working.
+     DES-0012's "keys are type-led" clause working.
 
-  5. RECORDING (ARCH-0012 R2, writing half, with the R2-RECORDING clause).
+  5. RECORDING (DES-0012 R2, writing half, with the R2-RECORDING clause).
      Using the alist from step 4a, SETP :shadowed-definitions on each survivor
      as a list of "start-end" strings built from each superseded entity's
      :start-line and :end-line, in source order -- but only when NOT both the
@@ -383,7 +383,7 @@ body: |
      32 RULE-0003 lines and "2 active rules not enforceable": no rule uses the
      kind yet.
 
-  7. THE CHECK KIND RUNS (ARCH-0012 R4). Add to src/graph/rules.lisp:
+  7. THE CHECK KIND RUNS (DES-0012 R4). Add to src/graph/rules.lisp:
 
        (defmethod run-check ((kind (eql :property-absent)) view rule check) ...)
 
@@ -412,7 +412,7 @@ body: |
      exactly the failure to observe (CON-0003). Full suite green. `check` in
      the console is still 32 lines: still no rule uses it.
 
-  8. RULE-0006 (ARCH-0012 R5). Create docs/rules/RULE-0006.yaml:
+  8. RULE-0006 (DES-0012 R5). Create docs/rules/RULE-0006.yaml:
 
        id: RULE-0006
        status: active
@@ -428,10 +428,10 @@ body: |
      which distinguishes it at a glance from the 32 "error RULE-0003" lines
      BUG-0009 produces. The statement says a definition must not be silently
      shadowed by a same-key definition in its own file; the rationale records
-     the two game-server instances ARCH-0012 named, the five more this plan
+     the two game-server instances DES-0012 named, the five more this plan
      measured, and the accessor carve-out with its reasoning, so a reader who
      wonders why a duplicated accessor is not reported finds the answer here
-     rather than in the analyzer. Include the known edge ARCH-0012's
+     rather than in the analyzer. Include the known edge DES-0012's
      CONSEQUENCES records: only one method qualifier is captured, so two
      clauses differing in a second qualifier collide spuriously and this rule
      is the tell.
@@ -445,7 +445,7 @@ body: |
      confirm a RULE-0006 line appears, and revert. Without that, "no findings"
      is indistinguishable from "not running".
 
-  9. WRITE THE CONTRACT DOWN. ARCH-0012 leaves "one file's op stream asserts
+  9. WRITE THE CONTRACT DOWN. DES-0012 leaves "one file's op stream asserts
      each natural key at most once" as an obligation every future analyzer
      carries, and nothing machine-checks it, so where it is written decides
      whether it survives. Three places, each with a distinct job:
@@ -459,7 +459,7 @@ body: |
         violation rather than a mechanism to rely on.
      b. docs/concepts/CON-0005.yaml, new: the recurring idea, so `context
         analyzer contract` finds it and so BUG-0012's history has somewhere to
-        live. Cite ARCH-0012 and this plan.
+        live. Cite DES-0012 and this plan.
      c. CLAUDE.md, one line under "Principles worth knowing before changing
         anything", in the same pointer style DEC-0001, CON-0001 and CON-0003
         already use there.
@@ -468,7 +468,7 @@ body: |
      returns CON-0005. A docstring change alters no behaviour, but re-run the
      full suite anyway: the analyzer suite reads its own source in places.
 
-  10. ACCEPTANCE ON LOOM (ARCH-0012 R8, first half). Full suite under
+  10. ACCEPTANCE ON LOOM (DES-0012 R8, first half). Full suite under
      /usr/bin/sbcl via tools/loom-test.sh -- name the SBCL, since a SLIME
      image may disagree. `tools/loom.sh 'reindex | status | check'`:
      1589 entities, 7689 relationships, 75 documents, 32 violations all
@@ -479,7 +479,7 @@ body: |
      writing before step 11. The one number allowed to move without argument
      is the document count, which rises with each document this plan adds.
 
-  11. ACCEPTANCE ON GAME-SERVER (ARCH-0012 R8, second half). In one console
+  11. ACCEPTANCE ON GAME-SERVER (DES-0012 R8, second half). In one console
      session: `watch "~/lisp/game-server"`, then `unwatch Loom` so an
      undesignated command resolves to game-server, then `status`, `check`, and
      `describe add-defn`. Expect: 2396 entities and 13298 relationships,
@@ -498,16 +498,16 @@ body: |
      broad; more means it is too narrow; different ones mean the tree moved.
      Do not expect any edge count to fall.
 
-  12. CLOSE THE DOCUMENTS (ARCH-0012 R9, RULE-0005). BUG-0012 to status fixed
+  12. CLOSE THE DOCUMENTS (DES-0012 R9, RULE-0005). BUG-0012 to status fixed
      with a WHAT LANDED section: which half went where and why candidate (a)
-     was killed by measurement rather than preference. ARCH-0012 to
+     was killed by measurement rather than preference. DES-0012 to
      implemented, with two amendments made explicitly rather than silently --
      R2 gains the R2-RECORDING clause and its reasoning, and R8's numbers are
      replaced with the measured 3/20 census and the 0/7 predicted findings. If
-     the architect rejects the carve-out, ARCH-0012 stays as written, step 5
+     the architect rejects the carve-out, DES-0012 stays as written, step 5
      is redone to record everything, and R8's numbers become 3 and 17.
-     ARCH-0010's R4 paragraph gains one line at its existing BUG-0012 forward
-     reference: the edge-union disclosure is superseded by ARCH-0012 and fixed
+     DES-0010's R4 paragraph gains one line at its existing BUG-0012 forward
+     reference: the edge-union disclosure is superseded by DES-0012 and fixed
      by PLAN-0012. This plan to final. Record in BUG-0012's closure that the
      EQ guard makes BUG-0015's recorded re-apply workaround unforced --
      ENRICH-REPOSITORY's re-derive stays as written, because it is correct and

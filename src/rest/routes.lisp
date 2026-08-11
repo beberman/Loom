@@ -1,12 +1,12 @@
 ;;;; The HTTP surface: one path per registry entry, one shape for all of them.
 ;;;;
-;;;; Every route does exactly the five steps ARCH-0006 commits to and nothing
+;;;; Every route does exactly the five steps DES-0006 commits to and nothing
 ;;;; else: decode the request into the arguments the entry wants, resolve the
 ;;;; caller's grants from the Authorization header, invoke the operation (which
 ;;;; checks the tier and guards the condition), encode the result, and set the
 ;;;; HTTP status. Because that shape is identical for every entry, the table is
 ;;;; the registry itself rather than a second list beside it. REQ-0008 excludes
-;;;; the exact route table and ARCH-0006 commits only to the shape every route
+;;;; the exact route table and DES-0006 commits only to the shape every route
 ;;;; shares, so deriving the paths from the registry is within the design and
 ;;;; removes the failure a hand-maintained table has: an operation added
 ;;;; without a route.

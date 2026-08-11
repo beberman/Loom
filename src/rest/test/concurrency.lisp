@@ -1,5 +1,5 @@
 ;;;
-;;; ARCH-0006 R3, verified under the caller shape that only now exists.
+;;; DES-0006 R3, verified under the caller shape that only now exists.
 ;;;
 ;;; This lives here and not at the end of PLAN-0005 because loom-rest is the
 ;;; first thing in the tree that can produce two simultaneous callers. Before
@@ -54,7 +54,7 @@ guess.")
 (defvar *worst-write-latency* nil
   "The slowest write-tier request seen by the last run, in seconds.
 
-ARCH-0006 declines to estimate request latency and says a future document
+DES-0006 declines to estimate request latency and says a future document
 should measure it once there is a listener. This is the first opportunity, and
 one number written down is worth more than the paragraph explaining why nobody
 has one.")
@@ -106,7 +106,7 @@ worst seen."
           (getf status :tested-units))))
 
 (test concurrent-rest-callers-do-not-corrupt-one-repository
-  ;; ARCH-0006 R3 exactly as stated, and it passes with no new locking code,
+  ;; DES-0006 R3 exactly as stated, and it passes with no new locking code,
   ;; which is the claim: both locks were already written to make no assumption
   ;; narrower than "some thread holds it", and a Hunchentoot worker satisfies
   ;; a recursive lock's reentrancy test identically to the console thread.
@@ -167,13 +167,13 @@ worst seen."
         (dolist (result results)
           (is (null (first result))
               "a client thread signalled ~a" (first result))
-          ;; 200 or 404, and the 404 is not a defect: ARCH-0004 R5 keeps
+          ;; 200 or 404, and the 404 is not a defect: DES-0004 R5 keeps
           ;; loom-knowledge's read path lock-free, so a read arriving between
           ;; REINDEX-REPOSITORY's graph swap and the moment the file is
           ;; re-analyzed sees an index that does not contain the term yet and
           ;; says so. That is the accepted cost of an unlocked read, not a torn
           ;; view -- the counts below are what would catch a torn view. A 500
-          ;; is the thing this asserts against, per ARCH-0006 R3.
+          ;; is the thing this asserts against, per DES-0006 R3.
           (let ((unexpected (find-if-not (lambda (status) (member status '(200 404)))
                                          (second result))))
             (is (null unexpected) "a request answered ~a" unexpected)))
@@ -310,7 +310,7 @@ repository this thread had just watched was not in the registry."
   ;; It also states the acquisition order as a fact: this test takes the
   ;; registry lock and never a repository's analysis lock, and the entry takes
   ;; the registry lock before the analysis lock WATCH-REPOSITORY acquires
-  ;; underneath it. A lock added above ARCH-0004's is only safe if it never
+  ;; underneath it. A lock added above DES-0004's is only safe if it never
   ;; inverts, and this is the shape that keeps that true.
   (let ((root (make-tiny-repository "serialize")))
     (unwind-protect

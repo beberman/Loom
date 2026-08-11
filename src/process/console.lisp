@@ -141,7 +141,7 @@ guessed at."
 Agents and humans both name things rather than quoting ids, and a command that
 demanded an id would send the developer to `find` first every single time.
 
-Several entities may carry one name, and since ARCH-0015 that is the normal
+Several entities may carry one name, and since DES-0015 that is the normal
 case rather than a defect: two same-named definitions in different packages are
 two callables. Picking the best of them would answer a question nobody asked --
 `describe id' on game-server described the one in :DATA-API-TEST, which has no
@@ -210,7 +210,7 @@ command."
           (let ((n (getf status :uncategorized-documents))) (and (plusp n) n)))
   ;; Printed unconditionally, zero included. A count that vanishes when it is
   ;; nought cannot be told from a count nobody computes, and these three exist
-  ;; precisely to be read as zero-or-not (ARCH-0002 R10).
+  ;; precisely to be read as zero-or-not (DES-0002 R10).
   (format t "  tests      : ~d test~:p covering ~d unit~:p~%"
           (getf status :test-entities) (getf status :tested-units))
   (format t "  watcher    : ~(~a~)~%" (getf status :monitor))
@@ -219,7 +219,7 @@ command."
   (format t "  unresolved : ~d document reference~:p, ~d definer macro~:p~%"
           (getf status :unresolved-references)
           (getf status :unhandled-definer-macros))
-  ;; ARCH-0013 R11, beside `unresolved' because it answers the same question a
+  ;; DES-0013 R11, beside `unresolved' because it answers the same question a
   ;; reader is asking there: what does this index know it is missing. Printed
   ;; unconditionally for the reason the tests line above gives -- these are
   ;; meant to be read as zero-or-not, and both read zero on a healthy tree.
@@ -229,7 +229,7 @@ command."
   (format t "  unread     : ~d suppressed region~:p, ~d recovered region~:p~%"
           (getf status :suppressed-regions)
           (getf status :recovered-regions))
-  ;; ARCH-0011. "never run" is spelled out rather than left as three zeroes,
+  ;; DES-0011. "never run" is spelled out rather than left as three zeroes,
   ;; because enrichment is optional and on demand: a reader who sees zeroes
   ;; cannot tell a tree the image agreed with completely from one nobody has
   ;; asked about, and only one of those is worth doing something about.
@@ -299,10 +299,10 @@ command."
 (define-command enrich (&optional designator)
     "enrich [<name>]"
     "Ask each language's toolchain to enrich the index. On demand only."
-  ;; On demand and nowhere else (ARCH-0011 R9). Nothing in POLL-ONCE, the
+  ;; On demand and nowhere else (DES-0011 R9). Nothing in POLL-ONCE, the
   ;; monitor, watch or reindex reaches ENRICH-REPOSITORY: a run loads the whole
   ;; target in a fresh process, which is seconds to minutes against a poll cycle
-  ;; designed to cost milliseconds. ARCH-0008 is the precedent and BUG-0008 is
+  ;; designed to cost milliseconds. DES-0008 is the precedent and BUG-0008 is
   ;; the trap.
   (let* ((repository (current-repository designator))
          (report (enrich-repository repository)))
@@ -318,7 +318,7 @@ is the inverse of what it looks like. A pass whose child died on its first unit
 adds nothing, drops nothing and signals nothing -- indistinguishable from a
 tree the image agrees with completely -- so what has to be printed
 unconditionally is which units were attempted and what became of them
-(REQ-0018 R4, and ARCH-0002 R10's precedent for printing a nought)."
+(REQ-0018 R4, and DES-0002 R10's precedent for printing a nought)."
   (format t "~&enriched in ~,1fs~%" (getf report :duration))
   (dolist (unit (getf report :units))
     (format t "  ~(~a~) ~a~@[: ~a~]~%"
@@ -387,7 +387,7 @@ unconditionally is which units were attempted and what became of them
               (if (eq :out (getf group :direction)) "->" "<-")
               (getf group :rel-type)
               ;; A call site's name already carries its file and line, so the
-              ;; kind is the only part of ARCH-0014 R7's "line and kind rather
+              ;; kind is the only part of DES-0014 R7's "line and kind rather
               ;; than a bare id" still missing here. NIL for every other type,
               ;; so the ~@[ is what keeps this from adding an empty pair of
               ;; parens to every ordinary neighbour -- and its clause contains
@@ -456,7 +456,7 @@ unconditionally is which units were attempted and what became of them
         (format t "~&~d unresolved document reference~:p:~%" (length unresolved))
         (dolist (pair unresolved)
           (format t "  ~a -> ~a~%" (car pair) (cdr pair)))))
-    ;; ARCH-0002 R6/R10, reported the way an unresolved reference is and for
+    ;; DES-0002 R6/R10, reported the way an unresolved reference is and for
     ;; the same reason: a definer Loom cannot characterise is a definition the
     ;; index knows it is missing, and it should be visible here rather than
     ;; only after a suite run.

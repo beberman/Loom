@@ -2,7 +2,7 @@
 ;;;;
 ;;;; Every entry here is a thin call onto a function console.lisp already
 ;;;; calls, stopping one step short of console.lisp's formatting. Nothing in
-;;;; this file renders; ARCH-0005's argument is that the data is already
+;;;; this file renders; DES-0005's argument is that the data is already
 ;;;; structured and only the console's last step is prose, so a second
 ;;;; rendering step would be a second thing to keep in agreement with the first.
 ;;;;
@@ -34,18 +34,18 @@ can lose a registration and two concurrent unwatches can resurrect one.
 The lock lives here and not in loom-workspace because REQ-0008 forbids editing
 that system, and this is the caller that created the need.
 
-Acquisition order, stated because ARCH-0004 states one and a lock added above
+Acquisition order, stated because DES-0004 states one and a lock added above
 it is only safe if it never inverts: this lock is always acquired *before* any
 repository's analysis-lock and never from inside one. The only things called
 while holding it are the WATCH-REPOSITORY and UNWATCH-REPOSITORY calls it
 exists to serialize, and both take a repository lock beneath it, never above.
-Recursive for the same reason ARCH-0004's is: a re-entry must not self-deadlock.")
+Recursive for the same reason DES-0004's is: a re-entry must not self-deadlock.")
 
 (defun require-repository (designator)
   "The repository DESIGNATOR names, or a malformed request naming it.
 
 No default, no fallback to the sole watched repository, no CURRENT-REPOSITORY.
-ARCH-0006 is explicit that an operation invoked without a designator is a
+DES-0006 is explicit that an operation invoked without a designator is a
 malformed request rather than an ambiguous one to be resolved by guessing."
   (cond ((null designator)
          (error 'malformed-request
@@ -60,7 +60,7 @@ malformed request rather than an ambiguous one to be resolved by guessing."
 
 Re-implemented here rather than reached for. console.lisp has a function of
 this name and shape, and calling it would make loom-serve depend on
-loom-process, which ARCH-0006 R5 forbids and PLAN-0005's RISKS names as one of
+loom-process, which DES-0006 R5 forbids and PLAN-0005's RISKS names as one of
 the three ways that dependency arrives looking reasonable. CURRENT-REPOSITORY,
 which sits beside it in that file, is deliberately *not* reproduced: refusing
 to guess which repository a program meant is the point."
@@ -153,7 +153,7 @@ The console's own cap, so the two answer the same question the same way.")
       (list :repositories (mapcar #'repository-status (all-repositories)))))
 
 ;;;; ------------------------------------------------------------------
-;;;; check and rules: the assembly ARCH-0006 accepts as duplication
+;;;; check and rules: the assembly DES-0006 accepts as duplication
 ;;;;
 ;;;; CONSEQUENCES records this as a small, named duplication rather than
 ;;;; hiding it: console.lisp's `check` and `rules` commands already make this
@@ -237,7 +237,7 @@ The console's own cap, so the two answer the same question the same way.")
     "Discard and rebuild the index from disk. Always safe."
   ;; No registry lock either, for PAUSE's reason: REINDEX-REPOSITORY replaces
   ;; the graph inside a repository that stays registered throughout, and
-  ;; ARCH-0004's own lock is what makes that safe.
+  ;; DES-0004's own lock is what makes that safe.
   (let ((watched (require-repository repository)))
     (reindex-repository watched :quiet t)
     (repository-status watched)))

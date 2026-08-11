@@ -1,5 +1,5 @@
 ;;;; Merging image-derived facts into a text-derived index.
-;;;; Implements ARCH-0011's ENRICH-OPS, beside resolve.lisp because it is the
+;;;; Implements DES-0011's ENRICH-OPS, beside resolve.lisp because it is the
 ;;;; same kind of thing: a graph-aware derive pass that reads a view and
 ;;;; returns operations without applying any of them.
 ;;;;
@@ -21,7 +21,7 @@
 ;;;; entities contribute lookups only.
 ;;;;
 ;;;; The inspection arrives as plain data and leaves as ops. It is a plist --
-;;;; ARCH-0011's CHILD PROTOCOL -- read with GETF, and this file names nothing
+;;;; DES-0011's CHILD PROTOCOL -- read with GETF, and this file names nothing
 ;;;; from LOOM-ANALYZER: loom-graph depends on loom-ontology and
 ;;;; bordeaux-threads, which is the same wall RESOLVE-GENERATED-DEFINITIONS hit
 ;;;; with *MACRO-GENERATORS*, and it takes the same answer. LOOM-WORKSPACE is
@@ -60,7 +60,7 @@ stale is the permanent lie CON-0001 forbids."
   (and (stringp file) (plusp (length file)) (char/= #\/ (char file 0))))
 
 ;;;; ==================================================================
-;;;; Speaking the text pass's renderings (ARCH-0011 R5)
+;;;; Speaking the text pass's renderings (DES-0011 R5)
 ;;;; ==================================================================
 ;;;;
 ;;;; Every component of a natural key is a rendering, and a drifted one does
@@ -84,7 +84,7 @@ tree doubles."
 (defun inspected-system (system)
   "SYSTEM as the keyword NORMALIZE-SYSTEM-NAME interns for it.
 
-The same fold, and it has to be the same one: ARCH-0009 warns that a rule whose
+The same fold, and it has to be the same one: DES-0009 warns that a rule whose
 two sides fold differently reports no violations rather than wrong ones, which
 is silence that reads as success. A keyword is passed through, so a caller that
 already has one -- a test, or a language whose inspector interns its own -- is
@@ -125,7 +125,7 @@ and then assert a second method beside the one it failed to find."
 (defun enriched-entity (type name properties origin-file)
   "The entity a definition the graph does not hold becomes.
 
-:SOURCE :INTROSPECTED and :CONFIDENCE 1.0 per ARCH-0011 R6 -- this is not a
+:SOURCE :INTROSPECTED and :CONFIDENCE 1.0 per DES-0011 R6 -- this is not a
 reading of source that might be wrong, it is what the compiler said. ORIGIN-FILE
 is the defining file's workspace-relative path, which is the whole of the
 staleness design: RETRACT-FILE removes it when that file is edited, and the
@@ -188,7 +188,7 @@ parses it there rather than here. (<kind> name package) for everything else."
               (getf definition :package)))))
 
 ;;;; ==================================================================
-;;;; Edges, and recording that two passes agree (ARCH-0011 R6)
+;;;; Edges, and recording that two passes agree (DES-0011 R6)
 ;;;; ==================================================================
 
 (defparameter *source-order* '(:structural :inferred :human-validated :introspected)
@@ -220,7 +220,7 @@ the slot says who asserted last, the property says who has ever agreed."
   "A :CALLS edge the image reported, as an operation.
 
 ASSERT-EDGE would be the obvious constructor and cannot be used: it takes no
-properties, and :SOURCES is a property (ARCH-0011 R6). Widening a constructor
+properties, and :SOURCES is a property (DES-0011 R6). Widening a constructor
 every analyzer calls, for one caller's benefit, would be the larger change.
 
 ORIGIN-FILE is (ORIGIN-FILE FROM), computed identically to ASSERT-EDGE and
@@ -244,7 +244,7 @@ caller was edited. Equal by construction is the only cheap defence."
 (defun implemented-interface-p (graph entity)
   "True when ENTITY is a generic function some method in the index implements.
 
-A call fact landing there is refused, and the refusal is ARCH-0001's existing
+A call fact landing there is refused, and the refusal is DES-0001's existing
 decision applied to the second pass rather than a new one. CALL-TARGETS fans a
 dispatched call out to the candidate methods and falls through to the
 :INTERFACE only when there are none to fan out to -- a slot accessor, or a
@@ -281,7 +281,7 @@ gap cost only itself."
 (defun enrich-ops (graph inspection &key workspace-id)
   "Two values: ops merging INSPECTION into GRAPH, and a report plist.
 
-INSPECTION is ARCH-0011's facts document as plain data. Nothing here writes;
+INSPECTION is DES-0011's facts document as plain data. Nothing here writes;
 the caller submits the ops as a transaction like any other pass, so the Graph
 Manager stays the only writer.
 

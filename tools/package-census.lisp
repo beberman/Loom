@@ -1,4 +1,4 @@
-;;;; Package census for ARCH-0015.
+;;;; Package census for DES-0015.
 ;;;;
 ;;;; Every function here is prefixed PC-, and that is not a style choice. Loom
 ;;;; indexes its own tree, so a measuring script that defines REPORT or CLAUSE
@@ -17,7 +17,7 @@
 ;;;; DEFINE-PACKAGE / IN-PACKAGE forms, so we learn what package declarations
 ;;;; this tree actually uses. The second indexes the tree through Loom and asks
 ;;;; how many callable names are ambiguous only because CALLABLE-INDEX ignores
-;;;; the package, which is the number that decides whether ARCH-0015 can land
+;;;; the package, which is the number that decides whether DES-0015 can land
 ;;;; in one step.
 
 (require :asdf)

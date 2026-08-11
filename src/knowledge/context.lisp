@@ -80,7 +80,7 @@ name and, failing that, on \"impact\"."
     (nreverse tokens)))
 
 (defparameter *seed-type-preference*
-  '(:function :method :class :interface :concept :decision :rule
+  '(:function :method :class :interface :concept :architecture :design :decision :rule
     :variable :test :module :package :document :file)
   "Entity types in the order a seed match is worth having.
 
@@ -184,7 +184,7 @@ the part most worth the tokens: why the code is the way it is."
                             :rel-types '(:decides :applies-to :documents :mentions)
                             :direction :in))
         (let ((other (neighbor-entity n)))
-          (when (and (member (entity-type other) '(:decision :rule :concept))
+          (when (and (member (entity-type other) '(:decision :design :architecture :rule :concept))
                      (not (stale-p other)))
             (pushnew other found)))))
     (nreverse found)))

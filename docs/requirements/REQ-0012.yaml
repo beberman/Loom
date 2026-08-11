@@ -74,7 +74,7 @@ body: |
 
   Loom's own source barely uses the idiom, so no query against Loom has ever
   returned a visibly wrong answer because of it, and no test covers it. This is
-  the same shape of defect REQ-0011 and ARCH-0009 addressed for system
+  the same shape of defect REQ-0011 and DES-0009 addressed for system
   identity: a design tuned, invisibly, to one author's style, correct on the
   tree it was written against and wrong on the next one. BUG-0006's "WHY IT
   HID" section describes the same mechanism for a third case. The general
@@ -172,7 +172,7 @@ body: |
 
   OUTSTANDING
 
-  PLAN-0009 implemented ARCH-0010 and closed R1, R2, R3, R4 and R6. The status
+  PLAN-0009 implemented DES-0010 and closed R1, R2, R3, R4 and R6. The status
   here is `partial' rather than `implemented' because two things this document
   asks for in R5 are not true of the tree as it stands, and calling the whole
   thing implemented would make both invisible.
@@ -182,24 +182,24 @@ body: |
      query does not: the calls are on the new :METHOD entity, and `describe'
      resolves a name through SEARCH-ENTITIES' first hit, whose sort ranks match
      quality only -- so an exact-name tie between the long-standing :INTERFACE
-     and the same-named :METHOD falls to index order. ARCH-0010's CONSEQUENCES
+     and the same-named :METHOD falls to index order. DES-0010's CONSEQUENCES
      measured this and R8 restates the acceptance through `find dhandler-delete
      method' and `impact dhandler-delete 2', both of which pass. Whether
      `describe' should prefer, merge or disambiguate same-named entities is a
-     loom-knowledge question ARCH-0010 deliberately left alone; nothing about
+     loom-knowledge question DES-0010 deliberately left alone; nothing about
      the analyzer will settle it.
 
   2. CLOSED 2026-08-08 by BUG-0011's fix, landed as PLAN-0011. The call name
      MAKE-SELECTOR is now recorded on the DHANDLER-DELETE :METHOD at
      game-server data-api/handler.lisp:158-166, alongside DHANDLER-DELETE-ALL
-     and DHANDLER-DELETE-SELECTOR. ARCH-0010 R7's criterion is met and its
+     and DHANDLER-DELETE-SELECTOR. DES-0010 R7's criterion is met and its
      CONSEQUENCES section says so.
 
      Kept rather than deleted, because whose criterion it was is the part worth
      remembering: R5 above asks only for DHANDLER-DELETE-ALL and
      DHANDLER-DELETE-SELECTOR, and both were already recorded by PLAN-0009.
      MAKE-SELECTOR is named by this document's prose (WHAT IS WRONG, describing
-     the body's contents) and required as acceptance by ARCH-0010 R7 alone --
+     the body's contents) and required as acceptance by DES-0010 R7 alone --
      and a criterion written from reading the source rather than from running
      the analyzer over it is the more expensive of the two to get wrong,
      because it is the thing an implementer is later asked to satisfy. It was

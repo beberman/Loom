@@ -15,7 +15,7 @@
   "A function fixture that says which system it is in.
 
 SYSTEM is required rather than optional deliberately. ENTITY-SYSTEM reads a
-property now (ARCH-0009 R7), so a fixture that omits it is unplaceable -- and
+property now (DES-0009 R7), so a fixture that omits it is unplaceable -- and
 EDGES-BETWEEN-SYSTEMS treats an unplaceable endpoint as no evidence of a
 violation, which means every :no-edge test below would pass by matching
 nothing. The three tests here that assert NULL would pass that way too. Making
@@ -31,13 +31,30 @@ decoration (CON-0003)."
 (defun rules-decision (graph doc-id &key affects mentions supersedes)
   (let ((e (make-instance 'decision-entity
                           :name doc-id
-                          :origin-file (format nil "docs/design/~a.yaml" doc-id)
+                          :origin-file (format nil "docs/decisions/~a.yaml" doc-id)
                           :source :human-validated
                           :properties (properties-table
                                        (list :doc-id doc-id
                                              :affects affects
                                              :mentions mentions
                                              :supersedes supersedes)))))
+    (add-entity graph e)
+    e))
+
+(defun rules-document (graph doc-id &key affects mentions refines)
+  "A plain :DOCUMENT fixture -- what an arch note, requirement, plan, bug
+report or review indexes as. Distinct from RULES-DECISION above precisely
+because the type is what decides whether affects: governs or merely bears on."
+  (let ((e (make-instance 'document-entity
+                          :name doc-id
+                          :origin-file (format nil "docs/plans/~a.yaml" doc-id)
+                          :source :human-validated
+                          :properties (properties-table
+                                       (list :doc-id doc-id
+                                             :path (format nil "docs/plans/~a.yaml" doc-id)
+                                             :affects affects
+                                             :mentions mentions
+                                             :refines refines)))))
     (add-entity graph e)
     e))
 
@@ -66,6 +83,39 @@ decoration (CON-0003)."
       (is (eq :structural (source (first edges)))
           "someone wrote this down deliberately")
       (is (= 1.0 (confidence (first edges)))))))
+
+(test a-non-decision-affects-bears-on-rather-than-governs
+  ;; The fix for the field that fifteen architecture notes, fourteen
+  ;; requirements, fifteen plans and twenty-two bug reports wrote and nothing
+  ;; read. Two claims in one test, and both must hold: the edge exists at all,
+  ;; and it is not :DECIDES. Before the fix the first assertion failed because
+  ;; the property was never populated; if the type mapping were dropped the
+  ;; second would fail instead (CON-0003).
+  (let* ((g (make-graph))
+         (target (rules-function g "apply-transaction" "graph/transaction.lisp"
+                                 :loom-graph))
+         (plan (rules-document g "PLAN-1" :affects '("apply-transaction"))))
+    (apply-transaction g (resolve-document-links g))
+    (is (null (relationships-from g (id plan) :rel-type :decides))
+        "a plan sequences work, it does not govern the code it touches")
+    (let ((edges (relationships-from g (id plan) :rel-type :documents)))
+      (is (equal (list (id target)) (mapcar #'to-id edges))
+          ":DOCUMENTS is the type declared for this and, until affects: was
+read for a non-decision, the type with no producer at all")
+      (is (eq :structural (source (first edges)))
+          "declared by an author, so it is not the inferred :MENTIONS")
+      (is (= 1.0 (confidence (first edges)))))))
+
+(test a-rotten-affects-in-a-plan-is-reported-like-a-decisions
+  ;; The half that matters for staleness: reading the field also switches on
+  ;; the detector for it. Thirteen references had been rotten and invisible on
+  ;; Loom's own tree at the moment this landed.
+  (let* ((g (make-graph))
+         (plan (rules-document g "PLAN-1" :affects '("a-function-that-went-away"))))
+    (apply-transaction g (resolve-document-links g))
+    (is (equal '("a-function-that-went-away") (getp plan :unresolved-references)))
+    (is (member "a-function-that-went-away" (mapcar #'cdr (unresolved-references g))
+                :test #'string=))))
 
 (test a-declared-reference-that-resolves-to-nothing-is-recorded
   ;; SS10.3: "A name that does not resolve is not dropped silently ... That
@@ -98,7 +148,7 @@ decoration (CON-0003)."
     (apply-transaction g (resolve-document-links g))
     ;; :MENTIONS, not :DOCUMENTS. The type says what the evidence supports --
     ;; the document names this function -- and stops there; REQ-0014 and
-    ;; ARCH-0016 D7. Asked for the older type this returns nothing, which is
+    ;; DES-0016 D7. Asked for the older type this returns nothing, which is
     ;; what makes this test fail without the change it covers (CON-0003).
     (is (null (relationships-from g (id decision) :rel-type :documents))
         "a backtick is not a claim to govern, so no :DOCUMENTS edge is asserted")
@@ -156,7 +206,7 @@ decoration (CON-0003)."
 ;;; These four repeat RULE-0001 to RULE-0003 verbatim, by rule id and by the
 ;;; :from-system/:to-system values the real documents carry. What they guard is
 ;;; that those values and the :system the analyzer writes are one vocabulary --
-;;; the failure ARCH-0009 R7/R8 could introduce, because ENTITY-SYSTEM's answer
+;;; the failure DES-0009 R7/R8 could introduce, because ENTITY-SYSTEM's answer
 ;;; and a rule's from-system: are the two sides of one EQ comparison. Change
 ;;; either alone and every :no-edge check matches nothing, `check` prints "No
 ;;; violations.", and that reads as success. It is the same vacuous pass
@@ -244,7 +294,7 @@ decoration (CON-0003)."
       (is (search "origin-file is missing" (violation-detail (first violations)))))))
 
 ;;; ------------------------------------------------------------------
-;;; property-absent (ARCH-0012 R4)
+;;; property-absent (DES-0012 R4)
 ;;; ------------------------------------------------------------------
 
 (test the-property-absent-check-reports-every-carrier

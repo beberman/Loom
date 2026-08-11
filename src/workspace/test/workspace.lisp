@@ -32,7 +32,7 @@
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
   ;; The IN-PACKAGE is load-bearing, not decoration (BUG-0010). RULE-0001 below
-  ;; names :KERNEL, and after ARCH-0009 that is a package name rather than a
+  ;; names :KERNEL, and after DES-0009 that is a package name rather than a
   ;; path segment: without this form src/alpha.lisp falls through to
   ;; DEFAULT-SYSTEM-FOR-PATH, which answers NIL for a path with no segment after
   ;; "src/", and the fixture's rule matches nothing whatever the pipeline does.
@@ -46,7 +46,7 @@
   (write-file "src/beta.lisp"
               "(defun beta (x) (alpha x))
 ")
-  (write-file "docs/design/DEC-0001.yaml"
+  (write-file "docs/decisions/DEC-0001.yaml"
               "id: DEC-0001
 type: decision
 title: Alpha stays arithmetic
@@ -158,7 +158,7 @@ check:
       (is (= 2 (getf status :documents)))
       (is (zerop (getf status :unresolved-references)))
       (is (zerop (getf status :errors)))
-      ;; ARCH-0002 R10. Asserted present *and* zero, not merely zero: the
+      ;; DES-0002 R10. Asserted present *and* zero, not merely zero: the
       ;; fixture has no definer calls, so a key that is absent and a count that
       ;; is genuinely nought both read as NIL through GETF, and only the
       ;; membership check tells them apart. Zero is also what these read at
@@ -260,7 +260,7 @@ check:
           "beta -> alpha was destroyed by the retract and rebuilt by resolution"))))
 
 (test poll-once-that-finds-a-change-moves-indexed-at
-  ;; ARCH-0007 R1: staleness is answered by comparing REPOSITORY-INDEXED-AT
+  ;; DES-0007 R1: staleness is answered by comparing REPOSITORY-INDEXED-AT
   ;; against a process's own start time, and that comparison is a fabricated
   ;; "current" unless the monitor's own path writes the slot too. Before the
   ;; fix INDEX-REPOSITORY was its only writer.
@@ -326,15 +326,15 @@ check:
 the files whichever way it got there"))))
 
 ;;; ------------------------------------------------------------------
-;;; The :CALL-SITE ceiling (ARCH-0014 R2)
+;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
 (defparameter *call-site-ceiling* 178
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
-ARCH-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
+DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
 entities -- and adopted the sparse form instead. Entity growth is therefore
-bounded by a rule rather than by a number, and ARCH-0014's own RISKS section
+bounded by a rule rather than by a number, and DES-0014's own RISKS section
 says rules drift: the failure mode if some common case starts minting a call
 site is a graph that quietly quadruples, with nothing failing. This number is
 the guard, and it is meant to fail loudly rather than warn.
@@ -351,9 +351,9 @@ when it says \"as step 2 left it\".
 Re-measure with the census rather than adjusting this to whatever the suite
 reports. A number edited to match an observation is not a ceiling.
 
-UNCHANGED BY ARCH-0015, 2026-08-10, and that is the finding rather than an
+UNCHANGED BY DES-0015, 2026-08-10, and that is the finding rather than an
 omission. Package-aware resolution was expected to empty most of the ambiguous
-population: ARCH-0015 states that all four ambiguous names on this tree are
+population: DES-0015 states that all four ambiguous names on this tree are
 package collisions and that all 18 sites would stop being minted. Measured
 after stage C, the tree holds 161 call sites against 162 before, and the
 ambiguous population fell from 18 to 16.
@@ -372,7 +372,7 @@ would be the mistake the paragraph above warns about, in the other
 direction.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
-  ;; ARCH-0014 R2, over this tree rather than a fixture, because the ceiling is
+  ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is
   ;; a whole-tree property and the workspace fixture is four synthetic files.
   ;;
   ;; Written before anything mints, which is deliberate rather than premature:
@@ -388,7 +388,7 @@ direction.")
     (unwind-protect
          (let ((sites (entities-of-type (repository-graph repository) :call-site)))
            (is (<= (length sites) *call-site-ceiling*)
-               "~d :CALL-SITE entities against a ceiling of ~d. ARCH-0014: \"A
+               "~d :CALL-SITE entities against a ceiling of ~d. DES-0014: \"A
 :CALL-SITE entity is minted exactly when a call name cannot be expressed as a
 :CALLS edge from an existing definition entity. Never otherwise.\" A count over
 the ceiling means some common case has started minting one, which is the
@@ -397,7 +397,7 @@ uniform model this design priced at 4867 entities and refused."
       (unwatch-repository (repository-name repository)))))
 
 ;;; ------------------------------------------------------------------
-;;; Enrichment (ARCH-0011): the orchestration
+;;; Enrichment (DES-0011): the orchestration
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; A stub inspector rather than the real one throughout. What is under test
@@ -523,7 +523,7 @@ the one resolution re-asserts over."
       ;; assertion: a poll of an unrelated file re-runs RESOLVE-AND-CHECK over
       ;; the whole index, and RESOLVE-CALLS re-asserts every text-derivable edge
       ;; whether or not its own files moved. src/delta.lisp is a file neither
-      ;; endpoint lives in, so nothing here is the aging-out that ARCH-0011
+      ;; endpoint lives in, so nothing here is the aging-out that DES-0011
       ;; intends.
       (write-file "src/delta.lisp" "(defun delta (x) (beta x))
 ")
@@ -535,8 +535,8 @@ the one resolution re-asserts over."
         ;; cannot reach a poll that happens later, and the alternatives that
         ;; could -- teaching RESOLVE-CALLS about provenance, or keeping every
         ;; inspection resident and re-merging it on the poll path -- trade away
-        ;; DEC-0003 or ARCH-0011 R9 respectively. What is left is a degradation
-        ;; rather than a lie, in exactly the sense ARCH-0011 already promises:
+        ;; DEC-0003 or DES-0011 R9 respectively. What is left is a degradation
+        ;; rather than a lie, in exactly the sense DES-0011 already promises:
         ;; the edge stands as the text pass's own, and the agreement returns on
         ;; the next enrich. BUG-0015 carries the residue.
         (is (null (getp edge :sources))
@@ -622,7 +622,7 @@ what tells this apart from the file simply having vanished")
           "and the next enrich puts it back"))))
 
 (test status-reports-enrichment-as-scalars
-  ;; ARCH-0011 R8. Scalars because loom-serve's :STATUS operation serializes
+  ;; DES-0011 R8. Scalars because loom-serve's :STATUS operation serializes
   ;; this plist to JSON for REST and MCP callers and no rule covers that
   ;; boundary -- a nested plist is the shape most likely to arrive as something
   ;; a client cannot read.
@@ -644,7 +644,7 @@ what tells this apart from the file simply having vanished")
         (is (not (consp (getf after key))) "~s must not be a list" key)))))
 
 ;;; ------------------------------------------------------------------
-;;; The SERIOUS-CONDITION guard (ARCH-0011, RULE-0004)
+;;; The SERIOUS-CONDITION guard (DES-0011, RULE-0004)
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; ENRICH-REPOSITORY guards each inspector with SERIOUS-CONDITION rather than
@@ -714,7 +714,7 @@ not unusual for a library to use."))
       (is (= 1 (length (getf report :absences)))))))
 
 (test a-poll-never-enriches-and-can-be-shown-not-to-have
-  ;; ARCH-0011 R9, written so it can fail. "No introspected entity appeared
+  ;; DES-0011 R9, written so it can fail. "No introspected entity appeared
   ;; after a poll" would pass on a tree where enrichment does nothing at all,
   ;; which proves nothing -- so the poll is shown to have done its own work
   ;; (the file really was reanalyzed) and the counter is shown to be capable of
@@ -743,11 +743,11 @@ not unusual for a library to use."))
           "the counter can move; the poll declined to move it"))))
 
 ;;; ------------------------------------------------------------------
-;;; Generated definitions (ARCH-0002): the lifecycle
+;;; Generated definitions (DES-0002): the lifecycle
 ;;; ------------------------------------------------------------------
 
 (test a-macro-that-stops-being-a-definer-un-mints-what-it-generated
-  ;; PLAN-0001 step 5c, and ARCH-0002's "dangerous step" -- RESOLVE-GENERATED-
+  ;; PLAN-0001 step 5c, and DES-0002's "dangerous step" -- RESOLVE-GENERATED-
   ;; DEFINITIONS owns a lifecycle no earlier resolution pass has had to carry.
   ;; A macro can stop qualifying as a definer in its own file while the call
   ;; site's file never changes, so no single RETRACT-FILE is guaranteed to
@@ -770,7 +770,7 @@ not unusual for a library to use."))
                            :key #'name :test #'string=)))
           "the call site minted an entity that exists nowhere as a defun"))
     ;; The macro edited so its template no longer qualifies as a definer -- a
-    ;; PROGN around a SETF, the false-positive shape ARCH-0002 predicts for
+    ;; PROGN around a SETF, the false-positive shape DES-0002 predicts for
     ;; DEFINE-COMMAND -- while the call site's own file is left untouched.
     (write-file "src/gen.lisp"
                 "(defmacro def-widget (name)
@@ -804,7 +804,7 @@ output must take it back -- no single file's retraction would have"))
                        #'string<))))))
 
 ;;; ------------------------------------------------------------------
-;;; Concurrency (BUG-0004, ARCH-0004 R8(b) and R8(c))
+;;; Concurrency (BUG-0004, DES-0004 R8(b) and R8(c))
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; The one test here that runs two threads, and the reason BUG-0004 survived
@@ -815,7 +815,7 @@ output must take it back -- no single file's retraction would have"))
 ;;; It drives REINDEX-REPOSITORY and POLL-ONCE from separate threads with no
 ;;; sleep between calls rather than starting a real monitor, because the
 ;;; monitor's own two-second cadence would need luck to collide even once
-;;; inside a sensible test budget (ARCH-0004 R8(b)).
+;;; inside a sensible test budget (DES-0004 R8(b)).
 ;;;
 ;;; Two traps, both mechanical. fiveam's IS records into thread-local special
 ;;; variables, so every assertion below runs on the main thread after both
@@ -896,7 +896,7 @@ and the whole of its damage in the other two."
         (is (null collisions)
             "a collision was caught and recorded rather than signaled: ~a"
             (first collisions)))
-      ;; ARCH-0004 R8(c): the direct check that no batch was lost to a torn
+      ;; DES-0004 R8(c): the direct check that no batch was lost to a torn
       ;; view, not merely that nothing crashed. Compared against a rebuild
       ;; taken with both threads joined, which is the only state that can be
       ;; trusted as a reference.
@@ -915,7 +915,7 @@ files: ~a against ~a" after-threads (stress-counts repository)))))
   ;; costs within its own file -- here the file's only form is the damaged one,
   ;; so the file legitimately contributes no definition, and it is no longer
   ;; marked :ANALYSIS-FAILED-P because the reader did not fail, it repaired and
-  ;; the repair was refused (ARCH-0013 R4). Reporting that refusal on the file
+  ;; the repair was refused (DES-0013 R4). Reporting that refusal on the file
   ;; entity is PLAN-0013 step 5; until then the gap is in READING-RECOVERED and
   ;; not yet on the graph, which is a real if brief silence.
   (with-workspace-fixture (repository)
@@ -934,7 +934,7 @@ files: ~a against ~a" after-threads (stress-counts repository)))))
   (with-workspace-fixture (repository)
     ;; Make kernel call into docs, which the fixture's RULE-0001 forbids. The
     ;; caller is the real ALPHA the pipeline analyzed, which is what makes this
-    ;; the one assertion in the nine suites that spans the whole of ARCH-0009's
+    ;; the one assertion in the nine suites that spans the whole of DES-0009's
     ;; seam: LISP-ANALYZER reading (in-package :kernel), LOOM-ONTOLOGY having
     ;; declared :system so PROPERTIES-TABLE keeps it, the transaction carrying
     ;; it through the upsert, and ENTITY-SYSTEM handing it to a rule compiled
@@ -943,7 +943,7 @@ files: ~a against ~a" after-threads (stress-counts repository)))))
     ;; Only the target is built by hand -- no docs/ file in the fixture defines
     ;; a callable for the edge to land on -- and it says its system as a
     ;; property rather than through its path because ENTITY-SYSTEM stopped
-    ;; parsing paths (ARCH-0009 R7).
+    ;; parsing paths (DES-0009 R7).
     (let* ((g (repository-graph repository))
            (caller (find "alpha" (entities-of-type g :function)
                          :key #'name :test #'string=))

@@ -1,4 +1,4 @@
-;;;; Capability checking (ARCH-0006 R6).
+;;;; Capability checking (DES-0006 R6).
 ;;;;
 ;;;; One seam, checked once per request, for both protocols. That is what makes
 ;;;; "protocol is not a proxy for trust" a property of loom-serve rather than a
@@ -34,13 +34,13 @@ is invisible to it. A variable a test can SETF and restore is what makes
   "The set of tiers CREDENTIAL is granted.
 
 The seam, and deliberately only the seam. REQ-0008 excludes the auth model and
-ARCH-0006 R6 names this exact function as where it will land; what is
+DES-0006 R6 names this exact function as where it will land; what is
 committed to today is that the seam exists, is single, and is called once per
 request by both skins before dispatch. A static token-to-grants table is the
 obvious first cut and is a future document's decision.
 
 Until then every caller gets :read and :write, and deliberately not :repl. The
-repl tier can reach beneath every safety property ARCH-0003 and ARCH-0004
+repl tier can reach beneath every safety property DES-0003 and DES-0004
 built -- a submitted form can call APPLY-TRANSACTION directly and get the
 graph's own lock but not the repository-level torn-view protection -- so it is
 not a tier to hand out by default while the credential story is unfinished."
@@ -54,7 +54,7 @@ GRANTS is a set, tested with MEMBER, and never a magnitude compared against an
 ordering. R6 and R9 both turn on that: :write must not imply :read, and :repl
 must never be implied by :write. A tier system implemented as an ordered level
 would pass every other test in this system and quietly hand every writer the
-one tier that reaches beneath ARCH-0004's locks."
+one tier that reaches beneath DES-0004's locks."
   (unless (member required-tier grants)
     (error 'capability-error :operation operation :tier required-tier))
   t)

@@ -36,7 +36,7 @@ costs the agent a read")
     (is-true (getf (entity-summary (k-resolve f)) :stale))))
 
 (test a-call-sites-summary-carries-the-kind-of-referrer-it-came-from
-  ;; ARCH-0014 R7: `describe' on a callee must show an incoming call site with
+  ;; DES-0014 R7: `describe' on a callee must show an incoming call site with
   ;; its line and kind rather than a bare id. The line is already in :LOCATION;
   ;; the kind has nowhere else to come from, because a summary is deliberately
   ;; not the whole property table.

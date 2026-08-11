@@ -1,0 +1,209 @@
+id: BUG-0016
+title: A definer macro whose template defines nothing is silently uncharacterised, so every DEFINE-OPERATION body's calls are dropped and loom-serve has no call graph
+status: closed
+date: 2026-08-08
+refines: [PLAN-0011]
+affects: [macro-generator-properties, template-definer-form, define-operation,
+          generated-definition-plan]
+tags: [analyzer, graph, calls, blind-spot, loom-serve]
+summary: |
+  MACRO-GENERATOR-PROPERTIES characterises a DEFMACRO only when
+  TEMPLATE-DEFINER-FORM finds a DEFUN, DEFCLASS or DEFMETHOD somewhere in its
+  template. DEFINE-OPERATION (src/serve/registry.lisp:41) expands to
+  (REGISTER-OPERATION (MAKE-OPERATION ... :FUNCTION (LAMBDA ...))) -- a runtime
+  table entry keyed by a keyword, not a Lisp definition -- so it matches none of
+  the three, records no generator properties, and does not even record
+  :DEFINER-STATUS :UNHANDLED. The 15 DEFINE-OPERATION call sites across
+  src/serve/{operations,repl,server}.lisp therefore mint no entity, and the 42
+  distinct names their bodies call are recorded on the file's
+  :DEFINER-CALL-SITES and attached to nothing. Every REST route and every MCP
+  tool is invisible in the call graph: `describe violation-summary` and
+  `describe search-entities` show no caller in loom-serve, and `impact` on any
+  loom-knowledge entry point under-reports its entire external contract.
+  Surfaced while reviewing PLAN-0011, which correctly captures "violation-summary"
+  into the call site's :CALL-NAMES and then has nowhere to put it.
+body: |
+  SYMPTOM
+
+  Measured, /usr/bin/sbcl, 2026-08-08, on the working tree:
+
+      tools/loom.sh 'describe violation-summary'
+        function violation-summary  [src/serve/operations.lisp:170-173]
+          -> calls: getp
+          <- contains: src/serve/operations.lisp
+
+  No incoming :CALLS, although the :CHECK operation's body five lines above
+  writes (mapcar #'violation-summary ...). After PLAN-0011 the name IS collected
+  -- the site's :CALL-NAMES contains "violation-summary" -- so this is no longer
+  a COLLECT-CALL-NAMES gap; the name is recorded and then discarded because no
+  entity exists to carry it.
+
+  Analyzing the three files that contain DEFINE-OPERATION forms and reading
+  their :DEFINER-CALL-SITES directly:
+
+      define-operation sites          15
+      distinct orphaned call names    42
+
+  Among the 42: SEARCH-ENTITIES, IMPACT-REPORT, RESOLVE-ENTITY, REPOSITORY-VIEW,
+  REPOSITORY-STATUS, WATCH-REPOSITORY, PAUSE-REPOSITORY, UNWATCH-REPOSITORY,
+  REINDEX-REPOSITORY, UNRESOLVED-REFERENCES, UNHANDLED-DEFINER-MACROS,
+  GENERATED-DEFINITION-COLLISIONS, RULE-SUMMARY, VIOLATION-SUMMARY,
+  PAIR-SUMMARY, REPL-OPEN, REPL-EVAL, REPL-CLOSE. These are precisely the
+  loom-knowledge and loom-workspace entry points the service exposes, which is
+  to say: the answer to "what breaks if I change this" is missing exactly where
+  the caller is an external contract rather than another internal function.
+
+  CAUSE
+
+  Two mechanisms, and only the second is a defect.
+
+  src/analyzer/lisp-analyzer.lisp, TEMPLATE-DEFINER-FORM (line 614) searches a
+  macro template for a head in *TEMPLATE-DEFINER-HEADS* -- defun, defclass,
+  defmethod. DEFINE-OPERATION's template contains none, because what it defines
+  is an entry in a runtime list keyed by a keyword. That is correct behaviour
+  for a walk that can only recognise Lisp definitions, and LOOM-GRAPH's
+  *GENERATABLE-TYPES* (resolve.lisp:174) names no type such an entry could be
+  either. Registering DEFINE-OPERATION by hand in *MACRO-GENERATORS* would not
+  help: :NAME-INDEX 1 would name the entity ":find", and the ontology has no
+  type for it.
+
+  MACRO-GENERATOR-PROPERTIES (line 668) then records nothing at all rather than
+  :DEFINER-STATUS :UNHANDLED, by deliberate design -- its docstring says a
+  template containing none of the three "claims to define nothing, and flagging
+  it would put every WITH-LOCK in the tree into a count that exists to be read
+  and acted on". That reasoning is sound for WITH-LOCK and wrong for
+  DEFINE-OPERATION, and the distinguishing fact is available and unused: a macro
+  whose calls are top-level forms appearing in :DEFINER-CALL-SITES with a
+  non-empty :CALL-NAMES is a macro that swallows real bodies, whereas a WITH-LOCK
+  is never a top-level form at all. The silence is the defect: `status` reports
+  "1 definer macro" unresolved and DEFINE-OPERATION is not the one, so the tool
+  that exists to report gaps reports this one as no gap.
+
+  WHY IT HID
+
+  It hides behind the shape of its own output. Nothing counts it (that is the
+  bug), the entities it would have minted have no name a person would search
+  for -- there is no "find :check" to come up empty -- and the functions whose
+  callers go missing all have other, internal callers from the console, so
+  `describe` on any of them returns plausible output with the service layer
+  quietly absent. src/serve has 61 of its own tests and every one of them calls
+  DISPATCH-OPERATION or FIND-OPERATION directly, so the registry is thoroughly
+  tested as behaviour and not once as an indexed artefact.
+
+  It also predates and is independent of BUG-0011, which is why PLAN-0011 could
+  not find it: before that fix the name "violation-summary" was never collected
+  in the first place, so the orphaning had nothing to orphan. Fixing the
+  collection is what made the second half of the path observable.
+
+  FIX
+
+  Two separable pieces, and the first is cheap and worth doing alone.
+
+  1. Count it. Give MACRO-GENERATOR-PROPERTIES a third outcome, or extend
+     :DEFINER-STATUS :UNHANDLED to cover a macro whose template defines nothing
+     but whose calls appear as top-level definer call sites carrying call names.
+     The point is that `check` and `status` report the gap instead of reporting
+     none, per CON-0001: a recorded gap beats silence that reads as success.
+
+  2. Decide what a DEFINE-OPERATION call is. The options, in increasing cost:
+     leave the bodies unattributed and say so; attribute a definer call site's
+     :CALL-NAMES to the enclosing FILE entity so the calls at least land
+     somewhere and `impact` reaches the file; or add an ontology type for a
+     registered operation and a registry entry whose :NAME-INDEX yields a
+     keyword name, which is the honest model of what loom-serve declares and the
+     only one that makes `impact search-entities` mention the /v1/find route.
+     The third is an ARCH-level question about whether the ontology models
+     runtime registrations, and should not be decided inside a bug fix.
+
+  Out of scope for PLAN-0011, which was explicit that it changes one clause in
+  one function.
+
+  FIX PART 1, LANDED 2026-08-09
+
+  The counting half is done and the bug stays open for the second half. Neither
+  of the two options named above is quite what was taken, and the difference is
+  worth recording: extending :DEFINER-STATUS in MACRO-GENERATOR-PROPERTIES
+  cannot work, because DEFINE-OPERATION is defined in src/serve/registry.lisp
+  and called in three other files, so the two halves of the discriminator are
+  never visible to one file-scoped analyzer pass (RULE-0002). The decision
+  therefore lives where the whole tree is visible:
+  BODY-SWALLOWING-MACRO-NAMES in src/graph/resolve.lisp reads every file's
+  :DEFINER-CALL-SITES, and UNHANDLED-DEFINER-MACROS now returns that population
+  alongside the :DEFINER-STATUS :UNHANDLED one. `status', `check', the REST
+  :check operation and the MCP tool all widened for free, since each of them
+  already called that one function.
+
+  What `check' reports on this tree, where it reported one line before:
+
+      4 definer macros whose expansion could not be read:
+        defentity        [src/ontology/root-ontology.lisp:512]  88 call names ...
+        defrelationship  [src/ontology/root-ontology.lisp:579]  12 call names ...
+        define-command   [src/process/console.lisp:92]          72 call names ...
+        define-operation [src/serve/registry.lisp:41]           42 call names ...
+
+  DEFINE-OPERATION's 42 reproduces this document's own measurement exactly,
+  which is the independent check that the mechanism found the thing the bug is
+  about.
+
+  Two findings from the measurement that this document did not predict.
+
+  DEFINE-COMMAND has the identical defect and is larger: 16 call sites orphaning
+  72 distinct names, which is every console verb's body. This document looked at
+  src/serve and concluded loom-serve has no call graph; the same was true of the
+  console and nobody had looked.
+
+  The counts are not all the same kind of thing, and the report says so by
+  carrying the number rather than folding it away. DEFINE-OPERATION's and
+  DEFINE-COMMAND's names are real calls into loom-knowledge. DEFRELATIONSHIP's
+  12 are `decision', `document', `file' and their siblings -- the heads of the
+  keyword lists in its :FROM and :TO arguments, recorded because
+  COLLECT-CALL-NAMES reads the head of any non-quoted list as an operator and a
+  keyword is a symbol. Both are honest members of a count of "declarations the
+  index cannot read", but only the first is a dropped call. Tightening the
+  predicate to exclude the second was tried and rejected: every available
+  discriminator was a heuristic that would have been wrong on some other tree,
+  where the per-macro count is a fact a reader can act on directly. The keyword
+  head imprecision in COLLECT-CALL-NAMES is a separate, pre-existing defect that
+  this measurement surfaced and nobody has filed.
+
+  Still open: what a DEFINE-OPERATION call should mint. DES-0014 takes a fourth
+  option this document did not list -- a :CALL-SITE entity modelling the call
+  rather than the registered operation -- and explicitly leaves the :OPERATION
+  entity question, the third option above, unanswered.
+
+  FIX PART 2, LANDED 2026-08-10, AND CLOSED
+
+  PLAN-0014 step 7 mints the call sites. RESOLVE-GENERATED-DEFINITIONS walks
+  every file's :DEFINER-CALL-SITES and, for a site GENERATED-DEFINITION-PLAN
+  produced no entity from, mints one :CALL-SITE per call name that CALL-TARGETS
+  resolves -- owned by the file through :CONTAINS, :referrer-kind :definer-call,
+  :generated-by the site's operator. 124 on this tree: define-command 68,
+  define-operation 50, let* 4, register-handler 2. The SYMPTOM measurement now
+  reads
+
+      tools/loom.sh 'describe violation-summary'
+        function violation-summary  [src/serve/operations.lisp:170-173]
+          -> calls: getp
+          <- documents: PLAN-0014, BUG-0016, DES-0014
+          <- calls: violation-summary@src/serve/operations.lisp:186 (definer-call)
+          <- contains: src/serve/operations.lisp
+
+  where it read no incoming :CALLS at all. Line 186 is where the :CHECK
+  operation's DEFINE-OPERATION form begins today, measured 2026-08-10; DES-0014
+  and PLAN-0014 both cite 165 for it, which no longer matches the file. 186 is
+  the figure to trust, and a hand-written line number in a document is exactly
+  the fact Loom exists to stop anyone hand-writing.
+
+  A name that resolves to nothing mints no call site -- 142 of the 266 orphaned
+  pairs -- because a node per absent callee is a node per thing that is not
+  there, and where those names went is already recorded on the site's
+  :CALL-NAMES and in `check''s definer-macro report. PLAN-0014 decision 2 and
+  DES-0014's OUTSTANDING item 2 carry the reasoning.
+
+  Closed on both halves. The third FIX option -- an :OPERATION entity type
+  modelling the runtime registration -- is neither taken nor refuted: `impact
+  search-entities' now names a call site in operations.lisp at a line rather
+  than the /v1/find route, which is a call graph rather than a model of what
+  loom-serve declares. That stays an open ARCH-level question and is out of
+  scope for this document, which was about the dropped call and no longer has
+  one. Whoever reopens it wants a new REQ, not this bug.

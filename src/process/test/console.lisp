@@ -142,7 +142,7 @@
         "and it keeps the newest, not the oldest")))
 
 ;;; ------------------------------------------------------------------
-;;; What `describe' prints (ARCH-0005)
+;;; What `describe' prints (DES-0005)
 ;;;
 ;;; These are at the END of the file deliberately: FiveAM runs a suite in
 ;;; definition order, and a-command-that-signals-prints-and-continues asserts
@@ -178,7 +178,7 @@ must NOT print, so the negative assertions below cannot pass by accident."
   ;; the code-entity test would be describing the file it meant to exclude.
   (write-console-fixture-file "src/code.lisp" "(defun alpha (x) (+ x 1))
 ")
-  (write-console-fixture-file "docs/design/DEC-0001.yaml"
+  (write-console-fixture-file "docs/decisions/DEC-0001.yaml"
                               "id: DEC-0001
 type: decision
 title: Alpha stays arithmetic
@@ -188,8 +188,8 @@ rationale: |
 consequences: |
   Zarquon is what nobody should be reading here.
 ")
-  (write-console-fixture-file "docs/arch/ARCH-0001.yaml"
-                              "id: ARCH-0001
+  (write-console-fixture-file "docs/design/DES-0001.yaml"
+                              "id: DES-0001
 type: document
 title: The shape of alpha
 status: implemented
@@ -215,7 +215,7 @@ body: |
   ;; sentinel was in it, however long the document was.
   (with-console-fixture
     (let ((output (with-output-to-string (*standard-output*)
-                    (run-command "describe ARCH-0001"))))
+                    (run-command "describe DES-0001"))))
       (is (search "The shape of alpha" output))
       (is (search "implemented" output)
           "and the status is printed, which needed the vocabulary widening
@@ -246,7 +246,7 @@ summary, which is the fabrication CON-0001 forbids")
     ;; where there is no preceding whitespace to back off to.
     (let ((output (let ((loom-knowledge:*summary-token-budget* 4))
                     (with-output-to-string (*standard-output*)
-                      (run-command "describe ARCH-0001")))))
+                      (run-command "describe DES-0001")))))
       (is (search "truncated" output))
       (is (search "Arithmetic" output)
           "the head of the summary is still printed: a truncated summary that
@@ -267,7 +267,7 @@ misused conditional directive hid, printing the flag itself as the text")
           "the first line is PRINT-SUMMARY-LINE's form, as it is today"))))
 
 ;;; ------------------------------------------------------------------
-;;; enrich (ARCH-0011)
+;;; enrich (DES-0011)
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; Driven against the real registered LISP-INSPECTOR rather than a stub, and

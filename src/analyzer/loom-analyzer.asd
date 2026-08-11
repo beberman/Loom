@@ -20,15 +20,15 @@
   ;; UIOP is not a new dependency in the sense that matters: it ships with
   ;; ASDF, which is already required to load any of this, so it adds no system
   ;; to the layering table. The inspector uses it to run a child process
-  ;; (ARCH-0011 R3), which is SS9.2's stated preference for subprocesses over
+  ;; (DES-0011 R3), which is SS9.2's stated preference for subprocesses over
   ;; FFI exercised rather than merely agreed with.
   ;;
   ;; ECLECTOR is the Common Lisp reader the Lisp analyzer reads through
-  ;; (ARCH-0013). Pure Common Lisp, no foreign code, so cl-yaml above remains
+  ;; (DES-0013). Pure Common Lisp, no foreign code, so cl-yaml above remains
   ;; the only FFI dependency in the system. It is confined to lisp-reader.lisp
-  ;; on the ARCH-0011 precedent that a library's spelling should be replaceable
+  ;; on the DES-0011 precedent that a library's spelling should be replaceable
   ;; without touching the code consuming its answers: no other file in the tree
-  ;; names an ECLECTOR package, and ARCH-0013 R1 asserts it.
+  ;; names an ECLECTOR package, and DES-0013 R1 asserts it.
   :depends-on (#:loom-ontology #:cl-yaml #:uiop #:eclector)
   :serial t
   :components

@@ -30,7 +30,7 @@ against the committed base graph."))
 ENTITY-NATURAL-KEY).  Re-asserting an unchanged entity applies as a no-op,
 which is what makes re-analysing an untouched file idempotent.
 
-Emitted by an analyzer, and -- since ARCH-0002 -- by a resolution pass as
+Emitted by an analyzer, and -- since DES-0002 -- by a resolution pass as
 well.  A definer macro's call site brings a name into existence that appears
 nowhere in the source as a definition, and the decision that it did needs the
 whole workspace, which no file-scoped analyzer has.  So \"every entity comes

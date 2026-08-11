@@ -1,5 +1,5 @@
 ;;;; The Lisp analyzer's reader, and the only file in the tree that names
-;;;; Eclector. ARCH-0013.
+;;;; Eclector. DES-0013.
 ;;;;
 ;;;; The whole design is one decision: the parse result Loom asks Eclector to
 ;;;; build IS the ordinary s-expression. MAKE-EXPRESSION-RESULT returns its
@@ -19,8 +19,8 @@
 ;;;;
 ;;;; Nothing here knows what an entity is. It emits no ontology operation and
 ;;;; reads nothing from the graph. The library's spelling is confined here on
-;;;; the ARCH-0011 precedent that nothing outside lisp-inspector.lisp knows
-;;;; what SBCL is: ARCH-0013 R1 asserts that no ECLECTOR symbol appears in any
+;;;; the DES-0011 precedent that nothing outside lisp-inspector.lisp knows
+;;;; what SBCL is: DES-0013 R1 asserts that no ECLECTOR symbol appears in any
 ;;;; other file.
 
 (in-package :loom-analyzer)
@@ -35,7 +35,7 @@
 FORMS keeps the four-element tuple (FORM START-LINE END-LINE START-OFFSET)
 that READ-FORMS-WITH-SPANS returned before this file existed. START-OFFSET no
 longer has a consumer -- ELEMENT-SPANS was its only one and ELEMENT-SPANS is
-gone -- but ARCH-0010 R1 named the widened tuple as a requirement and removing
+gone -- but DES-0010 R1 named the widened tuple as a requirement and removing
 an element to save one cons per top-level form would break it for no gain. It
 is vestigial and says so.
 
@@ -62,7 +62,7 @@ for a cons the reader did not record -- which after this design can happen only
 through reader-level structure sharing, where #1=(...) referenced by #1# makes
 one cons appear twice and the table keeps whichever range was written last.
 Zero occurrences in either indexed tree. The caller's declared fallback stays
-what ARCH-0010 R4 chose, the containing form's range: a wider truth rather than
+what DES-0010 R4 chose, the containing form's range: a wider truth rather than
 a fabricated one (CON-0001)."
   (let ((range (and (consp form) (gethash form (reading-spans reading)))))
     (if range
@@ -86,7 +86,7 @@ file's -- nothing here resolves anything."
 or NIL when the program wrote the list out itself.
 
 The one class of form kind a reader is entitled to know, because reader macros
-really are syntax where DEFUN is not (ARCH-0013, WHY DEFINITION-P SURVIVES).
+really are syntax where DEFUN is not (DES-0013, WHY DEFINITION-P SURVIVES).
 It exists so COLLECT-CALL-NAMES can stop guessing from a name: a one-argument
 (some-pkg:function g) matches its quotation test today and contributes \"g\",
 and (some-pkg:quote x) is taken for quoted data so its contents go unwalked."
@@ -196,11 +196,11 @@ this requirement. Before it, the index silently depended on the *analyzing
 implementation's* CL:*FEATURES* -- so the same repository read by SBCL and by
 CCL would yield different entities, and nothing anywhere recorded which
 reading it was. That gap was disclosed in no document and filed as no bug,
-which is why ARCH-0013 makes the mechanism a requirement.
+which is why DES-0013 makes the mechanism a requirement.
 
 The default stays the host's *FEATURES*, deliberately, so this step moves no
 entity count. Changing it is a separate decision with an entity-count
-consequence, and ARCH-0013 R6 leaves it to whoever takes it: a policy that
+consequence, and DES-0013 R6 leaves it to whoever takes it: a policy that
 read both branches of every #+/#- would index definitions that do not exist
 on any one platform, and a policy that read neither would lose the ones that
 do. Neither is obviously right, and picking one silently would be worse than
@@ -338,7 +338,7 @@ reader saw. Returns a READING.
 
 FEATURES is the list #+ and #- are decided against, defaulting to the host's
 CL:*FEATURES* so that this is parity rather than a policy (REQ-0019 R5,
-ARCH-0013 R6). Explicit because the alternative is what it replaced: an index
+DES-0013 R6). Explicit because the alternative is what it replaced: an index
 that silently depended on which implementation happened to be doing the
 analyzing, recorded nowhere. Material a policy suppresses is a recorded gap --
 READING-SUPPRESSED-REGIONS -- rather than a silent absence.
@@ -350,7 +350,7 @@ The HANDLER-BIND that invokes ECLECTOR.READER:RECOVER must be established
 INSIDE the HANDLER-CASE, not outside it. Handlers run innermost first, so with
 the nesting the other way the HANDLER-CASE unwinds before the restart is ever
 looked for -- and the symptom is not an error but the rest of the file silently
-not being read. This was got wrong twice while spiking ARCH-0013 and diagnosed
+not being read. This was got wrong twice while spiking DES-0013 and diagnosed
 only by comparison against a working case.
 
 A form whose read invoked RECOVER is recorded in RECOVERED and is NOT placed in

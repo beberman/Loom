@@ -8,7 +8,7 @@
 #   tools/loom-serve.sh reload     stop, then start (an alias for restart)
 #   tools/loom-serve.sh update     start / restart / nothing, whichever applies
 #
-# ARCH-0007 R4. `update' is the one verb meant to be called before relying on
+# DES-0007 R4. `update' is the one verb meant to be called before relying on
 # MCP or REST: it pays a restart's cost only when something actually changed,
 # which on most sessions is nothing.
 #
@@ -21,7 +21,7 @@
 # two concurrent `start' calls leave exactly one pidfile naming exactly the
 # process that is listening. It never guesses a pid: a service it did not start
 # is reported and left alone rather than killed. And it no longer decides which
-# source changes are safe to load into a live image: after ARCH-0008 there is no
+# source changes are safe to load into a live image: after DES-0008 there is no
 # in-place reload to decide about, and every path that brings code up to date is
 # a fresh process.
 
@@ -52,7 +52,7 @@ repository=${root##*/}
 
 # grep for the one key rather than a JSON parser: jq is not installed here, and
 # the only shape this script reads is a number, which cannot contain the quoting
-# a real parser exists to handle. A json_bool sat beside this until ARCH-0008
+# a real parser exists to handle. A json_bool sat beside this until DES-0008
 # R4; nothing reads a boolean out of a response any more.
 json_number() { printf '%s' "${2-}" | grep -o "\"$1\":[0-9][0-9]*" | head -1 | sed 's/.*://'; }
 
@@ -67,7 +67,7 @@ probe() {
     }
     started=$(json_number started-at "$server_body")
     # A 400 here is the service running against some other tree, or something
-    # having unwatched this one. ARCH-0007 R1: report that as unknown rather
+    # having unwatched this one. DES-0007 R1: report that as unknown rather
     # than guessing current, which is CON-0001's fabricated fact in
     # operational clothing.
     status_body=$(curl -sf --max-time 15 "$base/status?repository=$repository" 2>/dev/null) || {
@@ -79,10 +79,10 @@ probe() {
         state=unknown
         return
     fi
-    # :started-at directly, with nothing layered on top of it. ARCH-0007's third
+    # :started-at directly, with nothing layered on top of it. DES-0007's third
     # PROBLEM finding -- that a successful in-place reload leaves :started-at
     # naming an earlier moment than the code actually running -- stops applying
-    # under ARCH-0008 R1 and R2: the only mechanism left that changes running
+    # under DES-0008 R1 and R2: the only mechanism left that changes running
     # code is a fresh process, so :started-at is always the moment the running
     # code was loaded.
     if [ "$indexed" -gt "$started" ]; then state=stale; else state=current; fi
@@ -99,7 +99,7 @@ probe() {
 # that pid to something unrelated before anyone runs this script again.
 #
 # /proc is Linux-specific, matching this environment's stated platform, and
-# ARCH-0007's CONSEQUENCES names that as a boundary rather than a portability
+# DES-0007's CONSEQUENCES names that as a boundary rather than a portability
 # promise. cmdline is NUL-separated, which grep handles without help.
 #
 # status, start, stop and restart all route through this rather than reading
@@ -193,7 +193,7 @@ cmd_restart() {
 
 # A name for cmd_restart, kept as a verb rather than deleted so a script, a
 # memory or a habit that types `reload' keeps working instead of hitting a usage
-# error. There is nothing left for it to mean of its own: ARCH-0008 R1 removed
+# error. There is nothing left for it to mean of its own: DES-0008 R1 removed
 # the reload-code operation this used to POST to.
 cmd_reload() {
     cmd_restart

@@ -23,7 +23,7 @@
    #:find-analyzer
    #:analyzable-p
 
-   ;; the inspector protocol (ARCH-0011 R1) -- a second pass that asks the
+   ;; the inspector protocol (DES-0011 R1) -- a second pass that asks the
    ;; language's own toolchain rather than reading text. The three INSPECTION-
    ;; readers are exported for LOOM-WORKSPACE's report; LOOM-GRAPH reads the
    ;; same plist with GETF and names nothing from here.
@@ -38,7 +38,7 @@
    #:inspection-definitions
    #:inspection-calls
 
-   ;; the Common Lisp inspector (ARCH-0011 R3). The four bound slots are
+   ;; the Common Lisp inspector (DES-0011 R3). The four bound slots are
    ;; exported because they are knobs a caller sets, not internals.
    #:lisp-inspector
    #:inspector-timeout-seconds
@@ -52,7 +52,7 @@
    #:slurp-file
    #:workspace-relative-path
 
-   ;; the system a path belongs to (ARCH-0009 R2) -- exported because every
+   ;; the system a path belongs to (DES-0009 R2) -- exported because every
    ;; analyzer with no grouping construct of its own calls it, not because
    ;; anything above LOOM-ANALYZER does
    #:default-system-for-path
@@ -63,10 +63,10 @@
    #:document-analyzer
    #:markdown-analyzer
 
-   ;; what a macro call defines (ARCH-0002) -- read by LOOM-WORKSPACE, which
+   ;; what a macro call defines (DES-0002) -- read by LOOM-WORKSPACE, which
    ;; hands it to the resolution pass LOOM-GRAPH cannot reach this package from
    #:*macro-generators*
-   ;; Namespaces a Lisp tree uses but does not declare (ARCH-0015). Handed to
+   ;; Namespaces a Lisp tree uses but does not declare (DES-0015). Handed to
    ;; BUILD-PACKAGE-GRAPH the way *MACRO-GENERATORS* is handed to
    ;; RESOLVE-GENERATED-DEFINITIONS, and for the same layering reason.
    #:*external-package-names*
@@ -79,9 +79,9 @@
    #:register-document-type
    #:document-category
    #:docs-relative-p
-   ;; markdown under a documentation directory (REQ-0014, ARCH-0016). The
+   ;; markdown under a documentation directory (REQ-0014, DES-0016). The
    ;; directory list is exported because it is the seam a foreign repository
-   ;; adjusts -- convention with a knob, not configuration; ARCH-0016 D2.
+   ;; adjusts -- convention with a knob, not configuration; DES-0016 D2.
    #:*documentation-directories*
    #:register-documentation-directory
    #:documentation-relative-p

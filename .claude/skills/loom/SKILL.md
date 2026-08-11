@@ -78,7 +78,7 @@ stop                      pause everything and leave
 ```
 
 **A malformed form costs a form, not a file.** The Lisp analyzer reads through
-Eclector behind a Loom-owned client (ARCH-0013), which recovers: a file with a
+Eclector behind a Loom-owned client (DES-0013), which recovers: a file with a
 stray paren or an unbalanced list in it still yields its other definitions, and
 the damage is recorded on the `:file` entity as a `:recovered-regions` entry
 with a line range. A repaired form is deliberately *not* indexed — recovering
@@ -91,12 +91,12 @@ should have: the file could not be read at all.
 
 **A call with nowhere to go is an entity, not a drop.** An ambiguous name, a
 call in a body-swallowing macro's body such as `define-operation`'s, and a
-function designated in an initform each mint a `:call-site` (ARCH-0014) rather
+function designated in an initform each mint a `:call-site` (DES-0014) rather
 than being discarded, so `describe` on the callee lists them among its callers
 with their kind — `<- calls: violation-summary@src/serve/operations.lisp:186
 (definer-call)`.
 
-**A name is resolved as a symbol, not as a string** (ARCH-0015). Two definitions
+**A name is resolved as a symbol, not as a string** (DES-0015). Two definitions
 spelled alike in different packages are two callables, and a call reaches the one
 its own package makes accessible — imported, inherited through a `:use` of a
 package that exports it, or interned locally. So two `find` hits for one name are
@@ -132,7 +132,7 @@ tools/loom.sh 'context macro definitions'
 `enrich` is optional, runs on explicit demand only -- never from the monitor,
 never from `watch` -- and ages itself out through RETRACT-FILE, so an index
 nobody has re-enriched gives today's text answer rather than yesterday's image
-answer. ARCH-0011 is the design.
+answer. DES-0011 is the design.
 
 `impact` takes an optional depth. **The default is 5, not 3** — every example
 here and in CLAUDE.md passes an explicit `3`, which is a choice rather than a
@@ -168,7 +168,7 @@ unchanged and still how an agent in this tree reaches Loom (`.claude/agents/
 tools.md` says so explicitly). This runs Loom as a standing process reachable
 over REST (`/v1/...`) and MCP (`/mcp`) on `127.0.0.1:4780`, for a caller that
 needs one resident graph shared across many requests instead of a fresh index
-per call. REQ-0008 and ARCH-0006 are the design; CLAUDE.md's own "Running it
+per call. REQ-0008 and DES-0006 are the design; CLAUDE.md's own "Running it
 as a service" section is the other copy of this table.
 
 Do not run either invocation by hand. `tools/loom-serve.sh` owns the lifecycle,
@@ -186,9 +186,9 @@ tools/loom-serve.sh update     start / restart / nothing, whichever applies
 `update` is the one verb worth reaching for. It pays a restart's cost only when
 something actually changed — a no-op in ~30ms on the common case, a ~4.5s
 restart when the tree has moved, and a start when nothing is up. There is no
-in-place reload any more: ARCH-0008 removed it, because reloading nine systems
+in-place reload any more: DES-0008 removed it, because reloading nine systems
 under live request threads produced a reproducible 500 (BUG-0008), and a restart
-was already measured at the same cost. ARCH-0007 is the rest of the design; the
+was already measured at the same cost. DES-0007 is the rest of the design; the
 two files it tracks live under `/tmp`, named from the watched root
 (`/tmp/loom-serve-home-beberman-lisp-Loom.{pid,log}`), so a second checkout
 never collides with this one.
@@ -276,14 +276,14 @@ message are faster and never prompt.
 - **A running loom-serve goes stale mid-session and nothing tells you.** The
   SessionStart hook makes it current once, at the start; every edit after that
   is invisible to the resident image until `tools/loom-serve.sh update` runs
-  again. ARCH-0007 names this as accepted rather than solved.
+  again. DES-0007 names this as accepted rather than solved.
 - **The pidfile check under `tools/loom-serve.sh` is Linux-specific.** It reads
   `/proc/<pid>/cmdline` to tell loom-serve from whatever the OS may have
   recycled that pid to, which matches WSL Ubuntu and nothing else.
 - **Bringing the service up to date loses any repository added at runtime.** A
   restart re-watches only this tree's root and whatever was on the command line,
   so a repository an agent added through `watch` is gone. That was already true
-  of `restart` and `stop`; after ARCH-0008 it is true of `update` and `reload`
+  of `restart` and `stop`; after DES-0008 it is true of `update` and `reload`
   as well, because every path that changes running code is a fresh process.
 
 # Writing documents
@@ -294,15 +294,28 @@ a markdown file is indexed (see below) but it can never be a REQ, an ARCH or a
 DEC, so a plan written as markdown is a plan Loom cannot chain.
 
     docs/requirements/  REQ-nnnn      docs/plans/     PLAN-nnnn
-    docs/arch/          ARCH-nnnn     docs/reviews/   REV-nnnn
-    docs/design/        DEC-nnnn      docs/bugs/      BUG-nnnn
-    docs/concepts/      CON-nnnn      docs/rules/     RULE-nnnn
+    docs/design/        DES-nnnn      docs/reviews/   REV-nnnn
+    docs/decisions/     DEC-nnnn      docs/bugs/      BUG-nnnn
+    docs/arch/          ARCH-nnnn     docs/rules/     RULE-nnnn
+    docs/concepts/      CON-nnnn
 
 CON-0004 holds the full conventions and the reasoning. The fields that resolve:
 
 - `refines: [REQ-0002]` — the document this one answers. Becomes a `:refines`
   edge, so `impact REQ-0002` reports what came of it.
-- `affects: [function-name]` — code a decision governs.
+- `describes: [function-name]` — **ARCH only**: the code whose structure the
+  document describes. Becomes a `:documents` edge. An architecture document has
+  no `affects:` — it describes, it does not govern, and writing `affects:` in
+  one is read by nothing on purpose.
+- `invariants: |` — **ARCH only**: what must remain true, as prose. The field
+  that most distinguishes the genre — a DES records what was chosen, an ARCH
+  records what may not be broken.
+- `affects: [function-name]` — code the document bears on. Read from **every**
+  document type, not just decisions (BUG-0023 — it used to be decisions only,
+  and 63 of 67 documents were declaring this into a void). What the claim means
+  depends on who makes it: a decision *governs* what it affects and earns a
+  `:decides` edge, so `impact` reports it under `decisions:`; a requirement,
+  plan, bug or review merely *bears on* it and earns `:documents`.
 - `applies-to: [function-name]` — code a rule constrains.
 
 A name in any of those that resolves to nothing is reported by `check` rather
@@ -319,12 +332,12 @@ After writing, run `status` and confirm the document count rose and
 
 ## Markdown is indexed, and earns a weaker edge
 
-REQ-0014 and ARCH-0016. A separate analyzer claims `.md` and `.markdown` under
+REQ-0014 and DES-0016. A separate analyzer claims `.md` and `.markdown` under
 any directory named `docs`, `doc`, `design` or `documentation` — not the
 repository root, so a top-level README.md is not indexed. Each file becomes a
 `:document` named by its path, titled by its first H1 (the filename when there
 is none), always a plain `:document`: a markdown file in `docs/design` is *not*
-a DEC, because the directory-names-the-type registry is this tree's convention
+a DES, because the directory-names-the-type registry is this tree's convention
 and not a fact about foreign repositories.
 
 What it extracts is deliberately shallow — no summarizing, no inference:

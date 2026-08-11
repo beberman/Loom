@@ -139,7 +139,7 @@ body: |
 
   WHY THIS IS WORTH A DOCUMENT
 
-  `impact` is the command the whole workflow leans on. ARCH-0001, ARCH-0002 and
+  `impact` is the command the whole workflow leans on. DES-0001, DES-0002 and
   REQ-0003 all cite an impact result as evidence, and REQ-0003's central argument
   is built on `impact repository 2` returning one row. A command used that way
   has to be trustworthy in its own units, and right now the number it prints
