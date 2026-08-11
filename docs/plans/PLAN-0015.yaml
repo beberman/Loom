@@ -269,6 +269,68 @@ body: |
   nothing keys on any of this yet. This is the last step at which that is
   true, and it is the review checkpoint before the edges move.
 
+  STAGE B AS BUILT, 2026-08-10, and it contradicts a prediction this plan and
+  ARCH-0015 both made. src/graph/packages.lisp holds BUILD-PACKAGE-GRAPH,
+  HOME-PACKAGE and ENTITY-HOME-PACKAGE; src/graph/test/packages.lisp holds
+  seven tests. Nothing keys on any of it and no edge moved.
+
+  COMMON-LISP is seeded from the host image's external symbols. Nothing in a
+  source tree declares CL and almost everything uses it, so without the seed
+  every inherited name is unplaceable -- including PRINT-OBJECT, the case the
+  regression test exists for. Asking the running Lisp about a standard package
+  is not loading the subject's code, so DEC-0001 is untouched.
+
+  The regression guard was falsified rather than assumed. Disabling the
+  inheritance route by emptying the CL seed produces 2 failures in
+  A-GENERIC-INHERITED-FROM-CL-STAYS-ONE-CALLABLE-ACROSS-EVERY-USER and green
+  everywhere else, which is ARCH-0015 R7's naive implementation caught by the
+  test written to catch it.
+
+  THE MEASUREMENT, and the correction it forces. Of names whose definitions
+  span more than one writing package:
+
+                                 Loom      game-server
+      spanning names               11               95
+        collapse to one home        1               29
+        stay genuinely distinct     2               12
+        unplaceable, falls back     8               54
+
+  Unplaceable is HOME-PACKAGE refusing to place a name because its package
+  uses a package this workspace has no declaration for -- :fiveam, :drakma,
+  :cl-json -- and the name could therefore be inherited from outside. That
+  refusal is correct under CON-0001 and it is also most of the population.
+
+  So ARCH-0015's stated consequence -- "all 18 ambiguous call sites stop being
+  ambiguous", written into its own OUTSTANDING-facing prose and into step 10
+  below -- is FALSE. Named individually, Loom's four ambiguous names classify
+  as:
+
+      fixture-inspection     UNPLACEABLE   (10 sites)
+      discover-units         UNPLACEABLE   ( 4 sites)
+      read-inspection-file   UNPLACEABLE   ( 2 sites)
+      log-event              DISTINCT      ( 2 sites)
+
+  Only LOG-EVENT resolves. 16 of the 18 sites survive, because every test
+  package in this tree uses :fiveam and fiveam is not declared here. The
+  ceiling test will barely move and step 10 must not be written as though it
+  will.
+
+  This is not a defect in the design; it is the conservative fallback working
+  as specified, and the fallback is what guarantees no regression. It does
+  mean stage C buys less than ARCH-0015 claimed on both trees: 29 of 95
+  spanning names on game-server, not 95. Two ways to raise that number are
+  visible and both are out of this plan's scope:
+
+    Declare the external packages. A per-repository list of package names and
+    their exports -- fiveam, drakma, alexandria -- turns "unknown, refuse" into
+    a real answer. Cheap, explicit, and it is a file rather than a guess.
+
+    Ask a live image. ARCH-0011's enrichment already loads a tree in a bounded
+    child and knows every symbol's home exactly. ARCH-0015's ALTERNATIVES
+    section names this and rejects it as the primary mechanism for DEC-0001
+    reasons, which leaves it exactly where enrichment belongs: correcting the
+    text answer on demand, never replacing it.
+
   Step 8 -- KEYS. The callable index. ENTITIES-BY-NAME gains a package-aware
   sibling keyed on (home-package, downcased name), and CALLABLE-INDEX uses it.
   Names with no determinable home package go to a bucket keyed on the name

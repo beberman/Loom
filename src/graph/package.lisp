@@ -52,6 +52,12 @@
    #:resolve-specializers
    #:resolve-method-protocols
    #:callable-index
+   ;; The package graph (ARCH-0015)
+   #:build-package-graph
+   #:package-graph-p
+   #:canonical-package
+   #:home-package
+   #:entity-home-package
    #:*callable-types*
 
    ;; generated definitions (ARCH-0002) -- the one pass that mints entities
