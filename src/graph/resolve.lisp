@@ -42,6 +42,57 @@ the same name, and pretending otherwise is how a resolver invents edges."
 
 (defun callable-index (view) (entities-by-name view *callable-types*))
 
+(defstruct (callable-lookup (:constructor %make-callable-lookup))
+  "Candidates for a call name, keyed two ways (ARCH-0015).
+
+BY-NAME is CALLABLE-INDEX, name to definitions, and stays the answer whenever
+symbol identity cannot be established. BY-HOME is keyed on (home-package .
+name), which is the identity a Common Lisp callable actually has.
+
+Both, rather than one, because HOME-PACKAGE cannot place every name -- 8 of
+Loom's 11 package-spanning names and 54 of game-server's 95, measured
+2026-08-10, because their packages use packages no declaration in the tree
+describes. Falling back to BY-NAME for those makes this strictly more precise
+or identical: a name that can be placed resolves against its own package, and
+a name that cannot resolves exactly as it did before. Nothing this cannot
+place can regress, which is what lets game-server's 7085 at-risk edges move in
+one step and still be reviewable."
+  (by-name       (make-hash-table :test #'equal) :type hash-table)
+  (by-home       (make-hash-table :test #'equal) :type hash-table)
+  (package-graph nil))
+
+(defun callable-lookup (view)
+  "CALLABLE-INDEX plus the package-aware index over the same definitions."
+  (let* ((by-name (callable-index view))
+         (pg (build-package-graph view))
+         (by-home (make-hash-table :test #'equal)))
+    (maphash (lambda (name entities)
+               (dolist (e entities)
+                 (let ((home (entity-home-package pg e name)))
+                   (when home
+                     (push e (gethash (cons home name) by-home))))))
+             by-name)
+    (%make-callable-lookup :by-name by-name :by-home by-home :package-graph pg)))
+
+(defun candidate-entities (index name caller)
+  "The definitions NAME could name, as read from CALLER.
+
+INDEX may be a bare hash table, which is what CALLABLE-INDEX returns and what
+every caller passed before ARCH-0015. That path is the old behaviour exactly,
+which is why tools/call-site-census.lisp keeps working unchanged and why a
+CALLER of NIL -- RESOLVE-GENERATED-DEFINITIONS asking whether a name reaches
+anything at all -- still gets the unrestricted answer."
+  (let ((key (string-downcase name)))
+    (etypecase index
+      (hash-table (gethash key index))
+      (callable-lookup
+       (let* ((home (and caller
+                         (home-package (callable-lookup-package-graph index)
+                                       name (entity-package caller))))
+              (placed (and home (gethash (cons home key)
+                                         (callable-lookup-by-home index)))))
+         (or placed (gethash key (callable-lookup-by-name index))))))))
+
 (defun unique-match (index name)
   "The one entity INDEX holds under NAME, or NIL for none or several."
   (let ((candidates (gethash (string-downcase name) index)))
@@ -678,7 +729,7 @@ CALLER may be NIL, which asks the bare question \"does this name reach
 anything\" without a caller to remove from the candidates or to hang a node on.
 RESOLVE-GENERATED-DEFINITIONS asks it that way, so it can decide whether an
 orphaned definer name is worth a call site at all."
-  (let* ((candidates (remove caller (gethash (string-downcase name) index)))
+  (let* ((candidates (remove caller (candidate-entities index name caller)))
          (functions  (remove-if-not (lambda (e) (eq :function  (entity-type e))) candidates))
          (methods    (remove-if-not (lambda (e) (eq :method    (entity-type e))) candidates))
          (interfaces (remove-if-not (lambda (e) (eq :interface (entity-type e))) candidates)))
@@ -796,7 +847,7 @@ the same question and can answer it again.
 Idempotent: an edge that already exists upserts onto itself by natural key, and
 a name that resolved last pass resolves to the same edge this pass. Safe to run
 after every analysis pass."
-  (let ((index (callable-index view))
+  (let ((index (callable-lookup view))
         ;; The ambiguous call sites this pass produced, keyed by id: the
         ;; dedupe for the asserts below and the produced set for the sweep at
         ;; the end, which are the same question asked twice.

@@ -346,6 +346,63 @@ body: |
 
   This is the step to land alone and review alone.
 
+  STEP 8 AS BUILT, 2026-08-10. CALLABLE-LOOKUP and CANDIDATE-ENTITIES in
+  resolve.lisp beside CALLABLE-INDEX; RESOLVE-CALLS builds the lookup;
+  CALL-TARGETS' one GETHASH became a CANDIDATE-ENTITIES call. Suite 9/9.
+
+  The lookup keys twice and falls back, which is what made this landable in
+  one commit. A name HOME-PACKAGE can place resolves against its own package;
+  a name it cannot resolves against the old name index, exactly as before. A
+  bare hash table is still accepted, so CALL-TARGETS called with a NIL caller
+  -- RESOLVE-GENERATED-DEFINITIONS asking whether a name reaches anything at
+  all -- and tools/call-site-census.lisp both keep their old behaviour with no
+  change.
+
+  Measured:
+
+                                   before      after
+      Loom       :calls              3904       3922    +18
+                 onto spanning        120         84    -36
+                 covered units        332        330     -2
+      game-server :calls            12884      12612   -272
+                 onto spanning       7085       6813   -272
+
+  Loom gains edges and game-server loses them, and both are the same
+  mechanism. An ambiguous name that resolves to one home becomes a structural
+  edge where it previously produced none; a fan-out across packages that
+  shared only a spelling loses the members that were never reachable. The
+  covered-unit drop of 2 is RESOLVE-TESTS deriving coverage from :CALLS, and
+  it is the direction a correction takes -- a test that appeared to cover a
+  same-named function in another package no longer does -- but it is asserted
+  here rather than verified, and step 9 or 10 should name the two units.
+
+  THE ACCEPTANCE CRITERION STILL FAILS, and not because of this step.
+
+      describe id            -> <- contains only, no caller
+      impact cascade-delete 3 -> 1 impacted: its own file
+
+  Traced: a caller in MPACKAGE/OBJECT now gets the right candidate set. Its
+  `id' bucket holds two entities -- mpackage/object's accessor and
+  mpackage/filter's, correctly collapsed to one home by the import. But two
+  :INTERFACE entities with no methods match no clause in CALL-TARGETS, which
+  has one for exactly one interface and none for N, so the pair falls to
+  (t nil) exactly as six did.
+
+  That is REQ-0020, and BUG-0021's FIX section predicted precisely this: its
+  sequence is package identity, then the index, "then decide whether an
+  accessor declaration mints a :METHOD, or whether a generic becomes one
+  entity with several definition sites". PLAN-0015's WHAT THIS PLAN IS NOT
+  DOING says the same. So ARCH-0015 R9 and this plan's VERIFICATION section
+  are both mis-specified: they adopt BUG-0021's acceptance without noticing it
+  needs the third step of BUG-0021's own sequence. The criterion is right; it
+  belongs to the plan that implements REQ-0020, and step 11 must move it there
+  rather than record a failure against work that was never scoped to pass it.
+
+  What this step does deliver is the precondition. The candidate set for `id'
+  in mpackage is now two accessor definitions of one generic instead of six
+  definitions across three unrelated generics, which is the true candidate set
+  REQ-0020 needs before it can decide anything.
+
   Step 9 -- KEYS. The other four callers. RESOLVE-INHERITANCE (resolve.lisp:69
   and 90), RESOLVE-METHOD-PROTOCOLS (106) and generator resolution (149) move
   to the package-aware index. UNIQUE-MATCH returns NIL for several candidates
