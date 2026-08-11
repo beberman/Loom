@@ -454,6 +454,33 @@ body: |
   resolves to nothing; expect these to gain edges rather than lose them.
   Measure :inherits, :implements and :specializes counts before and after.
 
+  STEP 9 AS BUILT, 2026-08-10. The CALLABLE-LOOKUP struct generalised to
+  NAME-LOOKUP over any entity types, UNIQUE-MATCH gained an optional REFERRER,
+  and all four structural resolvers pass one. RESOLVE-DEFINITIONS assembles the
+  package graph once and shares it across its three passes rather than walking
+  every :PACKAGE entity three times for one answer.
+
+  Measured: game-server relationships 20317 -> 20346, +29; Loom 9626 -> 9632,
+  +6 of which one is the new function's own containment edge. :calls did not
+  move on either tree, which is right -- this step touches :inherits, :uses and
+  :implements and nothing else.
+
+  Gains only, and that is a property rather than an observation. BY-HOME is
+  built from BY-NAME, so a home bucket is always a subset of the name bucket,
+  and CANDIDATE-ENTITIES falls back when the bucket is empty. So a name that
+  resolved to exactly one entity before still resolves to that same entity --
+  a subset of a one-element set is that set or empty, and empty takes the
+  fallback -- while a name that matched several and therefore resolved to
+  nothing can now match one. UNIQUE-MATCH cannot lose an edge under this
+  change. That is not true of CALL-TARGETS in step 8, where shrinking the
+  candidate set is the point and the 272 game-server edges it dropped were the
+  cross-package members of fan-outs that were never reachable.
+
+  What the +29 are: superclasses, specialisers and generic functions named in
+  more than one package, which UNIQUE-MATCH refused to guess between and now
+  resolves within the referring package. CON-0001 was doing its job before and
+  is doing a better-informed job now.
+
   Step 10 -- KEYS, and the reckoning with ARCH-0014. All four ambiguous names
   on this tree -- FIXTURE-INSPECTION, LOG-EVENT, READ-INSPECTION-FILE and
   DISCOVER-UNITS (:LOOM-ANALYZER against :LOOM-ANALYZER-TEST) -- are package

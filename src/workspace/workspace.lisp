@@ -235,7 +235,9 @@ rather than a preference."
                      (format *standard-output* "~&  ! ~a: ~a~%" label condition)))))))
       ;; Definitions first: a dispatched call fans out to the methods on a
       ;; generic, and RESOLVE-METHOD-PROTOCOLS is what attaches them to it.
-      (submit "resolve-definitions"    (resolve-definitions graph :workspace-id workspace))
+      (submit "resolve-definitions"    (resolve-definitions graph :workspace-id workspace
+                                                                 :external-packages
+                                                                 (external-package-exports)))
       ;; Then the generated definitions, before RESOLVE-CALLS: a macro call
       ;; site mints an entity carrying the names its argument list invokes, and
       ;; a pass that has not run yet has nothing for the next one to resolve.
@@ -247,7 +249,9 @@ rather than a preference."
       ;; this one exists to do.
       (submit "resolve-generated-definitions"
               (resolve-generated-definitions graph :workspace-id workspace
-                                                   :registry *macro-generators*))
+                                                   :registry *macro-generators*
+                                                   :external-packages
+                                                   (external-package-exports)))
       ;; EXTERNAL-PACKAGES is handed in for the same reason *MACRO-GENERATORS*
       ;; above is: loom-graph depends on loom-ontology alone, so it cannot see
       ;; the analyzer's table -- and what COMMON-LISP exports is a fact about a

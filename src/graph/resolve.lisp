@@ -42,8 +42,8 @@ the same name, and pretending otherwise is how a resolver invents edges."
 
 (defun callable-index (view) (entities-by-name view *callable-types*))
 
-(defstruct (callable-lookup (:constructor %make-callable-lookup))
-  "Candidates for a call name, keyed two ways (ARCH-0015).
+(defstruct (name-lookup (:constructor %make-name-lookup))
+  "Entities under a name, keyed two ways (ARCH-0015).
 
 BY-NAME is CALLABLE-INDEX, name to definitions, and stays the answer whenever
 symbol identity cannot be established. BY-HOME is keyed on (home-package .
@@ -61,10 +61,14 @@ one step and still be reviewable."
   (by-home       (make-hash-table :test #'equal) :type hash-table)
   (package-graph nil))
 
-(defun callable-lookup (view &key external-packages)
-  "CALLABLE-INDEX plus the package-aware index over the same definitions."
-  (let* ((by-name (callable-index view))
-         (pg (build-package-graph view :external-packages external-packages))
+(defun name-lookup (view types &key external-packages package-graph)
+  "ENTITIES-BY-NAME plus the package-aware index over the same entities.
+
+PACKAGE-GRAPH may be supplied by a caller resolving several kinds of name in
+one pass, so the graph is assembled once rather than once per index."
+  (let* ((by-name (entities-by-name view types))
+         (pg (or package-graph
+                 (build-package-graph view :external-packages external-packages)))
          (by-home (make-hash-table :test #'equal)))
     (maphash (lambda (name entities)
                (dolist (e entities)
@@ -72,7 +76,12 @@ one step and still be reviewable."
                    (when home
                      (push e (gethash (cons home name) by-home))))))
              by-name)
-    (%make-callable-lookup :by-name by-name :by-home by-home :package-graph pg)))
+    (%make-name-lookup :by-name by-name :by-home by-home :package-graph pg)))
+
+(defun callable-lookup (view &key external-packages package-graph)
+  "The callable half of NAME-LOOKUP, which is what RESOLVE-CALLS wants."
+  (name-lookup view *callable-types*
+               :external-packages external-packages :package-graph package-graph))
 
 (defun candidate-entities (index name caller)
   "The definitions NAME could name, as read from CALLER.
@@ -85,17 +94,25 @@ anything at all -- still gets the unrestricted answer."
   (let ((key (string-downcase name)))
     (etypecase index
       (hash-table (gethash key index))
-      (callable-lookup
+      (name-lookup
        (let* ((home (and caller
-                         (home-package (callable-lookup-package-graph index)
+                         (home-package (name-lookup-package-graph index)
                                        name (entity-package caller))))
               (placed (and home (gethash (cons home key)
-                                         (callable-lookup-by-home index)))))
-         (or placed (gethash key (callable-lookup-by-name index))))))))
+                                         (name-lookup-by-home index)))))
+         (or placed (gethash key (name-lookup-by-name index))))))))
 
-(defun unique-match (index name)
-  "The one entity INDEX holds under NAME, or NIL for none or several."
-  (let ((candidates (gethash (string-downcase name) index)))
+(defun unique-match (index name &optional referrer)
+  "The one entity INDEX holds under NAME as REFERRER sees it, or NIL for none
+or several.
+
+REFERRER is what makes this package-aware: a superclass or a specialiser named
+in two packages matched several candidates and therefore resolved to nothing,
+which is CON-0001 refusing to guess. Given the referring entity, the candidates
+are those NAME actually reaches from where it was written, so the honest answer
+is often one. A NIL REFERRER, or an INDEX that is a bare hash table, is the old
+behaviour exactly."
+  (let ((candidates (candidate-entities index name referrer)))
     (when (and candidates (null (rest candidates)))
       (first candidates))))
 
@@ -110,18 +127,18 @@ anything at all -- still gets the unrestricted answer."
 ;;;; destroyed by retracting the file it pointed into comes back on the next
 ;;;; pass.
 
-(defun resolve-inheritance (view &key workspace-id)
+(defun resolve-inheritance (view &key workspace-id package-graph)
   "Operations linking each class to the superclasses it declares.
 
 A name that matches no class in the workspace is left alone rather than
 recorded: unlike a call, a superclass that is not here is almost always
 STANDARD-OBJECT, ERROR, or another part of the language, and reporting those
 as unresolved would be noise rather than a staleness signal."
-  (let ((index (entities-by-name view '(:class)))
+  (let ((index (name-lookup view '(:class) :package-graph package-graph))
         (ops '()))
     (dolist (class (entities-of-type view :class))
       (dolist (name (getp class :superclass-names))
-        (let ((super (unique-match index name)))
+        (let ((super (unique-match index name class)))
           (when (and super (not (eq super class)))
             (push (assert-edge :inherits class super :workspace-id workspace-id) ops)))))
     (nreverse ops)))
@@ -131,30 +148,30 @@ as unresolved would be noise rather than a staleness signal."
 It dispatches on a value, not a class, so there is no class edge to draw."
   (and (plusp (length name)) (char= #\( (char name 0))))
 
-(defun resolve-specializers (view &key workspace-id)
+(defun resolve-specializers (view &key workspace-id package-graph)
   "Operations linking each method to the classes its parameters dispatch on.
 
 One edge per specialised parameter, which is the whole answer to multiple
 dispatch: a method has no owning class, it has as many class edges as it has
 specialisers. A parameter specialised on T dispatches on everything and so
 says nothing worth recording."
-  (let ((index (entities-by-name view '(:class)))
+  (let ((index (name-lookup view '(:class) :package-graph package-graph))
         (ops '()))
     (dolist (method (entities-of-type view :method))
       (dolist (specializer (getp method :specializers))
         (unless (or (string-equal specializer "t") (eql-specializer-p specializer))
-          (let ((class (unique-match index specializer)))
+          (let ((class (unique-match index specializer method)))
             (when class
               (push (assert-edge :uses method class :workspace-id workspace-id) ops))))))
     (nreverse ops)))
 
-(defun resolve-method-protocols (view &key workspace-id)
+(defun resolve-method-protocols (view &key workspace-id package-graph)
   "Operations linking each method to the generic function it implements.
 
 Only a declared generic: a method whose DEFGENERIC is implicit has no protocol
 entity to point at, and ARCH-0001 refuses to synthesise one because there
 would be no source region to send an agent to."
-  (let ((index (entities-by-name view '(:interface)))
+  (let ((index (name-lookup view '(:interface) :package-graph package-graph))
         (ops '()))
     (dolist (method (entities-of-type view :method))
       (let ((generic (unique-match index (or (getp method :generic-function)
@@ -163,11 +180,16 @@ would be no source region to send an agent to."
           (push (assert-edge :implements method generic :workspace-id workspace-id) ops))))
     (nreverse ops)))
 
-(defun resolve-definitions (view &key workspace-id)
-  "Every structural edge the definition forms imply, as one batch."
-  (append (resolve-inheritance view :workspace-id workspace-id)
-          (resolve-specializers view :workspace-id workspace-id)
-          (resolve-method-protocols view :workspace-id workspace-id)))
+(defun resolve-definitions (view &key workspace-id external-packages)
+  "Every structural edge the definition forms imply, as one batch.
+
+The package graph is assembled once and shared: all three passes below resolve
+a name against the same declarations, and building it three times would be
+three walks of every :PACKAGE entity for one answer."
+  (let ((pg (build-package-graph view :external-packages external-packages)))
+    (append (resolve-inheritance view :workspace-id workspace-id :package-graph pg)
+            (resolve-specializers view :workspace-id workspace-id :package-graph pg)
+            (resolve-method-protocols view :workspace-id workspace-id :package-graph pg))))
 
 ;;;; ==================================================================
 ;;;; Generated definitions (ARCH-0002)
@@ -185,7 +207,7 @@ would be no source region to send an agent to."
 ;;;; impact in the right direction (:REVERSE -- from the thing that changed to
 ;;;; whatever relied on it), which is exactly generator to generated.
 
-(defun structural-generated-uses (view &key workspace-id)
+(defun structural-generated-uses (view &key workspace-id package-graph)
   "Operations linking each DEFSTRUCT or DEFCLASS generated name to its class.
 
 ARCH-0002 R6, and it needs no analyzer change at all: ARCH-0001 was already
@@ -197,13 +219,13 @@ matters more here than it looks: the same property is what the macro half of
 this pass writes, naming a macro rather than a class, and a macro is a
 :FUNCTION -- so looking the name up in an index of classes is also what keeps
 the two halves from crossing."
-  (let ((index (entities-by-name view '(:class)))
+  (let ((index (name-lookup view '(:class) :package-graph package-graph))
         (ops '()))
     (dolist (type '(:function :interface))
       (dolist (entity (entities-of-type view type))
         (let ((generator (getp entity :generated-by)))
           (when generator
-            (let ((class (unique-match index generator)))
+            (let ((class (unique-match index generator entity)))
               (when (and class (not (eq class entity)))
                 (push (assert-edge :uses entity class :workspace-id workspace-id)
                       ops)))))))
@@ -544,7 +566,7 @@ deliberate: the analyzer holds no callable index and cannot ask this question."
                     pairs))))))
     (nreverse pairs)))
 
-(defun resolve-generated-definitions (view &key workspace-id registry)
+(defun resolve-generated-definitions (view &key workspace-id registry external-packages)
   "Operations for every definition a generator brought into existence.
 
 Both halves of ARCH-0002's R4: the edge from a DEFSTRUCT or DEFCLASS generated
@@ -590,7 +612,10 @@ retracts come last, naming only entities no assert in this batch touches."
           (setf (gethash (id site) produced-sites) t)
           (push (assert-entity site workspace-id) asserts)
           (push (assert-edge :contains file site :workspace-id workspace-id) edges))))
-    (append (structural-generated-uses view :workspace-id workspace-id)
+    (append (structural-generated-uses
+             view :workspace-id workspace-id
+             :package-graph (build-package-graph
+                             view :external-packages external-packages))
             (nreverse asserts)
             (nreverse edges)
             (generated-entity-retractions
