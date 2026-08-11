@@ -78,6 +78,7 @@
    ;; and ambiguity -- and a key spelled two ways would grow a duplicate per
    ;; pass that nothing retracts. The DEFENTITY class and its accessors export
    ;; themselves.
+   #:entity-package
    #:call-site-label
    #:make-call-site-entity
 

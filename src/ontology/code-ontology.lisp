@@ -156,10 +156,55 @@ at.")))
 
 (defentity :package
   :documentation "A namespace: a Lisp package, an npm package, a Python
-package."
+package.
+
+:QUALIFIED-NAME is the name the package was DECLARED under. A nickname is an
+alias recorded in :NICKNAMES, never a second :PACKAGE entity -- ARCH-0015, and
+the reason is the natural key: two entities for one namespace would each hold
+half its exports and neither would answer correctly.
+
+:NICKNAMES and :IMPORTED-SYMBOLS are properties rather than entities or edges,
+which is ARCH-0014's arithmetic applied again. game-server imports 227 distinct
+symbol names and every package that (:use :cl) inherits on the order of a
+thousand more, so a node or an edge per moved symbol is a node per fact that
+already has somewhere to live. :EXPORTS was already a list property on this
+entity and these two are symmetric with it."
   :natural-key (:qualified-name)
   :properties ((:qualified-name string :required t)
                (:exports        list   :documentation "Exported symbol names.")
+               (:nicknames      list
+                :documentation "Declared aliases for :QUALIFIED-NAME. An
+IN-PACKAGE naming one of these names this package; canonicalising that is the
+graph's job, not the analyzer's, because a nickname is declared by a form
+RULE-0002 forbids an analyzer from reading beyond its own file.")
+               (:uses           list
+                :documentation "The packages this one inherits from, as
+declared names or nicknames. Route 2 of ARCH-0015's symbol movement: a :USE
+makes every symbol the used package EXPORTS accessible here, which is why
+resolving through it needs both this list and the other package's :EXPORTS.
+
+Not named in ARCH-0015 R1, which lists only :nicknames and :imported-symbols.
+R1 is incomplete rather than wrong -- its own HOME-PACKAGE rule has an
+inheritance route and there is nowhere else for the list to live. PLAN-0015
+step 3 records the addition.")
+               (:imported-symbols list
+                :documentation "What this package takes by name from another,
+as a list of (symbol-name . from-package-name). One entry per symbol per
+:IMPORT-FROM clause, and a package may carry several such clauses.")
+               (:unhandled-package-clauses list
+                :documentation "Clauses of a DEFINE-PACKAGE that move symbols
+and that this analyzer does not model -- :USE-REEXPORT, :MIX, :RECYCLE. Named
+rather than dropped: neither tree uses them today, and the first that does must
+be a recorded gap rather than a silent mis-resolution (CON-0001).")
+               ;; Where the declaration is, like every other source entity.
+               ;; A :package was previously minted by nothing, so it never
+               ;; needed these; now that the Lisp analyzer emits one, `find'
+               ;; and `describe' should send a reader somewhere, and
+               ;; EDGES-BETWEEN-SYSTEMS needs a :system to place it at all.
+               (:file           string)
+               (:start-line     integer)
+               (:end-line       integer)
+               (:system         keyword)
                (:language       keyword :one-of *source-languages*)))
 
 (defentity :module
@@ -480,6 +525,33 @@ RULE-0003 from silently ignoring the new edges (ARCH-0014 R7).")))
 ;;; section names a shared key-computing function in loom-ontology as the cheap
 ;;; insurance against exactly that; this is it, and neither minting site may
 ;;; construct a CALL-SITE-ENTITY directly.
+
+(defun entity-package (entity)
+  "The Lisp package ENTITY's definition was read in, as an uppercase string,
+or NIL. The namespace half of ARCH-0015: what decides whether two same-named
+definitions are one callable or two.
+
+Reads :SYSTEM rather than a property of its own, and that is a deliberate
+deviation from ARCH-0015 R3, which asked for a separate :PACKAGE property
+beside it. The two would hold the same value character for character.
+ARCH-0009 makes the IN-PACKAGE chain the sole source of :SYSTEM and
+NORMALIZE-SYSTEM-NAME is (INTERN (STRING-UPCASE raw) :KEYWORD) over the
+designator that chain carries, so :SYSTEM already IS the uppercased package
+name -- :LOOM-ANALYZER, :MPACKAGE.FILTER -- with nicknames unresolved, which is
+exactly what this needs and exactly what ARCH-0015 says the graph resolves.
+
+Duplicating it would put a second copy on every definition in every tree and
+create the failure ARCH-0015's own RISKS section names: two derivations of one
+IN-PACKAGE chain, drifting. One value, read through a name that says which
+question is being asked, is the smaller surface.
+
+What this buys is a single point of change. If :SYSTEM's derivation is ever
+altered -- given a path component, say, which CLAUDE.md claims BUG-0006 already
+did to ENTITY-SYSTEM's path-based cousin -- package resolution breaks silently
+everywhere unless it breaks here first. This function is where that
+dependency is declared, and the test beside it is what fails."
+  (let ((system (getp entity :system)))
+    (and system (string-upcase (string system)))))
 
 (defun call-site-label (call-name file start-line)
   "A call site's NAME slot: \"<call-name>@<file>:<line>\".
@@ -857,7 +929,7 @@ would answer a question nobody asks of the edge.")
   :from (:repository :workspace :package :module :file :class
          :variable :function :method :test)
   :to (:file :module :class :interface :function :method :variable :test
-       :call-site)
+       :call-site :package)
   :transitive-impact nil :impact-direction :reverse
   :documentation "One step only: a changed function marks its file, not the world.
 
@@ -875,7 +947,7 @@ to the case R1 did not enumerate.")
 
 (defrelationship :belongs-to
   :from (:file :module :class :interface :function :method :variable :test
-         :call-site)
+         :call-site :package)
   :to (:repository :workspace :package :module :file :class
        :variable :function :method :test)
   :transitive-impact nil :impact-direction :forward

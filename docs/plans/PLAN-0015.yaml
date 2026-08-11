@@ -1,0 +1,393 @@
+id: PLAN-0015
+title: Land package-aware resolution in three stages -- record, compute, key -- so that 7085 moving edges move one attributable step at a time
+status: draft
+date: 2026-08-10
+refines: [ARCH-0015, BUG-0021, REQ-0020]
+affects: [entities-by-name, callable-index, unique-match, call-targets,
+          resolve-calls, resolve-definitions, resolve-inheritance,
+          resolve-method-protocols, resolve-generated-definitions,
+          resolve-and-check, index-repository, linkable-index,
+          normalize-system-name, in-package-argument-name, handle-in-package,
+          collect-call-names, analyze-file, entity-system,
+          make-call-site-entity]
+tags: [ontology, analyzer, graph, packages, clos, resolution, plan,
+       game-server]
+summary: |
+  ARCH-0015 in eleven steps across its three required stages. Stage A records
+  package facts and changes no edge: the ontology gains two properties, the
+  analyzer learns DEFPACKAGE and uiop DEFINE-PACKAGE, and every definition and
+  call name starts carrying the package it was read in. Stage B computes
+  HOME-PACKAGE against the assembled package graph and asserts nothing with
+  it, so the resolution rule can be tested before anything depends on it.
+  Stage C keys the index on it, callables first and the three structural
+  resolvers after, measuring the edge delta on both trees at each step. The
+  invariant that makes each stage reviewable is a number: Stage A and Stage B
+  must leave the :CALLS edge count unmoved at 3844 here and 12884 on
+  game-server, and only Stage C is allowed to move it. The regression test
+  ARCH-0015 R7 demands -- an inherited generic must stay one callable -- is
+  written in Stage B, before the code that could break it exists.
+body: |
+  BEFORE ANYTHING
+
+  Re-take both baselines; ARCH-0015's were taken on 2026-08-10 and this tree
+  is under active edit. tools/package-census.lisp takes a repository path and
+  reports both halves.
+
+      Loom, `tools/loom.sh 'status'` plus the census:
+
+          files          185        callable names         808
+          entities      1916          spanning 2+ packages  11
+          relationships 9154        :calls edges          3871
+          documents       86          onto a spanning name  120
+          tests          503 / 325 units
+          violations      32 (all RULE-0003, BUG-0009)   RULE-0001 empty
+          unresolved       0 document references
+
+      game-server, census only:
+
+          package declarations         41    callable names        1091
+            uiop define-package        31      spanning 2+ pkgs      95
+            declaring nicknames        28    :calls edges         12884
+            with :import-from          31      onto a spanning name 7085
+          in-package naming a nickname  5
+
+  THE INVARIANT THIS PLAN IS BUILT AROUND
+
+  55% of game-server's call graph lands on a package-spanning name. No single
+  commit may move it. So every step below states which of these three it is,
+  and the reviewer's first question is whether the numbers match the claim:
+
+      RECORDS   adds facts. :CALLS count must not move on either tree.
+      COMPUTES  derives an answer and asserts nothing from it. Must not move.
+      KEYS      changes what resolves. Must move, by a predicted amount.
+
+  Steps 1-5 record, 6-7 compute, 8-10 key. A :CALLS count that moves during
+  steps 1-7 is a defect in that step, not a surprise to be absorbed.
+
+  WHAT THE CODE ACTUALLY LOOKS LIKE
+
+  Read before planning, and it changes two things ARCH-0015 assumed.
+
+  ENTITIES-BY-NAME (src/graph/resolve.lisp:32) is the shared index builder,
+  keyed on (string-downcase (name entity)). CALLABLE-INDEX (line 43) is one of
+  five callers. The others are RESOLVE-INHERITANCE at line 69 (:class),
+  specializer resolution at 90 (:class), RESOLVE-METHOD-PROTOCOLS at 106
+  (:interface) and generator resolution at 149 (:class). So package-blindness
+  is not a calls defect: a superclass or a specializer named in two packages
+  reaches UNIQUE-MATCH (line 45), which returns NIL for several, and resolves
+  to nothing today. ARCH-0015 scoped itself to callables; the same key serves
+  four other resolvers and this plan sequences them rather than leaving four
+  known-wrong callers of a fixed function.
+
+  LINKABLE-INDEX (line 949) is deliberately NOT in that set. It keys documents
+  and their `affects:` references, which are prose names with no package
+  context, and PLAN-0014 decision 1 exists because "0 unresolved document
+  references" is fragile. It stays name-keyed and no step touches it.
+
+  :CALL-NAMES is written once, at src/analyzer/lisp-analyzer.lisp:1420,
+  (setp caller :call-names (nreverse foreign)), inside the MULTIPLE-VALUE-BIND
+  at 1409 that already receives QUALIFIED from COLLECT-CALL-NAMES and writes
+  :QUALIFIED-CALLS beside it. That is one site to change and the qualified
+  names are already there, which is why step 5 is small.
+
+  RESOLVE-AND-CHECK (src/workspace/workspace.lisp:213) documents its ordering
+  as "each arrow in it is a dependency rather than a preference":
+  resolve-definitions, resolve-generated-definitions, resolve-calls,
+  resolve-tests, resolve-document-links, check-rules. The package graph must
+  be built before the first of them, since resolve-definitions is one of the
+  four structural resolvers that will consume it.
+
+  STEPS
+
+  Step 1 -- RECORDS. Re-baseline both trees with tools/package-census.lisp and
+  `tools/loom.sh 'status | check'`, and write the numbers into this plan.
+  Nothing to change. The census is already committed and already prefixed PC-
+  so it does not perturb its own subject; verify that claim holds by comparing
+  its callable count against the previous run rather than assuming it.
+
+  Step 2 -- RECORDS. Ontology. In src/ontology/code-ontology.lisp, :PACKAGE
+  (line 157) gains :nicknames (list) and :imported-symbols (list of
+  (symbol-name . from-package-name)). No new entity type, no new relationship
+  type, natural key unchanged at (:qualified-name), which stays the DECLARED
+  name. Tests in src/ontology/test/code-ontology.lisp: a :package entity
+  carrying both properties validates; two constructions with the same
+  qualified name derive the same key. Verification: suite green, `status`
+  identical -- nothing mints a :package yet.
+
+  Step 3 -- RECORDS. The analyzer learns package declarations. A definition
+  handler for "defpackage" and for "define-package" in
+  src/analyzer/lisp-analyzer.lisp, registered in the table at line 1196 beside
+  HANDLE-IN-PACKAGE, emitting a :PACKAGE entity with :qualified-name,
+  :nicknames, :exports and :imported-symbols. Both operators, because
+  game-server declares 31 of 41 packages with uiop's DEFINE-PACKAGE and
+  DEFPACKAGE alone would read that tree as importing nothing.
+
+  Every :import-from clause, not the first: the clause shape is
+  (:import-from PKG SYM ...) and a package may carry several. This is the
+  defect the census hit on its first run -- it read one clause and reported 0
+  imported names against a true 227 -- so the test asserts two clauses.
+
+  DEFINE-PACKAGE's other symbol-moving clauses (:use-reexport, :mix, :recycle)
+  are recorded on the entity as unhandled rather than dropped, per ARCH-0015
+  R2. Neither tree uses them; a tree that does must not be silently wrong.
+
+  Note that "defpackage" is currently in *DECLARATION-HEADS* (line 429). A
+  head with a handler never reaches the catch-all, as HANDLE-IN-PACKAGE's own
+  docstring records, so leaving it there is belt and braces -- follow that
+  precedent rather than removing it.
+
+  Tests in src/analyzer/test/lisp-analyzer.lisp, each failing first: a
+  DEFPACKAGE with nicknames and two :import-from clauses yields one :package
+  entity with both recorded; a uiop DEFINE-PACKAGE yields the same shape; a
+  :use-reexport clause is recorded as unhandled.
+
+  Verification: entity count rises by 24 here and 41 on game-server, plus this
+  step's own new code. :CALLS unmoved at 3871 / 12884. RULE-0001 empty --
+  :package entities carry a :system like anything else and the layering rules
+  will now see a new entity type.
+
+  Step 4 -- RECORDS. Definitions carry their package. A :package property on
+  every definition entity, the literal designator as IN-PACKAGE-ARGUMENT-NAME
+  renders it, threaded from the same walk state HANDLE-IN-PACKAGE already
+  returns. :SYSTEM is untouched: ARCH-0009 built the layering rules on it and
+  NORMALIZE-SYSTEM-NAME keeps folding as it does today.
+
+  The risk here is a silent conflation, and it has a cheap guard: assert in a
+  test that a file whose IN-PACKAGE names a nickname produces a :package
+  different from any declared :qualified-name, which is the case that proves
+  the two are recorded rather than one derived from the other. game-server has
+  5 such files; Loom has none, so this test needs a fixture rather than the
+  tree.
+
+  Verification: `check` byte-identical, the same 32 RULE-0003 lines and
+  RULE-0001 empty (ARCH-0015 R3). :CALLS unmoved.
+
+  Step 5 -- RECORDS, and the one output-format change. :CALL-NAMES becomes a
+  list of (name . package) pairs, written at lisp-analyzer.lisp:1420. A
+  :CALL-SITE gains :call-package beside :call-name rather than folding the
+  pair into it, because :call-name is a natural-key component and ARCH-0014's
+  key must not change shape -- a key that changes shape re-mints every call
+  site under a new id and the sweep in PLAN-0014 step 9 retracts the old ones,
+  which would look exactly like a working migration and be a full rebuild.
+
+  Every consumer of :CALL-NAMES must be found and updated in this step, not
+  discovered in the next: RESOLVE-CALLS' caller loop and CALLER-CALL-NAMES,
+  RESOLVE-GENERATED-DEFINITIONS' orphan walk, BODY-SWALLOWING-MACRO-NAMES,
+  the census script, and `describe`. Grep for :call-names and for
+  :definer-call-sites rather than trusting this list.
+
+  Verification, and this is the step most likely to move a number by accident:
+  :CALLS unmoved at 3871 / 12884, call sites unmoved at 162, `status`'
+  definer-macro line unmoved at 3, suite green.
+
+  STAGE A AS BUILT, 2026-08-10. Steps 1-5 landed; four departures, each
+  measured rather than argued.
+
+  1. :CONTAINS had to widen to terminate at :PACKAGE, and :BELONGS-TO with it.
+     Not in ARCH-0015 and not in step 2 above. ANALYZE-FILE emits a
+     containment edge for every entity it notes, so the first run of the new
+     handler threw TRANSACTION-ERROR: ":CONTAINS cannot terminate at :PACKAGE".
+     The mirroring is PLAN-0014 step 3's trap a second time --
+     BELONGS-TO-IS-THE-INVERSE-OF-CONTAINS asserts the two are exact mirrors.
+
+  2. :PACKAGE also gained :uses, and :file/:start-line/:end-line/:system.
+     ARCH-0015 R1 lists only :nicknames and :imported-symbols, but
+     HOME-PACKAGE's inheritance route needs the :use list and there is nowhere
+     else for it to live; and a :package minted by nothing never needed a
+     location, while one `find' can reach should send a reader somewhere and
+     EDGES-BETWEEN-SYSTEMS needs a :system to place it at all.
+
+  3. Step 4 did NOT add a :package property. ENTITY-PACKAGE in loom-ontology
+     reads :SYSTEM instead. ARCH-0009 makes the IN-PACKAGE chain the sole
+     source of :SYSTEM and NORMALIZE-SYSTEM-NAME is (INTERN (STRING-UPCASE
+     raw) :KEYWORD) over that chain's designator, so :SYSTEM already IS the
+     uppercased package name with nicknames unresolved -- character for
+     character what step 4 was going to copy beside it, on 1957 entities here
+     and 4121 on game-server. Duplicating it would have built the failure this
+     plan's own RISKS section names, two derivations of one chain drifting.
+     The accessor is the declared dependency and its test is what fails first
+     if :SYSTEM's derivation ever changes.
+
+  4. Step 5 therefore did not happen as written. :CALL-NAMES stays a list of
+     bare strings and no output format changed, because a call name is
+     recorded on an entity that already carries its own :SYSTEM and
+     ENTITY-PACKAGE answers for it. The one place with nowhere to look is a
+     definer call site, which is a plist on the :FILE entity, so
+     DEFINER-CALL-SITE gained a :system element -- exact rather than inferred
+     from the file, because 0 of 85 files here and 0 of 134 there change
+     package part-way and reading the file's package would work today and be a
+     fabricated fact tomorrow.
+
+     This removes the risk step 5 was written around. There is no consumer to
+     migrate, no shape change for five call sites to mis-read, and the
+     :CALL-SITE natural key is untouched.
+
+  Measured after Stage A: suite 9/9 green; game-server 12884 :calls edges and
+  7085 onto a package-spanning name, byte-identical to the baseline, which is
+  the RECORDS invariant holding where it can be tested cleanly. Loom's own
+  :calls went 3871 -> 3904 and its callable names 808 -> 826 because Loom
+  indexes itself and Stage A added five functions and eight tests; its at-risk
+  count stayed at 120. CON-0003 verified by stashing each change in turn: 3
+  ontology failures without step 2, 5 analyzer failures without step 3.
+
+  One finding filed rather than absorbed: BUG-0022. The first two tests written
+  for step 2 passed with the DEFENTITY change stashed, because PROPERTIES-TABLE
+  accepts any keyword and VALIDATE-ENTITY never checks the other direction --
+  so they were testing PROPERTIES-TABLE rather than the declaration. Rewritten
+  against ENTITY-TYPE-PROPERTIES, which does fail. A typo'd property name has
+  the same shape and nothing anywhere reports it.
+
+  Step 6 -- COMPUTES. The package graph. A new pass in src/graph/, called from
+  RESOLVE-AND-CHECK before RESOLVE-DEFINITIONS, building from every :package
+  entity: nicknames canonicalised to declared names, :use lists resolved to
+  canonical packages, exports and imported symbols indexed. Then HOME-PACKAGE
+  (graph, name, package-in-effect) applying ARCH-0015's three routes in order
+  -- explicit import, then inheritance from a :use whose target exports the
+  name, then the package in effect -- returning a canonical package or NIL.
+
+  Asserts nothing and is keyed on by nothing. It exists in this step only so
+  that step 7 can test it in isolation.
+
+  Step 7 -- COMPUTES. The tests that carry the design, written before anything
+  depends on them, both from ARCH-0015 R7:
+
+    A symbol imported by :import-from and extended by an accessor in the
+    importing package has ONE home package. game-server's `id': fixture is two
+    packages, one declaring ID and exporting it, the other importing it and
+    declaring a reader of the same name.
+
+    A generic inherited through (:use :cl) and specialised in seven packages
+    has ONE home package, not seven. game-server's PRINT-OBJECT, and this is
+    the regression test for the naive implementation -- it fails for any
+    design that keys on the writing package, which is precisely the mistake
+    ARCH-0015 says makes the index worse than the string key it replaces.
+
+  Plus: a name whose package cannot be placed returns NIL rather than a guess
+  (CON-0001), and a nickname IN-PACKAGE resolves to the package it aliases.
+
+  Verification: suite green; :CALLS still unmoved on both trees, because
+  nothing keys on any of this yet. This is the last step at which that is
+  true, and it is the review checkpoint before the edges move.
+
+  Step 8 -- KEYS. The callable index. ENTITIES-BY-NAME gains a package-aware
+  sibling keyed on (home-package, downcased name), and CALLABLE-INDEX uses it.
+  Names with no determinable home package go to a bucket keyed on the name
+  alone, counted, and surfaced in `status` beside `unread` and `unresolved`
+  (ARCH-0015 R5). CALL-TARGETS is otherwise unchanged: its clause order,
+  ARCH-0014's ambiguity clause and the method fan-out all still read a
+  candidate list, and this step only changes which entities are in it.
+
+  Predicted movement, to be stated exactly before running and then compared:
+  Loom's 120 at-risk edges and game-server's 7085 are the population that can
+  change. Most should resolve to MORE precise edges rather than disappear.
+  Measure with the census on both trees and attribute anything that vanishes.
+
+  This is the step to land alone and review alone.
+
+  Step 9 -- KEYS. The other four callers. RESOLVE-INHERITANCE (resolve.lisp:69
+  and 90), RESOLVE-METHOD-PROTOCOLS (106) and generator resolution (149) move
+  to the package-aware index. UNIQUE-MATCH returns NIL for several candidates
+  today, so a superclass or specializer named in two packages currently
+  resolves to nothing; expect these to gain edges rather than lose them.
+  Measure :inherits, :implements and :specializes counts before and after.
+
+  Step 10 -- KEYS, and the reckoning with ARCH-0014. All four ambiguous names
+  on this tree -- FIXTURE-INSPECTION, LOG-EVENT, READ-INSPECTION-FILE and
+  DISCOVER-UNITS (:LOOM-ANALYZER against :LOOM-ANALYZER-TEST) -- are package
+  collisions, so all 18 ambiguous call sites should stop being minted and 36
+  edges at confidence 0.5 should become 18 structural edges.
+
+  State the expected count before running (ARCH-0015 R8). Then update
+  *CALL-SITE-CEILING* in src/workspace/test/workspace.lisp deliberately, with
+  a comment saying the population fell because ambiguity was an artifact of
+  package-blindness rather than because anything broke. A ceiling that falls
+  unremarked is how a regression hides behind a passing test.
+
+  Re-run the census on game-server for the new ambiguous population; ARCH-0015
+  expects some of its 371 occurrences to survive as genuine same-package
+  ambiguity, which is what ARCH-0014's mechanism is actually for.
+
+  Step 11 -- The documentation, the statuses, and the numbers. CLAUDE.md and
+  .claude/skills/loom/SKILL.md gain a sentence: a callable is identified by
+  its symbol, so two same-named definitions in different packages are two
+  callables and `find` will show both. Statuses per CON-0004 -- note its
+  vocabulary, a BUG is open -> closed and there is no `fixed' and no
+  `partial':
+
+    ARCH-0015  implemented, or partial with OUTSTANDING.
+    BUG-0021   closed if `describe id' and `impact cascade-delete 3' both
+               answer on game-server; otherwise it stays open and says why.
+    REQ-0020   unchanged and still draft. This plan does not answer the
+               accessor question; it makes it answerable.
+    REQ-0015   revisit R6. Its acceptance criterion may now pass for
+               cascade-delete, and if it does, this is where that is recorded.
+    PLAN-0015  final, with the measured edge deltas for both trees.
+
+  VERIFICATION
+
+  Per step. At the end, and the game-server half is not optional -- REQ-0015
+  R6 went unrun through an entire plan because it was prose, and ARCH-0015 R9
+  makes this a line somebody pastes:
+
+    tools/loom-test.sh
+        nine systems green.
+    tools/loom.sh 'status | check'
+        unresolved 0 document references -- LINKABLE-INDEX is untouched by
+        every step above and this is the number that proves it.
+        RULE-0001 empty; 32 RULE-0003 lines.
+    tools/package-census.lisp on both trees
+        the spanning-name counts and the at-risk edge counts, before and
+        after, with the delta attributed.
+    tools/loom.sh 'unwatch Loom | watch "/home/beberman/lisp/game-server" |
+                   describe id | impact cascade-delete 3'
+        `id' reaches its definitions; `cascade-delete' reaches the mpackage
+        files that call it. Both report nothing today. This is ARCH-0015 R9
+        and BUG-0021's acceptance.
+
+  RISKS
+
+  Stage C is one step from a rebuilt call graph on the tree nobody's tests
+  cover. Every test in this repository can stay green while game-server's
+  12884 edges are rebuilt wrongly -- that is exactly how BUG-0021 survived
+  ARCH-0014. The census on both trees at every KEYS step is the only
+  instrument, and a step whose delta is not attributable should be reverted
+  rather than explained.
+
+  Step 5 changes a data shape that five call sites read. The failure mode is a
+  consumer that still expects strings, silently producing no names rather than
+  erroring, which shows up as :CALLS edges quietly disappearing. The step's
+  verification is an unmoved edge count for that reason.
+
+  The inheritance route is the half most likely to be postponed under
+  pressure, and postponing it makes the index worse than today rather than
+  incomplete. Step 7's PRINT-OBJECT test lands before step 8 for that reason
+  alone; if the order is inverted the regression is invisible.
+
+  Two properties from one walk state. :SYSTEM and :PACKAGE derive from the
+  same IN-PACKAGE chain and mean different things. A later simplification of
+  one into the other reintroduces this bug with ARCH-0009's layering rules as
+  collateral, and only step 4's byte-identical `check` output would catch it.
+
+  Tests likely to break, and why: anything asserting the exact shape of
+  :CALL-NAMES (step 5); the ambiguity tests from PLAN-0014 step 8, if their
+  fixtures happen to put two definitions in different packages -- read them
+  before changing them, because a fixture that was testing ambiguity and is
+  now testing package separation should be rewritten to keep testing
+  ambiguity; and the ceiling test (step 10), deliberately.
+
+  WHAT THIS PLAN IS NOT DOING
+
+  REQ-0020's accessor modelling. Downstream of this and still open: whether an
+  accessor declaration mints a :METHOD, or a generic becomes one entity with
+  several definition sites.
+
+  Shadowing clauses, and DEFINE-PACKAGE's :mix and :recycle beyond recording
+  them as unhandled. Neither tree uses either.
+
+  :QUALIFIED-CALLS. ARCH-0013 records the written prefix, nothing reads it,
+  and HOME-PACKAGE is the function that would -- substituting the written
+  prefix for the package in effect. That is a following change and is the
+  cheapest one this plan makes possible.
+
+  The TypeScript analyzer, whose module system asks the same question and will
+  not want this answer.

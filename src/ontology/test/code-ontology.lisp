@@ -299,6 +299,85 @@ RESOLVE-CALLS reads, so a second copy here could drift from the key")
                (name site))
         "the label and the entity cannot disagree, because one makes the other")))
 
+(test a-definitions-package-is-the-in-package-chain-uppercased
+  ;; PLAN-0015 step 4, decided against ARCH-0015 R3's separate property. This
+  ;; test is the declared dependency: ENTITY-PACKAGE reads :SYSTEM, so if
+  ;; :SYSTEM's derivation ever stops being the IN-PACKAGE chain, package
+  ;; resolution breaks silently everywhere unless it breaks here first.
+  (let ((f (make-instance 'function-entity
+                          :name "id"
+                          :properties (properties-table
+                                       '(:file "a.lisp" :start-line 1
+                                         :system :mpackage.filter)))))
+    (is (equal "MPACKAGE.FILTER" (entity-package f))
+        "the namespace, uppercased, nickname unresolved -- resolving that is
+the graph's job because it needs every declaration in the tree at once")
+    (is (null (entity-package (make-instance 'function-entity :name "x")))
+        "and an entity with no package in effect has none, rather than a guess")))
+
+(test a-package-declares-the-properties-symbol-movement-needs
+  ;; ARCH-0015 R1, and this is the assertion that actually binds. The
+  ;; round-trip test below documents intent but cannot fail without this
+  ;; change: PROPERTIES-TABLE accepts any key and VALIDATE-ENTITY does not
+  ;; reject an undeclared one, so an entity carrying :nicknames validates
+  ;; whether or not :package declares it (BUG-0022). The registry is the one
+  ;; place the declaration is observable, so the registry is what this asks.
+  (let* ((spec (find-entity-type :package))
+         (declared (mapcar (lambda (p) (getf (property-schema p) :key))
+                           (entity-type-properties spec))))
+    (dolist (key '(:qualified-name :exports :nicknames :imported-symbols
+                   :unhandled-package-clauses))
+      (is (member key declared)
+          "~s must be declared on :package -- ARCH-0015 keys symbol identity
+on these and an undeclared property is invisible to the published schema" key))
+    (is (equal '(:qualified-name) (entity-type-natural-key spec))
+        "and the key stays the declared name alone: a nickname is an alias
+recorded on the package, never a second :package entity")))
+
+(test a-package-records-what-it-aliases-and-what-it-takes-from-elsewhere
+  ;; Documents the shape ARCH-0015 R1 asks for. Deliberately noted as a test
+  ;; that passes without the change it accompanies -- see BUG-0022 -- and kept
+  ;; because it is the readable statement of what the properties hold.
+  (let ((p (make-instance 'package-entity
+                          :name "mpackage/filter"
+                          :properties (properties-table
+                                       (list :qualified-name "MPACKAGE/FILTER"
+                                             :nicknames '("MPACKAGE.FILTER")
+                                             :exports '("MAKE-FILTER" "FILTER-P")
+                                             :imported-symbols
+                                             '(("NAME" . "MPACKAGE/OBJECT")
+                                               ("ID"   . "MPACKAGE/OBJECT"))
+                                             :unhandled-package-clauses
+                                             '("USE-REEXPORT")
+                                             :language :lisp)))))
+    (is (null (validate-entity p)))
+    (is (eq :package (entity-type p)))
+    (is (equal '("MPACKAGE.FILTER") (getp p :nicknames)))
+    (is (equal "MPACKAGE/OBJECT" (cdr (assoc "ID" (getp p :imported-symbols)
+                                             :test #'equal)))
+        "the symbol a package takes by name, and where it takes it from --
+which is what decides whether two same-named accessors are one generic")
+    (is (equal '("USE-REEXPORT") (getp p :unhandled-package-clauses))
+        "a clause that moves symbols and is not modelled is a recorded gap")))
+
+(test a-packages-identity-is-its-declared-name-not-its-nickname
+  ;; A guard rather than a change-covering test: it passes today and exists to
+  ;; fail if someone later folds :nicknames into the key, which would mint a
+  ;; rival entity per alias and split one namespace in two.
+  (let ((a (make-instance 'package-entity
+                          :name "mpackage/filter"
+                          :properties (properties-table
+                                       (list :qualified-name "MPACKAGE/FILTER"
+                                             :nicknames '("MPACKAGE.FILTER")))))
+        (b (make-instance 'package-entity
+                          :name "mpackage/filter"
+                          :properties (properties-table
+                                       (list :qualified-name "MPACKAGE/FILTER"
+                                             :nicknames '("SOMETHING-ELSE"))))))
+    (is (equal (entity-natural-key a) (entity-natural-key b))
+        "the key is the declared name alone; the alias list is not part of it")
+    (is (equal (id a) (id b)))))
+
 (test a-document-may-mention-a-test
   ;; Found by running the pipeline over Loom's own tree the first time :TEST
   ;; held any facts. fiveam names tests in prose, so a document discussing one

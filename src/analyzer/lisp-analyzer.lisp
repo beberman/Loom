@@ -459,8 +459,17 @@ as a human wrote it in source."
         ((stringp x) x)
         (t (string-downcase (princ-to-string x)))))
 
-(defun definer-call-site (form start end)
+(defun definer-call-site (form start end &optional system)
   "One :DEFINER-CALL-SITES entry for the top-level call FORM.
+
+:SYSTEM is the package in effect at this site, and it is here rather than
+inferred from the file because a file may change package part-way. No file in
+either measured tree does -- 0 of 85 here and 0 of 134 on game-server,
+2026-08-10 -- so reading the file's own package would work today and be a
+fabricated fact tomorrow (CON-0001). Every other kind of call name reaches
+resolution on an entity that carries its own :SYSTEM, so ENTITY-PACKAGE answers
+for those; a definer call site is a plist on the :FILE entity and is the one
+place with nowhere else to look.
 
 :SYMBOL-ARGUMENTS is the part that is easy to leave out and expensive to miss.
 The registry says which argument names the entity; nothing says the call site
@@ -476,6 +485,7 @@ Indices count the operator as 0, so they line up with a registry entry's
     (list :operator (token-name (car form))
           :start-line start
           :end-line end
+          :system system
           :arguments (mapcar #'argument-token arguments)
           ;; NIL and a keyword are symbols and neither one ever names a
           ;; definition -- (def-suite code-ontology :in all-tests) has a
@@ -1129,6 +1139,105 @@ well, which is now belt and braces rather than the mechanism -- a head with a
 handler never reaches the catch-all."
   (or (normalize-system-name (in-package-argument-name form)) system))
 
+;;;; ------------------------------------------------------------------
+;;;; Package declarations (ARCH-0015)
+;;;;
+;;;; The analyzer records what a declaration says and decides nothing with it.
+;;;; Canonicalising a nickname, or working out which package a name is homed
+;;;; in, needs every declaration in the tree at once -- test/fixture.lisp is
+;;;; only (in-package :integration-test) with the DEFPACKAGE in another file --
+;;;; and RULE-0002 keeps an analyzer inside its own file. So this is the
+;;;; recording half of ARCH-0015's split, and loom-graph does the assembling,
+;;;; exactly as ARCH-0014 R4 divided definer call sites.
+
+(defun package-designator-name (x)
+  "A package or symbol designator as a canonical uppercase string.
+
+Uppercased for the reason NORMALIZE-SYSTEM-NAME gives: (:use :cl), (:use \"CL\")
+and (:use cl) name one package, and folding here means the graph compares one
+spelling. TOKEN-NAME reads SYMBOL-NAME and nothing else, so a package prefix on
+the designator itself is already gone before this sees it."
+  (let ((raw (token-name x)))
+    (and raw (plusp (length raw)) (string-upcase raw))))
+
+(defun package-clauses (form head)
+  "Every clause of a DEFPACKAGE-shaped FORM whose head is HEAD.
+
+Every, not the first: a package may carry several :IMPORT-FROM clauses, one
+per source package, and reading only the first is how tools/package-census.lisp
+reported 0 imported names on a tree that has 227."
+  (remove-if-not (lambda (clause)
+                   (and (consp clause)
+                        (equal head (token-name (car clause)))))
+                 (cddr form)))
+
+(defparameter *unmodelled-package-clauses*
+  '("use-reexport" "mix" "mix-reexport" "recycle" "reexport"
+    "shadow" "shadowing-import-from")
+  "Clauses that move symbols between packages and that this analyzer does not
+model. Recorded on the entity rather than dropped: neither Loom nor game-server
+uses any of them -- measured 2026-08-10, zero occurrences in 65 declarations --
+and the first tree that does must produce a recorded gap rather than a
+confident wrong answer (CON-0001).")
+
+(defun package-imported-symbols (form)
+  "Every (symbol-name . from-package-name) an :IMPORT-FROM clause declares.
+
+The clause is (:import-from PACKAGE SYMBOL ...), so the source package is the
+clause's second element and the symbols are the rest."
+  (loop for clause in (package-clauses form "import-from")
+        for from = (package-designator-name (second clause))
+        when from
+          append (loop for sym in (cddr clause)
+                       for name = (package-designator-name sym)
+                       when name collect (cons name from))))
+
+(defun make-package-entity (form start end path system)
+  "A :PACKAGE from a DEFPACKAGE or a uiop DEFINE-PACKAGE.
+
+Both operators, because game-server declares 31 of its 41 packages with
+DEFINE-PACKAGE and DEFPACKAGE alone would read that tree as importing nothing
+at all. TOKEN-NAME is package-independent, so UIOP/PACKAGE:DEFINE-PACKAGE and a
+bare DEFINE-PACKAGE arrive here identically."
+  (let ((qualified (package-designator-name (second form))))
+    (make-instance 'package-entity
+                   :name qualified
+                   :origin-file path
+                   :properties (properties-table
+                                (list :qualified-name qualified
+                                      :nicknames
+                                      (loop for c in (package-clauses form "nicknames")
+                                            append (mapcar #'package-designator-name
+                                                           (rest c)))
+                                      :uses
+                                      (loop for c in (package-clauses form "use")
+                                            append (mapcar #'package-designator-name
+                                                           (rest c)))
+                                      :exports
+                                      (loop for c in (package-clauses form "export")
+                                            append (mapcar #'package-designator-name
+                                                           (rest c)))
+                                      :imported-symbols (package-imported-symbols form)
+                                      :unhandled-package-clauses
+                                      (loop for head in *unmodelled-package-clauses*
+                                            when (package-clauses form head)
+                                              collect (string-upcase head))
+                                      :file path
+                                      :start-line start
+                                      :end-line end
+                                      :language :lisp
+                                      :system system)))))
+
+(define-definition-handler handle-defpackage
+  "DEFPACKAGE and uiop's DEFINE-PACKAGE.
+
+Mints an entity and changes no walk state: unlike IN-PACKAGE, declaring a
+package does not make it current. \"defpackage\" stays in *DECLARATION-HEADS*
+as belt and braces, following HANDLE-IN-PACKAGE's precedent -- a head with a
+handler never reaches the catch-all."
+  (funcall note (make-package-entity form start end path system))
+  system)
+
 (define-definition-handler handle-defun
   (funcall note (make-function-entity form start end path system)
            :local t :body (cdddr form))
@@ -1194,6 +1303,8 @@ handler never reaches the catch-all."
 (defparameter *definition-dispatch*
   (make-definition-dispatch
    (list (definition-handler "in-package"       #'handle-in-package)
+         (definition-handler "defpackage"       #'handle-defpackage)
+         (definition-handler "define-package"   #'handle-defpackage)
          (definition-handler "defun"            #'handle-defun)
          (definition-handler "defmacro"         #'handle-defmacro)
          (definition-handler "defvar"           #'handle-variable)
@@ -1300,7 +1411,8 @@ transaction."
               ;; workspace (ARCH-0002). HEAD being non-NIL is the same test the
               ;; catch-all always made -- a cons whose car is a non-NIL symbol.
               ((and head (not (call-site-head-p head)))
-               (push (definer-call-site form start end) call-sites)))))))
+               (push (definer-call-site form start end current-system)
+                     call-sites)))))))
     (setf definitions (nreverse definitions)
           owned-call-sites (nreverse owned-call-sites))
 

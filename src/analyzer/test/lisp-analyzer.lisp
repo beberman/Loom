@@ -288,6 +288,74 @@ the first miscounted span")
     (values g (find-by-name g :file path))))
 
 ;;; ------------------------------------------------------------------
+;;; Package declarations (ARCH-0015, PLAN-0015 step 3)
+
+(test a-defpackage-records-its-aliases-uses-exports-and-every-import-clause
+  (multiple-value-bind (g file) (analyze-source "
+(defpackage #:mpackage/filter
+  (:nicknames #:mpackage.filter)
+  (:use #:cl)
+  (:import-from #:mpackage/object #:name #:id)
+  (:import-from #:utils #:proper-listp)
+  (:export #:make-filter))")
+    (declare (ignore file))
+    (let ((p (find-by-name g :package "MPACKAGE/FILTER")))
+      (is (not (null p)) "a package declaration is a definition this ontology models")
+      (is (equal '("MPACKAGE.FILTER") (getp p :nicknames)))
+      (is (equal '("CL") (getp p :uses)))
+      (is (equal '("MAKE-FILTER") (getp p :exports)))
+      ;; Every :import-from clause, not the first. Reading one is how
+      ;; tools/package-census.lisp reported 0 imported names against a true
+      ;; 227, so this is the assertion that guards the defect rather than the
+      ;; feature.
+      (is (equal '(("NAME" . "MPACKAGE/OBJECT")
+                   ("ID"   . "MPACKAGE/OBJECT")
+                   ("PROPER-LISTP" . "UTILS"))
+                 (getp p :imported-symbols))
+          "two clauses, three symbols, each paired with the package it came from"))))
+
+(test a-uiop-define-package-is-read-exactly-like-a-defpackage
+  ;; game-server declares 31 of its 41 packages this way. TOKEN-NAME reads
+  ;; SYMBOL-NAME and nothing else, so the UIOP/PACKAGE: prefix is already gone
+  ;; before the dispatch table sees the head.
+  (multiple-value-bind (g file) (analyze-source "
+(uiop/package:define-package :mpackage/filter
+  (:nicknames :mpackage.filter)
+  (:use :cl)
+  (:import-from :mpackage/object :id))")
+    (declare (ignore file))
+    (let ((p (find-by-name g :package "MPACKAGE/FILTER")))
+      (is (not (null p)))
+      (is (equal '("MPACKAGE.FILTER") (getp p :nicknames)))
+      (is (equal '(("ID" . "MPACKAGE/OBJECT")) (getp p :imported-symbols))))))
+
+(test a-clause-that-moves-symbols-and-is-not-modelled-is-recorded-not-dropped
+  ;; CON-0001. Neither tree uses these -- zero occurrences in 65 declarations,
+  ;; measured 2026-08-10 -- so the first that does must be a recorded gap
+  ;; rather than a confident wrong answer.
+  (multiple-value-bind (g file) (analyze-source "
+(uiop/package:define-package :a
+  (:use :cl)
+  (:use-reexport :b)
+  (:shadow :name))")
+    (declare (ignore file))
+    (let ((p (find-by-name g :package "A")))
+      (is (member "USE-REEXPORT" (getp p :unhandled-package-clauses) :test #'equal))
+      (is (member "SHADOW" (getp p :unhandled-package-clauses) :test #'equal)))))
+
+(test a-package-declaration-does-not-change-the-package-in-effect
+  ;; Declaring a package is not entering it. HANDLE-DEFPACKAGE returns SYSTEM
+  ;; unchanged, so the definitions after it belong to whatever IN-PACKAGE said,
+  ;; and a file that declares a package it never enters does not capture them.
+  (multiple-value-bind (g file) (analyze-source "
+(defpackage #:declared-only (:use #:cl))
+(in-package #:actually-entered)
+(defun f () 1)")
+    (declare (ignore file))
+    (is (eq :actually-entered (getp (find-by-name g :function "f") :system))
+        "the DEFPACKAGE between them must not have become the current package")))
+
+;;; ------------------------------------------------------------------
 ;;; What the reader passed over, on the file entity (ARCH-0013, PLAN-0013 R5)
 ;;;
 ;;; The mechanism landed with READ-SOURCE; this is the reporting half, and the
