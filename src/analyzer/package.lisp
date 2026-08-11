@@ -65,6 +65,11 @@
    ;; what a macro call defines (ARCH-0002) -- read by LOOM-WORKSPACE, which
    ;; hands it to the resolution pass LOOM-GRAPH cannot reach this package from
    #:*macro-generators*
+   ;; Namespaces a Lisp tree uses but does not declare (ARCH-0015). Handed to
+   ;; BUILD-PACKAGE-GRAPH the way *MACRO-GENERATORS* is handed to
+   ;; RESOLVE-GENERATED-DEFINITIONS, and for the same layering reason.
+   #:*external-package-names*
+   #:external-package-exports
    #:register-macro-generator
    #:macro-generators-for
 

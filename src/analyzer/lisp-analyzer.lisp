@@ -1150,6 +1150,49 @@ handler never reaches the catch-all."
 ;;;; recording half of ARCH-0015's split, and loom-graph does the assembling,
 ;;;; exactly as ARCH-0014 R4 divided definer call sites.
 
+(defparameter *external-package-names* '("COMMON-LISP")
+  "Packages a Lisp tree uses but does not declare, named so their exports can
+be read from the host image.
+
+COMMON-LISP alone by default, and that default is doing real work: nothing in a
+source tree declares CL, almost everything (:use :cl), and without it every
+inherited name is unplaceable -- game-server's PRINT-OBJECT is ten definitions
+across seven packages and one symbol.
+
+Adding to this list is how a workspace places names it currently cannot. On
+game-server 54 of 95 package-spanning names are unplaceable, and they are
+unplaceable because their packages use :FIVEAM, :DRAKMA and :CL-JSON, which
+this tree does not contain. Naming those here answers them -- but only when the
+package is present in the image reading the tree, so the default stays at the
+one package every conforming Lisp has. A name that cannot be placed is reported
+as a gap rather than guessed at (CON-0001), so a short list costs answers and
+never correctness.")
+
+(defun external-package-exports (&optional (names *external-package-names*))
+  "NAMES as (name aliases exports) triples, read from the host image, for
+BUILD-PACKAGE-GRAPH's :EXTERNAL-PACKAGES.
+
+This is the Lisp-specific half of ARCH-0015's symbol identity and it lives here
+because ARCH-0012 puts language reconciliation in the analyzer: that :USE means
+\"inherit the exported symbols\" and that COMMON-LISP exports what it does are
+facts about Common Lisp, and loom-graph must not know which language it is
+indexing (CON-0005). The traversal that consumes this is namespace-generic.
+
+Reading the host's own COMMON-LISP package is not loading the tree being
+indexed, so DEC-0001 holds: the answer is identical on every conforming
+implementation and needs none of the subject's code. A name here that the image
+does not have is skipped rather than signalled -- an absent library is a gap in
+what can be placed, not an error in the analysis."
+  (loop for name in names
+        for package = (find-package (string-upcase (string name)))
+        when package
+          collect (list (package-name package)
+                        (package-nicknames package)
+                        (let ((exports '()))
+                          (do-external-symbols (s package)
+                            (push (symbol-name s) exports))
+                          exports))))
+
 (defun package-designator-name (x)
   "A package or symbol designator as a canonical uppercase string.
 

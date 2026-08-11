@@ -403,6 +403,50 @@ body: |
   definitions across three unrelated generics, which is the true candidate set
   REQ-0020 needs before it can decide anything.
 
+  A LAYERING DEFECT INTRODUCED AND CORRECTED, same day, recorded because
+  nothing would have caught it.
+
+  Stage B put `(find-package :common-lisp)' and DO-EXTERNAL-SYMBOLS in
+  loom-graph, to seed CL's exports so inherited names could be placed. That
+  made loom-graph the only system in the tree reaching into the host language
+  runtime -- verified by grep -- and it contradicts a precedent this codebase
+  had already set in the opposite direction. lisp-analyzer.lisp:1080 says of a
+  neighbouring question: "This lives in the Lisp analyzer and not in the rule
+  or the writer because 'an accessor name declared twice is one generic
+  function' is a fact about Common Lisp, and language reconciliation is what
+  ARCH-0012 puts here." CON-0005 says the same of the writer.
+
+  The fix separates two things that were conflated. The TRAVERSAL -- alias,
+  then import, then inheritance through exports, then interning -- is
+  namespace-generic, and :PACKAGE's own docstring already claims Lisp, npm and
+  Python. What COMMON-LISP exports is a fact about Common Lisp. So
+  BUILD-PACKAGE-GRAPH takes :EXTERNAL-PACKAGES as (name aliases exports)
+  triples, loom-analyzer's EXTERNAL-PACKAGE-EXPORTS reads them from the host
+  image, and loom-workspace hands them across -- exactly as it already hands
+  *MACRO-GENERATORS* to RESOLVE-GENERATED-DEFINITIONS, with the same comment
+  explaining why.
+
+  Two consequences beyond tidiness. loom-graph now knows nothing about which
+  language it indexes. And *EXTERNAL-PACKAGE-NAMES* is the mechanism Stage B
+  identified for the 54 unplaceable names on game-server: naming :FIVEAM and
+  :DRAKMA there places them, when the image reading the tree has them. The
+  default stays COMMON-LISP alone, so a short list costs answers and never
+  correctness.
+
+  src/graph/packages.lisp was also renamed to src/graph/symbol-identity.lisp.
+  Every system in this tree has a package.lisp holding its own DEFPACKAGE, and
+  a packages.lisp beside it meaning something entirely different is a trap.
+  package.lisp keeps its name: it holds a CL package, not an ASDF system, and
+  the convention is universal.
+
+  Verified behaviour-preserving: game-server 12612 :calls and 6813 onto a
+  package-spanning name, identical before and after the move. Suite 9/9.
+
+  Nothing in RULE-0001 to RULE-0003 could have reported any of this. They key
+  on system dependencies, and "loom-graph must not know a language" is a
+  different kind of claim -- as unenforced as CON-0005 and RULE-0005, and
+  caught the same way those are, by someone reading.
+
   Step 9 -- KEYS. The other four callers. RESOLVE-INHERITANCE (resolve.lisp:69
   and 90), RESOLVE-METHOD-PROTOCOLS (106) and generator resolution (149) move
   to the package-aware index. UNIQUE-MATCH returns NIL for several candidates

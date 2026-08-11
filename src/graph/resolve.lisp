@@ -61,10 +61,10 @@ one step and still be reviewable."
   (by-home       (make-hash-table :test #'equal) :type hash-table)
   (package-graph nil))
 
-(defun callable-lookup (view)
+(defun callable-lookup (view &key external-packages)
   "CALLABLE-INDEX plus the package-aware index over the same definitions."
   (let* ((by-name (callable-index view))
-         (pg (build-package-graph view))
+         (pg (build-package-graph view :external-packages external-packages))
          (by-home (make-hash-table :test #'equal)))
     (maphash (lambda (name entities)
                (dolist (e entities)
@@ -818,7 +818,7 @@ ARCH-0014, PLAN-0014 step 4."
         (when name (list name)))
       (getp caller :call-names)))
 
-(defun resolve-calls (view &key workspace-id)
+(defun resolve-calls (view &key workspace-id external-packages)
   "Operations linking each recorded call name to the definition it names.
 
 For every callable carrying :CALL-NAMES, each name is looked up in the
@@ -847,7 +847,7 @@ the same question and can answer it again.
 Idempotent: an edge that already exists upserts onto itself by natural key, and
 a name that resolved last pass resolves to the same edge this pass. Safe to run
 after every analysis pass."
-  (let ((index (callable-lookup view))
+  (let ((index (callable-lookup view :external-packages external-packages))
         ;; The ambiguous call sites this pass produced, keyed by id: the
         ;; dedupe for the asserts below and the produced set for the sweep at
         ;; the end, which are the same question asked twice.

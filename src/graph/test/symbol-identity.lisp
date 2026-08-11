@@ -10,6 +10,19 @@
 
 (in-suite graph-manager)
 
+(defun cl-externals ()
+  "COMMON-LISP as BUILD-PACKAGE-GRAPH's :EXTERNAL-PACKAGES wants it.
+
+Built here rather than reached for, which is the point of the argument: the
+graph no longer knows what language it is indexing, so a test that wants CL
+seeded has to say so. loom-analyzer:EXTERNAL-PACKAGE-EXPORTS is the production
+source of the same triple."
+  (list (list "COMMON-LISP" '("CL")
+              (let ((exports '()))
+                (do-external-symbols (s (find-package :common-lisp))
+                  (push (symbol-name s) exports))
+                exports))))
+
 (defun package-fixture (&rest declarations)
   "A graph holding one :PACKAGE per DECLARATION, each a plist of the
 properties DEFPACKAGE-shaped forms produce."
@@ -42,7 +55,7 @@ properties DEFPACKAGE-shaped forms produce."
                    :nicknames '("MPACKAGE.FILTER")
                    :uses '("CL")
                    :imported-symbols '(("ID" . "MPACKAGE/OBJECT")))))
-         (pg (build-package-graph g)))
+         (pg (build-package-graph g :external-packages (cl-externals))))
     (is (equal "MPACKAGE/OBJECT" (home-package pg "id" "MPACKAGE/OBJECT")))
     (is (equal "MPACKAGE/OBJECT" (home-package pg "id" "MPACKAGE/FILTER"))
         "the importing package's ID is the exporter's symbol -- following the
@@ -64,7 +77,7 @@ canonicalisation the analyzer is forbidden to do")))
              (list :qualified-name "MPACKAGE/OBJECT" :uses '("CL"))
              (list :qualified-name "MPACKAGE/FILTER" :uses '("CL"))
              (list :qualified-name "DATA-API/DB" :uses '("CL"))))
-         (pg (build-package-graph g))
+         (pg (build-package-graph g :external-packages (cl-externals)))
          (homes (mapcar (lambda (p) (home-package pg "print-object" p))
                         '("MPACKAGE/OBJECT" "MPACKAGE/FILTER" "DATA-API/DB"))))
     (is (equal '("COMMON-LISP" "COMMON-LISP" "COMMON-LISP") homes)
@@ -83,7 +96,7 @@ in more than one package has just been split into several")
              (list :qualified-name "INTEGRATION-TEST"
                    :uses '("CL" "FIVEAM" "DRAKMA"))
              (list :qualified-name "SELF-CONTAINED" :uses '("CL"))))
-         (pg (build-package-graph g)))
+         (pg (build-package-graph g :external-packages (cl-externals))))
     (is (null (home-package pg "id" "INTEGRATION-TEST"))
         "FIVEAM and DRAKMA are not declared in this workspace, so ID might be
 theirs; a guess here would be the fabricated binding CON-0001 forbids")
@@ -101,7 +114,7 @@ theirs; a guess here would be the fabricated binding CON-0001 forbids")
                    :imported-symbols '(("PARSE" . "UTILS")))
              (list :qualified-name "B" :uses '("CL")
                    :imported-symbols '(("PARSE" . "UTILS")))))
-         (pg (build-package-graph g)))
+         (pg (build-package-graph g :external-packages (cl-externals))))
     (is (equal "UTILS" (home-package pg "parse" "A")))
     (is (equal (home-package pg "parse" "A") (home-package pg "parse" "B"))
         "two packages importing one symbol from a third agree about it even
@@ -113,7 +126,7 @@ when the third is not declared here")))
   (let* ((g (package-fixture
              (list :qualified-name "A" :uses '("B" "CL") :exports '("SHARED"))
              (list :qualified-name "B" :uses '("A" "CL") :exports '("SHARED"))))
-         (pg (build-package-graph g)))
+         (pg (build-package-graph g :external-packages (cl-externals))))
     (is (not (null (home-package pg "shared" "A")))
         "an answer, rather than a stack overflow")))
 
@@ -125,6 +138,6 @@ when the third is not declared here")))
              (list :qualified-name "B" :uses '("CL") :exports '("DEEP")
                    :imported-symbols '(("DEEP" . "C")))
              (list :qualified-name "A" :uses '("B" "CL"))))
-         (pg (build-package-graph g)))
+         (pg (build-package-graph g :external-packages (cl-externals))))
     (is (equal "C" (home-package pg "deep" "A"))
         "not B, which merely passes it on")))

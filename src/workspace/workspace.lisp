@@ -248,7 +248,14 @@ rather than a preference."
       (submit "resolve-generated-definitions"
               (resolve-generated-definitions graph :workspace-id workspace
                                                    :registry *macro-generators*))
-      (submit "resolve-calls"          (resolve-calls graph :workspace-id workspace))
+      ;; EXTERNAL-PACKAGES is handed in for the same reason *MACRO-GENERATORS*
+      ;; above is: loom-graph depends on loom-ontology alone, so it cannot see
+      ;; the analyzer's table -- and what COMMON-LISP exports is a fact about a
+      ;; language, which ARCH-0012 puts in an analyzer and CON-0005 keeps out
+      ;; of the writer. This system is the one that may know both.
+      (submit "resolve-calls"          (resolve-calls graph :workspace-id workspace
+                                                            :external-packages
+                                                            (external-package-exports)))
       ;; And RESOLVE-TESTS after RESOLVE-CALLS, which is the second half of why
       ;; this sequence is load-bearing rather than merely tidy: coverage is
       ;; derived from the :CALLS edges a test's body produced, so a pass that

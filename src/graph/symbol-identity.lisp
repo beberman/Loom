@@ -35,34 +35,38 @@ names it. A nickname resolves; an undeclared package does not."
   (and designator (gethash (string-upcase (string designator))
                            (package-graph-canonical pg))))
 
-(defun standard-package-exports ()
-  "COMMON-LISP's external symbols, from the host image.
+(defun build-package-graph (view &key external-packages)
+  "The namespace graph of every :PACKAGE entity in VIEW.
 
-Seeded because almost every package (:use :cl) and nothing in a source tree
-declares CL. Without it every name inherited from the language is unplaceable,
-which on game-server means PRINT-OBJECT's ten definitions across seven packages
--- one symbol -- cannot be recognised as one.
+EXTERNAL-PACKAGES describes namespaces no declaration in the tree provides --
+Common Lisp itself, or a library the tree uses but does not contain -- as an
+alist of (name aliases exports). It is HANDED IN rather than reached for, for
+the reason workspace.lisp gives about *MACRO-GENERATORS*: loom-graph depends on
+loom-ontology alone, so it cannot see an analyzer's table, and it must not
+reach into the host image either. `(find-package :common-lisp)' lived here
+briefly and was the only place in this system that knew what language it was
+indexing -- which is the thing ARCH-0012 puts in an analyzer and CON-0005 says
+the writer must not do. The traversal below is namespace-generic; what
+Common Lisp exports is a fact about Common Lisp, and it now arrives as data.
 
-This asks the running Lisp about a standard package. It does not load the tree
-being indexed, so DEC-0001 is untouched: the answer is the same on every
-conforming implementation and is derivable without the subject's code."
-  (let ((table (make-hash-table :test #'equal)))
-    (do-external-symbols (s (find-package :common-lisp))
-      (setf (gethash (symbol-name s) table) t))
-    table))
-
-(defun build-package-graph (view)
-  "The package graph of every :PACKAGE entity in VIEW, plus COMMON-LISP."
+Without any external packages every name inherited from outside the tree is
+unplaceable, which HOME-PACKAGE reports rather than guesses at. Supplying more
+of them is how a workspace turns those recorded gaps into answers."
   (let ((pg (%make-package-graph)))
     (flet ((set-of (names)
              (let ((table (make-hash-table :test #'equal)))
                (dolist (n names table)
                  (setf (gethash (string-upcase (string n)) table) t)))))
-      ;; CL first, so a tree that somehow declares it wins over the seed.
-      (setf (gethash "COMMON-LISP" (package-graph-canonical pg)) "COMMON-LISP"
-            (gethash "CL" (package-graph-canonical pg)) "COMMON-LISP"
-            (gethash "COMMON-LISP" (package-graph-exports pg))
-            (standard-package-exports))
+      ;; The supplied namespaces first, so a tree that declares one of them
+      ;; itself wins over what was handed in.
+      (loop for (name aliases exports) in external-packages
+            for canon = (string-upcase (string name))
+            do (setf (gethash canon (package-graph-canonical pg)) canon)
+               (dolist (alias aliases)
+                 (setf (gethash (string-upcase (string alias))
+                                (package-graph-canonical pg))
+                       canon))
+               (setf (gethash canon (package-graph-exports pg)) (set-of exports)))
       (dolist (p (entities-of-type view :package))
         (let ((declared (getp p :qualified-name)))
           (when declared
