@@ -1,6 +1,6 @@
 id: BUG-0021
 title: A call to a generic function whose methods come from slot accessors resolves to nothing, and the candidate set it fails to choose from spans unrelated packages
-status: open
+status: closed
 date: 2026-08-10
 refines: [REQ-0020, REQ-0015, PLAN-0014]
 affects: [call-targets, callable-index, slot-accessor-names,
@@ -276,3 +276,49 @@ body: |
   else: whether an accessor declaration mints a :METHOD, or whether a generic
   function becomes one entity with several definition sites. The measurement
   that made this bug hard to see is now available to whoever answers it.
+
+  CLOSED 2026-08-10. The remaining step landed: CALL-TARGETS treats an
+  accessor-generated :INTERFACE as a dispatch target rather than a rival
+  protocol, and fans out over methods and accessors together.
+
+  The discriminator was already in the data, as this document said it was.
+  MAKE-INTERFACE-ENTITY is handed :GENERATED-BY for each `:accessor'/`:reader'
+  name (lisp-analyzer.lisp:847) and a written DEFGENERIC carries none, so
+  "synthesised from a slot declaration" separates a method-in-disguise from a
+  protocol without any new fact being recorded.
+
+  Fanning out only where the candidate set was package-placed is what makes it
+  safe, and it is the ordering argument in FIX made mechanical:
+  CANDIDATE-ENTITIES returns a second value saying whether symbol identity was
+  established, and an unplaced set keeps the old answer. Without that, `id'
+  from an unplaceable caller would have fanned across six accessors of three
+  unrelated generics -- the exact fabrication this document warned the cheap
+  fix would cause.
+
+  Measured on game-server, /usr/bin/sbcl:
+
+      id                    6 entities, 4 sharing MPACKAGE/OBJECT's symbol
+                            through imports, 64 incoming calls each. The two
+                            in :DATA-API-TEST and :INTEGRATION-TEST keep 0,
+                            which is correct -- they are different generics.
+      cascade-delete        the accessor at reference-types.lisp:104 goes from
+                            0 incoming calls to 10. Every call used to be
+                            attributed to the DEFGENERIC's inline default
+                            method, which returns NIL; that was the half of
+                            this bug worse than silence, and it is gone.
+      relationships         20346 -> 21777
+      tests covering        493 -> 509 units
+
+  `describe id' now answers differently again, and better: six things are named
+  `id' and it says so, listing their ids, rather than describing whichever one
+  hash order surfaced. RESOLVE-ENTITY took the single best match, which on this
+  name meant :DATA-API-TEST's accessor with no callers while four others had 64
+  each. An arbitrary answer that looks definite is CON-0001's fabricated fact
+  in a different place, so an exactly-ambiguous name is now reported with its
+  candidates. `describe interface:mpackage/object.lisp:id' shows the 60-odd
+  callers REQ-0015 counted as dropped.
+
+  What stays open is REQ-0020's larger question, and it is narrower now than
+  when this was filed: whether a generic function should be ONE entity with
+  several definition sites, rather than N interfaces that resolution has
+  learned to read as one. Nothing here forces that; it makes it optional.

@@ -1,6 +1,6 @@
 id: REQ-0020
 title: A generic function that gets its methods from slot accessors is one callee, not N unrelated interfaces, and a call to it should reach them
-status: draft
+status: partial
 date: 2026-08-10
 refines: [REQ-0015, ARCH-0014]
 affects: [call-targets, resolve-calls, slot-accessor-names, class-definition-entities,
@@ -167,3 +167,37 @@ body: |
   two-or-more-plain-functions case that produced no edge before and produces N
   discountable ones now. That mechanism is not implicated and should not be
   changed to accommodate this.
+
+  OUTSTANDING
+
+  R2 and R3 are met, 2026-08-10, and R5's prerequisite is met by ARCH-0015.
+
+  R2, dispatch rather than ambiguity: CALL-TARGETS fans out over methods and
+  accessor-generated interfaces together, at DISPATCH-CONFIDENCE, from the
+  caller and with no :CALL-SITE -- because nothing here is ambiguous and there
+  is no guess to anchor.
+
+  R3, an accessor-declared method is reachable: cascade-delete's accessor on
+  REFERENCE-TYPE-DEFN goes from 0 incoming calls to 10, and the DEFGENERIC's
+  default method no longer absorbs every call.
+
+  R4 is met by the same clause: a written DEFGENERIC stays a protocol, is not a
+  dispatch target, and is attached to the fan-out as :DERIVED-FROM, so a
+  generic and its accessor-generated extensions are one thing.
+
+  R5, package identity first, is ARCH-0015 and landed before this. The
+  fan-out is gated on CANDIDATE-ENTITIES' second value, so it happens only
+  where symbol identity was established.
+
+  R1 IS NOT MET and is the whole of what remains. Same-named accessor-generated
+  interfaces are still N entities; resolution has learned to read them as one
+  generic function, which is a different thing from modelling them as one. The
+  question R1 actually asks -- one entity with several definition sites, or N
+  linked -- is untouched, and it is still an ARCH-level question about how the
+  ontology models a generic function. What has changed is that it is now
+  optional rather than blocking: the call graph is correct without it.
+
+  R6, measured on both trees: game-server relationships 20346 -> 21777 and
+  covered units 493 -> 509; Loom 9645 -> 9648, which isnearly nothing because Loom
+  has few accessor-generated generics -- the asymmetry this whole line of work
+  keeps rediscovering.

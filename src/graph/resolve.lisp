@@ -93,14 +93,21 @@ CALLER of NIL -- RESOLVE-GENERATED-DEFINITIONS asking whether a name reaches
 anything at all -- still gets the unrestricted answer."
   (let ((key (string-downcase name)))
     (etypecase index
-      (hash-table (gethash key index))
+      (hash-table (values (gethash key index) nil))
       (name-lookup
        (let* ((home (and caller
                          (home-package (name-lookup-package-graph index)
                                        name (entity-package caller))))
               (placed (and home (gethash (cons home key)
                                          (name-lookup-by-home index)))))
-         (or placed (gethash key (name-lookup-by-name index))))))))
+         ;; The second value says whether symbol identity was established.
+         ;; A caller that fans out across the candidate set needs to know:
+         ;; fanning across a set assembled by spelling alone would assert
+         ;; edges between definitions that share nothing but a name, which is
+         ;; the fabrication ARCH-0015 exists to stop.
+         (if placed
+             (values placed t)
+             (values (gethash key (name-lookup-by-name index)) nil)))))))
 
 (defun unique-match (index name &optional referrer)
   "The one entity INDEX holds under NAME as REFERRER sees it, or NIL for none
@@ -730,10 +737,28 @@ The precedence is ARCH-0001's, and the order of the clauses is the design:
   one plain function     one structural edge. Nothing is being guessed: the
                          name has exactly one definition and the call reaches
                          it.
-  any methods            one :inferred edge per method. Dispatch is a union of
-                         genuine possibilities, not an ambiguity among
+  any methods, or two
+  or more accessor-
+  generated interfaces   one :inferred edge per dispatch target. Dispatch is a
+                         union of genuine possibilities, not an ambiguity among
                          mutually exclusive candidates, which is why fanning
                          out is not the fabricated edge CON-0001 forbids.
+
+                         An accessor-generated :INTERFACE is a dispatch target
+                         and not a rival protocol (REQ-0020). `:accessor id\' on
+                         six classes is one generic function acquiring six
+                         methods, and Loom mints an :INTERFACE for each because
+                         no DEFGENERIC was written -- so a name with N of them
+                         and no methods used to match no clause at all and
+                         resolve to nothing. That was BUG-0021 on game-server:
+                         144 dropped call sites for `id\'.
+
+                         Only when the candidate set was package-placed. Fanning
+                         out across a set assembled by spelling alone would
+                         assert edges between accessors of genuinely different
+                         generics -- the fabrication BUG-0021 warned the cheap
+                         fix would cause -- so an unplaced set keeps the old
+                         answer.
   one interface, no
   methods                one structural edge to the protocol. A generated slot
                          accessor, or a generic implemented outside the tree:
@@ -754,17 +779,27 @@ CALLER may be NIL, which asks the bare question \"does this name reach
 anything\" without a caller to remove from the candidates or to hang a node on.
 RESOLVE-GENERATED-DEFINITIONS asks it that way, so it can decide whether an
 orphaned definer name is worth a call site at all."
-  (let* ((candidates (remove caller (candidate-entities index name caller)))
+  (multiple-value-bind (all placedp) (candidate-entities index name caller)
+   (let* ((candidates (remove caller all))
          (functions  (remove-if-not (lambda (e) (eq :function  (entity-type e))) candidates))
          (methods    (remove-if-not (lambda (e) (eq :method    (entity-type e))) candidates))
-         (interfaces (remove-if-not (lambda (e) (eq :interface (entity-type e))) candidates)))
+         (interfaces (remove-if-not (lambda (e) (eq :interface (entity-type e))) candidates))
+         ;; An :INTERFACE carrying :GENERATED-BY was synthesised from a slot
+         ;; declaration -- `:accessor id\' -- rather than written as a
+         ;; DEFGENERIC. It is one method of a generic function, not a protocol
+         ;; of its own, and the analyzer already records which is which.
+         (accessors  (remove-if-not (lambda (e) (getp e :generated-by)) interfaces))
+         (protocols  (remove-if     (lambda (e) (getp e :generated-by)) interfaces))
+         ;; Fan out over accessors only where the candidate set is one
+         ;; symbol\'s. REQ-0020 R5 and BUG-0021\'s ordering argument.
+         (dispatch   (append methods (if placedp accessors '()))))
     (cond ((and (= 1 (length functions)) (null methods) (null interfaces))
            (list (list :callee (first functions))))
-          (methods
-           (let ((confidence (dispatch-confidence (length methods)))
-                 (generic (when (= 1 (length interfaces)) (id (first interfaces)))))
-             (loop for method in methods
-                   collect (list :callee method
+          ((or methods (rest dispatch))
+           (let ((confidence (dispatch-confidence (length dispatch)))
+                 (generic (when (= 1 (length protocols)) (id (first protocols)))))
+             (loop for target in dispatch
+                   collect (list :callee target
                                  :confidence confidence
                                  :derived-from (when generic (list generic))))))
           ((= 1 (length interfaces))
@@ -808,7 +843,7 @@ orphaned definer name is worth a call site at all."
                      collect (list :callee candidate
                                    :confidence confidence
                                    :call-site site)))))
-          (t nil))))
+          (t nil)))))
 
 (defparameter *minimum-dispatch-confidence* 0.1
   "The floor for a fanned-out call edge, so a generic with a great many

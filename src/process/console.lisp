@@ -130,14 +130,39 @@ guessed at."
 (defun current-graph (&optional designator)
   (repository-graph (current-repository designator)))
 
+(defun exact-name-matches (graph term)
+  "Every entity whose name is exactly TERM, ignoring case."
+  (remove-if-not (lambda (hit) (string-equal term (getf hit :name)))
+                 (search-entities graph :name term :limit 20)))
+
 (defun resolve-entity (graph term)
   "The entity TERM names: an id if it is one, otherwise the best name match.
 
 Agents and humans both name things rather than quoting ids, and a command that
-demanded an id would send the developer to `find` first every single time."
+demanded an id would send the developer to `find` first every single time.
+
+Several entities may carry one name, and since ARCH-0015 that is the normal
+case rather than a defect: two same-named definitions in different packages are
+two callables. Picking the best of them would answer a question nobody asked --
+`describe id' on game-server described the one in :DATA-API-TEST, which has no
+callers, while the four that share MPACKAGE/OBJECT's symbol have 64 each. The
+answer was not wrong so much as arbitrary, and an arbitrary answer that looks
+definite is CON-0001's fabricated fact wearing a different hat. So an exactly
+ambiguous name is reported with its candidates and their ids, which is what a
+developer needs in order to ask again precisely."
   (or (get-entity graph term)
-      (let ((hits (search-entities graph :name term :limit 1)))
-        (when hits (get-entity graph (getf (first hits) :id))))
+      (let ((exact (exact-name-matches graph term)))
+        (cond ((null (rest exact))
+               (let ((hits (search-entities graph :name term :limit 1)))
+                 (when hits (get-entity graph (getf (first hits) :id)))))
+              ;; The id carries the file, so it is both the disambiguator and
+              ;; the thing to type next.
+              (t (error "~d things are named ~s. Name one:~{~%  ~a~}"
+                        (length exact) term
+                        (mapcar (lambda (hit)
+                                  (format nil "~(~a~) ~a"
+                                          (getf hit :type) (getf hit :id)))
+                                exact)))))
       (error "Nothing in the index matches ~s." term)))
 
 (defun resolve-count (text what)
