@@ -1,0 +1,81 @@
+id: CON-0005
+title: One file's op stream asserts each natural key at most once
+refines: [DES-0012]
+summary: |
+  An analyzer owns reconciling two definitions in one file that derive one
+  natural key, because reconciling them is the language's semantics and the
+  writer is language-neutral. Nothing machine-checks this, so it is written
+  down in three places rather than one.
+body: |
+  THE CONTRACT
+
+  ANALYZE-FILE returns operations for one file. Among them, no two
+  ASSERT-ENTITY-OPs may carry the same LOOM-ONTOLOGY:ENTITY-NATURAL-KEY. An
+  analyzer that finds two source definitions deriving one key must reduce them
+  to one before emitting anything.
+
+  WHY THE WRITER CANNOT DO IT INSTEAD
+
+  It looks like the writer's job -- it is the writer that has to store one
+  entity for two asserts. It is not, for two separate reasons.
+
+  The first is that by the time the writer sees the ops, the information is
+  gone. Ids are derived from the natural key, so both definitions' outgoing
+  edges name the same endpoint, carry the same origin file and the same
+  provenance. Nothing distinguishes the dead definition's edge from the live
+  one's. ABSORB-ENTITY reconciles the properties, later-wins, and the edges
+  simply union -- an entity whose properties describe one body and whose
+  :CALLS edges describe two. That is BUG-0012, and it went unnoticed for as
+  long as it did because the property half looks correct in isolation.
+
+  The second reason is the one that settles it. There is no reconciliation
+  rule that is right for every language. Common Lisp replaces: a second DEFUN
+  or a second DEFMETHOD with matching qualifiers and specializers overwrites
+  the first, so the last definition in source order is the one the loaded
+  program contains and every earlier one is dead code. TypeScript does not:
+  interface declarations with one name merge their members, and function
+  overloads are declarations of one function. A writer that hardcoded
+  later-wins would be wrong for the second language the moment it arrived, and
+  a writer that hardcoded merging would be wrong for the first. So the writer
+  stays agnostic and each analyzer reconciles by its own language's rules.
+
+  This is also why the answer is not shared post-processing in the workspace:
+  the workspace is as language-neutral as the writer.
+
+  HOW THE LISP ANALYZER KEEPS IT
+
+  SUPERSEDE-SHADOWED-DEFINITIONS runs between pass 1 and pass 2 of
+  ANALYZE-FILE. It groups the pass-1 definitions by natural key, keeps the
+  last in source order, and drops the rest from DEFINITIONS, CALLABLES and
+  LOCAL-FUNCTIONS -- so a superseded definition's body is never walked, and no
+  entity op, :CONTAINS edge, :CALL-NAMES or local :CALLS edge is emitted for
+  it. Anything that reorders ANALYZE-FILE's passes must keep it there: after
+  pass 2 is too late, because the dead body's names have already leaked into
+  the survivor's edges.
+
+  A definition whose natural key is NIL is never grouped. NIL means the type
+  declares no upsert identity, not that two definitions share one.
+
+  WHAT THE CONTRACT DOES NOT ERASE
+
+  The shadowed source still exists on disk, so its existence is recorded
+  rather than dropped (CON-0001): the survivor carries :shadowed-definitions,
+  a list of "start-end" line ranges, and RULE-0006 reports every carrier. The
+  graph deliberately holds no entity for the dead definition -- it is not what
+  the file defines -- so a reader who wants the text opens the file.
+
+  NOTHING CHECKS THIS
+
+  There is no rule and no assertion that a new analyzer keeps the contract,
+  and DES-0012 records that as its sharpest tradeoff rather than an
+  oversight. A check would have to run every analyzer over a corpus and
+  compare op streams, which is a test harness rather than a rule. So the
+  contract is written in three places, each for a different reader: the
+  ANALYZE-FILE defgeneric docstring in src/analyzer/analyzer.lisp, which is
+  what someone implementing a method reads; this document, which is what
+  `context analyzer contract` finds; and one line in CLAUDE.md, which is what
+  someone who has not asked yet reads.
+
+  The tell that it has been broken is available even so. RULE-0006 fires when
+  a Lisp file collides, and a within-transaction absorb of a code entity means
+  some analyzer emitted two asserts on one key.

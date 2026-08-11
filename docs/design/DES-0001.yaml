@@ -1,0 +1,343 @@
+id: DES-0001
+title: CLOS definitions in the Lisp analyzer
+status: draft
+date: 2026-07-28
+tags: [analyzer, ontology, clos, multi-dispatch]
+summary: |
+  How defclass, defgeneric, defmethod and defstruct become entities and edges,
+  what multiple dispatch costs an ontology that assumes a method belongs to a
+  class, and why the answer has to survive a language without generic
+  functions.
+body: |
+  The Lisp analyzer recognises top-level defun and defvar/defparameter and
+  nothing else. In one real repository that blind spot is 376 defmethod, 158
+  defgeneric, 61 defclass, 45 defmacro and 27 define-condition -- roughly 667
+  definitions against the 830 it does find, so the index is missing about
+  as much as it holds.
+
+  The gap is not hypothetical. Loom's own architecture documents already name
+  the analyzer protocol, and indexing Loom reports those references as
+  unresolved -- RULE-0002 names analyze-file and analyzer-handles-p, DEC-0002
+  names id-derived-p -- because a defgeneric and a slot accessor are invisible.
+  The documentation staleness detector is firing correctly and pointing at the
+  analyzer, and until this is closed a genuine stale reference is
+  indistinguishable from one of these.
+
+  WHAT EACH FORM BECOMES
+
+  defclass becomes a :class. Its slot names become :slots. Its superclass list
+  becomes :inherits edges. define-condition has the same shape and becomes a
+  :class too.
+
+  defgeneric becomes an :interface, which the ontology already anticipates --
+  "a contract without implementation ... or a Lisp generic-function protocol
+  treated as one". The competing reading is that it should be a :function
+  carrying the :generic-p flag the ontology also declares. Interface wins
+  because of what a call site means: see CALL RESOLUTION below.
+
+  defmethod becomes a :method. The ontology already anticipates this too, and
+  more precisely than it may look: the natural key is
+  (:file :name :qualifier :specializers), which is exactly what distinguishes
+  two methods on one generic. Nothing about identity needs to change.
+
+  A method's :name is the generic's name, so `find draw' lists every method on
+  draw, told apart by location and rendered :signature. Qualifiers are :before,
+  :after, :around or absent. A (setf foo) method takes "(setf foo)" as its name.
+
+  THE MULTI-DISPATCH PROBLEM
+
+  An ontology built for single dispatch says a class contains its methods.
+  CLOS does not work that way. (defmethod draw ((s shape) (m medium))) belongs
+  to shape and medium equally, and to draw, and to none of them exclusively.
+  Forcing a single owner would mean picking the first specializer, which is a
+  fabricated fact of exactly the kind resolve-calls refuses to invent.
+
+  So a method has no owning class. Containment comes from the file, which is
+  unambiguous and consistent with the repository being the system of record:
+  the file :contains the method, as it contains a function. Everything about
+  which classes the method dispatches on is a separate edge, and there are as
+  many of them as there are specialised parameters.
+
+  That gives three edges per method:
+
+    method -> generic     the protocol it implements
+    method -> class       one per specialised parameter, none for a parameter
+                          specialised on t
+    file   -> method      containment, as for any definition
+
+  The method-to-generic edge is :implements, which the ontology already permits
+  from :method to :interface.
+
+  The method-to-class edges are :uses, which the ontology already permits from
+  :method to :class. It carries transitive impact in the reverse direction,
+  which reads correctly here: a changed class reaches the methods that dispatch
+  on it. A dedicated :specializes type would say more precisely what the edge
+  means, and would be the first ontology addition this design needs; it is not
+  worth one until something has to tell a method that dispatches on a class
+  apart from a method that merely mentions it.
+
+  CALL RESOLUTION
+
+  A call site names a dispatch target, never a particular method. (draw x y)
+  says nothing about which method will run; deciding that needs the runtime
+  types. The question is what the :calls edge should therefore point at, and
+  there are two answers.
+
+  The rejected one is to terminate the edge at the generic: one edge per call
+  site, the protocol named in the path, and the method reaching its callers by
+  going up to the generic and back down. It needs two ontology changes --
+  :calls must permit :interface as a target, and :implements must carry impact
+  in both directions rather than only interface-to-implementors -- and it
+  drags every sibling method into the impact set of any one of them, because
+  the generic is a hub and the traversal cannot tell which direction it
+  arrived from. Measured on the repository that motivated this, that costs
+  little: 70% of generics have exactly one method and the mean is 2.04. It was
+  the plan until the question was asked of JavaScript.
+
+  The chosen one is to fan the edge out to every candidate method, marked
+  :inferred with a confidence and with :derived-from naming the generic --
+  which is the mechanism resolve-document-links already uses for names found in
+  prose. Then:
+
+    from a method   reverse :calls              reaches its callers exactly
+    from a generic  reverse :implements, then
+                    reverse :calls              reaches its methods' callers
+
+  Both work with the impact metadata exactly as it is declared today. Nothing
+  becomes bidirectional, no sibling is dragged in, and a method's callers are
+  exact rather than approximate. :calls already permits :function and :method
+  as targets, so a function calling a method needs no change.
+
+  The cost is edge count -- roughly two per dispatched call site rather than
+  one -- and the loss of the generic from the path, which :derived-from
+  recovers, since recording what an inferred edge was derived from is what that
+  field is for.
+
+  ONE WIDENED ENDPOINT, AND WHY IT IS NOT THE REJECTED OPTION
+
+  Implementation added :interface to :calls' :to list. That is one of the two
+  changes listed above as a cost of the rejected design, so it deserves saying
+  plainly why accepting it here is not the rejected design arriving by the back
+  door.
+
+  The rejected design routes every dispatched call through the generic. This
+  routes none of them. What it allows for is a protocol with nothing to fan out
+  to, and there are two such cases, both real:
+
+    a DEFCLASS slot accessor, which is a generic function generated from a slot
+    and, in the overwhelming majority of cases, never specialised again, so
+    there is no method anywhere for a call to reach
+
+    a DEFGENERIC whose methods live outside the indexed tree
+
+  With the endpoint forbidden, every call to one of those resolves to nothing.
+  That is not an abstract loss: id-derived-p, the reference DEC-0002 has been
+  unable to resolve and one of the three findings that motivated this document,
+  is exactly a slot accessor. Forbidding the endpoint would mean closing the
+  gap everywhere except at one of the three places that demonstrated it.
+
+  So the rule is about precedence, not permission. Resolution fans out to
+  methods whenever the workspace has any; the edge lands on the interface only
+  when it has none. The generic is still not a hub, and no impact path runs
+  through one.
+
+  Nothing else changed: no new entity type, no new relationship type, no
+  altered impact direction. The remaining additions are properties --
+  :superclass-names and :kind on :class, :generated-by on :function and
+  :interface, :macro-p on :function.
+
+  WHY THE GENERIC IS NOT A ROUTING HUB: THE JAVASCRIPT TEST
+
+  The deciding argument is that terminating calls at the generic does not
+  survive contact with a second language, and Loom's whole claim is that a new
+  analyzer lands behind the existing protocol without ontology churn.
+
+  Routing through a hub requires the language to reify the dispatch target as
+  something with a source location. CLOS defgeneric does. A TypeScript or Java
+  interface does. An untyped JavaScript x.bar() does not -- bar is a property
+  name, not a declared thing, and there is nothing to point an edge at.
+
+  Nor can one be synthesised. :interface requires :file, :start-line and
+  :end-line, all of them required properties, because a graph answer is only
+  actionable if the agent can open the region the fact came from. A fabricated
+  generic for x.bar() has no such region, and giving it the location of its
+  first method would put a false location in front of anyone who ran `find'.
+
+  This is not a future problem. The repository that motivated this work has 184
+  distinct method names against 158 defgeneric forms, so at least 26 generics
+  are implicit -- created by defmethod alone, with no declaration site. Those
+  are the JavaScript case, in Lisp, today. Fanning out handles them and the
+  declared ones identically; routing through a hub would need a synthesised
+  entity for a quarter of them, or would resolve precisely or vaguely depending
+  on whether someone happened to write a defgeneric, which is a style choice
+  and should not change what impact reports.
+
+  So the generic remains a real :interface entity with its own location, its
+  own :implements edges, and a place in `find' and `describe'. It is a declared
+  contract worth indexing. It is not where calls terminate.
+
+  AN EXCEPTION TO CON-0001
+
+  CON-0001 records that a name matching several definitions is left unresolved,
+  because a fabricated edge is worse than a recorded miss. Fanning out looks
+  like a violation of that and is not, and the difference is worth writing down
+  so nobody dutifully "fixes" it later.
+
+  That rule is about ambiguity of identity: two files define run, one of them is
+  the one the caller meant, and the other is noise. Asserting both would state
+  something false. Dispatch is not that. Every method on obj-decode really is
+  reachable through a call to obj-decode; which one runs depends on values not
+  present in the source. The edge set is a union of genuine possibilities, not
+  a guess among mutually exclusive candidates.
+
+  What the two cases share is that the uncertainty must be visible. Ambiguous
+  names stay in :unresolved-calls where status can report them. Dispatched
+  calls become edges carrying :inferred and a confidence, so a consumer
+  filtering on confidence drops them and impact can show them as possibly
+  affected rather than certain. Neither case is allowed to look like a fact
+  that was actually established.
+
+  CROSS-FILE NAMES FOLLOW DEC-0003
+
+  A superclass, a specializer and a generic can all be defined in another file,
+  and the analyzer is file-scoped and stateless, so it cannot resolve any of
+  them. Each is recorded as a stable property that the analyzer writes and
+  never rewrites -- :superclass-names, :specializer-names, :generic-function --
+  and a resolution pass derives the edges from those properties on every pass.
+
+  This is DEC-0003 applied to three more name kinds, and it is not optional.
+  A resolution pass that consumed :specializer-names would lose every
+  method-to-class edge the first time the class's file was retracted, which is
+  precisely the failure that decision records.
+
+  SLOT ACCESSORS
+
+  A defclass slot with :reader, :writer or :accessor defines a generic function
+  that appears nowhere else in the source. These are how a large fraction of a
+  CLOS codebase is actually called, and they are the reason DEC-0002's
+  reference to id-derived-p does not resolve today. They become :interface
+  entities located at the slot's line, named by the accessor, with an edge to
+  the class whose slot declares them.
+
+  WHAT LOOM SAYS THE IMPACT IS
+
+  Loom was asked about this change against its own source, and the most useful
+  thing it reported was that it cannot see most of it.
+
+  Every entry point this work would rewrite comes back with a blast radius of
+  one file:
+
+    impact read-forms-with-spans   1 impacted: its own file
+    impact definition-p            1 impacted: its own file
+    impact make-function-entity    1 impacted: its own file
+    impact collect-call-names      1 impacted: its own file
+
+  None of those has a single recorded caller, and all of them are called. Their
+  only caller is the analyze-file defmethod, which is not in the index, so the
+  edges do not exist. `describe' on the analyzer file lists eleven contained
+  functions and no method at all. The index under-reports the cost of this
+  change for exactly the reason the change exists, which is the clearest
+  statement available of what the gap costs: the impact command is answering
+  confidently and wrongly, and nothing in the answer says so.
+
+  Where the index can see, it is informative. The resolution passes are the
+  expensive half:
+
+    impact resolve-calls           8 impacted, reaching resolve-and-check,
+                                   index-repository, poll-once, monitor-loop,
+                                   reindex-repository, watch-repository
+    impact callable-index          6 impacted, the same pipeline one hop later
+    impact analyze-path            9 impacted, same
+
+  So adding resolution for superclass and specializer names is not a local
+  edit. It lands in the sequence resolve-and-check runs, which every indexing
+  path and the monitor thread go through. Both impact reports attach DEC-0003
+  as a governing decision, which is correct: those new passes are the ones
+  that must derive rather than consume.
+
+  The weight of the work is therefore in the graph layer rather than the
+  ontology. Nothing above requires a new entity type, a new relationship type,
+  or a changed impact direction: :class, :interface and :method already exist
+  with the right natural keys, and :implements, :uses and :calls already permit
+  the endpoints and carry the impact directions this needs. What changes is the
+  analyzer, which learns three forms, and resolution, which learns three more
+  kinds of name.
+
+  On volume, Loom's own source carries 14 defclass, 6 defgeneric, 31 defmethod
+  and 5 define-condition against 225 defun, plus 33 slot accessors, so
+  self-analysis should gain roughly 90 entities and rather more edges. The
+  ratio is far gentler than the repository that motivated this -- Loom is
+  mostly plain functions -- which means Loom's own index is a poor test of the
+  work. The 137-file CLOS-heavy repository is the one that exercises it.
+
+  REQUIREMENTS
+
+  Numbered so the implementation can be checked against them, and so the ones
+  deferred are deferred on the record rather than forgotten.
+
+  Definitions
+
+    R1  defclass becomes a :class; slot names become :slots; the superclass
+        list becomes :inherits edges resolved from a stable :superclass-names
+        property. define-condition is the same shape.
+    R2  defgeneric becomes an :interface. A generic with no defgeneric form is
+        not synthesised; its methods simply carry no :implements edge.
+    R3  defmethod becomes a :method, keyed by (:file :name :qualifier
+        :specializers), with :implements to its generic when one is declared
+        and :uses to each specialised parameter's class.
+    R4  A dispatched call fans out to every candidate method as an :inferred
+        edge carrying a confidence and :derived-from naming the generic.
+
+  Generated names
+
+    R5  defstruct becomes a :class, with its slots as :slots.
+    R6  Every name a defstruct generates becomes an entity: the accessor per
+        slot, the constructor, the predicate, and the copier. They are
+        :function entities, not :interface -- unlike a defclass :accessor,
+        which is a generic function and becomes an :interface, a defstruct
+        accessor really is a plain function.
+    R7  The defstruct options that rename those must be honoured: :conc-name
+        including :conc-name nil, :constructor in both the plain and BOA forms
+        (:constructor make-file-stamp (write-date content-hash)), :predicate
+        and :copier. Guessing the default names would be wrong for eleven of
+        Loom's sixteen structures.
+    R8  A generated entity is located at the slot or form that generates it and
+        is marked as generated, so `find repository-graph' answers with a real
+        region and an agent can tell a written definition from a derived one.
+
+    R5 through R8 were nearly deferred on the grounds that the repository that
+    motivated this work contains no defstruct at all. Loom does: sixteen
+    structures, thirteen conc-names, and 332 call sites naming an accessor, a
+    constructor, a predicate or a copier -- 70 on repository- alone. Every one
+    of those is a call to something no defun defines, so today it resolves to
+    nothing and sits in :unresolved-calls looking like an external dependency.
+    Self-analysis is the acceptance test for this work, and without defstruct
+    the acceptance test is measuring a graph with a hole in the middle of it.
+
+  Macros
+
+    R9  defmacro becomes a :function entity so that it can be found and
+        documented. What a :calls edge into a macro means is not settled here.
+    R10 Calls made inside a macro body are not attributed to anything today,
+        because the analyzer walks top-level forms and a (test foo ...) form is
+        not a defun. The consequence is larger than it sounds: the :test entity
+        type and the :tests relationship exist in the ontology and are never
+        populated, so impact never reports which tests cover a change. Closing
+        this needs a registry of definition-shaped macro forms -- fiveam's test
+        and def-suite to begin with -- in the spirit of the docs/ directory
+        registry rather than a special case in the walk.
+    R11 `describe apply-transaction' reporting a single caller is expected to
+        be a symptom of R10 and R6 together. It is recorded as an acceptance
+        check rather than a diagnosis: re-run it afterwards and see.
+
+  Retired and untouched
+
+    R12 The TODO on APPLY-TRANSACTION -- cross-file edges lost when a file is
+        reanalyzed -- is answered by the workspace pipeline ordering and by
+        DEC-0003, and the comment in transaction.lisp should be updated to say
+        so rather than left describing a state that no longer holds.
+
+    Recorded and out of scope: NIL overloaded as both "no value" and boolean
+    false (root-ontology.lisp); closures and captured variables for the
+    JS/TS analyzers (code-ontology.lisp); queries scoped across several
+    watched workspaces with an `in:' delimiter.

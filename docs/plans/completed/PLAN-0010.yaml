@@ -1,0 +1,1137 @@
+id: PLAN-0010
+title: Sequence DES-0011 -- an isolated per-language inspector, a graph-aware merge, and an explicit enrich verb, in twelve steps that never let a blind assert reach the graph
+status: final
+date: 2026-08-07
+refines: [DES-0011]
+affects: [absorb-properties, absorb-relationship, absorb-provenance, absorb-entity,
+          apply-transaction, assert-edge, entity-natural-key, facts-from-file,
+          index-origin, resolve-and-check, index-repository, poll-once,
+          repository-status, register-analyzer, find-analyzer, analyzer-handles-p,
+          read-forms-with-spans, workspace-relative-path, provenanced, source,
+          confidence,
+          enrich-ops, enrich-repository, enriched-edge, union-sources,
+          designator-key, implemented-interface-p, resolve-calls,
+          generated-definition-plan, discover-units, write-driver-script,
+          read-inspection-file, register-inspector, find-inspectors]
+tags: [analyzer, graph, workspace, introspection, provenance, isolation, plan]
+summary: |
+  Twelve steps implementing DES-0011 R1 through R12, across loom-ontology,
+  loom-graph, loom-analyzer, loom-workspace and loom-process. The order is
+  forced by one hazard stated in DES-0011 and re-verified here: ABSORB-
+  PROPERTIES replaces a matched entity's property table wholesale, so an
+  image-pass assert landing on a text-pass natural key erases :call-names and,
+  with it, the 50 :TESTS edges and 58 inbound :CALLS edges APPLY-TRANSACTION
+  carries today. Nothing in this plan may spawn a child process until the merge
+  that protects those facts exists and is tested. So: the ontology vocabulary
+  widens first (step 1, the only step whose predecessor is nothing), ENRICH-OPS
+  is built and proven against hand-written facts with no subprocess anywhere
+  (steps 2 and 3), the inspector registry and the child driver are built and
+  run standalone with nothing consuming them (steps 4, 5, 6), the bounds are
+  proven to fire rather than merely configured (step 7), and only at step 9
+  does anything write image facts into a real repository index. Two corrections
+  to DES-0011 are carried, both mechanical: the inspection must cross into
+  loom-graph as a plist and not as a loom-analyzer struct, because loom-graph
+  depends on loom-ontology alone; and ASSERT-EDGE has no properties parameter,
+  so the :sources union needs a constructor of its own in enrich.lisp. Out of
+  scope, deliberately: BUG-0011, BUG-0012 and BUG-0013 (the user's order is
+  REQ-0018 first), exposing enrich as a loom-serve operation, automatic re-run
+  policy, and any change to how describe or impact render confidence.
+body: |
+  FILES
+
+  Created:
+
+    src/analyzer/inspector.lisp
+        The INSPECTOR protocol and registry: INSPECTOR, INSPECTOR-AVAILABLE-P,
+        INSPECT-REPOSITORY, *INSPECTORS*, REGISTER-INSPECTOR, FIND-INSPECTORS,
+        and the plist accessors for an inspection. Mirrors analyzer.lisp's
+        shape deliberately (step 4).
+
+    src/analyzer/lisp-inspector.lisp
+        LISP-INSPECTOR: unit discovery, the generated child driver, the
+        subprocess call with its bounds, the result-file reader, the compound
+        method-caller parse, and the line-range recovery (steps 5, 6, 7, 8).
+        The only file in the tree that knows what SBCL is.
+
+    src/graph/enrich.lisp
+        ENRICH-OPS and its helpers, beside resolve.lisp (steps 2, 3).
+
+    src/analyzer/test/inspector.lisp
+        Registry tests, driver-script tests, subprocess tests, bound tests,
+        span-recovery tests (steps 4-8).
+
+    src/graph/test/enrich.lisp
+        The R5 protection tests and the key-equality fixture (steps 2, 3).
+
+    src/analyzer/test/fixtures/inspect/
+        Four tiny ASDF systems used only by the child, never by Loom's own
+        registry: fixture-ok (loads clean; a DEFUN calling a DEFUN, a
+        DEFGENERIC with an inline method, a DEFMACRO generating an accessor),
+        fixture-boom (signals an ERROR at load), fixture-hang (a top-level
+        (loop) that never returns), fixture-hog (allocates past any sane heap
+        cap). Each is one .asd plus one .lisp (steps 5-7).
+
+  Changed:
+
+    src/ontology/root-ontology.lisp
+        One line: the SOURCE slot's :type gains :introspected (step 1).
+
+    src/ontology/test/root-ontology.lisp
+        Vocabulary tests (step 1).
+
+    src/analyzer/loom-analyzer.asd
+        Two components added; :depends-on gains #:uiop (steps 4, 5).
+
+    src/analyzer/package.lisp
+        The six inspector names exported (step 4).
+
+    src/graph/loom-graph.asd, src/graph/package.lisp
+        enrich.lisp added; ENRICH-OPS exported (step 2).
+
+    src/graph/test/loom-graph.asd component list
+        (inside loom-graph.asd) gains "enrich" (step 2).
+
+    src/workspace/workspace.lisp, src/workspace/package.lisp
+        ENRICH-REPOSITORY, the repository's ENRICHMENT slot, four new scalar
+        keys on REPOSITORY-STATUS (step 9).
+
+    src/workspace/test/workspace.lisp
+        The orchestration tests and the POLL-ONCE negative test (steps 9, 10).
+
+    src/process/console.lisp
+        The `enrich [repo]` command and its help row; PRINT-STATUS gains one
+        enrichment line (step 10).
+
+    src/process/test/console.lisp
+        The verb's test (step 10).
+
+    CLAUDE.md, .claude/skills/loom/SKILL.md, .claude/agents/tools.md
+        The enrich verb and the one-line statement that enrichment is
+        optional, on demand, and self-aging (step 12, DES-0011 R12).
+
+    docs/design/DES-0011.yaml, docs/requirements/REQ-0018.yaml,
+    docs/plans/PLAN-0010.yaml
+        Statuses restated (step 12, RULE-0005).
+
+  Not changed, and worth saying so: no file under src/knowledge/, src/serve/,
+  src/rest/ or src/mcp/. `find`, `describe`, `impact` and `context` read
+  entities and edges without caring which pass produced them, and the four
+  scalars step 9 adds to REPOSITORY-STATUS reach REST and MCP through
+  loom-serve's existing status operation without either system being edited.
+  loom-process's console.lisp is edited (the verb), which is expected: it is
+  the command surface, and DES-0006 R5's "console.lisp unedited" constraint
+  was about loom-serve's construction, not about adding a console command.
+
+  BLAST RADIUS
+
+  What Loom says. `impact apply-transaction 2` returns 108 entities
+  (truncated), and the useful part is the first tier: eight function callers --
+  DETECT-DELETIONS, RESOLVE-AND-CHECK, INDEX-FILE, RF-POPULATE,
+  LITERAL-ENTITY, DOCS-ENTITY, ANALYZE-SOURCE, ANALYZE-FIXTURE -- plus fifty
+  :TEST entities. `impact resolve-and-check 2` returns 15: INDEX-REPOSITORY
+  and POLL-ONCE directly, then WATCH-REPOSITORY, REINDEX-REPOSITORY and
+  MONITOR-LOOP. Those two sets are the whole of what step 9 touches on the
+  write path.
+
+  Measured baseline, taken today (2026-08-07) with `tools/loom.sh 'describe
+  apply-transaction'` and `status`, and the numbers this plan is graded on:
+
+    Loom index        147 files, 1377 entities, 6354 relationships
+    documents         65
+    tests             379 tests covering 250 units
+    rules             32 violations, 2 unenforced
+    unresolved        0 document references, 1 definer macro
+    apply-transaction 50 inbound :TESTS edges, 58 inbound :CALLS edges
+                      (the 50 :TEST entities plus the 8 functions above)
+
+  The 50 and the 58 are counted, not estimated: the `<- tests:` list in
+  `describe apply-transaction` has exactly 50 names, and `<- calls:` has those
+  same 50 plus the 8 functions. REQ-0018's "roughly 50" and the task's "~51"
+  both mean this set. Step 11's R7 guard is that both numbers are unchanged
+  after `enrich` and that the 58 edges keep their ids.
+
+  Where Loom is blind here, stated as blindness and not as a clean bill:
+
+  - Calls inside a macro body are unattributed (DES-0001), so every `test`
+    and `def-suite` form under-reports. That is the reason the 50 :TESTS edges
+    exist in Loom and cannot exist in xref, which is not a defect in this
+    context -- it is the fact R5 protects.
+  - `check` reports 32 rule violations today. PLAN-0009 recorded them as 32
+    RULE-0003 lines with no RULE-0002 line; BUG-0009 (open) says every one is
+    a false positive. Compare the shape, not only the total. Nothing in this
+    plan can legitimately move it, and RULE-0001 stays at zero because no .asd
+    gains a dependency on anything above it.
+  - No rule and no impact query covers the loom-serve / loom-rest / loom-mcp /
+    loom-process boundary. This plan reaches it in exactly one place -- the
+    four scalars added to REPOSITORY-STATUS, which loom-serve's status
+    operation serializes to REST and MCP callers -- and that reach is read off
+    src/serve/operations.lisp:152 by hand, not reported by any tool. Step 9
+    runs the loom-rest and loom-mcp suites for that reason.
+  - Loom cannot see a subprocess at all. Nothing in the index will ever record
+    that lisp-inspector.lisp drives /usr/bin/sbcl, so the child protocol's two
+    halves -- the generator in the parent and the code it generates -- are
+    coupled by a string with no edge between them. Step 5 makes the generated
+    script's shape a tested artifact for that reason.
+
+  Read off the .asd files rather than from `check`, per DES-0011's own
+  instruction: loom-analyzer depends on loom-ontology and cl-yaml, and gains
+  only #:uiop, which ships with ASDF and adds no system; loom-graph depends on
+  loom-ontology and bordeaux-threads and gains nothing; loom-workspace already
+  depends on all three; loom-process already depends on loom-workspace. The
+  layering table is unchanged.
+
+  TWO CORRECTIONS TO DES-0011, BOTH MECHANICAL
+
+  C-1  The inspection cannot cross into loom-graph as a loom-analyzer struct.
+       DES-0011 says INSPECT-REPOSITORY returns "an INSPECTION: plain data",
+       and ENRICH-OPS in loom-graph consumes it -- but loom-graph.asd depends
+       on loom-ontology and bordeaux-threads only, so it cannot name a
+       loom-analyzer accessor. This is the same wall RESOLVE-GENERATED-
+       DEFINITIONS hit with *MACRO-GENERATORS*, and it takes the same answer:
+       the thing that crosses is plain data handed across by loom-workspace,
+       the first system that uses both packages. Concretely, the in-memory
+       shape IS the wire shape -- the (:loom-inspection 1 :language ... :units
+       ... :definitions ... :calls ...) plist of DES-0011's CHILD PROTOCOL,
+       read with GETF on both sides. loom-analyzer may define accessor
+       functions over it for its own convenience; loom-graph uses GETF and
+       names nothing from loom-analyzer.
+
+  C-2  ASSERT-EDGE takes no properties. DES-0011 R6 requires a confirmed edge
+       to carry :sources, and ontology-ops.lisp:91's ASSERT-EDGE has no
+       parameter for it. Rather than widen a constructor every analyzer calls,
+       enrich.lisp defines ENRICHED-EDGE: the same MAKE-INSTANCE 'RELATIONSHIP
+       plus :properties (properties-table (list :sources ...)), wrapped in
+       ASSERT-RELATIONSHIP. Relationship properties are schema-free, so no
+       declaration is needed. ENRICHED-EDGE must compute ORIGIN-FILE exactly as
+       ASSERT-EDGE does -- (origin-file from), the caller entity's own origin
+       file -- and never from the child's :caller-file string. See R-3.
+
+  RISKS
+
+  R-1  A blind assert erases the text pass. The single failure this plan is
+       shaped around. ABSORB-PROPERTIES (src/graph/transaction.lisp:119)
+       CLRHASHes the target's table before copying, and ABSORB-PROVENANCE
+       overwrites all five provenance slots, so one ASSERT-ENTITY onto an
+       existing natural key silently drops :call-names, :specializers,
+       :unresolved-calls and everything else the text pass wrote -- and
+       :call-names is RESOLVE-CALLS' only input, so the next resolution pass
+       rebuilds nothing and the 50 :TESTS edges never come back. Mitigation is
+       structural, not procedural: ENRICH-OPS looks every definition up by
+       natural key first and emits ASSERT-ENTITY only on a miss (step 2), and
+       no step before step 9 lets any op reach a repository graph at all.
+       Step 2's verification includes making the guard fail on demand.
+
+  R-2  The natural key computed from image facts does not match the text
+       pass's. :FUNCTION keys on (:file :name); :METHOD keys on (:file :name
+       :qualifier :specializers) -- read off code-ontology.lisp:149 and 265.
+       Every component is a rendering: :file is the workspace-relative,
+       forward-slashed path WORKSPACE-RELATIVE-PATH produces; :name is
+       DEFINITION-NAME's downcased string, with (setf foo) rendered as
+       "(setf foo)"; :specializers are SPECIALIZER-NAME's strings, with an EQL
+       specializer rendered "(eql :svg)" and an unspecialized parameter "t".
+       Any drift makes the image pass mint a duplicate entity beside the text
+       one instead of confirming it -- which looks like success (entities
+       went up) and is a silent doubling. Step 3's key-equality fixture is the
+       guard, and CON-0003 applies to it: it must fail if either side's
+       rendering moves.
+
+  R-3  A confirmed edge changes its origin-file and the origin index goes
+       stale. INDEX-ORIGIN is called from ADD-ENTITY (graph-manager.lisp:135)
+       and ADD-RELATIONSHIP (line 200) and from nowhere else -- an absorb
+       overwrites ORIGIN-FILE without touching the index. So if ENRICH-OPS
+       asserts a confirmed :CALLS edge with a different origin-file than the
+       text pass gave it, the edge's provenance says one file and the index
+       that RETRACT-FILE consults says another, and the edge stops aging out
+       when its caller is edited. This is a pre-existing latent defect in
+       absorb, not one this plan introduces, and the plan's job is not to
+       trigger it: ENRICHED-EDGE takes origin-file from the resolved caller
+       entity, identically to ASSERT-EDGE, so a confirmed edge's origin-file is
+       equal by construction. Step 3 asserts that equality directly rather
+       than trusting it. If a later plan wants absorb to maintain the origin
+       index, this paragraph is the case for it.
+
+  R-4  The self-aging claim is unverified until someone verifies it.
+       DES-0011 asserts that image facts with honest origin-files are aged out
+       by existing RETRACT-FILE machinery with zero new staleness code. Read
+       against the code the claim holds: RETRACT-FILE-OP calls FACTS-FROM-FILE,
+       which reads GRAPH-ORIGIN-INDEX keyed by the origin-file string, and
+       REMOVE-ENTITY drops inbound edges with the entity -- so an :introspected
+       accessor entity minted at src/ontology/root-ontology.lisp vanishes when
+       that file is re-analyzed, and comes back only at the next enrich. Two
+       consequences the claim does not state and a reader will need: the
+       aging-out is keyed on string equality of the path, so the relative-path
+       rendering of R-2 is load-bearing here too (an absolute path would never
+       match, and the fact would never age out -- it would become the permanent
+       lie CON-0001 forbids); and an :introspected edge into a retracted entity
+       is destroyed with it and is not rebuilt by RESOLVE-CALLS, because
+       RESOLVE-CALLS derives from :call-names and the image pass writes none.
+       Between enrich runs the index therefore degrades toward the text index,
+       which is exactly what DES-0011 promises. Step 8 tests both halves. The
+       claim holds; it deserves the test precisely because nothing else in the
+       system guarantees "degrades rather than lies".
+
+  R-5  Partial failure that reports nothing looks like a clean tree. A pass
+       whose child dies on unit one and returns an empty facts document
+       produces zero new entities, zero drops, and no error -- indistinguishable
+       from a tree the image agrees with completely. Mitigation: unit statuses
+       are the primary output, not the facts; ENRICH-REPOSITORY's report
+       distinguishes "no inspector for this language" (R2's recorded absence)
+       from "inspector present, unit attempted, unit failed" from "unit
+       loaded"; and `enrich` prints per-unit status lines unconditionally,
+       zero included, on the DES-0002 R10 precedent that a count which
+       vanishes when it is nought cannot be told from a count nobody computes.
+       Step 7 tests the failure path before step 9 tests the success path on a
+       real tree.
+
+  R-6  The child's per-unit HANDLER-CASE guards the wrong condition type. This
+       is RULE-0004 with a measured instance. Probed today under /usr/bin/sbcl:
+       a MAKE-ARRAY beyond --dynamic-space-size inside
+       (handler-case ... (error (c) ...)) is NOT caught -- the child prints the
+       heap-exhaustion table and dies with "unhandled condition in
+       --disable-debugger mode", exit 1 -- while the same form inside
+       (handler-case ... (storage-condition (c) ...)) catches
+       HEAP-EXHAUSTED-ERROR, prints, and the child continues to the next form,
+       exit 0. The child's per-unit guard must therefore be SERIOUS-CONDITION
+       (or STORAGE-CONDITION and ERROR listed separately), never ERROR alone.
+       Step 6 writes it that way and step 7 proves it with fixture-hog.
+
+  R-7  The unit set changes the acceptance numbers, and REQ-0018 R8 does not
+       say which set it means. REQ-0018 measured WHO-CALLS APPLY-TRANSACTION as
+       3 callers with only :loom-process loaded and 8 with the test systems
+       also loaded; the extra five -- RF-POPULATE, DOCS-ENTITY, ANALYZE-SOURCE,
+       ANALYZE-FIXTURE, LITERAL-ENTITY -- are DEFUNs in test files. So "the
+       image confirms 8 of the 58 inbound :CALLS edges" is true only when the
+       test systems are units. This plan makes the unit set an explicit knob
+       (DES-0011 defers the default to the plan): primary systems only by
+       default, test systems included by a keyword. Step 11 states which
+       setting each measurement was taken under. What does not vary either way:
+       58 inbound :CALLS edges and 50 inbound :TESTS edges, before and after.
+
+  R-8  Isolation breaks a target that needs the network. `unshare --user --net`
+       was probed end-to-end today, not merely for exit status: game-server's
+       UTILS system loads inside `unshare --user --net /usr/bin/sbcl --script`
+       both with a warm fasl cache and with a cold one (ASDF_OUTPUT_TRANSLATIONS
+       pointed at an empty directory, so every file was compiled fresh inside
+       the namespace). So the wrapper does not break compilation or cache
+       writes here. What it does break is a target whose dependencies are not
+       yet installed: quicklisp cannot download inside --net, and the failure
+       arrives as a unit load failure rather than as anything self-describing.
+       The wrapper is therefore a slot on the inspector with a probe behind it,
+       and a unit that fails under isolation is worth retrying once without it
+       only if a later plan decides so -- this one does not.
+
+  R-9  Suite runtime grows. Steps 5 through 8 add tests that spawn child SBCLs;
+       fixture-hang deliberately burns its whole timeout. Keep the test timeout
+       parameter bound to 2-3 seconds in tests (the probe measured `timeout 2`
+       killing a hung SBCL at exactly 2.00s, exit 124) and keep fixture systems
+       to one file each. Expect tools/loom-test.sh to grow by roughly 15-30
+       seconds, and say so in step 8's completion note so a later slowdown has
+       a baseline to be compared against.
+
+  R-10 Tests likely to break, and why:
+         Any test asserting an exact key set on REPOSITORY-STATUS -- step 9
+           adds four keys. src/workspace/test/workspace.lisp:133 and :424 read
+           status with GETF, which is additive-safe; src/rest/test/
+           concurrency.lisp:103 does the same. Verify rather than assume.
+         The loom-rest and loom-mcp suites -- they serialize whatever
+           REPOSITORY-STATUS returns. Four scalars are safe; a nested plist
+           may not be, which is why step 9 forbids one.
+         Every test that counts entities over Loom's own tree -- steps 1
+           through 12 add source files, so totals move for reasons unrelated to
+           enrichment. The attributable measurement in step 11 is the count of
+           entities carrying :source :introspected, which is zero before the
+           first enrich by construction.
+         src/analyzer/test/analyzer.lisp registry tests -- step 4 adds a second
+           registry beside *ANALYZERS*. Nothing shared, but the file is edited.
+
+  STEPS
+
+  Step 1 is the first that can be run, and it is deliberately trivial: it is
+  the only step with no predecessor, and everything from step 2 on asserts
+  :source :introspected on an object whose slot type would otherwise refuse it.
+
+  1. WIDEN THE PROVENANCE VOCABULARY.
+
+     Files: src/ontology/root-ontology.lisp, src/ontology/test/
+     root-ontology.lisp.
+
+     One production line. The SOURCE slot at root-ontology.lisp:39 becomes
+
+       :type (member :structural :inferred :human-validated :introspected)
+
+     and gains a docstring naming the four members and what each means: a fact
+     read from text, a fact derived by a resolution pass with fractional
+     confidence, a fact a human asserted, and a fact the language's own
+     toolchain reported. This is the entire ontology cost of REQ-0018 R6 -- no
+     new entity type, no new relationship type, no widened endpoint.
+
+     Tests, in the ontology suite:
+       (a) An ENTITY constructed with :source :introspected has (source e) eq
+           :introspected, and survives ABSORB-PROVENANCE from another entity
+           carrying the same value.
+       (b) A RELATIONSHIP likewise.
+       (c) A value outside the four -- :guessed -- is still refused. Note that
+           SBCL enforces a slot :type at MAKE-INSTANCE under default safety;
+           if it does not in this image, assert through the property or skip
+           (c) with a comment rather than writing a test that passes because
+           nothing is checked. CON-0003 applies: a test that cannot fail is
+           worse than no test.
+
+     Verification: tools/loom-test.sh green. Confirm (a) and (b) fail without
+     the production line -- revert it, run the ontology suite, observe a type
+     error, restore. That falsification is the step's real verification;
+     "the suite is green" is not, since it was green before.
+
+  2. ENRICH-OPS, DEFINITIONS ONLY, WITH THE NEVER-ASSERT-EXISTING RULE.
+
+     Files: src/graph/enrich.lisp (new), src/graph/loom-graph.asd,
+     src/graph/package.lisp, src/graph/test/enrich.lisp (new).
+
+     No subprocess exists yet and none is needed: ENRICH-OPS takes a graph and
+     a facts plist and returns ops.
+
+       (defun enrich-ops (graph inspection &key workspace-id)
+         "=> (values ops report)")
+
+     INSPECTION is the plist of DES-0011's CHILD PROTOCOL, per C-1 above.
+     ENRICH-OPS reads it with GETF and names nothing from loom-analyzer.
+
+     This step handles :definitions only; :calls is step 3.
+
+     Mechanism:
+       - For each definition, compute its natural key with the ontology's own
+         machinery: build the properties the text pass would have written
+         (:file, :name, :qualifier, :specializers as applicable) and look the
+         key up with FIND-ENTITY-BY-KEY. Read the key components off
+         ENTITY-TYPE-NATURAL-KEY rather than hard-coding (:file :name), exactly
+         as GENERATED-NATURAL-KEY at resolve.lisp:227 does and for the same
+         reason.
+       - Key present: emit nothing. Record the id in the report's confirmed
+         set, for step 3's endpoint lookups. This is the R5 protection and it
+         is the whole reason this pass is graph-aware.
+       - Key absent: emit ASSERT-ENTITY with :source :introspected,
+         :confidence 1.0, :origin-file = the definition's workspace-relative
+         file, and properties including :file, :start-line, :end-line,
+         :language :lisp, :system (from DEFAULT-SYSTEM-FOR-PATH's convention --
+         pass the value in on the plist rather than reaching for the analyzer),
+         plus :qualifier and :specializers for a method. Filter to declared
+         properties, as DECLARED-PROPERTIES-ONLY does at resolve.lisp:286.
+       - A definition with no :start-line is dropped and counted in the
+         report under :dropped-no-location. :START-LINE is :required on every
+         code entity type, so there is no honest partial assert (CON-0001).
+       - A definition whose :file is absent or does not look workspace-relative
+         is dropped and counted under :dropped-not-under-root.
+
+     The report is a plist of counts and lists: :confirmed, :added, :dropped-*
+     and (step 3) :edges-confirmed, :edges-added, :edges-dropped.
+
+     Tests (src/graph/test/enrich.lisp):
+       (a) THE R5 GUARD, and the most important test in the plan. Analyze a
+           two-file literal source through the lisp analyzer, apply to a
+           graph, run RESOLVE-CALLS so :CALLS edges and :call-names exist.
+           Record, for every entity, its id and its full property table, and
+           for every edge its id, endpoints and source. Then run ENRICH-OPS
+           with a facts document naming exactly those same definitions, apply
+           the ops, and assert: every entity id unchanged, every property
+           table EQUAL to what it was, every edge still present with the same
+           id, and (length ops) is zero. The last assertion is the sharp one --
+           an inspection that names only definitions the graph already has
+           must produce no operations at all.
+       (b) The falsification of (a), run once by hand and recorded in the
+           step's completion note: temporarily delete the FIND-ENTITY-BY-KEY
+           check so every definition is asserted, re-run (a), and confirm it
+           goes red on the property table -- :call-names gone. Restore. A
+           guard nobody has seen fail is a guard over its own output.
+       (c) A definition the graph does not hold becomes exactly one
+           ASSERT-ENTITY with :source :introspected and the given range.
+       (d) A definition with no location is dropped and the report counts it;
+           no entity appears.
+       (e) Applying the same inspection twice produces the same graph -- the
+           second run emits zero ops, because the first run's entities are now
+           present. Idempotence, cheaply.
+
+     Verification: tools/loom-test.sh green, with (a) through (e) in the graph
+     suite. (b) executed and its failure text recorded. `check` unchanged at
+     32 violations -- loom-graph gains no dependency, so RULE-0001 stays at
+     zero.
+
+  3. ENRICH-OPS, CALL EDGES, THE :SOURCES UNION, AND THE KEY-EQUALITY FIXTURE.
+
+     Files: src/graph/enrich.lisp, src/graph/test/enrich.lisp.
+
+     For each call fact, resolve both endpoints -- to an entity already in the
+     graph, or to one this same transaction asserts (the tx remap handles the
+     ordering, so an op referring to an entity asserted earlier in the same op
+     list is sound). Both resolve: emit the edge. Either does not: drop and
+     count under :edges-dropped, per CON-0001.
+
+     ENRICHED-EDGE, per C-2:
+
+       (defun enriched-edge (from to sources &key workspace-id)
+         ;; ORIGIN-FILE is (origin-file from), identically to ASSERT-EDGE.
+         ...)
+
+     building a RELATIONSHIP with :rel-type :calls, :source :introspected,
+     :confidence 1.0, :derived-from (list (id to)), and :properties
+     (properties-table (list :sources sources)).
+
+     SOURCES is the stable union: the existing edge's :sources property when
+     it has one, else a one-element list of the existing edge's SOURCE slot,
+     with :introspected added if absent, sorted into a fixed order so the
+     value is stable across runs. When no edge exists, it is (:introspected).
+     Stability is what makes re-running enrich a no-op rather than a churn.
+
+     Tests:
+       (a) A call fact between two entities the text pass already linked
+           produces an edge with the SAME id (natural key is type plus
+           endpoints), :sources (:structural :introspected), and -- asserted
+           explicitly -- the same ORIGIN-FILE the text edge had. That last
+           assertion is R-3's guard: write it as (is (equal old-origin
+           (origin-file new))) against the value read before the merge, not
+           against a literal.
+       (b) A call fact between two entities the text pass did NOT link
+           produces a new edge with :sources (:introspected) and source
+           :introspected. This is the BUG-0011-shaped case: xref records
+           #'f under funcall, mapcar and apply, one caller each, so the
+           image sees calls the text pass never recorded. Predict it here,
+           measure it in step 11.
+       (c) Running (a) twice leaves :sources equal to itself -- the union is
+           stable and the second run emits an op that absorbs onto an
+           identical value.
+       (d) A call fact with an unresolvable endpoint emits nothing and
+           increments :edges-dropped.
+       (e) THE KEY-EQUALITY FIXTURE (DES-0011 R5, REQ-0018 R8's comparison
+           seam). One source string containing a DEFUN, a DEFMETHOD with a
+           qualifier, a DEFMETHOD with an EQL specializer, and a DEFGENERIC
+           with an inline (:method ...) clause. Run the text pass over it and
+           collect each entity's natural key. Hand-write the facts document
+           the inspector would produce for the same definitions -- same file
+           string, same rendered name, qualifier and specializers -- and
+           compute each key through ENRICH-OPS' own key function. Assert the
+           two key sets are EQUAL as sets. Per CON-0003 this must fail if
+           either rendering drifts: verify by changing one expected specializer
+           from "hop" to "HOP" in the fixture's facts document and observing
+           the test go red, then restoring. Record that observation.
+
+     Verification: tools/loom-test.sh green. Step 2's (a) still passes -- the
+     R5 guard must survive the arrival of edges, which is the case where a
+     careless union would rewrite text edges.
+
+  4. THE INSPECTOR PROTOCOL AND REGISTRY. NO TOOLCHAIN YET.
+
+     Files: src/analyzer/inspector.lisp (new), src/analyzer/package.lisp,
+     src/analyzer/loom-analyzer.asd, src/analyzer/test/inspector.lisp (new).
+
+     Mirror analyzer.lisp deliberately -- a reader who knows one should not
+     have to learn the other:
+
+       (defclass inspector () ((language :initarg :language
+                                         :reader inspector-language)))
+       (defgeneric inspector-available-p (inspector root)
+         ;; => (values generalized-boolean reason-string)
+         )
+       (defgeneric inspect-repository (inspector root &key)
+         ;; => the inspection plist
+         )
+       (defvar *inspectors* '())
+       (defun register-inspector (inspector) ...)   ; replace-by-class, as
+                                                    ; REGISTER-ANALYZER does
+       (defun find-inspectors (language) ...)       ; every inspector for a
+                                                    ; language, most recent
+                                                    ; first
+
+     Plus GETF wrappers -- INSPECTION-UNITS, INSPECTION-DEFINITIONS,
+     INSPECTION-CALLS -- which exist for loom-analyzer's own readability and
+     which loom-graph deliberately does not use (C-1).
+
+     INSPECTOR-AVAILABLE-P returns two values and never signals. R2 is
+     explicit that an absent toolchain is a recorded absence: the reason
+     string is what ENRICH-REPOSITORY reports, so it must name what was
+     missing ("no sbcl on PATH", "no .asd files under root"), not merely say
+     no.
+
+     Export the six names. Add both components to loom-analyzer.asd (the
+     lisp-inspector file arrives in step 5; add it there, not here) and add
+     #:uiop to :depends-on with a comment that it ships with ASDF and adds no
+     system, so a reader does not read it as a new dependency.
+
+     Tests, using a stub inspector defined in the test file:
+       (a) REGISTER-INSPECTOR twice with the same class leaves one entry.
+       (b) FIND-INSPECTORS returns only inspectors for the language asked.
+       (c) An inspector whose INSPECTOR-AVAILABLE-P returns NIL returns a
+           non-empty reason string as its second value.
+       (d) No method on any inspector generic names a loom-graph symbol --
+           asserted structurally by (null (find-package "LOOM-GRAPH")) being
+           irrelevant here, so instead assert it the honest way: this is what
+           loom-analyzer.asd's :depends-on enforces, and the test comment says
+           so rather than pretending a runtime assertion proves it.
+
+     Verification: tools/loom-test.sh green, nine systems. `check` unchanged.
+
+  5. THE CHILD DRIVER, GENERATED AND RUN BY HAND.
+
+     Files: src/analyzer/lisp-inspector.lisp (new), src/analyzer/
+     loom-analyzer.asd, src/analyzer/test/fixtures/inspect/**,
+     src/analyzer/test/inspector.lisp.
+
+     Nothing in Loom spawns anything in this step. The deliverable is a
+     function that WRITES a driver script, plus four fixture systems, plus a
+     test that runs the generated script with sbcl --script by hand and
+     asserts on the result file. That ordering is the point: the child is
+     debuggable on its own before any parent depends on its output.
+
+     LISP-INSPECTOR slots, all with defaults and all overridable so a test can
+     bind them small: TIMEOUT-SECONDS (default 300), HEAP-MB (default 4096),
+     ISOLATE-P (default: the probe's answer), INCLUDE-TEST-UNITS (default NIL,
+     per R-7).
+
+     DISCOVER-UNITS (root): the system names to load, in dependency order.
+     Take the stem of each .asd file under the root, excluding dot-directories
+     the way REPOSITORY-FILES does, and excluding names matching a test
+     pattern unless INCLUDE-TEST-UNITS. Measured shape to satisfy: game-server
+     has seven .asd files -- utils, mpackage, data-api, game, media,
+     game-server and test/game-integ-test -- and REQ-0018's six units are that
+     set minus the last. Order: let ASDF resolve dependencies (loading utils
+     first is not required for correctness, only for tidier per-unit status),
+     so "dependency order" here means "the order given", and a unit whose
+     dependency has not loaded is simply attempted and may pull it in.
+
+     WRITE-DRIVER-SCRIPT: emits a self-contained Lisp file taking root,
+     result-file and unit names from sb-ext:*posix-argv*. Its body, in order:
+       - The registry preamble the loom skill documents: (require :asdf), load
+         quicklisp/setup.lisp, and pushnew every directory under ROOT that
+         contains a .asd into asdf:*central-registry*.
+       - For each unit, in order: (handler-case (asdf:load-system unit)
+         (serious-condition (c) ...)), then append one
+         (:unit "name" :status :loaded) or (:unit "name" :status :failed
+         :phase :load :error "<princ-to-string of the condition>") form to the
+         result file, opening it :append and calling FINISH-OUTPUT before
+         moving on. SERIOUS-CONDITION and not ERROR -- see R-6, which measured
+         both.
+       - Then introspect once and append the facts document.
+       - Never write protocol on stdout. Compile chatter owns stdout; the
+         parent captures it for the log and parses none of it.
+
+     Introspection, per REQ-0018's measured limits:
+       - Walk every package's symbols. For each, query
+         SB-INTROSPECT:FIND-DEFINITION-SOURCES-BY-NAME once per kind
+         (:function, :generic-function, :method, :macro, :class, :structure,
+         :condition, :variable) rather than once per name -- REQ-0018 measured
+         that :function returns zero sources for a generic function.
+       - Keep a definition only when its source pathname truename is under
+         ROOT. That single filter is what drops dependency systems' symbols
+         and makes package ownership irrelevant.
+       - Emit :file as the path relative to ROOT, forward-slashed. This is the
+         same rendering WORKSPACE-RELATIVE-PATH produces and R-2 and R-4 both
+         depend on it; the child does it because only the child knows the
+         absolute path.
+       - For each kept definition that is callable, SB-INTROSPECT:WHO-CALLS its
+           name and emit one :calls entry per caller whose own source file is
+           under ROOT. Callers outside the root are dropped and counted.
+       - Every name crosses as a downcased string with its package name as a
+         separate string. No symbol from target code is ever interned into a
+         Loom package -- that is R3 and it is enforced here, in the child's
+         printing, not in the parent's reading.
+       - Method caller keys: SBCL returns a compound key, measured as
+         (FAST-METHOD G (INTEGER)). Parse it here into
+         (:method "g" nil ("integer")) -- generic name, qualifiers, downcased
+         specializer strings. REQ-0018 R8 makes this an inspector obligation
+         and DES-0011 confines SBCL's spelling to this file; nothing outside
+         lisp-inspector.lisp may ever see the word FAST-METHOD.
+
+     Fixtures under src/analyzer/test/fixtures/inspect/: fixture-ok (a DEFUN
+     calling another DEFUN, a DEFGENERIC with an inline method, and a DEFMACRO
+     whose expansion defines a function the text pass cannot see -- the
+     DEFENTITY-accessor case in miniature), fixture-boom, fixture-hang,
+     fixture-hog. Each is one .asd and one .lisp. Note for the coder: these
+     .lisp files are indexed by Loom's own text pass like any other file in
+     the tree, which is harmless, and their .asd files are not claimed by any
+     analyzer. They must NOT be added to asdf:*central-registry* by anything
+     in Loom's own build.
+
+     Tests, all invoking the generated script directly with uiop:run-program:
+       (a) Generate the driver for fixture-ok, run it, read the result file:
+           one (:unit ... :status :loaded) form, then a facts document whose
+           :definitions include the DEFUN, the inline method, and the
+           macro-generated function, each with a file, and whose :calls include
+           the DEFUN-to-DEFUN edge.
+       (b) The macro-generated function is present. This is the acceptance in
+           miniature for DES-0011 R10's DEFENTITY case and it is cheap here.
+       (c) The compound method key is parsed: assert a caller designator of the
+           form (:method "..." nil ("...")) appears, and assert the string
+           "FAST-METHOD" appears nowhere in the parsed output.
+       (d) Everything under :definitions has a :file that is relative --
+           assert no entry's :file begins with "/" -- which is R-2 and R-4's
+           precondition tested at its source.
+       (e) A definition from a dependency system (CL-USER, SB-KERNEL, whatever
+           the fixture pulls in) does not appear.
+
+     Verification: tools/loom-test.sh green. Every test in this step fails
+     without the step, because the generator does not exist; confirm the
+     failure is an undefined-function error rather than a silent skip.
+
+  6. THE PARENT SIDE: SPAWN, BOUND, READ. SUCCESS PATH ONLY.
+
+     Files: src/analyzer/lisp-inspector.lisp, src/analyzer/test/inspector.lisp.
+
+     INSPECT-REPOSITORY on a LISP-INSPECTOR: write the driver to a temporary
+     file, name a result file, run
+
+       [unshare --user --net] timeout <TIMEOUT-SECONDS>
+         /usr/bin/sbcl --dynamic-space-size <HEAP-MB> --script <driver>
+         <root> <result-file> <unit>...
+
+     through uiop:run-program with :ignore-error-status t, capturing stdout and
+     stderr as strings for the log. Then read the result file:
+
+       - Bind *READ-EVAL* to NIL and *PACKAGE* to a fresh throwaway package,
+         exactly as READ-FORMS-WITH-SPANS does, deleting it in an
+         UNWIND-PROTECT.
+       - READ forms one at a time in a loop, stopping on END-OF-FILE and
+         keeping what was read. A truncated trailing form is expected, not
+         exceptional: the child appends and flushes per unit precisely so a
+         crash leaves a well-formed prefix.
+       - Assemble the inspection plist: the union of unit statuses, the union
+         of definitions and calls.
+
+     INSPECTOR-AVAILABLE-P: probe (a) /usr/bin/sbcl exists and is executable,
+     (b) DISCOVER-UNITS returns at least one unit. Each failure gets its own
+     reason string.
+
+     The isolation probe, run once and cached in a special variable: run
+     `unshare --user --net /bin/true` and believe the exit status. Measured
+     today: it succeeds unprivileged on this machine, and a real system loads
+     inside it with both a warm and a cold fasl cache. Cache the probe rather
+     than paying it per run; a special variable, so a test can bind it.
+
+     Tests:
+       (a) INSPECT-REPOSITORY on fixture-ok returns an inspection with one
+           :loaded unit and the definitions step 5 asserted, now via the
+           parent rather than by hand.
+       (b) The reader is safe: hand the parent a result file containing
+           #.(error "boom") and assert it does not evaluate -- the read
+           signals and is handled, and no side effect occurs. *READ-EVAL* nil
+           is R3's concrete content and this is the test of it.
+       (c) A truncated result file -- the last form cut mid-list -- yields
+           every complete form before it and no condition escaping.
+       (d) INSPECTOR-AVAILABLE-P on an empty directory returns NIL and a
+           reason string naming the absence of units.
+
+     Verification: tools/loom-test.sh green. Record the wall-clock cost of (a)
+     so step 9's numbers have a baseline.
+
+  7. THE BOUNDS FIRE, AND FAILURE IS PARTIAL. THE FAILURE PATH, TESTED.
+
+     Files: src/analyzer/lisp-inspector.lisp, src/analyzer/test/inspector.lisp.
+
+     Add the re-spawn logic. After a child exits, compare the units passed
+     against the statuses recovered. If some unit has no status, the child died
+     in flight: the first such unit in the passed order is the in-flight one.
+     Record it :failed with :phase :load and an error string naming the exit
+     code (124 means the timeout fired -- measured), then re-spawn for the
+     remaining units with that one excluded. Cap the number of re-spawns at the
+     number of units so termination is guaranteed rather than hoped for, and
+     record a status for anything still unaccounted for at the cap.
+
+     Each child writes its own facts document; the parent unions across
+     children, deduplicating definitions on (kind, name, package, file) and
+     calls on (caller, callee, caller-file). Say why in a comment: a re-spawned
+     child's xref is scoped to the units IT loaded, so the union is the whole
+     answer and no single child holds it.
+
+     Tests, and this is where R7 stops being configuration and becomes a
+     measurement:
+       (a) SOFT FAILURE. Units (fixture-ok fixture-boom), one child. Assert
+           fixture-boom's status is :failed with a non-empty :error string,
+           fixture-ok's is :loaded, and fixture-ok's definitions are present.
+           One unit's failure is that unit's gap (REQ-0018 R4).
+       (b) THE TIMEOUT FIRES. Units (fixture-hang fixture-ok) in that order,
+           with TIMEOUT-SECONDS bound to 3. Assert: the whole call returns in
+           well under a minute; fixture-hang is :failed with an error string
+           naming exit 124; fixture-ok is :loaded and its definitions are
+           present -- which is only possible through the re-spawn, since the
+           first child never reached it. This is the step's headline assertion:
+           a hard kill costs one unit, not the pass.
+       (c) THE HEAP CAP FIRES. Units (fixture-hog fixture-ok) with HEAP-MB
+           bound to 96. Assert fixture-hog is :failed with an error naming a
+           heap exhaustion, fixture-ok is :loaded, and -- the part that proves
+           R-6 -- that this happened in ONE child, not through a re-spawn,
+           because the child's SERIOUS-CONDITION handler caught
+           HEAP-EXHAUSTED-ERROR and continued. Distinguish the two by counting
+           spawns (a counter on the inspector, or the number of result files);
+           if the count is 2, the handler guarded ERROR and R-6's measurement
+           was ignored.
+       (d) ISOLATION IS A KNOB. With ISOLATE-P bound to NIL, (a) still passes.
+           With it T on this machine, (a) still passes. Both directions, so a
+           machine where unshare misbehaves fails visibly here rather than
+           mysteriously in step 11.
+       (e) A pass in which EVERY unit fails returns an inspection with statuses
+           and empty :definitions -- and the report distinguishes it from a
+           tree with nothing to say. R-5's failure mode, tested rather than
+           described.
+
+     Verification: tools/loom-test.sh green. (b) and (c) both observed to take
+     their bound and no more. Record the observed elapsed times.
+
+  8. LINE RANGES, RECOVERED OR REFUSED.
+
+     Files: src/analyzer/lisp-inspector.lisp, src/analyzer/test/inspector.lisp.
+
+     The child reports :file and :form-path; a Loom entity needs :start-line
+     and :end-line, and :START-LINE is :required. The parent maps them: read
+     the file's text, call READ-FORMS-WITH-SPANS, and take the span of the form
+     at the leading index of :form-path. For a DEFENTITY-generated accessor
+     that yields the DEFENTITY call site's own range -- a wider truth in
+     DES-0010's sense, and correct: it is where an agent should be sent.
+
+     A definition whose location cannot be recovered -- file unreadable,
+     form-path out of range, the file changed since the child read it -- is
+     DROPPED and counted, never given a fabricated range. CON-0001, and it is
+     also why ENRICH-OPS in step 2 drops a definition with no :start-line
+     independently: two refusals, because the fabricated range is the failure
+     that would be hardest to notice.
+
+     Tests:
+       (a) A definition in fixture-ok gets the real span of its defining form,
+           asserted against the fixture's known line numbers.
+       (b) The macro-generated function gets the DEFMACRO call site's range,
+           not the DEFMACRO's -- or, where the child reports the macro's own
+           file, whatever the form-path actually names. Assert what is true of
+           the fixture rather than what would be tidy, and write the observed
+           behaviour into the test's comment.
+       (c) A form-path past the end of the file's forms yields no definition
+           and increments the drop count.
+       (d) THE SELF-AGING PROPERTY (R-4, DES-0011's staleness claim). This
+           test belongs here because it needs real ranges and nothing above.
+           Build a repository over a temp fixture tree, index it with the text
+           pass, apply an inspection that mints one :introspected entity in
+           file A and one :introspected edge from file B into it. Then apply
+           RETRACT-FILE for A and assert: the entity is gone, the inbound edge
+           is gone with it, and no code outside transaction.lisp ran to make
+           that happen. Then assert the second half, which is the honest half:
+           re-running the text pass alone does NOT bring either back, so the
+           index has degraded to today's text index rather than kept a stale
+           claim. This is the test DES-0011's "degrades toward today's index,
+           never lies" deserves and nothing else guarantees.
+
+     Verification: tools/loom-test.sh green. Note the suite's new total runtime
+     against the pre-step-5 baseline (R-9).
+
+  9. ENRICH-REPOSITORY: THE FIRST TIME ANYTHING WRITES IMAGE FACTS.
+
+     Files: src/workspace/workspace.lisp, src/workspace/package.lisp,
+     src/workspace/test/workspace.lisp.
+
+       (defun enrich-repository (repository &key quiet inspectors) ...)
+
+     Order, and every arrow is a dependency rather than a preference, exactly
+     as RESOLVE-AND-CHECK's docstring says of its own sequence:
+
+       find inspectors for the languages present
+       -> INSPECTOR-AVAILABLE-P each, recording absences with their reasons
+       -> INSPECT-REPOSITORY each
+       -> ENRICH-OPS (graph, inspection)
+       -> APPLY-TRANSACTION
+       -> RESOLVE-AND-CHECK
+
+     RESOLVE-AND-CHECK last and not first: an image-minted definition is
+     exactly what an unresolved text call name has been waiting for, so a text
+     call to a DEFENTITY accessor becomes a :structural edge in the same run
+     the accessor appears. That is where the two passes compose, and running it
+     first would defer every such edge to the next poll.
+
+     Wrap the body in WITH-REPOSITORY-LOCK, for the reason INDEX-REPOSITORY
+     wraps its own (DES-0004 R3): this writes to the graph and reads
+     REPOSITORY-STAMPS-adjacent state, and a poll running concurrently would
+     interleave two writers.
+
+     Handle conditions the way INDEX-FILE does -- NOTE-ERROR and continue, per
+     SS3.3. An inspector that signals must not take the console down.
+
+     The repository struct gains one slot, ENRICHMENT, holding the report
+     plist: per-unit statuses, absences with reasons, drop counts, edge
+     confirm/add counts, duration, and a run counter. In memory only -- it is
+     derivable by re-running, so DEC-0001 does not ask for a file.
+
+     REPOSITORY-STATUS gains four SCALAR keys and no nested structure:
+     :enrichment-runs, :enriched-units, :enrichment-gaps, :enrichment-at. The
+     scalar constraint is not style: this plist is serialized to JSON by
+     loom-serve's status operation (src/serve/operations.lisp:152) for REST and
+     MCP callers, no rule covers that boundary, and a nested plist is the shape
+     most likely to serialize into something a client cannot read.
+
+     Tests:
+       (a) On a fixture repository with a stub inspector returning a fixed
+           inspection, ENRICH-REPOSITORY adds the expected entity and edge,
+           and the text pass's facts are untouched (the step 2 (a) guard,
+           re-run one layer up).
+       (b) A language with no inspector produces an absence with a reason in
+           the report, no error, and an index identical to before. REQ-0018 R2.
+       (c) A previously unresolved text call name resolves in the same run --
+           assert an entity's :unresolved-calls shrinks and the corresponding
+           :CALLS edge appears. This is the compose property and it fails if
+           RESOLVE-AND-CHECK is called before ENRICH-OPS rather than after.
+       (d) REPOSITORY-STATUS's four new keys are present and are numbers or
+           NIL, never a list.
+
+     Verification: tools/loom-test.sh green -- all nine systems, and check the
+     loom-rest and loom-mcp rows specifically, since they serialize the status
+     plist and no tool reports that dependency (see BLAST RADIUS).
+
+  10. THE CONSOLE VERB, AND THE PROOF THAT NOTHING ELSE CALLS IT.
+
+     Files: src/process/console.lisp, src/process/test/console.lisp,
+     src/workspace/test/workspace.lisp.
+
+       (define-command enrich (&optional designator)
+           "enrich [<name>]"
+           "Ask each language's toolchain to enrich the index. On demand only."
+         ...)
+
+     Output: per-unit status lines, absences with their reasons, entities
+     added, edges confirmed and added, drops, and elapsed time. Print the zeros
+     -- DES-0002 R10's precedent, and R-5's mitigation.
+
+     PRINT-STATUS gains one line reporting the enrichment scalars, printed only
+     when a run has happened, with a bare "enrichment : never run" otherwise so
+     the absence is legible.
+
+     Nothing in POLL-ONCE, MONITOR-LOOP, WATCH-REPOSITORY, INDEX-REPOSITORY or
+     REINDEX-REPOSITORY calls ENRICH-REPOSITORY. That is R9, and DES-0008 is
+     the precedent: work that runs code outside the current image's control
+     happens in a fresh process when someone asks. BUG-0008 is the trap -- a
+     heavyweight lifecycle operation wired into a path that runs on a timer.
+
+     The negative test, written so it can fail (CON-0003 -- "no introspected
+     entity appeared after a poll" would pass on a tree where enrichment does
+     nothing, which proves nothing):
+
+       (a) Watch a fixture repository with a stub inspector registered. Assert
+           the report's run counter is 0. Touch a file and run POLL-ONCE.
+           Assert the counter is STILL 0 and the file was in fact reanalyzed
+           (so the poll did do its own work). Then call ENRICH-REPOSITORY
+           explicitly and assert the counter is 1. The third assertion is what
+           makes the second meaningful: it shows the counter can move and that
+           the poll chose not to move it.
+       (b) The console command runs on the current repository and prints unit
+           lines; a repository name that does not exist errors with the message
+           CURRENT-REPOSITORY already produces.
+
+     Verification: tools/loom-test.sh green. `tools/loom.sh 'help'` lists
+     enrich with its usage line -- the help table is generated from
+     DEFINE-COMMAND, so a missing row means the command was not declared.
+
+  11. ACCEPTANCE ON LOOM, MEASURED.
+
+     No file changes. Run and record.
+
+     Session:
+
+       tools/loom.sh 'status | describe apply-transaction'
+
+     first, to re-record the pre-enrich baseline on the tree AS IT NOW STANDS
+     (steps 1-10 added files, so entity totals have moved for reasons unrelated
+     to enrichment; the two numbers that must not have moved are the 50 and the
+     58). Then enrich and re-measure:
+
+       tools/loom.sh 'enrich | status | describe apply-transaction'
+
+     What must be true (DES-0011 R10, REQ-0018 R8):
+
+       - R7's GUARD, the single most important number in the plan:
+         apply-transaction still has exactly 50 inbound :TESTS edges and
+         exactly 58 inbound :CALLS edges, and the 58 have the same ids. Not
+         "about the same" -- the same. If :CALLS grew, the merge minted a
+         duplicate caller entity (R-2); if :TESTS shrank, absorb erased
+         something (R-1).
+       - DEFENTITY-generated accessors in LOOM-ONTOLOGY exist as :FUNCTION
+         entities with :source :introspected at the DEFENTITY call sites' real
+         ranges. Name one concretely in the completion note and reach it with
+         `find` and `describe`. REQ-0018 measured LOOM-ONTOLOGY as having 249
+         fbound symbols against a text pass that indexes none of the generated
+         ones; the delta is the measurement.
+       - ANALYZER-HANDLES-P's inline and standalone methods map onto the two
+         :METHOD entities DES-0010's text pass already mints, with ZERO new
+         method entities created for them. Check by counting :METHOD entities
+         with :source :introspected named analyzer-handles-p: it must be 0.
+       - Every unit reports :loaded, or a named gap with a reason.
+       - State which unit set was used (R-7). With primary systems only, the
+         image confirms 3 of the 58; with test systems included, 8. Record
+         which, and record the confirmed count.
+       - Predict and then measure the BUG-0011 side effect: edges that exist
+         only because xref sees through #'f, mapcar and apply. Count edges with
+         :source :introspected and no :structural in their :sources. Do not fix
+         BUG-0011 -- but note in the completion note that BUG-0011's own
+         measurement obligation must now filter on :source or measure on an
+         unenriched index, or its before/after delta is confounded. That is
+         DES-0011's warning and this is the run that makes it concrete.
+       - `status` shows unresolved document references still 0, and the
+         definer-macro count unchanged at 1.
+       - `check` still reports 32 violations, all RULE-0003 lines, zero
+         RULE-0001.
+
+     Then the aging check, by hand, because it is the property nothing else
+     guarantees: touch src/ontology/root-ontology.lisp, let the monitor poll,
+     and confirm the introspected accessors from that file are gone from
+     `find` while the text pass's entities for it are back. Re-run enrich and
+     confirm they return. Record both observations.
+
+     Verification: everything above, recorded with numbers rather than
+     adjectives.
+
+  12. ACCEPTANCE ON GAME-SERVER, DOCUMENTATION, AND STATUSES.
+
+     Files: CLAUDE.md, .claude/skills/loom/SKILL.md, .claude/agents/tools.md,
+     docs/design/DES-0011.yaml, docs/requirements/REQ-0018.yaml,
+     docs/plans/PLAN-0010.yaml.
+
+     First, game-server (DES-0011 R11). find, describe and impact take no
+     repository argument and refuse while two repositories are watched, so:
+
+       tools/loom.sh 'watch "~/lisp/game-server" | unwatch Loom | enrich | find cascade-delete'
+
+     and afterwards, to leave the tree as it was found:
+
+       tools/loom.sh 'watch "~/lisp/Loom" | unwatch game-server'
+
+     What must be true:
+       - All six primary units report :loaded -- utils, mpackage, data-api,
+         game, media, game-server. The seventh .asd, test/game-integ-test, is
+         excluded by default (R-7); if INCLUDE-TEST-UNITS is set, it is a
+         seventh unit and its status is recorded either way.
+       - CASCADE-DELETE's true definition set comes from the image, settling
+         the DEFGENERIC-versus-:accessor question the name-based index cannot
+         represent. Report what the image says, against what the text index
+         says, as two lists.
+       - The comparison summary is reported with real counts -- edges
+         confirmed, image-only added, text-only within loaded scope --
+         replacing REQ-0018's and REQ-0012's estimates.
+       - Record the wall-clock duration of the whole pass. It is the number a
+         future decision about automatic re-runs will need, and nobody has it.
+
+     Then documentation (DES-0011 R12): CLAUDE.md's command list and the loom
+     skill's console table gain the `enrich [repo]` row; .claude/agents/
+     tools.md gains it in its command table. All three gain one sentence:
+     enrichment is optional, runs on explicit demand only, and ages itself out
+     through RETRACT-FILE, so an un-rerun pass gives today's text answer rather
+     than yesterday's image answer. Do not restate the mechanism in three
+     places -- one line each, pointing at DES-0011.
+
+     Then statuses (RULE-0005, CON-0004's vocabulary):
+       - DES-0011: draft -> implemented, if R1 through R12 all landed; ->
+         partial with an OUTSTANDING section naming exactly what did not,
+         otherwise. Whichever is true.
+       - REQ-0018: draft -> implemented or partial on the same test. Its R8
+         acceptance should be amended in place with the unit-set clarification
+         from R-7 -- the "8 callers" figure is true of a unit set that includes
+         the test systems and the document does not currently say so.
+       - PLAN-0010: draft -> final, with its affects: list updated to the
+         symbols that now exist (enrich-ops, inspect-repository,
+         enrich-repository and the rest), since they resolve only after the
+         code lands.
+       - BUG-0011, BUG-0012, BUG-0013: untouched. Add one line to BUG-0011's
+         own record noting that its measurement must now filter on :source --
+         a note, not a fix, and only if BUG-0011's document does not already
+         say so.
+
+     Verification: tools/loom.sh 'status | check' -- document count risen by
+     nothing (no new documents) and unresolved document references still 0
+     after the affects: update. `describe DES-0011` shows the new status.
+
+  VERIFICATION
+
+  The plan is finished when all of the following hold at once:
+
+    tools/loom-test.sh          nine systems green, including the new
+                                inspector tests in loom-analyzer and the new
+                                enrich tests in loom-graph. Runtime up by
+                                roughly 15-30s over the pre-step-5 baseline;
+                                a much larger jump means a bound is not
+                                firing.
+    tools/loom.sh 'check'       32 violations, all RULE-0003, zero RULE-0001,
+                                unchanged from today. Compare the shape, not
+                                only the total.
+    tools/loom.sh 'status'      0 unresolved document references; 1 definer
+                                macro, unchanged.
+    describe apply-transaction  50 inbound :TESTS edges and 58 inbound :CALLS
+                                edges, before AND after enrich, with the 58
+                                keeping their ids. This is REQ-0018 R5 and
+                                DES-0011 R7 and it is the number that matters
+                                most.
+    enrich on Loom              every unit :loaded or a named gap;
+                                DEFENTITY-generated accessors present as
+                                :source :introspected :FUNCTION entities at
+                                real ranges; zero new :METHOD entities for
+                                analyzer-handles-p.
+    enrich twice on Loom        the second run changes no entity id, no edge
+                                id, and no :sources value. Idempotence on the
+                                real tree, not only in a fixture.
+    the aging check             editing a file removes its introspected facts
+                                and re-running enrich restores them.
+    enrich on game-server       six units :loaded; CASCADE-DELETE's image
+                                definition set reported; comparison counts
+                                recorded; duration recorded.
+    layering                    loom-analyzer.asd depends on loom-ontology,
+                                cl-yaml and uiop; loom-graph.asd on
+                                loom-ontology and bordeaux-threads. Read the
+                                files -- `check` cannot referee this.
+    docs                        DES-0011 and REQ-0018 restated, PLAN-0010
+                                final, the enrich verb in CLAUDE.md, the loom
+                                skill and tools.md.
+
+  The number that must move, if only one is checked: the count of entities
+  carrying :source :introspected on Loom's own index, 0 before the first
+  enrich and non-zero after. It cannot be non-zero for any reason other than
+  the image pass having run. The number that must NOT move, if only one is
+  checked: 50 inbound :TESTS edges on APPLY-TRANSACTION.
+
+  COMPLETION
+
+  Steps 1 through 11 landed. Step 12 landed its documentation and status
+  halves and not its game-server half; the numbers below are Loom's own tree,
+  2026-08-08, /usr/bin/sbcl, primary unit set (INCLUDE-TEST-UNITS NIL).
+
+    nine units             all :loaded, no absences
+    one enrich             46s cold, 147 files
+    entities minted        476 with :source :introspected, 0 before
+    call facts             763 confirmed, 220 added, 79 dropped
+    :SOURCES breakdown     768 edges (:structural :introspected)
+                           215 edges (:introspected) -- the BUG-0011-shaped set
+                           2295 (:structural) and 541 (:inferred) untouched
+    R7's guard             APPLY-TRANSACTION 66 inbound :TESTS and 77 inbound
+                           :CALLS, identical before, after, and after a second
+                           enrich. The plan's baseline said 50 and 58; the tree
+                           gained test files during implementation, and what the
+                           guard asserts is the equality rather than the value.
+    idempotence            a second enrich changed no count above
+    suite                  nine systems green
+    check                  32 violations, all RULE-0003, zero RULE-0001
+
+  768 confirmed rather than the 763 the report counts, because RESOLVE-AND-CHECK
+  runs between the two merges: an image-minted definition resolves a text call
+  name, five more :structural edges come into existence, and the second merge
+  confirms those too. That gap is the compose property R8 asks for, arriving as
+  a number.
+
+  Three things this plan asked for are not done, and each is recorded where a
+  reader will meet it rather than only here. game-server's acceptance -- step
+  12's first half, DES-0011 R11 -- has not been run, so the comparison counts
+  that were to replace REQ-0012's estimates are still estimates. DES-0011 R6's
+  agreement record survives the pass but not the next poll that finds a changed
+  file, which is BUG-0015 and stays open, narrowed. And the comparison summary
+  R8 names has no text-only column, so the enrichment report counts what the
+  image confirmed and added but not what it failed to confirm.
+
+  Five defects found by review after step 11 and fixed before this note: the
+  BUG-0015 erasure above; call facts into generics with methods being minted as
+  edges, against DES-0001 and the :calls declaration; SCRATCH-PATHNAME's names
+  not being unique between processes, since SBCL's initial *RANDOM-STATE* is
+  fixed at image start; DESIGNATOR-KEY collapsing a function onto a same-named
+  variable, so the call silently became a drop count; and ENRICH-REPOSITORY's
+  CONDITION guard treating a warning from an inspector as a fatal absence. Two
+  smaller ones with them: unit discovery testing path components of the
+  absolute path, so a repository rooted under any directory named `test' had
+  every unit excluded and was reported as having no systems; and
+  GENERATED-DEFINITION-PLAN reading an :introspected entity as a hand-written
+  claim on a natural key, which would have stopped DES-0002's minting for good
+  after the first enrich.

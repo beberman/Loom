@@ -1,0 +1,170 @@
+id: BUG-0010
+title: After DES-0009 no test connects an analyzer-written :system to a rule check, because both end-to-end fixtures name systems their own files cannot carry
+status: closed
+date: 2026-08-06
+refines: [PLAN-0008]
+affects: [make-fixture-repository, the-pipeline-runs-the-rule-checks,
+          a-rule-violation-is-detected-and-recorded, make-operations-fixture-repository,
+          entity-system, analyze-file]
+summary: |
+  DES-0009 moved system identity across a seam: the analyzer writes :system,
+  the workspace pipeline carries it into the graph, and ENTITY-SYSTEM reads it
+  back for the :no-edge checks. Every half of that seam is unit-tested, but
+  after PLAN-0008 step 7 nothing in the nine suites tests the whole of it. The
+  two fixtures that used to reach from an analyzed file to a rule check --
+  loom-workspace's and loom-serve's -- now each carry a rule whose
+  from-system: names a system no file in that fixture can ever be classified
+  into, so both rules match nothing by construction. The only evidence that a
+  real IN-PACKAGE reaches CHECK-RULES through INDEX-REPOSITORY is the console's
+  own violation count, which no assertion reads. A regression that dropped
+  :system anywhere in the pipeline would leave the suite 9/9 green and `check`
+  reporting "No violations." -- the vacuous success BUG-0006 existed to close,
+  reachable again by a third route.
+body: |
+  SYMPTOM
+
+  Observed: `tools/loom-test.sh` reports 9/9 green and
+  `tools/loom.sh 'reindex | check'` reports 32 violations, all RULE-0003 --
+  exactly PLAN-0008's prediction. Expected, additionally: that some assertion
+  in the suite would fail if the analyzer's :system value stopped arriving at
+  the rule engine. None would.
+
+  Concretely, two tests that read as end-to-end no longer are:
+
+  src/workspace/test/workspace.lisp:109, THE-PIPELINE-RUNS-THE-RULE-CHECKS,
+  asserts the fixture tree produces no :RULE-VIOLATION entities. The fixture's
+  rule (line 58) now reads `from-system: kernel`. The fixture writes
+  src/alpha.lisp and src/beta.lisp, neither of which declares a package, so
+  under DES-0009 R4 they fall through to DEFAULT-SYSTEM-FOR-PATH, which
+  answers NIL for a path with no segment after "src/". No entity in that
+  repository carries :KERNEL, so the rule cannot fire whatever the pipeline
+  does. The test now passes against a CHECK-RULES stubbed to return NIL.
+
+  src/workspace/test/workspace.lisp:469,
+  A-RULE-VIOLATION-IS-DETECTED-AND-RECORDED, previously took the real analyzed
+  ALPHA entity as the violating caller. It now manufactures both endpoints with
+  MAKE-INSTANCE and stamps :system on each by hand. It is a good test of
+  VIOLATION-OPS and of ENTITY-SYSTEM; it is no longer a test of anything the
+  analyzer or the indexing pipeline does.
+
+  src/serve/test/operations.lisp:60 has the same shape from the other side: its
+  fixture rule still says `from-system: src`, which was correct under the
+  pre-BUG-0006 leading-segment convention and classifies nothing now. Its file
+  is src/code.lisp -- again no package, again NIL.
+
+  CAUSE
+
+  DES-0009 replaced a derived value with an asserted one, and the assertion
+  crosses four systems: LOOM-ANALYZER writes :system, LOOM-ONTOLOGY must have
+  declared it or PROPERTIES-TABLE/DECLARED-PROPERTIES-ONLY drops it,
+  LOOM-GRAPH's transaction must carry it through an upsert, and LOOM-GRAPH's
+  rule engine must compare it against a keyword compiled out of YAML by
+  LOOM-ANALYZER's AS-KEYWORD. PLAN-0008 tested each hop in the suite that owns
+  it -- correctly, and thoroughly -- and left the composition to step 8's
+  console measurement.
+
+  That was a reasonable division while the change was in flight. It is not a
+  durable one: step 8's measurement is a number a human reads once, not an
+  assertion that runs again. The fixtures that could have carried the
+  composition were the ones the change had to edit, and both were edited toward
+  "make the test compile and pass" rather than "keep the fixture's rule naming
+  a system the fixture's own files land in". src/alpha.lisp needed one line --
+  (in-package :kernel) -- and got none, because manufacturing the entities was
+  the shorter path to green.
+
+  WHY IT HID
+
+  Because the suite went green and the console printed the predicted number, in
+  the same session. Both halves of the acceptance criteria were satisfied, so
+  neither pointed at the gap between them. The specific trap is that a
+  :no-edge rule whose from-system: matches no entity is indistinguishable, in
+  every observable output, from a :no-edge rule that matches entities and finds
+  no violation: both report zero, and both leave a NULL-asserting test green.
+  That is the same indistinguishability BUG-0006 turned on -- there
+  ENTITY-SYSTEM answered :SRC for every file so nothing ever matched; here the
+  fixture's rule names :KERNEL and nothing ever matches -- and PLAN-0008's own
+  risk 1 named it precisely, for the production rules. It did not occur to
+  anyone that the fixture rules were the same mechanism at fixture scale.
+
+  CON-0003's test is the one to apply: would this test fail if the thing it is
+  set up to trigger silently did not fire? For both workspace tests the answer
+  is no, and for the same reason.
+
+  FIX
+
+  Give the loom-workspace fixture a file whose package the rule names, and put
+  the real analyzed entity back on the violating end:
+
+    - src/workspace/test/workspace.lisp:34 -- write src/alpha.lisp with
+      "(in-package :kernel)" as its first form. The IN-PACKAGE clause added to
+      ANALYZE-FILE's pass-1 dispatch mints no entity, so
+      WATCHING-A-REPOSITORY-INDEXES-SOURCE-AND-DOCUMENTS-TOGETHER's count of 3
+      :FUNCTION entities and STATUS-REPORTS-WHAT-A-DEVELOPER-NEEDS-TO-SEE's
+      count of 4 files both stay true.
+    - A-RULE-VIOLATION-IS-DETECTED-AND-RECORDED then takes ALPHA back as the
+      caller, manufacturing only the docs-side target, and becomes a test that
+      the analyzer's :system survives INDEX-REPOSITORY and matches a rule
+      compiled from YAML.
+    - THE-PIPELINE-RUNS-THE-RULE-CHECKS regains its teeth for free: the rule
+      matches real entities again, so "clean" means checked-and-clean rather
+      than never-checked.
+
+  Optionally the same one-line treatment for src/serve/test/operations.lisp's
+  fixture, whose `from-system: src` is dead vocabulary either way.
+
+  A test that asserts the fixture rule matches at least one entity -- i.e. that
+  ENTITIES-IN-SYSTEM of the rule's from-system: is non-empty -- would close the
+  class rather than the instance, and is worth considering wherever a fixture
+  rule is written.
+
+  RESOLUTION
+
+  Fixed in src/workspace/test/workspace.lisp, three edits, all in the FIX
+  above:
+
+  - MAKE-FIXTURE-REPOSITORY writes "(in-package :kernel)" as src/alpha.lisp's
+    first form. ALPHA, ALPHA-TWICE and the src/alpha.lisp :FILE entity now
+    carry :system :KERNEL, which is what the fixture's RULE-0001 has always
+    named. The predicted counts held rather than were assumed: the IN-PACKAGE
+    clause mints no entity, so
+    WATCHING-A-REPOSITORY-INDEXES-SOURCE-AND-DOCUMENTS-TOGETHER still sees 3
+    :FUNCTION entities and STATUS-REPORTS-WHAT-A-DEVELOPER-NEEDS-TO-SEE still
+    sees 4 files, both unedited.
+  - A-RULE-VIOLATION-IS-DETECTED-AND-RECORDED takes the analyzed ALPHA back as
+    the violating caller and manufactures only the docs-side target, because no
+    docs/ file in the fixture defines a callable for the edge to land on. It
+    asserts (eq :kernel (getp caller :system)) before building the edge, so a
+    regression that dropped :system reports the seam that broke rather than
+    only a violation count of 0.
+  - THE-PIPELINE-RUNS-THE-RULE-CHECKS asserts ENTITIES-IN-SYSTEM of :KERNEL is
+    non-empty before asserting the tree is clean -- the class-level guard this
+    document's FIX section proposed. It is also this tree's first caller of
+    ENTITIES-IN-SYSTEM, which PLAN-0008's blast radius noted was exported API
+    with no caller.
+
+  VERIFIED, per CON-0003, by breaking the mechanism rather than by reading the
+  test: MAKE-FUNCTION-ENTITY's `:system system` was temporarily replaced with
+  `:system nil` -- the narrowest simulation of the analyzer's value not
+  reaching the graph -- and the loom-workspace suite went from 56/56 to 53/56,
+  all three failures in A-RULE-VIOLATION-IS-DETECTED-AND-RECORDED: the :KERNEL
+  premise, the violation count 0 against 1, and the cascade from reading a
+  property off the absent violation. Restored, the suite is 56/56 and all nine
+  systems are green under /usr/bin/sbcl.
+
+  One thing that break also measured, worth recording because it bounds the
+  new guard: THE-PIPELINE-RUNS-THE-RULE-CHECKS' ENTITIES-IN-SYSTEM assertion
+  passed throughout it, because the :FILE entity's own :system is written by a
+  separate SETP after ANALYZE-FILE's pass-1 loop and was untouched by the
+  break. That guard catches the defect this document reports -- a fixture rule
+  naming a system nothing lands in -- and does not catch a per-entity stamping
+  regression. The two assertions are complementary, not redundant.
+
+  NOT DONE, deliberately: src/serve/test/operations.lisp's `from-system: src`.
+  The one-line treatment does not make CHECK-REPORTS-THE-SAME-COUNTS-THE-
+  CONSOLE-PRINTS meaningful, because that test compares the operation's
+  violation count against the graph's own -- an identity that holds at 0 = 0
+  and at 1 = 1 alike, and never reads whether the rule fired. Making it read
+  the rule would need the fixture to gain a genuine cross-system call as well
+  as a package, which is a second test rather than a corrected vocabulary. The
+  fixture's rule stays inert, as it was before DES-0009 and after it, and the
+  edit was declined as churn.

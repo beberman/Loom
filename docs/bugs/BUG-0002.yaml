@@ -70,7 +70,7 @@ body: |
   prevented anyone from confirming from the console.
 
   It also hid because the tool was measured on questions it answers well. Every
-  `find` in the sessions that built ARCH-0001 named a specific function and got
+  `find` in the sessions that built DES-0001 named a specific function and got
   it back at position one. A cap at twenty is invisible until someone asks a
   question whose answer is a population rather than a location, and REQ-0003 is
   the first requirement whose acceptance test is a population count.

@@ -65,20 +65,41 @@ re-confirmed."
 ;;;; they all have the same shape: are there edges of these types leaving this
 ;;;; system for that one.
 ;;;;
-;;;; A system is identified by the leading path segment of a fact's file. That
-;;;; is a convention rather than a fact the ontology records, and it is the
-;;;; obvious thing to replace once :REPOSITORY and :PACKAGE entities are
-;;;; actually populated -- at which point this function changes and no caller
-;;;; does, which is the reason it is a named query rather than open-coded in
-;;;; each rule.
+;;;; A system is a fact the analyzer that read the file asserted, not something
+;;;; this layer derives: LOOM-ANALYZER writes :SYSTEM onto the seven code types
+;;;; that already carry :LANGUAGE -- :FILE, :FUNCTION, :VARIABLE, :CLASS,
+;;;; :INTERFACE, :METHOD, :TEST -- and onto :DOCUMENT, from a Lisp file's
+;;;; IN-PACKAGE binding and from DEFAULT-SYSTEM-FOR-PATH's path segment for a
+;;;; language with no such construct, and ENTITY-SYSTEM reads the property
+;;;; back. Not every entity: :RULE, :DECISION and :CONCEPT are given no :SYSTEM
+;;;; property at all and DOCUMENT-PROPERTIES writes them none (DES-0009 R1),
+;;;; so they read as NIL here exactly as they did under the path convention,
+;;;; which declined to place them for want of a :PATH -- a no-op for those
+;;;; three, pinned by A-RULE-DOCUMENT-CARRIES-NO-SYSTEM-AT-ALL. DES-0009 moved
+;;;; it there because the query layer
+;;;; is the one place in the stack that structurally cannot know what a path
+;;;; means in a given language, and a path convention is only ever a guess
+;;;; standing in for the language's own grouping construct.
+;;;;
+;;;; The header this replaces predicted the shape of its own replacement --
+;;;; "this function changes and no caller does" -- and that is what happened,
+;;;; even though :REPOSITORY and :PACKAGE stayed unpopulated: the caller-facing
+;;;; contract was never about where the value came from. EDGES-BETWEEN-SYSTEMS,
+;;;; IN-SYSTEM-P and ENTITIES-IN-SYSTEM are unchanged, keyword-EQ comparison
+;;;; and :OUTSIDE sentinel included.
+;;;;
+;;;; What moved with it is a whole vocabulary. :SYSTEM holds real package names
+;;;; now (:LOOM-GRAPH, :LOOM-ANALYZER-TEST), not path segments (:GRAPH,
+;;;; :ANALYZER), so a rule document's from-system: has to name the package --
+;;;; DES-0009 R8, and the reason RULE-0001 to RULE-0003 were edited in the
+;;;; same commit as this function. The two are the sides of one EQ comparison:
+;;;; changing either alone makes every :no-edge check match nothing and `check`
+;;;; report "No violations.", which is precisely the vacuous success BUG-0006
+;;;; existed to close.
 
 (defun entity-system (entity)
   "The system ENTITY belongs to, as a keyword, or NIL."
-  (let ((file (or (getp entity :file) (getp entity :path))))
-    (when (stringp file)
-      (let ((slash (position #\/ file)))
-        (when slash
-          (intern (string-upcase (subseq file 0 slash)) :keyword))))))
+  (getp entity :system))
 
 (defun in-system-p (view id system)
   (let ((entity (get-entity view id)))
@@ -186,6 +207,12 @@ so agents can rank near impact above distant impact.\""
 
 (defun impact-result-documents (result)
   (cdr (assoc :documents (impact-result-collected result))))
+
+(defun impact-result-mentions (result)
+  "Documents that merely name the seed. Separate from IMPACT-RESULT-DOCUMENTS
+and from IMPACT-RESULT-DECISIONS deliberately: a mention claims that a file
+writes this name, not that it governs what the name refers to. REQ-0014 R5."
+  (cdr (assoc :mentions (impact-result-collected result))))
 
 (defun impact-result-decisions (result)
   (cdr (assoc :decisions (impact-result-collected result))))
@@ -295,7 +322,14 @@ omission."
                           (way   (relationship-type-impact-direction (cdr pair))))
                       (when (case field
                               (:tests include-tests)
-                              (:documents include-docs)
+                              ;; :MENTIONS is gated with :DOCUMENTS rather
+                              ;; than on its own: a caller asking for an
+                              ;; impact set without documentation means
+                              ;; without documentation, and a flag that
+                              ;; suppressed the strong documentation edge
+                              ;; while letting the weak one through would be
+                              ;; the opposite of what it says.
+                              ((:documents :mentions) include-docs)
                               (t t))
                         (dolist (step (impact-step view from (car pair) way))
                           (let ((entity (get-entity view (cdr step))))

@@ -35,6 +35,30 @@ costs the agent a read")
     (setf (stale-p (k-resolve f)) t)
     (is-true (getf (entity-summary (k-resolve f)) :stale))))
 
+(test a-call-sites-summary-carries-the-kind-of-referrer-it-came-from
+  ;; DES-0014 R7: `describe' on a callee must show an incoming call site with
+  ;; its line and kind rather than a bare id. The line is already in :LOCATION;
+  ;; the kind has nowhere else to come from, because a summary is deliberately
+  ;; not the whole property table.
+  (let ((summary (entity-summary
+                  (make-call-site-entity :file "src/workspace/overlay.lisp"
+                                         :start-line 41 :end-line 53
+                                         :call-name "resolve-overlay"
+                                         :referrer-kind :ambiguous
+                                         :candidate-count 2
+                                         :language :lisp :system :workspace))))
+    (is (eq :ambiguous (getf summary :referrer-kind)))
+    (is (string= "src/workspace/overlay.lisp:41-53" (getf summary :location)))))
+
+(test an-ordinary-entity-carries-a-null-kind-rather-than-no-key-at-all
+  ;; The default argument is the whole test. GETF of an absent key already
+  ;; answers NIL, so asserting (null ...) alone would pass just as well before
+  ;; :REFERRER-KIND was added as after -- CON-0003's test that passes for the
+  ;; wrong reason. :ABSENT distinguishes "present and NIL" from "not there".
+  (let ((summary (entity-summary (k-resolve (make-k-fixture)))))
+    (is (null (getf summary :referrer-kind :absent))
+        "every summary carries the key so a consumer can read it unconditionally")))
+
 ;;; ------------------------------------------------------------------
 ;;; search-entities (loom_find)
 ;;; ------------------------------------------------------------------
@@ -57,6 +81,28 @@ costs the agent a read")
 
 (test search-with-no-match-returns-nothing-rather-than-guessing
   (is (null (search-entities (k-graph (make-k-fixture)) :name "leaflet"))))
+
+(test a-call-site-ranks-below-a-real-definition-it-would-otherwise-outrank
+  ;; PLAN-0014 step 10's fallback. "overlay" is a prefix of the call site's
+  ;; label "overlay-cache@...", so MATCH-RANK alone puts it at 1 and above
+  ;; RESET-OVERLAY's substring match at 2 -- which off the silent 20-hit cap is
+  ;; how a real definition disappears from `find'. Ranked, not filtered: the
+  ;; site is still in the answer, last.
+  (let* ((f (make-k-fixture))
+         (site (make-call-site-entity :file "src/workspace/overlay.lisp"
+                                      :start-line 41 :end-line 53
+                                      :call-name "overlay-cache"
+                                      :referrer-kind :definer-call
+                                      :language :lisp :system :workspace)))
+    (add-entity (k-graph f) site)
+    (let ((types (mapcar (lambda (s) (getf s :type))
+                         (search-entities (k-graph f) :name "overlay"))))
+      (is (= 1 (count :call-site types))
+          "ranked below, never filtered out -- an invisible call site is the
+thing this design exists to stop")
+      (is (eq :call-site (car (last types)))
+          "and below every real definition, not merely below the ones it ties
+with"))))
 
 ;;; ------------------------------------------------------------------
 ;;; describe-entity (loom_describe)
@@ -88,6 +134,100 @@ costs the agent a read")
                 (getf (getf detail :properties) :decision))
         "the decision text is exactly the knowledge that cannot be recovered
 by reading source")))
+
+(test describe-carries-a-bounded-summary-alongside-the-full-properties
+  (let* ((f (make-k-fixture))
+         (detail (describe-entity (k-graph f) (id (k-adr f)))))
+    (is (eq :rationale (getf (getf detail :document) :field)))
+    (is (search "Diffing an overlay"
+                (getf (getf detail :properties) :rationale))
+        "and :properties still holds the full untruncated text -- this is the
+assertion that fails if someone later \"fixes\" describe by truncating there")))
+
+(test describe-of-a-code-entity-has-no-document-key
+  ;; Passes today, vacuously, because the key does not exist yet: this is a
+  ;; regression guard, not the witness for the key being added.
+  (let ((f (make-k-fixture)))
+    (is (null (getf (describe-entity (k-graph f) (id (k-resolve f))) :document)))))
+
+;;; ------------------------------------------------------------------
+;;; document-summary -- a bounded answer for a document-shaped entity
+;;;
+;;; These build their entities locally rather than extending the shared
+;;; K-FIXTURE: DOCUMENT-SUMMARY takes an entity, not a view, so nothing here
+;;; needs the graph, and three tests above assert exact fixture hit counts.
+;;; ------------------------------------------------------------------
+
+(defun k-doc (class properties)
+  (make-instance class :name (getf properties :doc-id)
+                       :origin-file "docs/x.yaml"
+                       :properties (properties-table properties)))
+
+(defun k-long-text ()
+  "Several hundred words, comfortably over *SUMMARY-TOKEN-BUDGET*."
+  (with-output-to-string (s)
+    (dotimes (i 400) (format s "word~d " i))))
+
+(test document-summary-prefers-the-authors-own-summary
+  (let ((doc (k-doc 'document-entity
+                    (list :doc-id "ARCH-9" :title "A bounded describe"
+                          :status :draft
+                          :summary "One paragraph the author actually wrote."
+                          :body "The whole concatenation, which is not this."))))
+    (let ((s (document-summary doc)))
+      (is (eq :summary (getf s :field)))
+      (is (string= "One paragraph the author actually wrote." (getf s :text)))
+      (is (null (getf s :truncated)))
+      (is (string= "A bounded describe" (getf s :title)))
+      (is (eq :draft (getf s :status))))))
+
+(test document-summary-names-the-fallback-field-it-showed
+  ;; Asserting :FIELD is the point: a fallback that does not report which
+  ;; field it showed is indistinguishable from a summary the author wrote,
+  ;; which is the fabrication CON-0001 forbids.
+  (let ((s (document-summary (k-adr (make-k-fixture)))))
+    (is (eq :rationale (getf s :field)))
+    (is (search "Diffing an overlay" (getf s :text)))))
+
+(test document-summary-tells-two-kinds-of-nothing-apart
+  ;; NIL and a plist whose :FIELD is NIL mean different things -- "no summary
+  ;; shape for this type" and "a summary shape nobody filled" -- and an
+  ;; implementation that conflated them would pass a weaker test than this.
+  (let ((s (document-summary (k-doc 'rule-entity
+                                    (list :doc-id "RULE-9" :title "Unwritten")))))
+    (is (null (document-summary (k-resolve (make-k-fixture))))
+        "a :function has no summary shape at all")
+    (is (not (null s)) "a :rule does, even when nothing fills it")
+    (is (null (getf s :field)))
+    (is (null (getf s :text)))
+    (is (string= "Unwritten" (getf s :title)))))
+
+(test bounded-text-cuts-at-a-word-boundary-and-says-it-did
+  ;; Asserted against ESTIMATE-TOKENS rather than a real token count: the
+  ;; budget is spent in that function's currency, four characters to the
+  ;; token, and an assertion in any other would start lying the day the
+  ;; estimate is replaced.
+  (let ((long (k-long-text)))
+    (multiple-value-bind (shown truncated) (bounded-text long 120)
+      (is-true truncated)
+      (is (< (length shown) (length long)))
+      (is (string= shown (subseq long 0 (length shown))) "a prefix, not a rewrite")
+      (is (<= (estimate-tokens shown) 120))
+      (is (member (char long (length shown)) '(#\Space #\Tab #\Newline))
+          "the cut lands on whitespace, so no word is split")))
+  (multiple-value-bind (shown truncated) (bounded-text "short" 120)
+    (is (string= "short" shown))
+    (is (null truncated))))
+
+(test document-summary-reports-the-full-size-of-what-it-cut
+  (let* ((long (k-long-text))
+         (s (document-summary (k-doc 'rule-entity
+                                     (list :doc-id "RULE-8" :statement long)))))
+    (is (eq :statement (getf s :field)))
+    (is-true (getf s :truncated))
+    (is (> (getf s :full-tokens) *summary-token-budget*)
+        "the size reported is of what was cut, not of what was shown")
+    (is (<= (estimate-tokens (getf s :text)) *summary-token-budget*))))
 
 ;;; ------------------------------------------------------------------
 ;;; impact-report (loom_impact)

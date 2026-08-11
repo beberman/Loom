@@ -68,7 +68,7 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
                                :origin-file "notes.md"
                                :properties (properties-table '(:path "notes.md"))))
          (adr   (make-instance 'decision-entity :name "ADR-1"
-                               :origin-file "docs/design/ADR-1.yaml"
+                               :origin-file "docs/decisions/ADR-1.yaml"
                                :properties (properties-table
                                             '(:doc-id "ADR-1"
                                               :decision "Alpha stays synchronous.")))))
@@ -222,3 +222,52 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
         "a stale edge must not carry impact")
     (is (equal '("gamma") (mapcar #'name (impact-result-possibly-affected result)))
         "but what it led to must not silently disappear either")))
+
+;;; ------------------------------------------------------------------
+;;; entity-system and edges-between-systems (SS6.3, DES-0009)
+;;;
+;;; A fixture states its :system literally rather than encoding it in a path.
+;;; That is not a convenience: ENTITY-SYSTEM no longer parses paths at all, so
+;;; the analyzer is the only thing that could turn one into a system, and
+;;; loom-graph/test must not depend on loom-analyzer to build a fixture --
+;;; that would invert the layering for a test helper's sake. The real file
+;;; paths stay so the fixtures still read as statements about this tree; they
+;;; simply no longer drive the classification.
+;;;
+;;; The three path-parsing tests that lived here were ported to
+;;; src/analyzer/test/analyzer.lisp, where the computation moved. Deleting
+;;; rather than leaving them is what makes DES-0009's "one copy, not two"
+;;; true of the tests as well as of the function.
+;;; ------------------------------------------------------------------
+
+(defun sys-function (name file system)
+  (make-instance 'function-entity :name name :origin-file file
+                 :properties (properties-table (list :file file :start-line 1
+                                                     :end-line 2 :system system))))
+
+(test entity-system-is-the-property-verbatim-or-nothing
+  ;; Both halves matter. The second is what keeps EDGES-BETWEEN-SYSTEMS' "an
+  ;; unplaceable endpoint is not evidence of a violation" clause honest: an
+  ;; entity no analyzer placed has to read as unknown, not as some system.
+  (is (eq :loom-knowledge
+          (entity-system (sys-function "f" "src/knowledge/services.lisp"
+                                       :loom-knowledge))))
+  (is (null (entity-system (make-instance 'function-entity :name "f")))
+      "no :system property is not a system"))
+
+(test edges-between-systems-finds-a-real-cross-system-call
+  ;; Two entities in different packages, a :calls edge between them, and a
+  ;; query for exactly that boundary -- the shape RULE-0001 compiles to.
+  (let* ((g (make-graph))
+         (inner (sys-function "derive-id" "src/ontology/root-ontology.lisp"
+                              :loom-ontology))
+         (outer (sys-function "add-entity" "src/graph/graph-manager.lisp"
+                              :loom-graph)))
+    (dolist (e (list inner outer)) (add-entity g e))
+    (add-relationship g (make-instance 'relationship :rel-type :calls
+                                       :from-id (id inner) :to-id (id outer)
+                                       :origin-file "src/ontology/root-ontology.lisp"))
+    (let ((found (edges-between-systems g :loom-ontology :outside
+                                        :rel-types '(:calls))))
+      (is (= 1 (length found)))
+      (is (eq :loom-graph (entity-system outer))))))

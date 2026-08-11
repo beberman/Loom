@@ -42,6 +42,67 @@
         "and what the analyzer saw is left intact, because the next pass has
 to be able to ask the same question again")))
 
+(test an-ordinary-resolving-call-mints-no-call-site
+  ;; DES-0014 R2, and the test R2 actually turns on: its whole-tree
+  ;; counterpart in the workspace suite bounds the population, but this is what
+  ;; says the common path is untouched. 2527 of this tree's 2557 resolving
+  ;; call-name occurrences look exactly like this one, and every one of them
+  ;; must keep producing the edge it produces today and nothing else.
+  ;;
+  ;; Cheap on purpose. The ceiling test costs a full index of the tree; this
+  ;; costs two entities, so it is the one that can be run constantly.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("callee")))
+         (callee (r-function g "callee" "b.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id callee))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "the edge is the one it always was, sourced at the caller")
+    (is (null (entities-of-type g :call-site))
+        "and no node is interposed. DES-0014: a :CALL-SITE is minted exactly
+when a call name cannot be expressed as a :CALLS edge from an existing
+definition entity -- here it can, so there is nothing for one to carry")))
+
+(test a-call-site-is-a-caller-like-any-other
+  ;; DES-0014, PLAN-0014 step 4. RESOLVE-CALLS walked '(:function :method
+  ;; :test), so a :CALL-SITE entity sitting in the graph was simply never
+  ;; looked at -- the pass that turns a name into an edge did not know the type
+  ;; existed. Nothing mints one yet, which is the point: the plumbing lands
+  ;; before any generator, so each generator afterwards moves a number that is
+  ;; attributable to it alone.
+  (let* ((g (make-graph))
+         (site (make-call-site-entity :file "a.lisp" :start-line 12
+                                      :call-name "target"
+                                      :referrer-kind :variable
+                                      :language :lisp :system :demo))
+         (callee (r-function g "target" "b.lisp")))
+    (add-entity g site)
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id callee))
+               (mapcar #'to-id (relationships-from g (id site) :rel-type :calls)))
+        "the edge runs from the call site to the callee, so `describe' on the
+callee shows it as an incoming caller")))
+
+(test a-call-site-records-a-name-that-reached-nothing
+  ;; The other half of treating a call site as one more caller: the
+  ;; :UNRESOLVED-CALLS write applies to it unchanged, which is where the seven
+  ;; initform names that resolve to nothing on this tree are recorded rather
+  ;; than dropped (CON-0001, PLAN-0014 decision 4). Free, because it is the
+  ;; same code path -- but free only if the caller loop reaches the type at
+  ;; all, which is what this asserts.
+  (let* ((g (make-graph))
+         (site (make-call-site-entity :file "a.lisp" :start-line 12
+                                      :call-name "nowhere"
+                                      :referrer-kind :variable)))
+    (add-entity g site)
+    (apply-transaction g (resolve-calls g))
+    (is (null (relationships-from g (id site) :rel-type :calls)))
+    (is (equal '("nowhere") (getp site :unresolved-calls))
+        "a name matching nothing is a recorded gap, not a silent drop")
+    (is (null (getp site :call-names))
+        "and the name is still stored once -- CALLER-CALL-NAMES derives the
+list the pass reads from :CALL-NAME rather than from a second copy")))
+
 (test a-resolved-edge-is-rebuilt-after-its-callee-is-retracted
   ;; The cross-file half of SS5.4's reanalysis, at the smallest possible scale.
   ;; Retracting b.lisp destroys the edge into it; a.lisp is not reanalyzed, so
@@ -71,17 +132,81 @@ records that it calls something named callee"))))
     (is (equal '("hunchentoot-start") (getp caller :unresolved-calls)))))
 
 (test resolve-refuses-to-guess-between-two-definitions-of-a-name
+  ;; Rewritten by PLAN-0014 step 8 rather than deleted: what it protects is
+  ;; still true and still worth a test. CALL-TARGETS' docstring argued against
+  ;; fanning out on the grounds that "asserting all of them would make every
+  ;; caller of a common name look coupled to code it never touches", and that
+  ;; objection is about edges running *from the caller*. It still holds --
+  ;; CALLER acquires no direct edge to either RUN below -- and REQ-0015's
+  ;; fan-out now happens one hop away, from a node that is labelled as a guess.
   (let* ((g (make-graph))
          (caller (r-function g "caller" "a.lisp" :unresolved '("run"))))
     (r-function g "run" "b.lisp")
     (r-function g "run" "c.lisp")
     (apply-transaction g (resolve-calls g))
-    (is (null (relationships-from g (id caller) :rel-type :calls))
-        "picking one would be a fabricated edge; asserting both would be worse")
-    (is (equal '("run") (getp caller :unresolved-calls)))))
+    (is (null (remove :call-site
+                      (relationships-from g (id caller) :rel-type :calls)
+                      :key (lambda (edge)
+                             (entity-type (get-entity g (to-id edge))))))
+        "picking one would be a fabricated edge; asserting both from the caller
+would be the false coupling this clause has always refused")))
+
+(test an-ambiguous-call-fans-out-from-a-call-site-the-caller-contains
+  ;; REQ-0015 and R8's third test. (t nil) dropped 18 occurrences on this tree
+  ;; and 144 for a single name on game-server, and the drop was invisible: the
+  ;; name landed in :UNRESOLVED-CALLS beside the genuinely external ones, so
+  ;; nothing distinguished "this is defined elsewhere" from "this is defined
+  ;; twice here and I declined to choose".
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("run")))
+         (b (r-function g "run" "b.lisp"))
+         (c (r-function g "run" "c.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (let ((sites (entities-of-type g :call-site)))
+      (is (= 1 (length sites)) "one site, not one per candidate")
+      (let ((site (first sites)))
+        (is (eq :ambiguous (getp site :referrer-kind)))
+        (is (eql 2 (getp site :candidate-count))
+            "how much of a guess this is, as a number a consumer can read")
+        (is (equal "a.lisp" (getp site :file))
+            "at the caller's file and start line: :CALL-NAMES records no
+position of its own, so there is no finer truth available (decision 5)")
+        (is (equal (list (id site))
+                   (mapcar #'to-id (relationships-from g (id caller) :rel-type :contains)))
+            "and the caller shows one ambiguous site rather than two couplings")
+        (let ((edges (relationships-from g (id site) :rel-type :calls)))
+          (is (equal (sort (list (id b) (id c)) #'string<)
+                     (sort (mapcar #'to-id edges) #'string<))
+              "both candidates reached, which is REQ-0015's fan-out")
+          (is (every (lambda (e) (= 0.5 (confidence e))) edges)
+              "each at 1/N, the same DISPATCH-CONFIDENCE the method fan-out
+uses"))))
+    (is (null (getp caller :unresolved-calls))
+        "and the name leaves :UNRESOLVED-CALLS -- REQ-0015 R3 keeps only names
+matching nothing")))
+
+(test an-ambiguous-name-on-a-call-site-mints-no-second-call-site
+  ;; PLAN-0014 decision 6, and the recursion it guards. Seven of this tree's
+  ;; 124 resolving definer-call names are themselves ambiguous, so without this
+  ;; the pass would mint a call site from a call site -- at a key derived from
+  ;; the first one's file and line -- on every pass, forever. The node exists to
+  ;; be the anchor for an ambiguity, and a call site already is one.
+  (let* ((g (make-graph))
+         (site (make-call-site-entity :file "a.lisp" :start-line 12
+                                      :call-name "run"
+                                      :referrer-kind :definer-call
+                                      :language :lisp :system :demo)))
+    (add-entity g site)
+    (r-function g "run" "b.lisp")
+    (r-function g "run" "c.lisp")
+    (apply-transaction g (resolve-calls g))
+    (is (= 1 (length (entities-of-type g :call-site)))
+        "the call site fans out directly and mints nothing")
+    (is (= 2 (length (relationships-from g (id site) :rel-type :calls)))
+        "still reaching both candidates")))
 
 ;;; ------------------------------------------------------------------
-;;; Definitions: inheritance, dispatch, protocols (ARCH-0001)
+;;; Definitions: inheritance, dispatch, protocols (DES-0001)
 ;;; ------------------------------------------------------------------
 
 (defun r-class (graph name file &key superclasses (kind :class))
@@ -142,18 +267,18 @@ records that it calls something named callee"))))
 
 (test a-method-with-no-declared-generic-gets-no-protocol-edge
   ;; An implicit generic has no defgeneric form and so no source region.
-  ;; ARCH-0001 refuses to synthesise one rather than invent a location.
+  ;; DES-0001 refuses to synthesise one rather than invent a location.
   (let* ((g (make-graph))
          (method (r-method g "draw" "a.lisp" :specializers '("shape"))))
     (apply-transaction g (resolve-method-protocols g))
     (is (null (relationships-from g (id method) :rel-type :implements)))))
 
 ;;; ------------------------------------------------------------------
-;;; Generated definitions reach their generator (ARCH-0002 R6)
+;;; Generated definitions reach their generator (DES-0002 R6)
 ;;; ------------------------------------------------------------------
 
 (test a-generated-name-points-back-at-the-form-that-generated-it
-  ;; The measured defect ARCH-0002 opens with: :GENERATED-BY was already on
+  ;; The measured defect DES-0002 opens with: :GENERATED-BY was already on
   ;; every DEFSTRUCT accessor and every DEFCLASS slot accessor, but a property
   ;; is not an edge, so changing a structure reached none of its accessors'
   ;; callers. Both entity types are here because they take different shapes --
@@ -185,7 +310,7 @@ records that it calls something named callee"))))
     (is (null (relationships-from g (id accessor) :rel-type :uses)))))
 
 ;;; ------------------------------------------------------------------
-;;; Definitions a macro call brings into existence (ARCH-0002 R5, R7)
+;;; Definitions a macro call brings into existence (DES-0002 R5, R7)
 ;;; ------------------------------------------------------------------
 
 (defun r-file (graph path &key call-sites)
@@ -258,6 +383,27 @@ the retract half can recognise what it made")
           "no edge, because there is no macro entity to reach -- the
 :generated-by property still records what made it"))))
 
+(test a-minted-entity-inherits-the-system-of-the-file-that-called-the-macro
+  ;; DES-0009 R6. A macro-minted entity has no form of its own to read a
+  ;; package from, so the calling file's is the only fact available -- and
+  ;; without it every :TEST in the tree would be unplaceable, which
+  ;; EDGES-BETWEEN-SYSTEMS reads as "not evidence of a violation" rather than
+  ;; as a gap. This test is also why :SYSTEM had to be declared on :TEST first:
+  ;; DECLARED-PROPERTIES-ONLY drops an undeclared key without a word.
+  (let ((g (make-graph))
+        (registry (make-hash-table :test #'equal)))
+    (setf (gethash "test" registry)
+          (list (list :name "test" :package "fiveam" :entity-type :test
+                      :name-index 1 :body-index 2 :framework :fiveam)))
+    (let ((file (r-file g "src/analyzer/test/lisp-analyzer.lisp"
+                        :call-sites (list (r-call-site "test" "alpha-works")))))
+      (setp file :system :loom-analyzer-test))
+    (apply-transaction g (resolve-generated-definitions g :registry registry))
+    (let ((minted (first (entities-of-type g :test))))
+      (is (not (null minted)))
+      (is (eq :loom-analyzer-test (getp minted :system))
+          "the file's package, not the path it sits under"))))
+
 (test a-call-site-matching-several-registry-entries-is-left-alone
   ;; Two packages may name a macro identically, which is why the table holds a
   ;; list. Picking one would be the fabricated fact CON-0001 forbids.
@@ -281,11 +427,133 @@ the retract half can recognise what it made")
     (is (null (find-entity-by-key g '(:function "b.lisp" "workspace"))))
     (is (equal (list macro) (unhandled-definer-macros g)))))
 
+(test a-macro-that-defines-nothing-but-swallows-a-body-is-reported
+  ;; BUG-0016. DEFINE-OPERATION's template contains no DEFUN, DEFCLASS or
+  ;; DEFMETHOD, so MACRO-GENERATOR-PROPERTIES records nothing for it and it
+  ;; carries no :DEFINER-STATUS either -- which used to mean `status' said "1
+  ;; definer macro" on a tree where 15 call sites were orphaning 42 names, and
+  ;; the tool whose job is reporting gaps reported this one as no gap.
+  ;;
+  ;; The discriminator is that its calls are top-level forms carrying call
+  ;; names. Decided here rather than in the analyzer because the macro's
+  ;; definition and its call sites are in different files, which a file-scoped
+  ;; analyzer cannot see across (RULE-0002).
+  (let* ((g (make-graph))
+         (macro (r-function g "define-operation" "registry.lisp")))
+    (setp macro :macro-p t)
+    (r-file g "operations.lisp"
+            :call-sites (list (r-call-site "define-operation" "check"
+                                           :call-names '("violation-summary"))))
+    (is (equal (list macro) (unhandled-definer-macros g))
+        "reported, where before it was silently uncharacterised")
+    (is (= 1 (gethash "define-operation" (body-swallowing-macro-names g)))
+        "and the orphan count travels with the name, so the line is actionable")))
+
+(test a-wrapper-macro-is-not-swept-into-the-definer-count
+  ;; The guard MACRO-GENERATOR-PROPERTIES' docstring asks for, and the reason
+  ;; the clause above keys on definer call sites rather than on "template
+  ;; defines nothing": every WITH-LOCK in the tree would otherwise land in a
+  ;; count that exists to be read and acted on, which is what makes BUG-0009's
+  ;; output unreadable. A wrapper is never a top-level form, so it has no
+  ;; definer call site and nothing to orphan.
+  (let* ((g (make-graph))
+         (macro (r-function g "with-lock" "util.lisp")))
+    (setp macro :macro-p t)
+    (r-file g "user.lisp" :call-sites (list (r-call-site "some-other-definer" "thing")))
+    (is (null (unhandled-definer-macros g)))))
+
+(test an-orphaned-definer-call-site-mints-a-call-site-per-resolving-name
+  ;; BUG-0016's second half and R8's second test. Reporting the gap was the
+  ;; first half; this is the call actually reaching its callee. DEFINE-OPERATION
+  ;; expands to a runtime table entry, so its 15 sites mint no entity and the 42
+  ;; names their bodies call attach to nothing -- every REST route and every MCP
+  ;; tool invisible in the call graph.
+  ;;
+  ;; `not-here' is decision 2 asserted rather than assumed. DES-0014 R4 reads
+  ;; literally as one node per name, which on this tree is 266 nodes of which
+  ;; 142 name something that is not there; a node per absent callee is a node
+  ;; per thing that does not exist, and the fact that the name went nowhere
+  ;; already lives on the site's :CALL-NAMES and in `check''s definer report.
+  (let* ((g (make-graph))
+         (callee (r-function g "violation-summary" "check.lisp"))
+         (file (r-file g "operations.lisp"
+                       :call-sites
+                       (list (r-call-site "define-operation" "check"
+                                          :call-names '("violation-summary"
+                                                        "not-here"))))))
+    (apply-transaction g (resolve-generated-definitions g :registry nil))
+    (let ((sites (entities-of-type g :call-site)))
+      (is (= 1 (length sites))
+          "one node per resolving name, and none for the name that resolves to
+nothing")
+      (let ((site (first sites)))
+        (is (equal "violation-summary" (getp site :call-name)))
+        (is (eq :definer-call (getp site :referrer-kind)))
+        (is (equal "define-operation" (getp site :generated-by))
+            "carrying the macro that swallowed the body it was read from")
+        (is (eql 10 (getp site :start-line))
+            "at the call site's line, which is the region an agent opens")
+        (is (equal (list (id site))
+                   (mapcar #'to-id (relationships-from g (id file) :rel-type :contains)))
+            "owned by the file, because there is no definition entity to own it")
+        (apply-transaction g (resolve-calls g))
+        (is (equal (list (id callee))
+                   (mapcar #'to-id (relationships-from g (id site) :rel-type :calls)))
+            "and the call reaches its callee, which is the whole of BUG-0016")))))
+
+(test a-definer-call-site-that-minted-a-definition-mints-no-call-site
+  ;; DES-0014 R4's last clause, and the disjointness the two populations rely
+  ;; on: a site that minted an entity mints no call site, because the entity
+  ;; already carries the site's :CALL-NAMES and RESOLVE-CALLS sources the edge
+  ;; at it. Minting both would double every fiveam TEST body's calls.
+  (let ((g (make-graph)))
+    (r-macro g "struct-simplefn" "macros.lisp")
+    (r-function g "compute-area" "area.lisp")
+    (r-file g "geo.lisp"
+            :call-sites (list (r-call-site "struct-simplefn" "geo"
+                                           :call-names '("compute-area"))))
+    (apply-transaction g (resolve-generated-definitions g :registry nil))
+    (is (not (null (find-entity-by-key g '(:function "geo.lisp" "geo"))))
+        "the site mints its definition as before")
+    (is (null (entities-of-type g :call-site))
+        "and nothing else -- the definition is the :CALLS source")))
+
+(test an-introspected-entity-does-not-block-the-call-site-that-explains-it
+  ;; The same guard, and the one claim it must not read as a rival. An
+  ;; :INTROSPECTED entity is this very definition seen from the other side --
+  ;; the compiler reporting what the macro call expanded into (DES-0011 R6) --
+  ;; and enrichment mints exactly these, since a macro-generated name is what
+  ;; the text pass cannot see and the image can. Counted as hand-written, the
+  ;; first enrich would be the last pass able to mint here: the key would stay
+  ;; occupied, every later pass would report a collision it could do nothing
+  ;; about, and the :USES edge back to the macro would never be drawn -- so
+  ;; `impact' on the macro would stop reaching what it generates, which is the
+  ;; whole of DES-0002.
+  (let* ((g (make-graph))
+         (macro (r-macro g "struct-simplefn" "macros.lisp")))
+    (add-entity g (make-instance 'function-entity
+                                 :name "geo" :origin-file "geo.lisp"
+                                 :source :introspected :confidence 1.0
+                                 :properties (properties-table
+                                              (list :file "geo.lisp" :start-line 3
+                                                    :end-line 3 :language :lisp))))
+    (r-file g "geo.lisp"
+            :call-sites (list (r-call-site "struct-simplefn" "geo")))
+    (apply-transaction g (resolve-generated-definitions g :registry nil))
+    (let ((entity (find-entity-by-key g '(:function "geo.lisp" "geo"))))
+      (is (equal "struct-simplefn" (getp entity :generated-by))
+          "the minted account upserts onto the image's, rather than being refused")
+      (is (equal (list (id macro))
+                 (mapcar #'to-id (relationships-from g (id entity) :rel-type :uses)))
+          "and the edge to the generator exists, which is what the refusal cost")
+      (is (null (generated-definition-collisions g nil))
+          "and nothing is reported as a collision, because nothing collided"))))
+
 (test a-hand-written-definition-survives-a-colliding-generated-call-site
-  ;; ARCH-0002 R5's collision guard, and the trigger PLAN-0001 step 5b names as
+  ;; DES-0002 R5's collision guard, and the trigger PLAN-0001 step 5b names as
   ;; the one that can silently not fire: a call site whose name matches a
   ;; natural key a real, hand-written DEFUN already claims must not be
-  ;; overwritten. Two halves are asserted, per ARCH-0002 CONSEQUENCES -- the
+  ;; overwritten. Two halves are asserted, per DES-0002 CONSEQUENCES -- the
   ;; hand-written entity survives untouched, AND the collision is counted,
   ;; because "did not crash" alone is indistinguishable from a guard that
   ;; quietly stopped guarding.
@@ -310,7 +578,7 @@ indistinguishable from nothing having happened")
       (is (null (relationships-from g (id survivor) :rel-type :uses))
           "no edge to the macro, because nothing was minted to carry one")
       (is (= 1 (length (generated-definition-collisions g nil)))
-          "counted rather than merely not crashing -- the trigger ARCH-0002
+          "counted rather than merely not crashing -- the trigger DES-0002
 warns can silently not fire")
       (is (equal (cons "geo.lisp" "geo")
                  (first (generated-definition-collisions g nil)))))))
@@ -345,6 +613,69 @@ not a retract-plus-assert, which could remove what it had just landed")
         "the pass recomputes its whole output, so what it no longer produces
 does not survive by having been produced once")))
 
+(test a-definer-site-whose-macro-becomes-characterised-loses-its-call-sites
+  ;; PLAN-0014 step 9, and the case DES-0014 R6 got wrong. "RETRACT-FILE needs
+  ;; nothing" is true of the analyzer's initform sites and false of these two
+  ;; kinds: the call site's origin file is geo.lisp and geo.lisp never changes,
+  ;; so nothing retracts a site that the macro's own file stopped orphaning.
+  ;; Without the sweep the graph keeps a :CALL-SITE with a live :CALLS edge
+  ;; beside the definition that now carries the same call name, and an
+  ;; incremental index drifts from a rebuilt one for as long as geo.lisp
+  ;; happens not to be touched.
+  (let ((g (make-graph)))
+    (r-function g "compute-area" "area.lisp")
+    (r-file g "geo.lisp"
+            :call-sites (list (r-call-site "struct-simplefn" "geo"
+                                           :call-names '("compute-area"))))
+    (apply-transaction g (resolve-generated-definitions g :registry nil))
+    (is (= 1 (length (entities-of-type g :call-site)))
+        "no macro of that name, so the site is orphaned and its name gets a node")
+    (r-macro g "struct-simplefn" "macros.lisp")
+    (apply-transaction g (resolve-generated-definitions g :registry nil))
+    (is (not (null (find-entity-by-key g '(:function "geo.lisp" "geo"))))
+        "the site now mints a definition")
+    (is (null (entities-of-type g :call-site))
+        "which carries the call name itself, so the call site is not derived
+again -- and what this pass no longer produces must not survive by having been
+produced once")))
+
+(test a-name-that-stops-being-ambiguous-leaves-no-call-site-behind
+  ;; The other half of step 9, and the harder one to notice: nothing about
+  ;; a.lisp changed. One of the two definitions of RUN was deleted from c.lisp,
+  ;; so the name resolves cleanly now -- but the ambiguous call site's own
+  ;; origin file is a.lisp, so RETRACT-FILE never sees it, and it would sit
+  ;; there with a live edge to the survivor while the caller also acquired its
+  ;; own direct edge. One call reported twice, at two different confidences.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("run"))))
+    (r-function g "run" "b.lisp")
+    (r-function g "run" "c.lisp")
+    (apply-transaction g (resolve-calls g))
+    (is (= 1 (length (entities-of-type g :call-site))))
+    (apply-transaction g (list (retract-file "c.lisp" nil)))
+    (apply-transaction g (resolve-calls g))
+    (is (null (entities-of-type g :call-site))
+        "the ambiguity is gone, so its anchor is not derived again")
+    (is (= 1 (length (relationships-from g (id caller) :rel-type :calls)))
+        "and the caller has the one direct edge the name now earns")))
+
+(test a-sweep-does-not-touch-a-call-site-the-analyzer-owns
+  ;; The predicate keys on :REFERRER-KIND as well as on absence from the
+  ;; produced set, and both sweeps need it. An initform site is derived from one
+  ;; file by ANALYZE-FILE and aged out by RETRACT-FILE; neither resolution pass
+  ;; produces one, so a sweep that keyed on absence alone would retract every
+  ;; one of them on its first run and re-mint none.
+  (let ((g (make-graph))
+        (site (make-call-site-entity :file "a.lisp" :start-line 12
+                                     :call-name "target"
+                                     :referrer-kind :variable
+                                     :language :lisp :system :demo)))
+    (add-entity g site)
+    (apply-transaction g (resolve-generated-definitions g :registry nil))
+    (apply-transaction g (resolve-calls g))
+    (is (not (null (get-entity g (id site))))
+        "still there -- the analyzer's, and RETRACT-FILE's to age out")))
+
 (test a-defstruct-accessor-is-not-retracted-by-the-macro-half
   ;; The retract predicate keys on the registry, not on the mere presence of
   ;; :generated-by. A defstruct accessor carries that property too -- naming a
@@ -357,7 +688,7 @@ does not survive by having been produced once")))
     (setp accessor :generated-by "repository")
     (apply-transaction g (resolve-generated-definitions g :registry nil))
     (is (not (null (get-entity g (id accessor))))
-        "still there, and the ARCH-0001 output the whole index depends on")))
+        "still there, and the DES-0001 output the whole index depends on")))
 
 (defun r-test (graph name file &key call-names)
   (let ((e (make-instance 'test-entity :name name :origin-file file
@@ -370,7 +701,7 @@ does not survive by having been produced once")))
     e))
 
 (test a-test-body-resolves-its-calls-like-any-other-caller
-  ;; ARCH-0002 R8. Without this the minted entities exist with no edges and
+  ;; DES-0002 R8. Without this the minted entities exist with no edges and
   ;; impact still reports nothing, which is the whole payoff missed by one
   ;; missing element of a type list.
   (let* ((g (make-graph))
@@ -385,7 +716,7 @@ does not survive by having been produced once")))
 correct rather than a gap: fiveam is external to every indexed tree")))
 
 (test coverage-is-derived-from-what-a-test-body-calls
-  ;; ARCH-0002 R9, and the payoff the whole sequence exists for: until this
+  ;; DES-0002 R9, and the payoff the whole sequence exists for: until this
   ;; ran, the graph held no :tests edge at all and `impact' could not answer
   ;; which tests cover a change. The :interface case is why step 1 widened
   ;; :tests -- a test calling a defclass slot accessor directly still covers it.
@@ -425,7 +756,7 @@ correct rather than a gap: fiveam is external to every indexed tree")))
                  (mapcar #'name (impact-result-tests result)))))))
 
 ;;; ------------------------------------------------------------------
-;;; Dispatched calls fan out (ARCH-0001 R4)
+;;; Dispatched calls fan out (DES-0001 R4)
 ;;; ------------------------------------------------------------------
 
 (test a-dispatched-call-reaches-every-candidate-method
@@ -445,7 +776,7 @@ correct rather than a gap: fiveam is external to every indexed tree")))
           "a name that fanned out is resolved, not outstanding"))))
 
 (test one-method-means-the-dispatch-is-certain
-  ;; 70% of the generics in the repository that motivated ARCH-0001 have
+  ;; 70% of the generics in the repository that motivated DES-0001 have
   ;; exactly one method, so this is the common case and not a corner.
   (let* ((g (make-graph))
          (caller (r-function g "render" "a.lisp" :unresolved '("draw"))))

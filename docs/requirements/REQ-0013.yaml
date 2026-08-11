@@ -1,0 +1,154 @@
+id: REQ-0013
+title: An answer built from dropped edges must say so, at the point of the answer
+status: draft
+date: 2026-08-06
+affects: [resolve-calls, unresolved-references, impact-report, describe-entity,
+          run-check, impact-set, build-context]
+tags: [knowledge, console, resolution, honesty, con-0001]
+summary: |
+  CON-0001 and CLAUDE.md both state the principle as two halves: an ambiguous
+  name stays unresolved *and gets reported*. Only the first half is built. When
+  RESOLVE-CALLS finds several definitions for a call name it records the name
+  in an :UNRESOLVED-CALLS property and asserts no edge -- correct, and
+  deliberate. But nothing reads that property. `status` prints unresolved
+  document references and definer macros; `check` prints unresolved document
+  references; `impact` and `describe` print nothing at all. Measured: 3,037
+  unresolved call names in ~/lisp/game-server (48.2% of all call names recorded
+  there) and 1,859 in Loom's own tree (47.9%), and both codebases report the
+  number zero everywhere a user can see it. The failure this produces is not a
+  wrong edge, it is a confident silence: `impact cascade-delete 3` in
+  game-server reports "1 impacted" -- the entity's own file -- for a generic
+  function with roughly twelve genuine call sites across five production files,
+  and offers no signal that anything was dropped. A small impact set and a
+  contained change are indistinguishable. This asks that the gap be surfaced
+  where the answer is given, not only in a global counter.
+body: |
+  WHAT IS WRONG
+
+  src/graph/resolve.lisp:511-523 states the design, and the design is right:
+
+      exactly one definition  -- assert a :CALLS edge to it
+      several definitions     -- record it unresolved rather than guess. Picking
+                                 one would be a fabricated edge, and asserting all
+                                 of them would make every caller of a common name
+                                 look coupled to code it never touches.
+      none                    -- record it unresolved. It is a genuine external
+                                 dependency, and a standing record of one.
+
+  Line 570 writes the result: (list :unresolved-calls (nreverse left)). The
+  ontology declares the property on three entity types (src/ontology/
+  code-ontology.lisp:233, 285, 361). And then nothing reads it. Grepping the
+  tree for :unresolved-calls outside the analyzer and ontology returns the
+  single write in resolve.lisp and no reader anywhere.
+
+  What the console does report is a different thing with a similar name.
+  src/process/console.lisp:194:
+
+      "  unresolved : ~d document reference~:p, ~d definer macro~:p~%"
+
+  Those are unresolved *document* references -- a `refines:` or `affects:`
+  naming something that does not exist -- and unresolved definer macros. Both
+  are worth reporting and neither has anything to do with dropped calls.
+  `check` (console.lisp:358-363) reports the same document references again.
+  A user reading either output learns nothing about the 48% of call names that
+  never became edges.
+
+  THE MEASUREMENT
+
+  Taken 2026-08-06 with /usr/bin/sbcl, both repositories indexed through
+  LOOM-WORKSPACE and counted directly from the graph:
+
+                            game-server        Loom
+      call names recorded         6,307        3,884
+      :calls edges asserted       5,152        2,615
+      unresolved calls      3,037 (48.2%)  1,859 (47.9%)
+      distinct names                763          442
+
+  The rates are near-identical, so this is not a foreign-codebase problem --
+  Loom is as blind to its own tree as to any other. What differs is
+  composition, and that is what makes the silence dangerous rather than merely
+  untidy. Loom's most-dropped names are FiveAM macros and local variables that
+  were never calls: is (346), g (120), e (64), f (38), is-true (29), signals
+  (21). Dropping those loses nothing. game-server's list is real API: id (144
+  sites, 7 definitions), game (126), obj (91), definition (50 sites, 3
+  definitions), connection (58), handler (45), cascade-delete. Dropping those
+  loses exactly the edges an impact query exists to find.
+
+  THE FAILURE MODE, CONCRETELY
+
+  game-server defines CASCADE-DELETE twice -- a DEFGENERIC at
+  mpackage/obj-types.lisp:134 and a DEFCLASS :accessor at
+  mpackage/reference-types.lisp:104. Ambiguous, so every call to it is dropped.
+  The console:
+
+      find cascade-delete      -> 3 definitions, all correct
+      describe cascade-delete  -> one edge: <- contains: mpackage/obj-types.lisp
+      impact cascade-delete 3  -> "1 impacted:  d1 file mpackage/obj-types.lisp"
+
+  Ground truth is roughly twelve genuine call sites across mpackage/
+  reference-types.lisp, mpackage/obj-types.lisp, mpackage/collection-types.lisp
+  and mpackage/mpackage.lisp. A reader is told "1 impacted" and given no reason
+  to doubt it. CLAUDE.md's standing warning -- "a small impact set is not proof
+  of a small change" -- is written in Loom's own repository and is not present
+  in the mind of anyone querying a different one.
+
+  WHAT WOULD ACTUALLY HELP, AND WHAT WOULD NOT
+
+  A global counter in `status` is the obvious fix and is close to useless. A
+  line reading "3,037 unresolved calls" is read once, understood as a
+  background property of the tool, and never consulted again -- and it cannot
+  distinguish the 346 dropped `is` macros, which are noise, from the twelve
+  dropped cascade-delete calls, which are the answer. Volume is not the signal;
+  relevance to the question just asked is.
+
+  The useful form is disclosure attached to the specific answer. When `impact`
+  or `describe` is asked about an entity whose name is ambiguous, or when the
+  traversal passes through callers carrying unresolved names that match the
+  queried entity, that fact belongs in the output beside the result.
+
+  WHAT THIS IS NOT
+
+  This does not ask that ambiguous calls be resolved, guessed at, or asserted.
+  RESOLVE-CALLS' refusal to pick is correct and stays. Whether an ambiguous
+  name should instead produce several low-confidence edges is a separate
+  question, asked in REQ-0015; this requirement is satisfied by honest
+  reporting whether or not that one is ever built, and REQ-0015's answer would
+  change what is reported without removing the need to report it.
+
+  It also does not ask for the general "what does this tool not know" surface.
+  Unresolved definer macros and unresolved document references are already
+  reported and are not in scope.
+
+  REQUIREMENTS
+
+  R1  `impact <name>` must disclose, in its own output, when the queried name
+      resolves to more than one definition, and how many call sites naming it
+      were left unresolved. The existing "(truncated)" line is the precedent
+      for where such a note belongs. REQ-0005 governs that line's own defects
+      and is not superseded here.
+
+  R2  `describe <name>` must do the same. `describe cascade-delete` today
+      silently describes the first of three same-named entities without saying
+      that it chose, or that two others exist -- `find` reports all three, so
+      the information is available and is being discarded at presentation.
+
+  R3  `status` must report the unresolved-call total alongside the unresolved
+      document references it already prints, phrased so the two are not
+      confused. This is the weak form and is not sufficient on its own; R1 and
+      R2 are what make the number actionable.
+
+  R4  `check` must be able to list the unresolved call names, most-frequent
+      first, so a maintainer can see whether the tail is macro noise (Loom's
+      case) or real API (game-server's case). A bare total cannot distinguish
+      those and the distinction is the whole point.
+
+  R5  No new analysis or resolution work is required to satisfy R1 through R4.
+      The data is already computed, already written to :UNRESOLVED-CALLS, and
+      already discarded. This requirement is a reporting change, which is why
+      it is cheap and why its absence is hard to defend.
+
+  R6  Acceptance is measured against both trees. On game-server,
+      `impact cascade-delete 3` must state that the name has more than one
+      definition and that call sites were dropped. On Loom, `status` must
+      report a nonzero unresolved-call count where it reports zero today, and
+      the full suite must stay green.

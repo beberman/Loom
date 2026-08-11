@@ -1,7 +1,7 @@
 #!/bin/bash
 # The next free document id for a docs/ category.
 #
-#   tools/next-doc-id.sh ARCH     -> ARCH-0002
+#   tools/next-doc-id.sh ARCH     -> DES-0002
 #   tools/next-doc-id.sh req      -> REQ-0005      (type is case-insensitive)
 #   tools/next-doc-id.sh          -> every category, one per line
 #

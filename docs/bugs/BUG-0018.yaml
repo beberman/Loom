@@ -1,0 +1,127 @@
+id: BUG-0018
+title: "\"445 tests covering 302 units\" overclaims -- :TESTS is reachability, and a test file's own private helper counts as a unit under test"
+status: open
+date: 2026-08-08
+refines: [PLAN-0011]
+affects: [resolve-tests, print-status]
+tags: [graph, knowledge, tests, honesty]
+summary: |
+  RESOLVE-TESTS derives a :TESTS edge from every :CALLS edge a :TEST entity has
+  to a :FUNCTION, :METHOD or :INTERFACE, and says so plainly (DES-0002 R9).
+  PRINT-STATUS then renders the count of distinct targets as "N tests covering M
+  units". The derivation is honest and the label is not: "covering" claims a
+  subject under test, and reachability from a test body is a weaker fact than
+  that. The sharpest case in this tree is CONCURRENCY-TEXT-P, a two-line
+  predicate defined inside src/workspace/test/workspace.lisp and used by one
+  assertion in that same file to filter its own error list -- it is now counted
+  as a unit the suite covers, which means a test file is credited with testing
+  its own private machinery. STRESS-COUNTS, eight lines below it, has always
+  been counted the same way, so this is not new and not caused by BUG-0011,
+  which merely added one more instance of it. Two fixes are candidates and they
+  are not the same size: relabel, or teach the derivation that a :FUNCTION whose
+  origin file is itself a test file is a fixture rather than a subject.
+body: |
+  SYMPTOM
+
+  `status` reports, on this tree, /usr/bin/sbcl, 2026-08-08:
+
+      tests      : 445 tests covering 302 units
+
+  Four of those 302 arrived with BUG-0011's fix, which taught
+  COLLECT-CALL-NAMES to record the name a function quotation designates:
+  HOP-REL-TYPE, HOP-ENTITY-ID and PROPERTY-KEY, each reached through a
+  (mapcar #'accessor ...) inside a real assertion; and CONCURRENCY-TEXT-P,
+  reached through (remove-if-not #'concurrency-text-p ...) at
+  src/workspace/test/workspace.lisp:800.
+
+  The first three are weak but arguably real: the assertion does depend on the
+  accessor behaving. The fourth is not defensible on any reading.
+  CONCURRENCY-TEXT-P is defined at src/workspace/test/workspace.lisp:763, in the
+  test file, for the sole use of the test file, and its whole body is
+  (and (search "Unsafe concurrent operations" text) t). Counting it as a unit
+  the suite covers means the number includes the suite's own scaffolding.
+
+  This is a class, not an instance, and BUG-0011 did not create it. STRESS-COUNTS
+  at line 766 of the same file -- also private to the test file, also scaffolding
+  -- is called in operator position at line 791 and has therefore carried a
+  `<- tests` edge by the ordinary head-only walk for as long as that walk has
+  existed:
+
+      describe stress-counts
+        function stress-counts  [src/workspace/test/workspace.lisp:766-773]
+          <- tests: a-reindex-and-a-poll-do-not-corrupt-the-index
+          <- calls: a-reindex-and-a-poll-do-not-corrupt-the-index
+
+  So the fix added one instance to a category that was already there. That is
+  why this is filed as its own bug rather than as a consequence of BUG-0011, and
+  why the fix must not be a quotation-specific exclusion -- PLAN-0011 R-5
+  explicitly refuses a per-operator exclusion list, and it is right to: a rule
+  that dropped #'f from the :TESTS derivation would leave STRESS-COUNTS counted
+  and CONCURRENCY-TEXT-P not, which is worse than either consistent answer.
+
+  CAUSE
+
+  Two places, and the interesting claim of this bug is that only one of them is
+  wrong.
+
+  src/graph/resolve.lisp:591, RESOLVE-TESTS. Derives a :TESTS edge from each
+  :CALLS edge a :TEST has to a member of *TESTED-TYPES*. Its docstring states
+  the derivation exactly, records why a naming-convention or import-graph
+  derivation was rejected for Lisp, and claims nothing more than reachability.
+  This function is doing what it says.
+
+  src/process/console.lisp:189, PRINT-STATUS:
+
+      (format t "  tests      : ~d test~:p covering ~d unit~:p~%"
+              (getf status :test-entities) (getf status :tested-units))
+
+  "covering" is the overclaim. A reader who has not read RESOLVE-TESTS' docstring
+  -- which is every reader of a status line -- takes it to mean the number of
+  units the suite tests, and it is instead the number of definitions any test
+  body happens to reach, scaffolding included. The property name behind it,
+  :TESTED-UNITS (workspace.lisp:687), carries the same claim.
+
+  WHY IT HID
+
+  The number has only ever been read as a trend. DES-0002 R10 asks for these
+  counts to be printed unconditionally so they can be read as zero-or-not, and
+  every use of it since has been "did it move" -- PLAN-0011 step 5 is a fair
+  example, treating 298 -> 302 as a delta to explain rather than a total to
+  believe. A number nobody takes an absolute reading of never has its label
+  audited.
+
+  It also reads plausibly. 302 units against 445 tests is roughly the ratio a
+  reader expects, so nothing about the figure invites a second look; the
+  scaffolding is a handful of entries inside it, not a distortion large enough
+  to notice from the outside.
+
+  FIX
+
+  Two candidates, deliberately of different sizes, and they are not exclusive.
+
+  Relabel. Change "covering" to a word that means what is measured -- "reaching"
+  is the accurate one -- in PRINT-STATUS, and say the same in the :TESTED-UNITS
+  docstring or rename the key. Cheap, correct, loses nothing, and settles the
+  honesty complaint completely without touching a derivation. This is the one to
+  do if only one is done.
+
+  Teach the derivation. In RESOLVE-TESTS, skip a candidate target whose origin
+  file is itself a test file -- the same predicate the workspace already uses to
+  decide what is test code. That drops CONCURRENCY-TEXT-P and STRESS-COUNTS
+  together, which is the point: it is a statement about what a fixture is, not
+  about how a name was written, so it treats the pre-existing instance and the
+  new one identically. It belongs in loom-graph, not the analyzer -- the
+  analyzer records what the source says and must go on doing so (RULE-0002); the
+  question of which recorded call constitutes coverage is a derivation question.
+
+  Two things to settle before writing the second one. Whether "origin file is a
+  test file" is available at RESOLVE-TESTS' layer without reaching for a path
+  heuristic the graph does not already own. And what it does to a codebase whose
+  units and tests share a file, which is legal and which the predicate would
+  silently zero -- the safer form may be "target and test share an origin file"
+  rather than "target lives in a test file".
+
+  A test must fail without whichever is chosen (CON-0003). For the relabel, the
+  console output assertion. For the derivation, a fixture with a test calling a
+  helper defined in the same test file, asserting no :TESTS edge is emitted --
+  which is emitted today.

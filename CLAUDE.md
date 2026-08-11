@@ -17,6 +17,12 @@ tools/loom.sh 'impact <name> 3'       # what a change reaches, plus decisions
                                       #   3 is a narrowing; the default is 5
 tools/loom.sh 'rules'                 # constraints, and which are machine-checked
 tools/loom.sh 'check'                 # violations and unresolved doc references
+tools/loom.sh 'enrich'                # ask the toolchain what the text pass
+                                      #   cannot see. Optional, on demand only,
+                                      #   and self-aging: an index nobody has
+                                      #   re-enriched gives today's text answer
+                                      #   rather than yesterday's image answer.
+                                      #   DES-0011.
 tools/loom.sh 'status | find foo'     # several commands, run in order
 tools/loom.sh 'help'                  # the authoritative table; trust it first
 ```
@@ -44,8 +50,37 @@ of their own, and a prompt inside a subagent is a stall nobody sees.
 contradicting them.
 
 Loom has known blind spots — calls inside macro bodies are unattributed, so
-anything driven by a `test` form under-reports. ARCH-0001 records the rest. A
-small impact set is not proof of a small change.
+anything driven by a `test` form under-reports. A call inside a body-swallowing
+macro is the exception since DES-0014: a `define-operation` or `define-command`
+body reaches its callee through a `:call-site` entity, an ambiguous name becomes
+one reportable site with an edge to each candidate rather than a silent drop, and
+`describe` on the callee lists both among its callers with their kind. DES-0001
+records the rest. A small impact set is not proof of a small change.
+
+A callable is identified by the symbol it names, not the string it spells
+(DES-0015). Two same-named definitions in different packages are two callables,
+and a call reaches whichever one its own package makes accessible — through an
+`:import-from`, through a `:use` of a package that exports it, or by interning
+its own. So `find` showing two entries for one name is usually two things, not a
+duplicate. When the package cannot be worked out — the file's package `:use`s
+something no declaration in the tree describes, which on game-server is 54 of 95
+same-named callables — Loom refuses to place the name and falls back to matching
+on the spelling, which is the older and blunter answer rather than a wrong one.
+`loom-analyzer:*external-package-names*` is how you narrow that: naming a
+library there lets its exports be read from the image and its inherited names
+placed.
+
+A malformed form costs a form rather than a file. The Lisp analyzer reads
+through Eclector behind a Loom-owned client (DES-0013), so a file with damage
+in it still yields its other definitions and the damage is recorded on the
+`:file` entity with a line range. A repaired form is deliberately not indexed:
+recovering an unterminated list can swallow the next definition into the
+damaged one's body, and an entity minted from that would carry a plausible
+range over text defining something else — CON-0001's fabricated fact in the one
+shape no count would reveal. `status`' `unread` line sums what was passed over
+(`#+`/`#-` branches not taken, a refused `#.`) and what was repaired; both read
+zero on a healthy tree, and a number there is the index saying which
+definitions it knows it is missing.
 
 ## Environment
 
@@ -60,7 +95,7 @@ Full suite, in a live image:
 
 ```lisp
 (load "src/full-test.lisp")
-(loom-test:full-test)      ; six systems, per-system summary
+(loom-test:full-test)      ; nine systems, per-system summary
 ```
 
 or `tools/loom-test.sh` from outside one — note that is `/usr/bin/sbcl`, not the
@@ -74,9 +109,44 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
     loom-knowledge  read-only services: find, describe, impact, context.
     loom-workspace  indexing pipeline and file monitor.
     loom-process    the console.
+    loom-serve      the operation registry, tiers, REPL sessions, the listener.
+    loom-rest       HTTP/JSON over that registry.
+    loom-mcp        MCP's JSON-RPC over the same listener.
+
+The last four are peers, not a stack: loom-serve, loom-rest and loom-mcp depend
+on the same five systems loom-process does and on nothing above loom-knowledge,
+and nothing below any of them depends on any of them. DES-0006 R5 makes that
+structural rather than a habit — console.lisp, loom.lisp, loom-process.asd and
+src/process/package.lisp are unedited by all of it.
 
 RULE-0001 to RULE-0003 enforce parts of this and are machine-checked. They do
-not fail a FiveAM assertion, so run `check` as well as the suite.
+not fail a FiveAM assertion, so run `check` as well as the suite — and note
+that they cannot see the peer property above at all regardless: they key on
+LOOM-GRAPH:ENTITY-SYSTEM, which reads the segment after `src/` (BUG-0006 fixed
+it to do that; it used to read the segment before the first slash, so every
+file in the tree was system "src" and every layering rule matched nothing —
+`check`'s own layering output was accordingly always vacuous, not just for the
+peer property). `sbcl --script tools/load-test.lisp loom-serve` is still the
+instrument for the peer property specifically; no rule names loom-serve,
+loom-rest, loom-mcp or loom-process, so `check` has nothing to say about them
+either way. Since BUG-0006's fix, `check` **can** report a real RULE-0001
+violation — but RULE-0002 and RULE-0003 currently report 72 false positives of
+their own (BUG-0009): a test file resolves to the same system as the
+production code it tests, and RULE-0003's check clause bans every call from
+loom-knowledge to loom-graph rather than only a write. Read `check`'s own
+output for RULE-0001 as real; read a RULE-0002 or RULE-0003 line as BUG-0009
+until that closes.
+
+## Running it as a service
+
+    sbcl --script loom-serve.lisp [/path/to/repo ...]              console + listener
+    sbcl --script loom-serve.lisp --headless [/path/to/repo ...]   listener alone
+
+Both bind 127.0.0.1:4780 and carry the REST routes under `/v1/` and the MCP
+endpoint at `/mcp`. The first hands over the same `loom>` console `loom.lisp`
+does; the second exists because `main` returns immediately when stdin is closed,
+which under a supervisor would take the listener down with it. REQ-0008 and
+DES-0006 are the reasoning.
 
 ## Where the knowledge lives
 
@@ -84,19 +154,41 @@ Not here. This file is a pointer; the reasoning is in `docs/`, indexed and
 cross-referenced. CON-0004 describes the workflow and how documents link.
 
     docs/requirements/  what is wanted           REQ-nnnn
-    docs/arch/          the shape of an answer   ARCH-nnnn
-    docs/design/        decisions and rationale  DEC-nnnn
+    docs/design/        the shape of an answer   DES-nnnn
+    docs/decisions/     decisions and rationale  DEC-nnnn
+    docs/arch/          structure and mechanism  ARCH-nnnn
     docs/plans/         ordered steps            PLAN-nnnn
     docs/reviews/       review findings          REV-nnnn
     docs/bugs/          defects worth keeping    BUG-nnnn
     docs/concepts/      recurring ideas          CON-nnnn
     docs/rules/         constraints              RULE-nnnn
 
-Documents are YAML. The analyzer claims `.yaml` and `.yml` under `docs/` and
-nothing else, and the directory names the type — a markdown file in `docs/plans`
-is invisible. `refines:` names the document a document answers, `affects:` names
-the code a decision governs, and both resolve against the index; a name that
-resolves to nothing is reported by `check` rather than dropped.
+Loom's own documents are YAML, and writing one is still writing YAML. The
+document analyzer claims `.yaml` and `.yml` under `docs/`, and the directory
+names the type. `refines:` names the document a document answers, `affects:`
+names the code a document bears on — every document type, not just decisions
+(BUG-0023) — and both resolve against the index; a name that resolves to
+nothing is reported by `check` rather than dropped. A decision's `affects:`
+*governs* and becomes `:decides`; every other document's merely bears on its
+target and becomes `:documents`.
+
+Markdown is indexed too, by a separate analyzer, and it earns weaker edges on
+purpose (REQ-0014, DES-0016). A `.md` or `.markdown` file under any directory
+named `docs`, `doc`, `design` or `documentation` becomes a `:document` whose
+title is its first H1 — but never a REQ or a DEC, whatever its directory is
+called, because that mapping is this tree's convention rather than a fact about
+markdown. Its backticked identifiers and its relative link targets resolve into
+`:mentions` edges: *this file names this thing*, and nothing more. A `:mentions`
+is not an `affects:`, `impact` reports it under its own heading rather than
+among the decisions governing an entity, and a token that resolves to nothing
+is dropped in silence rather than counted as a rotten reference — prose is full
+of ordinary words in backticks.
+
+`:mentions` is where every prose mention now lands, including the ones the YAML
+analyzer finds in a document's own body. They used to be `:documents` edges;
+`impact`'s `documents:` line is consequently empty on this tree, and that is the
+honest report — nothing in CON-0004 currently lets an author *declare* that a
+document documents a function.
 
 ## Principles worth knowing before changing anything
 
@@ -110,6 +202,11 @@ resolves to nothing is reported by `check` rather than dropped.
 - **Guard with the condition type the library actually signals.** `error` does
   not catch a condition defined as a direct subtype of `condition`. RULE-0004.
 - **A test must fail without the change it covers.** CON-0003.
+- **An analyzer asserts each natural key at most once per file.** Two source
+  definitions deriving one key are reconciled by the analyzer, in its own
+  language's semantics — CL replaces, TypeScript merges — because the writer is
+  language-neutral and by the time it sees the ops the evidence is gone.
+  Nothing checks this. CON-0005.
 - **Finishing a plan means restating what it implemented.** A plan reaching
   `final` makes the `draft` status of every document it refines false, so mark
   those `implemented`, or `partial` with an OUTSTANDING section. Nothing checks

@@ -31,14 +31,22 @@
         (merge-pathnames (format nil "loom-fixture-~36r/" (random (expt 2 48)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
+  ;; The IN-PACKAGE is load-bearing, not decoration (BUG-0010). RULE-0001 below
+  ;; names :KERNEL, and after DES-0009 that is a package name rather than a
+  ;; path segment: without this form src/alpha.lisp falls through to
+  ;; DEFAULT-SYSTEM-FOR-PATH, which answers NIL for a path with no segment after
+  ;; "src/", and the fixture's rule matches nothing whatever the pipeline does.
+  ;; It mints no entity of its own, so the exact counts asserted below --
+  ;; 3 :FUNCTION entities, 4 files -- are unchanged by its presence.
   (write-file "src/alpha.lisp"
-              "(defun alpha (x) (+ x 1))
+              "(in-package :kernel)
+(defun alpha (x) (+ x 1))
 (defun alpha-twice (x) (alpha (alpha x)))
 ")
   (write-file "src/beta.lisp"
               "(defun beta (x) (alpha x))
 ")
-  (write-file "docs/design/DEC-0001.yaml"
+  (write-file "docs/decisions/DEC-0001.yaml"
               "id: DEC-0001
 type: decision
 title: Alpha stays arithmetic
@@ -50,12 +58,12 @@ rationale: |
   (write-file "docs/rules/RULE-0001.yaml"
               "id: RULE-0001
 type: rule
-title: Nothing in src may call into docs
+title: Nothing in kernel may call into docs
 status: active
 severity: error
 check:
   kind: no-edge
-  from-system: src
+  from-system: kernel
   to-system: docs
   rel-types: [calls]
 ")
@@ -75,6 +83,28 @@ check:
 ;;; ------------------------------------------------------------------
 ;;; Indexing (SS3.4)
 ;;; ------------------------------------------------------------------
+
+(test a-repository-is-found-by-the-path-spelling-a-person-types
+  ;; WATCH-REPOSITORY stores its root as NORMALIZE-ROOT left it -- a truename,
+  ;; so `~' is already expanded -- while a designator arrives as whatever was
+  ;; typed. Comparing the two as strings therefore failed on exactly the
+  ;; spelling CLAUDE.md and the console both encourage: `watch "~/lisp/Loom"'
+  ;; registered the repository and `unwatch "~/lisp/Loom"' could not find it,
+  ;; because the name branch wants "Loom" and the string branch wants the
+  ;; expanded path.
+  ;;
+  ;; No fixture on disk: the home directory is a directory that certainly
+  ;; exists, so a synthetic repository rooted there tests the normalisation
+  ;; without writing anything anywhere.
+  (let* ((home (probe-file (user-homedir-pathname)))
+         (repository (loom-workspace::make-repository :root home :name "home-fixture"))
+         (*repositories* (list repository)))
+    (is (eq repository (find-repository "home-fixture"))
+        "by name, as before")
+    (is (eq repository (find-repository (namestring home)))
+        "by the spelling watch stored, as before")
+    (is (eq repository (find-repository "~/"))
+        "and by the spelling a person types, which is the fix")))
 
 (test watching-a-repository-indexes-source-and-documents-together
   (with-workspace-fixture (repository)
@@ -109,6 +139,14 @@ check:
 (test the-pipeline-runs-the-rule-checks
   (with-workspace-fixture (repository)
     (let ((g (repository-graph repository)))
+      ;; BUG-0010, and CON-0003's question asked of the assertion below: a rule
+      ;; whose from-system: matches no entity reports zero exactly the way a
+      ;; rule that matched entities and found nothing does. The NULL assertion
+      ;; alone cannot tell "checked and clean" from "never checked", so the
+      ;; premise gets asserted first -- something has to be in :KERNEL for the
+      ;; fixture's RULE-0001 to have had anything to say.
+      (is (plusp (length (entities-in-system g :kernel)))
+          "nothing landed in the system the fixture's rule names")
       (is (null (entities-of-type g :rule-violation))
           "the fixture is clean, and a clean tree must report nothing"))))
 
@@ -120,7 +158,7 @@ check:
       (is (= 2 (getf status :documents)))
       (is (zerop (getf status :unresolved-references)))
       (is (zerop (getf status :errors)))
-      ;; ARCH-0002 R10. Asserted present *and* zero, not merely zero: the
+      ;; DES-0002 R10. Asserted present *and* zero, not merely zero: the
       ;; fixture has no definer calls, so a key that is absent and a count that
       ;; is genuinely nought both read as NIL through GETF, and only the
       ;; membership check tells them apart. Zero is also what these read at
@@ -221,6 +259,37 @@ check:
                   :test #'string=)
           "beta -> alpha was destroyed by the retract and rebuilt by resolution"))))
 
+(test poll-once-that-finds-a-change-moves-indexed-at
+  ;; DES-0007 R1: staleness is answered by comparing REPOSITORY-INDEXED-AT
+  ;; against a process's own start time, and that comparison is a fabricated
+  ;; "current" unless the monitor's own path writes the slot too. Before the
+  ;; fix INDEX-REPOSITORY was its only writer.
+  (with-workspace-fixture (repository)
+    (let ((before (repository-indexed-at repository)))
+      ;; GET-UNIVERSAL-TIME counts whole seconds, so a poll in the same second
+      ;; as the initial index would move the slot to a value EQL to the old one
+      ;; and the first assertion would fail for a reason that is not the code's
+      ;; -- the same whole-second fact *MTIME-SETTLE-SECONDS* records one
+      ;; system down.
+      (loop while (<= (get-universal-time) before) do (sleep 0.2))
+      (write-file "src/gamma.lisp" "(defun gamma (x) (beta x))
+")
+      (let ((written (get-universal-time)))
+        (poll-once repository :quiet t)
+        (is (> (repository-indexed-at repository) before)
+            "a poll that reindexed a file left indexed-at at the last reindex")
+        (is (>= (repository-indexed-at repository) written)))
+      ;; The pairing CON-0003 asks for. "Just set it every time" passes the
+      ;; assertions above and fails this one, and it is the first fix a reader
+      ;; reaches for -- it would make every poll of an idle tree report the
+      ;; index as having just moved, which is the same fabricated answer in the
+      ;; other direction.
+      (let ((after (repository-indexed-at repository)))
+        (loop while (<= (get-universal-time) after) do (sleep 0.2))
+        (poll-once repository :quiet t)
+        (is (eql after (repository-indexed-at repository))
+            "a poll that found nothing moved indexed-at anyway")))))
+
 ;;; ------------------------------------------------------------------
 ;;; Rebuild equivalence (SS14.4)
 ;;; ------------------------------------------------------------------
@@ -257,11 +326,428 @@ check:
 the files whichever way it got there"))))
 
 ;;; ------------------------------------------------------------------
-;;; Generated definitions (ARCH-0002): the lifecycle
+;;; The :CALL-SITE ceiling (DES-0014 R2)
+;;; ------------------------------------------------------------------
+
+(defparameter *call-site-ceiling* 178
+  "The most :CALL-SITE entities this tree may hold before something is wrong.
+
+DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
+entities -- and adopted the sparse form instead. Entity growth is therefore
+bounded by a rule rather than by a number, and DES-0014's own RISKS section
+says rules drift: the failure mode if some common case starts minting a call
+site is a graph that quietly quadruples, with nothing failing. This number is
+the guard, and it is meant to fail loudly rather than warn.
+
+162 measured plus 10% headroom. The three generators' populations on this tree,
+counted by tools/call-site-census.lisp after BUG-0020's keyword fix: 20 initform
+pairs, 124 resolving orphaned definer names, 18 ambiguous sites. PLAN-0014 step
+5 says to use step 1's sum, which was 170 -- but step 1 predates step 2, and 8
+of those 170 were the keyword-head orphans BUG-0020 removed. Using the stale
+number would leave 8 counts of slack that stand for nothing, so this is the
+post-step-2 sum; the plan's own step 7 verification makes the same substitution
+when it says \"as step 2 left it\".
+
+Re-measure with the census rather than adjusting this to whatever the suite
+reports. A number edited to match an observation is not a ceiling.
+
+UNCHANGED BY DES-0015, 2026-08-10, and that is the finding rather than an
+omission. Package-aware resolution was expected to empty most of the ambiguous
+population: DES-0015 states that all four ambiguous names on this tree are
+package collisions and that all 18 sites would stop being minted. Measured
+after stage C, the tree holds 161 call sites against 162 before, and the
+ambiguous population fell from 18 to 16.
+
+Only LOG-EVENT resolved. FIXTURE-INSPECTION, DISCOVER-UNITS and
+READ-INSPECTION-FILE are unplaceable, because the packages they are written in
+use :FIVEAM, which no declaration in this tree describes, so HOME-PACKAGE
+refuses to place them and they fall back to name-only matching -- CON-0001
+working exactly as designed. Naming :FIVEAM in
+LOOM-ANALYZER:*EXTERNAL-PACKAGE-NAMES* would place them; the default does not,
+because that would make the index depend on what the reading image happens to
+have loaded.
+
+So the ceiling stays at 178. Lowering it to track a fall that did not happen
+would be the mistake the paragraph above warns about, in the other
+direction.")
+
+(test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
+  ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is
+  ;; a whole-tree property and the workspace fixture is four synthetic files.
+  ;;
+  ;; Written before anything mints, which is deliberate rather than premature:
+  ;; it passes trivially at zero today, so every generator step lands against a
+  ;; guard already in place instead of one written afterwards to fit the number
+  ;; it got. That also means this test cannot fail for the right reason yet --
+  ;; the population it bounds is empty until PLAN-0014 step 6. What it does
+  ;; assert today is that the measurement is real: it indexes the actual tree
+  ;; and counts the actual type, so the assertion is wired to something rather
+  ;; than vacuous.
+  (let* ((root (asdf:system-relative-pathname :loom-workspace "../../"))
+         (repository (watch-repository root :monitor nil :quiet t)))
+    (unwind-protect
+         (let ((sites (entities-of-type (repository-graph repository) :call-site)))
+           (is (<= (length sites) *call-site-ceiling*)
+               "~d :CALL-SITE entities against a ceiling of ~d. DES-0014: \"A
+:CALL-SITE entity is minted exactly when a call name cannot be expressed as a
+:CALLS edge from an existing definition entity. Never otherwise.\" A count over
+the ceiling means some common case has started minting one, which is the
+uniform model this design priced at 4867 entities and refused."
+               (length sites) *call-site-ceiling*))
+      (unwatch-repository (repository-name repository)))))
+
+;;; ------------------------------------------------------------------
+;;; Enrichment (DES-0011): the orchestration
+;;; ------------------------------------------------------------------
+;;;
+;;; A stub inspector rather than the real one throughout. What is under test
+;;; here is the ordering ENRICH-REPOSITORY owns -- inspectors, then the merge,
+;;; then resolution -- and a real child SBCL would make every assertion below
+;;; depend on the fixture tree also being a loadable ASDF system, which it is
+;;; not and should not have to be. The child itself is tested in
+;;; src/analyzer/test/inspector.lisp.
+
+;;; Qualified rather than imported: LOOM-WORKSPACE uses LOOM-ANALYZER but does
+;;; not re-export its protocol, and widening this test package's :USE list to
+;;; reach four symbols would pull in the whole analyzer surface.
+
+(defclass stub-inspector (loom-analyzer:inspector)
+  ((inspection :initarg :inspection :reader stub-inspector-inspection))
+  (:default-initargs :language :lisp))
+
+(defmethod loom-analyzer:inspector-available-p ((inspector stub-inspector) root)
+  (declare (ignore root))
+  (values t nil))
+
+(defmethod loom-analyzer:inspect-repository ((inspector stub-inspector) root &key)
+  (declare (ignore root))
+  (stub-inspector-inspection inspector))
+
+(defun fixture-inspection ()
+  "What an inspector would report about the fixture repository: BETA, which the
+text pass already holds, and GENERATED-THING, which exists nowhere in the
+source -- plus the call between them, which is only expressible once both
+endpoints resolve."
+  (list :loom-inspection 1
+        :language :lisp
+        :units '((:unit "fixture" :status :loaded))
+        :definitions
+        (list (list :kind :function :name "beta" :package "fixture"
+                    :file "src/beta.lisp" :start-line 1 :end-line 1)
+              (list :kind :function :name "generated-thing" :package "fixture"
+                    :file "src/alpha.lisp" :start-line 2 :end-line 2
+                    :system :kernel))
+        :calls
+        (list (list :caller (list :function "beta" "fixture")
+                    :caller-file "src/beta.lisp"
+                    :callee (list :function "generated-thing" "fixture")))))
+
+(defun stub-inspectors (&optional (inspection (fixture-inspection)))
+  (list (make-instance 'stub-inspector :inspection inspection)))
+
+(defun named-function (graph name)
+  (find name (entities-of-type graph :function) :key #'name :test #'string=))
+
+(test enrichment-adds-what-the-image-saw-and-leaves-the-text-pass-alone
+  ;; The step 2 guard re-run one layer up, on a real index built by the real
+  ;; analyzers rather than by hand.
+  (with-workspace-fixture (repository)
+    (let* ((graph (repository-graph repository))
+           (alpha (named-function graph "alpha"))
+           (before (getp alpha :call-names))
+           (beta (named-function graph "beta")))
+      (enrich-repository repository :quiet t :inspectors (stub-inspectors))
+      (let ((minted (named-function graph "generated-thing")))
+        (is (not (null minted)))
+        (is (eq :introspected (source minted)))
+        (is (equal "src/alpha.lisp" (origin-file minted))
+            "so editing alpha.lisp ages it out")
+        (is (find (id minted)
+                  (relationships-from graph (id beta) :rel-type :calls)
+                  :key #'to-id :test #'equal)
+            "the edge only the image could see"))
+      (is (equal before (getp (named-function graph "alpha") :call-names))
+          "and the text pass's resolution input is untouched")
+      (is (member "beta" (mapcar (lambda (r) (name (get-entity graph (from-id r))))
+                                 (relationships-to graph (id alpha) :rel-type :calls))
+                  :test #'string=)
+          "as are the edges derived from it"))))
+
+(defun confirming-inspection ()
+  "What an inspector would report about a call the text pass already recorded:
+BETA calling ALPHA, both definitions already in the index.
+
+Separate from FIXTURE-INSPECTION rather than folded into it because it exists
+for one property the other cannot show. FIXTURE-INSPECTION's only edge is
+image-only -- BETA to GENERATED-THING -- and RESOLVE-CALLS cannot re-derive
+that one, because the image pass writes no :CALL-NAMES. A *confirmed* edge is
+the one resolution re-asserts over."
+  (list :loom-inspection 1
+        :language :lisp
+        :units '((:unit "fixture" :status :loaded))
+        :definitions
+        (list (list :kind :function :name "alpha" :package "kernel"
+                    :file "src/alpha.lisp" :start-line 2 :end-line 2)
+              (list :kind :function :name "beta" :package "fixture"
+                    :file "src/beta.lisp" :start-line 1 :end-line 1))
+        :calls
+        (list (list :caller (list :function "beta" "fixture")
+                    :caller-file "src/beta.lisp"
+                    :callee (list :function "alpha" "kernel")))))
+
+(defun beta-calls-alpha (graph)
+  "The one :CALLS edge both passes see in the fixture."
+  (let ((alpha (id (named-function graph "alpha"))))
+    (find alpha (relationships-from graph (id (named-function graph "beta"))
+                                    :rel-type :calls)
+          :key #'to-id :test #'equal)))
+
+(test a-confirmed-edge-keeps-its-agreement-record-through-the-whole-pass
+  ;; BUG-0015, at the layer where it lives. Every other assertion on :SOURCES is
+  ;; a loom-graph unit test that stops at APPLY-TRANSACTION -- the near side of
+  ;; the seam where the property was destroyed. ENRICH-REPOSITORY then calls
+  ;; RESOLVE-AND-CHECK, whose RESOLVE-CALLS re-asserts this very edge with no
+  ;; properties and :SOURCE :STRUCTURAL, and ABSORB-PROPERTIES CLRHASHes the
+  ;; union away. So the property was written in loom-graph, erased in
+  ;; loom-workspace, and no test on either side of the boundary could see both.
+  (with-workspace-fixture (repository)
+    (let ((graph (repository-graph repository))
+          (inspectors (stub-inspectors (confirming-inspection))))
+      (enrich-repository repository :quiet t :inspectors inspectors)
+      (let ((edge (beta-calls-alpha graph)))
+        (is (not (null edge)))
+        (is (equal '(:structural :introspected) (getp edge :sources))
+            "agreement has to survive the resolution ENRICH-REPOSITORY runs itself")
+        (is (eq :introspected (source edge))))
+      ;; The second erasure, which has a different trigger and needs its own
+      ;; assertion: a poll of an unrelated file re-runs RESOLVE-AND-CHECK over
+      ;; the whole index, and RESOLVE-CALLS re-asserts every text-derivable edge
+      ;; whether or not its own files moved. src/delta.lisp is a file neither
+      ;; endpoint lives in, so nothing here is the aging-out that DES-0011
+      ;; intends.
+      (write-file "src/delta.lisp" "(defun delta (x) (beta x))
+")
+      (is (= 1 (poll-once repository :quiet t)))
+      (let ((edge (beta-calls-alpha graph)))
+        (is (not (null edge)) "the edge itself survives -- it is text-derivable")
+        ;; Asserted as it is rather than as R6 would like it. The fix above is
+        ;; ENRICH-REPOSITORY re-deriving the merge after its own resolution; it
+        ;; cannot reach a poll that happens later, and the alternatives that
+        ;; could -- teaching RESOLVE-CALLS about provenance, or keeping every
+        ;; inspection resident and re-merging it on the poll path -- trade away
+        ;; DEC-0003 or DES-0011 R9 respectively. What is left is a degradation
+        ;; rather than a lie, in exactly the sense DES-0011 already promises:
+        ;; the edge stands as the text pass's own, and the agreement returns on
+        ;; the next enrich. BUG-0015 carries the residue.
+        (is (null (getp edge :sources))
+            "the union is gone until the next enrich, and this is the record of that")
+        (is (eq :structural (source edge))))
+      (enrich-repository repository :quiet t :inspectors inspectors)
+      (is (equal '(:structural :introspected) (getp (beta-calls-alpha graph) :sources))
+          "which is what makes the line above a degradation and not a loss"))))
+
+(test a-language-with-no-inspector-is-a-recorded-absence
+  ;; REQ-0018 R2: not an error, not a failure, and above all not silence -- a
+  ;; pass that reported nothing would be indistinguishable from one that agreed
+  ;; with the tree completely.
+  (with-workspace-fixture (repository)
+    (let* ((loom-analyzer:*inspectors* '())
+           (graph (repository-graph repository))
+           (before (length (all-entities graph)))
+           (report (enrich-repository repository :quiet t))
+           (absence (first (getf report :absences))))
+      (is (= 1 (length (getf report :absences))))
+      (is (eq :lisp (getf absence :language)))
+      (is (search "no inspector" (getf absence :reason)))
+      (is (= before (length (all-entities graph)))
+          "and the index the text pass built stands unchanged")
+      (is (zerop (getf report :added))))))
+
+(test an-image-minted-definition-resolves-a-text-call-in-the-same-run
+  ;; The compose property, and the reason RESOLVE-AND-CHECK runs last rather
+  ;; than first. GAMMA records a call to a name nothing defines; the moment the
+  ;; image mints it, the text pass's own record resolves into a :structural
+  ;; edge. Called before the merge, resolution would defer this to the next
+  ;; poll, so the assertion fails if the order is reversed.
+  (with-workspace-fixture (repository)
+    (write-file "src/gamma.lisp" "(defun gamma (x) (generated-thing x))
+")
+    (poll-once repository :quiet t)
+    (let* ((graph (repository-graph repository))
+           (gamma (named-function graph "gamma")))
+      (is (member "generated-thing" (getp gamma :unresolved-calls) :test #'string=)
+          "unresolved before, because nothing defines it")
+      (enrich-repository repository :quiet t :inspectors (stub-inspectors))
+      (is (null (member "generated-thing" (getp gamma :unresolved-calls)
+                        :test #'string=))
+          "and resolved after, in the same run")
+      (is (find (id (named-function graph "generated-thing"))
+                (relationships-from graph (id gamma) :rel-type :calls)
+                :key #'to-id :test #'equal)))))
+
+(test an-introspected-fact-ages-out-through-a-real-poll-and-a-real-enrich
+  ;; PLAN-0010 step 11's "aging check, by hand", as an automated regression
+  ;; instead of a one-time manual measurement. The graph-level tests in
+  ;; src/graph/test/enrich.lisp prove the mechanism -- RETRACT-FILE, called
+  ;; directly as an op, ages an introspected fact out -- but that is not the
+  ;; same claim as "editing a file through the real pipeline does this",
+  ;; because what actually calls RETRACT-FILE on an edit is INDEX-FILE's own
+  ;; ops, reached through POLL-ONCE, not a hand-built transaction. This is the
+  ;; test of the real path.
+  (with-workspace-fixture (repository)
+    (let ((inspectors (stub-inspectors))
+          (graph (repository-graph repository)))
+      (enrich-repository repository :quiet t :inspectors inspectors)
+      (is (not (null (named-function graph "generated-thing")))
+          "the image-minted fact exists after the first enrich")
+      ;; Editing alpha.lisp -- GENERATED-THING's own origin-file -- through
+      ;; the real pipeline: WRITE-FILE plus POLL-ONCE, not RETRACT-FILE by
+      ;; hand. The content changes materially so FILE-CHANGED-P has no
+      ;; ambiguity to resolve by way of the settle window (CON-0002).
+      (write-file "src/alpha.lisp"
+                  "(in-package :kernel)
+(defun alpha (x) (+ x 1))
+(defun alpha-twice (x) (alpha (alpha x)))
+(defun alpha-thrice (x) (alpha (alpha-twice x)))
+")
+      (is (= 1 (poll-once repository :quiet t)))
+      (is (null (named-function graph "generated-thing"))
+          "gone with the file it was minted from -- no enrich involved, and
+no code outside the pipeline POLL-ONCE already runs")
+      (is (not (null (named-function graph "alpha-thrice")))
+          "the text pass's own definitions in the same file are back, which is
+what tells this apart from the file simply having vanished")
+      (enrich-repository repository :quiet t :inspectors inspectors)
+      (is (not (null (named-function graph "generated-thing")))
+          "and the next enrich puts it back"))))
+
+(test status-reports-enrichment-as-scalars
+  ;; DES-0011 R8. Scalars because loom-serve's :STATUS operation serializes
+  ;; this plist to JSON for REST and MCP callers and no rule covers that
+  ;; boundary -- a nested plist is the shape most likely to arrive as something
+  ;; a client cannot read.
+  (with-workspace-fixture (repository)
+    (let ((before (repository-status repository)))
+      (dolist (key '(:enrichment-runs :enriched-units :enrichment-gaps :enrichment-at))
+        (is (member key before) "~s is missing from status" key))
+      (is (eql 0 (getf before :enrichment-runs)))
+      (is (eql 0 (getf before :enriched-units)))
+      (is (null (getf before :enrichment-at))
+          "which is what tells \"never run\" from \"run and found nothing\""))
+    (enrich-repository repository :quiet t :inspectors (stub-inspectors))
+    (let ((after (repository-status repository)))
+      (is (eql 1 (getf after :enrichment-runs)))
+      (is (eql 1 (getf after :enriched-units)))
+      (is (eql 0 (getf after :enrichment-gaps)))
+      (is (integerp (getf after :enrichment-at)))
+      (dolist (key '(:enrichment-runs :enriched-units :enrichment-gaps :enrichment-at))
+        (is (not (consp (getf after key))) "~s must not be a list" key)))))
+
+;;; ------------------------------------------------------------------
+;;; The SERIOUS-CONDITION guard (DES-0011, RULE-0004)
+;;; ------------------------------------------------------------------
+;;;
+;;; ENRICH-REPOSITORY guards each inspector with SERIOUS-CONDITION rather than
+;;; INDEX-FILE's ERROR, and its own comment names the reason: "a per-language
+;;; inspector nobody in this file wrote". RULE-0004's own example is the shape
+;;; that reason has to survive -- cl-yaml's conditions are defined as direct
+;;; subtypes of CONDITION, not of ERROR, and (measured directly under
+;;; /usr/bin/sbcl) not of SERIOUS-CONDITION either: (typep (make-condition
+;;; '(define-condition foo () ())) 'serious-condition) is NIL, and a
+;;; handler-case naming serious-condition does not catch an instance signalled
+;;; with ERROR the function unless the condition class itself descends from
+;;; error or storage-condition. So the two tests below are not redundant: the
+;;; first is the case the current guard actually catches (an ERROR subtype, by
+;;; far the common case and the only one exercised anywhere in this suite
+;;; before now); the second is the case its own justifying comment names and
+;;; that a SERIOUS-CONDITION guard does not in fact reach.
+
+(defclass erroring-inspector (loom-analyzer:inspector) ()
+  (:default-initargs :language :lisp))
+
+(defmethod loom-analyzer:inspector-available-p ((inspector erroring-inspector) root)
+  (declare (ignore root))
+  (values t nil))
+
+(defmethod loom-analyzer:inspect-repository ((inspector erroring-inspector) root &key)
+  (declare (ignore root))
+  (error "the toolchain misbehaved"))
+
+(define-condition bare-condition-toolchain-failure (condition)
+  ((text :initarg :text :reader bare-condition-toolchain-failure-text))
+  (:report (lambda (c s) (format s "~a" (bare-condition-toolchain-failure-text c))))
+  (:documentation "cl-yaml's own shape, reproduced: (define-condition foo () ...)
+with no ERROR or SERIOUS-CONDITION ancestor. RULE-0004 names this convention as
+not unusual for a library to use."))
+
+(defclass bare-condition-inspector (loom-analyzer:inspector) ()
+  (:default-initargs :language :lisp))
+
+(defmethod loom-analyzer:inspector-available-p ((inspector bare-condition-inspector) root)
+  (declare (ignore root))
+  (values t nil))
+
+(defmethod loom-analyzer:inspect-repository ((inspector bare-condition-inspector) root &key)
+  (declare (ignore root))
+  (error 'bare-condition-toolchain-failure :text "toolchain misbehaved, not an error"))
+
+(test enrich-repository-survives-an-inspector-that-signals-an-ordinary-error
+  (with-workspace-fixture (repository)
+    (let ((report (enrich-repository repository :quiet t
+                                     :inspectors (list (make-instance 'erroring-inspector)))))
+      (is (not (null report)) "the call must return rather than unwind the caller")
+      (is (search "misbehaved" (cdr (first (repository-errors repository)))))
+      (is (= 1 (length (getf report :absences)))))))
+
+(test enrich-repository-survives-an-inspector-that-signals-a-bare-condition
+  ;; The case ENRICH-REPOSITORY's own comment names and SERIOUS-CONDITION does
+  ;; not reach. If this regresses to naming ERROR or stays at SERIOUS-CONDITION
+  ;; without widening, the condition escapes ENRICH-REPOSITORY, escapes
+  ;; RUN-COMMAND's own ERROR-only guard (src/process/console.lisp), and takes
+  ;; the console down for a toolchain condition that named itself no differently
+  ;; than a rule violation report.
+  (with-workspace-fixture (repository)
+    (let ((report (enrich-repository repository :quiet t
+                                     :inspectors (list (make-instance 'bare-condition-inspector)))))
+      (is (not (null report)) "the call must return rather than unwind the caller")
+      (is (search "misbehaved" (cdr (first (repository-errors repository)))))
+      (is (= 1 (length (getf report :absences)))))))
+
+(test a-poll-never-enriches-and-can-be-shown-not-to-have
+  ;; DES-0011 R9, written so it can fail. "No introspected entity appeared
+  ;; after a poll" would pass on a tree where enrichment does nothing at all,
+  ;; which proves nothing -- so the poll is shown to have done its own work
+  ;; (the file really was reanalyzed) and the counter is shown to be capable of
+  ;; moving (an explicit call moves it). Only then does the middle assertion
+  ;; mean the poll chose not to.
+  ;;
+  ;; The trap is BUG-0008's: a heavyweight lifecycle operation wired into a path
+  ;; that runs on a timer. Here it would be a whole child SBCL loading the
+  ;; target, every two seconds.
+  (with-workspace-fixture (repository)
+    (let ((inspectors (stub-inspectors)))
+      (is (eql 0 (getf (repository-status repository) :enrichment-runs)))
+      (write-file "src/alpha.lisp"
+                  "(in-package :kernel)
+(defun alpha (x) (+ x 1))
+(defun alpha-twice (x) (alpha (alpha x)))
+(defun alpha-thrice (x) (alpha (alpha-twice x)))
+")
+      (is (= 1 (poll-once repository :quiet t)))
+      (is (= 4 (length (entities-of-type (repository-graph repository) :function)))
+          "the poll really did its own work, so its not enriching is a choice")
+      (is (eql 0 (getf (repository-status repository) :enrichment-runs))
+          "and nothing on the poll path reaches ENRICH-REPOSITORY")
+      (enrich-repository repository :quiet t :inspectors inspectors)
+      (is (eql 1 (getf (repository-status repository) :enrichment-runs))
+          "the counter can move; the poll declined to move it"))))
+
+;;; ------------------------------------------------------------------
+;;; Generated definitions (DES-0002): the lifecycle
 ;;; ------------------------------------------------------------------
 
 (test a-macro-that-stops-being-a-definer-un-mints-what-it-generated
-  ;; PLAN-0001 step 5c, and ARCH-0002's "dangerous step" -- RESOLVE-GENERATED-
+  ;; PLAN-0001 step 5c, and DES-0002's "dangerous step" -- RESOLVE-GENERATED-
   ;; DEFINITIONS owns a lifecycle no earlier resolution pass has had to carry.
   ;; A macro can stop qualifying as a definer in its own file while the call
   ;; site's file never changes, so no single RETRACT-FILE is guaranteed to
@@ -284,7 +770,7 @@ the files whichever way it got there"))))
                            :key #'name :test #'string=)))
           "the call site minted an entity that exists nowhere as a defun"))
     ;; The macro edited so its template no longer qualifies as a definer -- a
-    ;; PROGN around a SETF, the false-positive shape ARCH-0002 predicts for
+    ;; PROGN around a SETF, the false-positive shape DES-0002 predicts for
     ;; DEFINE-COMMAND -- while the call site's own file is left untouched.
     (write-file "src/gen.lisp"
                 "(defmacro def-widget (name)
@@ -318,7 +804,7 @@ output must take it back -- no single file's retraction would have"))
                        #'string<))))))
 
 ;;; ------------------------------------------------------------------
-;;; Concurrency (BUG-0004, ARCH-0004 R8(b) and R8(c))
+;;; Concurrency (BUG-0004, DES-0004 R8(b) and R8(c))
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; The one test here that runs two threads, and the reason BUG-0004 survived
@@ -329,7 +815,7 @@ output must take it back -- no single file's retraction would have"))
 ;;; It drives REINDEX-REPOSITORY and POLL-ONCE from separate threads with no
 ;;; sleep between calls rather than starting a real monitor, because the
 ;;; monitor's own two-second cadence would need luck to collide even once
-;;; inside a sensible test budget (ARCH-0004 R8(b)).
+;;; inside a sensible test budget (DES-0004 R8(b)).
 ;;;
 ;;; Two traps, both mechanical. fiveam's IS records into thread-local special
 ;;; variables, so every assertion below runs on the main thread after both
@@ -410,7 +896,7 @@ and the whole of its damage in the other two."
         (is (null collisions)
             "a collision was caught and recorded rather than signaled: ~a"
             (first collisions)))
-      ;; ARCH-0004 R8(c): the direct check that no batch was lost to a torn
+      ;; DES-0004 R8(c): the direct check that no batch was lost to a torn
       ;; view, not merely that nothing crashed. Compared against a rebuild
       ;; taken with both threads joined, which is the only state that can be
       ;; trusted as a reference.
@@ -424,33 +910,56 @@ files: ~a against ~a" after-threads (stress-counts repository)))))
 ;;; ------------------------------------------------------------------
 
 (test a-file-that-will-not-parse-does-not-stop-the-pass
+  ;; The containment property SS3.3 asks for, unchanged: damage in one file
+  ;; does not cost the pass. What changed under REQ-0019 R3 is what damage
+  ;; costs within its own file -- here the file's only form is the damaged one,
+  ;; so the file legitimately contributes no definition, and it is no longer
+  ;; marked :ANALYSIS-FAILED-P because the reader did not fail, it repaired and
+  ;; the repair was refused (DES-0013 R4). Reporting that refusal on the file
+  ;; entity is PLAN-0013 step 5; until then the gap is in READING-RECOVERED and
+  ;; not yet on the graph, which is a real if brief silence.
   (with-workspace-fixture (repository)
     (write-file "src/gamma.lisp" "(defun gamma (")
     (poll-once repository :quiet t)
     (let* ((g (repository-graph repository))
            (gamma (find "src/gamma.lisp" (entities-of-type g :file)
                         :key #'name :test #'string=)))
-      (is (not (null gamma)) "the file is indexed as a known unknown")
-      (is-true (getp gamma :analysis-failed-p))
+      (is (not (null gamma)) "the file is indexed")
       (is (= 3 (length (entities-of-type g :function)))
-          "and the rest of the repository is still there"))))
+          "and the rest of the repository is still there")
+      (is (null (relationships-from g (id gamma) :rel-type :contains))
+          "the damaged form mints nothing"))))
 
 (test a-rule-violation-is-detected-and-recorded
   (with-workspace-fixture (repository)
-    ;; Make src call into docs, which RULE-0001 forbids. A decision entity is
-    ;; not callable, so the violation is manufactured directly on the graph.
+    ;; Make kernel call into docs, which the fixture's RULE-0001 forbids. The
+    ;; caller is the real ALPHA the pipeline analyzed, which is what makes this
+    ;; the one assertion in the nine suites that spans the whole of DES-0009's
+    ;; seam: LISP-ANALYZER reading (in-package :kernel), LOOM-ONTOLOGY having
+    ;; declared :system so PROPERTIES-TABLE keeps it, the transaction carrying
+    ;; it through the upsert, and ENTITY-SYSTEM handing it to a rule compiled
+    ;; out of YAML by AS-KEYWORD. BUG-0010: with both endpoints manufactured
+    ;; this tested VIOLATION-OPS and nothing the analyzer or the pipeline does.
+    ;; Only the target is built by hand -- no docs/ file in the fixture defines
+    ;; a callable for the edge to land on -- and it says its system as a
+    ;; property rather than through its path because ENTITY-SYSTEM stopped
+    ;; parsing paths (DES-0009 R7).
     (let* ((g (repository-graph repository))
-           (alpha (find "alpha" (entities-of-type g :function)
-                        :key #'name :test #'string=))
+           (caller (find "alpha" (entities-of-type g :function)
+                         :key #'name :test #'string=))
            (target (make-instance 'function-entity
                                   :name "doc-helper"
-                                  :origin-file "docs/design/DEC-0001.yaml"
+                                  :origin-file "docs/design/helper.lisp"
                                   :properties (properties-table
                                                '(:file "docs/design/helper.lisp"
-                                                 :start-line 1 :end-line 2)))))
+                                                 :start-line 1 :end-line 2
+                                                 :system :docs)))))
+      (is (eq :kernel (getp caller :system))
+          "ALPHA carries the package its file declares, or the rule below is
+comparing against nothing and its silence would mean nothing")
       (add-entity g target)
       (add-relationship g (make-instance 'relationship :rel-type :calls
-                                         :from-id (id alpha) :to-id (id target)
+                                         :from-id (id caller) :to-id (id target)
                                          :origin-file "src/alpha.lisp"))
       (apply-transaction g (violation-ops g))
       (is (= 1 (length (entities-of-type g :rule-violation))))

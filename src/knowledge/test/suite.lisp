@@ -57,7 +57,7 @@
                                               '(:file "test/overlay.lisp"
                                                 :start-line 1 :end-line 9))))
          (adr     (make-instance 'decision-entity :name "ADR-7"
-                                 :origin-file "docs/design/ADR-7.yaml"
+                                 :origin-file "docs/decisions/ADR-7.yaml"
                                  :properties (properties-table
                                               '(:doc-id "ADR-7"
                                                 :decision "Branch switches reset the overlay rather than diffing it."

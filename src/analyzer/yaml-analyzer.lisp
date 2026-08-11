@@ -42,9 +42,15 @@
   ;; cased anywhere: a requirement is answered by an architecture note, which a
   ;; plan sequences, which a review or a bug report closes. All of them index,
   ;; and refines: is what chains them.
-  '(("design"       . :decision)
+  ;; Three tiers, not two, and the names mean what an engineer means by them
+  ;; (BUG-0023's sibling rename): a decision records a choice, a design argues
+  ;; how to implement a requirement, and an architecture document describes
+  ;; structure and mechanism as it stands. docs/arch held sixteen of the middle
+  ;; kind until they were renamed DES-nnnn and moved here.
+  '(("decisions"    . :decision)
+    ("design"       . :design)
     ("rules"        . :rule)
-    ("arch"         . :document)
+    ("arch"         . :architecture)
     ("requirements" . :document)
     ("plans"        . :document)
     ("reviews"      . :document)
@@ -153,7 +159,7 @@ half of why SS10.2 chose YAML."
 ;;;; Prose blocks and the names mentioned in them (SS10.3)
 ;;;; ==================================================================
 
-(defparameter *prose-fields* '(:rationale :consequences :statement :summary
+(defparameter *prose-fields* '(:rationale :consequences :statement :summary :invariants
                                :description :notes :body :lessons)
   "Fields whose values are prose rather than metadata.
 Their text becomes the entity's :BODY, which is both what an agent reads and
@@ -204,7 +210,13 @@ against entity names would bury the real hits."
   ;; the workflow chain runs through all of them: a requirement is answered by
   ;; a design, sequenced by a plan, and reported on by a review. Any document
   ;; may name the one it answers.
+  ;; :SUMMARY is read from TABLE, the raw parse -- not from BODY and not from
+  ;; any property computed above. COLLECT-BODY reads the same table and folds
+  ;; summary: into :BODY as it always did; this is a second independent read of
+  ;; unchanged source, which is what DEC-0003 permits and distinguishes from a
+  ;; pass that rewrites its own input.
   (list :title    (as-string (yaml-value table :title))
+        :summary  (as-string (yaml-value table :summary))
         :category category
         :body     body
         :refines  (as-list-of-strings (yaml-value table :refines))
@@ -243,10 +255,47 @@ and registering a type\" stays true of the fields as well as the directory."))
                 :applies-to (as-list-of-strings (yaml-value table :|applies-to|))
                 :check      (parse-check (yaml-value table :check)))))
 
+(defmethod document-properties ((type-key (eql :design)) table path category body)
+  ;; The nine fields the sixteen renamed documents actually use, counted rather
+  ;; than assumed: id, title, tags, summary, status, date, body, refines,
+  ;; affects. No decision:/rationale:/consequences: -- a design argues in its
+  ;; body rather than in named slots, which is what distinguishes the genre
+  ;; from an ADR and why this is not simply :DECISION with a wider status list.
+  (append (base-properties table path category body)
+          (list :doc-id     (or (as-string (yaml-value table :id)) path)
+                :status     (or (as-keyword (yaml-value table :status)
+                                            '(:draft :proposed :accepted :final
+                                              :superseded :rejected
+                                              :implemented :partial))
+                                :draft)
+                :date       (as-string (yaml-value table :date))
+                :tags       (as-list-of-strings (yaml-value table :tags))
+                :affects    (as-list-of-strings (yaml-value table :affects))
+                :supersedes (as-list-of-strings (yaml-value table :supersedes))
+                :system     (default-system-for-path path))))
+
+(defmethod document-properties ((type-key (eql :architecture)) table path category body)
+  ;; DESCRIBES:, not AFFECTS:, and the analyzer is where that becomes true
+  ;; rather than a convention: an architecture document that wrote affects:
+  ;; would have it read by nothing, which is exactly the silent drop BUG-0023
+  ;; closed, so the genre distinction is enforced by which key is looked up.
+  (append (base-properties table path category body)
+          (list :doc-id     (or (as-string (yaml-value table :id)) path)
+                :status     (or (as-keyword (yaml-value table :status)
+                                            '(:draft :accepted :superseded))
+                                :draft)
+                :date       (as-string (yaml-value table :date))
+                :tags       (as-list-of-strings (yaml-value table :tags))
+                :invariants (as-string (yaml-value table :invariants))
+                :describes  (as-list-of-strings (yaml-value table :describes))
+                :supersedes (as-list-of-strings (yaml-value table :supersedes))
+                :system     (default-system-for-path path))))
+
 (defmethod document-properties ((type-key (eql :concept)) table path category body)
   (append (base-properties table path category body)
-          (list :doc-id  (or (as-string (yaml-value table :id)) path)
-                :summary (as-string (yaml-value table :summary)))))
+          ;; No :SUMMARY line here: BASE-PROPERTIES now supplies the same value
+          ;; from the same YAML key for every document type.
+          (list :doc-id  (or (as-string (yaml-value table :id)) path))))
 
 (defmethod document-properties ((type-key (eql :document)) table path category body)
   ;; :DOC-ID is read here for the same reason a decision reads it: it is how
@@ -256,19 +305,49 @@ and registering a type\" stays true of the fields as well as the directory."))
   ;; refines: naming it resolves to nothing.
   (append (base-properties table path category body)
           (list :doc-id (or (as-string (yaml-value table :id)) path)
+                ;; Read here for the same reason :DOC-ID is: every workflow
+                ;; category lands on :DOCUMENT, so a field only the :DECISION
+                ;; method reads is a field fifteen architecture notes, fourteen
+                ;; requirements, fifteen plans and twenty-two bug reports write
+                ;; and nothing ever sees. It resolved to nothing and was not
+                ;; even reported unresolved, because a field that is never read
+                ;; produces no name to fail.
+                :affects (as-list-of-strings (yaml-value table :affects))
                 :status (as-keyword (yaml-value table :status)
+                                    ;; :IMPLEMENTED and :PARTIAL complete
+                                    ;; CON-0004's vocabulary. Without them
+                                    ;; AS-KEYWORD returned NIL for every
+                                    ;; document that had actually landed, so
+                                    ;; the status of the work that was done was
+                                    ;; the one status the index never held.
                                     '(:draft :proposed :accepted :final
-                                      :superseded :rejected :open :closed))
+                                      :superseded :rejected :open :closed
+                                      :implemented :partial))
                 :path path
+                ;; DES-0009 R3. A document has no grouping construct of its
+                ;; own to read, so it gets the shared default and nothing
+                ;; stronger. Only here: :RULE, :DECISION and :CONCEPT declare
+                ;; no :SYSTEM property, so a value written on one of those
+                ;; would be dropped by nothing and read by nothing.
+                :system (default-system-for-path path)
                 :format :yaml)))
 
 ;;;; ==================================================================
 ;;;; Rules: compiling the check clause (SS10.4)
 ;;;; ==================================================================
 
-(defparameter *check-kinds* '(:no-edge :requires-edge :property-constraint)
+(defparameter *check-kinds* '(:no-edge :requires-edge :property-constraint
+                              :property-absent)
   "SS10.4: \"Phase 1 supports a small set of check kinds ... which is enough
-for the layering and single-writer rules Loom needs on itself.\"")
+for the layering and single-writer rules Loom needs on itself.\"
+
+Four now, not SS10.4's original three. :PROPERTY-ABSENT was added by DES-0012
+for RULE-0006, and it is the mirror of :PROPERTY-CONSTRAINT rather than a new
+kind of question -- \"this property must be absent\" against \"this property
+must be present\". The list grows when a rule someone wants to write is one a
+generic check can express; the discipline SS10.4 sets is that a rule needing
+more than that stays prose, which PARSE-CHECK enforces by returning NIL for a
+kind not named here.")
 
 (defun parse-check (value)
   "A rule's check: clause as a plist, or NIL.

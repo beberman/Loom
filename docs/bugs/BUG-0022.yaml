@@ -1,0 +1,89 @@
+id: BUG-0022
+title: An entity may carry a property no DEFENTITY declares, and VALIDATE-ENTITY reports nothing
+status: open
+date: 2026-08-10
+refines: [PLAN-0015]
+affects: [validate-entity, properties-table, getp, ontology-schema,
+          entity-type-properties]
+tags: [ontology, validation, test-quality, con-0003]
+summary: |
+  PROPERTIES-TABLE accepts any keyword and VALIDATE-ENTITY checks only that
+  required properties are present and declared ones are well-typed, so an
+  entity carrying a property its type never declared validates cleanly, reads
+  back through GETP, and is invisible to ONTOLOGY-SCHEMA. The practical cost
+  is that a test written against a new property passes before the property is
+  declared: the first two tests written for DES-0015 step 2 asserted
+  :nicknames and :imported-symbols round-tripped on a :package and passed with
+  the DEFENTITY change stashed, which is CON-0003's "a test must fail without
+  the change it covers" violated by a test written to honour it. A typo in a
+  property name has the same shape and is worse, because nothing anywhere
+  reports it.
+body: |
+  SYMPTOM
+
+  Observed 2026-08-10 while implementing PLAN-0015 step 2. Two tests were
+  written asserting a :PACKAGE entity carries the new :nicknames and
+  :imported-symbols properties declared by DES-0015 R1. With the DEFENTITY
+  change stashed:
+
+      git stash push src/ontology/code-ontology.lisp
+      tools/loom-test.sh   ->   LOOM-ONTOLOGY/TEST ok, 0 failures
+
+  Expected both tests to fail. The entity validated, GETP returned the values,
+  and nothing observed that :package declared neither property.
+
+  Rewritten to ask the registry instead -- that the property appears in
+  ENTITY-TYPE-PROPERTIES -- the same stash produces 3 failures, which is the
+  test CON-0003 asks for. Both forms are now in
+  src/ontology/test/code-ontology.lisp, the second labelled as the binding one
+  and the first as documentation.
+
+  CAUSE
+
+  VALIDATE-ENTITY walks the type's DECLARED properties and checks each is
+  present if required and well-typed if present. It has no pass in the other
+  direction, over the properties the entity actually carries, so an undeclared
+  key is never compared against anything. PROPERTIES-TABLE stores whatever
+  plist it is handed.
+
+  The asymmetry is deliberate in one direction and accidental in the other:
+  entities are built incrementally by analyzers that SETP as they learn, so
+  the table has to accept writes before the type is fully populated. Nothing
+  follows from that about accepting a key the type does not declare.
+
+  WHY IT HID
+
+  Undeclared properties are not obviously wrong. An analyzer that writes one
+  gets working code -- GETP reads it back -- and the only observable loss is
+  that ONTOLOGY-SCHEMA, which loom-rest serves, does not mention it. Nobody
+  reads the schema for a property they already know is there.
+
+  It hid from the test suite for the reason that makes this worth recording: a
+  test asserting round-trip behaviour tests PROPERTIES-TABLE and GETP, which
+  work, rather than the declaration, which is the change. That failure mode is
+  invisible unless somebody actually runs the suite with the change removed,
+  and the whole point of CON-0003 is that this is the step people skip. It was
+  caught here only because PLAN-0015's step 2 verification says to do it.
+
+  FIX
+
+  Not settled. Three shapes, in increasing cost:
+
+  Report rather than reject. VALIDATE-ENTITY gains a second pass listing
+  properties the entity carries that the type does not declare, surfaced the
+  way unresolved references are. Cheapest, and it cannot break an analyzer
+  mid-flight.
+
+  Reject. Stricter and probably right eventually, but every analyzer would
+  have to be audited first: an undeclared property that some pass depends on
+  today would become a hard failure, and nothing currently reports how many
+  there are. Measure before choosing this.
+
+  Leave the runtime alone and make the schema the test surface. The registry
+  is already the honest place to ask "is this declared", as the rewritten test
+  shows, so a convention that property tests ask ENTITY-TYPE-PROPERTIES costs
+  nothing and needs no code change. This does not fix the typo case.
+
+  Whichever is chosen, the count is worth having first: how many properties do
+  entities in this tree carry that their types do not declare? If the answer
+  is zero, rejection is cheap. If it is not, the number is itself the finding.

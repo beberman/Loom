@@ -130,14 +130,39 @@ guessed at."
 (defun current-graph (&optional designator)
   (repository-graph (current-repository designator)))
 
+(defun exact-name-matches (graph term)
+  "Every entity whose name is exactly TERM, ignoring case."
+  (remove-if-not (lambda (hit) (string-equal term (getf hit :name)))
+                 (search-entities graph :name term :limit 20)))
+
 (defun resolve-entity (graph term)
   "The entity TERM names: an id if it is one, otherwise the best name match.
 
 Agents and humans both name things rather than quoting ids, and a command that
-demanded an id would send the developer to `find` first every single time."
+demanded an id would send the developer to `find` first every single time.
+
+Several entities may carry one name, and since DES-0015 that is the normal
+case rather than a defect: two same-named definitions in different packages are
+two callables. Picking the best of them would answer a question nobody asked --
+`describe id' on game-server described the one in :DATA-API-TEST, which has no
+callers, while the four that share MPACKAGE/OBJECT's symbol have 64 each. The
+answer was not wrong so much as arbitrary, and an arbitrary answer that looks
+definite is CON-0001's fabricated fact wearing a different hat. So an exactly
+ambiguous name is reported with its candidates and their ids, which is what a
+developer needs in order to ask again precisely."
   (or (get-entity graph term)
-      (let ((hits (search-entities graph :name term :limit 1)))
-        (when hits (get-entity graph (getf (first hits) :id))))
+      (let ((exact (exact-name-matches graph term)))
+        (cond ((null (rest exact))
+               (let ((hits (search-entities graph :name term :limit 1)))
+                 (when hits (get-entity graph (getf (first hits) :id)))))
+              ;; The id carries the file, so it is both the disambiguator and
+              ;; the thing to type next.
+              (t (error "~d things are named ~s. Name one:~{~%  ~a~}"
+                        (length exact) term
+                        (mapcar (lambda (hit)
+                                  (format nil "~(~a~) ~a"
+                                          (getf hit :type) (getf hit :id)))
+                                exact)))))
       (error "Nothing in the index matches ~s." term)))
 
 (defun resolve-count (text what)
@@ -185,7 +210,7 @@ command."
           (let ((n (getf status :uncategorized-documents))) (and (plusp n) n)))
   ;; Printed unconditionally, zero included. A count that vanishes when it is
   ;; nought cannot be told from a count nobody computes, and these three exist
-  ;; precisely to be read as zero-or-not (ARCH-0002 R10).
+  ;; precisely to be read as zero-or-not (DES-0002 R10).
   (format t "  tests      : ~d test~:p covering ~d unit~:p~%"
           (getf status :test-entities) (getf status :tested-units))
   (format t "  watcher    : ~(~a~)~%" (getf status :monitor))
@@ -194,6 +219,25 @@ command."
   (format t "  unresolved : ~d document reference~:p, ~d definer macro~:p~%"
           (getf status :unresolved-references)
           (getf status :unhandled-definer-macros))
+  ;; DES-0013 R11, beside `unresolved' because it answers the same question a
+  ;; reader is asking there: what does this index know it is missing. Printed
+  ;; unconditionally for the reason the tests line above gives -- these are
+  ;; meant to be read as zero-or-not, and both read zero on a healthy tree.
+  ;; "unread" rather than "skipped": a comment is skipped too, and a reader who
+  ;; sees a number here should understand it as source that would have defined
+  ;; something and did not.
+  (format t "  unread     : ~d suppressed region~:p, ~d recovered region~:p~%"
+          (getf status :suppressed-regions)
+          (getf status :recovered-regions))
+  ;; DES-0011. "never run" is spelled out rather than left as three zeroes,
+  ;; because enrichment is optional and on demand: a reader who sees zeroes
+  ;; cannot tell a tree the image agreed with completely from one nobody has
+  ;; asked about, and only one of those is worth doing something about.
+  (if (plusp (getf status :enrichment-runs))
+      (format t "  enrichment : ~d unit~:p loaded, ~d gap~:p, ~d run~:p~%"
+              (getf status :enriched-units) (getf status :enrichment-gaps)
+              (getf status :enrichment-runs))
+      (format t "  enrichment : never run~%"))
   (when (plusp (getf status :errors))
     (format t "  errors     : ~d, last: ~a~%"
             (getf status :errors) (cdr (getf status :last-error)))))
@@ -252,6 +296,47 @@ command."
     (reindex-repository repository)
     (print-status (repository-status repository))))
 
+(define-command enrich (&optional designator)
+    "enrich [<name>]"
+    "Ask each language's toolchain to enrich the index. On demand only."
+  ;; On demand and nowhere else (DES-0011 R9). Nothing in POLL-ONCE, the
+  ;; monitor, watch or reindex reaches ENRICH-REPOSITORY: a run loads the whole
+  ;; target in a fresh process, which is seconds to minutes against a poll cycle
+  ;; designed to cost milliseconds. DES-0008 is the precedent and BUG-0008 is
+  ;; the trap.
+  (let* ((repository (current-repository designator))
+         (report (enrich-repository repository)))
+    (log-event "enrich" "~a" (repository-root repository))
+    (print-enrichment report)
+    (print-status (repository-status repository))))
+
+(defun print-enrichment (report)
+  "What one enrichment run did, zeros included.
+
+The per-unit lines are the primary output and the counts are secondary, which
+is the inverse of what it looks like. A pass whose child died on its first unit
+adds nothing, drops nothing and signals nothing -- indistinguishable from a
+tree the image agrees with completely -- so what has to be printed
+unconditionally is which units were attempted and what became of them
+(REQ-0018 R4, and DES-0002 R10's precedent for printing a nought)."
+  (format t "~&enriched in ~,1fs~%" (getf report :duration))
+  (dolist (unit (getf report :units))
+    (format t "  ~(~a~) ~a~@[: ~a~]~%"
+            (getf unit :status) (getf unit :unit) (getf unit :error)))
+  (dolist (absence (getf report :absences))
+    (format t "  absent ~(~a~): ~a~%"
+            (getf absence :language) (getf absence :reason)))
+  (format t "  entities   : ~d added, ~d confirmed~%"
+          (getf report :added) (getf report :confirmed))
+  (format t "  edges      : ~d added, ~d confirmed~%"
+          (getf report :edges-added) (getf report :edges-confirmed))
+  (format t "  dropped    : ~d without a location, ~d outside the root, ~
+~d of an unknown kind, ~d edge~:p with an unresolved endpoint~%"
+          (getf report :dropped-no-location)
+          (getf report :dropped-not-under-root)
+          (getf report :dropped-unknown-kind)
+          (getf report :edges-dropped)))
+
 (define-command find (term &optional type)
     "find <name> [<type>]"
     "Where something is defined. The entry point for \"where is X\"."
@@ -269,16 +354,50 @@ command."
          (entity (resolve-entity graph term))
          (detail (describe-entity graph (id entity))))
     (print-summary-line (getf detail :entity))
-    (let ((body (getf (getf detail :properties) :body))
-          (statement (getf (getf detail :properties) :statement))
-          (rationale (getf (getf detail :properties) :rationale)))
-      (dolist (text (remove nil (list statement rationale body)))
-        (format t "~&~%~a~%" text)))
+    ;; A document's :BODY is its author's whole concatenation, so printing it
+    ;; put the neighbours below an unbounded amount of prose, and for a
+    ;; decision printed the rationale twice -- once under its own key and once
+    ;; buried inside :BODY. One named, labelled, budgeted field instead. The
+    ;; full text is still one Read of the path already named on the line above.
+    (let ((doc (getf detail :document)))
+      ;; NIL for a code entity, so this branch does not exist for a function,
+      ;; class or file rather than happening to print nothing there.
+      (when doc
+        (format t "~&~@[title: ~a~%~]~@[status: ~(~a~)~%~]"
+                (getf doc :title) (getf doc :status))
+        (if (getf doc :text)
+            ;; ", truncated" is a two-clause ~:[~;~] and not a ~@[~]: an ~@[
+            ;; whose clause contains no directive does not use up the argument
+            ;; it tested, so the flag survived into the following ~a and the
+            ;; summary of every truncated document printed as "T".
+            (format t "~&summary~@[ (via ~(~a~))~] (~d~@[/~d~] tokens~:[~;, truncated~]):~%  ~a~%"
+                    ;; Labelled only when it is a fallback: naming the field on
+                    ;; an author's real summary would be noise, and not naming
+                    ;; it on a fallback would be a fabrication.
+                    (and (not (eq (getf doc :field) :summary)) (getf doc :field))
+                    (estimate-tokens (getf doc :text))
+                    ;; The full size prints only when something was cut;
+                    ;; "(24/24 tokens)" reads as though something happened.
+                    (and (getf doc :truncated) (getf doc :full-tokens))
+                    (getf doc :truncated)
+                    (getf doc :text))
+            (format t "~&summary: (none written)~%"))))
     (dolist (group (getf detail :neighbors))
       (format t "~&  ~a ~(~a~): ~{~a~^, ~}~%"
               (if (eq :out (getf group :direction)) "->" "<-")
               (getf group :rel-type)
-              (mapcar (lambda (e) (getf e :name)) (getf group :entities))))))
+              ;; A call site's name already carries its file and line, so the
+              ;; kind is the only part of DES-0014 R7's "line and kind rather
+              ;; than a bare id" still missing here. NIL for every other type,
+              ;; so the ~@[ is what keeps this from adding an empty pair of
+              ;; parens to every ordinary neighbour -- and its clause contains
+              ;; a directive, so it consumes the argument it tested rather than
+              ;; leaking it into the next one, which is the trap the document
+              ;; summary above this records.
+              (mapcar (lambda (e)
+                        (format nil "~a~@[ (~(~a~))~]"
+                                (getf e :name) (getf e :referrer-kind)))
+                      (getf group :entities))))))
 
 (define-command impact (term &optional depth)
     "impact <name> [<depth>]"
@@ -302,7 +421,7 @@ command."
     (dolist (e (getf report :impacted))
       (format t "  d~a ~(~a~) ~a~30t~a~%"
               (getf e :depth) (getf e :type) (getf e :name) (getf e :via)))
-    (dolist (field '(:tests :documents :decisions))
+    (dolist (field '(:tests :documents :decisions :mentions))
       (let ((entries (getf report field)))
         (when entries
           (format t "~&~(~a~): ~{~a~^, ~}~%"
@@ -337,18 +456,25 @@ command."
         (format t "~&~d unresolved document reference~:p:~%" (length unresolved))
         (dolist (pair unresolved)
           (format t "  ~a -> ~a~%" (car pair) (cdr pair)))))
-    ;; ARCH-0002 R6/R10, reported the way an unresolved reference is and for
+    ;; DES-0002 R6/R10, reported the way an unresolved reference is and for
     ;; the same reason: a definer Loom cannot characterise is a definition the
     ;; index knows it is missing, and it should be visible here rather than
     ;; only after a suite run.
     (let ((unhandled (unhandled-definer-macros graph))
+          (swallowed (body-swallowing-macro-names graph))
           (collisions (generated-definition-collisions graph *macro-generators*)))
       (when unhandled
         (format t "~&~d definer macro~:p whose expansion could not be read:~%"
                 (length unhandled))
+        ;; The orphan count travels with the name because the list mixes two
+        ;; populations (BUG-0016, and BODY-SWALLOWING-MACRO-NAMES' docstring):
+        ;; a macro swallowing real call bodies and one whose recorded names are
+        ;; keyword heads. Without the number a reader cannot tell which line to
+        ;; act on, which is the failure BUG-0009 is made of.
         (dolist (macro unhandled)
-          (format t "  ~a  [~a:~a]~%" (name macro) (getp macro :file)
-                  (getp macro :start-line))))
+          (format t "  ~a  [~a:~a]~@[  ~d call name~:p attached to nothing~]~%"
+                  (name macro) (getp macro :file) (getp macro :start-line)
+                  (gethash (string-downcase (name macro)) swallowed))))
       (when collisions
         (format t "~&~d definer call site~:p left alone:~%" (length collisions))
         (dolist (pair collisions)

@@ -53,32 +53,29 @@ not fire.
 **Timestamp and clock assumptions.** `file-write-date` counts in whole seconds,
 so same-second edits are invisible to it. CON-0002.
 
-**Machine-checked rules.** RULE-0001 to RULE-0003 constrain layering: the
-ontology depends on nothing, analyzers never touch the graph, the knowledge
-layer never writes. Run `check` — a violation does not fail a FiveAM assertion,
-so a green suite proves nothing about these.
+**Machine-checked rules, weaker than they look.** RULE-0001 to RULE-0003 are
+meant to constrain layering (`.claude/agents/tools.md` has the table) and are
+supposed to fail `check`, not a FiveAM assertion, so a green suite alone
+proves nothing about them. BUG-0006 (closed) fixed the vacuous pass; a
+RULE-0001 line from `check` is real now. It is not that simple for the other
+two: BUG-0009 (open) found RULE-0002 and RULE-0003 currently report false
+positives of their own, so a nonzero count for either is not yet a violation
+worth flagging on its own — cross-check it against BUG-0009's two named causes
+first. Flag a layering violation the rules cannot see at all (the loom-serve/
+loom-rest/loom-mcp/loom-process boundary, which no rule names) from the `.asd`
+dependency graph instead, never from `check`'s silence.
 
 ## Use Loom on the change
 
-Use the **Bash** tool and `tools/loom.sh`, one console command per argument. Do
-not add a pipe or a `tail`; each needs its own permission, and a prompt inside a
-subagent is a stall nobody sees.
-
-Read files with the **Read** tool, never `cat` and never a shell loop over
-several files: the compound command prompts whatever the allowlist says. Several
-Read calls in one message are faster and silent.
+`.claude/agents/tools.md` has the Bash invocation, the Read-tool discipline,
+the command table, and the layering — the single copy every agent definition
+in this directory points to rather than restates. Read it before your first
+`tools/loom.sh` call; `check` and `impact` are the two calls a review leans on
+most:
 
 ```bash
 tools/loom.sh 'check' 'impact <changed-fn> 3'
 ```
-
-    check                 rule violations and unresolved doc references
-    impact <changed-fn> 3 what the change reaches, and the decisions governing it
-                          (3 narrows it; the default is 5)
-    context <words>       a budgeted bundle of what bears on the changed area
-
-`help` prints the authoritative command table — trust it over any list in this
-file.
 
 If `impact` attaches a decision, read it. A change that contradicts a recorded
 decision without superseding it is a finding in itself.

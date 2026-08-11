@@ -1,0 +1,219 @@
+id: REQ-0012
+title: A method defined inline in DEFGENERIC must be analyzed like one defined by DEFMETHOD
+status: partial
+date: 2026-08-06
+affects: [generic-definition-entities, method-definition-entity, analyze-file,
+          make-method-entity, make-interface-entity, definition-p]
+tags: [analyzer, lisp, clos, generality, blind-spot]
+summary: |
+  Common Lisp lets a method body be written two ways: a standalone DEFMETHOD,
+  or a (:method ...) clause inside the DEFGENERIC that declares the generic
+  function. Loom's Lisp analyzer handles the first completely and the second
+  not at all -- GENERIC-DEFINITION-ENTITY reads the generic's name and lambda
+  list and discards the rest of the form, so an inline method's body is never
+  walked, mints no :METHOD entity, and contributes no :CALLS edges in either
+  direction. The result is that a generic function whose only implementation is
+  inline appears to call nothing. Measured against ~/lisp/game-server, a real
+  Lisp codebase Loom did not write: 247 inline (:method ...) clauses against
+  158 DEFGENERIC forms, so the idiom is not a curiosity there but the dominant
+  way that codebase writes a default implementation -- including the whole
+  default layer of its data-api handler protocol. Loom's own tree uses the
+  idiom twice, in seven DEFGENERIC forms, which is why the gap has never been
+  felt here. This asks that the analyzer walk (:method ...) clauses and emit
+  the same :METHOD entity, with the same body analysis, that a standalone
+  DEFMETHOD already produces.
+body: |
+  WHAT IS WRONG
+
+  src/analyzer/lisp-analyzer.lisp:707:
+
+      (defun generic-definition-entity (form start end path system)
+        (make-interface-entity (definition-name (second form)) start end path system
+                               :members (mapcar #'token-name
+                                                (lambda-list-parameters (third form)))))
+
+  It reads (second form) for the name and (third form) for the lambda list.
+  Everything after that -- (:documentation ...), (:method ...), (:method
+  :around ...) -- is discarded. One :INTERFACE entity is minted, spanning the
+  source range of the whole DEFGENERIC form including every inline method body,
+  and no call names are recorded on it. RESOLVE-CALLS (src/graph/resolve.lisp:544)
+  only walks callers of type :FUNCTION, :METHOD and :TEST, so even if call names
+  were recorded on an :INTERFACE they would not resolve; measurement confirms
+  the point is moot, because zero call names are stranded on :INTERFACE entities
+  in either codebase -- they are never recorded at all.
+
+  The asymmetry is visible in one pair of console queries against game-server.
+  data-api/handler.lisp:156-166 declares DHANDLER-DELETE with an inline method
+  whose body calls MAKE-SELECTOR, DHANDLER-DELETE-ALL and
+  DHANDLER-DELETE-SELECTOR:
+
+      describe dhandler-delete
+        <- tests: ... (7)
+        <- calls: ... (11 incoming callers)
+        <- contains: data-api/handler.lisp
+
+  No outgoing calls at all. Against a standalone DEFMETHOD in the same
+  subsystem, data-api/game-handler.lisp:119-129:
+
+      describe dhandler-delete-selector
+        -> calls: make-clause, db-ops-basic, db-delete, db-delete
+        -> implements: dhandler-delete-selector
+        -> uses: selector, game-set-handler
+        <- contains: data-api/game-handler.lisp
+
+  Same protocol, same file tree, same analyzer pass. The only difference is
+  which of Common Lisp's two spellings the author used.
+
+  WHY THIS WENT UNNOTICED, AND WHY THAT MATTERS
+
+  Counted directly rather than estimated:
+
+      inline (:method ...)      Loom:   2      game-server: 247
+      DEFGENERIC forms          Loom:   7      game-server: 158
+      standalone DEFMETHOD      Loom: (n/a)    game-server: 376
+
+  Loom's own source barely uses the idiom, so no query against Loom has ever
+  returned a visibly wrong answer because of it, and no test covers it. This is
+  the same shape of defect REQ-0011 and DES-0009 addressed for system
+  identity: a design tuned, invisibly, to one author's style, correct on the
+  tree it was written against and wrong on the next one. BUG-0006's "WHY IT
+  HID" section describes the same mechanism for a third case. The general
+  lesson this project keeps relearning is that a single reference codebase
+  cannot exercise a language's full surface, and the remedy is to check against
+  a second real one rather than to reason harder about the first.
+
+  WHAT IT COSTS
+
+  In game-server, 247 method bodies contribute no edges. At that codebase's
+  measured average of ~4.2 call names per callable (6,307 call names across
+  1,499 callables) and its measured 52% resolution rate, walking them would be
+  expected to recover roughly 1,000 additional call names and on the order of
+  500 additional :CALLS edges against a current base of 5,152 -- about a 10%
+  increase. That figure is an estimate from the measured averages, not a
+  measurement, and should be replaced by a real count once implemented.
+
+  Measured after PLAN-0009 landed (/usr/bin/sbcl, 2026-08-06): game-server
+  :CALLS 5,152 -> 7,242, an increase of 2,090 edges, or 41%. The estimate is
+  kept above rather than deleted, because the gap is the lesson: the real
+  figure is four times it. Why it is four times is not established, and is
+  recorded here as an open question rather than answered by argument -- two
+  mechanisms the averaging could not see are candidates (an inline clause is
+  where a protocol's default implementation lives, so those 247 bodies may not
+  be typical of the callable the ~4.2 average was drawn from; and a resolved
+  call from a method fans out to every candidate the generic dispatches to, so
+  one call name can become several edges where a flat resolution rate counts at
+  most one), but neither was measured. What is established is the shape of the
+  error: an estimate built from whole-population averages predicted a change to
+  a deliberately selected subpopulation, and was low by 4x.
+
+  The count understates the value. These are not 500 arbitrary edges: an inline
+  (:method ...) on a DEFGENERIC is idiomatically where a protocol's *default*
+  implementation lives, which is the layer a reader must understand first
+  before changing the protocol. In game-server the entire default layer of the
+  data-api handler protocol -- DHANDLER-DELETE, RESET-TABLES, INITIALIZE-HANDLER,
+  DHANDLER-COPY, BASE-ENCODER, BASE-DECODER and the rest of handler.lisp's 21
+  generics -- is invisible in the outgoing direction for exactly this reason.
+
+  WHAT THIS IS NOT
+
+  This does not address ambiguous call resolution, which is a separate defect
+  in the incoming direction with its own requirement (REQ-0013 for its
+  reporting, REQ-0015 for its resolution). Fixing inline methods would not have
+  made `impact cascade-delete` correct in game-server: those call sites are
+  dropped because two definitions share the name, not because of where the
+  method body sits. The two defects are independent and compose -- several of
+  cascade-delete's call sites are *both* inside inline methods *and* ambiguous.
+
+  It also does not ask for DEFCLASS :accessor / :reader / :writer methods to
+  be minted as :METHOD entities. Those already produce an :INTERFACE entity via
+  CLASS-DEFINITION-ENTITIES and are a different question.
+
+  REQUIREMENTS
+
+  R1  GENERIC-DEFINITION-ENTITY must walk the DEFGENERIC form's remaining
+      clauses and, for each (:method ...) clause, produce the same :METHOD
+      entity a standalone DEFMETHOD of the same name, qualifier and
+      specializers would produce -- including its :IMPLEMENTS edge to the
+      generic, its :USES edges to specializer types, and its recorded
+      :CALL-NAMES. METHOD-DEFINITION-ENTITY already does all of this and should
+      be reused rather than reimplemented; the clause differs from a DEFMETHOD
+      form only in that the head is the keyword :method rather than the symbol
+      DEFMETHOD, so the shapes align after one shift.
+
+  R2  The :INTERFACE entity for the DEFGENERIC itself must continue to exist
+      with its current name and :members, so nothing that resolves against a
+      generic function's name today breaks. What changes is that :METHOD
+      entities now exist beside it, not that it is replaced.
+
+  R3  Source ranges must be per-method, not per-form. An inline method's
+      :METHOD entity should carry the line range of its own (:method ...)
+      clause, so `find` and `describe` point at the body rather than at the top
+      of the enclosing DEFGENERIC. The :INTERFACE entity keeps the whole form's
+      range, as it does today.
+
+  R4  Method qualifiers must survive. (:method :around ((x foo)) ...) and
+      (:method ((x foo)) ...) on one generic are two methods, distinguished by
+      qualifier in the natural key exactly as METHOD-DEFINITION-ENTITY already
+      distinguishes them for DEFMETHOD. Collapsing them would fabricate a
+      single entity where the source has two.
+
+  R5  Acceptance is measured, not assumed, and against both codebases. On
+      Loom's own tree the entity count must rise by exactly the number of
+      inline methods present (2 at the time of writing) and the full suite must
+      stay green. On ~/lisp/game-server, `describe dhandler-delete` must report
+      outgoing calls to DHANDLER-DELETE-ALL and DHANDLER-DELETE-SELECTOR, and
+      the total :CALLS edge count must be recorded before and after so the
+      estimate above is replaced by a fact.
+
+  R6  A test must fail without the change (CON-0003). A fixture containing a
+      DEFGENERIC with an inline (:method ...) whose body calls a function
+      defined elsewhere in the same fixture, asserting the :CALLS edge exists,
+      is the shape -- it returns nothing today.
+
+  OUTSTANDING
+
+  PLAN-0009 implemented DES-0010 and closed R1, R2, R3, R4 and R6. The status
+  here is `partial' rather than `implemented' because two things this document
+  asks for in R5 are not true of the tree as it stands, and calling the whole
+  thing implemented would make both invisible.
+
+  1. `describe dhandler-delete' does not report the outgoing calls. R5's
+     wording names the query as well as the fact, and the fact holds while the
+     query does not: the calls are on the new :METHOD entity, and `describe'
+     resolves a name through SEARCH-ENTITIES' first hit, whose sort ranks match
+     quality only -- so an exact-name tie between the long-standing :INTERFACE
+     and the same-named :METHOD falls to index order. DES-0010's CONSEQUENCES
+     measured this and R8 restates the acceptance through `find dhandler-delete
+     method' and `impact dhandler-delete 2', both of which pass. Whether
+     `describe' should prefer, merge or disambiguate same-named entities is a
+     loom-knowledge question DES-0010 deliberately left alone; nothing about
+     the analyzer will settle it.
+
+  2. CLOSED 2026-08-08 by BUG-0011's fix, landed as PLAN-0011. The call name
+     MAKE-SELECTOR is now recorded on the DHANDLER-DELETE :METHOD at
+     game-server data-api/handler.lisp:158-166, alongside DHANDLER-DELETE-ALL
+     and DHANDLER-DELETE-SELECTOR. DES-0010 R7's criterion is met and its
+     CONSEQUENCES section says so.
+
+     Kept rather than deleted, because whose criterion it was is the part worth
+     remembering: R5 above asks only for DHANDLER-DELETE-ALL and
+     DHANDLER-DELETE-SELECTOR, and both were already recorded by PLAN-0009.
+     MAKE-SELECTOR is named by this document's prose (WHAT IS WRONG, describing
+     the body's contents) and required as acceptance by DES-0010 R7 alone --
+     and a criterion written from reading the source rather than from running
+     the analyzer over it is the more expensive of the two to get wrong,
+     because it is the thing an implementer is later asked to satisfy. It was
+     unmet because the source writes (apply #'make-selector args) and
+     COLLECT-CALL-NAMES walked operator positions only, so a function
+     quotation's argument was dropped. That was BUG-0011, filed rather than
+     fixed at the time because the fix moves :CALLS on both codebases and would
+     have confounded the delta PLAN-0009 step 8 existed to measure; it was
+     fixed once that measurement was safely in the past, which is the sequencing
+     working as intended rather than a delay.
+
+     This document stays `partial`: item 1 is untouched and still open.
+
+  A third thing is disclosed rather than outstanding, because it is not
+  something this document asked for: BUG-0012, where an inline clause and a
+  standalone DEFMETHOD colliding on one natural key in one file leave a union
+  of both definitions' outgoing edges on the surviving entity.

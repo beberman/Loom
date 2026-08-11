@@ -21,7 +21,10 @@
     (:loom-graph/test     . "LOOM-GRAPH-TEST")
     (:loom-workspace/test . "LOOM-WORKSPACE-TEST")
     (:loom-knowledge/test . "LOOM-KNOWLEDGE-TEST")
-    (:loom-process/test   . "LOOM-PROCESS-TEST"))
+    (:loom-process/test   . "LOOM-PROCESS-TEST")
+    (:loom-serve/test     . "LOOM-SERVE-TEST")
+    (:loom-rest/test      . "LOOM-REST-TEST")
+    (:loom-mcp/test       . "LOOM-MCP-TEST"))
   "Each test system and the package its TEST-RUNNER lives in.
 The two are listed rather than derived because the names do not correspond:
 LOOM-ONTOLOGY/TEST's runner is in ROOT-ONTOLOGY-TEST.")

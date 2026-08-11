@@ -1,0 +1,218 @@
+id: BUG-0004
+title: reindex races the monitor thread and can leave a third of the index missing
+status: closed
+date: 2026-07-31
+refines: [PLAN-0001]
+affects: [reindex-repository, index-repository, poll-once, index-file,
+          resolve-and-check, resolve-generated-definitions, resolve-calls,
+          resolve-document-links, repository-status]
+tags: [workspace, concurrency, reindex, monitor, verification]
+summary: |
+  `reindex` on a watched repository rebuilds the index on the console thread
+  while the monitor thread is polling the same graph, with no lock anywhere in
+  loom-graph or loom-workspace. SBCL detects the collision -- "Unsafe concurrent
+  operations on #<HASH-TABLE ...>" -- and every resolution pass in flight dies,
+  leaving an index with 650 entities and 42 tests where a clean rebuild gives
+  883 and 245. The surviving index still reports 0 violations and 0 unresolved
+  references, so nothing about it looks wrong. It also produces a false failure
+  of PLAN-0001's own drift check, which is specified as the sole symptom of a
+  lifecycle bug in the generated-definition pass.
+body: |
+  SYMPTOM
+
+  On a watched repository, `reindex` prints errors from inside the rebuild and
+  then a status describing an index that is missing a third of itself:
+
+    loom> reindex
+    Indexing Loom (75 files)...
+      ! src/workspace/workspace.lisp: Unsafe concurrent operations on
+        #<HASH-TABLE :TEST EQUAL :COUNT 651 {10064BED83}> detected.
+      ! resolve-generated-definitions: Unsafe concurrent operations on
+        #<HASH-TABLE :TEST EQUAL :COUNT 1227 {10064BEE43}> detected.
+      ! resolve-calls: Unsafe concurrent operations on
+        #<HASH-TABLE :TEST EQUAL :COUNT 1227 {10064BEE43}> detected.
+      ! resolve-document-links: Unsafe concurrent operations on
+        #<HASH-TABLE :TEST EQUAL :COUNT 1227 {10064BEE43}> detected.
+    Loom  /home/beberman/lisp/Loom/
+      index      : 74 files, 650 entities, 1226 relationships
+      documents  : 26
+      tests      : 42 tests covering 0 units
+      watcher    : watching
+      rules      : 0 violations, 1 unenforced
+      unresolved : 0 document references, 1 definer macro
+      errors     : 7, last: Unsafe concurrent operations on ...
+
+  Against the same tree with the monitor paused:
+
+      index      : 75 files, 883 entities, 3956 relationships
+      tests      : 245 tests covering 167 units
+
+  So a reindex meant as "the escape hatch for any suspected divergence" --
+  reindex-repository's own docstring, quoting SS3.2 -- is capable of
+  manufacturing a far worse divergence than any it was run to clear.
+
+  The outcome is not deterministic. Three consecutive runs produced 848
+  entities / 3476 relationships, then 883 / 1740 with 0 tested units, then a
+  correct 883 / 3956. Which is the race showing through: what survives depends
+  on where the monitor happened to be.
+
+  CAUSE
+
+  There is no lock. `grep -rn "make-lock\|with-lock\|mutex" src/graph src/workspace`
+  returns nothing, and two threads write one graph:
+
+    the console thread   reindex -> reindex-repository -> index-repository
+                         -> index-file per file, then resolve-and-check
+    the monitor thread   monitor-loop -> poll-once -> index-file per changed
+                         file, then resolve-and-check
+
+  reindex-repository does three things before rebuilding: installs a fresh
+  graph, clears repository-stamps, and clears the error list. Clearing the
+  stamps is what opens the window. file-changed-p decides a file changed by
+  comparing against repository-stamps, so between the clrhash and the moment
+  index-file re-stamps a given file, that file reads as changed to a
+  concurrent poll. The monitor wakes inside a 2-second interval, finds most of
+  the tree apparently changed, and starts its own analysis of the same files
+  into the same graph the console thread is rebuilding.
+
+  Both threads then reach resolve-and-check and walk the graph's hash tables
+  while the other mutates them. SBCL's collision detection fires, the
+  condition aborts the pass, and because a pass emits its whole batch as one
+  transaction, an aborted pass contributes nothing at all -- which is why the
+  relationship count lands near the pre-resolution figure and tested-units at
+  zero.
+
+  WHY IT HID
+
+  Three reasons, and the third is the one worth keeping.
+
+  The error path works exactly as designed, and that is what conceals it.
+  SS3.3's rule is that an analyzer condition must not reach the debugger; the
+  monitor logs and continues. So the failure prints four lines into a stream
+  already carrying compile chatter and an indexing banner, and then the console
+  goes on answering queries against a gutted index.
+
+  `status` does not report it. Violations are 0 and unresolved references are 0
+  -- both true, and both cheap to satisfy when the passes that would populate
+  them never ran. The `errors` line is the only tell, and it is printed only
+  when the count is non-zero, so a reader who has not seen it before does not
+  know to miss it. Compare the three counts DES-0002 R10 added, which are
+  printed unconditionally, zero included, for precisely this reason: "a count
+  that vanishes when it is nought cannot be told from a count nobody computes".
+
+  Nothing in the suite runs a monitor and a reindex at once. The workspace
+  tests drive poll-once directly, which is the right way to test analysis but
+  means the thread the monitor would have run it on never exists.
+
+  The race is not new -- there has never been a lock -- but it was much harder
+  to hit before DES-0002. The resolution passes now build a registry, walk
+  every file's :definer-call-sites, mint and retract generated entities, and
+  derive :tests from :calls. That is a far longer window over far more shared
+  structure than resolve-calls plus resolve-document-links alone. The work
+  landed by PLAN-0001 did not introduce this defect; it made it reachable.
+
+  WHAT THIS COST, CONCRETELY
+
+  PLAN-0001's verification section specifies:
+
+    reindex, status
+        The drift check for step 5. A reindex is a full rebuild, so its counts
+        must equal those of the incrementally updated index that preceded it.
+        A difference here is the lifecycle bug and there is no other symptom.
+
+  Run as written, on a watched repository, it fails -- and it names in advance
+  the wrong culprit, since "there is no other symptom" invites reading any
+  difference as proof of a mint/retract bug in
+  resolve-generated-definitions. There is no such bug: with the monitor paused
+  the rebuilt index matches the incremental one exactly, 883 entities and 3956
+  relationships either way. An acceptance instrument that reports a false
+  failure and pre-assigns the blame is worse than no instrument, because it
+  sends the reader to search a pass that is behaving correctly.
+
+  FIX
+
+  Not made here; the choice is a design one and belongs in a decision.
+
+  The narrow fix is for reindex to stop the monitor for the duration and
+  restart it -- three lines, and it closes the observed path. It leaves the
+  general hole: any console command running while the monitor polls touches the
+  same unguarded structure.
+
+  The general fix is a per-repository lock held across a whole analysis pass by
+  all three of index-repository, poll-once and reindex-repository, so that a
+  rebuild and a poll serialise rather than interleave. Note that the unit of
+  exclusion has to be the pass, not the transaction: apply-transaction being
+  individually safe would not help, because the damage here is a resolution
+  pass reading a view while another thread writes it.
+
+  Whichever is chosen, PLAN-0001's drift check needs restating so that it is
+  run against a paused watcher, or the difference it detects is no longer
+  attributable to the lifecycle it was written to test.
+
+  CLOSED, 2026-08-01
+
+  The general fix was taken, not the narrow one. DES-0004 designed the
+  per-repository lock this section asked for and DES-0003 designed the
+  graph-layer protected-table beneath it; PLAN-0002 sequenced both, deliberately
+  in the reverse of their document order, and executed them.
+
+  What earned the close, in the order the evidence arrived:
+
+    DES-0004 R8(a)   twenty reindex/status pairs in one invocation, monitor
+                      alive throughout, every status block identical, no errors
+                      line, no "Unsafe concurrent operations" anywhere in the
+                      output or in `log`. First passed at PLAN-0002 step 2 and
+                      re-run after steps 4 and 5, and again at step 7.
+    DES-0004 R8(b)   the workspace concurrency stress test -- one thread in
+                      reindex-repository, one in poll-once, no sleep -- went
+                      from failing 4 of 5 runs pre-fix to 0 of 5 after step 2,
+                      and is in the suite.
+    DES-0004 R8(c)   the state the racing threads leave equals a fresh
+                      monitor-stopped rebuild of the same fixture.
+    DES-0004 R8(d)   a pause issued the instant a reindex returned completed in
+                      48 ms against *monitor-stop-timeout*'s 10 s, no forced
+                      thread destroy.
+    DES-0004 R8(e)   four files written by a second thread at the moment a
+                      reindex was issued were all present in the final index.
+    DES-0003 R7      the graph concurrency test from PLAN-0002 step 1 -- two
+                      writers and a reader against one graph -- failed 5 of 5
+                      runs from step 1 through step 3 and has passed 5 of 5
+                      since step 4.
+
+  The close waited for step 4 rather than being taken at step 2 on R8's letter.
+  R8 was satisfied by the repository lock alone, but the SYMPTOM section above
+  quotes a condition a console query racing a poll could still produce until the
+  graph layer was converted, and a bug whose quoted symptom is still reachable
+  is not closed.
+
+  HOW MUCH POWER THE ACCEPTANCE CHECK HAD
+
+  Recorded because a clean run of a probabilistic instrument means only as much
+  as its pre-fix failure rate. Re-measured on 2026-08-01 before any fix, on a
+  tree of 78 files, the R8(a) command failed one invocation in three -- and the
+  failure was not the shape this document captured. The entity count was
+  correct at 886; the damage was entirely in relationships (1263 against 4035)
+  and tested units (0 against 167). An acceptance check comparing entity counts
+  alone would have passed that run, which is why R8(a) compares all four
+  numbers and the errors line. Against a one-in-three failure rate, twenty
+  clean trials is a strong result rather than a lucky one.
+
+  The two tests in the suite are stronger instruments still: 4 of 5 and 5 of 5
+  pre-fix respectively, each re-verified against a copy of the tree with its own
+  fix reversed rather than assumed from the pre-fix state.
+
+  TWO THINGS FOUND ON THE WAY, NEITHER OF THEM THIS DEFECT
+
+  SBCL detects concurrent *mutation* of a hash table, not a read overlapping a
+  write. A one-writer/one-reader test never signals however long it runs; two
+  writers signal within a few hundred puthashes, every time. The first shape of
+  the graph test was therefore not an instrument at all, and the collision pair
+  in this document -- a console thread in reindex-repository against a monitor
+  thread in poll-once -- is two writers, which is what the test now models.
+
+  random-uuid:make-uuid is not thread-safe: two threads generating 20,000 uuids
+  each produced 26,039 distinct strings of 40,000. Duplicate ids, second write
+  wins, entities silently gone. After step 4 this presented as the graph test
+  losing four to ten entities of four thousand with nothing signaled -- the
+  exact shape of DES-0003 R8's stated residual, and not that. It is BUG-0005
+  and it is not this defect.

@@ -36,9 +36,9 @@ statement: |
 
 rationale: |
   This rule exists because it was broken. PLAN-0001 reached final on
-  2026-07-31 having landed all ten of ARCH-0002's requirements, and ARCH-0002
+  2026-07-31 having landed all ten of DES-0002's requirements, and DES-0002
   sat in draft for two days afterwards. PLAN-0002 reached final on 2026-08-01
-  and left ARCH-0003 and ARCH-0004 in draft the same way. Nothing reported it,
+  and left DES-0003 and DES-0004 in draft the same way. Nothing reported it,
   because nothing was looking: `check` verifies that document references
   resolve, not that their statuses tell the truth.
 
@@ -49,14 +49,14 @@ rationale: |
   is the problem Loom was built to solve, or proposes work that is already
   done. Both failures are silent and both are expensive.
 
-  The three-way choice is a judgement and not a lookup, and ARCH-0003 is the
+  The three-way choice is a judgement and not a lookup, and DES-0003 is the
   worked example of why. Applying this rule for the first time, it was read as
-  partial on the strength of PLAN-0002's summary, which lists ARCH-0003 R5
+  partial on the strength of PLAN-0002's summary, which lists DES-0003 R5
   under "out of scope and deliberately so". Reading R5 itself reverses that:
   R5 requires that transaction.lisp's tx tables stay bare hash tables, so
   leaving them alone is the requirement being met, not skipped. R12 turned out
-  not to be a requirement of ARCH-0003 at all -- its own text puts it out of
-  scope -- and had since been settled against by ARCH-0004. ARCH-0003 is
+  not to be a requirement of DES-0003 at all -- its own text puts it out of
+  scope -- and had since been settled against by DES-0004. DES-0003 is
   implemented.
 
   The general trap: a plan's scope-out list mixes two different things under

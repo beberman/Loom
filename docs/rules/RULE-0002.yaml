@@ -11,6 +11,6 @@ statement: |
   property for the workspace to resolve, never written directly.
 check:
   kind: no-edge
-  from-system: analyzer
-  to-system: graph
+  from-system: loom-analyzer
+  to-system: loom-graph
   rel-types: [calls, imports, depends-on]

@@ -1,0 +1,166 @@
+id: REQ-0009
+title: Documents under docs/ must move to a database, explicitly overriding DEC-0001
+status: draft
+date: 2026-08-03
+affects: [register-document-type, document-properties, collect-body,
+          resolve-document-links, apply-transaction, retract-file,
+          facts-from-file, index-repository]
+tags: [documents, database, workflow, process, architecture]
+summary: |
+  docs/*.yaml is the whole system of record for the workflow chain CON-0004
+  describes, and that chain's own weakest point is named in CON-0004 itself:
+  status is "held up by discipline alone," nothing verifies a transition, and
+  there is no notion of who owns a document or when it changed hands. This
+  asks Loom's documents -- requirements, arch, design, plans, reviews, bugs,
+  concepts, rules -- to move into a database with an enforced workflow, which
+  requires overriding DEC-0001's "the repository on disk is the system of
+  record" for this one category of file. That override is deliberate and
+  must be stated as such, not arrived at by accident. Source code is
+  unaffected; DEC-0001 continues to hold there.
+body: |
+  WHAT IS WRONG
+
+  CON-0004 names its own gap plainly: "Nothing in Loom verifies a status...
+  Status is the one field in this workflow held up by discipline alone,
+  which is the argument for moving it in the same change as the work rather
+  than later." A REQ can sit in :draft after the PLAN that answers it has
+  gone :final, and nothing but a human rereading RULE-0005 catches it --
+  which is exactly the failure mode RULE-0005 exists to name and does not
+  itself prevent.
+
+  Two more gaps sit next to that one and are the reason this is a database
+  question rather than another rule:
+
+    No document has an owner. A REQ can sit in :draft indefinitely with
+    no record of whose job it is to move it, and nothing distinguishes
+    "nobody has picked this up" from "somebody is actively blocked on it."
+
+    A status change carries no structured reason. Git blame says which
+    commit changed `status: draft` to `status: accepted` and the commit
+    message says whatever the author happened to write there, but there is
+    no queryable field answering "why did this move, and who moved it" the
+    way `refines:` answers "what does this document answer."
+
+  A flat file tree with YAML front matter cannot enforce any of the three
+  without a program re-deriving that enforcement from scratch on every
+  write. A database can express valid-transition constraints and ownership
+  as schema rather than as convention, and make "every REQ currently
+  assigned to X" or "every document that changed status in the last week"
+  a query instead of a grep.
+
+  WHY THIS OVERRIDES DEC-0001, AND WHY THAT IS STATED HERE RATHER THAN LEFT
+  IMPLICIT
+
+  DEC-0001 holds today: "The graph is an index over files, not a second copy
+  of the truth... Anything Loom knows that is not derivable from files must
+  be written back to files, or it is not knowledge." A database of record for
+  documents is a second copy of the truth in exactly the sense DEC-0001 was
+  written to rule out, for this one class of file.
+
+  This requirement asks for that override deliberately, and the decision
+  that answers this requirement must carry `supersedes: [DEC-0001]` --
+  the field already exists on :decision documents for precisely this case
+  and has been unused (every decision to date lists `supersedes: []`).
+  DEC-0001 is not quietly bypassed by routing documents through a database
+  and leaving the decision saying files are truth; the decision record
+  itself must say it no longer holds, and for what.
+
+  The override is scoped to docs/. Source, comments, and the analyzer's
+  view of code are untouched -- DEC-0001's rationale for source (the graph
+  is disposable, Git is the history) is not in question here and this
+  requirement does not reopen it. Whether a database-backed document also
+  keeps a YAML export as the human-readable, Git-diffable artifact, or
+  whether YAML stops being the source of truth entirely, is left to the
+  architect; either way the decision record must say which.
+
+  WHY THIS MATTERS NOW
+
+  REQ-0008 asks Loom to become a long-lived, in-image service reachable over
+  MCP and REST. A process that stays up across many callers is exactly the
+  shape a database of record fits naturally and a per-call cold-start script
+  does not: today's tools/loom.sh rebuilds the whole index every invocation,
+  which is cheap because nothing persists between calls anyway. Once a
+  service holds state across calls (REQ-0008's R1, R7), documents living in
+  a database that same service manages is a smaller step than it is against
+  today's process-per-call shape. This requirement should be sequenced
+  alongside or after REQ-0008 lands, not ahead of it -- building the
+  database-backed store first means building it twice, once for a process
+  that dies every call and once for one that doesn't.
+
+  WHAT A SOLUTION HAS TO COVER
+
+  R1  Every document currently under docs/*.yaml -- requirements, arch,
+      design, plans, reviews, bugs, concepts, rules -- is representable in a
+      database, with every field the YAML schema carries today: id, title,
+      status, date, refines, affects, supersedes, tags, summary, and the
+      per-type prose fields document-properties reads per type-key.
+
+  R2  Status transitions are enforced by the database schema against the
+      per-type vocabulary CON-0004 already states (REQ: draft -> accepted ->
+      implemented | partial, DEC: accepted | superseded, and so on for the
+      rest), not merely checked after the fact. An invalid transition is
+      rejected at the point it is attempted, closing the gap CON-0004 names.
+
+  R3  refines:, affects:, and supersedes: continue to resolve against the
+      index exactly as they do today -- `impact REQ-0002` and `check`'s
+      unresolved-reference report are unchanged in what they report, only in
+      where the underlying data lives.
+
+  R4  Loom's read commands (find, describe, impact, context, status, check,
+      rules) behave identically from a caller's perspective before and
+      after this migration. This is a storage-layer change, not a change to
+      what any existing command returns.
+
+  R5  A migration path takes the current docs/*.yaml tree into the database
+      without loss -- every field, every id, every cross-reference -- and is
+      re-runnable, since DEC-0001's "recovery is reindexing, and reindexing
+      is always correct" is the property this migration must not quietly
+      drop even while overriding the rest of that decision.
+
+  WHAT THIS IS NOT
+
+  Not a request to design the schema, pick the database engine, or decide
+  whether YAML remains a secondary export -- those are architecture-stage
+  decisions, the same way REQ-0008 left its own storage and protocol choices
+  to the architect.
+
+  Not a request to migrate source code off the file system. DEC-0001 keeps
+  holding there; only docs/ is in scope.
+
+  Not a request to add "assigned to," "assigned date," or assignment
+  traceability. Those depend on a table of users -- including agents -- and
+  a table tracking assignment events, both of which depend on this
+  migration existing first. That is deferred to a later requirement that
+  refines this one once the database exists; asking for it here would be
+  asking for the dependent work before its dependency.
+
+  LEFT OPEN, FOR THE ARCHITECT
+
+  Whether the database gets a one-way, read-only reflection into GitHub
+  Issues -- Loom's database stays the system of record and the only place a
+  status transition is enforced; GitHub Issues, if used at all, is a mirror
+  opened and closed by Loom, never a second place the state can be written.
+  This is worth naming rather than defaulting to no integration, for a
+  reason separate from workflow: if this repository is pushed as a public
+  Git repository, a GitHub Issue per requirement or bug gives a reader who
+  has not read CLAUDE.md a familiar way to see what is open and why, without
+  requiring them to run Loom or parse docs/*.yaml to find out. That is a
+  discoverability argument, not a workflow one -- it does not change R2's
+  enforcement, which stays in the database regardless of whether a mirror
+  exists.
+
+  Which database -- embedded (SQLite) or a server process -- and how it
+  relates to REQ-0008's own service process: the same process, a sibling
+  process Loom's service talks to, or a library linked into the same image.
+
+  Whether YAML under docs/ survives as a generated, Git-diffable export of
+  the database (closer to today's review workflow) or is retired once the
+  database is the source of truth.
+
+  Whether the per-type status vocabulary CON-0004 states in prose becomes an
+  enum per document type in schema, or one shared state machine parameterized
+  by type.
+
+  How `check`'s "a name that resolves to nothing is reported rather than
+  dropped" behaviour is preserved when the thing being checked is a database
+  row rather than a parsed file.

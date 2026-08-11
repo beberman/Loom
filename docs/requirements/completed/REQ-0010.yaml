@@ -1,0 +1,257 @@
+id: REQ-0010
+title: An agent must be able to get a running, current loom-serve without a human starting it
+status: implemented
+date: 2026-08-03
+affects: [start-server, stop-server, server-status, serve-forever, main]
+tags: [process, service, mcp, agents, lifecycle, prototype]
+summary: |
+  DES-0006 built loom-serve, loom-rest and loom-mcp; PLAN-0005 landed them,
+  green. None of it answers the question raised while updating
+  .claude/agents/tools.md to reflect that work: an MCP-transport connection
+  in Claude Code's own configuration only reaches a server that is already
+  running, and nothing today starts one, notices it is stale after a code
+  change, or restarts it. tools.md and the loom skill were written to say
+  "use tools/loom.sh" for exactly this reason -- that always works and this
+  does not, yet. This asks for the minimum that closes the gap for one
+  person on one machine in prototype: a way for either a human or an agent
+  to start loom-serve on demand, and for an agent to bring it up to date --
+  by a full process restart, always, since DES-0008 amended R3 and removed
+  the in-image reload this document originally preferred -- when Loom's own
+  source has changed since the running process loaded it. Explicitly not
+  a systemd unit, not a permissions model, and not a decision about which
+  Claude Code mechanism drives it -- those are named as open questions, not
+  requirements, because prototype scope on a single machine does not need
+  the first two yet and the third is a real design choice this document
+  should not make by default.
+body: |
+  WHAT IS WRONG
+
+  REQ-0008 asked for a standing process and R7 gave it a lifecycle -- start,
+  stop, status, two modes -- but R7 is three functions and a signal handler,
+  not a policy for who calls them. Nothing decides that a service should
+  exist right now, and nothing notices when the one that exists no longer
+  matches the code on disk. Concretely, two gaps:
+
+    Nobody starts it. `sbcl --script loom-serve.lisp --headless` has to be
+    typed by a person, at a shell, before any MCP or REST caller can reach
+    anything. An agent that wants to use Loom over MCP instead of
+    `tools/loom.sh` has no way to make that true itself.
+
+    Nobody notices it is stale. loom-serve.lisp loads Lisp source into one
+    SBCL image at start and never again; a change to any file under src/ --
+    whether the six systems REQ-0008 protects or the three PLAN-0005 added --
+    is invisible to a process already running, the same way a change to a
+    library is invisible to a program that already linked it. A server
+    answering MCP calls with yesterday's `describe-entity` is worse than no
+    server, because it looks correct.
+
+  Both are the reason tools.md, written this session, still tells every
+  agent to use `tools/loom.sh` and not the service: that script's per-call
+  cold start makes both gaps irrelevant by construction, and nothing else in
+  the tree yet does.
+
+  WHY NOW, AND WHY NOT MORE THAN THIS
+
+  This is prototype software on one developer's machine, not a deployed
+  service with other tenants. That scope is the reason this document can be
+  small: no auth model beyond what R6 already stubs (REQ-0008 excluded it
+  and this document does not reopen that), no process supervision beyond
+  what one script can do (no systemd unit, no restart-on-crash policy, no
+  multi-machine anything), and no attempt to make the service durable across
+  a reboot -- DES-0006 already recorded that nothing crosses a restart, by
+  DEC-0001's own argument, and this document does not revisit it. A single
+  running process that a script can start, check, and restart is the whole
+  target. Turning it into an installed service that Ubuntu itself supervises
+  is real future work and is named here only so it is not mistaken for part
+  of this one.
+
+  WHAT A SOLUTION HAS TO COVER
+
+  R1  A way to ask "is loom-serve running, and is it current" that a human or
+      an agent can call before assuming an MCP or REST call will land
+      anywhere. "Running" is `server-status` (already built) answering, or
+      the port refusing a connection if not.
+
+      "Current" is a different question from whether a watched repository's
+      *index* is fresh, and must not be confused with it: a repository's
+      monitor thread already keeps its graph data current against its
+      source by design, and this document adds nothing there. What can go
+      stale is the running SBCL image's own loaded code -- Lisp does not
+      reload a function's definition because the file it came from changed
+      on disk, so a change to any file under the nine systems'
+      src/ directories is invisible to a process that already loaded them,
+      the same way a change to a linked library is invisible to a program
+      already running against it. Re-running `reindex` on a repository
+      updates the graph's facts about that code; it does not reload the code
+      itself, and nothing short of reloading the systems or restarting the
+      process does.
+
+      No new detection mechanism is needed to notice this, only the existing
+      one pointed at the right target: loom-serve watches its own source
+      tree as an ordinary repository, through the same `watch-repository` /
+      `poll-once` machinery every other repository already uses. "Is loom-
+      serve current" then reduces to "does that self-watched repository's
+      own status show a file changed since the process started" -- reusing
+      the mechanism the workspace already has and tests, rather than
+      inventing a second one, per the correction that produced this
+      wording: a fingerprint or hash scheme built fresh for this purpose
+      would only be re-deriving what watch-repository already computes.
+
+      Detecting is not acting, and the two must stay separate. An ordinary
+      watched repository reindexing itself the moment `poll-once` sees a
+      change is correct and desired -- that is the watcher's whole job. It
+      is not correct for loom-serve's self-watch: a change mid-edit, or one
+      of several files in a multi-file change not yet all saved, can leave
+      Loom's own source in a state that does not even read, and R3 must
+      never be wired to fire automatically off R1's signal for that reason.
+      R1 answers "is it stale" on request; R3, below, is a separate,
+      deliberately invoked step, taken only once whoever is editing believes
+      the change is complete -- never a consequence the watcher triggers by
+      itself. Reloading, or worse restarting, the one process every other
+      agent depends on in the middle of someone else's half-finished edit is
+      the failure mode this separation exists to prevent.
+
+  R2  A way to start loom-serve that is safe to call when it might already be
+      running, without a person watching. Two agents, or an agent and a
+      human, both deciding independently that the service is not running and
+      both trying to start it must not produce two processes fighting over
+      one port or a confusing crash from the second. Binding the port is
+      itself a natural single-instance guard; the requirement is that the
+      losing attempt recognizes "something is already there" and stops
+      cleanly rather than treating a bind failure as an unrelated error.
+
+  R3  A way to bring loom-serve's own running code up to date once R1 has
+      found it stale. That way is a full process restart, always, performed
+      from outside the process being replaced -- SIGTERM and a fresh spawn,
+      the mechanism R2 already made safe to call blind -- and never an
+      in-image reload reached over the service's own request path.
+
+      AMENDED by DES-0008, 2026-08-04, and by PLAN-0007 which implemented
+      it. This text is not what this requirement originally asked for. It
+      asked for the Lisp-native reload to be *preferred* over a restart, on
+      the grounds that watched repositories stay watched, open REPL sessions
+      survive, and the port is never closed and reopened. Both grounds were
+      checked against the running code rather than restated, and neither
+      holds today. RESOLVE-CALLER-GRANTS (capability.lisp:33-48) grants
+      `(:read :write)` and never `:repl` to any caller, so no REPL session
+      can be opened at all over REST or MCP and "open REPL sessions survive"
+      protects a provably empty set. Watched-repository loss is not a cost a
+      restart introduces: `stop`, `restart`, a crash, and the documented
+      fallback path of `reload` itself all already had it. Against that,
+      in-place reload produced a reproduced HTTP 500 in one of six concurrent
+      requests (BUG-0008), failed twice more on this tree's own dependency
+      graph before that (DES-0007 OUTSTANDING), and was measured at 4.4s
+      against a restart's 4.3s -- so it bought nothing that survived
+      inspection.
+
+      The Lisp-specific risk the original text named is unchanged and is now
+      closed by construction rather than reasoned around: redefining a
+      `defstruct` whose slot layout changed while live instances of the old
+      layout exist is implementation-defined -- `operation`, `repl-session`,
+      and the graph's own entity and repository representations are exactly
+      that kind of structure -- and a macro whose expansion changed does not
+      retroactively fix a caller already compiled against the old expansion.
+      Nothing survives a restart, so nothing can be left holding a layout the
+      new code no longer has. "Which changes are safe to reload in place",
+      left to the architect here, is no longer a question anyone has to
+      answer.
+
+  R4  Both R2 and R3 are reachable the same way a human would reach them --
+      a script under tools/, in the shape tools/loom.sh and tools/loom-test.sh
+      already are, so the same Claude Code permission story that already
+      allowlists those two extends to this one rather than needing its own
+      exception. What that script is named and exactly which subcommands it
+      takes (start / stop / restart / status, or fewer) is left to whoever
+      implements this, not fixed here.
+
+  R5  tools.md and the loom skill are updated once R1 to R4 exist, to say how
+      an agent gets a current, running loom-serve rather than only how to
+      fall back to tools/loom.sh -- this document's own trigger, so it is
+      named as an obligation rather than left implicit the way CON-0004
+      warns against.
+
+  WHAT THIS IS NOT
+
+  Not an automatic reload the instant the self-watched repository sees a
+  changed file. R1's detection and R3's action are deliberately two
+  different requirements rather than one, precisely so nothing reloads or
+  restarts the running service mid-edit, before a multi-file change has
+  finished landing. See R1's own closing paragraph.
+
+  Not a systemd unit, a launchd job, or any OS-level service installation.
+  "Ubuntu itself makes sure it's running" is real and wanted, later, once
+  this is past prototype -- explicitly deferred, not rejected.
+
+  Not a new authentication or permission model, and not "no permission check."
+  `check-capability` keeps running on every call exactly as DES-0006 built
+  it -- an operation still declares a required tier and an ungranted caller
+  is still refused. What stays a stub is only `resolve-caller-grants`, the
+  seam DES-0006 named for this and REQ-0008 already excluded designing in
+  full: for a single-machine prototype with one person and their own agents,
+  any credential presented resolves to every tier, which is what it already
+  does today. A caller still passes something and the server still checks
+  it against what the operation needs; the something is just trivial to
+  obtain right now. Building real credential issuance is separate, later
+  work, not reopened by this document.
+
+  Not a decision about which Claude Code mechanism drives R1 through R3 --
+  a hook (SessionStart, PreToolUse on an MCP call), a step written into a
+  skill's own instructions, or something else. That choice was raised and
+  explicitly left open while writing this document rather than guessed at;
+  see LEFT OPEN.
+
+  Not a change to loom-serve's own lifecycle primitives. start-server,
+  stop-server, server-status and serve-forever already do what R1 to R3
+  need; this document asks for the calling convention around them, not new
+  behaviour inside them. This line did not survive intact either, and
+  DES-0008 says so rather than obscuring it: stop-server now drains
+  in-flight requests before it completes, bounded by a timeout, because the
+  alternative -- an opt-in keyword defaulting to today's hard stop -- would
+  have left the defect open for the SIGTERM path, which is every `stop` and
+  `restart` this requirement's own script performs. serve-forever also stopped
+  re-watching paths its caller already watched (BUG-0007).
+
+  LEFT OPEN, FOR THE ARCHITECT
+
+  Which Claude Code mechanism triggers R1's check and R2/R3's start-or-
+  restart -- named explicitly as undecided rather than defaulted:
+
+    A PreToolUse hook on the MCP tool calls themselves, checking and
+    starting the service before the first real call in a session reaches it.
+    Closest to "just works," and the one with the least precedent in this
+    tree to model it on.
+
+    A step in a skill's own instructions (the loom skill, or a new one) that
+    an agent runs explicitly -- "before using MCP, run tools/<script> status
+    and start or restart it if needed" -- closer to how tools.md already
+    tells an agent what to do, at the cost of depending on the agent
+    remembering to do it.
+
+    A SessionStart hook that checks once per Claude Code session rather than
+    per call -- cheaper, but stale-by-code-change (R1's second half) can
+    still happen mid-session if source changes after the session's already
+    running, which a per-call check would not miss.
+
+  Whichever is chosen, whether it belongs to Loom (a script under tools/,
+  documented and left to be invoked) or to the surrounding Claude Code
+  configuration (a hook in .claude/settings.json) is itself part of the
+  choice, not a given.
+
+  Whether R1's self-watch check is worth calling conditionally at all, given
+  that restarting is already cheap -- PLAN-0005 measured loom-serve's own
+  process lifecycle in seconds, and the console's own `reindex` is
+  documented as "always safe" on the same reasoning. An implementation may
+  reasonably skip R1 entirely and have R2/R3 collapse into one unconditional
+  "ensure a freshly started process" step, rather than checking staleness
+  first and restarting only when it is found. Whether that is simpler
+  overall or just moves the cost from "sometimes check" to "always restart"
+  depends on how often the trigger mechanism (also left open, above) fires.
+
+  Whether a full restart (R3's fallback path, once reload is judged unsafe
+  or fails) should attempt to preserve which repositories were being
+  watched across it -- a config file remembering them, which DES-0006
+  already considered and deferred for the interactive/headless entry point
+  itself -- or simply requires the caller to re-`watch` afterward, matching
+  today's restart behaviour exactly. This question does not apply to the
+  reload path at all, since reloading in place never loses watched-
+  repository state to begin with.

@@ -1,0 +1,687 @@
+id: DES-0006
+title: A shared loom-serve layer puts MCP and REST on one Hunchentoot listener over the same live graph
+status: implemented
+date: 2026-08-02
+refines: [REQ-0008]
+affects: [main, console, run-command, current-repository, current-graph,
+          resolve-entity, watch-repository, pause-repository, unwatch-repository,
+          reindex-repository, repository-status, all-repositories, find-repository,
+          search-entities, describe-entity, impact-report, build-context,
+          render-context, active-rules, unenforced-rules, install-debugger-hook]
+tags: [process, service, mcp, rest, concurrency, permissions, workspace, knowledge]
+summary: |
+  REQ-0008 asks for a standing, in-image process reachable over MCP and REST
+  instead of one process per call. Three new systems answer it: loom-serve, a
+  shared layer that turns the same functions console.lisp already calls
+  (search-entities, describe-entity, impact-report, build-context,
+  repository-status, watch-repository, pause-repository, unwatch-repository,
+  reindex-repository) into a small typed operation registry with a permission
+  tier and a structured-error contract attached to each entry; and loom-rest and
+  loom-mcp, two thin protocol skins over that one registry, sharing one
+  Hunchentoot listener in one process so the graph is never rebuilt per call and
+  never duplicated across processes. Both new protocol systems are peers of
+  loom-process, not layers on top of it: console.lisp, loom.lisp, and every
+  system beneath loom-process are unedited by this document, and a new entry
+  script, loom-serve.lisp, is what wires the listener's lifecycle around
+  loom-process:main rather than console.lisp growing a mode of its own. The
+  REPL (R9) is a stateful session keyed by an opaque id and scoped to its own
+  package, not a fresh stateless eval per call, because a stateless design
+  cannot reproduce what a terminal REPL already gives for free -- SETQ,
+  DEFPARAMETER, and IN-PACKAGE persisting between lines -- and reproducing
+  exactly that, no more, turns out to need nothing beyond an ordinary CL
+  package per session.
+body: |
+  PROBLEM, RESTATED FROM MEASUREMENT
+
+  REQ-0008's own numbers are the starting point and are not re-derived here.
+  PLAN-0003's OUTCOME measured a full rebuild of this tree at 135-143 ms; every
+  `tools/loom.sh` invocation today pays that cost once per call because the
+  process that built the graph exits at the end of the call (DEC-0004's
+  pause/watch distinction only holds within one process's lifetime). DES-0004
+  measured a repository lock's worst-case contended hold at ~200 ms, against a
+  2000 ms poll interval -- the number this document leans on when it asks
+  whether an HTTP worker thread changes anything about that argument, below.
+  Neither number needed re-measuring; nothing here changes what either
+  measures, only how many kinds of caller can exercise the code the numbers
+  describe.
+
+  No new benchmarking was performed for this document, and that is stated
+  plainly rather than hidden: there is no Hunchentoot listener in the tree yet
+  to measure, and "measure before designing" means using the real numbers that
+  exist, not fabricating ones a prototype could produce. Once loom-rest exists,
+  its own request latency under concurrent load is a real number a future plan
+  should measure and is explicitly not estimated here.
+
+  WHERE THE BOUNDARY SITS, AND WHY
+
+  Two comments already in the tree, written before this document, settle part
+  of this question rather than leaving it open. src/process/package.lisp:
+  "The HTTP listener belongs to loom-rest and loom-mcp, which do not exist
+  yet"; src/ontology/root-ontology.lisp:608, ontology-schema's docstring:
+  "ready for JSON encoding by loom-rest." Both names were chosen by whoever
+  wrote SS3.1 and SS12 originally, and this document keeps them rather than
+  inventing new ones -- there is no reason to rename something the tree
+  already calls by a specific name in two independent places.
+
+  This document adds three systems: loom-serve (shared substance), loom-rest
+  (HTTP/JSON), loom-mcp (MCP's JSON-RPC over the same listener). All three are
+  peers of loom-process, not a layer stacked on top of it. loom-serve depends
+  on exactly the same five systems loom-process.asd already depends on --
+  loom-ontology, loom-graph, loom-analyzer, loom-workspace, loom-knowledge --
+  and nothing in loom-serve, loom-rest, or loom-mcp depends on loom-process.
+  This is a deliberate choice, not the only one available (see ALTERNATIVES
+  CONSIDERED), made for a reason the REQ's own R5 states directly: console.lisp
+  must keep working exactly as it does today, and the surest way to guarantee
+  that is for nothing about it to change -- not its file, not its .asd, not
+  what depends on it. Stacking loom-serve *inside* loom-process (a `serve`
+  console command) would mean loom-process.asd gains a dependency on Hunchentoot
+  and a JSON library merely to support a command most console sessions never
+  call, and would put an HTTP listener's lifecycle behind the same throw/catch
+  a mistyped `find` command already uses to unwind -- correct, probably, but a
+  coupling with no argument for it once the alternative (a peer system with its
+  own entry point) costs nothing more.
+
+  loom-ontology, loom-graph, loom-analyzer, loom-knowledge, and loom-workspace
+  are untouched -- zero edits, per REQ-0008's own explicit exclusion. Every
+  function loom-serve calls (search-entities, describe-entity, impact-report,
+  build-context, repository-status, watch-repository, pause-repository,
+  unwatch-repository, reindex-repository, active-rules, unenforced-rules,
+  unresolved-references, unhandled-definer-macros,
+  generated-definition-collisions) already exists, already returns plain data
+  or acts through an already-locked entry point, and is called exactly as
+  console.lisp already calls it.
+
+  THE CENTRAL ECONOMY: ONE OPERATION, TWO PROTOCOL SKINS
+
+  DES-0005 already made the argument this document leans on for R2 and R4:
+  "the underlying data is already structured; only the console's formatting
+  step is prose." services.lisp's own header comment says the same thing about
+  its own design test, unprompted by this requirement: "Everything returned is
+  plain data -- plists, strings, numbers -- with no CLOS objects and no
+  closures, so LOOM-REST can JSON-encode an answer and LOOM-MCP can render the
+  same answer as text without either of them reaching back into the graph."
+  describe-entity, impact-report, build-context, and repository-status already
+  return exactly the plists a JSON encoder or an MCP tool result wants; only
+  console.lisp's render step -- the `format t` calls under `describe`, `impact`,
+  `context`, and `status` -- throws that structure away into `~a` directives a
+  human reads and a program has to re-parse. loom-serve's operation registry is
+  therefore not a reimplementation of the console's command table; it is a
+  small table of (name, permission tier, underlying function, argument shape)
+  entries that call the *same* functions console.lisp calls and stop one step
+  short of console.lisp's own formatting. loom-rest's route handlers and
+  loom-mcp's tool handlers are then both thin: decode a request into
+  arguments, look up the entry, check its tier against the caller's grants,
+  call it, JSON-encode or MCP-encode the plist that comes back, translate any
+  condition into R8's shape. Neither protocol system contains business logic
+  of its own; both contain protocol translation over one shared registry.
+
+  WHAT EACH THING BECOMES
+
+  loom-serve (new system, src/serve/)
+
+    Repository selection without guessing. current-repository's convenience --
+    imply the one watched repository, refuse to guess among several -- is
+    right for a human who forgot to type a name and wrong for a program, which
+    either knows exactly which repository it means or should ask first. Every
+    loom-serve operation that acts on a repository takes an explicit
+    designator argument with no default and no fallback to current-repository;
+    an operation invoked without one is a malformed request (R8), not an
+    ambiguous one to be resolved by guessing. The one operation with no
+    designator requirement is status: called with none, it returns the same
+    list-every-watched-repository shape console's `status` gives with no
+    argument, which doubles as the repository-discovery call a caller makes
+    once before naming one to everything else -- no new function, since
+    all-repositories plus repository-status already produce exactly this.
+    resolve-entity is reused unchanged for id-or-name resolution *within* an
+    already-selected repository's graph -- a different, non-ambiguous kind of
+    resolution that current-repository's problem does not touch.
+
+    The operation registry. A plain alist (or a small defstruct table, in the
+    shape *commands* already is in console.lisp) of entries, each: a keyword
+    name, a required permission tier (:read, :write, or :repl -- R6), a
+    function of (repository-designator &rest args) -> plist, and enough
+    argument shape to validate a decoded request before calling it. The read
+    tier covers exactly REQ-0008 R2's seven names -- find, describe, impact,
+    context, status, check, rules -- each backed by search-entities,
+    describe-entity, impact-report, build-context, repository-status, and (for
+    check and rules) a small assembly of active-rules,
+    (entities-of-type graph :rule-violation), unenforced-rules,
+    unresolved-references, unhandled-definer-macros, and
+    generated-definition-collisions -- the same handful of loom-graph calls
+    console.lisp's `check` and `rules` commands already make directly, since
+    no single loom-knowledge function bundles them today and adding one would
+    edit loom-knowledge, which REQ-0008 excludes (recorded under CONSEQUENCES
+    as a small, accepted duplication rather than hidden). The write tier
+    covers watch, pause, unwatch, reindex, backed by watch-repository,
+    pause-repository, unwatch-repository, reindex-repository exactly as
+    console.lisp calls them. The repl tier covers repl-open, repl-eval,
+    repl-close, described below.
+
+    Capability checking. A caller reaches loom-serve carrying a resolved set
+    of granted tiers -- some subset of {:read :write :repl}, deliberately not
+    a single ordered level, because R9 requires that :repl never be implied by
+    :write and R6 requires each tier checked independently. `check-capability`
+    (grants required-tier) signals a structured condition naming the operation
+    and the tier it needed when `required-tier` is not a member of `grants`,
+    caught by the same R8 translation as any other condition and turned into a
+    403-shaped REST response or an MCP tool error, never a raw Lisp condition.
+    Where `grants` comes from is deliberately underspecified here, per
+    REQ-0008's own exclusion of the auth model: one function,
+    `resolve-caller-grants (credential)`, is the seam both loom-rest (reading
+    an Authorization header) and loom-mcp (reading the same header over its
+    HTTP transport) call once per request before dispatch, and its
+    implementation -- a static token-to-grants table is the obvious first cut
+    -- is a future document's decision, not this one's. What this document
+    commits to is that the check happens at this one seam, per request, for
+    both protocols, rather than being folded into either protocol's own
+    routing -- which is what makes "protocol is not a proxy for trust"
+    (R6) a property of loom-serve rather than a discipline each protocol
+    adapter has to remember to uphold separately.
+
+    Structured errors (R8). A translation function, `operation-error->plist`,
+    wraps every registry-entry invocation from both protocol systems in
+    `handler-case` naming `serious-condition`, not `error` -- RULE-0004's own
+    argument applies with more force here than it does to console's
+    `run-command`, which the same rule leaves alone: a mistyped console
+    command is one line a human is already watching fail; a condition that
+    escapes a long-lived server's request handler is the RULE-0004 failure
+    mode REQ-0008 exists to avoid at a much higher cost, since the process
+    that stops indexing silently is the one every future MCP and REST caller
+    depends on too, not one console session. The result is always
+    `(:name <string> :message <string>)`: `:name` is `(string (type-of
+    condition))`, which for most of today's `(error "...")` call sites is the
+    single string "SIMPLE-ERROR" -- a coarse, honest classification rather
+    than an invented one, recorded here as an accepted gap in the same spirit
+    CON-0001 records an unresolved name rather than guessing at it. A future
+    document minting a real condition hierarchy (no-such-repository,
+    ambiguous-repository, unknown-entity) can replace SIMPLE-ERROR with
+    something a caller can dispatch on without this document's shape changing
+    at all, since `operation-error->plist` reads `type-of` regardless of how
+    fine-grained the type actually is.
+
+    The REPL: a stateful session, not a fresh eval per call. R9 asks this
+    question explicitly rather than defaulting it, and the answer follows from
+    what a terminal REPL actually preserves across lines, which is less than
+    it looks. console's `repl` command hands control to SBCL's own
+    `toplevel-repl`; between two lines typed at that prompt, no lexical `let`
+    binding survives -- a `(let ((x 5)) ...)` form's `x` is gone the moment
+    that one form finishes evaluating, exactly as it would be for a fresh
+    `eval` per line. What *does* survive between lines is only what ordinary
+    Common Lisp already makes global: `*package*` (set by `in-package`), and
+    any symbol a form gave a value via `setq`, `defparameter`, or `defvar`,
+    because a special variable's binding lives on the symbol, not on a stack
+    frame a REPL line's completion unwinds. A stateless request/response REPL
+    -- fresh package, fresh everything, per call -- would therefore already
+    fail to reproduce `in-package` persisting, which is the one piece of
+    terminal-REPL behaviour every Lisp developer relies on without noticing.
+    The fix costs less than it sounds: a REPL session is a struct holding an
+    opaque id, a dedicated package (freshly made per session, using
+    COMMON-LISP and every LOOM-* package console's own image uses, so short
+    names resolve exactly as they do at a console `repl` prompt), and a
+    last-used timestamp. `repl-open` mints one and returns its id. `repl-eval
+    (session-id text)` reads TEXT with `*package*` bound to the session's
+    stored package, evaluates it inside `(handler-case ... (serious-condition
+    ...))`, captures `*standard-output*` into a string, re-stores whatever
+    `*package*` ended up as after evaluation (so a submitted `(in-package
+    :loom-workspace)` sticks for the *next* call, matching a real REPL line by
+    line), and returns `(:output <captured text> :values <printed return
+    values> :condition <name/message plist, or nil>)`. `repl-close (session-id)`
+    drops it. Because a session lives in the one image's memory keyed by an
+    opaque id rather than by protocol, a session opened over REST and
+    continued over MCP is not a special case to design for -- it falls out of
+    both protocols calling the same loom-serve registry entry with the same id.
+
+    A REPL session's `:condition` result is deliberately not the same thing as
+    a request-level R8 error. A form that itself signals a condition -- the
+    exact case R9 names, "inspect a stuck watcher thread or a bad graph state"
+    -- is the *answer* to what was asked, not a failed request; `repl-eval`
+    returns it as data inside a normal successful result, the same way a real
+    REPL prints a condition and returns to its prompt rather than exiting.
+    Only a genuinely malformed request -- an unknown session id, text that
+    fails at `read` before `eval` ever runs, a missing argument -- surfaces as
+    an R8 request-level error. Getting this distinction backwards -- treating
+    every condition a submitted form raises as a request failure -- would make
+    the REPL materially less useful for exactly the debugging case it exists
+    for, and is named here so a later implementer does not make it by
+    accident.
+
+    Sessions are bounded and reaped lazily rather than by a third supervising
+    thread. `*max-repl-sessions*` refuses a new `repl-open` past a small cap,
+    returned as a structured error naming the limit; a per-session idle
+    timeout is checked whenever any repl-tier operation runs (open, eval, or
+    close), sweeping sessions whose last-used timestamp is older than
+    `*repl-session-idle-timeout*`. This is deliberately not a background
+    thread polling on its own cadence: Loom already has one thread pattern
+    that needs its own supervision story (the per-repository monitor,
+    DES-0003/0004), and a REPL session leaking a little retained memory until
+    the next repl call happens to sweep it is a bounded, cheap cost next to
+    adding a second kind of supervised thread whose own failure mode would
+    need the same RULE-0004 discipline the monitor already has.
+
+    Lifecycle (R7). `start-server (&key (port 4780) (address "127.0.0.1"))`
+    builds one Hunchentoot acceptor carrying both loom-rest's routes and
+    loom-mcp's single JSON-RPC endpoint, and starts it. `stop-server` stops
+    it. `server-status` returns `(:running <bool> :port <n> :address <string>
+    :started-at <universal-time>)`, itself a :read-tier operation reachable
+    over both protocols -- the positive half of "how a client tells running
+    from nothing listening": a successful call to it, over either protocol,
+    is the answer "running"; a refused TCP connection to the port at all is
+    the answer "nothing is listening," and needs no Lisp-level mechanism to
+    say so. Binding to 127.0.0.1 by default, not merely as an example --
+    matching the one piece of the pre-existing SS12 vision text this document
+    keeps ("Hunchentoot serves JSON over HTTP on a configurable port... bound
+    to localhost") -- is a real requirement here for a different reason than
+    that document had space to state: R6's auth model is deliberately
+    underspecified by this document, so a service that defaulted to listening
+    on every interface would be the one part of this design that is unsafe
+    before a future document finishes R6's credential story. A caller who
+    wants it reachable off-box opens the port explicitly; the default does
+    not do that for them.
+
+  loom-rest (new system, src/rest/)
+
+    Hunchentoot route handlers, one per registry entry, each doing exactly:
+    decode the request (path parameters, query string, or a JSON body,
+    depending on the operation) into the arguments the entry's function wants;
+    resolve the caller's grants and check the entry's tier; call the entry;
+    JSON-encode the plist that comes back, or translate a caught condition via
+    `operation-error->plist` into an error-shaped JSON body with a matching
+    HTTP status. cl-json or jonathan (both already present in this machine's
+    quicklisp cache, alongside hunchentoot itself, so none of the three named
+    libraries here is speculative) is the encoder; which one is a smaller
+    decision than this document needs to make, since loom-serve's registry
+    already returns plain plists either library encodes the same way. No
+    route's handler body contains logic beyond this five-step shape --
+    REQ-0008 explicitly excludes the exact route table, and this document
+    commits to the shape every route shares rather than to the table itself.
+
+  loom-mcp (new system, src/mcp/)
+
+    An MCP server exposed as a JSON-RPC 2.0 endpoint on the same Hunchentoot
+    acceptor loom-rest uses, per the pre-existing SS13 text this document
+    keeps rather than re-derives: "MCP therefore runs over HTTP... on the same
+    listener as the REST API... [which] additionally allows several clients...
+    to share one index." That reasoning still holds and is restated in this
+    document's own terms below (WHY ONE LISTENER). Checked against the current
+    MCP specification rather than assumed: the wire protocol is JSON-RPC 2.0,
+    UTF-8; a conformant server implements at minimum the `initialize`
+    handshake, `tools/list`, and `tools/call`; the "Streamable HTTP" transport
+    allows a server to answer a POST with either a single JSON response body
+    or a Server-Sent-Events stream, and SSE is a capability a server *may*
+    use, not one every response must use. Because none of Loom's operations
+    are long-running or need server-initiated push -- every one of them is a
+    single graph read, a single write already made synchronous by the
+    repository lock, or one REPL eval -- this design implements the
+    single-response subset: every `tools/call` answers with one JSON-RPC
+    response body, no SSE stream, which is a smaller, fully spec-conformant
+    surface rather than a cut corner. There is no official Common Lisp MCP
+    SDK; this document does not assume one exists or wait for one -- the wire
+    protocol itself is plain JSON-RPC over HTTP, which loom-mcp implements
+    directly on top of Hunchentoot and whichever JSON library loom-rest uses,
+    the same way any language without a first-party SDK would.
+
+    Read-tier tools mirror R2's own enumerated list exactly: loom_find,
+    loom_describe, loom_impact, loom_context, loom_status, loom_check,
+    loom_rules. Repl-tier tools -- loom_repl_open, loom_repl_eval,
+    loom_repl_close -- are added per R9's explicit instruction that the REPL
+    "is reachable through the same REST and MCP surfaces R2 and R4 expose."
+    Write-tier tools (loom_watch, loom_pause, loom_unwatch, loom_reindex) are
+    *not* added by this document; see ALTERNATIVES CONSIDERED for the
+    reasoning and how cheap reversing this is later. Every tool's JSON Schema
+    input/output shape, exact tool description text, and the ontology-schema
+    embedding SS13's own text suggested ("so the model knows the vocabulary
+    without discovery calls") are excluded per REQ-0008's own scoping and are
+    a future document's job, not this one's -- what this document commits to
+    is the tool *set* and that each tool is a thin call into the same
+    registry entry loom-rest's equivalent route calls.
+
+  WHY ONE LISTENER, ONE PROCESS
+
+  R1 needs one warm image holding the graph; it does not by itself demand one
+  HTTP listener rather than two. Two acceptors -- one for REST, one for MCP --
+  would still share the same process, the same graph, the same locks, so
+  nothing about correctness turns on this choice. It is decided anyway,
+  in favour of one, because a second acceptor buys no isolation this design
+  needs (both are equally trusted parts of the same image regardless of which
+  port answered the request) and does cost a second port to open, a second
+  thing R7's lifecycle has to describe starting and stopping, and a second
+  thing a firewall rule or a deployment script has to know about. The
+  pre-existing SS13 text reasons about this identically for a different
+  emphasis -- letting several MCP clients share one index -- and this
+  document's own reason (nothing to gain, a real cost to duplicate) reaches
+  the same conclusion independently.
+
+  THE ENTRY POINT: loom-serve.lisp, two lifecycle modes
+
+  A new script, parallel to loom.lisp and loading it, not replacing it:
+
+    sbcl --script loom-serve.lisp [/path/to/repo ...]
+
+  watches the given repositories exactly as `loom.lisp` does, calls
+  `loom-serve:start-server`, and then calls `loom-process:main` completely
+  unmodified -- `main` still hands over the interactive `loom>` console loop a
+  human at that terminal can keep using precisely as before, satisfying R5 by
+  construction rather than by care: nothing about `main`'s own body changed,
+  it is simply now wrapped. `main` returning (on `stop` or stdin EOF) is
+  followed by `stop-server`, so the two lifecycles start and end together in
+  this mode. This is INTERACTIVE-WITH-SERVICE mode, and it is what a developer
+  gets by running the new script directly at a terminal.
+
+  A second mode, HEADLESS, exists because `main`'s own return path depends on
+  `console` reading EOF from `*standard-input*` -- under a detached run with
+  stdin closed or redirected from `/dev/null` (a supervisor, a background
+  `nohup`, a container without a tty), `read-line` returns `:eof` immediately,
+  `console` returns immediately, and `main` would pause every repository and
+  the script would exit within its first second, taking the just-started
+  listener down with it. R7 asks for the lifecycle to be explicit rather than
+  assumed, and this is exactly the assumption ("something is always attached
+  to stdin") that `main`'s existing EOF handling makes safely today and would
+  make unsafely here. HEADLESS mode does not call `console` or `main` at all:
+  `loom-serve:serve-forever` watches the given repositories via
+  `watch-repository` directly, starts the listener, installs a signal handler
+  for SIGTERM/SIGINT that calls the same shutdown path (pause every watched
+  repository, `stop-server`), and blocks the main thread until that handler
+  fires -- a loop sleeping in slices, the same shape `monitor-sleep` already
+  uses to make a stop request responsive rather than a single long `sleep`.
+  Console.lisp is not touched by this mode either; it is simply not entered.
+
+  What crosses a restart, in either mode: nothing, by design, and this is
+  DEC-0001 restated rather than a new decision. The graph, the watched-
+  repository list, and every open REPL session are process memory; a restart
+  -- deliberate or a crash -- loses all of it, and the first thing a caller
+  does after one is `watch` each repository again, exactly as a developer
+  restarting `sbcl --script loom.lisp` does today. A config file remembering
+  which repositories to auto-watch on the next start would remove that one
+  piece of friction and was considered; it is new persisted state with no
+  analogue in the tree today, REQ-0008 does not ask for it, and DEC-0001's own
+  argument -- a derived index should be cheap to throw away -- extends
+  naturally to "and cheap to re-point," not to "and remembers where it was
+  pointed." Left as a plainly named, deferred follow-on rather than built here.
+
+  CONCURRENCY UNDER THE NEW CALLER SHAPE (R3)
+
+  REQ-0008 asks directly whether an HTTP worker thread per request changes
+  anything about DES-0003/DES-0004's argument -- thread identity, lock
+  reentrancy -- and the answer is no, checked rather than assumed.
+
+  Both locks (`with-graph-lock` inside a `graph`, `with-repository-lock` on a
+  `repository`) are `bt:with-recursive-lock-held` over a `bt:make-recursive-
+  lock`, and a recursive lock's reentrancy test is "is the calling thread
+  already the holder," which Hunchentoot's worker threads satisfy identically
+  to the console thread or the monitor thread: they are ordinary
+  bordeaux-threads threads, created the same way `start-monitor` already
+  creates one, with no special relationship to loom-graph or loom-workspace
+  that either lock's code could even detect. A Hunchentoot worker thread
+  calling `reindex-repository` acquires `analysis-lock` exactly as the console
+  thread does today; one calling `search-entities` never touches it at all,
+  exactly as loom-knowledge's reads never have (DES-0004 R5, unchanged by
+  this document -- loom-serve's read-tier entries call straight into
+  loom-knowledge and acquire nothing of their own). Nothing about *which*
+  thread is holding a lock, or how many distinct threads exist in the image,
+  is load-bearing to either lock's correctness argument; both were already
+  written to make no assumption narrower than "some thread holds it."
+
+  What genuinely changes is cardinality, and it is worth naming precisely
+  rather than waving at. Before this document, at most two threads could ever
+  contend for one repository's `analysis-lock` -- the console thread and that
+  repository's monitor thread -- because console.lisp's read loop dispatches
+  one line at a time and cannot itself issue a second `reindex` while the
+  first is still running. After this document, N Hunchentoot worker threads
+  (bounded by Hunchentoot's own taskmaster/thread-pool size) plus the monitor
+  thread can all be blocked on the same repository's lock at once, because
+  REST and MCP remove the structural one-command-at-a-time serialization a
+  single stdin loop gave for free. This is safe -- DES-0004's blocking,
+  strictly-ordered design makes no claim that depends on caller count -- and
+  it is a real, bounded latency cost worth stating rather than discovering
+  later: a burst of concurrent write-tier calls against one repository from
+  several REST or MCP clients now queues rather than being prevented from
+  overlapping in the first place, at up to DES-0004's measured ~200 ms
+  worst-case hold *per caller ahead of you in the queue*, not a fixed 200 ms
+  total. Nothing in this document proposes to change that; DES-0004 R6
+  already scoped adaptive backoff and any queuing discipline beyond plain FIFO
+  blocking out of its own design, and nothing about a new caller shape reopens
+  that scoping.
+
+  One further fact specific to the REPL tier, not the read/write tiers above:
+  CL:EVAL run through `repl-eval` can call `apply-transaction`, or any other
+  graph-manager function, directly, bypassing `with-repository-lock` entirely
+  if the submitted form does not itself call through `index-repository`,
+  `poll-once`, or `reindex-repository`. The graph's *own* lock
+  (`with-graph-lock`, DES-0003) still guards every individual mutation
+  regardless -- a REPL form cannot make SBCL crash on a torn hash table any
+  more than any other caller can -- but DES-0004's stronger, repository-level
+  torn-view protection is a property of *those three functions*, not of the
+  graph, and a REPL form calling something lower-level than they are does not
+  automatically get it. This is not a new gap this document introduces; it is
+  R9's own stated danger ("arbitrary code... able to shell out, touch the
+  filesystem, or redefine the image's own functions") restated in terms of
+  these two specific locks, and it is the concrete reason R9 keeps the REPL
+  tier separate from, and never implied by, write: granting :repl is granting
+  a caller the ability to reach beneath every safety property this document
+  and DES-0003/DES-0004 built, not merely the four write operations sitting
+  on top of them.
+
+  ALTERNATIVES CONSIDERED
+
+  loom-serve stacked inside loom-process, as a `serve` console command,
+  instead of a peer system. Rejected under WHERE THE BOUNDARY SITS above: R5
+  is best satisfied by console.lisp not changing at all, and a peer system
+  achieves that structurally rather than by discipline. The REQ's own "left
+  open" text names this as a real option ("whether loom-process itself grows
+  a serve mode... or a new system sits above it") and this document picks the
+  new-system branch for the stated reason, not because the other branch is
+  unworkable.
+
+  Two Hunchentoot acceptors, one per protocol, instead of one shared listener.
+  Rejected under WHY ONE LISTENER above: no isolation gained, real lifecycle
+  and deployment cost added, and the pre-existing SS13 text already reasoned
+  to the same answer from a different angle.
+
+  A stateless, one-form-in-one-answer-out REPL, matching console's `repl`
+  literally line for line rather than session for session. Considered
+  seriously, since it is simpler to implement and reason about -- no session
+  registry, no idle-timeout sweep, no cap. Rejected once traced against what a
+  terminal REPL actually preserves between lines (THE REPL section above):
+  `in-package` persisting is not an enhancement over stateless eval, it is
+  baseline REPL behaviour every Lisp developer already relies on, and a
+  design that dropped it would not be a smaller version of R9's ask, it would
+  be a different, less useful capability wearing the same name. The session
+  design costs one struct, one package per session, and a lazy sweep -- small
+  next to what it restores.
+
+  Exposing every operation, including watch/pause/unwatch/reindex, as MCP
+  tools symmetrically with REST, on the reading that R6's "protocol is not a
+  proxy for trust" argues against any protocol-shaped asymmetry in which
+  operations exist at all. Considered and rejected in favour of the literal
+  text of R2 and R4: R2 enumerates exactly seven read tools, deliberately, the
+  same document's R4 uses the open-ended phrase "full console command
+  vocabulary" for REST alone, and R9 explicitly calls out the REPL as an
+  *addition* to R2 and R4's surfaces rather than treating it as already
+  implied by either -- three separate signals in one requirement's own text
+  that MCP's surface is meant to be the narrower of the two by design, not by
+  omission. R6's "protocol is not a proxy for trust" is about how a granted
+  tier is *checked* -- uniformly, regardless of protocol -- not about whether
+  every protocol must expose every tier-gated operation; an MCP caller
+  granted :write today simply has no MCP-side write tool to invoke it with,
+  which is a scoping choice about the tool *set*, not a trust decision made by
+  the wrong party. Recorded explicitly because it is reversible cheaply: four
+  more thin loom-mcp tool wrappers, calling registry entries that already
+  exist and are already tier-checked, is the entire cost of changing this
+  later, and REQUIREMENTS R2/R4 below states that reversibility as part of
+  the record.
+
+  A full Common Lisp MCP SDK, written or vendored, instead of implementing the
+  JSON-RPC surface directly against Hunchentoot. Rejected because none exists
+  to vendor -- checked, not assumed, per REQ-0008's own instruction not to
+  guess at protocol details -- and because the surface this document actually
+  needs (initialize, tools/list, tools/call, single-response Streamable HTTP)
+  is a small, well-specified slice of plain JSON-RPC that gains nothing from
+  a general-purpose SDK a small, specific implementation would not also give,
+  while a hand-rolled implementation stays exactly as legible to a future
+  reader as loom-rest's own route handlers are.
+
+  REQUIREMENTS
+
+  R1  loom-serve:start-server, called from loom-serve.lisp's own top-level
+      form (either lifecycle mode), runs a Hunchentoot acceptor inside the
+      same SBCL image that holds every watched repository's graph. No request
+      handler in loom-rest or loom-mcp shells out to `sbcl --script` or any
+      other subprocess; every one calls loom-serve's registry directly, in
+      the calling thread, against the graph already resident in memory. The
+      graph is built once per `watch`/`reindex`, not once per request --
+      PLAN-0003's 135-143 ms full-rebuild cost is paid at most once per
+      repository per process lifetime rather than once per call, which is
+      the number R1 exists to stop repeating.
+
+  R2  loom-mcp exposes exactly REQ-0008's seven named read operations --
+      loom_find, loom_describe, loom_impact, loom_context, loom_status,
+      loom_check, loom_rules -- as MCP tools, each a thin wrapper over a
+      loom-serve registry entry backed by search-entities, describe-entity,
+      impact-report, build-context, repository-status, and the check/rules
+      assembly described under loom-serve above. Every result is the plist
+      the underlying function already returns, JSON-RPC-encoded as the tool's
+      structured content -- never console.lisp's rendered prose, and no new
+      rendering step is written to produce one.
+
+  R3  Concurrent callers -- several MCP clients, an MCP call in flight
+      against a REST call, either against the repository's own monitor
+      thread -- are safe under DES-0003's graph lock and DES-0004's
+      repository lock exactly as they stand today, verified rather than
+      re-designed: CONCURRENCY UNDER THE NEW CALLER SHAPE above traces both
+      locks' reentrancy contracts against Hunchentoot worker threads and
+      finds no assumption either lock made that a new caller shape violates.
+      The one genuinely new fact -- write-tier calls against one repository
+      can now queue behind each other, where console's single stdin loop
+      previously made that queue impossible to form -- is recorded as an
+      accepted, bounded latency cost, not a correctness gap, and no new
+      locking mechanism is introduced by this document.
+
+  R4  loom-rest exposes the full console command vocabulary over HTTP: the
+      same seven read operations as R2, the four write operations (watch,
+      pause, unwatch, reindex, backed by watch-repository, pause-repository,
+      unwatch-repository, reindex-repository), and R9's REPL operations
+      (repl-open, repl-eval, repl-close) -- fourteen registry entries in
+      total, every one reachable directly over REST without going through
+      MCP or a hand-invoked Lisp process, satisfying "a full peer of MCP...
+      not a read-only facade in front of it" by exposing strictly more
+      operations than loom-mcp does, deliberately, per R2 above.
+
+  R5  console.lisp, loom.lisp, loom-process.asd, and
+      src/process/package.lisp receive zero edits from this document. The
+      interactive `sbcl --script loom.lisp` path and `tools/loom.sh` continue
+      to call exactly the code they call today; loom-serve.lisp is a new,
+      separate script that wraps loom-process:main without modifying it, so
+      nothing about the console's own behaviour, output shape, or lifecycle
+      can regress by construction, not merely by testing.
+
+  R6  Every loom-serve registry entry declares exactly one required tier from
+      {:read, :write, :repl}; a caller carries a resolved set of granted
+      tiers, not a single ordered level, so :write does not imply :read and
+      :repl is never implied by :write, matching R9's explicit requirement
+      that the REPL tier is never implied by write. `check-capability` is
+      called once, at the point of invocation, by both loom-rest's route
+      handlers and loom-mcp's tool handlers, from the one seam
+      `resolve-caller-grants` -- so a caller's reachable operations are a
+      function of its resolved grants alone, identical whether the request
+      arrived as an HTTP route or a JSON-RPC tool call. The credential format
+      `resolve-caller-grants` reads and the storage backing the token-to-
+      grants mapping are explicitly not designed here, per REQ-0008's own
+      exclusion of the auth model in detail; what this document commits to is
+      that the seam exists, is single, and is checked before every operation
+      regardless of protocol.
+
+  R7  Explicit lifecycle, in two modes. INTERACTIVE-WITH-SERVICE
+      (loom-serve.lisp at a terminal): start-server, then loom-process:main
+      unmodified, so `stop` or stdin EOF ends both the console session and
+      the listener together, exactly as today's `loom.lisp` ends the console
+      session alone. HEADLESS (loom-serve:serve-forever, for a detached run
+      where main's EOF-on-closed-stdin assumption does not hold): watch the
+      given repositories directly, start-server, block on a SIGTERM/SIGINT
+      handler rather than on console input. Both modes are covered by
+      server-status, a :read-tier operation over both protocols returning
+      `(:running :port :address :started-at)`, which is the positive half of
+      "a client tells running from nothing listening"; the negative half
+      needs no Lisp-level answer, since a refused TCP connection already says
+      it. What crosses a restart: nothing, by DEC-0001's own argument
+      extended rather than revised -- every watched repository must be
+      `watch`ed again after either a deliberate stop or a crash, and this is
+      recorded explicitly rather than left to be discovered.
+
+  R8  Every loom-serve registry-entry invocation, from either protocol
+      system, is wrapped in `handler-case` naming `serious-condition` per
+      RULE-0004, translated by `operation-error->plist` into
+      `(:name <string> :message <string>)` -- never a bare Lisp condition,
+      never a stack trace, mirroring run-command's discipline while widening
+      the condition class it guards against for the reason stated under
+      loom-serve above (a long-lived server's stakes for RULE-0004's failure
+      mode exceed a single console line's). `:name` is coarse today (mostly
+      "SIMPLE-ERROR", since that is what today's `(error "...")` call sites
+      already signal) and is recorded as an accepted, honest gap rather than
+      papered over with an invented taxonomy, per CON-0001's standing
+      argument applied to error classification rather than to a resolved
+      edge.
+
+  R9  A live REPL is reachable through the same REST and MCP surfaces R2 and
+      R4 expose, as a stateful session (repl-open, repl-eval, repl-close)
+      rather than a stateless per-call eval -- the design argued for under
+      THE REPL section above, because a stateless design would fail to
+      reproduce `in-package` persisting between calls, which is baseline
+      terminal-REPL behaviour, not an enhancement over it. The repl tier is
+      declared, checked, and grantable entirely independently of the write
+      tier (R6), and a condition a submitted form itself signals is returned
+      as data inside a successful `repl-eval` result, not surfaced as an R8
+      request-level error -- the distinction THE REPL section names
+      explicitly so a later implementer does not collapse it by accident.
+      CONCURRENCY UNDER THE NEW CALLER SHAPE's final paragraph states the one
+      safety property the REPL tier does *not* inherit from DES-0004 for
+      free (a form bypassing `with-repository-lock` by calling beneath
+      index-repository/poll-once/reindex-repository), as a known, accepted
+      property of granting :repl at all rather than a defect in this design.
+
+  CONSEQUENCES
+
+  Three new systems and one new entry script: src/serve/ (loom-serve.asd,
+  package.lisp, and the registry, capability-check, structured-error, REPL-
+  session, and lifecycle code described above), src/rest/ (loom-rest.asd,
+  package.lisp, Hunchentoot route handlers), src/mcp/ (loom-mcp.asd,
+  package.lisp, the JSON-RPC handshake and tool handlers), and
+  loom-serve.lisp at the tree root, parallel to loom.lisp. Zero edits to
+  src/process/, src/workspace/, src/knowledge/, src/graph/, src/analyzer/, or
+  src/ontology/, and zero edits to loom.lisp itself -- checked explicitly
+  because REQ-0008 names this as a hard boundary, not a preference.
+
+  A small, named duplication: the check/rules assembly loom-serve's registry
+  builds (active-rules, unenforced-rules, entities-of-type :rule-violation,
+  unresolved-references, unhandled-definer-macros,
+  generated-definition-collisions) repeats, as data assembly rather than
+  formatting, logic console.lisp's `check` and `rules` commands already
+  contain as formatting. This is a direct consequence of loom-knowledge
+  staying untouched (REQ-0008's exclusion) rather than gaining a
+  `check-report`/`rules-report` function the way `describe-entity` and
+  `impact-report` already bundle their own answers; a future document
+  revisiting that exclusion could add such a function to loom-knowledge and
+  have both console.lisp and loom-serve call it, removing the duplication
+  without changing either's external behaviour -- not done here because doing
+  it would edit a system this document was told to leave alone.
+
+  loom-workspace and loom-graph gain new *concurrent callers* -- Hunchentoot
+  worker threads -- but no new code and no new locking obligation; both
+  already depend on bordeaux-threads and both locks already make no
+  assumption narrower than "some thread holds it," per CONCURRENCY UNDER THE
+  NEW CALLER SHAPE above. The one new operational fact anyone deploying this
+  needs to know is the queuing-depth point recorded under R3: a repository
+  under concurrent write-tier load serializes correctly and can therefore
+  make an individual caller wait longer than DES-0004's single-contender
+  200 ms figure ever implied, bounded by however many concurrent writers are
+  ahead of it rather than by a fixed constant.
+
+  Every future MCP tool, REST route, or console command that reads or writes
+  the graph inherits the obligation this document states but does not itself
+  enforce mechanically: a read-tier operation calls loom-knowledge or
+  loom-graph's read functions and nothing that submits a transaction; a
+  write-tier operation calls one of the four loom-workspace entry points
+  already holding `analysis-lock` for its whole body, never graph-manager
+  functions directly; a repl-tier operation is the one place in the system
+  where neither of those obligations is enforced, because CL:EVAL cannot be
+  constrained by convention, which is exactly why R9 keeps it a separately
+  granted tier rather than a variant of write.

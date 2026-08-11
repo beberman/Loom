@@ -95,7 +95,7 @@ the transaction, so this may assume its preconditions hold."))
 
 The one function outside graph-manager.lisp that reaches into a graph table,
 which is why it is easy to miss and why it is named here rather than left to a
-grep. Neither ARCH-0003 nor ARCH-0004 lists it, and ARCH-0004's promise to a
+grep. Neither DES-0003 nor DES-0004 lists it, and DES-0004's promise to a
 concurrent reader -- \"no entity missing its natural-key index entry\" --
 is exactly what the gap between these two lines would break."
   (with-graph-lock (graph)
@@ -139,9 +139,21 @@ at the old id."
 (defun absorb-relationship (target incoming)
   "Overwrite TARGET's properties and provenance from INCOMING, keeping its id.
 Endpoints are not absorbed: they are TARGET's natural key, so INCOMING would
-not have matched it if they differed."
-  (absorb-properties target incoming)
-  (absorb-provenance target incoming))
+not have matched it if they differed.
+
+Absorbing a fact into itself is a no-op, and has to be said explicitly:
+ABSORB-PROPERTIES replaces rather than merges, so a self-absorb CLRHASHes
+TARGET's own table and then copies that emptied table back into it, losing
+every property. APPLY-OP for ASSERT-ENTITY-OP has had the same guard since
+SS4.1 (the ((eq existing e) existing) clause below); this one is here rather
+than at the call site so every caller is covered. Re-applying an op list --
+which the PLAN-0010 coder hit and routed around by re-deriving -- is the way
+into it: the second pass finds the very relationship object the first pass
+stored. DES-0012 R6."
+  (if (eq target incoming)
+      target
+      (progn (absorb-properties target incoming)
+             (absorb-provenance target incoming))))
 
 (defun cascade-staleness (graph target-id)
   "Mark stale every fact whose DERIVED-FROM names TARGET-ID.
@@ -161,7 +173,7 @@ Linear in the size of the graph -- DERIVED-FROM has no index yet. Adequate at
 the Phase 1 scale of one workspace, and the obvious thing to index when it
 isn't.
 
-Held under the graph lock for its whole scan (ARCH-0003 R4): it reads both
+Held under the graph lock for its whole scan (DES-0003 R4): it reads both
 full tables and writes back into whatever it finds, so run against a
 concurrent writer it would mark a set of facts that never existed together."
   (with-graph-lock (graph)
@@ -365,14 +377,14 @@ and the reason every precondition an op has is checked in PLAN-OP.
 Returns the remap table: the id each op named, mapped to the id it landed on.
 A caller that wants the entity it just asserted looks its own id up there.
 
-The whole body is under the graph lock, which extends ARCH-0003 R4 rather than
+The whole body is under the graph lock, which extends DES-0003 R4 rather than
 following it -- R4 requires the bodies it lists to be wrapped, not that no
 other body may be. Two reasons. It is what makes SS5.2's atomicity true
 against a concurrent *reader* for the first time: without it a reader can
 observe a transaction half applied, the entity present and its edge not, which
 is precisely the guarantee the paragraph above claims. And it turns every pt-
 primitive inside the transaction into a reentrant re-acquisition of a lock
-this thread already holds, which is ARCH-0003 R13's own argument for why
+this thread already holds, which is DES-0003 R13's own argument for why
 composing the two mechanisms amortizes cost instead of compounding it.
 
 The cost is worth stating rather than discovering: a knowledge query can now

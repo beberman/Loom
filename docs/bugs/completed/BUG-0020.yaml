@@ -1,0 +1,142 @@
+id: BUG-0020
+title: COLLECT-CALL-NAMES reads a keyword in operator position as a call, so a property declaration is indistinguishable from a call site
+status: closed
+date: 2026-08-09
+refines: [BUG-0016]
+affects: [collect-call-names, body-swallowing-macro-names, unhandled-definer-macros]
+tags: [analyzer, lisp, calls, false-positive]
+summary: |
+  A keyword can never name a function in Common Lisp, but COLLECT-CALL-NAMES'
+  walk tested only SYMBOLP on a form's head, so `(:line-count integer)' inside a
+  DEFENTITY call recorded a call to LINE-COUNT and `(case key (:name name) ...)'
+  inside GENERATED-NATURAL-KEY recorded a call to NAME. TOKEN-NAME renders :FILE
+  and FILE identically, so nothing downstream could tell the two apart once the
+  name was a string -- the discrimination is only available in the walk, on the
+  symbol. Measured on this tree: 218 of 484 orphaned definer (site, name) pairs
+  were keyword heads, 177 of them DEFENTITY's, 19 DEFRELATIONSHIP's and 22
+  DEFSYSTEM's; 8 of those resolved to a real function and 5 of the 8 crossed
+  loom-ontology's system boundary. Filed and fixed as PLAN-0014 step 2, which
+  had to precede any step that mints a :CALL-SITE: those 5 would have become 5
+  :CALLS edges out of loom-ontology and RULE-0001's first false positives, on
+  the one machine-checked rule CLAUDE.md currently tells every agent to trust.
+body: |
+  SYMPTOM
+
+  Three visible faces, and only the third was ever reported as a defect.
+
+  A false :CALLS edge in the finished graph. GENERATED-NATURAL-KEY
+  (src/graph/resolve.lisp) contains
+
+      (case key (:name name) (:file file) (t nil))
+
+  and carried an outgoing :CALLS edge to the :INTERFACE NAME in
+  src/ontology/root-ontology.lisp. It calls no such thing: `name' there is its
+  own parameter, and `:name' is a CASE clause head. `describe name' listed a
+  caller that does not call it.
+
+  Inflated definer-macro counts in `status' and `check'. Before the fix,
+  `check' reported
+
+      defentity        [src/ontology/root-ontology.lisp:512]  91 call names
+      defrelationship  [src/ontology/root-ontology.lisp:579]  12 call names
+
+  Every one of DEFRELATIONSHIP's 12 was a keyword head -- `decision',
+  `document', `file' and the like, read out of the keyword lists in its :FROM
+  and :TO arguments -- and so were 91 of DEFENTITY's. A report whose job is to
+  say what the index is missing was counting declarations as missing calls.
+
+  The one that made it urgent, which had not happened yet. DES-0014 mints a
+  :CALL-SITE per orphaned definer call name that resolves. Of DEFENTITY's
+  resolving pairs, measured pre-fix:
+
+      code-ontology.lisp:86   line-count            -> src/analyzer/analyzer.lisp
+      code-ontology.lisp:467  unresolved-references -> src/graph/resolve.lisp
+      code-ontology.lisp:545  unresolved-references -> src/graph/resolve.lisp
+      code-ontology.lisp:567  unresolved-references -> src/graph/resolve.lisp
+      code-ontology.lisp:617  unresolved-references -> src/graph/resolve.lisp
+
+  Five :CALLS edges leaving loom-ontology for loom-analyzer and loom-graph,
+  from a file that does neither -- those names are the heads of `(:line-count
+  integer)' and `(:unresolved-references list)' property declarations. RULE-0001
+  forbids exactly that edge, and since BUG-0006 closed, RULE-0001's output is
+  the one layering result this tree tells agents to read as real. The fix's
+  whole urgency is that it lands before anything mints.
+
+  CAUSE
+
+  One clause of COLLECT-CALL-NAMES' walk, src/analyzer/lisp-analyzer.lisp:
+
+      (when (symbolp head)
+        (let ((name (token-name head)))
+          (push name names)
+          (note head name)))
+
+  A keyword is a symbol, so a keyword head passed. The test has to be here and
+  cannot be anywhere downstream: TOKEN-NAME is (STRING-DOWNCASE (SYMBOL-NAME x))
+  and a keyword's SYMBOL-NAME carries no colon, so :FILE and FILE both render
+  to "file" and every consumer past this point sees one string. The evidence
+  exists only while the symbol does.
+
+  WHY IT HID
+
+  It was found, described accurately, and not filed. BODY-SWALLOWING-MACRO-NAMES'
+  docstring has said since BUG-0016 that DEFRELATIONSHIP's 12 names "are
+  `decision', `document', `file' and the like, the heads of the keyword lists in
+  its :FROM and :TO arguments rather than calls to anything," and named it as
+  "COLLECT-CALL-NAMES' own imprecision showing through." BUG-0016's FIX PART 1
+  recorded that nobody had filed it. So the fact was in the tree, in a
+  docstring, next to the count it explained -- and a fact recorded only in prose
+  beside the number it invalidates is a fact nothing acts on.
+
+  The second reason is that it was harmless for as long as the names went
+  nowhere, which is the same conditional the head-only discipline's own comment
+  uses: "Harmless while the names went nowhere; not harmless once dispatched
+  calls fan out." Both times the defect became real the moment a name started
+  producing an edge, and both times that was a change made elsewhere.
+
+  FIX
+
+  One conjunct, in the walk, on the symbol:
+
+      (when (and (symbolp head) (not (keywordp head)))
+
+  Heuristic-free rather than a tightened guess: a keyword cannot name a function
+  in Common Lisp, so a list whose head is one is a declaration, a plist entry or
+  a CASE clause and never a call. Nothing else in the walk changes -- the
+  FUNCTION exception, the head-only discipline and QUOTATIONP are untouched, and
+  the tail loop still walks a keyword-headed list's contents, so a real call
+  nested inside `(:initform (make-thing))' is still recovered.
+
+  NIL is deliberately still accepted. NIL is a symbol and not a keyword, so
+  `(nil ...)' still records "nil"; that is pre-existing behaviour this change
+  does not touch, and it is filtered by STANDARD-OPERATOR-P downstream anyway.
+
+  MEASURED
+
+  /usr/bin/sbcl, 2026-08-09, whole-tree index, before and after the one-line
+  change and nothing else.
+
+      orphaned definer (site, name) pairs   484 -> 266
+        defentity                           177 ->   0
+        defrelationship                      19 ->   0
+        defsystem                            76 ->  54
+        define-command                      113 -> 113
+        define-operation                     75 ->  75
+      of which resolve to a callee          132 -> 124
+      definer macros reported by `check'      4 ->   3
+      distinct call names recorded         1034 -> 959
+      :CALLS edges                         3500 -> 3499
+
+  The :CALLS movement is the number that decides whether a keyword-head fix is
+  safe, because it changes :CALL-NAMES on ordinary callables too, and it is one.
+  That one edge is GENERATED-NATURAL-KEY -> NAME above, enumerated rather than
+  counted: it was false, so 3499 is a more accurate number than 3500, and no
+  real call was lost. DEFINE-COMMAND's and DEFINE-OPERATION's populations do not
+  move at all, which is the point -- those are BUG-0016's real dropped calls and
+  this fix must leave every one of them in place for DES-0014 to mint from.
+
+  DEFRELATIONSHIP leaves the definer-macro report entirely, since
+  BODY-SWALLOWING-MACRO-NAMES requires a non-empty :CALL-NAMES and it now has
+  none. DEFENTITY stays, through the other clause -- :DEFINER-STATUS :UNHANDLED,
+  a template whose name position is computed -- and reports no call-name count.
+  Both are the report becoming right rather than becoming quieter.

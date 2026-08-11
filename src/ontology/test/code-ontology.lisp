@@ -69,6 +69,26 @@
     (is (null (property-default-form (find-property :function :exported-p))))
     (is (eq 'function-entity (entity-type-class-name spec)))))
 
+(test every-document-shaped-type-can-carry-a-summary
+  ;; :SUMMARY started on :CONCEPT alone, which is why BASE-PROPERTIES had no
+  ;; line for it and three of the four types folded summary: into :BODY and
+  ;; kept nothing addressable.  Declared here first because VALIDATE-ENTITY
+  ;; only checks *declared* properties: an undeclared :SUMMARY would be stored
+  ;; and silently unvalidated, outside the schema the ontology exists to be.
+  (dolist (key '(:document :decision :rule :concept))
+    (let ((p (find-property key :summary)))
+      (is (not (null p)) "~a has no :summary property" key)
+      (is (eq 'string (property-type p))))))
+
+(test a-document-status-covers-the-workflow-vocabulary
+  ;; CON-0004's vocabulary has REQ and ARCH reaching implemented or partial,
+  ;; and RULE-0005 requires a plan reaching final to move them there.  Outside
+  ;; the :one-of list AS-KEYWORD returns NIL rather than signalling, so every
+  ;; already-landed document carried :status NIL and nothing said so.
+  (let ((allowed (property-one-of (find-property :document :status))))
+    (is (member :implemented allowed))
+    (is (member :partial allowed))))
+
 (test unresolved-calls-are-a-property-not-an-edge
   ;; a callee outside the workspace must never become a dangling relationship
   (dolist (key '(:function :method))
@@ -116,6 +136,26 @@
         (is (not (null p)) "~s has no :language property" key)
         (is (eq *source-languages* (property-one-of p))
             "~s :language does not share the vocabulary" key)))))
+
+(test the-system-property-is-declared-on-exactly-the-types-that-can-carry-one
+  ;; DES-0009 R1. Asserted through FIND-PROPERTY rather than by round-tripping
+  ;; an entity because getting this wrong is silent: VALIDATE-ENTITY only walks
+  ;; declared properties, so an undeclared :SYSTEM would be stored and never
+  ;; complained about -- everywhere except DECLARED-PROPERTIES-ONLY, which
+  ;; filters a generated entity's plist against this exact set and would drop
+  ;; the value without a word.
+  (dolist (key '(:file :function :variable :class :interface :method
+                 :test :document))
+    (let ((p (find-property key :system)))
+      (is (not (null p)) "~s has no :system property" key)
+      (is (eq 'keyword (property-type p)) "~s :system must be a keyword" key)
+      (is (null (property-one-of p))
+          "~s :system must have no :one-of -- the vocabulary is open" key)))
+  ;; :RULE, :DECISION and :CONCEPT declare no :PATH, so ENTITY-SYSTEM already
+  ;; answers NIL for them and R1 makes that absence part of the requirement.
+  (dolist (key '(:rule :decision :concept))
+    (is (null (find-property key :system))
+        "~s must not declare :system" key)))
 
 (test the-language-vocabulary-covers-the-phase-one-analyzers
   (dolist (lang '(:lisp :typescript))
@@ -176,7 +216,7 @@
   (is (null (validate-relationship-endpoints :tests :test :function))))
 
 (test a-generated-definition-can-point-at-what-generated-it
-  ;; ARCH-0002 R4. All three returned a problem list before the widening, and
+  ;; DES-0002 R4. All three returned a problem list before the widening, and
   ;; PLAN-OP rejects a whole transaction on one illegal endpoint -- so without
   ;; these three pairs RESOLVE-GENERATED-DEFINITIONS loses every op it emits,
   ;; not just the offending one. code-ontology.lisp records that happening
@@ -187,6 +227,156 @@
       "a generated test must reach the macro, which is a :function")
   (is (null (validate-relationship-endpoints :tests :test :interface))
       "and a test that calls a slot accessor directly still covers it"))
+
+(test a-call-site-is-called-from-and-contained-by-what-refers-to-it
+  ;; DES-0014 R1, plus PLAN-0014 decision 3 for the caller-side :CONTAINS.
+  ;; PLAN-OP rejects a whole transaction on one illegal endpoint, so each of
+  ;; these missing would cost RESOLVE-CALLS every op it emits rather than one
+  ;; edge -- which is the failure a-generated-definition-can-point-at-what-
+  ;; generated-it records happening before.
+  (is (null (validate-relationship-endpoints :calls :call-site :function))
+      "the edge runs from the call site to the callee, which is the whole
+ontology cost of DES-0014")
+  (is (null (validate-relationship-endpoints :contains :variable :call-site))
+      "BUG-0017: an initform's site belongs to the variable that holds it")
+  (is (null (validate-relationship-endpoints :contains :class :call-site))
+      "and a slot initform's to its class")
+  (is (null (validate-relationship-endpoints :contains :file :call-site))
+      "BUG-0016: a definer call site's belongs to the file")
+  (is (null (validate-relationship-endpoints :contains :function :call-site))
+      "REQ-0015: and an ambiguous site to the caller it runs from, or
+`describe' on that caller shows the site as no neighbour at all")
+  ;; The guard on all five. A call site is a call, not a callable: widening
+  ;; :CALLS' :TO as well would let one call site call another, which is the
+  ;; recursion PLAN-0014 decision 6 exists to prevent.
+  (is (not (null (validate-relationship-endpoints :calls :function :call-site)))
+      "nothing calls a call site"))
+
+(test two-constructions-of-one-call-site-agree-on-its-identity
+  ;; The seam DES-0014's RISKS section names: the analyzer mints initform
+  ;; sites and the graph mints the other two, so if the two ever spelled the
+  ;; key differently the graph would grow a duplicate per pass that nothing
+  ;; retracts. MAKE-CALL-SITE-ENTITY being the only constructor is the
+  ;; insurance; this asserts the property that makes it worth having.
+  (let ((a (make-call-site-entity :file "a.lisp" :start-line 12
+                                  :call-name "target" :referrer-kind :variable
+                                  :language :lisp :system :demo))
+        (b (make-call-site-entity :file "a.lisp" :start-line 12
+                                  :call-name "target" :referrer-kind :definer-call
+                                  :generated-by "define-operation"
+                                  :language :lisp :system :other)))
+    (is (equal (entity-natural-key a) (entity-natural-key b))
+        "the key is (:file :start-line :call-name) and nothing else -- two
+minting passes disagreeing about the referrer must still land on one entity")
+    (is (equal "call-site:a.lisp:12:target" (id a))
+        "and the derived id reads the way every other derived id here does")
+    (is (equal "call-site:a.lisp:12:target" (id b))))
+  ;; A different line is a different site, which is what lets two colliding
+  ;; definitions produce two call sites rather than one merged set (BUG-0012).
+  (is (not (equal (id (make-call-site-entity :file "a.lisp" :start-line 12
+                                             :call-name "target"))
+                  (id (make-call-site-entity :file "a.lisp" :start-line 13
+                                             :call-name "target"))))))
+
+(test a-call-sites-name-carries-its-referenced-name-and-its-location
+  ;; PLAN-0014 decision 1. NAME cannot be the bare referenced name:
+  ;; LINKABLE-INDEX keys every named entity and RESOLVE-ONE refuses a name
+  ;; matching several, so call sites named exactly like their callees would
+  ;; turn resolved `affects:' references into unresolved ones and move the
+  ;; pinned "0 unresolved document references" off zero.
+  (let ((site (make-call-site-entity :file "src/serve/operations.lisp"
+                                     :start-line 165
+                                     :call-name "violation-summary"
+                                     :referrer-kind :definer-call)))
+    (is (equal "violation-summary@src/serve/operations.lisp:165" (name site)))
+    (is (equal "violation-summary" (getp site :call-name))
+        "the referenced name is the property, so RESOLVE-CALLS looks up the
+callee rather than the label")
+    (is (null (getp site :call-names))
+        "and the name is stored once -- CALLER-CALL-NAMES derives the list
+RESOLVE-CALLS reads, so a second copy here could drift from the key")
+    (is (equal (call-site-label "violation-summary" "src/serve/operations.lisp" 165)
+               (name site))
+        "the label and the entity cannot disagree, because one makes the other")))
+
+(test a-definitions-package-is-the-in-package-chain-uppercased
+  ;; PLAN-0015 step 4, decided against DES-0015 R3's separate property. This
+  ;; test is the declared dependency: ENTITY-PACKAGE reads :SYSTEM, so if
+  ;; :SYSTEM's derivation ever stops being the IN-PACKAGE chain, package
+  ;; resolution breaks silently everywhere unless it breaks here first.
+  (let ((f (make-instance 'function-entity
+                          :name "id"
+                          :properties (properties-table
+                                       '(:file "a.lisp" :start-line 1
+                                         :system :mpackage.filter)))))
+    (is (equal "MPACKAGE.FILTER" (entity-package f))
+        "the namespace, uppercased, nickname unresolved -- resolving that is
+the graph's job because it needs every declaration in the tree at once")
+    (is (null (entity-package (make-instance 'function-entity :name "x")))
+        "and an entity with no package in effect has none, rather than a guess")))
+
+(test a-package-declares-the-properties-symbol-movement-needs
+  ;; DES-0015 R1, and this is the assertion that actually binds. The
+  ;; round-trip test below documents intent but cannot fail without this
+  ;; change: PROPERTIES-TABLE accepts any key and VALIDATE-ENTITY does not
+  ;; reject an undeclared one, so an entity carrying :nicknames validates
+  ;; whether or not :package declares it (BUG-0022). The registry is the one
+  ;; place the declaration is observable, so the registry is what this asks.
+  (let* ((spec (find-entity-type :package))
+         (declared (mapcar (lambda (p) (getf (property-schema p) :key))
+                           (entity-type-properties spec))))
+    (dolist (key '(:qualified-name :exports :nicknames :imported-symbols
+                   :unhandled-package-clauses))
+      (is (member key declared)
+          "~s must be declared on :package -- DES-0015 keys symbol identity
+on these and an undeclared property is invisible to the published schema" key))
+    (is (equal '(:qualified-name) (entity-type-natural-key spec))
+        "and the key stays the declared name alone: a nickname is an alias
+recorded on the package, never a second :package entity")))
+
+(test a-package-records-what-it-aliases-and-what-it-takes-from-elsewhere
+  ;; Documents the shape DES-0015 R1 asks for. Deliberately noted as a test
+  ;; that passes without the change it accompanies -- see BUG-0022 -- and kept
+  ;; because it is the readable statement of what the properties hold.
+  (let ((p (make-instance 'package-entity
+                          :name "mpackage/filter"
+                          :properties (properties-table
+                                       (list :qualified-name "MPACKAGE/FILTER"
+                                             :nicknames '("MPACKAGE.FILTER")
+                                             :exports '("MAKE-FILTER" "FILTER-P")
+                                             :imported-symbols
+                                             '(("NAME" . "MPACKAGE/OBJECT")
+                                               ("ID"   . "MPACKAGE/OBJECT"))
+                                             :unhandled-package-clauses
+                                             '("USE-REEXPORT")
+                                             :language :lisp)))))
+    (is (null (validate-entity p)))
+    (is (eq :package (entity-type p)))
+    (is (equal '("MPACKAGE.FILTER") (getp p :nicknames)))
+    (is (equal "MPACKAGE/OBJECT" (cdr (assoc "ID" (getp p :imported-symbols)
+                                             :test #'equal)))
+        "the symbol a package takes by name, and where it takes it from --
+which is what decides whether two same-named accessors are one generic")
+    (is (equal '("USE-REEXPORT") (getp p :unhandled-package-clauses))
+        "a clause that moves symbols and is not modelled is a recorded gap")))
+
+(test a-packages-identity-is-its-declared-name-not-its-nickname
+  ;; A guard rather than a change-covering test: it passes today and exists to
+  ;; fail if someone later folds :nicknames into the key, which would mint a
+  ;; rival entity per alias and split one namespace in two.
+  (let ((a (make-instance 'package-entity
+                          :name "mpackage/filter"
+                          :properties (properties-table
+                                       (list :qualified-name "MPACKAGE/FILTER"
+                                             :nicknames '("MPACKAGE.FILTER")))))
+        (b (make-instance 'package-entity
+                          :name "mpackage/filter"
+                          :properties (properties-table
+                                       (list :qualified-name "MPACKAGE/FILTER"
+                                             :nicknames '("SOMETHING-ELSE"))))))
+    (is (equal (entity-natural-key a) (entity-natural-key b))
+        "the key is the declared name alone; the alias list is not part of it")
+    (is (equal (id a) (id b)))))
 
 (test a-document-may-mention-a-test
   ;; Found by running the pipeline over Loom's own tree the first time :TEST

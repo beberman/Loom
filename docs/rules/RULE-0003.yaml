@@ -10,6 +10,6 @@ statement: |
   about what it read.
 check:
   kind: no-edge
-  from-system: knowledge
-  to-system: graph
+  from-system: loom-knowledge
+  to-system: loom-graph
   rel-types: [calls]

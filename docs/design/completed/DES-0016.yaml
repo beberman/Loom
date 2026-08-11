@@ -1,0 +1,328 @@
+id: DES-0016
+title: Markdown under a documentation directory is a second analyzer, and every prose mention becomes a :MENTIONS edge rather than a :DOCUMENTS one
+status: implemented
+date: 2026-08-10
+refines: [REQ-0014]
+affects: [analyzer-handles-p, analyze-file, document-properties, document-type-for,
+          resolve-document-links, unresolved-references, docs-relative-p,
+          impact-report, impact-result-documents, build-context,
+          register-analyzer, default-system-for-path]
+tags: [analyzer, documents, markdown, generality, con-0001, ontology]
+summary: |
+  REQ-0014 asks that markdown under a documentation directory be indexed, and
+  that the references it literally contains -- backticked tokens and link
+  targets -- become a new, deliberately weaker :MENTIONS edge rather than the
+  :AFFECTS a YAML document earns by declaring it. This is the shape: a second
+  analyzer beside the YAML one, claiming .md and .markdown under any directory
+  named in a registrable list that defaults to docs, doc, design and
+  documentation; always producing a plain :DOCUMENT, because the
+  directory-names-the-type registry is a convention of Loom's own YAML
+  workflow and not a fact about foreign trees; carrying the file's inline code
+  spans and its normalized link targets as the same :MENTIONS property the
+  YAML analyzer already fills, so one resolution pass serves both; and one new
+  relationship type collected into its own impact field.
+
+  One decision is wider than REQ-0014 asked for and is taken deliberately.
+  Loom's YAML documents already produce prose mentions, and RESOLVE-DOCUMENT-
+  LINKS already asserts them -- as :DOCUMENTS, at confidence 0.5. That is the
+  only producer of a :DOCUMENTS edge in the tree. Rather than have a backtick
+  in a YAML body mean :DOCUMENTS and a backtick in a markdown body mean
+  :MENTIONS, every prose mention moves onto :MENTIONS. One kind of fact, one
+  name for it. :DOCUMENTS stays declared, with no producer, reserved for the
+  declared claim it was always named for.
+body: |
+  WHAT IS ALREADY TRUE, MEASURED BEFORE IT WAS DESIGNED
+
+  Read directly on 2026-08-10 rather than assumed.
+
+  Loom's own tree, `tools/loom.sh 'status'`:
+
+      index      : 189 files, 1994 entities, 9651 relationships
+      documents  : 88
+      unresolved : 0 document references
+
+  REQ-0014 R6 writes "52 YAML documents". That number is stale -- the tree has
+  grown to 88 -- and the acceptance condition is restated below against what
+  is actually there.
+
+  ~/lisp/game-server, `find . -name '*.md' -not -path './.git/*'`: fifteen
+  markdown files. Twelve of them sit under `docs/` (README.md, api.md,
+  data-layer.md, database-schema.md) or `design/` (HexGridRequirements.md,
+  PlayBoardRendering.md, changes-for-client.md, media.md, piece-editor-req.md,
+  pieces.md, rules.md, semantic-validators.md). The other three -- Bugs.md,
+  CLAUDE.md, README.md -- sit at the repository root. REQ-0014 R6's "rises
+  from 0 to 12" is therefore an exact statement of a directory rule: a
+  documentation *directory*, not a documentation *extension*, and not the
+  repository root.
+
+  docs/data-layer.md line 20, the file R6 names, in full:
+
+        (`dhandler-get`, `dhandler-put`, `dhandler-update`, `dhandler-delete`,
+
+  an inline code span in a prose bullet, not a fenced block. That matters for
+  D5 below: the acceptance case is met by scanning prose spans alone, so
+  excluding fenced blocks costs nothing that has been measured.
+
+  And the piece of the problem REQ-0014 does not mention, found by reading
+  RESOLVE-DOCUMENT-LINKS rather than the requirement: prose mentions already
+  exist. YAML-ANALYZER's PROSE-MENTIONS scans a document's :BODY for tokens
+  that look like identifiers, carries them as a :MENTIONS *property*, and
+  RESOLVE-DOCUMENT-LINKS resolves each into an :inferred :DOCUMENTS edge at
+  *MENTION-CONFIDENCE* 0.5. Grepping the tree for who else asserts that type
+  returns nothing: src/graph/resolve.lisp:1128 is the sole producer of every
+  :DOCUMENTS edge Loom holds. So `impact`'s `documents:` line is, today,
+  already nothing but prose mentions wearing a stronger name.
+
+  D1  A SECOND ANALYZER, NOT A WIDENED ONE
+
+  MARKDOWN-ANALYZER is a new class in LOOM-ANALYZER, in its own file
+  src/analyzer/markdown-analyzer.lisp, registered like every other.
+
+  The alternative -- adding "md" to DOCUMENT-ANALYZER's :file-types and
+  branching inside ANALYZE-FILE on the extension -- was rejected for the
+  reason SS8.1 gives the protocol at all. The two formats share nothing below
+  the entity they produce: one parses with cl-yaml and reads named fields, the
+  other scans text for spans; one signals YAML.ERROR:YAML-ERROR and must guard
+  for it (RULE-0004), the other cannot fail to parse at all. A branch on
+  extension inside one ANALYZE-FILE is two analyzers with one entry point,
+  which is the arrangement the registry exists to avoid.
+
+  Nothing above LOOM-ANALYZER changes to accommodate it. REPOSITORY-FILES
+  already walks the whole tree and asks ANALYZABLE-P; REPOSITORY-STATUS
+  already counts :DOCUMENT entities; DESCRIBE-ENTITY already groups neighbours
+  by relationship type. Registering an instance is the whole of the
+  integration.
+
+  D2  WHICH DIRECTORIES COUNT: CONVENTION, WITH A REGISTRATION SEAM
+
+  REQ-0014 R2 leaves this decision here, and names the case that decides it: a
+  repository that documents itself in a directory named something else again.
+
+      *documentation-directories*   ("docs" "doc" "design" "documentation")
+      (register-documentation-directory "notes")
+
+  A path is claimed when any of its directory segments, compared
+  case-insensitively, is in that list. This is the same shape
+  *DOCUMENT-TYPE-DIRECTORIES* and REGISTER-DOCUMENT-TYPE already have, and it
+  is chosen for the same reason: the convention stays obvious to a human
+  reading the tree, and the one repository that breaks it changes a list
+  rather than the code.
+
+  Configuration proper -- a .loom file in the repository root, a field on the
+  repository object -- is rejected for now, and the rejection is worth
+  recording because it is the more general answer. It would need a file format,
+  a place to read it, a decision about what happens when it names a directory
+  that does not exist, and a story for the watcher re-reading it. That is a
+  requirement's worth of work in service of a case nobody has yet hit: both
+  measured repositories are served by the four names above. A special variable
+  is where configuration would read into anyway.
+
+  The repository root is deliberately not a documentation directory. game-
+  server's root README.md and CLAUDE.md are unclaimed, which is what makes R6's
+  count 12 rather than 15, and a root README is as often a build instruction or
+  a badge wall as it is engineering knowledge. Loom's own CLAUDE.md and
+  README.md are likewise unclaimed; docs/TODO.md is claimed.
+
+  D3  THE DIRECTORY DOES NOT NAME THE TYPE FOR MARKDOWN
+
+  DOCUMENT-TYPE-FOR maps docs/design -> :DECISION, docs/rules -> :RULE,
+  docs/concepts -> :CONCEPT. A markdown file gets none of it. Every markdown
+  document is a plain :DOCUMENT with :format :markdown.
+
+  Two reasons, and the second is the load-bearing one.
+
+  The mechanical one: :DECISION, :RULE and :CONCEPT all have :natural-key
+  (:doc-id) with :doc-id :required t. A markdown file declares no id. Minting
+  one from the path would give every markdown file under `design/` a fake
+  decision id, and CON-0001 rules that out -- an inferred fact recorded as a
+  declared one. :DOCUMENT's natural key is (:path), which a file always has.
+
+  The substantive one: game-server keeps `design/pieces.md` and
+  `design/rules.md`, and neither is a Loom decision record or a Loom rule.
+  "design" and "rules" naming those types is a convention of CON-0004's
+  workflow, applied to a directory tree Loom itself writes. Reading a foreign
+  repository's `design/` as a directory of DEC documents is exactly the
+  generality failure REQ-0014 was raised about, committed a second time one
+  level down.
+
+  D4  IDENTITY: THE PATH IS THE NAME AND THE KEY, THE FIRST H1 IS THE TITLE
+
+  :name and :path are both the workspace-relative path. :title is the first H1
+  -- ATX (`# Title`) or setext (a line underlined with `=`) -- falling back to
+  the filename without its extension. :doc-id is left unset: a document with no
+  `id:` field has no id, and the YAML analyzer's fallback of using the path
+  exists to keep the *natural key* satisfiable, which a :DOCUMENT's (:path)
+  already is.
+
+  Naming the entity by path, rather than by title, is what makes REQ-0014 R6
+  readable: `impact dhandler-delete 3` is required to report
+  "docs/data-layer.md", and it is the path an agent then opens. `find` matches
+  on substrings, so `find data-layer` still finds it, and the title is carried
+  as a property for DOCUMENT-SUMMARY to print.
+
+  :system is DEFAULT-SYSTEM-FOR-PATH's answer, as DES-0009 R1 requires of
+  every :DOCUMENT and for the reason it gives -- a document has no grouping
+  construct of its own to read.
+
+  D5  WHAT IS SCANNED, AND WHAT IS DELIBERATELY NOT
+
+  Three extractions over the raw text, and nothing else:
+
+    1. Inline code spans. `` `dhandler-delete` `` and its double-backtick
+       form. The span's content becomes a candidate when it looks like an
+       identifier rather than a sentence: no whitespace, at least
+       *MENTION-MINIMUM-LENGTH* characters, beginning with a letter.
+
+    2. Link and image targets: `[text](target)`, `![alt](target)`, and
+       reference definitions `[label]: target`. Normalized as D6 describes.
+
+    3. The first H1, for :title.
+
+  Fenced code blocks are excluded, and their content is excluded from the
+  candidate scan. A fence is a transcript or a specimen -- a shell session, a
+  SQL schema, an ASCII diagram -- and its tokens are the document reproducing
+  something rather than naming it. game-server's markdown carries 256 fence
+  delimiters across twelve files, so this is the difference between scanning
+  prose and scanning a corpus of embedded SQL. The measured acceptance case
+  survives it: R6's `dhandler-delete` is an inline span in a prose bullet
+  (line 20, quoted above), not a fenced one. If measurement later says a fence
+  carries signal that prose does not, this is one predicate to change.
+
+  PROSE-MENTIONS -- the unbackticked, identifier-shaped-token heuristic the
+  YAML analyzer runs over its :BODY -- is deliberately *not* applied to
+  markdown. It was tuned against Loom's own document bodies, which are prose
+  about Loom written in Loom's vocabulary. Turned loose on arbitrary markdown
+  it would offer every hyphenated English compound in 3,906 lines as a
+  candidate. REQ-0014 R3 asks for backticks and links; that is what this reads.
+
+  :BODY is the full markdown text. It is what an agent reads when it wants the
+  reasoning, and DOCUMENT-SUMMARY already bounds what any caller prints of it
+  (DES-0005 / REQ-0007), so an unbounded property does not become unbounded
+  output.
+
+  D6  LINK TARGETS ARE NORMALIZED IN THE ANALYZER, RESOLVED IN THE GRAPH
+
+  The analyzer turns `[`media`](../media/media-handler.lisp)` inside
+  docs/data-layer.md into the candidate string "media/media-handler.lisp", and
+  stops. It does not check whether that file exists: an analyzer has no index
+  and must not acquire one (SS8.1), and the filesystem is equally off limits.
+  Resolution is RESOLVE-DOCUMENT-LINKS' job, against :FILE entities whose
+  :name is that same workspace-relative path.
+
+  Normalization, in order: drop the fragment (`#anchor`) and any trailing
+  `"title"`; drop anything with a URL scheme (`http:`, `https:`, `mailto:`)
+  and anything that is a bare fragment; merge what remains against the
+  document's own directory; collapse `.` and `..` segments; forward-slash it.
+  A target ending in `/` is a directory, resolves to nothing today because
+  Loom mints no directory entities, and is dropped -- silently, per R3.
+
+  D7  :MENTIONS, AND THE RETARGETING OF THE EDGE THAT ALREADY EXISTED
+
+      (defrelationship :mentions
+        :from (:document :decision :rule :concept)
+        :to   (:function :method :class :interface :module :package :file
+               :concept :test)
+        :transitive-impact nil :impact-direction :reverse
+        :collect-as :mentions)
+
+  Endpoints, direction and one-step-ness copy :DOCUMENTS exactly, because the
+  traversal question is unchanged: a change to a unit should reach the
+  documents naming it, without inflating the impact count. :COLLECT-AS is what
+  R5 asks for and is the whole of the presentation change -- IMPACT-REL-TYPES
+  reads the registry, so a terminal type with its own :collect-as lands in its
+  own field with no edit to the traversal.
+
+  RESOLVE-DOCUMENT-LINKS' mention loop changes one keyword: the edge it
+  asserts becomes :MENTIONS. It keeps *MENTION-CONFIDENCE*, keeps :source
+  :inferred, keeps refusing an ambiguous name through RESOLVE-ONE -- which is
+  R4, already satisfied, and by the same function RESOLVE-CALLS' judgement is
+  written in -- and keeps excluding a document as a target.
+
+  That last exclusion is retained rather than reconsidered, and it has a cost
+  worth naming: a markdown link from docs/README.md to docs/api.md resolves to
+  a :DOCUMENT and is therefore dropped. An explicit link between two documents
+  is better evidence than a heuristic token and arguably deserves an edge. It
+  does not get one here because widening the exclusion widens it for YAML too,
+  where PROSE-MENTIONS extracts "REQ-0011", "DES-0009", "CON-0001" from
+  ordinary sentences and LINKABLE-INDEX keys on doc-id -- several hundred new
+  doc-to-doc edges on Loom's own tree, asserted from prose, in a change whose
+  requirement asks for none of them. Recorded as OUTSTANDING.
+
+  Why every prose mention moves, and not just markdown's: because they are the
+  same fact. A backticked name in a YAML body and a backticked name in a
+  markdown body are both an author writing a name, and REQ-0014's own argument
+  for :MENTIONS -- "a backtick is evidence that a file names something, it is
+  not evidence that the file governs it" -- does not become false when the
+  file's extension changes. Leaving YAML on :DOCUMENTS would put two names on
+  one fact and make `describe` print them under two headings with no
+  distinction a reader could act on.
+
+  What this costs, stated plainly: on Loom's own tree `impact`'s `documents:`
+  line empties and a `mentions:` line takes its place, carrying the same
+  entities. :DOCUMENTS remains declared with no producer. That is not left as
+  an accident -- it is the type's proper meaning restored. A declared field
+  saying "this document documents this code", which nothing in CON-0004
+  currently offers, is what should fill it, and until something does, an empty
+  `documents:` is an honest report that no author has declared one.
+
+  D8  WHERE THE NEW FIELD SURFACES
+
+  - IMPACT-RESULT-MENTIONS, beside IMPACT-RESULT-DOCUMENTS in query.lisp.
+  - IMPACT-SET's include-docs gate covers :mentions as well as :documents. A
+    caller asking for an impact set without documentation gets neither.
+  - IMPACT-REPORT gains :mentions; the console's impact command adds it to the
+    list of fields it prints; loom-serve's *ARRAY-VALUED-KEYS* gains it so an
+    empty one encodes as [] rather than null.
+  - BUILD-CONTEXT's documentation rel-types gain :mentions, so a mentioning
+    document can reach a context bundle.
+  - DESCRIBE-ENTITY needs no change. GROUP-NEIGHBORS keys on
+    (direction, rel-type), so :MENTIONS gets its own heading the moment the
+    first edge exists -- which is R5's describe half, already true.
+
+  D9  WHAT MUST NOT MOVE
+
+  `unresolved` must stay at 0 (R3, R6). It does, structurally rather than by
+  care: RESOLVE-DOCUMENT-LINKS only pushes onto :UNRESOLVED-REFERENCES from
+  *DECLARED-LINK-FIELDS*, and a markdown document supplies none of those
+  fields -- no affects:, no applies-to:, no supersedes:, no refines:. A
+  mention that resolves to nothing is dropped by the mention loop and always
+  was.
+
+  The 88 YAML documents must be undisturbed. They are: DOCUMENT-ANALYZER's
+  ANALYZER-HANDLES-P is unchanged, the two analyzers claim disjoint
+  extensions, and FIND-ANALYZER takes the first that claims a path.
+
+  REQUIREMENTS MET
+
+  R1  MARKDOWN-ANALYZER claims .md and .markdown, produces one :DOCUMENT per
+      file with :path, :title and :system. D1, D4.
+  R2  *DOCUMENTATION-DIRECTORIES*, defaulting to four names and registrable.
+      Convention with a seam, not configuration; the reasoning and the
+      rejected alternative are in D2.
+  R3  Inline code spans and normalized link targets become :MENTIONS edges; a
+      candidate resolving to nothing is dropped without a report. D5, D6, D9.
+  R4  Unchanged: RESOLVE-ONE already refuses an ambiguous name and asserts
+      nothing, which is the answer REQ-0015 settled for call names. No new
+      code and no new judgement. D7.
+  R5  :MENTIONS is a new relationship type, collected into its own impact
+      field and grouped under its own describe heading. D7, D8.
+  R6  Restated against the tree as it is on 2026-08-10, since R6's own numbers
+      predate 36 documents:
+        - game-server: `documents` rises from 0 to 12, `impact dhandler-delete
+          3` reports docs/data-layer.md under `mentions:`, and `unresolved`
+          stays 0.
+        - Loom: 88 documents becomes 89. R6 says the count "must not change",
+          and then names docs/TODO.md as the file to index -- the two cannot
+          both hold, and indexing the file is the one the requirement asks
+          for. The condition that is honoured is the one that carries the
+          meaning: the 88 YAML documents are unchanged, entity by entity, and
+          `unresolved` stays 0.
+
+  OUTSTANDING
+
+  - A markdown link from one document to another resolves to a :DOCUMENT and
+    is dropped, so cross-document links in a markdown tree produce no edge.
+    D7 gives the reason and the cost.
+  - :DOCUMENTS is declared with no producer until a declared field earns it.
+  - Fenced code blocks are unscanned. D5 gives the reason and names the single
+    predicate that would reverse it.

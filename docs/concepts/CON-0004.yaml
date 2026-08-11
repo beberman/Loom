@@ -21,10 +21,13 @@ body: |
 
     docs/requirements/REQ-nnnn   what is wanted, and why the current behaviour
                                  is not it
-    docs/arch/ARCH-nnnn          the shape of the answer: entities, ownership,
+    docs/design/DES-nnnn         the shape of the answer: entities, ownership,
                                  boundaries, alternatives rejected
-    docs/design/DEC-nnnn         a decision taken, its rationale and its
+    docs/decisions/DEC-nnnn      a decision taken, its rationale and its
                                  consequences
+    docs/arch/ARCH-nnnn          the structure and mechanism of the software as
+                                 it stands -- not how to implement a
+                                 requirement, which is what a DES is for
     docs/plans/PLAN-nnnn         the ordered steps, the files each touches,
                                  the risks
     docs/reviews/REV-nnnn        what a review found, and whether it is safe
@@ -41,19 +44,36 @@ body: |
   `impact REQ-0002' reports the decision that answered it and everything
   downstream of that.
 
-  Two other fields reach into code rather than into documents. A decision's
-  affects: names the functions it governs; a rule's applies-to: names what it
-  constrains. Both resolve against the index, and a name that resolves to
-  nothing is reported by `check' rather than dropped -- which is the
-  documentation staleness detector, and the reason these fields are worth
-  filling in accurately.
+  Two other fields reach into code rather than into documents. affects: names
+  the code a document bears on; a rule's applies-to: names what it constrains.
+  Both resolve against the index, and a name that resolves to nothing is
+  reported by `check' rather than dropped -- which is the documentation
+  staleness detector, and the reason these fields are worth filling in
+  accurately.
+
+  An ARCH document writes describes: instead of affects:, and that is the
+  genre distinction made mechanical rather than left to discipline: it names
+  the code whose structure the document describes, becomes a :documents edge,
+  and an affects: written in an architecture document is read by nothing. An
+  architecture document describes what is there; it does not govern it.
+
+  affects: is read from every document type, which it was not until BUG-0023:
+  it was read only from a DEC, so 63 of the 67 documents carrying the field
+  declared roughly 610 names into a void, with no edge and no unresolved
+  report either. What the claim means still depends on who makes it. A DEC or
+  a DES *governs* what it affects and earns a :decides edge, so `impact'
+  reports it among the decisions bearing on an entity. A REQ, PLAN, BUG or REV
+  merely *bears on* it and earns :documents, which is a weaker claim and a
+  separate line in the same report. Prose backticks are weaker still and land
+  on :mentions (REQ-0014).
 
   STATUS, AND WHO MOVES IT
 
   Every document carries status:, and the vocabulary is per type:
 
     REQ    draft -> accepted -> implemented | partial
-    ARCH   draft -> accepted -> implemented | partial | superseded
+    DES    draft -> accepted -> implemented | partial | superseded
+    ARCH   draft -> accepted -> superseded
     DEC    accepted | superseded
     PLAN   draft -> final
     BUG    open -> closed
@@ -62,7 +82,7 @@ body: |
     CON    accepted | superseded
 
   The one that is routinely got wrong is the transition out of draft on a REQ
-  or an ARCH, because it is not the document's own author who owes it. A plan
+  or a DES, because it is not the document's own author who owes it. A plan
   reaching final is what makes an architecture's draft status false, so the
   plan's closing step restates every document it refines -- implemented if all
   of it landed, partial with an OUTSTANDING section if some of it did not,

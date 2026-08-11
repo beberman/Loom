@@ -1,0 +1,289 @@
+id: REQ-0018
+title: A language with its own toolchain should enrich the index through a second pass that asks it, rather than a better text analyzer
+status: partial
+date: 2026-08-06
+refines: [REQ-0012, REQ-0015]
+tags: [analyzer, knowledge, multi-language, introspection, isolation]
+summary: |
+  Loom's analyzer reads source as text and infers structure from it. That is
+  the right baseline -- it needs nothing installed, indexes a tree it has never
+  seen in seconds, and works on code that does not compile. It is also the
+  reason for a standing family of defects: DES-0001's macro blind spot,
+  REQ-0012's inline methods, REQ-0015's ambiguous calls, DES-0009's
+  reconstruction of package identity from IN-PACKAGE. Each is a case of
+  re-deriving, imperfectly, something the language's own toolchain already
+  knows exactly. This asks for a second pass that asks the toolchain instead:
+  for Common Lisp, load the system into an isolated SBCL and read
+  SB-INTROSPECT and the MOP; for other languages, the equivalent inspector
+  where one exists. It is an enrichment layer over the text pass, never a
+  replacement, and it is per-language and optional -- a language with no
+  inspector, or a tree that will not build, simply does not get the pass, and
+  the text-derived index stands unchanged.
+body: |
+  WHY A SECOND PASS AND NOT A BETTER FIRST ONE
+
+  Several open requirements are the same shape. REQ-0012 asks that a method
+  written inline in DEFGENERIC be analyzed like one written as DEFMETHOD.
+  DES-0009 reconstructs system identity by tracking IN-PACKAGE forms, and
+  defers nickname handling. DES-0001 records that calls inside macro bodies
+  are unattributed. REQ-0015 asks that an ambiguous call become several
+  discountable edges rather than none.
+
+  All four are attempts to recover, from text, facts a loaded image holds
+  directly. The distinction REQ-0012 is about does not survive macroexpansion
+  at all; the nicknames DES-0009 defers are a list the package object carries;
+  the accessors a definer macro generates are ordinary functions with ordinary
+  source locations once the macro has run. Improving the text analyzer means
+  re-implementing progressively more of the language. Asking the toolchain
+  means not doing that.
+
+  This generalizes. The principle is not "parse text per language" but "ask the
+  language's own toolchain, when it has one." TypeScript has the compiler API,
+  Java has javac and reflection, Go has go/types, Python has ast plus a loaded
+  module. Each gives better answers than a hand-written parser will, and each
+  is a different mechanism behind one uniform question. The project has already
+  half-conceded this: resolve.lisp's docstring defers precise disambiguation to
+  LSP, which is the same idea reached by a slower route.
+
+  MEASURED, NOT ASSUMED
+
+  Probes run 2026-08-06 against this tree and ~/lisp/game-server, with
+  /usr/bin/sbcl:
+
+  What the image gives that the text pass does not --
+
+  - SB-INTROSPECT:WHO-CALLS is backed by the compiler's xref database and is
+    populated: 149 functions in LOOM-GRAPH, 127 of them with at least one
+    recorded caller, 341 caller edges.
+  - FIND-DEFINITION-SOURCES-BY-NAME returns file and form-path:
+    APPLY-TRANSACTION -> src/graph/transaction.lisp, form-path (27).
+  - SB-MOP:GENERIC-FUNCTION-METHODS makes REQ-0012 vanish for Lisp.
+    ANALYZER-HANDLES-P reports two methods -- one written inline as
+    (:method ...) in the DEFGENERIC, one standalone -- and the MOP presents
+    them identically, with qualifiers and specializers. The distinction
+    REQ-0012 is about is a spelling difference that never reaches the image.
+  - Macro-generated definitions are visible. LOOM-ONTOLOGY has 249 fbound
+    symbols including every accessor DEFENTITY generates, none of which the
+    text analyzer can see.
+
+  What the image does NOT give, which is the finding that shapes this
+  requirement --
+
+  With only :loom-process loaded, WHO-CALLS APPLY-TRANSACTION returns 3
+  callers. With the test systems also loaded it returns 8: RESOLVE-AND-CHECK,
+  DETECT-DELETIONS, INDEX-FILE, RF-POPULATE, DOCS-ENTITY, ANALYZE-SOURCE,
+  ANALYZE-FIXTURE, LITERAL-ENTITY -- all eight plain symbols, none containing
+  "TEST". Loom's own `describe apply-transaction` returns those same 8 plus
+  roughly 50 FiveAM test names under `<- tests:`.
+
+  An earlier draft of this document explained that gap by saying a probe for
+  callers recorded under a non-symbol name -- "a lambda or method key" --
+  found zero. That is half wrong, and the correction narrows the claim rather
+  than weakening it. A method IS returned by WHO-CALLS, under a compound key:
+  a DEFGENERIC with an inline (:method ((x integer)) (target-d)) makes
+  WHO-CALLS TARGET-D return ((FAST-METHOD G (INTEGER)) VIA-PLAIN-CALL),
+  verified by direct probe. The zero above is not evidence that compound keys
+  are unreachable; it is because none of APPLY-TRANSACTION's callers happens
+  to be a method.
+
+  What is genuinely absent is narrower and was isolated in a minimal case
+  rather than inferred from the APPLY-TRANSACTION result. A macro that expands
+  to an anonymous lambda -- (defmacro deftest-like (name &body body)
+  `(push (cons ',name (lambda () ,@body)) *registry*)) -- and a (deftest-like
+  probe-one (the-callee)) form beside an ordinary caller yields WHO-CALLS
+  THE-CALLEE = (ORDINARY-CALLER) and nothing else. The lambda has no name for
+  xref to record the call under, so the edge does not exist at any key. That
+  is exactly FiveAM's `test`.
+
+  So the calls inside a (test ...) body are not reachable through xref, while
+  Loom recovers them by minting :TEST entities from definer-macro call sites
+  and attributing the body's calls to them. The test-to-code coverage
+  attribution, one of Loom's more distinctive outputs and the thing `impact`
+  reports as coverage, is something the image does not offer.
+
+  DES-0001's blind spot therefore does not simply disappear under this
+  approach. It disappears for definitions a macro *generates*. It persists,
+  and is worse, for calls inside macro bodies that expand to anonymous lambdas
+  -- which is exactly FiveAM's `test`. That asymmetry is the argument for
+  layering rather than replacement, and it is why R5 below exists.
+
+  Two further limits found: xref coverage is scoped to what was loaded, so the
+  pass sees nothing about a system it did not load; and
+  FIND-DEFINITION-SOURCES-BY-NAME requires the correct definition kind --
+  passing :function for a generic function returned zero sources, so one lookup
+  per name is not enough.
+
+  THE COST, AND WHAT IT IS NOT
+
+  Loading is running. The current analyzer is deliberately inert -- *read-eval*
+  nil, a throwaway package, never evaluates a form -- which is what makes it
+  safe to point at an arbitrary tree. This pass executes every top-level form
+  and initform in the repository, so it is not safe in the same sense and must
+  not be treated as though it were.
+
+  It also requires the tree to build, which is precisely when it is least
+  likely to: a repository that does not compile is when "where is this defined
+  and what calls it" matters most, and that is the case the text pass must keep
+  covering. And the image reflects load time, not disk, so anything excluded --
+  #+ conditionals for another platform, files absent from the .asd, dead code
+  that no longer compiles -- is invisible to it and visible to the text pass.
+
+  The build risk is smaller than it looks, at least here. All six game-server
+  systems -- UTILS, MPACKAGE, DATA-API, GAME, MEDIA, GAME-SERVER -- loaded
+  cleanly in a child SBCL, exit 0, with no database needed at load time; that
+  codebase's DB connections happen at runtime, not in initforms.
+
+  ISOLATION
+
+  The pass must run in a separate process. That is not a hardening measure but
+  the design: the child loads the target, introspects, and writes results as
+  data on stdout, which Loom reads with *read-eval* nil -- the same discipline
+  analyzer.lisp already keeps. Loom's own image never loads foreign code.
+
+  In-image package isolation is not sufficient and should not be attempted. A
+  loaded system can define a method on a CL generic such as PRINT-OBJECT and
+  mutate the shared image, and a target depending on a different version of a
+  library Loom itself uses is unresolvable in one image.
+
+  DES-0008 is the precedent. It removed in-place reload because reloading nine
+  systems under live request threads produced a reproducible 500 (BUG-0008),
+  and made every path that changes running code a fresh process driven from
+  outside. This is the same principle applied to foreign code.
+
+  Available on this machine, all unprivileged: `timeout`, so a load that hangs
+  on a DB connect dies on a clock; --dynamic-space-size as a heap cap; and
+  `unshare --user --net`, verified working without root, so the child can run
+  with no network at all. `bwrap` and `systemd-run` are present if read-only
+  filesystem mounts are wanted. There is no docker or podman.
+
+  REQUIREMENTS
+
+  R1  The pass is a second pass over an index the text analyzer has already
+      built. It must not be a precondition for indexing, and a tree that
+      cannot be loaded must produce the same index it produces today.
+
+  R2  It is per-language and optional. Each language contributes its own
+      inspector behind one uniform interface; a language with no inspector,
+      or with one not installed, yields no pass. That is a recorded absence,
+      not an error, and must not be reported as a failure.
+
+  R3  The inspector must run in a process separate from any Loom image, and
+      must never load target code into the process serving queries. Results
+      cross the boundary as data, read with *read-eval* nil.
+
+  R4  Failure must be partial rather than total. Where a language's unit of
+      loading permits it -- an ASDF system, a module, a package -- each unit
+      is attempted independently, what loaded is introspected, and what did
+      not is recorded as a gap. A gap Loom knows about satisfies CON-0001;
+      an all-or-nothing pass does not.
+
+  R5  Enrichment must not destroy text-derived facts, per DEC-0003. The
+      FiveAM case above is the concrete test: the roughly 50 test-to-code
+      edges the text pass derives for APPLY-TRANSACTION are absent from xref,
+      and a pass that replaced rather than added would delete Loom's coverage
+      data outright.
+
+  R6  Every edge and entity must carry which pass produced it. Image-derived
+      facts are high-confidence and text-derived ones are not, which gives
+      REQ-0015's confidence field real content instead of a synthetic
+      candidate count. Where the two passes disagree, both are kept and the
+      disagreement is reportable -- it is the only direct measurement of the
+      text analyzer's error rate, currently unknown in both directions.
+
+  R7  The pass must be bounded in time and memory, and must be killable
+      without affecting the indexer that spawned it.
+
+  R8  Acceptance is measured on both trees. On Loom, the pass must add the
+      DEFENTITY-generated accessors in LOOM-ONTOLOGY and must resolve
+      ANALYZER-HANDLES-P's inline and standalone methods identically, while
+      the roughly 50 FiveAM test edges on APPLY-TRANSACTION survive
+      unchanged. On game-server, the pass must load all six systems and must
+      settle the DEFGENERIC-versus-:accessor question for CASCADE-DELETE,
+      which the name-based index cannot represent. The full suite stays green
+      and `check` reports no new unresolved references.
+
+      One shape this obliges the inspector to handle, surfaced by the probe
+      that corrected the non-symbol claim above: WHO-CALLS reports a method
+      caller as a compound key, (FAST-METHOD <generic> (<specializers>)),
+      not as a symbol. Mapping that back to a Loom :METHOD entity is a
+      parsing obligation on the inspector, and it is precisely the form in
+      which the image reports the edges REQ-0012 and DES-0010 just taught
+      the text pass to see -- so it is also where the two passes can first
+      be compared against each other, per R6.
+
+      Amended 2026-08-08, during PLAN-0010's step 12, because this clause was
+      an acceptance criterion resting on a number whose unit set it did not
+      state. "WHO-CALLS APPLY-TRANSACTION returns 8" above is true of a unit
+      set that includes the test systems; with only the primary systems it
+      returns 3, the other five -- RF-POPULATE, DOCS-ENTITY, ANALYZE-SOURCE,
+      ANALYZE-FIXTURE, LITERAL-ENTITY -- being DEFUNs in test files. Both
+      figures are in MEASURED, NOT ASSUMED above and both are correct; only
+      one of them is the acceptance number for any given run, and it is
+      whichever matches the unit set the pass was run with. PLAN-0010 R-7
+      made that set an explicit knob and defaulted it to primary systems
+      only, so a run that states no set means 3. Any acceptance figure quoted
+      from this document must therefore name its unit set beside it.
+
+      What does not vary with the unit set, and so stays an acceptance figure
+      without a qualifier, is R5's guard: APPLY-TRANSACTION's inbound :TESTS
+      and :CALLS edge counts are identical before and after enrichment.
+      Measured on this tree 2026-08-08 under /usr/bin/sbcl, primary systems
+      only: 66 and 77 before, 66 and 77 after, and again after a second
+      enrich. The absolute numbers moved from PLAN-0010's baseline of 50 and
+      58 because the tree gained test files while the plan was being
+      implemented; what R5 asserts is the equality across the pass, not the
+      value.
+
+  WHAT THIS DOES NOT ASK FOR
+
+  It does not ask that REQ-0012, REQ-0015 or DES-0009 be closed as obsolete.
+  Each governs the text pass, which remains the baseline and the only pass
+  available on a tree that will not build. This requirement changes what is
+  worth spending on them, not whether they are real.
+
+  It does not ask for the file monitor to reload on change. The image reflects
+  load time, and incremental reindexing under this pass would mean reloading,
+  which DES-0008 and BUG-0008 have already established is unpleasant here.
+  When and how often the pass re-runs is left to an architecture document.
+
+  OUTSTANDING
+
+  DES-0011 answered this document and PLAN-0010 implemented it. R1, R2, R3,
+  R4, R5 and R7 hold end to end, measured on this tree 2026-08-08 under
+  /usr/bin/sbcl with the primary unit set: all nine systems load in bounded
+  children, 476 image-only definitions are minted, 763 call facts land on
+  edges the text pass already had, and APPLY-TRANSACTION's 66 :TESTS and 77
+  :CALLS edges are the same before and after. The status is `partial' rather
+  than `implemented' for three things, none of which is invisible once named.
+
+  1. R8's game-server half is not measured. All six units loading and
+     CASCADE-DELETE's DEFGENERIC-versus-:accessor question being settled from
+     the image are what DES-0011 R11 and PLAN-0010 step 12 ask for, and that
+     run has not been made -- so the comparison counts that were to replace
+     REQ-0012's and this document's estimates are still estimates. Nothing
+     found on Loom's own tree suggests it will fail; it has simply not been
+     done, and reporting it as done would be exactly CON-0001's fabricated
+     fact.
+
+  2. R6's agreement record does not survive an edit anywhere in the tree.
+     BUG-0015 (open) has the mechanism and the residue. Where the two passes
+     agree, the surviving edge carries :sources (:structural :introspected) --
+     768 of them here -- and that record now survives the resolution
+     ENRICH-REPOSITORY runs itself, which it did not before. It does not
+     survive the next poll that finds any file changed: RESOLVE-CALLS
+     re-derives every text-derivable :CALLS edge by DEC-0003 and re-asserts it
+     with no properties, so the union is cleared until the next enrich. The
+     edge itself stands as the text pass's own, so this is the degradation
+     DES-0011 promises rather than a wrong answer, but "every edge carries
+     which pass produced it" is true of a freshly enriched index and not of
+     one that has been edited since.
+
+  3. R6's disagreement half is measurable but not reported. Facts only the
+     image saw are kept and countable -- 215 :CALLS edges here carry
+     :introspected with no :structural, which is the BUG-0011-shaped set --
+     and facts only the text pass saw are kept because the merge never
+     removes anything. What no command reports is the third column DES-0011
+     R8 names, text-only within loaded scope: the enrichment report counts
+     confirmations, additions and drops, and nothing computes what the image
+     failed to confirm. Until it does, "the disagreement is reportable" is
+     true of a query somebody writes, not of Loom.

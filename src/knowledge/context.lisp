@@ -21,6 +21,11 @@
 (defparameter *context-token-budget* 2000
   "Default size of a context bundle, in tokens.")
 
+;; The other budget in this system is *SUMMARY-TOKEN-BUDGET* (120), in
+;; services.lisp -- one document's summary rather than a bundle of entities.
+;; It lives there rather than here because services.lisp compiles first and
+;; DOCUMENT-SUMMARY reads it; see the section comment beside it.
+
 (defun estimate-tokens (string)
   "A rough token count for STRING: four characters to the token.
 
@@ -75,7 +80,7 @@ name and, failing that, on \"impact\"."
     (nreverse tokens)))
 
 (defparameter *seed-type-preference*
-  '(:function :method :class :interface :concept :decision :rule
+  '(:function :method :class :interface :concept :architecture :design :decision :rule
     :variable :test :module :package :document :file)
   "Entity types in the order a seed match is worth having.
 
@@ -169,10 +174,17 @@ the part most worth the tokens: why the code is the way it is."
   (let ((found '()))
     (dolist (entity entities)
       (dolist (n (neighbors view (id entity)
-                            :rel-types '(:decides :applies-to :documents)
+                            ;; :MENTIONS carries what :DOCUMENTS used to
+                            ;; before REQ-0014 retyped every prose mention, so
+                            ;; it is named here or a decision reached only by
+                            ;; a backtick in its own body stops reaching a
+                            ;; bundle. The type filter below is what keeps
+                            ;; this honest: a mentioning markdown file is a
+                            ;; :DOCUMENT and is not collected here.
+                            :rel-types '(:decides :applies-to :documents :mentions)
                             :direction :in))
         (let ((other (neighbor-entity n)))
-          (when (and (member (entity-type other) '(:decision :rule :concept))
+          (when (and (member (entity-type other) '(:decision :design :architecture :rule :concept))
                      (not (stale-p other)))
             (pushnew other found)))))
     (nreverse found)))

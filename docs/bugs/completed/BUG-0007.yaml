@@ -1,0 +1,114 @@
+id: BUG-0007
+title: A freshly started loom-serve reports its own code stale within one second, over an untouched tree
+status: closed
+date: 2026-08-04
+refines: [DES-0007]
+affects: [serve-forever, watch-repository, index-repository, repository-indexed-at]
+tags: [service, lifecycle, workspace, prototype, bug]
+summary: |
+  `tools/loom-serve.sh start` followed by `status` reports "running, code
+  stale" against a tree nothing has written to since before the process began.
+  The answer errs in the safe direction -- CON-0001 prefers a false stale to a
+  fabricated current -- so nothing is broken and nothing reloads by itself.
+  What it costs is DES-0007's own argument for a SessionStart hook over an
+  unconditional restart: `update` was designed to no-op on the common case,
+  measured at 0.03s when it does, and a cold start never reached that path.
+
+  Closed by PLAN-0007 step 1. The cause is not the one this document originally
+  named. POLL-ONCE was measured directly and exonerated; what moves :indexed-at
+  is loom-serve.lisp's own startup order, in which SERVE-FOREVER re-watched --
+  and therefore reindexed -- paths its caller had already watched, after
+  START-SERVER had recorded :started-at. SERVE-FOREVER now skips that watch loop
+  when ALREADY-STARTED is true (src/serve/server.lisp), which is exactly the case
+  in which its caller has already done the watching.
+body: |
+  WHAT WAS MEASURED
+
+  /usr/bin/sbcl, branch server, 2026-08-04, this tree, nothing edited between
+  the two calls:
+
+    tools/loom-serve.sh start
+    curl /v1/server-status        -> started-at 3994838453
+    curl /v1/status?repository=Loom -> indexed-at 3994838453   (equal)
+    tools/loom-serve.sh status    -> "running, code stale"
+    curl /v1/status?repository=Loom -> indexed-at 3994838454   (one later)
+
+  So at the instant the service answers, the two timestamps are equal and the
+  comparison is correct -- `status`'s own test is `indexed-at > baseline`, and
+  equal is not greater. Something then moves indexed-at one second past
+  started-at, and every `status` from then on reads stale until something writes
+  a .reloaded-at later than it.
+
+  CAUSE, MEASURED RATHER THAN INFERRED
+
+  Not POLL-ONCE. That was the original diagnosis and it was checked directly
+  against this tree, /usr/bin/sbcl, before any code was changed:
+
+    WATCH-REPOSITORY over the Loom root with the monitor off: 127 files, 127
+    stamped, 0 unstamped. Two manual POLL-ONCE calls three seconds apart: 0
+    changed both times, REPOSITORY-INDEXED-AT unmoved.
+
+    WATCH-REPOSITORY with the monitor thread running, sampled every 2s for 16s:
+    REPOSITORY-INDEXED-AT never moved.
+
+  What does move it is the sequence loom-serve.lisp performs at startup.
+  HEADLESS watches every path (loom-serve.lisp:103-115), calls START-SERVER
+  (116), which records *SERVER-STARTED-AT*, and then calls `(serve-forever paths
+  :already-started t)` (122-123) -- whose own body watched every path a second
+  time. WATCH-REPOSITORY on an already-registered root calls REINDEX-REPOSITORY
+  (workspace.lisp:428-431), and INDEX-REPOSITORY ends by setting
+  REPOSITORY-INDEXED-AT to GET-UNIVERSAL-TIME (workspace.lisp:241). So the
+  running process re-indexed itself *after* the instant it reports as
+  :started-at, and whenever that second index crossed a whole-second boundary --
+  GET-UNIVERSAL-TIME counts in whole seconds -- :indexed-at landed one second
+  past :started-at and `probe`'s `indexed > baseline` test reported stale,
+  permanently, over a tree nothing had touched.
+
+  Probabilistic rather than certain, which is why the fix was verified by
+  counting repeated cold starts rather than by asserting a single one. Measured
+  on this machine, 2026-08-04, three cold starts each followed by a 12-second
+  settle and a `status`:
+
+    before the fix   2 of 3 stale, 1 of 3 current
+    after the fix    3 of 3 current
+
+  The settle matters and is the reason this document's original measurement
+  looked like a race in POLL-ONCE. `tools/loom-serve.sh start` returns as soon
+  as `probe` gets an answer, and `probe` answers while the post-start reindex is
+  still running -- one sampled mid-reindex showed 663 entities of an eventual
+  1275 -- so a `status` issued immediately reads the *previous* index's stamp
+  and says "current". The stale answer appears a second or two later, when the
+  redundant reindex finishes and writes its own.
+
+  WHY IT HID
+
+  :indexed-at is the slot POLL-ONCE writes in the steady state, so the obvious
+  reading of "indexed-at moved and nobody edited a file" is that the poller
+  counted something as changed. It is also the slot INDEX-REPOSITORY writes at
+  the end of every index, and an index nobody asked for looks exactly like a
+  poll that found something. Distinguishing the two needed POLL-ONCE to be run
+  in isolation with the monitor off, which is what finally separated them.
+
+  THE FIX
+
+  SERVE-FOREVER's watch loop is wrapped in `(unless already-started ...)`, and
+  the log line it wrote is replaced for that branch by one line per
+  ALL-REPOSITORIES entry, so HEADLESS's own log still records which roots are
+  watched. ALREADY-STARTED now means the caller has already watched PATHS *and*
+  started the listener -- which is what loom-serve.lisp's HEADLESS branch has
+  always done.
+
+  The alternative fix, passing `'()` for PATHS at loom-serve.lisp:122-123, is
+  one character shorter and cannot be tested by anything: that script is not an
+  ASDF component. Putting the condition in SERVE-FOREVER puts it where a FiveAM
+  test can reach it -- SERVE-FOREVER-DOES-NOT-REINDEX-WHAT-THE-CALLER-ALREADY-
+  WATCHED, src/serve/test/server.lisp, which fails against the code as it stood.
+
+  STILL TRUE AND NOT FIXED HERE
+
+  loom-serve.lisp's `paths` carries this tree's root twice -- the script
+  prepends *here* and tools/loom-serve.sh's `start` also passes `$root` -- so
+  startup performs two full indexes rather than one. Both happen strictly before
+  START-SERVER records :started-at, so this costs startup time and nothing else.
+  PLAN-0007 names it as deferred rather than absent: deduplicating a list of
+  paths that have not been normalized yet is its own small correctness question.

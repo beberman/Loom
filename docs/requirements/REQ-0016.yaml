@@ -1,0 +1,137 @@
+id: REQ-0016
+title: context must rank by structural centrality, not by name similarity
+status: draft
+date: 2026-08-06
+affects: [build-context, context-item, seed-entities, search-entities,
+          neighbor-summary, group-neighbors]
+tags: [knowledge, console, context, ranking]
+summary: |
+  `context` is the command CLAUDE.md and the loom skill both tell an agent to
+  reach for first -- "a budgeted bundle: what to know before editing". On
+  Loom's own tree it works. Asked about a foreign codebase it returns the
+  wrong subsystem entirely, because its seeding is lexical: it matches query
+  words against entity names and expands from whatever it hits. Asked
+  `context data-handler` against ~/lisp/game-server -- a codebase whose
+  data-api subsystem defines a DATA-HANDLER class, six subclasses and 21
+  `dhandler-*` CRUD generics across nine files -- it returned 22 entities
+  consisting of CORS handlers from the web layer, mpackage event callbacks,
+  and test helpers. The DATA-HANDLER class itself and its CRUD protocol are
+  absent. Every entity returned contains the substring "handler" and almost
+  none of them is what the question was about. This asks that seeding and
+  ranking use the structure Loom has already built -- degree, edge type,
+  clustering, distance from the named entity -- rather than treating a name
+  match as the answer.
+body: |
+  WHAT IS WRONG
+
+  Run against game-server:
+
+      # Context for: data-handler
+      # 24 entities, ~1960/2000 tokens (truncated)
+      function handler-exists-p        [mpackage/mpackage.lisp:250-253]
+      function set-cors-handler        [server/gameapi.lisp:29-36]
+      function make-cors-handler       [server/gameapi.lisp:21-27]
+      function get-handler             [server/content.lisp:104-120]
+      function make-table-handler      [mpackage/test/cache-namespace.lisp:43-52]
+      function make-null-handler       [mpackage/test/cache-namespace.lisp:24-25]
+      function ns-make-handler         [mpackage/mpackage.lisp:208-241]
+      ...
+
+  The full set of 22 distinct entities contains CORS request handling, event
+  callbacks, two test fixtures, and `make-handler`. It does not contain the
+  DATA-HANDLER class (data-api/handler.lisp:26), DB-HANDLER, TABLE-HANDLER,
+  MODEL-HANDLER, NULL-HANDLER, GAME-HANDLER, or any of DHANDLER-GET,
+  DHANDLER-PUT, DHANDLER-UPDATE, DHANDLER-DELETE and the rest of the protocol.
+
+  An agent following the documented workflow -- start with `context`, then
+  narrow with `find` -- would read the wrong nine files and form a wrong model
+  of the subsystem before writing a line.
+
+  A second, looser query behaves the same way. `context restructure data
+  handler protocol encode decode` returned predominantly `test/fixture.lisp`
+  and `test/test-api.lisp` entities: functions named `decode-obj`,
+  `decode-slot`, `decode-defn-item`, `alist-value`. They match the query's
+  words. They are test fixtures for a different subsystem.
+
+  WHY IT LOOKS FINE ON LOOM
+
+  Loom's own entity names are unusually descriptive and unusually unique --
+  APPLY-TRANSACTION, RESOLVE-GENERATED-DEFINITIONS, EDGES-BETWEEN-SYSTEMS --
+  so a lexical match against a task description lands on the right entity
+  most of the time, and the neighbourhood expansion around a correct seed does
+  the rest. The ranking is not being tested by that tree; the naming is
+  carrying it. game-server's names are shorter, more repeated, and grouped by
+  CLOS class rather than by unique verb, and the seeding fails immediately.
+
+  This is the third instance of one pattern found in a single afternoon's
+  evaluation, alongside REQ-0012's inline methods and REQ-0015's ambiguous
+  calls: a mechanism that is correct on the tree it was developed against, and
+  wrong on the next one, for reasons invisible from inside the first.
+
+  WHAT THE GRAPH ALREADY KNOWS THAT THE RANKING IGNORES
+
+  DATA-HANDLER is reachable, and richly so. `impact data-handler 5` returns
+  over 128 entities and correctly walks the whole hierarchy -- d1 to
+  NULL-HANDLER and DB-HANDLER, d2 to TABLE-HANDLER, GAME-HANDLER,
+  GAME-SET-HANDLER and every method specialized on them, deeper to
+  MODEL-BASE-HANDLER, MODEL-HANDLER and OPERATOR-HANDLER -- with the
+  `inherits>` and `uses>` path on each row explaining why it is there. The
+  structure needed to answer `context data-handler` well is present in the
+  graph and was built by the same indexing pass. Only the selection is wrong.
+
+  Signals available and unused: in-degree and out-degree; edge type (an
+  :INHERITS or :IMPLEMENTS edge says more about subsystem membership than a
+  :CALLS edge does); co-location in a file or directory; whether an entity is
+  a class with many specialized methods, which is what a CLOS subsystem's
+  centre looks like; and, once REQ-0014 lands, whether a document mentions it.
+
+  WHAT THIS IS NOT
+
+  This is not REQ-0005. That requirement governs `impact`'s depth labelling and
+  its boolean `(truncated)` flag, both of which are real and both of which also
+  affect `context`'s "(truncated)" line. Neither is about which entities are
+  selected, which is the whole of this requirement. REQ-0005 stands unchanged
+  and should be read alongside this one.
+
+  This is not a request for semantic or embedding-based search. A query is a
+  handful of words and the graph is a graph; the claim here is that structure
+  is a stronger signal than string similarity, not that a language model
+  belongs in the ranking. If an architecture document concludes otherwise it
+  should say why the cheaper structural signals were insufficient.
+
+  It does not ask for the token budget to change. 2,000 tokens is enough to
+  describe a subsystem when the right entities are chosen; the current output
+  spends nearly all of it (~1,960) on the wrong ones, which is the argument
+  that selection rather than budget is the defect.
+
+  REQUIREMENTS
+
+  R1  A query naming an entity that exists must seed from that entity, not from
+      every entity whose name contains the query as a substring. `context
+      data-handler` must include the DATA-HANDLER class.
+
+  R2  Expansion from a seed must weight edge types rather than treat them
+      alike. For a class-shaped seed, :INHERITS, :IMPLEMENTS and :USES identify
+      the subsystem; :CALLS from unrelated code does not.
+
+  R3  Entities matching the query lexically but sitting in an unrelated part of
+      the graph must rank below entities reached structurally from the seed.
+      SET-CORS-HANDLER must not displace DHANDLER-GET.
+
+  R4  Test fixtures must rank below production code when both match, unless the
+      query asks about tests. Two of the 22 entities returned above are test
+      helpers from a different subsystem, and the looser query returned
+      predominantly test fixtures.
+
+  R5  A query naming no known entity must still return something useful -- the
+      current lexical behaviour is the fallback, not the primary path, and
+      must not regress for the "task described in words" case `context` was
+      built for.
+
+  R6  Acceptance is measured on both trees. On game-server, `context
+      data-handler` must return the DATA-HANDLER class and a majority of its
+      subclasses and `dhandler-*` protocol from data-api/, and must not spend
+      its budget on server/gameapi.lisp's CORS layer. On Loom, the existing
+      documented example -- `context macro definitions` returning
+      MAKE-MACRO-ENTITY and its neighbours -- must not regress, and the full
+      suite must stay green.

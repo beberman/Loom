@@ -36,7 +36,22 @@ Graph Manager's business, not a property write's."))
 (defclass provenanced ()
   ((source        :initarg :source :accessor source
                   :initform :structural
-                  :type (member :structural :inferred :human-validated))
+                  :type (member :structural :inferred :human-validated :introspected)
+                  :documentation "Which pass produced this fact.
+
+:STRUCTURAL   read from the text of a file -- what an analyzer saw written.
+:INFERRED     derived by a resolution pass that had to choose, and so carries
+              a fractional CONFIDENCE saying how much of a choice it was.
+:HUMAN-VALIDATED  asserted by a person, and not re-derivable from anything.
+:INTROSPECTED the language's own toolchain reported it, from an image in which
+              the target was loaded (DES-0011). Confidence 1.0: it is not a
+              reading of source but an answer from the compiler.
+
+The fourth member is the whole ontology cost of REQ-0018. Read it as the
+vocabulary rather than as an enforced constraint: SBCL does not check a
+standard-class slot :TYPE at the safety this tree compiles at, measured
+2026-08-07, so this declaration is what a reader and a higher-safety build
+see and not something MAKE-INSTANCE will refuse.")
    (confidence    :initarg :confidence :accessor confidence
                   :initform 1.0 :type (real 0 1))
    (derived-from  :initarg :derived-from :accessor derived-from
@@ -373,8 +388,8 @@ object per image that SBCL threads inherit by value and whose MT19937 state
 vector it mutates without atomicity. Two threads inside it interleave and mint
 the same id, which BUG-0005 measured at 26,039 distinct strings out of 40,000.
 
-Global rather than hung off a graph or a repository as ARCH-0003's and
-ARCH-0004's locks are, because the resource is: one random state per image, so
+Global rather than hung off a graph or a repository as DES-0003's and
+DES-0004's locks are, because the resource is: one random state per image, so
 a per-object lock would not help two graphs' threads. Plain and not recursive
 because FRESH-ID's body calls two library functions and can never re-enter
 itself, so there is nothing to compose. It is a leaf in the acquisition order

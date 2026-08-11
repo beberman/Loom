@@ -1,0 +1,553 @@
+id: PLAN-0012
+title: Supersede a shadowed same-key definition inside ANALYZE-FILE, record it on the survivor, and report it through RULE-0006
+status: draft
+date: 2026-08-08
+refines: [DES-0012]
+affects: [analyze-file, absorb-relationship, run-check, check-rules, parse-check,
+          class-definition-entities, generic-definition-entities, entity-natural-key]
+tags: [analyzer, graph, rules, clos, provenance]
+summary: |
+  Sequences DES-0012 into twelve steps. The consistency half lands in
+  ANALYZE-FILE: between pass 1 and pass 2, among definitions in one file
+  sharing one ENTITY-NATURAL-KEY, only the last in source order survives, so
+  no entity op, :CONTAINS edge, body walk, :CALL-NAMES or local :CALLS edge is
+  ever emitted for a shadowed definition. The loudness half lands as a
+  :shadowed-definitions property on the survivor, a generic :property-absent
+  check kind, and RULE-0006. ABSORB-RELATIONSHIP gains the EQ guard
+  ABSORB-ENTITY has had all along. Out of scope, deliberately: BUG-0013,
+  BUG-0015, BUG-0016, BUG-0017, BUG-0018; any change to ABSORB-ENTITY or
+  APPLY-OP; any widening of the :method natural key; and same-key collisions
+  minted by RESOLVE-GENERATED-DEFINITIONS rather than by an analyzer, which
+  R1's contract does not reach. One measured finding forces an amendment to
+  DES-0012 R8 and is called out as such rather than absorbed silently: both
+  trees carry more same-key collisions than R8 predicts, and most of them are
+  DEFCLASS accessor names rather than shadowed code.
+body: |
+  WHAT MEASUREMENT CHANGED BEFORE THE FIRST STEP
+
+  DES-0012 R8 predicts that Loom is collision-free and that game-server has
+  exactly two collisions. Both are false, measured today by running
+  ANALYZE-FILE over every .lisp file in each tree and counting duplicate
+  ENTITY-NATURAL-KEYs within one file's op stream:
+
+    Loom          3 collisions, all :INTERFACE
+    game-server  20 collisions: 14 :INTERFACE, 4 :METHOD, 2 :FUNCTION
+
+  Every one of Loom's three, and thirteen of game-server's fourteen
+  :INTERFACE collisions, are DEFCLASS or DEFINE-CONDITION accessor names --
+  two classes in one file each declaring :ACCESSOR NAME, which in Common Lisp
+  is one generic function with two methods, not a shadowing. Nothing is dead
+  code; nothing is silently replaced. Loom's three:
+
+    src/ontology/ontology-ops.lisp  target-id  (62-65, 67-72, 74-79)
+    src/ontology/root-ontology.lisp properties (71-75, 77-83)
+
+  Reported verbatim, RULE-0006 would print three findings on Loom and
+  seventeen on game-server, of which thirteen would be noise -- burying the
+  six real ones, and repeating BUG-0009's pattern of a rule whose output has
+  to be read past. So this plan adds one clause DES-0012 does not state, and
+  step 12 amends DES-0012 rather than leaving the divergence in code only:
+
+    R2-RECORDING: supersession (R1) applies to every definition kind with no
+    exception. The :shadowed-definitions property is recorded unless BOTH the
+    superseded and the surviving entity carry :generated-by -- that is, both
+    are accessor names synthesized from a slot declaration rather than
+    definitions someone wrote. If either was written, the shadowing is real
+    and is recorded.
+
+  The predicate is Lisp-specific, which is why it lives in the Lisp analyzer
+  and not in the writer or the rule: "an accessor name declared twice is one
+  generic function" is CL semantics, exactly the kind of reconciliation
+  DES-0012's ALTERNATIVES section argues belongs to the analyzer.
+
+  With the clause, the predicted findings are:
+
+    Loom          0
+    game-server   7 -- db-select (two DEFGENERICs, connection.lisp 433 and
+                  500), add-defn, computed-id-p, mp-typename,
+                  initialize-instance :after, make-encoded-value,
+                  restart-server
+
+  Six of those seven are dead code a human should delete. If the architect
+  rejects the clause, the fallback is to record every collision and restate
+  R8's numbers as 3 and 20; step 5 is the only step that changes, and step 11
+  expects 3 and 17 instead of 0 and 7.
+
+  A second measured correction, in the same direction as the task's warning:
+  the edge union is invisible in both trees. Verified body by body --
+  restart-server 85-87, mp-typename 419-422 and initialize-instance 45-49 all
+  call a subset of what their survivors call, or call it across a file
+  boundary where :CALL-NAMES already gives the survivor's answer alone
+  (get-id-fn and utils:dict-value in operator-handler.lisp are defined
+  elsewhere, so they never became local edges). make-encoded-value's two
+  bodies both call only make-dict and package-kwd-encode; `describe
+  make-encoded-value` shows one outgoing call, make-dict, and no self-edge.
+  Do not promise an edge-count movement on either tree. The graph half of
+  this fix is guarded by the fixture in step 4, where the bodies differ on
+  purpose; the user-visible value on game-server is the RULE-0006 finding.
+
+  FILES
+
+  Created:
+
+    docs/rules/RULE-0006.yaml         the rule (step 8)
+    docs/concepts/CON-0005.yaml       the per-analyzer contract (step 9)
+
+  Changed:
+
+    src/graph/transaction.lisp        ABSORB-RELATIONSHIP gains the EQ guard
+                                      (step 2, ~3 lines at line 139)
+    src/graph/test/graph-manager.lisp one test: apply the same op list twice
+                                      (step 2)
+    src/ontology/code-ontology.lisp   :shadowed-definitions declared on
+                                      :class, :interface, :function, :method,
+                                      :variable, :test (step 3)
+    src/analyzer/lisp-analyzer.lisp   the supersession step between pass 1 and
+                                      pass 2, plus the filtering of CALLABLES
+                                      and LOCAL-FUNCTIONS (step 4) and the
+                                      property recording (step 5)
+    src/analyzer/test/lisp-analyzer.lisp
+                                      A-COLLIDED-METHODS-CALLS-EDGES-ARE-A-
+                                      UNION-NOT-A-REPLACEMENT rewritten;
+                                      AN-INLINE-METHOD-AND-A-STANDALONE-
+                                      DEFMETHOD-COLLIDE-IN-ONE-FILE's comment
+                                      corrected and extended; three tests
+                                      added (steps 4 and 5)
+    src/analyzer/yaml-analyzer.lisp   :property-absent added to *CHECK-KINDS*
+                                      (step 6, one line at line 289)
+    src/graph/rules.lisp              RUN-CHECK (:kind :property-absent)
+                                      (step 7)
+    src/graph/test/rules.lisp         one test for the new kind (step 7)
+    src/analyzer/analyzer.lisp        ANALYZE-FILE's defgeneric docstring
+                                      states the contract (step 9)
+    CLAUDE.md                         one line under "Principles worth
+                                      knowing", pointing at CON-0005 (step 9)
+    docs/bugs/BUG-0012.yaml           status fixed, WHAT LANDED (step 12)
+    docs/design/DES-0012.yaml          status implemented, R2/R8 amended
+                                      (step 12)
+    docs/design/DES-0010.yaml          one line at its BUG-0012 forward
+                                      reference (step 12)
+
+  Deleted: nothing. In particular
+  A-COLLIDED-METHODS-CALLS-EDGES-ARE-A-UNION-NOT-A-REPLACEMENT is rewritten in
+  place, keeping its name and its BUG-0012 citation. It was written to
+  document current behaviour so a fix would have something to turn red
+  (CON-0003); deleting it would discard exactly the evidence the fix needs.
+  Its body becomes the inverse assertion -- SECOND-CALLEE present,
+  FIRST-CALLEE absent -- and its comment records that it once asserted the
+  union and what changed.
+
+  BLAST RADIUS
+
+  What Loom says, run today:
+
+    impact analyze-file 2       21 entities (truncated)
+    impact absorb-relationship 3  85 entities (truncated)
+    impact run-check 3          17 entities (truncated)
+
+  The 21 around ANALYZE-FILE are the generic, its two implementing methods
+  (lisp and yaml), the two analyzer source files, and the analyzer suite's own
+  helpers -- ANALYZE-SOURCE, ANALYZE-FIXTURE, ANALYZE-PATH, TEXT-INDEXED,
+  LITERAL-ENTITY, DOCS-OPS, FIXTURE-OPS. Nothing outside loom-analyzer and its
+  tests, which is what choosing this layer bought and confirms DES-0012's
+  count.
+
+  The 85 around ABSORB-RELATIONSHIP are effectively every test that goes
+  through APPLY-TRANSACTION, in four systems. That set is real but the change
+  inside it is three lines that make a self-absorb a no-op; step 2 is
+  sequenced first and alone so that if anything in those 85 moves, nothing
+  else is in flight to confuse it.
+
+  The 17 around RUN-CHECK are rules.lisp, CHECK-RULES, VIOLATION-OPS and the
+  graph rules suite. Adding a method to a generic that dispatches on a keyword
+  cannot disturb the existing four.
+
+  Where Loom is blind, all of which this plan relies on human reading instead:
+
+  - Calls inside macro bodies are unattributed, so every `(test ...)` form
+    under-reports. All three impact sets above list tests only because the
+    definer-macro pass mints :TEST entities and resolution derives their
+    :CALLS from bodies; a test added by this plan appears in impact only after
+    the next resolution pass, and a test whose assertions call nothing named
+    appears not at all.
+  - `(truncated)` is a boolean (REQ-0005), so 85 means 85-or-more, and the
+    `d<n>` labels can exceed the depth asked for.
+  - Loom cannot see that an :INTERFACE entity was synthesized from a DEFCLASS
+    slot. That is the :generated-by property, invisible to impact and to
+    check, and it is the whole basis of the R2-RECORDING clause above. It was
+    found by reading source, not by asking Loom.
+  - Loom cannot see the collisions themselves at all: two definitions with one
+    key are one entity in the index, so `find`, `describe` and `check` have no
+    way to report the second. That is what step 1's script exists for and what
+    RULE-0006 exists to fix.
+  - No rule and no impact set covers the loom-serve / loom-rest / loom-mcp /
+    loom-process boundary. Irrelevant here only because nothing in this plan
+    touches those four files; that is asserted from the FILES list, not from
+    Loom.
+  - `check` reports 32 violations today, every one of them RULE-0003 and every
+    one a BUG-0009 false positive (a loom-knowledge function calling a
+    loom-graph reader, which RULE-0003's check clause bans wholesale instead
+    of banning writes). RULE-0001 and RULE-0002 report nothing. So the number
+    to watch through this plan is 32, and any RULE-0006 line is signal.
+
+  RISKS
+
+  1. LOCAL-FUNCTIONS is an alist searched with ASSOC, and ASSOC finds the
+     most recently pushed entry -- which is already the last definition in
+     source order. If step 4 drops a definition from DEFINITIONS but leaves
+     its entry in LOCAL-FUNCTIONS, a caller that is the survivor will find a
+     *different object* with the same name, fail the `(not (eq callee
+     caller))` guard, and emit a :CALLS edge from the survivor's id to the
+     survivor's id -- a self-edge, since both definitions derive one id. The
+     supersession step must filter LOCAL-FUNCTIONS as well as DEFINITIONS and
+     CALLABLES. Test: two DEFUNs of one name whose surviving body calls that
+     name (step 4d).
+
+  2. The R2-RECORDING clause is the sharpest judgement in the plan and it is
+     not machine-checkable. If it is too broad, RULE-0006 goes quiet on a real
+     shadowing; if too narrow, it prints thirteen accessor lines nobody reads.
+     Mitigated by measuring both trees before (step 1) and after (steps 10 and
+     11), and by naming every expected finding by file and line in advance so
+     a surprise is visible.
+
+  3. A definition whose ENTITY-NATURAL-KEY is NIL must never be superseded --
+     NIL is "no key", not "a key they share". Every type the Lisp analyzer
+     mints has a key today, so this is latent rather than live, but a
+     hash-table keyed on NIL would collapse unrelated definitions into one.
+     Guard explicitly.
+
+  4. Step 6 must land before step 8. PARSE-CHECK returns NIL for an
+     unrecognised kind (deliberately, so a bad rule stays prose rather than
+     failing the document), so a RULE-0006 document indexed before
+     :property-absent is in *CHECK-KINDS* becomes silently unenforced: `check`
+     would print "3 active rules not enforceable as a check" and no findings,
+     and nothing would say why. If that is seen, the cause is this ordering.
+
+  5. Step 2's EQ guard changes behaviour for every re-applied op list in the
+     tree. It cannot make a previously-correct absorb wrong -- the guarded
+     case is CLRHASH of a table followed by copying that emptied table into
+     itself -- but it is in the 85-entity set, so it runs alone and the full
+     suite runs after it.
+
+  6. Tests likely to break, and why:
+     - A-COLLIDED-METHODS-CALLS-EDGES-ARE-A-UNION-NOT-A-REPLACEMENT will fail
+       at step 4. That is the point; it is rewritten in the same step.
+     - AN-INLINE-METHOD-AND-A-STANDALONE-DEFMETHOD-COLLIDE-IN-ONE-FILE should
+       keep passing unchanged: its callees are deliberately foreign, so the
+       collision it measures is in :CALL-NAMES, which the survivor already
+       owned. If it fails, supersession picked the wrong survivor -- it must
+       be the LAST in source order. Its comment becomes wrong either way,
+       because it describes the graph absorbing two asserts, and after step 4
+       only one assert is emitted.
+     - A-DEFMETHOD-PRODUCES-THE-SAME-ENTITY-IT-ALWAYS-HAS and the DES-0010
+       clause tests exercise files with no collisions and must be untouched.
+     - THE-REAL-RULES-STILL-PASS-A-CLEAN-REAL-LAYOUT in the graph rules suite
+       runs the real rule documents against a synthetic layout; adding
+       RULE-0006 to docs/rules may change what it loads. Check it at step 8.
+     - Nothing in loom-workspace, loom-knowledge, loom-process, loom-serve,
+       loom-rest or loom-mcp should move. If one does, stop.
+
+  7. Entity and relationship counts on both trees are predicted unchanged,
+     because a collision already collapses to one entity and one :CONTAINS
+     edge in the graph, and the measurement above found no dead body with a
+     local callee the survivor lacks. A drop is not automatically a failure --
+     it would mean a real union edge was removed -- but it is a surprise, and
+     it must be traced to a specific pair before it is accepted.
+
+  STEPS
+
+  Step 1 is the first that can be run, and it changes nothing in the tree.
+  Step 2 is the first that changes code.
+
+  1. CONFIRM THE CENSUS. Write a throwaway script under the scratchpad that
+     loads loom-analyzer, walks every .lisp file in a tree (skipping Emacs
+     backups ending in ~ and lock links beginning with .#), calls ANALYZE-FILE
+     on each, and reports every case where two ASSERT-ENTITY-OPs in one file's
+     op stream carry the same ENTITY-NATURAL-KEY, printing the key and both
+     line ranges. Run it against /home/beberman/lisp/Loom/ and
+     /home/beberman/lisp/game-server/.
+     Verification: 3 collisions on Loom and 20 on game-server, matching the
+     lists in WHAT MEASUREMENT CHANGED above by file and line. If the numbers
+     differ, the trees have moved since 2026-08-08 and every predicted count
+     in steps 5, 10, 11 and 12 must be re-derived before proceeding. Keep the
+     script; steps 10 and 11 re-run it.
+
+  2. THE EQ GUARD (DES-0012 R6). In src/graph/transaction.lisp,
+     ABSORB-RELATIONSHIP at line 139 gains the clause ABSORB-ENTITY's caller
+     has had at line 196: when TARGET and INCOMING are EQ, return TARGET
+     unchanged. Put it in ABSORB-RELATIONSHIP itself rather than in APPLY-OP,
+     so every caller is covered, and extend the docstring with why: absorbing
+     a fact into itself must be a no-op, and ABSORB-PROPERTIES would otherwise
+     CLRHASH the table and then copy the emptied table into it. Add one test
+     to src/graph/test/graph-manager.lisp using that file's existing
+     GRAPH-TEST-NODE and GRAPH-TEST-EDGE fixtures: build one op list asserting
+     two entities and one relationship carrying at least one property, apply
+     it through APPLY-TRANSACTION twice, and assert the property is still
+     there after the second apply. Do not let the endpoints be remapped
+     between the two applies -- if they are, TX-REBOUND-REL returns a copy,
+     the objects are not EQ, and the test exercises nothing.
+     Verification: the new test fails before the guard and passes after
+     (CON-0003 -- run it both ways and say so). Full suite green, all nine
+     systems. This is the step whose blast radius is 85 entities, so the full
+     suite here is the point, not a formality.
+
+  3. THE PROPERTY (DES-0012 R2, declaration half). In
+     src/ontology/code-ontology.lisp declare
+
+       (:shadowed-definitions list
+        :documentation "...")
+
+     on :class (line 147), :interface (175), :function (199), :method (263),
+     :variable (287) and :test (315) -- every type the Lisp analyzer mints
+     with a :file-bearing natural key. There is no :condition entity type;
+     DEFINE-CONDITION mints a :class with :kind :condition, so :class covers
+     it. DES-0012's R2 left the exact list to this plan: that is the list.
+     The docstring must say what the value is (line-range strings "start-end",
+     one per superseded definition, in source order), that absent and empty
+     differ (absent means nothing collided), and that a reader wanting the
+     shadowed text must open the file, because the graph deliberately holds no
+     entity for it.
+     Verification: full suite green -- VALIDATE-ENTITY only iterates declared
+     properties, so this is additive and nothing should move. Confirm
+     `tools/loom.sh 'status'` still reports 1589 entities. Note for the
+     reviewer: an undeclared property would not have been rejected either,
+     so this step buys schema honesty and UPDATE-PROPERTIES support, not
+     enforcement.
+
+  4. SUPERSESSION (DES-0012 R1 and R3). In src/analyzer/lisp-analyzer.lisp,
+     immediately after `(setf definitions (nreverse definitions))` at line
+     1080 and before pass 2 at line 1105:
+
+     a. Add a function taking DEFINITIONS in source order and returning two
+        values: the survivors in source order, and an alist mapping each
+        survivor to the list of entities it superseded, in source order. Group
+        by ENTITY-NATURAL-KEY compared with EQUAL; a definition whose key is
+        NIL is never grouped and always survives (RISK 3). The survivor is the
+        last in source order.
+     b. In ANALYZE-FILE, rebind DEFINITIONS to the survivors, filter CALLABLES
+        to entries whose CAR is EQ to a survivor, and filter LOCAL-FUNCTIONS
+        to entries whose CDR is EQ to a survivor (RISK 1). Filtering rather
+        than rewriting is sufficient for LOCAL-FUNCTIONS because PUSH order
+        already puts the last definition at the front, so ASSOC then finds the
+        survivor.
+     c. Rewrite A-COLLIDED-METHODS-CALLS-EDGES-ARE-A-UNION-NOT-A-REPLACEMENT
+        in src/analyzer/test/lisp-analyzer.lisp to assert the fixed behaviour
+        on the same source: still exactly one :METHOD, the :CALLS edge to
+        SECOND-CALLEE present, the edge to FIRST-CALLEE absent. Keep the name.
+        Replace the comment: state that it previously asserted the union, that
+        BUG-0012 is what it documented, and that PLAN-0012 inverted it.
+     d. Add a test proving R1 is not method-specific: two DEFUNs of one name
+        in one file, the later calling that name, asserting one :FUNCTION
+        entity with the later body's line range, no self :CALLS edge from it
+        to itself, and -- because CALL-NAMES is the other half of R3 -- that a
+        foreign name appearing only in the earlier body is absent from
+        :CALL-NAMES.
+     e. Correct the comment on AN-INLINE-METHOD-AND-A-STANDALONE-DEFMETHOD-
+        COLLIDE-IN-ONE-FILE: it now measures the analyzer emitting one assert,
+        not the graph absorbing two. Its assertions stand.
+     Verification: the rewritten test in (c) fails before (a)/(b) and passes
+     after -- run it both ways. Test (d) fails before, for two reasons worth
+     confirming separately: the self-edge and the leaked :CALL-NAMES. Full
+     suite green; the lisp-analyzer suite is where any breakage will be. A
+     defun/defmacro pair of one name in one file collides too, because both
+     mint :FUNCTION -- that is intended, and if it surprises anyone it is
+     DES-0012's "keys are type-led" clause working.
+
+  5. RECORDING (DES-0012 R2, writing half, with the R2-RECORDING clause).
+     Using the alist from step 4a, SETP :shadowed-definitions on each survivor
+     as a list of "start-end" strings built from each superseded entity's
+     :start-line and :end-line, in source order -- but only when NOT both the
+     survivor and that superseded entity carry :generated-by. When every
+     superseded entity for a survivor is filtered out, write nothing at all:
+     absent, not an empty list. Add two tests: a no-collision fixture
+     asserting the property is absent on an ordinary DEFUN, and an assertion
+     on the step-4c test that the survivor carries the DEFMETHOD's range
+     ("1-1" for that fixture -- read it from the entity rather than trusting
+     this number). Add a third: two DEFCLASSes in one fixture file each
+     declaring :accessor NAME, asserting the surviving :INTERFACE carries no
+     :shadowed-definitions -- this is the carve-out's own CON-0003 anchor and
+     it fails if the clause is implemented as a blanket record.
+     Verification: three tests, each failing without this step. Full suite
+     green. Then `tools/loom.sh 'reindex | status'` on Loom: entity count
+     still 1589, relationship count still 7689 (RISK 7). Nothing reports
+     anything yet -- no rule reads the property until step 8.
+
+  6. THE CHECK KIND IS PARSEABLE. Add :property-absent to *CHECK-KINDS* in
+     src/analyzer/yaml-analyzer.lisp line 289. Nothing else: PARSE-CHECK
+     already reads :entity-type and :property, so the clause RULE-0006 needs
+     parses with no other change. Update the defparameter's docstring to say
+     the list has grown past SS10.4's original three and why.
+     Verification: full suite green (the yaml-analyzer suite has
+     A-RULE-COMPILES-ITS-CHECK-CLAUSE and A-RULE-WITH-NO-RECOGNISABLE-CHECK-
+     STAYS-PROSE; both must still pass). `tools/loom.sh 'check'` still prints
+     32 RULE-0003 lines and "2 active rules not enforceable": no rule uses the
+     kind yet.
+
+  7. THE CHECK KIND RUNS (DES-0012 R4). Add to src/graph/rules.lisp:
+
+       (defmethod run-check ((kind (eql :property-absent)) view rule check) ...)
+
+     Every entity carrying :property is a violation. :entity-type is optional:
+     when given, iterate ENTITIES-OF-TYPE; when absent, iterate ALL-ENTITIES
+     (both are in graph-manager.lisp and already used by this file's
+     neighbours). The detail string names the entity, its file and its
+     start-line, and the property's value, so a finding reads like
+
+       add-defn (mpackage/obj-types.lisp:452) shadows definitions at 438-441
+
+     Read the location from the entity's own :file and :start-line properties,
+     not from ORIGIN-FILE, matching what the console's unhandled-definer
+     report already does. The method must know nothing about shadowing --
+     no mention of definitions, accessors or the analyzer in its code or its
+     docstring. Do say in the docstring that the kind reads as a constraint,
+     the mirror of :property-constraint: "this property must be absent", so a
+     reader does not invert it. Add a test to src/graph/test/rules.lisp beside
+     THE-PROPERTY-CONSTRAINT-CHECK-CATCHES-A-FACT-WITH-NO-ORIGIN-FILE, using
+     that file's RULES-FUNCTION and RULES-RULE helpers: one function entity
+     carrying an arbitrary property, one not, a rule with (:kind
+     :property-absent :property ...), one violation whose detail contains the
+     value. Add a second assertion covering the no-:entity-type path.
+     Verification: the test fails before this step -- an unknown kind hits the
+     default method and returns NIL, so CHECK-RULES finds nothing, which is
+     exactly the failure to observe (CON-0003). Full suite green. `check` in
+     the console is still 32 lines: still no rule uses it.
+
+  8. RULE-0006 (DES-0012 R5). Create docs/rules/RULE-0006.yaml:
+
+       id: RULE-0006
+       status: active
+       severity: warning
+       check:
+         kind: property-absent
+         property: shadowed-definitions
+
+     No entity-type: the property is declared on six types and a shadowing on
+     any of them is worth the same report. Severity warning, not error, and
+     the document must say why: this is a source smell in an indexed tree, not
+     a breach of Loom's own layering, and it prints as "warning RULE-0006"
+     which distinguishes it at a glance from the 32 "error RULE-0003" lines
+     BUG-0009 produces. The statement says a definition must not be silently
+     shadowed by a same-key definition in its own file; the rationale records
+     the two game-server instances DES-0012 named, the five more this plan
+     measured, and the accessor carve-out with its reasoning, so a reader who
+     wonders why a duplicated accessor is not reported finds the answer here
+     rather than in the analyzer. Include the known edge DES-0012's
+     CONSEQUENCES records: only one method qualifier is captured, so two
+     clauses differing in a second qualifier collide spuriously and this rule
+     is the tell.
+     Verification: `tools/loom.sh 'reindex | status | check'` on Loom. status
+     must show 74 documents (up one) and 2 unenforced (unchanged -- if it says
+     3, step 6 did not land or the check clause's kind is misspelled, RISK 4).
+     check must show 32 RULE-0003 lines and no RULE-0006 line, since all three
+     of Loom's collisions are accessor pairs. Then confirm the rule is live
+     rather than merely quiet: temporarily add a second DEFUN of an existing
+     name to a scratch copy of a Loom file under a watched path, reindex,
+     confirm a RULE-0006 line appears, and revert. Without that, "no findings"
+     is indistinguishable from "not running".
+
+  9. WRITE THE CONTRACT DOWN. DES-0012 leaves "one file's op stream asserts
+     each natural key at most once" as an obligation every future analyzer
+     carries, and nothing machine-checks it, so where it is written decides
+     whether it survives. Three places, each with a distinct job:
+     a. src/analyzer/analyzer.lisp, the ANALYZE-FILE defgeneric docstring at
+        line 43. This is the primary home: it is the text a TypeScript
+        analyzer author reads while implementing the method, and it already
+        carries the sibling contract ("must not touch the filesystem or the
+        graph"). State the invariant, that reconciliation is the language's
+        own semantics (CL replaces, TypeScript interface declarations merge),
+        and that ABSORB-ENTITY's later-wins is a disclosed backstop for a
+        violation rather than a mechanism to rely on.
+     b. docs/concepts/CON-0005.yaml, new: the recurring idea, so `context
+        analyzer contract` finds it and so BUG-0012's history has somewhere to
+        live. Cite DES-0012 and this plan.
+     c. CLAUDE.md, one line under "Principles worth knowing before changing
+        anything", in the same pointer style DEC-0001, CON-0001 and CON-0003
+        already use there.
+     Verification: `tools/loom.sh 'reindex | status'` -- 75 documents, 0
+     unresolved references. Then `tools/loom.sh 'context analyzer contract'`
+     returns CON-0005. A docstring change alters no behaviour, but re-run the
+     full suite anyway: the analyzer suite reads its own source in places.
+
+  10. ACCEPTANCE ON LOOM (DES-0012 R8, first half). Full suite under
+     /usr/bin/sbcl via tools/loom-test.sh -- name the SBCL, since a SLIME
+     image may disagree. `tools/loom.sh 'reindex | status | check'`:
+     1589 entities, 7689 relationships, 75 documents, 32 violations all
+     RULE-0003, 2 unenforced (RULE-0004, RULE-0005), 0 unresolved references,
+     1 unhandled definer macro (defentity). Re-run step 1's script: still 3
+     collisions, all accessor pairs, all correctly unreported.
+     Verification: every number above matches, or the mismatch is explained in
+     writing before step 11. The one number allowed to move without argument
+     is the document count, which rises with each document this plan adds.
+
+  11. ACCEPTANCE ON GAME-SERVER (DES-0012 R8, second half). In one console
+     session: `watch "~/lisp/game-server"`, then `unwatch Loom` so an
+     undesignated command resolves to game-server, then `status`, `check`, and
+     `describe add-defn`. Expect: 2396 entities and 13298 relationships,
+     unchanged from the pre-change baseline recorded in step 1 (RISK 7);
+     RULE-0006 reporting exactly the seven findings listed in WHAT MEASUREMENT
+     CHANGED, by name and line; add-defn's entity carrying the 452-clause's
+     properties, its :shadowed-definitions naming 438-441, and no outgoing
+     edge reachable only from the 438 body. Note that `check` on game-server
+     shows no RULE-0003 lines at all -- the rules come from docs/rules in the
+     watched tree and game-server has none -- so RULE-0006 findings will only
+     appear if Loom's own docs are also watched. If they are not, run the
+     check against Loom's graph by designator instead, or watch both and use
+     `check game-server`; settle which before running, because a silent empty
+     check here would read as success.
+     Verification: seven findings, named. Fewer means the carve-out is too
+     broad; more means it is too narrow; different ones mean the tree moved.
+     Do not expect any edge count to fall.
+
+  12. CLOSE THE DOCUMENTS (DES-0012 R9, RULE-0005). BUG-0012 to status fixed
+     with a WHAT LANDED section: which half went where and why candidate (a)
+     was killed by measurement rather than preference. DES-0012 to
+     implemented, with two amendments made explicitly rather than silently --
+     R2 gains the R2-RECORDING clause and its reasoning, and R8's numbers are
+     replaced with the measured 3/20 census and the 0/7 predicted findings. If
+     the architect rejects the carve-out, DES-0012 stays as written, step 5
+     is redone to record everything, and R8's numbers become 3 and 17.
+     DES-0010's R4 paragraph gains one line at its existing BUG-0012 forward
+     reference: the edge-union disclosure is superseded by DES-0012 and fixed
+     by PLAN-0012. This plan to final. Record in BUG-0012's closure that the
+     EQ guard makes BUG-0015's recorded re-apply workaround unforced --
+     ENRICH-REPOSITORY's re-derive stays as written, because it is correct and
+     the guard removes a trap rather than mandating a new shape -- and that
+     BUG-0015's own mechanism is otherwise untouched.
+     Verification: `tools/loom.sh 'reindex | status | check'` -- 0 unresolved
+     document references. Read each edited document's status field back and
+     confirm it describes the tree.
+
+  VERIFICATION
+
+  Suites: tools/loom-test.sh, all nine systems, under /usr/bin/sbcl, at every
+  step from 2 onward. The suites that carry this plan's own evidence are
+  graph-manager (step 2), lisp-analyzer (steps 4 and 5), yaml-analyzer (step
+  6) and rules (step 7). A green suite says nothing about the rule engine, so
+  `check` runs alongside it.
+
+  Console, on Loom:
+
+    tools/loom.sh 'reindex | status | check'
+
+  What should have moved when the plan is done:
+
+    entities            1589 -> 1589
+    relationships       7689 -> 7689
+    documents             73 -> 76   (RULE-0006, CON-0005, PLAN-0012)
+    violations            32 -> 32   (all RULE-0003, all BUG-0009)
+    unenforced rules       2 -> 2    (RULE-0004, RULE-0005)
+    unresolved refs        0 -> 0
+    RULE-0006 findings         0     on Loom, and proven live by the
+                                     temporary-collision check in step 8
+
+  Console, on game-server (watch it, unwatch Loom, and settle the designator
+  question in step 11 first):
+
+    entities            2396 -> 2396
+    relationships      13298 -> 13298
+    RULE-0006 findings           7   named in step 11
+
+  Every one of the four counts predicted unchanged is a claim that could be
+  wrong, and each has a named owner in RISKS. The two counts predicted to move
+  -- documents, and RULE-0006 findings on game-server -- are the plan's whole
+  visible effect.

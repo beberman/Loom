@@ -56,7 +56,7 @@ body: |
   backwards, and that direction is genuinely useful:
 
     loom> impact repository-graph 3
-    documents: CON-0002, BUG-0002, ARCH-0001, ARCH-0002, REQ-0003, REV-0001
+    documents: CON-0002, BUG-0002, DES-0001, DES-0002, REQ-0003, REV-0001
 
   "Which documents talk about this function" is a good question, cheaply
   answered, and a mention is exactly the right signal for it -- an author who
@@ -116,7 +116,7 @@ body: |
 
   R5  Whether this is a new relationship type or a renaming is left to the
       architect, but the cheap reading should be considered first, per
-      ARCH-0001's standing preference for widening or renaming over adding a
+      DES-0001's standing preference for widening or renaming over adding a
       type. Since :documents is only ever inferred, renaming the type to say so
       -- and giving it a :collect-as that produces the related-documents field --
       may cost nothing but a rename plus two console headings. Adding a second,
@@ -137,7 +137,7 @@ body: |
   WHY NOT JUST MARK THEM
 
   REV-0001 offered marking inferred edges at print time as the cheap fix. It is
-  not enough on its own, for a reason ARCH-0002 supplied while rejecting
+  not enough on its own, for a reason DES-0002 supplied while rejecting
   :inferred for a different edge: a confidence marker only carries information if
   markers are rare and mean something. A `documents:` list in which every entry
   is marked inferred teaches a reader to ignore the marker, and the list is

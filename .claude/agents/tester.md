@@ -27,38 +27,20 @@ before changing it.
 
 ## Environment
 
-Run the full suite — six systems, per-system pass/fail summary — with the
-**Bash** tool:
+`.claude/agents/tools.md` has the Bash invocation, the Read-tool discipline,
+the command table, and the layering — the single copy every agent definition
+in this directory points to rather than restates. Read it before your first
+`tools/loom.sh` or `tools/loom-test.sh` call.
 
 ```bash
-tools/loom-test.sh        # summary only
+tools/loom-test.sh        # summary only, nine systems
 tools/loom-test.sh -v     # with compile output
-```
-
-Never add a pipe or a `tail`; each needs its own permission, and a prompt inside
-a subagent is a stall nobody sees. Query the index the same way:
-
-```bash
 tools/loom.sh 'check'                    # rule violations, unresolved refs
 tools/loom.sh 'context <task words>'     # what bears on the area under test
 ```
 
-`help` prints the authoritative command table.
-
-Read files with the **Read** tool, never `cat` and never a shell loop over
-several files: the compound command prompts whatever the allowlist says. Several
-Read calls in one message are faster and silent.
-
 That script is `/usr/bin/sbcl`, not the SBCL behind SLIME — say which one you
-ran. In a live image the suite is:
-
-```lisp
-(load "src/full-test.lisp")
-(loom-test:full-test)
-```
-
-A one-off script needs the registry preamble `tools/loom-test.sh` contains.
-Files ending in `~` are Emacs backups; ignore them.
+ran.
 
 ## Layout and conventions
 
@@ -102,8 +84,15 @@ expecting a reanalysis should say so.
 and polled in the same second looks unchanged unless content is compared.
 CON-0002.
 
-**Run `check` as well as the suite.** RULE-0001 to RULE-0003 are enforced by the
-rule engine, not by assertions, so a green suite says nothing about them.
+**Run `check` as well as the suite, but know what it can and cannot tell you.**
+RULE-0001 to RULE-0003 are meant to be enforced by the rule engine, not by
+assertions, so a green suite says nothing about them by design. BUG-0006
+(closed) fixed the vacuous pass; RULE-0001's count is now real. RULE-0002 and
+RULE-0003 are not yet trustworthy in the other direction — per tools.md,
+BUG-0009 (open) found both currently report false positives, so a nonzero
+count against either is not yet evidence of a real violation, only of the
+class BUG-0009 names. Neither rule, working or not, says anything about
+loom-serve, loom-rest, loom-mcp or loom-process.
 
 **Report honestly.** What you tested, what passed, what failed, and the root
 cause of each failure. If a suite is red for a reason unrelated to the change,

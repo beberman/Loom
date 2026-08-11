@@ -125,12 +125,58 @@ impact paths that humans read")))
   (let ((e (make-instance 'test-bare-entity
                           :source :inferred :confidence 0.5
                           :derived-from '("a" "b")
-                          :origin-file "docs/design/DEC-0042.yaml")))
+                          :origin-file "docs/decisions/DEC-0042.yaml")))
     (is (eq :inferred (source e)))
     (is (= 0.5 (confidence e)))
     (is (equal '("a" "b") (derived-from e)))
-    (is (string= "docs/design/DEC-0042.yaml" (origin-file e))
+    (is (string= "docs/decisions/DEC-0042.yaml" (origin-file e))
         "SS5.1 makes this mandatory: every fact traces to the file it came from")))
+
+;;; --- the source vocabulary (DES-0011 R6) -------------------------
+;;;
+;;; These read the *declared* type rather than trying to provoke a type error,
+;;; and the reason is a measurement rather than a preference. PLAN-0010 step 1
+;;; predicted that reverting the SOURCE slot's widened :TYPE would make a test
+;;; constructing an :INTROSPECTED fact signal. It does not: SBCL performs no
+;;; slot type check on a standard class at the safety this tree compiles at, so
+;;; (make-instance 'entity :source :guessed) is accepted today, measured
+;;; 2026-08-07 under /usr/bin/sbcl. A round-trip test would therefore have
+;;; passed with the production line reverted, which CON-0003 says is worse than
+;;; no test at all. Reading the slot definition is what can actually fail.
+
+(defun declared-source-type ()
+  "The type declared for the SOURCE slot of PROVENANCED.
+SB-MOP rather than a literal copy of the declaration, so this asserts what the
+class says rather than what this file remembers it saying."
+  (let ((slot (find 'loom-ontology::source
+                    (sb-mop:class-direct-slots (find-class 'provenanced))
+                    :key #'sb-mop:slot-definition-name)))
+    (sb-mop:slot-definition-type slot)))
+
+(test the-source-vocabulary-admits-an-introspected-fact
+  ;; DES-0011's only ontology change. An image-derived fact has to be
+  ;; expressible before ENRICH-OPS can produce one.
+  (is-true (typep :introspected (declared-source-type)))
+  (dolist (member '(:structural :inferred :human-validated))
+    (is-true (typep member (declared-source-type))
+             "widening the vocabulary must not narrow it")))
+
+(test the-source-vocabulary-is-still-closed
+  ;; PLAN-0010 step 1 (c). The point of a MEMBER type is what it excludes, and
+  ;; a later edit that relaxed it to KEYWORD or T would leave every test above
+  ;; passing.
+  (is-false (typep :guessed (declared-source-type))))
+
+(test an-introspected-fact-round-trips-through-entity-and-relationship
+  ;; PLAN-0010 step 1 (a) and (b). Behavioural rather than falsifying, per the
+  ;; note above: what it protects is the initarg and the reader continuing to
+  ;; carry the value, not the declaration.
+  (is (eq :introspected
+          (source (make-instance 'test-bare-entity :source :introspected))))
+  (is (eq :introspected
+          (source (make-instance 'relationship :rel-type :test-links
+                                               :from-id "x" :to-id "y"
+                                               :source :introspected)))))
 
 ;;; ------------------------------------------------------------------
 ;;; entity / relationship

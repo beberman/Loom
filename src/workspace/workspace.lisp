@@ -28,7 +28,12 @@
   (stamps (make-hash-table :test #'equal))   ; relative path -> FILE-STAMP
   (monitor nil)
   (stopping nil)                ; asks the monitor thread to return
-  ;; ARCH-0004 R1. One lock per repository rather than a process-wide one:
+  ;; DES-0011 R8: per-unit statuses, inspector absences, drop counts and a run
+  ;; counter from the last ENRICH-REPOSITORY, or NIL if there has not been one.
+  ;; In memory only, and DEC-0001 is satisfied rather than bent: the report is
+  ;; derivable by re-running the pass, so it is cache and says so.
+  (enrichment nil)
+  ;; DES-0004 R1. One lock per repository rather than a process-wide one:
   ;; *REPOSITORIES* can hold more than one entry and two repositories share no
   ;; state, so serializing one's rebuild against another's poll would cost
   ;; latency for no correctness reason. Recursive because REINDEX-REPOSITORY
@@ -38,14 +43,26 @@
   (analysis-lock (bt:make-recursive-lock "loom-repository-analysis")))
 
 (defmacro with-repository-lock ((repository) &body body)
-  "Run BODY holding REPOSITORY's analysis lock. ARCH-0004 R2.
+  "Run BODY holding REPOSITORY's analysis lock. DES-0004 R2.
 
 Internal and unexported, and that is load-bearing rather than tidiness:
-ARCH-0004 R5 requires loom-knowledge's read path to stay lock-free, and the
+DES-0004 R5 requires loom-knowledge's read path to stay lock-free, and the
 only way to keep that true is for the lock to be unreachable from outside this
 file. A blocking acquire, with no timed or non-blocking variant anywhere in
 the design -- the measured worst-case hold is around a tenth of one poll
-interval, which is what retired the earlier skip-and-retry draft."
+interval, which is what retired the earlier skip-and-retry draft.
+
+One holder is outside that measurement by orders of magnitude and is named
+here rather than left for a reader to discover: ENRICH-REPOSITORY holds it
+across one child SBCL per unit, each bounded by the inspector's own
+TIMEOUT-SECONDS (300 by default), so the monitor thread can park for minutes
+on a tree that builds slowly. Accepted rather than fixed. The hold is bounded
+by a timeout the caller sets, an enrich is explicit and rare (DES-0011 R9),
+and what a parked monitor costs is a delayed poll rather than a wrong index.
+The alternative -- hold the lock only around the merge and let the read-only
+out-of-process inspection run outside it -- would let a poll reindex between
+the two, so the facts would be read against one tree state and merged into
+another; the shorter hold is not worth buying with that."
   `(bt:with-recursive-lock-held ((repository-analysis-lock ,repository))
      ,@body))
 
@@ -66,12 +83,33 @@ interval, which is what retired the earlier skip-and-retry draft."
 
 (defun find-repository (designator)
   "The repository named or rooted at DESIGNATOR.
-Accepts a name, so a developer types \"reindex Loom\" rather than a path."
-  (or (find designator *repositories* :key #'repository-name :test #'string-equal)
-      (find (namestring (pathname-as-directory (pathname designator)))
-            *repositories*
-            :key (lambda (r) (namestring (repository-root r)))
-            :test #'string-equal)))
+Accepts a name, so a developer types \"reindex Loom\" rather than a path.
+
+Three branches, and the middle one is the whole point. A repository's root is
+stored as WATCH-REPOSITORY's NORMALIZE-ROOT left it -- a truename, so `~' is
+already expanded and every symlink already followed -- while a designator
+arrives as whatever was typed. Comparing the two as strings therefore fails on
+exactly the spelling the console encourages: `watch \"~/lisp/Loom\"' registers
+/home/beberman/lisp/Loom/, and `unwatch \"~/lisp/Loom\"' used to match neither
+the name branch (the name is the last path component, \"Loom\") nor the string
+branch, so a repository could be watched by a path it could not be unwatched
+by. Normalising the designator the same way the root was normalised is what
+makes the two comparable.
+
+The raw string branch is kept last rather than replaced, because
+NORMALIZE-ROOT probes the filesystem and a root that has since been deleted
+would otherwise become unreachable by path -- and unwatching a directory that
+is gone is a thing someone will want to do. IGNORE-ERRORS rather than a
+PROBE-FILE test because the designator is usually a name and not a path at
+all, and NORMALIZE-ROOT signals on those."
+  (flet ((rooted-at (namestring)
+           (find namestring *repositories*
+                 :key (lambda (r) (namestring (repository-root r)))
+                 :test #'string-equal)))
+    (or (find designator *repositories* :key #'repository-name :test #'string-equal)
+        (let ((root (ignore-errors (normalize-root designator))))
+          (and root (rooted-at (namestring root))))
+        (rooted-at (namestring (pathname-as-directory (pathname designator)))))))
 
 (defun all-repositories () (reverse *repositories*))
 
@@ -178,7 +216,7 @@ counted and reported; the pass continues."
 Order matters and is the reason this function exists. Document links resolve
 against entities the code analyzers produced, and the rules of SS10.4 are
 queries over the finished graph, so they run last. Two stages in the middle
-are load-bearing for the same kind of reason (ARCH-0002). A definer macro's
+are load-bearing for the same kind of reason (DES-0002). A definer macro's
 call site mints an entity, and that entity has to exist and carry its
 :CALL-NAMES before RESOLVE-CALLS can turn them into edges; and coverage is
 derived from those edges, so RESOLVE-TESTS has to follow RESOLVE-CALLS rather
@@ -197,7 +235,9 @@ rather than a preference."
                      (format *standard-output* "~&  ! ~a: ~a~%" label condition)))))))
       ;; Definitions first: a dispatched call fans out to the methods on a
       ;; generic, and RESOLVE-METHOD-PROTOCOLS is what attaches them to it.
-      (submit "resolve-definitions"    (resolve-definitions graph :workspace-id workspace))
+      (submit "resolve-definitions"    (resolve-definitions graph :workspace-id workspace
+                                                                 :external-packages
+                                                                 (external-package-exports)))
       ;; Then the generated definitions, before RESOLVE-CALLS: a macro call
       ;; site mints an entity carrying the names its argument list invokes, and
       ;; a pass that has not run yet has nothing for the next one to resolve.
@@ -209,8 +249,17 @@ rather than a preference."
       ;; this one exists to do.
       (submit "resolve-generated-definitions"
               (resolve-generated-definitions graph :workspace-id workspace
-                                                   :registry *macro-generators*))
-      (submit "resolve-calls"          (resolve-calls graph :workspace-id workspace))
+                                                   :registry *macro-generators*
+                                                   :external-packages
+                                                   (external-package-exports)))
+      ;; EXTERNAL-PACKAGES is handed in for the same reason *MACRO-GENERATORS*
+      ;; above is: loom-graph depends on loom-ontology alone, so it cannot see
+      ;; the analyzer's table -- and what COMMON-LISP exports is a fact about a
+      ;; language, which DES-0012 puts in an analyzer and CON-0005 keeps out
+      ;; of the writer. This system is the one that may know both.
+      (submit "resolve-calls"          (resolve-calls graph :workspace-id workspace
+                                                            :external-packages
+                                                            (external-package-exports)))
       ;; And RESOLVE-TESTS after RESOLVE-CALLS, which is the second half of why
       ;; this sequence is load-bearing rather than merely tidy: coverage is
       ;; derived from the :CALLS edges a test's body produced, so a pass that
@@ -225,7 +274,7 @@ rather than a preference."
 SS3.4: \"Because files are truth, this is always available and always correct,
 and its only cost is time.\"
 
-Locked for its whole body (ARCH-0004 R3). It wraps itself rather than relying
+Locked for its whole body (DES-0004 R3). It wraps itself rather than relying
 on REINDEX-REPOSITORY's lock because it is a real independent entry point:
 WATCH-REPOSITORY calls it directly on first registration, before any monitor
 thread exists."
@@ -249,7 +298,7 @@ suspected divergence.\" A fresh graph rather than a cleared one, so nothing
 from the old index can survive by accident.
 
 The graph swap and the stamp clear are inside the lock, not merely the nested
-INDEX-REPOSITORY call (ARCH-0004 R3). BUG-0004's CAUSE names the clrhash as
+INDEX-REPOSITORY call (DES-0004 R3). BUG-0004's CAUSE names the clrhash as
 the step that opens the window: between it and the moment INDEX-FILE re-stamps
 a file, that file reads as changed to a concurrent poll, which then starts its
 own analysis into the graph this function is rebuilding. This is also the
@@ -261,6 +310,188 @@ would belong to does not exist yet at the instant protection has to begin."
     (clrhash (repository-stamps repository))
     (setf (repository-errors repository) '())
     (index-repository repository :quiet quiet)))
+
+;;;; ==================================================================
+;;;; Enrichment (DES-0011)
+;;;; ==================================================================
+;;;;
+;;;; The second pass, and the second thing this system exists to own an
+;;;; ordering for. It is not part of the pipeline above and nothing on a timer
+;;;; calls it: a run loads the whole target in a fresh process, seconds to
+;;;; minutes, where a poll cycle is designed to cost milliseconds. DES-0008 is
+;;;; the precedent and BUG-0008 is the trap -- a heavyweight lifecycle
+;;;; operation wired into a path that runs on a clock.
+;;;;
+;;;; What makes that affordable is that an un-rerun pass is never wrong, only
+;;;; old: image facts carry an origin file like every other fact, so
+;;;; RETRACT-FILE ages them out as their files are edited and the index
+;;;; degrades toward today's text index rather than keeping a claim nobody
+;;;; re-verified.
+
+(defparameter *enrichment-count-keys*
+  '(:confirmed :added :dropped-no-location :dropped-not-under-root
+    :dropped-unknown-kind :edges-confirmed :edges-added :edges-dropped)
+  "The ENRICH-OPS report keys that are counts, and so can be summed across
+inspectors. Named once because a key missing from this list would be silently
+dropped from a multi-inspector report rather than mis-added.")
+
+(defun add-enrichment-counts (accumulated report)
+  "The element-wise sum of two ENRICH-OPS reports. NIL is the empty sum."
+  (loop for key in *enrichment-count-keys*
+        append (list key (+ (or (getf accumulated key) 0)
+                            (or (getf report key) 0)))))
+
+(defun repository-languages (repository)
+  "Every language the index has :FILE facts for."
+  (remove-duplicates
+   (remove nil (mapcar (lambda (file) (getp file :language))
+                       (entities-of-type (repository-graph repository) :file)))))
+
+(defun inspectors-for-repository (repository inspectors)
+  "Two values: the inspectors to run, and the absences to record.
+
+INSPECTORS overrides the registry entirely, which is what lets a caller ask one
+toolchain and a test run a stub. Otherwise every language the index has facts
+for is looked up, and a language with no inspector is REQ-0018 R2's recorded
+absence -- reported with a reason, never as an error, and never as silence."
+  (if inspectors
+      (values inspectors '())
+      (let ((found '())
+            (absent '()))
+        (dolist (language (repository-languages repository))
+          (let ((candidates (find-inspectors language)))
+            (if candidates
+                (setf found (append found candidates))
+                (push (list :language language
+                            :reason (format nil "no inspector for ~(~a~)" language))
+                      absent))))
+        (values found (nreverse absent)))))
+
+(defun enrich-repository (repository &key quiet inspectors)
+  "Ask each language's toolchain to enrich the index, and return the report.
+
+The order is a chain of dependencies rather than a preference, exactly as
+RESOLVE-AND-CHECK's is:
+
+  find inspectors -> INSPECTOR-AVAILABLE-P -> INSPECT-REPOSITORY
+  -> ENRICH-OPS -> APPLY-TRANSACTION -> RESOLVE-AND-CHECK
+  -> ENRICH-OPS -> APPLY-TRANSACTION
+
+RESOLVE-AND-CHECK in the middle and not first, which is where the two passes
+compose. An image-minted definition is exactly what an unresolved text call
+name has been waiting for, so a text-recorded call to a DEFENTITY accessor
+becomes a :structural edge in the same run the accessor appears. Running it
+first would defer every such edge to the next poll.
+
+The merge again after it, which is BUG-0015 and is explained where it happens
+below: resolution re-asserts every text-derivable edge, which clears the
+agreement the merge just recorded on the ones both passes see.
+
+Locked for its whole body (DES-0004 R3), for INDEX-REPOSITORY's reason: this
+writes to the graph, and a poll running concurrently would interleave two
+writers.
+
+CONDITION and not INDEX-FILE's ERROR -- BUG-0014, and RULE-0004 read against
+what is actually being guarded: a subprocess, a reader over its output, and a
+per-language inspector nobody in this file wrote. The comment on the handler
+has the measurement, and the HANDLER-BIND inside it is the other half, since
+CONDITION reaches warnings too."
+  (with-repository-lock (repository)
+    (let* ((started (get-internal-real-time))
+           (graph (repository-graph repository))
+           (root (repository-root repository))
+           (workspace (repository-name repository))
+           (previous (repository-enrichment repository))
+           (units '())
+           (inspections '())
+           (counts nil))
+      (multiple-value-bind (found absences) (inspectors-for-repository repository inspectors)
+        (dolist (inspector found)
+          (handler-case
+              ;; Inside the guard and around the whole body, so it runs first.
+              ;; BUG-0014 widened the guard below to CONDITION, which is right
+              ;; for cl-yaml's shape and wrong in the other direction: WARNING
+              ;; is a CONDITION too, and HANDLER-CASE unwinds on any match, so
+              ;; an inspector that merely calls WARN mid-INSPECT-REPOSITORY
+              ;; would have its whole inspection discarded and the warning text
+              ;; filed as the reason it was absent. Muffling here keeps the
+              ;; guard's RULE-0004 width without treating a warning as fatal.
+              (handler-bind ((warning #'muffle-warning))
+                (multiple-value-bind (available reason) (inspector-available-p inspector root)
+                  (if (not available)
+                      (push (list :language (inspector-language inspector) :reason reason)
+                            absences)
+                      (let ((inspection (inspect-repository inspector root)))
+                        (setf units (append units (inspection-units inspection)))
+                        (push inspection inspections)
+                        (multiple-value-bind (ops report)
+                            (enrich-ops graph inspection :workspace-id workspace)
+                          (apply-transaction graph ops)
+                          ;; The parent refused some definitions a range before
+                          ;; ENRICH-OPS ever saw them; both refusals are the same
+                          ;; fact to a reader, so they are one count.
+                          (incf (getf report :dropped-no-location)
+                                (or (getf inspection :dropped-no-location) 0))
+                          (setf counts (add-enrichment-counts counts report)))))))
+            ;; CONDITION, not SERIOUS-CONDITION -- measured, not assumed.
+            ;; RULE-0004's own example is a library that defines its
+            ;; conditions as (define-condition foo () ...), a direct subtype
+            ;; of CONDITION and of neither ERROR nor SERIOUS-CONDITION; probed
+            ;; directly under /usr/bin/sbcl, a HANDLER-CASE naming
+            ;; SERIOUS-CONDITION does not catch an instance of such a type
+            ;; even when it is signalled with ERROR the function, because
+            ;; HANDLER-CASE matches on the condition's own class and not on
+            ;; how it was raised. "A per-language inspector nobody in this
+            ;; file wrote" is exactly RULE-0004's case, so the guard has to be
+            ;; RULE-0004's "or wider": CONDITION, the only type a
+            ;; hand-written inspector cannot fail to be an instance of.
+            (condition (condition)
+              (note-error repository "enrich" condition)
+              (unless quiet
+                (format *standard-output* "~&  ! enrich: ~a~%" condition))
+              (push (list :language (inspector-language inspector)
+                          :reason (princ-to-string condition))
+                    absences))))
+        (resolve-and-check repository :quiet quiet)
+        ;; BUG-0015, and the reason the merge runs twice rather than once.
+        ;; RESOLVE-AND-CHECK's RESOLVE-CALLS re-derives every text-derivable
+        ;; :CALLS edge and re-asserts it through ASSERT-EDGE, which takes no
+        ;; properties and defaults :SOURCE to :STRUCTURAL -- so the absorb that
+        ;; lands on a confirmed edge CLRHASHes the :SOURCES union the merge just
+        ;; wrote, and DES-0011 R6 is inert for the majority case. Measured
+        ;; before this line existed: source=:INTROSPECTED sources=(:STRUCTURAL
+        ;; :INTROSPECTED) after the merge, source=:STRUCTURAL sources=NIL after
+        ;; resolution.
+        ;;
+        ;; RESOLVE-CALLS is not the thing to change. Rebuilding its whole output
+        ;; on every run is DEC-0003's derive-never-consume, and it is what lets
+        ;; an edge a retract destroyed come back at all; teaching it about
+        ;; provenance would trade that away for this. So the merge is re-derived
+        ;; against the graph resolution left behind. Re-derived rather than
+        ;; re-applied: the ops hold relationship instances, and re-applying an
+        ;; instance the graph already stores would absorb it onto itself and
+        ;; CLRHASH its own table.
+        ;;
+        ;; The second run adds nothing new by construction -- every definition
+        ;; it names is now present, so it emits no ASSERT-ENTITY -- and computes
+        ;; the same union it computed the first time, because the edge it reads
+        ;; is the :STRUCTURAL edge resolution has just restored. That stability
+        ;; is what makes this a second transaction rather than two passes
+        ;; fighting.
+        (dolist (inspection inspections)
+          (apply-transaction graph (enrich-ops graph inspection
+                                               :workspace-id workspace)))
+        (setf (repository-enrichment repository)
+              (append (list :runs (1+ (or (getf previous :runs) 0))
+                            :at (get-universal-time)
+                            :duration (/ (- (get-internal-real-time) started)
+                                         internal-time-units-per-second)
+                            :units units
+                            :absences (nreverse absences))
+                      (or counts (add-enrichment-counts nil nil))))))))
+
+(defun enrichment-unit-count (report status)
+  (count status (getf report :units) :key (lambda (unit) (getf unit :status))))
 
 ;;;; ==================================================================
 ;;;; Monitoring (SS8.3)
@@ -286,7 +517,7 @@ never comes up again, which is the one case this misses and the reason
 DETECT-DELETIONS exists below.
 
 Locked for its whole body, changed-file computation included and not only the
-mutating tail (ARCH-0004 R3). The FILE-CHANGED-P loop reads REPOSITORY-STAMPS,
+mutating tail (DES-0004 R3). The FILE-CHANGED-P loop reads REPOSITORY-STAMPS,
 and computed outside the lock it could read a table REINDEX-REPOSITORY is
 midway through clearing -- which is BUG-0004's CAUSE reproduced one level
 down. Locking only the writing half would move the window rather than close
@@ -301,7 +532,18 @@ it."
       (dolist (path changed) (index-file repository path :quiet quiet))
       (let ((removed (detect-deletions repository)))
         (when (or changed removed)
-          (resolve-and-check repository :quiet quiet)))
+          (resolve-and-check repository :quiet quiet)
+          ;; DES-0007: until this line, INDEX-REPOSITORY (line 241) was the
+          ;; only writer of this slot, so REPOSITORY-STATUS reported "last
+          ;; indexed" as the time of the last explicit watch or reindex, and a
+          ;; caller comparing it against a process start time would read
+          ;; "current" for a tree the monitor had silently absorbed a dozen
+          ;; edits from -- CON-0001's fabricated fact, arrived at by omission.
+          ;; Inside the `when` and not above it: the slot means "when this
+          ;; index last changed", so a poll that found nothing must leave it
+          ;; alone. `now' rather than a fresh GET-UNIVERSAL-TIME, because it is
+          ;; the instant the change was observed at.
+          (setf (repository-indexed-at repository) now)))
       (length changed))))
 
 (defun detect-deletions (repository)
@@ -446,6 +688,16 @@ is why there is no separate resume."
       (setf *repositories* (remove repository *repositories*)))
     repository))
 
+(defun count-file-regions (graph property)
+  "How many regions PROPERTY records across every :FILE entity in GRAPH.
+
+Regions rather than files: two suppressed branches in one file are two things
+a reader might go and look at, and reporting it as one file would hide the
+second. The analyzer writes the property only when it has something to say, so
+a file with nothing to report contributes nothing rather than an empty list."
+  (loop for file in (entities-of-type graph :file)
+        sum (length (getp file property))))
+
 (defun repository-status (repository)
   "SS3.2's status, as plain data: \"indexing progress, entity and relationship
 counts, watcher health, unresolved document references, unenforced rules, and
@@ -462,12 +714,14 @@ the last error per thread.\""
           ;; older word described it as something that had gone wrong.
           :monitor (if (monitor-running-p repository) :watching :paused)
           :documents (+ (length (entities-of-type graph :decision))
+                        (length (entities-of-type graph :design))
+                        (length (entities-of-type graph :architecture))
                         (length (entities-of-type graph :rule))
                         (length (entities-of-type graph :concept))
                         (length (entities-of-type graph :document)))
-          ;; ARCH-0002 R10, following the precedent :DOCUMENTS set: a named sum
+          ;; DES-0002 R10, following the precedent :DOCUMENTS set: a named sum
           ;; rather than a raw total. These three are the console-readable
-          ;; acceptance check for the whole of ARCH-0002 -- fiveam's TEST and
+          ;; acceptance check for the whole of DES-0002 -- fiveam's TEST and
           ;; DEF-SUITE are the most common macro calls in every
           ;; src/*/test/*.lisp, so all three read zero until generated
           ;; definitions reach the index and are expected to move when Loom
@@ -484,7 +738,7 @@ the last error per thread.\""
           ;; the same thing from where they stand -- a definition the index
           ;; knows it is missing. The collision half is recounted rather than
           ;; recorded, because the obvious place to store it is a property the
-          ;; analyzer owns (ARCH-0002 R1).
+          ;; analyzer owns (DES-0002 R1).
           :unhandled-definer-macros
           (+ (length (unhandled-definer-macros graph))
              (length (generated-definition-collisions graph *macro-generators*)))
@@ -498,5 +752,39 @@ the last error per thread.\""
                              (not (assoc category *document-type-directories*
                                          :test #'string-equal)))))
                     (entities-of-type graph :document))
+          ;; DES-0011 R8, and four scalars rather than the report itself. The
+          ;; constraint is not style: loom-serve's :STATUS operation
+          ;; (src/serve/operations.lisp) serializes this plist to JSON for REST
+          ;; and MCP callers, no rule covers that boundary and no impact query
+          ;; reports it, and a nested plist is the shape most likely to
+          ;; serialize into something a client cannot read. The report itself is
+          ;; on the repository for the console to print.
+          ;;
+          ;; :ENRICHMENT-AT is what tells "never run" from "run and found
+          ;; nothing"; the three counts are always numbers, on DES-0002 R10's
+          ;; precedent that a count which vanishes when it is nought cannot be
+          ;; told from a count nobody computed.
+          :enrichment-runs (or (getf (repository-enrichment repository) :runs) 0)
+          :enriched-units (enrichment-unit-count
+                           (repository-enrichment repository) :loaded)
+          :enrichment-gaps (+ (enrichment-unit-count
+                               (repository-enrichment repository) :failed)
+                              (length (getf (repository-enrichment repository)
+                                            :absences)))
+          :enrichment-at (getf (repository-enrichment repository) :at)
+          ;; DES-0013, PLAN-0013 step 5. Two scalars, for the reason the
+          ;; enrichment block above gives: this plist is serialized to JSON for
+          ;; REST and MCP callers, so a count travels where a nested region
+          ;; list would not. The regions themselves are on the :FILE entities,
+          ;; which is where a reader who wants the line numbers goes.
+          ;;
+          ;; Always numbers, never absent when nought, on the same DES-0002
+          ;; R10 precedent: zero suppressed regions and an indexer that never
+          ;; looked are different facts, and a vanishing count conflates them.
+          ;; Both read zero on this tree, which is what makes them a regression
+          ;; guard as well as a report -- the day one moves, a definition
+          ;; stopped being indexed and this is the only place that says so.
+          :suppressed-regions (count-file-regions graph :suppressed-regions)
+          :recovered-regions (count-file-regions graph :recovered-regions)
           :errors (length (repository-errors repository))
           :last-error (first (repository-errors repository)))))

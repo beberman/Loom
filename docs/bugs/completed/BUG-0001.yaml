@@ -1,0 +1,68 @@
+id: BUG-0001
+title: Self-index entity counts were read as a fixed baseline while the code was being written
+status: closed
+date: 2026-07-29
+refines: [DES-0001]
+affects: [resolve-calls, resolve-definitions, index-repository]
+summary: |
+  Indexing Loom went from 571 entities to 581 across one implementation step,
+  and the jump was reported as an unexplained anomaly worth chasing. It was not
+  a defect. The step added ten top-level definitions to resolve.lisp, and Loom
+  indexes itself, so the count moved because the code moved.
+body: |
+  SYMPTOM
+
+  Two consecutive `status` readings on the Loom repository, taken either side of
+  wiring in the DES-0001 resolution passes:
+
+    before:  61 files, 571 entities, 1156 relationships
+    after:   61 files, 581 entities, 1450 relationships
+
+  The relationship growth was expected and understood -- the new passes assert
+  :inherits, :uses and :implements edges. The entity growth was not: resolution
+  emits edges and property updates, and creates no entities at all. It was
+  reported as an open question against the implementation.
+
+  CAUSE
+
+  No defect. The implementation step that added the resolution passes added
+  twelve top-level definitions to src/graph/resolve.lisp, of which two --
+  *callable-types* and callable-index -- were rewrites of definitions that
+  already existed. The other ten were new: entities-by-name, unique-match,
+  resolve-inheritance, eql-specializer-p, resolve-specializers,
+  resolve-method-protocols, resolve-definitions, call-targets,
+  dispatch-confidence, and *minimum-dispatch-confidence*.
+
+  Ten new definitions in a repository that indexes itself is ten new entities.
+  571 + 10 = 581.
+
+  WHY IT HID
+
+  It hid because the measurement looked like an observation of a fixed object
+  and was in fact an observation of a moving one. Every other number in the
+  session behaved that way honestly -- game-server's counts were stable because
+  nobody was editing game-server -- so the habit of treating a count as a
+  baseline was formed on a repository where it was safe, and then carried to one
+  where it was not.
+
+  What made it survive scrutiny was that the suspicion was well-formed. The
+  reasoning "resolution creates edges, not entities, therefore this should not
+  move" is correct, and it points at resolution. Confirming that resolution adds
+  nothing -- entity totals identical after resolve-definitions, resolve-calls,
+  resolve-document-links, violation-ops, and a second full pass -- eliminates
+  the suspect but says nothing about the actual cause, because the actual cause
+  was upstream of the measurement rather than inside it.
+
+  FIX
+
+  Nothing in the code. What changes is how a self-index measurement is quoted:
+  a count taken from Loom indexing Loom is only comparable to another count
+  taken at the same revision. Where a before-and-after is wanted across a change
+  to Loom itself, either measure a repository nobody is editing -- game-server
+  is the one used throughout DES-0001 -- or state the revision alongside the
+  number.
+
+  The general form is worth keeping: a tool that measures the codebase it lives
+  in has no stable baseline while that codebase is under development, and any
+  metric it reports about itself is a joint function of the thing being measured
+  and the work being done.
