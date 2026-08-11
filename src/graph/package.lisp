@@ -131,6 +131,7 @@
    #:impact-result-truncated-p
    #:impact-result-tests
    #:impact-result-documents
+   #:impact-result-mentions
    #:impact-result-decisions
 
    ;; errors

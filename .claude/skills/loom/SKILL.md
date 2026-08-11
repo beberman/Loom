@@ -288,9 +288,10 @@ message are faster and never prompt.
 
 # Writing documents
 
-Documents live in `docs/` as **YAML** — the analyzer claims `.yaml` and `.yml`
-under `docs/` and nothing else, so a markdown file there is invisible to Loom.
-The directory names the type:
+Documents you write live in `docs/` as **YAML** — the document analyzer claims
+`.yaml` and `.yml` under `docs/`, and the directory names the type. Write YAML;
+a markdown file is indexed (see below) but it can never be a REQ, an ARCH or a
+DEC, so a plan written as markdown is a plan Loom cannot chain.
 
     docs/requirements/  REQ-nnnn      docs/plans/     PLAN-nnnn
     docs/arch/          ARCH-nnnn     docs/reviews/   REV-nnnn
@@ -315,3 +316,39 @@ Two mistakes have each already cost a document its place in the index:
 
 After writing, run `status` and confirm the document count rose and
 `unresolved` did not.
+
+## Markdown is indexed, and earns a weaker edge
+
+REQ-0014 and ARCH-0016. A separate analyzer claims `.md` and `.markdown` under
+any directory named `docs`, `doc`, `design` or `documentation` — not the
+repository root, so a top-level README.md is not indexed. Each file becomes a
+`:document` named by its path, titled by its first H1 (the filename when there
+is none), always a plain `:document`: a markdown file in `docs/design` is *not*
+a DEC, because the directory-names-the-type registry is this tree's convention
+and not a fact about foreign repositories.
+
+What it extracts is deliberately shallow — no summarizing, no inference:
+
+- **Inline code spans.** `` `dhandler-delete` `` is a candidate; a span with a
+  space in it is a phrase, not a name, and is not.
+- **Link and image targets**, normalized against the document's own directory,
+  so `[h](../media/media-handler.lisp)` in `docs/data-layer.md` becomes
+  `media/media-handler.lisp` and resolves against the `:file` entity.
+- **Fenced code blocks are skipped entirely.** A fence is a transcript or a
+  specimen, not the document naming something.
+
+Each candidate that resolves becomes a `:mentions` edge — *this file names this
+thing*, which is not the `affects:` a YAML document earns by declaring it.
+`impact` lists mentions under their own heading, never among the decisions
+governing an entity, and `describe` gives them their own group. A candidate that
+resolves to nothing, or that is ambiguous, is dropped in silence: prose is full
+of ordinary words in backticks, and reporting each as an unresolved reference
+would bury the staleness signal that `unresolved` exists to carry.
+
+`:mentions` is also where the YAML analyzer's own prose mentions land now. They
+were `:documents` edges until REQ-0014, so `impact`'s `documents:` line is empty
+on this tree and a `mentions:` line carries what it used to.
+
+To index a repository that keeps documentation somewhere else again, add the
+directory name to `loom-analyzer:*documentation-directories*` — the same seam
+`*external-package-names*` is for packages.

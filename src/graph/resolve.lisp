@@ -1101,7 +1101,11 @@ Declared names that resolve become :structural edges of the type their field
 declares; the rest are collected onto the document's :UNRESOLVED-REFERENCES,
 which is what SS10.3 asks be \"flagged ... counted in status, and exposed
 through the API\" instead of quietly discarded. Prose mentions that resolve
-become :inferred :DOCUMENTS edges.
+become :inferred :MENTIONS edges -- the weaker type, which claims that the
+document names the entity and nothing more (ARCH-0016 D7). It was :DOCUMENTS
+until REQ-0014, and this loop was that type's only producer in the tree; a
+markdown backtick and a YAML backtick are the same fact and now say so with
+the same word.
 
 Idempotent, like RESOLVE-CALLS: edges upsert by natural key, and a name that
 resolved on a previous pass is still in the property, so nothing drifts."
@@ -1125,7 +1129,7 @@ resolved on a previous pass is still in the property, so nothing drifts."
               (when (and target
                          (not (eq target document))
                          (not (member (entity-type target) *document-types*)))
-                (push (assert-edge :documents document target
+                (push (assert-edge :mentions document target
                                    :workspace-id workspace-id
                                    :source :inferred
                                    :confidence *mention-confidence*

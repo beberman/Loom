@@ -174,7 +174,14 @@ the part most worth the tokens: why the code is the way it is."
   (let ((found '()))
     (dolist (entity entities)
       (dolist (n (neighbors view (id entity)
-                            :rel-types '(:decides :applies-to :documents)
+                            ;; :MENTIONS carries what :DOCUMENTS used to
+                            ;; before REQ-0014 retyped every prose mention, so
+                            ;; it is named here or a decision reached only by
+                            ;; a backtick in its own body stops reaching a
+                            ;; bundle. The type filter below is what keeps
+                            ;; this honest: a mentioning markdown file is a
+                            ;; :DOCUMENT and is not collected here.
+                            :rel-types '(:decides :applies-to :documents :mentions)
                             :direction :in))
         (let ((other (neighbor-entity n)))
           (when (and (member (entity-type other) '(:decision :rule :concept))

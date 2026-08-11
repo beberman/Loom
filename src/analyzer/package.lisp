@@ -61,6 +61,7 @@
    ;; analyzers
    #:lisp-analyzer
    #:document-analyzer
+   #:markdown-analyzer
 
    ;; what a macro call defines (ARCH-0002) -- read by LOOM-WORKSPACE, which
    ;; hands it to the resolution pass LOOM-GRAPH cannot reach this package from
@@ -78,6 +79,12 @@
    #:register-document-type
    #:document-category
    #:docs-relative-p
+   ;; markdown under a documentation directory (REQ-0014, ARCH-0016). The
+   ;; directory list is exported because it is the seam a foreign repository
+   ;; adjusts -- convention with a knob, not configuration; ARCH-0016 D2.
+   #:*documentation-directories*
+   #:register-documentation-directory
+   #:documentation-relative-p
    #:parse-document
    #:parse-check
    #:*check-kinds*

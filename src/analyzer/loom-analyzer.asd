@@ -43,6 +43,10 @@
    (:file "lisp-inspector")
    (:file "lisp-analyzer")
    (:file "yaml-analyzer")
+   ;; After yaml-analyzer, whose PATH-SEGMENTS and *MENTION-MINIMUM-LENGTH* it
+   ;; reuses rather than reimplements. The two claim disjoint extensions, so
+   ;; registration order does not decide anything between them.
+   (:file "markdown-analyzer")
    )
   :in-order-to ((test-op (test-op :loom-analyzer/test)))
   )
@@ -66,6 +70,7 @@
    (:file "lisp-reader")
    (:file "lisp-analyzer")
    (:file "yaml-analyzer")
+   (:file "markdown-analyzer")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-analyzer-test :test-runner)

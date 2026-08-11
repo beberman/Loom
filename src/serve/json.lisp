@@ -41,7 +41,7 @@
 (in-package :loom-serve)
 
 (defparameter *array-valued-keys*
-  '(:impacted :tests :documents :decisions :possibly-affected :neighbors
+  '(:impacted :tests :documents :mentions :decisions :possibly-affected :neighbors
     :entities :violations :rules :unresolved :repositories :values :rel-types
     ;; The keys the operations in this system emit that can legitimately be
     ;; empty: a caller iterating them should get [] rather than having to

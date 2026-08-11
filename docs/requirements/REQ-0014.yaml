@@ -1,6 +1,6 @@
 id: REQ-0014
 title: Markdown documentation must be indexed, asserting only the references it literally contains
-status: draft
+status: implemented
 date: 2026-08-06
 affects: [analyzer-handles-p, analyze-file, document-properties, document-type-for,
           resolve-document-references, unresolved-references]
@@ -139,3 +139,48 @@ body: |
       document count must not change -- docs/TODO.md is the one markdown file
       under docs/ and indexing it must not disturb the 52 YAML documents or the
       zero unresolved references.
+
+  WHAT LANDED, 2026-08-10
+
+  ARCH-0016 answered this and PLAN-0016 sequenced it; both are implemented and
+  the measurements below were taken under /usr/bin/sbcl.
+
+  R6 as written above is stale in two places, and ARCH-0016's own restatement
+  of it is the one to read. The "52 YAML documents" was 90 by the time the work
+  started -- the tree had grown 38 documents since this was filed. And the two
+  halves of the last sentence cannot both hold: indexing docs/TODO.md
+  necessarily raises Loom's document count, so "the document count must not
+  change" was honoured in the sense that carries the meaning -- the YAML
+  documents were undisturbed, entity for entity, and `unresolved` stayed at 0
+  -- while the count itself went 90 -> 91.
+
+  What was measured:
+
+    game-server   documents 0 -> 12, unresolved 0.
+                  `impact <dhandler-delete interface> 3` reports
+                  `mentions: design/media.md, docs/data-layer.md`.
+                  `describe docs/data-layer.md` resolves 28 mentions,
+                  including model-handler, media-remap-id-clause, the six
+                  dhandler-* generics, and four link targets normalized to
+                  real files (media/media-handler.lisp,
+                  mpackage/namespace.lisp and two more).
+    Loom          documents 90 -> 91, unresolved 0, nine test systems green.
+
+  One thing this requirement did not anticipate, found by reading
+  RESOLVE-DOCUMENT-LINKS rather than the requirement: prose mentions already
+  existed for YAML documents and were asserted as :DOCUMENTS at confidence
+  0.5, which was the only producer of that edge type in the tree. Rather than
+  let a backtick mean :DOCUMENTS in YAML and :MENTIONS in markdown, every
+  prose mention moved onto :MENTIONS. ARCH-0016 D7 records the decision and
+  its cost.
+
+  R4 needed no code. RESOLVE-ONE already refuses an ambiguous name and asserts
+  nothing, which is the answer REQ-0015 settled for call names, so mentions
+  and calls are answered the same way by the same function -- which is what
+  this requirement asked for.
+
+  OUTSTANDING, all three recorded in ARCH-0016 rather than left implicit: a
+  markdown link from one document to another resolves to a :DOCUMENT and is
+  dropped, so cross-document links in a markdown tree produce no edge;
+  :DOCUMENTS is now declared with no producer until a declared field earns it;
+  and fenced code blocks are unscanned.

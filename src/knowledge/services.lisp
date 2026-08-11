@@ -293,6 +293,10 @@ NIL when ID is unknown."
                              collect (impact-entry-summary view entry))
             :tests     (summarize-entities (impact-result-tests result))
             :documents (summarize-entities (impact-result-documents result))
+            ;; Its own field, never folded into :DOCUMENTS or :DECISIONS.
+            ;; REQ-0014 R5: a file that names this entity must not arrive
+            ;; looking like a decision governing it.
+            :mentions  (summarize-entities (impact-result-mentions result))
             :decisions (summarize-entities (impact-result-decisions result))
             :possibly-affected
             (summarize-entities (impact-result-possibly-affected result))))))

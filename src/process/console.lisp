@@ -421,7 +421,7 @@ unconditionally is which units were attempted and what became of them
     (dolist (e (getf report :impacted))
       (format t "  d~a ~(~a~) ~a~30t~a~%"
               (getf e :depth) (getf e :type) (getf e :name) (getf e :via)))
-    (dolist (field '(:tests :documents :decisions))
+    (dolist (field '(:tests :documents :decisions :mentions))
       (let ((entries (getf report field)))
         (when entries
           (format t "~&~(~a~): ~{~a~^, ~}~%"

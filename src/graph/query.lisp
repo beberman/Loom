@@ -208,6 +208,12 @@ so agents can rank near impact above distant impact.\""
 (defun impact-result-documents (result)
   (cdr (assoc :documents (impact-result-collected result))))
 
+(defun impact-result-mentions (result)
+  "Documents that merely name the seed. Separate from IMPACT-RESULT-DOCUMENTS
+and from IMPACT-RESULT-DECISIONS deliberately: a mention claims that a file
+writes this name, not that it governs what the name refers to. REQ-0014 R5."
+  (cdr (assoc :mentions (impact-result-collected result))))
+
 (defun impact-result-decisions (result)
   (cdr (assoc :decisions (impact-result-collected result))))
 
@@ -316,7 +322,14 @@ omission."
                           (way   (relationship-type-impact-direction (cdr pair))))
                       (when (case field
                               (:tests include-tests)
-                              (:documents include-docs)
+                              ;; :MENTIONS is gated with :DOCUMENTS rather
+                              ;; than on its own: a caller asking for an
+                              ;; impact set without documentation means
+                              ;; without documentation, and a flag that
+                              ;; suppressed the strong documentation edge
+                              ;; while letting the weak one through would be
+                              ;; the opposite of what it says.
+                              ((:documents :mentions) include-docs)
                               (t t))
                         (dolist (step (impact-step view from (car pair) way))
                           (let ((entity (get-entity view (cdr step))))

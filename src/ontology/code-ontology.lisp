@@ -985,6 +985,37 @@ resolves the mention, and one illegal endpoint rejected the whole transaction
 rather than one edge. Nothing noticed while the :TEST type held no facts,
 because no mention could resolve to one.")
 
+(defrelationship :mentions
+  :from (:document :decision :rule :concept)
+  :to (:function :method :class :interface :module :package :file :concept :test)
+  :transitive-impact nil :impact-direction :reverse :collect-as :mentions
+  :documentation "A document names this entity, and claims nothing further.
+
+The weak half of the pair, and the distinction is the whole point of the type
+(REQ-0014, ARCH-0016 D7). A decision's affects: field is an author's explicit
+claim that this decision governs that code, and it becomes :DECIDES. A
+backticked token in a paragraph is an author writing a name. Recording the
+second as though it were the first would fabricate governance no document
+asserted, which is CON-0001's fabricated fact in the shape an agent is least
+able to check -- `impact' would attach a README to a function as a decision
+bearing on it.
+
+So this type claims exactly what is true: this document names this entity. A
+consumer weights it accordingly, `impact' collects it into its own field
+rather than among the decisions, and `describe' gives it its own heading. The
+distinction also survives the case that matters most: a markdown file that has
+gone stale still mentions what it mentions, and the mention is still the right
+pointer for a human deciding whether to update it.
+
+Every prose mention lands here -- markdown's inline code spans and link
+targets, and the identifier-shaped tokens PROSE-MENTIONS finds in a YAML
+document's body alike. They are the same fact, and ARCH-0016 D7 records why
+they were not left under two names. :DOCUMENTS above is what remains for a
+declared claim, and has no producer until a field earns it.
+
+Endpoints, direction and one-step-ness copy :DOCUMENTS deliberately: the
+traversal question is unchanged, only the strength of the claim.")
+
 ;;; SS11's table pairs DECIDES with DOCUMENTS: "One step, at the end --
 ;;; Impacted unit -> documents -- Decisions, rules, and notes that reference
 ;;; it."  Impact therefore runs from the changed unit back to the decision, and

@@ -96,7 +96,13 @@ decoration (CON-0003)."
                                  :loom-workspace))
          (decision (rules-decision g "DEC-1" :mentions '("resolve-overlay"))))
     (apply-transaction g (resolve-document-links g))
-    (let ((edges (relationships-from g (id decision) :rel-type :documents)))
+    ;; :MENTIONS, not :DOCUMENTS. The type says what the evidence supports --
+    ;; the document names this function -- and stops there; REQ-0014 and
+    ;; ARCH-0016 D7. Asked for the older type this returns nothing, which is
+    ;; what makes this test fail without the change it covers (CON-0003).
+    (is (null (relationships-from g (id decision) :rel-type :documents))
+        "a backtick is not a claim to govern, so no :DOCUMENTS edge is asserted")
+    (let ((edges (relationships-from g (id decision) :rel-type :mentions)))
       (is (equal (list (id target)) (mapcar #'to-id edges)))
       (is (eq :inferred (source (first edges)))
           "nobody promised this link, so it must not claim structural certainty")

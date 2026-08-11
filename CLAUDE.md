@@ -162,11 +162,29 @@ cross-referenced. CON-0004 describes the workflow and how documents link.
     docs/concepts/      recurring ideas          CON-nnnn
     docs/rules/         constraints              RULE-nnnn
 
-Documents are YAML. The analyzer claims `.yaml` and `.yml` under `docs/` and
-nothing else, and the directory names the type — a markdown file in `docs/plans`
-is invisible. `refines:` names the document a document answers, `affects:` names
-the code a decision governs, and both resolve against the index; a name that
-resolves to nothing is reported by `check` rather than dropped.
+Loom's own documents are YAML, and writing one is still writing YAML. The
+document analyzer claims `.yaml` and `.yml` under `docs/`, and the directory
+names the type. `refines:` names the document a document answers, `affects:`
+names the code a decision governs, and both resolve against the index; a name
+that resolves to nothing is reported by `check` rather than dropped.
+
+Markdown is indexed too, by a separate analyzer, and it earns weaker edges on
+purpose (REQ-0014, ARCH-0016). A `.md` or `.markdown` file under any directory
+named `docs`, `doc`, `design` or `documentation` becomes a `:document` whose
+title is its first H1 — but never a REQ or a DEC, whatever its directory is
+called, because that mapping is this tree's convention rather than a fact about
+markdown. Its backticked identifiers and its relative link targets resolve into
+`:mentions` edges: *this file names this thing*, and nothing more. A `:mentions`
+is not an `affects:`, `impact` reports it under its own heading rather than
+among the decisions governing an entity, and a token that resolves to nothing
+is dropped in silence rather than counted as a rotten reference — prose is full
+of ordinary words in backticks.
+
+`:mentions` is where every prose mention now lands, including the ones the YAML
+analyzer finds in a document's own body. They used to be `:documents` edges;
+`impact`'s `documents:` line is consequently empty on this tree, and that is the
+honest report — nothing in CON-0004 currently lets an author *declare* that a
+document documents a function.
 
 ## Principles worth knowing before changing anything
 
