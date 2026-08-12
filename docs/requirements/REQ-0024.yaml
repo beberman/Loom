@@ -1,0 +1,183 @@
+id: REQ-0024
+title: A JavaScript analyzer is needed before any front-end repository is more than a directory of prose to Loom
+status: draft
+date: 2026-08-11
+refines: [CON-0004]
+affects: [analyze-file, analyzer-handles-p, find-analyzer, register-analyzer,
+          analyzable-p, default-system-for-path, analyze-tree, repository-status]
+tags: [analyzer, javascript, generality, front-end, tree-sitter, req-0023]
+summary: |
+  Loom ships three analyzers -- Lisp, YAML and markdown -- and claims to be
+  language-independent on the strength of a protocol that has only ever been
+  implemented for one programming language. ~/github/front-end holds 455 .js
+  and .jsx files and Loom reads none of them: the repository contributes no
+  functions, no modules, no calls, and its five real architecture documents
+  describe code the index cannot see.
+
+  This asks for a JavaScript analyzer, and it is the gate on REQ-0023's second
+  phase -- cross-repository edges have nothing to attach to on the front-end
+  side until one exists. It is also the first genuine test of the claim SS8.2
+  makes about the analyzer protocol: adding a language should be subclassing
+  ANALYZER, declaring extensions, writing one ANALYZE-FILE, and registering an
+  instance, with nothing upstream changing. Either that holds or the protocol
+  needs the second implementation to find out where it does not.
+body: |
+  WHAT IS WRONG
+
+      ~/github/front-end, measured 2026-08-11
+        .js and .jsx                        455    src/ 438, server/ 7, functions/ 4
+        module style                        ES modules; one require( in src
+        Loom analyzers claiming any of it     0
+        code entities Loom would produce      0
+
+  The repository is not small and it is not shapeless: src/ holds context,
+  core, data-api, domain and models directories, an App.jsx and a hooks.js.
+  src/data-api mirrors game-server's data-api/ by name, which is the join
+  REQ-0023 phase two wants and cannot reach.
+
+  The wider claim this tests is Loom's own. LOOM-ANALYZER's package comment says
+  adding a language is "subclass ANALYZER, declare the file extensions it
+  claims, write one ANALYZE-FILE method that returns ops, and register an
+  instance. Nothing upstream changes." That has never been tried for a second
+  programming language. The markdown analyzer added by REQ-0014 was a real
+  second implementation but a shallow one -- it extracts spans and links, not
+  definitions, calls or scope -- so it exercised the registry and not the
+  ontology.
+
+  HOW IT SHOULD PARSE, AND WHY NOT BY HAND
+
+  The Lisp analyzer reads through Eclector because Common Lisp has a reader and
+  Loom could own a client for it. JavaScript has no equivalent available inside
+  SBCL, and hand-rolling a parser for a language with ASI, JSX, destructuring
+  and template literals is a project rather than a file.
+
+  SS9.2 states the preference -- subprocesses over FFI -- and DES-0011 already
+  built the machinery: the inspector protocol runs a language's own toolchain
+  in a bounded child process with a timeout and a heap cap, and returns plain
+  data. That is the shape to reuse. A Node process running an off-the-shelf
+  parser, or a tree-sitter binary, emitting one JSON document per file, keeps
+  the FFI surface at zero and the parser replaceable. cl-yaml is currently the
+  only FFI dependency in the system and there is no reason to add a second.
+
+  The cost to be honest about: a subprocess per file across 455 files is slow,
+  and the Lisp analyzer's whole-tree pass is measured in seconds. Batching --
+  one child process for many files -- is the obvious answer and changes the
+  protocol's shape, because ANALYZE-FILE takes one path and its contents. A
+  design that needs to parse in batches while presenting a per-file interface
+  is the first real strain this protocol has been put under.
+
+  WHAT IT MUST PRODUCE
+
+  The ontology is language-neutral and already has the types. What the analyzer
+  owes:
+
+    :FILE with :language :javascript, :line-count and a :system.
+    :FUNCTION for declarations, arrow functions bound to a name, and methods.
+    :CLASS for class declarations, with :superclass-names for extends.
+    :VARIABLE for module-level const and let bindings.
+    :CALL-NAMES on each callable, for RESOLVE-CALLS to turn into edges.
+    :IMPORTS edges from the module graph -- which JavaScript gives explicitly,
+      unlike Lisp, where the package graph had to be reconstructed.
+
+  Two questions the ontology does not answer and this requirement must. A React
+  component is a function that returns JSX and is used as `<Thing />` rather
+  than called; whether `<Thing />` is a :CALLS edge, a new relationship, or
+  nothing at all decides whether `impact` works at all on a component tree, and
+  a component tree is most of what front-end is. And a default export has no
+  name at the definition site while the importing module names it whatever it
+  likes, so the natural key cannot be the exported name.
+
+  :SYSTEM, and the rule that will not fit
+
+  DES-0009 R2 gives a path default -- the segment after src/ -- and R4 gives
+  Lisp something stronger in IN-PACKAGE. JavaScript's grouping construct is the
+  module, which is the file itself, so every file would be its own system and
+  the layering rules would have nothing to say. The path default is probably
+  right here (src/domain, src/core, src/data-api are real groupings a developer
+  would name), but it should be chosen deliberately rather than inherited,
+  because it is the first language where the strongest available construct is
+  weaker than the default.
+
+  CON-0005, in a language that merges
+
+  ANALYZE-FILE's contract requires one assert per natural key per file, and the
+  docstring already names JavaScript's neighbour as the counter-example:
+  "A TypeScript analyzer meeting interface declaration merging or function
+  overloads must MERGE the same shape instead." JavaScript proper is closer to
+  Lisp -- a redeclared function replaces -- but a file that assigns
+  `Thing.prototype.method` twice, or defines a class and then patches it, will
+  produce two asserts on one key. The analyzer reconciles, in JavaScript's
+  semantics, before it emits.
+
+  WHAT THIS IS NOT
+
+  It is not TypeScript. `:typescript` has been declared in *SOURCE-LANGUAGES*
+  since the beginning and remains unimplemented; front-end has one .ts file, a
+  vite config. Types, interfaces, generics and declaration merging are a
+  separate and larger problem, and a JavaScript analyzer that parses TS by
+  accident because the parser accepts it would produce entities whose
+  properties it does not model.
+
+  It is not a bundler or a resolver. Following an import to the file it names
+  requires understanding node resolution, aliases and extensions; front-end has
+  an alias.config.mjs, so this is live rather than hypothetical. Whether import
+  targets resolve to :FILE entities or stay recorded names for a resolution
+  pass is a design question, and the second is consistent with how every other
+  cross-file name in Loom is handled.
+
+  It does not index node_modules. BUG-0024 must land first or the analyzer's
+  first run will parse a dependency tree an order of magnitude larger than the
+  project.
+
+  REQUIREMENTS
+
+  R1  An analyzer claims .js, .jsx, .mjs and .cjs, produces the entity types
+      above, and registers like every other. Nothing above LOOM-ANALYZER
+      changes; if something must, that is a finding about the protocol and
+      belongs in the design rather than being absorbed quietly.
+
+  R2  Parsing runs a real JavaScript parser in a bounded child process, on
+      DES-0011's inspector precedent -- timeout, heap cap, and a recorded
+      absence when the toolchain is missing rather than a failure. No new FFI
+      dependency.
+
+  R3  A file that will not parse is marked and indexed anyway, and its damage
+      is recorded with a line range where the parser gives one. The contract
+      DES-0013 sets for Lisp holds here: a malformed region costs what it
+      covers, not the file.
+
+  R4  JSX component usage is modelled deliberately, and the decision stated. A
+      component tree in which `<Thing />` produces no edge would leave `impact`
+      answering nothing useful about most of a front-end.
+
+  R5  :SYSTEM comes from a rule chosen for JavaScript rather than inherited by
+      default, and the choice is recorded with the reason. The module is the
+      only grouping construct the language offers and it is weaker than the
+      path convention.
+
+  R6  Same-key definitions within one file are reconciled by the analyzer in
+      JavaScript's own semantics before any operation is emitted, per CON-0005.
+
+  R7  Acceptance is measured on ~/github/front-end with BUG-0024 fixed: 455
+      files indexed, a non-trivial call graph, `impact` on a shared module
+      reaching its importers, and `describe` on a component listing what uses
+      it. The number that matters is not entity count but whether a question a
+      front-end developer would actually ask returns a usable answer.
+
+  R8  Loom's own test suite gains a JavaScript analyzer suite with fixtures in
+      the tree, so the acceptance above is a measurement and not the test.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - Which parser, and does it batch? A subprocess per file over 455 files is
+    the obvious performance problem, and batching strains ANALYZE-FILE's
+    one-file interface.
+  - Is a React component a distinct entity type, or a :FUNCTION with a
+    property? The second is cheaper and the first makes "what renders this"
+    answerable directly.
+  - Do import targets resolve in the analyzer or in a resolution pass? Every
+    other cross-file name in Loom takes the second route, but imports are
+    explicit in a way call names are not.
+  - What does an anonymous default export key on? The file path is the only
+    stable answer and it makes the entity's name a path, which `find` and
+    `context` both treat specially.

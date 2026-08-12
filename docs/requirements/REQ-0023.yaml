@@ -1,0 +1,181 @@
+id: REQ-0023
+title: A product built from several repositories must be answerable as one system, starting with queries that name the repository they mean
+status: draft
+date: 2026-08-11
+refines: [CON-0004]
+affects: [repository-status, repository-files, impact-set, build-context,
+          analyzable-p, default-system-for-path, document-type-for]
+tags: [multi-repo, generality, service, cross-repository, game-server, front-end]
+summary: |
+  A product is not usually one repository. ~/lisp/game-server is the backend
+  for ~/github/front-end, and a team may hold a third for middleware; none of
+  them is a monorepo and none of them contains the others. The question worth
+  asking across that boundary -- what in the front-end breaks if I change this
+  endpoint -- is the one an agent cannot answer by reading either repository
+  alone, and it is precisely the question Loom exists for.
+
+  Loom already registers several repositories in one service, so this is closer
+  than it looks, but two things stop it being usable. Several of the console
+  commands take no repository designator and refuse outright once more than one
+  is watched. And nothing in the ontology spans two graphs, so even with both
+  indexed there is no edge from a front-end call to a backend handler.
+
+  This asks for the first half now and scopes the second honestly. Phase one is
+  plumbing: every query names its repository, documents stay per-repository,
+  and a team can run Loom across three repositories today. Phase two is
+  cross-repository edges, and it is gated on a JavaScript analyzer (REQ-0024)
+  that does not exist -- without it the front-end contributes no code entities
+  at all, and there is nothing for an edge to reach.
+body: |
+  WHAT IS ALREADY TRUE
+
+  Measured 2026-08-11. `watch` registers as many repositories as it is given,
+  and each gets its own graph; two were watched simultaneously several times
+  during this session. What breaks is the query layer:
+
+      loom> impact dhandler-delete 3
+      Several repositories are watched; name one. Try: status
+
+  `find` takes an optional designator and resolves against one repository;
+  `impact`, `describe` and `context` call CURRENT-GRAPH with no argument and
+  therefore refuse. The refusal is correct -- answering from an arbitrary
+  repository would be CON-0001's fabricated fact -- but it makes the
+  multi-repository case unusable rather than merely awkward, and it is a small
+  fix.
+
+  WHAT THE FRONT-END ACTUALLY CONTRIBUTES TODAY
+
+  Read directly rather than assumed:
+
+      ~/github/front-end
+        .js and .jsx files                          455
+        Loom analyzers that claim them                0
+        markdown under node_modules                4730
+        of those, in a docs/ dir -> indexed         334
+        the project's own documents in docs/          5
+
+  So pointing Loom at the front-end today yields no code entities and 334
+  vendored documents. The second number is BUG-0024 and must be fixed before
+  any of this is worth doing; the first is REQ-0024 and is the gate on phase
+  two. Both are named here rather than absorbed, because a multi-repository
+  feature demonstrated against a repository Loom cannot read would be a
+  measurement of nothing.
+
+  PHASE ONE: NAME THE REPOSITORY, KEEP THE GRAPHS SEPARATE
+
+  Every read command takes a repository designator, and every operation the
+  service exposes already does. That is the whole of it, plus the consequences
+  of admitting that ids are per-repository:
+
+  A document id is scoped to its repository. REQ-0001 in the front-end and
+  REQ-0001 in game-server are different documents, and neither refers to the
+  other. This is not a defect to fix; it is what makes REQ-0021's prepared
+  workspaces independent, and it is only a problem if something needs to point
+  across, which phase one says nothing does.
+
+  A cross-cutting requirement has no home, and that is the honest gap in phase
+  one. "Soft delete must hide a record from every read path" is a claim about
+  both repositories -- game-server's `dhandler-delete-selector` and the
+  front-end's docs/SoftDelete-Architecture.md are the two halves of it, and
+  they already exist. Written in one repository it governs code the other holds;
+  written in both it is two documents that can drift. Phase one accepts the
+  duplication and records it; phase two is where it becomes answerable.
+
+  PHASE TWO: EDGES ACROSS GRAPHS, AND WHAT THEY NEED
+
+  Three things, in order of difficulty:
+
+  A JavaScript analyzer, REQ-0024. Without it the front-end has no functions,
+  no modules and no calls, so a cross-repository edge has no endpoint to
+  attach to. This is the gate and it is the largest piece of work of the three.
+
+  Somewhere for the edge to live. The ontology models one workspace; entity
+  ids derive from natural keys within a graph, and no relationship type has an
+  endpoint in another graph. Whether that becomes one graph with a repository
+  property, a federation with cross-graph edges, or a third index that holds
+  only the joins is an architecture question with different costs for
+  reindexing, retraction and impact traversal.
+
+  A vocabulary the two sides can meet in. A front-end `fetch('/public/game/
+  create')` and a Lisp handler for that route share no symbol; the join is the
+  HTTP contract, and game-server has already written it down -- docs/api.md
+  lists the routes under "## Game Lifecycle", "## Type Definitions" and the
+  rest. So the contract exists as prose in one repository and as string
+  literals in the other, and the derivation is a matching problem rather than a
+  call-graph one. Worth noting that api.md is 50% fenced lines, so REQ-0014's
+  fence exclusion currently hides exactly the endpoint table this would need.
+
+  The encouraging evidence is that the two repositories already mirror each
+  other: front-end has src/data-api and game-server has data-api/, and both
+  document soft delete. The join is real and an author has already drawn it
+  twice by hand.
+
+  WHAT THIS IS NOT
+
+  It is not a monorepo proposal. The repositories stay separate, are cloned
+  separately, and branch independently; Loom watches several and answers about
+  them, which is a different thing from merging them.
+
+  It does not ask for cross-repository documents in phase one. A REQ still
+  lives in one repository, and REQ-0021's per-workspace ids stand.
+
+  It does not assume the repositories are checked out at compatible commits.
+  They are not, in general -- the front-end may be running against a deployed
+  backend three tags behind the worktree Loom is indexing. Any cross-repository
+  answer is therefore an answer about two working trees, not about production,
+  and must say so rather than imply a coherence nobody guaranteed.
+
+  REQUIREMENTS
+
+  R1  Every read command takes a repository designator: `impact`, `describe`
+      and `context` alongside `find`, which already does. With one repository
+      watched the argument stays optional and nothing changes; with several,
+      naming one is how a query is asked rather than a reason to refuse it.
+
+  R2  A vendored dependency directory is not indexed. BUG-0024 measures the
+      cost -- 334 documents on the front-end -- and respecting .gitignore is
+      the fix. This is a precondition: without it, a JavaScript repository's
+      index is mostly somebody else's README.
+
+  R3  Ids are scoped to their repository, and nothing in phase one refers
+      across. Two repositories each holding REQ-0001 is correct, and no
+      resolution pass may match a name in one repository against an entity in
+      another.
+
+  R4  `status` reports every watched repository, and a caller can tell which
+      answers came from which. An answer that does not say which repository it
+      describes is not usable in a three-repository setup.
+
+  R5  A cross-cutting concern that spans repositories is recorded as a known
+      gap rather than silently duplicated. Where a team writes the same
+      requirement in two repositories, nothing pretends they are one document,
+      and phase two is where the duplication is resolved.
+
+  R6  Phase two -- cross-repository edges -- is gated on REQ-0024. It is not
+      attempted, designed around, or partially built before a JavaScript
+      analyzer exists, because there is nothing on the front-end side for an
+      edge to reach and any demonstration would be measuring Loom against
+      itself.
+
+  R7  Acceptance for phase one is a three-repository session: Loom's own tree,
+      ~/lisp/game-server and ~/github/front-end watched together, with
+      `impact`, `describe` and `context` each answering correctly for a named
+      repository, `status` reporting all three, and the front-end's document
+      count reading 5 rather than 339.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - One graph with a repository property, federated graphs with cross-graph
+    edges, or a separate join index? The choice decides what reindexing one
+    repository costs and whether a retraction can leave a dangling edge in
+    another.
+  - How does an agent working in one repository discover that another is
+    watched and relevant? A prepared workspace knows its own name; nothing
+    tells it that a backend it calls is also indexed.
+  - Does an HTTP contract become a first-class entity type, or are route
+    matches derived edges between existing ones? The first makes the contract
+    queryable in its own right and is the larger change.
+  - What does a cross-repository answer say about commit skew? Two working
+    trees at unrelated commits can be described together, but the answer is
+    about those trees and should not be readable as a claim about a deployed
+    system.
