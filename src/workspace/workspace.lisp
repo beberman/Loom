@@ -33,6 +33,13 @@
   ;; In memory only, and DEC-0001 is satisfied rather than bent: the report is
   ;; derivable by re-running the pass, so it is cache and says so.
   (enrichment nil)
+  ;; DES-0018 D5. Why git could not be asked what this tree ignores, or NIL
+  ;; when it answered. Set on every pass, so it clears itself as soon as the
+  ;; cause goes away. Reported by `status' rather than logged as an error: a
+  ;; directory that is legitimately not a repository would otherwise push a
+  ;; line onto the error list on every poll, for a condition that is stable and
+  ;; expected.
+  (ignore-reason nil)
   ;; DES-0004 R1. One lock per repository rather than a process-wide one:
   ;; *REPOSITORIES* can hold more than one entry and two repositories share no
   ;; state, so serializing one's rebuild against another's poll would cost
@@ -120,6 +127,79 @@ all, and NORMALIZE-ROOT signals on those."
 (defun dot-prefixed-p (name)
   (and (stringp name) (plusp (length name)) (char= #\. (char name 0))))
 
+;;;; ------------------------------------------------------------------
+;;;; What the repository says is not part of it (DES-0018)
+;;;;
+;;;; Loom does not interpret .gitignore. The pattern language has anchoring,
+;;;; directory-only matches, ** and negation whose meaning depends on whether a
+;;;; parent was already excluded, and the inputs are not only .gitignore --
+;;;; git also reads one per directory, .git/info/exclude, and whatever
+;;;; core.excludesFile points at, which may be outside the tree. Since the
+;;;; question is literally "what does git ignore here", git is asked.
+;;;; ------------------------------------------------------------------
+
+(defparameter *ignore-query-timeout-seconds* 20
+  "Bound on the check-ignore subprocess. Generous: it is one process for a
+whole tree, and the cost of it running long is a slow poll rather than a wrong
+answer.")
+
+(defun ignored-paths (root relative-paths)
+  "The subset of RELATIVE-PATHS that git ignores under ROOT, as a hash table.
+
+One subprocess for the whole list, not one per file: `git check-ignore --stdin'
+reads paths and writes back only the ignored ones.
+
+Two things this must not do. It must not treat exit status 1 as a failure --
+that status means none of the paths were ignored, which is the ordinary answer
+for a clean repository, and reading it as an error would make every tree behave
+as though git were missing. And it must not pass --no-index, which is what
+keeps DES-0018 D3 true: git consults the index by default and does not report a
+*tracked* file as ignored, so a checked-in dist/ keeps being indexed while a
+generated one does not.
+
+Returns an empty table, and a second value naming the reason, when git cannot
+answer -- no repository, no git, a timeout, a signal. The caller indexes
+everything in that case (D5): a known unknown beats both a crash and a false
+clean."
+  (let ((ignored (make-hash-table :test #'equal)))
+    (if (null relative-paths)
+        (values ignored nil)
+        (handler-case
+            (multiple-value-bind (out err status)
+                ;; `timeout' rather than thread machinery, on DES-0011's
+                ;; precedent: the inspector bounds its child the same way and
+                ;; reads 124 as the timeout having fired. No new dependency --
+                ;; the binary is already required by that path.
+                (uiop:run-program (list "timeout"
+                                        (princ-to-string *ignore-query-timeout-seconds*)
+                                        "git" "-C" (namestring root)
+                                        "check-ignore" "--stdin")
+                                  :input (make-string-input-stream
+                                          (format nil "~{~a~%~}" relative-paths))
+                                  :output :string
+                                  :error-output :string
+                                  :ignore-error-status t)
+              (declare (ignore err))
+              (cond ((member status '(0 1))
+                     (with-input-from-string (in out)
+                       (loop for line = (read-line in nil nil)
+                             while line
+                             for trimmed = (string-trim '(#\Return #\Space) line)
+                             unless (zerop (length trimmed))
+                               do (setf (gethash trimmed ignored) t)))
+                     (values ignored nil))
+                    (t
+                     ;; 128 and friends: not a repository, or git refused.
+                     ;; 124 is `timeout' having fired. Either way the tree is
+                     ;; indexed whole and the reason is carried back.
+                     (values (make-hash-table :test #'equal)
+                             (if (eql status 124)
+                                 "git check-ignore timed out"
+                                 (format nil "git check-ignore exited ~a" status))))))
+          (error (condition)
+            (values (make-hash-table :test #'equal)
+                    (princ-to-string condition)))))))
+
 (defun repository-files (repository)
   "Every file under the repository root that some analyzer claims.
 
@@ -132,14 +212,35 @@ of it is not even a file: Emacs writes .#foo.yaml as a dangling symlink while a
 buffer is open, which keeps the extension of the thing it locks, so an analyzer
 claims it and then fails to read it. The developer sees an error naming a file
 that does not exist, in a repository where nothing is wrong, for as long as
-they have the real file open."
-  (remove-if-not
-   (lambda (path)
-     (and (pathname-name path)
-          (not (dot-prefixed-p (file-namestring path)))
-          (notany #'dot-prefixed-p (rest (pathname-directory path)))
-          (analyzable-p path)))
-   (directory (merge-pathnames "**/*.*" (repository-root repository)))))
+they have the real file open.
+
+Skips what git ignores, which is DES-0018 and the reason BUG-0024 was opened:
+node_modules is not dot-prefixed, so a vendored dependency tree was walked like
+source. The ignore query runs once for the whole candidate list and after
+ANALYZABLE-P rather than before -- most of a node_modules tree is JavaScript no
+analyzer currently claims, so filtering by analyzer first cuts what git is
+asked about from thousands to hundreds.
+
+A tree git cannot answer for -- not a repository, no git, a timeout -- is
+indexed whole, and the reason is recorded on the repository for `status' to
+report. That is a gap a reader can see rather than a silent clean."
+  (let* ((root (repository-root repository))
+         (claimed (remove-if-not
+                   (lambda (path)
+                     (and (pathname-name path)
+                          (not (dot-prefixed-p (file-namestring path)))
+                          (notany #'dot-prefixed-p (rest (pathname-directory path)))
+                          (analyzable-p path)))
+                   (directory (merge-pathnames "**/*.*" root)))))
+    (multiple-value-bind (ignored reason)
+        (ignored-paths root (mapcar (lambda (p) (workspace-relative-path p root))
+                                    claimed))
+      (setf (repository-ignore-reason repository) reason)
+      (if (zerop (hash-table-count ignored))
+          claimed
+          (remove-if (lambda (path)
+                       (gethash (workspace-relative-path path root) ignored))
+                     claimed)))))
 
 (defun note-error (repository path condition)
   (push (cons path (princ-to-string condition)) (repository-errors repository))
@@ -742,6 +843,8 @@ the last error per thread.\""
           :unhandled-definer-macros
           (+ (length (unhandled-definer-macros graph))
              (length (generated-definition-collisions graph *macro-generators*)))
+          ;; DES-0018 D5: NIL on a healthy tree, so `status' prints nothing.
+          :ignore-reason (repository-ignore-reason repository)
           :unresolved-references (length (unresolved-references graph))
           :unenforced-rules (length (unenforced-rules graph))
           :violations (length (entities-of-type graph :rule-violation))

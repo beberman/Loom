@@ -8,7 +8,12 @@
   ;; SS4: loom-workspace depends on loom-graph and the analyzers. It is the
   ;; first system that knows both how to analyze and where the result goes,
   ;; which is what lets everything below it stay ignorant of the other half.
-  :depends-on (#:loom-ontology #:loom-graph #:loom-analyzer #:bordeaux-threads)
+  :depends-on (#:loom-ontology #:loom-graph #:loom-analyzer #:bordeaux-threads
+               ;; UIOP runs `git check-ignore' for DES-0018. Already in the
+               ;; image through loom-analyzer, and named here anyway: a
+               ;; system that uses a library should say so rather than rely
+               ;; on a dependency of a dependency continuing to want it.
+               #:uiop)
   :serial t
   :components
   (
@@ -34,6 +39,7 @@
   (
    (:file "suite")
    (:file "workspace")
+   (:file "gitignore")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-workspace-test :test-runner)

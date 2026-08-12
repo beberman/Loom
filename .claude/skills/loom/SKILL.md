@@ -272,6 +272,15 @@ message are faster and never prompt.
   evidence about the other. Where it matters, say which you ran.
 - **Files ending in `~` are Emacs backups.** Ignore them. Files beginning with
   `.#` are Emacs lock symlinks and are skipped by the indexer.
+- **The indexer skips what git ignores** (DES-0018). It asks
+  `git check-ignore` once per pass rather than interpreting `.gitignore`
+  itself, so `node_modules`, `dist`, `coverage` and anything else the
+  repository excludes contributes nothing — but a *tracked* file stays indexed
+  even when it matches a pattern, because git consults the index and a
+  committed file is part of the repository. A directory that is not a git
+  repository is indexed whole, and `status` prints an `ignores :` line saying
+  git could not be consulted. Measured on `~/github/front-end`: 27 documents
+  instead of 421.
 - **Compile output goes to stdout**, so grep it away rather than reading it.
 - **A running loom-serve goes stale mid-session and nothing tells you.** The
   SessionStart hook makes it current once, at the start; every edit after that

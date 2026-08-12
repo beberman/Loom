@@ -219,6 +219,13 @@ command."
   (format t "  unresolved : ~d document reference~:p, ~d definer macro~:p~%"
           (getf status :unresolved-references)
           (getf status :unhandled-definer-macros))
+  ;; DES-0018 D5. Printed only when git could not be asked, because on a
+  ;; healthy tree there is nothing to say and a line reading "ignoring: fine"
+  ;; would be noise on every status call. When it does print, it is the
+  ;; explanation for a document count that includes somebody else's README.
+  (let ((reason (getf status :ignore-reason)))
+    (when reason
+      (format t "  ignores    : not consulted -- ~a~%" reason)))
   ;; DES-0013 R11, beside `unresolved' because it answers the same question a
   ;; reader is asking there: what does this index know it is missing. Printed
   ;; unconditionally for the reason the tests line above gives -- these are

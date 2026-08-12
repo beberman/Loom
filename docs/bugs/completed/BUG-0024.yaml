@@ -1,6 +1,6 @@
 id: BUG-0024
 title: A vendored dependency directory is indexed like source, so a JavaScript repository contributes hundreds of documents nobody wrote
-status: open
+status: closed
 date: 2026-08-11
 refines: [REQ-0014]
 affects: [repository-files, analyzable-p, documentation-relative-p, analyzer-handles-p]
@@ -8,12 +8,12 @@ tags: [analyzer, documents, generality, markdown, node_modules]
 summary: |
   REPOSITORY-FILES walks everything under a repository root and skips only
   dot-directories. node_modules is not dot-prefixed, so it is walked. Measured
-  on ~/github/front-end, 2026-08-11: 4,730 markdown files live under
-  node_modules, and 334 of them sit in a directory named docs, which is
-  exactly what the markdown analyzer claims. Pointing Loom at that repository
-  today would index 334 vendored documents as first-class :DOCUMENT entities,
-  each resolving its backticks into :MENTIONS edges against the host project's
-  code.
+  on ~/github/front-end, 2026-08-11: 421 markdown files sit in a directory the
+  analyzer claims -- named docs, doc, design or documentation -- and git
+  ignores 394 of them. Pointing Loom at that repository would index those 394
+  vendored documents as first-class :DOCUMENT entities against the project's
+  own 27, each resolving its backticks into :MENTIONS edges against the host
+  project's code.
 
   The tree Loom was written against has no vendored dependency directory, which
   is why nothing ever forced the question. This is the same generality failure
@@ -31,7 +31,7 @@ body: |
   REQ-0014 widened the exposure by an order of magnitude. The markdown analyzer
   claims .md and .markdown under any directory named docs, doc, design or
   documentation -- and every npm package ships a README and many ship a docs/
-  tree. The 334 measured on front-end is the direct consequence, and it is new
+  tree. The 394 measured on front-end is the direct consequence, and it is new
   damage rather than a pre-existing condition.
 
   WHY IT MATTERS MORE THAN THE COUNT SUGGESTS
@@ -46,12 +46,11 @@ body: |
   that this file names this token, and the conclusion a reader draws from it is
   false.
 
-  It also inverts the ratio the tool depends on. front-end has five real
-  architecture documents in its own docs/ -- ARCHITECTURE-GUIDE.md,
-  SoftDelete-Architecture.md, TERRAIN_EDITOR_ARCHITECTURE.md,
-  EditorComponentPattern.md, TODO.md. Against 334 vendored ones they are 1.5%
-  of the document count, and `context` and `find` would surface them
-  accordingly.
+  It also inverts the ratio the tool depends on. front-end's own documents --
+  ARCHITECTURE-GUIDE.md, SoftDelete-Architecture.md,
+  TERRAIN_EDITOR_ARCHITECTURE.md, EditorComponentPattern.md and the rest --
+  are 27 against 394 vendored ones, so 6% of the document count, and `context`
+  and `find` would surface them accordingly.
 
   THE FIX, AND WHY IT IS THE GENERAL ONE
 
@@ -77,9 +76,19 @@ body: |
   MEASURED
 
       ~/github/front-end
-        markdown under node_modules                    4730
-        of those, in a docs/ directory -> claimed       334
-        the project's own documents in docs/              5
+        markdown in a directory the analyzer claims      421
+        of those, ignored by git -> vendored             394
+        the project's own, surviving the filter           27
+
+  Two figures in the first draft of this bug were wrong and are corrected
+  above. "334" counted only node_modules paths containing a literal /docs/
+  segment, which is narrower than DOCUMENTATION-RELATIVE-P's actual rule -- it
+  matches any segment named docs, doc, design or documentation, anywhere, and
+  ignored directories other than node_modules (dist, coverage, a nested
+  functions/node_modules) contribute too. "5" came from a truncated directory
+  listing; the project's own docs/ holds 10 files and the surviving total
+  across all such directories is 27. Both were understatements: the real
+  vendored count is 394.
 
   Loom's own tree and ~/lisp/game-server both read zero, which is why this has
   been invisible: neither vendors a dependency tree inside the repository.
