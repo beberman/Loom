@@ -19,6 +19,10 @@
   (
    (:file "package")
    (:file "workspace")
+   ;; After "workspace": the transition takes WITH-REPOSITORY-LOCK and calls
+   ;; REINDEX-REPOSITORY, both defined there, and :SERIAL T is what makes the
+   ;; macro available at compile time rather than only at load time.
+   (:file "transition")
    )
   :in-order-to ((test-op (test-op :loom-workspace/test)))
   )
@@ -40,6 +44,7 @@
    (:file "suite")
    (:file "workspace")
    (:file "gitignore")
+   (:file "transition")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-workspace-test :test-runner)

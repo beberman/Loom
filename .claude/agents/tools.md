@@ -48,6 +48,37 @@ before proposing or writing anything that contradicts one; to overturn a
 decision, say so and write one that supersedes it, rather than quietly
 disagreeing with it in code.
 
+## Closing a plan is a command, not a checklist
+
+Two commands in that table write files rather than reading an index:
+
+    set-status <doc> <status>            one document: sets the status line and
+                                         files the document where that status
+                                         belongs
+    complete <plan> [<doc>=<status> ...] a plan and everything it implements
+
+When work lands, do not edit statuses by hand and do not move files into
+`completed/` yourself. Run `complete <plan>` with no verdicts first — it writes
+nothing and prints the chain with the verdicts it still needs — then supply
+them:
+
+    tools/loom.sh 'complete PLAN-0019'
+    tools/loom.sh 'complete PLAN-0019 DES-0019=implemented REQ-0022=implemented'
+
+The verdict per document is yours and is never derived: `implemented` means
+every requirement that document states is now true of the tree, `partial` means
+some landed and the document gains an OUTSTANDING section naming what did not.
+The command supplies the parts a person gets wrong — it refuses a document that
+another unfinished plan still refines and names that plan, it stops climbing at
+a `partial`, it moves the files, and it refuses the whole cascade rather than
+applying half of it. This replaced RULE-0005 and RULE-0007, both now retired to
+advisory: they still state the invariant, the command maintains it.
+
+An agent working in a repository *prepared* by Loom rather than in this one
+reaches the same two through the service — `POST /v1/complete` or the
+`loom_complete` MCP tool — and names its repository in the call. There is no
+`tools/loom.sh` in a prepared worktree.
+
 ## Read files with the Read tool
 
 Never `cat`, `head`, `grep`, or a shell loop over several files to read them —

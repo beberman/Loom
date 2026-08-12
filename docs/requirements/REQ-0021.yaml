@@ -50,14 +50,24 @@ summary: |
   No requirements documents, design documents, or any other documents should be constructed
   only the architecture documents.
 
+  The ids that the Loom service users for documents need to be generated in a way that
+  will not create conflicts across a team working in multiple branchs on the same git tree.
+  That either requires that a single Loom service is available to all users as a server and
+  it has a get id or construct next document of type function which considers the ids across the
+  checkouts. The other is to switch from a sequential id to a UUID that is generated.
+
 body: |
   ORDER
 
-  REQ-0022 lands first. It makes document state transitions a Loom command
+  REQ-0022 must be implemented before this document.
+
+  REQ-0022 makes document state transitions a Loom command
   rather than a rule, and this requirement depends on that in two places: R4c
   says a prepared workspace gets no workflow rule because the transition is
   performed rather than remembered, and R4d says the installed agents invoke
-  the command rather than describing the manual procedure. Preparing workspaces
+  the command rather than describing the manual procedure.
+
+  Preparing workspaces
   with agent text that teaches a procedure about to be replaced would install
   the stale instructions REQ-0022 R8 exists to remove, into every tree init has
   touched, where they are far more expensive to correct than in this one.
@@ -102,18 +112,21 @@ body: |
 
   The service is shared, and the worktree is one of several. `watch` registers
   a repository; several may be registered at once, and this tree's own console
-  already refuses an ambiguous `impact` when two are. An agent working in a
+  already refuses an ambiguous `impact` when two are.
+
+  An agent working in a
   prepared worktree must be able to name its own repository in every query, or
   it will get answers about somebody else's code. Loom's REST and MCP surfaces
   take a repository argument; the console command does not always, and that
-  gap is now load-bearing.
+  gap must now be closed.
 
-  Loom is installed on a branch, and that settles what was the sharpest open
-  question. A worktree pinned to a tag is a detached checkout that cannot hold
-  a commit, and init's entire output is files; on a branch the documents are
-  ordinary tracked files and the normal review path applies. Init writes them
-  and stops there. Committing the branch and raising the merge request belong
-  to the dev team, which is also what moves Loom's documents across branches.
+  Loom is installed as a separate service. For a single developer that can be on the
+  development machine. For a team working together on a code base Loom would be a central
+  server that has access to each developer disk space where their particular git version
+  is running. That requires NFS mounts of the user drives and permission to write and read those
+  partitions.
+
+When a user inits they link the Loom service to a particular git tree and branch.
 
   Init therefore writes and never commits, never pushes, and never opens a
   merge request. The distinction is not fastidiousness: writing a file into a
@@ -129,13 +142,16 @@ body: |
   number.
 
   Git catches the ordinary case: the filename carries the id, so two branches
-  adding DES-0022.yaml collide add/add and a human resolves it. What it does
-  not catch is a resolution that keeps both files under different names without
-  changing the `id:` inside them, or a document copied rather than moved into
-  completed/ -- and that second one is easy to produce with the directory
-  convention RULE-0007 introduced. In those cases the outcome depends on the
-  type, and one of the two is silent:
+  adding DES-0022.yaml will collide. They may have very different meanings we
+  therefore must avoid collisions.  To do this the ids must either move
+  to a UUID system, or Loom must create the initial blank documents using ids that it
+  knows will not collide across the known user branches.
 
+  Because multiple users could be using the same Loom service, Loom must have a way
+  of associating user names (login credentials) with a set of user directories that
+  are the workspace that user is working on.
+
+>> rewrite
     id-keyed types -- DEC, DES, ARCH, RULE, CON -- have :natural-key (:doc-id).
       Two files carrying one id derive one entity id, so the second assert
       absorbs into the first. Two documents become one entity, later-write-wins

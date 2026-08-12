@@ -1,12 +1,20 @@
 id: RULE-0007
 title: A workflow document lives in completed/ when its status is terminal, and nowhere else
-status: active
-severity: warning
+status: retired
+severity: advisory
 date: 2026-08-11
-refines: [CON-0004]
+refines: [CON-0004, REQ-0022]
 applies-to: [document-category, repository-status]
 tags: [documents, convention, prose-only, staleness]
 statement: |
+  RETIRED 2026-08-12. The convention below still holds and still describes the
+  tree; what changed is that Loom now maintains it. `set-status <document>
+  <status>` files the document where its new status belongs in the same
+  operation that sets the status, and `complete` inherits that for every
+  document in its cascade, so the two copies of the fact this rule worried
+  about can no longer be written apart. The section at the end records what the
+  retirement does and does not claim.
+
   Under docs/requirements, docs/design, docs/plans, docs/bugs and
   docs/reviews, a document whose status is terminal -- implemented for a REQ or
   a DES, final for a PLAN, closed for a BUG or REV -- lives in that directory's
@@ -76,11 +84,17 @@ body: |
   and inventing a fifth kind for one convention is the trade SS10.4 explicitly
   refuses: "a rule needing more than that stays prose".
 
-  So it stays prose with severity warning, and `status' counts it among the
-  unenforced rules, which is the point -- prose-only drift stays visible rather
-  than comfortable. A cheap check kind that compared a path segment against a
-  property value would settle it, and would also close RULE-0005, which is
-  unenforced for a related reason.
+  So it stayed prose, and `status' counted it among the unenforced rules, which
+  is the point -- prose-only drift stays visible rather than comfortable. A
+  cheap check kind that compared a path segment against a property value would
+  settle it, and would also close RULE-0005, which is unenforced for a related
+  reason.
+
+  That last sentence is where this reasoning ran out, and REQ-0022 says why: a
+  check kind would have settled this rule and would still have left RULE-0005
+  unenforceable, because what is missing there is not expressive power but a
+  transition to observe. The answer to both turned out to be the same command
+  rather than a fifth check kind.
 
   A NEARBY DEFECT THIS SURFACED
 
@@ -96,3 +110,40 @@ body: |
   dropped. Not fixed here -- it wants its own bug -- but it means the count of
   documents whose status this rule can check is one lower than it looks
   wherever someone has invented a status word.
+
+  That is now half fixed, in the one place it can do harm. The transition
+  command reads the file's own status line before writing, validates it against
+  the category's vocabulary, and refuses a document whose current status it does
+  not recognise rather than overwriting it -- because a document in an unknown
+  state is exactly where a human should look. It does not fix the indexing side,
+  where an unknown status is still dropped to NIL; it stops the command adding a
+  second instance of the problem.
+
+  WHAT REPLACED THIS RULE
+
+  REQ-0022 and DES-0019. The two copies of the fact -- the status line and the
+  directory -- are now written by one operation:
+
+    set-status BUG-0025 closed      sets the line and moves the file to
+                                    docs/bugs/completed/ in one go
+    set-status BUG-0025 open        moves it back out again
+
+  Both directions, which is what makes "they cannot disagree" a property rather
+  than a hope: a status becoming terminal moves the file in, and one that stops
+  being terminal moves it back. The destination is derived from the directory
+  the file is already in rather than from a `docs' segment in its path, so a
+  foreign tree prepared by REQ-0021 -- which may keep its documents anywhere --
+  gets the same answer this one does.
+
+  The vocabulary above is where the command reads its terminal set from, and
+  the reading is literal: implemented for a REQ or a DES, final for a PLAN,
+  closed for a BUG or REV, and nothing terminal at all under docs/decisions,
+  docs/arch, docs/rules and docs/concepts. A partial document stays flat. A
+  superseded design stays flat too, because this text names one word and
+  departing from it in code would put the rule and the tool into exactly the
+  disagreement the rule exists to prevent.
+
+  RETIRED AND NOT SUPERSEDED, for RULE-0005's reason: a developer moving a file
+  by hand is not doing anything wrong, and a rule claiming the command is the
+  only way would be false the first time someone used `git mv`. What changed is
+  that the drift this rule guards against now has an instrument against it.

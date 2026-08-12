@@ -207,7 +207,19 @@ document documents a function.
   language's semantics — CL replaces, TypeScript merges — because the writer is
   language-neutral and by the time it sees the ops the evidence is gone.
   Nothing checks this. CON-0005.
-- **Finishing a plan means restating what it implemented.** A plan reaching
-  `final` makes the `draft` status of every document it refines false, so mark
-  those `implemented`, or `partial` with an OUTSTANDING section. Nothing checks
-  this. RULE-0005, and CON-0004 for the status vocabulary.
+- **Finishing a plan is a command, not a chore you remember.** A plan reaching
+  `final` makes the `draft` status of every document it refines false, so
+  `complete` sets both and moves the files:
+
+      tools/loom.sh 'complete PLAN-0019'      # writes nothing; shows what it needs
+      tools/loom.sh 'complete PLAN-0019 DES-0019=implemented REQ-0022=implemented'
+
+  It walks upward while the verdicts stay terminal, refuses to touch a document
+  another unfinished plan still refines, and files each moved document in
+  `completed/`. It will not guess `implemented` versus `partial` — that is a
+  judgement about intent, and a partial needs an OUTSTANDING section. Dry run is
+  the default, so a `complete` with no verdicts has done nothing.
+  `set-status <doc> <status>` is the same write path for one document.
+  REQ-0022 and DES-0019; CON-0004 for the status vocabulary. RULE-0005 and
+  RULE-0007 are retired to advisory — they describe the invariant, the command
+  maintains it.

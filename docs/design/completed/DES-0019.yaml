@@ -1,0 +1,216 @@
+id: DES-0019
+title: A transition is a plan, then a write of one line per document and a rename, under the lock the repository already has
+status: implemented
+date: 2026-08-11
+refines: [REQ-0022]
+affects: [repository-files, index-repository, with-repository-lock, apply-transaction,
+          repository-status, unresolved-references, document-category]
+tags: [workflow, documents, write-path, transitions, con-0004]
+summary: |
+  REQ-0022 asks that finishing a plan stop being a rule an agent remembers and
+  become an operation Loom performs. This is the shape: two verbs rather than
+  one, a status edit that is provably the top-level key and never prose, a
+  propagation query the graph can answer and a person cannot be relied on to
+  run, a verdict the caller supplies because nothing derives it, and the whole
+  thing planned before any byte is written.
+
+  The edit rule is the part worth stating up front, because it removes the
+  hazard REQ-0022 ranked second: a `status:` at column zero cannot be inside a
+  block scalar, since block scalar content must be indented past its parent key
+  and every top-level key sits at column zero. So "the first line matching
+  `status:` with no leading whitespace" is not a heuristic, it is the top-level
+  key by construction. Verified across this tree: 97 documents have exactly one
+  such line and four concepts have none.
+body: |
+  D1  TWO VERBS, AND THE CASCADE IS BUILT FROM THE PRIMITIVE
+
+    set-status <document> <status>
+        One document. Validates the status against that document's type,
+        rewrites the line, and moves the file when the new status is terminal.
+
+    complete <plan> [<document>=<verdict> ...]
+        The cascade RULE-0005 describes. Sets the plan final, finds every
+        document it refines, and applies the caller's verdict to each.
+
+  Both, rather than only the cascade, because the primitive is independently
+  wanted -- accepting a requirement, closing a bug, retiring a rule -- and
+  because a cascade defined in terms of it has one write path to get right
+  instead of two. REQ-0022 R1 is `complete`; R3's file move belongs to
+  `set-status` and is therefore inherited rather than reimplemented.
+
+  D2  THE EDIT IS ONE LINE, FOUND BY A RULE THAT CANNOT BE WRONG
+
+  No YAML round-trip. Reserialising from the graph would destroy key order,
+  block scalars, blank lines and every field the ontology does not model, and
+  the entity carries a dozen properties while the file carries whatever its
+  author wrote.
+
+  The line is found by scanning for the first line whose first character is not
+  whitespace and which begins `status:`. That is exactly the top-level key, and
+  the argument is short enough to check: a block scalar's content must be
+  indented more than the key introducing it, every top-level key is at column
+  zero, therefore no line at column zero is inside a block scalar. A `status:`
+  written in prose -- and this design does write one -- is indented and
+  invisible to the scan.
+
+  Everything else in the file is copied through byte for byte. A completed
+  plan's diff is one changed line, and its design's is one more.
+
+  D3  A DOCUMENT WITH NO STATUS IS REFUSED, NOT REPAIRED
+
+  Four concepts in this tree carry no status line, and :CONCEPT declares no
+  :STATUS property at all -- CON-0004 has one in the file that the analyzer
+  never reads. Inserting a line into a document whose type has nowhere to put
+  it would write a fact the index cannot hold.
+
+  So set-status refuses a type with no status property, and refuses a document
+  whose file has no top-level status line, and says which. Neither is an error
+  in the tree; both are cases where the honest answer is that this document
+  does not have the thing being set.
+
+  A status outside the type's vocabulary is refused the same way, which closes
+  the hazard BUG-0019 left: `status: fixed` was dropped to NIL by AS-KEYWORD
+  and the document held no status at all while the file held a word. The
+  command will not add a second instance of that, and meeting one -- a file
+  whose current status is unreadable -- is reported rather than silently
+  overwritten, because a document in an unknown state is exactly where a
+  human should look.
+
+  D4  THE PROPAGATION QUERY IS WHY THIS IS WORTH BUILDING
+
+  When a plan reaches final, the documents it refines may move out of draft
+  only if no *other* unfinished plan also refines them. That is one graph query
+  -- incoming :REFINES edges, filtered to plans, checked for a non-final status
+  -- and it is the thing a person closing a long change will not do.
+
+  A plan is identified by its :CATEGORY property, which the analyzer sets from
+  the directory, rather than by a PLAN- prefix on its id. The category is a
+  fact the indexer recorded; the prefix is a naming convention a foreign tree
+  prepared by REQ-0021 need not share.
+
+  Where a document is still refined by an unfinished plan, `complete` reports
+  it and leaves it alone. Saying so is the useful answer, and it is the one
+  RULE-0005 could never give.
+
+  D4a THE WALK IS UPWARD AND NOT ONE HOP -- AMENDED IN IMPLEMENTATION
+
+  D4 as first written describes one hop, and that is not enough to replace
+  RULE-0005, which is what this design exists to do. The rule's own text:
+  "The walk continues upward only on implemented. If a plan implements an
+  architecture and that architecture was the last outstanding child of a
+  requirement, the requirement is implemented too." A one-hop cascade closing
+  PLAN-0019 would mark DES-0019 implemented and leave REQ-0022 in draft, which
+  is the same false claim the command exists to stop, arrived at one level
+  further up.
+
+  So the implementation climbs, and three things bound the climb rather than
+  one:
+
+    Only through a terminal verdict. A `partial` document has an OUTSTANDING
+    section, which is work, so the document above it is not finished either and
+    the walk stops there.
+
+    Only past an unblocked document. The blocking query generalises with the
+    walk -- every *document* still refining the candidate counts, not only
+    plans, which is again RULE-0005 read whole: "If any sibling is still open --
+    another architecture, an unfixed bug, an unanswered review -- the parent
+    stays where it is."
+
+    And not through anything already finished, or anything with no status at
+    all. A document already at its terminal status contributes nothing new to
+    its parent, so it is reported and the climb ends there; a concept has no
+    status property and ends it the same way. Both are reported rather than
+    dropped, because a caller reading the chain wants to see where it stops.
+
+  A document whose category has no terminal status -- a decision, a rule, an
+  architecture note -- never blocks anything. Those are in force rather than
+  outstanding, and treating an active rule as unfinished work would hold its
+  parent open permanently for a document that is behaving correctly.
+
+  D5  THE VERDICT COMES FROM THE CALLER, AND ITS ABSENCE IS A DRY RUN
+
+  implemented versus partial is a judgement about whether the work met the
+  intent, and nothing in the graph distinguishes them: a plan can execute every
+  step it listed and still leave a requirement partly unmet, because the steps
+  were written before the work was understood.
+
+  So `complete` with no verdicts writes nothing and reports what it would do --
+  which document, its current status, whether another plan still blocks it, and
+  what the caller must decide. That makes the dry run the default rather than a
+  flag, which is the right default for a command whose failure mode is editing
+  files.
+
+  D6  PLAN, THEN APPLY, ON THE DISCIPLINE THE GRAPH ALREADY USES
+
+  The command touches several files and a filesystem is not transactional.
+  APPLY-TRANSACTION already solves this shape -- PLAN-OP over every operation,
+  collect every problem, and only then APPLY-OP -- and the same split applies:
+  resolve every document, read every file, locate every status line, validate
+  every target status, compute every destination path, and only then write.
+
+  A refusal names every problem at once rather than the first, for the reason
+  the transaction planner does: an agent that has to run a command five times
+  to discover five problems will stop reading the fifth.
+
+  It is not atomic across files and cannot be. What it is is *all-or-nothing at
+  the decision point*: nothing is written until everything has been checked, so
+  the surviving failure mode is a write that fails mid-sequence on a full disk
+  or a permission change between check and write. That residue is recorded
+  rather than engineered away.
+
+  D7  IT DOES NOT COMMIT
+
+  REQ-0021 R1a already decided this for init and the reason carries: writing a
+  file is reversible in one command and visible in `git status`, while a commit
+  rewrites history a team shares. The transition leaves a dirty tree, which is
+  what a developer expects from a command that edited their documents.
+
+  D8  ONE LOCK, THE ONE THAT IS ALREADY THERE
+
+  REQ-0022's last open question is two agents completing plans against one
+  service in one worktree. WITH-REPOSITORY-LOCK is a recursive per-repository
+  lock DES-0004 introduced to serialise indexing against reindexing, and the
+  transition takes it for the whole plan-and-apply. That makes two concurrent
+  transitions serial, and it stops a poll from reindexing between the plan and
+  the write -- which would otherwise let the command act on a graph that no
+  longer describes the files it is about to edit.
+
+  It does not make the filesystem single-writer. A human with an editor is
+  still a second writer and always will be, and DEC-0001 says that is correct:
+  files are truth, and a command that fought the author for them would be the
+  wrong tool.
+
+  D9  WHERE IT LIVES
+
+  loom-workspace. It writes files and then reindexes, which is that system's
+  existing job; loom-knowledge is read-only by RULE-0003 and loom-analyzer may
+  not touch the tree at all.
+
+  The console gets `complete` and `set-status`. loom-serve gets the same two as
+  :WRITE-tier operations, which is REQ-0022 R6 and the reason it matters:
+  REQ-0021 requires installed agents to reach Loom through the service rather
+  than through a path inside Loom's own tree, so a console-only command would
+  be unusable in the deployment that motivated the whole thing.
+
+  WHAT HAPPENS TO RULE-0005 AND RULE-0007
+
+  Both are retired to advisory rather than superseded or deleted. Retiring is
+  the honest option because the command can be bypassed -- a developer editing
+  a status by hand is not doing anything wrong, files are truth, and a rule
+  that claimed the command was the only way would be false the first time
+  someone used an editor. What changes is that the discipline now has an
+  instrument, so the rules describe an invariant instead of asking a human to
+  maintain one.
+
+  CONSEQUENCES
+
+  `status` should report fewer unenforced rules afterwards -- three today, two
+  of which are these.
+
+  Loom gains its first document-writing capability, and every later feature
+  that wants one now has a place to put it. REQ-0009's owner and change-reason
+  fields are the obvious next tenants, and REQ-0021's init is the other.
+
+  The dry-run-by-default choice means an agent that runs `complete PLAN-0018`
+  and walks away has done nothing. That is deliberate and will occasionally be
+  surprising.

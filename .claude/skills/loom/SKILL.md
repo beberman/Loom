@@ -70,6 +70,14 @@ impact <name> [<depth>]   what a change reaches, plus governing decisions
 context <task words>      a budgeted bundle: what to know before editing
 rules                     constraints; [prose only] means unenforced
 check                     rule violations and unresolved doc references
+set-status <doc> <status> set one document's status and file it where that
+                          status belongs — into completed/ when terminal, back
+                          out when not. One line changed, one rename, nothing
+                          else in the file touched.
+complete <plan> [<doc>=<status> ...]
+                          set a plan final and restate every document it
+                          implements. With no verdicts it writes nothing and
+                          shows what it would need.
 enrich [repo]             load the tree in a bounded child and add what its own
                           toolchain knows: macro-generated definitions, calls
                           xref sees and the text walk does not
@@ -338,6 +346,52 @@ Two mistakes have each already cost a document its place in the index:
 
 After writing, run `status` and confirm the document count rose and
 `unresolved` did not.
+
+## Finishing work: `complete`, not a status you remember to edit
+
+A plan reaching `final` makes the `draft` status of every document it refines
+false, and a false status is worse than none — the next agent believes it. That
+transition used to be RULE-0005, a rule nobody could check because `check`
+inspects a state and the rule describes an event. It is now a command:
+
+```bash
+tools/loom.sh 'complete PLAN-0019'
+```
+
+writes nothing and prints the chain with the verdicts it still needs:
+
+```
+  PLAN-0019      plans          draft       -> final
+  DES-0019       design         draft       -> ?            needs a verdict
+  REQ-0022       requirements   draft       -> ?            needs a verdict
+  CON-0004       concepts       -           -               no status field -- the walk stops here
+To apply: complete PLAN-0019 DES-0019=<status> REQ-0022=<status>
+```
+
+Then supply them. What the command does and does not do:
+
+- **The verdict is yours.** `implemented` means every requirement the document
+  states is now true; `partial` means some landed and the document gains an
+  OUTSTANDING section naming what did not. Nothing derives that, and a command
+  that guessed would write a false claim into a file and then index it.
+- **It walks upward, but only through a terminal verdict.** A `partial` design
+  stops the climb, because the requirement above it is not implemented either.
+- **It refuses a document another unfinished plan still refines**, and names the
+  plan in the way. That query is the reason the command exists — it is the one
+  a human closing a long change will not run.
+- **All or nothing.** Give a verdict for every document it asks about, or it
+  writes none of them. It also refuses whole rather than one problem at a time.
+- **The file moves too.** A terminal status files the document under
+  `completed/`, and a status that stops being terminal moves it back out, so
+  placement and `status:` cannot drift apart. That was RULE-0007.
+- **It does not commit.** The tree is left dirty, which is what you want from a
+  command that just edited your documents.
+
+`set-status <doc> <status>` is the same write path for one document, with no
+propagation query — the way to accept a requirement, close a bug, retire a rule,
+or override a block you have looked at. Both are also `/v1/set-status` and
+`/v1/complete` over REST, and `loom_set_status` and `loom_complete` over MCP,
+which is how an agent working outside this tree reaches them.
 
 ## Markdown is indexed, and earns a weaker edge
 

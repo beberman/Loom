@@ -39,15 +39,26 @@
         (is (not (null (assoc :capabilities result))))
         (is (equal "loom" (cdr (assoc :name (cdr (assoc :server-info result))))))))))
 
-(test tools-list-returns-exactly-ten-and-no-write-tool
+(test tools-list-returns-exactly-twelve-and-no-lifecycle-write-tool
   ;; The negative is the witness for DES-0006's deliberate asymmetry. Without
   ;; it, a later well-meaning restoration of symmetry between the two skins is
   ;; invisible -- the count would simply be fourteen and every other test would
   ;; still pass.
+  ;;
+  ;; Twelve rather than ten since REQ-0022: the two transition tools are on this
+  ;; surface because R6 puts them there and REQ-0021 R8 says why -- an agent
+  ;; installed into a prepared worktree reaches Loom through the service and has
+  ;; no tools/loom.sh to shell out to. The four names below stay absent, which
+  ;; is the part of DES-0006's asymmetry that was actually argued for.
   (with-test-server ()
     (let* ((tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
            (names (mapcar (lambda (tool) (cdr (assoc :name tool))) tools)))
-      (is (= 10 (length tools)) "the tool set is ~a" names)
+      (is (= 12 (length tools)) "the tool set is ~a" names)
+      (dolist (present '("loom_set_status" "loom_complete"))
+        (is-true (member present names :test #'string=)
+                 "~a is missing; REQ-0022 R6 puts the transition on MCP as well
+as REST, and an agent in a prepared worktree has no other way to reach it"
+                 present))
       (dolist (absent '("loom_watch" "loom_pause" "loom_unwatch" "loom_reindex"))
         (is-false (member absent names :test #'string=)
                   "~a is exposed; DES-0006 rejects the write tools under

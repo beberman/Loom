@@ -241,3 +241,49 @@ The console's own cap, so the two answer the same question the same way.")
   (let ((watched (require-repository repository)))
     (reindex-repository watched :quiet t)
     (repository-status watched)))
+
+;;;; ------------------------------------------------------------------
+;;;; Document state transitions (REQ-0022 R6, DES-0019 D9)
+;;;;
+;;;; The first two entries in this table that write a file rather than an
+;;;; index, and the reason they are here at all rather than only in the console.
+;;;; REQ-0021 requires installed agents to reach Loom through the service --
+;;;; REST under /v1/ or MCP at /mcp -- rather than through a path inside Loom's
+;;;; own tree, because a prepared worktree has no tools/loom.sh in it. A
+;;;; console-only transition command would be unusable in exactly the deployment
+;;;; that motivated building it.
+;;;;
+;;;; They name their repository like everything else here, and REQUIRE-REPOSITORY
+;;;; refuses to guess. That refusal matters more for these two than for any read
+;;;; entry above: a misdirected query is a wrong answer, while a transition that
+;;;; wrote into the wrong worktree has edited somebody else's documents.
+;;;; ------------------------------------------------------------------
+
+(defun transition-result (report)
+  "REPORT as an answer, or a MALFORMED-REQUEST naming every problem it collected.
+
+A refusal is a statement about the request -- a status outside the document's
+vocabulary, a verdict for a blocked document, a plan whose file has no top-level
+status line -- so it belongs on the 400 path rather than arriving as a 200 with
+a problems array a client has to remember to read. All of them in one message,
+because the underlying command collected them all for that purpose."
+  (let ((problems (getf report :problems)))
+    (if problems
+        (error 'malformed-request
+               :message (format nil "~{~a~^~%~}" problems))
+        report)))
+
+(define-operation :set-status :write (repository document status)
+    "Set one document's status and file it where that status belongs."
+  (transition-result
+   (set-document-status (require-repository repository) document status)))
+
+(define-operation :complete :write (repository plan (verdicts))
+    "Set a plan final and restate every document it implements. Without verdicts, a dry run."
+  ;; VERDICTS is one string -- "DES-0019=implemented REQ-0022=partial" -- and
+  ;; not an object, because an MCP tool argument is declared a string by
+  ;; TOOL-INPUT-SCHEMA and an HTTP query parameter is one whatever it means.
+  ;; One spelling that works on all three surfaces beats a richer shape that
+  ;; works on one of them.
+  (transition-result
+   (complete-plan (require-repository repository) plan :verdicts verdicts)))

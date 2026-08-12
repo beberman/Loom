@@ -47,7 +47,12 @@
     ;; empty: a caller iterating them should get [] rather than having to
     ;; treat null as "none".
     :unenforced :collisions :unhandled-definer-macros :items :seeds :relations
-    :properties-filters :call-names)
+    :properties-filters :call-names
+    ;; The transition report (REQ-0022). :PROBLEMS empty is the ordinary
+    ;; answer and :CHANGED empty is what a dry run and an already-completed
+    ;; plan both return, so all three have to encode as [] rather than null --
+    ;; a client branching on "did anything happen" reads these directly.
+    :problems :changed :blocked-by)
   "Keys whose value is a sequence even when it is empty.
 
 Two jobs. NIL under one of these encodes as [] rather than null, so an empty

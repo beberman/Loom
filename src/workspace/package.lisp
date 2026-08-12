@@ -37,6 +37,14 @@
    ;; POLL-ONCE, the monitor, watch or reindex reaches it.
    #:enrich-repository
 
+   ;; document state transitions (REQ-0022, DES-0019) -- the one write path
+   ;; that edits a document rather than reading one. Both return a report
+   ;; plist whose :PROBLEMS is empty exactly when something was written.
+   #:set-document-status
+   #:complete-plan
+   #:parse-verdicts
+   #:document-status-vocabulary
+
    ;; monitoring
    #:start-monitor
    #:stop-monitor

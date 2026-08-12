@@ -344,6 +344,109 @@ unconditionally is which units were attempted and what became of them
           (getf report :dropped-unknown-kind)
           (getf report :edges-dropped)))
 
+;;;; ------------------------------------------------------------------
+;;;; Document state transitions (REQ-0022, DES-0019)
+;;;;
+;;;; The two commands that write. Everything else in this table reads an index
+;;;; built from files; these edit the files themselves, so the rendering has one
+;;;; job the others do not: make it obvious what was written and what was not.
+;;;; A report whose :PROBLEMS is non-empty means nothing at all was written, and
+;;;; that sentence is printed rather than left to be inferred from the absence
+;;;; of a change line.
+;;;; ------------------------------------------------------------------
+
+(defun print-transition-problems (report)
+  "The refusals, all of them. True when there were any.
+
+Every problem at once rather than the first, because the underlying command
+collects them that way for a reason: an agent that has to run a command five
+times to discover five problems will stop reading the fifth."
+  (let ((problems (getf report :problems)))
+    (when problems
+      (format t "~&Nothing was written. ~d problem~:p:~%" (length problems))
+      (dolist (problem problems) (format t "  - ~a~%" problem))
+      t)))
+
+(defun transition-action-note (row)
+  "The right-hand column for one document in a transition report."
+  (case (getf row :action)
+    (:no-status        "no status field -- the walk stops here")
+    (:already-finished "already finished")
+    (:blocked          (format nil "blocked by ~{~a~^, ~}" (getf row :blocked-by)))
+    (:awaiting-verdict "needs a verdict")
+    (:unchanged        "already there")
+    (t                 nil)))
+
+(defun transition-target (row)
+  "The status column on the right of the arrow.
+`?' where the caller still owes a verdict, so the gap is visible in the column
+rather than only in the note beside it."
+  (or (getf row :verdict)
+      (case (getf row :action)
+        ((:no-status :already-finished) "-")
+        (t "?"))))
+
+(defun print-transition-documents (report)
+  (dolist (row (getf report :documents))
+    (format t "  ~14a ~14a ~(~11a~) -> ~(~13a~)~@[~a~]~%"
+            (getf row :doc-id)
+            (or (getf row :category) "")
+            (or (getf row :status) "-")
+            (transition-target row)
+            (transition-action-note row))))
+
+(defun print-transition-changes (report)
+  (let ((changed (getf report :changed)))
+    (dolist (change changed)
+      (format t "  ~14a ~(~a~) -> ~(~a~)~@[  moved to ~a~]~%"
+              (getf change :doc-id) (or (getf change :from) "-") (getf change :to)
+              (and (getf change :moved) (getf change :file))))
+    (format t "~&~d document~:p changed, ~d file~:p moved.~%"
+            (length changed)
+            (count-if (lambda (c) (getf c :moved)) changed))))
+
+(define-command set-status (document status &optional designator)
+    "set-status <document> <status> [<name>]"
+    "Set one document's status and file it where that status belongs."
+  ;; The primitive. It runs no propagation query on purpose -- this is the way
+  ;; to say "I know what I am doing" about one document, and files are truth: a
+  ;; developer with an editor can always do the same thing, so a command that
+  ;; refused would only be telling them to use the editor.
+  (let* ((repository (current-repository designator))
+         (report (set-document-status repository document status)))
+    (unless (print-transition-problems report)
+      (log-event "set-status" "~a ~a" document status)
+      (if (getf report :changed)
+          (print-transition-changes report)
+          (format t "~&~a is already ~(~a~), filed at ~a. Nothing to do.~%"
+                  (getf report :document) (getf report :status) (getf report :file))))))
+
+(define-command complete (plan &rest verdicts)
+    "complete <plan> [<doc>=<status> ...]"
+    "Set a plan final and restate every document it implements."
+  ;; With no verdicts this writes nothing and shows what it would do. Dry run by
+  ;; default rather than behind a flag, which is the right default for a command
+  ;; whose failure mode is editing files -- and it means an agent that runs
+  ;; `complete PLAN-0019' and walks away has done nothing.
+  (let* ((repository (current-repository))
+         (report (complete-plan repository plan :verdicts verdicts)))
+    (print-transition-documents report)
+    (unless (print-transition-problems report)
+      (cond ((getf report :dry-run)
+             (format t "~&Dry run: nothing written.~%")
+             (let ((awaiting (remove-if-not
+                              (lambda (row) (eq :awaiting-verdict (getf row :action)))
+                              (getf report :documents))))
+               (when awaiting
+                 ;; The line the caller types next, assembled rather than
+                 ;; described. A verdict per document is a judgement Loom cannot
+                 ;; make, but which documents need one is not.
+                 (format t "~&To apply: complete ~a~{ ~a=<status>~}~%"
+                         (getf report :plan)
+                         (mapcar (lambda (row) (getf row :doc-id)) awaiting)))))
+            (t (log-event "complete" "~a" (getf report :plan))
+               (print-transition-changes report))))))
+
 (define-command find (term &optional type)
     "find <name> [<type>]"
     "Where something is defined. The entry point for \"where is X\"."
