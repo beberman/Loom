@@ -50,27 +50,37 @@ summary: |
   No requirements documents, design documents, or any other documents should be constructed
   only the architecture documents.
 
-  The ids that the Loom service users for documents need to be generated in a way that
-  will not create conflicts across a team working in multiple branchs on the same git tree.
-  That either requires that a single Loom service is available to all users as a server and
-  it has a get id or construct next document of type function which considers the ids across the
-  checkouts. The other is to switch from a sequential id to a UUID that is generated.
+  The ids Loom hands out for documents must not collide across a team working
+  on several branches of one git tree. That is REQ-0025 and no longer this
+  requirement's to solve: allocation becomes a service operation backed by a
+  ledger keyed on the history the branches share, so two branches of one
+  project draw from one counter while keeping two indexes. This requirement
+  depends on it and states what init has to do about it.
 
 body: |
   ORDER
 
-  REQ-0022 must be implemented before this document.
+  REQ-0022 and REQ-0025 must both be implemented before this document.
 
-  REQ-0022 makes document state transitions a Loom command
-  rather than a rule, and this requirement depends on that in two places: R4c
-  says a prepared workspace gets no workflow rule because the transition is
-  performed rather than remembered, and R4d says the installed agents invoke
-  the command rather than describing the manual procedure.
+  REQ-0022 makes document state transitions a Loom command rather than a rule,
+  and this requirement depends on that in two places: R4c says a prepared
+  workspace gets no workflow rule because the transition is performed rather
+  than remembered, and R4d says the installed agents invoke the command rather
+  than describing the manual procedure.
 
-  Preparing workspaces
-  with agent text that teaches a procedure about to be replaced would install
-  the stale instructions REQ-0022 R8 exists to remove, into every tree init has
-  touched, where they are far more expensive to correct than in this one.
+  Preparing workspaces with agent text that teaches a procedure about to be
+  replaced would install the stale instructions REQ-0022 R8 exists to remove,
+  into every tree init has touched, where they are far more expensive to
+  correct than in this one.
+
+  REQ-0025 makes document id allocation a service operation with a ledger
+  behind it, and this requirement depends on that in three places: R4a says
+  transcribed documents take workspace-local ids, R14 says init allocates
+  through the service rather than by reading the directory, and R10a's
+  duplicate check is REQ-0025 R7. Preparing a tree whose agents allocate ids by
+  counting files would install the collision into every workspace, and unlike
+  the stale agent text it would not be visible until two people had already
+  written over each other.
 
   WHAT IS WRONG
 
@@ -98,9 +108,13 @@ body: |
   THE DEPLOYMENT THIS ASSUMES, AND WHAT IT CHANGES
 
   Loom is installed separately and runs as a service. The target is a git
-  worktree pinned to a tag. The script prepares that worktree, launches Loom
-  against it, and then writes architecture documents into it. Four consequences
-  follow, and each is a constraint rather than a detail.
+  worktree on a branch -- not pinned to a tag, which an earlier draft assumed
+  and which settled nothing: a worktree pinned to a tag is a detached checkout
+  that cannot hold a commit, and init's entire output is files. On a branch the
+  documents are ordinary tracked files and the normal review path applies. The
+  script prepares that worktree, launches Loom against it, and then writes
+  architecture documents into it. Several consequences follow, and each is a
+  constraint rather than a detail.
 
   The installed agents cannot drive Loom the way Loom's own do. Every agent
   definition in this tree reaches Loom through `tools/loom.sh`, a script that
@@ -114,61 +128,98 @@ body: |
   a repository; several may be registered at once, and this tree's own console
   already refuses an ambiguous `impact` when two are.
 
-  An agent working in a
-  prepared worktree must be able to name its own repository in every query, or
-  it will get answers about somebody else's code. Loom's REST and MCP surfaces
-  take a repository argument; the console command does not always, and that
-  gap must now be closed.
+  An agent working in a prepared worktree must be able to name its own
+  repository in every query, or it will get answers about somebody else's code.
+  Loom's REST and MCP surfaces already take a repository argument and refuse to
+  guess -- REQUIRE-REPOSITORY is explicit that an operation invoked without a
+  designator is a malformed request rather than an ambiguous one -- so the
+  service half of this is closed. The console half is not: `find`, `describe`,
+  `impact`, `context` and `complete` call CURRENT-REPOSITORY with no designator
+  and refuse outright once two repositories are watched. That gap is REQ-0023
+  phase 1 and is named here because init's output depends on it, not because
+  this requirement should fix it.
 
-  Loom is installed as a separate service. For a single developer that can be on the
-  development machine. For a team working together on a code base Loom would be a central
-  server that has access to each developer disk space where their particular git version
-  is running. That requires NFS mounts of the user drives and permission to write and read those
-  partitions.
+  WHERE THE SERVICE RUNS, AND WHAT THAT COSTS
 
-When a user inits they link the Loom service to a particular git tree and branch.
+  For one developer the service runs on the development machine and the
+  worktree is a local directory. For a team it is a central server that must
+  reach each developer's checkout, which in practice means the checkouts are
+  network-mounted and the service has read and write access to them. When a
+  user inits, they link the service to one git tree and branch.
 
-  Init therefore writes and never commits, never pushes, and never opens a
-  merge request. The distinction is not fastidiousness: writing a file into a
-  working tree is reversible with one command and visible in `git status`,
-  while a commit rewrites history a team shares. Loom writing documents is a
-  new capability either way, and the smaller destructive surface is the one to
-  ship first.
+  That deployment is not free and the costs belong in the requirement rather
+  than in the design, because they bear on whether it is the right shape at
+  all. Three are properties of code that already exists:
+
+    The file monitor is a two-second mtime poll. FILE-CHANGED-P compares
+    FILE-WRITE-DATE against the local clock, and over a network mount those
+    are two clocks. A server ahead of the client by more than
+    *MTIME-SETTLE-SECONDS* makes the comparison negative, so every file falls
+    through to the content-hash branch on every poll -- correct, and it reads
+    the whole tree continuously. A server behind loses edits inside the skew.
+
+    Attribute caching defeats the poll's assumption. A network filesystem may
+    hold a cached mtime for tens of seconds, against a poll designed around
+    two.
+
+    Writing needs an identity. The transition command of REQ-0022 writes into
+    the worktree, and a central service doing that runs as its own user: the
+    files it writes are owned by that user, and `git status` in the
+    developer's tree shows changes made by a process that is not them. Whether
+    that is acceptable is a decision, not a detail.
+
+  None of these is fatal and none is this requirement's to solve. They are the
+  reason the single-developer deployment must remain first-class rather than
+  becoming the degenerate case of the team one.
+
+  WHO IS ASKING
+
+  Because several developers may use one service, Loom needs to associate a
+  caller with the checkouts that are theirs. There is already a seam: a request
+  carries an Authorization header, RESOLVE-CALLER-GRANTS turns it into grants
+  and CHECK-CAPABILITY gates the operation's tier. What does not exist is any
+  notion of *which repositories* a caller may name -- every operation takes a
+  repository designator and any caller may pass any of them.
+
+  So this is an extension of the capability model rather than a second
+  mechanism, and it is a larger change than it reads: the repository set
+  becomes per-caller, which lands on REQUIRE-REPOSITORY and through it on every
+  entry in the registry. The design should say plainly whether it is building
+  authentication or only scoping, because those are different projects and only
+  the second is needed to stop an agent being answered about somebody else's
+  tree.
+
+  WHAT INIT WRITES, AND WHAT IT LEAVES TO THE TEAM
+
+  Init writes files and never commits, never pushes and never opens a merge
+  request. The distinction is not fastidiousness: writing a file into a working
+  tree is reversible with one command and visible in `git status`, while a
+  commit rewrites history a team shares. Loom writing documents is a new
+  capability either way, and the smaller destructive surface is the one to ship
+  first. Committing the branch and raising the merge request belong to the dev
+  team, which is also what moves Loom's documents across branches.
+
+  IDS ACROSS BRANCHES -- REQ-0025
 
   Documents travelling across branches by merge has a consequence the workflow
   has never faced, because Loom's own tree has only ever had one line of
-  document history. Two branches that each add a document will each allocate
-  the next free id from the state they can see, and both will pick the same
-  number.
+  document history. Two branches that each add a document allocate the next
+  free id from the state each can see, and both pick the same number.
 
-  Git catches the ordinary case: the filename carries the id, so two branches
-  adding DES-0022.yaml will collide. They may have very different meanings we
-  therefore must avoid collisions.  To do this the ids must either move
-  to a UUID system, or Loom must create the initial blank documents using ids that it
-  knows will not collide across the known user branches.
+  REQ-0025 answers it and this requirement does not restate the answer: ids are
+  allocated by a service operation from a ledger keyed on the root commit the
+  branches share, so two checkouts of one project draw from one counter while
+  keeping two indexes. UUIDs were the alternative and are rejected there, on
+  grounds this document supplies half of -- R10 requires a prepared worktree's
+  documents stay readable by a human with no agent runtime, and an id nobody
+  can type or sort by is not that.
 
-  Because multiple users could be using the same Loom service, Loom must have a way
-  of associating user names (login credentials) with a set of user directories that
-  are the workspace that user is working on.
-
->> rewrite
-    id-keyed types -- DEC, DES, ARCH, RULE, CON -- have :natural-key (:doc-id).
-      Two files carrying one id derive one entity id, so the second assert
-      absorbs into the first. Two documents become one entity, later-write-wins
-      on the properties, and nothing reports it. Retracting either file removes
-      the entity they share.
-
-    path-keyed types -- REQ, PLAN, BUG, REV -- have :natural-key (:path). Two
-      files carrying one id stay two entities, LINKABLE-INDEX holds both under
-      that id, and RESOLVE-ONE refuses an ambiguous name. Every reference to
-      that id becomes unresolved and is reported, which is the correct and
-      visible failure.
-
-  So the id-keyed half of the taxonomy has a silent failure available to it
-  under exactly the workflow this requirement asks for, reachable by a
-  mis-resolved conflict or a copied file rather than by the common path. A
-  duplicate-doc-id check would make it visible and costs little; it is worth
-  having before documents start crossing branches rather than after.
+  What is left here is init's part of it, and it is small. Init writes documents
+  -- the workflow concept and the ARCH documents -- so it is a caller of the
+  allocator like any other, and R14 says it must allocate rather than count
+  files. Init also creates the tree in which the counter's key first exists: a
+  worktree with no commits has no root commit to key on, which is REQ-0025's
+  first open question and reaches it through this requirement.
 
   The branch also makes the index reproducible in the way a tag would have: a
   structural report derived from a known commit can name that commit, so a
@@ -430,30 +481,32 @@ When a user inits they link the Loom service to a particular git tree and branch
       about the target, while everything init derives from the index is
       confined to ARCH.
 
-  R4a Transcribed documents take workspace-local ids. A fresh tree has no
-      concepts and no rules, so the workflow concept is that tree's CON-0001
-      and a transcribed workflow rule is its RULE-0001. Loom's own ids do not
-      travel and Loom's own documents are not renumbered to match: the same
-      text is CON-0004 and RULE-0005/RULE-0007 here, and CON-0001 and RULE-0001
-      there. The workflow concept defines the document types, id prefixes,
-      status vocabularies and the refines: chain for everything written in that
-      tree afterwards.
+  R4a Transcribed documents take workspace-local ids, allocated the same way
+      every other document in that tree will be -- through REQ-0025's operation,
+      against that project's own counter. A fresh tree has no concepts and no
+      rules, so the workflow concept is that tree's CON-0001. Loom's own ids do
+      not travel and Loom's own documents are not renumbered to match: the same
+      text is CON-0004 here and CON-0001 there. The workflow concept defines the
+      document types, id prefixes, status vocabularies and the refines: chain
+      for everything written in that tree afterwards.
 
   R4b No installed agent may name a transcribed document by an id belonging to
       Loom's own tree. The same text carries different ids in the two places,
-      so agent text naming CON-0004 or RULE-0005 is wrong in every workspace it
-      is copied into. Agents refer to these by role -- the workflow concept,
-      the workflow rule -- or init rewrites the reference to the local id as it
-      installs. One agent text has to be correct in both places, which is the
-      point of installing it at all.
+      so agent text naming CON-0004 is wrong in every workspace it is copied
+      into -- and under R4a the local id is not even predictable, since it comes
+      from that project's counter rather than from being the first of its kind.
+      Agents refer to these by role -- the workflow concept -- or init rewrites
+      the reference to the allocated id as it installs. One agent text has to be
+      correct in both places, which is the point of installing it at all.
 
   R4c The document state transitions are a Loom command, not a rule
       transcribed into the workspace -- REQ-0022. A prepared workspace
       therefore gets no workflow rule at all: the transition is performed
       rather than remembered, so there is nothing for init to write and nothing
       for an agent to be told to observe. Where a transcribed rule is needed
-      later for some other reason, R4a's numbering applies to it -- it is that
-      tree's RULE-0001 -- but the workflow transition is not that case.
+      later for some other reason, R4a's rule applies to it -- its id comes from
+      that project's counter like any other -- but the workflow transition is
+      not that case.
 
   R4d The installed agents invoke the transition command rather than
       performing the transition by hand. Loom's own agent definitions currently
@@ -496,13 +549,29 @@ When a user inits they link the Loom service to a particular git tree and branch
       conventions may assume; it does not make R1's agent installation
       optional.
 
-  R10a `check` reports a duplicate doc-id. Git catches two branches adding the
-      same filename, but not a conflict resolved by renaming one file without
-      changing the id inside it, nor a document copied rather than moved into
-      completed/. For the id-keyed types -- DEC, DES, ARCH, RULE, CON -- that
-      collapses two documents into one entity with nothing reported. Merge-safe
-      id allocation would prevent it and is worth considering; a check makes it
-      visible and is the smaller change.
+  R10a `check` reports a duplicate doc-id, which is REQ-0025 R7 and is named
+      here because a prepared tree needs it from its first day. It is the
+      detector rather than the prevention: allocation through REQ-0025's ledger
+      is what stops two branches picking one number, and this catches what gets
+      past it -- a conflict resolved by renaming one file without changing the
+      id inside it, a document copied rather than moved into completed/, and an
+      id allocated while the service was unreachable.
+
+  R14 Init allocates every id it writes through the service, never by counting
+      files in the directory it is about to write into. Init runs against a tree
+      whose branch is one of several, so the state it can see is exactly the
+      state REQ-0025 exists because two people cannot both trust. A prepared
+      workspace whose first documents were numbered by a directory listing has
+      the collision built into it before anyone has written anything.
+
+  R15 Two repositories registered with one service cannot share a name. This is
+      REQ-0025 R8 and it lands on init directly: a prepared worktree is one of
+      several checkouts of one project, so the name init registers is the one an
+      agent will type, and today WATCH-REPOSITORY derives it from the last path
+      component -- which is the project name in every checkout. Measured
+      2026-08-12: two checkouts register as two repositories with one name, and
+      both FIND-REPOSITORY and REQUIRE-REPOSITORY silently answer with whichever
+      was registered last. R8 above states why that is worse than failing.
 
   R11 Acceptance is measured on ~/lisp/game-server, and must separate init's
       contribution from the filter fix named above. Record `documents`,
@@ -553,11 +622,19 @@ When a user inits they link the Loom service to a particular git tree and branch
     only unanswered question that can stop init from finishing.
     game-server cannot settle it -- it has `.claude/settings.local.json` and no
     agents -- so the design needs a repository that does.
-  - How are merge-safe ids allocated? A per-branch prefix, a monotonic
-    allocator held by the service, or a duplicate-doc-id check that catches the
-    collision after the fact. The first two prevent it; the third makes it
-    visible, which for the id-keyed types is the difference between a reported
-    problem and a silent one.
+  - How does init allocate ids in a tree that has no commits yet? REQ-0025 keys
+    its ledger on the root commit, and a worktree prepared before anything is
+    committed has none. This is REQ-0025's first open question and init is how
+    it is reached, so the two have to be answered together: either init defers
+    the documents it writes until the first commit, or it allocates against a
+    provisional key that is rewritten when the root commit exists -- a rename
+    of the ledger's key while ids are already outstanding.
+  - Is the caller's identity authentication or only scoping? A service serving
+    several developers must at least know which checkouts a caller may name, so
+    that an agent is not answered about somebody else's tree. Whether it must
+    also establish *who* the caller is, rather than trusting a name they supply
+    over a loopback interface, is a separate and much larger project, and the
+    design should say which one it is building.
   - How is the chosen document directory recorded so that the script, the
     console and every installed agent agree on it? A file in the worktree is
     the obvious answer and is itself a Loom-written file, which R3 constrains.
