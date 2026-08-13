@@ -41,6 +41,11 @@
    #:render-context
    #:*context-token-budget*
    #:*context-relation-limit*
+   ;; DES-0020: how much prose a bundle admits. Exported for the reason
+   ;; *CONTEXT-RELATION-LIMIT* is -- the right number is a judgement about
+   ;; budget rather than a fact, and someone tuning it should not have to
+   ;; reach into the package.
+   #:*context-mention-limit*
    #:*seed-type-preference*
    #:estimate-tokens
 

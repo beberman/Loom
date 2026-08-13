@@ -1,0 +1,226 @@
+id: DES-0020
+title: Band a bundle by the edge that carried each document into it, and say so in the text
+status: implemented
+date: 2026-08-12
+refines: [REQ-0026]
+affects: [build-context, render-context, context-item, documents-touching, seed-entities]
+tags: [context, documents, knowledge, req-0014, bug-0023]
+summary: |
+  REQ-0026 asks that `context` stop discarding the documents it collects. This
+  is the shape: the collector keeps the edge each document arrived on and sorts
+  by it rather than by entity type, producing the three bands `impact` already
+  reports -- decisions, documents, mentions -- with the third ranked by how much
+  of the bundle a document actually names and capped at a parameter.
+
+  The load-bearing observation is that the edge is a stronger test than the type
+  and is structural rather than heuristic. A declared edge can only exist
+  because an author wrote affects:, applies-to: or describes: in a YAML
+  document; the markdown analyzer has no field to write one from and produces
+  :MENTIONS only. So banding on the edge separates authored claims from prose
+  observations exactly, without a list of types to keep in step with the
+  taxonomy -- which is what went wrong the first time, since the list was
+  written before :DOCUMENT covered four workflow categories.
+
+  The change is additive by construction: every entity the current filter
+  admits is admitted by one of the three bands, so no bundle loses anything.
+body: |
+  D1  THE COLLECTOR KEEPS THE EDGE
+
+  DECISIONS-TOUCHING walks incoming :DECIDES, :APPLIES-TO, :DOCUMENTS and
+  :MENTIONS edges and pushes the neighbour *entity*, discarding the NEIGHBOR
+  struct that knows which edge it came from. That discard is the whole defect:
+  by the time the type filter runs, the one fact that could separate a
+  requirement's declaration from a README's backtick is gone, and the type is
+  all that is left to filter on.
+
+  So it keeps the relationship. The function is renamed DOCUMENTS-TOUCHING,
+  because it no longer returns decisions, and it returns three lists.
+
+  D2  THREE BANDS, ASSIGNED STRONGEST FIRST
+
+    decisions   a governing type -- :DECISION, :DESIGN, :ARCHITECTURE, :RULE,
+                :CONCEPT -- reached by any of the four edges.
+
+    documents   any other document type reached by a *declared* edge:
+                :DECIDES, :APPLIES-TO, :DOCUMENTS.
+
+    mentions    any document type reached only by :MENTIONS, ranked and capped
+                per D4.
+
+  A document qualifying for more than one band takes the strongest, so a design
+  reached by both a :DECIDES and a :MENTIONS is a decision and appears once.
+  Assignment is per document rather than per edge, which is what keeps a
+  document from appearing twice in one bundle.
+
+  The first band is the current behaviour exactly, including the part the
+  existing comment defends: a governing type reached *only* by a mention in
+  someone's prose still lands in decisions, because that is what walking
+  :MENTIONS was for. Nothing that reaches a bundle today stops reaching one,
+  which is REQ-0026 R6 and is a property of the band definitions rather than
+  something to test for separately -- though the test exists anyway.
+
+  D3  WHY THE EDGE AND NOT A WIDER TYPE LIST
+
+  The obvious smaller change is to add :DOCUMENT to the five-type list. It is
+  wrong for the reason the list is wrong: the type cannot tell a requirement
+  declaring affects: from a README backticking a name, because REQ-0014
+  deliberately types both as :DOCUMENT -- a markdown file must never be a REQ or
+  a DEC, since the directory-names-the-type registry is this tree's convention
+  and not a fact about markdown. Adding :DOCUMENT admits both populations and
+  floods the budget, which is what the filter was put there to prevent.
+
+  The edge test has a property the type test cannot have: a declared edge exists
+  only because an author wrote a field, and the markdown analyzer has no field
+  to write one from. So markdown cannot reach the documents band at all, by
+  construction rather than by exclusion -- there is no rule anywhere saying
+  "except markdown", and none is needed.
+
+  It also stops the list going stale the way this one did. The five types were
+  right when they were written and became wrong when :DOCUMENT started carrying
+  requirements, plans, bugs and reviews. A band defined by edges does not need
+  editing when a category is added to *DOCUMENT-TYPE-DIRECTORIES*.
+
+  D4  THE MENTION BAND IS RANKED, AND THE RANK IS DERIVED
+
+  Prose is unbounded and a bundle is a token budget, so the mention band cannot
+  be admitted wholesale. Two ways to bound it and only one of them is honest.
+
+  A bare cap takes the first N in whatever order the graph yielded them, which
+  is an arbitrary answer that looks definite -- CON-0001's shape.
+
+  So it is ranked by a number the index already holds: how many distinct
+  entities in the bundle -- seeds plus their one-hop expansion -- each document
+  mentions. A document naming many of them is more likely to be about the task
+  than one naming a single entity once. On game-server this is exactly the
+  discriminator that matters: docs/data-layer.md resolves 28 mentions and will
+  rank first for a data-layer task, while a README that backticked `config`
+  ranks last.
+
+  Ties break on the document's name, so a bundle is reproducible across runs
+  rather than depending on hash order.
+
+  *CONTEXT-MENTION-LIMIT* is the cap, defaulting to 5. A parameter and not a
+  literal, on *CONTEXT-RELATION-LIMIT*'s precedent, because the right number is
+  a judgement about budget rather than a fact and someone will want to tune it.
+
+  D5  THE BUDGET ORDER
+
+  BUILD-CONTEXT admits seeds, then decisions, then the one-hop expansion,
+  cheapest-first within each band so that a bundle running out of room loses
+  distant neighbours rather than what the task named. The two new bands slot in
+  by strength:
+
+      seeds -> decisions -> documents -> mentions -> expanded
+
+  Mentions before the expansion rather than after it, which is the one debatable
+  placement here. The argument: the expansion is already reachable by asking
+  `describe` on a seed, while the prose is the thing that is not recoverable by
+  reading the code, and the mention band is capped at five so it cannot crowd
+  out much. A bundle that truncates now loses its fortieth structural neighbour
+  instead of the document that explains the design.
+
+  D5a THE DOCUMENT BANDS ARE BUDGETED FIRST -- AMENDED IN IMPLEMENTATION
+
+  D5's ordering is necessary and was not sufficient, and the measurement that
+  showed it is the one this design was built for. On ~/lisp/game-server,
+  `context dhandler-delete soft deletion' spent 1968 of its 2000 tokens on
+  eight seeds and their twelve relations apiece, truncated, and never reached a
+  single document. The band this design exists to add was empty on exactly the
+  repository it was added for -- an ordering is worthless if the budget is gone
+  before the order is consulted.
+
+  So the document bands are costed before the seeds are admitted and that cost
+  is held back. Seeds are admitted against the budget less the reserve; the
+  bands are then admitted against the whole budget and fit by construction.
+
+  Three things bound it, because a reserve is a claim on someone else's room:
+
+    It is what the bands actually cost, not a fixed fraction. They are cheap by
+    construction -- one line each, no relations, and the mention band already
+    capped at five -- so on most trees the reserve is small.
+
+    It is capped at half the budget, so a tree with a hundred governing
+    decisions cannot starve the code the task asked about.
+
+    It may never cost the first seed. Seeds are ordered best-match-first and
+    the first is admitted against the whole budget, because a bundle answering
+    "what is this code" with nothing but reasoning about it would invert
+    BUILD-CONTEXT's own promise that a bundle running out of room loses distant
+    neighbours rather than what the task named. Measured while writing the
+    guard: without it, a 200-token budget dropped the exact match and admitted
+    a worse one that happened to be cheaper.
+
+  This is the same judgement D5's ordering encodes, applied one level up. What
+  re-reading the source cannot give back is the part worth the tokens, and a
+  budget that spends itself on the twelfth relation of the eighth seed has
+  bought structure an agent could have got from `describe'.
+
+  D6  THE BANDS ARE VISIBLE IN THE TEXT
+
+  RENDER-CONTEXT prints :ITEMS as a flat list of entity lines and never prints
+  :DECISIONS at all -- decisions reach the text only by being admitted into
+  :ITEMS, where they read as untitled lines among the functions. So a change to
+  the data alone would be one nothing could observe, which is REQ-0026 R5.
+
+  Each item carries a :BAND, one of :SEED, :DECISION, :DOCUMENT, :MENTION,
+  :NEIGHBOUR, and RENDER-CONTEXT prints a heading when the band changes. The
+  items list stays one list in the order it was admitted, so nothing downstream
+  has to learn a new shape -- the bundle gains a key on each item and the text
+  gains four lines.
+
+  The headings say what the band means rather than naming it, because the reader
+  is an agent deciding what to read next:
+
+      ## the task named these
+      ## decisions governing them
+      ## documents bearing on them
+      ## prose that names them
+      ## one hop away
+
+  D7  WHAT STAYS THE SAME
+
+  The bundle keeps its :DECISIONS key with the same meaning it has now, so
+  existing callers and the two tests over it are untouched, and gains
+  :DOCUMENTS and :MENTIONS beside it. loom-serve's :CONTEXT operation returns
+  BUILD-CONTEXT's plist directly, so REST and MCP get the new keys with no edit
+  -- they need adding to *ARRAY-VALUED-KEYS* so an empty band encodes as [] and
+  not null, which is that list's whole job.
+
+  No analyzer changes, no resolution changes, no new edge and no new entity
+  type. Every fact this surfaces is already in the index and already reported by
+  `impact`; the only thing that changes is which of them BUILD-CONTEXT keeps and
+  how the text is laid out.
+
+  ALTERNATIVES CONSIDERED
+
+  Add :DOCUMENT to the type list. One line, and it is REQ-0021's estimate. It
+  admits the two populations the filter exists to separate and floods the
+  budget with prose; rejected under D3.
+
+  Rank by confidence rather than by mention count. :MENTIONS edges carry
+  *MENTION-CONFIDENCE*, so the number is already there -- but it is a constant
+  for every mention edge in the index, so ranking by it produces the arbitrary
+  order D4 rejects, wearing a number that makes it look principled.
+
+  Give prose its own command rather than a band. `context` is the one call an
+  agent makes before editing, and a second command it has to know to make is a
+  command it will not make. The band is what makes this reach the caller.
+
+  CONSEQUENCES
+
+  Bundles get bigger, which is the point and is bounded: the documents band is
+  as large as the number of documents whose authors declared they bear on this
+  code, which is small and self-limiting, and the mention band is capped at
+  five. What grows is the useful half.
+
+  A bundle on a tree with no documents at all is unchanged, so nothing about
+  this improves a repository nobody has written anything about. That is
+  REQ-0021's job and this does not do it -- it makes the prose a foreign tree
+  already has reachable, which is a different and smaller claim.
+
+  CLAUDE.md currently says "impact's documents: line is consequently empty on
+  this tree, and that is the honest report -- nothing in CON-0004 currently lets
+  an author declare that a document documents a function." That stopped being
+  true when BUG-0023 made affects: readable from every document type: the line
+  now reads `documents: PLAN-0019, REQ-0025`. Corrected in passing, because this
+  design's whole argument rests on those edges existing.

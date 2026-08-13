@@ -52,6 +52,10 @@
     ;; answer and :CHANGED empty is what a dry run and an already-completed
     ;; plan both return, so all three have to encode as [] rather than null --
     ;; a client branching on "did anything happen" reads these directly.
+    ;; DES-0020's context bands need nothing added: :DOCUMENTS and :MENTIONS are
+    ;; already above, carrying the same meaning for the impact report that they
+    ;; now carry for a bundle, which is the point of the two services sharing
+    ;; one vocabulary.
     :problems :changed :blocked-by)
   "Keys whose value is a sequence even when it is empty.
 

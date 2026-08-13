@@ -185,10 +185,20 @@ is dropped in silence rather than counted as a rotten reference — prose is ful
 of ordinary words in backticks.
 
 `:mentions` is where every prose mention now lands, including the ones the YAML
-analyzer finds in a document's own body. They used to be `:documents` edges;
-`impact`'s `documents:` line is consequently empty on this tree, and that is the
-honest report — nothing in CON-0004 currently lets an author *declare* that a
-document documents a function.
+analyzer finds in a document's own body. They used to be `:documents` edges.
+`impact`'s `documents:` line carries the declared kind instead — a requirement's,
+plan's or bug's `affects:`, and an architecture document's `describes:` — which
+it did not until BUG-0023 made `affects:` readable from every document type, so
+a claim that the line is empty on this tree is out of date rather than honest.
+
+`context` bands the same three ways `impact` does (REQ-0026, DES-0020) and says
+which band each entry is in: what the task named, decisions governing it,
+documents bearing on it, prose that names it, and one hop away. The bands are
+assigned by the edge a document arrived on rather than by its type, because
+`:document` is what REQ, PLAN, BUG and REV land on *and* what every markdown
+file is — so the type cannot tell a declared `affects:` from a backtick, and the
+edge can. Prose is ranked by how much of the bundle it actually names and capped
+at `loom-knowledge:*context-mention-limit*`.
 
 ## Principles worth knowing before changing anything
 
