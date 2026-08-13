@@ -1,0 +1,154 @@
+id: PLAN-0021
+title: One rule in the dispatcher, one variable, one better refusal
+status: final
+date: 2026-08-12
+refines: [DES-0021]
+affects: [run-command, current-repository, current-graph, find-repository]
+tags: [multi-repo, console, req-0023]
+summary: |
+  DES-0021 is small and lands entirely in src/process/console.lisp. The steps
+  are ordered so that the parsing rule exists before anything reads what it
+  binds, and the refusal message is rewritten last because it is the only part
+  a user sees when nothing else has changed.
+
+  The care needed is in the tests rather than the code. A designator mechanism
+  that silently picks a repository is worse than none, so the tests have to pin
+  the precedence order and the refusal, not just the happy path.
+body: |
+  FILES
+
+  src/process/console.lisp        *COMMAND-REPOSITORY*, the strip in
+                                  RUN-COMMAND, CURRENT-REPOSITORY's precedence
+                                  and its refusal message.
+  src/process/test/console.lisp   new tests, including the two-repository
+                                  fixture the existing suite does not have.
+  .claude/skills/loom/SKILL.md    the command table gains the token.
+  CLAUDE.md                       the same, in the command block at the top.
+
+  Not edited: any command's lambda list, DEFINE-COMMAND, or its usage string.
+  That is the design's central claim -- the strip happens once in the
+  dispatcher, so the six commands that cannot take a designator today get one
+  without any of them being touched. A plan that listed them would be
+  describing a different design.
+
+  Not edited: loom-serve, loom-rest, loom-mcp. Their operations already require
+  a repository and REQUIRE-REPOSITORY already refuses to guess (DES-0021 D5).
+
+  BLAST RADIUS
+
+  What Loom says: `impact current-repository 3` reaches every console command
+  through CURRENT-GRAPH, which is the whole point and is why the change is one
+  function rather than six.
+
+  What Loom cannot see: RUN-COMMAND dispatches through a table of closures built
+  by DEFINE-COMMAND, so the edges from the dispatcher to the command bodies are
+  the DES-0014 `:call-site` kind rather than direct calls. The impact set will
+  under-report what this reaches; the suite is the check, not the graph.
+
+  RISKS
+
+  A token that eats an argument. `@` leads and is checked at the first character
+  only, so the failure mode is an entity or a task word beginning with `@` being
+  read as a repository. None exists in the three trees this is measured on.
+  Worth a test that a *quoted* token is not stripped, so the escape hatch is
+  real rather than asserted.
+
+  Precedence written the wrong way round. An explicit designator argument must
+  beat the token, not the other way about, because a caller who typed
+  `check game-server` after `@Loom` meant the argument. This is the assertion
+  most likely to be written to match whatever the code does, so it goes in
+  before the precedence is implemented.
+
+  The single-repository case regressing. Every existing command line must keep
+  working untouched, and the existing console suite is the guard -- it runs
+  against a one-repository fixture, so if anything there needs editing, the
+  design's "nothing changes with one repository" claim is false rather than the
+  test being stale.
+
+  A refusal that lists repositories from a stale read. The message names what is
+  watched at the moment of refusal, so it is built from ALL-REPOSITORIES at that
+  point rather than captured earlier.
+
+  STEPS
+
+  1. *COMMAND-REPOSITORY*, a special defaulting to NIL, and the strip in
+     RUN-COMMAND: after the command is looked up and before its handler is
+     applied, a leading `@name` in the remaining tokens binds the variable for
+     that call's dynamic extent and is removed from the arguments. First
+     runnable step; verified by a command that takes no designator at all
+     reaching the right graph.
+
+  2. CURRENT-REPOSITORY reads DES-0021 D2's precedence: explicit argument, then
+     the variable, then the sole watched repository, then refuse. The order is
+     the whole of the step and the test for it goes in first.
+
+  3. The refusal message names the mechanism and lists what is watched.
+
+  4. Tests: the precedence, the strip on a variadic command, the quoted-token
+     escape, and the single-repository case unchanged.
+
+  5. The two documents. CLAUDE.md's command block and the loom skill's table
+     both show console invocations and both would otherwise teach a console
+     that cannot be told which repository it means.
+
+  6. Acceptance, REQ-0023 R7: Loom, ~/lisp/game-server and ~/github/front-end
+     watched in one session, with `find`, `describe`, `impact` and `context`
+     each answering for a named repository, `status` reporting all three, and
+     the front-end's document count re-measured rather than quoted.
+
+  7. Close it: `complete PLAN-0021 DES-0021=<verdict> REQ-0023=<verdict>`.
+     REQ-0023 is the interesting verdict rather than a formality -- its R2 was
+     satisfied by BUG-0024 before this work started, R3 and R4 were already true
+     by construction, and R5 is satisfied by the document's own text, so what
+     this plan adds is R1, R1a and the R7 measurement. Whether that makes the
+     requirement implemented or partial is a judgement to make against its text
+     once the acceptance has actually been run.
+
+  VERIFICATION
+
+  Per step; then `tools/loom-test.sh` for all nine systems, and
+  `tools/loom.sh 'status' 'check'` to confirm `unresolved` has not risen.
+
+  OUTCOME
+
+  All seven steps landed as written, which is unusual enough here to say
+  plainly: the design was small and the dispatcher turned out to be the right
+  place, so nothing had to be amended. Six new console tests, 118 checks in that
+  suite, nine of nine systems.
+
+  The existing console suite needed no edit, which was the risk worth naming --
+  it runs against a one-repository fixture, so it is the evidence for DES-0021's
+  claim that the single-repository case is unchanged rather than a test that
+  happened to survive.
+
+  R7 RE-MEASURED RATHER THAN QUOTED
+
+  The three-repository session, 2026-08-12:
+
+      Loom          217 files, 2218 entities, 11477 relationships, 111 documents
+      game-server   146 files, 4173 entities, 21893 relationships,  12 documents
+      front-end      27 files,   27 entities,     0 relationships,  27 documents
+
+  `status` reports all three. A bare `find dhandler-delete` refuses and names
+  the mechanism and the three repositories. `find @game-server dhandler-delete`
+  answers with fourteen methods from game-server;
+  `impact @game-server interface:data-api/handler.lisp:dhandler-delete-selector 2`
+  reports fourteen impacted; `context @front-end soft delete` returns
+  docs/SoftDelete-Architecture.md.
+
+  That last one is worth noticing. It is the front-end half of the
+  cross-repository concern this requirement records as a gap and REQ-0027 exists
+  to close -- and the reason it is reachable at all is DES-0020's mention band,
+  landed an hour earlier. Neither change was made for the other.
+
+  The document figure is the correction R7 asked for rather than a
+  confirmation. The requirement quoted "5 rather than 339" from a reading taken
+  before BUG-0024; the real number is 27. The 5 counted only the project's own
+  docs/ directory, while the markdown analyzer claims any directory named docs,
+  doc, design or documentation -- so 27 is the honest count of what front-end
+  actually contributes, and the thing BUG-0024 removed is the 312 vendored
+  files, not the difference between 5 and 339.
+
+  front-end reports 27 entities and 0 relationships, all of them documents. That
+  is REQ-0024 stated as a measurement: 455 .js and .jsx files, no analyzer that
+  claims them, so a repository Loom can watch and cannot read.

@@ -113,19 +113,65 @@ comment."
 ;;;; Choosing what to operate on
 ;;;; ==================================================================
 
+(defparameter *repository-sigil* #\@
+  "The character that makes a leading token a repository name. DES-0021 D1.
+
+Chosen because nothing else the console reads can begin with it: a designator
+is a name or a path, an entity name is a Lisp symbol name, a depth is digits,
+and a verdict is DOC=status. Tested at the first character only, so an entity
+genuinely named `@foo' is still reachable through the console's quoting rule.")
+
+(defvar *command-repository* nil
+  "The repository named by a leading @token, for one command's dynamic extent.
+
+A variable rather than an argument on each command, because two of the commands
+that need one are variadic -- `context' takes the task's words and `complete'
+takes verdicts -- so there is no trailing position to put a designator in.
+RUN-COMMAND strips the token and binds this, which is what lets every command
+take a repository without any command's lambda list changing (DES-0021 D2).
+
+Bound per command and never set, which is REQ-0023 R1a and the reason a `use
+<repository>' mode was rejected: a session that remembers a selection answers a
+later query about the wrong tree with nothing in the question or the answer
+saying so. That is CON-0001's fabricated fact arrived at by omission, and
+REQ-0021 R8 already calls it worse than a failure.")
+
+(defun repository-token-p (token)
+  "True when TOKEN is a leading @name naming a repository."
+  (and (stringp token)
+       (> (length token) 1)
+       (char= *repository-sigil* (char token 0))))
+
+(defun watched-repository-names ()
+  (mapcar #'repository-name (all-repositories)))
+
 (defun current-repository (&optional designator)
   "The repository a command should act on.
 
-With one repository watched, naming it every time is friction for no benefit,
-so it is implied. With several, an ambiguous command is refused rather than
-guessed at."
-  (cond (designator (or (find-repository designator)
-                        (error "No repository named ~a. Try: status" designator)))
-        ((null (all-repositories))
-         (error "Nothing is being watched yet. Try: watch \"/path/to/repo\""))
-        ((rest (all-repositories))
-         (error "Several repositories are watched; name one. Try: status"))
-        (t (first (all-repositories)))))
+DES-0021 D2's precedence, most specific first: an explicit designator argument,
+then the @token RUN-COMMAND stripped from this command line, then the sole
+watched repository, and otherwise a refusal naming what is watched.
+
+The explicit argument wins over the token because a caller who typed one in
+that position meant it, and overriding it from a token earlier on the line
+would be the surprise this exists to remove. With one repository watched
+nothing changes and nothing has to be typed."
+  (let ((named (or designator *command-repository*)))
+    (cond (named (or (find-repository named)
+                     (error "No repository named ~a. Watching: ~{~a~^, ~}"
+                            named (or (watched-repository-names) '("nothing")))))
+          ((null (all-repositories))
+           (error "Nothing is being watched yet. Try: watch \"/path/to/repo\""))
+          ((rest (all-repositories))
+           ;; Naming the mechanism and the answers, not just the problem. The
+           ;; old message said "name one" and gave no way to; a developer who
+           ;; has to run `status' first to find out how to ask is a developer
+           ;; who ran two commands to ask one question.
+           (error "Several repositories are watched. Name one with ~c<name>:~{ ~c~a~}"
+                  *repository-sigil*
+                  (loop for name in (watched-repository-names)
+                        append (list *repository-sigil* name))))
+          (t (first (all-repositories))))))
 
 (defun current-graph (&optional designator)
   (repository-graph (current-repository designator)))
@@ -645,10 +691,29 @@ as much as to the watcher: a mistyped command should print a message, not drop
 the developer somewhere they have to know Lisp to escape."
   (let ((tokens (split-command-line line)))
     (when tokens
-      (let ((command (find-command (first tokens))))
+      (let ((command (find-command (first tokens)))
+            (arguments (rest tokens))
+            (repository nil))
+        ;; DES-0021 D1: a leading @name is the repository this one command acts
+        ;; on. Stripped here, between the command lookup and the handler, so
+        ;; that no command's lambda list has to make room for it -- which is
+        ;; what lets the variadic ones take a repository at all, and what makes
+        ;; every command added later take one without knowing about it.
+        ;;
+        ;; Only the first remaining token, and only unquoted-into-existence by
+        ;; the sigil test: SPLIT-COMMAND-LINE has already removed the quotes, so
+        ;; `find "@foo"' arrives here as @foo and would be stripped. That is the
+        ;; known edge, and it is why the sigil is a character no name in these
+        ;; trees begins with rather than a general escape grammar.
+        (when (and command arguments (repository-token-p (first arguments)))
+          (setf repository (subseq (first arguments) 1)
+                arguments (rest arguments)))
         (cond ((null command)
                (format t "~&Unknown command ~s. Try: help~%" (first tokens)))
-              (t (handler-case (apply (command-handler command) (rest tokens))
+              (t (handler-case
+                     ;; Bound for this command's dynamic extent and no longer.
+                     (let ((*command-repository* repository))
+                       (apply (command-handler command) arguments))
                    (error (condition)
                      (log-event "error" "~a: ~a" (first tokens) condition)
                      (format t "~&~a~%" condition))))))))

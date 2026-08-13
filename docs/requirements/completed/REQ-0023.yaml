@@ -1,0 +1,187 @@
+id: REQ-0023
+title: Every query must name the repository it means, so that a service holding several is usable rather than merely capable
+status: implemented
+date: 2026-08-11
+refines: [CON-0004]
+affects: [repository-status, repository-files, impact-set, build-context,
+          analyzable-p, default-system-for-path, document-type-for]
+tags: [multi-repo, generality, service, cross-repository, game-server, front-end]
+summary: |
+  A product is not usually one repository. ~/lisp/game-server is the backend
+  for ~/github/front-end, and a team may hold a third for middleware; none of
+  them is a monorepo and none of them contains the others. The question worth
+  asking across that boundary -- what in the front-end breaks if I change this
+  endpoint -- is the one an agent cannot answer by reading either repository
+  alone, and it is precisely the question Loom exists for.
+
+  Loom already registers several repositories in one service, so this is closer
+  than it looks, but two things stop it being usable. Several of the console
+  commands take no repository designator and refuse outright once more than one
+  is watched. And nothing in the ontology spans two graphs, so even with both
+  indexed there is no edge from a front-end call to a backend handler.
+
+  This is the first half: every query names its repository, documents stay
+  per-repository, and a team can run Loom across three repositories today. The
+  second half -- cross-repository edges -- is REQ-0027, split out of this
+  document because it is gated on a JavaScript analyzer that does not exist and
+  because its content is a requirement rather than an outstanding item: its own
+  three sub-problems, its own four open questions, and a gate. Holding both in
+  one document meant neither could reach a status of its own.
+body: |
+  WHAT IS ALREADY TRUE
+
+  Measured 2026-08-11. `watch` registers as many repositories as it is given,
+  and each gets its own graph; two were watched simultaneously several times
+  during this session. What breaks is the query layer:
+
+      loom> impact dhandler-delete 3
+      Several repositories are watched; name one. Try: status
+
+  CORRECTED 2026-08-12. An earlier draft of this paragraph said "`find` takes
+  an optional designator and resolves against one repository". It does not:
+  FIND's second optional argument is an entity *type*, and its body calls
+  (CURRENT-GRAPH) with no argument like the rest. Re-measured against
+  console.lisp, six commands refuse once two repositories are watched -- `find`,
+  `describe`, `impact`, `context`, `complete` and, before its designator
+  argument was added, `set-status`. Only `check`, `rules`, `status`, `pause`,
+  `unwatch`, `reindex` and `enrich` take one.
+
+  The refusal is correct -- answering from an arbitrary repository would be
+  CON-0001's fabricated fact -- but it makes the multi-repository case unusable
+  rather than merely awkward.
+
+  It is also not quite the small fix the draft assumed, and that is the reason
+  this half needs a design rather than an afternoon. There is no free trailing
+  argument to add: `find` already ends in an optional type, `impact` in an
+  optional depth, and `context` and `complete` are variadic -- `context` takes
+  the task's words and `complete` takes a list of verdicts, so a trailing
+  designator is indistinguishable from another word or another verdict.
+
+  WHAT THE FRONT-END ACTUALLY CONTRIBUTES TODAY
+
+  Read directly rather than assumed:
+
+      ~/github/front-end
+        .js and .jsx files                          455
+        Loom analyzers that claim them                0
+        markdown under node_modules                4730
+        of those, in a docs/ dir -> indexed         334
+        the project's own documents in docs/          5
+
+  So pointing Loom at the front-end today yields no code entities and 334
+  vendored documents. The second number is BUG-0024 and must be fixed before
+  any of this is worth doing; the first is REQ-0024 and is the gate on phase
+  two. Both are named here rather than absorbed, because a multi-repository
+  feature demonstrated against a repository Loom cannot read would be a
+  measurement of nothing.
+
+  NAME THE REPOSITORY, KEEP THE GRAPHS SEPARATE
+
+  Every read command takes a repository designator, and every operation the
+  service exposes already does. That is the whole of it, plus the consequences
+  of admitting that ids are per-repository:
+
+  A document id is scoped to its repository. REQ-0001 in the front-end and
+  REQ-0001 in game-server are different documents, and neither refers to the
+  other. This is not a defect to fix; it is what makes REQ-0021's prepared
+  workspaces independent, and it is only a problem if something needs to point
+  across, which nothing here asks for.
+
+  A cross-cutting requirement has no home, and that is this document's honest
+  gap. "Soft delete must hide a record from every read path" is a claim about
+  both repositories -- game-server's `dhandler-delete-selector` and the
+  front-end's docs/SoftDelete-Architecture.md are the two halves of it, and
+  they already exist. Written in one repository it governs code the other holds;
+  written in both it is two documents that can drift. This document accepts the
+  duplication and records it; REQ-0027 is where it becomes answerable.
+
+  WHAT IS LEFT TO REQ-0027
+
+  Cross-repository edges, and the three things they need: a JavaScript
+  analyzer, somewhere for an edge between two graphs to live, and a vocabulary
+  the two sides can meet in. All of it moved to REQ-0027 rather than kept here
+  as an outstanding note, because none of it can be worked until REQ-0024
+  exists and all of it has open questions of its own.
+
+  What this document keeps is the consequence for phase one: nothing refers
+  across, and a cross-cutting concern spanning two repositories is a recorded
+  gap rather than a silent duplication. R5.
+
+  WHAT THIS IS NOT
+
+  It is not a monorepo proposal. The repositories stay separate, are cloned
+  separately, and branch independently; Loom watches several and answers about
+  them, which is a different thing from merging them.
+
+  It does not ask for cross-repository documents in phase one. A REQ still
+  lives in one repository, and REQ-0021's per-workspace ids stand.
+
+  It does not assume the repositories are checked out at compatible commits.
+  They are not, in general -- the front-end may be running against a deployed
+  backend three tags behind the worktree Loom is indexing. Any cross-repository
+  answer is therefore an answer about two working trees, not about production,
+  and must say so rather than imply a coherence nobody guaranteed.
+
+  REQUIREMENTS
+
+  R1  Every console command can be told which repository it means, including
+      the variadic ones. With one repository watched nothing changes and no
+      extra typing appears; with several, naming one is how a query is asked
+      rather than a reason to refuse it. Six commands refuse today -- `find`,
+      `describe`, `impact`, `context`, `complete` and `set-status` -- and two of
+      them take a variable number of arguments, so there is no free trailing
+      position and the mechanism has to work without one.
+
+  R1a Naming a repository is explicit at the point of the query, not a mode the
+      session remembers. A selected-repository state that a caller forgets is
+      how an agent gets a confident answer about somebody else's code, which
+      REQ-0021 R8 already calls worse than a failure. Whatever the mechanism,
+      reading the command line must be enough to know which repository answered.
+
+  R2  A vendored dependency directory is not indexed. BUG-0024 measures the
+      cost -- 334 documents on the front-end -- and respecting .gitignore is
+      the fix. This is a precondition: without it, a JavaScript repository's
+      index is mostly somebody else's README.
+
+  R3  Ids are scoped to their repository, and nothing in phase one refers
+      across. Two repositories each holding REQ-0001 is correct, and no
+      resolution pass may match a name in one repository against an entity in
+      another.
+
+  R4  `status` reports every watched repository, and a caller can tell which
+      answers came from which. An answer that does not say which repository it
+      describes is not usable in a three-repository setup.
+
+  R5  A cross-cutting concern that spans repositories is recorded as a known
+      gap rather than silently duplicated. Where a team writes the same
+      requirement in two repositories, nothing pretends they are one document,
+      and phase two is where the duplication is resolved.
+
+  R6  Cross-repository edges are out of scope and are REQ-0027. Nothing here
+      may be built in a way that presumes one of that requirement's three
+      unanswered architecture options, because choosing between them is exactly
+      what REQ-0027 exists to do.
+
+  R7  Acceptance is a three-repository session: Loom's own tree,
+      ~/lisp/game-server and ~/github/front-end watched together, with `find`,
+      `describe`, `impact` and `context` each answering correctly for a named
+      repository, `status` reporting all three, and the front-end's document
+      count reflecting its own documents rather than its dependencies'.
+
+      The last figure is quoted from an earlier measurement as "5 rather than
+      339" and should be re-measured rather than asserted: BUG-0024 landed
+      between that reading and this one, so what the count now is, is the thing
+      being checked.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - What names a repository on a command line that has no free argument left?
+    `context` takes the task's words and `complete` takes verdicts, so a
+    trailing designator is indistinguishable from another word. A token with a
+    sigil, a separate selecting command, and a per-command keyword argument all
+    work; only the first is both stateless and uniform, and R1a rules the
+    second out unless it can be made visible at every query.
+  - Does the same mechanism belong on the service surfaces? loom-serve's
+    entries already take a repository and REQUIRE-REPOSITORY refuses to guess,
+    so the answer is probably no -- but the console and the service should not
+    end up with two spellings of one idea.

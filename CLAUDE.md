@@ -23,6 +23,10 @@ tools/loom.sh 'enrich'                # ask the toolchain what the text pass
                                       #   re-enriched gives today's text answer
                                       #   rather than yesterday's image answer.
                                       #   DES-0011.
+tools/loom.sh 'impact @game-server foo 3'   # name the repository, when the
+                                      #   service holds several. A leading
+                                      #   @token works on every command and
+                                      #   lasts one command. REQ-0023.
 tools/loom.sh 'status | find foo'     # several commands, run in order
 tools/loom.sh 'help'                  # the authoritative table; trust it first
 ```

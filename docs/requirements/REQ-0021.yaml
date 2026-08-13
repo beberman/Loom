@@ -135,9 +135,9 @@ body: |
   designator is a malformed request rather than an ambiguous one -- so the
   service half of this is closed. The console half is not: `find`, `describe`,
   `impact`, `context` and `complete` call CURRENT-REPOSITORY with no designator
-  and refuse outright once two repositories are watched. That gap is REQ-0023
-  phase 1 and is named here because init's output depends on it, not because
-  this requirement should fix it.
+  and refuse outright once two repositories are watched. That gap is REQ-0023 and is
+  named here because init's output depends on it, not because this requirement
+  should fix it.
 
   WHERE THE SERVICE RUNS, AND WHAT THAT COSTS
 

@@ -56,6 +56,14 @@ cd ~/lisp/Loom && sbcl --script loom.lisp
 The commands, at the `loom>` prompt or as `loom.sh` arguments:
 
 ```
+@<name> <command> ...     name the repository a command acts on. A leading
+                          @token is stripped by the dispatcher, so it works on
+                          every command including the variadic ones:
+                          `impact @game-server dhandler-delete 3`,
+                          `context @front-end soft delete read path`. It lasts
+                          one command -- there is no selected-repository mode
+                          to forget. With one repository watched, nothing has
+                          to be typed.
 help [command]            the authoritative table; trust it over this list
 watch "~/lisp/Loom"       register, index, and watch. Resumes a paused repo.
 pause                     stop watching, keep the index

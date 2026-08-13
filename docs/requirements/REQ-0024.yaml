@@ -14,7 +14,7 @@ summary: |
   functions, no modules, no calls, and its five real architecture documents
   describe code the index cannot see.
 
-  This asks for a JavaScript analyzer, and it is the gate on REQ-0023's second
+  This asks for a JavaScript analyzer, and it is the gate on REQ-0027, the second
   phase -- cross-repository edges have nothing to attach to on the front-end
   side until one exists. It is also the first genuine test of the claim SS8.2
   makes about the analyzer protocol: adding a language should be subclassing
@@ -33,7 +33,7 @@ body: |
   The repository is not small and it is not shapeless: src/ holds context,
   core, data-api, domain and models directories, an App.jsx and a hooks.js.
   src/data-api mirrors game-server's data-api/ by name, which is the join
-  REQ-0023 phase two wants and cannot reach.
+  REQ-0027 wants and cannot reach.
 
   The wider claim this tests is Loom's own. LOOM-ANALYZER's package comment says
   adding a language is "subclass ANALYZER, declare the file extensions it
