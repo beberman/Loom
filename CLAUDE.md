@@ -15,6 +15,10 @@ tools/loom.sh 'find <name>'           # where something is defined
 tools/loom.sh 'describe <name>'       # neighbours, grouped by edge type
 tools/loom.sh 'impact <name> 3'       # what a change reaches, plus decisions
                                       #   3 is a narrowing; the default is 5
+tools/loom.sh 'structure'             # systems, protocols, entry points, hubs,
+                                      #   derived from the index. Reports edges
+                                      #   between systems both ways and calls
+                                      #   neither wrong. REQ-0021 R5.
 tools/loom.sh 'rules'                 # constraints, and which are machine-checked
 tools/loom.sh 'check'                 # violations and unresolved doc references
 tools/loom.sh 'enrich'                # ask the toolchain what the text pass
@@ -110,8 +114,12 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
     loom-ontology   entity and relationship declarations. Depends on nothing.
     loom-graph      the only writer. Transactions, queries, resolution, rules.
     loom-analyzer   path + contents -> operations. Never touches the graph.
-    loom-knowledge  read-only services: find, describe, impact, context.
-    loom-workspace  indexing pipeline and file monitor.
+    loom-knowledge  read-only services: find, describe, impact, context,
+                    structure.
+    loom-workspace  indexing pipeline, file monitor, and the write path:
+                    document transitions, init, generated architecture. Depends
+                    on loom-knowledge since DES-0022 S3 -- it renders that
+                    system's structural report into a document.
     loom-process    the console.
     loom-serve      the operation registry, tiers, REPL sessions, the listener.
     loom-rest       HTTP/JSON over that registry.
@@ -206,6 +214,12 @@ at `loom-knowledge:*context-mention-limit*`.
 
 ## Principles worth knowing before changing anything
 
+- **A generated invariant is a defect.** `init` prepares a foreign tree and
+  `architecture` writes an ARCH document into it from the index — and that
+  document's invariants section is empty and says so. Code being consistent
+  with an invariant is not evidence anybody intended it, and a violation is not
+  evidence they did not. What a generator may write is what was measured;
+  what must remain true is the half only a human can supply. REQ-0021 R6.
 - **Files are truth.** The graph is an index over them and can be discarded and
   rebuilt. Anything Loom knows that is not derivable from files must be written
   back to files, or it is not knowledge. DEC-0001.

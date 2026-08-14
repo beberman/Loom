@@ -10,7 +10,7 @@
 ;;;; Nothing below it has to know about that ordering.
 
 (defpackage #:loom-workspace
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-analyzer)
+  (:use #:cl #:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge)
   (:export
    ;; the registry
    #:repository
@@ -55,6 +55,12 @@
    #:read-manifest
    #:prepared-p
    #:*default-endpoint*
+
+   ;; REQ-0021 R5/R6: the structural report rendered into an ARCH document a
+   ;; prepared tree can actually read. Says only what was measured, and says
+   ;; plainly that its invariants section is empty because a generated
+   ;; invariant is a defect.
+   #:generate-architecture
 
    ;; monitoring
    #:start-monitor

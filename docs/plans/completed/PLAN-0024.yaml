@@ -1,0 +1,182 @@
+id: PLAN-0024
+title: An architecture document that can only say what was measured
+status: final
+date: 2026-08-13
+refines: [DES-0022]
+affects: [structure-report, prepare-repository, linkable-index, repository-commit,
+          resolve-document-links, unresolved-references]
+tags: [init, arch, generation, con-0001, req-0021]
+summary: |
+  DES-0022 S3, deterministic half. A prepared tree gets directories and a
+  conventions document and nothing to read, which is most of init's value
+  missing. This renders the structural report S1 already produces into an ARCH
+  document and writes it into the prepared tree.
+
+  The whole difficulty is R6: a generated invariant is a defect. The report is
+  data, so the generator can only render fields that were measured -- and the
+  section where a hand-written architecture document says what must remain true
+  is written empty, saying so, because nothing in an index is evidence of
+  intent.
+
+  The other half of S3 is not this plan: reviewing the markdown and the source
+  comments (R7) needs an LLM reading files, and belongs to the script.
+body: |
+  WHY THIS IS SEPARATE FROM INIT
+
+  PREPARE-REPOSITORY runs against a tree Loom has not indexed -- it creates the
+  directories the index will later read. A structural report needs the graph.
+  So the order is prepare, watch, generate, and the generator is its own command
+  the script calls third rather than a phase inside init.
+
+  That also makes it re-runnable against a tree that was prepared months ago,
+  which R9's "how does a generated ARCH document age" question will want.
+
+  WHAT THE DOCUMENT MAY CONTAIN
+
+  Only fields the report carries: systems and their counts, the edges between
+  them, protocols and implementors, entry points with their qualifier, hubs with
+  their inbound counts, and the commit. Rendered, not summarised -- the
+  generator has no license to characterise, because a characterisation is the
+  interpretive act R6 forbids.
+
+  Three things it must refuse to do, each of which is CON-0001 in this
+  document's particular shape:
+
+  No invariants. The section exists, is empty, and says why -- that code being
+  consistent with an invariant is not evidence anybody intended it. An empty
+  section a reader can see is the honest artifact; an absent one reads as an
+  oversight and a filled one is fabrication.
+
+  No verdict on the layering. The report gives edges in both directions and
+  names neither wrong. The document repeats that and adds the same sentence the
+  report carries.
+
+  No ambiguous name in describes:. R6 requires that `unresolved` not rise, and
+  describes: resolves through RESOLVE-ONE, which refuses a name matching several
+  entities -- on game-server `dhandler-delete-selector` matches seven. An
+  ambiguous name in that field would be reported as an unresolved reference by
+  the very check R6 is written against, so the generator filters to names that
+  resolve to exactly one thing and says how many it dropped.
+
+  FILES
+
+  src/workspace/architecture.lisp  new. GENERATE-ARCHITECTURE and the renderer.
+  src/workspace/package.lisp       exports it.
+  src/workspace/loom-workspace.asd the components.
+  src/workspace/test/architecture.lisp new.
+  src/process/console.lisp         `architecture` command.
+  src/serve/operations.lisp        :ARCHITECTURE, write tier.
+
+  Not this plan: R7's markdown and comment review, and R9's re-run-against-an-
+  edited-document rule beyond refusing to overwrite. Both need the LLM half.
+
+  RISKS
+
+  A describes: field that raises unresolved. The thing R6 exists to prevent, and
+  the acceptance measures it directly: `unresolved` on the prepared copy is 0
+  before and must be 0 after.
+
+  A document that reads as authoritative. It is generated, it says so in its
+  summary and its provenance, and its status is draft -- which is the one ARCH
+  status the rest of the system does not treat as settled.
+
+  Overwriting a document a human improved. Create-only, like everything else
+  init writes. A second run reports the existing document and changes nothing.
+
+  A generated document that is indexed as a real architecture document and then
+  believed. That is the point of it and also the risk; the mitigation is that
+  every claim in it is checkable against the tree by construction, which is more
+  than a hand-written one offers.
+
+  STEPS
+
+  1. UNAMBIGUOUS-NAMES: given the graph and a list of candidate names, the
+     subset that LINKABLE-INDEX resolves to exactly one entity, and the count
+     dropped. First, because describes: depends on it and it is the one piece
+     that decides whether R6 holds.
+
+  2. RENDER-ARCHITECTURE: the report as an ARCH document's YAML. Provenance in
+     the summary, invariants empty and explained, the layering sentence carried
+     through, describes: from step 1.
+
+  3. GENERATE-ARCHITECTURE: allocate the next ARCH id in the prepared tree's
+     document directory, refuse if the file exists, write it, and report.
+     Reuses NEXT-DOCUMENT-ID and the create-only discipline from init.
+
+  4. The console command and the operation.
+
+  5. Tests: the invariants section is empty and says so; an ambiguous name is
+     dropped from describes: and counted; a second run changes nothing; a
+     generated document names its commit.
+
+  6. Acceptance on the prepared copy of game-server: generate, reindex, and
+     require `unresolved` still 0, the document count up by exactly one, and
+     `impact` on a name the document describes reporting it.
+
+  7. Close it: `complete PLAN-0024 DES-0022=<verdict>`. DES-0022 stays partial
+     -- S3's prose half and S4 remain -- so the walk stops there and REQ-0021
+     is not reached, which BUG-0026's fix now says out loud.
+
+  VERIFICATION
+
+  Per step; `tools/loom-test.sh`; and the acceptance's `unresolved` count, which
+  is the single number R6 turns on.
+
+  OUTCOME
+
+  All seven steps landed. Eight tests, 22 checks, nine of nine systems.
+
+  THE FILTER WAS WRONG IN THE WORST DIRECTION
+
+  Step 1's UNAMBIGUOUS-NAMES counted entries in LINKABLE-INDEX and called
+  anything with more than one candidate ambiguous. That is not the rule
+  RESOLVE-ONE applies, and the difference threw away exactly what the document
+  existed to name: a protocol with 23 implementors has 24 entries under its
+  name, so `obj-decode' -- game-server's central protocol -- was dropped as
+  ambiguous while `q', `row' and `credentials' survived.
+
+  Measured on the prepared copy before and after:
+
+      naive count   40 kept, 237 dropped; describes: was slot accessors
+      resolve-one   40 kept,  86 dropped; describes: is obj-decode, obj-encode,
+                    to-alist, dhandler-delete-selector, initialize-handler ...
+
+  RESOLVE-ONE already knows a lone :INTERFACE plus its methods is one protocol
+  rather than several things sharing a spelling. Duplicating its rule got it
+  wrong; calling it is right, and it is now exported for that. The general
+  lesson is the one CON-0005 makes elsewhere: a second implementation of a rule
+  is a second place for it to be wrong, and this one was wrong in the direction
+  that silently produced a worse document rather than a broken one.
+
+  Found by reading the output, not by a test. The suite passed with the naive
+  filter -- every assertion about refusing to fabricate still held, because
+  dropping good names is not fabricating bad ones.
+
+  ACCEPTANCE
+
+  On the prepared copy of game-server, at commit 525f0d7:
+
+      documents   13 -> 14
+      unresolved   0 ->  0
+      describes:  40 names, resolving into 40 :documents edges
+
+  R6's number held. `describe ARCH-0001' shows the forty as documents edges,
+  which is the field doing what it was written to do rather than merely parsing.
+
+  A CONSEQUENCE WORTH NAMING
+
+  The generated body lists every system, protocol, entry point and hub, and the
+  YAML analyzer turns each backticked name in prose into a :MENTIONS edge -- so
+  ARCH-0001 mentions several hundred entities and will surface in the mention
+  band of almost any `context' query on that tree. DES-0020's ranking makes that
+  a fair competition rather than a flood, since the band is capped at five and
+  ordered by how much of the bundle a document actually names. Recorded rather
+  than tuned: a generated architecture document that names an entity is
+  legitimately relevant to it, and the cap is already the mechanism for deciding
+  how much of that a bundle can afford.
+
+  WHAT IS STILL NOT DONE
+
+  R7's markdown and comment review, which needs the LLM half of S3; the shell
+  script; and S4's removal.
+

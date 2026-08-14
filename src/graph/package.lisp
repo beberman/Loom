@@ -82,6 +82,12 @@
    #:resolve-document-links
    #:unresolved-references
    #:linkable-index
+   ;; Exported for DES-0022 S3's generator, which has to know whether a name it
+   ;; is about to write into a describes: field will resolve. Duplicating the
+   ;; rule was tried and got it wrong in the worst direction -- see the
+   ;; function's own docstring for the generic-plus-methods case that a naive
+   ;; "one candidate" test drops.
+   #:resolve-one
    #:*document-types*
    #:*mention-confidence*
 

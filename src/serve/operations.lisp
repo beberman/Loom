@@ -261,6 +261,13 @@ The console's own cap, so the two answer the same question the same way.")
                            (not (string-equal "false" (princ-to-string append-claude-md)))
                            t)))
 
+(define-operation :architecture :write (repository)
+    "Write an ARCH document from the index. Says only what was measured."
+  ;; :WRITE rather than :READ, and the tier is the whole point: :STRUCTURE
+  ;; returns the same measurements and changes nothing, while this puts a file
+  ;; in somebody's repository.
+  (generate-architecture (require-repository repository)))
+
 (define-operation :reindex :write (repository)
     "Discard and rebuild the index from disk. Always safe."
   ;; No registry lock either, for PAUSE's reason: REINDEX-REPOSITORY replaces

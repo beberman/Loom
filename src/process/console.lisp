@@ -636,6 +636,34 @@ rather than only in the note beside it."
 `claude-md' to append a pointer, or add one by hand.~%"))))
        (format t "~&Nothing was committed. `git status' shows exactly what was added.~%")))))
 
+(define-command architecture (&optional designator)
+    "architecture [<name>]"
+    "Write an ARCH document from the index. Says only what was measured."
+  ;; REQ-0021 R5/R6, and the second half of preparing a tree: init makes the
+  ;; directories, this puts something in them. Separate from `init' because a
+  ;; structural report needs an index and init runs before there is one -- so
+  ;; the order is prepare, watch, generate.
+  (let* ((repository (current-repository designator))
+         (report (generate-architecture repository)))
+    (if (getf report :problems)
+        (progn (format t "~&Nothing was written. ~d problem~:p:~%"
+                       (length (getf report :problems)))
+               (dolist (problem (getf report :problems))
+                 (format t "  - ~a~%" problem)))
+        (progn
+          (log-event "architecture" "~a ~a" (getf report :repository)
+                     (getf report :document))
+          (format t "~&Wrote ~a~%" (getf report :created))
+          (format t "  document   : ~a (draft, generated)~%" (getf report :document))
+          (format t "  derived at : ~@[~a~]~%" (getf report :commit))
+          (format t "  describes  : ~d name~:p~@[, ~d dropped as ambiguous~]~%"
+                  (getf report :describes)
+                  (let ((n (getf report :dropped))) (and (plusp n) n)))
+          ;; Said every time, because the empty section is the one thing a
+          ;; reader is most likely to take for an oversight.
+          (format t "~&Its invariants section is empty on purpose -- what must remain~%")
+          (format t "true is the half no index can derive, and is yours to write.~%")))))
+
 (define-command structure (&optional designator)
     "structure [<name>]"
     "Systems, protocols, entry points and hubs, derived from the index."

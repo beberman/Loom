@@ -78,6 +78,16 @@ impact <name> [<depth>]   what a change reaches, plus governing decisions
 context <task words>      a budgeted bundle: what to know before editing
 rules                     constraints; [prose only] means unenforced
 check                     rule violations and unresolved doc references
+structure                 systems, the edges between them, protocols, entry
+                          points and hubs — all derived, and it names neither
+                          direction of a cycle wrong
+init "<dir>" [docs] [claude-md] [host:port]
+                          prepare a repository Loom did not write: directories,
+                          conventions, the skill, a manifest. `claude-md` is the
+                          second consent — without it an existing CLAUDE.md is
+                          left alone
+architecture              write an ARCH document from the index into a prepared
+                          tree. Invariants section empty on purpose
 set-status <doc> <status> set one document's status and file it where that
                           status belongs — into completed/ when terminal, back
                           out when not. One line changed, one rename, nothing
