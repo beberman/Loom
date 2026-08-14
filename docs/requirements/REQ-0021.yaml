@@ -760,8 +760,34 @@ body: |
   workspace gets no transcribed workflow rule, and the installed text tells an
   agent to run the transition command rather than to move statuses by hand.
 
-  R6, R7, R9 -- generated ARCH documents, the markdown and comment review, and
-  provenance. DES-0022 S3, gated on S2 having somewhere to write.
+  R6 and R9 are implemented -- DES-0022 S3, PLAN-0024. A generated ARCH document
+  fills only what the report derived, its invariants section is empty and says
+  why, its describes: field raises no unresolved reference, and it names the
+  commit it came from.
+
+  R7 is partly implemented and the remainder is worth stating precisely, because
+  three of its five clauses are done and two are not.
+
+    Done: the markdown is reviewed (`drift'), the disagreement is reported
+    rather than reconciled, and the review now precedes the document and feeds
+    it -- the generated ARCH document carries which prose describes which
+    system, attributed with counts.
+
+    Not done: the *source comments*. R7 assigns their review to the LLM reading
+    files, so Loom has nothing to implement -- but the process has nothing that
+    makes it happen either. The script prints an instruction after everything
+    else has run, and no artifact records that anyone read a comment. R7 is the
+    only requirement in this set whose satisfaction cannot be checked
+    afterwards.
+
+    Not done, and larger: `where they describe *structure* the index does not
+    show'. What is implemented finds names that did not resolve, which is
+    missing nouns rather than missing structure. A document saying "the handler
+    layer calls the cache layer" can have every name resolve while the claimed
+    edge does not exist -- and nothing compares a prose claim against the system
+    edges the report already computes. That is a real requirement and probably
+    its own; scoping it into this one produced an implementation narrower than
+    the sentence.
 
   R13, R13a, R13b, R13c -- removal in two modes and the manifest it rests on.
   DES-0022 S4, gated on S2 writing the manifest.

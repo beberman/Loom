@@ -125,9 +125,16 @@ echo "== preparing =="
 
 echo
 echo "== indexing and describing =="
-# One session: the architecture command needs the index the watch builds, and a
-# second invocation would index the tree twice for no reason.
-./tools/loom.sh "watch \"$TARGET\"" "architecture @$NAME" "drift @$NAME" || exit 1
+# One session: both commands need the index the watch builds, and a second
+# invocation would index the tree twice for no reason.
+#
+# `drift' before `architecture', which is REQ-0021 R7 read literally -- the
+# prose is reviewed *before* the document is written. The first version had
+# these the other way round, which made the ordering meaningless: the review
+# printed after the document it was supposed to inform. It matters now because
+# the generated document carries the prose attribution rather than only the
+# structure.
+./tools/loom.sh "watch \"$TARGET\"" "drift @$NAME" "architecture @$NAME" || exit 1
 
 echo
 echo "== what to do next =="

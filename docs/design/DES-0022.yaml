@@ -338,6 +338,39 @@ body: |
     It does not rank hubs as "important". It reports inbound edge counts. A
     hub is a measurement; what it means is a judgement.
 
+  D4a THE REPORT CARRIES THE PROSE, BECAUSE THE ATTRIBUTION IS DERIVED
+
+  D4 says a generated document may contain only what the report derived, and
+  the first implementation read that as a reason to leave prose out of the
+  report. That was right about the constraint and wrong about its scope: which
+  document describes which system is derivable, from the same :MENTIONS edges
+  the context bundle already ranks on.
+
+  Measured on ~/lisp/game-server:
+
+      docs/data-layer.md                          DATA-API:18  MPACKAGE/NAMESPACE:7
+      docs/design-summary/semantic-validators.md  MPACKAGE/OBJ-TYPES:7  MPACKAGE/MPACKAGE:6
+      docs/design-summary/HexGridRequirements.md  GAME/GEN-MAP:7
+
+  A document naming eighteen entities in one system is describing that system.
+  That is a count, not an interpretation, and withholding it produced a
+  generated architecture document that was structurally accurate and
+  architecturally empty: it said there were 47 systems and that obj-decode had
+  23 implementors, and said nothing about the layered handler protocol sitting
+  in prose beside it.
+
+  So the report gains a per-system `described by' and a ranked list of the
+  prose, and the generated document renders both. The constraint that does not
+  move is paraphrase: summarising data-layer.md into a sentence of generated
+  text is the plausible, unfalsifiable prose R6 exists to stop. Naming it, with
+  the count that earned the pointer, is a measurement -- and it turns the
+  document into a map into the prose rather than a replacement for it.
+
+  This is also what makes the ordering in D3a mean something. The review now
+  feeds the document rather than printing beside it, so `drift' runs before
+  `architecture' and R7's "reviewed before the document is written" is a
+  causal claim rather than a sequence.
+
   D5  THE STRUCTURAL REPORT NAMES ITS COMMIT
 
   R5 requires the report be reproducible and name what it was derived from.

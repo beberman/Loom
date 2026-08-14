@@ -1,0 +1,91 @@
+id: PLAN-0026
+title: Attach the prose to the structure it describes
+status: final
+date: 2026-08-14
+refines: [DES-0022]
+affects: [structure-report, render-structure, generate-architecture, prose-report,
+          entity-system]
+tags: [init, arch, prose, req-0021]
+summary: |
+  DES-0022 D4a. The generated architecture document was structurally accurate
+  and architecturally empty: 47 systems and a 23-implementor protocol, and
+  nothing about the layered handler protocol described in the markdown sitting
+  beside it.
+
+  The attribution turns out to be derived rather than inferred -- docs/data-layer.md
+  names eighteen entities in DATA-API -- so it belongs in the report, and R6 is
+  satisfied rather than bent. What does not move is paraphrase.
+body: |
+  WHAT WAS WRONG
+
+  R6 confines a generated document to what the report derived, and the first
+  implementation read that as a reason to keep prose out of the report. The
+  result was a document that said how many systems there were and nothing about
+  what any of them was for -- while `docs/design-summary/` held real
+  architecture that an LLM or a human could have used directly.
+
+  The correction is that "which document describes which system" is a
+  measurement. It comes from the :MENTIONS edges the context bundle already
+  ranks on, and it is a count rather than a reading.
+
+  THE LINE THAT DOES NOT MOVE
+
+  Pointing and attributing are measurements. Paraphrasing is not. A generator
+  that summarised data-layer.md into a sentence would be producing exactly the
+  plausible, unfalsifiable prose R6 exists to stop -- indistinguishable from a
+  human's architecture note and answerable to nothing.
+
+  So the document names the prose, says how much of each system it covers, and
+  sends the reader there. It becomes a map into the prose rather than a
+  replacement for it.
+
+  STEPS
+
+  1. PROSE-ATTRIBUTION in loom-knowledge: one walk over :MENTIONS edges giving
+     system -> documents and document -> systems, with counts. prose.lisp moves
+     ahead of structure.lisp in the system definition, because the resolution
+     rate comes from DOCUMENT-PROSE-ROW.
+
+  2. STRUCTURE-REPORT's system rows gain :DESCRIBED-BY, and the report gains a
+     ranked :PROSE list.
+
+  3. RENDER-STRUCTURE and the ARCH document render both. The document's section
+     says in as many words that it is a map and not a summary.
+
+  4. tools/loom-init.sh runs `drift` before `architecture`, which R7 asked for
+     and which only matters now that the review feeds the document.
+
+  5. Tests: attribution by count, ranking, and that the rendered section points
+     rather than paraphrases.
+
+  6. Acceptance on a fresh copy of game-server.
+
+  VERIFICATION
+
+  `tools/loom-test.sh`, and the generated document on a prepared copy showing
+  DATA-API attributed to docs/data-layer.md.
+
+  OUTCOME
+
+  All six steps landed; nine of nine systems, three new tests.
+
+  On a fresh prepared copy of game-server the document now reads:
+
+      DATA-API                       314   297     0    57
+          described by docs/data-layer.md (18 names here)
+          described by docs/design-summary/media.md (2 names here)
+          described by docs/database-schema.md (2 names here)
+
+  and carries a ranked prose section naming all eleven documents with the
+  systems each covers. The ordering fix means the drift report is read before
+  the document is written rather than printed after it.
+
+  WHAT THIS DID NOT FIX
+
+  Two R7 clauses, now stated precisely in REQ-0021's OUTSTANDING rather than
+  left implied. The source comments are still only an instruction printed by the
+  script, with no artifact recording that anyone read one. And "where they
+  describe *structure* the index does not show" is still unimplemented: what
+  exists finds names that did not resolve, which is missing nouns, and a
+  document claiming an edge that does not exist while naming only entities that
+  do would pass unnoticed.

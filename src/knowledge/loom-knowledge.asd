@@ -17,8 +17,10 @@
    (:file "context")
    ;; After "services": the report builds its rows with ENTITY-SUMMARY and
    ;; ENTITY-LOCATION, which live there.
-   (:file "structure")
+   ;; Before "structure": STRUCTURE-REPORT attributes prose to the systems it
+   ;; describes, and reuses DOCUMENT-PROSE-ROW for the resolution rate.
    (:file "prose")
+   (:file "structure")
    )
   :in-order-to ((test-op (test-op :loom-knowledge/test)))
   )
@@ -40,8 +42,8 @@
    (:file "suite")
    (:file "services")
    (:file "context")
-   (:file "structure")
    (:file "prose")
+   (:file "structure")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-knowledge-test :test-runner)

@@ -113,6 +113,78 @@ is exactly the intent REQ-0021 says no index holds."
     table))
 
 ;;;; ==================================================================
+;;;; Which prose describes which system
+;;;;
+;;;; The half of an architecture a hand-written document has and a derived one
+;;;; was missing. REQ-0021 says it plainly: the markdown "says what the author
+;;;; believed, which is exactly the material the index cannot supply."
+;;;;
+;;;; A first version of this report left it out entirely, on the reading that
+;;;; R6 confines a generated document to what the report derived. That was
+;;;; right about R6 and wrong about the report: which document describes which
+;;;; system *is* derivable, from the same :MENTIONS edges the mention band
+;;;; already ranks on. Measured on ~/lisp/game-server: docs/data-layer.md names
+;;;; eighteen entities in DATA-API and seven in MPACKAGE/NAMESPACE, which is not
+;;;; a guess about what it is about.
+;;;;
+;;;; The line this must not cross is paraphrase. Summarising data-layer.md into
+;;;; a sentence of generated prose is the plausible, unfalsifiable text R6
+;;;; exists to stop. Pointing at it, with the count that earned the pointer, is
+;;;; a measurement -- and it turns the generated document into a map into the
+;;;; prose rather than a replacement for it.
+;;;; ==================================================================
+
+(defparameter *system-prose-limit* 4
+  "How many documents are attributed to one system.
+Ranked by how much of the system each names, so the tail is prose that
+mentioned one thing in passing.")
+
+(defun prose-attribution (view)
+  "Two values: system -> documents describing it, and document -> systems.
+
+Both from the same walk over :MENTIONS edges. A document naming eighteen things
+in one system is describing that system; one naming a single entity is
+mentioning it. The counts travel so a reader can tell those apart rather than
+being asked to trust the attribution."
+  (let ((by-system (make-hash-table :test #'eq))
+        (by-document '()))
+    (dolist (document (entities-of-type view :document))
+      (let ((tally (make-hash-table :test #'eq))
+            (name (and (slot-boundp document 'name) (princ-to-string (name document)))))
+        (dolist (n (neighbors view (id document) :rel-types '(:mentions) :direction :out))
+          (let ((system (entity-system (neighbor-entity n))))
+            (when system (incf (gethash system tally 0)))))
+        (when (plusp (hash-table-count tally))
+          (let ((systems (sort (loop for system being the hash-keys of tally
+                                       using (hash-value count)
+                                     collect (list :name system :names count))
+                               #'> :key (lambda (row) (getf row :names)))))
+            (push (list :document name
+                        :path (or (getp document :path) (origin-file document))
+                        ;; The resolution rate, so a reader can tell a document
+                        ;; about this codebase from one about something else --
+                        ;; the same measurement the drift report ranks on.
+                        :percent (let ((row (document-prose-row view document)))
+                                   (and row (getf row :percent)))
+                        :systems systems)
+                  by-document)
+            (dolist (row systems)
+              (push (list :document name :names (getf row :names))
+                    (gethash (getf row :name) by-system)))))))
+    (values by-system
+            (sort (nreverse by-document) #'>
+                  :key (lambda (row) (reduce #'+ (getf row :systems)
+                                             :key (lambda (s) (getf s :names))))))))
+
+(defun system-prose (by-system system)
+  "The documents describing SYSTEM, best first and capped."
+  (let ((rows (sort (copy-list (gethash system by-system)) #'>
+                    :key (lambda (row) (getf row :names)))))
+    (if (> (length rows) *system-prose-limit*)
+        (subseq rows 0 *system-prose-limit*)
+        rows)))
+
+;;;; ==================================================================
 ;;;; Protocols, entry points, hubs
 ;;;; ==================================================================
 
@@ -221,6 +293,7 @@ and only this flag tells them apart."
          (tested (tested-units-by-system view))
          (edges (system-edge-tally view))
          (placed (loop for entity in entities count (entity-system entity))))
+    (multiple-value-bind (by-system prose) (prose-attribution view)
     (multiple-value-bind (entry-points entry-point-count) (entry-point-report view)
       (list
        :repository repository
@@ -238,7 +311,11 @@ and only this flag tells them apart."
                                  :entities (first row)
                                  :definitions (second row)
                                  :tests (third row)
-                                 :tested-units (gethash system tested 0)))
+                                 :tested-units (gethash system tested 0)
+                                 ;; What an author wrote about this system, if
+                                 ;; anything did. The half the index cannot
+                                 ;; supply, attached to the half it can.
+                                 :described-by (system-prose by-system system)))
              #'> :key (lambda (row) (getf row :entities)))
        :system-edges
        (sort (loop for pair being the hash-keys of edges using (hash-value row)
@@ -252,7 +329,10 @@ and only this flag tells them apart."
        :entry-points entry-points
        :entry-point-count entry-point-count
        :entry-point-qualifier (entry-point-qualifier view)
-       :hubs (hub-report view)))))
+       :hubs (hub-report view)
+       ;; Ordered by how much of the codebase each names, so the prose most
+       ;; worth reading first is first.
+       :prose prose)))))
 
 ;;;; ==================================================================
 ;;;; Rendering -- formats, decides nothing (DES-0022 D4)
@@ -285,7 +365,13 @@ follows describes what Loom could read, which may be only its documents.~%"))
     (dolist (row (getf report :systems))
       (format out "  ~28a ~5d entities  ~4d definitions  ~4d tests covering ~d~%"
               (getf row :name) (getf row :entities) (getf row :definitions)
-              (getf row :tests) (getf row :tested-units)))
+              (getf row :tests) (getf row :tested-units))
+      ;; What an author wrote about this system. A pointer and a count, never a
+      ;; paraphrase -- the reader is sent to the document rather than given a
+      ;; generated summary of it.
+      (dolist (prose (getf row :described-by))
+        (format out "      described by ~a (~d name~:p here)~%"
+                (getf prose :document) (getf prose :names))))
     (when (null (getf report :systems)) (format out "  (none placed)~%"))
     (format out "~&~%## edges between systems~%")
     (format out "  Both directions are reported and neither is judged. A cycle here is a~%")
@@ -318,4 +404,16 @@ follows describes what Loom could read, which may be only its documents.~%"))
       (format out "  ~5d  ~(~a~) ~a~@[  [~a]~]~%"
               (getf row :inbound) (getf row :type) (getf row :name)
               (getf row :location)))
-    (when (null (getf report :hubs)) (format out "  (none)~%"))))
+    (when (null (getf report :hubs)) (format out "  (none)~%"))
+    (format out "~&~%## prose describing this codebase~%")
+    (format out "  What an author wrote, which is the half no index can supply. Ranked by~%")
+    (format out "  how much of the code each names; the percentage is how much of the~%")
+    (format out "  document's own vocabulary resolved, so a low one is prose about~%")
+    (format out "  something this repository does not contain.~%")
+    (dolist (row (getf report :prose))
+      (format out "  ~a~@[  (~d% of its names resolve)~]~%"
+              (getf row :document) (getf row :percent))
+      (format out "      ~{~a~^  ~}~%"
+              (mapcar (lambda (s) (format nil "~a:~d" (getf s :name) (getf s :names)))
+                      (getf row :systems))))
+    (when (null (getf report :prose)) (format out "  (none indexed)~%"))))

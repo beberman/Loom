@@ -207,3 +207,72 @@ intent REQ-0021 says no index holds."
                                                      :commit-reason "not a repository"))))
       (is (search "commit unknown: not a repository" text)
           "a known gap rather than a blank where a commit should be"))))
+
+;;; ------------------------------------------------------------------
+;;; Prose attributed to the systems it describes
+;;;
+;;; The half a first version of this report left out. REQ-0021 says the
+;;; markdown "says what the author believed, which is exactly the material the
+;;; index cannot supply" -- and which document describes which system turns out
+;;; to be derivable from the mention edges rather than needing an LLM.
+;;; ------------------------------------------------------------------
+
+(defun s-doc (name mentions)
+  (make-instance 'document-entity :name name :origin-file name
+                 :properties (properties-table
+                              (list :path name :format :markdown :mentions mentions))))
+
+(test prose-is-attributed-to-the-system-it-actually-names
+  ;; Measured on ~/lisp/game-server before this existed: docs/data-layer.md
+  ;; names eighteen entities in DATA-API and seven in MPACKAGE/NAMESPACE. That
+  ;; is not a guess about what the document is about, and the generated
+  ;; architecture document was throwing it away.
+  (let* ((f (make-s-fixture))
+         (g (s-graph f))
+         (about-alpha (s-doc "docs/alpha-design.md" '("alpha-entry" "never-called")))
+         (about-beta  (s-doc "docs/beta-notes.md" '("beta-helper"))))
+    (dolist (d (list about-alpha about-beta)) (add-entity g d))
+    (s-edge g :mentions about-alpha (s-alpha f))
+    (s-edge g :mentions about-alpha (s-orphan f))
+    (s-edge g :mentions about-beta (s-beta f))
+    (let* ((report (structure-report g))
+           (alpha (row-named (getf report :systems) :alpha))
+           (beta  (row-named (getf report :systems) :beta)))
+      (is (equal '("docs/alpha-design.md")
+                 (mapcar (lambda (p) (getf p :document)) (getf alpha :described-by)))
+          "the document naming two things in :alpha is attributed to it: ~a"
+          (getf alpha :described-by))
+      (is (= 2 (getf (first (getf alpha :described-by)) :names))
+          "with the count that earned the attribution")
+      (is (equal '("docs/beta-notes.md")
+                 (mapcar (lambda (p) (getf p :document)) (getf beta :described-by)))))))
+
+(test the-report-lists-the-prose-ranked-by-how-much-it-names
+  (let* ((f (make-s-fixture))
+         (g (s-graph f))
+         (broad (s-doc "docs/broad.md" '("a" "b")))
+         (narrow (s-doc "docs/narrow.md" '("c"))))
+    (dolist (d (list broad narrow)) (add-entity g d))
+    (s-edge g :mentions broad (s-alpha f))
+    (s-edge g :mentions broad (s-beta f))
+    (s-edge g :mentions narrow (s-beta f))
+    (let ((prose (getf (structure-report g) :prose)))
+      (is (equal '("docs/broad.md" "docs/narrow.md")
+                 (mapcar (lambda (row) (getf row :document)) prose))
+          "the document naming more of the codebase is read first: ~a"
+          (mapcar (lambda (row) (getf row :document)) prose)))))
+
+(test the-prose-section-points-and-does-not-paraphrase
+  ;; The line this must not cross. Summarising a document into generated prose
+  ;; is the plausible unfalsifiable text R6 exists to stop; naming it with the
+  ;; count that earned the pointer is a measurement.
+  (let* ((f (make-s-fixture))
+         (g (s-graph f))
+         (doc (s-doc "docs/alpha-design.md" '("alpha-entry"))))
+    (add-entity g doc)
+    (s-edge g :mentions doc (s-alpha f))
+    (let ((text (render-structure (structure-report g))))
+      (is (search "docs/alpha-design.md" text) "the document is named")
+      (is (search "described by" text) "and attached to its system")
+      (is (search "no index can supply" text)
+          "and the section says why a reader should go and read it"))))
