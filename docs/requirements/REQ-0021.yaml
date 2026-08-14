@@ -1,6 +1,6 @@
 id: REQ-0021
 title: Loom must be able to prepare a repository it did not write, deriving the architecture it can see and recording as gaps the parts it cannot
-status: draft
+status: partial
 date: 2026-08-11
 refines: [CON-0004]
 affects: [register-document-type, document-type-for, register-documentation-directory,
@@ -60,7 +60,7 @@ summary: |
 body: |
   ORDER
 
-  REQ-0022 and REQ-0025 must both be implemented before this document.
+  REQ-0022 must be implemented before this document. REQ-0025 must not.
 
   REQ-0022 makes document state transitions a Loom command rather than a rule,
   and this requirement depends on that in two places: R4c says a prepared
@@ -73,14 +73,29 @@ body: |
   into every tree init has touched, where they are far more expensive to
   correct than in this one.
 
-  REQ-0025 makes document id allocation a service operation with a ledger
-  behind it, and this requirement depends on that in three places: R4a says
-  transcribed documents take workspace-local ids, R14 says init allocates
-  through the service rather than by reading the directory, and R10a's
-  duplicate check is REQ-0025 R7. Preparing a tree whose agents allocate ids by
-  counting files would install the collision into every workspace, and unlike
-  the stale agent text it would not be visible until two people had already
-  written over each other.
+  REQ-0025 is a different case and an earlier draft of this paragraph got it
+  wrong by treating the two the same way. It makes id allocation a service
+  operation with a ledger behind it, and the collision it prevents is one that
+  only exists when two people work on two branches of one project. A single
+  developer preparing one worktree has no second reader of the id space, so
+  reading the directory and adding one is not a shortcut there -- it is the
+  correct answer, and it is the answer REQ-0025 R6 itself specifies for any
+  caller that cannot reach an allocator.
+
+  So init is a caller of the allocator like any other, and inherits its
+  fallback. Where a ledger exists init allocates through it; where none does it
+  allocates locally and the document records that it did, which is REQ-0025 R6
+  verbatim and needs nothing from this requirement but the discipline of not
+  inventing a second rule. Init therefore works before REQ-0025 lands and gets
+  better when it does, rather than waiting for it.
+
+  The distinction from REQ-0022 is worth stating because both were listed as
+  hard prerequisites and only one is. REQ-0022's dependency is about *text this
+  requirement copies into other people's repositories*: agent definitions
+  teaching a manual procedure would be installed into every prepared tree and
+  would have to be corrected in all of them. REQ-0025's is about a failure mode
+  a single-developer deployment does not have. The first is expensive to undo
+  and the second does not arise, so the first blocks and the second does not.
 
   WHAT IS WRONG
 
@@ -482,13 +497,16 @@ body: |
       confined to ARCH.
 
   R4a Transcribed documents take workspace-local ids, allocated the same way
-      every other document in that tree will be -- through REQ-0025's operation,
-      against that project's own counter. A fresh tree has no concepts and no
-      rules, so the workflow concept is that tree's CON-0001. Loom's own ids do
-      not travel and Loom's own documents are not renumbered to match: the same
-      text is CON-0004 here and CON-0001 there. The workflow concept defines the
-      document types, id prefixes, status vocabularies and the refines: chain
-      for everything written in that tree afterwards.
+      every other document in that tree will be. That is the requirement, and
+      it deliberately does not name the mechanism: today it is the highest id in
+      the tree plus one, and when REQ-0025 lands it is that requirement's
+      operation against the project's counter, and init must not care which. A
+      fresh tree has no concepts, so the workflow concept is that tree's
+      CON-0001. Loom's own ids do not travel and Loom's own documents are not
+      renumbered to match: the same text is CON-0004 here and CON-0001 there.
+      The workflow concept defines the document types, id prefixes, status
+      vocabularies and the refines: chain for everything written in that tree
+      afterwards.
 
   R4b No installed agent may name a transcribed document by an id belonging to
       Loom's own tree. The same text carries different ids in the two places,
@@ -549,20 +567,26 @@ body: |
       conventions may assume; it does not make R1's agent installation
       optional.
 
-  R10a `check` reports a duplicate doc-id, which is REQ-0025 R7 and is named
-      here because a prepared tree needs it from its first day. It is the
-      detector rather than the prevention: allocation through REQ-0025's ledger
-      is what stops two branches picking one number, and this catches what gets
-      past it -- a conflict resolved by renaming one file without changing the
-      id inside it, a document copied rather than moved into completed/, and an
-      id allocated while the service was unreachable.
+  R10a `check` reports a duplicate doc-id. This is REQ-0025 R7 and lands with
+      it, not here: it is the detector rather than the prevention, and a
+      prepared tree wants it from its first day but is not prevented from being
+      prepared without it. Named in this document because the workflow it
+      installs is what eventually produces the collision -- a conflict resolved
+      by renaming one file without changing the id inside it, a document copied
+      rather than moved into completed/, and an id allocated while no allocator
+      was reachable.
 
-  R14 Init allocates every id it writes through the service, never by counting
-      files in the directory it is about to write into. Init runs against a tree
-      whose branch is one of several, so the state it can see is exactly the
-      state REQ-0025 exists because two people cannot both trust. A prepared
-      workspace whose first documents were numbered by a directory listing has
-      the collision built into it before anyone has written anything.
+  R14 Init allocates ids through whatever allocator the tree has, and through
+      exactly one rule. Where REQ-0025's operation is reachable, init calls it
+      like any other caller; where it is not, init uses that requirement's own
+      fallback -- the highest id in this checkout plus one, recorded on the
+      document as locally allocated. What init may not do is invent a third
+      rule of its own, because two allocation rules in one tree is how the
+      counter stops being trustworthy.
+
+      This is deliberately weaker than an earlier draft, which required the
+      service unconditionally and would have blocked init on REQ-0025 for a
+      deployment that does not have the problem REQ-0025 solves.
 
   R15 Two repositories registered with one service cannot share a name. This is
       REQ-0025 R8 and it lands on init directly: a prepared worktree is one of
@@ -648,3 +672,50 @@ body: |
     deterministic half a Loom command the script calls? The nine test systems
     cover no shell script today, and R1's directory creation is exactly the
     kind of thing that should be tested.
+
+  OUTSTANDING
+
+  R5 is implemented -- DES-0022 S1, PLAN-0022. `structure` derives systems and
+  their dependency graph, protocols and implementors, entry points with an
+  honest qualifier, hubs and per-system test coverage, and names the commit it
+  was taken at. It found BUG-0025 on its first run.
+
+  Everything else remains, and the honest summary is that this requirement's
+  first stage is done rather than its first half:
+
+  R1, R1a, R2, R3, R4, R4a-R4d -- init itself: the script, the directories, the
+  transcribed workflow concept, the installed workflow text, and the consent
+  before writing into an existing docs/. DES-0022 S2, deferred on the four
+  decisions that design's D6 lists as unsettled.
+
+  R6, R7, R9 -- generated ARCH documents, the markdown and comment review, and
+  provenance. DES-0022 S3, gated on S2 having somewhere to write.
+
+  R13, R13a, R13b, R13c -- removal in two modes and the manifest it rests on.
+  DES-0022 S4, gated on S2 writing the manifest.
+
+  R8, R10, R14, R15 -- constraints on init rather than work of their own, so
+  they land with S2. R15 is additionally REQ-0025 R8 and may land there first.
+
+  R10a is REQ-0025 R7 and is that requirement's to deliver, per the ORDER
+  section above.
+
+  R11 and R12 -- acceptance on game-server, and a real task run there. Neither
+  can be measured until init exists. What can be said now is the baseline they
+  will be measured against: game-server holds 4173 entities, 21893
+  relationships, 12 documents and 0 decisions, rules, requirements, designs or
+  plans, and `structure` on it now produces 27 systems and a 23-implementor
+  protocol without any of those documents existing.
+
+  ONE AMENDMENT OWED
+
+  R1 says init installs the agent definitions. DES-0022 D2 argues it should
+  install a skill instead, on the measurement that ~/github/front-end already
+  holds five agents with the same five names as this tree's, all generic and
+  none Loom-aware -- and that Loom's own agents are about Loom and would be
+  wrong in every paragraph of a JavaScript front-end regardless of the
+  collision. R1 should be rewritten to require that the workflow reach the LLM
+  without saying by which artifact, when S2 lands. It is recorded here rather
+  than changed now because the argument belongs to a design that has not been
+  implemented.
+

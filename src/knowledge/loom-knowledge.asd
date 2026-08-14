@@ -15,6 +15,9 @@
    (:file "package")
    (:file "services")
    (:file "context")
+   ;; After "services": the report builds its rows with ENTITY-SUMMARY and
+   ;; ENTITY-LOCATION, which live there.
+   (:file "structure")
    )
   :in-order-to ((test-op (test-op :loom-knowledge/test)))
   )
@@ -36,6 +39,7 @@
    (:file "suite")
    (:file "services")
    (:file "context")
+   (:file "structure")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-knowledge-test :test-runner)

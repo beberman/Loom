@@ -329,7 +329,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 178
+(defparameter *call-site-ceiling* 208
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -367,9 +367,36 @@ LOOM-ANALYZER:*EXTERNAL-PACKAGE-NAMES* would place them; the default does not,
 because that would make the index depend on what the reading image happens to
 have loaded.
 
-So the ceiling stays at 178. Lowering it to track a fall that did not happen
-would be the mistake the paragraph above warns about, in the other
-direction.")
+So the ceiling stayed at 178 through DES-0015. Lowering it to track a fall that
+did not happen would be the mistake the paragraph above warns about, in the
+other direction.
+
+RE-MEASURED 2026-08-12 AT 189, CEILING 208. DES-0022's structural report adds
+one console command and one registry operation, and both are body-swallowing
+macros whose call names become orphaned definer pairs. Census composition
+before and after, which is what makes this growth rather than a defect:
+
+    define-command      79 -> 85
+    define-operation    56 -> 61
+    resolving to a callee   141 -> 141
+    ambiguous occurrences    16 ->  16
+
+Every one of the eleven is a call name inside the two new macro bodies, the
+resolving population is unchanged, and the ambiguous population is unchanged.
+189 measured plus 10% headroom is 208, derived the same way 162 gave 178.
+
+This is the second time in one day the ceiling fired, and the two occasions are
+worth telling apart because only one was a defect. Earlier the same day it went
+to 182 on four ambiguous sites, and the cause was a test helper named K-DOC
+colliding with another of a different arity in one package -- a real bug the
+ceiling caught before the arity error was traced. This time the census shows
+new code and nothing else.
+
+The instrument's cost is now visible: an absolute whole-tree count has to be
+re-measured whenever a command or an operation is added, and each
+re-measurement is an opportunity to raise it without looking. The census is
+what makes that check cheap, and running it is not optional -- a number edited
+to match a red suite is not a ceiling.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is

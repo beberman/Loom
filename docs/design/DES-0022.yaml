@@ -1,0 +1,265 @@
+id: DES-0022
+title: Init installs a skill rather than agents, and the deterministic half is a Loom command the script calls
+status: partial
+date: 2026-08-12
+refines: [REQ-0021]
+affects: [build-context, impact-set, entity-system, entities-in-system, edges-between-systems,
+          repository-status, describe-entity, default-system-for-path]
+tags: [init, generality, bootstrap, agents, structural-report, game-server, front-end]
+summary: |
+  REQ-0021's sharpest open question -- what resolves an agent-name collision --
+  is settled by measuring a repository that has one. ~/github/front-end holds
+  five agent definitions named architect, coder, planner, reviewer and tester:
+  the same five names Loom's own tree uses, generic in content, and mentioning
+  Loom nowhere. So the collision is total rather than partial, and none of
+  REQ-0021's four options is good.
+
+  The answer is that init should not have been installing agents. Loom's own
+  agents are about Loom -- "You are the planner for Loom, a Common Lisp
+  engineering knowledge engine" -- and every one of them already delegates the
+  transferable half to `.claude/skills/loom/SKILL.md`, which they call the
+  authoritative copy. That skill is the thing worth installing, it is
+  advertised to the model by the harness without any file being edited, and a
+  skill named `loom` collides only with another skill named `loom`.
+
+  The second decision is where the work lives. The deterministic half -- the
+  structural report REQ-0021 R5 asks for -- becomes a Loom operation with a
+  test suite behind it, and the shell script calls it. A shell script is the
+  only thing in this tree that nine test systems do not cover, and R5's output
+  is the input to every ARCH document init writes.
+body: |
+  STAGING
+
+  REQ-0021 is four pieces of work and this design covers all four but sequences
+  them, because only the first is worth building before the others are wanted:
+
+    S1  the structural report as a Loom operation (R5). Pure derivation from
+        the index, testable, and independently useful -- "what is the shape of
+        this tree" is a question worth answering whether or not anyone runs
+        init.
+    S2  init proper: the directories, the transcribed workflow concept, the
+        skill, the manifest and the recorded directory choice (R1-R4a, R13b).
+    S3  generated ARCH documents from S1's report, with provenance (R6, R7, R9).
+        The only stage needing an LLM in the loop.
+    S4  removal in two modes (R13, R13a, R13c).
+
+  S1 first because S3 consumes it, because it is the half a test can hold, and
+  because it is the piece that demonstrates something on its own.
+
+  D1  THE AGENT COLLISION IS TOTAL, AND THAT IS THE ANSWER
+
+  Measured 2026-08-12. ~/github/front-end holds .claude/agents/ with
+  architect.md, coder.md, planner.md, reviewer.md and tester.md -- 263 lines
+  across five files, the same five names this tree uses. Read: they are generic
+  project agents ("You are an implementation specialist focused on writing
+  clean, correct code"), they defer to the repository's own CLAUDE.md, and none
+  of them mentions Loom.
+
+  REQ-0021 offered four resolutions and every one is bad against that:
+
+    namespacing them -- `loom-coder' beside `coder' -- leaves a user with two
+      coders, no guidance on which to invoke, and a description field that
+      cannot honestly distinguish them.
+    merging edits a file Loom did not write, which R3 forbids outright.
+    asking per file is five prompts during what is meant to be one command, and
+      a prompt inside a non-interactive run is a stall nobody sees.
+    declining is unavailable since R1 made installation part of preparing the
+      tree.
+
+  The trap is in the premise. Loom's agent definitions are agents *for Loom* --
+  "You are the planner for Loom, a Common Lisp engineering knowledge engine",
+  with its layering, its nine test systems, its known blind spots. Copied into
+  a JavaScript front-end they would be wrong in every paragraph, collision or
+  no collision. What init has that is worth installing is not the role
+  definitions; it is the workflow those roles share.
+
+  D2  A SKILL IS THE VEHICLE, AND THIS TREE ALREADY PROVES IT
+
+  Every agent definition in .claude/agents/ opens by delegating:
+
+      Invoke the **loom** skill before running anything. It is the
+      authoritative copy of the invocation, the test-suite driver, the console
+      commands and the document conventions -- none of that needs
+      rediscovering, and this file deliberately does not restate it.
+
+  The transferable knowledge is already factored out of the roles and into
+  .claude/skills/loom/SKILL.md, because five separately drifting copies went
+  stale twice. Init installs that, adapted: the service endpoints instead of
+  tools/loom.sh, the repository token, the document conventions, and the
+  transition command.
+
+  Four properties make this better than agents rather than merely smaller:
+
+    It does not collide. A skill named `loom' conflicts only with another skill
+    named `loom', and a repository that has one has already met Loom.
+
+    It needs no file edited to be found. The harness advertises installed
+    skills to the model with their description, so the workflow reaches the LLM
+    without touching CLAUDE.md -- which R3 forbids and which is the file a team
+    is most protective of. This is the property that makes R3 and R1
+    satisfiable at once, and neither was, with agents.
+
+    It composes with the agents a repository already has. front-end's coder
+    keeps being front-end's coder and gains a workflow it can invoke. Nothing
+    is replaced, so nothing has to be reconciled.
+
+    It is one file to keep correct in both places, which is R4b's requirement
+    exactly. Loom's own skill and a prepared tree's differ in how they reach
+    the service and in nothing else.
+
+  This departs from R1's letter, which says init "installs the agent
+  definitions", and it is recorded here as a departure rather than an
+  interpretation. R1's substance is that the workflow must reach the LLM rather
+  than sitting inert in a directory, and the skill does that better than a copy
+  of five agent files about a Lisp knowledge engine. R4b, R4c and R4d are about
+  what the installed text says and transfer unchanged from agents to a skill.
+
+  Where a repository has no agents at all -- game-server, today -- init still
+  installs only the skill. Two mechanisms depending on what it finds is two
+  things to keep correct and a difference nobody can predict from the outside.
+
+  D3  THE DETERMINISTIC HALF IS A COMMAND, NOT SCRIPT
+
+  REQ-0021's last open question asks whether the shell script owns the work or
+  calls a Loom command for it. It calls a command, and R5's report is the first
+  of them.
+
+  A shell script is the only artifact in this tree that none of the nine test
+  systems covers, and directory creation, id allocation and document writing
+  are exactly the operations a test should hold. The script's own job is what
+  only a script can do: find or start the service, register the worktree, and
+  hand the rest over.
+
+  So S1 adds one read-tier operation. It derives, from the index alone:
+
+    systems and the dependency graph between them
+    protocols -- a generic with implementors -- and who implements each
+    entry points: callable definitions with no in-tree caller
+    hubs: definitions ranked by inbound edges
+    test coverage per system
+    the layering that actually holds, as edges between systems
+
+  Every one of those is a query loom-graph already answers, which is why this is
+  a report rather than an engine: ENTITIES-IN-SYSTEM, EDGES-BETWEEN-SYSTEMS,
+  NEIGHBORS and the :IMPLEMENTS and :TESTS edges are the whole of it.
+
+  It lives in loom-knowledge beside BUILD-CONTEXT and IMPACT-REPORT: it reads a
+  view and returns a plist, writes nothing, and RULE-0003 holds. The console
+  gets `structure`, loom-serve gets a :STRUCTURE operation, and REST and MCP
+  follow from the registry.
+
+  D4  THE REPORT IS DATA, AND ITS HONESTY IS THE POINT
+
+  R6 says a generated ARCH document fills only what the report derived and that
+  its invariants section is explicitly empty. That constraint is only
+  enforceable if the report is data rather than prose -- an LLM handed a
+  paragraph will write a better paragraph, and an LLM handed a list of systems
+  and edge counts can only render what is in the list.
+
+  So the operation returns a plist and no rendering step decides anything. The
+  console's `structure` prints it for a human; S3's document generation walks
+  the same plist. Neither may add a field the other has.
+
+  Two things the report must not do, both of which are R6's "a generated
+  invariant is a defect" one level down:
+
+    It does not name a layer violation as a violation. It reports the edges
+    that exist between systems, in both directions, and lets a reader see that
+    A calls B and B calls A. Calling one of those wrong requires knowing which
+    was intended, which is exactly the intent no index holds.
+
+    It does not rank hubs as "important". It reports inbound edge counts. A
+    hub is a measurement; what it means is a judgement.
+
+  D5  THE STRUCTURAL REPORT NAMES ITS COMMIT
+
+  R5 requires the report be reproducible and name what it was derived from.
+  Loom's own tree is on a branch and REQ-0021 settled that init works on one, so
+  the report carries the HEAD commit at the time it was taken, read the same way
+  REQ-0025 reads a root commit -- one `git -C <root> rev-parse HEAD`, and NIL
+  with a reason when git cannot answer, on DES-0018's precedent.
+
+  That is what makes an ARCH document generated from it checkable later: a
+  reader can see exactly which tree was described, and REQ-0021's "how does a
+  generated ARCH document age" question has at least a detectable answer even
+  before it has a reported one.
+
+  D6  WHAT S2 WILL NEED FROM THIS AND IS NOT DECIDED HERE
+
+  Recorded so the S1 boundary is a boundary rather than a place the design ran
+  out:
+
+    The manifest's format and location (R13b), which S4's removal depends on.
+    The recorded document-directory choice (R2), which is probably the same
+    file.
+    Whether the transcribed workflow concept is a template in this tree or is
+    generated from CON-0004, which decides whether the two can drift.
+    How the skill's service endpoint is parameterised, since a prepared tree
+    may reach a service on another host.
+
+  ALTERNATIVES CONSIDERED
+
+  Namespaced agents (`loom-architect`). Keeps both sets and leaves the user to
+  choose between two coders on every task, with description fields that cannot
+  honestly distinguish them. Rejected under D1.
+
+  Agents plus a skill. Installs the collision *and* the thing that made it
+  unnecessary. If the skill carries the workflow, the agents carry only role
+  text about a Lisp knowledge engine, which is the part that should not travel.
+
+  A structural report generated by the shell script from console output.
+  Parsing `find` and `describe` output is a second, undeclared API over the
+  console's formatting -- the thing DES-0005 and DES-0006 both exist to avoid.
+
+  Putting the report in loom-workspace because init writes files. The report
+  writes nothing; the document generation that consumes it does, and that is
+  S3's problem to place.
+
+  CONSEQUENCES
+
+  REQ-0021 R1 is contradicted in its letter and served in its substance, and
+  the requirement should be amended rather than quietly reinterpreted when this
+  lands.
+
+  A prepared worktree gets no role agents, so a repository with none -- like
+  game-server -- ends up with a workflow its LLM can invoke and no agents to
+  invoke it from. That is a real gap and it is smaller than it looks: the skill
+  is advertised on its own, and a team that wants role agents has a better
+  basis for writing their own than a copy of Loom's would have given them.
+
+  The structural report is useful before init exists, which is the argument for
+  building it first. On game-server it answers a question nothing currently
+  answers; on front-end it will answer almost nothing, because 455 .js files
+  produce 27 entities and no relationships until REQ-0024 lands, and the report
+  saying so plainly is the honest form of that.
+
+  OUTSTANDING
+
+  S1 landed as PLAN-0022; S2, S3 and S4 have not started. What each still needs,
+  and what deferred it:
+
+  S2, init proper -- the directories, the transcribed workflow concept, the
+  skill, the manifest and the recorded document-directory choice. Deferred
+  because D6 lists four things it needs that this design does not settle: the
+  manifest's format and location, whether the workflow concept is a template or
+  is generated from CON-0004, how the skill's service endpoint is parameterised
+  for a service on another host, and whether the recorded directory choice
+  shares the manifest's file. None of those is hard; all of them are decisions,
+  and making them while implementing S1 would have been making them without a
+  reason to.
+
+  S3, generated ARCH documents with provenance (R6, R7, R9). Depends on S2 for
+  somewhere to write and on S1 for what to write, and is the only stage that
+  needs an LLM in the loop. The constraint it exists to honour is already
+  enforceable: S1's report is data, so a generator can only render what was
+  measured.
+
+  S4, removal in two modes (R13, R13a, R13c). Depends on S2's manifest, which
+  is the mechanism R13 rests on -- REQ-0021 is explicit that inferring init's
+  output after the fact is not an acceptable substitute.
+
+  Also outstanding and not a stage: D2 contradicts REQ-0021 R1 in its letter,
+  and that requirement should be amended to say a skill rather than agent
+  definitions when S2 lands. Recorded in CONSEQUENCES and repeated here so the
+  amendment is not lost between now and then.
+

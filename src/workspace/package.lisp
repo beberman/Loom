@@ -21,6 +21,9 @@
    #:repository-file-count
    #:repository-errors
    #:repository-enrichment
+   ;; DES-0022 D5: the commit a structural report was derived from, or NIL and
+   ;; a reason. A report that cannot name its tree cannot be checked later.
+   #:repository-commit
    #:*repositories*
    #:find-repository
    #:all-repositories

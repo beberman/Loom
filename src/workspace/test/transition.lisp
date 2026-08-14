@@ -381,3 +381,40 @@ body: |~%  status: implemented is written here too.~%")))
   (multiple-value-bind (verdicts problems) (parse-verdicts "DES-0019")
     (is (null verdicts))
     (is (= 1 (length problems)))))
+
+(test a-verdict-for-a-document-the-cascade-never-reaches-is-refused
+  ;; BUG-0026. The verdict lookup is driven by the walk, so a verdict for a
+  ;; document the walk never visits was never consulted and never reported --
+  ;; the caller typed it, nothing happened to it, and the command said nothing.
+  ;;
+  ;; The walk stopping is correct: a `partial' design has an OUTSTANDING
+  ;; section, which is work, so the requirement above it is not implemented
+  ;; either. What was wrong is that the stop silently invalidated an argument
+  ;; already supplied. This is the case the suite did not have -- a well-formed
+  ;; verdict for a document that is neither blocked nor reached.
+  (with-document-tree (root)
+    (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
+    (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
+    (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
+    (with-indexed-tree (repository root)
+      (let ((report (complete-plan repository "PLAN-0001"
+                                   :verdicts "DES-0001=partial REQ-0001=partial")))
+        (is (some (lambda (problem) (search "REQ-0001" problem)) (getf report :problems))
+            "the unused verdict has to be named: ~a" (getf report :problems))
+        (is (null (getf report :changed))
+            "and nothing is written, because the command is all or nothing")
+        (is (search "status: draft" (document-text root "docs/plans/PLAN-0001.yaml"))
+            "not even the plan, which would otherwise have been written first")))))
+
+(test a-verdict-for-every-document-the-cascade-reaches-is-not-refused
+  ;; The complement, without which the test above passes against an
+  ;; implementation that refuses every cascade with a non-terminal verdict in
+  ;; it. Here the walk stops at the partial design and no verdict is left over.
+  (with-document-tree (root)
+    (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
+    (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
+    (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
+    (with-indexed-tree (repository root)
+      (let ((report (complete-plan repository "PLAN-0001" :verdicts "DES-0001=partial")))
+        (is (null (getf report :problems)) "~a" (getf report :problems))
+        (is (= 2 (length (getf report :changed))))))))

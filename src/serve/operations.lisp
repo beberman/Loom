@@ -141,6 +141,20 @@ The console's own cap, so the two answer the same question the same way.")
   ;; bundle into the text a console prints, and a program wants the bundle.
   (build-context (repository-view repository) task))
 
+(define-operation :structure :read (repository)
+    "Systems, protocols, entry points and hubs, derived from the index."
+  ;; REQ-0021 R5, and the shape matters more than usual: DES-0022 D4 requires
+  ;; that the console printer and the document generator walk the same plist,
+  ;; so this returns the report and renders nothing. An init script asking for
+  ;; a tree's structure over REST gets the data a human sees formatted, not a
+  ;; second, prose-shaped answer it would have to parse.
+  (let ((watched (require-repository repository)))
+    (multiple-value-bind (commit reason) (repository-commit watched)
+      (structure-report (repository-graph watched)
+                        :commit commit
+                        :commit-reason reason
+                        :repository (repository-name watched)))))
+
 (define-operation :status :read ((repository))
     "Index size, watcher health, unresolved references, rule violations."
   ;; The one operation with no designator requirement, because with none it is

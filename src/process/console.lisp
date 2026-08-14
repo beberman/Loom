@@ -593,6 +593,23 @@ rather than only in the note beside it."
   (let ((task (format nil "~{~a~^ ~}" words)))
     (write-string (render-context (build-context (current-graph) task)))))
 
+(define-command structure (&optional designator)
+    "structure [<name>]"
+    "Systems, protocols, entry points and hubs, derived from the index."
+  ;; REQ-0021 R5. Everything it prints was derived from the index, so every
+  ;; name in it resolved against real code -- which is the property that makes
+  ;; a generated architecture document worth writing and a hand-written one
+  ;; hard to keep true. What it will not print is an invariant: code being
+  ;; consistent with one is not evidence anybody intended it.
+  (let ((repository (current-repository designator)))
+    (multiple-value-bind (commit reason) (repository-commit repository)
+      (write-string
+       (render-structure
+        (structure-report (repository-graph repository)
+                          :commit commit
+                          :commit-reason reason
+                          :repository (repository-name repository)))))))
+
 (define-command check (&optional designator)
     "check [<name>]"
     "Run the rule checks from docs/rules and print violations."

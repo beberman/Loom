@@ -56,7 +56,12 @@
     ;; already above, carrying the same meaning for the impact report that they
     ;; now carry for a bundle, which is the point of the two services sharing
     ;; one vocabulary.
-    :problems :changed :blocked-by)
+    :problems :changed :blocked-by
+    ;; The structural report (DES-0022 S1). Every one of these is a list that is
+    ;; legitimately empty -- a tree with no protocols, or one no analyzer
+    ;; claimed -- and [] against null is exactly the distinction an init script
+    ;; reading this over REST has to make.
+    :systems :system-edges :protocols :implementors :entry-points :hubs)
   "Keys whose value is a sequence even when it is empty.
 
 Two jobs. NIL under one of these encodes as [] rather than null, so an empty

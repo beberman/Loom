@@ -46,6 +46,14 @@
    ;; budget rather than a fact, and someone tuning it should not have to
    ;; reach into the package.
    #:*context-mention-limit*
+
+   ;; the structural report (REQ-0021 R5, DES-0022 S1) -- what the index can
+   ;; say about a tree's shape, as data, so a generated architecture document
+   ;; is confined to what was actually measured
+   #:structure-report
+   #:render-structure
+   #:*structure-hub-limit*
+   #:*structure-entry-point-limit*
    #:*seed-type-preference*
    #:estimate-tokens
 

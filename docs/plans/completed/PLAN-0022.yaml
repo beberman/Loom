@@ -1,0 +1,201 @@
+id: PLAN-0022
+title: The structural report, derived from the index and nothing else
+status: final
+date: 2026-08-12
+refines: [DES-0022]
+affects: [entities-in-system, edges-between-systems, entity-system, describe-entity,
+          build-context, repository-status]
+tags: [init, structural-report, knowledge, req-0021]
+summary: |
+  DES-0022 S1 only: one read-only function in loom-knowledge, a console command
+  that prints it, a loom-serve operation, and the commit the report was derived
+  from. S2 to S4 of that design are not started here and the plan says where
+  the boundary is.
+
+  Every part of the report is a query loom-graph already answers, so the work is
+  assembling them honestly rather than computing anything new. The care is in
+  what the report refuses to say: no layer violation is named as a violation, no
+  hub is called important, and a repository with no relationships says so
+  rather than returning empty lists that read as a clean result.
+body: |
+  FILES
+
+  src/knowledge/structure.lisp    new. STRUCTURE-REPORT and its helpers.
+  src/knowledge/package.lisp      exports STRUCTURE-REPORT, RENDER-STRUCTURE.
+  src/knowledge/loom-knowledge.asd  the new component, and the test component.
+  src/knowledge/test/structure.lisp new.
+  src/process/console.lisp        `structure` command.
+  src/serve/operations.lisp       :STRUCTURE, read tier.
+  src/serve/json.lisp             the report's array-valued keys.
+  src/workspace/workspace.lisp    REPOSITORY-COMMIT, one `git rev-parse HEAD`.
+  src/workspace/package.lisp      exports it.
+
+  Not edited: loom-rest. Routes derive from the registry.
+
+  Not edited: any analyzer, the ontology, any resolution pass. The report reads
+  the index and computes nothing new -- if this plan needs a new edge or a new
+  property, the design was wrong.
+
+  WHERE THE BOUNDARY IS
+
+  This plan does not create a directory, write a document, install a skill,
+  write a manifest, or generate an ARCH document. DES-0022 S2 to S4 are those,
+  and the report is deliberately useful without them: `structure @game-server`
+  answers a question nothing currently answers.
+
+  BLAST RADIUS
+
+  What Loom says: `impact entities-in-system 3` and `impact edges-between-systems
+  3` reach the rule engine, which is the one caller of both today. Adding a
+  second reader of the same queries touches nothing the rules do.
+
+  What Loom cannot see: the console command and the serve operation are macro
+  bodies, so the edges from them to STRUCTURE-REPORT are `:call-site` entities
+  rather than direct calls, and the impact set will under-report. The suite is
+  the check.
+
+  RISKS
+
+  ENTITY-SYSTEM reads the path segment after `src/` (BUG-0006). On a tree with
+  no src/ directory -- which is most repositories, and game-server is one --
+  every entity may land in one system or in none, and a report that shows one
+  system on a 146-file tree is technically true and useless. This is the risk
+  most likely to make the report worthless on exactly the trees it is for, and
+  it has to be measured before the shape is fixed rather than after.
+
+  Entry points computed as "no inbound :calls" will include every test, every
+  definition only reached through a macro body, and everything in DES-0001's
+  known blind spots. A list that calls all of those entry points is worse than
+  no list. The count of unattributed call sites is the honest qualifier and has
+  to travel with the number.
+
+  A report that returns empty lists on a repository Loom cannot read looks
+  identical to a clean, simple architecture. front-end is that case now -- 27
+  entities, 0 relationships -- and the report must distinguish "nothing here"
+  from "nothing indexed".
+
+  Rendering deciding something the data does not carry. DES-0022 D4 requires the
+  console printer and S3's generator walk the same plist, so any judgement in
+  the printer is a judgement S3 cannot reproduce and will invent differently.
+
+  STEPS
+
+  1. REPOSITORY-COMMIT in loom-workspace: one `git -C <root> rev-parse HEAD`,
+     returning NIL and a reason when git cannot answer, on IGNORED-PATHS'
+     precedent. First step because it is independent of everything else and the
+     report carries it.
+
+  2. Measure ENTITY-SYSTEM on game-server and front-end before writing the
+     report, and record what it returns. If a 146-file tree resolves to one
+     system, the systems section is reported with that fact rather than as a
+     one-line answer, and RISKS' first item becomes a finding in the outcome.
+
+  3. STRUCTURE-REPORT: systems and their edges, protocols and implementors,
+     entry points with their qualifier, hubs by inbound count, test coverage per
+     system, and the commit. A plist, no prose, nothing ranked as good or bad.
+
+  4. RENDER-STRUCTURE and the `structure` command. The printer may format and
+     may not decide.
+
+  5. The :STRUCTURE operation and its array-valued keys.
+
+  6. Tests: a fixture with two systems and an edge each way, so the report shows
+     both directions and names neither as wrong; a protocol with two
+     implementors; an entity with no callers; and the empty-index case reporting
+     that it is empty rather than clean.
+
+  7. Acceptance: `structure` on all three trees. On this one the systems and
+     their dependency graph must match the layering CLAUDE.md describes, which
+     is the only tree where the right answer is known independently. On
+     game-server the report is the first structural answer that tree has ever
+     produced. On front-end it must say plainly that there is nothing to report,
+     because 455 .js files are invisible until REQ-0024.
+
+  8. Close it: `complete PLAN-0022 DES-0022=partial REQ-0021=<verdict>`.
+     DES-0022 is expected to be `partial` and this is written before the work
+     rather than after: the design covers four stages and this plan implements
+     one, so its OUTSTANDING section names S2, S3 and S4. REQ-0021's verdict is
+     a judgement to make after the acceptance, and `partial` is the likely
+     answer for the same reason.
+
+  VERIFICATION
+
+  Per step; then `tools/loom-test.sh`, and `tools/loom.sh 'status' 'check'` to
+  confirm `unresolved` has not risen.
+
+  OUTCOME
+
+  All eight steps landed. Nine of nine systems, ten new tests in a `structure`
+  suite.
+
+  STEP 2's RISK DID NOT MATERIALISE, WHICH IS WHY IT WAS STEP 2
+
+  The plan's first risk was that ENTITY-SYSTEM reads the path segment after
+  `src/`, so a tree without one would resolve to a single useless system.
+  Measured before the report's shape was fixed:
+
+      Loom          38 distinct systems
+      game-server   48 distinct systems
+      front-end      1 (DOCS)
+
+  It does not read the path for code. :SYSTEM comes from the package for a Lisp
+  entity (DES-0009) and from the path only for documents, so game-server's
+  MPACKAGE/OBJ-TYPES and DATA-API are real groupings despite that tree having no
+  src/ directory at all. front-end's single DOCS system is the honest answer for
+  a tree whose 455 .js files no analyzer claims.
+
+  Measuring first cost one probe and would have cost a redesign if the answer
+  had gone the other way.
+
+  WHAT THE REPORT SAYS ON EACH TREE
+
+      Loom          30 systems; the dependency graph matches CLAUDE.md's
+                    layering independently -- LOOM-GRAPH -> LOOM-ONTOLOGY,
+                    LOOM-KNOWLEDGE -> LOOM-GRAPH, and LOOM-ONTOLOGY appears as
+                    the source of no edge at all, which is RULE-0001 confirmed
+                    by a route that does not read RULE-0001.
+      game-server   27 systems, a protocol with 23 implementors, 207 entry
+                    points qualified by 1725 unattributable call sites. The
+                    first structural description that tree has ever produced,
+                    and it holds no Loom documents at all.
+      front-end     "nothing here is indexed", said before anything a reader
+                    could misread as a clean result.
+
+  IT FOUND A DEFECT ON ITS FIRST RUN
+
+  BUG-0025. The report showed LOOM-GRAPH -> LOOM-MCP, LOOM-KNOWLEDGE ->
+  LOOM-MCP and LOOM-PROCESS -> LOOM-MCP: edges that cannot exist. All four point
+  at loom-mcp's FIELD, and the callers have no call to any function of that name
+  -- they have a local variable called `field`.
+
+  Reproduced against ANALYZE-PATH directly: a definition whose only mention of
+  two names is as `let` bindings records all of them as calls, because a binding
+  pair `(field (compute x))` is syntactically identical to a call. Where such a
+  name happens to match a real definition, RESOLVE-CALLS asserts an edge that
+  does not exist -- CON-0001's fabricated fact, resolvable and plausible and
+  wrong, and invisible to `check`, which reports names that resolved to nothing.
+
+  Filed rather than fixed. The fix has to cover `flet`, `labels`, `do` and
+  destructuring lambda lists as well, which is a change to the Lisp analyzer
+  with its own tests and is not what this plan named.
+
+  The finding is also the argument for the report. Those edges have been in the
+  index for as long as the analyzer has existed; no rule covers loom-mcp, no
+  count moves, and `check` cannot see a fabricated edge. What surfaced it was
+  reporting every system pair that has an edge and letting a reader see one that
+  cannot be right.
+
+  THE CALL-SITE CEILING FIRED AGAIN, AND THIS TIME IT WAS GROWTH
+
+  189 against 178. Censused rather than adjusted, per its own docstring:
+  define-command 79 -> 85, define-operation 56 -> 61, resolving 141 -> 141,
+  ambiguous 16 -> 16. Every one of the eleven is a call name inside the two new
+  macro bodies this plan added. Re-measured to 189 + 10% = 208, with the
+  composition recorded in the parameter's docstring.
+
+  Worth noting against the same day's earlier firing, which was a real defect --
+  a K-DOC helper colliding with another of a different arity. Two firings, one
+  bug and one growth, and only the census told them apart. The instrument's cost
+  is now explicit in its docstring: an absolute whole-tree count must be
+  re-measured whenever a command or operation is added, and each re-measurement
+  is a chance to raise it without looking.

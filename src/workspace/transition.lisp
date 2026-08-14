@@ -653,6 +653,13 @@ from a plan. Use set-status for one document."
                     ;; that would otherwise block every document it refines.
                     (settled (list plan))
                     (visited (list plan))
+                    ;; BUG-0026. The verdict lookup is driven by the walk, so a
+                    ;; verdict for a document the walk never reaches is never
+                    ;; the subject of an ASSOC and cannot be reported by any
+                    ;; code path that reads it. Every consulted doc-id is
+                    ;; recorded here instead, and what is left over is refused
+                    ;; below rather than discarded in silence.
+                    (consulted '())
                     (frontier '()))
                 (flet ((record (row) (push row rows))
                        (edit-for (document status)
@@ -699,6 +706,7 @@ from a plan. Use set-status for one document."
                                         (blocked (document-blockers graph document settled))
                                         (verdict (cdr (assoc doc-id parsed
                                                              :test #'string-equal))))
+                                   (push doc-id consulted)
                                    (cond
                                      ;; A type with no status field at all --
                                      ;; a concept, which REQ documents in this
@@ -781,6 +789,24 @@ set-status to override." doc-id blocked (rest blocked))
                                    (setf next (append next
                                                       (refines-targets graph document))))))
                              (setf frontier (remove-duplicates next :from-end t)))))
+                ;; BUG-0026: a verdict nobody asked for. Refused rather than
+                ;; warned, for the reason a missing verdict is refused -- the
+                ;; command is all-or-nothing, and a caller who named a document
+                ;; the cascade does not reach has either mistyped it or misread
+                ;; the chain. The message says which of the walk's two stopping
+                ;; conditions applies, because "not in this cascade" invites the
+                ;; reply that it is right there in the refines: chain.
+                (let ((unused (remove-if (lambda (pair)
+                                           (member (car pair) consulted
+                                                   :test #'string-equal))
+                                         parsed)))
+                  (when unused
+                    (push (format nil "~{~a~^, ~} ~:[is~;are~] not in this cascade, so ~
+~:*~:[its verdict was~;their verdicts were~] not applied. The walk stops at a document ~
+whose verdict is not terminal, and goes no further than what the plan refines -- run ~
+`complete' with no verdicts to see the chain it reaches."
+                                  (mapcar #'car unused) (rest unused))
+                          problems)))
                 (let ((rows (nreverse rows))
                       (edits (remove-if-not #'edit-writes-p (nreverse edits))))
                   (list :repository (repository-name repository)

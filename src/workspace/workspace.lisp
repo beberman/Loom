@@ -200,6 +200,32 @@ clean."
             (values (make-hash-table :test #'equal)
                     (princ-to-string condition)))))))
 
+(defun repository-commit (repository)
+  "Two values: REPOSITORY's HEAD commit, and why it could not be read.
+
+DES-0022 D5. A structural report has to name the tree it described, or a reader
+meeting a generated architecture document six months later cannot tell whether
+it was ever true. One `git rev-parse HEAD', bounded and guarded the way
+IGNORED-PATHS is, and NIL with a reason when git cannot answer -- not a
+repository, no git, a tree with no commits yet. A known gap beats a fabricated
+commit, and a tree with no commits is exactly the case REQ-0025's first open
+question is about."
+  (handler-case
+      (multiple-value-bind (out err status)
+          (uiop:run-program (list "timeout"
+                                  (princ-to-string *ignore-query-timeout-seconds*)
+                                  "git" "-C" (namestring (repository-root repository))
+                                  "rev-parse" "HEAD")
+                            :output :string :error-output :string
+                            :ignore-error-status t)
+        (declare (ignore err))
+        (if (zerop status)
+            (values (string-trim '(#\Newline #\Return #\Space) out) nil)
+            (values nil (if (eql status 124)
+                            "git rev-parse timed out"
+                            (format nil "git rev-parse exited ~a" status)))))
+    (error (condition) (values nil (princ-to-string condition)))))
+
 (defun repository-files (repository)
   "Every file under the repository root that some analyzer claims.
 
