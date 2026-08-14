@@ -413,9 +413,13 @@ which is how an agent working outside this tree reaches them.
 
 ## Markdown is indexed, and earns a weaker edge
 
-REQ-0014 and DES-0016. A separate analyzer claims `.md` and `.markdown` under
-any directory named `docs`, `doc`, `design` or `documentation` — not the
-repository root, so a top-level README.md is not indexed. Each file becomes a
+REQ-0014, DES-0016, and REQ-0028 which widened it. A separate analyzer claims
+`.md`, `.markdown` and `.txt` **anywhere the repository keeps them**, root
+README included. Excluded: any dot-directory (`.claude/`, `.windsurf/` instruct
+an assistant rather than describe the code), a `templates/` directory, and
+`CLAUDE.md`/`AGENTS.md` by name. What a document is worth is measured by how
+much of its vocabulary resolves — `drift` reports it — rather than assumed from
+where it sits. Each file becomes a
 `:document` named by its path, titled by its first H1 (the filename when there
 is none), always a plain `:document`: a markdown file in `docs/design` is *not*
 a DES, because the directory-names-the-type registry is this tree's convention
@@ -443,6 +447,7 @@ would bury the staleness signal that `unresolved` exists to carry.
 were `:documents` edges until REQ-0014, so `impact`'s `documents:` line is empty
 on this tree and a `mentions:` line carries what it used to.
 
-To index a repository that keeps documentation somewhere else again, add the
-directory name to `loom-analyzer:*documentation-directories*` — the same seam
-`*external-package-names*` is for packages.
+There is nothing to register any more: the directory name was never the
+question, so `*documentation-directories*` and its registration function are
+gone. A repository keeping prose under `handbook/`, `adr/` or beside its source
+is claimed without anybody configuring anything.

@@ -33,24 +33,57 @@
 ;;; Dispatch: which directories count (R1, R2)
 ;;; ------------------------------------------------------------------
 
-(test markdown-is-claimed-under-a-documentation-directory
+(test prose-is-claimed-wherever-the-repository-keeps-it
+  ;; REQ-0028. The old rule claimed markdown only under a directory named docs,
+  ;; doc, design or documentation -- which tested where a file lived rather than
+  ;; what it said, and missed the most common place architecture lives.
+  ;; Measured on ~/github/front-end: src/models/README.md, 541 lines titled
+  ;; "Models Directory - Game Object System", invisible because the directory is
+  ;; called models.
   (let ((a (make-instance 'markdown-analyzer)))
     (is-true (analyzer-handles-p a "docs/data-layer.md"))
-    (is-true (analyzer-handles-p a "design/HexGridRequirements.md"))
-    (is-true (analyzer-handles-p a "docs/notes.markdown"))
-    (is-true (analyzer-handles-p a "some/nested/doc/thing.md")
-             "R2: the directory may sit anywhere in the path, not only at the root")))
+    (is-true (analyzer-handles-p a "src/models/README.md")
+             "the file that prompted the change")
+    (is-true (analyzer-handles-p a "README.md")
+             "R1a: the root README, which DES-0016 excluded by name")
+    (is-true (analyzer-handles-p a "notes/adr/0001-why.md")
+             "a name nobody put on an allowlist")
+    (is-true (analyzer-handles-p a "design.txt")
+             "and plain text, which was never claimed at all")))
 
-(test the-repository-root-is-not-a-documentation-directory
-  ;; What makes game-server's twelve documentation files twelve rather than
-  ;; fifteen: Bugs.md, CLAUDE.md and README.md sit at the root and are not
-  ;; engineering knowledge by virtue of being markdown. REQ-0014 R6.
+(test instructions-to-an-assistant-are-not-documentation-of-the-code
+  ;; The population a blanket walk would wrongly admit. An agent definition
+  ;; describes how an assistant should behave; indexing it puts a prompt into
+  ;; the graph wearing the shape of documentation, which is CON-0001's failure
+  ;; in a new place.
   (let ((a (make-instance 'markdown-analyzer)))
-    (is-false (analyzer-handles-p a "README.md"))
-    (is-false (analyzer-handles-p a "CLAUDE.md"))
-    (is-false (analyzer-handles-p a "src/analyzer/notes.md"))
-    (is-false (analyzer-handles-p a "docs.md")
-              "a file called docs.md is not a docs directory")))
+    (is-false (analyzer-handles-p a ".claude/agents/coder.md"))
+    (is-false (analyzer-handles-p a ".windsurf/rules/logging.md"))
+    (is-false (analyzer-handles-p a ".claude/skills/loom/SKILL.md")
+              "including the skill Loom itself installs")
+    (is-false (analyzer-handles-p a "CLAUDE.md")
+              "by name: it is not dot-prefixed and no structural rule reaches it")
+    (is-false (analyzer-handles-p a "AGENTS.md"))
+    (is-false (analyzer-handles-p a "nested/deep/CLAUDE.md")
+              "wherever it sits")))
+
+(test text-written-to-be-copied-elsewhere-describes-the-elsewhere
+  ;; Loom's own src/workspace/templates/ holds what init writes into other
+  ;; people's repositories. Indexing it would describe this codebase with prose
+  ;; written about a different one.
+  (let ((a (make-instance 'markdown-analyzer)))
+    (is-false (analyzer-handles-p a "src/workspace/templates/loom-skill.md"))
+    (is-false (analyzer-handles-p a "templates/anything.md"))))
+
+(test the-directory-name-no-longer-decides
+  ;; What the retired registration seam was really guarding. A repository that
+  ;; keeps its prose under a fifth name used to have to register it; now there
+  ;; is nothing to register because the name was never the question.
+  (let ((a (make-instance 'markdown-analyzer)))
+    (dolist (path '("handbook/onboarding.md" "wiki/design.md" "rfc/0003.md"
+                    "architecture/overview.md" "a/b/c/d/notes.md"))
+      (is-true (analyzer-handles-p a path)
+               "~a is claimed without anybody registering a directory" path))))
 
 (test the-two-document-analyzers-claim-disjoint-extensions
   ;; The 88 YAML documents must be undisturbed by any of this (DES-0016 D9),
@@ -63,12 +96,25 @@
     (is (typep (find-analyzer "docs/TODO.md") 'markdown-analyzer))
     (is (typep (find-analyzer "docs/decisions/DEC-0001.yaml") 'document-analyzer))))
 
-(test a-registered-directory-is-claimed-from-then-on
-  (let ((*documentation-directories* (copy-list *documentation-directories*))
-        (a (make-instance 'markdown-analyzer)))
-    (is-false (analyzer-handles-p a "handbook/onboarding.md"))
-    (register-documentation-directory "handbook")
-    (is-true (analyzer-handles-p a "handbook/onboarding.md"))))
+(test a-plain-text-file-links-only-through-an-identifier
+  ;; DES-0023 D2. Markdown gives an author a backtick to mark a name with and
+  ;; plain text gives nothing, so matching every token would manufacture edges
+  ;; out of ordinary English -- and would make the resolution rate meaningless,
+  ;; since a rate only informs when its denominator is what somebody chose to
+  ;; mark.
+  (let ((mentions (loom-analyzer::markdown-mentions
+                   "Directory Structure
+ - common: utilities and helpers
+ - the dhandler-delete path is in data-api/handler.lisp
+"
+                   "design.txt")))
+    (is (member "dhandler-delete" mentions :test #'string=)
+        "an identifier-shaped token is a candidate: ~a" mentions)
+    (is (member "data-api/handler.lisp" mentions :test #'string=)
+        "and so is a path")
+    (is (not (member "utilities" mentions :test #'string=))
+        "an ordinary word is not")
+    (is (not (member "structure" mentions :test #'string=)))))
 
 ;;; ------------------------------------------------------------------
 ;;; The entity (R1)

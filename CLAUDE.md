@@ -185,9 +185,14 @@ nothing is reported by `check` rather than dropped. A decision's `affects:`
 target and becomes `:documents`.
 
 Markdown is indexed too, by a separate analyzer, and it earns weaker edges on
-purpose (REQ-0014, DES-0016). A `.md` or `.markdown` file under any directory
-named `docs`, `doc`, `design` or `documentation` becomes a `:document` whose
-title is its first H1 — but never a REQ or a DEC, whatever its directory is
+purpose (REQ-0014, DES-0016). Since REQ-0028 a `.md`, `.markdown` or `.txt` file
+is claimed **wherever the repository keeps it** — the directory-name allowlist
+is gone, because it tested where a file lived rather than what it said and so
+missed a 541-line `src/models/README.md`. Three exclusions remain: any
+dot-directory (`.claude/`, `.windsurf/` — those instruct an assistant, not the
+reader of the code), a `templates/` directory (text written to be copied
+elsewhere describes the elsewhere), and `CLAUDE.md`/`AGENTS.md` by name. A
+claimed file becomes a `:document` whose title is its first H1 — but never a REQ or a DEC, whatever its directory is
 called, because that mapping is this tree's convention rather than a fact about
 markdown. Its backticked identifiers and its relative link targets resolve into
 `:mentions` edges: *this file names this thing*, and nothing more. A `:mentions`

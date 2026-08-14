@@ -1,0 +1,148 @@
+id: DES-0023
+title: Claim prose by extension, exclude by rule, and let the resolution rate say what it is worth
+status: implemented
+date: 2026-08-14
+refines: [REQ-0028]
+affects: [documentation-relative-p, markdown-analyzer, prose-report,
+          repository-files, analyzer-handles-p, markdown-mentions]
+tags: [markdown, analyzer, req-0014, des-0016, generality]
+summary: |
+  REQ-0028 asks that prose be indexed by what it says rather than where it
+  sits. The shape is small: DOCUMENTATION-RELATIVE-P stops asking about
+  directory names and starts asking about two exclusions, .txt joins the claimed
+  extensions with a narrower extraction rule, and nothing else moves.
+
+  What earns the change is that the measurement REQ-0028 leans on already
+  exists. The allowlist was a proxy for "is this engineering knowledge" written
+  when nothing could ask the real question; the resolution rate answers it
+  directly and three callers already use it.
+body: |
+  D1  TWO EXCLUSIONS REPLACE ONE ALLOWLIST
+
+  The rule becomes: claim .md, .markdown and .txt anywhere under the repository,
+  except
+
+    a dot-directory, at any depth. `.claude/agents/coder.md' tells an assistant
+      how to behave and `.windsurf/rules/logging.md' tells an editor what to
+      enforce. Neither describes the software, and indexing them would put
+      prompts into the graph wearing the shape of documentation. REPOSITORY-FILES
+      already skips these; R2 makes it a rule the analyzer states rather than a
+      side effect it inherits, because the day somebody widens the walker is the
+      day a hundred agent definitions arrive as architecture.
+
+    a template directory. Loom's own src/workspace/templates/ holds the text
+      init writes into other people's repositories, and it describes those
+      rather than this one. Named as a directory convention rather than a path,
+      so a prepared workspace that grows its own templates gets the same
+      treatment.
+
+    an assistant-instruction file by name: CLAUDE.md and AGENTS.md, wherever
+      they sit. Neither of the other two rules reaches them -- they are not
+      dot-prefixed and not in a template directory -- and CLAUDE.md is the most
+      concentrated instruction-to-an-assistant a repository has. Loom appends to
+      it during init, so indexing it would mean reading its own output back as a
+      description of the code.
+
+      By name rather than by heuristic, because there is no property of the text
+      that distinguishes it: CLAUDE.md is markdown about a codebase, and what
+      makes it different is a convention about who it is addressed to. A
+      convention is what a name list is for.
+
+  Exclusions rather than an allowlist, because they enumerate the small
+  well-understood set and the allowlist enumerated the large open one. There are
+  a handful of places that hold instructions-to-a-tool and an unbounded number
+  that hold documentation, which is the asymmetry DES-0016 had backwards.
+
+  The exclusions are stated as conventions in the analyzer rather than read from
+  a prepared tree's manifest, even though the manifest is the authority on what
+  Loom wrote (REQ-0021 R13b). An analyzer is stateless and file-scoped by SS8.1
+  and does not know what a repository is, let alone which one wrote a file. A
+  fixed convention it can apply to a path is the honest shape; reaching for the
+  manifest would be the analyzer acquiring exactly the whole-repository view
+  that layer exists not to have.
+
+  D2  .TXT IS INDEXED AND LINKED DIFFERENTLY
+
+  Markdown gives an author a way to mark a name -- a backtick -- and MARKDOWN-
+  MENTIONS reads exactly those plus relative link targets. Plain text has no
+  such mark. Matching every whitespace-delimited token against the index would
+  manufacture edges out of ordinary English, and would do it at a volume that
+  makes the resolution rate meaningless: a rate is only informative when the
+  denominator is what an author *chose* to mark.
+
+  So a .txt file's candidates are the tokens that look like identifiers -- the
+  IDENTIFIER-SHAPED-P filter the drift report already applies, requiring a
+  hyphen, dot, slash or underscore. `dhandler-delete' qualifies; `utilities'
+  does not.
+
+  The consequence is that most .txt files earn no edges, and that is the right
+  outcome rather than a shortfall. front-end's design.txt is forty lines of
+  directory structure with no identifier in it; it becomes a document `find' and
+  `context' can reach, which is strictly more than the nothing it is today.
+
+  D3  NOTHING ABOUT WHAT A MENTION MEANS CHANGES
+
+  A prose file still earns :MENTIONS and never :DECIDES or :DOCUMENTS, still
+  never becomes a REQ or a DEC whatever its directory is called, and still has
+  its unresolved tokens dropped in silence. REQ-0014's distinction between an
+  observation and a declared claim is what makes widening the observation safe:
+  more prose in the graph cannot strengthen any claim, it can only add weak
+  edges that the ranking already knows how to order.
+
+  This is the property that makes the change affordable, and it is worth saying
+  because the obvious worry -- "now every README competes with the real
+  documents" -- is answered by a mechanism that predates this design. The
+  context bundle's mention band is capped at five and ranked by how much of the
+  bundle each document names, so a README that mentions one thing loses to one
+  that mentions eight.
+
+  D4  WHY THIS IS AFFORDABLE NOW AND WAS NOT IN AUGUST
+
+  DES-0016 chose the narrow list while REPOSITORY-FILES still walked
+  node_modules. Indexing every .md in a JavaScript repository then meant 4730
+  files, and a directory allowlist was cheap insurance against a problem whose
+  real fix had not been built.
+
+  BUG-0024 built it: git is asked what the repository ignores, and a vendored
+  tree is not walked at all. The allowlist has been redundant insurance since,
+  and this design retires it rather than leaving a second filter to explain.
+
+  D5  REGISTER-DOCUMENTATION-DIRECTORY GOES
+
+  It was the seam for adding a fifth directory name to the allowlist, and with
+  no allowlist it has nothing to add to. Removed rather than left as a no-op:
+  an exported function that quietly does nothing is worse than an absent one,
+  because a caller will find it and believe it.
+
+  ALTERNATIVES CONSIDERED
+
+  Extend the list with notes, adr, rfc, architecture, wiki. The same proxy with
+  more entries, and it still misses src/models/README.md -- which is the file
+  that prompted this. A list can only ever enumerate the names somebody thought
+  of.
+
+  Index everything and rank, with no exclusions at all. Simpler to state and
+  wrong on the population REQ-0028 measures: agent definitions and editor rules
+  would arrive as documentation, and their resolution rates are not reliably low
+  -- .claude/agents/coder.md legitimately names functions when it describes what
+  a coder should do to them.
+
+  Treat a README beside code as a declared claim rather than a mention.
+  Attractive, and left as REQ-0028's open question: proximity is derivable and
+  is stronger evidence than mention-counting, but it would be a new kind of edge
+  and this design does not need one.
+
+  CONSEQUENCES
+
+  Document counts rise on every tree, and on Loom itself by the most in
+  proportion -- 1 indexed today of 12 tracked. Loom's own README and docs/TODO.md
+  join the index, which is correct and slightly startling.
+
+  `check`'s unresolved count is unaffected: a markdown mention that resolves to
+  nothing is dropped in silence by design (REQ-0014), so more prose cannot make
+  that number worse. That is worth stating because it is the number this project
+  usually watches, and it will not move.
+
+  The mention band in every context bundle now has more to choose from. The
+  ranking decides, and the acceptance has to show a bundle that is still about
+  the task rather than about whichever README names the most things.

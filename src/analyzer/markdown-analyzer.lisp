@@ -29,37 +29,75 @@
 ;;;; Which directories count (REQ-0014 R2, DES-0016 D2)
 ;;;; ==================================================================
 
-(defparameter *documentation-directories*
-  '("docs" "doc" "design" "documentation")
-  "Directory names that mark a tree as documentation.
+(defparameter *excluded-directories* '("templates")
+  "Directory names whose prose describes something other than this repository.
 
-Convention with a registration seam, deliberately, and not configuration:
-DES-0016 D2 records the reasoning and the rejected alternative. Loom keeps its
-own documents in docs/; ~/lisp/game-server keeps requirements in design/ and
-reference material in docs/; a repository that uses a fifth name registers it
-rather than editing this file.
+Loom's own src/workspace/templates/ holds the text `init' writes into other
+people's repositories; indexing it would describe this codebase with prose
+written about a different one. Named as a convention rather than a path so a
+prepared workspace that grows its own templates gets the same treatment.
 
-The repository root is not on this list and is not meant to be. A root
-README.md is as often a build instruction or a badge wall as it is engineering
-knowledge, and it is what makes game-server's twelve documentation files twelve
-rather than fifteen.")
+Dot-directories are excluded too and are not on this list, because the test for
+them is structural rather than a name -- see DOCUMENTATION-RELATIVE-P.")
 
-(defun register-documentation-directory (name)
-  "Add NAME to the directories markdown is indexed from. Idempotent."
-  (pushnew (string-downcase name) *documentation-directories* :test #'string=)
-  *documentation-directories*)
+(defparameter *assistant-instruction-files* '("CLAUDE.md" "AGENTS.md")
+  "Filenames that instruct an assistant rather than describe the software.
+
+By name, because nothing in the text distinguishes them: CLAUDE.md is markdown
+about a codebase, and what makes it different is a convention about who it is
+addressed to. Neither of the structural exclusions reaches them -- they sit at a
+repository root, not dot-prefixed and not in a template directory -- and
+CLAUDE.md is the most concentrated instruction-to-an-assistant a repository has.
+
+Loom appends to CLAUDE.md during init (REQ-0021 R3), so indexing it would also
+mean reading its own output back as a description of the code.")
 
 (defun documentation-relative-p (path)
-  "True when some *directory* segment of PATH is a documentation directory.
+  "True when PATH's prose is about this repository. REQ-0028, DES-0023 D1.
 
-The filename is excluded from the comparison: a file called docs.md at the
-repository root is not a documentation tree, and the question this asks is
-which directory the file sits in."
-  (let ((segments (path-segments (substitute #\/ #\\ (namestring path)))))
-    (and (some (lambda (segment)
-                 (member segment *documentation-directories* :test #'string-equal))
-               (butlast segments))
+Two exclusions where there used to be an allowlist. DES-0016 D2 claimed prose
+only under a directory named docs, doc, design or documentation, which tested
+where a file lived rather than what it said -- and missed the most common place
+architecture lives. Measured on ~/github/front-end: 46 tracked markdown files,
+27 claimed, and among the misses src/models/README.md at 541 lines titled
+\"Models Directory - Game Object System\".
+
+The allowlist was a proxy for \"is this engineering knowledge\", written when
+nothing could ask the real question. A document's resolution rate answers it
+directly now and three callers already use it, so the proxy is retired rather
+than extended -- extending it would be the same proxy with more entries, and a
+list can only enumerate the names somebody thought of.
+
+What remains is the small, well-understood set on the other side:
+
+  a dot-directory at any depth. .claude/agents/coder.md tells an assistant how
+    to behave and .windsurf/rules/logging.md tells an editor what to enforce.
+    Indexing those would put prompts into the graph wearing the shape of
+    documentation. REPOSITORY-FILES already skips them; stating it here makes it
+    a rule the analyzer holds rather than a side effect it inherits, because the
+    day somebody widens the walker is the day a hundred agent definitions arrive
+    as architecture.
+
+  a template directory, and an assistant-instruction file by name. See the two
+    parameters above.
+
+This is affordable now and was not in August: DES-0016 chose the narrow list
+while REPOSITORY-FILES still walked node_modules, where indexing every .md meant
+4730 files. BUG-0024 asks git what the repository ignores, so a vendored tree is
+not walked at all, and the allowlist has been redundant insurance since."
+  (let* ((normalized (substitute #\/ #\\ (namestring path)))
+         (segments (path-segments normalized))
+         (directories (butlast segments))
+         (file (car (last segments))))
+    (and (notany (lambda (segment)
+                   (or (dot-prefixed-segment-p segment)
+                       (member segment *excluded-directories* :test #'string-equal)))
+                 directories)
+         (not (member file *assistant-instruction-files* :test #'string-equal))
          t)))
+
+(defun dot-prefixed-segment-p (segment)
+  (and (stringp segment) (plusp (length segment)) (char= #\. (char segment 0))))
 
 ;;;; ==================================================================
 ;;;; Reading the text: fences, headings, spans, links (DES-0016 D5)
@@ -273,6 +311,33 @@ schema)."
        (alpha-char-p (char token 0))
        (notany (lambda (c) (member c '(#\Space #\Tab #\Newline))) token)))
 
+(defun plain-text-tokens (contents)
+  "CONTENTS split on anything that cannot be part of a name."
+  (let ((tokens '()) (current (make-string-output-stream)))
+    (flet ((finish ()
+             (let ((token (get-output-stream-string current)))
+               (when (plusp (length token)) (push token tokens)))))
+      (loop for character across contents
+            do (if (or (alphanumericp character)
+                       (member character '(#\- #\. #\/ #\_)))
+                   (write-char character current)
+                   (finish))
+            finally (finish)))
+    (nreverse tokens)))
+
+(defun identifier-shaped-token-p (token)
+  "True when TOKEN looks like a name rather than an English word.
+
+The same shape LOOM-KNOWLEDGE's drift report filters unresolved markdown names
+by, applied here as an extraction rule rather than a reporting one. Duplicated
+across a system boundary rather than shared: loom-analyzer may not depend on
+loom-knowledge, and the alternative -- pushing it down into the ontology -- would
+put a text heuristic in the layer that declares types."
+  (and (> (length token) 2)
+       (some (lambda (c) (member c '(#\- #\. #\/ #\_))) token)
+       ;; A bare version number or a sentence-ending word is not a name.
+       (some #'alpha-char-p token)))
+
 (defun markdown-mentions (contents path)
   "Every candidate name CONTENTS offers, from its code spans and its links.
 
@@ -284,6 +349,23 @@ PROSE-MENTIONS is deliberately not applied. It was tuned against Loom's own
 document bodies, which are prose about Loom in Loom's vocabulary; turned loose
 on arbitrary markdown it would offer every hyphenated English compound in the
 file. REQ-0014 R3 asks for backticks and links, which is what this reads."
+  (when (plain-text-p path)
+    ;; DES-0023 D2. Plain text has no backtick, so there is no mark an author
+    ;; made to read -- and matching every whitespace-delimited token would
+    ;; manufacture edges out of ordinary English at a volume that makes the
+    ;; resolution rate meaningless, since a rate is only informative when its
+    ;; denominator is what somebody chose to mark.
+    ;;
+    ;; So a plain-text candidate has to look like a name: a hyphen, a dot, a
+    ;; slash or an underscore. `dhandler-delete' qualifies and `utilities' does
+    ;; not. Most .txt files earn no edges at all, which is the right outcome --
+    ;; the document is still findable, which is more than the nothing it was.
+    (return-from markdown-mentions
+      (remove-duplicates
+       (loop for token in (plain-text-tokens contents)
+             when (identifier-shaped-token-p token)
+               collect (string-downcase token))
+       :test #'string=)))
   (let* ((lines (unfenced-lines (text-lines contents)))
          (text (format nil "~{~a~^~%~}" lines))
          (found '()))
@@ -303,15 +385,22 @@ file. REQ-0014 R3 asks for backticks and links, which is what this reads."
 
 (defclass markdown-analyzer (analyzer)
   ()
-  (:default-initargs :language nil :file-types '("md" "markdown"))
-  (:documentation "Reads markdown under a documentation directory (REQ-0014)."))
+  (:default-initargs :language nil :file-types '("md" "markdown" "txt"))
+  (:documentation "Reads prose about this repository (REQ-0014, REQ-0028)."))
 
 (defmethod analyzer-handles-p ((analyzer markdown-analyzer) path)
-  "Markdown, and under a documentation directory. The extension alone is not
-enough for the same reason DOCUMENT-ANALYZER gives about a CI config: a
-CHANGELOG.md or a node_modules README is markdown too, and indexing it as
-engineering knowledge would be worse than ignoring it."
+  "Prose, anywhere the repository keeps it, minus DOCUMENTATION-RELATIVE-P's
+two exclusions.
+
+A CHANGELOG.md is claimed now where it once was not, and that is the intended
+consequence rather than an accepted cost: what it is worth is measured by how
+much of its vocabulary resolves, and a changelog resolves badly and ranks last.
+Judging it by its directory was the thing REQ-0028 removed."
   (and (call-next-method) (documentation-relative-p path)))
+
+(defun plain-text-p (path)
+  "True when PATH is prose with no markup to mark a name with."
+  (string-equal "txt" (or (pathname-type (pathname path)) "")))
 
 (defmethod analyze-file ((analyzer markdown-analyzer) path contents workspace-id)
   "Ontology operations for one markdown document.

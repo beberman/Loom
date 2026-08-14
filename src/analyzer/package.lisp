@@ -83,8 +83,9 @@
    ;; directory list is exported because it is the seam a foreign repository
    ;; adjusts -- convention with a knob, not configuration; DES-0016 D2.
    #:*documentation-directories*
-   #:register-documentation-directory
    #:documentation-relative-p
+   #:*excluded-directories*
+   #:*assistant-instruction-files*
    #:parse-document
    #:parse-check
    #:*check-kinds*
