@@ -466,10 +466,21 @@ body: |
   R1  A shell script prepares a worktree that is on a branch: it creates the
       document directories with the completed/ subdirectories RULE-0007 calls
       for, writes a conventions document naming the id prefixes, status
-      vocabularies and the fields that resolve, installs the agent definitions,
-      and then launches or attaches to the Loom service and registers the
-      worktree. Installing the agents is part of preparing the tree, not a
-      later step and not a prompt.
+      vocabularies and the fields that resolve, installs the workflow text
+      where the LLM will meet it, and then launches or attaches to the Loom
+      service and registers the worktree.
+
+      AMENDED 2026-08-13. This said "installs the agent definitions", and the
+      artifact was the wrong thing to require. Loom's own agents are agents for
+      Loom -- its layering, its nine test systems, its blind spots -- and would
+      be wrong in every paragraph of a repository written in another language,
+      collision or no collision. What has to travel is the workflow, which this
+      tree already factors out of its agents and into a skill.
+
+      So the requirement is that the workflow *reach the LLM*, and the artifact
+      is the design's to choose. DES-0022 D2 chooses a skill and D2a adds the
+      pointer that makes a skill discoverable, because a skill on its own is
+      advertised rather than delivered.
 
   R1a Init writes files and stops. It does not commit, does not push and does
       not open a merge request; the branch, its commit and its review belong to
@@ -483,10 +494,26 @@ body: |
       recorded, so a second run and every later agent resolve it the same way
       rather than re-deriving it.
 
-  R3  No existing file is overwritten or edited. This covers CLAUDE.md,
-      existing agent definitions and the markdown already under docs/. Where
-      Loom needs a file a name is already taken by, it asks or declines; it
-      does not merge.
+  R3  No existing file is overwritten or edited, with one bounded exception.
+      This covers existing agent definitions and the markdown already under
+      docs/. Where Loom needs a file a name is already taken by, it asks or
+      declines; it does not merge.
+
+      AMENDED 2026-08-13. The exception is CLAUDE.md, by append only, inside
+      delimiting markers, and only with the consent R16 requires. It exists
+      because CLAUDE.md is the only channel a session receives unprompted -- a
+      skill is advertised by name and description and its content arrives only
+      if the model invokes it -- so a rule that forbade this one edit would
+      forbid the workflow being found at all. DES-0022 D2a is the reasoning.
+
+      The markers are what keep R3's second purpose intact. This rule earns its
+      keep twice: once for not editing a human's document, and once because an
+      init that only adds can be undone by deleting. A delimited region is
+      removable exactly, so R13's full removal stays a property rather than
+      becoming a promise.
+
+      Where no CLAUDE.md exists, init writes one. That is a new file and this
+      rule does not bear on it.
 
   R4  Init writes the workflow documents and ARCH documents, and nothing else
       -- no REQ, DES, DEC or PLAN, and no rule or concept derived from the
@@ -588,6 +615,36 @@ body: |
       service unconditionally and would have blocked init on REQ-0025 for a
       deployment that does not have the problem REQ-0025 solves.
 
+  R16 Init asks two questions and does not conflate them: whether this
+      repository should use Loom for development, and whether Loom may append
+      its pointer to CLAUDE.md. A yes to the first and a no to the second is a
+      supported outcome -- init writes everything else and prints the lines the
+      user may paste themselves. Loom is then installed but undiscovered, which
+      is a recoverable state and not a failed run.
+
+      Consent is recorded in R13b's manifest, because removal has to know
+      whether there is a region to delete.
+
+      A run with no terminal cannot prompt, and a prompt nobody sees is the
+      stall this requirement warns about elsewhere. So the answer is also
+      settable as an argument, and a non-interactive run with no argument
+      declines rather than assuming.
+
+  R17 The pointer is idempotent and exactly removable. A second run finds its
+      own markers and changes nothing (R11), and removal deletes the delimited
+      region and no other byte of a file Loom did not write.
+
+  R18 Where the workflow is reached over MCP, init registers the endpoint in
+      the project's `.mcp.json`, under R3 and R16's terms: a new file where
+      none exists, and a consented, marked, removable edit where one does.
+
+      Recorded because R8 assumed this worked and nothing had tried it. Checked
+      2026-08-13: neither this tree nor ~/github/front-end has an `.mcp.json`,
+      and this tree's own agents reach Loom through tools/loom.sh -- the script
+      a prepared worktree does not have. So the MCP half of R8 is untested
+      rather than merely unimplemented, and a design that assumes it works
+      should demonstrate it before relying on it.
+
   R15 Two repositories registered with one service cannot share a name. This is
       REQ-0025 R8 and it lands on init directly: a prepared worktree is one of
       several checkouts of one project, so the name init registers is the one an
@@ -683,10 +740,25 @@ body: |
   Everything else remains, and the honest summary is that this requirement's
   first stage is done rather than its first half:
 
-  R1, R1a, R2, R3, R4, R4a-R4d -- init itself: the script, the directories, the
-  transcribed workflow concept, the installed workflow text, and the consent
-  before writing into an existing docs/. DES-0022 S2, deferred on the four
-  decisions that design's D6 lists as unsettled.
+  R1, R2, R3, R4, R4a, R4b, R14, R16, R17 are implemented -- DES-0022 S2's Loom
+  half, PLAN-0023. `init` creates the directories, transcribes the workflow
+  concept under the next free id, installs the skill, appends the CLAUDE.md
+  pointer between markers with consent, registers the MCP endpoint, writes the
+  manifest, refuses whole rather than half-preparing, and does nothing at all on
+  a second run. Measured on a copy of game-server: four files written, the
+  author's 171-line CLAUDE.md byte-identical above the appended region, and the
+  prepared tree indexing at 13 documents with `unresolved` still 0.
+
+  R1a and R18 are partly done and the remainder is one artifact. The consent
+  answers are threaded as arguments and nothing prompts, which is what R16
+  requires of the command -- but the *asking* needs a terminal and therefore a
+  shell script, and that script is not written. R18's registration works where
+  no .mcp.json exists and reports rather than merges where one does, which is
+  the honest limit of a format with no comment syntax.
+
+  R4c and R4d are satisfied by construction rather than by work: a prepared
+  workspace gets no transcribed workflow rule, and the installed text tells an
+  agent to run the transition command rather than to move statuses by hand.
 
   R6, R7, R9 -- generated ARCH documents, the markdown and comment review, and
   provenance. DES-0022 S3, gated on S2 having somewhere to write.
@@ -694,8 +766,13 @@ body: |
   R13, R13a, R13b, R13c -- removal in two modes and the manifest it rests on.
   DES-0022 S4, gated on S2 writing the manifest.
 
-  R8, R10, R14, R15 -- constraints on init rather than work of their own, so
-  they land with S2. R15 is additionally REQ-0025 R8 and may land there first.
+  R8 and R10 hold so far as the Loom half goes -- the installed skill reaches
+  the service by URL and names its repository in every example, and a prepared
+  worktree is usable from the console with no agent runtime present. Neither is
+  demonstrated until an agent has actually worked in a prepared tree, which is
+  R12.
+
+  R15 is REQ-0025 R8 and may land there first.
 
   R10a is REQ-0025 R7 and is that requirement's to deliver, per the ORDER
   section above.
@@ -707,15 +784,27 @@ body: |
   plans, and `structure` on it now produces 27 systems and a 23-implementor
   protocol without any of those documents existing.
 
-  ONE AMENDMENT OWED
+  AMENDMENTS MADE 2026-08-13
 
-  R1 says init installs the agent definitions. DES-0022 D2 argues it should
-  install a skill instead, on the measurement that ~/github/front-end already
-  holds five agents with the same five names as this tree's, all generic and
-  none Loom-aware -- and that Loom's own agents are about Loom and would be
-  wrong in every paragraph of a JavaScript front-end regardless of the
-  collision. R1 should be rewritten to require that the workflow reach the LLM
-  without saying by which artifact, when S2 lands. It is recorded here rather
-  than changed now because the argument belongs to a design that has not been
-  implemented.
+  R1 no longer names agent definitions; it requires that the workflow reach the
+  LLM and leaves the artifact to the design. R3 gains its one bounded
+  exception. R16, R17 and R18 are new: the consent, the idempotent and exactly
+  removable pointer, and the MCP registration nobody had noticed was missing.
+
+  The question that produced them is worth keeping, because the first design
+  answered it too easily. If init installs no agents, what creates and enforces
+  the workflow? The answer is in three parts. Nothing enforced it before either
+  -- an agent applies only if something spawns it. Half of what "the workflow"
+  means is enforced by the tool rather than by any prompt, and refuses
+  regardless of what an agent read. And what was actually missing was
+  discovery, which needs the one channel a session receives unprompted, which
+  is the file R3 forbade touching.
+
+  STILL OPEN
+
+  Whether one narrow agent should be installed after all. An agent definition
+  can restrict tools -- this tree's reviewer is read-only on source and the
+  harness enforces it -- and a skill cannot, being text. The reviewer role is
+  the one place a namespaced name would buy an enforced property rather than a
+  second coder nobody can choose between. DES-0022 D2a carries it.
 

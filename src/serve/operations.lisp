@@ -247,6 +247,20 @@ The console's own cap, so the two answer the same question the same way.")
     (let ((watched (require-repository repository)))
       (repository-status (unwatch-repository (repository-name watched))))))
 
+(define-operation :init :write (path (document-directory) (endpoint) (append-claude-md))
+    "Prepare a repository for the Loom workflow. Writes files; never commits."
+  ;; The consent is an argument here for the reason it is one at the console:
+  ;; REQ-0021 R16 puts the asking where a terminal is, and a service has none.
+  ;; A caller that omits APPEND-CLAUDE-MD gets the conservative answer, which
+  ;; is that an existing CLAUDE.md is not touched.
+  (prepare-repository path
+                      :document-directory (or document-directory "docs")
+                      :endpoint (or endpoint *default-endpoint*)
+                      :append-claude-md
+                      (and append-claude-md
+                           (not (string-equal "false" (princ-to-string append-claude-md)))
+                           t)))
+
 (define-operation :reindex :write (repository)
     "Discard and rebuild the index from disk. Always safe."
   ;; No registry lock either, for PAUSE's reason: REINDEX-REPOSITORY replaces

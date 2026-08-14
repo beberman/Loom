@@ -593,6 +593,49 @@ rather than only in the note beside it."
   (let ((task (format nil "~{~a~^ ~}" words)))
     (write-string (render-context (build-context (current-graph) task)))))
 
+(define-command init (path &optional document-directory claude-md endpoint)
+    "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>]"
+    "Prepare a repository for the Loom workflow. Writes; never commits."
+  ;; REQ-0021 R16's two consents arrive as arguments rather than as prompts,
+  ;; here as much as in the service: this command has to be callable from a
+  ;; script, and a prompt in a run with no terminal is a stall nobody sees.
+  ;; Running the command at all is the first consent; the literal token
+  ;; `claude-md' is the second, and its absence means an existing CLAUDE.md is
+  ;; left exactly as it was.
+  (let ((report (prepare-repository path
+                                    :document-directory (or document-directory "docs")
+                                    :endpoint (or endpoint *default-endpoint*)
+                                    :append-claude-md
+                                    (and claude-md (string-equal "claude-md" claude-md)))))
+    (cond
+      ((getf report :problems)
+       (format t "~&Nothing was written. ~d problem~:p:~%"
+               (length (getf report :problems)))
+       (dolist (problem (getf report :problems)) (format t "  - ~a~%" problem)))
+      ((getf report :already-prepared)
+       (format t "~&~a is already prepared. Nothing to do.~%" (getf report :root))
+       (format t "  documents in ~a/, workflow concept ~a~%"
+               (getf (getf report :manifest) :document-directory)
+               (getf (getf report :manifest) :workflow-concept)))
+      (t
+       (log-event "init" "~a" (getf report :root))
+       (format t "~&Prepared ~a~%" (getf report :root))
+       (format t "  documents  : ~a/~%" (getf report :document-directory))
+       (format t "  conventions: ~a~%" (getf report :workflow-concept))
+       (format t "  service    : ~a~%" (getf report :endpoint))
+       (format t "  wrote ~d file~:p:~{~%    ~a~}~%"
+               (length (getf report :created)) (getf report :created))
+       (dolist (skip (getf report :skipped))
+         (format t "  skipped ~a -- ~a~%" (car skip) (cdr skip)))
+       ;; The one thing a caller has to do by hand, said rather than buried.
+       (unless (find "CLAUDE.md" (getf report :created) :test #'string=)
+         (let ((skip (find "CLAUDE.md" (getf report :skipped)
+                           :key #'car :test #'string=)))
+           (when skip
+             (format t "~&Nothing points at the skill yet. Re-run with ~
+`claude-md' to append a pointer, or add one by hand.~%"))))
+       (format t "~&Nothing was committed. `git status' shows exactly what was added.~%")))))
+
 (define-command structure (&optional designator)
     "structure [<name>]"
     "Systems, protocols, entry points and hubs, derived from the index."

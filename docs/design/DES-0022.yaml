@@ -118,6 +118,126 @@ body: |
   installs only the skill. Two mechanisms depending on what it finds is two
   things to keep correct and a difference nobody can predict from the outside.
 
+  D2a A SKILL IS NOT DISCOVERED BY ITSELF -- REOPENED 2026-08-13
+
+  D2 above claims the skill "needs no file edited to be found", and that claim
+  is wrong in the way that matters. Measured against what a session actually
+  receives:
+
+    CLAUDE.md   the entire file, injected unprompted, every session.
+    a skill     its name and one-line description. The content arrives only
+                when the model chooses to invoke it.
+    an agent    its name and description. Its behaviour applies only if
+                something spawns it.
+
+  So a skill is advertised, not delivered. The model may invoke it, and on a
+  repository whose CLAUDE.md says nothing about Loom there is nothing telling
+  it that it should.
+
+  The correction cuts deeper than the skill-versus-agents choice, and D2 was
+  wrong to present that choice as the answer to R1. Agents were never
+  enforcement either -- an agent definition shapes a subagent only if the main
+  model spawns it, and Loom's own five sit inert until something does. The
+  reason the workflow holds *in this tree* is CLAUDE.md: two hundred lines of
+  injected instruction naming the commands, the principles and the conventions,
+  and pointing at everything else. R3 forbids init from touching the one
+  channel that works, and both the agent design and the skill design inherited
+  that hole. REQ-0021 half-saw it -- "a separate file only works if something
+  points at it" -- and then did not resolve it.
+
+  WHAT ENFORCES, AND WHAT MERELY REACHES
+
+  Separating these is what makes the gap the right size rather than fatal.
+  Prompts do not enforce; the tool refuses. Already true today, whatever any
+  agent read:
+
+    a status outside a category's vocabulary is refused by set-status
+    status and completed/ placement cannot drift, because one operation sets both
+    complete refuses partial application, a blocked document, and a verdict
+      its walk never reached (BUG-0026)
+    a rotten affects: is reported by check
+    a document in an unregistered directory is uncategorized and counted
+    id allocation, once REQ-0025 lands
+
+  What no mechanism can enforce, and should not: writing a REQ before a DES,
+  and the implemented-versus-partial judgement. Those are the parts a prompt is
+  for, and a prompt is advisory by nature.
+
+  So the workflow's enforced half needs no discovery at all. What discovery
+  buys is that an agent knows the tool exists before it works around it.
+
+  THE CONSENT, WHICH IS TWO QUESTIONS AND NOT ONE
+
+  Init asks, and asks separately:
+
+    Should this repository use Loom for development?  -- the whole of init
+    May Loom append a pointer to CLAUDE.md?           -- the discovery mechanism
+
+  Conflating them makes a yes to the first conditional on a yes to the second,
+  and it should not be. A user who wants the directories, the conventions and
+  the service but not an edit to their CLAUDE.md gets all of it, plus the one
+  line printed for them to paste. Init is not degraded by that; it is
+  undiscovered, which is a different and recoverable state.
+
+  THE APPEND IS BOUNDED BY MARKERS, WHICH IS WHAT MAKES IT UNDOABLE
+
+  R3's ban on editing exists for two reasons and only one of them is about
+  ownership. The other is removability: an init that only adds files can be
+  undone by deleting them, while one that merged into a file would have to
+  remember exactly what it merged. An append between markers keeps that
+  property:
+
+      <!-- loom:begin --> ... <!-- loom:end -->
+
+  which gives all three things at once. Removal deletes the region and nothing
+  else. A second run finds the markers and does nothing, which is R11's "a
+  second run changes nothing". And a human reading their own CLAUDE.md can see
+  exactly which part is not theirs.
+
+  So R3 is amended rather than kept and quietly broken: no existing file is
+  edited, except CLAUDE.md, by append only, between markers, with consent
+  recorded in the manifest. Where no CLAUDE.md exists init writes one, which is
+  a new file and touches R3 not at all.
+
+  WHAT THE APPENDED TEXT SAYS, AND HOW SHORT IT IS
+
+  A pointer, not a copy. Roughly: this repository is indexed by Loom, the
+  service is at <endpoint>, the documents are under <chosen directory>, invoke
+  the loom skill before writing one. Under a dozen lines, because it is
+  someone else's file and because the workflow lives in the skill -- two copies
+  of it would be the drift D2 already argues against.
+
+  It is a template with substitutions rather than fixed text, since the
+  document directory is R2's choice and the endpoint may not be localhost.
+
+  THE SECOND FILE NOBODY HAD NOTICED
+
+  R8 requires installed agents to reach Loom over REST or MCP. For MCP that
+  needs the endpoint registered with the harness, in a project-scoped
+  `.mcp.json`. Neither this tree nor ~/github/front-end has one -- checked
+  2026-08-13 -- so no agent has ever actually driven Loom over MCP from Claude
+  Code; this tree's own agents shell out to tools/loom.sh, which is exactly the
+  script a prepared worktree does not have.
+
+  That file has the same shape as the CLAUDE.md question: absent, it is a new
+  file and R3 is untouched; present, it is an edit and needs the same consent
+  and the same markers. It also means R8's premise is untested rather than
+  merely unimplemented, and the design should not assume the MCP path works
+  until something has used it.
+
+  WHAT INSTALLING NO AGENTS ACTUALLY COSTS
+
+  One thing, and D2 did not weigh it. An agent definition can restrict tools --
+  this tree's reviewer is read-only on source because its frontmatter says so,
+  and the harness enforces that. A skill cannot; it is text, and text cannot
+  stop a model writing a file.
+
+  So the reviewer role specifically loses a real guarantee. Recorded as an open
+  question rather than settled: whether init should install one narrow,
+  non-colliding agent for that role -- `loom-reviewer' -- accepting a
+  namespaced name for the one case where the namespacing buys an enforced
+  property rather than a duplicate.
+
   D3  THE DETERMINISTIC HALF IS A COMMAND, NOT SCRIPT
 
   REQ-0021's last open question asks whether the shell script owns the work or
@@ -199,6 +319,15 @@ body: |
 
   ALTERNATIVES CONSIDERED
 
+  A skill alone, with no CLAUDE.md pointer. This is what D2 originally
+  proposed and D2a retracts: it leaves the workflow advertised to a model that
+  has no reason to look for it.
+
+  Appending to CLAUDE.md without asking. Smaller and faster, and it takes a
+  decision that is the repository owner's. It also makes removal a promise
+  rather than a property until the markers exist, and the markers are most of
+  the work either way.
+
   Namespaced agents (`loom-architect`). Keeps both sets and leaves the user to
   choose between two coders on every task, with description fields that cannot
   honestly distinguish them. Rejected under D1.
@@ -235,18 +364,28 @@ body: |
 
   OUTSTANDING
 
-  S1 landed as PLAN-0022; S2, S3 and S4 have not started. What each still needs,
-  and what deferred it:
+  S1 landed as PLAN-0022 and S2 as PLAN-0023. S3 and S4 have not started, and
+  the shell script half of S2 has not either.
 
-  S2, init proper -- the directories, the transcribed workflow concept, the
-  skill, the manifest and the recorded document-directory choice. Deferred
-  because D6 lists four things it needs that this design does not settle: the
-  manifest's format and location, whether the workflow concept is a template or
-  is generated from CON-0004, how the skill's service endpoint is parameterised
-  for a service on another host, and whether the recorded directory choice
-  shares the manifest's file. None of those is hard; all of them are decisions,
-  and making them while implementing S1 would have been making them without a
-  reason to.
+  S2's Loom half is done: PREPARE-REPOSITORY writes the directories, the
+  transcribed workflow concept, the skill, the CLAUDE.md pointer, the .mcp.json
+  registration and the manifest, plans every write before making one, and
+  refuses whole. D6's four open decisions are settled in PLAN-0023 -- one
+  manifest at .loom/manifest.yaml holding both the choices and the output, a
+  template maintained in this tree rather than generated from CON-0004, and the
+  endpoint as a parameter.
+
+  S2's script half is not. Finding or starting the service, registering the
+  worktree and doing R16's actual asking belong to a shell script, because D3
+  gives a script only what needs a terminal or a process -- and the command it
+  calls had to exist first. Nothing in the Loom half prompts, so the script has
+  something to drive.
+
+  One decision made during implementation and worth carrying: .mcp.json is
+  create-only. JSON has no comment syntax, so no marker survives a parse, and
+  merging into an existing server list is the merge R3 forbids. A tree that
+  already has one is told to add the loom server by hand -- a real gap, and the
+  honest form of it.
 
   S3, generated ARCH documents with provenance (R6, R7, R9). Depends on S2 for
   somewhere to write and on S1 for what to write, and is the only stage that

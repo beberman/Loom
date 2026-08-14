@@ -23,6 +23,10 @@
    ;; REINDEX-REPOSITORY, both defined there, and :SERIAL T is what makes the
    ;; macro available at compile time rather than only at load time.
    (:file "transition")
+   ;; After "transition": PREPARE-REPOSITORY reuses LINE-END and
+   ;; WHITESPACE-CHAR-P to scan a manifest, and the plan-then-apply split it
+   ;; follows is that file's.
+   (:file "init")
    )
   :in-order-to ((test-op (test-op :loom-workspace/test)))
   )
@@ -45,6 +49,10 @@
    (:file "workspace")
    (:file "gitignore")
    (:file "transition")
+   ;; After "transition": PREPARE-REPOSITORY reuses LINE-END and
+   ;; WHITESPACE-CHAR-P to scan a manifest, and the plan-then-apply split it
+   ;; follows is that file's.
+   (:file "init")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-workspace-test :test-runner)

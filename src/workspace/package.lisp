@@ -48,6 +48,14 @@
    #:parse-verdicts
    #:document-status-vocabulary
 
+   ;; preparing a repository Loom did not write (REQ-0021, DES-0022 S2).
+   ;; Writes into somebody else's tree, so it plans every write before making
+   ;; one and records what it did before doing it.
+   #:prepare-repository
+   #:read-manifest
+   #:prepared-p
+   #:*default-endpoint*
+
    ;; monitoring
    #:start-monitor
    #:stop-monitor
