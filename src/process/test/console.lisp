@@ -419,3 +419,24 @@ this repository, so an answer proves which graph was consulted."
       (is (search "no-such-repository" output))
       (is (search "Watching:" output)
           "the message lists what is watched rather than only what is not"))))
+
+(test a-repository-token-in-the-wrong-position-says-where-it-goes
+  ;; DES-0021 D1 strips a *leading* @token, and a caller who writes it after
+  ;; another argument gets it as a positional designator instead. "No repository
+  ;; named @gs2" is true and one word short of useful; found by writing
+  ;; `remove tooling @gs2' and having to work out why.
+  (with-two-console-fixtures
+    (let* ((second-name (loom-workspace:repository-name second-repository))
+           (output (run-to-string (format nil "check ~a" second-name))))
+      (is (not (search "has to come first" output))
+          "a bare designator in that position is fine and must not be corrected"))
+    (let ((output (run-to-string (format nil "check @~a"
+                                         (loom-workspace:repository-name
+                                          second-repository)))))
+      ;; `check' takes a designator, so a leading token is stripped before the
+      ;; handler sees it and this is the ordinary success path.
+      (is (not (search "has to come first" output))))
+    (let ((output (run-to-string "set-status DOC status @somewhere")))
+      (is (search "has to come first" output)
+          "a token in a later position is told where it goes: ~s" output))))
+

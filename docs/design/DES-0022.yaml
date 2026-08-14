@@ -268,6 +268,53 @@ body: |
   gets `structure`, loom-serve gets a :STRUCTURE operation, and REST and MCP
   follow from the registry.
 
+  D3a R7 SPLITS, AND LOOM OWNS MORE OF IT THAN THIS DESIGN ASSUMED
+
+  D3 gave all of R7 -- reviewing the markdown and the comments before a document
+  is written -- to the script and the LLM. That is right for comments, which
+  Loom does not index and deliberately does not (DES-0013: a comment is not a
+  gap in what Loom knows, it is what a source file is made of). It is wrong for
+  markdown, which Loom does index, and the wrongness costs the deterministic
+  half of a requirement.
+
+  Every markdown file's backticked identifiers and link targets are already
+  candidate names in its :MENTIONS property, and resolution already knows which
+  of them reached something. So "prose describing structure the index does not
+  show" is derivable: it is the tokens that did not resolve.
+
+  What makes that a report rather than noise is a second measurement.
+  REQ-0014 drops unresolved mention tokens in silence on purpose, because prose
+  is full of ordinary words in backticks -- and a list of every one would be
+  useless. But a document's *resolution rate* says whether its unresolved
+  tokens are worth reading. Measured on ~/lisp/game-server, 2026-08-14:
+
+      docs/design-summary/semantic-validators.md   24 of 42 resolved
+        unresolved include delete-obj, delete-obj(old)
+      docs/design-summary/piece-editor-req.md       2 of 27 resolved
+        unresolved include src/ui/edit/piece/mock/pieceeditormock.jsx
+
+  Those two are not the same finding. The first is a document about this
+  codebase naming something the codebase no longer has, which is exactly R7's
+  disagreement. The second is a document about a JavaScript front-end, whose
+  unresolved names are not drift at all -- they are about a repository this one
+  does not contain.
+
+  So the report ranks by resolution rate and says which side of that line each
+  document falls on. It reports and does not reconcile, which is R7's own word:
+  a token that did not resolve is a candidate for a human to read, never a
+  claim that the prose is wrong. The prose may be right and the code may have
+  drifted, and nothing in an index says which.
+
+  A second filter cuts the remaining noise: a token shaped like an identifier
+  -- hyphenated, dotted, or a path -- is more likely a name than an English
+  word. `delete-obj' and `game-operator-resolver' survive it; `null', `data'
+  and `sprite' do not. It is a heuristic and is labelled as one, because the
+  alternative is a report nobody reads.
+
+  The comments half stays with the LLM, and the script is where it belongs: R7
+  says so in as many words, and DES-0013 says why Loom will not be indexing
+  them.
+
   D4  THE REPORT IS DATA, AND ITS HONESTY IS THE POINT
 
   R6 says a generated ARCH document fills only what the report derived and that

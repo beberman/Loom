@@ -329,7 +329,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 208
+(defparameter *call-site-ceiling* 237
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -396,7 +396,20 @@ The instrument's cost is now visible: an absolute whole-tree count has to be
 re-measured whenever a command or an operation is added, and each
 re-measurement is an opportunity to raise it without looking. The census is
 what makes that check cheap, and running it is not optional -- a number edited
-to match a red suite is not a ceiling.")
+to match a red suite is not a ceiling.
+
+RE-MEASURED 2026-08-14 AT 215, CEILING 237. REQ-0021's remaining commands --
+`structure', `architecture', `drift', `remove', `init' and their registry
+entries. Composition, which is what makes this growth rather than a defect:
+
+    define-operation    61 -> 72
+    ambiguous occurrences  16 -> 16
+
+Three re-measurements in three days, all from the same cause: this requirement
+added six commands and six operations, and every one is a body-swallowing macro
+whose call names become orphaned definer pairs. The ambiguous population has
+not moved through any of it, which is the number that would have moved if
+something had gone wrong.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is

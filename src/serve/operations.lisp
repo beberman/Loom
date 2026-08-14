@@ -155,6 +155,11 @@ The console's own cap, so the two answer the same question the same way.")
                         :commit-reason reason
                         :repository (repository-name watched)))))
 
+(define-operation :drift :read (repository)
+    "Where the prose and the index disagree. Candidates for review, not findings."
+  (let ((watched (require-repository repository)))
+    (prose-report (repository-graph watched) :repository (repository-name watched))))
+
 (define-operation :status :read ((repository))
     "Index size, watcher health, unresolved references, rule violations."
   ;; The one operation with no designator requirement, because with none it is
@@ -267,6 +272,14 @@ The console's own cap, so the two answer the same question the same way.")
   ;; returns the same measurements and changes nothing, while this puts a file
   ;; in somebody's repository.
   (generate-architecture (require-repository repository)))
+
+(define-operation :remove :write (repository (mode))
+    "Take Loom out of a prepared repository. Documents stay unless mode is all."
+  (let ((watched (require-repository repository)))
+    (remove-preparation (repository-root watched)
+                        :mode (if (and mode (string-equal "all" (princ-to-string mode)))
+                                  :all
+                                  :tooling))))
 
 (define-operation :reindex :write (repository)
     "Discard and rebuild the index from disk. Always safe."

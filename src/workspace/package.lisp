@@ -62,6 +62,12 @@
    ;; invariant is a defect.
    #:generate-architecture
 
+   ;; REQ-0021 R13: taking Loom back out, in the two modes a team actually
+   ;; means by it. Never infers what init wrote -- the manifest is the only
+   ;; authority, and full mode refuses rather than orphan a document nobody
+   ;; can prove init created.
+   #:remove-preparation
+
    ;; monitoring
    #:start-monitor
    #:stop-monitor

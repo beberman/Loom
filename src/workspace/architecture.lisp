@@ -245,10 +245,20 @@ write into the wrong place in exactly the trees that chose otherwise."
                (with-open-file (out path :direction :output :if-exists :error
                                          :if-does-not-exist :create)
                  (write-string (render-architecture report doc-id describes dropped) out))
-               (list :repository (repository-name repository)
-                     :problems '()
-                     :document doc-id
-                     :commit commit
-                     :describes (length describes)
-                     :dropped dropped
-                     :created (workspace-relative-path path root))))))))))
+               (let ((relative (workspace-relative-path path root)))
+                 ;; So that removal can account for it. Init records what it
+                 ;; wrote, but this runs later -- once there is an index to
+                 ;; derive a report from -- and without recording itself here
+                 ;; full removal meets a document the manifest cannot explain
+                 ;; and refuses on it, which is R13a protecting the tree from
+                 ;; Loom's own output. Found by running removal against a
+                 ;; prepared copy of game-server.
+                 (record-created-path root relative)
+                 (list :repository (repository-name repository)
+                       :problems '()
+                       :document doc-id
+                       :commit commit
+                       :describes (length describes)
+                       :dropped dropped
+                       :recorded (and (read-manifest root) t)
+                       :created relative))))))))))

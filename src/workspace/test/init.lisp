@@ -240,3 +240,159 @@ one, so a boolean could not have carried it"))
       (is (string= "CON-0008" (getf report :workflow-concept))
           "completed/ counts too, or an id gets reused")
       (is-true (probe-file (target-file root "docs/concepts/CON-0008.yaml"))))))
+
+;;; ------------------------------------------------------------------
+;;; Taking Loom back out (R13)
+;;;
+;;; Removal deletes files from a repository Loom does not own, so what is
+;;; asserted here is mostly what it refuses to delete. The direction to fail in
+;;; is leaving things behind.
+;;; ------------------------------------------------------------------
+
+(test removing-the-tooling-keeps-every-document
+  ;; R13's default and the reason it is the default: the documents are the point
+  ;; of the exercise, they are plain YAML readable with no tool at all, and
+  ;; deleting a team's knowledge because the tool is leaving would be the worst
+  ;; outcome REQ-0021 could produce.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (let ((report (remove-preparation root :mode :tooling)))
+      (is (null (getf report :problems)) "~a" (getf report :problems))
+      (is (null (probe-file (target-file root ".claude/skills/loom/SKILL.md")))
+          "the skill is gone")
+      (is (null (probe-file (target-file root ".loom/manifest.yaml")))
+          "and the manifest")
+      (is-true (probe-file (target-file root "docs/concepts/CON-0001.yaml"))
+               "and the workflow concept stayed")
+      (is (member "docs/concepts/CON-0001.yaml" (getf report :kept) :test #'string=)
+          "and is reported as kept rather than silently skipped: ~a"
+          (getf report :kept)))))
+
+(test removing-everything-takes-the-documents-init-wrote-and-nothing-else
+  (with-target-tree (root)
+    (prepare-repository root)
+    (let ((report (remove-preparation root :mode :all)))
+      (is (null (getf report :problems)) "~a" (getf report :problems))
+      (is (null (probe-file (target-file root "docs/concepts/CON-0001.yaml")))
+          "full removal takes the workflow concept")
+      (is (null (probe-file (target-file root ".loom/manifest.yaml")))))))
+
+(test full-removal-refuses-rather-than-orphan-a-document-it-did-not-write
+  ;; R13a. A tree whose documents were all written by hand after init is one
+  ;; where full removal is nearly a no-op, and that is correct -- so this stops
+  ;; and says which, rather than deciding for the user.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (write-target-file root "docs/requirements/REQ-0001.yaml"
+                       "id: REQ-0001
+title: mine
+status: draft
+")
+    (let ((report (remove-preparation root :mode :all)))
+      (is-true (getf report :problems))
+      (is (search "REQ-0001" (first (getf report :problems)))
+          "the refusal names the document: ~a" (getf report :problems))
+      (is (null (getf report :deleted)) "and nothing was deleted")
+      (is-true (probe-file (target-file root ".loom/manifest.yaml"))
+               "not even the manifest, so a second attempt has something to read")
+      (is-true (probe-file (target-file root "docs/concepts/CON-0001.yaml"))))))
+
+(test tooling-removal-is-unbothered-by-a-document-it-did-not-write
+  ;; The complement: the mode that keeps documents has no reason to refuse.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (write-target-file root "docs/requirements/REQ-0001.yaml" "id: REQ-0001
+")
+    (let ((report (remove-preparation root :mode :tooling)))
+      (is (null (getf report :problems)) "~a" (getf report :problems))
+      (is-true (probe-file (target-file root "docs/requirements/REQ-0001.yaml"))))))
+
+(test the-claude-md-region-is-cut-and-the-authors-bytes-are-untouched
+  ;; The edit discipline the transition command uses on a status line, applied
+  ;; to a region: byte for byte outside it, so the diff shows exactly what Loom
+  ;; put there leaving.
+  (with-target-tree (root)
+    (let ((original "# My project
+
+Do not touch this.
+"))
+      (write-target-file root "CLAUDE.md" original)
+      (prepare-repository root :append-claude-md t)
+      (is (not (string= original (target-text root "CLAUDE.md"))) "the append happened")
+      (remove-preparation root :mode :tooling)
+      (is (string= original (target-text root "CLAUDE.md"))
+          "and removing it restored the file byte for byte, blank line included"))))
+
+(test a-claude-md-loom-created-is-deleted-whole
+  ;; The three-valued disposition earning itself. A boolean could not tell this
+  ;; from the case above, and getting it wrong deletes somebody's document.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (is-true (probe-file (target-file root "CLAUDE.md")) "Loom wrote one")
+    (remove-preparation root :mode :tooling)
+    (is (null (probe-file (target-file root "CLAUDE.md")))
+        "and took it away again, because it was never anybody else's")))
+
+(test removal-refuses-a-tree-it-never-prepared
+  ;; The manifest is the only authority. Removal never infers what init would
+  ;; have written, because the guess it would have to make is which files in
+  ;; somebody's repository are safe to delete.
+  (with-target-tree (root)
+    (write-target-file root ".claude/skills/loom/SKILL.md" "not ours")
+    (let ((report (remove-preparation root :mode :all)))
+      (is-true (getf report :problems))
+      (is (search "no Loom manifest" (first (getf report :problems))))
+      (is-true (probe-file (target-file root ".claude/skills/loom/SKILL.md"))
+               "and the file that looks like ours was left alone"))))
+
+(test full-removal-takes-back-the-directories-it-made-and-leaves-the-ones-it-found
+  ;; R13b names directories in as many words, and they are the one thing that
+  ;; leaves no trace anywhere else: git does not track an empty directory and no
+  ;; document's provenance records one. So if the manifest does not hold it, it
+  ;; cannot be undone -- which is exactly what happened on the first prepared
+  ;; copy of game-server, where full removal left nine empty directories behind
+  ;; a `git status' that looked clean.
+  ;;
+  ;; The other half is the one that matters more: a directory that was already
+  ;; there is not Loom's to delete. game-server had a docs/ long before any of
+  ;; this.
+  (with-target-tree (root)
+    ;; docs/ and a directory of theirs exist first.
+    (write-target-file root "docs/design-summary/notes.md" "# theirs")
+    (prepare-repository root)
+    (remove-preparation root :mode :all)
+    (is (null (probe-file (target-file root "docs/plans/completed/")))
+        "a directory Loom made and emptied is gone")
+    (is (null (probe-file (target-file root "docs/concepts/")))
+        "and so is one that only ever held Loom's own document")
+    (is-true (probe-file (target-file root "docs/design-summary/notes.md"))
+             "their file is untouched")
+    (is-true (probe-file (target-file root "docs/"))
+             "and docs/ itself stays, because Loom found it rather than made it")))
+
+(test tooling-removal-leaves-every-directory-alone
+  ;; The mode that keeps documents has no business removing the directories
+  ;; those documents live in.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (remove-preparation root :mode :tooling)
+    (is-true (probe-file (target-file root "docs/concepts/"))
+             "the concept is kept, so its directory must be too")
+    (is-true (probe-file (target-file root "docs/plans/completed/")))))
+
+(test a-directory-made-only-as-a-file-s-parent-is-recorded-too
+  ;; The half the first version missed. .claude/ already existed on the tree
+  ;; that found this, so .claude/skills/ and .claude/skills/loom/ were created
+  ;; silently by ENSURE-DIRECTORIES-EXIST on the way to writing the skill,
+  ;; appeared in no plan, and survived a full removal behind a `git status' that
+  ;; looked clean -- git does not track an empty directory.
+  (with-target-tree (root)
+    (write-target-file root ".claude/settings.json" "{}")
+    (prepare-repository root)
+    (is-true (probe-file (target-file root ".claude/skills/loom/"))
+             "the intermediate directories were made")
+    (remove-preparation root :mode :all)
+    (is (null (probe-file (target-file root ".claude/skills/")))
+        "and taken back, because they were recorded rather than inferred")
+    (is-true (probe-file (target-file root ".claude/settings.json"))
+             "while .claude/ itself stays -- Loom found it, and their file is in it")))

@@ -66,7 +66,7 @@
     ;; already-prepared tree returns and :SKIPPED empty is the ordinary answer,
     ;; so both have to be [] -- a caller branching on "did anything happen"
     ;; reads them directly.
-    :created :skipped)
+    :created :skipped :candidates :deleted :kept)
   "Keys whose value is a sequence even when it is empty.
 
 Two jobs. NIL under one of these encodes as [] rather than null, so an empty

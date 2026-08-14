@@ -107,6 +107,34 @@ document somebody wrote."
   "True when this repository already carries a Loom manifest."
   (and (read-manifest root) t))
 
+(defun record-created-path (root relative)
+  "Add RELATIVE to the manifest's created list. Returns true when it did.
+
+Init is not the only thing that writes into a prepared tree -- `architecture'
+writes a document later, once there is an index to derive one from -- and R13b
+is explicit that inferring init's output after the fact is not acceptable. So
+anything Loom writes records itself here, or full removal meets a document it
+cannot account for and refuses on it.
+
+Found by exactly that: removal refused to complete because ARCH-0001.yaml was
+not in the manifest, which is R13a protecting the tree from Loom's own output."
+  (let ((manifest (read-manifest root))
+        (created (manifest-created-paths root)))
+    (when (and manifest (not (member relative created :test #'string=)))
+      (with-open-file (out (manifest-path root) :direction :output
+                                                :if-exists :supersede
+                                                :if-does-not-exist :create)
+        (write-string (render-manifest
+                       ;; :CREATED is the list header the line scan reads as a
+                       ;; valueless key; it is re-emitted by RENDER-MANIFEST and
+                       ;; must not also appear as a scalar.
+                       (loop for (key value) on manifest by #'cddr
+                             unless (eq key :created)
+                               append (list key value))
+                       (append created (list relative)))
+                      out))
+      t)))
+
 (defun render-manifest (plist created)
   (with-output-to-string (out)
     (format out "# Written by `loom init'. Records what Loom chose and what it~%")
@@ -219,6 +247,11 @@ and leaves the tree exactly as it was."
              (push (apply #'format nil format arguments) (prep-problems prep)))
            (skip (path why) (push (cons path why) (prep-skipped prep))))
       ;; --- directories --------------------------------------------
+      ;; Every directory the preparation needs is listed; which of them did not
+      ;; already exist is decided at apply time and recorded separately, because
+      ;; removal may only delete the ones Loom made. game-server has a docs/
+      ;; long predating any of this, and deleting it because init used it would
+      ;; be the worst kind of tidy-up.
       (push (merge-pathnames (format nil "~a/" *loom-state-directory*) root)
             (prep-directories prep))
       (dolist (kind *document-kinds*)
@@ -325,11 +358,36 @@ was: a run that dies halfway is exactly when removal needs to know what was
 intended, and a manifest written last does not exist at the moment it is
 wanted."
   (let* ((root (prep-root prep))
+         ;; LET* and later SETF: the directory list is appended after the
+         ;; existence check below, which has to happen before they are made.
          (planned (append (mapcar (lambda (pair) (workspace-relative-path (car pair) root))
                                   (prep-files prep))
                           (mapcar (lambda (pair) (workspace-relative-path (car pair) root))
                                   (prep-appends prep)))))
-    (dolist (dir (prep-directories prep)) (ensure-directories-exist dir))
+    ;; Which directories did not exist is decided here, before they are made,
+    ;; and recorded so removal can tell Loom's from the team's. R13b names
+    ;; directories in as many words, and an empty one leaves no trace in git or
+    ;; in any document's provenance -- so if it is not written down it cannot be
+    ;; undone.
+    (let ((made (remove-if #'probe-file
+                           (append (prep-directories prep)
+                                   ;; The parents of the files, which
+                                   ;; ENSURE-DIRECTORIES-EXIST creates silently
+                                   ;; below. .claude/skills/loom/ is the case
+                                   ;; that found this: game-server already had
+                                   ;; .claude/, so the skill's two intermediate
+                                   ;; directories were made without appearing in
+                                   ;; the plan, and full removal left them behind
+                                   ;; a `git status' that looked clean.
+                                   (missing-ancestors
+                                    (mapcar #'car (prep-files prep)) root)))))
+      (dolist (dir (prep-directories prep)) (ensure-directories-exist dir))
+      (setf planned (append planned
+                            (mapcar (lambda (dir)
+                                      (format nil "~a/"
+                                              (string-right-trim
+                                               "/" (workspace-relative-path dir root))))
+                                    made))))
     (let ((manifest (manifest-path root)))
       (ensure-directories-exist manifest)
       (with-open-file (out manifest :direction :output :if-exists :supersede
@@ -392,3 +450,244 @@ asking belongs where a terminal is."
                   :endpoint (prep-endpoint prep)
                   :created (apply-preparation prep)
                   :skipped (prep-skipped prep))))))
+
+;;;; ==================================================================
+;;;; Taking Loom back out (REQ-0021 R13, DES-0022 S4)
+;;;; ==================================================================
+;;;;
+;;;; Removal deletes files from a repository Loom does not own, which makes the
+;;;; direction to fail in the only interesting design question. It fails toward
+;;;; leaving things: the manifest is the sole authority for what init created,
+;;;; nothing is inferred, and a file init *would* have written but which the
+;;;; manifest does not name is left alone.
+;;;;
+;;;; Two modes, because "remove Loom" is two different requests. A team that
+;;;; keeps its knowledge and drops the tool wants its documents untouched --
+;;;; they are the point of the exercise, they are plain YAML readable with no
+;;;; tool at all, and deleting them because the thing that suggested the
+;;;; directory layout is going away would be the worst outcome available.
+
+(defparameter *removal-modes* '(:tooling :all)
+  ":TOOLING removes what makes Loom work here and keeps every document.
+:ALL additionally removes the documents init itself wrote -- the workflow
+concept and the generated architecture documents -- and nothing else.")
+
+(defun manifest-created-paths (root)
+  "The relative paths the manifest records init as having created.
+Read from the `created:' list, which APPLY-PREPARATION writes before it writes
+the files, so a run that died halfway still has something to work from."
+  (let ((path (manifest-path root)))
+    (when (probe-file path)
+      (let ((contents (handler-case (slurp-file path) (error () nil)))
+            (paths '())
+            (in-list nil))
+        (when contents
+          (loop with start = 0
+                with length = (length contents)
+                while (< start length)
+                do (multiple-value-bind (end next) (line-end contents start)
+                     (let ((line (subseq contents start end)))
+                       (cond ((and (>= (length line) 8)
+                                   (string= "created:" line :end2 8))
+                              (setf in-list t))
+                             ((and in-list (>= (length line) 4)
+                                   (string= "  - " line :end2 4))
+                              (push (string-trim '(#\" #\Space #\Return)
+                                                 (subseq line 4))
+                                    paths))
+                             ((and in-list (plusp (length line))
+                                   (not (whitespace-char-p (char line 0))))
+                              (setf in-list nil))))
+                     (setf start next)))
+          (nreverse paths))))))
+
+(defun cut-marked-region (contents)
+  "Two values: CONTENTS with the Loom region removed, and whether one was found.
+
+Byte for byte outside the region, which is the same discipline the transition
+command applies to a status line and for the same reason: this is somebody
+else's file and the diff should show exactly what Loom put there leaving.
+
+The blank line the append introduced goes with it, so removing a pointer from a
+file that never had one is a no-op on the bytes rather than a stray newline."
+  (let ((begin (search *marker-begin* contents)))
+    (if (null begin)
+        (values contents nil)
+        (let ((end (search *marker-end* contents :start2 begin)))
+          (if (null end)
+              ;; A begin with no end is damage somebody else caused, and
+              ;; guessing where the region ends could delete the rest of their
+              ;; file. Refused by reporting no region.
+              (values contents nil)
+              (let* ((after (+ end (length *marker-end*)))
+                     (after (if (and (< after (length contents))
+                                     (char= #\Newline (char contents after)))
+                                (1+ after)
+                                after))
+                     ;; The blank line APPLY-PREPARATION wrote before the region.
+                     (before (if (and (plusp begin)
+                                      (char= #\Newline (char contents (1- begin))))
+                                 (1- begin)
+                                 begin)))
+                (values (concatenate 'string (subseq contents 0 before)
+                                     (subseq contents after))
+                        t)))))))
+
+(defun missing-ancestors (paths root)
+  "Every directory under ROOT that PATHS need and that does not exist yet.
+
+Shallowest first, so a caller creating them in order never makes a child before
+its parent -- and so removal, which walks the recorded list deepest first, takes
+them back in the reverse order it made them."
+  (let ((root (pathname-as-directory root))
+        (found '()))
+    (dolist (path paths)
+      (let ((directory (pathname-directory path))
+            (base (pathname-directory (pathname-as-directory root))))
+        (loop for n from (1+ (length base)) to (length directory)
+              for candidate = (make-pathname :directory (subseq directory 0 n)
+                                             :name nil :type nil :defaults path)
+              unless (or (probe-file candidate)
+                         (member candidate found :test #'equal))
+                do (push candidate found))))
+    (sort (nreverse found) #'< :key (lambda (p) (length (pathname-directory p))))))
+
+(defun directory-entry-p (relative)
+  "True when a manifest entry names a directory rather than a file.
+The trailing slash is the whole distinction, and it is written by
+APPLY-PREPARATION so the two never have to be told apart by probing a
+filesystem that removal is in the middle of changing."
+  (and (plusp (length relative))
+       (char= #\/ (char relative (1- (length relative))))))
+
+(defun document-path-p (root relative document-directory)
+  "True when RELATIVE is a document under the prepared document directory."
+  (declare (ignore root))
+  (let ((prefix (format nil "~a/" document-directory)))
+    (and (>= (length relative) (length prefix))
+         (string= prefix relative :end2 (length prefix))
+         (let ((type (pathname-type (pathname relative))))
+           (and type (member type '("yaml" "yml") :test #'string-equal))))))
+
+(defun unmanaged-documents (root document-directory created)
+  "Documents under the document directory that the manifest does not name.
+
+R13a's refusal. A tree whose documents were all written by hand after init is
+one where full removal is nearly a no-op, and that is the correct behaviour --
+so this is the list full mode stops on rather than a warning it prints."
+  (let ((docs (merge-pathnames (format nil "~a/" document-directory)
+                               (pathname-as-directory root)))
+        (found '()))
+    (dolist (path (directory (merge-pathnames "**/*.*" docs)))
+      (when (pathname-name path)
+        (let ((relative (workspace-relative-path path (pathname-as-directory root))))
+          (when (and (document-path-p root relative document-directory)
+                     (not (member relative created :test #'string=)))
+            (push relative found)))))
+    (nreverse found)))
+
+(defun remove-preparation (root &key (mode :tooling))
+  "Take Loom out of ROOT. Returns a report plist; :PROBLEMS non-empty means
+nothing was deleted.
+
+MODE is :TOOLING -- the skill, the MCP registration, the CLAUDE.md pointer and
+the manifest, leaving every document -- or :ALL, which additionally removes the
+documents init wrote and nothing else.
+
+R13c: this writes to the working tree and does not commit, exactly as
+installation did. Carrying a removal across branches is the dev team's business."
+  (let* ((root (pathname-as-directory (or (probe-file root) root)))
+         (manifest (read-manifest root))
+         (created (manifest-created-paths root))
+         (document-directory (or (getf manifest :document-directory) "docs"))
+         (problems '())
+         (deleted '())
+         (kept '()))
+    (cond
+      ((null manifest)
+       (list :root (namestring root) :mode mode
+             :problems (list (format nil "~a carries no Loom manifest, so there is ~
+nothing recorded to remove. Removal never infers what init wrote."
+                                     (namestring root)))
+             :deleted '()))
+      ((not (member mode *removal-modes*))
+       (list :root (namestring root) :mode mode
+             :problems (list (format nil "~(~a~) is not a removal mode. Try: ~{~(~a~)~^, ~}"
+                                     mode *removal-modes*))
+             :deleted '()))
+      (t
+       (let ((unmanaged (and (eq :all mode)
+                             (unmanaged-documents root document-directory created))))
+         (when unmanaged
+           (push (format nil "~d document~:p under ~a/ ~:[was~;were~] not written by ~
+init, and full removal would orphan ~:*~:[it~;them~]. Remove the tooling instead, ~
+or move ~:*~:[it~;them~] first:~{~%    ~a~}"
+                         (length unmanaged) document-directory (rest unmanaged)
+                         unmanaged)
+                 problems))
+         (if problems
+             (list :root (namestring root) :mode mode
+                   :problems (nreverse problems) :deleted '())
+             ;; --- plan, then apply, as everything else here does ------
+             (let ((targets
+                     (loop for relative in created
+                           ;; Three kinds of entry live in one list and each is
+                           ;; handled somewhere else: a directory ends in a
+                           ;; slash and is removed after the files, deepest
+                           ;; first; CLAUDE.md is cut or deleted per the
+                           ;; manifest's three-valued disposition; everything
+                           ;; else is a file this loop collects.
+                           for directoryp = (directory-entry-p relative)
+                           for documentp = (document-path-p root relative
+                                                            document-directory)
+                           for path = (merge-pathnames relative root)
+                           unless (or directoryp (string-equal "CLAUDE.md" relative))
+                             append (cond ((and documentp (eq :tooling mode))
+                                           (push relative kept) nil)
+                                          ((probe-file path) (list (cons relative path)))
+                                          (t (push relative kept) nil)))))
+               (dolist (pair targets) (delete-file (cdr pair)) (push (car pair) deleted))
+               ;; Directories Loom made, deepest first, and only when empty.
+               ;; Recorded rather than derived: game-server's docs/ long
+               ;; predates any of this, and removing it because init used it
+               ;; would be the worst kind of tidy-up. An empty directory leaves
+               ;; no trace in git either, which is why the manifest is the only
+               ;; thing that can undo one.
+               (when (eq :all mode)
+                 (dolist (relative (sort (remove-if-not #'directory-entry-p created)
+                                         #'> :key #'length))
+                   (let ((dir (merge-pathnames relative root)))
+                     (when (and (probe-file dir)
+                                (ignore-errors (uiop:delete-empty-directory dir)))
+                       (push relative deleted)))))
+               ;; --- CLAUDE.md ----------------------------------------
+               (let ((claude (merge-pathnames "CLAUDE.md" root))
+                     (disposition (getf manifest :claude-md)))
+                 (cond
+                   ((not (probe-file claude)))
+                   ((string-equal "created" disposition)
+                    ;; Loom wrote the whole file, so the whole file goes.
+                    (delete-file claude)
+                    (push "CLAUDE.md" deleted))
+                   ((string-equal "appended" disposition)
+                    (let ((contents (slurp-file claude)))
+                      (multiple-value-bind (without found) (cut-marked-region contents)
+                        (cond (found
+                               (with-open-file (out claude :direction :output
+                                                           :if-exists :supersede)
+                                 (write-string without out))
+                               (push "CLAUDE.md (region)" deleted))
+                              (t (push (format nil "CLAUDE.md carries no complete Loom ~
+region, so it was left alone.")
+                                       problems))))))))
+               ;; --- the state directory, last ------------------------
+               (let ((state (merge-pathnames (format nil "~a/" *loom-state-directory*) root)))
+                 (when (probe-file (manifest-path root))
+                   (delete-file (manifest-path root))
+                   (push ".loom/manifest.yaml" deleted))
+                 (ignore-errors (uiop:delete-empty-directory state)))
+               (list :root (namestring root)
+                     :mode mode
+                     :problems (nreverse problems)
+                     :deleted (nreverse deleted)
+                     :kept (nreverse kept)))))))))

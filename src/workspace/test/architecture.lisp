@@ -182,3 +182,37 @@ Nothing here is source.
              (text (generated-text root (getf report :document))))
         (is (search "no analyzer claimed" text)
             "an unread tree has to say so before a reader draws a conclusion")))))
+
+(test a-generated-document-records-itself-so-removal-can-account-for-it
+  ;; R13b, and the gap found by running removal against a prepared copy: init
+  ;; records what it wrote, but `architecture' writes later -- once there is an
+  ;; index -- and did not. Full removal then met a document the manifest could
+  ;; not account for and refused on it, which is R13a protecting the tree from
+  ;; Loom's own output.
+  (with-document-tree (root)
+    (arch-tree-fixture root)
+    (prepare-repository root)
+    (with-indexed-tree (repository root)
+      (let ((report (generate-architecture repository)))
+        (is-true (getf report :recorded) "there is a manifest to record into")
+        (is (member (getf report :created)
+                    (loom-workspace::manifest-created-paths root)
+                    :test #'string=)
+            "the generated document is in the manifest: ~a"
+            (loom-workspace::manifest-created-paths root)))
+      ;; And the consequence that matters: full removal now completes.
+      (let ((removal (remove-preparation root :mode :all)))
+        (is (null (getf removal :problems)) "~a" (getf removal :problems))
+        (is (null (probe-file (target-file root "docs/arch/ARCH-0001.yaml")))
+            "full removal takes the document init generated")))))
+
+(test a-generated-document-outside-a-prepared-tree-still-works
+  ;; The complement: `architecture' is useful on any indexed repository, not
+  ;; only a prepared one, and a missing manifest is not an error.
+  (with-document-tree (root)
+    (arch-tree-fixture root)
+    (with-indexed-tree (repository root)
+      (let ((report (generate-architecture repository)))
+        (is (null (getf report :problems)) "~a" (getf report :problems))
+        (is-false (getf report :recorded) "nothing to record into, and that is fine")))))
+

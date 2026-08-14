@@ -158,8 +158,18 @@ would be the surprise this exists to remove. With one repository watched
 nothing changes and nothing has to be typed."
   (let ((named (or designator *command-repository*)))
     (cond (named (or (find-repository named)
-                     (error "No repository named ~a. Watching: ~{~a~^, ~}"
-                            named (or (watched-repository-names) '("nothing")))))
+                     ;; A designator that still carries the sigil got here as a
+                     ;; positional argument rather than being stripped, which
+                     ;; means it was not first on the line. Found by writing
+                     ;; `remove tooling @gs2\' and being told no repository was
+                     ;; named @gs2 -- true, unhelpful, and one word short of the
+                     ;; thing the caller needed to know.
+                     (if (repository-token-p named)
+                         (error "The ~c token names a repository and has to come ~
+first: try `~c~a ...\' rather than putting it after another argument."
+                                *repository-sigil* *repository-sigil* (subseq named 1))
+                         (error "No repository named ~a. Watching: ~{~a~^, ~}"
+                                named (or (watched-repository-names) '("nothing"))))))
           ((null (all-repositories))
            (error "Nothing is being watched yet. Try: watch \"/path/to/repo\""))
           ((rest (all-repositories))
@@ -635,6 +645,41 @@ rather than only in the note beside it."
              (format t "~&Nothing points at the skill yet. Re-run with ~
 `claude-md' to append a pointer, or add one by hand.~%"))))
        (format t "~&Nothing was committed. `git status' shows exactly what was added.~%")))))
+
+(define-command drift (&optional designator)
+    "drift [<name>]"
+    "Where the prose and the index disagree. Candidates, not findings."
+  ;; REQ-0021 R7's markdown half. The comments half is the LLM reading files;
+  ;; Loom does not index comments and DES-0013 says why.
+  (write-string (render-prose
+                 (let ((repository (current-repository designator)))
+                   (prose-report (repository-graph repository)
+                                 :repository (repository-name repository))))))
+
+(define-command remove (&optional mode designator)
+    "remove [tooling|all] [<name>]"
+    "Take Loom out of a prepared repository. Documents stay unless you say all."
+  ;; Two modes because "remove Loom" is two requests. Tooling is the default and
+  ;; keeps every document -- they are the point of the exercise, and deleting a
+  ;; team's knowledge because the tool is leaving would be the worst outcome
+  ;; REQ-0021 could produce.
+  (let* ((repository (current-repository designator))
+         (mode (if (and mode (string-equal "all" mode)) :all :tooling))
+         (report (remove-preparation (repository-root repository) :mode mode)))
+    (if (getf report :problems)
+        (progn (format t "~&Nothing was deleted. ~d problem~:p:~%"
+                       (length (getf report :problems)))
+               (dolist (problem (getf report :problems))
+                 (format t "  - ~a~%" problem)))
+        (progn
+          (log-event "remove" "~(~a~) ~a" mode (getf report :root))
+          (format t "~&Removed ~(~a~) from ~a~%" mode (getf report :root))
+          (format t "  deleted ~d~{~%    ~a~}~%"
+                  (length (getf report :deleted)) (getf report :deleted))
+          (when (getf report :kept)
+            (format t "  kept ~d document~:p~{~%    ~a~}~%"
+                    (length (getf report :kept)) (getf report :kept)))
+          (format t "~&Nothing was committed.~%")))))
 
 (define-command architecture (&optional designator)
     "architecture [<name>]"

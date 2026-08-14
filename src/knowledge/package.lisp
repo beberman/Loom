@@ -54,6 +54,13 @@
    #:render-structure
    #:*structure-hub-limit*
    #:*structure-entry-point-limit*
+
+   ;; REQ-0021 R7: where the prose and the index disagree. Reports candidates
+   ;; for a human to read; never says a document is stale, because nothing in
+   ;; an index says which side moved.
+   #:prose-report
+   #:render-prose
+   #:*prose-engaged-rate*
    #:*seed-type-preference*
    #:estimate-tokens
 
