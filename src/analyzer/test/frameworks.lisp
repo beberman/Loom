@@ -82,6 +82,24 @@ and the tree writes sendGet")
     (is (null (gethash "defroute" base))
         "game-server declaring defroute must not make another tree look for one")))
 
+(test archived-paths-parse-and-are-downcased
+  ;; DES-0025 D6a. Declared rather than guessed: "archive" is this tree's
+  ;; convention, and a directory-name allowlist is the proxy REQ-0028 deleted.
+  (let ((frameworks (parse-frameworks
+                     "archived-paths:
+  - docs/archive/
+  - docs/OLD/
+")))
+    (is (equal '("docs/archive/" "docs/old/") (getf frameworks :archived-paths)))))
+
+(test a-frameworks-file-declaring-only-archived-paths-is-usable
+  ;; The three keys are independent. A repository with no unusual definers and
+  ;; no route conventions may still have an archive, and FRAMEWORKS-PROBLEMS
+  ;; must not call that file useless.
+  (let ((frameworks (parse-frameworks "archived-paths: [docs/archive/]")))
+    (is (null (getf frameworks :definer-macros)))
+    (is (equal '("docs/archive/") (getf frameworks :archived-paths)))))
+
 (test an-absent-frameworks-file-is-not-a-problem
   ;; The normal case for every repository Loom indexed before DES-0025.
   (is (null (read-frameworks "/nonexistent-tree-for-this-test/")))

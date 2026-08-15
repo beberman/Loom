@@ -276,6 +276,30 @@ body: |
   count is a function of which repositories are registered, and `check' should
   not be read as a claim about repositories the service was never told about.
 
+  D6a AN ARCHIVED DOCUMENT IS EXEMPT, AND SAYS SO IN ITS OWN REPOSITORY
+
+  Added after measuring D6 on front-end: 84 reported references, of which 30
+  came from docs/archive/. Those are not stale. A document under an archive
+  names files that no longer exist *because that is what archiving is*, and
+  reporting them is reporting the tree's own history back at it -- noise of
+  exactly the kind RULE-0006's rationale warns about, where a real finding is
+  buried under findings nobody can act on.
+
+  A repository declares its archives in .loom/frameworks.yaml:
+
+      archived-paths:
+        - docs/archive/
+
+  Declared rather than guessed, on the same ground as D4 and for the same
+  reason REQ-0028 deleted the markdown directory allowlist: `archive' is one
+  tree's convention, another says `old' or `historical' or nothing, and a
+  name-matching heuristic tests where a file sits instead of what it is.
+
+  Measured: 84 -> 54 on front-end. The 54 that remain are the ones worth
+  reading -- Bugs.md naming three files that are gone, docs/api.md naming a
+  server/config.json, and SoftDelete-Architecture.md naming src/models/mapper.js,
+  which is the very document REQ-0027 holds up as the cross-cutting example.
+
   ALTERNATIVES CONSIDERED
 
   A separate join index -- a third graph holding only the joins. This was the

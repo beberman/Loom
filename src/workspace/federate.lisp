@@ -395,20 +395,44 @@ merely unwatched, and `check' must not be read as a claim about repositories
 the service was never told about."
   (let ((out '()))
     (dolist (source repositories)
-      (let ((graph (repository-graph source)))
+      (let ((graph (repository-graph source))
+            (archived (getf (repository-frameworks source) :archived-paths)))
         (dolist (document (entities-of-type graph :document))
-          (let ((resolved (local-mention-targets graph document)))
-            (dolist (token (getp document :mentions))
-              (when (and (path-shaped-token-p token)
-                         (not (member (string-downcase token) resolved :test #'string=))
-                         (notany (lambda (r)
-                                   (entity-at-path (repository-graph r) token))
-                                 repositories))
-                (push (list :repository (repository-name source)
-                            :document (name document)
-                            :reference token)
-                      out)))))))
+          ;; DES-0025 D6a. An archived document names files that no longer
+          ;; exist because that is what archiving *is*; reporting it as
+          ;; staleness would be reporting the tree's own history back at it.
+          (unless (archived-document-p document archived)
+            (let ((resolved (local-mention-targets graph document)))
+              (dolist (token (getp document :mentions))
+                (when (and (path-shaped-token-p token)
+                           (not (member (string-downcase token) resolved :test #'string=))
+                           (notany (lambda (r)
+                                     (entity-at-path (repository-graph r) token))
+                                   repositories))
+                  (push (list :repository (repository-name source)
+                              :document (name document)
+                              :reference token)
+                        out))))))))
     (nreverse out)))
+
+(defun archived-document-p (document archived-paths)
+  "Does DOCUMENT sit under a path this repository declared archival?
+
+Declared rather than guessed, for the same reason every other fact in
+.loom/frameworks.yaml is. \"archive\" is a convention this tree happens to
+use; another calls the directory `old', `historical', or nothing at all, and
+a directory-name allowlist is exactly the proxy REQ-0028 deleted for markdown.
+
+Matched on a path prefix, case-insensitively, so `docs/archive/' covers
+everything beneath it and a declaration written with or without the trailing
+slash behaves the same."
+  (let ((path (or (getp document :path) (origin-file document))))
+    (when path
+      (some (lambda (prefix)
+              (let ((prefix (string-right-trim "/" prefix)))
+                (and (>= (length path) (length prefix))
+                     (string-equal prefix path :end2 (length prefix)))))
+            archived-paths))))
 
 (defun federated-retractions (repository workspace-id)
   "Retractions for every federated edge REPOSITORY currently holds."

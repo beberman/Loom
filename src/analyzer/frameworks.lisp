@@ -14,6 +14,13 @@
 ;;;;   route-callers:
 ;;;;     - callee: [get, post, sendGet, sendPost]
 ;;;;       argument-index: 0
+;;;;   archived-paths:
+;;;;     - docs/archive/
+;;;;
+;;;; Three keys now, and the file's name has grown a little narrow: what it
+;;;; holds is what a repository declares about itself that Loom cannot derive.
+;;;; A third key is cheaper than a second file, and every one of them has the
+;;;; same shape of justification -- a fact only this repository's author has.
 ;;;;
 ;;;; Without this, game-server's 27 (easy-routes:defroute NAME ("/public/..."))
 ;;;; forms produce nothing at all: PUBLIC-API-CREATE-GAME is not an entity, and
@@ -125,7 +132,12 @@ out which half."
                                 (as-sequence (yaml-value parsed :|definer-macros|))))
             :route-callers
             (remove nil (mapcar #'parse-route-caller
-                                (as-sequence (yaml-value parsed :|route-callers|))))))))
+                                (as-sequence (yaml-value parsed :|route-callers|))))
+            ;; Path prefixes whose documents describe a state the tree has left
+            ;; behind. DES-0025 D6a.
+            :archived-paths
+            (mapcar #'string-downcase
+                    (as-list-of-strings (yaml-value parsed :|archived-paths|)))))))
 
 (defun read-frameworks (root)
   "ROOT's framework declarations, or NIL when it has none.
@@ -171,8 +183,13 @@ nothing about that looks like an error. `status' reports these."
       (let ((frameworks (read-frameworks root)))
         (cond ((null frameworks)
                (list (format nil "~a does not parse as YAML" *frameworks-file*)))
+              ;; All three keys, not two. A repository with no unusual definers
+              ;; and no route conventions may still declare an archive, and
+              ;; calling that file useless would be a false report about a file
+              ;; doing its job.
               ((and (null (getf frameworks :definer-macros))
-                    (null (getf frameworks :route-callers)))
+                    (null (getf frameworks :route-callers))
+                    (null (getf frameworks :archived-paths)))
                (list (format nil "~a declares nothing usable: a definer-macros entry needs both macro: and defines:"
                              *frameworks-file*)))
               (t '()))))))
