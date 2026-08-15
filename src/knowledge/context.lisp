@@ -95,34 +95,145 @@ definitions, it spends it on code.")
   (or (position (entity-type entity) *seed-type-preference*)
       (length *seed-type-preference*)))
 
+(defparameter *seed-term-share* 2
+  "How many distinct names one slice of the task may contribute as seeds.
+
+A judgement rather than a measurement, and it needs no scaling with how common
+a term is: a slice with fewer than two names never reaches the cap, so a rare
+word is untouched by it while a common one has its contribution held to the
+same two however many hundred entities it matches. That is REQ-0016 R7's
+\"proportionately less\" expressed as a share rather than as a weight, and a
+share is the form that does not need a tuned constant per tree.
+
+Advisory: ADMIT-SEEDS relaxes it rather than return fewer seeds than there are
+candidates.")
+
+(defun seed-matches (view tokens types)
+  "How TOKENS meet the index: an alist of (entity . ((token . rank) ...)).
+
+In the order the entities were first reached, so a bundle does not reorder
+itself between two calls over one index -- the old seeder's ties fell to a
+PUSHNEW accumulator, which put the *last* word of the task first and is half
+of why a trailing \"check\" was so expensive.
+
+Rank 3 is dropped rather than recorded. FIND-ENTITIES matches a path component
+as readily as a name, and a token that reached an entity only through its path
+is neither a seed nor evidence about the token."
+  (let ((hits  (make-hash-table :test #'eq))
+        (order '()))
+    (dolist (token tokens)
+      (dolist (entity (find-entities view :name-like token))
+        (when (or (null types) (member (entity-type entity) types))
+          (let ((rank (match-rank entity token)))
+            (unless (= rank 3)
+              (unless (gethash entity hits)
+                (push entity order))
+              (push (cons token rank) (gethash entity hits)))))))
+    (loop for entity in (nreverse order)
+          collect (cons entity (nreverse (gethash entity hits))))))
+
+(defun seed-score (entity matches)
+  "Sort key for one candidate seed, lower first: type, then coverage, then match.
+
+Coverage -- how many of the task's distinct terms this name answers to -- is
+the signal the original ranking had no way to express. It scored an entity by
+the *best* of its matches, and a best is the same number whether one term
+produced it or five, so an entity matching one common word tied with the
+entity matching half the sentence and the tie fell to whatever order the
+tokens happened to be in. On a task described in prose that is the whole
+defect: measured on game-server, \"start-server startup sequence and database
+handler health check\" seeded seven of its eight entities on the English word
+\"check\" (REQ-0016 R7).
+
+The bands are separated rather than blended, and in the order the original
+comment argues for. Type still dominates, for the reason *SEED-TYPE-PREFERENCE*
+gives. Match quality still breaks ties beneath coverage, which is what keeps a
+single-term task ranked exactly as it was: every candidate then has coverage 1
+and the term cancels."
+  (+ (* 1000 (seed-type-rank entity))
+     (*   10 (max 0 (- 8 (length matches))))
+     (reduce #'min matches :key #'cdr :initial-value 3)))
+
+(defun seed-slice (matches)
+  "The slice of the task a seed answers to: its matched terms, sorted.
+The key the share in ADMIT-SEEDS is counted against."
+  (format nil "~{~a~^ ~}" (sort (mapcar #'car matches) #'string<)))
+
+(defun admit-seeds (ranked limit)
+  "The first LIMIT entities of RANKED, holding back a slice past its share.
+
+The cap is a filter on the way in rather than another term in the score,
+because it is a property of the set being built and not of any candidate in
+it: whether a seventh \"check\" is worth admitting depends entirely on whether
+anything else is still waiting.
+
+What it counts against is the *set* of terms a seed answers to, and what it
+counts is names rather than entities. Both halves were measured rather than
+reasoned to, and each fixes what the simpler rule got wrong:
+
+  Charging each seed to one term -- its narrowest -- cost REQ-0016 R8's query
+  one of the three CONNECTION-CONNECT-DATABASE definitions, the one in
+  server/server.lisp. Three files defining one name is the finding that query
+  exists to produce, and a cap counting entities destroys it. Counting names
+  does not: they are one name, so they are one charge.
+
+  Exempting anything that answered to more than one term let five members of
+  the CHECK-DATABASE-* family take five of eight slots, because they all match
+  {check, database} and nothing capped a pair of words the way a single word
+  was capped. A family sharing a slice is the same crowding as a family
+  sharing a word.
+
+Relaxed rather than enforced. When the held-back candidates are all there is
+they are admitted in score order, so a task naming one thing still seeds on
+that thing as many times as the tree offers and a small tree behaves exactly
+as it did before the cap existed."
+  (let ((spent  (make-hash-table :test #'equal))
+        (chosen '())
+        (held   '())
+        (taken  0))
+    (dolist (pair ranked)
+      (when (< taken limit)
+        (let* ((slice (seed-slice (cdr pair)))
+               (names (gethash slice spent))
+               (name  (significant-name (car pair))))
+          (cond ((or (< (length names) *seed-term-share*)
+                     (member name names :test #'string-equal))
+                 (pushnew name (gethash slice spent) :test #'string-equal)
+                 (incf taken)
+                 (push (car pair) chosen))
+                (t (push (car pair) held))))))
+    (setf chosen (nreverse chosen)
+          held   (nreverse held))
+    (append chosen (subseq held 0 (min (- limit taken) (length held))))))
+
 (defun seed-entities (view task &key (limit 8) types)
   "Entities whose names the words of TASK point at, best match first.
 
 The naive half of SS11's \"first implementation is simple\", and the half most
 obviously worth replacing: name matching finds RESOLVE-OVERLAY from the word
 \"overlay\" and finds nothing at all from \"the bit that merges edits\".
-Semantic seeding is what Qdrant is for in the target architecture."
-  (let ((tokens (task-tokens task))
-        (found '()))
-    (dolist (token tokens)
-      (dolist (entity (find-entities view :name-like token))
-        (when (or (null types) (member (entity-type entity) types))
-          (pushnew entity found))))
-    ;; Type preference dominates, match quality breaks its ties -- the reverse
-    ;; of what SEARCH-ENTITIES does, and deliberately so. loom_find answers
-    ;; "where is this thing", where an exactly-named file is the right answer.
-    ;; A context bundle answers "what should I know before editing", where a
-    ;; function matched loosely is worth more than a file matched exactly: the
-    ;; file's neighbourhood is a directory listing, the function's is the code
-    ;; that will break.
-    (let ((scored (loop for entity in found
-                        for match = (reduce #'min tokens
-                                            :key (lambda (token) (match-rank entity token))
-                                            :initial-value 3)
-                        unless (= match 3)   ; matched only on a path component
-                          collect (cons entity (+ (* 100 (seed-type-rank entity)) match)))))
-      (let ((ranked (mapcar #'car (stable-sort scored #'< :key #'cdr))))
-        (subseq ranked 0 (min limit (length ranked)))))))
+Semantic seeding is what Qdrant is for in the target architecture.
+
+Naive, but since REQ-0016 R7 no longer indifferent to *which* word did the
+matching. A task described in prose carries words -- \"check\", \"handler\",
+\"value\", \"create\" -- that name something in almost any codebase, so
+matching on one of them is not evidence about the task, and lexical seeding
+therefore gets worse as a query gets longer and more descriptive rather than
+better. Two things follow and both are here: coverage outranks match quality
+(SEED-SCORE), and no single term fills the set while another has a candidate
+waiting (ADMIT-SEEDS)."
+  ;; Type preference dominates, match quality breaks its ties -- the reverse
+  ;; of what SEARCH-ENTITIES does, and deliberately so. loom_find answers
+  ;; "where is this thing", where an exactly-named file is the right answer.
+  ;; A context bundle answers "what should I know before editing", where a
+  ;; function matched loosely is worth more than a file matched exactly: the
+  ;; file's neighbourhood is a directory listing, the function's is the code
+  ;; that will break.
+  (let* ((matches (seed-matches view (task-tokens task) types))
+         (ranked  (stable-sort matches #'<
+                               :key (lambda (pair)
+                                      (seed-score (car pair) (cdr pair))))))
+    (admit-seeds ranked limit)))
 
 ;;;; ==================================================================
 ;;;; Instrumentation (SS11)

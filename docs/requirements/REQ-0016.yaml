@@ -3,7 +3,8 @@ title: context must rank by structural centrality, not by name similarity
 status: draft
 date: 2026-08-06
 affects: [build-context, context-item, seed-entities, search-entities,
-          neighbor-summary, group-neighbors]
+          neighbor-summary, group-neighbors,
+          seed-matches, seed-score, seed-slice, admit-seeds]
 tags: [knowledge, console, context, ranking]
 summary: |
   `context` is the command CLAUDE.md and the loom skill both tell an agent to
@@ -151,19 +152,25 @@ body: |
 
       start-server startup sequence and database handler health check
 
-  the bundle came back with eight seeds, of which six were:
+  the bundle came back with eight seeds, of which seven were:
 
       check-not-found-response   test/test-api.lisp
       check-unknown-response     test/test-api.lisp
       check-ok-response          test/test-api.lisp
       check-alist                mpackage/test/obj-defn.lisp
       check-slot                 mpackage/test/obj-defn.lisp
+      check-slot                 mpackage/struct-types.lisp
       check-obj                  mpackage/obj-namespace.lisp
 
   Every one of them is seeded on the English word "check". None has anything
-  to do with startup, databases or health. Five are test helpers, which is R4
-  firing again. The bundle reported 1973 of 2000 tokens and truncated, so the
+  to do with startup, databases or health. Six are test helpers, which is R4
+  firing again. The bundle reported 1979 of 2000 tokens and truncated, so the
   noise was not free -- it was most of the budget.
+
+  (Six of eight when first written from the session transcript; re-measured
+  against a fresh index the same day it was seven, the second CHECK-SLOT being
+  a name game-server defines in two files. The exact count is not the point
+  and is why R7 below is a bound rather than a reproduction.)
 
   This is worse than a bad ranking of relevant things. A word like "check",
   "handler", "value", "create" or "test" appears in a large fraction of the
@@ -176,12 +183,18 @@ body: |
 
   TWO THINGS THE SAME SESSION SHOWED THAT ARE NOT DEFECTS
 
-  The neighbourhood expansion rescued it. START-SERVER was among the two good
-  seeds, and the neighbour band underneath carried READ-CONFIG, CONFIG-GET,
+  The neighbourhood expansion partly rescued it. START-SERVER was the one good
+  seed, and the neighbour band underneath carried READ-CONFIG, CONFIG-GET,
   SET-CORS-HANDLER, INITIALIZE-GAME-API, INITIALIZE-MEDIA and CONFIGURE-LOG --
   which is the startup sequence, correctly and in order, and was what the
   caller actually needed. The structure Loom builds is doing its job; it is
   reached through seeds chosen badly and is competing for budget with them.
+
+  How badly it competes is worth stating, because the rescue is not reliable.
+  Re-measured against a fresh index the same day, that band was down to four
+  entries and only READ-CONFIG and CONFIG-GET of the six survived; the rest
+  were squeezed out by the seeds. So the expansion is not a floor under the
+  seeding defect -- it is the first thing the defect spends.
 
   And a second query in the same session was genuinely, decisively useful:
 
@@ -202,13 +215,67 @@ body: |
   names, a stop-list, or a cap per query term is the architecture's to decide.
 
   R7  A query term that matches many entities contributes proportionately
-      less, and no single common word may fill the seed set. On game-server,
-      the query in this section must not seed six of eight from `check`, and
-      the startup sequence that currently survives in the neighbour band must
-      still be present.
+      less, and no narrow slice of the query may fill the seed set. Stated as
+      a bound rather than as a reproduction, because the counts in this
+      section moved within a day: no single task term, and no single set of
+      task terms, may account for more than a quarter of the seeds while
+      another slice still has a candidate waiting. On game-server, the query
+      in this section must seed START-SERVER and must carry READ-CONFIG,
+      CONFIG-GET, SET-CORS-HANDLER, INITIALIZE-GAME-API, INITIALIZE-MEDIA and
+      CONFIGURE-LOG somewhere in the bundle.
 
   R8  A prose query that lands today must still land. The `data-api handler
       database connection` query above must continue to return
       CONNECTION-CONNECT-DATABASE and its siblings; a fix that suppressed
       common terms hard enough to lose it would trade this defect for a worse
-      one.
+      one. The triplication is the finding, so all three definitions count --
+      two of three is a regression, not a partial pass.
+
+  WHAT LANDED, 2026-08-15
+
+  R7 and R8 only. R1 through R6 are untouched and this document stays draft
+  for them.
+
+  SEED-ENTITIES was rewritten in three parts (src/knowledge/context.lisp).
+  SEED-MATCHES records every (term . rank) an entity matched rather than only
+  the best one; SEED-SCORE ranks coverage -- how many of the task's distinct
+  terms a name answers to -- above match quality and below type preference;
+  ADMIT-SEEDS caps the number of distinct *names* any one slice of the task
+  may contribute at *SEED-TERM-SHARE*, and relaxes the cap rather than return
+  fewer seeds than there are candidates.
+
+  The defect was one expression. The old ranking scored an entity by
+  (reduce #'min tokens ...) -- the best of its matches -- and a best is the
+  same number whether one term produced it or five, so the entity matching
+  half the sentence tied with the entity matching one common word and the tie
+  fell to a PUSHNEW accumulator that put the task's *last* word first.
+
+  Measured after, on game-server:
+
+    start-server startup sequence and database handler health check
+      seeds     START-SERVER, RESTART-SERVER, CHECK-DATABASE-GAME,
+                CHECK-DATABASE-DEFNS, START-NULL-P?, SERVER-STATUS,
+                DATABASE-ALERT, HANDLER-EXISTS-P
+      band      all six of R7's startup functions, plus GAME-CONFIG and
+                CHECK-DATABASE itself -- which the pre-change bundle did not
+                contain anywhere
+
+    data-api handler database connection acquire and test connectivity
+      seeds     CONNECTION-CONNECT-DATABASE from all three files,
+                DATABASE-ALERT, IS-RESTRICTED-DATABASE, HANDLER-EXISTS-P,
+                CLEAR-TEST-DATA, CLEAR-GAME-DATA
+      band      MAKE-DB-CONNECTION, DB-OPEN
+
+  Two intermediate rules were measured and rejected, and ADMIT-SEEDS records
+  why in full: charging each seed to its narrowest term cost R8 one of the
+  three CONNECTION-CONNECT-DATABASE definitions, and exempting anything that
+  matched more than one term let five of the CHECK-DATABASE-* family take five
+  of eight slots. Counting distinct names against the whole matched slice is
+  what satisfies both.
+
+  R6's Loom-side example is stale and was already stale before this change:
+  `context macro definitions` does not return MAKE-MACRO-ENTITY on the current
+  tree and did not before the rewrite either, because MAKE-MACRO-ENTITY
+  matches "macro" as a substring where MACRO-BODY-INDEX and its siblings match
+  it as a prefix. That is R1 and R3's subject, not R7's. The bundle is
+  otherwise unchanged and lost a test-file entity from it.

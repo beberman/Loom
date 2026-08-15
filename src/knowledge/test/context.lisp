@@ -38,6 +38,77 @@
         "the exactly-named entity must come first")))
 
 ;;; ------------------------------------------------------------------
+;;; Seeding on a prose task -- REQ-0016 R7 and R8.
+;;;
+;;; The defect these cover was measured on game-server: "start-server startup
+;;; sequence and database handler health check" seeded seven of eight entities
+;;; on the English word "check", none of which had anything to do with
+;;; startup, databases or health. The bundle then truncated at 1979 of 2000
+;;; tokens, so the noise cost the neighbour band that carried the answer.
+;;; ------------------------------------------------------------------
+
+(defun seed-graph (&rest names)
+  "A graph of one function per name in NAMES, all in one file.
+Deliberately flat -- these tests are about which names the seeder reaches for
+and in what order, and an edge would only add a neighbourhood nobody reads."
+  (let ((g (make-graph)))
+    (loop for name in names
+          for line from 10 by 20
+          do (add-entity g (k-function name line)))
+    g))
+
+(defun seed-names (graph task &key (limit 8))
+  (mapcar #'name (loom-knowledge::seed-entities graph task :limit limit)))
+
+(test a-name-answering-more-of-the-task-outranks-one-answering-a-common-word
+  ;; Match quality alone cannot tell these apart: every candidate here matches
+  ;; some token as a prefix, so before REQ-0016 R7 they all scored identically
+  ;; and the tie fell to token order -- which put the last word of the task
+  ;; first.
+  (let ((names (seed-names (seed-graph "database-handler-health"
+                                       "check-ok-response" "check-unknown-response"
+                                       "check-alist" "check-slot" "check-obj"
+                                       "check-not-found-response")
+                           "database handler health check"
+                           :limit 2)))
+    (is (string= "database-handler-health" (first names))
+        "three of the task's terms beats one of them, whatever the match rank")))
+
+(test no-single-common-term-may-fill-the-seed-set
+  ;; R7 proper. The six CHECK-* names are the population the word "check"
+  ;; drags in; DATABASE-ALERT and CONNECTION-CONNECT-DATABASE are what the
+  ;; task was actually about and were crowded out entirely.
+  (let* ((names (seed-names (seed-graph "start-server" "database-alert"
+                                        "connection-connect-database"
+                                        "check-ok-response" "check-unknown-response"
+                                        "check-alist" "check-slot" "check-obj"
+                                        "check-not-found-response")
+                            "start-server startup sequence and database handler health check"
+                            :limit 4))
+         (from-check (count-if (lambda (n) (eql 0 (search "check-" n))) names)))
+    (is (string= "start-server" (first names))
+        "the name the task opens with is still the first seed")
+    (is (<= from-check loom-knowledge::*seed-term-share*)
+        "one English word must not take the bundle")
+    (is (member "database-alert" names :test #'string=)
+        "and what it was crowding out has to arrive")))
+
+(test a-task-naming-one-thing-still-seeds-on-that-thing
+  ;; R8. The cap is advisory: when the terms it holds back are the only
+  ;; candidates there are, they come back anyway. A fix that suppressed a
+  ;; common term hard enough to lose this would trade one defect for a worse
+  ;; one -- on game-server this is the shape of the query that works, where
+  ;; CONNECTION-CONNECT-DATABASE arrives three times from three files and the
+  ;; triplication is the finding.
+  (let ((names (seed-names (seed-graph "connect-database" "connect-database-pool"
+                                       "connect-database-retry")
+                           "connect-database")))
+    (is (= 3 (length names))
+        "three candidates, one term, and the share is 2 -- all three still come")
+    (is (string= "connect-database" (first names))
+        "the exact name first, as before")))
+
+;;; ------------------------------------------------------------------
 ;;; Bundles
 ;;; ------------------------------------------------------------------
 
