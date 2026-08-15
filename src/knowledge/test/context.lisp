@@ -93,6 +93,107 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
     (is (member "database-alert" names :test #'string=)
         "and what it was crowding out has to arrive")))
 
+;;; ------------------------------------------------------------------
+;;; Which candidate a match is worth having -- REQ-0016 R1 and R4.
+;;;
+;;; Measured on game-server: `context data-handler' ranked four loosely
+;;; matched functions above the DATA-HANDLER class the query is named after,
+;;; because the type band put :CLASS below :FUNCTION; and `context restructure
+;;; data handler protocol encode decode' came back predominantly test
+;;; fixtures for a different subsystem.
+;;; ------------------------------------------------------------------
+
+(defun k-def (class name file &rest properties)
+  "One definition of CLASS named NAME in FILE, plus any extra PROPERTIES."
+  (make-instance class :name name :origin-file file
+                 :properties (properties-table
+                              (list* :file file :start-line 10 :end-line 20
+                                     properties))))
+
+(defun graph-of (&rest entities)
+  (let ((g (make-graph)))
+    (dolist (e entities g) (add-entity g e))))
+
+(test a-class-the-task-names-outranks-functions-that-merely-matched
+  ;; R1. Every one of these functions matches some word of the task, and
+  ;; before the type tiers were flattened every one of them outranked the
+  ;; class the task is named after.
+  (let ((names (seed-names
+                (graph-of (k-def 'function-entity "database-alert" "src/server.lisp")
+                          (k-def 'function-entity "handler-exists-p" "src/pkg.lisp")
+                          (k-def 'function-entity "data-encoder" "src/encode.lisp")
+                          (k-def 'class-entity "data-handler" "src/data/handler.lisp")
+                          (k-def 'class-entity "data-handler-error" "src/data/handler.lisp"))
+                "data-handler")))
+    (is (string= "data-handler" (first names))
+        "the entity the query is named after seeds first, class or not")))
+
+(test an-exact-match-on-a-fragment-loom-invented-does-not-promote
+  ;; TASK-TOKENS splits "data-handler" into "data" and "handler" to widen the
+  ;; search. An entity named exactly DATA therefore matches a token exactly --
+  ;; but the caller never wrote that word, so it is Loom's guess and must not
+  ;; buy the promotion R1 gives a name the task really contains.
+  (let ((names (seed-names
+                (graph-of (k-def 'function-entity "data" "src/data.lisp")
+                          (k-def 'class-entity "data-handler" "src/data/handler.lisp")
+                          (k-def 'class-entity "data-handler-error" "src/data/handler.lisp"))
+                "data-handler")))
+    (is (string= "data-handler" (first names)))
+    (is (string= "data-handler-error" (second names))
+        "answering to two of the task's terms beats matching an invented one exactly")))
+
+(test a-slot-accessor-does-not-seed-ahead-of-what-it-accesses
+  ;; A :GENERATED-BY :INTERFACE is a name a slot declaration synthesised.
+  ;; game-server has five DATA accessors in five files and they took five of
+  ;; eight seeds on `data-handler'.
+  (let ((names (seed-names
+                (graph-of (k-def 'interface-entity "data" "src/a.lisp"
+                                 :generated-by "holder-a")
+                          (k-def 'interface-entity "data" "src/b.lisp"
+                                 :generated-by "holder-b")
+                          (k-def 'class-entity "data-holder" "src/holder.lisp"))
+                "data")))
+    (is (string= "data-holder" (first names))
+        "the class is the seed; its accessors are one hop away from it")))
+
+(test test-code-ranks-below-production-code-that-matched-the-same-task
+  ;; R4, and the fixture is inserted first so that insertion order cannot be
+  ;; what produces the answer.
+  (let ((names (seed-names
+                (graph-of (k-def 'function-entity "encode-helper" "src/test/fixture.lisp")
+                          (k-def 'function-entity "encode-thing" "src/encode.lisp"))
+                "encode helper")))
+    (is (string= "encode-thing" (first names))
+        "the fixture answers to more of the task and still ranks below it")))
+
+(test a-task-that-asks-about-tests-gets-them
+  ;; The other half of R4. "test" is a TASK-TOKENS stopword -- too common to
+  ;; match a name against -- so this is read off the raw task instead.
+  (let ((names (seed-names
+                (graph-of (k-def 'function-entity "encode-helper" "src/test/fixture.lisp")
+                          (k-def 'function-entity "encode-thing" "src/encode.lisp"))
+                "encode helper test")))
+    (is (string= "encode-helper" (first names))
+        "asked about tests, the demotion must not fire")))
+
+(test a-test-definition-sharing-a-production-name-is-not-demoted
+  ;; Where R4 would otherwise eat R8: two of the three
+  ;; CONNECTION-CONNECT-DATABASE definitions live in test files, and demoting
+  ;; them does not remove a fixture, it removes the triplication that is the
+  ;; whole finding.
+  (let* ((shared-prod (k-def 'function-entity "connect-db" "src/server.lisp"))
+         (shared-test (k-def 'function-entity "connect-db" "src/test/fixture.lisp"))
+         (fixture     (k-def 'function-entity "connect-helper" "src/test/fixture.lisp"))
+         (matches     (list (cons shared-prod nil) (cons shared-test nil)
+                            (cons fixture nil)))
+         (production  (loom-knowledge::production-names matches)))
+    (is (not (loom-knowledge::demoted-test-p shared-test t production))
+        "a test definition of a name production also defines is evidence, not a fixture")
+    (is (loom-knowledge::demoted-test-p fixture t production)
+        "a name only test code defines is exactly what R4 demotes")
+    (is (not (loom-knowledge::demoted-test-p fixture nil production))
+        "and nothing is demoted when the task asked about tests")))
+
 (test a-task-naming-one-thing-still-seeds-on-that-thing
   ;; R8. The cap is advisory: when the terms it holds back are the only
   ;; candidates there are, they come back anyway. A fix that suppressed a

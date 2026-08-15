@@ -4,7 +4,9 @@ status: draft
 date: 2026-08-06
 affects: [build-context, context-item, seed-entities, search-entities,
           neighbor-summary, group-neighbors,
-          seed-matches, seed-score, seed-slice, admit-seeds]
+          seed-matches, seed-score, seed-slice, admit-seeds,
+          seed-type-rank, task-terms, slot-accessor-p, test-code-p,
+          named-by-task-p, production-names, demoted-test-p]
 tags: [knowledge, console, context, ranking]
 summary: |
   `context` is the command CLAUDE.md and the loom skill both tell an agent to
@@ -233,8 +235,8 @@ body: |
 
   WHAT LANDED, 2026-08-15
 
-  R7 and R8 only. R1 through R6 are untouched and this document stays draft
-  for them.
+  R1, R4, R7 and R8. R2, R3 and R5 are untouched and this document stays draft
+  for them; R6 is discussed at the end.
 
   SEED-ENTITIES was rewritten in three parts (src/knowledge/context.lisp).
   SEED-MATCHES records every (term . rank) an entity matched rather than only
@@ -279,3 +281,110 @@ body: |
   matches "macro" as a substring where MACRO-BODY-INDEX and its siblings match
   it as a prefix. That is R1 and R3's subject, not R7's. The bundle is
   otherwise unchanged and lost a test-file entity from it.
+
+  R1 AND R4, SAME DAY
+
+  SEED-SCORE is now six bands, and the two added for R1 and R4 are the third
+  and fourth:
+
+    type      *SEED-TYPE-PREFERENCE*, flattened from fifteen entries to three
+              tiers -- definitions, containers, documents, with an unlisted
+              type (:CALL-SITE) after all of them
+    named     the task named this entity, as a whole word the caller wrote
+    accessor  the name was synthesised from a slot declaration
+    test      test code, when the task did not ask about tests
+    coverage  how many of the task's terms the name answers to
+    match     quality of the best match
+
+  R1's defect was not that naming went unrewarded. It was that :CLASS sat two
+  places below :FUNCTION in a fifteen-entry list whose only recorded argument
+  is about *containers* -- "a file's neighbourhood is a directory listing" --
+  and because the type band dominates the score, that unargued gap meant every
+  function matching any word outranked the class the query was named after. A
+  CLOS subsystem is classes and methods, so a seeder preferring functions
+  cannot describe one. Flattening the tiers is most of R1; the `named` band is
+  what then decides between a class and a function that tie.
+
+  Three things had to be got right and each was measured wrong first:
+
+  - `named` must sit *below* type, not above it. Above, it hands the bundle to
+    whatever container shares a word with the task: a file's SIGNIFICANT-NAME
+    is its basename, so `data-api handler database connection acquire and test
+    connectivity` seeded the DATA-API package, data-api.asd, three more files
+    and one lone definition.
+  - It must fire only on words the caller wrote. TASK-TOKENS splits
+    "data-handler" into "data" and "handler" to widen the search, and
+    game-server has five slot accessors named exactly DATA -- which took five
+    of eight seeds on an exact match against a fragment Loom invented.
+    TASK-TERMS is the task's own words; TASK-TOKENS is Loom's guess about them.
+  - A slot accessor needs a band of its own even so, because excluding it from
+    `named` still leaves it winning on match rank. SLOT-ACCESSOR-P reads
+    :GENERATED-BY on an :INTERFACE, which is a fact the analyzer recorded
+    rather than a guess about a name. A :FUNCTION with :GENERATED-BY is left
+    alone: in a tree that leans on definer macros that is the API.
+
+  R4 needed a notion of test code Loom did not have. The :TEST entity type is
+  a `test' form the analyzer recognised, and the population R4 is about --
+  CHECK-OK-RESPONSE, ENCODE-TEST-OBJ -- are ordinary :FUNCTIONs that happen to
+  live in test/. So TEST-CODE-P is a path guess, and this project has been
+  burned by one: BUG-0006 derived :SYSTEM from a path and every layering rule
+  matched nothing until DES-0009 replaced it with the file's own package name.
+  The difference worth stating is what a wrong answer costs. A wrong :SYSTEM
+  is a fact asserted into the graph and read by rules; a wrong answer here
+  moves one candidate down one band in one bundle. Ranking may guess where
+  assertion may not.
+
+  R4 AGAINST R8, AND WHICH ONE BENDS
+
+  They collide head-on, and the collision is not hypothetical: two of the
+  three CONNECTION-CONNECT-DATABASE definitions R8 protects live in test
+  files. Demoting test code took R8's query from three of three to one of
+  three -- exactly the regression R8 was written to forbid.
+
+  R4 bends, and it does not lose anything by bending. Its subject is a
+  *fixture* displacing the definitions a task asked about; a test definition
+  of a name production code also defines is not competing for that slot, it is
+  part of what the seed is saying about the name. PRODUCTION-NAMES collects
+  the names some non-test candidate carries and DEMOTED-TEST-P exempts them.
+  After it: R8's query returns all three definitions and gains the
+  DHANDLER-ACQUIRE-CONNECTION protocol; R4's query still shows no fixture
+  among its seeds.
+
+  MEASURED AFTER, ON GAME-SERVER
+
+    data-handler
+      seeds  DATA-HANDLER (first), DATA-HANDLER-ERROR,
+             DATABASE-UNAVAILABLE-ERROR, DATABASE-ALERT, HANDLER-EXISTS-P,
+             DB-HANDLER (class and interface), data-api/db-handler.lisp
+      band   DATA-DECODER-FN, DATA-ENCODER-FN, RESET-TABLES
+      R1 met; no CORS layer, no test helpers, no call sites.
+
+    restructure data handler protocol encode decode
+      seeds  the two DATA-HANDLER error classes, SET-ENCODER-DECODER,
+             DATABASE-UNAVAILABLE-ERROR, DATABASE-ALERT, HANDLER-EXISTS-P,
+             ENCODE-MODEL-BASE, ENCODE-TYPESIG
+      R4 met; the ENCODE-TEST-OBJ and DECODE-TEST-OBJ fixtures that dominated
+      this bundle are gone.
+
+  R6 IS NOT MET AND THIS IS WHERE IT STOPS
+
+  R6 asks for "a majority of its subclasses and dhandler-* protocol". DB-HANDLER
+  arrives as a seed and DHANDLER-DELETE, DHANDLER-GET and the rest arrive in
+  the neighbour band, but TABLE-HANDLER, MODEL-HANDLER and GAME-HANDLER do
+  not, and which of the protocol survives varies with what else is competing
+  for the budget. Getting there is R2 and R3's work -- weighting :INHERITS and
+  :IMPLEMENTS above :CALLS when expanding, and ranking structural distance
+  above lexical match -- and those are about the *expansion*, not the seeding.
+  Everything above changes which entities a bundle starts from; nothing above
+  changes how it grows.
+
+  One clause of R7 as restated above is also no longer met on the nose: the
+  startup-sequence query now spends its neighbour band on the
+  DHANDLER-HEALTHY-P protocol and carries only READ-CONFIG and CONFIG-GET of
+  the six functions named there. That is a better bundle for the question
+  asked -- CHECK-DATABASE is a seed and the health-check protocol is what the
+  task was about -- but it is a bundle the clause forbids, and the clause was
+  written a commit earlier against behaviour this change replaced. It is left
+  standing rather than quietly relaxed: R2 and R3 should be measured against
+  it, and if it is still unmet then, it should be argued with rather than
+  edited.

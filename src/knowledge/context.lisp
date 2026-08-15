@@ -79,21 +79,104 @@ name and, failing that, on \"impact\"."
             finally (finish)))
     (nreverse tokens)))
 
-(defparameter *seed-type-preference*
-  '(:function :method :class :interface :concept :architecture :design :decision :rule
-    :variable :test :module :package :document :file)
-  "Entity types in the order a seed match is worth having.
+(defun task-terms (task)
+  "The task's words as written: compounds intact, stopwords kept.
 
-Definitions first, containers last, and this ordering earns its keep: a task
+What REQ-0016 R1 means by a query *naming* an entity. TASK-TOKENS is the
+wrong list to ask, because it also returns the parts it split compounds into,
+and those are Loom's own manufacture rather than anything the caller typed:
+\"data-handler\" splits to \"data\", game-server has five slot accessors named
+exactly DATA, and promoting them for an exact match would be promoting on the
+strength of Loom's guess about what the caller might have meant."
+  (let ((terms '())
+        (current (make-string-output-stream)))
+    (flet ((finish ()
+             (let ((word (string-downcase (get-output-stream-string current))))
+               (when (plusp (length word))
+                 (pushnew word terms :test #'string=)))))
+      (loop for char across task
+            do (if (or (alphanumericp char) (member char '(#\- #\_ #\* #\%)))
+                   (write-char char current)
+                   (finish))
+            finally (finish)))
+    terms))
+
+(defun slot-accessor-p (entity)
+  "True when ENTITY is an accessor the analyzer synthesised from a slot.
+
+A DEFCLASS or DEFINE-CONDITION slot declaring :accessor NAME mints an
+:INTERFACE carrying :GENERATED-BY, the class it came from -- so this is a fact
+the graph holds rather than a guess about a name. It matters to R1 because
+such a name is often short, common and defined once per class that happens to
+use it: game-server has five DATA accessors in five files, and on the query
+`data-handler' they took five of the eight seeds by matching a fragment
+exactly. The class they hang off is the better seed and the neighbour band
+reaches them through it.
+
+Only :INTERFACE. A :FUNCTION with :GENERATED-BY came from a definer macro,
+which in a tree that leans on definer macros is the API itself."
+  (and (eq :interface (entity-type entity))
+       (getp entity :generated-by)
+       t))
+
+(defparameter *seed-type-preference*
+  '((:function :method :class :interface :variable :test)
+    (:module :package :file)
+    (:concept :architecture :design :decision :rule :document))
+  "Entity types in tiers, by how much a seed match on one is worth having.
+
+Definitions first, containers next, and that much earns its keep: a task
 mentioning \"the graph manager\" matches the *file* graph-manager.lisp on the
 word \"graph\" as readily as it matches any function in it, and a file's
 neighbourhood is every definition it holds. Seeded on the file, a bundle
 spends its whole budget listing a directory back at the agent. Seeded on the
-definitions, it spends it on code.")
+definitions, it spends it on code.
+
+Tiers rather than a total order since REQ-0016 R1, and the flattening is the
+point. This was a fifteen-entry list in which :CLASS sat two places below
+:FUNCTION for no recorded reason, and because the type band dominates the
+score, that gap meant every function matching any word of the task outranked
+the class the task was *named after*. On game-server `context data-handler`
+put four functions above the DATA-HANDLER class and never reached DB-HANDLER,
+TABLE-HANDLER or the DHANDLER-* protocol at all -- a CLOS subsystem is classes
+and methods, so a ranking that prefers functions cannot describe one. A class
+and a function are both definitions and the argument above says nothing to
+separate them; what it separates is definitions from the things that contain
+them.
+
+Documents rank last rather than mid-list: they reach a bundle through the
+decision, document and mention bands DES-0020 built for them, and a document
+arriving as a *seed* would be counted twice and expand as though it were code.
+
+A type named in no tier -- :CALL-SITE, which prefix-matches its own callee's
+name and would otherwise seed as readily as the callee -- sorts after all of
+them. PLAN-0014 step 10 made the same judgement for `find'.")
 
 (defun seed-type-rank (entity)
-  (or (position (entity-type entity) *seed-type-preference*)
+  (or (position-if (lambda (tier) (member (entity-type entity) tier))
+                   *seed-type-preference*)
       (length *seed-type-preference*)))
+
+(defparameter *test-path-segments* '("test" "tests")
+  "Path segments that mark a definition as test code, for ranking only.
+
+Loom has one notion of test code and it is the :TEST entity type -- a `test'
+form the analyzer recognised. That is not the population REQ-0016 R4 is about:
+game-server's CHECK-OK-RESPONSE and ENCODE-TEST-OBJ are ordinary :FUNCTIONs
+that happen to live in test/, and they are exactly what crowded out the
+production code the query asked for.
+
+So this is a path guess, and this project has been burned by one before --
+BUG-0006 derived an entity's :SYSTEM from its path, every file in the tree
+read as system \"src\", and every layering rule matched nothing until DES-0009
+replaced it with the file's own package name. The difference worth stating is
+what a wrong answer costs. A wrong :SYSTEM is a fact asserted into the graph
+and read by rules; a wrong answer here moves one candidate down one band in
+one bundle, and is invisible to every other query. Ranking may guess where
+assertion may not.
+
+Whole segments only, split on /, - and . -- so data-api/test/fixture.lisp and
+connection-test.lisp both match while latest-config.lisp does not.")
 
 (defparameter *seed-term-share* 2
   "How many distinct names one slice of the task may contribute as seeds.
@@ -132,7 +215,84 @@ is neither a seed nor evidence about the token."
     (loop for entity in (nreverse order)
           collect (cons entity (nreverse (gethash entity hits))))))
 
-(defun seed-score (entity matches)
+(defun plain-words (string)
+  "STRING split into whole words at every non-alphanumeric character, lowercased.
+
+Used on a path and on the raw task alike, which is why the separator set is
+\"everything else\" rather than the punctuation a path happens to use:
+data-api/test/fixture.lisp yields TEST, and so must \"rework the test
+fixture\". Splitting a path on /-. alone was enough for the first and silently
+made the second one long word."
+  (let ((words '())
+        (current (make-string-output-stream)))
+    (flet ((finish ()
+             (let ((word (string-downcase (get-output-stream-string current))))
+               (when (plusp (length word)) (push word words)))))
+      (loop for char across string
+            do (if (alphanumericp char)
+                   (write-char char current)
+                   (finish))
+            finally (finish)))
+    words))
+
+(defun test-code-p (entity)
+  "True when ENTITY looks like test code: a :TEST, or defined under a test path.
+The type is the fact and the path is the guess; see *TEST-PATH-SEGMENTS*."
+  (or (eq :test (entity-type entity))
+      (let ((path (or (getp entity :file)
+                      (and (slot-boundp entity 'origin-file) (origin-file entity)))))
+        (and path
+             (intersection (plain-words path) *test-path-segments*
+                           :test #'string=)
+             t))))
+
+(defun production-names (matches)
+  "The names among MATCHES that some non-test candidate carries.
+
+What keeps REQ-0016 R4 from eating R8. R4 demotes test code so that fixtures
+stop displacing the definitions a task asked about -- but two of the three
+CONNECTION-CONNECT-DATABASE definitions R8 protects live in test files, and
+demoting those does not remove a fixture from the bundle, it removes the
+evidence that one name is defined in three places. A test definition sharing
+its name with a production one is not a fixture competing for the slot; it is
+part of what the seed is telling you about that name."
+  (let ((table (make-hash-table :test #'equalp)))
+    (dolist (pair matches table)
+      (unless (test-code-p (car pair))
+        (setf (gethash (significant-name (car pair)) table) t)))))
+
+(defun task-wants-tests-p (task)
+  "True when TASK asks about tests, so R4's demotion must not fire.
+
+Whole words, because \"the latest handler\" is not a question about tests.
+Read off the raw task rather than off TASK-TOKENS, which drops \"test\" as a
+stopword -- it is too common to *match a name* against and is perfectly good
+evidence of what the caller wants."
+  (intersection (plain-words task) '("test" "tests" "testing" "fixture" "fixtures")
+                :test #'string=))
+
+(defun named-by-task-p (entity matches terms)
+  "True when the task named ENTITY: it matched one of TERMS exactly.
+
+A rank-0 match is a name equal to the token, and TERMS is the task's own words
+rather than TASK-TOKENS' -- so the match has to be on something the caller
+wrote. A slot accessor is excluded whatever it matched; SLOT-ACCESSOR-P says
+why."
+  (and (not (slot-accessor-p entity))
+       (find-if (lambda (m) (and (zerop (cdr m))
+                                 (member (car m) terms :test #'string=)))
+                matches)
+       t))
+
+(defun demoted-test-p (entity demote-tests production)
+  "True when ENTITY is test code that R4 should rank below production code.
+Exempt when a non-test candidate carries the same name; PRODUCTION-NAMES says
+why."
+  (and demote-tests
+       (test-code-p entity)
+       (not (gethash (significant-name entity) production))))
+
+(defun seed-score (entity matches &key demote-tests terms production)
   "Sort key for one candidate seed, lower first: type, then coverage, then match.
 
 Coverage -- how many of the task's distinct terms this name answers to -- is
@@ -145,13 +305,59 @@ defect: measured on game-server, \"start-server startup sequence and database
 handler health check\" seeded seven of its eight entities on the English word
 \"check\" (REQ-0016 R7).
 
-The bands are separated rather than blended, and in the order the original
-comment argues for. Type still dominates, for the reason *SEED-TYPE-PREFERENCE*
-gives. Match quality still breaks ties beneath coverage, which is what keeps a
-single-term task ranked exactly as it was: every candidate then has coverage 1
-and the term cancels."
-  (+ (* 1000 (seed-type-rank entity))
-     (*   10 (max 0 (- 8 (length matches))))
+The bands are separated rather than blended, widest first:
+
+  type       *SEED-TYPE-PREFERENCE*, now three tiers rather than fifteen.
+
+  named      the task named this entity, as a whole word it wrote. REQ-0016
+             R1: \"a query naming an entity that exists must seed from that
+             entity\".
+
+             Below type, and that is load-bearing rather than arbitrary. R1's
+             defect was a type band outranking an exact name, so the obvious
+             repair is to put naming on top -- and measured, it hands a bundle
+             to whatever container shares a word with the task. `context
+             data-api handler database connection acquire and test
+             connectivity' then seeded the DATA-API package, data-api.asd,
+             three more files, and one lone definition, because a file's
+             SIGNIFICANT-NAME is its basename and \"connectivity\" names
+             connectivity.lisp exactly. What R1 actually needed was the type
+             band to stop ordering *definitions* among themselves, which the
+             tiers above now do; a class and a function tie there, so naming
+             decides between them without ever lifting a directory listing
+             over code.
+
+  accessor   SLOT-ACCESSOR-P. A name a slot declaration synthesised is worth
+             less as a seed than any definition someone wrote, because it is
+             usually short, usually common, and defined once per class that
+             happens to use the word: five DATA accessors in five files on
+             game-server. Excluded from `named' as well, so this band is what
+             stops them winning on an exact match rank instead.
+
+  test       REQ-0016 R4: test code ranks below production code that matched
+             the same task, unless the task asked about tests. Beneath type,
+             so a production *file* never outranks a test *function* -- R4 is
+             about fixtures displacing definitions, and a directory listing
+             displaces both.
+
+  coverage   how many of the task's distinct terms this name answers to. The
+             signal the original ranking had no way to express: it scored an
+             entity by the *best* of its matches, and a best is the same
+             number whether one term produced it or five, so an entity
+             matching one common word tied with the entity matching half the
+             sentence and the tie fell to whatever order the tokens happened
+             to be in. Measured on game-server, \"start-server startup
+             sequence and database handler health check\" seeded seven of its
+             eight entities on the English word \"check\" (REQ-0016 R7).
+
+  match      quality of the best match, which is what keeps a single-term task
+             ranked exactly as it was: every candidate then has coverage 1 and
+             that band cancels."
+  (+ (* 100000 (seed-type-rank entity))
+     (*  10000 (if (named-by-task-p entity matches terms) 0 1))
+     (*   1000 (if (slot-accessor-p entity) 1 0))
+     (*    100 (if (demoted-test-p entity demote-tests production) 1 0))
+     (*     10 (max 0 (- 8 (length matches))))
      (reduce #'min matches :key #'cdr :initial-value 3)))
 
 (defun seed-slice (matches)
@@ -222,17 +428,23 @@ therefore gets worse as a query gets longer and more descriptive rather than
 better. Two things follow and both are here: coverage outranks match quality
 (SEED-SCORE), and no single term fills the set while another has a candidate
 waiting (ADMIT-SEEDS)."
-  ;; Type preference dominates, match quality breaks its ties -- the reverse
-  ;; of what SEARCH-ENTITIES does, and deliberately so. loom_find answers
-  ;; "where is this thing", where an exactly-named file is the right answer.
-  ;; A context bundle answers "what should I know before editing", where a
-  ;; function matched loosely is worth more than a file matched exactly: the
-  ;; file's neighbourhood is a directory listing, the function's is the code
-  ;; that will break.
-  (let* ((matches (seed-matches view (task-tokens task) types))
-         (ranked  (stable-sort matches #'<
-                               :key (lambda (pair)
-                                      (seed-score (car pair) (cdr pair))))))
+  ;; Type preference outranks match quality -- the reverse of what
+  ;; SEARCH-ENTITIES does, and deliberately so. loom_find answers "where is
+  ;; this thing", where an exactly-named file is the right answer. A context
+  ;; bundle answers "what should I know before editing", where a function
+  ;; matched loosely is worth more than a file matched exactly: the file's
+  ;; neighbourhood is a directory listing, the function's is the code that
+  ;; will break.
+  (let* ((demote-tests (not (task-wants-tests-p task)))
+         (terms      (task-terms task))
+         (matches    (seed-matches view (task-tokens task) types))
+         (production (production-names matches))
+         (ranked     (stable-sort matches #'<
+                                  :key (lambda (pair)
+                                         (seed-score (car pair) (cdr pair)
+                                                     :demote-tests demote-tests
+                                                     :terms terms
+                                                     :production production)))))
     (admit-seeds ranked limit)))
 
 ;;;; ==================================================================
