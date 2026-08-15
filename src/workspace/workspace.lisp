@@ -33,6 +33,11 @@
   ;; In memory only, and DEC-0001 is satisfied rather than bent: the report is
   ;; derivable by re-running the pass, so it is cache and says so.
   (enrichment nil)
+  ;; DES-0025 D4. What .loom/frameworks.yaml declared, re-read on every index
+  ;; pass so an edit to it takes effect on the next reindex rather than on the
+  ;; next restart. NIL is the normal case: every repository Loom indexed before
+  ;; this existed has no such file and needs none.
+  (frameworks nil)
   ;; DES-0018 D5. Why git could not be asked what this tree ignores, or NIL
   ;; when it answered. Set on every pass, so it clears itself as soon as the
   ;; cause goes away. Reported by `status' rather than logged as an error: a
@@ -374,9 +379,15 @@ rather than a preference."
       ;; that way, so the pass cannot see the analyzer's table -- and this is
       ;; the first system that uses both packages, which is exactly the job
       ;; this one exists to do.
+      ;;
+      ;; The registry is per repository since DES-0025 D4: FRAMEWORKS-REGISTRY
+      ;; returns *MACRO-GENERATORS* plus whatever this tree declared in
+      ;; .loom/frameworks.yaml, in a fresh table. game-server declaring
+      ;; easy-routes:defroute must not make Loom's own tree start looking for
+      ;; one, which is exactly what pushing into the global would do.
       (submit "resolve-generated-definitions"
               (resolve-generated-definitions graph :workspace-id workspace
-                                                   :registry *macro-generators*
+                                                   :registry (repository-registry repository)
                                                    :external-packages
                                                    (external-package-exports)))
       ;; EXTERNAL-PACKAGES is handed in for the same reason *MACRO-GENERATORS*
@@ -402,6 +413,19 @@ rather than a preference."
                                                              :workspace-id workspace))
       (submit "check-rules"            (violation-ops graph :workspace-id workspace)))))
 
+(defun repository-registry (repository)
+  "The generator registry this repository's resolution passes should use.
+
+*MACRO-GENERATORS* when it declared nothing, which is every tree Loom indexed
+before DES-0025. Otherwise a fresh table holding the shipped entries plus its
+own -- fresh so that two watched repositories cannot teach each other their
+frameworks, which is the whole reason this is a function rather than a
+REGISTER-MACRO-GENERATOR call at startup."
+  (let ((frameworks (repository-frameworks repository)))
+    (if frameworks
+        (frameworks-registry frameworks)
+        *macro-generators*)))
+
 (defun index-repository (repository &key quiet)
   "Analyze every analyzable file, then resolve and check.
 
@@ -417,6 +441,11 @@ thread exists."
           (indexed 0))
       (unless quiet
         (format t "~&Indexing ~a (~d files)...~%" (repository-name repository) (length files)))
+      ;; Before the files, not after: RESOLVE-AND-CHECK reads the registry this
+      ;; builds, and re-reading here rather than at registration is what makes
+      ;; an edit to .loom/frameworks.yaml take effect on a reindex.
+      (setf (repository-frameworks repository)
+            (read-frameworks (repository-root repository)))
       (dolist (path files)
         (when (index-file repository path :quiet quiet) (incf indexed)))
       (resolve-and-check repository :quiet quiet)

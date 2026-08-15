@@ -66,6 +66,17 @@
    ;; what a macro call defines (DES-0002) -- read by LOOM-WORKSPACE, which
    ;; hands it to the resolution pass LOOM-GRAPH cannot reach this package from
    #:*macro-generators*
+
+   ;; what a repository declares about its own frameworks (DES-0025 D4).
+   ;; Handed in the same direction and for the same reason, except that the
+   ;; value is per repository rather than global -- FRAMEWORKS-REGISTRY
+   ;; returns a fresh table so two watched trees cannot teach each other.
+   #:*frameworks-file*
+   #:frameworks-path
+   #:read-frameworks
+   #:parse-frameworks
+   #:frameworks-registry
+   #:frameworks-problems
    ;; Namespaces a Lisp tree uses but does not declare (DES-0015). Handed to
    ;; BUILD-PACKAGE-GRAPH the way *MACRO-GENERATORS* is handed to
    ;; RESOLVE-GENERATED-DEFINITIONS, and for the same layering reason.

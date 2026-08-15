@@ -1,0 +1,275 @@
+id: DES-0025
+title: Federation is a resolution pass over several graphs, and a claim is what crosses
+status: draft
+date: 2026-08-15
+refines: [REQ-0027]
+affects: [resolve-document-links, impact-report, watch-repository, index-repository,
+          register-macro-generator, markdown-mentions, repository-graph]
+tags: [multi-repo, federation, game-server, front-end, req-0024, req-0023]
+summary: |
+  REQ-0027 asks for an answer that spans two repositories. The mechanism is
+  federated cross-graph edges: an edge stored in the claiming repository's
+  graph whose far endpoint is an entity in another. That choice was taken
+  deliberately over a separate join index, and it carries one hazard the
+  requirement names -- R2, a retraction in one tree leaving a dangling edge in
+  the other -- so most of this document is about making federation safe rather
+  than about making it work.
+
+  The safety comes from one property: a cross-repository edge is never
+  authored, only derived, and the pass that derives them retracts every edge
+  it owns and re-derives the lot whenever any repository reindexes. That is
+  VIOLATION-OPS' shape applied across graphs. A dangling edge cannot survive
+  because no edge survives.
+
+  What crosses is a *claim*: a normalized string one repository asserts and
+  another may satisfy. Two kinds are built, both measured on the real trees --
+  an HTTP route, and a relative path in a prose document. Neither is a call,
+  and both are inference carrying a confidence (R3).
+body: |
+  WHAT THE TREES ACTUALLY OFFER, MEASURED 2026-08-15
+
+  Measured by asking Loom -- `watch "/home/beberman/lisp/game-server"' then
+  `find @game-server ...', `describe @game-server ...', `check @game-server' --
+  rather than by reading the trees. That is worth stating because the first
+  attempt at this section did read the trees, and got two things wrong that
+  Loom had right: it counted 12 documents where the index holds 14, and it
+  concluded api.md did not exist when the index knew its path. A design
+  argued from grep against a tree Loom already indexes is a design arguing
+  with its own instrument.
+
+      game-server   148 files, 4175 entities, 21904 relationships
+                    14 documents, 2 unresolved references, 18 definer macros
+      front-end     508 files, 4249 entities (REQ-0024's measurement)
+
+  REQ-0027 was written from a reading that is now partly out of date, and the
+  corrections matter because they change what is buildable.
+
+  The HTTP join is code-to-code, not prose-to-code. REQ-0027 expected to match
+  a route table in prose against string literals; in fact both sides are string
+  literals:
+
+      game-server   27 (easy-routes:defroute NAME ("/public/game/create" ...))
+      front-end     16 .get("public/games") / .post("public/game/create")
+                       in src/data-api/gameIntf.js and mediaIntf.js
+
+  `fetch(' is a red herring -- there are four call sites and one of them builds
+  its URL from a template literal. The real client surface is the two Intf
+  modules, which spell their routes literally.
+
+  The server side of that join does not exist in the index at all. All 27
+  DEFROUTE forms produce nothing: PUBLIC-API-CREATE-GAME is not an entity, and
+  DEFROUTE is not even reported by UNHANDLED-DEFINER-MACROS, because that
+  report covers macros defined in the tree and DEFROUTE comes from a library.
+  This is the gate on everything else here and it is not a federation problem.
+
+  api.md exists, one directory below where REQ-0027 looked: docs/design-summary/
+  api.md, not docs/api.md. All eleven design-summary documents index today as
+  :DOCUMENT entities. So REQ-0027's open question about REQ-0014's fence
+  exclusion is not on the critical path -- the routes are readable from code on
+  both sides and the prose is a third witness, not the only one.
+
+  The prose join is real, already rotten in one place, and -- the part that
+  decides how much work it is -- already extracted. docs/design-summary/
+  piece-editor-req.md names four front-end files, backticked:
+  `src/domain/pieces/Piece.js', `PieceType.js', `Capability.js', and
+  `src/ui/edit/piece/mock/PieceEditorMock.jsx', which does not exist.
+
+  `describe @game-server docs/design-summary/piece-editor-req.md' reports its
+  mentions as add-defn, get-piece-defns, game/default.lisp, game/piece.lisp --
+  the four intra-tree ones, and not one of the front-end paths. So the tokens
+  ARE extracted by the markdown analyzer and then dropped, because they resolve
+  to nothing in game-server's graph and REQ-0028's rule is that an unresolved
+  backticked token is dropped in silence rather than counted as rotten. Prose
+  is full of ordinary words in backticks and that rule is right.
+
+  This makes the prose half of federation a change to resolution *order*, not a
+  new extraction: try the other watched repositories before dropping. Nothing
+  in the markdown analyzer moves.
+
+  It also sharpens a question REQ-0027 does not ask. `check @game-server'
+  reports two unresolved references today, both intra-tree links to a missing
+  CounterDisplayScaling.md -- a markdown *link* target that fails is reported,
+  a backticked token that fails is not. PieceEditorMock.jsx is backticked, so
+  under the existing rule it stays silent even after federation can see the
+  front-end. D6 decides that; it is not obvious and it should not be decided by
+  accident.
+
+  D1  A CLAIM IS THE UNIT THAT CROSSES
+
+  Nothing in one graph names an entity in another directly. What one repository
+  publishes is a claim: a kind, a normalized string, and the entity making it.
+
+      (:route "public/game/create"   handler-entity)      game-server
+      (:route "public/game/create"   client-fn-entity)    front-end
+      (:path  "src/domain/pieces/Piece.js"  document)     game-server
+
+  A claim is derived from a property an analyzer wrote, never from a second
+  parse. The Lisp analyzer records :ROUTE on a handler; the JS analyzer records
+  :ROUTES on a caller; the markdown analyzer already records relative link
+  targets. Federation reads properties and writes edges, which keeps it a
+  resolution pass in DEC-0003's sense -- derive, never consume -- and means no
+  analyzer learns that another repository exists.
+
+  Normalization is deliberately small and stated where a reader will find it: a
+  route claim is stripped of a leading and trailing `/' and nothing else.
+  game-server writes "/public/game/create" and front-end writes
+  "public/game/create"; that one character is the entire difference, and
+  inventing more normalization than the trees need is how a matcher starts
+  producing matches nobody meant. A `:gameid' style parameter segment does not
+  match a literal and is left unresolved rather than glob-matched -- CON-0001,
+  and REQ-0027 R3 says so directly.
+
+  D2  THE EDGE IS FEDERATED, AND SAFE BECAUSE IT IS DISPOSABLE
+
+  The edge lives in the claiming repository's graph. Its TO-ID is the foreign
+  entity's id. It carries three properties the id alone cannot survive without:
+
+      :foreign-repository   the repository name the far end is in
+      :foreign-key          the far entity's natural key
+      :foreign-commit       the far tree's HEAD when the edge was derived
+
+  R2 is met by disposability, not by bookkeeping. FEDERATE-REPOSITORIES
+  retracts every edge it owns across every watched repository and re-derives
+  all of them, whenever any one of them reindexes. VIOLATION-OPS already works
+  exactly this way for rule violations and for the same reason: an edge that is
+  re-derived from scratch cannot be stale, and a retraction in a far tree
+  removes the far endpoint before the next derivation looks for it.
+
+  The cost is honest and should not be hidden: federation is O(watched
+  repositories) on every reindex of any of them. It is re-resolution over
+  properties already in memory, not re-analysis, and on these two trees that is
+  4175 + ~4250 entities scanned for two property keys. If that ever stops being
+  cheap, the answer is an incremental pass, not a durable edge.
+
+  :FOREIGN-KEY is what makes an id-based edge defensible. Ids are per-graph and
+  churn on reanalysis; the key does not. Nothing reads it on the happy path --
+  it is the evidence that lets a reader, or a later incremental pass, tell
+  whether an edge pointed at the thing it claims to have pointed at.
+
+  D3  TWO RELATIONSHIP TYPES, BOTH SAYING WHAT THEY ARE
+
+  :SERVES     from an HTTP handler to a client that calls its route.
+              Direction chosen so `impact' on the handler reaches the client:
+              the question REQ-0027 R6 asks is "change this handler, what
+              breaks in the front-end", and impact traverses outward.
+  :MENTIONS   from a document to code in another repository. The existing type,
+              unchanged, because the claim is identical to the one REQ-0014
+              already makes within a tree -- this document names this thing --
+              and inventing a cross-repository variant would say the boundary
+              changes what a mention means. It does not.
+
+  Both are :INFERRED with a confidence. A route matched exactly on both sides
+  is 0.9 rather than 1.0: the two literals agree, but nothing has verified that
+  the running client talks to this server, and REQ-0027's WHAT THIS IS NOT is
+  explicit that two working trees are not a deployed system.
+
+  D4  FRAMEWORK KNOWLEDGE IS PER REPOSITORY, IN .loom/frameworks.yaml
+
+  Loom ships knowing fiveam and nothing else. A tree that wants its own definer
+  macros understood declares them:
+
+      # game-server/.loom/frameworks.yaml
+      definer-macros:
+        - macro: defroute
+          package: easy-routes
+          defines: function
+          name-index: 1
+          route-index: 2        # the literal to record as :ROUTE
+      route-callers:            # front-end's half of the same idea
+        - callee: [get, post, sendGet, sendPost]
+          argument-index: 0
+
+  A separate file from .loom/manifest.yaml, and the reason is structural rather
+  than tidiness: READ-MANIFEST is a line scanner, because loom-workspace does
+  not depend on a YAML parser and DES-0018 kept it that way on purpose. A
+  nested declaration cannot be line-scanned honestly. frameworks.yaml is parsed
+  by loom-analyzer, which has cl-yaml already, and handed to the passes the way
+  *MACRO-GENERATORS* is handed in today -- the seam exists and this uses it.
+
+  This is REQ-0021's principle applied one layer down: what a generator may
+  write is what was measured, and what a framework means is what only that
+  repository's author can supply. Loom accumulating a table of other people's
+  web frameworks would be the same mistake as the directory allowlist REQ-0028
+  deleted -- a proxy for a question the repository can answer directly.
+
+  D5  IMPACT CROSSES IN LOOM-KNOWLEDGE, NOT IN LOOM-GRAPH
+
+  IMPACT-SET takes a view and stays that way. loom-graph depends on
+  loom-ontology alone and RULE-0001 to RULE-0003 keep it there; it cannot learn
+  what a repository is. So the crossing happens one layer up: IMPACT-REPORT
+  runs impact in the home graph, collects the :SERVES and cross-repository
+  :MENTIONS edges among the results, and resolves their far endpoints through a
+  resolver loom-workspace supplies.
+
+  The far side is reported as its own band, the way DES-0020 banded documents
+  and mentions, and the band header names the repository and its commit. That
+  is REQ-0027 R5 discharged where a human will actually read it, rather than as
+  a property nobody prints.
+
+  D6  A PATH-SHAPED TOKEN THAT RESOLVES NOWHERE IS REPORTED; A WORD IS NOT
+
+  REQ-0028's silence rule is about prose ambiguity: a backticked token is as
+  likely to be an ordinary word as a name, so an unresolved one is dropped.
+  Federation does not change that ambiguity, it only adds places to look, so
+  the rule survives federation unchanged for words.
+
+  It does not survive for `src/ui/edit/piece/mock/PieceEditorMock.jsx'. A token
+  carrying a path separator and a file extension is not an ordinary word in
+  backticks; it is a claim about a file, and a claim about a file that no
+  watched repository holds is exactly the documentation staleness this project
+  built `check' to detect. So: a backticked token is reported as unresolved
+  only when it is path-shaped -- contains a `/' and ends in an extension some
+  registered analyzer claims -- and is otherwise dropped as before.
+
+  The cost, stated rather than discovered: a document naming a file in a
+  repository nobody has watched will have that reference reported as rotten
+  when it is merely unwatched. That is the right failure direction -- a report
+  a human can dismiss beats a silence nobody can query -- but it means the
+  count is a function of which repositories are registered, and `check' should
+  not be read as a claim about repositories the service was never told about.
+
+  ALTERNATIVES CONSIDERED
+
+  A separate join index -- a third graph holding only the joins. This was the
+  recommendation and it was not taken. Its advantage is that R2 is satisfied by
+  construction rather than by a discipline the pass has to keep. Its cost is a
+  traversal seam every consumer of `impact' would have to learn, and a third
+  thing to keep indexed. Federation was chosen; D2 is what buys back the safety
+  property the join index would have given for free, and if the wholesale
+  re-derivation in D2 ever has to become incremental, the join index is the
+  design to revisit rather than to patch around.
+
+  Shipping easy-routes in Loom's own generator table beside fiveam. Rejected on
+  D4's grounds. The precedent is real -- fiveam is shipped -- but fiveam is
+  shipped because Loom's own tree uses it, which is a statement about Loom, not
+  a policy about frameworks.
+
+  Matching routes with a glob so "/public/game/:gameid" matches
+  "public/game/17". Rejected: it manufactures matches from a pattern the far
+  side never wrote. An unmatched parameterized route stays unresolved and is
+  reported, which is CON-0001 and which REQ-0027 R3 asks for by name.
+
+  Making the HTTP contract a first-class entity type, as REQ-0027's open
+  questions raise. Deferred, not rejected. It would make the contract queryable
+  in its own right -- "what routes exist" as a question rather than an
+  inference -- and it is a larger change than the join needs. The claims in D1
+  are the data such an entity would be minted from, so nothing here forecloses
+  it.
+
+  CONSEQUENCES
+
+  27 handlers appear in game-server's index that were invisible, which will
+  read as a jump in entity count and is the largest single effect of this
+  document on that tree. It is also the one improvement that stands alone: a
+  tree whose route handlers are indexed is better answerable whether or not
+  anything federates.
+
+  loom-workspace gains a pass that reaches across repositories, which is a new
+  kind of thing for it to do. Nothing below it changes: the analyzers do not
+  learn that other repositories exist, loom-graph does not learn what a
+  repository is, and loom-knowledge learns only how to ask a resolver for a
+  foreign entity.
+
+  A federated answer is about two working trees at two commits and says so.
+  It is not a claim about anything deployed, and D2's :FOREIGN-COMMIT plus
+  D5's band header are what keep that visible rather than implied.

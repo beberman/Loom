@@ -1,0 +1,156 @@
+id: PLAN-0029
+title: Handlers first, then claims, then the crossing
+status: draft
+date: 2026-08-15
+refines: [DES-0025]
+affects: [register-macro-generator, resolve-generated-definitions, resolve-document-links,
+          impact-report, watch-repository, index-repository]
+tags: [multi-repo, federation, game-server, front-end, req-0027]
+summary: |
+  DES-0025 in eight steps, ordered so the first one is worth having on its own.
+  Nothing federates until S4; S1 to S3 are about getting the two sides of a
+  join into the index at all, and S1 alone takes game-server from 0 indexed
+  route handlers to 27.
+
+  The sequencing is deliberate rather than convenient. Every step before S4
+  improves a single tree's answers and can be measured on that tree by itself,
+  so a stop after any of them leaves working software rather than half a
+  feature.
+body: |
+  FILES
+
+  src/analyzer/frameworks.lisp          new. Parse .loom/frameworks.yaml into
+                                        generator entries and route-caller
+                                        declarations.
+  src/analyzer/lisp-analyzer.lisp       :ROUTE captured from a declared literal
+                                        index on a definer call site.
+  tools/js/extract.js                   route literals from declared callees.
+  src/analyzer/js-analyzer.lisp         carry them onto the caller as :ROUTES.
+  src/workspace/federate.lisp           new. Claims, matching, edge derivation,
+                                        wholesale retraction.
+  src/workspace/workspace.lisp          read frameworks.yaml per repository;
+                                        run federation after any reindex.
+  src/graph/resolve.lisp                RESOLVE-DOCUMENT-LINKS gains a
+                                        foreign-index argument; D6's
+                                        path-shaped reporting.
+  src/knowledge/services.lisp           IMPACT-REPORT's cross-repository band.
+  src/ontology/root-ontology.lisp       :SERVES.
+
+  RISKS
+
+  Federation running while another repository is mid-reindex. Every repository
+  has its own lock (DES-0004 R1) and federation reads two graphs at once, which
+  is the first thing in the system that wants more than one. Taking both locks
+  invites a deadlock the moment two repositories reindex at once. S4 takes no
+  second lock: it reads the far graph without one and accepts that it may
+  derive against a graph mid-rebuild, because the pass re-runs on that
+  rebuild's completion anyway. Stated here because "just lock it" is the
+  obvious wrong fix.
+
+  A silent zero, again. If frameworks.yaml fails to parse, or its macro name
+  does not match, S1 mints nothing and game-server looks exactly as it does
+  today. `status' already prints unhandled definer macros; S1's acceptance is a
+  number that must MOVE, not a suite that must stay green.
+
+  Federation making `check' noisier on every tree at once. D6 reports
+  path-shaped unresolved tokens, and every repository's documents get scanned
+  for them. Measure the new count on Loom before and after; a large jump on
+  Loom's own tree means D6's shape is wrong, not that Loom's docs are rotten.
+
+  STEPS
+
+  S1  .loom/frameworks.yaml, its parser, and the plumbing that hands its
+      definer-macro entries to RESOLVE-GENERATED-DEFINITIONS alongside
+      *MACRO-GENERATORS*. Write game-server's, declaring easy-routes:defroute.
+      ACCEPTANCE: `find @game-server public-api-create-game' returns a
+      function today it returns nothing, and the count of DEFROUTE handlers in
+      the index is 27.
+
+  S2  :ROUTE on a handler, from a declared literal index on the definer entry.
+      ACCEPTANCE: `describe @game-server public-api-create-game' shows the
+      route, and 27 handlers carry one.
+
+  S3  The JS side: declared route-carrying callees, their literal arguments
+      captured onto the calling function as :ROUTES.
+      ACCEPTANCE: 16 call sites in src/data-api/gameIntf.js and mediaIntf.js
+      carry a route claim.
+
+  S4  src/workspace/federate.lisp: collect claims from every watched
+      repository, match them, mint :SERVES edges with :FOREIGN-REPOSITORY,
+      :FOREIGN-KEY and :FOREIGN-COMMIT, retract-and-re-derive wholesale on any
+      reindex.
+      ACCEPTANCE: the number of matched routes, and the number of unmatched
+      claims on each side, both reported rather than assumed. A parameterized
+      route matches nothing and is counted, per D1.
+
+  S5  Cross-repository prose resolution: RESOLVE-DOCUMENT-LINKS tries the other
+      watched repositories before dropping, and D6's path-shaped reporting.
+      ACCEPTANCE: piece-editor-req.md mentions three front-end files, and
+      PieceEditorMock.jsx is reported unresolved. Loom's own `check' count is
+      measured before and after.
+
+  S6  IMPACT-REPORT crosses, and its band names the repository and commit.
+      ACCEPTANCE: REQ-0027 R6 -- `impact @game-server dhandler-delete-selector'
+      reaches front-end code, with the path it was reached by.
+
+  S7  R4: a document's affects: may name code in another repository, resolving
+      through the same foreign index S5 builds.
+
+  S8  Measure R1 to R6 on the two trees, record the numbers here, and
+      `complete PLAN-0029 DES-0025=<verdict> REQ-0027=<verdict>'.
+
+  S1 OUTCOME, 2026-08-15
+
+  Landed. game-server carries .loom/frameworks.yaml declaring
+  easy-routes:defroute, and `find @game-server public-api function' returns
+  20 handlers with real line ranges where it returned nothing:
+
+    public-api-get-games          server/gameapi.lisp:223-229
+    public-api-create-game        server/gameapi.lisp:250-275
+    public-api-defn-update        server/gameapi.lisp:434-476
+    ... 15 more in gameapi.lisp ...
+    public-api-register-media     server/media-api.lisp:66-110
+    public-api-update-media       server/media-api.lisp:117-138
+
+  THE ENTITY COUNT WENT DOWN, AND THAT IS THE RESULT
+
+  4175 entities before, 3943 after. A step that adds definitions removing 232
+  entities looks like a defect and is the opposite; `structure @game-server'
+  run either side of the declaration says what happened:
+
+    GAME-SERVER system     362 entities,  77 definitions   before
+                           130 entities, 102 definitions   after
+    unattributed calls    1725                             before
+                          1468                             after
+
+  +25 definitions, -257 call sites that could not be attributed to any
+  definition. Before the declaration, the 27 DEFROUTE bodies belonged to no
+  definition at all, so every call inside them was an unattributable site and
+  DES-0014 minted a :CALL-SITE entity to hold it rather than drop it. With the
+  handlers indexed those calls attach to the function that contains them, and
+  the placeholders are not minted. Fewer entities carrying more knowledge,
+  which is what a placeholder is supposed to become.
+
+  This is also the sharpest available answer to "what does a missing framework
+  declaration cost". Not 27 entities: 257 unattributed calls, and every
+  question about who calls what inside a route handler.
+
+  RULE-0004 CAUGHT THIS FILE ON THE FIRST ATTEMPT
+
+  PARSE-FRAMEWORKS guarded YAML:PARSE with HANDLER-CASE naming ERROR, and
+  cl-yaml's conditions are direct subtypes of CONDITION. The malformed-file
+  test took the suite down rather than passing -- the exact failure RULE-0004
+  describes and PARSE-DOCUMENT's own comment warns about, reproduced in a new
+  file thirty lines from the warning. Recorded because the rule earned its
+  keep: nothing else would have found it, since a frameworks file that fails
+  to parse is silent by design.
+
+  WHAT WOULD MAKE THIS PARTIAL RATHER THAN IMPLEMENTED
+
+  Stated in advance, since PLAN-0028 taught that a threshold set afterwards is
+  not a threshold. REQ-0027 R6 is the acceptance and it is one named answer,
+  not a count: change `dhandler-delete-selector' and have `impact' report the
+  front-end code consuming the affected endpoint. If S1 to S5 land and S6 does
+  not, the verdict is `partial' with R1 and R6 in OUTSTANDING -- the joins
+  would exist and be queryable one repository at a time, which is real, and the
+  spanning answer would not, which is the requirement's whole point.

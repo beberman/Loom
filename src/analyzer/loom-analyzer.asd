@@ -57,6 +57,11 @@
    ;; reuses rather than reimplements. The two claim disjoint extensions, so
    ;; registration order does not decide anything between them.
    (:file "markdown-analyzer")
+   ;; Last: it reads YAML through yaml-analyzer's helpers and defaults its
+   ;; base registry to lisp-analyzer's *MACRO-GENERATORS*, so both must be
+   ;; compiled before it. It registers no analyzer of its own -- .loom/ is
+   ;; Loom's own configuration, not a repository's content (DES-0025 D4).
+   (:file "frameworks")
    )
   :in-order-to ((test-op (test-op :loom-analyzer/test)))
   )
@@ -82,6 +87,7 @@
    (:file "js-analyzer")
    (:file "yaml-analyzer")
    (:file "markdown-analyzer")
+   (:file "frameworks")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-analyzer-test :test-runner)
