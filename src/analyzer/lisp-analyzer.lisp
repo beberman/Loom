@@ -459,6 +459,22 @@ as a human wrote it in source."
         ((stringp x) x)
         (t (string-downcase (princ-to-string x)))))
 
+(defun first-string-literal (x &optional (depth 0))
+  "The first string literal in X, in reading order, or NIL.
+
+Depth-bounded at three, which is not a performance guard -- a call site's
+argument is small -- but a meaning one. A string buried inside a nested body
+is a message, a docstring, a format control; a string in the first level or
+two of a declarative form is what that form was given. easy-routes puts the
+route one level down, inside the spec list, and nothing this is meant to read
+puts it deeper. Going all the way would find the first string in a handler
+body and call it a route."
+  (cond ((stringp x) x)
+        ((and (consp x) (< depth 3))
+         (loop for element in x
+               for found = (first-string-literal element (1+ depth))
+               when found return found))))
+
 (defun definer-call-site (form start end &optional system)
   "One :DEFINER-CALL-SITES entry for the top-level call FORM.
 
@@ -496,6 +512,19 @@ Indices count the operator as 0, so they line up with a registry entry's
                                   when (and argument (symbolp argument)
                                             (not (keywordp argument)))
                                     collect index)
+          ;; :STRING-ARGUMENTS is :SYMBOL-ARGUMENTS' mirror and exists for the
+          ;; same reason stated above it: a rendered argument cannot be told
+          ;; from a name, so which positions held a real string literal is its
+          ;; own fact. The value rather than the index, because unlike a name
+          ;; -- which resolution looks up in :ARGUMENTS -- the string itself is
+          ;; the thing wanted, and it may be nested: easy-routes writes the
+          ;; route inside a spec form, (defroute name ("/public/games" :method
+          ;; :get) ...), so position 2 holds a list whose first string is the
+          ;; claim. FIRST-STRING-LITERAL is what reaches it.
+          :string-arguments (loop for argument in arguments
+                                  for index from 1
+                                  for literal = (first-string-literal argument)
+                                  when literal collect (cons index literal))
           ;; The whole argument list, not a guessed body: DES-0002 has the
           ;; walk happen here precisely so resolution never has to know which
           ;; argument the body starts at. A non-body argument -- a bare name, a

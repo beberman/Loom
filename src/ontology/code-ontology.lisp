@@ -431,7 +431,36 @@ the body, counting the operator as 0.")
 DEFUN, DEFCLASS or DEFMETHOD but the name position is not a bare substitution
 -- a name built with INTERN or FORMAT cannot be read without running the code
 that computes it.  Recorded and counted rather than guessed at, per CON-0001,
-and reported by status the way an unresolved document reference is.")))
+and reported by status the way an unresolved document reference is.")
+               (:routes list
+                :documentation "HTTP routes this entity publishes or consumes,
+normalized -- leading and trailing `/' stripped and nothing else.  DES-0025 D1.
+
+A route is a *claim*, which is why it is a property rather than an edge: one
+repository says \"I serve public/game/create\" and another says \"I call
+public/game/create\", and neither names the other.  FEDERATE-REPOSITORIES
+matches the claims and draws the edge; nothing here knows another repository
+exists.
+
+Written from a literal the source spelled, never from a pattern.  A route
+carrying a parameter segment -- easy-routes' \"/public/game/:gameid\" -- is
+recorded verbatim and matches no client literal, because glob-matching it
+against \"public/game/17\" would manufacture a join the far side never wrote
+(CON-0001, and REQ-0027 R3 by name).  A list because one handler may answer
+several paths, which easy-routes permits and this tree does not yet do.")
+               (:route-role keyword :one-of (:publishes :consumes)
+                :documentation "Which end of an HTTP contract this is.
+:PUBLISHES for a handler, :CONSUMES for a client that calls one.  DES-0025 D1.
+
+Declared rather than inferred, and that is deliberate.  Both ends carry
+:ROUTES and the strings are identical, so nothing about the property itself
+says which is the server -- guessing from the language, or from whether the
+entity came from a definer macro, would be a heuristic standing where a
+declaration already exists.  The repository's own .loom/frameworks.yaml says
+it: a definer-macros entry with a route-index declares an endpoint, a
+route-callers entry declares a consumer.  FEDERATE-REPOSITORIES draws the edge
+from a publisher to a consumer and needs the distinction to know which way it
+runs.")))
 
 (defentity :method
   :documentation "A method on a class, or a CLOS method on a generic function."
@@ -1100,6 +1129,36 @@ considered and rejected: every path would have grown a hop, so every depth
 `impact' reports would have changed. A name resolving to exactly one callee
 from a :FUNCTION, :METHOD or :TEST still produces the edge it produces today
 and mints nothing.")
+
+(defrelationship :serves
+  :from (:function :method) :to (:function :method)
+  :transitive-impact t :impact-direction :forward
+  :documentation "An HTTP handler answers the route a client calls. DES-0025.
+
+The one edge in this ontology whose endpoints may live in different
+repositories, and the reason REQ-0027 exists: \"what in the front-end breaks
+if I change this endpoint\" is a question neither tree can answer alone. It is
+derived by FEDERATE-REPOSITORIES from two claims that never name each other --
+a handler carrying :ROUTES because a declared definer macro spelled a path,
+and a client carrying :ROUTES because it passed that path to a declared
+route-caller -- so nothing in either analyzer knows the other repository is
+watched.
+
+:IMPACT-DIRECTION is :FORWARD, unlike :CALLS, and that is the whole point of
+the direction the edge runs. A handler changing reaches the clients it serves;
+a client changing does not reach the handler, which knows nothing about it.
+REQ-0027 R6's acceptance is impact on a server-side change arriving at
+front-end code, and this is the hop that carries it.
+
+Confidence is never 1.0. Two literals agreeing is evidence that these two
+working trees were written against one contract, not that the running client
+talks to this server -- REQ-0027's WHAT THIS IS NOT is explicit that a
+federated answer describes two checkouts and not a deployment.
+
+A parameterized route -- easy-routes' \"/public/game/:gameid\" -- produces no
+edge at all. Matching it against a client's \"public/game/17\" would
+manufacture a join neither side wrote, so it stays unmatched and is counted
+(CON-0001, REQ-0027 R3).")
 
 (defrelationship :depends-on
   :from (:module :package :file) :to (:module :package :file)

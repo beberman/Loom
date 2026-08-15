@@ -32,6 +32,9 @@
    ;; the create-only discipline, and after loom-knowledge because it renders
    ;; STRUCTURE-REPORT's output.
    (:file "architecture")
+   ;; After "workspace": it takes WITH-REPOSITORY-LOCK, NOTE-ERROR and
+   ;; *REPOSITORIES*, and is the one pass that reads more than one graph.
+   (:file "federate")
    )
   :in-order-to ((test-op (test-op :loom-workspace/test)))
   )

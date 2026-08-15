@@ -65,6 +65,7 @@
 
    ;; generated definitions (DES-0002) -- the one pass that mints entities
    #:resolve-generated-definitions
+   #:normalize-route
    #:structural-generated-uses
    #:generated-definition-collisions
    #:unhandled-definer-macros
@@ -113,6 +114,8 @@
    #:in-system-p
    #:entities-in-system
    #:edges-between-systems
+   #:federated-relationships
+   #:federated-relationship-p
    #:neighbors
    #:neighbor
    #:neighbor-entity

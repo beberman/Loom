@@ -446,12 +446,37 @@ thread exists."
       ;; an edit to .loom/frameworks.yaml take effect on a reindex.
       (setf (repository-frameworks repository)
             (read-frameworks (repository-root repository)))
-      (dolist (path files)
-        (when (index-file repository path :quiet quiet) (incf indexed)))
+      ;; DES-0025 D1. Bound around this repository's files and nothing else, so
+      ;; front-end's `sendGet' convention cannot make another watched tree read
+      ;; its own string literals as routes.
+      (let ((*route-callers* (getf (repository-frameworks repository) :route-callers)))
+        (dolist (path files)
+          (when (index-file repository path :quiet quiet) (incf indexed))))
       (resolve-and-check repository :quiet quiet)
       (setf (repository-file-count repository) indexed
             (repository-indexed-at repository) (get-universal-time))
+      ;; DES-0025. Outside RESOLVE-AND-CHECK because it is not a pass over this
+      ;; repository: it re-derives every cross-repository edge everywhere, which
+      ;; is how a retraction here cannot leave a dangling edge there (REQ-0027
+      ;; R2). Last, because it reads the graph this function has just finished
+      ;; building. Deferred through a function cell so loom-workspace's own load
+      ;; order does not have to put federate.lisp before this file.
+      (federate-after-index repository :quiet quiet)
       indexed)))
+
+(defun federate-after-index (repository &key quiet)
+  "Re-derive cross-repository edges, if federation is loaded.
+
+Split out and guarded so INDEX-REPOSITORY does not name a function defined in
+a later component. A single watched repository still pays one claim scan that
+finds nothing to pair with, which is cheap and unconditional on purpose --
+guarding on a repository count would mean the pass behaves differently the
+first time a second tree is watched."
+  (declare (ignorable repository quiet))
+  (let ((federate (and (find-package :loom-workspace)
+                       (find-symbol "FEDERATE-REPOSITORIES" :loom-workspace))))
+    (when (and federate (fboundp federate))
+      (funcall federate :quiet quiet))))
 
 (defun reindex-repository (repository &key quiet)
   "Discard the index and rebuild it from disk.

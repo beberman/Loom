@@ -89,6 +89,60 @@ const GLOBAL_VALUES = new Set([
   '__filename',
 ]);
 
+// A string literal argument that looks like a path, with the callee that
+// received it and the position it sat in.
+//
+// DES-0025 D1 splits the work here rather than teaching this process what a
+// route is: the extractor reports path-shaped literals, and the Lisp side
+// decides which callees publish routes using the repository's own
+// .loom/frameworks.yaml. Nothing about easy-routes, this codebase's `sendGet',
+// or any other convention belongs in a JavaScript parser.
+//
+// Path-shaped is a wire-size bound, not a semantic claim. Every string literal
+// argument in a tree is a great many of them -- front-end logs constantly --
+// and almost none can be a route. A literal with a `/' and no whitespace is
+// the cheap test that keeps `logger.debug("server: making fetch request to ")'
+// off the wire while keeping "public/game/create" on it. A route with a space
+// in it would be missed and is not a thing.
+//
+// A template literal is deliberately not reported. `${TILE_PROXY_BASE}${ep}'
+// is a route computed at runtime, and recording its static fragments as a
+// claim would invent a join the source never wrote.
+function pathLiteralValue(node) {
+  // A bare string literal, or the leading literal of a `+' chain.
+  //
+  // The second case is the ordinary REST-with-an-id shape and skipping it
+  // loses most of a client's routes:
+  //
+  //     this.post("public/game/delete" + "/" + game.id, ...)
+  //
+  // The leftmost operand is a literal the source wrote, and it is exactly the
+  // static part of the path. Reading it is not inferring anything -- the
+  // server writes the same prefix on its own side, as "/public/game/delete/
+  // :gameid" -- so the two ends still meet on strings both of them spelled.
+  // What is dropped is everything after the first non-literal, which is the
+  // part neither side can know without running the code.
+  if (!node) return null;
+  if (node.type === 'Literal') {
+    return typeof node.value === 'string' ? node.value : null;
+  }
+  if (node.type === 'BinaryExpression' && node.operator === '+') {
+    return pathLiteralValue(node.left);
+  }
+  return null;
+}
+
+function collectPathLiterals(call, callee, out) {
+  const args = call.arguments || [];
+  for (let i = 0; i < args.length; i++) {
+    const value = pathLiteralValue(args[i]);
+    if (typeof value !== 'string') continue;
+    if (value.indexOf('/') < 0) continue;
+    if (/\s/.test(value)) continue;
+    out.push({ callee: callee, index: i, value: value });
+  }
+}
+
 // The name of a callee, for :call-names. Only the parts that can resolve to a
 // definition somewhere in the tree are worth recording.
 //
@@ -169,6 +223,7 @@ function extract(source, ast) {
   // on the file rather than dropped.
   const fileCalls = [];
   const fileJsx = [];
+  const fileLiteralArgs = [];
 
   function record(kind, name, node, extra) {
     const definition = Object.assign({
@@ -178,6 +233,7 @@ function extract(source, ast) {
       endLine: node.loc.end.line,
       calls: [],
       jsx: [],
+      literalArgs: [],
     }, extra || {});
     definitions.push(definition);
     return definition;
@@ -191,12 +247,14 @@ function extract(source, ast) {
   function walkBody(node, owner) {
     const calls = owner ? owner.calls : fileCalls;
     const usages = owner ? owner.jsx : fileJsx;
+    const literals = owner ? owner.literalArgs : fileLiteralArgs;
     const stack = [node];
     while (stack.length) {
       const current = stack.pop();
       if (current.type === 'CallExpression' || current.type === 'NewExpression') {
         const name = calleeName(current.callee);
         if (name) calls.push(name);
+        if (name) collectPathLiterals(current, name, literals);
       } else if (current.type === 'JSXOpeningElement') {
         const name = jsxName(current);
         if (name) usages.push(name);
@@ -363,7 +421,7 @@ function extract(source, ast) {
     }
   }
 
-  return { definitions, imports, exports, fileCalls, fileJsx };
+  return { definitions, imports, exports, fileCalls, fileJsx, fileLiteralArgs };
 }
 
 // ---------------------------------------------------------------------------
@@ -411,6 +469,7 @@ function analyze(filePath, source) {
     const line = (failure && failure.loc && failure.loc.line) || 1;
     return Object.assign(base, {
       definitions: [], imports: [], exports: [], fileCalls: [], fileJsx: [],
+                fileLiteralArgs: [],
       damage: {
         message: String(failure && failure.message || 'parse failed'),
         startLine: line,
@@ -461,7 +520,7 @@ function pump() {
       // An extractor bug costs one file and reports itself. It must never take
       // the process down, because the process is serving a whole tree.
       reply = { path: filePath, lineCount: 0, definitions: [], imports: [],
-                exports: [], fileCalls: [], fileJsx: [],
+                exports: [], fileCalls: [], fileJsx: [], fileLiteralArgs: [],
                 error: String(error && error.stack || error) };
     }
     process.stdout.write(JSON.stringify(reply) + '\n');

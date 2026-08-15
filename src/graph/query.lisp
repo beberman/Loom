@@ -190,6 +190,24 @@ endpoint is not evidence of a violation."
                              (system-satisfies-p to-system target)))))
           collect r))
 
+(defun federated-relationships (view id &key (direction :out))
+  "Edges at ID whose far endpoint lives in another repository. DES-0025.
+
+NEIGHBORS cannot answer this and should not learn to. It returns entities, and
+the far end of a federated edge has no entity in this graph by construction --
+that is what federation means -- so NEIGHBORS drops these edges and every
+caller of it stays correct. This returns the relationships themselves, which
+carry enough to name the far end without reading another graph: the
+repository, the entity's name, file and line, and the commit the tree was at
+when the edge was derived.
+
+loom-graph therefore learns nothing about repositories. It hands back edges
+whose properties a caller may read, exactly as it does for every other edge."
+  (remove-if-not
+   (lambda (r) (getp r :federated))
+   (append (when (member direction '(:out :both)) (relationships-from view id))
+           (when (member direction '(:in :both)) (relationships-to view id)))))
+
 ;;;; ==================================================================
 ;;;; Neighbors (SS5.3)
 ;;;; ==================================================================

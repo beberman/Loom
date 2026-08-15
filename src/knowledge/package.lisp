@@ -27,6 +27,7 @@
    ;; services (SS11's read-only tools)
    #:search-entities
    #:describe-entity
+   #:federated-summaries
    #:impact-report
 
    ;; a bounded answer for a document-shaped entity (DES-0005)

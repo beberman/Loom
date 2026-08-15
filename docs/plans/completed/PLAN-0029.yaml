@@ -1,6 +1,6 @@
 id: PLAN-0029
 title: Handlers first, then claims, then the crossing
-status: draft
+status: final
 date: 2026-08-15
 refines: [DES-0025]
 affects: [register-macro-generator, resolve-generated-definitions, resolve-document-links,
@@ -144,6 +144,88 @@ body: |
   file thirty lines from the warning. Recorded because the rule earned its
   keep: nothing else would have found it, since a frameworks file that fails
   to parse is silent by design.
+
+  OUTCOME, 2026-08-15
+
+  All eight steps ran. REQ-0027 R6 is met -- the named answer, not a count:
+
+    impact @game-server interface:data-api/handler.lisp:dhandler-delete-selector 4
+      ...
+      in other repositories:
+        @front-end method gameIntf.deleteGame public/game/delete
+          [src/data-api/gameIntf.js:149] @0c69809
+
+  Changing the soft-delete protocol in game-server reports the front-end method
+  that consumes the affected endpoint, the route it was reached by, and the
+  commit that tree was at. R1, R5 and R6 in one line.
+
+  MEASURED ACROSS BOTH TREES
+
+    routes published            27   game-server, via defroute and addroute
+    routes consumed             13   front-end, via get/post/sendGet/sendPost
+    matched                     13
+    served, never called         6   4 media endpoints the client reaches only
+                                     through template literals, plus /status
+                                     and /test
+    called, never served         0
+    prose file references
+      resolved across trees      3   piece-editor-req.md -> Piece.js,
+                                     PieceType.js, Capability.js
+      reported as rotten        84   D6; on front-end's own documents, mostly
+                                     docs/archive/* naming a pre-restructure
+                                     layout
+
+  Loom's own tree is unchanged: 0 violations, 14 unresolved references, and
+  D6 reports nothing at all -- the "federation making check noisier on every
+  tree" risk did not materialize here, because Loom's documents do not name
+  files by path in backticks.
+
+  TWO STEPS NEEDED MORE THAN THEY ASKED FOR
+
+  S4 could not draw a single edge as designed. Both the transaction planner and
+  ADD-RELATIONSHIP refuse an edge whose endpoint the graph does not hold, which
+  is the no-dangling-edge guarantee doing its job -- and a federated edge is
+  exactly that by construction. FEDERATED-RELATIONSHIP-P is the narrow
+  exemption, and it is narrow: the FROM end is never exempt, the property is
+  written only by this pass, and the pass re-derives everything wholesale. This
+  is the cost DES-0025's ALTERNATIVES predicted a join index would not have
+  had, arriving where it said it would.
+
+  S6 needed the route to match on its static prefix. The acceptance case runs
+  through `public/game/delete/:gameid' on the server and
+  `"public/game/delete" + "/" + game.id' on the client -- a parameterized route
+  and a concatenation, neither of which is a bare literal. Exact matching
+  answered nothing for the one question REQ-0027 was written to answer. Both
+  sides spell the static part literally, so ROUTE-STATIC-PREFIX matches on
+  that and records :MATCH-KIND :PREFIX at 0.75 rather than :EXACT at 0.9. That
+  is not the glob-matching R3 rules out: no pattern is ever matched against a
+  value, and "public/game/17" is never constructed.
+
+  TWO DEFECTS THIS FOUND IN ITSELF
+
+  A duplicate REPOSITORY-COMMIT. federate.lisp defined its own, loading after
+  workspace.lisp and silently replacing DES-0022 D5's bounded, guarded version
+  with an unbounded one. Nothing failed. It was caught because `check' on
+  Loom's own tree went from 14 unresolved references to 16: PLAN-0023 and
+  PLAN-0024 both name REPOSITORY-COMMIT, and two definitions made the name
+  ambiguous, so CON-0001 refused to resolve it. Loom reported a defect in Loom
+  by declining to guess, which is the mechanism working end to end.
+
+  ENTITY-AT-PATH searched only :FILE entities. A markdown file indexes as a
+  :DOCUMENT, so a document referring to another document -- most of what
+  documents do -- found nothing and was reported rotten. D6's count on these
+  two trees was 121 before and 84 after, and all 37 differences were files
+  sitting in the tree.
+
+  ONE FINDING FOR GAME-SERVER'S AUTHOR
+
+  `public/game/map/get-grid' appeared under "called but served by no watched
+  repository" until addroute was declared. The front-end does call it and the
+  server does serve it -- through server/gameapi.lisp:126's own addroute macro
+  rather than through easy-routes:defroute. That is what an undeclared definer
+  costs once federation can see across: not a missing entity, a missing
+  contract. Declaring it took published from 24 to 27 and matched from 12 to
+  13, and emptied the called-but-unserved list.
 
   WHAT WOULD MAKE THIS PARTIAL RATHER THAN IMPLEMENTED
 

@@ -33,6 +33,14 @@
    #:pause-repository
    #:unwatch-repository
    #:index-repository
+
+   ;; Cross-repository edges (REQ-0027, DES-0025). The one pass that reads
+   ;; more than one graph, and the only place in the system that may.
+   #:federate-repositories
+   #:federation-report
+   #:unresolved-path-references
+   #:federated-edge-p
+   #:repository-commit
    #:reindex-repository
    #:repository-status
 

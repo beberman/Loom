@@ -304,6 +304,28 @@ its most durable form."
                (<= index (length arguments)))
       (nth (1- index) arguments))))
 
+(defun normalize-route (route)
+  "ROUTE with a leading and trailing `/' stripped, or NIL.
+
+DES-0025 D1, and deliberately the whole of the normalization. game-server
+writes \"/public/game/create\" and front-end writes \"public/game/create\";
+that one character is the entire difference between the two trees, measured
+rather than assumed. Inventing more -- case folding, collapsing a trailing
+segment, treating a parameter as a wildcard -- is how a matcher starts
+producing joins nobody wrote."
+  (let ((trimmed (and (stringp route) (string-trim "/" route))))
+    (when (and trimmed (plusp (length trimmed))) trimmed)))
+
+(defun definer-site-literal (site index)
+  "The string literal a call site supplied at INDEX, or NIL.
+
+:STRING-ARGUMENTS' counterpart to DEFINER-SITE-NAME above, and NIL for the
+same class of reason: a site that computed its route rather than spelling it
+supplies nothing here, and a route built at runtime is not a claim this pass
+can honestly record."
+  (when index
+    (cdr (assoc index (getf site :string-arguments)))))
+
 (defun generated-natural-key (type file name)
   "The natural key a generated entity of TYPE at FILE named NAME will carry.
 
@@ -416,6 +438,17 @@ belongs."
                              :generated-by (getf entry :name)
                              :call-names (getf site :call-names)
                              :framework (getf entry :framework)
+                             ;; DES-0025 D1. Present only for a declared
+                             ;; :ROUTE-INDEX, which is absent on every definer
+                             ;; that defines no endpoint -- that is, on all of
+                             ;; them but one so far.
+                             :routes (let ((route (normalize-route
+                                                   (definer-site-literal
+                                                    site (getf entry :route-index)))))
+                                       (when route (list route)))
+                             :route-role (when (definer-site-literal
+                                                site (getf entry :route-index))
+                                           :publishes)
                              :language (getp file :language)
                              ;; DES-0009 R6, and the same shortcut :LANGUAGE
                              ;; takes one line up, for the same reason: a

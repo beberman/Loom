@@ -169,6 +169,30 @@ never holds an edge pointing at an id it no longer stores."
 ;;;; Relationships
 ;;;; ------------------------------------------------------------------
 
+(defun federated-relationship-p (r)
+  "Does R declare that its far endpoint lives in another repository?
+
+The one exemption from \"both endpoints exist here\", and it is narrow on
+purpose. DES-0025 chose federated cross-graph edges over a separate join
+index, and this is where that choice is paid for: an edge from a game-server
+handler to a front-end client names an id this graph does not hold and never
+will, so the check below would reject it and REQ-0027 R1 would be
+unbuildable.
+
+What keeps it from being a hole in the no-dangling-edge invariant is that
+nothing may assert one of these casually. The property is written only by
+LOOM-WORKSPACE:FEDERATE-REPOSITORIES, which retracts every edge it owns and
+re-derives the lot whenever any watched repository reindexes -- so a far
+endpoint that disappeared is gone from the graph before anything can follow
+the edge to it. An ordinary edge still cannot dangle; a federated one is
+disposable rather than trusted.
+
+The FROM end is never exempt. An edge has to be anchored in the graph that
+stores it, or the retraction that owns its lifecycle has nothing to key on."
+  (and (getp r :federated)
+       (getp r :foreign-repository)
+       t))
+
 (defun add-relationship (graph relationship)
   "Validate RELATIONSHIP's endpoints against its registered type and store
 it, indexed by both ends. Both FROM-ID and TO-ID must already be entities in
@@ -178,21 +202,30 @@ here. Signals GRAPH-ERROR, and stores nothing, if either check fails.
 The endpoint checks are inside the lock along with the stores, not merely
 beside them: read outside it, a concurrent RETRACT-FILE could remove the FROM
 entity between the check and the store, and this function would create the
-dangling edge it exists to refuse."
+dangling edge it exists to refuse.
+
+The one exception is a federated edge, whose TO end is an entity in another
+repository's graph by construction (DES-0025). FEDERATED-RELATIONSHIP-P states
+what makes that safe; the check is repeated here rather than trusted from
+PLAN-OP because this function is a public entry point that a test fixture or a
+resolution pass can reach without going through a transaction at all, and the
+no-dangling-edge guarantee is this function's to keep."
   (with-graph-lock (graph)
-    (let ((from-entity (get-entity graph (from-id relationship)))
-          (to-entity   (get-entity graph (to-id relationship))))
+    (let* ((from-entity (get-entity graph (from-id relationship)))
+           (to-entity   (get-entity graph (to-id relationship)))
+           (federated   (federated-relationship-p relationship)))
       (unless from-entity
         (error 'graph-error
                :problems (list (list :end :from :problem
                                      (format nil "unknown FROM entity ~s" (from-id relationship))))))
-      (unless to-entity
+      (unless (or to-entity federated)
         (error 'graph-error
                :problems (list (list :end :to :problem
                                      (format nil "unknown TO entity ~s" (to-id relationship))))))
-      (let ((problems (validate-relationship-endpoints (rel-type relationship)
-                                                       (entity-type from-entity)
-                                                       (entity-type to-entity))))
+      (let ((problems (and to-entity
+                           (validate-relationship-endpoints (rel-type relationship)
+                                                            (entity-type from-entity)
+                                                            (entity-type to-entity)))))
         (when problems
           (error 'graph-error :problems problems))))
     (setf (pt-get (graph-rel-keys graph) (relationship-natural-key relationship))

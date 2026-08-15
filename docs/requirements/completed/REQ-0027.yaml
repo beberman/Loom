@@ -1,6 +1,6 @@
 id: REQ-0027
 title: A product built from several repositories must be answerable as one system, which needs an edge that crosses two graphs
-status: draft
+status: implemented
 date: 2026-08-12
 refines: [CON-0004]
 affects: [impact-set, resolve-calls, linkable-index, build-context, entity-natural-key,

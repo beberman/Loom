@@ -548,6 +548,24 @@ rather than only in the note beside it."
                     (getf doc :truncated)
                     (getf doc :text))
             (format t "~&summary: (none written)~%"))))
+    ;; DES-0025 D1. A route is the one property worth printing beside the
+    ;; neighbours rather than leaving in the :PROPERTIES table: it is the join
+    ;; key two repositories meet in, and a reader checking why a handler did
+    ;; not federate needs to see what it actually claims. Absent on everything
+    ;; that publishes no endpoint, which is nearly everything.
+    (let ((routes (getf (getf detail :properties) :routes)))
+      (when routes
+        (format t "~&routes: ~{~a~^, ~}~%" routes)))
+    ;; DES-0025. Below the routes and above the neighbours: a federated edge
+    ;; is what the route is *for*, and it is not a neighbour -- `find' in this
+    ;; repository will not answer about it, which the repository name makes
+    ;; plain at a glance.
+    (dolist (far (getf detail :federated))
+      (format t "~&  -> ~(~a~) @~a: ~a ~a [~a~@[:~a~]]~@[ via ~a~]~@[ @~a~]~%"
+              (getf far :rel-type) (getf far :repository)
+              (getf far :type) (getf far :name)
+              (getf far :file) (getf far :line)
+              (getf far :via) (getf far :commit)))
     (dolist (group (getf detail :neighbors))
       (format t "~&  ~a ~(~a~): ~{~a~^, ~}~%"
               (if (eq :out (getf group :direction)) "->" "<-")
@@ -595,7 +613,40 @@ rather than only in the note beside it."
     (let ((maybe (getf report :possibly-affected)))
       (when maybe
         (format t "~&possibly affected (reached only through a stale edge): ~{~a~^, ~}~%"
-                (mapcar (lambda (e) (getf e :name)) maybe))))))
+                (mapcar (lambda (e) (getf e :name)) maybe))))
+    ;; DES-0025, and the answer REQ-0027 exists for. Its own heading, naming
+    ;; the repository and the commit, because this is a claim about another
+    ;; working tree and not about anything deployed -- REQ-0027 R5 and its
+    ;; WHAT THIS IS NOT.
+    (let ((far (getf report :federated)))
+      (when far
+        (format t "~&in other repositories:~%")
+        (dolist (e far)
+          (format t "  @~a ~(~a~) ~a~40t~a~@[  [~a~@[:~a~]]~]~@[ @~a~]~%"
+                  (getf e :repository) (getf e :type) (getf e :name)
+                  (or (getf e :via) "")
+                  (getf e :file) (getf e :line) (getf e :commit)))))))
+
+(define-command federation ()
+    "federation"
+    "Routes matched across repositories, and the claims that matched nothing."
+  (let ((report (federation-report)))
+    (format t "~&~d route~:p published, ~d consumed, ~d matched~%"
+            (length (getf report :published))
+            (length (getf report :consumed))
+            (length (getf report :matched)))
+    ;; Both halves of the unmatched set, because a count of edges is not
+    ;; evidence on its own (REQ-0027 R3). A parameterized route that no client
+    ;; spells, and a client call to an endpoint no watched repository serves,
+    ;; are different problems and a reader should be able to tell them apart.
+    (let ((server-only (getf report :unmatched-published)))
+      (when server-only
+        (format t "~&served but never called from a watched repository:~%")
+        (dolist (route server-only) (format t "  ~a~%" route))))
+    (let ((client-only (getf report :unmatched-consumed)))
+      (when client-only
+        (format t "~&called but served by no watched repository:~%")
+        (dolist (route client-only) (format t "  ~a~%" route))))))
 
 (define-command context (&rest words)
     "context <task description>"
@@ -745,6 +796,20 @@ rather than only in the note beside it."
         (format t "~&~d unresolved document reference~:p:~%" (length unresolved))
         (dolist (pair unresolved)
           (format t "  ~a -> ~a~%" (car pair) (cdr pair)))))
+    ;; DES-0025 D6. A backticked token carrying a path separator and a file
+    ;; extension is a claim about a file, not an ordinary word, so one that no
+    ;; *watched* repository holds is reported. The qualifier is load-bearing and
+    ;; is printed rather than assumed: this count is a function of which
+    ;; repositories are registered, and a document naming a file in a tree
+    ;; nobody watched is reported here when it is merely unwatched.
+    (let ((rotten (unresolved-path-references)))
+      (when rotten
+        (format t "~&~d prose file reference~:p no watched repository holds:~%"
+                (length rotten))
+        (dolist (entry rotten)
+          (format t "  @~a ~a -> ~a~%"
+                  (getf entry :repository) (getf entry :document)
+                  (getf entry :reference)))))
     ;; DES-0002 R6/R10, reported the way an unresolved reference is and for
     ;; the same reason: a definer Loom cannot characterise is a definition the
     ;; index knows it is missing, and it should be visible here rather than

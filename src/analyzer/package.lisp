@@ -77,6 +77,10 @@
    #:parse-frameworks
    #:frameworks-registry
    #:frameworks-problems
+   ;; Bound by loom-workspace around one repository's files, so the JavaScript
+   ;; analyzer can tell a route literal from any other string without learning
+   ;; a convention (DES-0025 D1).
+   #:*route-callers*
    ;; Namespaces a Lisp tree uses but does not declare (DES-0015). Handed to
    ;; BUILD-PACKAGE-GRAPH the way *MACRO-GENERATORS* is handed to
    ;; RESOLVE-GENERATED-DEFINITIONS, and for the same layering reason.

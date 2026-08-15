@@ -241,6 +241,28 @@ that conflates them reports a gap it has not checked for."
               ;; caller be told how much it is not seeing.
               :full-tokens (and text (estimate-tokens text)))))))
 
+(defun federated-summaries (view id &key (direction :out))
+  "The other repositories' code this entity reaches, as plain data.
+
+Read entirely off the edges. A federated edge carries the far end's
+repository, name, file, line and the commit that tree was at when the edge was
+derived, so answering this needs no second graph and takes no lock on a
+repository that may be mid-reindex.
+
+REQ-0027 R5 is discharged here: every entry names the working tree and commit
+it describes, because a federated answer is about two checkouts and must not
+read as a claim about a deployed system."
+  (loop for r in (federated-relationships view id :direction direction)
+        collect (list :repository (getp r :foreign-repository)
+                      :name       (getp r :foreign-name)
+                      :type       (getp r :foreign-type)
+                      :file       (getp r :foreign-file)
+                      :line       (getp r :foreign-line)
+                      :commit     (getp r :foreign-commit)
+                      :rel-type   (rel-type r)
+                      :via        (getp r :route)
+                      :confidence (confidence r))))
+
 (defun describe-entity (view id)
   "Full detail for one entity: its own properties plus its neighbours grouped
 by edge type -- the \"tell me about this function\" call. NIL when ID is
@@ -252,6 +274,12 @@ unknown."
                                 using (hash-value value)
                               unless (null value) append (list key value))
             :neighbors  (group-neighbors (neighbors view id))
+            ;; DES-0025. Separate from :NEIGHBORS rather than folded into it,
+            ;; and the separation is the honest part: a neighbour is an entity
+            ;; this graph holds, and the far end of a federated edge is not one.
+            ;; Reporting it in the same list would make a reader think `find'
+            ;; could then be asked about it in this repository.
+            :federated  (federated-summaries view id)
             ;; Added rather than substituted: :PROPERTIES still carries the
             ;; complete untruncated table, so a caller wanting the full text
             ;; has lost nothing. NIL for a code entity, whose type has no
@@ -301,4 +329,34 @@ NIL when ID is unknown."
             :mentions  (summarize-entities (impact-result-mentions result))
             :decisions (summarize-entities (impact-result-decisions result))
             :possibly-affected
-            (summarize-entities (impact-result-possibly-affected result))))))
+            (summarize-entities (impact-result-possibly-affected result))
+            ;; DES-0025, REQ-0027 R1 and R6. Gathered from every entity the
+            ;; impact set reached, not only from the seed: the question is
+            ;; "change this handler, what breaks over there", and the handler
+            ;; is usually several hops from the function actually being edited.
+            ;; DHANDLER-DELETE-SELECTOR does not serve a route; the endpoint
+            ;; that calls it does.
+            :federated (federated-band view result)))))
+
+(defun federated-band (view result)
+  "Every other repository's code the impact set reaches, deduplicated.
+
+Its own band for the same reason :MENTIONS is one (REQ-0014 R5): this is a
+different kind of claim from the rest of the report, and folding it in would
+make code in another repository read like code in this one. The band names
+the repository and the commit, so what a reader is looking at is two working
+trees rather than a system."
+  (let ((seen (make-hash-table :test #'equal))
+        (out '()))
+    (dolist (entry (cons (impact-result-seed result)
+                         (mapcar #'impact-entry-entity
+                                 (impact-result-impacted result))))
+      (let ((id (if (listp entry) nil (id entry))))
+        (when id
+          (dolist (summary (federated-summaries view id))
+            (let ((key (list (getf summary :repository) (getf summary :name)
+                             (getf summary :via))))
+              (unless (gethash key seen)
+                (setf (gethash key seen) t)
+                (push summary out)))))))
+    (nreverse out)))

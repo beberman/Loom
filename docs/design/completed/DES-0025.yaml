@@ -1,6 +1,6 @@
 id: DES-0025
 title: Federation is a resolution pass over several graphs, and a claim is what crosses
-status: draft
+status: implemented
 date: 2026-08-15
 refines: [REQ-0027]
 affects: [resolve-document-links, impact-report, watch-repository, index-repository,
@@ -110,8 +110,30 @@ body: |
   resolution pass in DEC-0003's sense -- derive, never consume -- and means no
   analyzer learns that another repository exists.
 
-  Normalization is deliberately small and stated where a reader will find it: a
-  route claim is stripped of a leading and trailing `/' and nothing else.
+  D1a THE TWO ENDS MEET ON THE STATIC PREFIX, NOT ON THE WHOLE ROUTE
+
+  Added during implementation, because exact matching answered nothing for the
+  one question REQ-0027 exists to answer. The soft-delete acceptance case is
+  `/public/game/delete/:gameid' on the server and `"public/game/delete" + "/" +
+  game.id' on the client: a parameterized route and a concatenation, and no
+  bare literal on either side.
+
+  Both sides spell the static part literally, so that is where they meet.
+  ROUTE-STATIC-PREFIX truncates a route at its first `:' segment, claims are
+  keyed on the result, and the edge records :MATCH-KIND -- :EXACT at confidence
+  0.9 when the full routes agree, :PREFIX at 0.75 when only the static parts
+  do. The extractor reads the leading literal of a `+' chain for the same
+  reason.
+
+  This is not the glob-matching D1 rules out below, and the distinction is
+  exact rather than convenient: no pattern is ever matched against a value.
+  "public/game/17" is never constructed and never compared. Two strings that
+  both appear in source are compared to each other, and the weaker of the two
+  kinds of agreement is recorded as weaker.
+
+  Normalization is otherwise deliberately small and stated where a reader will
+  find it: a route claim is stripped of a leading and trailing `/' and nothing
+  else.
   game-server writes "/public/game/create" and front-end writes
   "public/game/create"; that one character is the entire difference, and
   inventing more normalization than the trees need is how a matcher starts
@@ -192,7 +214,33 @@ body: |
   web frameworks would be the same mistake as the directory allowlist REQ-0028
   deleted -- a proxy for a question the repository can answer directly.
 
-  D5  IMPACT CROSSES IN LOOM-KNOWLEDGE, NOT IN LOOM-GRAPH
+  D5  THE EDGE CARRIES ITS FAR END'S NAME; NOTHING CALLS BACK
+
+  AMENDED DURING IMPLEMENTATION, and the original is left below because the
+  reason it changed is worth more than the design it replaced.
+
+  What was built: a federated edge carries :FOREIGN-REPOSITORY, :FOREIGN-NAME,
+  :FOREIGN-FILE, :FOREIGN-LINE and :FOREIGN-COMMIT, so `describe' and `impact'
+  answer about the far end from the edge alone. LOOM-GRAPH gains
+  FEDERATED-RELATIONSHIPS, which returns edges rather than entities -- NEIGHBORS
+  cannot answer this and must not learn to, since it returns entities and the
+  far end has none in this graph. LOOM-KNOWLEDGE reads the properties.
+
+  This is strictly better than the resolver below on three counts: no second
+  graph is read while a query is running, no lock is taken on a repository that
+  may be mid-reindex, and loom-knowledge gains no dependency on the system
+  above it. The cost is that the far end's name is as fresh as the last
+  federation pass -- which runs on every reindex of either side, so the window
+  is the same one D2 already accepts.
+
+  WHAT WAS ORIGINALLY DESIGNED, and why it was wrong: IMPACT-SET takes a view
+  and stays that way; loom-graph cannot learn what a repository is. So the
+  crossing was to happen in IMPACT-REPORT, resolving far endpoints through a
+  resolver loom-workspace supplied. The premise was right and the conclusion
+  was one step too many -- the crossing does happen above loom-graph, but it
+  needs no resolver, because the edge can simply carry what a reader needs.
+
+  D5a THE FAR SIDE IS ITS OWN BAND, NAMING THE TREE AND THE COMMIT
 
   IMPACT-SET takes a view and stays that way. loom-graph depends on
   loom-ontology alone and RULE-0001 to RULE-0003 keep it there; it cannot learn

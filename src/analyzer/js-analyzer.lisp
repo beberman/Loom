@@ -388,12 +388,64 @@ are not in the index -- and :ANALYSIS-ERROR is what tells them apart."
                                          :start-line (jget damage :start-line)
                                          :end-line (jget damage :end-line))))))))))
 
+(defvar *route-callers* '()
+  "Which callees carry a route as a literal argument, and at which position.
+
+Bound per repository by loom-workspace from .loom/frameworks.yaml, and empty
+everywhere else -- which is every tree indexed before DES-0025 and every tree
+that consumes no HTTP API. Empty means JS-DEFINITION-ROUTES answers NIL and
+nothing changes.
+
+A special rather than an argument because ANALYZE-FILE's signature is the
+protocol every analyzer shares (CON-0005), and a per-repository convention is
+not something the protocol should learn. The workspace binds it around the
+files of one repository, the way it hands the generator registry to the
+resolution pass, and for the same layering reason.")
+
+(defun js-definition-routes (definition)
+  "The routes this definition claims, from the path literals it passed to a
+declared route-carrying callee.
+
+The extractor reports every path-shaped string literal with the callee that
+received it and the position it sat in; the decision about which of those is
+a route lives here, because it is a fact about this repository's conventions
+rather than about JavaScript. front-end routes everything through four
+wrapper names -- get, post, sendGet, sendPost -- so the declaration is four
+lines and the analyzer stays convention-free."
+  (let ((claims (jlist definition :literal-args)))
+    (when (and claims *route-callers*)
+      (remove-duplicates
+       (loop for claim in claims
+             for callee = (jget claim :callee)
+             for index = (jget claim :index)
+             for value = (jget claim :value)
+             for route = (and callee value
+                              (loop for entry in *route-callers*
+                                    when (and (member (string-downcase callee)
+                                                      (getf entry :callees)
+                                                      :test #'string=)
+                                              (eql index (getf entry :argument-index)))
+                                      return (normalize-js-route value)))
+             when route collect route)
+       :test #'string=))))
+
+(defun normalize-js-route (route)
+  "ROUTE with a leading and trailing `/' stripped, or NIL.
+
+The same normalization LOOM-GRAPH:NORMALIZE-ROUTE applies to the server side,
+restated here rather than called: loom-analyzer must not depend on loom-graph
+(RULE-0002), and the two sides of a join agreeing on what a route string is
+matters enough to be worth two copies and a test that compares them."
+  (let ((trimmed (and (stringp route) (string-trim "/" route))))
+    (when (and trimmed (plusp (length trimmed))) trimmed)))
+
 (defun make-js-definition-entity (definition path system)
   "One entity for one definition, or NIL when it cannot be named."
   (let* ((kind (jget definition :kind))
          (name (js-definition-name definition path))
          (calls (js-call-names definition))
          (jsx (jlist definition :jsx))
+         (routes (js-definition-routes definition))
          (shadowed (jget definition :shadowed))
          (common (list :file path
                        :start-line (jget definition :start-line)
@@ -426,6 +478,8 @@ are not in the index -- and :ANALYSIS-ERROR is what tells them apart."
                           (when (and callable calls) (list :call-names calls))
                           (when (and callable jsx)
                             (list :jsx-names (remove-duplicates jsx :test #'string=)))
+                          (when (and callable routes)
+                            (list :routes routes :route-role :consumes))
                           (when shadowed (list :shadowed-definitions shadowed))
                           extra)))))
         (cond
