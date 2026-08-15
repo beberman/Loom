@@ -83,8 +83,11 @@ rationale: |
   architecture is not what it says. This one is about the source of whatever
   tree is being indexed, and Loom has no standing to call another project's
   dead code an error. It also prints as "warning RULE-0006", which
-  distinguishes it at a glance from the thirty-two "error RULE-0003" lines
-  BUG-0009 currently produces.
+  distinguishes it at a glance from an "error RULE-0001" to "error RULE-0003"
+  line about Loom's own layering. When this was written BUG-0009 was producing
+  thirty-two of those and every one was false; it closed on 2026-08-15 and
+  `check` reports none, so the severity now separates two kinds of real
+  finding rather than a real one from standing noise.
 
   THE KNOWN FALSE POSITIVE
 

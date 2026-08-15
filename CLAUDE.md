@@ -138,20 +138,26 @@ src/process/package.lisp are unedited by all of it.
 RULE-0001 to RULE-0003 enforce parts of this and are machine-checked. They do
 not fail a FiveAM assertion, so run `check` as well as the suite — and note
 that they cannot see the peer property above at all regardless: they key on
-LOOM-GRAPH:ENTITY-SYSTEM, which reads the segment after `src/` (BUG-0006 fixed
-it to do that; it used to read the segment before the first slash, so every
-file in the tree was system "src" and every layering rule matched nothing —
-`check`'s own layering output was accordingly always vacuous, not just for the
-peer property). `sbcl --script tools/load-test.lisp loom-serve` is still the
-instrument for the peer property specifically; no rule names loom-serve,
-loom-rest, loom-mcp or loom-process, so `check` has nothing to say about them
-either way. Since BUG-0006's fix, `check` **can** report a real RULE-0001
-violation — but RULE-0002 and RULE-0003 currently report 72 false positives of
-their own (BUG-0009): a test file resolves to the same system as the
-production code it tests, and RULE-0003's check clause bans every call from
-loom-knowledge to loom-graph rather than only a write. Read `check`'s own
-output for RULE-0001 as real; read a RULE-0002 or RULE-0003 line as BUG-0009
-until that closes.
+LOOM-GRAPH:ENTITY-SYSTEM, which reads the `:system` property the analyzer
+wrote, and that property holds the file's own package name (DES-0009). It is
+not a path guess: it was one until BUG-0006, when every file in the tree read
+as system "src" and every layering rule matched nothing, and the segment after
+`src/` for a while after that. `sbcl --script tools/load-test.lisp loom-serve`
+is still the instrument for the peer property specifically; no rule names
+loom-serve, loom-rest, loom-mcp or loom-process, so `check` has nothing to say
+about them either way.
+
+`check` reports **no violations** on this tree, and has since BUG-0009 closed
+on 2026-08-15 — so a violation you see is a real one, not the standing noise
+this file used to warn about. Getting there took both of BUG-0009's causes:
+DES-0009's package-derived `:system` stopped classifying a test file into the
+system it tests, and RULE-0003 moved to a fifth check kind, `:no-call-to`,
+which names the loom-graph functions that *mutate* rather than banning every
+call into loom-graph. Reading the graph is what loom-knowledge depends on it
+for; only a write was ever forbidden. That deny list is only as current as its
+`to-names:` — a mutator added to loom-graph is unreported until its name is
+added to `docs/rules/RULE-0003.yaml`. One rule stays unenforceable as a check
+and prints as such: RULE-0004.
 
 ## Running it as a service
 

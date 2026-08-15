@@ -337,17 +337,22 @@ and registering a type\" stays true of the fields as well as the directory."))
 ;;;; ==================================================================
 
 (defparameter *check-kinds* '(:no-edge :requires-edge :property-constraint
-                              :property-absent)
+                              :property-absent :no-call-to)
   "SS10.4: \"Phase 1 supports a small set of check kinds ... which is enough
 for the layering and single-writer rules Loom needs on itself.\"
 
-Four now, not SS10.4's original three. :PROPERTY-ABSENT was added by DES-0012
+Five now, not SS10.4's original three. :PROPERTY-ABSENT was added by DES-0012
 for RULE-0006, and it is the mirror of :PROPERTY-CONSTRAINT rather than a new
 kind of question -- \"this property must be absent\" against \"this property
-must be present\". The list grows when a rule someone wants to write is one a
-generic check can express; the discipline SS10.4 sets is that a rule needing
-more than that stays prose, which PARSE-CHECK enforces by returning NIL for a
-kind not named here.")
+must be present\". :NO-CALL-TO was added for BUG-0009's cause two: :NO-EDGE
+can only say \"no edge to that whole system\", and RULE-0003's claim is
+narrower than the system it names -- loom-knowledge depends on loom-graph
+precisely so it can read, and only a write is forbidden. :NO-CALL-TO keeps
+:NO-EDGE's from-system/to-system framing and adds TO-NAMES, so a rule can
+name the callees it means. The list grows when a rule someone wants to write
+is one a generic check can express; the discipline SS10.4 sets is that a rule
+needing more than that stays prose, which PARSE-CHECK enforces by returning
+NIL for a kind not named here.")
 
 (defun parse-check (value)
   "A rule's check: clause as a plist, or NIL.
@@ -368,7 +373,12 @@ rule falls back to prose, rather than the document failing to index."
                                    (as-list-of-strings (yaml-value value :|rel-types|)))
               :entity-type (as-keyword (yaml-value value :|entity-type|))
               :property    (as-keyword (yaml-value value :property))
-              :equals      (as-string (yaml-value value :equals)))))))
+              :equals      (as-string (yaml-value value :equals))
+              ;; Kept as written, not interned: these are entity names, which
+              ;; are strings on the graph, and RUN-CHECK compares them with
+              ;; STRING-EQUAL. Interning them would make the rule's vocabulary
+              ;; depend on which package read the document.
+              :to-names    (as-list-of-strings (yaml-value value :|to-names|)))))))
 
 ;;;; ==================================================================
 ;;;; The analyzer

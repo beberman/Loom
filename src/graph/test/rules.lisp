@@ -247,6 +247,19 @@ read for a non-decision, the type with no producer at all")
                                 :rel-types (:calls :imports :depends-on)))
     (is (= 1 (length (check-rules g))))))
 
+(defparameter *rule-0003-check*
+  '(:kind :no-call-to :from-system :loom-knowledge :to-system :loom-graph
+    :rel-types (:calls)
+    :to-names ("apply-transaction" "apply-op" "cascade-staleness"
+               "reindex-entity" "absorb-entity" "absorb-relationship"
+               "absorb-properties" "absorb-provenance"
+               "add-entity" "remove-entity" "add-relationship"
+               "remove-relationship" "index-origin" "unindex-origin"))
+  "RULE-0003.yaml's check clause, verbatim, in the plist shape PARSE-CHECK
+produces. The tests using it are only evidence about the real rule if they run
+the real rule's own to-names -- an invented two-name list would pass while the
+document said something else.")
+
 (test rule-0003-catches-knowledge-writing-under-the-real-src-layout
   (let* ((g (make-graph))
          (service (rules-function g "describe-entity" "src/knowledge/services.lisp"
@@ -256,9 +269,78 @@ read for a non-decision, the type with no producer at all")
     (add-relationship g (make-instance 'relationship :rel-type :calls
                                        :from-id (id service) :to-id (id writer)
                                        :origin-file "src/knowledge/services.lisp"))
-    (rules-rule g "RULE-0003" '(:kind :no-edge :from-system :loom-knowledge
-                                :to-system :loom-graph :rel-types (:calls)))
+    (rules-rule g "RULE-0003" *rule-0003-check*)
     (is (= 1 (length (check-rules g))))))
+
+;;; ------------------------------------------------------------------
+;;; no-call-to (BUG-0009 cause two)
+;;; ------------------------------------------------------------------
+
+(test the-no-call-to-check-permits-the-read-it-is-not-about
+  ;; BUG-0009's cause two, as a test. Every one of the 63 violations `check`
+  ;; reported on this tree had this shape: a knowledge service calling a
+  ;; loom-graph *read*. Swap :no-call-to back to :no-edge here and this test
+  ;; fails with one violation, which is what makes it evidence (CON-0003).
+  (let* ((g (make-graph))
+         (service (rules-function g "describe-entity" "src/knowledge/services.lisp"
+                                  :loom-knowledge))
+         (reader (rules-function g "neighbors" "src/graph/query.lisp"
+                                 :loom-graph)))
+    (add-relationship g (make-instance 'relationship :rel-type :calls
+                                       :from-id (id service) :to-id (id reader)
+                                       :origin-file "src/knowledge/services.lisp"))
+    (rules-rule g "RULE-0003" *rule-0003-check*)
+    (is (null (check-rules g))
+        "reading the graph is the dependency's whole purpose, not a breach")))
+
+(test the-no-call-to-check-names-the-callee-it-caught
+  (let* ((g (make-graph))
+         (service (rules-function g "build-context" "src/knowledge/context.lisp"
+                                  :loom-knowledge))
+         (reader (rules-function g "neighbors" "src/graph/query.lisp"
+                                 :loom-graph))
+         (writer (rules-function g "add-relationship" "src/graph/graph-manager.lisp"
+                                 :loom-graph)))
+    (dolist (target (list reader writer))
+      (add-relationship g (make-instance 'relationship :rel-type :calls
+                                         :from-id (id service) :to-id (id target)
+                                         :origin-file "src/knowledge/context.lisp")))
+    (rules-rule g "RULE-0003" *rule-0003-check*)
+    (let ((violations (check-rules g)))
+      (is (= 1 (length violations))
+          "the write is reported and the read beside it is not")
+      (is (search "add-relationship" (violation-detail (first violations)))))))
+
+(test the-no-call-to-check-ignores-a-same-named-callee-inside-the-system
+  ;; :NO-CALL-TO keeps :NO-EDGE's boundary framing rather than degenerating
+  ;; into a name grep. loom-knowledge calling its own ADD-ENTITY -- were there
+  ;; one -- crosses nothing, and the rule is about a crossing.
+  (let* ((g (make-graph))
+         (service (rules-function g "build-context" "src/knowledge/context.lisp"
+                                  :loom-knowledge))
+         (local (rules-function g "add-entity" "src/knowledge/context.lisp"
+                                :loom-knowledge)))
+    (add-relationship g (make-instance 'relationship :rel-type :calls
+                                       :from-id (id service) :to-id (id local)
+                                       :origin-file "src/knowledge/context.lisp"))
+    (rules-rule g "RULE-0003" *rule-0003-check*)
+    (is (null (check-rules g)))))
+
+(test a-no-call-to-check-with-no-names-reports-nothing
+  ;; The degenerate clause. A rule author who writes the kind and forgets
+  ;; to-names: gets no findings rather than every call in the tree -- the same
+  ;; refusal :NO-EDGE makes when from-system: is missing.
+  (let* ((g (make-graph))
+         (service (rules-function g "describe-entity" "src/knowledge/services.lisp"
+                                  :loom-knowledge))
+         (writer (rules-function g "apply-transaction" "src/graph/transaction.lisp"
+                                 :loom-graph)))
+    (add-relationship g (make-instance 'relationship :rel-type :calls
+                                       :from-id (id service) :to-id (id writer)
+                                       :origin-file "src/knowledge/services.lisp"))
+    (rules-rule g "RULE-X" '(:kind :no-call-to :from-system :loom-knowledge
+                             :to-system :loom-graph :rel-types (:calls)))
+    (is (null (check-rules g)))))
 
 (test the-real-rules-still-pass-a-clean-real-layout
   ;; The other half of each test above: an edge that stays inside its own

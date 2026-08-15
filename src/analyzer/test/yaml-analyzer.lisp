@@ -139,9 +139,17 @@ knowledge would be worse than ignoring it")
   (let ((rule-0003 (docs-entity "docs/rules/RULE-0003.yaml")))
     (is (string= "RULE-0003" (getp rule-0003 :doc-id)))
     (let ((check (getp rule-0003 :check)))
-      (is (eq :no-edge (getf check :kind)))
+      (is (eq :no-call-to (getf check :kind))
+          "BUG-0009 cause two: :no-edge could not say \"only a write\"")
       (is (eq :loom-knowledge (getf check :from-system)))
-      (is (eq :loom-graph (getf check :to-system))))))
+      (is (eq :loom-graph (getf check :to-system)))
+      ;; The other half of the vacuous-zero guard above. :NO-CALL-TO with an
+      ;; empty to-names: reports nothing at all, so a to-names: that failed to
+      ;; parse -- or a document edited down to none -- would read as a clean
+      ;; tree. Naming APPLY-TRANSACTION specifically because it is the one
+      ;; callee RULE-0003's own statement names.
+      (is (member "apply-transaction" (getf check :to-names) :test #'string-equal))
+      (is (member "add-relationship" (getf check :to-names) :test #'string-equal)))))
 
 (test a-rule-with-no-recognisable-check-stays-prose
   ;; SS10.4: such a rule "remains valid as prose with severity advisory; it is
