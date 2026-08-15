@@ -9,5 +9,8 @@
       "Read(/home/beberman/quicklisp/dists/quicklisp/software/**)"
     ],
     "defaultMode": "dontAsk"
-  }
+  },
+  "enabledMcpjsonServers": [
+    "loom"
+  ]
 }
