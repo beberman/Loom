@@ -1,0 +1,142 @@
+id: REQ-0032
+title: tools/list must advertise what the caller can actually call, because a tool that always fails is worse than one that is absent
+status: draft
+date: 2026-08-15
+refines: [CON-0004]
+affects: [all-tools, find-tool, resolve-caller-grants, check-capability]
+tags: [mcp, capability, agents, serve, req-0008]
+summary: |
+  *TOOLS* is a static list of fourteen and tools/list returns all fourteen to
+  every client. RESOLVE-CALLER-GRANTS returns :read and :write and
+  deliberately not :repl. So loom_repl_open, loom_repl_eval and loom_repl_close
+  are advertised to every caller and callable by none -- not as a matter of
+  configuration, but unconditionally, in every deployment, today.
+
+  Measured 2026-08-15: an agent working in game-server saw the three repl tools
+  in its tool list, spent five separate sbcl process launches doing by shell
+  what a persistent session would have done in one, then called loom_repl_open
+  and received
+
+      CAPABILITY-ERROR: repl-open requires the repl capability.
+
+  The gating is right and this requirement does not argue with it -- the
+  reasoning in RESOLVE-CALLER-GRANTS is sound and DES-0003 and DES-0004 back
+  it. What is wrong is that the advertisement and the grant are two facts that
+  nothing reconciles, so the only way to discover the boundary is to cross it.
+body: |
+  WHAT IS WRONG
+
+  src/mcp/tools.lisp:36-63 builds *TOOLS* as a literal list, and ALL-TOOLS
+  returns it whole. Nothing in the path from tools/list to that list consults
+  the caller's grants; the tier is checked later, at dispatch, by
+  CHECK-CAPABILITY.
+
+  src/serve/capability.lisp:33-48 is explicit that this is not an accident of
+  configuration:
+
+      Until then every caller gets :read and :write, and deliberately not
+      :repl. The repl tier can reach beneath every safety property DES-0003
+      and DES-0004 built ... so it is not a tier to hand out by default while
+      the credential story is unfinished.
+
+  Both halves are defensible in isolation. The list is static because the tool
+  set is fixed and the file's own header carefully records which operations
+  are on it and why. The grant is static because REQ-0008 excluded the auth
+  model and left RESOLVE-CALLER-GRANTS as a seam. What nobody decided is that
+  three of the fourteen advertised tools are unreachable by construction, and
+  that is the state the two decisions produce together.
+
+  WHY THIS IS NOT MERELY UNTIDY
+
+  A tool list is an interface description read by a machine that plans with
+  it. An agent that sees loom_repl_eval will, correctly, form plans that use
+  it -- and the failure arrives after the plan is made, midway through a task,
+  as an error it must now recover from. Compare the same agent with an
+  eleven-tool list: it never considers the REPL, reaches for the shell
+  immediately, and loses nothing but the option it could not have had.
+
+  The cost measured on 2026-08-15 was the reverse of that: the agent did *not*
+  reach for the REPL when it would have helped -- five `sbcl --load`
+  invocations, each paying the full system-load cost, where a persistent
+  session is load-once-eval-many -- and then discovered at the end of the task
+  that the tool it had been ignoring was unavailable anyway. Both halves of
+  that are bad and they are the same defect: the tool list did not describe
+  the tools.
+
+  There is a second, quieter cost. A capability system whose refusals are
+  routine teaches callers that refusals are noise. The repl tier is the one
+  tier that guards something DES-0003 and DES-0004 care about, and it is the
+  tier whose error message every agent will eventually have seen for reasons
+  that had nothing to do with security.
+
+  WHAT THIS IS NOT
+
+  It does not ask that :repl be granted. RESOLVE-CALLER-GRANTS is right, its
+  stated reason is right, and a requirement that widened the default grant to
+  make the tool list honest would be fixing the wrong end. If anything this
+  strengthens the gate: a tier nobody is advertised into is a tier whose
+  refusal means something when it fires.
+
+  It does not ask for the credential model. That is REQ-0008's exclusion and
+  a future document's decision. This requirement must hold both before and
+  after that lands, which is why R1 is written against the caller's *resolved
+  grants* rather than against a configuration flag: on the day
+  RESOLVE-CALLER-GRANTS starts answering :repl for some callers, the list
+  should grow for exactly those callers with nothing else changing.
+
+  It does not ask for the four lifecycle write tools or :architecture, :init
+  and :remove to appear. Those are absent by a deliberate judgement the file
+  header records at length, and their absence is a scope decision rather than
+  a capability one. This requirement is only about tools that are present and
+  cannot work.
+
+  It is not about REST. REST exposes the full console vocabulary by REQ-0008
+  R4 and a route that refuses is an ordinary 403 against an endpoint a caller
+  looked up deliberately. The defect is specific to a surface that *enumerates*
+  its own capabilities to a machine.
+
+  REQUIREMENTS
+
+  R1  tools/list returns the tools the requesting caller's resolved grants
+      permit it to call. A tool whose operation's tier is not in the caller's
+      grants is not in that caller's list.
+
+  R2  The filter reads the same grants CHECK-CAPABILITY reads, resolved by the
+      same function, once per request. Two places deciding what a caller may
+      reach is how they drift, and the whole point of the single seam in
+      capability.lisp is that there is one answer.
+
+  R3  Dispatch keeps checking. Filtering the advertisement is not a
+      substitute for the check at the call: a client may call a tool it was
+      never shown, and CHECK-CAPABILITY must refuse it exactly as it does
+      today. This requirement removes a misleading advertisement and removes
+      no enforcement.
+
+  R4  The static case must be visible in a test. With *STATIC-GRANTS* at its
+      default, tools/list returns eleven tools and none of them is a repl
+      tool; with :repl added to *STATIC-GRANTS*, it returns fourteen. That is
+      two assertions and they are the acceptance.
+
+  R5  Nothing changes for the eleven. Their names, order, schemas and
+      behaviour are untouched, and a client that never had the repl tools
+      available sees no difference beyond three entries it could not use.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - Should an unreachable tool be hidden or shown as disabled? MCP has no
+    notion of a disabled tool, so hiding is the only thing the protocol
+    expresses -- but a client that cannot see a tool also cannot tell a
+    caller *why* it is missing, and "you would need the repl capability" is
+    useful information to a human debugging their own deployment. A
+    capabilities field on initialize, or a note in the server instructions,
+    may be the place for it.
+  - Does tools/list change per caller before there are callers to distinguish?
+    With one static grant set the filtered list is a constant, and the
+    machinery to make it per-request buys nothing until credentials exist.
+    Building it now is cheap and building it later touches the same two
+    functions; the question is whether the seam should be threaded through
+    ALL-TOOLS immediately or stubbed at a constant with the shape in place.
+  - Does the REST surface owe the same honesty in a different form? It has no
+    enumeration endpoint today. If one is ever added -- and a service holding
+    several repositories is the kind of thing that grows one -- it inherits
+    this question rather than deciding it fresh.

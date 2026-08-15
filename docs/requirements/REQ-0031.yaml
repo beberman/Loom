@@ -1,0 +1,147 @@
+id: REQ-0031
+title: describe must be able to return the source of what it describes, because every caller that gets a line range next reaches for a file
+status: draft
+date: 2026-08-15
+refines: [CON-0004]
+affects: [describe-entity, search-entities, build-context]
+tags: [knowledge, describe, agents, console, game-server]
+summary: |
+  DESCRIBE-ENTITY answers with everything about an entity except the entity:
+  its file, its exact line range, its arguments, the names it calls, its
+  neighbours grouped by edge type, and the documents governing it. It does not
+  answer with the code. So the caller reads the line range and immediately
+  spends a second, slower operation outside Loom getting the seven lines Loom
+  just located.
+
+  Measured on game-server, 2026-08-15: one small change, two `context` calls
+  and six `find`/`describe`/`check` calls against Loom -- and eleven shell
+  commands, of which five existed only to print regions of files Loom had
+  already named. `describe database-alert` returned
+  server/server.lisp:49-57 and the caller then ran `sed -n 49,57p` on the same
+  file.
+
+  This asks that the source be available from the operation that already knows
+  where it is. It is the cheapest unclaimed improvement in the tool: the data
+  is on disk, the byte offsets are indexed, and no analysis is involved.
+body: |
+  WHAT IS WRONG
+
+  Nothing is wrong with what DESCRIBE-ENTITY returns. The gap is what it
+  stops short of, and the shape of the gap is that every consumer closes it
+  the same way.
+
+  An agent's loop against a foreign codebase is: ask `context` what bears on
+  the task, ask `find` or `describe` where the interesting entity is, then
+  read it. The third step is the one that changes code, and Loom hands it off.
+  For a human at the console that handoff is free -- the editor is already
+  open and the line number is a jump. For an agent it is a tool call to a
+  different tool with a different failure mode, and for a remote caller over
+  MCP it may not be available at all: the service knows the repository root
+  and the client may not even be on the same machine.
+
+  That last case is the one that makes this a requirement rather than a
+  convenience. REQ-0021 prepares repositories Loom did not write, and REQ-0008
+  put the service behind MCP so that an agent installed in such a worktree
+  reaches Loom over the wire. An agent that can ask Loom where a function is
+  and cannot ask Loom what it says is an agent that must have filesystem
+  access to the tree the service is indexing -- which the deployment REQ-0021
+  describes, with a central service and network-mounted checkouts, does not
+  guarantee in the direction anyone assumed.
+
+  WHAT IT WOULD COST
+
+  Almost nothing, and that is most of the argument. The entity already carries
+  :file, :start-line and :end-line -- DESCRIBE-ENTITY's own properties block
+  returns all three today. Answering with the text is a bounded read of a
+  known range of a known file. There is no analysis, no new index, no schema
+  beyond a field, and no new failure mode except a file that changed under a
+  stale index, which is a condition the monitor already exists to bound and
+  which REQ-0013's reporting obligation already covers in principle.
+
+  WHAT THIS IS NOT
+
+  It is not REQ-0007 reversed, and the distinction is the whole design.
+  REQ-0007 established that `describe` on a *document* must summarise it
+  rather than reprint it, because a document is prose whose whole content is
+  the answer and dumping 800 lines of REQ-0021 into a context window is not
+  describing it. A code entity is the opposite case: a function is bounded,
+  its text is the specification of its behaviour, and no summary of nine lines
+  of Lisp is smaller than the nine lines. Both requirements say the same thing
+  -- return what is useful at the size it is useful -- and reach opposite
+  conclusions because the material differs. R3 below keeps REQ-0007's rule
+  intact by leaving documents alone entirely.
+
+  It is not a request that `context` inline source. `context` is budgeted at
+  2,000 tokens and spends it on breadth; source in that bundle would buy one
+  entity and lose the map, which is the trade REQ-0016 is already arguing
+  about from the other side. The right shape is that `context` names what
+  matters and a second call fetches the few that do.
+
+  It does not ask Loom to become an editor. Reading a region is not writing
+  one, and nothing here implies a patch operation. The :repl tier exists for
+  callers that need to act on the image and is gated for good reasons that
+  DES-0003 and DES-0004 carry.
+
+  It does not ask for the file. A whole-file read is a different operation
+  with a different budget, and the entity's range is what makes this one
+  bounded. A caller that wants the file has the path.
+
+  REQUIREMENTS
+
+  R1  `describe` can return the source text of the entity it describes,
+      bounded by the line range it already reports, on both the REST and MCP
+      surfaces and at the console.
+
+  R2  It is requested rather than assumed. A caller that wants the neighbours
+      and not the body -- which is `describe`'s behaviour today and is right
+      for surveying -- must be able to have exactly that, so the source is a
+      flag on the operation and off by default.
+
+  R3  A document entity is unaffected. REQ-0007 governs what `describe`
+      returns for a REQ, DES, PLAN, REV, BUG, CON, RULE or ARCH, and this
+      requirement does not reopen it: asking for source on a document returns
+      what it returns today.
+
+  R4  The text is served with the range it came from and the commit or index
+      generation it was read at, so a caller can tell that what it read
+      matches what Loom described. A body served without provenance is a
+      quiet way to act on a file that moved.
+
+  R5  A range that no longer exists -- the file shrank, the file is gone --
+      reports that plainly rather than returning a shorter region or an empty
+      string. This is the stale-index case and it must be visible at the point
+      of the answer, per REQ-0013.
+
+  R6  The response is bounded. An entity whose range is enormous -- a 900-line
+      generated file treated as one unit -- must not turn one `describe` into
+      an unbounded payload; the limit and what happens at it are the
+      architecture's to choose, but silence is not among the options.
+
+  R7  Acceptance is measured as a reduction in the handoff. Re-run the
+      game-server session of 2026-08-15 -- the five `sed`/`Read` calls that
+      followed a Loom answer -- and require that each is answerable by
+      `describe` with source. On Loom's own tree, `describe resolve-one
+      --source` must return src/graph/resolve.lisp:1136-1158 verbatim,
+      docstring included, and `describe REQ-0021 --source` must return what
+      REQ-0007 makes it return today.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - Does source belong on `describe` or on its own operation? A separate
+    `source` reads more honestly against REQ-0007's split and costs a caller
+    one more round trip. A flag keeps the "where is it and what is it" question
+    single, which is how it is actually asked.
+  - What does `find` do? It returns several entities and a body for each would
+    be an unbounded answer to a search. Probably nothing, and R1 deliberately
+    does not name it -- but an agent that has found the one entity it wanted
+    will want the body without a second call, and that pressure should be
+    resolved deliberately rather than by whoever implements it first.
+  - Does the range include the docstring and the preceding comment block? The
+    indexed range starts at the form, and in this codebase the paragraph above
+    a function is frequently the most valuable thing about it. Extending the
+    range is a change to what an entity *is* and should not be made silently
+    here.
+  - How does this interact with the enrichment fields that are currently
+    unpopulated everywhere? If an enriched summary lands later, a caller asking
+    for source and a caller asking for a summary want different things and the
+    operation should already have room for both.

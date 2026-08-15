@@ -135,3 +135,80 @@ body: |
       documented example -- `context macro definitions` returning
       MAKE-MACRO-ENTITY and its neighbours -- must not regress, and the full
       suite must stay green.
+
+  FURTHER EVIDENCE, 2026-08-15, AND WHAT IT ADDS
+
+  Still draft, still reproducing, and now with a case the original evidence
+  did not cover: a query that names no entity at all.
+
+  Both queries above are entity-shaped -- `data-handler` is a class that
+  exists, and R1 is written about a "query naming an entity that exists". The
+  case measured here is R5's fallback, the "task described in words" path
+  `context` was built for, and it fails by a mechanism R1 through R4 do not
+  describe.
+
+  Asked, on game-server, for
+
+      start-server startup sequence and database handler health check
+
+  the bundle came back with eight seeds, of which six were:
+
+      check-not-found-response   test/test-api.lisp
+      check-unknown-response     test/test-api.lisp
+      check-ok-response          test/test-api.lisp
+      check-alist                mpackage/test/obj-defn.lisp
+      check-slot                 mpackage/test/obj-defn.lisp
+      check-obj                  mpackage/obj-namespace.lisp
+
+  Every one of them is seeded on the English word "check". None has anything
+  to do with startup, databases or health. Five are test helpers, which is R4
+  firing again. The bundle reported 1973 of 2000 tokens and truncated, so the
+  noise was not free -- it was most of the budget.
+
+  This is worse than a bad ranking of relevant things. A word like "check",
+  "handler", "value", "create" or "test" appears in a large fraction of the
+  natural-language task descriptions an agent will write, and in a large
+  fraction of the entity names in any codebase. Lexical seeding on a prose
+  task therefore does not degrade gracefully as the query gets longer and more
+  descriptive -- it gets worse, because every additional word is another
+  chance to match something irrelevant. The seeding is being driven by whichever
+  of the author's words happens to collide with a name.
+
+  TWO THINGS THE SAME SESSION SHOWED THAT ARE NOT DEFECTS
+
+  The neighbourhood expansion rescued it. START-SERVER was among the two good
+  seeds, and the neighbour band underneath carried READ-CONFIG, CONFIG-GET,
+  SET-CORS-HANDLER, INITIALIZE-GAME-API, INITIALIZE-MEDIA and CONFIGURE-LOG --
+  which is the startup sequence, correctly and in order, and was what the
+  caller actually needed. The structure Loom builds is doing its job; it is
+  reached through seeds chosen badly and is competing for budget with them.
+
+  And a second query in the same session was genuinely, decisively useful:
+
+      data-api handler database connection acquire and test connectivity
+
+  returned CONNECTION-CONNECT-DATABASE in three places -- server/server.lisp,
+  game/test/api.lisp and data-api/test/fixture.lisp -- which is a triplication
+  nothing in the file being edited points at, and which changed the design of
+  the change being made. That query also contains "test" and "handler" and
+  still landed, because enough of its other words named real things.
+
+  So the recommendation this evidence supports is narrower than "seed
+  structurally instead of lexically", and it is a signal R1 through R5 do not
+  currently name: a seed matched only on a term that is common in prose should
+  be weighted far below one matched on a term that is distinctive, and the
+  count of seeds a single query word may contribute should probably be
+  bounded. Whether that is inverse document frequency over the tree's own
+  names, a stop-list, or a cap per query term is the architecture's to decide.
+
+  R7  A query term that matches many entities contributes proportionately
+      less, and no single common word may fill the seed set. On game-server,
+      the query in this section must not seed six of eight from `check`, and
+      the startup sequence that currently survives in the neighbour band must
+      still be present.
+
+  R8  A prose query that lands today must still land. The `data-api handler
+      database connection` query above must continue to return
+      CONNECTION-CONNECT-DATABASE and its siblings; a fix that suppressed
+      common terms hard enough to lose it would trade this defect for a worse
+      one.
