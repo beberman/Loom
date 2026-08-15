@@ -11,15 +11,23 @@
 
 (in-suite tools)
 
+(defun rpc-raw (method &key params (id 1))
+  "One JSON-RPC call, as the text on the wire.
+
+Wanted because cl-json decodes JSON `false' and JSON `null' to the same NIL, so
+a decoded response cannot tell a typed boolean from a missing one. BUG-0028 is
+exactly that distinction, and a test that went through the decoder would have
+passed against the defect."
+  (http-call *endpoint*
+             :method :post
+             :content-type "application/json"
+             :content (encode-result
+                       (append (list :jsonrpc "2.0" :id id :method method)
+                               (when params (list :params params))))))
+
 (defun rpc (method &key params (id 1))
   "One JSON-RPC call. Returns (values decoded-body http-status)."
-  (multiple-value-bind (body status)
-      (http-call *endpoint*
-                 :method :post
-                 :content-type "application/json"
-                 :content (encode-result
-                           (append (list :jsonrpc "2.0" :id id :method method)
-                                   (when params (list :params params)))))
+  (multiple-value-bind (body status) (rpc-raw method :params params :id id)
     (values (and (plusp (length body)) (json:decode-json-from-string body))
             status)))
 
@@ -126,6 +134,33 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
           "a refused tier arrived as a transport error rather than as a result")
       (is-true (cdr (assoc :is-error result)))
       (is (equal "CAPABILITY-ERROR" (cdr (assoc :name (structured response))))))))
+
+(test a-successful-call-reports-is-error-as-the-boolean-false
+  ;; BUG-0028. isError is typed boolean in the MCP result schema, and NIL
+  ;; encodes as null, so every *successful* tools/call carried
+  ;; "isError":null. A client that validates the result before reading it --
+  ;; Claude Code does -- rejected the answer, which meant every working tool
+  ;; failed and only the refusals got through.
+  ;;
+  ;; Asserted against the wire text rather than the decoded body on purpose:
+  ;; cl-json reads `false' and `null' both as NIL, so the obvious decoded
+  ;; assertion passes against the defect. The test that would have caught this
+  ;; is the one nobody wrote -- the existing coverage asserted isError on a
+  ;; refusal, where the value was T and encoded correctly all along.
+  (with-test-server ()
+    (let ((body (rpc-raw "tools/call"
+                         :params (list :name "loom_status" :arguments nil))))
+      (is (search "\"isError\":false" body)
+          "a successful call must carry the boolean false, not null:~%  ~a" body)
+      (is-false (search "\"isError\":null" body)))))
+
+(test a-refused-call-still-reports-is-error-as-true
+  ;; The other half, so the fix cannot be "always write false".
+  (with-test-server ()
+    (let ((body (rpc-raw "tools/call"
+                         :params (list :name "loom_repl_open" :arguments nil))))
+      (is (search "\"isError\":true" body)
+          "a refusal must still say true:~%  ~a" body))))
 
 (test an-unknown-tool-is-an-envelope-error
   ;; The other side of the same line: there is no tool, so there was no call.

@@ -16,6 +16,16 @@
 # Emacs backups (docs/x/REQ-0001.yaml~) and lock symlinks (docs/x/.#REQ-0001.yaml)
 # cannot match the glob below, so a file open in an editor never shifts the
 # answer.
+#
+# completed/ is searched as well as the category directory, and that is not a
+# refinement -- it is the whole correctness of this script. REQ-0022's `complete'
+# MOVES a finished document into docs/<category>/completed/, so the highest id
+# in a mature category is normally in there and not beside its open siblings.
+# Looking only at the open ones answered BUG-0026 on 2026-08-14, when BUG-0026
+# and BUG-0027 were both already taken and sitting in completed/. A duplicate
+# was written and had to be renumbered -- which is exactly the failure the
+# header above says this script exists to prevent, produced by the script
+# itself.
 
 set -u
 
@@ -27,7 +37,8 @@ types="REQ:requirements ARCH:arch DEC:design PLAN:plans REV:reviews BUG:bugs CON
 next_for() {
     local type=$1 dir=$2 highest=0 f base n
 
-    for f in "$root/docs/$dir/$type"-[0-9][0-9][0-9][0-9].yaml; do
+    for f in "$root/docs/$dir/$type"-[0-9][0-9][0-9][0-9].yaml \
+             "$root/docs/$dir/completed/$type"-[0-9][0-9][0-9][0-9].yaml; do
         [ -e "$f" ] || continue          # no match: the glob came through literally
         base=$(basename "$f" .yaml)
         n=$((10#${base#"$type"-}))       # 10# so 0004 is four, not an octal error

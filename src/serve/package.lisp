@@ -69,6 +69,7 @@
    #:plist-shaped-p
    #:encode-result
    #:*array-valued-keys*
+   #:*json-false*
    #:*json-key-name*
 
    ;; the listener and its registration seam (R7)

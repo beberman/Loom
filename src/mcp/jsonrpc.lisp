@@ -55,7 +55,15 @@ with."
         ;; structuredContent is what a program reads, and they are the same
         ;; answer rather than two renderings of it.
         :|structuredContent| content
-        :|isError| (and error t)))
+        ;; *JSON-FALSE* rather than NIL, which encodes as null. isError is typed
+        ;; boolean in the MCP schema, and a client that validates the result
+        ;; before reading it rejects null -- so every *successful* call was
+        ;; refused by the client while every failing one passed, which is
+        ;; BUG-0028 and is why this reads oddly at first glance. The spec allows
+        ;; omitting the field entirely and defaulting it to false; it is written
+        ;; explicitly instead because a caller reading result.isError directly
+        ;; should not have to know the default.
+        :|isError| (if error t *json-false*)))
 
 (defun call-tool (parameters grants)
   "Dispatch a tools/call. Returns (values result code message).
