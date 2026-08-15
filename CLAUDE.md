@@ -7,7 +7,11 @@ defined, what a change reaches, what decisions govern an area.
 ## Ask Loom before reading the tree
 
 Loom indexes itself, so the fastest way to understand this codebase is to use
-it:
+it. **If `loom_*` tools are in your tool list, use those** — `.mcp.json`
+registers the running service and they answer against a warm index in
+milliseconds, where each `tools/loom.sh` call reindexes the tree first. They
+need a Claude Code restart to appear, and `tools/loom-serve.sh update` after any
+change to Loom's own source. The script below is the fallback and always works:
 
 ```
 tools/loom.sh 'context <task words>'  # start here: what to read before editing

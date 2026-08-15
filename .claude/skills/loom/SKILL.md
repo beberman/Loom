@@ -16,9 +16,35 @@ restating it, because five copies of it went stale twice.
 Every invocation below is known to work. If something fails, the cause is
 almost certainly a real problem rather than a wrong incantation.
 
-## The console
+## Two ways in, and the fast one first
 
-Drive it through `tools/loom.sh` **using the Bash tool**, which takes a whole
+**MCP.** `.mcp.json` registers the running service, so `loom_*` tools may be in
+your tool list already:
+
+    loom_find  loom_describe  loom_impact  loom_context  loom_status
+    loom_check  loom_rules  loom_structure  loom_drift
+    loom_set_status  loom_complete  loom_repl_open/eval/close
+
+Each takes a `repository` argument — the service holds several and refuses to
+guess, because an answer about the wrong tree is worse than none. They run
+against a resident, file-watching index: an `impact` measured at 22ms where the
+script takes minutes, since the script reindexes the whole tree before it can
+answer.
+
+Three caveats, all real:
+
+- The registration needs a **Claude Code restart**. A session that began before
+  `.mcp.json` existed will not have the tools; look at your own list.
+- The service runs **the code it was started with**. After changing Loom's
+  source, `tools/loom-serve.sh update` — it restarts only when something
+  actually changed.
+- `loom_init`, `loom_remove` and `loom_architecture` are deliberately **not**
+  MCP tools. They prepare, describe or dismantle a repository and are driven by
+  `tools/loom-init.sh`, where a terminal can ask the consent REQ-0021 R16
+  requires. REST carries them for that script.
+
+**The console.** Always works, needs no service, and is the answer whenever the
+tools are absent. Drive it through `tools/loom.sh` **using the Bash tool**, which takes a whole
 console session as one quoted argument, watches the tree before the first
 command and stops after the last, and filters compile chatter:
 

@@ -42,12 +42,25 @@
         (make-tool :name "loom_status" :operation :status)
         (make-tool :name "loom_check" :operation :check)
         (make-tool :name "loom_rules" :operation :rules)
+        ;; Two more read tools, and the line they sit on the right side of.
+        ;; :STRUCTURE and :DRIFT answer questions an agent working in a prepared
+        ;; worktree asks -- what is the shape of this tree, and where does its
+        ;; prose disagree with its code -- and change nothing.
+        ;;
+        ;; :ARCHITECTURE, :INIT and :REMOVE are deliberately absent, which is
+        ;; the same judgement that keeps the four lifecycle write tools off this
+        ;; surface. Those three prepare, describe or dismantle a repository, and
+        ;; they are driven by tools/loom-init.sh where a terminal can ask the
+        ;; consent REQ-0021 R16 requires. An agent mid-task has no business
+        ;; running any of them, and REST carries them for the script that does.
+        (make-tool :name "loom_structure" :operation :structure)
+        (make-tool :name "loom_drift" :operation :drift)
         (make-tool :name "loom_set_status" :operation :set-status)
         (make-tool :name "loom_complete" :operation :complete)
         (make-tool :name "loom_repl_open" :operation :repl-open)
         (make-tool :name "loom_repl_eval" :operation :repl-eval)
         (make-tool :name "loom_repl_close" :operation :repl-close))
-  "The twelve tools, in the order tools/list returns them.")
+  "The fourteen tools, in the order tools/list returns them.")
 
 (defun all-tools () *tools*)
 

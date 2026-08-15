@@ -12,6 +12,28 @@ first and which is the authoritative build/test/console reference. This file
 is shorter and role-agnostic: the part every agent definition needed and
 restated, not the part any one of them needed in full.
 
+## Prefer the MCP tools; the script is the fallback
+
+`.mcp.json` registers Loom's running service, so **`loom_*` tools may be
+available directly** — `loom_find`, `loom_describe`, `loom_impact`,
+`loom_context`, `loom_status`, `loom_check`, `loom_rules`, `loom_structure`,
+`loom_drift`, `loom_set_status`, `loom_complete`, and three `loom_repl_*`.
+Every one takes a `repository` argument and refuses to guess.
+
+Use them when they are in your tool list. They answer against a resident,
+file-watching index: measured at **22ms** for an `impact` that costs minutes
+through the script, because the script starts a fresh SBCL and reindexes 240
+files before it can answer anything.
+
+Two things to know. The registration needs a Claude Code restart to take
+effect, so a session that started before it was added will not see the tools —
+check your own list rather than assuming. And run `tools/loom-serve.sh update`
+first if you have changed Loom's own source: the service runs the code it was
+started with, and `update` pays a restart only when something actually changed.
+
+`tools/loom.sh` below always works, needs no service, and is the answer whenever
+the tools are absent.
+
 ## Query the console through the Bash tool
 
 `tools/loom.sh` takes a whole console session as one quoted argument, `cd`s to

@@ -39,7 +39,7 @@
         (is (not (null (assoc :capabilities result))))
         (is (equal "loom" (cdr (assoc :name (cdr (assoc :server-info result))))))))))
 
-(test tools-list-returns-exactly-twelve-and-no-lifecycle-write-tool
+(test tools-list-returns-exactly-fourteen-and-no-lifecycle-write-tool
   ;; The negative is the witness for DES-0006's deliberate asymmetry. Without
   ;; it, a later well-meaning restoration of symmetry between the two skins is
   ;; invisible -- the count would simply be fourteen and every other test would
@@ -53,13 +53,18 @@
   (with-test-server ()
     (let* ((tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
            (names (mapcar (lambda (tool) (cdr (assoc :name tool))) tools)))
-      (is (= 12 (length tools)) "the tool set is ~a" names)
-      (dolist (present '("loom_set_status" "loom_complete"))
+      (is (= 14 (length tools)) "the tool set is ~a" names)
+      (dolist (present '("loom_set_status" "loom_complete"
+                         "loom_structure" "loom_drift"))
         (is-true (member present names :test #'string=)
                  "~a is missing; REQ-0022 R6 puts the transition on MCP as well
 as REST, and an agent in a prepared worktree has no other way to reach it"
                  present))
-      (dolist (absent '("loom_watch" "loom_pause" "loom_unwatch" "loom_reindex"))
+      ;; The lifecycle four, plus the three that prepare, describe or dismantle
+      ;; a repository -- driven by tools/loom-init.sh where a terminal can ask
+      ;; REQ-0021 R16's consent, and carried by REST for that script.
+      (dolist (absent '("loom_watch" "loom_pause" "loom_unwatch" "loom_reindex"
+                        "loom_init" "loom_remove" "loom_architecture"))
         (is-false (member absent names :test #'string=)
                   "~a is exposed; DES-0006 rejects the write tools under
 ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
