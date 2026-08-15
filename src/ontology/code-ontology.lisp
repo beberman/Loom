@@ -730,11 +730,39 @@ earns :DOCUMENTS.")
                 :documentation "Entity names found in the prose.  Raw text
 until the workspace resolves them (SS10.3); resolution turns each into an
 :inferred edge and drops it from here.")
+               (:link-targets list
+                :documentation "Workspace-relative paths a markdown document
+links to, normalised against its own directory.
+
+Separate from :MENTIONS because the two fail differently, which is BUG-0027.
+Both earn the same weak :MENTIONS edge when they resolve -- a link is still only
+an observation that this file names this thing.  But an unresolved code span is
+an ordinary word in backticks and is dropped in silence, while an unresolved
+link target is a path an author wrote that is not there, and goes to
+:UNRESOLVED-REFERENCES where `check' reports it.
+
+Merging the two destroyed that distinction one line before the only place that
+could act on it, and thirty-eight broken links in ~/lisp/game-server went
+unreported while `status' read zero.")
                (:unresolved-references list
                 :documentation "Declared references that named nothing in the
 index.  SS10.3: not dropped silently -- this is the documentation staleness
 detector, and a decision naming a function that no longer exists is
 detectably rotten.")
+               (:broken-links list
+                :documentation "Link targets that name no file on disk.
+
+Separate from :UNRESOLVED-REFERENCES because it is established differently and
+by a different layer.  An unresolved reference is a name the *index* could not
+place; a broken link is a path the *filesystem* does not have.  The two are not
+the same question, and conflating them reported game-server's links to
+CLAUDE.md and to a .sql file as broken when both files were present and merely
+unindexed -- one excluded by name, the other claimed by no analyzer.
+
+Written by CHECK-DOCUMENT-LINKS in loom-workspace, which is the layer that
+knows a repository has a root.  UNRESOLVED-REFERENCES reports both, because to
+a reader they are one question: what does this document name that is not
+there.")
                (:analysis-error string
                 :documentation "Set when the YAML would not parse.  The
 document is indexed anyway, for the SS9.3 reason: a known unknown beats an

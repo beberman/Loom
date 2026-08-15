@@ -27,7 +27,13 @@
                           (all-entities g)))))
 
 (defun md-mentions (path contents)
+  "The backticked code spans only. Link targets live in :LINK-TARGETS since
+BUG-0027, because the two fail differently: an unresolved span is an ordinary
+word and is dropped in silence, an unresolved link is a path that is not there."
   (getp (md-entity path contents) :mentions))
+
+(defun md-links (path contents)
+  (getp (md-entity path contents) :link-targets))
 
 ;;; ------------------------------------------------------------------
 ;;; Dispatch: which directories count (R1, R2)
@@ -215,7 +221,7 @@
 ;;; ------------------------------------------------------------------
 
 (test a-relative-link-normalizes-against-the-documents-own-directory
-  (let ((m (md-mentions "docs/data-layer.md"
+  (let ((m (md-links "docs/data-layer.md"
                         "[`media`](../media/media-handler.lisp) and [x](./sibling.md)")))
     (is (member "media/media-handler.lisp" m :test #'string=))
     (is (member "docs/sibling.md" m :test #'string=))))
@@ -223,25 +229,25 @@
 (test a-directory-target-and-an-external-url-are-dropped
   ;; Loom mints no directory entity, so `../data-api/' would resolve to nothing
   ;; anyway -- and R3 asks that it be dropped rather than reported.
-  (let ((m (md-mentions "docs/x.md"
+  (let ((m (md-links "docs/x.md"
                         "[a](../data-api/) [b](https://example.com/x.lisp) ~
                          [c](mailto:someone@example.com) [d](#a-section)")))
     (is (null m))))
 
 (test a-fragment-and-a-title-are-stripped-from-a-target
-  (let ((m (md-mentions "docs/x.md"
+  (let ((m (md-links "docs/x.md"
                         "[a](../src/foo.lisp#the-part \"A title\")")))
     (is (member "src/foo.lisp" m :test #'string=))))
 
 (test a-reference-definition-is-a-link-too
-  (let ((m (md-mentions "docs/x.md" (format nil "see [handler]~%~%[handler]: ../media/h.lisp"))))
+  (let ((m (md-links "docs/x.md" (format nil "see [handler]~%~%[handler]: ../media/h.lisp"))))
     (is (member "media/h.lisp" m :test #'string=))))
 
 (test a-target-reaching-above-the-root-stays-visibly-wrong
   ;; Rather than quietly becoming a sibling. It resolves to nothing and is
   ;; dropped, which is the recorded gap CON-0001 prefers to a fabricated hit.
   (is (member "../elsewhere.lisp"
-              (md-mentions "docs/x.md" "[a](../../elsewhere.lisp)")
+              (md-links "docs/x.md" "[a](../../elsewhere.lisp)")
               :test #'string=)))
 
 ;;; ------------------------------------------------------------------

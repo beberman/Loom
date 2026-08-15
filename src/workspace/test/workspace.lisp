@@ -1005,3 +1005,45 @@ comparing against nothing and its silence would mean nothing")
       (is (= 1 (length (entities-of-type g :rule-violation))))
       (is (string= "RULE-0001" (getp (first (entities-of-type g :rule-violation))
                                      :rule-id))))))
+
+;;; ------------------------------------------------------------------
+;;; Link targets against the disk (BUG-0027)
+;;; ------------------------------------------------------------------
+
+(test a-link-to-a-file-that-is-not-there-is-reported
+  ;; The finding BUG-0027 exists for. Measured on ~/lisp/game-server: 38 broken
+  ;; link targets across six files while `status' read `unresolved: 0'.
+  (with-workspace-fixture (repository)
+    (write-file "docs/notes.md"
+                "see [alpha](../src/alpha.lisp) and [gone](../src/missing.lisp)
+")
+    (poll-once repository :quiet t)
+    (let ((unresolved (mapcar #'cdr (unresolved-references (repository-graph repository)))))
+      (is (member "src/missing.lisp" unresolved :test #'string=)
+          "the link to nothing is reported: ~a" unresolved)
+      (is (not (member "src/alpha.lisp" unresolved :test #'string=))
+          "and the one that lands is not"))))
+
+(test a-link-to-a-real-file-loom-does-not-index-is-not-reported
+  ;; The false positive the first fix produced, and the reason this check asks
+  ;; the disk rather than the index. A document may legitimately link to a
+  ;; licence, a .sql fixture, a CLAUDE.md -- things no analyzer claims and Loom
+  ;; has no opinion about. What it may not do is link to nothing.
+  ;;
+  ;; Without this, five of game-server's eight reported findings were files
+  ;; sitting right there on disk, which is how a staleness report stops being
+  ;; read.
+  (with-workspace-fixture (repository)
+    (write-file "schema.sql" "-- no analyzer claims this
+")
+    (write-file "CLAUDE.md" "# instructions, excluded from indexing by name
+")
+    (write-file "docs/notes.md"
+                "see [schema](../schema.sql) and [guide](../CLAUDE.md)
+")
+    (poll-once repository :quiet t)
+    (let ((unresolved (mapcar #'cdr (unresolved-references (repository-graph repository)))))
+      (is (not (member "schema.sql" unresolved :test #'string=))
+          "a .sql file no analyzer claims is on disk and is not broken: ~a" unresolved)
+      (is (not (member "CLAUDE.md" unresolved :test #'string=))
+          "and neither is the file REQ-0028 excludes by name"))))

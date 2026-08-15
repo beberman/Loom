@@ -393,6 +393,13 @@ rather than a preference."
       ;; has not run yet leaves every test covering nothing.
       (submit "resolve-tests"          (resolve-tests graph :workspace-id workspace))
       (submit "resolve-document-links" (resolve-document-links graph :workspace-id workspace))
+      ;; After RESOLVE-DOCUMENT-LINKS and before the rules, because it writes a
+      ;; property that same pass's siblings read, and because a rule check is a
+      ;; query over the finished graph. It takes the repository rather than the
+      ;; graph -- the only pass here that does -- since the question it asks is
+      ;; about the disk (BUG-0027).
+      (submit "check-document-links"   (check-document-links repository
+                                                             :workspace-id workspace))
       (submit "check-rules"            (violation-ops graph :workspace-id workspace)))))
 
 (defun index-repository (repository &key quiet)
@@ -917,3 +924,45 @@ the last error per thread.\""
           :recovered-regions (count-file-regions graph :recovered-regions)
           :errors (length (repository-errors repository))
           :last-error (first (repository-errors repository)))))
+
+;;;; ==================================================================
+;;;; Link targets against the filesystem (BUG-0027)
+;;;; ==================================================================
+;;;;
+;;;; The one check in the pipeline that asks the disk rather than the index,
+;;;; and it lives here because this is the layer that knows a repository has a
+;;;; root. loom-graph resolves names against entities and has no filesystem;
+;;;; an analyzer has neither and must not acquire either (SS8.1).
+;;;;
+;;;; The distinction is not pedantry, it is the difference between a report and
+;;;; a fabrication. A link target that does not resolve in the index has not
+;;;; been shown to be broken: game-server links to CLAUDE.md, which REQ-0028
+;;;; excludes by name, and to data-api/sql/test.sql, which no analyzer claims.
+;;;; Both files are present. Reporting them as broken would put five confident
+;;;; falsehoods in front of a reader alongside the two real findings, which is
+;;;; how a staleness report stops being read.
+
+(defun check-document-links (repository &key workspace-id)
+  "Operations recording, per document, the link targets that name no file.
+
+Existence on disk, not presence in the index. A document may legitimately link
+to a licence, a .sql fixture, a CLAUDE.md -- things Loom does not index and has
+no opinion about. What it may not do is link to nothing."
+  (let ((graph (repository-graph repository))
+        (root (repository-root repository))
+        (ops '()))
+    (dolist (type *document-types*)
+      (dolist (document (entities-of-type graph type))
+        (let ((targets (getp document :link-targets)))
+          ;; Only documents that carry link targets are touched, so a YAML
+          ;; document -- which has none -- keeps whatever it had rather than
+          ;; being handed an empty list on every pass.
+          (when targets
+            (let ((broken (remove-if (lambda (target)
+                                       (probe-file (merge-pathnames target root)))
+                                     targets)))
+              (push (update-properties (id document)
+                                       (list :broken-links broken)
+                                       workspace-id)
+                    ops))))))
+    (nreverse ops)))

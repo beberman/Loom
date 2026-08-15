@@ -373,10 +373,38 @@ file. REQ-0014 R3 asks for backticks and links, which is what this reads."
       (let ((token (string-trim '(#\Space #\Tab) span)))
         (when (mention-candidate-p token)
           (pushnew (string-downcase token) found :test #'string=))))
+    (nreverse found)))
+
+(defun markdown-link-targets (contents path)
+  "Every link target CONTENTS offers, as a workspace-relative path.
+
+Separate from MARKDOWN-MENTIONS since BUG-0027, and the separation is the whole
+point rather than tidiness. Both lists resolve the same way and earn the same
+weak edge; they differ in what their failures mean. An unresolved code span is
+an ordinary word in backticks -- prose is full of them and REQ-0014 drops them
+in silence. An unresolved link target is a path an author wrote that is not
+there, which is checkable and is a defect.
+
+Fences are excluded here as they are for spans: a link inside a code fence is a
+specimen of a link, not one."
+  (let* ((lines (unfenced-lines (text-lines contents)))
+         (text (format nil "~{~a~^~%~}" lines))
+         (found '()))
     (dolist (target (append (link-targets text) (line-link-targets lines)))
       (let ((normalized (normalize-link-target target path)))
         (when normalized
-          (pushnew (string-downcase normalized) found :test #'string=))))
+          ;; Case preserved, unlike a code span. A link target is checked
+          ;; against the filesystem by CHECK-DOCUMENT-LINKS as well as looked up
+          ;; in the index, and on a case-sensitive filesystem `claude.md' is not
+          ;; CLAUDE.md and `playboardrendering.md' is not PlayBoardRendering.md.
+          ;; Downcasing here reported four of game-server's files as missing
+          ;; while they sat on disk under the names their authors gave them.
+          ;;
+          ;; Nothing is lost for the index lookup: RESOLVE-ONE downcases its
+          ;; argument, so a target keeps matching a downcased LINKABLE-INDEX
+          ;; key. The original case is also what a reader wants to see in a
+          ;; report -- it is the string to search the document for.
+          (pushnew normalized found :test #'string-equal))))
     (nreverse found)))
 
 ;;;; ==================================================================
@@ -433,6 +461,7 @@ that a *declared* field promised would resolve."
                                        :system (default-system-for-path path)
                                        :format :markdown
                                        :mentions (markdown-mentions contents path)
+                                       :link-targets (markdown-link-targets contents path)
                                        :unresolved-references '())))))
     (list (retract-file path workspace-id)
           (assert-entity entity workspace-id))))
