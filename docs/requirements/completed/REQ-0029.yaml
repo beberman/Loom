@@ -1,0 +1,226 @@
+id: REQ-0029
+title: A layering rule must be writable about a family of packages, not only about one
+status: implemented
+date: 2026-08-15
+refines: [DES-0009, BUG-0009]
+affects: [edges-between-systems, in-system-p, entity-system, run-check,
+          parse-check]
+tags: [rules, layering, check-kinds, system, generality, game-server, cl-dbi]
+summary: |
+  DES-0009 R10 recorded a gap and declined to design a fix: `:system` holds a
+  package name and rules compare it with EQ, so "nothing outside this family
+  may reach its internals" -- RULE-0002's exact claim -- cannot be written as
+  one rule on a codebase whose subsystem is fourteen packages. It named three
+  possible answers and asked a follow-up requirement to choose.
+
+  Two of the three are now decided by measurement rather than by argument, and
+  both are decided against the obvious reading. Comparing every `:system` value
+  as a prefix uniformly -- R10's second option -- would re-open BUG-0009's
+  cause one on Loom's own tree, because every production package here is a
+  literal string prefix of its own test sibling. And a raw string prefix is
+  wrong even as an opt-in, because on game-server it sweeps in four packages
+  that are not family members, and on cl-dbi it sweeps in that tree's test
+  siblings by the same mechanism.
+
+  What survives is the third shape: an explicit, opt-in, delimiter-aware
+  family match that leaves every existing rule's semantics exactly as they
+  are. This asks for that, and fixes the delimiter question with measurement
+  from four trees rather than from game-server alone.
+body: |
+  WHAT R10 LEFT OPEN
+
+  DES-0009 R10, verbatim in its ask: a follow-up requirement "should decide
+  whether from-system:/to-system: gain an explicit prefix-match variant,
+  whether every :system value is compared as a prefix uniformly (which would
+  change RULE-0001 to RULE-0003's own semantics on Loom's tree, not only
+  game-server's), or whether this stays a per-rule, name-every-package cost
+  indefinitely."
+
+  R10 also pairs itself with BUG-0009's cause two as "the same class of gap".
+  That pairing was right about the class and should not be mistaken for a
+  shared fix: BUG-0009 closed on 2026-08-15 by widening what a check may say
+  about the *callee* (`:no-call-to` and its `to-names:`), and it left
+  `from-system:`/`to-system:` untouched, delegating to EDGES-BETWEEN-SYSTEMS
+  exactly as `:no-edge` does. This document is the other axis -- what those
+  two fields may *match* -- and none of it came for free with the other.
+
+  MEASURED, ON FOUR TREES
+
+  Every package declaration in each tree, by DEFPACKAGE or
+  UIOP/PACKAGE:DEFINE-PACKAGE, counted directly on 2026-08-15:
+
+    tree                    packages  delimiter  families
+    ~/lisp/Loom                   29  none (-)   none
+    ~/lisp/game-server            40  /          game/ (14), mpackage/ (14)
+    ~/lisp/cl-dbi                 18  .          dbi. (7), dbd. (5), dbi-test. (2)
+    ~/lisp/cl-mysql                3  .          com.hackinghat. (3)
+    ~/lisp/datascience            13  none (-)   none
+    ~/lisp/linear-algebra          3  none (-)   none
+
+  Three findings that the game-server-only reading in R10 could not have
+  produced:
+
+  1. Families are not a game-server peculiarity. Two of the six trees on this
+     machine have them, using two different delimiters, and one of those --
+     cl-dbi -- nests two levels deep (`dbi.cache.single`, `dbd.mysql.error`).
+
+  2. The delimiter is not `/`. R10 speaks throughout of "`/`-prefix family
+     membership" because game-server is the tree it had. cl-dbi and cl-mysql
+     use `.` for the same purpose, canonically -- not as a nickname shape, but
+     as the package's own name. A scheme that hard-codes `/` answers one tree
+     of the two that need answering.
+
+  3. `-` must not be a delimiter, and this is the load-bearing finding.
+
+  WHY R10's OPTION TWO IS DEAD
+
+  Loom's own 29 packages include eight production/test pairs:
+
+    loom-analyzer / loom-analyzer-test    loom-process   / loom-process-test
+    loom-graph    / loom-graph-test       loom-serve     / loom-serve-test
+    loom-knowledge/ loom-knowledge-test   loom-rest      / loom-rest-test
+    loom-workspace/ loom-workspace-test   loom-mcp       / loom-mcp-test
+
+  In every pair the production name is a literal string prefix of the test
+  name. Compare `:system` values as prefixes uniformly and `from-system:
+  loom-analyzer` matches `loom-analyzer-test` again -- which is precisely
+  BUG-0009's cause one, the thirty-seven RULE-0002 false positives DES-0009
+  closed by moving off path segments and onto package names. R10 warned that
+  option two "would change RULE-0001 to RULE-0003's own semantics on Loom's
+  tree"; the measured direction of that change is straight back to
+  2026-08-05, on the same rules, for the same files.
+
+  This is not an argument that option two is risky. It is a demonstration that
+  it reintroduces a closed bug, and it should be recorded as closed rather than
+  weighed again by the next reader.
+
+  WHY A RAW PREFIX IS WRONG EVEN OPT-IN
+
+  Restricting the prefix match to rules that ask for it removes the damage
+  above but not the mechanism. game-server's 40 packages include four that
+  begin with the string `game` and belong to no family:
+
+    game-server        game-server-test        game-test        game-full-test
+
+  A rule writing `family: game` to mean the fourteen `game/*` packages gets
+  those four as well, including the two test packages -- cause one again, in a
+  foreign tree, arrived at by a different route. cl-dbi reproduces it exactly:
+  `family: dbi` intending the seven `dbi.*` packages also captures
+  `dbi-test.dbi` and `dbi-test.driver`.
+
+  Both trees fail the same way, both times through a test sibling, which is
+  what makes it a mechanism rather than a coincidence. The match must be
+  anchored at a delimiter, not at a character offset.
+
+  WHAT IS WANTED
+
+  R1  Existing rules keep their exact current semantics. `from-system:` and
+      `to-system:` compared with EQ, unchanged, by default. Every rule in
+      docs/rules/ today must behave identically before and after -- the
+      measurement is `check` reporting the same findings on Loom's tree, which
+      as of BUG-0009's close is none.
+
+  R2  A rule may opt into matching a family instead of one package. The
+      spelling is DES's to choose, but the choice must be visible in the
+      document a human reads: it must not be possible to look at a
+      `from-system:` line and be unable to tell whether it means one package or
+      fourteen.
+
+  R3  A family match is anchored at a delimiter, never at a character offset.
+      Family F matches system S when S is exactly F, or when S begins with F
+      followed by a delimiter character. `game` matches `game/map` and
+      `game/system`; it does not match `game-server` or `game-test`. `dbi`
+      matches `dbi.driver`; it does not match `dbi-test.dbi`.
+
+  R4  The delimiter set covers `/` and `.` and excludes `-`. The first two are
+      measured above as canonical family separators in three trees. Excluding
+      `-` is what keeps R1 true: it is the character every one of Loom's eight
+      test siblings is joined by, and admitting it re-opens BUG-0009.
+
+  R5  Nesting works. `dbd.mysql.error` is in family `dbd` and in family
+      `dbd.mysql`, because both are delimiter-anchored prefixes of it. A rule
+      may name either, and naming the outer one includes the inner.
+
+  R6  `:outside` follows the from side. Where a rule's from side names a
+      family, `to-system: outside` means outside *that family* -- "nothing
+      outside this family reaches its internals" is RULE-0002's claim and the
+      sentence R10 says cannot currently be written. A family whose members
+      call each other must not report fourteen packages' worth of internal
+      traffic as violations.
+
+  R7  `:no-call-to` inherits it. The kind BUG-0009 added delegates its boundary
+      question to EDGES-BETWEEN-SYSTEMS and must keep doing so, gaining family
+      matching with no change of its own. A check kind's callee vocabulary and
+      its boundary vocabulary are separate and must stay separately extensible.
+
+  R8  Acceptance is measured on two trees, not asserted. On Loom: `check`
+      reports what it reports today, unchanged, and the eight test siblings are
+      still not matched by their production rules. On game-server: one rule,
+      not fourteen, expresses "nothing outside the `game/` family reaches its
+      internals", and it matches the fourteen members and none of
+      `game-server`, `game-server-test`, `game-test`, `game-full-test`.
+
+      MEASURED, AND R8's OWN NUMBER WAS WRONG BY ONE. PLAN-0028 S7 ran this
+      and the family matched *fifteen* systems, not fourteen. The fifteenth is
+      a bare `:game`, and it is correct rather than a leak: it holds 42
+      entities, of which 15 are the DEFPACKAGE forms themselves. A
+      `(defpackage #:game/capability ...)` form sits above the `in-package`
+      that follows it, so it is inside no package and DEFAULT-SYSTEM-FOR-PATH
+      places it by directory segment (DES-0009 R3) -- along with four `.asd`
+      file entities and 23 definitions appearing before any `in-package`.
+      Every one of the 42 comes from a file under `game/`.
+
+      The number in this requirement was derived from a DEFPACKAGE census of
+      the source, which by construction cannot see the path-fallback bucket;
+      the indexed answer is the real one. The four exclusions were measured
+      exactly as predicted. R8 is met -- what it asks is that family members
+      are matched and same-prefix strangers are not -- and the count is
+      corrected here rather than in a footnote because a later reader
+      comparing 14 against 15 deserves the reason and not a discrepancy.
+
+  WHAT THIS IS NOT
+
+  Not a change to where `:system`'s value comes from. DES-0009 settled that --
+  the analyzer writes the file's own canonical package designator, unrewritten
+  -- and R5 of that document kept the value literal precisely so a later family
+  scheme would have "a stable, meaningful string to match against". This
+  document spends that, and changes nothing about how the string is produced.
+
+  Not nickname resolution. game-server's `game/system` declares the nickname
+  `:game`, which is the short umbrella name a reader would expect to belong to
+  `game/game`. Under this document that is a non-event: `:system` holds
+  canonical designators, a family is matched against canonical designators, and
+  a nickname that collides with a family name never enters the comparison.
+  DES-0009's ALTERNATIVES already declined to fold nicknames and this does not
+  reopen it.
+
+  Not a general query language. SS10.4's discipline stands: a rule that needs
+  more than the check kinds can express stays prose with severity advisory and
+  is counted by `unenforced-rules`. This adds one dimension to two existing
+  fields; it does not make `check:` programmable.
+
+  Not the per-rule cost abolished everywhere. A codebase that groups its
+  subsystems by neither `/` nor `.` -- Loom itself, datascience,
+  linear-algebra -- gains nothing here and still writes one rule per package if
+  it wants a family claim. That is the honest scope: three of the six trees
+  measured have no families to match, and inventing a `-` rule to serve them is
+  the thing R4 forbids.
+
+  WHY NOW, AND WHY NOT SOONER
+
+  R10 asked for this "alongside or after BUG-0009's cause two". Cause two
+  closed today, and the reason to take it up in the same sitting rather than
+  bank it is that the two share one reader's context and nothing else: the
+  measurements above -- eight test siblings on Loom, four false `game` prefixes
+  on game-server, two on cl-dbi -- are cheap to take while the rule machinery
+  is open and expensive to rediscover cold. None of them is recoverable from
+  the source by reading it; each required counting a tree.
+
+  The counter-argument, recorded because it is real: no rule on Loom's own tree
+  can use this. Loom's packages are dash-flat, so R8's first acceptance clause
+  is "nothing changed" and the only tree that exercises the feature is a
+  foreign one. That is a genuine cost -- a check-kind feature whose sole
+  consumer is a repository Loom does not build -- and it is why R1 and R8 are
+  written as they are: the change earns its place by provably not touching what
+  works, and by being measured where it does work rather than where it is
+  convenient.

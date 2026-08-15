@@ -159,6 +159,14 @@ for; only a write was ever forbidden. That deny list is only as current as its
 added to `docs/rules/RULE-0003.yaml`. One rule stays unenforceable as a check
 and prints as such: RULE-0004.
 
+A rule names one package by default. `from-family:`/`to-family:` name a family
+instead — every system whose name is the family or begins with it followed by
+`/` or `.`, so one rule covers game-server's fourteen `game/*` packages and
+`to-system: outside` then means outside the *family* (DES-0024). No rule here
+uses it: Loom's packages are dash-flat, and `-` is deliberately not a family
+delimiter because it would rejoin every `loom-x` to its `loom-x-test` sibling
+and re-open BUG-0009.
+
 ## Running it as a service
 
     sbcl --script loom-serve.lisp [/path/to/repo ...]              console + listener

@@ -1,0 +1,189 @@
+id: PLAN-0028
+title: One comparison behind a designator, and two fields in front of it
+status: final
+date: 2026-08-15
+refines: [DES-0024]
+affects: [edges-between-systems, in-system-p, entities-in-system, parse-check,
+          run-check]
+tags: [rules, layering, system, req-0029, des-0009, bug-0009]
+summary: |
+  DES-0024 in two source files plus their tests. SYSTEM-SATISFIES-P goes into
+  src/graph/query.lisp and three EQ comparisons start calling it; PARSE-CHECK
+  learns two fields and folds them into the slot it already fills. Nothing
+  downstream of the plist changes, which is the point.
+
+  The risk is not in the code, which is small. It is that this tree cannot
+  demonstrate the feature working -- Loom's packages are dash-flat -- so the
+  suite proves only that nothing broke, and the evidence that it does anything
+  has to be taken off game-server by hand.
+body: |
+  FILES
+
+  src/graph/query.lisp           SYSTEM-SATISFIES-P, *SYSTEM-FAMILY-DELIMITERS*,
+                                 and the three comparisons that adopt them:
+                                 EDGES-BETWEEN-SYSTEMS (twice, counting the
+                                 :outside branch), IN-SYSTEM-P,
+                                 ENTITIES-IN-SYSTEM.
+  src/graph/package.lisp         export both new names.
+  src/analyzer/yaml-analyzer.lisp   PARSE-CHECK reads from-family:/to-family:
+                                 and refuses a clause writing both forms of one
+                                 side.
+  src/graph/test/query.lisp      SYSTEM-SATISFIES-P's own tests, named for real
+                                 packages from game-server and cl-dbi.
+  src/graph/test/rules.lisp      a family rule end to end through CHECK-RULES,
+                                 including the :outside branch and :no-call-to
+                                 inheriting it.
+  src/analyzer/test/yaml-analyzer.lisp   the two fields parsing, and the
+                                 both-forms refusal.
+  CLAUDE.md                      the layering section states what a rule can
+                                 say; it gains a sentence, not a section.
+
+  RISKS
+
+  A silent EQ left behind. The whole change is that four comparisons stop being
+  EQ, and one missed is a designator that works in three places and not the
+  fourth -- DES-0024 D4's stated failure mode, discovered by a caller at the
+  worst moment. Step 2's grep for `entity-system` beside an `eq` is the guard,
+  and it runs before the tests rather than after.
+
+  A regression that reads as success. This tree's acceptance is "check reports
+  what it reported yesterday", and the way to fail it invisibly is for
+  SYSTEM-SATISFIES-P to answer NIL more often than EQ did -- every rule then
+  matches nothing and `check` prints "No violations.", which is the exact
+  vacuous pass BUG-0006 closed and BUG-0009 spent two sections warning about.
+  Step 5 therefore checks a number that must stay non-zero (the four rules that
+  find nothing are not evidence) by rerunning the three RULE-000n fixture tests
+  that assert a violation IS found, not the ones asserting none.
+
+  The dash delimiter creeping in. `#\-` in *SYSTEM-FAMILY-DELIMITERS* re-opens
+  BUG-0009 cause one across all eight of Loom's production/test pairs. It is
+  one character in one defparameter and it is the single most damaging edit
+  available in this change, so step 1 writes the reason into the docstring and
+  step 3 writes a test that fails if it is ever added.
+
+  Evidence that is a fixture rather than a tree. Naming a fixture :GAME/MAP
+  does not make it game-server. The suite can only show the comparison behaves
+  as specified; step 7's manual measurement on the real tree is what shows the
+  specification was the right one, and it is not skippable just because the
+  suite is green.
+
+  STEPS
+
+  S1  *SYSTEM-FAMILY-DELIMITERS* and SYSTEM-SATISFIES-P in
+      src/graph/query.lisp, above ENTITY-SYSTEM. Keyword designator: EQ.
+      `(:family F)` designator: SYMBOL-NAME comparison, case-insensitive,
+      exact-or-followed-by-a-delimiter. The docstring carries why `#\-` is
+      absent. Exported from LOOM-GRAPH.
+
+  S2  EDGES-BETWEEN-SYSTEMS, IN-SYSTEM-P and ENTITIES-IN-SYSTEM adopt it --
+      four comparison sites including the `:outside` branch, which becomes
+      `(not (system-satisfies-p from-system target))` and thereby delivers
+      REQ-0029 R6. Then grep the tree for a surviving `eq` against
+      ENTITY-SYSTEM's result before running anything.
+
+  S3  Tests for SYSTEM-SATISFIES-P in src/graph/test/query.lisp, beside the
+      existing ENTITY-SYSTEM ones. The cases that matter are the negatives, and
+      they are named for real packages measured in REQ-0029:
+        (:family :game) satisfied by :game, :game/map, :game/system
+                        not by :game-server, :game-server-test, :game-test
+        (:family :dbi)  satisfied by :dbi.driver, :dbi.cache.single
+                        not by :dbi-test.dbi
+        (:family :dbd.mysql) satisfied by :dbd.mysql.error   -- nesting, R5
+        :loom-analyzer  not satisfied by :loom-analyzer-test -- the dash guard
+
+  S4  PARSE-CHECK reads `from-family:`/`to-family:` and folds each into the
+      :from-system/:to-system slot as `(:family NAME)`. A clause writing both
+      forms of one side returns NIL, joining `kind: vibes` on the prose path.
+      Tests in src/analyzer/test/yaml-analyzer.lisp.
+
+  S5  Rule-level tests in src/graph/test/rules.lisp: a `from-family:` rule
+      finding a real crossing; the same rule NOT reporting a call between two
+      members of its own family (the :outside branch, and the clause without
+      which the feature is useless on game-server); and a :no-call-to rule with
+      a family from side, pinning DES-0024 D3's claim that it inherits this
+      with no edit of its own.
+
+  S6  Full suite, /usr/bin/sbcl, then `tools/loom.sh 'reindex | check'`.
+      Acceptance on this tree: 0 violations, 1 unenforced rule, unchanged from
+      BUG-0009's close. Nothing in docs/rules/ is edited by this plan -- if a
+      rule document needed changing to keep its behaviour, R1 has already
+      failed.
+
+  S7  Measure on game-server by hand, since no automated path reaches it: write
+      one `from-family: game` rule, run it against that tree, and record which
+      packages it matched. REQ-0029 R8 asks for the fourteen `game/*` members
+      and none of `game-server`, `game-server-test`, `game-test`,
+      `game-full-test`. The count goes in this plan's outcome; a plan that
+      records only the Loom half has not been finished.
+
+  S8  `complete PLAN-0028 DES-0024=implemented REQ-0029=implemented`, with the
+      verdicts adjusted to `partial` plus an OUTSTANDING section if S7 measures
+      anything other than fourteen and four.
+
+  OUTCOME
+
+  /usr/bin/sbcl, branch foreign-tree, 2026-08-15. All eight steps ran.
+
+  ON LOOM -- the regression surface, which is this tree's whole contribution:
+
+    check      0 violations, 1 unenforced (RULE-0004), unchanged from
+               BUG-0009's close the same day. No document in docs/rules/ was
+               edited by this plan, so R1 held without anything being made to
+               hold.
+    suite      9 of 9 systems. loom-graph 368 -> 401 assertions, loom-analyzer
+               605 -> 609.
+
+  ON GAME-SERVER -- tools/family-census.lisp, written for this step because no
+  existing path reaches a foreign tree. 148 files, 47 distinct systems indexed:
+
+    in family :game        15   game, game/capability, game/default,
+                                game/description, game/game, game/gen-map,
+                                game/geometry, game/graphics, game/map,
+                                game/media, game/piece, game/player,
+                                game/rules, game/spatial-geom, game/system
+    same-prefix strangers   4   game-server, game-server-test, game-test,
+                                game-full-test -- all correctly excluded, and
+                                all four captured by the raw-prefix
+                                implementation REQ-0029 R3 rejected
+    one from-family: rule
+      through CHECK-RULES 300   calls leaving the family
+
+  S8's THRESHOLD WAS WRONG, AND SAYING SO IS THE POINT OF WRITING IT DOWN
+  FIRST. This step said to record `partial` for anything other than fourteen
+  and four, and the measurement is fifteen and four. The fifteenth is a bare
+  `:game` holding 42 entities -- 15 DEFPACKAGE forms, 4 `.asd` file entities,
+  and 23 definitions preceding any `in-package` -- every one of them from a
+  file under `game/`. A DEFPACKAGE form sits above the `in-package` that
+  follows it and is therefore inside no package, so DEFAULT-SYSTEM-FOR-PATH
+  places it by directory segment (DES-0009 R3).
+
+  So the family match is right and the prediction was wrong: R8's fourteen
+  came from a source census that by construction cannot see the path-fallback
+  bucket. The verdict is `implemented`, not `partial`, because what R8 asks --
+  members in, same-prefix strangers out -- is met exactly; the count is
+  corrected in REQ-0029 R8 itself. A threshold that fires on the right answer
+  is a threshold that was set before the measurement, which is when thresholds
+  have to be set.
+
+  WHAT THE FEATURE IS WORTH, MEASURED
+
+  396 calls leave one `game/*` member package for another system. The family
+  rule reports 300 of them. The 96-call difference is intra-family traffic --
+  `game/graphics` calling `game/map` and the like -- which fourteen per-package
+  `:no-edge` rules would each have reported as violations, because two members
+  of one family are EQ-incomparable.
+
+  That is the cost DES-0009 R10 described without a number: not merely fourteen
+  rules to write and keep in sync, but 96 findings to read past every time they
+  run. One rule reports 300 and all 300 are the question the rule was asked.
+
+  WHAT IS NOT PROVEN HERE
+
+  The suite exercises SYSTEM-SATISFIES-P against fixtures named for
+  game-server's and cl-dbi's packages, which is not the same evidence as the
+  packages. The end-to-end path -- a `from-family:` clause parsed out of a real
+  rule document in a real tree, run by a real `check` -- is exercised on Loom
+  only at the PARSE-CHECK level, because no rule on this dash-flat tree can
+  use a family. tools/family-census.lisp builds its RULE entity in memory
+  rather than reading one from game-server's docs/, since writing a rule
+  document into a repository Loom does not own is not this plan's to do.

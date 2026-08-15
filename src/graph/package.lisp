@@ -108,6 +108,8 @@
    ;; queries -- read-only (SS6.3)
    #:find-entities
    #:entity-system
+   #:system-satisfies-p
+   #:*system-family-delimiters*
    #:in-system-p
    #:entities-in-system
    #:edges-between-systems

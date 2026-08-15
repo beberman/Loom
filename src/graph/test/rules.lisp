@@ -360,6 +360,83 @@ document said something else.")
     (is (null (check-rules g)))))
 
 ;;; ------------------------------------------------------------------
+;;; A family on the from side (DES-0024)
+;;;
+;;; RULE-0002's sentence -- "nothing outside this family may reach its
+;;; internals" -- written as one rule rather than as fourteen. The fixtures
+;;; are game-server package names because that is the tree REQ-0029 measured;
+;;; no rule on Loom's own dash-flat tree can exercise this.
+;;; ------------------------------------------------------------------
+
+(test a-family-rule-catches-a-call-leaving-the-family
+  (let* ((g (make-graph))
+         (inside (rules-function g "draw-tile" "game/graphics.lisp"
+                                 :game/graphics))
+         (outside (rules-function g "db-select" "data-api/db/connection.lisp"
+                                  :data-api)))
+    (add-relationship g (make-instance 'relationship :rel-type :calls
+                                       :from-id (id inside) :to-id (id outside)
+                                       :origin-file "game/graphics.lisp"))
+    (rules-rule g "RULE-9001" '(:kind :no-edge :from-system (:family :game)
+                                :to-system :outside :rel-types (:calls)))
+    (let ((violations (check-rules g)))
+      (is (= 1 (length violations)))
+      (is (search "draw-tile" (violation-detail (first violations)))))))
+
+(test a-family-rule-permits-a-call-between-two-of-its-own-members
+  ;; The half that makes the feature worth having. :GAME/GRAPHICS and
+  ;; :GAME/MAP are EQ-incomparable, so under the old comparison this edge was
+  ;; a violation of any rule naming either package -- which is exactly why
+  ;; DES-0009 R10 said the claim could not be written at all.
+  (let* ((g (make-graph))
+         (a (rules-function g "draw-tile" "game/graphics.lisp" :game/graphics))
+         (b (rules-function g "tile-at" "game/map.lisp" :game/map)))
+    (add-relationship g (make-instance 'relationship :rel-type :calls
+                                       :from-id (id a) :to-id (id b)
+                                       :origin-file "game/graphics.lisp"))
+    (rules-rule g "RULE-9001" '(:kind :no-edge :from-system (:family :game)
+                                :to-system :outside :rel-types (:calls)))
+    (is (null (check-rules g)))))
+
+(test a-family-rule-does-not-catch-a-package-that-merely-starts-the-same-way
+  ;; :GAME-SERVER is not in family :GAME, so a call it makes is not this
+  ;; rule's business. The raw-prefix implementation reports it.
+  (let* ((g (make-graph))
+         (impostor (rules-function g "start-server" "server/server.lisp"
+                                   :game-server))
+         (outside (rules-function g "db-select" "data-api/db/connection.lisp"
+                                  :data-api)))
+    (add-relationship g (make-instance 'relationship :rel-type :calls
+                                       :from-id (id impostor) :to-id (id outside)
+                                       :origin-file "server/server.lisp"))
+    (rules-rule g "RULE-9001" '(:kind :no-edge :from-system (:family :game)
+                                :to-system :outside :rel-types (:calls)))
+    (is (null (check-rules g)))))
+
+(test no-call-to-inherits-family-matching-with-no-edit-of-its-own
+  ;; DES-0024 D3's claim, as a test. :NO-CALL-TO hands both designator slots
+  ;; to EDGES-BETWEEN-SYSTEMS untouched, so widening what those slots may
+  ;; hold widens this kind too. If the two vocabularies ever have to be
+  ;; extended separately, this is the test that says so.
+  (let* ((g (make-graph))
+         (member (rules-function g "draw-tile" "game/graphics.lisp"
+                                 :game/graphics))
+         (writer (rules-function g "apply-transaction" "src/graph/transaction.lisp"
+                                 :loom-graph))
+         (reader (rules-function g "neighbors" "src/graph/query.lisp"
+                                 :loom-graph)))
+    (dolist (target (list writer reader))
+      (add-relationship g (make-instance 'relationship :rel-type :calls
+                                         :from-id (id member) :to-id (id target)
+                                         :origin-file "game/graphics.lisp")))
+    (rules-rule g "RULE-9002" '(:kind :no-call-to :from-system (:family :game)
+                                :to-system :loom-graph :rel-types (:calls)
+                                :to-names ("apply-transaction")))
+    (let ((violations (check-rules g)))
+      (is (= 1 (length violations)))
+      (is (search "apply-transaction" (violation-detail (first violations)))))))
+
+;;; ------------------------------------------------------------------
 ;;; property-constraint (SS10.4, SS14.3)
 ;;; ------------------------------------------------------------------
 

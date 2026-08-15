@@ -354,6 +354,32 @@ is one a generic check can express; the discipline SS10.4 sets is that a rule
 needing more than that stays prose, which PARSE-CHECK enforces by returning
 NIL for a kind not named here.")
 
+(defun conflicting-side-p (value system-key family-key)
+  "Does this clause name one side of the comparison twice, both ways?
+
+A rule writing from-system: and from-family: together is a rule whose author
+did not decide what they meant, and guessing which one they intended is the
+fabricated fact CON-0001 rules out. PARSE-CHECK refuses the whole clause, the
+document still indexes, and UNENFORCED-RULES counts the rule where a human will
+see it -- the same treatment `kind: vibes' already gets."
+  (and (yaml-value value system-key) (yaml-value value family-key) t))
+
+(defun side-designator (value system-key family-key)
+  "One side of a :no-edge-style comparison, as a system designator.
+
+from-system: yields a bare keyword, which is what every rule in docs/rules/
+writes and what LOOM-GRAPH:SYSTEM-SATISFIES-P compares with EQ. from-family:
+yields (:family NAME), matched by delimiter-anchored prefix instead.
+
+Both land in the same plist slot on purpose (DES-0024 D3). Nothing downstream
+learns a new key: RUN-CHECK reads :from-system as it always did, and :no-call-to
+-- which hands both slots to EDGES-BETWEEN-SYSTEMS untouched -- gains family
+matching without an edit of its own."
+  (let ((family (as-keyword (yaml-value value family-key))))
+    (if family
+        (list :family family)
+        (as-keyword (yaml-value value system-key)))))
+
 (defun parse-check (value)
   "A rule's check: clause as a plist, or NIL.
 
@@ -361,14 +387,18 @@ NIL is not a failure. SS10.4: \"A rule that cannot be expressed as a check
 remains valid as prose with severity advisory; it is not enforced, and status
 reports the count of unenforced rules so that prose-only drift stays visible
 rather than comfortable.\" An unrecognised kind therefore yields NIL and the
-rule falls back to prose, rather than the document failing to index."
+rule falls back to prose, rather than the document failing to index. A clause
+writing both from-system: and from-family: takes the same path -- see
+SIDE-DESIGNATOR."
   (when (hash-table-p value)
     (let ((kind (as-keyword (yaml-value value :kind) *check-kinds*)))
-      (when kind
+      (when (and kind
+                 (not (conflicting-side-p value :|from-system| :|from-family|))
+                 (not (conflicting-side-p value :|to-system| :|to-family|)))
         (list :kind        kind
-              :from-system (as-keyword (yaml-value value :|from-system|))
+              :from-system (side-designator value :|from-system| :|from-family|)
               :to          (as-keyword (yaml-value value :to))
-              :to-system   (as-keyword (yaml-value value :|to-system|))
+              :to-system   (side-designator value :|to-system| :|to-family|)
               :rel-types   (mapcar (lambda (s) (intern (string-upcase s) :keyword))
                                    (as-list-of-strings (yaml-value value :|rel-types|)))
               :entity-type (as-keyword (yaml-value value :|entity-type|))

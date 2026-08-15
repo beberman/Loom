@@ -151,6 +151,46 @@ knowledge would be worse than ignoring it")
       (is (member "apply-transaction" (getf check :to-names) :test #'string-equal))
       (is (member "add-relationship" (getf check :to-names) :test #'string-equal)))))
 
+(test a-from-family-compiles-to-a-family-designator
+  ;; DES-0024 D3: both fields land in the same plist slot, so nothing
+  ;; downstream of PARSE-CHECK learns a new key.
+  (let ((e (literal-entity "docs/rules/RULE-9001.yaml"
+                           "id: RULE-9001
+type: rule
+title: Nothing outside the game family reaches its internals
+severity: error
+statement: |
+  One rule, not fourteen.
+check:
+  kind: no-edge
+  from-family: game
+  to-system: outside
+  rel-types: [calls]
+" :rule)))
+    (let ((check (getp e :check)))
+      (is (equal '(:family :game) (getf check :from-system)))
+      (is (eq :outside (getf check :to-system))))))
+
+(test a-clause-naming-one-side-both-ways-stays-prose
+  ;; Guessing which the author meant is the fabricated fact CON-0001 rules
+  ;; out. The document still indexes; the rule falls back to prose and is
+  ;; counted by UNENFORCED-RULES.
+  (let ((e (literal-entity "docs/rules/RULE-9002.yaml"
+                           "id: RULE-9002
+type: rule
+title: Two minds about one side
+severity: error
+statement: |
+  Undecided.
+check:
+  kind: no-edge
+  from-system: loom-graph
+  from-family: loom
+  to-system: outside
+" :rule)))
+    (is (not (null e)) "the statement survives even though the check does not")
+    (is (null (getp e :check)))))
+
 (test a-rule-with-no-recognisable-check-stays-prose
   ;; SS10.4: such a rule "remains valid as prose with severity advisory; it is
   ;; not enforced". It must still index -- refusing the document would lose the

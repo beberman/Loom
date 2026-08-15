@@ -271,3 +271,85 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
                                         :rel-types '(:calls))))
       (is (= 1 (length found)))
       (is (eq :loom-graph (entity-system outer))))))
+
+;;; ------------------------------------------------------------------
+;;; system-satisfies-p (DES-0024)
+;;;
+;;; The negatives carry this section. A family match that answers YES to its
+;;; own members is easy and proves little; what REQ-0029 measured is that the
+;;; obvious implementation -- a raw string prefix -- answers YES to four
+;;; game-server packages and two cl-dbi packages that belong to no family, and
+;;; that admitting `-' as a delimiter re-opens BUG-0009 cause one across all
+;;; eight of Loom's production/test pairs. Every keyword below is a package
+;;; name counted in one of those trees on 2026-08-15, not an invented one.
+;;; ------------------------------------------------------------------
+
+(test a-keyword-designator-is-still-exactly-eq
+  ;; REQ-0029 R1. Every rule in docs/rules/ passes a keyword, so this is the
+  ;; path that must not have moved.
+  (is (system-satisfies-p :loom-graph :loom-graph))
+  (is (not (system-satisfies-p :loom-graph :loom-knowledge)))
+  (is (not (system-satisfies-p :loom-graph nil))
+      "an unplaceable entity satisfies nothing"))
+
+(test a-family-designator-takes-its-members-and-its-own-name
+  (is (system-satisfies-p '(:family :game) :game/map))
+  (is (system-satisfies-p '(:family :game) :game/system))
+  (is (system-satisfies-p '(:family :game) :game)
+      "the bare family name is in its own family")
+  (is (system-satisfies-p '(:family :dbi) :dbi.driver))
+  (is (system-satisfies-p '(:family :dbi) :dbi.cache.single)))
+
+(test a-family-designator-refuses-a-name-that-merely-starts-the-same-way
+  ;; The four game-server packages beginning with "game" that belong to no
+  ;; family, and cl-dbi's two test packages beginning with "dbi". A raw string
+  ;; prefix takes all six; this is the assertion that fails if the delimiter
+  ;; anchor is ever dropped.
+  (dolist (impostor '(:game-server :game-server-test :game-test :game-full-test))
+    (is (not (system-satisfies-p '(:family :game) impostor))
+        "a dash is not a hierarchy separator"))
+  (dolist (impostor '(:dbi-test.dbi :dbi-test.driver))
+    (is (not (system-satisfies-p '(:family :dbi) impostor)))))
+
+(test a-family-designator-never-joins-a-test-package-to-its-production-package
+  ;; BUG-0009 cause one, as a standing assertion. If #\- is ever added to
+  ;; *SYSTEM-FAMILY-DELIMITERS* this test goes red for all eight of Loom's
+  ;; pairs before anyone reindexes anything.
+  (dolist (pair '((:loom-analyzer . :loom-analyzer-test)
+                  (:loom-graph . :loom-graph-test)
+                  (:loom-knowledge . :loom-knowledge-test)
+                  (:loom-workspace . :loom-workspace-test)
+                  (:loom-process . :loom-process-test)
+                  (:loom-serve . :loom-serve-test)
+                  (:loom-rest . :loom-rest-test)
+                  (:loom-mcp . :loom-mcp-test)))
+    (is (not (system-satisfies-p (list :family (car pair)) (cdr pair)))
+        "the thirty-seven false positives DES-0009 closed stay closed")))
+
+(test a-family-designator-nests
+  ;; REQ-0029 R5, and it needs no code of its own: :DBD.MYSQL.ERROR begins
+  ;; with DBD followed by a delimiter and with DBD.MYSQL followed by one.
+  (is (system-satisfies-p '(:family :dbd) :dbd.mysql.error))
+  (is (system-satisfies-p '(:family :dbd.mysql) :dbd.mysql.error))
+  (is (not (system-satisfies-p '(:family :dbd.mysql) :dbd.postgres))))
+
+(test outside-a-family-means-outside-the-family-not-outside-one-package
+  ;; DES-0024 D2, and the clause without which a family rule is useless: the
+  ;; fourteen game/* packages call each other constantly, and a rule that
+  ;; reported every one of those has replaced fourteen rules with fourteen
+  ;; thousand findings.
+  (let* ((g (make-graph))
+         (member-a (sys-function "draw" "game/graphics.lisp" :game/graphics))
+         (member-b (sys-function "tile-at" "game/map.lisp" :game/map))
+         (stranger (sys-function "db-select" "data-api/db/connection.lisp"
+                                 :data-api)))
+    (dolist (e (list member-a member-b stranger)) (add-entity g e))
+    (dolist (target (list member-b stranger))
+      (add-relationship g (make-instance 'relationship :rel-type :calls
+                                         :from-id (id member-a) :to-id (id target)
+                                         :origin-file "game/graphics.lisp")))
+    (let ((found (edges-between-systems g '(:family :game) :outside
+                                        :rel-types '(:calls))))
+      (is (= 1 (length found))
+          "the call to a sibling package is internal traffic")
+      (is (equal (id stranger) (to-id (first found)))))))
