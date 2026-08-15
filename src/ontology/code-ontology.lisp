@@ -12,11 +12,24 @@
 ;;;; Shared vocabularies
 ;;;; ==================================================================
 
-(defvar *source-languages* '(:lisp :typescript :python)
+(defvar *source-languages* '(:lisp :javascript :typescript :python)
   "Languages the analyzers emit entities for, and the :LANGUAGE vocabulary
 every code entity is validated against.  Phase 1 ships a reader-based Lisp
 analyzer and a Tree-sitter TypeScript one; adding a language is a matter of
-pushing its keyword here and writing the analyzer.")
+pushing its keyword here and writing the analyzer.
+
+:JAVASCRIPT is REQ-0024's, and its arrival is the first evidence that the
+sentence above is very slightly false. Adding a language is indeed an analyzer
+plus a keyword -- but the keyword goes *here*, in loom-ontology, which is below
+the analyzer layer that REQ-0024 R1 predicted would be the only thing to
+change. One word in a shared vocabulary is a small enough exception to state
+rather than to hide: a language the ontology has never heard of cannot have its
+:LANGUAGE property validated, so the vocabulary is genuinely shared rather than
+per-analyzer, and no arrangement of the analyzer layer would have avoided it.
+
+:TYPESCRIPT remains unimplemented and is deliberately not what the JavaScript
+analyzer claims -- REQ-0024's WHAT THIS IS NOT is explicit that a parser
+accepting TS by accident would mint entities whose properties nothing models.")
 
 ;;;; ==================================================================
 ;;;; Workspace and history
@@ -139,6 +152,23 @@ one's body -- an entity with a plausible range over text defining something
 else, which is the fabrication no count would reveal. So this property is the
 whole record that the definitions in these lines are missing, and it is why a
 file with damage in it costs a form rather than the file it used to cost.")
+               (:import-sources list
+                :documentation "Module specifiers this file imports from, as
+written -- \"react\", \"./hooks\", \"../domain/game\". REQ-0024.
+
+Recorded, not resolved, and the distinction is the whole point. Turning
+\"./hooks\" into the :FILE entity it names needs node resolution: extension
+probing, directory index files, and the alias table a project configures for
+itself, which ~/github/front-end really does have in an alias.config.mjs.
+REQ-0024's WHAT THIS IS NOT rules that out as a separate problem, so what an
+analyzer may honestly write is the specifier it read.
+
+Keeping it here is what lets a later pass derive :IMPORTS edges without
+reanalysing the tree, which is DEC-0003's shape: the analyzer writes the name
+once and never rewrites it, and resolution re-derives from it on every pass, so
+an edge a retract destroyed comes back. Until such a pass exists this property
+is a recorded fact with no edge drawn from it -- a gap a reader can see rather
+than one they cannot.")
                (:definer-call-sites list
                 :documentation "Every top-level form in this file whose
 operator is neither a definition nor a declaration -- DES-0002 R2. One plist
@@ -355,6 +385,29 @@ own input could not be re-run.")
 workspace.  Recorded as a property, never as a dangling edge.  Derived from
 :CALL-NAMES on every resolution pass rather than accumulated, so it describes
 the workspace as it stands rather than as it was when a name last resolved.")
+               (:jsx-names list
+                :documentation "Which of this entity's :CALL-NAMES arrived as
+JSX -- `<Thing />' rather than `thing()'. REQ-0024 R4.
+
+Every name here is also in :CALL-NAMES, deliberately and not redundantly. A
+React component is invoked by being rendered, so a component tree in which
+`<Thing />' produced no edge would leave `impact' unable to answer anything
+about the majority of a front-end; putting the name in :CALL-NAMES is what
+makes RESOLVE-CALLS draw the edge, with no new relationship type and no change
+to any resolution pass.
+
+This property is the part that would otherwise be lost. Rendering is not
+calling -- a renderer's relationship to its component is the parent/child edge
+of a UI tree, not a transfer of control the way a call is -- and a consumer
+that wants to ask `what renders this' as opposed to `what calls this' can
+subtract this set from :CALL-NAMES. Spending a relationship type on the
+distinction was considered and refused on DES-0014's arithmetic: a new type
+has to be threaded through impact's propagation, `describe's grouping and both
+JSON encoders before it answers anything, and nothing has yet asked.
+
+Host elements never appear. `<div>' is not a definition in any tree, so it is
+dropped at extraction rather than carried as a call name that can never
+resolve.")
                ;; What a DEFMACRO's template says a call to it defines
                ;; (DES-0002 R1).  Written once from the source text and never
                ;; rewritten, like :SUPERCLASS-NAMES: the decision about a call
@@ -391,6 +444,10 @@ and reported by status the way an unresolved document reference is.")))
                (:qualifier        keyword
                 :documentation "CLOS method qualifier -- :before, :after, :around.")
                (:specializers     list)
+               (:jsx-names        list
+                :documentation "Which of this method's :CALL-NAMES arrived as
+JSX. The :FUNCTION property of the same name carries the reasoning; a class
+component's render() is why methods need it too.")
                (:generic-function string
                 :documentation "Name of the generic function this method extends.")
                (:language         keyword :one-of *source-languages*)

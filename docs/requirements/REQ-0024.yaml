@@ -1,6 +1,6 @@
 id: REQ-0024
 title: A JavaScript analyzer is needed before any front-end repository is more than a directory of prose to Loom
-status: draft
+status: partial
 date: 2026-08-11
 refines: [CON-0004]
 affects: [analyze-file, analyzer-handles-p, find-analyzer, register-analyzer,
@@ -181,3 +181,96 @@ body: |
   - What does an anonymous default export key on? The file path is the only
     stable answer and it makes the entity's name a path, which `find` and
     `context` both treat specially.
+
+  OUTSTANDING
+
+  Implemented 2026-08-14. R1 through R6 and R8 are met; R7 was run and its
+  questions return usable answers. The status is `partial' rather than
+  `implemented' because one thing this document asks for is not in, and one
+  thing it did not anticipate is wrong.
+
+  MEASURED, ~/github/front-end, 2026-08-14
+
+      files indexed                    508   (468 .js/.jsx/.mjs/.cjs + 37 prose)
+      entities                        4249   (was 0)
+      relationships                   3207   (was 0)
+      parse failures                     0
+      whole-tree parse                0.65s
+
+  ANSWERED, which is what R7 actually asks
+
+      describe AppHandler
+        -> calls: NavProvider, NavigationSystem      (both reached through JSX)
+        <- calls: App
+      impact class:src/core/mapper.js:Mapper 2
+        19 subclasses through :INHERITS, plus four documents under mentions:
+
+  THE OPEN QUESTIONS, AS ANSWERED
+
+  1. Which parser, and does it batch? acorn with acorn-jsx, both vendored under
+     tools/js/ so that reading a JavaScript tree never depends on that tree
+     having run `npm install'. It does NOT batch, and this document's
+     expectation that it would have to was wrong. The child is a *server*: one
+     long-lived process, framed request/reply, started on first use. ANALYZE-FILE's
+     per-file interface is untouched, so the "first real strain this protocol has
+     been put under" turned out not to strain it. What is genuinely new is that
+     an analyzer now holds a process handle in module state, which the protocol
+     documents as having none; js-analyzer.lisp's header states it rather than
+     absorbing it, per R1.
+
+  2. Is a React component a distinct entity type? Neither -- a :FUNCTION whose
+     JSX usages go into :CALL-NAMES so RESOLVE-CALLS draws the edge with no new
+     relationship type, plus a :JSX-NAMES property so `what renders this' stays
+     answerable separately from `what calls this'. DES-0014's arithmetic
+     against a new relationship type applies unchanged.
+
+  3. Do import targets resolve in the analyzer or in a pass? Neither yet. The
+     specifiers are recorded on the :FILE as :IMPORT-SOURCES and no edge is
+     drawn from them -- see below.
+
+  4. What does an anonymous default export key on? The module basename, not the
+     path. The path was rejected on a concrete ground rather than a stylistic
+     one: `find' and `context' tokenise names to rank them, so a path-named
+     entity would rank against a query by its directories as much as by itself.
+
+  NOT IN
+
+  R1's ":IMPORTS edges from the module graph" is not built. The specifiers are
+  recorded, so no reanalysis is needed to build it later (DEC-0003's shape), but
+  no edge exists. Two reasons, and only the first is a decision: WHAT THIS IS
+  NOT rules out the node resolution that following `./hooks' to a file requires,
+  and front-end's alias.config.mjs makes that live rather than hypothetical. The
+  second is that no import-resolution pass exists in loom-graph at all, so this
+  is a new pass rather than a new property -- work above the analyzer layer,
+  which is exactly the kind of upstream change R1 asks to be surfaced instead of
+  absorbed. Note the call graph already carries much of what R7 wanted from it:
+  an importer that calls what it imported reaches the definition through
+  :CALL-NAMES, at function granularity rather than file granularity.
+
+  Calls inside a module-level variable initialiser are dropped. The :CALLS
+  relationship's :FROM does not admit a :VARIABLE, so `const emitter =
+  mitt()' has nowhere legal to put MITT. DES-0014's :CALL-SITE is the designed
+  answer for precisely this position (BUG-0017) and minting one is the
+  follow-on. 782 of front-end's 3486 definitions are variables, so the loss is
+  real; a recorded gap beats an illegal edge (CON-0001).
+
+  WRONG, AND FOUND BY DOING THIS
+
+  BUG-0029. Name resolution folds case, because Common Lisp's reader upcases
+  and the index was built for it. JavaScript is case-sensitive and is the first
+  such language Loom has indexed, so every `logger.error(...)' call site in
+  front-end matches a component named `Error': 116 false inbound edges on each
+  of three components, which makes them the top three hubs in `structure' ahead
+  of every real one. The true count is 2. This is not a defect in the analyzer
+  and cannot be fixed in one -- both names are correctly extracted and are
+  distinct identifiers in the language; only the matcher is wrong.
+
+  It is worth recording how close it came to being invisible. The extractor's
+  own filter for language globals -- without which `new Error(...)' put the
+  same three components at 315 edges each -- fixed the loud half of the same
+  symptom, and a reader who saw the count fall from 315 to 116 could reasonably
+  have concluded the problem was solved. What the requirement's own summary
+  predicted is exactly this: three of the six requirements from the game-server
+  evaluation "are mechanisms that are correct against Loom's own tree and wrong
+  against the next one, for reasons invisible from inside the first." This is a
+  fourth.

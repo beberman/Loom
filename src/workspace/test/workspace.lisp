@@ -329,7 +329,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 237
+(defparameter *call-site-ceiling* 294
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -409,7 +409,32 @@ Three re-measurements in three days, all from the same cause: this requirement
 added six commands and six operations, and every one is a body-swallowing macro
 whose call names become orphaned definer pairs. The ambiguous population has
 not moved through any of it, which is the number that would have moved if
-something had gone wrong.")
+something had gone wrong.
+
+RE-MEASURED 2026-08-14 AT 267, CEILING 294. REQ-0024's JavaScript analyzer and
+its suite. Composition:
+
+    js-test              0 -> 50
+    one interface       13 -> 24
+    resolve to nothing 182 -> 235
+    ambiguous occurrences  16 -> 16
+
+The whole of the growth is JS-TEST, a macro this suite defines for itself so
+that a machine without node skips rather than fails. It is body-swallowing like
+DEFINE-COMMAND and DEFINE-OPERATION, so its twenty uses orphan fifty definer
+pairs by exactly the mechanism the three entries above it did -- a fourth
+instance of one cause, not a fourth cause.
+
+Worth stating because it looks like the opposite: none of this growth is
+JavaScript. Not one :CALL-SITE in the census comes from a .js file. The
+JavaScript analyzer writes :CALL-NAMES on functions and methods only, and
+:CALL-SITE is minted by RESOLVE-GENERATED-DEFINITIONS from *Lisp* definer
+macros, so a JavaScript tree cannot reach this population at all. Confirmed by
+measurement rather than by reading: hiding tools/js/extract.js so that no
+JavaScript was indexed anywhere left the count at 267 unchanged.
+
+The ambiguous population is 16 before and 16 after, which is the number that
+moves when something has gone wrong.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is

@@ -981,7 +981,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod render ((x hop)) x)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
       ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier nil)
+       (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:signature nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (x))
@@ -990,7 +990,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod render :around ((x hop)) x)"
      (:method "render" "method:sample.lisp:render:around:hop" "sample.lisp"
       ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier :around)
+       (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier :around)
        (:shadowed-definitions nil) (:signature nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (x))
@@ -998,7 +998,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod render ((x (eql :oneof))) x)"
      (:method "render" "method:sample.lisp:render::(eql oneof)" "sample.lisp"
       ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier nil)
+       (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:signature nil)
        (:specializers ("(eql oneof)")) (:start-line 1)
        (:system nil) (:unresolved-calls nil)))
@@ -1009,7 +1009,7 @@ file, and every property with its value, in a stable order."
       "sample.lisp"
       ((:arguments ("v" "x")) (:call-names nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "(setf render)")
-       (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
+       (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:signature nil)
        (:specializers ("t" "hop")) (:start-line 1) (:system nil)
        (:unresolved-calls nil)))
@@ -1020,7 +1020,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod render () 1)"
      (:method "render" "method:sample.lisp:render::" "sample.lisp"
       ((:arguments nil) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier nil)
+       (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:signature nil) (:specializers nil)
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (1))
@@ -1028,7 +1028,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod render ((x hop) &rest args) args)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
       ((:arguments ("x" "&rest" "args")) (:call-names nil) (:end-line 1)
-       (:file "sample.lisp") (:generic-function "render") (:language :lisp)
+       (:file "sample.lisp") (:generic-function "render") (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil) (:signature nil)
        (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
@@ -1037,7 +1037,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod render (a b) (helper a b))"
      (:method "render" "method:sample.lisp:render::t,t" "sample.lisp"
       ((:arguments ("a" "b")) (:call-names ("helper")) (:end-line 1)
-       (:file "sample.lisp") (:generic-function "render") (:language :lisp)
+       (:file "sample.lisp") (:generic-function "render") (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil) (:signature nil)
        (:specializers ("t" "t"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
@@ -1053,7 +1053,7 @@ file, and every property with its value, in a stable order."
       "src/graph/foo.lisp"
       ((:arguments ("x")) (:call-names ("helper")) (:end-line 1)
        (:file "src/graph/foo.lisp") (:generic-function "render")
-       (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
+       (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:signature nil)
        (:specializers ("hop")) (:start-line 1) (:system :graph)
        (:unresolved-calls nil)))
