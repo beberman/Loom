@@ -1252,7 +1252,8 @@ a distinct tests field rather than mixed into the impact set.")
 
 (defrelationship :documents
   :from (:document :design :architecture :decision :rule :concept)
-  :to (:function :method :class :interface :variable :module :package :file :concept :test)
+  :to (:function :method :class :interface :variable :module :package :file :concept :test
+       :document)
   :transitive-impact nil :impact-direction :reverse :collect-as :documents
   :documentation "One step, applied at the end, gathered into a distinct
 documents field.
@@ -1263,11 +1264,28 @@ way. A fiveam test name is prose -- reindexing-produces-an-identical-index --
 so a document discussing that test mentions it by name, RESOLVE-DOCUMENT-LINKS
 resolves the mention, and one illegal endpoint rejected the whole transaction
 rather than one edge. Nothing noticed while the :TEST type held no facts,
-because no mention could resolve to one.")
+because no mention could resolve to one.
+
+:DOCUMENT is the third, BUG-0030, and it took a whole repository rather than a
+whole transaction. A markdown file's relative link to another markdown file is
+what a cross-linked docs/ directory is made of, and ~/github/front-end -- 36
+markdown files, 456 JavaScript and TypeScript ones -- indexed nothing at all
+because ARCHITECTURE-GUIDE.md links to TODO.md. The tell that this was an
+oversight and never a rule is :CONCEPT, three entries to the left: a concept is
+itself a document type, so naming CON-0004 was legal while naming TODO.md was
+not, and nobody decided that.
+
+Three reactive additions is the argument that the enumeration is not the
+defect. BUG-0030 F1 is the real repair -- an op failing *endpoint* validation
+is dropped, counted and reported rather than rejecting its transaction, which
+is the trade the analyzer already makes when a malformed form costs a form
+rather than a file. Until that lands, a fourth missing type still costs a
+fourth tree.")
 
 (defrelationship :mentions
   :from (:document :design :architecture :decision :rule :concept)
-  :to (:function :method :class :interface :variable :module :package :file :concept :test)
+  :to (:function :method :class :interface :variable :module :package :file :concept :test
+       :document)
   :transitive-impact nil :impact-direction :reverse :collect-as :mentions
   :documentation "A document names this entity, and claims nothing further.
 

@@ -1,0 +1,133 @@
+id: BUG-0030
+title: One illegal edge endpoint rejects a whole repository's transaction, and the third missing type took the whole of front-end
+status: open
+date: 2026-08-16
+affects: [apply-transaction, resolve-document-links, analyze-file]
+tags: [graph, ontology, markdown, transaction, front-end, con-0001, con-0006]
+summary: |
+  Watching ~/github/front-end -- 36 markdown files, 456 JavaScript and
+  TypeScript files -- indexes nothing at all:
+
+      op 7 :MENTIONS document:docs/ARCHITECTURE-GUIDE.md
+                  -> document:docs/TODO.md: :MENTIONS cannot terminate at
+                     :DOCUMENT
+
+  A markdown file with a relative link to another markdown file is what a
+  cross-linked docs directory is made of, and CLAUDE.md states plainly that
+  relative link targets resolve into :MENTIONS edges. The ontology's :MENTIONS
+  :TO list does not include :DOCUMENT, so the edge is illegal, and one illegal
+  edge rejects the entire transaction. The repository ends with no index.
+
+  This is the third instance of one defect and the first two are recorded in
+  the ontology beside the type. :INTERFACE was missing -- "its absence was an
+  oversight rather than a judgement" -- and rejected every resolution
+  transaction once the Lisp analyzer learned DEFGENERIC. :TEST was missing --
+  "the same oversight the :DECIDES comment above records, found the same way"
+  -- and "one illegal endpoint rejected the whole transaction rather than one
+  edge".
+
+  That last sentence is the bug. Three types have been added reactively, each
+  after a tree went dark, and a fourth will be missed. The enumeration is not
+  the defect; the blast radius is.
+body: |
+  WHAT HAPPENS
+
+  POST /v1/watch with /home/beberman/github/front-end returns a TYPE-ERROR and
+  the repository is not indexed. The message inside it is the transaction
+  rejection above, naming three of the offending ops -- ARCHITECTURE-GUIDE.md,
+  archive/RESTRUCTURING-PLAN.md and pieces/piece-editor-req.md all linking to
+  docs/TODO.md.
+
+  Neither Loom nor game-server reproduces it. Loom's documents are YAML and its
+  only markdown is excluded by name or by dot-directory; game-server has a
+  handful of markdown files that do not cross-link. front-end is the first
+  watched tree with a genuinely cross-linked docs/ directory, which is exactly
+  the population REQ-0028 widened markdown claiming to reach.
+
+  TWO DEFECTS, AND THE SECOND HIDES THE FIRST
+
+  D1. :MENTIONS and :DOCUMENTS both declare
+
+        :to (:function :method :class :interface :variable :module :package
+             :file :concept :test)
+
+      :DOCUMENT is absent. :CONCEPT is present -- and :CONCEPT is itself a
+      document type, so a markdown file mentioning CON-0004 is legal today and
+      the same file mentioning TODO.md is not. That inconsistency is the
+      evidence that the omission is an oversight and not a rule: nobody
+      decided a document may name a concept but not a document.
+
+  D2. The failure surfaces as an unhandled TYPE-ERROR -- "The value
+      \"Transaction rejected, nothing applied: ...\" is not of type LIST" --
+      rather than as the structured rejection the condition was designed to
+      report. Something on the error path stringifies the condition and hands
+      the string where a list is expected. Not yet localised, and it matters
+      independently: the caller of a failed `watch` is told a type is wrong
+      rather than which edge was illegal, and the actual diagnosis was only
+      readable because the string happened to be embedded in the TYPE-ERROR's
+      own message.
+
+  WHY THE BLAST RADIUS IS THE DEFECT
+
+  SS5.2 requires a transaction to apply atomically or be rejected, and that is
+  right for a transaction expressing one coherent change. It is the wrong unit
+  here. The ops rejected are one indexing pass over a whole repository, so an
+  edge Loom is unsure it may draw costs every entity, every relationship and
+  every document in the tree.
+
+  Weigh that against what the project already decided about incomplete
+  knowledge. CON-0001 says a fabricated fact is worse than a recorded gap, and
+  an edge dropped and counted is a recorded gap of the cheapest kind -- the
+  same trade the analyzer already makes for a malformed form, where "a
+  malformed form costs a form rather than a file". CON-0006 says a missing
+  answer is the expensive error because the reader cannot tell it from an
+  absent one. A whole unindexed repository is the maximal version of both.
+
+  There is precedent in the tree for the shape of the fix. `status` reports an
+  `unread` line summing what the analyzer passed over, and the number reading
+  non-zero is the index saying which definitions it knows it is missing. An
+  illegal edge should join that: dropped, counted, reported by `status` and by
+  `check`, and never fatal to the pass.
+
+  WHAT WOULD HAVE CAUGHT IT
+
+  Nothing in the suite, because the suite runs against Loom's own tree and
+  Loom's documents are YAML. This is the pattern REQ-0016 named -- a mechanism
+  correct on the tree it was developed against -- arriving through the
+  ontology rather than through a ranking. The fix for that is not a test; it
+  is that a third tree be watched routinely, which is how this was found.
+
+  THE FIX, IN TWO PARTS
+
+  F1  An op that fails endpoint validation is dropped, counted and reported,
+      rather than rejecting its transaction. Endpoint validation only -- an op
+      that would corrupt the graph must still be fatal, and the distinction is
+      that an illegal endpoint is a claim Loom declines to record, not a claim
+      that damages what is already recorded. This is the part that stops a
+      fourth missing type from taking a fourth tree.
+
+  F2  :DOCUMENT joins the :TO list of :MENTIONS and of :DOCUMENTS. On its own
+      merits and not merely to unblock: a document naming another document is
+      the ordinary content of a docs directory, the markdown analyzer already
+      produces the edge from a relative link, and :CONCEPT's presence in the
+      same list shows the intent.
+
+  Both, and in that order. F2 alone is the reactive fix that has now been
+  applied three times; F1 alone leaves front-end's docs cross-links silently
+  dropped when they are legitimate and wanted. Neither is sufficient.
+
+  D2's error path is a third piece and should be localised before F1 lands,
+  because F1 changes what that path reports and a wrong report is what made
+  this take a detour to read.
+
+  ACCEPTANCE
+
+  ~/github/front-end watches, indexes and answers `find`, `describe` and
+  `context`, with its 36 markdown files cross-linked and its 456 JavaScript and
+  TypeScript files present. Loom and game-server index exactly as they do now,
+  with the same entity and relationship counts -- F2 adds edges only where a
+  document names a document, which neither tree currently does enough of to
+  move a count.
+
+  A synthetic tree with a deliberately illegal edge indexes everything else and
+  reports the drop, which is F1 and is what no existing test covers.
