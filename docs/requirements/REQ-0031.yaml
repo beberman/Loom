@@ -4,7 +4,7 @@ status: draft
 date: 2026-08-15
 refines: [CON-0004]
 affects: [describe-entity, search-entities, build-context]
-tags: [knowledge, describe, agents, console, game-server]
+tags: [knowledge, describe, agents, console, game-server, con-0006, req-0016]
 summary: |
   DESCRIBE-ENTITY answers with everything about an entity except the entity:
   its file, its exact line range, its arguments, the names it calls, its
@@ -145,3 +145,67 @@ body: |
     unpopulated everywhere? If an enriched summary lands later, a caller asking
     for source and a caller asking for a summary want different things and the
     operation should already have room for both.
+
+  CONTEXT AFTER ALL, AND TWO OPEN QUESTIONS CLOSED, 2026-08-16
+
+  DES-0026 is written against this requirement and assumes it lands next, so
+  the coupling is recorded here as well -- a design depending on a draft
+  requirement is a fact the requirement should carry rather than something only
+  the design knows.
+
+  One non-goal above is contested by that design and is left standing rather
+  than edited, per the convention REQ-0016 set for its own R7 clause.
+
+  "It is not a request that `context` inline source." The reason given is that
+  "`context` is budgeted at 2,000 tokens and spends it on breadth; source in
+  that bundle would buy one entity and lose the map". The arithmetic is right
+  and the conclusion followed from it, but the budget is the premise and
+  DES-0026 D3 argues the premise: 2,000 was sized for a bundle carrying names
+  and locations, and it is not a fact about what a bundle should cost. Sized
+  against a modern context window the bundle can hold both -- a few entities
+  with their source and a long, cheap list of everything else recalled at
+  roughly fifteen tokens a line.
+
+  So the map is not lost, which was the real objection. It moves to a tier that
+  costs almost nothing, and CON-0006 is why that is the right trade: the reader
+  discards a wrong line for free and cannot recover from a missing one without
+  the grep this requirement exists to eliminate. "`context` names what matters
+  and a second call fetches the few that do" was one round trip per interesting
+  entity; the two-tier bundle is zero for the entities ranking highest and one
+  for anything the reader picks out of the index tier.
+
+  R8  `context` may carry source for a bounded number of entities, and must
+      still name every other entity it recalled. The bound is the
+      architecture's -- DES-0026 makes it a count of definitions rather than a
+      token figure -- but the pairing is not optional in either direction: a
+      bundle with source and no index tier is the precision failure CON-0006
+      names, and a bundle with an index tier and no source is what this
+      requirement already exists to fix.
+
+  Two of the open questions above are answered by that design, and one of them
+  is answered harder than it was asked.
+
+  "Does the range include the docstring and the preceding comment block?" Yes,
+  and it stopped being a nicety. No code entity in this index carries a
+  docstring at all -- the :FUNCTION schema holds :SIGNATURE, :ARGUMENTS, the
+  line range and some flags, and :SUMMARY exists only on document types. So the
+  padded block is the *only* route by which prose about a definition reaches a
+  reader, and on this tree that prose is frequently the most valuable thing
+  about the definition. The question asked whether extending the range changes
+  what an entity is; R9 answers that it does not, by extending what is
+  *served* rather than what is indexed.
+
+  R9  Source is served padded: the contiguous comment or docstring block
+      immediately preceding the form, and a small fixed number of lines after
+      it. The entity's indexed range is unchanged -- padding is a property of
+      the answer, not of the entity, so nothing that reads :START-LINE or
+      :END-LINE sees a different number. R4's provenance reports the padded
+      range actually returned, not the indexed one, or the caller cannot tell
+      what it read.
+
+  "What does `find` do?" Still open here, but no longer neutral: `find` caps
+  silently at twenty hits (REQ-0005), which CON-0006 makes a defect by
+  inspection -- it drops candidates, and the caller cannot see that it did.
+  That is `find`'s problem rather than this requirement's and belongs in its
+  own document; it is noted because whoever resolves the body-on-`find`
+  question will be looking straight at it.

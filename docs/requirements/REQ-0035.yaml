@@ -1,0 +1,217 @@
+id: REQ-0035
+title: the prose a definition carries must be indexed, because the retriever cannot match what only the reader can see
+status: draft
+date: 2026-08-16
+affects: [analyze-file, seed-entities, seed-matches, search-entities, find-entities,
+          significant-name, match-rank, build-context]
+tags: [analyzer, retrieval, ranking, context, con-0006, req-0016, req-0031, game-server]
+summary: |
+  No code entity in this index carries the prose its own definition declares.
+  The :FUNCTION schema holds :SIGNATURE, :ARGUMENTS, a line range and some
+  flags; :SUMMARY exists only on document types. So a docstring is read by the
+  analyzer, passed over, and never seen again -- and every query Loom answers
+  about code is answered from identifiers alone.
+
+  Measured on this tree, 2026-08-16, after REQ-0016's landed work:
+
+      context stop a fixture displacing the definitions a task asked about
+
+  returned STOP-JS-CHILD, STOP-SERVER, FIXTURE-ROOT and a test, each seeded on
+  one English word. PRODUCTION-NAMES and DEMOTED-TEST-P -- the two functions
+  this describes, whose docstring says "fixtures stop displacing the
+  definitions a task asked about" almost verbatim -- appear nowhere in the
+  bundle. The sentence that would have answered the query is sitting in the
+  file, eight lines above the function, unindexed.
+
+  This asks that the prose be a field the retrieval path can match against. It
+  is not REQ-0031, which serves source to the *reader*; this serves text to the
+  *retriever*, and the two consumers are satisfied by different mechanisms at
+  different times.
+body: |
+  WHAT IS WRONG
+
+  SEED-ENTITIES' own docstring states the defect and has since the function was
+  written: name matching "finds nothing at all from 'the bit that merges
+  edits'". That has been read as an argument for semantic search, which
+  REQ-0016 declines, and it is not. It is an argument that Loom is matching
+  against the wrong text. A query describing what a function does should match
+  the sentence in which its author described what it does, and on this tree
+  that sentence usually exists.
+
+  The measurement above is the demonstration and its setting matters twice
+  over. It is Loom's own tree, the one everything is developed against and the
+  one REQ-0016 says lexical seeding works on. And it is *after* R1, R4, R7 and
+  R8 landed -- the coverage band, the share cap and the type tiers all firing
+  correctly, and still four of the first entities are seeded on "stop", "task"
+  and "fixture" while the two functions the query describes are absent. The
+  landed work fixed how candidate names are weighed against each other. It
+  could not manufacture a candidate, because the text that makes
+  PRODUCTION-NAMES a candidate was never indexed.
+
+  That is REQ-0016 R5's case -- "a query naming no known entity must still
+  return something useful" -- and it is the one clause of that requirement no
+  ranking change can reach.
+
+  WHAT IS AVAILABLE, MEASURED ON TWO TREES
+
+  Both trees are almost exactly the same size, which makes the comparison
+  clean:
+
+                                     Loom          game-server
+      lines of Lisp                  32,501        32,640
+      defun/defmethod/defmacro          910          1,144
+        ... with a docstring         565 (62%)     164 (14%)
+      (:documentation ...) options       38            198
+      comment lines                7,036 (21%)   2,715 (8%)
+
+  Read the first two rows alone and this is a feature for Loom and nearly
+  nothing for game-server: 62% against 14%, a four-fold difference in exactly
+  the direction that should make anyone here suspicious. It is REQ-0016's own
+  thesis about to happen for the third time -- a mechanism correct on the tree
+  it was developed against, wrong on the next one, for a reason invisible from
+  inside the first.
+
+  The third row is why it is not that. game-server carries five times as many
+  (:documentation ...) options as Loom does. Its prose is on its classes and
+  its conditions, not on its functions, which is what a CLOS-shaped codebase
+  looks like and is consistent with everything REQ-0016 recorded about it --
+  the subsystem that requirement is about is a DATA-HANDLER class with six
+  subclasses. Loom documents functions because Loom is functions.
+
+  So the requirement is not "capture docstrings". It is "capture the prose,
+  wherever this language and this author put it", and R2 exists because reading
+  only the first row would have shipped the narrow version.
+
+  WHY THIS IS NOT REQ-0031
+
+  REQ-0031 serves the source of a definition to a caller that asked about it,
+  padded with the comment block above it (its R9). That is the same text, and
+  it satisfies a different consumer at a different moment.
+
+  REQ-0031's consumer is the reader, after retrieval has already succeeded. It
+  answers "I know this is the function I want, show me". It cannot help a query
+  find a function it never returned, and a bundle that never names
+  PRODUCTION-NAMES will never be asked for its source.
+
+  This requirement's consumer is the retriever, before anything has been
+  chosen. It answers "which functions is this task about". The text must be in
+  an index for that, not on disk behind a line range.
+
+  Both are worth having and neither substitutes. Implementing REQ-0031 and
+  calling this done would leave the measurement above unchanged, because
+  nothing in it is a display problem.
+
+  WHAT THIS IS NOT
+
+  It is not a request for semantic or embedding-based search, and it makes that
+  weaker rather than stronger. REQ-0016 asks that anyone proposing a model
+  first say why the cheaper signals were insufficient. The cheapest signal
+  available is the author's own sentence about the function, and it has never
+  been tried. DES-0026 D11 is explicit that a cross-encoder over a name and an
+  arglist has nothing to read; this is what would give it something, and is
+  also what might make it unnecessary.
+
+  It is not enrichment. DES-0011's `enrich` asks the toolchain what the text
+  pass cannot see and is self-aging for that reason. A docstring is text in the
+  file, read by the analyzer that is already reading the form, and is exactly
+  as fresh as the index. Nothing here is optional, on-demand or subject to
+  ageing.
+
+  It is not a summary. Loom does not generate, condense or rewrite the prose;
+  it records what the file says, at the length the file says it. If a docstring
+  lies about its function, the index faithfully holds a lie, which is DEC-0001's
+  position and not a defect to be fixed here.
+
+  It does not ask for anything to be displayed. R6 is explicit: this is a field
+  for matching, and what a command prints is REQ-0031's business and REQ-0007's.
+  A bundle that started dumping 60-line docstrings because they became
+  available would have spent the budget this whole line of work exists to
+  protect.
+
+  REQUIREMENTS
+
+  R1  A code entity carries the prose its definition declares, in an indexed
+      field, populated by the analyzer that read the form.
+
+  R2  All three sources are captured, because the mix differs by tree and the
+      measurement above shows the difference is large: the docstring in a body,
+      the (:documentation ...) option on a class, condition, generic or
+      package, and the contiguous comment block immediately preceding a form.
+      A capture reading only the first would serve this tree and not
+      game-server.
+
+  R3  A string that is a definition's *only* body form is a return value, not
+      a docstring, and must not be captured as one. `(defun f () "x")` returns
+      "x". This is the one place the extraction can fabricate: a value recorded
+      as documentation is a sentence Loom claims the author wrote about the
+      function, and CON-0001 forbids exactly that trade -- a fabricated fact is
+      worse than a recorded gap, and a gap here costs one unmatched query.
+
+  R4  The retrieval path matches against the field. This is the point of the
+      requirement and not a consequence of it: a field populated and never
+      searched changes nothing the measurement above reports.
+
+  R5  The property is language-neutral and the extraction is per-analyzer. The
+      Lisp analyzer knows about docstring position and (:documentation ...);
+      a JavaScript analyzer knows about JSDoc; the YAML and markdown analyzers
+      already have :SUMMARY and are unaffected. The graph writer stays
+      language-neutral, per CON-0005.
+
+  R6  Nothing displayed by default changes. `find`, `describe`, `context` and
+      `impact` print what they print today unless a caller asks otherwise.
+
+  R7  A definition with no prose is not penalised for lacking it. On
+      game-server 86% of functions have no docstring, so a scoring change that
+      systematically ranks undocumented code below documented code would be a
+      recall defect on the tree this requirement is measured against -- and
+      under CON-0006 a recall defect is the expensive kind. Absence of the
+      field must be neutral, not negative.
+
+  R8  Acceptance is measured on both trees and on prose queries specifically.
+
+      On Loom: `context stop a fixture displacing the definitions a task asked
+      about` returns PRODUCTION-NAMES and DEMOTED-TEST-P. That query returns
+      neither today and its wording is taken from their docstring, which is the
+      point -- an author's sentence about a function should find that function.
+
+      On game-server: a query phrased from a class's (:documentation ...) text
+      returns that class. The specific query is the architecture's to choose
+      from the 198 available, and it must be chosen before the change rather
+      than after, so it is a test and not a demonstration.
+
+      On both: REQ-0016 R9's recall count -- relevant entities appearing
+      nowhere in the bundle -- must fall, and no query in REQ-0016's existing
+      acceptance set may regress.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - Where does a preceding comment block begin, and does it belong to the
+    definition below it? This tree uses ;;;; for section headers and ;; for
+    remarks, and a section header describes a section rather than whichever
+    definition happens to follow it. Attaching one to the next form would
+    give the same paragraph to an arbitrary member of the section and would be
+    wrong in a way no count reveals. Blank-line separation, comment level, or
+    only ever attaching ;; and never ;;;; are all candidates and the choice
+    should be measured rather than assumed.
+
+  - One field or several? A docstring, a class's :documentation and a comment
+    block are different kinds of claim and a retrieval path may want to weight
+    them differently. One blob is simpler and cannot express that.
+
+  - What does it cost the index? 565 docstrings on this tree, several of them
+    sixty lines. The number is not large but it is the first time the graph
+    holds substantial text rather than identifiers and line numbers, and the
+    persistence and memory consequences should be measured before rather than
+    discovered.
+
+  - Does a generated definition inherit the prose of its generator? A DEFCLASS
+    slot accessor has no docstring of its own and its class usually does. The
+    :GENERATED-BY property already records the link. Inheriting is a
+    convenience that manufactures a claim the author did not make about that
+    name; not inheriting leaves an accessor as findable as it is now, which is
+    barely.
+
+  - Is a docstring matched against the same field weights as a name? A name is
+    a few tokens and a docstring is a paragraph, so length normalisation
+    decides whether one 60-line docstring outranks fifty apt names. DES-0026 D4
+    proposes BM25, which has an answer; the field weights are still a choice.

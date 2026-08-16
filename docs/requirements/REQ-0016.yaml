@@ -7,7 +7,7 @@ affects: [build-context, context-item, seed-entities, search-entities,
           seed-matches, seed-score, seed-slice, admit-seeds,
           seed-type-rank, task-terms, slot-accessor-p, test-code-p,
           named-by-task-p, production-names, demoted-test-p]
-tags: [knowledge, console, context, ranking]
+tags: [knowledge, console, context, ranking, con-0006, req-0031]
 summary: |
   `context` is the command CLAUDE.md and the loom skill both tell an agent to
   reach for first -- "a budgeted bundle: what to know before editing". On
@@ -388,3 +388,52 @@ body: |
   standing rather than quietly relaxed: R2 and R3 should be measured against
   it, and if it is still unmet then, it should be argued with rather than
   edited.
+
+  THE PURPOSE, AND WHAT IT CORRECTS ABOVE, 2026-08-16
+
+  Everything above is written as a precision complaint, and half of it is
+  wrong for a reason that is not visible from inside the evidence. This section
+  states the correction rather than editing the text it corrects.
+
+  The consumer of a bundle is an LLM, and Loom exists to stop it grepping --
+  REQ-0031 measured the loop this requirement is ultimately about: one small
+  change on game-server cost eleven shell commands, five of which existed only
+  to print regions of files Loom had already named. That fixes the retrieval
+  trade-off and fixes it opposite to the way a search engine for humans does.
+  A wrong entry costs the reader a few tokens and no attention. A *missing*
+  entry sends it back to grep, and does so silently, because the reader cannot
+  tell a subsystem Loom did not return from one that does not exist. CON-0006
+  records the asymmetry and its consequence: demote, never drop.
+
+  So the complaint at the top of this document -- 22 entities came back and
+  "almost none of them is what the question was about" -- named the right
+  defect and measured it with the wrong instrument. The defect was never that
+  SET-CORS-HANDLER was present. It was that the DATA-HANDLER protocol was
+  *absent*, which is a recall failure, and the 22 wrong entities were the
+  symptom that made it visible rather than the disease.
+
+  Three clauses above should be read in that light:
+
+  R3 is already right and is the model. "SET-CORS-HANDLER must not displace
+  DHANDLER-GET" -- displace, not appear.
+
+  R6 is not. "Must not spend its budget on server/gameapi.lisp's CORS layer"
+  reads as exclusion, and exclusion of a cheap entry buys nothing. What it
+  should require is that the CORS layer never take a slot the protocol needed.
+
+  "It does not ask for the token budget to change" was correct when written
+  and is now false, and this is the one place the correction has real cost.
+  The argument for it was that 2,000 tokens is enough to *describe a subsystem*
+  when the right entities are chosen -- true of a bundle listing names and
+  locations. Once REQ-0031 lands and a bundle can carry source, 2,000 tokens is
+  three to eight definitions in total. The number was not wrong; the bundle it
+  was sized for stops existing. DES-0026 assumes REQ-0031 is implemented next
+  and is written against it.
+
+  R9  Recall is the measure, and it has never been measured. For each
+      acceptance query, the count of entities a competent reader judges
+      relevant that appear *nowhere* in the bundle -- not ranked low, absent.
+      That number is what this requirement exists to move and no clause above
+      reports it. A change that halves it while returning more irrelevant
+      entities than before has succeeded, and every clause above would have
+      called that a regression.
