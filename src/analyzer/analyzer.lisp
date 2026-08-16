@@ -71,6 +71,46 @@ properties and leaves the edges unioned. A within-transaction absorb of a code
 entity is evidence of an analyzer violating this contract. Nothing checks it
 -- see CON-0005."))
 
+(defun blank-line-p (line)
+  "True when LINE holds nothing but whitespace."
+  (every (lambda (c) (member c '(#\Space #\Tab #\Return #\Page))) line))
+
+(defgeneric comment-extent (analyzer lines start-line)
+  (:documentation "Where the comment block attached above START-LINE begins.
+
+Returns two values: the 1-based line the block starts at, and how it is
+attached -- :ADJACENT, :SEPARATED or :SECTION. NIL and NIL when there is none.
+
+LINES is a vector of strings and START-LINE is 1-based, which is what the
+entity's :START-LINE already is. A vector rather than the CONTENTS string every
+other entry in this protocol takes, because the caller has already split it and
+this is the one operation that wants random access by line number rather than a
+parse.
+
+The analyzer answers because the question is language-shaped and a shared line
+rule gets it wrong. A first draft of DES-0027 proposed one: walk upward while
+each line is blank-or-comment. That is Lisp's answer written down as though it
+were everyone's, and on ~/github/front-end -- 249 of 461 source files carrying
+JSDoc -- none of ` */`, ` * @param` or `/**` is recognisable as a comment line
+without knowing a block is open, so it returns nothing on half the tree in
+silence.
+
+This makes no judgement about whether the block *should* be used, and that
+separation is DES-0027 D3a. Serving source may take a section banner, because
+over-including costs a reader a few tokens and CON-0006 calls that the cheap
+error. Indexing prose may not, because attaching a section header to one
+arbitrary member of its section records a claim the author did not make, which
+is CON-0001's fabricated fact. One extractor reports what it found and how it
+is attached; each caller applies its own threshold to the same evidence.
+
+The default is NIL for both values. A language whose analyzer has not answered
+this question serves an unpadded range rather than a guessed one -- a smaller
+answer, where a wrong one attributes prose to a definition it was not written
+about.")
+  (:method ((analyzer analyzer) lines start-line)
+    (declare (ignore lines start-line))
+    (values nil nil)))
+
 (defgeneric analyzer-handles-p (analyzer path)
   (:documentation "True when ANALYZER claims PATH.")
   (:method ((analyzer analyzer) path)

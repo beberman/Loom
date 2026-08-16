@@ -138,10 +138,43 @@ body: |
   language uses for sections. The extractor makes no judgement; the caller
   applies its own threshold to the same evidence.
 
-  This design takes everything. REQ-0035 takes only the adjacent case. Neither
-  reimplements the scan, and neither has to argue with the other's bar --
-  which is what would have happened had each written its own rule and then
+  This design takes :ADJACENT and :SEPARATED. REQ-0035 takes only :ADJACENT.
+  Neither reimplements the scan, and neither has to argue with the other's bar
+  -- which is what would have happened had each written its own rule and then
   disagreed about a section header.
+
+  AMENDED IN IMPLEMENTATION, 2026-08-16. This section first said serving takes
+  *everything*, section banners included, on the argument that over-including
+  costs a reader a few tokens. Counting what actually sits above a top-level
+  definition moved it:
+
+                   ;;      ;;;     ;;;;+
+      Loom          1       51       124
+      game-server  89       38        99
+
+  Two corrections came out of that table. The :SECTION threshold is four
+  semicolons and not three: CL style calls `;;;' and `;;;;' both top-level, but
+  a `;;;;' here is a box heading -- `;;;; ====' / `;;;; Running the rule set' /
+  `;;;; ====' above ACTIVE-RULES -- while a `;;;' is commentary about the
+  definition it sits on, and the nine `;;;' lines above EDGES-MATCHING explain
+  why staleness is enforced at that one call. Three would have discarded 51
+  real paragraphs on this tree to catch banners a fourth semicolon marks.
+
+  And serving declines :SECTION after all. There are 124 such banners above a
+  definition on Loom and 99 on game-server, and a three-line box about a
+  different subject prepended to a five-line function does not read as a few
+  tokens of context -- it reads as that function's documentation, which is
+  CON-0001's fabricated fact rather than the over-inclusion CON-0006 excuses.
+  The cheap error stays cheap only while what is over-included is still about
+  the subject. The two consumers still differ; they differ by one band instead
+  of two.
+
+  The third number in that table is the one to carry into REQ-0035. Loom has
+  exactly one adjacent `;;' block above any of its 1,154 top-level definitions,
+  because its prose lives in docstrings *inside* the form and is already within
+  :START-LINE..:END-LINE. Padding buys this tree almost nothing and buys
+  game-server 89 real blocks. A feature measured only against Loom would have
+  been called a no-op and cut -- REQ-0016's thesis arriving one system over.
 
   A consequence worth stating: the attachment kind is derived at read time from
   the file and is not a property asserted into the graph, so nothing here

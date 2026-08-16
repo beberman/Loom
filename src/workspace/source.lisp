@@ -86,7 +86,55 @@ be vouched for."
         :current
         :stale)))
 
-(defun definition-source (repository id &key (limit *source-line-limit*))
+(defparameter *source-trailing-pad* 0
+  "Lines served after an entity's :END-LINE.
+
+Zero, and the zero is argued rather than lazy. REQ-0031 R9 asks for \"a small
+number of lines after\", and the reason padding exists at all is that the prose
+above a definition is frequently the most valuable thing about it. Nothing
+symmetrical is true below: the next lines are the next definition, which the
+reader can ask for by name, and DES-0027 D3's downward margin carries no claim
+about what those lines mean.
+
+Left as a parameter rather than removed, because R9 asks for it and the right
+value is a measurement nobody has made. A tree where definitions end in a
+closing brace on its own line might want one.")
+
+(defun padded-start (repository relative lines start-line)
+  "Where a served range should begin: the attached comment block, or START-LINE.
+
+The analyzer decides where the block is, per DES-0027 D3a; this decides whether
+to use it. :ADJACENT and :SEPARATED are taken, :SECTION is not.
+
+D3a first said serving should take everything, on the argument that
+over-including costs a reader a few tokens and CON-0006 calls that the cheap
+error. Measurement moved it. A :SECTION on these trees is a box --
+
+    ;;;; ==================================================================
+    ;;;; Running the rule set
+    ;;;; ==================================================================
+
+-- and there are 124 of them above a definition on Loom and 99 on game-server.
+That is not a few tokens of harmless context; prepended to a five-line function
+it reads as *that function's* documentation, which is the fabricated fact
+CON-0001 forbids rather than the over-inclusion CON-0006 excuses. The cheap
+error stays cheap only while what is over-included is still about the subject.
+
+So the two consumers still differ, and differ by one band rather than two:
+serving takes :ADJACENT and :SEPARATED, REQ-0035 will take only :ADJACENT.
+
+A language whose analyzer has not answered returns START-LINE unchanged: an
+unpadded body is a smaller answer, where a guessed one is a wrong claim."
+  (declare (ignore repository))
+  (let ((analyzer (find-analyzer relative)))
+    (if (null analyzer)
+        start-line
+        (multiple-value-bind (first attachment) (comment-extent analyzer lines start-line)
+          (if (and first (member attachment '(:adjacent :separated)))
+              first
+              start-line)))))
+
+(defun definition-source (repository id &key (limit *source-line-limit*) (pad t))
   "The source text of the entity ID names in REPOSITORY, as a plist.
 
   :status        :current :stale :missing :short :unlocated :unknown
@@ -140,15 +188,27 @@ surprise in the :READ tier, and the monitor already owns that job."
                         ;; END may outrun a file that shrank without dropping
                         ;; below START; clamping serves what is there and the
                         ;; range reports what was served.
-                        (let* ((last      (min end total))
-                               (available (1+ (- last start)))
+                        (let* ((from      (if pad
+                                              (padded-start repository relative lines start)
+                                              start))
+                               (last      (min (+ end *source-trailing-pad*) total))
+                               (available (1+ (- last from)))
                                (shown     (min available limit))
-                               (served    (+ start shown -1)))
+                               (served    (+ from shown -1)))
                           (list :status (source-status repository relative path contents)
                                 :file relative
-                                :range (format nil "~d-~d" start served)
+                                ;; R9: the padded range, because it is what was
+                                ;; actually returned. A caller told 29-36 and
+                                ;; handed 22-38 cannot otherwise tell what it
+                                ;; read, and R4 exists so that it can.
+                                :range (format nil "~d-~d" from served)
+                                ;; The entity's own range, unchanged and beside
+                                ;; it. Padding is a property of the answer and
+                                ;; never of the entity -- nothing that reads
+                                ;; :START-LINE sees a different number.
+                                :definition-range (format nil "~d-~d" start end)
                                 :text (with-output-to-string (out)
-                                        (loop for i from (1- start) below served
+                                        (loop for i from (1- from) below served
                                               do (write-line (aref lines i) out)))
                                 :truncated (< shown available)
                                 :withheld (- available shown)

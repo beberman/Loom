@@ -31,6 +31,72 @@
    :file-types '("lisp" "lsp" "cl" "asd"))
   (:documentation "A reader-based analyzer for Common Lisp source files."))
 
+(defun lisp-comment-level (line)
+  "How many semicolons open LINE's comment, or NIL when it opens none.
+
+Only a comment that starts the line counts. A trailing `(foo) ; why' is a
+remark about that line and is inside the definition's own range already."
+  (let ((start (position-if-not (lambda (c) (member c '(#\Space #\Tab))) line)))
+    (when (and start (char= #\; (char line start)))
+      (- (or (position-if-not (lambda (c) (char= #\; c)) line :start start)
+             (length line))
+         start))))
+
+(defmethod comment-extent ((analyzer lisp-analyzer) lines start-line)
+  "The run of comment lines above START-LINE, and how it is attached.
+
+**Four** or more semicolons is :SECTION, and the number was measured rather
+than taken from the convention. CL style says `;;;' and `;;;;' are both
+top-level, which suggested three -- and counting what actually sits above a
+top-level definition says otherwise:
+
+                 ;;      ;;;     ;;;;+
+    Loom          1       51       124
+    game-server  89       38        99
+
+A `;;;;' is a box: `;;;; ====' / `;;;; Running the rule set' / `;;;; ===='
+above ACTIVE-RULES, which is a heading for everything below it and says nothing
+about that function. A `;;;' is commentary about the definition it sits on --
+the nine lines above EDGES-MATCHING explain why staleness is enforced at that
+one call, and losing them would lose the reason the function exists. Three
+would have discarded 51 real paragraphs on this tree to catch banners a fourth
+semicolon already marks.
+
+The other number worth carrying out of that table: Loom has exactly one
+adjacent `;;' block above any of its 1,154 top-level definitions. Its prose
+lives in docstrings, inside the form, already inside :START-LINE..:END-LINE.
+Padding is worth almost nothing here and worth something real on game-server,
+which is REQ-0016's thesis arriving in the ontology's neighbour -- a mechanism
+measured only against Loom would have been called a no-op and cut.
+
+A blank line between the block and the definition makes it :SEPARATED rather
+than ending the search. Both callers want to know the block is there; they
+disagree only about what a gap means, and that is theirs to decide rather than
+this function's. :SECTION wins over :SEPARATED when both apply, because the
+stronger reason to distrust the attachment is the one worth reporting.
+
+The walk stops at the first line that is neither blank nor a comment, which is
+the previous form."
+  (declare (ignore analyzer))
+  (let ((i (- start-line 2))                 ; 0-based index of the line above
+        (gap nil))
+    ;; Skip whatever blank lines separate the definition from a block above it.
+    (loop while (and (>= i 0) (blank-line-p (aref lines i)))
+          do (setf gap t) (decf i))
+    (if (or (minusp i) (null (lisp-comment-level (aref lines i))))
+        (values nil nil)
+        ;; Collect upward while the lines stay comments. A blank line *inside*
+        ;; the run ends it: two paragraphs separated by a gap are two remarks,
+        ;; and the nearer one is the one about this definition.
+        (let ((level 0))
+          (loop while (and (>= i 0) (lisp-comment-level (aref lines i)))
+                do (setf level (max level (lisp-comment-level (aref lines i))))
+                   (decf i))
+          (values (+ i 2)                    ; 1-based first line of the block
+                  (cond ((>= level 4) :section)
+                        (gap :separated)
+                        (t :adjacent)))))))
+
 ;;;; ------------------------------------------------------------------
 ;;;; Naming the things a form mentions
 ;;;; ------------------------------------------------------------------

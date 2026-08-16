@@ -1626,3 +1626,86 @@ name a macro identically and a pass must be able to see the ambiguity")))
   (is (null (find-analyzer "src/ui/DrawingTool.tsx"))
       "no TypeScript analyzer is registered yet, and NIL is how a caller
 sweeping a mixed tree learns to skip the file"))
+
+;;; ------------------------------------------------------------------
+;;; COMMENT-EXTENT -- REQ-0031 R9, DES-0027 D3a, PLAN-0030 S4
+;;; ------------------------------------------------------------------
+
+(defun extent-of (lines start-line)
+  "COMMENT-EXTENT over LINES, a list of strings, as two values."
+  (comment-extent (make-instance 'lisp-analyzer)
+                  (coerce lines 'vector) start-line))
+
+(test a-comment-block-touching-a-definition-is-adjacent
+  (multiple-value-bind (first attachment)
+      (extent-of '(";; why this exists"
+                   ";; and the second line of why"
+                   "(defun f (x) x)")
+                 3)
+    (is (= 1 first) "the top of the run, not the line just above")
+    (is (eq :adjacent attachment))))
+
+(test a-blank-line-separates-a-block-without-hiding-it
+  ;; Both callers want to know the block is there; they disagree only about
+  ;; what the gap means, and DES-0027 D3a leaves that to them rather than to
+  ;; this function.
+  (multiple-value-bind (first attachment)
+      (extent-of '(";; a remark about something"
+                   ""
+                   "(defun f (x) x)")
+                 3)
+    (is (= 1 first))
+    (is (eq :separated attachment))))
+
+(test four-semicolons-is-a-section-and-three-is-not
+  ;; Measured rather than taken from CL style, which calls both top-level:
+  ;; counting what sits above a definition gives Loom 51 ;;; blocks and 124
+  ;; ;;;; ones, and the ;;; are commentary about the definition while the
+  ;;;; ones are box headings for everything below them.
+  (multiple-value-bind (first attachment)
+      (extent-of '(";;;; ================"
+                   ";;;; Running the rule set"
+                   ";;;; ================"
+                   "(defun active-rules (view) view)")
+                 4)
+    (is (= 1 first))
+    (is (eq :section attachment) "a heading for what follows, not about it"))
+  (multiple-value-bind (first attachment)
+      (extent-of '(";;; why staleness is enforced at this one call"
+                   "(defun edges-matching (g) g)")
+                 2)
+    (is (= 1 first))
+    (is (eq :adjacent attachment)
+        "three semicolons is commentary; discarding it would lose 51 real
+         paragraphs on this tree to catch banners a fourth semicolon marks")))
+
+(test a-definition-with-nothing-above-it-pads-by-nothing
+  (multiple-value-bind (first attachment)
+      (extent-of '("(defparameter *x* 1)" "" "(defun f (x) x)") 3)
+    (is (null first) "the previous form is not a comment")
+    (is (null attachment)))
+  (multiple-value-bind (first attachment) (extent-of '("(defun f (x) x)") 1)
+    (is (null first) "the top of the file is not an error")
+    (is (null attachment))))
+
+(test a-trailing-remark-is-not-an-attached-block
+  ;; `(foo) ; why' is a remark about that line and is already inside the
+  ;; previous definition's own range.
+  (multiple-value-bind (first attachment)
+      (extent-of '("(defun g (x) x) ; a trailing remark"
+                   "(defun f (x) x)")
+                 2)
+    (is (null first))
+    (is (null attachment))))
+
+(test a-blank-line-inside-a-run-ends-it-at-the-nearer-paragraph
+  ;; Two paragraphs separated by a gap are two remarks, and the nearer one is
+  ;; the one about this definition.
+  (multiple-value-bind (first attachment)
+      (extent-of '(";; an older paragraph about something else"
+                   ""
+                   ";; the remark about f"
+                   "(defun f (x) x)")
+                 4)
+    (is (= 3 first))
+    (is (eq :adjacent attachment))))
