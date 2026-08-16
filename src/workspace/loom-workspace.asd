@@ -35,6 +35,10 @@
    ;; After "workspace": it takes WITH-REPOSITORY-LOCK, NOTE-ERROR and
    ;; *REPOSITORIES*, and is the one pass that reads more than one graph.
    (:file "federate")
+   ;; After "workspace": REQ-0031's reader takes STAMP-FILE and
+   ;; REPOSITORY-STAMPS to answer whether the text it served is the text the
+   ;; index was built from.
+   (:file "source")
    )
   :in-order-to ((test-op (test-op :loom-workspace/test)))
   )
@@ -62,6 +66,9 @@
    ;; follows is that file's.
    (:file "init")
    (:file "architecture")
+   ;; After "workspace": it takes WITH-WORKSPACE-FIXTURE and WRITE-FILE, and
+   ;; the line numbers it asserts are that fixture's src/alpha.lisp.
+   (:file "source")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-workspace-test :test-runner)

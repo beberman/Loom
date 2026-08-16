@@ -34,6 +34,12 @@
    #:unwatch-repository
    #:index-repository
 
+   ;; REQ-0031, DES-0027 D1. The source of a definition, which only this
+   ;; system can serve: the range is on the entity and the root is on the
+   ;; repository, and loom-knowledge cannot see the second.
+   #:definition-source
+   #:*source-line-limit*
+
    ;; Cross-repository edges (REQ-0027, DES-0025). The one pass that reads
    ;; more than one graph, and the only place in the system that may.
    #:federate-repositories
