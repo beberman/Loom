@@ -205,3 +205,41 @@ check:
         (is (plusp (getf status :entities)))
         (is (not (null (getf status :indexed-at))))
         (is (>= (getf status :indexed-at) before))))))
+
+;;; ------------------------------------------------------------------
+;;; REQ-0031: source on :DESCRIBE (DES-0027, PLAN-0030 S3)
+;;; ------------------------------------------------------------------
+
+(test describe-returns-source-only-when-it-is-asked-for
+  ;; REQ-0031 R2: off by default. The absence matters as much as the presence
+  ;; -- `describe' surveying an entity is the behaviour that already existed
+  ;; and is right for deciding whether you wanted it at all.
+  (with-operations-fixture (repository)
+    (let ((plain (call-operation :describe '(:read)
+                                 :repository (repository-name repository)
+                                 :term "alpha-twice"))
+          (with (call-operation :describe '(:read)
+                                :repository (repository-name repository)
+                                :term "alpha-twice" :source "true")))
+      (is (null (getf plain :source)) "absent unless requested")
+      (is (not (null (getf with :source))))
+      (is (eq :current (getf (getf with :source) :status)))
+      (is (search "alpha-twice" (getf (getf with :source) :text))
+          "the definition's own text, read now rather than asserted at index time")
+      (is (not (null (getf with :neighbors)))
+          "added to the answer rather than replacing it"))))
+
+(test the-source-flag-refuses-junk-rather-than-reading-it-as-false
+  ;; REQUEST-BOOLEAN's asymmetry. A caller who sent source=yep asked for
+  ;; something; answering as though they asked for nothing returns a body-less
+  ;; answer that reads exactly like a definition with no body.
+  (with-operations-fixture (repository)
+    (signals malformed-request
+      (call-operation :describe '(:read)
+                      :repository (repository-name repository)
+                      :term "alpha-twice" :source "yep"))
+    (is (null (getf (call-operation :describe '(:read)
+                                    :repository (repository-name repository)
+                                    :term "alpha-twice" :source "false")
+                    :source))
+        "an explicit false is not junk and is not a request")))

@@ -97,6 +97,32 @@ asked for."
                   :message (format nil "~a must be a non-negative integer, not ~s."
                                    what value)))))
 
+(defun request-boolean (value what)
+  "VALUE as a flag, NIL when absent, or a malformed request.
+
+REQUEST-INTEGER's argument applied to the other shape both skins disagree
+about: a JSON body carries a real boolean and an HTTP query parameter carries
+the string \"true\", and an entry should not have to know which arrived.
+
+Junk is refused rather than read as false, and that asymmetry is the point. A
+caller who sent `source=yep' asked for something; answering as though they had
+asked for nothing returns a smaller answer than they wanted with nothing in it
+saying so, which is REQUEST-INTEGER's invisible-wrong-bound failure in the one
+place it would be even quieter -- a missing body reads exactly like a
+definition that has none."
+  (cond ((null value) nil)
+        ((eq value t) t)
+        ((member value '(:true :false)) (eq value :true))
+        ((stringp value)
+         (cond ((member value '("true" "1" "yes") :test #'string-equal) t)
+               ((member value '("false" "0" "no") :test #'string-equal) nil)
+               (t (error 'malformed-request
+                         :message (format nil "~a must be true or false, not ~s."
+                                          what value)))))
+        (t (error 'malformed-request
+                  :message (format nil "~a must be true or false, not ~s."
+                                   what value)))))
+
 ;;;; ==================================================================
 ;;;; Read tier (R2's seven names)
 ;;;; ==================================================================
@@ -123,10 +149,23 @@ The console's own cap, so the two answer the same question the same way.")
                                     (intern (string-upcase (string entity-type)) :keyword))
                          :limit (or (request-integer limit "limit") *find-limit*))))
 
-(define-operation :describe :read (repository term)
-    "Full detail for one entity, with its neighbours grouped by edge type."
-  (let ((graph (repository-view repository)))
-    (describe-entity graph (id (resolve-entity graph term)))))
+(define-operation :describe :read (repository term (source))
+    "Full detail for one entity, with its neighbours grouped by edge type. \
+Pass source=true for the definition's text."
+  ;; REQ-0031 R1 and R2. The optional SOURCE is what makes this available on
+  ;; REST and MCP at once: loom-rest walks ARG-SHAPE for routes and loom-mcp
+  ;; walks it for tools/list, so declaring the argument declares both surfaces
+  ;; and neither file is edited. DES-0006 R5's property, exercised.
+  (let* ((repository-struct (require-repository repository))
+         (graph (repository-graph repository-struct))
+         (entity (resolve-entity graph term))
+         (detail (describe-entity graph (id entity))))
+    (if (request-boolean source "source")
+        ;; Appended under its own key rather than folded into :PROPERTIES: the
+        ;; text is not a fact the analyzer asserted about the entity, it is a
+        ;; read of a file performed now, and its :STATUS is about that read.
+        (append detail (list :source (definition-source repository-struct (id entity))))
+        detail)))
 
 (define-operation :impact :read (repository term (depth))
     "What may need attention if this changes, with paths and depths."

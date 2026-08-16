@@ -513,12 +513,27 @@ rather than only in the note beside it."
         (format t "~&Nothing matches ~s.~%" term)
         (dolist (hit hits) (print-summary-line hit)))))
 
-(define-command describe (term)
-    "describe <name>"
-    "Full detail for one entity, with its neighbours grouped by edge type."
-  (let* ((graph (current-graph))
+(define-command describe (term &optional flag)
+    "describe <name> [--source]"
+    "Full detail for one entity, with its neighbours grouped by edge type. \
+--source adds the definition's text."
+  (let* ((repository (current-repository))
+         (graph (repository-graph repository))
          (entity (resolve-entity graph term))
-         (detail (describe-entity graph (id entity))))
+         (detail (describe-entity graph (id entity)))
+         ;; REQ-0031 R2: requested rather than assumed. A flag rather than a
+         ;; second positional, because `describe <name> <something>' reads as a
+         ;; type filter by analogy with `find'. An unrecognised token is
+         ;; refused rather than ignored -- a typo that silently returns the
+         ;; answer to a different question is the failure this command is least
+         ;; able to make visible.
+         (source-wanted
+           (cond ((null flag) nil)
+                 ((string-equal flag "--source") t)
+                 ;; Signalled rather than printed: RUN-COMMAND catches every
+                 ;; condition and reports it, and DEFINE-COMMAND's body is an
+                 ;; anonymous lambda with no block to return from.
+                 (t (error "Unknown option ~s. Try: --source" flag)))))
     (print-summary-line (getf detail :entity))
     ;; A document's :BODY is its author's whole concatenation, so printing it
     ;; put the neighbours below an unbounded amount of prose, and for a
@@ -581,7 +596,42 @@ rather than only in the note beside it."
               (mapcar (lambda (e)
                         (format nil "~a~@[ (~(~a~))~]"
                                 (getf e :name) (getf e :referrer-kind)))
-                      (getf group :entities))))))
+                      (getf group :entities))))
+    ;; REQ-0031 R1, last because it is the longest thing printed and the
+    ;; neighbours are the survey a reader uses to decide whether they wanted
+    ;; this entity at all.
+    (when source-wanted
+      (print-source (definition-source repository (id entity))))))
+
+(defun print-source (result)
+  "REQ-0031's source block, or why there is none.
+
+Every status prints something. REQ-0031 R5 forbids answering a range that is no
+longer there with a shorter region or an empty string, and a caller that asked
+for source and got silence cannot tell a refusal from an empty definition --
+which is CON-0006's expensive error at the scale of one answer."
+  (let ((status (getf result :status)))
+    (case status
+      ((:current :stale)
+       ;; R4: the range served and the generation it was read against, so a
+       ;; caller can tell that what it read matches what Loom described. The
+       ;; range is what was *served* and may be shorter than the entity's when
+       ;; the cap cut it.
+       (format t "~&~%source ~a~@[ (~d line~:p withheld)~]~@[ -- ~a~]:~%"
+               (getf result :range)
+               (and (getf result :truncated) (getf result :withheld))
+               (when (eq :stale status)
+                 "the file has changed since it was indexed"))
+       (write-string (getf result :text)))
+      (:unlocated
+       (format t "~&~%source: this entity records no line range.~%"))
+      (:missing
+       (format t "~&~%source: ~a is gone.~%" (getf result :file)))
+      (:short
+       (format t "~&~%source: ~a no longer reaches line ~a.~%"
+               (getf result :file) (getf result :range)))
+      (t
+       (format t "~&~%source: unavailable (~(~a~)).~%" status)))))
 
 (define-command impact (term &optional depth)
     "impact <name> [<depth>]"
