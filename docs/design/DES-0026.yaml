@@ -65,7 +65,8 @@ body: |
     *context-token-budget* 2000     everything after truncation  re-set (D3)
     `find`'s 20-hit cap             REQ-0005, and silently       out of scope,
                                                                  noted (D13)
-    *context-relation-limit* 12     relations past twelve        keep: display
+    *context-relation-limit* 12     relations past twelve        RECALL GATE
+                                                                 -- see D1a
     R4 test demotion                nothing -- it is a band      already right
 
   The last row is the pattern the others should follow, and it was already
@@ -73,6 +74,56 @@ body: |
   call site rather than filtering it because "a filtered entity is invisible",
   and SEED-SCORE demotes test code for the same reason. CON-0006 is those two
   paragraphs generalised.
+
+  D1a MEASURED ON GAME-SERVER THROUGH LOOM, 2026-08-16
+
+  Everything this document said about game-server was taken from REQ-0016's
+  recorded numbers. Watching that tree in the running service and asking it
+  directly corrects three things, and the third changes a design decision.
+
+  `context data-handler`, today, with R1/R4/R7/R8 in:
+
+    seeds   DATA-HANDLER (first), DATA-HANDLER-ERROR,
+            DATABASE-UNAVAILABLE-ERROR, DATABASE-ALERT, HANDLER-EXISTS-P,
+            DB-HANDLER (class and interface), data-api/db-handler.lisp
+    band    DATA-DECODER-FN, DATA-ENCODER-FN, RESET-TABLES -- three entries
+    budget  1970 of 2000, truncated
+
+  First: the CRUD protocol is *already arriving*, and not where this document
+  assumed. DATA-HANDLER's own relation list carries DHANDLER-DELETE,
+  DHANDLER-COUNT, DHANDLER-EXISTS, DHANDLER-GET and DHANDLER-WITH-TRANSACTION;
+  DB-HANDLER's carries DHANDLER-UPDATE, DHANDLER-PUT, DHANDLER-GET-ALL-IDS,
+  DHANDLER-ACQUIRE-CONNECTION, DHANDLER-ROLLBACK and DHANDLER-COMMIT. So the
+  channel doing the work on this query is the per-item relation list, not the
+  neighbour band -- which got three entries before the budget ran out.
+
+  Second: those methods arrive on **:USES**, not :IMPLEMENTS. A method
+  specialised on a class reaches it by :USES in this ontology, and :IMPLEMENTS
+  targets an :INTERFACE. D6's table already prices :USES at 2 and is therefore
+  right, but D12's acceptance said "each with :INHERITS or :IMPLEMENTS on its
+  line" and that clause would have failed a correct implementation. Corrected
+  there. DATA-HANDLER's incoming :INHERITS are exactly NULL-HANDLER and
+  DB-HANDLER, which confirms the reachability claim in D6: TABLE-HANDLER,
+  MODEL-HANDLER and GAME-HANDLER hang off DB-HANDLER and are two or more hops
+  out, so no one-hop expansion reaches them at any budget.
+
+  Third, and this is the design change: *CONTEXT-RELATION-LIMIT* = 12 is a
+  recall gate, not a display cap, and D1's inventory classified it wrongly.
+  DATA-HANDLER has 22 relations and shows 12; DB-HANDLER has 21 and shows 12.
+  Nineteen relations are withheld across two seeds on the one query R6 is
+  written about, and the protocol R6 asks for is the population being cut. The
+  bundle does print "... N more", so it is not silent -- but under CON-0006 a
+  count is not a name, and an agent cannot ask for what it cannot see spelled.
+
+  Under D2 the repair is nearly free and needs no new mechanism: relations are
+  one line each and belong in the index tier, so the cap becomes a source-tier
+  concern only. An entity in the index tier lists its relations because they
+  cost what a line costs.
+
+  This section is also the argument for the practice. Three corrections, one of
+  them to a design decision, from two queries against the tree the requirement
+  is about -- none of which was visible from inside Loom's own tree or from the
+  requirement's prose.
 
   D2  THE OUTPUT IS TWO TIERS, AND REQ-0031 IS ASSUMED
 
@@ -461,7 +512,12 @@ body: |
     data-handler
       R6. DATA-HANDLER first in the source tier, and a majority of DB-HANDLER,
       TABLE-HANDLER, MODEL-HANDLER, NULL-HANDLER and GAME-HANDLER present
-      somewhere, each with :INHERITS or :IMPLEMENTS on its line. The CORS layer
+      somewhere, each with :INHERITS or :USES on its line -- :USES and not
+      :IMPLEMENTS, per D1a, because that is the edge a method specialised on a
+      class actually carries in this ontology. DATA-HANDLER, DB-HANDLER and
+      most of the protocol already arrive today through the per-item relation
+      lists; what R6 still lacks is TABLE-HANDLER, MODEL-HANDLER and
+      GAME-HANDLER, so that trio is the measurement. The CORS layer
       may appear in the index tier and must not appear in the source tier --
       which is R6 read through CON-0006, and is weaker than R6's text on
       presence and stronger on what the expensive tier holds. The horizon is
