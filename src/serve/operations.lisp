@@ -74,25 +74,99 @@ to guess which repository a program meant is the point."
   "The graph REQUIRE-REPOSITORY's answer holds."
   (repository-graph (require-repository designator)))
 
+;;;; ==================================================================
+;;;; Reading a wire value -- one predicate and one converter per type
+;;;; ==================================================================
+;;;;
+;;;; Both skins reach the same entry with different types: an HTTP query
+;;;; parameter is always a string, a JSON body carries a real number or a real
+;;;; boolean, and an entry should not have to know which arrived.
+;;;;
+;;;; Split into a predicate, a converter and a request-level coercer because
+;;;; the three answer different questions and a caller usually wants only one
+;;;; of them. IS-INTEGER-P asks whether a value can be read. TO-INTEGER reads
+;;;; it. REQUEST-INTEGER reads it or refuses the request, which is the one an
+;;;; operation entry wants and the only one that knows what to call the
+;;;; argument in a message.
+;;;;
+;;;; game-server BUG-0001 is what this shape is answering. That tree decodes an
+;;;; integer by signalling on junk and a boolean by returning false on junk,
+;;;; three lines apart in one function, and has three exported predicates
+;;;; disagreeing about what a number is. The lesson taken here is not that
+;;;; strict beats permissive -- it is that the policy must be stated once and
+;;;; shared, because the two branches there were written by the same author on
+;;;; the same day and still disagreed.
+
+(defparameter *true-tokens* '("true" "t" "1" "yes" "on")
+  "Spellings of true a caller may send. Compared case-insensitively.
+
+Wider than a JSON boolean because a query string has no booleans: `?source=1'
+and `?source=true' are both ordinary, and refusing one would make the REST
+surface stricter than the MCP one for no reason a caller could discover.")
+
+(defparameter *false-tokens* '("false" "nil" "0" "no" "off")
+  "Spellings of false. An explicit false is a request and not junk, so it is
+enumerated rather than left to fall through -- the whole point of BUG-0031's
+sibling defect is that unreadable input must not arrive at the same answer an
+author deliberately asked for.")
+
+(defun is-integer-p (value)
+  "True when VALUE can be read as an integer -- already one, or a string
+spelling one exactly. A partial parse is not an integer: \"3x\" is a question
+about intent and REV-0001 finding 4 is why it is not answered as 3."
+  (typecase value
+    (integer t)
+    (string (multiple-value-bind (n end) (parse-integer value :junk-allowed t)
+              (and n (= end (length value)) t)))
+    (t nil)))
+
+(defun to-integer (value)
+  "VALUE as an integer, or NIL when it is not one. IS-INTEGER-P is the test."
+  (typecase value
+    (integer value)
+    (string (multiple-value-bind (n end) (parse-integer value :junk-allowed t)
+              (and n (= end (length value)) n)))
+    (t nil)))
+
+(defun is-boolean-p (value)
+  "True when VALUE can be read as a boolean.
+
+T counts, and so does every spelling in *TRUE-TOKENS* and *FALSE-TOKENS*. NIL
+does not: an absent argument and an argument spelled `false' are different
+requests, and every caller here distinguishes them by testing for NIL first."
+  (or (eq value t)
+      (and (member value '(:true :false)) t)
+      (and (stringp value)
+           (or (member value *true-tokens* :test #'string-equal)
+               (member value *false-tokens* :test #'string-equal))
+           t)))
+
+(defun to-boolean (value)
+  "VALUE as a boolean, and a second value saying whether it could be read.
+
+Two values because one cannot carry the answer: NIL is both a legitimate false
+and the only thing an unreadable value could return, and collapsing them is
+precisely game-server BUG-0001's silent misread. A caller that ignores the
+second value has written the bug that report is about."
+  (cond ((eq value t) (values t t))
+        ((eq value :true) (values t t))
+        ((eq value :false) (values nil t))
+        ((and (stringp value) (member value *true-tokens* :test #'string-equal))
+         (values t t))
+        ((and (stringp value) (member value *false-tokens* :test #'string-equal))
+         (values nil t))
+        (t (values nil nil))))
+
 (defun request-integer (value what)
   "VALUE as a non-negative integer, NIL when absent, or a malformed request.
 
-Both skins reach the same entry with different types: an HTTP query parameter
-is a string and a JSON body carries a number, and the entry should not have to
-know which arrived. Junk is refused rather than truncated, which is
-console.lisp's RESOLVE-COUNT answer and REV-0001 finding 4's reason -- `depth
-3x' meaning 3 is a guess about intent, and a wrong guess about a bound is
-invisible in the output, because the report is simply smaller than the caller
-asked for."
+Junk is refused rather than truncated, which is console.lisp's RESOLVE-COUNT
+answer and REV-0001 finding 4's reason -- `depth 3x' meaning 3 is a guess about
+intent, and a wrong guess about a bound is invisible in the output, because the
+report is simply smaller than the caller asked for."
   (cond ((null value) nil)
-        ((and (integerp value) (not (minusp value))) value)
-        ((stringp value)
-         (multiple-value-bind (n end) (parse-integer value :junk-allowed t)
-           (unless (and n (= end (length value)) (not (minusp n)))
-             (error 'malformed-request
-                    :message (format nil "~a must be a non-negative integer, not ~s."
-                                     what value)))
-           n))
+        ((and (is-integer-p value) (not (minusp (to-integer value))))
+         (to-integer value))
         (t (error 'malformed-request
                   :message (format nil "~a must be a non-negative integer, not ~s."
                                    what value)))))
@@ -100,28 +174,24 @@ asked for."
 (defun request-boolean (value what)
   "VALUE as a flag, NIL when absent, or a malformed request.
 
-REQUEST-INTEGER's argument applied to the other shape both skins disagree
-about: a JSON body carries a real boolean and an HTTP query parameter carries
-the string \"true\", and an entry should not have to know which arrived.
+REQUEST-INTEGER's policy applied to the other shape the skins disagree about,
+and applied deliberately rather than by coincidence: junk is refused, not read
+as false.
 
-Junk is refused rather than read as false, and that asymmetry is the point. A
-caller who sent `source=yep' asked for something; answering as though they had
-asked for nothing returns a smaller answer than they wanted with nothing in it
-saying so, which is REQUEST-INTEGER's invisible-wrong-bound failure in the one
-place it would be even quieter -- a missing body reads exactly like a
-definition that has none."
-  (cond ((null value) nil)
-        ((eq value t) t)
-        ((member value '(:true :false)) (eq value :true))
-        ((stringp value)
-         (cond ((member value '("true" "1" "yes") :test #'string-equal) t)
-               ((member value '("false" "0" "no") :test #'string-equal) nil)
-               (t (error 'malformed-request
-                         :message (format nil "~a must be true or false, not ~s."
-                                          what value)))))
-        (t (error 'malformed-request
-                  :message (format nil "~a must be true or false, not ~s."
-                                   what value)))))
+That asymmetry is the whole point and game-server BUG-0001 is the counterexample
+that argues it. A caller who sent `source=yep' asked for something; answering as
+though they had asked for nothing returns a smaller answer than they wanted with
+nothing in it saying so. It is REQUEST-INTEGER's invisible-wrong-bound failure
+in the one place it would be quieter still, because a suppressed body reads
+exactly like a definition that has none."
+  (if (null value)
+      nil
+      (multiple-value-bind (result readable) (to-boolean value)
+        (unless readable
+          (error 'malformed-request
+                 :message (format nil "~a must be true or false, not ~s."
+                                  what value)))
+        result)))
 
 ;;;; ==================================================================
 ;;;; Read tier (R2's seven names)

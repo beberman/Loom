@@ -53,7 +53,20 @@
    #:resolve-entity
    #:*workspace-registry-lock*
    #:*find-limit*
+
+   ;; Reading a wire value: one predicate, one converter and one coercer per
+   ;; type. The coercers are what an operation entry wants; the other four are
+   ;; exported because the policy they encode should have exactly one home.
+   ;; game-server BUG-0001 is what three of them scattered across three files
+   ;; costs.
+   #:is-integer-p
+   #:to-integer
+   #:is-boolean-p
+   #:to-boolean
    #:request-integer
+   #:request-boolean
+   #:*true-tokens*
+   #:*false-tokens*
 
    ;; the REPL tier (R9)
    #:repl-open

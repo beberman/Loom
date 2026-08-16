@@ -1,0 +1,99 @@
+id: BUG-0031
+title: The MCP tool schema types every argument as a string, because arg-shape carries only a name and whether it is required
+status: open
+date: 2026-08-16
+affects: [define-operation, validate-arguments, request-integer, request-boolean]
+tags: [mcp, serve, registry, schema, req-0031, des-0006]
+summary: |
+  tools/list advertises loom_describe as
+
+      "properties":{"repository":{"type":"string"},
+                    "term":{"type":"string"},
+                    "source":{"type":"string"}}
+
+  and SOURCE is a boolean. LIMIT on loom_find and DEPTH on loom_impact are
+  integers advertised the same way.
+
+  The cause is one line of derivation. DEFINE-OPERATION builds ARG-SHAPE as a
+  list of (keyword required-p) and nothing else, so the MCP skin has no type to
+  report and reports the only one it can.
+
+  Nothing is broken today: REQUEST-INTEGER and REQUEST-BOOLEAN each accept both
+  the JSON and the query-string encoding, so a client sending true and a client
+  sending "true" are both answered. The defect is that the schema is a claim
+  about the interface and the claim is false -- a client that validates its
+  arguments before sending is told to send "true" for a boolean, and a client
+  that reads the schema to build a form gets a text box for a checkbox.
+body: |
+  HOW IT ARRIVES
+
+  DEFINE-OPERATION's argument list is names, with a parenthesised name meaning
+  optional:
+
+      (define-operation :describe :read (repository term (source)) ...)
+
+  and it compiles that to
+
+      :arg-shape ((:repository t) (:term t) (:source nil))
+
+  That table is deliberately the single source of truth -- loom-rest walks it
+  to check every entry has a route, loom-mcp walks it to answer tools/list, and
+  DES-0006 R5's property is that adding an argument reaches both surfaces with
+  neither file edited. PLAN-0030 S3 verified exactly that and it held: `source`
+  appeared on REST and in tools/list with no edit to either skin.
+
+  So the derivation works. It is simply lossy in one dimension nobody has
+  needed until now, because until REQ-0031 every optional argument was either a
+  string or an integer that a caller would naturally spell as digits, and
+  "type": "string" is true enough of a query parameter that nothing complained.
+
+  A boolean is the first argument where the spelling and the type disagree
+  visibly. `true` and `"true"` are different JSON values, and a schema saying
+  string is telling an MCP client that the first one is wrong.
+
+  WHY IT IS NOT URGENT AND SHOULD STILL BE FIXED
+
+  Not urgent, because the coercers are permissive by design. REQUEST-BOOLEAN
+  accepts T, :TRUE/:FALSE and the strings "true"/"1"/"yes"/"false"/"0"/"no";
+  REQUEST-INTEGER accepts an integer and a digit string. Every client that gets
+  through the schema gets a correct answer.
+
+  Worth fixing, because a schema is the one part of an interface a caller is
+  entitled to trust without reading the implementation, and this one is wrong
+  in a direction that only bites strict clients -- which is to say, it bites
+  the careful callers and not the careless ones. It also fails the property
+  DES-0006 R5 is really claiming: not merely that both surfaces carry an
+  argument, but that they describe it.
+
+  THE FIX
+
+  ARG-SHAPE gains a type, and DEFINE-OPERATION gains a way to spell it.
+  Something in the existing idiom -- the parenthesised form already means
+  optional, so it is the natural place:
+
+      (repository term (source :boolean))
+      (repository term (entity-type) (limit :integer))
+
+  with an unspecified type meaning :STRING, which keeps every existing
+  declaration correct and unedited. loom-mcp maps the keyword to a JSON Schema
+  type; loom-rest needs nothing, since a query string is text either way.
+
+  There is a second, larger prize available and it should be weighed rather
+  than assumed. Once the shape knows a type, VALIDATE-ARGUMENTS could apply the
+  coercion itself, and REQUEST-INTEGER and REQUEST-BOOLEAN would stop being
+  called by hand in each entry -- an entry that forgot to call one is a bug the
+  table could have prevented, and there is nothing today that would catch it.
+  That is a bigger change to the write path of every operation and belongs in
+  its own design if it is wanted.
+
+  ACCEPTANCE
+
+  tools/list reports "type":"boolean" for loom_describe's source and
+  "type":"integer" for loom_find's limit and loom_impact's depth.
+
+  Every existing declaration is unedited except the three that gain a type, and
+  the REST surface is byte-identical.
+
+  A test asserts the advertised type against the declaration rather than
+  against a fixed string, so the next argument with a type gets the same
+  guarantee without anyone remembering to add one.

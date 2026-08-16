@@ -243,3 +243,56 @@ check:
                                     :term "alpha-twice" :source "false")
                     :source))
         "an explicit false is not junk and is not a request")))
+
+;;; ------------------------------------------------------------------
+;;; Reading a wire value (BUG-0031's siblings; game-server BUG-0001)
+;;; ------------------------------------------------------------------
+
+(test an-integer-is-recognised-in-both-encodings-and-not-half-parsed
+  (is (is-integer-p 3))
+  (is (is-integer-p "3"))
+  (is (is-integer-p "-3") "the predicate is about integers, not about bounds")
+  (is (not (is-integer-p "3x")) "REV-0001 finding 4: a partial parse is not a number")
+  (is (not (is-integer-p "")))
+  (is (not (is-integer-p nil)))
+  (is (not (is-integer-p :three)))
+  (is (= 3 (to-integer "3")))
+  (is (= 3 (to-integer 3)))
+  (is (null (to-integer "3x"))))
+
+(test a-boolean-is-recognised-in-both-encodings-and-in-both-cases
+  ;; game-server BUG-0001: `debug: True' there reads as false, because the test
+  ;; is (equal val "true") and nothing is case-folded. A configuration dialect
+  ;; that accepts True, true and TRUE for one value makes that wrong two times
+  ;; in three.
+  (is (is-boolean-p t))
+  (is (is-boolean-p "true"))
+  (is (is-boolean-p "True") "the spelling a YAML author writes")
+  (is (is-boolean-p "FALSE"))
+  (is (is-boolean-p "0"))
+  (is (not (is-boolean-p "yep")))
+  (is (not (is-boolean-p nil)) "absent is not false; every caller tests NIL first"))
+
+(test to-boolean-separates-a-false-from-an-unreadable-value
+  ;; The two-value return is the whole defence. NIL is both a legitimate false
+  ;; and the only thing an unreadable value could return, and collapsing them
+  ;; is the silent misread game-server BUG-0001 records.
+  (multiple-value-bind (result readable) (to-boolean "false")
+    (is (null result))
+    (is-true readable "an explicit false was read, and read as false"))
+  (multiple-value-bind (result readable) (to-boolean "yep")
+    (is (null result))
+    (is (not readable) "and junk is distinguishable from it")))
+
+(test the-two-coercers-agree-about-junk
+  ;; The defect this shape exists to prevent: game-server's CONFIG-GET signals
+  ;; on an unreadable integer and returns false for an unreadable boolean,
+  ;; three lines apart in one COND. Whatever the policy is, both types get it.
+  (signals malformed-request (request-integer "3x" "depth"))
+  (signals malformed-request (request-boolean "yep" "source"))
+  (is (null (request-integer nil "depth")) "absent is absent for both")
+  (is (null (request-boolean nil "source")))
+  (is (= 3 (request-integer "3" "depth")))
+  (is (eq t (request-boolean "TRUE" "source")))
+  (signals malformed-request (request-integer "-1" "depth")
+           "the bound is REQUEST-INTEGER's, not IS-INTEGER-P's"))
