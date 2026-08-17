@@ -450,3 +450,67 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
         "requests that found nothing are the signal that name matching is
 not enough -- they have to be countable"))
   (clear-context-log))
+
+;;; ------------------------------------------------------------------
+;;; Prose as a seeding signal -- REQ-0035 R4/R7, DES-0028 D4/D5, PLAN-0031 S4
+;;; ------------------------------------------------------------------
+
+(test prose-can-seed-an-entity-whose-name-answers-to-nothing
+  ;; The defect REQ-0035 was opened on, in miniature. STOPPER matches one
+  ;; English word of the task through its name; EXPLAINED matches four through
+  ;; its docstring and none through its name. Before the prose pass EXPLAINED
+  ;; was not a candidate at all -- no ranking change could have reached it,
+  ;; because the text that makes it one was never indexed.
+  (let ((names (seed-names
+                (graph-of (k-def 'function-entity "stopper" "src/a.lisp")
+                          (k-def 'function-entity "explained" "src/b.lisp"
+                                 :documentation
+                                 "stop a fixture displacing the definitions a task asked about"))
+                "stop a fixture displacing the definitions a task asked about")))
+    (is (member "explained" names :test #'string=))
+    (is (string= "explained" (first names))
+        "coverage decides: four terms through prose beats one through a name")))
+
+(test a-prose-match-loses-a-tie-to-a-name-match
+  ;; The band exists, and it sits *below* coverage rather than above it. Equal
+  ;; coverage is where it gets to speak: an author who chose a word for a thing
+  ;; said more than one who used it while explaining the thing.
+  (let ((names (seed-names
+                (graph-of (k-def 'function-entity "widget" "src/a.lisp")
+                          (k-def 'function-entity "unrelated" "src/b.lisp"
+                                 :documentation "a widget of some kind"))
+                "widget")))
+    (is (string= "widget" (first names)))))
+
+(test prose-matching-is-whole-word
+  ;; DES-0028 D4. Substring-matching a word across 549 KB of English finds it
+  ;; inside longer words, and the noise would arrive in proportion to how much a
+  ;; project documented -- worst on the trees that invested most in prose.
+  ;;
+  ;; Not spelled with "test", which would have been the natural example: that
+  ;; word is on *CONTEXT-STOPWORDS* and never reaches the prose pass at all. A
+  ;; hardcoded guess about English deciding what can be matched is the defect
+  ;; DES-0028 D5 argues IDF should retire, met here while writing its test.
+  (let ((names (seed-names
+                (graph-of (k-def 'function-entity "alpha" "src/a.lisp"
+                                 :documentation "the cached uncacheable recaching")
+                          (k-def 'function-entity "beta" "src/b.lisp"
+                                 :documentation "writes to a cache"))
+                "cache")))
+    (is (member "beta" names :test #'string=))
+    (is (not (member "alpha" names :test #'string=))
+        "\"cached\" and \"recaching\" contain the token and are not the word")))
+
+(test an-undocumented-definition-is-not-penalised-for-being-undocumented
+  ;; REQ-0035 R7. On game-server 86% of functions carry no docstring, so a score
+  ;; that ranked undocumented code below documented code would be a recall
+  ;; defect on the tree the requirement is measured against -- and under
+  ;; CON-0006 a recall defect is the expensive kind. The band demotes prose-ONLY
+  ;; matches, and an entity with no prose is not in it.
+  (let ((names (seed-names
+                (graph-of (k-def 'function-entity "widget-maker" "src/a.lisp")
+                          (k-def 'function-entity "other" "src/b.lisp"
+                                 :documentation "concerns the widget maker also"))
+                "widget-maker")))
+    (is (string= "widget-maker" (first names))
+        "no prose, and still first: absence is neutral, not negative")))

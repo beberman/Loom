@@ -201,19 +201,67 @@ of why a trailing \"check\" was so expensive.
 
 Rank 3 is dropped rather than recorded. FIND-ENTITIES matches a path component
 as readily as a name, and a token that reached an entity only through its path
-is neither a seed nor evidence about the token."
+is neither a seed nor evidence about the token.
+
+A rank of :PROSE is a match in the entity's :DOCUMENTATION rather than in its
+name (REQ-0035 R4, DES-0028). It is a keyword and not a fourth integer because
+the two are not points on one scale -- a name match is evidence an author chose
+that word *for this thing*, and a prose match is evidence they used it while
+explaining it. SEED-SCORE bands them separately for that reason."
   (let ((hits  (make-hash-table :test #'eq))
         (order '()))
-    (dolist (token tokens)
-      (dolist (entity (find-entities view :name-like token))
-        (when (or (null types) (member (entity-type entity) types))
-          (let ((rank (match-rank entity token)))
-            (unless (= rank 3)
-              (unless (gethash entity hits)
-                (push entity order))
-              (push (cons token rank) (gethash entity hits)))))))
+    (flet ((record (entity token rank)
+             (unless (gethash entity hits)
+               (push entity order))
+             (push (cons token rank) (gethash entity hits))))
+      (dolist (token tokens)
+        (dolist (entity (find-entities view :name-like token))
+          (when (or (null types) (member (entity-type entity) types))
+            (let ((rank (match-rank entity token)))
+              (unless (= rank 3)
+                (record entity token rank))))))
+      ;; The prose pass, second so that a name match wins the de-duplication
+      ;; below: one entry per (entity, token) is what keeps SEED-SCORE's
+      ;; coverage band a count of *distinct terms* rather than of matches.
+      ;;
+      ;; One walk over the entities rather than one per token, because the cost
+      ;; here is splitting the prose and that should happen once per entity.
+      ;; It is a linear scan and it is the second reason DES-0026 D4's inverted
+      ;; index is worth building -- the first being that FIND-ENTITIES above is
+      ;; already one.
+      (dolist (entity (find-entities view))
+        (let ((prose (getp entity :documentation)))
+          (when (and prose (or (null types) (member (entity-type entity) types)))
+            (let ((words (make-hash-table :test #'equal)))
+              ;; Whole words, per DES-0028 D4. Substring-matching "test"
+              ;; against 549 KB of English across three trees finds "latest",
+              ;; "contest" and "attestation", and the noise would arrive in
+              ;; proportion to how much a project documented -- worst on the
+              ;; trees that invested most in prose.
+              (dolist (word (plain-words prose)) (setf (gethash word words) t))
+              (dolist (token tokens)
+                (when (and (gethash token words)
+                           (not (assoc token (gethash entity hits) :test #'string=)))
+                  (record entity token :prose))))))))
     (loop for entity in (nreverse order)
           collect (cons entity (nreverse (gethash entity hits))))))
+
+(defun prose-only-p (matches)
+  "True when every one of MATCHES came from prose rather than from a name.
+
+The test is `only', not `any'. An entity whose name answered to one term and
+whose prose answered to four is not a prose-only candidate -- it is a name match
+with corroboration, and demoting it would punish the documentation."
+  (every (lambda (m) (eq :prose (cdr m))) matches))
+
+(defun best-name-rank (matches)
+  "The best MATCH-RANK among MATCHES, or 3 when every match came from prose.
+
+3 rather than an error, because the band this feeds is about how well a *name*
+matched and a prose-only candidate has no answer to give -- it is already
+separated by PROSE-ONLY-P one band above."
+  (let ((ranks (remove :prose (mapcar #'cdr matches))))
+    (if ranks (reduce #'min ranks) 3)))
 
 (defun plain-words (string)
   "STRING split into whole words at every non-alphanumeric character, lowercased.
@@ -279,7 +327,10 @@ rather than TASK-TOKENS' -- so the match has to be on something the caller
 wrote. A slot accessor is excluded whatever it matched; SLOT-ACCESSOR-P says
 why."
   (and (not (slot-accessor-p entity))
-       (find-if (lambda (m) (and (zerop (cdr m))
+       ;; EQL rather than ZEROP: a prose match's rank is the keyword :PROSE,
+       ;; and naming is about a name. An author who used a word in a paragraph
+       ;; did not thereby name the thing after it.
+       (find-if (lambda (m) (and (eql 0 (cdr m))
                                  (member (car m) terms :test #'string=)))
                 matches)
        t))
@@ -350,15 +401,41 @@ The bands are separated rather than blended, widest first:
              sequence and database handler health check\" seeded seven of its
              eight entities on the English word \"check\" (REQ-0016 R7).
 
+  prose      REQ-0035 R4, DES-0028 D5. The task matched this entity's
+             :DOCUMENTATION and never its name.
+
+             Below coverage, and that placement is the whole of what REQ-0035
+             buys. Measured on this tree before the change, `context stop a
+             fixture displacing the definitions a task asked about' returned
+             STOP-JS-CHILD, STOP-SERVER and FIXTURE-ROOT -- each seeded on one
+             English word -- while PRODUCTION-NAMES and DEMOTED-TEST-P, whose
+             docstring is where that sentence comes from, appeared nowhere.
+             PRODUCTION-NAMES answers to five of the task's terms through its
+             prose and STOP-SERVER to one through its name; coverage is what
+             separates five from one. A prose band *above* coverage would rank
+             STOP-SERVER first again and would have shipped the defect it was
+             written to remove.
+
+             `Only', not `any': an entity whose name matched one term and whose
+             prose matched four is a name match with corroboration, and
+             demoting it would punish the documentation.
+
+             An entity with no prose at all is not in this band and scores
+             exactly as it did before (REQ-0035 R7). On game-server 86% of
+             functions carry no docstring, and ranking undocumented code below
+             documented code would be a recall defect on the tree the
+             requirement is measured against.
+
   match      quality of the best match, which is what keeps a single-term task
              ranked exactly as it was: every candidate then has coverage 1 and
              that band cancels."
-  (+ (* 100000 (seed-type-rank entity))
-     (*  10000 (if (named-by-task-p entity matches terms) 0 1))
-     (*   1000 (if (slot-accessor-p entity) 1 0))
-     (*    100 (if (demoted-test-p entity demote-tests production) 1 0))
-     (*     10 (max 0 (- 8 (length matches))))
-     (reduce #'min matches :key #'cdr :initial-value 3)))
+  (+ (* 1000000 (seed-type-rank entity))
+     (*  100000 (if (named-by-task-p entity matches terms) 0 1))
+     (*   10000 (if (slot-accessor-p entity) 1 0))
+     (*    1000 (if (demoted-test-p entity demote-tests production) 1 0))
+     (*     100 (max 0 (- 8 (length matches))))
+     (*      10 (if (prose-only-p matches) 1 0))
+     (best-name-rank matches)))
 
 (defun seed-slice (matches)
   "The slice of the task a seed answers to: its matched terms, sorted.

@@ -17,11 +17,15 @@ summary: |
       context stop a fixture displacing the definitions a task asked about
 
   returned STOP-JS-CHILD, STOP-SERVER, FIXTURE-ROOT and a test, each seeded on
-  one English word. PRODUCTION-NAMES and DEMOTED-TEST-P -- the two functions
-  this describes, whose docstring says "fixtures stop displacing the
-  definitions a task asked about" almost verbatim -- appear nowhere in the
-  bundle. The sentence that would have answered the query is sitting in the
-  file, eight lines above the function, unindexed.
+  one English word. PRODUCTION-NAMES -- the function this describes, whose
+  docstring says "fixtures stop displacing the definitions a task asked about"
+  almost verbatim -- appeared nowhere in the bundle. The sentence that would
+  have answered the query is sitting in the file, inside the function it is
+  about, unindexed.
+
+  (First written naming DEMOTED-TEST-P alongside it. That was wrong: the two are
+  a conceptual pair written in one change, and only PRODUCTION-NAMES carries the
+  sentence. Corrected under R8.)
 
   This asks that the prose be a field the retrieval path can match against. It
   is not REQ-0031, which serves source to the *reader*; this serves text to the
@@ -170,9 +174,16 @@ body: |
   R8  Acceptance is measured on both trees and on prose queries specifically.
 
       On Loom: `context stop a fixture displacing the definitions a task asked
-      about` returns PRODUCTION-NAMES and DEMOTED-TEST-P. That query returns
-      neither today and its wording is taken from their docstring, which is the
-      point -- an author's sentence about a function should find that function.
+      about` returns PRODUCTION-NAMES. That query returns it nowhere today and
+      its wording is taken from that function's docstring, which is the point --
+      an author's sentence about a function should find that function.
+
+      (As first written this clause named DEMOTED-TEST-P too, and that half was
+      wrong. The sentence is in PRODUCTION-NAMES' docstring alone; DEMOTED-TEST-P
+      carries none of the query's terms, so no prose match can reach it and none
+      should. The two are a conceptual pair written in one change, which is why
+      they were named together. Met on 2026-08-17: PRODUCTION-NAMES is the first
+      seed and the three one-word matches that crowded the old bundle are gone.)
 
       On game-server: a query phrased from a class's (:documentation ...) text
       returns that class. The specific query is the architecture's to choose

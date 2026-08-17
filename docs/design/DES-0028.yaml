@@ -241,9 +241,29 @@ body: |
 
       context stop a fixture displacing the definitions a task asked about
 
-  must return PRODUCTION-NAMES and DEMOTED-TEST-P. It returns neither today,
-  and the query's wording is taken from their docstring, which is the point --
-  an author's sentence about a function should find that function.
+  must return PRODUCTION-NAMES. It returns it nowhere today, and the query's
+  wording is taken from that function's docstring, which is the point -- an
+  author's sentence about a function should find that function.
+
+  CORRECTED, 2026-08-17. This clause asked for PRODUCTION-NAMES *and*
+  DEMOTED-TEST-P, and the second half was wrong from the moment it was written.
+  The sentence the query paraphrases -- "fixtures stop displacing the
+  definitions a task asked about" -- is in PRODUCTION-NAMES' docstring alone.
+  DEMOTED-TEST-P's own reads "True when ENTITY is test code that R4 should rank
+  below production code", and it contains not one of the query's terms. The two
+  functions are a conceptual pair and were written in one change, which is why
+  they were named together; only one of them carries the text.
+
+  So no prose match can reach DEMOTED-TEST-P for this query and none should.
+  It is a callee of SEED-SCORE alongside PRODUCTION-NAMES, so the route that
+  would bring it is the neighbour band -- DES-0026 D6's cost-ordered walk over
+  :CALLS -- and that is a different requirement's work. Corrected rather than
+  quietly dropped, because an acceptance clause that cannot be met by the
+  mechanism it is testing will otherwise be read as a failure of the mechanism.
+
+  MEASURED, 2026-08-17. PRODUCTION-NAMES is the *first* seed, and
+  STOP-JS-CHILD, STOP-SERVER and FIXTURE-ROOT -- the three entities that
+  crowded the pre-change bundle, each on one English word -- are all gone.
 
   On game-server, a query phrased from a class's (:documentation ...) returns
   that class. The query is chosen from the 198 available *before* the change,

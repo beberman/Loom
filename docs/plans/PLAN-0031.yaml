@@ -115,10 +115,15 @@ body: |
 
       context stop a fixture displacing the definitions a task asked about
 
-  must return PRODUCTION-NAMES and DEMOTED-TEST-P. It returns neither today --
-  STOP-JS-CHILD, STOP-SERVER, FIXTURE-ROOT and a test, each seeded on one
-  English word -- and the query's wording comes from those two functions' own
-  docstring.
+  must return PRODUCTION-NAMES. It returns it nowhere today -- STOP-JS-CHILD,
+  STOP-SERVER, FIXTURE-ROOT and a test, each seeded on one English word -- and
+  the query's wording comes from that function's own docstring.
+
+  Not DEMOTED-TEST-P, though this clause named it until the step ran. The
+  sentence is in PRODUCTION-NAMES' docstring alone and DEMOTED-TEST-P carries
+  none of the query's terms, so prose matching cannot reach it and should not
+  claim to. It arrives, if at all, through the neighbour band as a callee of
+  SEED-SCORE, which is DES-0026 D6's work.
 
   On game-server, a query phrased from a class's (:documentation ...) returns
   that class. Chosen from the 198 available *before* S4 runs, so it is a test
