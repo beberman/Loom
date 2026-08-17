@@ -202,12 +202,38 @@ body: |
   validated by "the suite is green on three languages" is not the same evidence
   as a bundle that changed from wrong to right.
 
-  JSDoc also raises a question Lisp does not, and it should be answered with
-  the JS work rather than guessed at now: a `/** ... @param {Object} p - the
-  partition @returns {Doc} */` block is structured, and its tag names and type
-  annotations are not prose a task would ever match on. Whether they are
+  JSDoc also raises a question Lisp does not: a `/** ... @param {Object} p -
+  the partition @returns {Doc} */` block is structured, and its tag names and
+  type annotations are not prose a task would ever match on. Whether they are
   stripped, kept, or indexed separately is a decision with evidence available
-  -- 980 blocks on front-end -- and none of it is in hand yet.
+  -- 979 blocks on front-end.
+
+  ANSWERED, 2026-08-17, before the JS work rather than during it, because the
+  evidence was one measurement away and the guess would have been wrong.
+
+      979 JSDoc blocks
+      377 (38%) contain any @tag at all
+      199.4 KB of prose against 44.0 KB of tag lines -- 18% of the text
+      @param 561, @returns 213, @override 52, @example 19
+
+  The block is kept whole and nothing is stripped. Four-fifths of the text is
+  ordinary prose, only 38% of blocks carry a tag at all, and a tag line is
+  mostly description anyway: "@param {Object} partition - carries `.map` (the
+  rectangle the terrain occupies)" is a sentence about the parameter with six
+  characters of syntax in front of it. Stripping would discard that to remove
+  the tag name.
+
+  What is genuinely not worth matching is the tag *name* and the type
+  annotation -- "param", "returns", "Object" -- and those are exactly what
+  makes them harmless: a token appearing 561 times across one tree is what IDF
+  weighs to nothing without being told. Hand-stripping them now would be the
+  48-word stopword list all over again, a tuned suppression standing in for a
+  measurement the retrieval layer is about to make for itself (D5, DES-0026 D4).
+
+  The other number that came out of this: front-end holds 199 KB of prose
+  against Loom's 315 and game-server's 50. It is the second-richest tree in
+  prose and the largest by entity count -- 3,457 -- so "second" should mean
+  soon rather than someday.
 
   ACCEPTANCE
 
