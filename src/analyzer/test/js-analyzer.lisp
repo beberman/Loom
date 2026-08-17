@@ -450,3 +450,67 @@ function dup() { return second(); }
                     4)
     (is (= 2 first))
     (is (eq :separated attachment) "one line opening and closing a block")))
+
+;;; ------------------------------------------------------------------
+;;; JSDoc as prose -- REQ-0035, DES-0028 D9, PLAN-0031 (JavaScript)
+;;; ------------------------------------------------------------------
+
+(test js-comment-line-text-strips-delimiters-and-keeps-tags
+  ;; DES-0028 D9, measured before deciding: 979 blocks on front-end, only 377
+  ;; carrying any @tag, and 44 KB of tag lines against 199 KB of prose. A tag
+  ;; line is mostly description anyway, and what is not worth matching --
+  ;; "param", "Object" -- is frequent enough that IDF weighs it to nothing
+  ;; without being told.
+  (let ((a (make-instance 'loom-analyzer::js-analyzer)))
+    (is (string= "Emit a partition." (comment-line-text a " * Emit a partition.")))
+    (is (string= "Emit a partition." (comment-line-text a "/** Emit a partition. */")))
+    (is (string= "" (comment-line-text a " */")))
+    (is (string= "why this exists" (comment-line-text a "// why this exists")))
+    (is (string= "@param {Object} p - the partition"
+                 (comment-line-text a " * @param {Object} p - the partition"))
+        "the tag stays: the description after the dash is the prose")))
+
+(js-test a-jsdoc-block-becomes-the-definitions-prose
+    ;; The import matters. A block with no code above it is a file banner, not
+    ;; documentation of whichever export happens to be first, so COMMENT-EXTENT
+    ;; reports :SECTION and indexing declines it -- which is what the first
+    ;; draft of this test tripped over. Real React files open with imports, so
+    ;; the block above the export is :ADJACENT there; BANNER below asserts the
+    ;; other half.
+    (let* ((g (js-graph "src/x.js"
+                        "import { z } from './z.js';
+
+/**
+ * Flatten a partition to an interchange document.
+ * @param {Object} p - the partition
+ */
+export function emitP(p) { return p; }
+
+export function undocumented(p) { return p; }"))
+           (fns (entities-of-type g :function)))
+      (flet ((doc-for (name)
+               (let ((e (find name fns :key (lambda (x) (and (slot-boundp x 'name) (name x)))
+                              :test #'equal)))
+                 (and e (gethash :documentation (properties e))))))
+        (is (search "Flatten a partition" (doc-for "emitP")))
+        (is (search "@param" (doc-for "emitP")) "tags kept, per D9")
+        (is (not (search "/**" (doc-for "emitP"))) "delimiters gone")
+        (is (null (doc-for "undocumented"))
+            "REQ-0035 R7: absence costs the entity nothing"))))
+
+(js-test a-file-banner-is-not-the-first-exports-documentation
+  ;; The other half of the rule above. JavaScript has no fourth-semicolon
+  ;; convention marking a heading, so position is the evidence: nothing precedes
+  ;; the block, therefore it is about the file. Attaching it to whichever export
+  ;; happens to come first would be CON-0001's fabricated fact.
+    (let* ((g (js-graph "src/y.js"
+                        "/**
+ * Partition interchange helpers.
+ */
+export function first(p) { return p; }"))
+           (e (find "first" (entities-of-type g :function)
+                    :key (lambda (x) (and (slot-boundp x 'name) (name x)))
+                    :test #'equal)))
+      (is (not (null e)) "the definition is still indexed")
+      (is (null (gethash :documentation (properties e)))
+          "the banner describes the module, not this function")))

@@ -548,6 +548,33 @@ distinction the Lisp method makes about a trailing `; why'."
   (let ((s (js-trim line)))
     (and (>= (length s) 2) (string= "/*" s :end2 2))))
 
+(defmethod comment-line-text ((analyzer js-analyzer) line)
+  "LINE without its comment delimiters: `//', `/**', `/*', a JSDoc `*'
+continuation, and a trailing `*/'.
+
+The tags stay. DES-0028 D9 measured front-end before deciding: 979 JSDoc blocks,
+only 377 of them carrying any @tag, and 44 KB of tag lines against 199 KB of
+prose. Four-fifths of the text is ordinary sentences, and a tag line is mostly
+description anyway -- \"@param {Object} partition - carries `.map` (the
+rectangle the terrain occupies)\" is prose with six characters of syntax in
+front of it. What is genuinely not worth matching is \"param\" and \"Object\",
+and their frequency is what makes them harmless: a token appearing 561 times
+across one tree is what IDF weighs to nothing without being told. Stripping
+them by hand would be the 48-word stopword list again.
+
+A bare `*' at the start is read as a delimiter rather than as multiplication,
+which is safe because this is only ever called on lines COMMENT-EXTENT already
+placed inside a comment."
+  (declare (ignore analyzer))
+  (let ((s (js-trim line)))
+    (when (and (>= (length s) 2) (string= "*/" s :start2 (- (length s) 2)))
+      (setf s (js-trim (subseq s 0 (- (length s) 2)))))
+    (cond ((and (>= (length s) 3) (string= "/**" s :end2 3)) (js-trim (subseq s 3)))
+          ((and (>= (length s) 2) (string= "/*"  s :end2 2)) (js-trim (subseq s 2)))
+          ((and (>= (length s) 2) (string= "//"  s :end2 2)) (js-trim (subseq s 2)))
+          ((and (>= (length s) 1) (char= #\* (char s 0)))    (js-trim (subseq s 1)))
+          (t s))))
+
 (defmethod comment-extent ((analyzer js-analyzer) lines start-line)
   "The comment block above START-LINE in JavaScript, and how it is attached.
 
@@ -663,18 +690,25 @@ this. A file whose parse failed, and a file analyzed on a machine with no node
 at all, are both indexed with the reason recorded on them. An unreadable file
 that vanished from the index entirely would be a silent gap, and CON-0001's
 whole argument is that a recorded gap beats both a fabrication and a silence."
-  (declare (ignore analyzer))
   (multiple-value-bind (reply reason) (parse-javascript path contents)
-    (let ((system (js-system-for-path path)))
+    (let* ((system (js-system-for-path path))
+           ;; The entities are collected before the ops are built, because
+           ;; REQ-0035's prose is a post-pass over entities that already exist
+           ;; and the ops wrap them. Nothing else about the shape changed: the
+           ;; NIL definitions this used to drop while mapping are dropped here
+           ;; instead, one step earlier.
+           (entities (remove nil
+                             (mapcar (lambda (definition)
+                                       (make-js-definition-entity definition path system))
+                                     (reconcile-definitions (jlist reply :definitions))))))
+      ;; PLAN-0031, JavaScript. The block above a definition is the only source
+      ;; this language has -- there is no in-form docstring position -- and
+      ;; front-end keeps 199 KB of prose in 979 JSDoc blocks.
+      (attach-comment-documentation analyzer entities (split-lines contents))
       (list* (retract-file path workspace-id)
              (assert-entity (make-js-file-entity path contents reply reason)
                             workspace-id)
-             (remove nil
-                     (mapcar (lambda (definition)
-                               (let ((entity (make-js-definition-entity
-                                              definition path system)))
-                                 (when entity (assert-entity entity workspace-id))))
-                             (reconcile-definitions (jlist reply :definitions))))))))
+             (mapcar (lambda (entity) (assert-entity entity workspace-id)) entities)))))
 
 ;;;; The one registered instance. Stateless in the sense that matters: it holds
 ;;;; no repository, so one serves every tree. The child process it reaches is a
