@@ -1,0 +1,165 @@
+id: PLAN-0031
+title: Capture the prose that is already inside the form, then the block above it, then let the seeder see it
+status: draft
+date: 2026-08-16
+refines: [DES-0028]
+affects: [make-function-entity, analyze-file, comment-extent, seed-matches,
+          seed-score, seed-entities, find-entities]
+tags: [analyzer, ontology, retrieval, ranking, context, req-0035, req-0016]
+summary: |
+  DES-0028 for Lisp, in five steps, ordered so the cheapest capture comes first
+  and the step that can change every bundle comes last.
+
+  S1 to S3 populate :DOCUMENTATION and change no answer. S4 is the one that
+  moves a ranking, and by the time it runs the field it reads is already
+  measurable on both Lisp trees -- so a bundle that changes can be attributed
+  to the ranking rather than to the capture.
+
+  JavaScript is deliberately not here. DES-0028 D9: the acceptance is one query
+  on one tree that fails today, and a change validated by "green on three
+  languages" is weaker evidence than a bundle that went from wrong to right.
+  REQ-0035 closes `partial` on this plan and a JS plan takes it the rest of the
+  way.
+body: |
+  FILES
+
+  src/ontology/code-ontology.lisp   :DOCUMENTATION on eight entity types.
+  src/analyzer/lisp-analyzer.lisp   docstring position rule, (:documentation
+                                    ...) option, and the comment block.
+  src/knowledge/context.lisp        prose matching and the PROSE-ONLY band.
+  src/analyzer/test/lisp-analyzer.lisp
+  src/knowledge/test/context.lisp
+
+  S1  DECLARE THE PROPERTY
+
+  :DOCUMENTATION, a string, on :FUNCTION, :METHOD, :CLASS, :INTERFACE,
+  :VARIABLE, :TEST, :PACKAGE and :MODULE.
+
+  Worth knowing before starting, because it changes what this step is for:
+  VALIDATE-ENTITY loops over the *declared* properties and checks each, and
+  does not reject an undeclared one that is present. So the capture in S2 would
+  work with no ontology edit at all, and this step is about the schema being
+  true rather than about unblocking anything. It is first because a property
+  the ontology does not mention is a property the next reader of
+  code-ontology.lisp does not know exists.
+
+  Nothing reads it yet. No test beyond the suite staying green.
+
+  S2  CAPTURE WHAT IS ALREADY INSIDE THE FORM
+
+  The analyzer holds the read form, so both of these are elements of something
+  it already has and neither needs new plumbing.
+
+  The body docstring, under DES-0028 D3's rule: a string in the docstring
+  position counts only when some form follows it, because `(defun f () "x")`
+  returns "x". This is the one place the capture can fabricate, and CON-0001 is
+  why the rule is strict rather than generous -- the cost of being too strict
+  is an unmatched query, and the cost of being too loose is a sentence the
+  index claims an author wrote about a function.
+
+  The (:documentation ...) option on DEFCLASS, DEFINE-CONDITION, DEFGENERIC
+  and DEFPACKAGE. This is where game-server keeps its prose: 198 options
+  against Loom's 38, because a CLOS codebase documents its classes and Loom
+  documents its functions.
+
+  Measurable on its own, and the measurement is the point of stopping here: the
+  count of entities carrying :DOCUMENTATION should land near the 638 blocks on
+  Loom and 362 on game-server that DES-0028 measured from the text. A large gap
+  either way means the position rule is wrong in one direction or the other,
+  and finding that out before the seeder reads the field is much cheaper than
+  after.
+
+  S3  CAPTURE THE BLOCK ABOVE THE FORM
+
+  COMMENT-EXTENT already finds it and PLAN-0030 S4 already shipped it. Only
+  :ADJACENT is taken -- not :SEPARATED, not :SECTION -- which is DES-0027 D3a's
+  threshold and the reason that function reports an attachment kind at all.
+
+  The one plumbing step in this plan. The entity builders take a form and a
+  line range; the comment block needs the file's lines, so ANALYZE-FILE splits
+  once and threads the vector to the builders that want it.
+
+  Expect this to add little on Loom and something real on game-server: 0
+  adjacent `;;` blocks above 1,154 top-level definitions there against 89 on
+  game-server. A step that appears to do nothing on the tree it is developed
+  against is exactly the shape REQ-0016 was opened about, so the game-server
+  number is the one that says whether it worked.
+
+  Concatenated with an in-form docstring when both exist, in source order.
+
+  S4  LET THE SEEDER SEE IT
+
+  Two changes in src/knowledge/context.lisp, and this is the step that can move
+  every bundle.
+
+  SEED-MATCHES gains a prose pass. Whole-word, per DES-0028 D4 -- PLAIN-WORDS
+  already splits text that way -- because substring-matching "test" across
+  247 KB of English finds "latest", "contest" and "attestation", and the noise
+  would arrive in proportion to how much a project documents.
+
+  SEED-SCORE gains a seventh band, PROSE-ONLY, placed **below coverage and
+  above match quality**. The position is the whole fix and DES-0028 D5 argues
+  it: the query this exists to repair is won on coverage, by an entity matching
+  five task terms in its prose against one in a name, so a band that demoted
+  prose above coverage would rank the wrong entity first again and ship the
+  defect it was meant to remove.
+
+  An entity with no prose is not in the band and is scored exactly as today.
+  REQ-0035 R7: on game-server 86% of functions carry no docstring, and ranking
+  undocumented code below documented code would be a recall defect on the tree
+  this is measured against.
+
+  S5  MEASURE, ON BOTH LISP TREES
+
+  The query this plan exists for, on Loom:
+
+      context stop a fixture displacing the definitions a task asked about
+
+  must return PRODUCTION-NAMES and DEMOTED-TEST-P. It returns neither today --
+  STOP-JS-CHILD, STOP-SERVER, FIXTURE-ROOT and a test, each seeded on one
+  English word -- and the query's wording comes from those two functions' own
+  docstring.
+
+  On game-server, a query phrased from a class's (:documentation ...) returns
+  that class. Chosen from the 198 available *before* S4 runs, so it is a test
+  and not a demonstration.
+
+  Nothing regresses. REQ-0016's existing acceptance set is re-run whole:
+  `data-handler`, `restructure data handler protocol encode decode`, the
+  startup-sequence query with its six functions, and R8's connection query with
+  all three CONNECTION-CONNECT-DATABASE definitions. `context macro
+  definitions` on Loom is unchanged.
+
+  REQ-0016 R9's recall count is reported for each -- the entities a competent
+  reader judges relevant that appear nowhere -- because that is the number this
+  whole line of work exists to move and no clause before R9 reported it.
+
+  Index size confirmed against the built index rather than against the 247 KB
+  and 39.5 KB estimated from the text.
+
+  Full suite green, `check` clean.
+
+  RISKS
+
+  Coverage inflation from long prose. DES-0028 D6 names it and declines to fix
+  it: Loom's mean block is 396 characters and its longest 3,922, so a long
+  docstring has more chances to match a task term for no reason connected to
+  relevance. Length normalisation is BM25's job and BM25 is DES-0026 D4.
+  Measured in S5 rather than assumed away, and if it is bad enough to regress
+  an existing acceptance query then S4's band is not the answer and DES-0026 D4
+  has to come first.
+
+  The prose pass changes candidate volume, not just order. Every entity with a
+  docstring mentioning a common task word becomes a candidate where it was not
+  one before, and ADMIT-SEEDS' share cap and the eight-seed limit were tuned
+  against a smaller candidate set. S5 watches seed composition on the existing
+  queries, not only their final bundles.
+
+  Threading lines through the analyzer. ANALYZE-FILE's contract takes contents
+  and returns ops, and S3 must not change that shape -- the split happens
+  inside, and the builders take an extra argument rather than the protocol
+  gaining one.
+
+  Scope creep into DES-0026. S4 is one band and one matching pass. The inverted
+  index, BM25, IDF and the field weights are DES-0026 D4 and must not arrive
+  here wearing a smaller name.
