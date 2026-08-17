@@ -1,6 +1,6 @@
 id: REQ-0035
 title: the prose a definition carries must be indexed, because the retriever cannot match what only the reader can see
-status: draft
+status: implemented
 date: 2026-08-16
 affects: [analyze-file, seed-entities, seed-matches, search-entities, find-entities,
           significant-name, match-rank, build-context]

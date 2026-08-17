@@ -1,6 +1,6 @@
 id: PLAN-0031
 title: Capture the prose that is already inside the form, then the block above it, then let the seeder see it
-status: draft
+status: final
 date: 2026-08-16
 refines: [DES-0028]
 affects: [make-function-entity, analyze-file, comment-extent, seed-matches,

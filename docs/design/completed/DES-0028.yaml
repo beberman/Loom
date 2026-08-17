@@ -1,6 +1,6 @@
 id: DES-0028
 title: Prose is a property the analyzer writes and the seeder matches whole-word, ranked under coverage and over match quality
-status: draft
+status: implemented
 date: 2026-08-16
 refines: [REQ-0035]
 affects: [make-function-entity, analyze-file, seed-matches, seed-score, seed-entities,
@@ -264,6 +264,25 @@ body: |
   MEASURED, 2026-08-17. PRODUCTION-NAMES is the *first* seed, and
   STOP-JS-CHILD, STOP-SERVER and FIXTURE-ROOT -- the three entities that
   crowded the pre-change bundle, each on one English word -- are all gone.
+
+  DEMOTED-TEST-P is in the bundle after all, and by the route the correction
+  above predicted: it is a callee of SEED-SCORE, SEED-SCORE is a seed, and the
+  relation lines under a seed name it. So the corrected clause understated the
+  result -- prose matching cannot reach that function and did not, and the
+  structure Loom already builds carried it anyway. Both halves of the original
+  clause are satisfied; only the mechanism was misattributed.
+
+  The game-server clause is met and its query was chosen mechanically to keep it
+  a test: the longest (:documentation ...) on any class in the tree, which is
+  CLIENT-OP's, with the query taken from that block's first sentence --
+  "operator whose expression serialized json client-side evaluation".
+  CLIENT-OP comes back as the second seed, behind OPERATOR, which the query's
+  first word names. One honest caveat: "client-side" tokenises to "client",
+  which prefix-matches CLIENT-OP, so this clause is not a pure prose win. The
+  Loom query is the clean proof of the mechanism, since PRODUCTION-NAMES shares
+  no word with its task; this one confirms the mechanism reaches game-server's
+  *different* source, the (:documentation ...) option rather than a body
+  docstring, which is R2's whole point.
 
   On game-server, a query phrased from a class's (:documentation ...) returns
   that class. The query is chosen from the 198 available *before* the change,

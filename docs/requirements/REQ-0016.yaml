@@ -430,6 +430,40 @@ body: |
   was sized for stops existing. DES-0026 assumes REQ-0031 is implemented next
   and is written against it.
 
+  R7'S STANDING CLAUSE IS MET, 2026-08-17
+
+  The clause was left standing rather than relaxed, with the instruction that
+  "R2 and R3 should be measured against it, and if it is still unmet then, it
+  should be argued with rather than edited". It is met, and neither R2 nor R3
+  is what met it.
+
+  On game-server, `start-server startup sequence and database handler health
+  check` now seeds START-SERVER and carries all six of READ-CONFIG, CONFIG-GET,
+  SET-CORS-HANDLER, INITIALIZE-GAME-API, INITIALIZE-MEDIA and CONFIGURE-LOG
+  somewhere in the bundle. Nothing is missing.
+
+  What met it was REQ-0035 -- the prose a definition declares becoming a field
+  the seeder matches. The seeds improved enough that the neighbour band and the
+  per-item relation lines reach the startup sequence without the expansion
+  changing at all. That is worth recording precisely because it was not the
+  predicted route: DES-0026 D12 expected the two-tier bundle to make this clause
+  easy, and it was met before any part of that design landed.
+
+  The measurement counts a relation line as carrying an entity, which the clause
+  permits -- it says "somewhere in the bundle" -- and which is honest for the
+  same reason CON-0006 gives: a named entity is one `describe` away, where an
+  absent one sends the reader to grep. It is not the same as a source block, and
+  DES-0026 D2's tiers are still what would put the right six in the expensive
+  tier rather than merely in the answer.
+
+  R6 remains unmet and is unchanged by this. Measured the same day,
+  `context data-handler` returns 6 of 10 expected: DATA-HANDLER, DB-HANDLER and
+  four of the DHANDLER-* protocol arrive, and NULL-HANDLER, TABLE-HANDLER,
+  MODEL-HANDLER and GAME-HANDLER do not. That is the residue DES-0026 D1a
+  identified and it is a reachability problem, not a ranking one -- those four
+  are two or more :INHERITS hops from the seed and no one-hop expansion reaches
+  them at any budget.
+
   R9  Recall is the measure, and it has never been measured. For each
       acceptance query, the count of entities a competent reader judges
       relevant that appear *nowhere* in the bundle -- not ranked low, absent.
