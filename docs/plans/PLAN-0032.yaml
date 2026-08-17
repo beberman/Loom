@@ -27,8 +27,8 @@ summary: |
 body: |
   WHAT IS ALREADY TRUE
 
-  Worth stating, because three of this design's premises changed under it and a
-  plan written from the design alone would redo work.
+  DES-0026 was written before REQ-0031 and REQ-0035 landed. Four of its premises
+  have changed since.
 
   DEFINITION-SOURCE exists (REQ-0031, PLAN-0030 S1) in loom-workspace, with
   padding, provenance and a 400-line cap. S3 spends it rather than building it.
