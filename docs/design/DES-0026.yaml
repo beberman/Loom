@@ -278,9 +278,32 @@ body: |
     *context-stopwords*, 48 words. A hardcoded guess about English, and it
     misses the word that actually broke game-server: "check" is not on the list
     and "test" is, though "test" is a fine discriminator on a tree where test
-    helpers are the subject. Under IDF, "check" is common on game-server and
-    weighs nothing there, without anyone writing it down and without
-    suppressing it on a tree where it is rare.
+    helpers are the subject.
+
+    CORRECTED 2026-08-17, with the index built and df countable for the first
+    time. This paragraph went on to claim that "under IDF, 'check' is common on
+    game-server and weighs nothing there", and that is false:
+
+                    Loom            game-server      front-end
+        test        df 1218 idf 0.27  df 2205 idf 0.00  df 636 idf 1.74
+        check       df   62 idf 3.78  df   43 idf 4.50  df  41 idf 4.62
+        data        df   37 idf 4.30  df  622 idf 1.68  df 214 idf 2.93
+        handler     df   47 idf 4.06  df  277 idf 2.58  df 111 idf 3.61
+
+    "check" is *rare* on all three trees -- 43 of game-server's 3,946 entities.
+    IDF would not have suppressed it and was never going to. R7's defect was
+    never that the term was common; it was that the CHECK-* family is *many*,
+    and a family sharing one rare term is a diversity problem rather than a
+    term-rarity one. So the share cap's replacement is the MMR penalty named
+    below and not IDF, and this paragraph had the causation backwards.
+
+    What the table does vindicate is the other half. "test" scores 0.27 on Loom
+    and 0.00 on game-server, so the stoplist was right to hold it there -- and
+    1.74 on front-end, where it is informative and the stoplist suppresses it
+    anyway. That is precisely the per-tree judgement a hardcoded list cannot
+    express. And "data" is 4.30 on Loom against 1.68 on game-server, which is
+    the fragment problem solved on the tree it occurred on, exactly as claimed
+    below.
 
     The coverage band, (max 0 (- 8 (length matches))). Counting matched terms
     equally is the arbitrariness at the centre of the current score. Summing
