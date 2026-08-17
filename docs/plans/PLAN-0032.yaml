@@ -1,5 +1,5 @@
 id: PLAN-0032
-title: Reach it first, then say why, then hold it cheaply, then stop guessing at rarity
+title: DES-0026 in seven steps: the walk, the tiers, the index, the ranking
 status: draft
 date: 2026-08-17
 refines: [DES-0026]
@@ -7,25 +7,24 @@ affects: [build-context, context-item, render-context, seed-entities, seed-match
           seed-score, admit-seeds, neighbors, find-entities, definition-source]
 tags: [context, knowledge, ranking, retrieval, expansion, req-0016, req-0031, con-0006]
 summary: |
-  DES-0026 in seven steps, ordered by what is measurably broken rather than by
-  the order the design argues its case.
+  DES-0026 has seven steps. The order is set by which elements are measurably
+  broken, not by the order the design presents them.
 
-  The only clause of REQ-0016 still failing a measurement is R6, and the R9
-  count taken on 2026-08-17 says exactly what it is: `context data-handler` on
-  game-server returns 6 of 10 expected, and the four it misses --
-  NULL-HANDLER, TABLE-HANDLER, MODEL-HANDLER, GAME-HANDLER -- are two or more
-  :INHERITS hops from the seed. That is reachability, not ranking, so the
-  cost-ordered walk goes first and is measurable the day it lands.
+  R6 is the only clause of REQ-0016 still failing a measurement. The R9 count of
+  2026-08-17: `context data-handler` on game-server returns 6 of 10 expected
+  entities, and the four it misses -- NULL-HANDLER, TABLE-HANDLER,
+  MODEL-HANDLER, GAME-HANDLER -- are two or more :INHERITS hops from the seed.
+  Ranking cannot reach an entity the expansion never visits, so the cost-ordered
+  walk is S1, and the same count measures whether it worked.
 
-  The retrieval half comes later on purpose. Every acceptance query now answers
-  in 0.01-0.06s, so the inverted index buys no speed yet; what it buys is
-  length normalisation over a prose field that did not exist when this design
-  was written, and the retirement of four hand-fitted constants. Both are worth
-  having and neither is on fire.
+  S4 to S6 are the retrieval half and come last because the index recovers no
+  latency: every acceptance query already answers in 0.01-0.06s. It buys two
+  other things -- length normalisation over a prose field that postdates this
+  design, and the removal of four constants fitted by hand to one tree.
 
-  A stop after any step leaves working software. A stop after S1 leaves R6 met;
-  after S3, REQ-0031 closed and every bundle carrying source; after S5, no
-  hardcoded guess about English anywhere in the seeder.
+  Each step leaves working software. After S1 the four entities R6 misses are
+  reachable. After S3 REQ-0031 is closed and a bundle can carry source. After S5
+  no hardcoded list of English words decides which entities a query reaches.
 body: |
   WHAT IS ALREADY TRUE
 
@@ -37,9 +36,9 @@ body: |
 
   :DOCUMENTATION exists (REQ-0035, PLAN-0031) on eight entity types across two
   languages: 798 entities on Loom carrying 315 KB, 462 on game-server, 999 on
-  front-end. S4's field set has six fields, not five, and the longest single
-  block is 5,639 characters against a 12-character name -- which is why length
-  normalisation is the point of BM25 here rather than a refinement.
+  front-end. S4's field set has six fields, not five. The longest single block is
+  5,639 characters and a function name averages 5, so BM25's length
+  normalisation decides most of the score rather than adjusting it.
 
   D1a's corrections hold: the CRUD protocol arrives on :USES and not
   :IMPLEMENTS, and *CONTEXT-RELATION-LIMIT* is a recall gate rather than a
@@ -68,18 +67,19 @@ body: |
   because DES-0020 owns them. Horizon 4. A container may be reached and not
   expanded from.
 
-  The :CALLS asymmetry is the part to get right and the part a reviewer will
-  question: outgoing is what a thing calls, which is bounded and describes it;
-  incoming is what calls it, which is unbounded and describes them.
+  :CALLS costs less outward than inward. What a thing calls is bounded by its
+  body and describes that thing; what calls it is unbounded and describes the
+  callers. R7's startup-sequence query depends on the outward direction being
+  cheap, since READ-CONFIG and INITIALIZE-GAME-API are START-SERVER's callees.
 
   Each neighbour carries the edge it arrived on and its distance, and
-  RENDER-CONTEXT prints both -- D10's half that this step needs, because a walk
-  whose output does not say why a row is there cannot be checked by eye.
+  RENDER-CONTEXT prints both. This is half of D10, and it belongs in S1 because
+  the acceptance below is checked by reading rows: a row that does not name its
+  edge and cost cannot be verified against the cost table.
 
-  Measured on the R9 set the day it lands. R6's four missing classes are at
-  cost 1 to 3 under this table, so the number to move is 6 of 10 to at least
-  8 of 10. If it does not move, the table is wrong and no later step will fix
-  it.
+  R6's four missing classes are at cost 1 to 3 under this table. The number to
+  move is 6 of 10, to at least 8 of 10. If it does not move, the cost table is
+  wrong, and no later step corrects a table that cannot reach the entities.
 
   S1 MEASURED, AND WHAT IT RESEQUENCES, 2026-08-17
 
@@ -143,9 +143,9 @@ body: |
   source-tier concern only. That is the 19 withheld relations on R6's query
   returned without any new mechanism.
 
-  Before S4 deliberately. S4 and S5 increase candidate volume -- retiring a
-  stoplist and a share cap admits more -- and doing that while the budget is
-  still one 2,000-token pot would spend the increase on truncation.
+  S3 precedes S4 because S4 and S5 admit more candidates -- retiring a stoplist
+  and a share cap both widen the set -- and a single 2,000-token budget would
+  spend that increase on truncation instead of on entities.
 
   S4  THE POSTINGS INDEX AND BM25
 
@@ -208,10 +208,10 @@ body: |
   from S5. The tier boundary in S3 becomes a cut in this order rather than a
   band boundary.
 
-  D9 is honest that the lexical-to-structural weight is a tuning with no
-  defensible value a priori, and D2 is why being wrong about it is cheap: it
-  decides who gets a source block, not who exists, and the cost of an error is
-  one `describe` call.
+  The lexical-to-structural weight has no defensible value before measurement,
+  which D9 states. Being wrong about it costs one `describe` call: the weight
+  decides which entities get a source block, and every entity not chosen is still
+  named in the index tier.
 
   S7  ACCEPTANCE, ON THREE TREES
 
