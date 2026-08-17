@@ -980,7 +980,7 @@ file, and every property with its value, in a stable order."
   '(;; a  plain specializer
     ("(defmethod render ((x hop)) x)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:signature nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
@@ -989,7 +989,7 @@ file, and every property with its value, in a stable order."
     ;;    the :QUALIFIER property AND into the id's third segment
     ("(defmethod render :around ((x hop)) x)"
      (:method "render" "method:sample.lisp:render:around:hop" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier :around)
        (:shadowed-definitions nil) (:signature nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
@@ -997,7 +997,7 @@ file, and every property with its value, in a stable order."
     ;; c  EQL specializer, rendered rather than resolved
     ("(defmethod render ((x (eql :oneof))) x)"
      (:method "render" "method:sample.lisp:render::(eql oneof)" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:signature nil)
        (:specializers ("(eql oneof)")) (:start-line 1)
@@ -1007,7 +1007,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod (setf render) (v (x hop)) v)"
      (:method "(setf render)" "method:sample.lisp:(setf render)::t,hop"
       "sample.lisp"
-      ((:arguments ("v" "x")) (:call-names nil) (:end-line 1)
+      ((:arguments ("v" "x")) (:call-names nil) (:documentation nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "(setf render)")
        (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:signature nil)
@@ -1019,7 +1019,7 @@ file, and every property with its value, in a stable order."
     ;;    and mints an entity with the body where its arguments belong.
     ("(defmethod render () 1)"
      (:method "render" "method:sample.lisp:render::" "sample.lisp"
-      ((:arguments nil) (:call-names nil) (:end-line 1) (:file "sample.lisp")
+      ((:arguments nil) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:signature nil) (:specializers nil)
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
@@ -1027,7 +1027,7 @@ file, and every property with its value, in a stable order."
     ;; f  an & marker stops the specializer walk but not the argument list
     ("(defmethod render ((x hop) &rest args) args)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
-      ((:arguments ("x" "&rest" "args")) (:call-names nil) (:end-line 1)
+      ((:arguments ("x" "&rest" "args")) (:call-names nil) (:documentation nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "render") (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil) (:signature nil)
        (:specializers ("hop"))
@@ -1036,7 +1036,7 @@ file, and every property with its value, in a stable order."
     ;; g  wholly unspecialized, and the only entry with a call in its body
     ("(defmethod render (a b) (helper a b))"
      (:method "render" "method:sample.lisp:render::t,t" "sample.lisp"
-      ((:arguments ("a" "b")) (:call-names ("helper")) (:end-line 1)
+      ((:arguments ("a" "b")) (:call-names ("helper")) (:documentation nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "render") (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil) (:signature nil)
        (:specializers ("t" "t"))
@@ -1051,7 +1051,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod render ((x hop)) (helper x))"
      (:method "render" "method:src/graph/foo.lisp:render::hop"
       "src/graph/foo.lisp"
-      ((:arguments ("x")) (:call-names ("helper")) (:end-line 1)
+      ((:arguments ("x")) (:call-names ("helper")) (:documentation nil) (:end-line 1)
        (:file "src/graph/foo.lisp") (:generic-function "render")
        (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:signature nil)
@@ -1709,3 +1709,65 @@ sweeping a mixed tree learns to skip the file"))
                  4)
     (is (= 3 first))
     (is (eq :adjacent attachment))))
+
+;;; ------------------------------------------------------------------
+;;; The prose a definition declares -- REQ-0035 R3, DES-0028 D3, PLAN-0031 S2
+;;; ------------------------------------------------------------------
+
+(test a-trailing-string-is-a-return-value-and-not-a-docstring
+  ;; The one place this capture can fabricate. Recording "x" below as
+  ;; documentation would put a sentence in the index that Loom claims the
+  ;; author wrote *about* F -- populated, plausible and wrong, which is
+  ;; CON-0001's fabricated fact in the shape no count reveals.
+  (is (null (loom-analyzer::body-docstring '(defun f () "x") 3))
+      "(defun f () \"x\") returns \"x\"")
+  (is (string= "x" (loom-analyzer::body-docstring '(defun f () "x" nil) 3))
+      "a form follows it, so it documents F")
+  (is (null (loom-analyzer::body-docstring '(defun f () nil) 3))
+      "no string at all")
+  (is (string= "d" (loom-analyzer::body-docstring
+                    '(defun f (x) "d" (declare (ignore x)) x) 3))
+      "a declaration is a following form like any other"))
+
+(test a-variable-docstring-is-the-last-element-and-that-is-not-ambiguous
+  ;; Deliberately not BODY-DOCSTRING's rule. (defvar name [value [doc]]) puts
+  ;; the docstring last with nothing after it, so the form-must-follow test
+  ;; would reject every one -- and there is nothing to guard against, because
+  ;; the form has no body for a value to be returned from.
+  (is (string= "why" (loom-analyzer::variable-docstring '(defparameter *x* 1 "why"))))
+  (is (null (loom-analyzer::variable-docstring '(defparameter *x* 1))))
+  (is (null (loom-analyzer::variable-docstring '(defvar *x*)))))
+
+(test the-documentation-option-is-found-and-a-slots-is-not
+  ;; Matched on the option's own name rather than on a position: a slot spelled
+  ;; (name :documentation "...") has the slot name first, and only an option
+  ;; has the word itself first.
+  (is (string= "the class"
+               (loom-analyzer::option-documentation
+                '(defclass c () ((a :accessor a)) (:documentation "the class")))))
+  (is (null (loom-analyzer::option-documentation
+             '(defclass c () ((a :accessor a :documentation "a slot")))))
+      "a slot's documentation is not the class's")
+  (is (string= "pkg" (loom-analyzer::option-documentation
+                      '(defpackage #:p (:documentation "pkg") (:use #:cl))))))
+
+(test a-captured-docstring-reaches-the-entity
+  ;; All three sources through the real pipeline, because the helpers above
+  ;; can each be right while nothing wires them to an entity.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun f (x) \"what f is for\" x)
+(defparameter *v* 1 \"what v is for\")
+(defclass c () () (:documentation \"what c is for\"))
+(defun undocumented (x) x)"
+                      "sample.lisp")
+    (declare (ignore file))
+    (flet ((doc-for (type name)
+             (let ((e (find name (entities-of-type g type)
+                            :key (lambda (x) (and (slot-boundp x 'name) (name x)))
+                            :test #'equal)))
+               (and e (gethash :documentation (properties e))))))
+      (is (string= "what f is for" (doc-for :function "f")))
+      (is (string= "what v is for" (doc-for :variable "*v*")))
+      (is (string= "what c is for" (doc-for :class "c")))
+      (is (null (doc-for :function "undocumented"))
+          "REQ-0035 R7: absence is absence, and must cost the entity nothing"))))

@@ -201,6 +201,9 @@ already has somewhere to live. :EXPORTS was already a list property on this
 entity and these two are symmetric with it."
   :natural-key (:qualified-name)
   :properties ((:qualified-name string :required t)
+               (:documentation  string
+                :documentation "Prose this package declares about itself --
+DEFPACKAGE's own (:documentation ...) option. REQ-0035, DES-0028.")
                (:exports        list   :documentation "Exported symbol names.")
                (:nicknames      list
                 :documentation "Declared aliases for :QUALIFIED-NAME. An
@@ -244,7 +247,10 @@ disk: a module may span files, and a file need not declare one."
   :natural-key (:qualified-name)
   :properties ((:qualified-name string :required t)
                (:file           string)
-               (:language       keyword :one-of *source-languages*)))
+               (:language       keyword :one-of *source-languages*)
+               (:documentation  string
+                :documentation "Prose this module declares about itself.
+REQ-0035, DES-0028.")))
 
 (defentity :class
   :documentation "A class definition."
@@ -266,6 +272,15 @@ is a class that is signalled rather than instantiated.  Worth telling apart
 without reopening the file.")
                (:exported-p boolean :default nil)
                (:language   keyword :one-of *source-languages*)
+               (:documentation string
+                :documentation "The prose this definition declares about
+itself. REQ-0035, DES-0028.
+
+Absent rather than empty when there is none, because absence must cost an
+entity nothing: 86% of game-server's functions carry no docstring, and a
+ranking that put undocumented code below documented code would be a recall
+defect on the tree the requirement is measured against (REQ-0035 R7,
+CON-0006).")
                (:shadowed-definitions list
                 :documentation "Line ranges, each \"start-end\", of the
 definitions this one superseded by sharing its natural key in the same file --
@@ -298,6 +313,15 @@ indexed so calls to it resolve, and marked so an agent can tell a derived
 name from one someone wrote.")
                (:exported-p boolean :default nil)
                (:language   keyword :one-of *source-languages*)
+               (:documentation string
+                :documentation "The prose this definition declares about
+itself. REQ-0035, DES-0028.
+
+Absent rather than empty when there is none, because absence must cost an
+entity nothing: 86% of game-server's functions carry no docstring, and a
+ranking that put undocumented code below documented code would be a recall
+defect on the tree the requirement is measured against (REQ-0035 R7,
+CON-0006).")
                (:shadowed-definitions list
                 :documentation "Line ranges, each \"start-end\", of the
 definitions this one superseded by sharing its natural key in the same file --
@@ -334,6 +358,15 @@ name, when it was generated rather than written -- a DEFSTRUCT accessor,
 constructor, predicate or copier.  Unlike a DEFCLASS accessor, which is a
 generic function and so an :INTERFACE, these really are plain functions.")
                (:language   keyword :one-of *source-languages*)
+               (:documentation string
+                :documentation "The prose this definition declares about
+itself. REQ-0035, DES-0028.
+
+Absent rather than empty when there is none, because absence must cost an
+entity nothing: 86% of game-server's functions carry no docstring, and a
+ranking that put undocumented code below documented code would be a recall
+defect on the tree the requirement is measured against (REQ-0035 R7,
+CON-0006).")
                (:shadowed-definitions list
                 :documentation "Line ranges, each \"start-end\", of the
 definitions this one superseded by sharing its natural key in the same file --
@@ -470,6 +503,9 @@ runs.")))
                (:end-line         integer :required t)
                (:signature        string)
                (:arguments        list)
+               (:documentation    string
+                :documentation "Prose this method declares about itself.
+REQ-0035, DES-0028.")
                (:qualifier        keyword
                 :documentation "CLOS method qualifier -- :before, :after, :around.")
                (:specializers     list)
@@ -509,6 +545,15 @@ module-level declaration."
                (:kind       keyword :one-of (:constant :special :parameter :lexical))
                (:exported-p boolean :default nil)
                (:language   keyword :one-of *source-languages*)
+               (:documentation string
+                :documentation "The prose this definition declares about
+itself. REQ-0035, DES-0028.
+
+Absent rather than empty when there is none, because absence must cost an
+entity nothing: 86% of game-server's functions carry no docstring, and a
+ranking that put undocumented code below documented code would be a recall
+defect on the tree the requirement is measured against (REQ-0035 R7,
+CON-0006).")
                (:shadowed-definitions list
                 :documentation "Line ranges, each \"start-end\", of the
 definitions this one superseded by sharing its natural key in the same file --
@@ -710,6 +755,15 @@ whichever signal the language actually offers."
                (:suite      string)
                (:framework  keyword :one-of (:fiveam :vitest :jest :pytest))
                (:language   keyword :one-of *source-languages*)
+               (:documentation string
+                :documentation "The prose this definition declares about
+itself. REQ-0035, DES-0028.
+
+Absent rather than empty when there is none, because absence must cost an
+entity nothing: 86% of game-server's functions carry no docstring, and a
+ranking that put undocumented code below documented code would be a recall
+defect on the tree the requirement is measured against (REQ-0035 R7,
+CON-0006).")
                (:shadowed-definitions list
                 :documentation "Line ranges, each \"start-end\", of the
 definitions this one superseded by sharing its natural key in the same file --
