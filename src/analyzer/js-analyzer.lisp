@@ -525,6 +525,99 @@ THIS IS NOT is explicit that a parser accepting TS by accident would produce
 entities whose properties nothing in the ontology models, and front-end's one
 .ts file is a vite config."))
 
+(defun js-trim (line)
+  (string-trim '(#\Space #\Tab #\Return) line))
+
+(defun js-line-comment-p (line)
+  "True when LINE is a `//' comment and not code with a remark after it."
+  (let ((s (js-trim line)))
+    (and (>= (length s) 2) (string= "//" s :end2 2))))
+
+(defun js-block-close-p (line)
+  "True when LINE ends a block comment."
+  (let ((s (js-trim line)))
+    (and (>= (length s) 2) (string= "*/" s :start2 (- (length s) 2)))))
+
+(defun js-block-open-p (line)
+  "True when LINE *opens* a block comment at its start.
+
+Starts, rather than merely contains: `foo(); /* note */' is an inline remark
+about that statement, and treating it as a block opener would serve the
+statement above a definition as though it were documentation. The same
+distinction the Lisp method makes about a trailing `; why'."
+  (let ((s (js-trim line)))
+    (and (>= (length s) 2) (string= "/*" s :end2 2))))
+
+(defmethod comment-extent ((analyzer js-analyzer) lines start-line)
+  "The comment block above START-LINE in JavaScript, and how it is attached.
+
+This method is why COMMENT-EXTENT is a generic at all. DES-0027 D3 first
+proposed one shared rule -- walk upward while each line is blank-or-comment --
+which is Lisp's answer written down as though it were everyone's. Applied here
+it returns nothing on half of ~/github/front-end: 249 of its 461 source files
+carry JSDoc, and in
+
+    /**
+     * Emit a partition.
+     * @param {Object} p
+     */
+    export function emitPartition(p) {
+
+none of ` */', ` * @param' or `/**' is recognisable as a comment line unless
+you already know a block is open. Silently, on the majority convention of the
+language.
+
+So two shapes are read. A run of `//' lines, which is the same shape Lisp's
+`;;' has. And a delimited block, walked upward from a line ending `*/' to the
+line opening it -- which must *start* with `/*', so that `foo(); /* note */'
+is an inline remark and not a block, the same distinction the Lisp method
+makes about a trailing `; why'.
+
+:SECTION is decided by position rather than by depth, and that difference is
+the point of asking the analyzer instead of a shared rule. Lisp marks a file
+banner with a fourth semicolon; JavaScript has no such convention, so the
+evidence here is that no code precedes the block at all -- a comment at the top
+of a file is about the file, not about whichever export happens to be first.
+Two languages, two kinds of evidence, one conclusion, and neither expressible
+in the other's terms.
+
+An unterminated block returns nothing rather than swallowing the file, which is
+this analyzer's standing rule that damage costs a form rather than a file."
+  (declare (ignore analyzer))
+  (let ((i (- start-line 2))
+        (gap nil))
+    (loop while (and (>= i 0) (blank-line-p (aref lines i)))
+          do (setf gap t) (decf i))
+    (if (minusp i)
+        (values nil nil)
+        ;; Both branches answer with the 0-based index of the block's first
+        ;; line, so the conversion to a line number happens exactly once.
+        (let ((first-index
+                (cond
+                  ;; A run of // lines, ending at a blank line or at code.
+                  ((js-line-comment-p (aref lines i))
+                   (let ((j i))
+                     (loop while (and (>= j 0) (js-line-comment-p (aref lines j)))
+                           do (decf j))
+                     (1+ j)))
+                  ;; A delimited block, walked up from */ to the line opening
+                  ;; it. Nothing found means the block is unterminated upward.
+                  ((js-block-close-p (aref lines i))
+                   (loop for j downfrom i to 0
+                         when (js-block-open-p (aref lines j)) return j
+                           finally (return nil)))
+                  (t nil))))
+          (if (null first-index)
+              (values nil nil)
+              (let ((code-above
+                      (loop for j downfrom (1- first-index) to 0
+                            unless (blank-line-p (aref lines j)) return t
+                              finally (return nil))))
+                (values (1+ first-index)
+                        (cond ((not code-above) :section)
+                              (gap :separated)
+                              (t :adjacent)))))))))
+
 (defparameter *vendored-directories* '("vendor" "node_modules" "bower_components")
   "Directory names whose contents are somebody else's code.")
 

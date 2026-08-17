@@ -373,3 +373,80 @@ function dup() { return second(); }
   (let ((entity (js-named "src/plain.js" "export function second() { return two(); }" "second")))
     (is-true entity "the file after a non-ASCII one is still read correctly")
     (is (member "two" (getp entity :call-names) :test #'string=))))
+
+;;; ------------------------------------------------------------------
+;;; COMMENT-EXTENT for JavaScript -- REQ-0031 R9, PLAN-0030 S5
+;;; ------------------------------------------------------------------
+
+(defun js-extent-of (lines start-line)
+  (comment-extent (make-instance 'loom-analyzer::js-analyzer) (coerce lines 'vector) start-line))
+
+(test a-jsdoc-block-is-found-though-none-of-its-lines-is-a-comment-line
+  ;; The case that corrected DES-0027 D3. A shared blank-or-comment line rule
+  ;; recognises none of " */", " * @param" or "/**", and returns nothing on the
+  ;; 249 of front-end's 461 source files that carry JSDoc -- silently.
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("const a = 1;"
+                      ""
+                      "/**"
+                      " * Emit a partition."
+                      " * @param {Object} p"
+                      " */"
+                      "export function emitPartition(p) {")
+                    7)
+    (is (= 3 first) "the opening /**, not the line just above")
+    (is (eq :adjacent attachment))))
+
+(test a-run-of-slash-slash-lines-behaves-like-a-lisp-comment-block
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("const a = 1;"
+                      "// why this component exists"
+                      "// and the second line"
+                      "export function C() {}")
+                    4)
+    (is (= 2 first))
+    (is (eq :adjacent attachment))))
+
+(test a-file-banner-is-a-section-because-nothing-precedes-it
+  ;; JavaScript has no fourth-semicolon convention, so position is the evidence
+  ;; where depth is the evidence in Lisp. A comment at the top of a file is
+  ;; about the file, not about whichever export happens to be first.
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("/**"
+                      " * Partition interchange helpers."
+                      " */"
+                      "export function first() {}")
+                    4)
+    (is (= 1 first))
+    (is (eq :section attachment))))
+
+(test an-inline-remark-is-not-a-block-opener
+  ;; `foo(); /* note */' is about that statement. Treating it as a block would
+  ;; serve the statement above a definition as though it documented it.
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("const a = 1;"
+                      "foo(); /* note */"
+                      "export function C() {}")
+                    3)
+    (is (null first))
+    (is (null attachment))))
+
+(test an-unterminated-block-costs-a-form-and-not-the-file
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("const a = 1;"
+                      " * a block nothing ever opened"
+                      " */"
+                      "export function C() {}")
+                    4)
+    (is (null first) "no opener found, so nothing is claimed")
+    (is (null attachment))))
+
+(test a-blank-line-separates-a-js-block-without-hiding-it
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("const a = 1;"
+                      "/** a remark */"
+                      ""
+                      "export function C() {}")
+                    4)
+    (is (= 2 first))
+    (is (eq :separated attachment) "one line opening and closing a block")))
