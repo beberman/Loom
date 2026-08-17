@@ -1,6 +1,6 @@
 id: REQ-0031
 title: describe must be able to return the source of what it describes, because every caller that gets a line range next reaches for a file
-status: draft
+status: partial
 date: 2026-08-15
 refines: [CON-0004]
 affects: [describe-entity, search-entities, build-context]
@@ -271,6 +271,43 @@ body: |
   range and not about its type, but "source of a variable" means something
   very different per language and a design that special-cases :FUNCTION would
   be wrong here.
+
+  OUTSTANDING, 2026-08-16
+
+  R1 through R7 and R9 landed under DES-0027 and PLAN-0030. Three things did
+  not, and this document is `partial` for them.
+
+  R8, `context` carrying source. Deliberately not attempted here. It is
+  DES-0026's two-tier bundle -- a few entities with their padded source and a
+  long cheap list naming everything else recalled -- and spending it under this
+  plan would have meant implementing a design that has no plan of its own.
+  DEFINITION-SOURCE exists in the layer BUILD-CONTEXT's caller can reach, which
+  is the whole of what DES-0026 needs from this work. Nothing about R8 changed;
+  it is queued, not reconsidered.
+
+  R7's acceptance is not repeatable as written, and that is a defect in the
+  clause rather than in the work. It asks to "re-run the game-server session of
+  2026-08-15 -- the five `sed`/`Read` calls" and the transcript naming those
+  five was never committed, so only the one call quoted in this document's
+  summary can be checked. It was: `describe database-alert --source` returns
+  server/server.lisp 49-57, which is exactly the `sed -n 49,57p` that prompted
+  the requirement. The capability was measured instead, across 126 sampled
+  definitions on all three watched trees -- every one served its source, with
+  no unlocated and no failures. A future acceptance clause that names a session
+  should name the calls in the document, or it expires with the terminal
+  scrollback.
+
+  BUG-0032 limits what this delivers on ~/github/front-end, and limits it
+  exactly where the feature is most wanted. `describe LayerEditor --source`
+  answers about LayerEditor.jsx, the file, and prints "this entity records no
+  line range" for a 251-line component three lines away, because a :FILE's
+  SIGNIFICANT-NAME is its basename and both are rank-0 exact matches. Sampling
+  60 of 430 basenames, 37 resolve to the file first. Addressed by id the source
+  path is correct on that tree and always was -- 42 of 42 sampled front-end
+  definitions served -- so this is a resolver defect that this requirement
+  exposed rather than caused. It is filed and not fixed here because the fix
+  changes what `describe` resolves to, which is a decision about a different
+  operation than the one this requirement is about.
 
   "What does `find` do?" Still open here, but no longer neutral: `find` caps
   silently at twenty hits (REQ-0005), which CON-0006 makes a defect by

@@ -1,6 +1,6 @@
 id: DES-0027
 title: The source reader belongs to loom-workspace, because it is the only layer that knows both a root and a range
-status: draft
+status: implemented
 date: 2026-08-16
 refines: [REQ-0031]
 affects: [describe-entity, repository-view, stamp-file, file-changed-p, build-context]

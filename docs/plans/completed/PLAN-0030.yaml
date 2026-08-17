@@ -1,6 +1,6 @@
 id: PLAN-0030
 title: The body first, then the flag, then the prose above it
-status: draft
+status: final
 date: 2026-08-16
 refines: [DES-0027]
 affects: [describe-entity, repository-view, stamp-file, file-changed-p, analyze-file,
