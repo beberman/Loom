@@ -239,15 +239,28 @@ body: |
   path-only match survives at the bottom of the index tier instead of being
   discarded (D1, CON-0006).
 
-  What is *not* in the field set is the one that would matter most: no code
-  entity carries a docstring. The :FUNCTION schema holds signature, arguments,
-  line range and flags, and :SUMMARY exists only on document types. So
-  SEED-ENTITIES' own docstring is still exactly right that name matching "finds
-  nothing at all from 'the bit that merges edits'", and no weighting fixes it.
-  Capturing docstrings is the largest unclaimed retrieval improvement in this
-  tree and it is a separate requirement, not this design's -- but D2 buys back
-  most of its *reader-side* value immediately, since a padded source block
-  contains the docstring whether or not the index does.
+  AMENDED 2026-08-17: the field set is five plus :DOCUMENTATION. This section
+  was written when the one field that would matter most did not exist -- "no
+  code entity carries a docstring", and no weighting fixes a query whose words
+  are only in prose. REQ-0035 built it, and the numbers change what BM25 has to
+  handle rather than merely adding a column:
+
+      entities carrying prose      Loom 798   game-server 462   front-end 999
+      volume                       315 KB     50 KB             184 KB
+      mean block                   396 ch     111 ch            ~184 ch
+      longest single block         5,639 ch
+
+  So the length distribution BM25 normalises is no longer names against names.
+  A 5,639-character docstring and a 12-character function name are now fields on
+  one entity, and that spread is the whole reason length normalisation stops
+  being a refinement and becomes the point -- DES-0028 D6 named this and
+  declined to fix it, on the grounds that inventing a second normalisation here
+  would only have to be removed when BM25 arrived.
+
+  Prose keeps the whole-word matching DES-0028 D4 gave it, which the tokenised
+  index makes free rather than special: a postings map is built from words, so
+  "cached" and "cache" are simply different terms and no substring rule is
+  needed to keep them apart.
 
   D5  WHAT TERM RARITY RETIRES
 
@@ -565,9 +578,11 @@ body: |
 
   Not here, and each is a requirement of its own:
 
-    Docstring capture. Named repeatedly above as the largest single retrieval
-    improvement available. It is an analyzer change across four languages and
-    an ontology property, and it does not belong inside a ranking design.
+    Docstring capture -- DONE, 2026-08-17, as REQ-0035 and DES-0028. Listed
+    here as not-this-design's and it was not; it landed first because it is a
+    prerequisite for REQ-0016 R5 rather than a follow-on, since no weighting
+    change can manufacture a candidate whose only distinguishing text was never
+    indexed. D4's field set now includes what it produced.
 
     `find`'s silent 20-hit cap (REQ-0005). A CON-0006 defect by inspection --
     it drops, and silently -- but it is `find`'s, not `context`'s.

@@ -1,0 +1,224 @@
+id: PLAN-0032
+title: Reach it first, then say why, then hold it cheaply, then stop guessing at rarity
+status: draft
+date: 2026-08-17
+refines: [DES-0026]
+affects: [build-context, context-item, render-context, seed-entities, seed-matches,
+          seed-score, admit-seeds, neighbors, find-entities, definition-source]
+tags: [context, knowledge, ranking, retrieval, expansion, req-0016, req-0031, con-0006]
+summary: |
+  DES-0026 in seven steps, ordered by what is measurably broken rather than by
+  the order the design argues its case.
+
+  The only clause of REQ-0016 still failing a measurement is R6, and the R9
+  count taken on 2026-08-17 says exactly what it is: `context data-handler` on
+  game-server returns 6 of 10 expected, and the four it misses --
+  NULL-HANDLER, TABLE-HANDLER, MODEL-HANDLER, GAME-HANDLER -- are two or more
+  :INHERITS hops from the seed. That is reachability, not ranking, so the
+  cost-ordered walk goes first and is measurable the day it lands.
+
+  The retrieval half comes later on purpose. Every acceptance query now answers
+  in 0.01-0.06s, so the inverted index buys no speed yet; what it buys is
+  length normalisation over a prose field that did not exist when this design
+  was written, and the retirement of four hand-fitted constants. Both are worth
+  having and neither is on fire.
+
+  A stop after any step leaves working software. A stop after S1 leaves R6 met;
+  after S3, REQ-0031 closed and every bundle carrying source; after S5, no
+  hardcoded guess about English anywhere in the seeder.
+body: |
+  WHAT IS ALREADY TRUE
+
+  Worth stating, because three of this design's premises changed under it and a
+  plan written from the design alone would redo work.
+
+  DEFINITION-SOURCE exists (REQ-0031, PLAN-0030 S1) in loom-workspace, with
+  padding, provenance and a 400-line cap. S3 spends it rather than building it.
+
+  :DOCUMENTATION exists (REQ-0035, PLAN-0031) on eight entity types across two
+  languages: 798 entities on Loom carrying 315 KB, 462 on game-server, 999 on
+  front-end. S4's field set has six fields, not five, and the longest single
+  block is 5,639 characters against a 12-character name -- which is why length
+  normalisation is the point of BM25 here rather than a refinement.
+
+  D1a's corrections hold: the CRUD protocol arrives on :USES and not
+  :IMPLEMENTS, and *CONTEXT-RELATION-LIMIT* is a recall gate rather than a
+  display cap, withholding 19 relations across two seeds on R6's own query.
+
+  REQ-0016 R7's standing clause is met already, by REQ-0035 rather than by
+  anything here. No step below should be justified by it.
+
+  FILES
+
+  src/knowledge/expand.lisp        new. The cost table, the frontier, the walk.
+  src/knowledge/context.lisp       tiers, budget, the seeder's retirements.
+  src/knowledge/services.lisp      the postings index and BM25.
+  src/knowledge/loom-knowledge.asd the new components.
+  src/knowledge/test/*.lisp
+
+  S1  THE COST-ORDERED WALK, AND NO TRANSIT THROUGH A CONTAINER
+
+  DES-0026 D6 and D8, together because either alone is unusable: the cost table
+  without the container rule puts all forty of a file's definitions two hops
+  from any seed that shares its file.
+
+  Multi-source best-first over NEIGHBORS. Costs keyed on relationship type and
+  direction -- :INHERITS and :IMPLEMENTS 1, :USES and :SERVES 2, :CALLS 3 out
+  and 4 in, :CONTAINS and :BELONGS-TO 3, :TESTS 5, document edges excluded
+  because DES-0020 owns them. Horizon 4. A container may be reached and not
+  expanded from.
+
+  The :CALLS asymmetry is the part to get right and the part a reviewer will
+  question: outgoing is what a thing calls, which is bounded and describes it;
+  incoming is what calls it, which is unbounded and describes them.
+
+  Each neighbour carries the edge it arrived on and its distance, and
+  RENDER-CONTEXT prints both -- D10's half that this step needs, because a walk
+  whose output does not say why a row is there cannot be checked by eye.
+
+  Measured on the R9 set the day it lands. R6's four missing classes are at
+  cost 1 to 3 under this table, so the number to move is 6 of 10 to at least
+  8 of 10. If it does not move, the table is wrong and no later step will fix
+  it.
+
+  S2  CONVERGENCE
+
+  D7. Carry a seed-origin set on each frontier entry and union it when a node is
+  reached again; discount effective cost by one per additional seed, floored at
+  1. The floor is argued rather than tuned: the cheapest edge costs 1, so a
+  second seed reaching an entity is worth exactly the strongest structural claim
+  the table admits and never more.
+
+  The discount reorders and does not extend -- the horizon is checked against
+  raw cost -- so convergence cannot pull in an entity the walk never reached.
+
+  This is D7's answer to R5, and R5 is the clause REQ-0016 has never had an
+  answer for. Measured on the startup-sequence query: whether the eight seeds
+  meet somewhere sensible, reported either way including if they do not.
+
+  S3  THE TWO TIERS, AND REQ-0031 CLOSES
+
+  D2 and D3. A source tier of N entities carrying padded source, and an index
+  tier naming everything else recalled at one line each.
+
+  This is REQ-0031 R8 and it takes that requirement from `partial` to
+  `implemented`. DEFINITION-SOURCE already returns the text, the padded range
+  and a status; the work here is the budget split and the rendering.
+
+  *CONTEXT-TOKEN-BUDGET* = 2000 was sized for a bundle carrying names and
+  locations, and a padded source block is 200-600 tokens, so it becomes two
+  budgets: definitions of source, and a large allowance of one-line entries.
+  DES-0020 D5a's document reserve becomes a tier assignment rather than a claim
+  on someone else's room.
+
+  *CONTEXT-RELATION-LIMIT* is resolved here rather than left as D1a's finding: a
+  relation is one line, so it belongs in the index tier and the cap becomes a
+  source-tier concern only. That is the 19 withheld relations on R6's query
+  returned without any new mechanism.
+
+  Before S4 deliberately. S4 and S5 increase candidate volume -- retiring a
+  stoplist and a share cap admits more -- and doing that while the budget is
+  still one 2,000-token pot would spend the increase on truncation.
+
+  S4  THE POSTINGS INDEX AND BM25
+
+  D4, and the largest single step here.
+
+  At index time, tokenise into a term-to-entity postings map: names split on
+  hyphen, underscore and case boundary with the whole name kept as a term, and
+  the other five fields tokenised as words. Document frequency is a postings
+  list length. BM25 scores with length normalisation over six fields --
+  name, :SIGNATURE, :ARGUMENTS, path words, package, :DOCUMENTATION -- weighted
+  name highest and path lowest.
+
+  Two properties fall out and should be checked rather than assumed. Substring
+  matching goes away, so MATCH-RANK's four bands go with it -- prefix and
+  substring ranks are artifacts of not having tokens. And the path-only match
+  that SEED-MATCHES drops as rank 3 becomes a low-weighted field instead, which
+  is CON-0006 applied where D1's inventory said it should be.
+
+  The prose field is what makes normalisation load-bearing: 5,639 characters
+  against 12 is not a spread any hand-written rule was going to handle, and
+  DES-0028 D6 declined to invent one precisely so this step would not have to
+  remove it.
+
+  Where the index lives is this step's own decision to make and record: the
+  graph is rebuilt on every file save, so a postings map is either derived on
+  demand and cached per generation, or maintained by the writer. The second is
+  faster and couples loom-graph to a retrieval concern; the first is honest and
+  costs a rebuild. Measure before choosing.
+
+  S5  RETIRE THE CONSTANTS
+
+  D5. Each is a proxy for term rarity, hand-fitted to one tree, and IDF is the
+  quantity they were approximating.
+
+    *CONTEXT-STOPWORDS*, 48 words. It misses "check", which is the word that
+    broke game-server, and includes "test", which is a fine discriminator on a
+    tree where test helpers are the subject. PLAN-0031 S4 met this defect while
+    writing a test: the word chosen for a whole-word matching test was "test",
+    and it never reached the prose pass at all.
+
+    The coverage band's 8. Summing idf(t) is the same idea measured.
+
+    *SEED-TERM-SHARE* = 2, replaced by an MMR-style redundancy penalty. A
+    penalty reorders where a cap drops, which is the CON-0006 difference.
+
+    TASK-TERMS versus TASK-TOKENS, and SLOT-ACCESSOR-P. Both exist to survive
+    the "data" fragment, and under IDF the fragment is self-limiting.
+
+  The riskiest step in the plan, because it removes four mechanisms that
+  currently pass the acceptance set. Nothing here lands without the full R9
+  count before and after.
+
+  What survives: the type tiers, R4's test demotion, and :EXPORTED-P, which is
+  in the schema and read by nothing.
+
+  S6  ONE ORDER OVER THE RECALLED SET
+
+  D9. Seeds and neighbours become commensurable: BM25 lexical score, the
+  structural term from S1 and S2, entity properties, and the redundancy penalty
+  from S5. The tier boundary in S3 becomes a cut in this order rather than a
+  band boundary.
+
+  D9 is honest that the lexical-to-structural weight is a tuning with no
+  defensible value a priori, and D2 is why being wrong about it is cheap: it
+  decides who gets a source block, not who exists, and the cost of an error is
+  one `describe` call.
+
+  S7  ACCEPTANCE, ON THREE TREES
+
+  D12 in full, plus the R9 recall count for every query in it, plus the measure
+  D12 asks for that nothing has reported yet: grep-equivalent tool calls after
+  a bundle, which is REQ-0031 R7's instrument and the number this whole line of
+  work exists to move.
+
+  Loom, game-server and front-end. Full suite green, `check` clean, no new call
+  from loom-knowledge into loom-workspace.
+
+  RISKS
+
+  S1's table is a guess with an argument, not a measurement. Seven costs and a
+  horizon, chosen from what the ontology says an edge means. The R6 number is
+  the check, and if it does not move the response is to re-derive the table from
+  the four missing classes' actual paths rather than to tune one number.
+
+  S4's index is where a subtle wrong answer hides. A postings map that
+  tokenises differently from the query path silently returns nothing for terms
+  that should match, and the symptom is a smaller bundle rather than an error --
+  CON-0006's expensive error at the mechanism level. The guard is that the
+  tokeniser is one function used by both sides, tested on the compound cases
+  that already broke things: "data-handler", "LayerEditor", "*call-site-ceiling*".
+
+  S5 removes what currently works. Every constant it retires is load-bearing
+  today, and the R9 count is the only thing standing between "retired" and
+  "regressed".
+
+  Prose length under S4. DES-0028 D6 deferred normalisation here on the grounds
+  that BM25 would bring it. If BM25's normalisation turns out not to handle a
+  5,639-character field against a 12-character one, that is a finding about the
+  parameters and not a licence to add a second rule.
+
+  Scope. S1 through S3 do not need S4, and S4 does not need S1. The temptation
+  is to land the index first because it is the interesting part; R6 is the
+  clause that is failing.
