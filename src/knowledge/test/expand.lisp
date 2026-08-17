@@ -105,3 +105,73 @@
     (let ((reaches (expand-from-seeds g (list a b))))
       (is (null reaches)
           "both are seeds, in the bundle already under their own band"))))
+
+;;; ------------------------------------------------------------------
+;;; The two tiers -- DES-0026 D2/D3, PLAN-0032 S3
+;;; ------------------------------------------------------------------
+
+(defun stub-source (id)
+  "A source block of a known size, so a test can reason about the budget."
+  (list :status :current :range "1-3" :file "src/a.lisp"
+        :text (format nil "line one about ~a~%line two~%line three~%" id)))
+
+(test only-the-first-few-seeds-carry-a-body
+  ;; DES-0026 D2. The expensive tier is bounded by a count of definitions and
+  ;; the cheap one by tokens, because that is the unit each is rationed in.
+  (let* ((g (seed-graph "alpha" "alpha-two" "alpha-three" "alpha-four"))
+         (bundle (build-context g "alpha" :source-fn #'stub-source
+                                          :source-definitions 2))
+         (sourced (remove-if-not (lambda (i) (getf i :source)) (getf bundle :items))))
+    (is (= 2 (length sourced)) "two bodies, not four")
+    (is (= 2 (getf bundle :sourced)))
+    (is (every (lambda (i) (eq :seed (getf i :band))) sourced)
+        "the source tier is the first N seeds until DES-0026 D9's one order exists")))
+
+(test a-caller-that-asks-for-no-bodies-gets-the-bundle-it-always-got
+  ;; SOURCE-FN is NIL for every caller that existed before this step, and the
+  ;; absence has to cost nothing rather than merely not crash.
+  (let ((bundle (build-context (seed-graph "alpha" "alpha-two") "alpha")))
+    (is (= 0 (getf bundle :sourced)))
+    (is (= 0 (getf bundle :source-tokens)))
+    (is (notany (lambda (i) (getf i :source)) (getf bundle :items)))))
+
+(test a-body-is-not-charged-to-the-index-budget
+  ;; The defect this guard exists for, measured before it: charging a 400-token
+  ;; body to the index budget spent the cheap tier on the expensive one, and
+  ;; `context data-handler' named 14 of the 157 entities the walk had reached.
+  ;; Two budgets that share one counter are one budget.
+  ;; Asserted as "no more", not "the same", which is what the first draft got
+  ;; wrong: an entity in the source tier leaves the index budget altogether, so
+  ;; the index figure legitimately *falls* when bodies are asked for. What must
+  ;; never happen is the other direction -- a body inflating the tier that is
+  ;; supposed to be cheap.
+  (let* ((g (seed-graph "alpha" "alpha-two" "alpha-three"))
+         (plain (build-context g "alpha"))
+         (sourced (build-context g "alpha" :source-fn #'stub-source
+                                           :source-definitions 3)))
+    (is (plusp (getf sourced :source-tokens)) "the bodies cost something")
+    (is (<= (getf sourced :tokens) (getf plain :tokens))
+        "and none of it came out of the index tier")
+    ;; The invariant stated the other way round, on a budget tight enough to
+    ;; bite: bodies must not cost the index tier a single entry.
+    (let ((tight-plain (build-context g "alpha" :budget 40))
+          (tight-sourced (build-context g "alpha" :budget 40
+                                                  :source-fn #'stub-source
+                                                  :source-definitions 1)))
+      (is (>= (count-if-not (lambda (i) (getf i :source)) (getf tight-sourced :items))
+              (count-if-not (lambda (i) (getf i :source)) (getf tight-plain :items)))
+          "a tight index budget holds at least as many lines when bodies are added"))))
+
+(test the-budget-is-measured-against-what-is-printed
+  ;; RENDER-ITEM is used to cost an item and to print it, so the two cannot
+  ;; disagree. They did: the estimate was taken from the serialised plist, keys
+  ;; and all, which over-counts the rendered line about fivefold -- so an index
+  ;; tier sized on the premise that a line costs 15 tokens bought a fifth of
+  ;; what it was budgeted for.
+  (let* ((bundle (build-context (seed-graph "alpha" "alpha-two") "alpha"))
+         (item (first (getf bundle :items)))
+         (rendered (loom-knowledge::render-item item)))
+    (is (search "alpha" rendered) "the item's own line")
+    (is (< (loom-knowledge::estimate-tokens rendered)
+           (loom-knowledge::estimate-tokens (princ-to-string item)))
+        "the plist is the bigger number, and it is not the one that is spent")))

@@ -277,13 +277,16 @@ body: |
   R1 through R7 and R9 landed under DES-0027 and PLAN-0030. Three things did
   not, and this document is `partial` for them.
 
-  R8, `context` carrying source. Deliberately not attempted here. It is
-  DES-0026's two-tier bundle -- a few entities with their padded source and a
-  long cheap list naming everything else recalled -- and spending it under this
-  plan would have meant implementing a design that has no plan of its own.
-  DEFINITION-SOURCE exists in the layer BUILD-CONTEXT's caller can reach, which
-  is the whole of what DES-0026 needs from this work. Nothing about R8 changed;
-  it is queued, not reconsidered.
+  R8, `context` carrying source. Outstanding when this section was written and
+  MET on 2026-08-17 under PLAN-0032 S3. `context` now carries padded source for
+  *CONTEXT-SOURCE-DEFINITIONS* entities and names the rest in an index tier
+  budgeted separately, which is both halves of R8's pairing.
+
+  DEFINITION-SOURCE is reached through a callback rather than called, because
+  loom-knowledge cannot see loom-workspace -- the same layering D1 of DES-0027
+  established, met from the other side. The caller that has the repository
+  passes the fetch in; the tier logic and the rendering stay where the bundle is
+  built.
 
   R7's acceptance is not repeatable as written, and that is a defect in the
   clause rather than in the work. It asks to "re-run the game-server session of
@@ -296,6 +299,9 @@ body: |
   no unlocated and no failures. A future acceptance clause that names a session
   should name the calls in the document, or it expires with the terminal
   scrollback.
+
+  What remains outstanding is BUG-0032 alone, so this document is `partial` for
+  a resolver defect it exposed rather than for anything it failed to build.
 
   BUG-0032 limits what this delivers on ~/github/front-end, and limits it
   exactly where the feature is most wanted. `describe LayerEditor --source`

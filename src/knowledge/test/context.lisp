@@ -381,11 +381,23 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
   ;; for. A budget this tight reproduces it -- without the reserve the seeds
   ;; consume everything and the documents band is empty.
   ;;
-  ;; 450 is chosen so the budget bites in exactly the interesting place: the
-  ;; seeds alone cost more than that, so without the reserve they fill it and
+  ;; The number is chosen so the budget bites in exactly the interesting place:
+  ;; the seeds alone cost more than it, so without the reserve they fill it and
   ;; no document survives. CON-0003 -- remove the reserve and this fails.
+  ;;
+  ;; It was 450 until PLAN-0032 S3, and the move is not a recalibration to make
+  ;; a test pass. The budget used to be estimated from (PRINC-TO-STRING ITEM) --
+  ;; the serialised plist, keys and all -- which over-counts the rendered line
+  ;; about fivefold, so every token figure this system reported was inflated by
+  ;; roughly that factor. RENDER-ITEM now costs what it prints, so the same
+  ;; bundle measures about a fifth of what it used to and 450 stopped biting.
+  ;; The constant follows the estimator; the estimator is the thing that got
+  ;; correct. 150 was found by probing rather than divided: the shape this test
+  ;; needs -- truncated, the document surviving, the first seed surviving -- holds
+  ;; from 120 to about 200 and stops truncating around 300, so 150 sits in the
+  ;; middle of the window rather than on its edge.
   (let* ((f (banded-fixture))
-         (bundle (build-context (k-graph f) "change resolve-overlay" :budget 450)))
+         (bundle (build-context (k-graph f) "change resolve-overlay" :budget 150)))
     (is-true (getf bundle :truncated) "the budget has to actually bite")
     (is (member "REQ-9001" (band-names bundle :document) :test #'string=)
         "the declared document survives a budget the seeds would have eaten: ~a"
@@ -393,7 +405,7 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
                 (getf bundle :items)))
     (is (member "resolve-overlay" (band-names bundle :seed) :test #'string=)
         "and the reserve did not cost the best seed, which it may never do")
-    (is (<= (getf bundle :tokens) 450) "and the budget is still a budget")))
+    (is (<= (getf bundle :tokens) 150) "and the budget is still a budget")))
 
 (test a-stale-document-stays-out-of-every-band
   ;; The staleness rule applied to the two new bands as well as the old one.

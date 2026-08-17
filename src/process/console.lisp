@@ -702,7 +702,11 @@ which is CON-0006's expensive error at the scale of one answer."
     "context <task description>"
     "A budgeted context bundle for a task: what to know before editing."
   (let ((task (format nil "~{~a~^ ~}" words)))
-    (write-string (render-context (build-context (current-graph) task)))))
+    (let ((repo (current-repository)))
+      (write-string
+       (render-context
+        (build-context (repository-graph repo) task
+                       :source-fn (lambda (id) (definition-source repo id))))))))
 
 (define-command init (path &optional document-directory claude-md endpoint)
     "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>]"

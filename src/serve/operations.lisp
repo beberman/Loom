@@ -248,7 +248,13 @@ Pass source=true for the definition's text."
     "A budgeted context bundle for a task: what to know before editing."
   ;; BUILD-CONTEXT and no RENDER-CONTEXT. The rendering step is what turns the
   ;; bundle into the text a console prints, and a program wants the bundle.
-  (build-context (repository-view repository) task))
+  ;; SOURCE-FN rather than a call from inside BUILD-CONTEXT: DEFINITION-SOURCE
+  ;; is loom-workspace's because it needs REPOSITORY-ROOT, and loom-knowledge
+  ;; cannot reach up there (DES-0027 D1). This entry has the repository, so the
+  ;; fetch is passed in and the tier logic stays where the bundle is built.
+  (let ((repo (require-repository repository)))
+    (build-context (repository-graph repo) task
+                   :source-fn (lambda (id) (definition-source repo id)))))
 
 (define-operation :structure :read (repository)
     "Systems, protocols, entry points and hubs, derived from the index."

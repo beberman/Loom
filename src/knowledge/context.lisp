@@ -18,8 +18,38 @@
 ;;;; Budget
 ;;;; ==================================================================
 
-(defparameter *context-token-budget* 2000
-  "Default size of a context bundle, in tokens.")
+(defparameter *context-token-budget* 4000
+  "Tokens the index tier may spend. DES-0026 D3, PLAN-0032 S3.
+
+Was 2000, and 2000 was right for the bundle it was sized for -- one carrying
+names and locations. REQ-0016 argued explicitly that the budget was not the
+defect, and under a names-only bundle that was true: ~1960 of 2000 was being
+spent on the wrong entities, which is a selection problem.
+
+It stopped being true twice over. A padded source block is 200-600 tokens, so
+under *CONTEXT-SOURCE-DEFINITIONS* a single pot of 2000 holds three to eight
+definitions and nothing else. And PLAN-0032 S1 measured the other half: the
+cost-ordered walk reaches 157 entities on `context data-handler` and the old
+budget printed 2 of them, so REQ-0016 R6 was failing on room rather than on
+reach.
+
+An index-tier line costs 15-30 tokens, so 4000 holds well over a hundred of
+them. That is CON-0006's asymmetry bought cheaply: the reader discards a wrong
+line for almost nothing and cannot recover from a missing one without the grep
+this whole tool exists to remove.")
+
+(defparameter *context-source-definitions* 5
+  "How many entities carry their source. DES-0026 D2.
+
+A count of definitions rather than a token figure, because that is the unit a
+caller reasons in -- \"show me the five things this is about\" -- and a token
+count for it is a consequence rather than a choice.
+
+Five is a judgement and the shape of the trade is what argues it: source is the
+expensive tier and the index tier is what makes being wrong about the order
+cheap. A caller who wanted the sixth entity's body spends one `describe`, which
+is the failure DES-0026 D2 says a wrong ranking costs. Raising this buys fewer
+`describe` calls and spends tokens on bodies the reader may not want.")
 
 ;; The other budget in this system is *SUMMARY-TOKEN-BUDGET* (120), in
 ;; services.lisp -- one document's summary rather than a bundle of entities.
@@ -685,7 +715,7 @@ has a handful of neighbours and a file has one per definition it holds -- and
 without a cap a single well-connected entity consumes a bundle that was meant
 to describe eight.")
 
-(defun context-item (view entity &key (relations t) (band :neighbour) reach)
+(defun context-item (view entity &key (relations t) (band :neighbour) reach source)
   "One entity as a context line plus, optionally, its immediate relationships.
 
 BAND is why this entity is in the bundle -- :SEED, :DECISION, :DOCUMENT,
@@ -706,6 +736,10 @@ neighbour two hops out all read as the same kind of line."
           :cost (and reach (reach-cost reach))
           :via (and reach (reach-via reach))
           :direction (and reach (reach-direction reach))
+          ;; DES-0026 D2's source tier. NIL on every index-tier item, which is
+          ;; most of them -- and the asymmetry is the design: the expensive tier
+          ;; is small and the cheap one is where recall lives.
+          :source source
           :relation-count (length all)
           :relations
           (loop for n in shown
@@ -715,7 +749,8 @@ neighbour two hops out all read as the same kind of line."
                                       (and (slot-boundp e 'name) (name e))))))))
 
 (defun build-context (view task &key (budget *context-token-budget*)
-                                     (seed-limit 8) types)
+                                     (seed-limit 8) types source-fn
+                                     (source-definitions *context-source-definitions*))
   "A budgeted context bundle for TASK: the entities its words point at, their
 immediate relationships, and the decisions bearing on them.
 
@@ -748,6 +783,7 @@ Every call is logged to *CONTEXT-LOG*."
          (expanded  (mapcar #'reach-entity reaches))
          (items     '())
          (used      0)
+         (sourced-tokens 0)
          (truncated nil))
     (multiple-value-bind (decisions documents mentions)
         (documents-touching view (append seeds expanded))
@@ -794,27 +830,57 @@ Every call is logged to *CONTEXT-LOG*."
                                mentions)))
              (reserve (min (floor budget 2)
                            (reduce #'+ document-items :initial-value 0
-                                   :key (lambda (i) (estimate-tokens (princ-to-string i)))))))
-        (flet ((admit-item (item cap)
-                 (let ((cost (estimate-tokens (princ-to-string item))))
-                   (cond ((<= (+ used cost) cap)
+                                   :key (lambda (i) (estimate-tokens (render-item i)))))))
+        (flet ((admit-item (item cap &key free)
+                 ;; FREE is the source tier, and it is what makes "two budgets"
+                 ;; true rather than merely stated. Charging a 400-token body to
+                 ;; the index budget spends the cheap tier on the expensive one:
+                 ;; measured before this guard, `context data-handler' printed 31
+                 ;; items for 3979 tokens -- 128 tokens for an entry that is
+                 ;; supposed to be a line -- and named 14 of the 157 entities the
+                 ;; walk had reached. A body is rationed by *CONTEXT-SOURCE-
+                 ;; DEFINITIONS*, a line by tokens, and neither may spend the
+                 ;; other's allowance.
+                 (let ((cost (estimate-tokens (render-item item))))
+                   (cond (free
+                          (incf sourced-tokens cost)
+                          (push item items)
+                          t)
+                         ((<= (+ used cost) cap)
                           (incf used cost)
                           (push item items)
                           t)
                          (t (setf truncated t) nil))))
                (item-for (entity relations band)
                  (context-item view entity :relations relations :band band)))
-          ;; Seeds against the budget less the reserve, so the reasoning has
-          ;; room left when they are done -- except the first, which is
-          ;; measured against the whole budget. The seeds are ordered best
-          ;; match first, and a bundle that answered "what is this code" with
-          ;; nothing but the reasoning about it would have inverted the promise
-          ;; this function's docstring makes. The reserve may cost the eighth
-          ;; seed; it may not cost the first.
+          ;; DES-0026 D2's source tier, admitted first and outside the index
+          ;; budget entirely. It is bounded by a count of definitions, which is
+          ;; the whole point of two budgets: a body is expensive and is rationed
+          ;; by how many bodies a reader wants, where a line is cheap and is
+          ;; rationed by tokens.
+          ;;
+          ;; SOURCE-FN is a callback rather than a call, and the layering is why.
+          ;; DEFINITION-SOURCE lives in loom-workspace because an entity's :FILE
+          ;; is repository-relative and REPOSITORY-ROOT is a slot up there
+          ;; (DES-0027 D1); loom-workspace depends on loom-knowledge, so this
+          ;; function cannot reach it. The caller that has the repository passes
+          ;; the fetch in, and the tier logic and the rendering stay here where
+          ;; they belong. NIL means a caller that wants no bodies, which is every
+          ;; caller that existed before this step.
+          ;;
+          ;; The first N *seeds*, in seed order, which is an interim and is worth
+          ;; naming as one: DES-0026 D9 makes the cut fall on one order over the
+          ;; whole recalled set, and that order does not exist until PLAN-0032
+          ;; S6. Until then a neighbour cannot outrank a seed for a body, however
+          ;; near it is.
           (loop for entity in seeds
-                for first = t then nil
-                do (admit-item (item-for entity t :seed)
-                               (if first budget (- budget reserve))))
+                for rank from 0
+                for wants-source = (and source-fn (< rank source-definitions))
+                do (admit-item (context-item view entity :relations t :band :seed
+                                             :source (when wants-source
+                                                       (funcall source-fn (id entity))))
+                               (if (zerop rank) budget (- budget reserve))
+                               :free wants-source))
           ;; Then the reserve is released: these are measured against the full
           ;; budget, and fit by construction unless the ceiling clipped them.
           (dolist (item document-items) (admit-item item budget))
@@ -837,7 +903,14 @@ Every call is logged to *CONTEXT-LOG*."
                           :mentions (summarize-entities mentions)
                           :budget budget
                           :tokens used
-                          :truncated truncated)))
+                          :truncated truncated
+                          ;; What the source tier actually spent, reported rather
+                          ;; than inferred: a caller comparing two bundles wants
+                          ;; to know whether it got bodies without scanning for
+                          ;; them.
+                          :source-tokens sourced-tokens
+                          :source-definitions (if source-fn source-definitions 0)
+                          :sourced (count-if (lambda (i) (getf i :source)) items))))
         (push (make-context-log-entry :task task
                                       :seeds (length seeds)
                                       :entities (length items)
@@ -864,6 +937,45 @@ Every band is named, seeds included, so no line in the block is unlabelled."
     (:neighbour "one hop away")
     (t          (string-downcase (princ-to-string band)))))
 
+(defun render-item (item)
+  "One bundle item as the text a reader sees.
+
+Extracted so that costing and printing cannot disagree, which they did. The
+budget was estimated from (PRINC-TO-STRING ITEM) -- the serialised plist, keys
+and all -- and that over-counts the rendered line about fivefold. It did not
+matter much while a bundle held eight seeds; it mattered a great deal once
+DES-0026 D3 sized an index tier on the premise that a line costs 15 tokens,
+because the tier then bought a fifth of what it was budgeted for. Measured:
+`context data-handler' named 35 of the 157 entities the walk reached.
+
+This function's docstring is the reason RENDER-CONTEXT gives for living beside
+the builder -- \"the rendering is where the token budget is really spent\" --
+made true rather than merely asserted."
+  (let ((entity (getf item :entity)))
+    (with-output-to-string (out)
+      (format out "~(~a~) ~a~@[  [~a]~]~@[  (stale)~]~@[  ~a~]~%"
+              (getf entity :type) (getf entity :name)
+              (getf entity :location) (getf entity :stale)
+              (when (getf item :cost)
+                (format nil "~a~(~a~) ~d"
+                        (if (eq :out (getf item :direction)) "->" "<-")
+                        (getf item :via) (getf item :cost))))
+      (dolist (rel (getf item :relations))
+        (format out "    ~a ~(~a~) ~a~%"
+                (if (eq :out (getf rel :direction)) "->" "<-")
+                (getf rel :rel-type) (getf rel :name)))
+      (let ((hidden (- (or (getf item :relation-count) 0)
+                       (length (getf item :relations)))))
+        (when (plusp hidden) (format out "    ... ~d more~%" hidden)))
+      (let ((src (getf item :source)))
+        (when (and src (getf src :text))
+          (format out "    source ~a~@[ (~d line~:p withheld)~]:~%"
+                  (getf src :range)
+                  (and (getf src :truncated) (getf src :withheld)))
+          (with-input-from-string (in (getf src :text))
+            (loop for line = (read-line in nil nil)
+                  while line do (format out "      ~a~%" line))))))))
+
 (defun render-context (bundle)
   "BUNDLE as the text block an agent receives.
 
@@ -879,25 +991,17 @@ whose text is not has not saved anybody anything."
     (when (null (getf bundle :items))
       (format out "No indexed entity matched this task.~%"))
     (dolist (item (getf bundle :items))
-      (let ((entity (getf item :entity)))
-        ;; The heading changes when the band does, so an agent can tell the code
-        ;; it asked about from the reasoning about it and from a neighbour two
-        ;; hops out. Before DES-0020 every item printed as the same kind of line
-        ;; and the bundle's :DECISIONS field was not rendered at all -- decisions
-        ;; reached the text only by being admitted among the functions, which
-        ;; made "why is the code this way" indistinguishable from "what else is
-        ;; nearby" at exactly the moment an agent is deciding what to read.
-        (unless (eq band (getf item :band))
-          (setf band (getf item :band))
-          (format out "~&~%## ~a~%" (band-heading band)))
-        (format out "~&~(~a~) ~a~@[  [~a]~]~@[  (stale)~]~%"
-                (getf entity :type) (getf entity :name)
-                (getf entity :location) (getf entity :stale))
-        (dolist (rel (getf item :relations))
-          (format out "    ~a ~(~a~) ~a~%"
-                  (if (eq :out (getf rel :direction)) "->" "<-")
-                  (getf rel :rel-type) (getf rel :name)))
-        (let ((hidden (- (or (getf item :relation-count) 0)
-                         (length (getf item :relations)))))
-          (when (plusp hidden)
-            (format out "    ... ~d more~%" hidden))))))))
+      ;; The heading changes when the band does, so an agent can tell the code
+      ;; it asked about from the reasoning about it and from a neighbour two
+      ;; hops out. Before DES-0020 every item printed as the same kind of line
+      ;; and the bundle's :DECISIONS field was not rendered at all -- decisions
+      ;; reached the text only by being admitted among the functions, which
+      ;; made "why is the code this way" indistinguishable from "what else is
+      ;; nearby" at exactly the moment an agent is deciding what to read.
+      (unless (eq band (getf item :band))
+        (setf band (getf item :band))
+        (format out "~&~%## ~a~%" (band-heading band)))
+      ;; The body is RENDER-ITEM's, which is also what the budget was measured
+      ;; against. Two copies of this loop is how costing and printing came to
+      ;; disagree by a factor of five.
+      (write-string (render-item item) out)))))
