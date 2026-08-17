@@ -210,10 +210,32 @@ body: |
   fail on the next. That is a prediction about a fourth tree, and no query
   against these three tests it.
 
-  Before S5 runs, find the queries. The candidates are known: a task using a word
-  the 48-word list suppresses on a tree where it is informative -- "test" scores
-  1.74 on front-end and is suppressed there -- and a task whose terms are more
-  than eight, where the coverage band's 8 saturates and stops discriminating.
+  THE DISCRIMINATING SET, front-end, 2026-08-17
+
+  Two measurements were taken. Twenty-five entities were sampled, a query built
+  from each one's own :DOCUMENTATION with every word of its name removed, and the
+  entity looked for in the bundle: 25 of 25 found. Prose retrieval on that tree
+  is not the weak point.
+
+  Ten task queries written in a developer's words rather than the author's score
+  7 of 11 expected entities. The four misses:
+
+    working set track edited layers      -> LayerEditor missing
+    changing the type of a map element   -> MapElementTypeEditor missing
+    admin permission to edit media       -> isAdminFlag missing
+    saving a piece design and rejections -> SaveDesign missing
+
+  MAPELEMENTTYPEEDITOR is the clearest. Its name tokenises to map, element,
+  type and editor, so it answers three of the query's four terms -- and
+  MAPELEMENTTYPE, which answers the same three from a shorter name, seeds twice
+  and it does not seed at all. The shorter name wins on match quality, and no
+  band above match quality separates them. That is REQ-0016 R3 restated: an
+  entity matching lexically outranks one matching lexically and structurally.
+
+  This set replaces the saturated one for S5. The number to move is 7 of 11.
+  Two of the four misses may be my expectation rather than a defect --
+  MEDIAEDITORSTATE.ADMINMODE is a defensible answer for "admin permission to edit
+  media" -- so each should be judged before it is counted as a target.
 
   S5 also forces the caching decision S4 deferred. Retiring the stoplist and the
   coverage band requires IDF at query time, so BUILD-SEARCH-INDEX moves onto the
