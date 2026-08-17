@@ -175,3 +175,72 @@
     (is (< (loom-knowledge::estimate-tokens rendered)
            (loom-knowledge::estimate-tokens (princ-to-string item)))
         "the plist is the bigger number, and it is not the one that is spent")))
+
+;;; ------------------------------------------------------------------
+;;; Convergence -- DES-0026 D7, PLAN-0032 S2
+;;; ------------------------------------------------------------------
+
+(test convergence-counts-the-distinct-seeds-that-reach-an-entity
+  ;; D7's answer to R5, the clause REQ-0016 has never had one for. Eight seeds
+  ;; on a prose query are eight guesses, and the guesses are not independent: if
+  ;; several reach one entity, that entity is what the task was about, and no
+  ;; lexical score could have said so because the evidence is not in the names.
+  (let* ((g (make-graph))
+         (a (k-def 'class-entity "alpha" "src/a.lisp"))
+         (b (k-def 'class-entity "beta" "src/a.lisp"))
+         (shared (k-def 'class-entity "shared" "src/a.lisp")))
+    (dolist (e (list a b shared)) (add-entity g e))
+    (k-edge g :inherits shared a)
+    (k-edge g :inherits shared b)
+    (let ((r (reach-named (expand-from-seeds g (list a b)) "shared")))
+      (is (= 2 (reach-convergence r)) "both seeds reached it")
+      (is (= 1 (reach-cost r)))
+      (is (= 1 (loom-knowledge::effective-cost r))
+          "already at the floor, so the discount has nothing left to give"))))
+
+(test the-discount-is-one-cheap-edge-per-extra-seed-and-floors-at-one
+  ;; The floor is argued rather than tuned: the cheapest edge costs 1, so a
+  ;; second seed is worth exactly the strongest structural claim the table
+  ;; admits and never more. Convergence may promote past a call hop and may not
+  ;; promote past a hierarchy, because three seeds meeting at a utility function
+  ;; is an ordinary thing to happen.
+  (flet ((eff (cost convergence)
+           (loom-knowledge::effective-cost
+            (loom-knowledge::make-reach :entity (k-def 'function-entity "f" "src/a.lisp")
+                                        :cost cost :convergence convergence))))
+    (is (= 4 (eff 4 1)))
+    (is (= 3 (eff 4 2)) "one extra seed, one cheap edge")
+    (is (= 2 (eff 4 3)))
+    (is (= 1 (eff 4 9)) "and it never goes below the cheapest edge in the table")))
+
+(test a-container-is-never-discounted-by-convergence
+  ;; D8's docstring predicted this before it was written, and it happened:
+  ;; measured on game-server, five of the eight seeds are defined in
+  ;; server/server.lisp, so the file arrived at x5 and a raw cost of 3 became an
+  ;; effective 1 -- a directory listing lifted above the definitions the query
+  ;; was about. D8 stops a container being a route; this stops co-location alone
+  ;; making it a destination.
+  (let ((file (make-instance 'file-entity :name "src/a.lisp"
+                             :properties (properties-table (list :path "src/a.lisp")))))
+    (is (= 3 (loom-knowledge::effective-cost
+              (loom-knowledge::make-reach :entity file :cost 3 :convergence 5)))
+        "raw cost, undiscounted")))
+
+(test convergence-reorders-and-does-not-extend
+  ;; The horizon is checked against raw cost during the walk, so a discount
+  ;; cannot pull in an entity the walk never reached. Otherwise convergence
+  ;; would quietly widen the bound it is supposed to be ordered within.
+  (let* ((g (make-graph))
+         (a (k-def 'function-entity "alpha" "src/a.lisp"))
+         (b (k-def 'function-entity "beta" "src/a.lisp"))
+         (far (k-def 'function-entity "far" "src/b.lisp"))
+         (farther (k-def 'function-entity "farther" "src/b.lisp")))
+    (dolist (e (list a b far farther)) (add-entity g e))
+    ;; both seeds call FAR (cost 3 out), and FAR calls FARTHER (3 more = 6)
+    (k-edge g :calls a far)
+    (k-edge g :calls b far)
+    (k-edge g :calls far farther)
+    (let ((reaches (expand-from-seeds g (list a b))))
+      (is (= 2 (reach-convergence (reach-named reaches "far"))))
+      (is (null (reach-named reaches "farther"))
+          "cost 6 is past the horizon and convergence does not buy it in"))))

@@ -48,6 +48,8 @@
    #:reach-via
    #:reach-direction
    #:reach-origin
+   #:reach-convergence
+   #:effective-cost
    #:*edge-costs*
    #:*context-expansion-horizon*
    #:render-context

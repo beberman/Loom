@@ -456,6 +456,29 @@ body: |
   DES-0026 D2's tiers are still what would put the right six in the expensive
   tier rather than merely in the answer.
 
+  R6 IS MET, 2026-08-17
+
+  Both halves, and the Loom half had been recorded as stale.
+
+  On game-server, `context data-handler` returns all ten of DATA-HANDLER,
+  DB-HANDLER, NULL-HANDLER, TABLE-HANDLER, MODEL-HANDLER, GAME-HANDLER and four
+  of the DHANDLER-* protocol, untruncated. The count went 6 of 10 before
+  PLAN-0032, to 7 when the cost-ordered walk made all ten reachable, to 10 when
+  the two tiers gave them somewhere to print.
+
+  On Loom, `context macro definitions` returns MAKE-MACRO-ENTITY. That clause
+  was written into this requirement as an example and then recorded on
+  2026-08-15 as stale -- "does not return MAKE-MACRO-ENTITY on the current tree
+  and did not before the rewrite either", because MAKE-MACRO-ENTITY matches
+  "macro" as a substring where MACRO-BODY-INDEX matches it as a prefix. The
+  substring problem is still there and untouched; what changed is that the
+  bundle is now large enough to hold both, which is the CON-0006 argument
+  arriving where a ranking fix was expected.
+
+  The paragraph below is what R6 looked like before that, kept because the
+  distinction it draws -- reachability against ranking -- is the one that turned
+  out to be right.
+
   R6 remains unmet and is unchanged by this. Measured the same day,
   `context data-handler` returns 6 of 10 expected: DATA-HANDLER, DB-HANDLER and
   four of the DHANDLER-* protocol arrive, and NULL-HANDLER, TABLE-HANDLER,

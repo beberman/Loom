@@ -116,48 +116,35 @@ about tests' applied to the expansion rather than to the seeder."
 (defstruct (reach (:conc-name reach-))
   "One entity the walk settled, and why it is in the bundle.
 
-VIA and DIRECTION are the edge it arrived on and ORIGIN is the rank of the best
-seed that reached it. All three exist so a reader can be told why a row is
-there: DES-0026 D10, and the practical reason is that a walk whose output does
-not explain itself cannot be checked by eye."
+VIA and DIRECTION are the edge it arrived on, ORIGIN is the rank of the nearest
+seed that reached it, and CONVERGENCE is how many distinct seeds did. All four
+exist so a reader can be told why a row is there: DES-0026 D10, and the
+practical reason is that a walk whose output does not explain itself cannot be
+checked by eye."
   (entity nil)
   (cost 0)
   (via nil)
   (direction nil)
-  (origin 0))
+  (origin 0)
+  (convergence 1))
 
-(defun expand-from-seeds (view seeds &key (horizon *context-expansion-horizon*)
-                                          wants-tests)
-  "Every entity within HORIZON of SEEDS, as REACH records, nearest first.
+(defun walk-from-one (view seed horizon wants-tests)
+  "Every entity within HORIZON of SEED, as a hash of id -> REACH.
 
-Multi-source Dijkstra with a bucket queue. The queue is an array indexed by
+Single-source Dijkstra with a bucket queue. The queue is an array indexed by
 cost rather than a heap because every edge cost is a small integer and the
 horizon is one too, which makes push and pop constant time and the invariant
 obvious: costs are popped in non-decreasing order, so the first time an entity
-is settled it is settled at its cheapest.
-
-The seeds are settled at cost 0 and excluded from the result. They are in the
-bundle already under their own band, and leaving them settled is what stops the
-walk offering one back as a neighbour of another.
-
-Ordering is cost, then the rank of the best seed that reached it, then the type
-tiers, then the name -- so a neighbour of the first seed precedes a neighbour of
-the eighth, a definition precedes a container at equal distance, and the whole
-answer is reproducible across two calls over one index."
+is settled it is settled at its cheapest."
   (let ((buckets (make-array (1+ horizon) :initial-element '()))
-        (settled (make-hash-table :test #'equal))
-        (out '()))
-    (loop for seed in seeds
-          for rank from 0
-          do (push (make-reach :entity seed :cost 0 :origin rank) (aref buckets 0)))
+        (settled (make-hash-table :test #'equal)))
+    (push (make-reach :entity seed :cost 0) (aref buckets 0))
     (loop for cost from 0 to horizon
           do (loop while (aref buckets cost)
                    for entry = (pop (aref buckets cost))
                    for entity = (reach-entity entry)
                    do (unless (gethash (id entity) settled)
                         (setf (gethash (id entity) settled) entry)
-                        (unless (zerop (reach-cost entry))
-                          (push entry out))
                         ;; D8: a container is an answer, never a route.
                         (unless (container-p entity)
                           (dolist (n (neighbors view (id entity)))
@@ -171,17 +158,92 @@ answer is reproducible across two calls over one index."
                                          (not (gethash (id other) settled)))
                                 (push (make-reach :entity other :cost next
                                                   :via rel
-                                                  :direction (neighbor-direction n)
-                                                  :origin (reach-origin entry))
+                                                  :direction (neighbor-direction n))
                                       (aref buckets next)))))))))
-    (sort (nreverse out)
-          (lambda (a b)
-            (let ((ka (list (reach-cost a) (reach-origin a)
-                            (seed-type-rank (reach-entity a))))
-                  (kb (list (reach-cost b) (reach-origin b)
-                            (seed-type-rank (reach-entity b)))))
-              (cond ((not (equal ka kb))
-                     (loop for x in ka for y in kb
-                           unless (= x y) return (< x y)))
-                    (t (string< (or (significant-name (reach-entity a)) "")
-                                (or (significant-name (reach-entity b)) "")))))))))
+    settled))
+
+(defun effective-cost (reach)
+  "REACH's cost discounted by how many seeds converged on it, floored at 1.
+
+DES-0026 D7, and the floor is argued rather than tuned. The cheapest edge in
+*EDGE-COSTS* costs 1, so a second seed reaching an entity is worth exactly as
+much as the strongest structural claim the table admits and never more:
+convergence can promote past a call hop and cannot promote past a hierarchy.
+That ceiling is right because convergence is the weakest evidence here -- three
+seeds meeting at a utility function is an ordinary thing to happen, and the
+floor is what stops it outranking a subclass.
+
+The discount reorders and does not extend. The horizon is checked against raw
+cost during the walk, so convergence can never pull in an entity the walk did
+not reach.
+
+A container is never discounted, and D8's own docstring predicted why before
+this was written: convergence on a file is co-location and not evidence.
+Measured on game-server before the guard, `start-server startup sequence and
+database handler health check' put server/server.lisp at x5 -- five of the eight
+seeds are defined in it -- which discounted a raw cost of 3 to an effective 1
+and lifted a directory listing above the definitions the query was about. D8
+stops a container being a *route*; this stops it being a *destination* that
+co-location alone promotes. Two halves of one rule, and only the first was
+implemented until the measurement showed the second missing."
+  (if (container-p (reach-entity reach))
+      (reach-cost reach)
+      (max 1 (- (reach-cost reach) (1- (reach-convergence reach))))))
+
+(defun expand-from-seeds (view seeds &key (horizon *context-expansion-horizon*)
+                                          wants-tests)
+  "Every entity within HORIZON of SEEDS, as REACH records, nearest first.
+
+One walk per seed, merged, rather than one multi-source walk. A multi-source
+Dijkstra settles a node once and then cannot learn that a second seed also
+reached it -- the later entry finds the node settled and is discarded -- so the
+convergence count it produced would be whatever the pop order happened to
+reveal. Per-seed walks make the count exact, and eight walks over a horizon of
+4 is cheap enough that the honest version is also the affordable one.
+
+Merging takes the cheapest cost, the arriving edge that came with it, the
+nearest seed's rank, and the union of every seed that reached the entity at all.
+
+The seeds are excluded from the result. They are in the bundle already under
+their own band, and dropping them here is what stops the walk offering one back
+as a neighbour of another.
+
+Ordering is effective cost, then raw cost, then the nearest seed's rank, then
+the type tiers, then the name -- so convergence speaks first, a genuine
+distance is never hidden by a discount, a neighbour of the first seed precedes a
+neighbour of the eighth, and the whole answer is reproducible across two calls
+over one index."
+  (let ((merged (make-hash-table :test #'equal))
+        (seed-ids (make-hash-table :test #'equal)))
+    (dolist (s seeds) (setf (gethash (id s) seed-ids) t))
+    (loop for seed in seeds
+          for rank from 0
+          do (let ((reached (walk-from-one view seed horizon wants-tests)))
+               (maphash
+                (lambda (key entry)
+                  (unless (or (gethash key seed-ids) (zerop (reach-cost entry)))
+                    (let ((known (gethash key merged)))
+                      (cond ((null known)
+                             (setf (reach-origin entry) rank
+                                   (gethash key merged) entry))
+                            (t
+                             (incf (reach-convergence known))
+                             (when (< (reach-cost entry) (reach-cost known))
+                               (setf (reach-cost known) (reach-cost entry)
+                                     (reach-via known) (reach-via entry)
+                                     (reach-direction known) (reach-direction entry)
+                                     (reach-origin known) rank)))))))
+                reached)))
+    (let ((out '()))
+      (maphash (lambda (key entry) (declare (ignore key)) (push entry out)) merged)
+      (sort out
+            (lambda (a b)
+              (let ((ka (list (effective-cost a) (reach-cost a) (reach-origin a)
+                              (seed-type-rank (reach-entity a))))
+                    (kb (list (effective-cost b) (reach-cost b) (reach-origin b)
+                              (seed-type-rank (reach-entity b)))))
+                (cond ((not (equal ka kb))
+                       (loop for x in ka for y in kb
+                             unless (= x y) return (< x y)))
+                      (t (string< (or (significant-name (reach-entity a)) "")
+                                  (or (significant-name (reach-entity b)) ""))))))))))

@@ -736,6 +736,13 @@ neighbour two hops out all read as the same kind of line."
           :cost (and reach (reach-cost reach))
           :via (and reach (reach-via reach))
           :direction (and reach (reach-direction reach))
+          ;; DES-0026 D7. How many of the bundle's own seeds converged here, and
+          ;; the effective cost that count bought. Printed because a discount a
+          ;; reader cannot see is a discount a reader cannot argue with -- and
+          ;; convergence is the weakest evidence in the design, so it is the one
+          ;; most worth showing.
+          :convergence (and reach (reach-convergence reach))
+          :effective-cost (and reach (effective-cost reach))
           ;; DES-0026 D2's source tier. NIL on every index-tier item, which is
           ;; most of them -- and the asymmetry is the design: the expensive tier
           ;; is small and the cheap one is where recall lives.
@@ -957,9 +964,11 @@ made true rather than merely asserted."
               (getf entity :type) (getf entity :name)
               (getf entity :location) (getf entity :stale)
               (when (getf item :cost)
-                (format nil "~a~(~a~) ~d"
+                (format nil "~a~(~a~) ~d~@[ x~d~]"
                         (if (eq :out (getf item :direction)) "->" "<-")
-                        (getf item :via) (getf item :cost))))
+                        (getf item :via) (getf item :cost)
+                        (let ((c (getf item :convergence)))
+                          (and c (> c 1) c)))))
       (dolist (rel (getf item :relations))
         (format out "    ~a ~(~a~) ~a~%"
                 (if (eq :out (getf rel :direction)) "->" "<-")
