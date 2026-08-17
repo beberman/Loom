@@ -193,9 +193,35 @@ body: |
     TASK-TERMS versus TASK-TOKENS, and SLOT-ACCESSOR-P. Both exist to survive
     the "data" fragment, and under IDF the fragment is self-limiting.
 
-  The riskiest step in the plan, because it removes four mechanisms that
-  currently pass the acceptance set. Nothing here lands without the full R9
-  count before and after.
+  BASELINE TAKEN 2026-08-17, BEFORE ANY OF S5
+
+      R6        10/10     R8      1/1     R7   7/7     R4   3/3
+      prose      2/2      R6-loom 1/1     front-end 2/2
+      total     26/26 present, 0 missing.  Latency 0.03-0.09s.
+
+  The acceptance set is saturated. S5 can hold it or regress it and cannot
+  improve it, so the R9 count cannot justify these four retirements -- it can
+  only veto them.
+
+  Two consequences. S5 needs queries the four constants currently answer wrongly,
+  or it is a refactor with measurable downside and unmeasurable upside. And the
+  argument for it is unchanged but now has to stand on its own: each constant is
+  fitted to one tree, and REQ-0016 exists because mechanisms fitted to one tree
+  fail on the next. That is a prediction about a fourth tree, and no query
+  against these three tests it.
+
+  Before S5 runs, find the queries. The candidates are known: a task using a word
+  the 48-word list suppresses on a tree where it is informative -- "test" scores
+  1.74 on front-end and is suppressed there -- and a task whose terms are more
+  than eight, where the coverage band's 8 saturates and stops discriminating.
+
+  S5 also forces the caching decision S4 deferred. Retiring the stoplist and the
+  coverage band requires IDF at query time, so BUILD-SEARCH-INDEX moves onto the
+  query path at 99-169 ms per call unless it is cached. Correct before fast:
+  build per call, measure the latency against the 0.03-0.09s above, and add a
+  generation counter to the graph only if the number is unacceptable. A cache
+  keyed on entity and relationship counts would miss a rename, and a stale
+  search result is a fabricated fact rather than a slow one.
 
   What survives: the type tiers, R4's test demotion, and :EXPORTED-P, which is
   in the schema and read by nothing.
