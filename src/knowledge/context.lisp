@@ -685,7 +685,7 @@ has a handful of neighbours and a file has one per definition it holds -- and
 without a cap a single well-connected entity consumes a bundle that was meant
 to describe eight.")
 
-(defun context-item (view entity &key (relations t) (band :neighbour))
+(defun context-item (view entity &key (relations t) (band :neighbour) reach)
   "One entity as a context line plus, optionally, its immediate relationships.
 
 BAND is why this entity is in the bundle -- :SEED, :DECISION, :DOCUMENT,
@@ -699,6 +699,13 @@ neighbour two hops out all read as the same kind of line."
                     all)))
     (list :entity (entity-summary entity)
           :band band
+          ;; DES-0026 D10. A neighbour at distance 1 on :IMPLEMENTS and one at
+          ;; distance 4 on :CALLS are worth different amounts of reading, and
+          ;; before this they printed identically. NIL on a seed, which has no
+          ;; arriving edge -- it was reached by a name.
+          :cost (and reach (reach-cost reach))
+          :via (and reach (reach-via reach))
+          :direction (and reach (reach-direction reach))
           :relation-count (length all)
           :relations
           (loop for n in shown
@@ -731,13 +738,14 @@ the design.
 
 Every call is logged to *CONTEXT-LOG*."
   (let* ((seeds     (seed-entities view task :limit seed-limit :types types))
-         (expanded  (let ((out '()))
-                      (dolist (entity seeds)
-                        (dolist (n (neighbors view (id entity)))
-                          (let ((other (neighbor-entity n)))
-                            (unless (or (member other seeds) (stale-p other))
-                              (pushnew other out)))))
-                      (nreverse out)))
+         ;; DES-0026 D6/D8, PLAN-0032 S1. Was: NEIGHBORS on each seed, PUSHNEW,
+         ;; every edge the same price and nothing ordering the result. A one-hop
+         ;; expansion cannot satisfy REQ-0016 R6 at any budget -- the four
+         ;; classes it misses are two or more :INHERITS hops out -- so the fix
+         ;; is reachability and not ranking.
+         (reaches   (expand-from-seeds view seeds
+                                       :wants-tests (task-wants-tests-p task)))
+         (expanded  (mapcar #'reach-entity reaches))
          (items     '())
          (used      0)
          (truncated nil))
@@ -755,11 +763,13 @@ Every call is logged to *CONTEXT-LOG*."
       ;; before the bands are computed would lose the band rather than the
       ;; duplicate. Nothing stops reaching a bundle -- it arrives once, under
       ;; the stronger claim.
-      (setf expanded (remove-if (lambda (e)
-                                  (or (member e decisions)
-                                      (member e documents)
-                                      (member e mentions)))
-                                expanded))
+      (setf reaches (remove-if (lambda (r)
+                                 (let ((e (reach-entity r)))
+                                   (or (member e decisions)
+                                       (member e documents)
+                                       (member e mentions))))
+                               reaches)
+            expanded (mapcar #'reach-entity reaches))
       ;; DES-0020 D5a. The document bands are budgeted before the seeds are,
       ;; because otherwise they are never reached at all: measured on
       ;; ~/lisp/game-server, `context dhandler-delete soft deletion' spent
@@ -808,8 +818,10 @@ Every call is logged to *CONTEXT-LOG*."
           ;; Then the reserve is released: these are measured against the full
           ;; budget, and fit by construction unless the ceiling clipped them.
           (dolist (item document-items) (admit-item item budget))
-          (dolist (entity expanded)
-            (admit-item (item-for entity nil :neighbour) budget))))
+          (dolist (r reaches)
+            (admit-item (context-item view (reach-entity r)
+                                      :relations nil :band :neighbour :reach r)
+                        budget))))
       (let ((bundle (list :task task
                           :seeds (summarize-entities seeds)
                           :items (reverse items)

@@ -81,7 +81,34 @@ body: |
   8 of 10. If it does not move, the table is wrong and no later step will fix
   it.
 
-  S2  CONVERGENCE
+  S1 MEASURED, AND WHAT IT RESEQUENCES, 2026-08-17
+
+  Reachability is complete and the numeric target was not hit, and those are the
+  same sentence rather than a contradiction.
+
+  The walk reaches 157 entities from `context data-handler`'s eight seeds, and
+  all three of R6's misses are among them: TABLE-HANDLER at cost 1, GAME-HANDLER
+  at cost 1, MODEL-HANDLER at cost 3. The bundle still returns 7 of 10 rather
+  than the 8 this plan asked for, because the neighbour band printed **2 of the
+  157** before the 2,000-token budget ran out.
+
+  So the binding constraint moved. S1 was written against a reachability defect
+  and that defect is gone; what remains on R6 is budget, which is S3's, and no
+  further work on the walk will move the number.
+
+  Two corrections fall out. DES-0026 D1a said the three classes were "two or
+  more :INHERITS hops from the seed" -- they are two hops from DATA-HANDLER and
+  *one* from DB-HANDLER, which is itself a seed. The reachability argument for
+  the walk survives intact and the arithmetic behind it was wrong.
+
+  And S2 moves after S3. Convergence reorders the walk's output, and reordering
+  is invisible while 2 of 157 rows are printed. Measuring S2 before the tiers
+  exist would mean measuring nothing. The order is now S1, S3, S2, S4, S5, S6,
+  S7, and the reason is that a step whose effect cannot be seen cannot be
+  checked -- which is the same argument that put the arriving edge into S1's
+  output rather than into a later step.
+
+  S2  CONVERGENCE (AFTER S3 -- SEE ABOVE)
 
   D7. Carry a seed-origin set on each frontier entry and union it when a node is
   reached again; discount effective cost by one per additional seed, floored at

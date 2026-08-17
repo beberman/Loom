@@ -15,6 +15,10 @@
    (:file "package")
    (:file "services")
    (:file "context")
+   ;; After "context": the walk uses SEED-TYPE-RANK for its tie-break and is
+   ;; called by BUILD-CONTEXT, and :SERIAL T is what makes the parameters it
+   ;; reads available at compile time rather than only at load time.
+   (:file "expand")
    ;; After "services": the report builds its rows with ENTITY-SUMMARY and
    ;; ENTITY-LOCATION, which live there.
    ;; Before "structure": STRUCTURE-REPORT attributes prose to the systems it
@@ -42,6 +46,7 @@
    (:file "suite")
    (:file "services")
    (:file "context")
+   (:file "expand")
    (:file "prose")
    (:file "structure")
    )

@@ -39,6 +39,17 @@
 
    ;; context building -- SS11's loom_context
    #:build-context
+   ;; DES-0026 D6/D8: the cost-ordered expansion.
+   #:expand-from-seeds
+   #:edge-cost
+   #:container-p
+   #:reach-entity
+   #:reach-cost
+   #:reach-via
+   #:reach-direction
+   #:reach-origin
+   #:*edge-costs*
+   #:*context-expansion-horizon*
    #:render-context
    #:*context-token-budget*
    #:*context-relation-limit*

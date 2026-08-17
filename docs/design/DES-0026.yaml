@@ -97,6 +97,13 @@ body: |
   channel doing the work on this query is the per-item relation list, not the
   neighbour band -- which got three entries before the budget ran out.
 
+  CORRECTED AGAIN 2026-08-17, when the walk was built and measured:
+  TABLE-HANDLER and GAME-HANDLER are at cost 1, not 2. They are two :INHERITS
+  hops from DATA-HANDLER and one from DB-HANDLER, which `context data-handler`
+  also seeds. MODEL-HANDLER is at 3. The reachability argument stands -- a
+  one-hop expansion from the *named* seed misses them and a cost-ordered walk
+  does not -- and the hop arithmetic quoted below was wrong.
+
   Second: those methods arrive on **:USES**, not :IMPLEMENTS. A method
   specialised on a class reaches it by :USES in this ontology, and :IMPLEMENTS
   targets an :INTERFACE. D6's table already prices :USES at 2 and is therefore
