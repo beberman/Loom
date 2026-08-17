@@ -75,6 +75,79 @@ entity is evidence of an analyzer violating this contract. Nothing checks it
   "True when LINE holds nothing but whitespace."
   (every (lambda (c) (member c '(#\Space #\Tab #\Return #\Page))) line))
 
+(defun split-lines (contents)
+  "CONTENTS as a vector of lines, newline-separated, trailing return stripped.
+
+A vector rather than a list because every caller here indexes by line number,
+and a file is read once per request. Carriage returns are stripped so a range
+served from a CRLF checkout matches one served from the same file on Linux --
+the analyzer's line numbers count newlines either way."
+  (let ((lines (make-array 0 :adjustable t :fill-pointer t))
+        (start 0))
+    (flet ((emit (end)
+             (let ((line (subseq contents start end)))
+               (vector-push-extend
+                (if (and (plusp (length line))
+                         (char= #\Return (char line (1- (length line)))))
+                    (subseq line 0 (1- (length line)))
+                    line)
+                lines))))
+      (dotimes (i (length contents))
+        (when (char= #\Newline (char contents i))
+          (emit i)
+          (setf start (1+ i))))
+      ;; A file not ending in a newline still has a last line; one that does
+      ;; must not gain an empty one.
+      (when (< start (length contents))
+        (emit (length contents))))
+    lines))
+
+(defgeneric comment-line-text (analyzer line)
+  (:documentation "LINE with its comment markers removed, or LINE unchanged.
+
+Separate from COMMENT-EXTENT because the two answer different questions and
+only one of them is needed to *serve* source: REQ-0031 pads a range and prints
+the file's own bytes, markers included, where REQ-0035 indexes prose and the
+semicolons are syntax rather than words.
+
+The default returns the line as it stands, which is the safe answer for a
+language whose analyzer has not said what a marker looks like -- the text is
+then slightly noisier than it could be, and no word is lost.")
+  (:method ((analyzer analyzer) line) line))
+
+(defun attach-comment-documentation (analyzer entities lines)
+  "Fill :DOCUMENTATION on ENTITIES from the comment block written above each.
+
+A post-pass over entities that already exist, rather than an argument threaded
+through every definition handler. The handlers take a form, a range and a
+system, and none of them wants the file's lines; adding a parameter to all of
+them to serve one property would have put the plumbing everywhere the property
+is not.
+
+Only :ADJACENT. DES-0027 D3a's threshold, and REQ-0035 R3's reason: a
+:SEPARATED block is a paragraph with a gap between it and the definition, and a
+:SECTION is a heading for everything below it. Attaching either to one
+arbitrary member of its section records a claim the author did not make, which
+is CON-0001's fabricated fact.
+
+Concatenated when a definition has both, comment first, because that is source
+order and both are prose about one thing (DES-0028 D2)."
+  (dolist (entity entities)
+    (let* ((table (properties entity))
+           (start (gethash :start-line table)))
+      (when (and start (<= start (length lines)))
+        (multiple-value-bind (first attachment) (comment-extent analyzer lines start)
+          (when (and first (eq attachment :adjacent))
+            (let ((text (with-output-to-string (out)
+                          (loop for i from (1- first) below (1- start)
+                                do (write-line (comment-line-text analyzer (aref lines i))
+                                               out))))
+                  (existing (gethash :documentation table)))
+              (setf (gethash :documentation table)
+                    (if existing
+                        (concatenate 'string text existing)
+                        text)))))))))
+
 (defgeneric comment-extent (analyzer lines start-line)
   (:documentation "Where the comment block attached above START-LINE begins.
 

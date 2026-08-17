@@ -1771,3 +1771,47 @@ sweeping a mixed tree learns to skip the file"))
       (is (string= "what c is for" (doc-for :class "c")))
       (is (null (doc-for :function "undocumented"))
           "REQ-0035 R7: absence is absence, and must cost the entity nothing"))))
+
+(test a-comment-block-above-a-definition-becomes-its-prose
+  ;; PLAN-0031 S3. game-server's VALID-REFERENCE-TYPE-P is the shape: no
+  ;; docstring at all, and six lines above it explaining what a valid reference
+  ;; type is. Loom gained 5 of these and game-server 76, which is why the step
+  ;; could not have been judged on this tree alone.
+  (multiple-value-bind (g file)
+      (analyze-source ";; why g exists
+(defun g (x) x)
+
+;; a paragraph with a gap under it
+
+(defun separated (x) x)
+
+;;;; ==================================
+;;;; A section heading
+(defun sectioned (x) x)
+
+;; above the docstring
+(defun both (x) \"and its own docstring\" x)"
+                      "sample.lisp")
+    (declare (ignore file))
+    (flet ((doc-for (name)
+             (let ((e (find name (entities-of-type g :function)
+                            :key (lambda (x) (and (slot-boundp x 'name) (name x)))
+                            :test #'equal)))
+               (and e (gethash :documentation (properties e))))))
+      (is (string= (format nil "why g exists~%") (doc-for "g"))
+          "markers stripped -- the words are the prose, the semicolons are syntax")
+      (is (null (doc-for "separated"))
+          "a gap makes it :SEPARATED, which indexing declines (DES-0027 D3a)")
+      (is (null (doc-for "sectioned"))
+          "a heading is about everything below it, not about the next definition")
+      (is (search "above the docstring" (doc-for "both")))
+      (is (search "and its own docstring" (doc-for "both"))
+          "both, comment first, because that is source order"))))
+
+(test comment-line-text-strips-the-marker-and-one-space
+  (let ((a (make-instance 'lisp-analyzer)))
+    (is (string= "why" (comment-line-text a ";; why")))
+    (is (string= "why" (comment-line-text a "   ;;; why")))
+    (is (string= " why" (comment-line-text a ";;  why") ) "only one space is the marker's")
+    (is (string= "(defun f ())" (comment-line-text a "(defun f ())"))
+        "a line that is not a comment is returned untouched")))

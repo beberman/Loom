@@ -42,6 +42,21 @@ remark about that line and is inside the definition's own range already."
              (length line))
          start))))
 
+(defmethod comment-line-text ((analyzer lisp-analyzer) line)
+  "LINE without its leading semicolons and the one space conventionally after
+them. The words are what REQ-0035 indexes; the semicolons are syntax."
+  (declare (ignore analyzer))
+  (let* ((start (or (position-if-not (lambda (c) (member c '(#\Space #\Tab))) line)
+                    (length line)))
+         (after (or (position-if-not (lambda (c) (char= #\; c)) line :start start)
+                    (length line))))
+    (if (= start after)
+        line
+        (subseq line (if (and (< after (length line))
+                              (char= #\Space (char line after)))
+                         (1+ after)
+                         after)))))
+
 (defmethod comment-extent ((analyzer lisp-analyzer) lines start-line)
   "The run of comment lines above START-LINE, and how it is attached.
 
@@ -1542,7 +1557,6 @@ references the other.
 Asserts precede the edges that name them, because the Graph Manager resolves
 an edge's endpoints against the asserts it has already planned in the same
 transaction."
-  (declare (ignore analyzer))
   (let ((file (make-file-entity path contents))
         ;; The package in effect at the form being read (DES-0009 R4). Seeded
         ;; from the path because a definition read before the file's first
@@ -1628,6 +1642,10 @@ transaction."
           owned-call-sites (nreverse owned-call-sites))
 
     ;; --- supersession: what the file defines once loaded (DES-0012 R1) ---
+    ;; REQ-0035 S3: the prose written above a definition, filled in once the
+    ;; definitions exist rather than threaded through every handler.
+    (attach-comment-documentation analyzer definitions (split-lines contents))
+
     ;; Here rather than after pass 2, because the point is that a shadowed
     ;; definition's body is never walked at all: no :CALL-NAMES, no local
     ;; :CALLS edge, no entity op, no :CONTAINS. Left to the graph it would be

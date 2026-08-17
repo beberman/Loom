@@ -39,33 +39,6 @@ A limit nothing normally reaches is the right shape for a limit whose purpose
 is to stop one payload running away rather than to ration a budget. Rationing
 among many entities is `context''s problem and DES-0026 D2 gives it tiers.")
 
-(defun split-lines (contents)
-  "CONTENTS as a vector of lines, newline-separated, trailing return stripped.
-
-A vector rather than a list because every caller here indexes by line number,
-and a file is read once per request. Carriage returns are stripped so a range
-served from a CRLF checkout matches one served from the same file on Linux --
-the analyzer's line numbers count newlines either way."
-  (let ((lines (make-array 0 :adjustable t :fill-pointer t))
-        (start 0))
-    (flet ((emit (end)
-             (let ((line (subseq contents start end)))
-               (vector-push-extend
-                (if (and (plusp (length line))
-                         (char= #\Return (char line (1- (length line)))))
-                    (subseq line 0 (1- (length line)))
-                    line)
-                lines))))
-      (dotimes (i (length contents))
-        (when (char= #\Newline (char contents i))
-          (emit i)
-          (setf start (1+ i))))
-      ;; A file not ending in a newline still has a last line; one that does
-      ;; must not gain an empty one.
-      (when (< start (length contents))
-        (emit (length contents))))
-    lines))
-
 (defun source-status (repository relative path contents)
   "Whether CONTENTS is what the index was built from: :CURRENT or :STALE.
 

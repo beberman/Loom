@@ -18,7 +18,10 @@
    ;; REQ-0031 R9 and REQ-0035: which comment block belongs to a definition, in
    ;; this language. One extractor, two thresholds -- DES-0027 D3a.
    #:comment-extent
+   #:comment-line-text
+   #:attach-comment-documentation
    #:blank-line-p
+   #:split-lines
    #:analyzer-handles-p
 
    ;; registry
