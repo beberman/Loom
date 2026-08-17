@@ -15,12 +15,11 @@ summary: |
   entities, and the four it misses -- NULL-HANDLER, TABLE-HANDLER,
   MODEL-HANDLER, GAME-HANDLER -- are two or more :INHERITS hops from the seed.
   Ranking cannot reach an entity the expansion never visits, so the cost-ordered
-  walk is S1, and the same count measures whether it worked.
+  walk is S1.
 
-  S4 to S6 are the retrieval half and come last because the index recovers no
-  latency: every acceptance query already answers in 0.01-0.06s. It buys two
-  other things -- length normalisation over a prose field that postdates this
-  design, and the removal of four constants fitted by hand to one tree.
+  S4 through S6 are last because query latency is already 0.01-0.06s. The index
+  buys length normalisation over the prose field REQ-0035 added, and removes four
+  constants fitted by hand to one tree.
 
   Each step leaves working software. After S1 the four entities R6 misses are
   reachable. After S3 REQ-0031 is closed and a bundle can carry source. After S5
