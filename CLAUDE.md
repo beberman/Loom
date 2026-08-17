@@ -235,6 +235,34 @@ file is — so the type cannot tell a declared `affects:` from a backtick, and t
 edge can. Prose is ranked by how much of the bundle it actually names and capped
 at `loom-knowledge:*context-mention-limit*`.
 
+## Writing a document, a docstring or a commit message
+
+Every sentence carries a fact the reader can check. Four tests, each from a real
+failure in this tree:
+
+- **A title names the contents.** "DES-0026 in seven steps: the walk, the tiers,
+  the index, the ranking", not "Reach it first, then say why, then hold it
+  cheaply, then stop guessing at rarity". A title that cannot be checked against
+  the document is decoration.
+
+- **The subject is the subject matter, never the document.** Cut "Worth stating,
+  because...", "This is the part to get right", "...comes later on purpose".
+  Each announces that a claim has status instead of making it. If the reason is
+  known it belongs in that sentence; if it is not, the sentence should not exist.
+
+- **A number needs no adjective.** "S4 through S6 are last because query latency
+  is 0.01-0.06s", not "...because the index recovers no latency: every query
+  already answers in 0.01-0.06s". Giving the characterisation and then the
+  measurement says it twice.
+
+- **Replace a metaphor with the measurement it stands for.** Not "the constraint
+  moved from reach to budget" but "all ten are reachable; the neighbour band
+  printed 2 of 157 before the budget ran out".
+
+Prefer two short declarative sentences to one clause-laden one. These documents
+are read later as the record of a decision, so a sentence nobody can check is
+worse than no sentence.
+
 ## Principles worth knowing before changing anything
 
 - **A generated invariant is a defect.** `init` prepares a foreign tree and
