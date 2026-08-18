@@ -402,9 +402,37 @@ body: |
 
   This is the same defect as the coverage band counting terms equally, arrived
   at from the other direction, and it is why REQ-0016 R6's Loom clause regressed
-  when the index went on the query path. The fix is to score one contribution
-  per stem class rather than one per term, and it belongs before the next S6
-  attempt.
+  when the index went on the query path.
+
+  FIXED, 2026-08-17. TERM-CLASSES partitions the query so a word and its stem
+  variants share one class, and both scorers take one contribution per class
+  rather than one per term. Union-find rather than a canonical form: SAVING has
+  variants SAV and SAVE and neither of those has a variant that is the other, so
+  mapping each term to its own shortest variant would leave SAVE in a class of
+  its own and count it a second time.
+
+  On "macro definitions" BM25 now returns MAKE-MACRO-ENTITY -- the R6 Loom
+  clause -- with MACRO-BODY-INDEX, PARSE-DEFINER-MACRO, REGISTER-MACRO-GENERATOR
+  and *MACRO-GENERATORS*, where before it returned -s words and no macro-*
+  entity at all.
+
+  Two things the fix exposed rather than caused.
+
+  BM25 and BM25F disagree per query. BM25F wins on the R4 protocol query,
+  recovering BASE-ENCODER and BASE-DECODER; BM25 wins on "macro definitions",
+  where BM25F loses MACRO-BODY-INDEX. Neither is uniformly better and the next
+  attempt has to pick on more than two queries.
+
+  The comparison harness is not like-for-like and its numbers should be re-taken.
+  It applies the type, accessor and test bands but not ADMIT-SEEDS, so the share
+  cap the live seeder enforces is missing from both scored columns: BM25 returns
+  OBJ-DECODE four times and INITIALIZE-HANDLER three, which the cap would have
+  held to two. Every "lost by" figure above is therefore an overstatement of what
+  the scorers would actually lose.
+
+  Also recorded: INDEX-TOKENS keeps the whole spelling as a term, which is right
+  for an entity name and noise for a task -- "encode decode" yields a third term
+  that is the phrase itself and matches nothing.
 
   WHAT S6 STILL NEEDS
 

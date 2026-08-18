@@ -220,6 +220,40 @@ candidate its lead rather than its existence."
         (df (document-frequency sx term)))
     (log (+ 1.0 (/ (+ (- n df) 0.5) (+ df 0.5))))))
 
+(defun term-classes (terms)
+  "TERMS partitioned so that a word and its stem variants share one class.
+
+Scoring sums over terms, and STEM-VARIANTS puts a word and its inflections in
+the term list together, so without this every word with a plural or gerund form
+counted twice. Measured on Loom: the query \"macro definitions\" yields both
+DEFINITIONS and DEFINITION, LOCATE-DEFINITIONS matches both and scored as two
+terms, MACRO-BODY-INDEX matched MACRO and scored as one, and every macro-*
+entity lost its place to a -s word.
+
+Union-find rather than a canonical form, because the relation is not one-way.
+SAVING has variants SAV and SAVE, and neither SAV nor SAVE has a variant that is
+the other -- so mapping each term to its own shortest variant would leave SAVE in
+a class of its own and count it a second time. Linking every term to every
+variant of it that is also present puts all three together."
+  (let ((parent (make-hash-table :test #'equal)))
+    (labels ((root (x)
+               (let ((p (gethash x parent x)))
+                 (if (string= p x) x (root p))))
+             (link (a b)
+               (let ((ra (root a)) (rb (root b)))
+                 (unless (string= ra rb) (setf (gethash ra parent) rb)))))
+      (dolist (term terms) (setf (gethash term parent) term))
+      (dolist (term terms)
+        (dolist (variant (stem-variants term))
+          (when (member variant terms :test #'string=) (link term variant))))
+      (let ((groups (make-hash-table :test #'equal))
+            (order '()))
+        (dolist (term terms)
+          (let ((r (root term)))
+            (unless (gethash r groups) (push r order))
+            (push term (gethash r groups))))
+        (loop for r in (nreverse order) collect (gethash r groups))))))
+
 (defparameter *bm25-k1* 1.2
   "BM25's term-frequency saturation. The textbook value.")
 
@@ -248,16 +282,21 @@ Summed per field rather than over a concatenation, because the fields have
 different lengths and different worth and a concatenation loses both."
   (let ((fields (gethash (id entity) (sx-field-tokens sx)))
         (total 0.0))
-    (loop for (field . tokens) in fields
-          for weight = (or (second (assoc field *field-weights*)) 0.0)
-          for len = (length tokens)
-          for avg = (max 1.0 (gethash field (sx-average-length sx) 1.0))
-          do (dolist (term terms)
-               (let ((tf (count term tokens :test #'string=)))
-                 (when (plusp tf)
-                   (incf total (* weight
-                                  (inverse-document-frequency sx term)
-                                  (bm25-saturation tf len avg)))))))
+    ;; One contribution per stem class, taking its best member. Summing over
+    ;; terms would count a word and its inflection twice; TERM-CLASSES says why.
+    (dolist (class (term-classes terms))
+      (let ((best 0.0))
+        (loop for (field . tokens) in fields
+              for weight = (or (second (assoc field *field-weights*)) 0.0)
+              for len = (length tokens)
+              for avg = (max 1.0 (gethash field (sx-average-length sx) 1.0))
+              do (dolist (term class)
+                   (let ((tf (count term tokens :test #'string=)))
+                     (when (plusp tf)
+                       (setf best (max best (* weight
+                                               (inverse-document-frequency sx term)
+                                               (bm25-saturation tf len avg))))))))
+        (incf total best)))
     total))
 
 (defun bm25f-score (sx entity terms)
@@ -276,20 +315,25 @@ CLOS methods whose terms concentrate in one field, to entities that spread the
 same terms across several."
   (let ((fields (gethash (id entity) (sx-field-tokens sx)))
         (total 0.0))
-    (dolist (term terms)
-      (let ((combined 0.0))
+    (dolist (class (term-classes terms))
+      (let ((combined 0.0)
+            (idf 0.0))
         (loop for (field . tokens) in fields
               for weight = (or (second (assoc field *field-weights*)) 0.0)
               for len = (length tokens)
               for avg = (max 1.0 (gethash field (sx-average-length sx) 1.0))
-              for tf = (count term tokens :test #'string=)
-              when (plusp tf)
-                do (incf combined
-                         (/ (* weight tf)
-                            (+ 1 (- *bm25-b*) (* *bm25-b* (/ len avg))))))
+              do (dolist (term class)
+                   (let ((tf (count term tokens :test #'string=)))
+                     (when (plusp tf)
+                       ;; The class contributes one frequency, not one per
+                       ;; inflection, and carries the rarest member's IDF --
+                       ;; the form the author actually wrote is the rare one.
+                       (setf idf (max idf (inverse-document-frequency sx term)))
+                       (incf combined
+                             (/ (* weight tf)
+                                (+ 1 (- *bm25-b*) (* *bm25-b* (/ len avg)))))))))
         (when (plusp combined)
-          (incf total (* (inverse-document-frequency sx term)
-                         (/ combined (+ *bm25-k1* combined)))))))
+          (incf total (* idf (/ combined (+ *bm25-k1* combined)))))))
     total))
 
 (defun search-candidates (sx terms)

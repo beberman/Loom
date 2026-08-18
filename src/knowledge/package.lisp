@@ -48,6 +48,7 @@
    #:sx-field-tokens
    #:bm25-score
    #:bm25f-score
+   #:term-classes
    #:search-candidates
    #:document-frequency
    #:inverse-document-frequency

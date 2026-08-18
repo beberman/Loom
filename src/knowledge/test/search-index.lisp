@@ -68,6 +68,10 @@
            (inverse-document-frequency sx "common"))
         "and rarity still dominates")))
 
+(defun named-entity-in (graph name)
+  (find name (find-entities graph)
+        :key (lambda (e) (and (slot-boundp e 'name) (name e))) :test #'equal))
+
 (defun filler (n)
   "N entities carrying none of the terms a test is about.
 
@@ -151,3 +155,51 @@ corpus to be rare *in*."
       "-ing needs six characters, so RING survives")
   (is (member "type" (index-tokens "types") :test #'string=)
       "and an ordinary plural still folds"))
+
+(test a-word-and-its-inflection-count-once-not-twice
+  ;; Measured on Loom before the fix: "macro definitions" yields DEFINITIONS and
+  ;; DEFINITION, LOCATE-DEFINITIONS matched both and scored as two terms,
+  ;; MACRO-BODY-INDEX matched MACRO and scored as one, and every macro-* entity
+  ;; lost its place to a -s word.
+  (let ((classes (term-classes (index-tokens "macro definitions"))))
+    ;; Three: MACRO, the DEFINITIONS/DEFINITION pair, and the whole spelling
+    ;; "macro definitions", which INDEX-TOKENS keeps as a term. Two ideas and one
+    ;; phrase that matches nothing.
+    (is (= 3 (length classes))
+        "the inflected pair is one class, however many spellings it has")
+    (is (find-if (lambda (c) (and (member "definitions" c :test #'string=)
+                                  (member "definition" c :test #'string=)))
+                 classes)
+        "the plural and the singular are one class")))
+
+(test a-stem-class-groups-through-a-shared-root
+  ;; Union-find rather than a canonical form, because the relation is not
+  ;; one-way: SAVING has variants SAV and SAVE, and neither SAV nor SAVE has a
+  ;; variant that is the other. Mapping each term to its own shortest variant
+  ;; would leave SAVE in a class of its own and count it a second time.
+  (let ((classes (term-classes (index-tokens "saving"))))
+    (is (= 1 (length classes)))
+    (is (= 3 (length (first classes))) "saving, sav and save are one idea")))
+
+(test two-unrelated-words-stay-two-classes
+  (is (= 2 (length (term-classes '("macro" "handler")))))
+  (is (= 2 (length (term-classes '("encode" "decode")))))
+  ;; INDEX-TOKENS also keeps the whole spelling as a term, so a two-word task
+  ;; yields three: both words and the phrase. The phrase matches no entity name
+  ;; and so scores nothing, but it is a class of its own and is counted here so
+  ;; the behaviour is recorded rather than discovered again.
+  (is (= 3 (length (term-classes (index-tokens "encode decode"))))
+      "the whole spelling is a term, which is right for a name and noise for a task"))
+
+(test scoring-a-plural-does-not-outweigh-scoring-a-distinct-word
+  ;; The consequence, end to end. ALPHA-DEFINITIONS answers one idea spelled two
+  ;; ways; MACRO-ALPHA answers two ideas. Before the fix the first scored higher.
+  (let* ((g (apply #'graph-of
+                   (k-def 'function-entity "alpha-definitions" "src/a.lisp")
+                   (k-def 'function-entity "macro-alpha" "src/b.lisp")
+                   (filler 20)))
+         (sx (build-search-index g))
+         (terms (index-tokens "macro definitions")))
+    (is (> (bm25-score sx (named-entity-in g "macro-alpha") terms)
+           (bm25-score sx (named-entity-in g "alpha-definitions") terms))
+        "answering two ideas beats answering one twice")))
