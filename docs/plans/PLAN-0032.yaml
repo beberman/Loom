@@ -434,6 +434,24 @@ body: |
   for an entity name and noise for a task -- "encode decode" yields a third term
   that is the phrase itself and matches nothing.
 
+  THE BASELINE IS NOT STABLE, AND LOOM IS WHY
+
+  R6-loom went from 1/1 to 0/1 with no change to the live seeder. MAKE-MACRO-
+  ENTITY fell out of the top eight seeds for "macro definitions" because Loom's
+  own index grew: the bundle went from 140 items to 144 as this session's own
+  commits added entities, TERM-CLASSES among them.
+
+  Loom is one of the three measured trees and every commit changes it, so a
+  clause that depends on an entity holding eighth place is measuring the
+  repository as much as the ranking. The 26/26 figure quoted throughout this
+  document is therefore a reading taken at a moment, not a fixed floor.
+
+  Two ways out, and the choice belongs with whoever runs S6 next. Pin the Loom
+  measurements to a commit, so the corpus is fixed while the ranking varies. Or
+  drop the Loom clause and measure on game-server and front-end, neither of which
+  this work commits to. The second is simpler and loses the tree whose naming
+  conventions are least like the others.
+
   WHAT S6 STILL NEEDS
 
   The regression is not diagnosed. R4's three losses are the sharpest lead --
