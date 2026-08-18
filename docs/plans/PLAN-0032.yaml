@@ -320,6 +320,47 @@ body: |
   What survives: the type tiers, R4's test demotion, and :EXPORTED-P, which is
   in the schema and read by nothing.
 
+  S6 ATTEMPTED AND REVERTED, 2026-08-17
+
+  SEED-ENTITIES was rewritten onto the postings index -- BM25 for the score,
+  SEARCH-CANDIDATES for the candidate set, the type/named/accessor/test bands
+  kept above the float. It regressed the acceptance set and was reverted.
+
+      before   26/26 present   0.03-0.09s
+      after    21/26 present   0.14-0.26s
+
+    R4        0/3   base-encoder, base-decoder, set-encoder-decoder all lost
+    R6-loom   0/1   make-macro-entity lost
+    front-end 1/2   LayerEditor lost
+
+  The offline scoring in the section above was right about the three misses and
+  said nothing about the twenty-six that already passed. Scoring the entities a
+  query *should* return does not measure what displaces them, and that is the
+  error to avoid repeating: the next attempt scores the whole seed set against
+  the current one, not the wanted entities against each other.
+
+  Two changes from the attempt were kept because they are defects of the index
+  rather than of the seeder, and the index is not on the query path.
+
+  INVERSE-DOCUMENT-FREQUENCY moved from the Robertson-Sparck-Jones form floored
+  at zero to the Lucene form, which is always positive. The floored form returns
+  exactly 0 once a term appears in more than half the entities, and on a small
+  repository most terms do -- so every match scored 0, no entity was a candidate,
+  and a seeder built on it seeded nothing. Nine seeding tests failed that way on
+  fixtures of three to nine entities, which is a fair model of a young tree.
+
+  The 99-169 ms index build is now measured on the query path: 0.14-0.26s
+  against a 0.03-0.09s baseline. That is the caching question answered with a
+  number rather than deferred.
+
+  WHAT S6 STILL NEEDS
+
+  The regression is not diagnosed. R4's three losses are the sharpest lead --
+  base-encoder and base-decoder are :METHOD entities on a CLOS protocol, and the
+  query that finds them today is "restructure data handler protocol encode
+  decode" -- and until it is understood the same rewrite will regress the same
+  way.
+
   S6  ONE ORDER OVER THE RECALLED SET
 
   D9. Seeds and neighbours become commensurable: BM25 lexical score, the

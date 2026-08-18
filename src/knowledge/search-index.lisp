@@ -199,17 +199,26 @@ as pathologically long."
   (length (gethash term (sx-postings sx))))
 
 (defun inverse-document-frequency (sx term)
-  "Robertson-Sparck-Jones IDF, floored at zero.
+  "How much TERM distinguishes, by document frequency. Always positive.
 
-The floor matters on a small tree: a term appearing in more than half the
-entities gives a negative weight under the unfloored formula, and a negative
-weight would make a common word *penalise* the entities carrying it rather than
-merely failing to help them. Zero is the honest answer -- this term says
-nothing -- and it is the whole retirement of the 48-word stopword list, measured
-per tree instead of guessed at once."
+The Lucene form, log(1 + (N - df + 0.5) / (df + 0.5)), rather than the
+Robertson-Sparck-Jones form floored at zero.
+
+The floored form was written here first and is wrong for this corpus. It returns
+exactly 0 once a term appears in more than half the entities, and on a small
+repository most terms do -- so every match scored 0, nothing was a candidate,
+and a seeder built on it seeded nothing at all. Nine of the seeding tests failed
+that way on fixtures of three to nine entities, which is a fair model of a young
+tree.
+
+Always-positive is the right shape for the same reason CON-0006 gives: a term in
+60% of the documents still says something, and answering with nothing is the
+expensive error. Rarity still dominates -- on game-server \"dhandler\" outweighs
+\"data\" by the ratio their frequencies imply -- but a common term now costs a
+candidate its lead rather than its existence."
   (let ((n (sx-document-count sx))
         (df (document-frequency sx term)))
-    (max 0.0 (log (/ (+ (- n df) 0.5) (+ df 0.5))))))
+    (log (+ 1.0 (/ (+ (- n df) 0.5) (+ df 0.5))))))
 
 (defparameter *bm25-k1* 1.2
   "BM25's term-frequency saturation. The textbook value.")

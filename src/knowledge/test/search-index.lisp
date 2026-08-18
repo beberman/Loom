@@ -45,21 +45,28 @@
            (inverse-document-frequency sx "handler"))
         "the rarer term is worth more, measured rather than listed")))
 
-(test a-term-in-more-than-half-the-corpus-weighs-nothing-rather-than-less-than-nothing
-  ;; The floor. Unfloored, the Robertson-Sparck-Jones form goes negative past
-  ;; half the corpus, and a negative weight would make a common word *penalise*
-  ;; the entities carrying it rather than merely failing to help them. Zero is
-  ;; the honest answer -- this term says nothing -- and it is the whole
-  ;; retirement of the 48-word stopword list, measured per tree instead of
-  ;; guessed at once. On game-server "test" scores exactly this.
+(test a-term-in-every-document-still-scores-above-zero
+  ;; This asserted exactly 0.0 while the floored Robertson-Sparck-Jones form was
+  ;; in use, on the argument that a term in every document says nothing. The
+  ;; argument is right and the consequence was not: with most terms of a small
+  ;; repository above half the corpus, every match scored 0, no entity was a
+  ;; candidate, and the seeder returned nothing. Nine seeding tests failed that
+  ;; way on fixtures of three to nine entities.
+  ;;
+  ;; The Lucene form is always positive. A common term now costs a candidate its
+  ;; lead rather than its existence, which is CON-0006's asymmetry applied to a
+  ;; scoring function.
   (let* ((g (apply #'graph-of
                    (loop for i from 1 to 10
                          collect (k-def 'function-entity (format nil "common-~d" i)
                                         "src/a.lisp"))))
          (sx (build-search-index g)))
     (is (= 10 (document-frequency sx "common")))
-    (is (= 0.0 (inverse-document-frequency sx "common"))
-        "in every document, so it distinguishes nothing")))
+    (is (plusp (inverse-document-frequency sx "common"))
+        "in every document, and still worth more than nothing")
+    (is (> (inverse-document-frequency sx "common-1")
+           (inverse-document-frequency sx "common"))
+        "and rarity still dominates")))
 
 (defun filler (n)
   "N entities carrying none of the terms a test is about.
