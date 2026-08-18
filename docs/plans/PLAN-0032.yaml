@@ -353,6 +353,59 @@ body: |
   against a 0.03-0.09s baseline. That is the caching question answered with a
   number rather than deferred.
 
+  BM25F TESTED, WHOLE SEED SETS COMPARED, 2026-08-17
+
+  BM25-SCORE saturates each field and sums the results, so a term in the name,
+  the docstring and the path contributes three saturated amounts. BM25F-SCORE
+  normalises each field's frequency by that field's length, sums those into one
+  weighted frequency and saturates once, so the same term spread across three
+  fields is worth no more than its weight concentrated in one.
+
+  Compared as whole seed sets against the live seeder, eight against eight,
+  which is what the earlier offline scoring failed to do.
+
+    restructure data handler protocol encode decode
+      live   base-encoder, base-decoder, data-handler-error,
+             data-handler-insert-error, encode-typesig, set-encoder-decoder,
+             database-unavailable-error, database-alert
+      BM25   loses base-encoder, base-decoder, set-encoder-decoder
+      BM25F  recovers base-decoder and base-encoder at positions 1 and 2;
+             still loses set-encoder-decoder
+
+    data-handler
+      BM25   loses check-database, database-alert, database-unavailable-error,
+             handler-exists-p; gains table-handler, null-handler,
+             operator-handler, game-set-handler
+      BM25F  same losses less one; gains table-handler, base-encoder,
+             base-decoder
+
+    macro definitions
+      BM25 and BM25F both lose macro-body-index, macro-parameter-names,
+      macro-generator-properties, call-site-retractions, resolve-and-check
+
+  BM25F is the better of the two and the R4 hypothesis holds: per-field
+  saturation was penalising CLOS methods whose terms concentrate in one field.
+
+  The "data-handler" losses are not obviously losses. The query contains "data"
+  and not "database", and what both scorers drop is DATABASE-ALERT,
+  DATABASE-UNAVAILABLE-ERROR and CHECK-DATABASE while gaining the subclass
+  hierarchy REQ-0016 R6 asks for. That set should be re-judged before it is
+  counted against either scorer.
+
+  STEMMING DOUBLE-COUNTS, AND NEITHER SCORER CAUSES IT
+
+  "macro definitions" is lost by both, and the cause is in the tokeniser.
+  INDEX-TOKENS adds variants to the query and to the index, so the query yields
+  both DEFINITIONS and DEFINITION. LOCATE-DEFINITIONS matches both and scores as
+  two terms; MACRO-BODY-INDEX matches MACRO and scores as one. Any word with a
+  plural or gerund form is therefore worth double, and the -s words win.
+
+  This is the same defect as the coverage band counting terms equally, arrived
+  at from the other direction, and it is why REQ-0016 R6's Loom clause regressed
+  when the index went on the query path. The fix is to score one contribution
+  per stem class rather than one per term, and it belongs before the next S6
+  attempt.
+
   WHAT S6 STILL NEEDS
 
   The regression is not diagnosed. R4's three losses are the sharpest lead --

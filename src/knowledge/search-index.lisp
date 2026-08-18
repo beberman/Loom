@@ -260,6 +260,38 @@ different lengths and different worth and a concatenation loses both."
                                   (bm25-saturation tf len avg)))))))
     total))
 
+(defun bm25f-score (sx entity terms)
+  "BM25F: weighted term frequencies combined across fields, then saturated once.
+
+The difference from BM25-SCORE is where saturation happens. That function
+saturates each field separately and sums the results, so a term appearing in the
+name, the docstring and the path contributes three saturated amounts. BM25F
+normalises each field's frequency by that field's length, sums those into one
+weighted frequency, and saturates the sum -- so a term spread across three
+fields is worth no more than the same weight concentrated in one.
+
+Which is right is an empirical question about this corpus and is what
+PLAN-0032 asks be tested: the S6 regression lost BASE-ENCODER and BASE-DECODER,
+CLOS methods whose terms concentrate in one field, to entities that spread the
+same terms across several."
+  (let ((fields (gethash (id entity) (sx-field-tokens sx)))
+        (total 0.0))
+    (dolist (term terms)
+      (let ((combined 0.0))
+        (loop for (field . tokens) in fields
+              for weight = (or (second (assoc field *field-weights*)) 0.0)
+              for len = (length tokens)
+              for avg = (max 1.0 (gethash field (sx-average-length sx) 1.0))
+              for tf = (count term tokens :test #'string=)
+              when (plusp tf)
+                do (incf combined
+                         (/ (* weight tf)
+                            (+ 1 (- *bm25-b*) (* *bm25-b* (/ len avg))))))
+        (when (plusp combined)
+          (incf total (* (inverse-document-frequency sx term)
+                         (/ combined (+ *bm25-k1* combined)))))))
+    total))
+
 (defun search-candidates (sx terms)
   "Every entity carrying at least one of TERMS, as a list.
 

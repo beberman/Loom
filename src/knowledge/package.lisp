@@ -47,6 +47,7 @@
    #:sx-average-length
    #:sx-field-tokens
    #:bm25-score
+   #:bm25f-score
    #:search-candidates
    #:document-frequency
    #:inverse-document-frequency
