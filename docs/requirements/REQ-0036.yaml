@@ -1,0 +1,272 @@
+id: REQ-0036
+title: retrieval must be measured against queries somebody asked, so every context call and what the agent actually used are logged as one record
+status: draft
+date: 2026-08-18
+refines: [REQ-0016]
+affects: [build-context, seed-entities, task-tokens, render-context, check-capability,
+          ignored-paths, repository-commit]
+tags: [retrieval, context, ranking, acceptance, evaluation, req-0016, req-0035,
+       con-0001, con-0006, dec-0001]
+summary: |
+  Every ranking change Loom has made was judged against 32 expectations written
+  by hand. That set is at 31 of 32 and it is the reason PLAN-0032 S5 was
+  abandoned: with the set saturated, retiring the four constants fitted to one
+  tree "could only hold or regress it".
+
+  Two attempts to replace the seeder were measured against it and both were
+  reverted -- 30/32 to 29/32 at 0.16-0.48s against a 0.02-0.06s baseline. The
+  change that landed was forty lines of tokeniser, and it gained the same one
+  entity both index attempts gained between them. The set was good enough to
+  refuse two rewrites and is not good enough to justify one.
+
+  This asks that the queries be collected rather than invented. A `context`
+  call records what was asked, what came back, and the state of the tree it was
+  asked against; the agent that made the call records what it went on to use,
+  including what it found by grep or by reading a file. The join of those two
+  is a relevance judgement, and enough of them are an acceptance set nobody had
+  to guess at.
+
+  The log is the first thing Loom would know that is not derivable from the
+  tree, which is what makes DEC-0001 decide its storage rather than convenience
+  deciding it.
+body: |
+  WHAT IS WRONG
+
+  tools/acceptance.py holds 32 expectations across two trees. Its own header
+  records why Loom is not one of them: "R6-loom went 1/1 to 0/1 with no seeder
+  change, because a session's own commits grew the index from 140 items to 144
+  and pushed MAKE-MACRO-ENTITY out of eighth place." game-server and front-end
+  are measurable because "they are not written to by this work, so their
+  corpora hold still."
+
+  Each expectation was written by a person deciding what a query ought to
+  return. That is a reasonable way to start and it has three limits, all
+  visible in PLAN-0032's record.
+
+  It saturates. At 26/26 S5 was not attempted, and the plan says so directly:
+  its four retirements "could only hold or regress it". The set stopped being
+  able to distinguish a good change from a neutral one before the work it was
+  meant to guide had finished.
+
+  It is small enough that one query decides a verdict. The S6 retry landed
+  SaveDesign and lost WorkingSet and ColorEditor -- net one entity, on a set of
+  32, and that number reverted a rewrite. Whether that was the right call is
+  not knowable from 32 samples.
+
+  It cannot record a miss it never thought of. Every expectation names an
+  entity somebody already believed relevant. The queries that matter most are
+  the ones where an agent needed something nobody predicted it would need.
+
+  WHAT IS AVAILABLE AND UNUSED
+
+  Loom answers `context` on real tasks now, on three trees. Each call already
+  computes everything a judgement needs and discards all of it: the task
+  string, the tokens TASK-TOKENS derived from it, the seeds with their bands
+  and scores, the items and the band each landed in, and the latency. The agent
+  on the other end then does the one thing no offline scorer can do -- it finds
+  out which of those it actually needed, and finds the rest some other way.
+
+  That second half is the part with no substitute. PLAN-0032 records two
+  offline predictions that the acceptance set then rejected, and draws the
+  rule: "a ranking change is measured by running tools/acceptance.py, and
+  nothing else counts as evidence for landing one." A log of real use is the
+  only thing that makes that rule cheap to obey.
+
+  WHAT IS REQUIRED
+
+  R1  Every `context` call is recorded, with an identifier the caller can
+      quote back. The record carries the task as asked, the tokens it produced,
+      the seeds in rank order with their bands and scores, the items with the
+      band each landed in, and the latency.
+
+      The tokens and not only the task. TASK-TOKENS is the layer where
+      stopwords and stemming act, and it is where the only measured win came
+      from: moving STEM-VARIANTS onto the live path took the set from 30 of 32
+      to 31 at baseline latency, after two postings-index attempts gained one
+      entity between them at eight times the cost. A record holding the raw
+      string alone cannot show that the tokeniser dropped the discriminating
+      word.
+
+  R2  An agent can attach to that identifier what it went on to use, from any
+      source. Not a subset of what the bundle returned: what it found by grep,
+      by reading a file, or by asking a second question counts and is the
+      reason this requirement exists.
+
+      A feedback channel restricted to the returned items can never record a
+      miss. It samples only from what the seeder already found, and so excludes
+      exactly the population that would improve recall. The eight seed slots
+      make that bias severe rather than theoretical.
+
+  R3  What was returned and what was used are separate fields, so their join
+      is computable. Three populations follow from it and each implies a
+      different repair:
+
+        in both                 a hit, and its rank says how nearly it was not
+        used, not returned      a miss, and the only records that raise recall
+        returned, not used      what the eight slots were spent on instead
+
+      How an entity outside the bundle was found is recorded with it -- the
+      grep pattern, the path, or the follow-up query. "Found by grepping the
+      exact identifier" and "found three files from something the bundle
+      returned" are different failures.
+
+  R4  Every record carries the state of the repository that was searched: its
+      name, its branch, its HEAD commit, and a hash of its uncommitted diff.
+      The searched repository and not Loom -- the judgement is a claim about
+      game-server's or front-end's content, and it is that content moving that
+      can make the claim false.
+
+      REPOSITORY-COMMIT already reads exactly this: `git rev-parse HEAD'
+      against REPOSITORY-ROOT, bounded by `timeout' and returning NIL with a
+      reason rather than a fabricated commit when git cannot answer (DES-0022
+      D5, on the precedent IGNORED-PATHS sets). The commit and the diff, not
+      the commit's tree object: a tree under active work is dirty for most of
+      the sessions that would produce these records, and a fingerprint naming
+      only the last commit attributes a judgement to code that was not what
+      answered it.
+
+      A fingerprint that no longer matches is not itself a verdict. Every
+      commit to game-server invalidates the equality test against every record
+      that predates it, which is most of them, so a mismatch opens a check
+      rather than closing one. The check has three outcomes and a record is
+      reported as whichever it is:
+
+        current       the fingerprint matches. Scored.
+        checkable     the fingerprint differs and every entity the judgement
+                      names still resolves in the current index. The task is
+                      still a task and its expected answers still exist, so it
+                      is scored and reported as authored against an older tree.
+        unverifiable  the fingerprint differs and an entity the judgement names
+                      no longer resolves. Reported, and not scored. Counting a
+                      deleted function as a ranking miss is CON-0001's
+                      fabricated fact in the shape that matters most here -- a
+                      failure attributed to the seeder that belongs to the
+                      corpus.
+
+      A judgement against a repository nobody is currently watching cannot be
+      checked at all, and is reported as unwatched rather than assumed to pass.
+      That is the posture `check' already takes toward a prose file reference
+      no watched repository holds.
+
+  R5  Every record also carries the version of Loom that answered it: the
+      commit of the tree the running image was loaded from, a hash of its
+      uncommitted diff, and the same recorded reason when git cannot answer.
+
+      Two fingerprints, because two things move independently and one field
+      cannot separate their effects. Two records against one game-server commit
+      whose returned sets differ, differ because the ranking changed. Two
+      records against one Loom commit whose scores differ, differ because the
+      corpus changed. acceptance.py's header is the second of those already
+      measured -- "R6-loom went 1/1 to 0/1 with no seeder change" -- and
+      without Loom's own fingerprint on the record the first is equally
+      undiagnosable. A regression hunt that cannot tell them apart is the
+      reason to write both down before the first record exists rather than
+      after.
+
+  R6  The log is stored in Loom's own repository, and not in the tree that was
+      queried.
+
+      This is what preserves the property acceptance.py depends on. Writing a
+      record into game-server or front-end would end their corpora holding
+      still, and the header quoted above is the measurement of what that costs.
+      It also keeps a third party's task strings out of a repository Loom does
+      not own.
+
+  R7  The log does not enter the index. Under a dot-directory, where
+      REPOSITORY-FILES already skips it -- workspace.lisp filters on
+      `(notany #'dot-prefixed-p (rest (pathname-directory path)))` before any
+      analyzer is consulted. Under `docs/` it would be claimed by the document
+      analyzer and every judgement would become an indexed document inside the
+      corpus it judges.
+
+  R8  Logging does not change what a `context` call returns or what it costs a
+      reader to read. The identifier is additive. The baseline to hold is
+      0.02-0.07s, which is the latency two rewrites were reverted for
+      exceeding.
+
+  R9  The permission tier is decided explicitly rather than by accident.
+      `:context` is declared `:read` and CHECK-CAPABILITY enforces the split; a
+      read operation that writes a file changes that contract. Either the
+      recording happens outside the operation, or the design states that a read
+      operation may write to the state directory and why.
+
+  R10 The log emits acceptance cases. tools/acceptance.py's shape is
+      `(repository, query, expected, label)`, and a record with a resolved
+      fingerprint and a used set is that tuple. The harness gains a generated
+      companion; the hand-written cases stay.
+
+  R11 The hand-authored clauses are never trained on. REQ-0016's R4, R6, R7,
+      R8 and REQ-0035's prose clause are the only judgements in the system not
+      shaped by what the current seeder returned. They are the held-out set,
+      and they are what would catch a ranking fitted to its own bias.
+
+  WHAT THIS DOES NOT ASK FOR
+
+  Not a ranking model. Learning to rank wants hundreds of queries with graded
+  judgements; at a few queries per session that is months away, and a
+  requirement that promised it would be judged on a schedule nobody can meet.
+  The eval use pays from the first dozen records.
+
+  Not a change to the seeder. This requirement is the instrument, and it is
+  written because two seeder rewrites were argued from offline numbers and
+  rejected by measurement. Any ranking work it enables is a separate document.
+
+  Not semantic search. REQ-0016 declines it and nothing here reopens that. A
+  log of real queries is what would let the question be settled by measurement
+  if it is reopened, which is the opposite of assuming an answer.
+
+  ACCEPTANCE
+
+  A `context` call over MCP returns an identifier, and a following feedback
+  call quoting it writes a record that names entities the bundle did not
+  contain.
+
+  The record round-trips: the searched repository's branch, commit and diff
+  hash are enough to check that tree back out and re-run the query, and Loom's
+  own commit and diff hash are enough to say which seeder answered it.
+
+  A record whose searched repository has moved since it was written is reported
+  as current, checkable, unverifiable or unwatched -- never silently scored and
+  never silently discarded. Measured by moving one: a judgement whose expected
+  entity is renamed reports unverifiable, and one whose expected entities all
+  survive an unrelated commit reports checkable and scores.
+
+  Loom's own index is unchanged by the log's existence -- the same entity and
+  relationship counts with a populated log directory as without one.
+
+  A generated acceptance run over the log reports the same three populations
+  R3 names, and tools/acceptance.py's 32 hand-written expectations score
+  exactly as they do now.
+
+  Latency on the five game-server clauses stays inside 0.02-0.07s.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - One file per record, or one appended file per session? Appending is cheaper
+    and a concurrent listener makes interleaving a real case; one file per
+    record makes a git history readable and a bad record deletable. Neither is
+    obviously right and the choice should be made against how the set is read
+    back, not how it is written.
+
+  - What identifies a record across a rebuild? An id is derived from the
+    natural key and is readable as one -- "function:src/graph/query.lisp:
+    impact-set" -- so it survives a restart unchanged, and recording the id
+    already records the key. What it does not survive is a rename or a file
+    move, which is the change R4's checkable/unverifiable split turns on.
+    Whether a record should name the key it was answered with, the key that
+    exists now, or both is the open part.
+
+  - Does a task string ever hold something that should not be committed? The
+    task is whatever a user typed. Loom's repository is where R6 puts it, and
+    that is a publication decision the requirement should not make silently.
+
+  - Is "used" one field or graded? An entity read and acted on and an entity
+    read and discarded are different judgements, and the standard IR answer is
+    a graded relevance scale. One boolean is simpler and cannot express it,
+    and an agent may not reliably know the difference at the time it reports.
+
+  - How is a session bounded? R11's held-out discipline and any later split
+    both need queries grouped by task, because several queries inside one task
+    share a tree state and a vocabulary and splitting them across two sets
+    leaks the answer. Nothing in the service currently knows where one task
+    ends.

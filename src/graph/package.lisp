@@ -55,6 +55,7 @@
    #:resolve-specializers
    #:resolve-method-protocols
    #:callable-index
+   #:member-call-parts
    #:callable-lookup
    #:name-lookup
    #:candidate-entities

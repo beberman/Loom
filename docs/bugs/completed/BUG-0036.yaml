@@ -1,0 +1,144 @@
+id: BUG-0036
+title: A member call is matched by its bare method name, so log.commit() reaches every commit in the repository
+status: closed
+date: 2026-08-18
+refines: [BUG-0035]
+affects: [call-targets, resolve-calls, entities-by-name, candidate-entities,
+          member-call-parts, member-call-candidates]
+tags: [resolution, javascript, methods, receiver, con-0001, req-0015, bug-0035]
+severity: medium
+body: |
+  FIXED 2026-08-18
+
+  The extractor records the receiver the source wrote. `log.commit()' now
+  contributes LOG.COMMIT rather than COMMIT, and `this.commit()' inside a class
+  body contributes GESTURELOG.COMMIT, because the enclosing class is the one
+  the walk is already in. CALLEE-NAMES reports the property alongside it, since
+  DES-0025's route join reads the callee by its bare spelling and front-end
+  writes most of its routes as `this.post(...)'.
+
+  CANDIDATE-ENTITIES sends a dotted name to MEMBER-CALL-CANDIDATES, which tries
+  three tiers and takes the first that answers:
+
+    the receiver names a class   the methods named exactly that. A method
+                                 entity has been named Class.method since
+                                 REQ-0024, so this needed no new index.
+    a method has the property    every method of that property, whatever class
+                                 it belongs to, fanned out at 1/N.
+    none does                    the property as a bare name, which is what
+                                 the call resolved to before this change. It
+                                 is the namespace import -- `import * as api'
+                                 then `api.fetchGame()' -- where the receiver
+                                 is a module and the property is a plain
+                                 function.
+
+  A member call never reaches a plain function while any method of that
+  property exists. That is the defect this document reported: `set.persist()'
+  drew edges to two test-local `function persist' and one arrow in a mock, and
+  to none of the eight `persist' methods, because nothing was asking for a
+  method under PERSIST.
+
+  This is DES-0015's shape in a language with no packages. Place the name where
+  the source put it, and fall back to the spelling only when it cannot be
+  placed. METHODS-BY-PROPERTY is the index for the second tier and holds
+  methods alone; MEMBER-CALL-PARTS reads one dot and refuses two, since a
+  second dot means the receiver was an expression and the extractor reports the
+  property alone for that case.
+
+  The tiers are asked only where MODULE-SCOPED-LANGUAGE-P says the caller is
+  written in a language that has properties. A dot in a Common Lisp symbol is a
+  character in a name.
+
+  WHAT THE OPEN QUESTION TURNED OUT TO BE
+
+  This document named three cheaper things and said none was obviously right.
+  The first, recording the receiver, is what landed, and it settled the other
+  two by removing the population they were for.
+
+  VISIBLE-CANDIDATES is deliberately not applied to the property tier. Which
+  modules the caller imports is evidence about its own bindings and not about
+  which class its receiver holds, and narrowing on imports would often leave
+  one candidate -- turning a reported guess into the confident wrong edge this
+  document refused. Fanned out at 1/N it stays a recorded guess (CON-0001).
+
+  MEASURED, THREE TREES, 2026-08-18
+
+                        entities              relationships
+      Loom            2889 -> 2901          14944 -> 15054
+      game-server     3873 -> 3873          21163 -> 21163
+      front-end       4015 -> 3999           2445 ->  7573
+
+  game-server is identical in both columns and its ambiguous census holds at
+  375. Loom's movement is this change's own source: tools/js/extract.js is the
+  one JavaScript file Loom indexes, and its member calls are now placed like
+  any other tree's.
+
+      :CALL-SITE fan-outs on front-end        50 -> 34
+      of which member calls                   40 ->  1
+
+  The one that remains is `g.poly', which names a receiver no class is spelled
+  like and a property no method carries, so it falls to the third tier and
+  fans out over two plain functions. It is reported with its receiver on it,
+  which is what a reader needed and did not have.
+
+  WHAT IT COST, MEASURED
+
+  front-end's :CALLS edges go 1664 to 6808. 1537 to 2596 of them are single
+  full-weight edges and 127 to 4212 are fanned out at 1/N.
+
+  The 4085 new fanned edges are member calls that resolved to nothing before,
+  because a bare property name matched no method entity in a tree that names
+  every method Class.method. They run from the caller rather than from a
+  :CALL-SITE, which is the treatment DES-0001 already gives a name with several
+  methods behind it, and the widest caller goes from 31 outbound edges to 78.
+
+  Routing them through a :CALL-SITE instead was considered and not taken. It
+  would preserve REQ-0015's property that a caller acquires no direct edge to a
+  candidate the resolver could not place, at the cost of minting a site per
+  member call -- and it would raise the number this document's acceptance asks
+  to lower. The case for revisiting it is that a JavaScript receiver holds one
+  class, so the candidates are mutually exclusive in a way a generic function's
+  methods are not; the case against is that a CLOS call reaches exactly one
+  method at runtime too, and Loom has always fanned that out from the caller.
+  A reader who wants only what Loom can rely on filters on confidence, which is
+  what the 1/N is for.
+
+  ACCEPTANCE MET
+
+  front-end's member-call fan-outs fall from 40 to 1. No fan-out became a
+  single edge without evidence naming the receiver: the first tier requires the
+  receiver to spell the class, and the second never collapses below the number
+  of methods carrying the property. Loom and game-server index with the counts
+  above, and game-server's are unchanged.
+
+  tools/acceptance.py scores 31 of 32, which is what it scored before, at
+  0.02-0.06s.
+
+  WHAT HAPPENED
+
+  `log.commit()' contributed the call name `commit'. GestureLog.js defines a
+  method of that name, CircleGraphic.js defines another, and nothing in the
+  call name said which object the call was made on -- so resolution matched the
+  bare spelling and fanned out to every `commit' in the repository.
+
+  Module scope could not narrow it, which is what made it a separate defect
+  from BUG-0035 rather than the rest of it. A method is a property of an
+  object, not a module binding: `log.commit()' requires no import of `commit'
+  and is not shadowed by a local definition of one. BUG-0035's two tiers both
+  declined to fire here by design -- the rule may only ever reduce a candidate
+  set, and a name it does not govern keeps every candidate it had.
+
+  MEASURED, ~/github/front-end, 2026-08-18
+
+      :CALL-SITE fan-outs, after BUG-0029 and BUG-0035     50
+        aliased specifiers, recorded on BUG-0035           10
+        member calls, this document                        40
+
+  The 40 is the residue of 284 -- BUG-0029 removed 121 by fixing case,
+  BUG-0035 removed 113 by fixing scope, and what is left is dominated by this.
+
+  The receiver's type is the question, and it is the question a JavaScript type
+  checker exists to answer. `log' is a parameter, a destructured field or the
+  result of a call, and following it to a class needs inference Loom does not
+  do and REQ-0024 explicitly did not ask for. What the source does write down
+  is the receiver's spelling, and that is what this fix reads.

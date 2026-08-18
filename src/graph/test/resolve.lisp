@@ -1065,11 +1065,12 @@ Lisp's folding by being compared against a Lisp definition")
                (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls))))))
 
 (test a-name-no-tier-governs-keeps-the-candidates-it-had
-  ;; The rule may only ever reduce a candidate set, never empty one. A method
-  ;; call records the bare name -- `log.commit()' contributes "commit" -- and a
-  ;; method is a property of an object rather than a module binding, so nothing
-  ;; here has anything to say about it. 33 of front-end's 163 fan-outs are that
-  ;; shape and every one must survive untouched.
+  ;; The rule may only ever reduce a candidate set, never empty one. A bare
+  ;; call to a name defined in two modules the caller neither holds nor imports
+  ;; is the shape nothing here governs, and it must survive untouched.
+  ;;
+  ;; `commit' and not `log.commit': BUG-0036 gave a member call its receiver,
+  ;; so the name that arrives here with nothing to narrow it is the bare one.
   (let* ((g (make-graph))
          (caller (r-js-function g "run" "ui/Home.jsx" :unresolved '("commit")))
          (one    (r-js-function g "commit" "a/Log.js"))
@@ -1129,3 +1130,116 @@ Lisp's folding by being compared against a Lisp definition")
     (is (null (loom-graph::resolve-module-specifier "./nowhere" "ui/Home.jsx" known))
         "and a relative one naming no indexed file resolves to nothing rather
 than to a path nobody holds")))
+
+
+;;; ------------------------------------------------------------------
+;;; A member call names a receiver (BUG-0036)
+;;; ------------------------------------------------------------------
+;;;
+;;; `log.commit()' contributed COMMIT, which matched every plain function of
+;;; that name in the repository and no method at all, since a method entity is
+;;; named Class.method. Module scope cannot narrow it -- a property is not a
+;;; module binding -- so BUG-0035's two tiers both declined by design and the
+;;; name reached resolution with nothing on it. On ~/github/front-end that was
+;;; 40 of 50 fan-outs, and the largest single one was `set.persist()' pointing
+;;; at two test-local `function persist' and one arrow in a mock.
+;;;
+;;; The extractor now records the receiver the source wrote, and resolution
+;;; reads it back: the receiver names the class, or it does not and the
+;;; property is what is left to go on.
+
+(defun r-js-method (graph name file &key unresolved)
+  (let ((e (make-instance 'method-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :javascript
+                                             :call-names unresolved)))))
+    (add-entity graph e)
+    e))
+
+(test member-call-parts-reads-one-dot-and-refuses-the-rest
+  (multiple-value-bind (receiver property)
+      (loom-graph:member-call-parts "log.commit")
+    (is (equal "log" receiver))
+    (is (equal "commit" property)))
+  (is (null (loom-graph:member-call-parts "commit"))
+      "a bare call is not a member call")
+  (is (null (loom-graph:member-call-parts "obj.a.b"))
+      "two dots means the receiver was an expression, and the extractor
+reports the property alone for that case")
+  (is (null (loom-graph:member-call-parts ".commit")))
+  (is (null (loom-graph:member-call-parts "log."))))
+
+(test a-receiver-naming-the-class-resolves-to-that-class-method
+  ;; `this.commit()' inside GestureLog, which the extractor records as
+  ;; GestureLog.commit because the enclosing class is not a guess.
+  (let* ((g (make-graph))
+         (caller (r-js-method g "GestureLog.record" "a/GestureLog.js"
+                              :unresolved '("GestureLog.commit")))
+         (wanted (r-js-method g "GestureLog.commit" "a/GestureLog.js"))
+         (other  (r-js-method g "CircleGraphic.commit" "b/CircleGraphic.js"))
+         (plain  (r-js-function g "commit" "c/util.js")))
+    (r-js-file g "a/GestureLog.js")
+    (r-js-file g "b/CircleGraphic.js")
+    (r-js-file g "c/util.js")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "one edge, to the method of the class the receiver names")
+    (is (null (relationships-to g (id other) :rel-type :calls))
+        "and none to the other class's method of the same property")
+    (is (null (relationships-to g (id plain) :rel-type :calls))
+        "nor to the plain function, which a property access cannot reach")))
+
+(test a-member-call-fans-out-over-methods-and-never-over-functions
+  ;; The population BUG-0036 measured. `set.persist()' names no class, so the
+  ;; property is all there is: every method of it is a candidate, at 1/N, and
+  ;; the plain functions that used to collect these edges get none.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "run" "ui/Home.jsx" :unresolved '("set.persist")))
+         (one    (r-js-method g "TypeSet.persist" "core/TypeSet.js"))
+         (two    (r-js-method g "WorkingSet.persist" "core/WorkingSet.js"))
+         (plain  (r-js-function g "persist" "test/reload.test.js")))
+    (r-js-file g "ui/Home.jsx")
+    (r-js-file g "core/TypeSet.js")
+    (r-js-file g "core/WorkingSet.js")
+    (r-js-file g "test/reload.test.js")
+    (apply-transaction g (resolve-calls g))
+    (let ((edges (relationships-from g (id caller) :rel-type :calls)))
+      (is (equal (sort (list (id one) (id two)) #'string<)
+                 (sort (mapcar #'to-id edges) #'string<))
+          "both methods, and only the methods")
+      (is (every (lambda (r) (< (confidence r) 0.51)) edges)
+          "each at 1/N, which is the recorded guess CON-0001 asks for"))
+    (is (null (relationships-to g (id plain) :rel-type :calls))
+        "the plain function collects nothing: a property is not a module
+binding, and this edge was the defect")))
+
+(test a-member-call-with-no-method-of-that-property-falls-back-to-the-name
+  ;; The namespace import -- `import * as api' then `api.fetchGame()'. The
+  ;; receiver is a module rather than an object, the property really is a plain
+  ;; function, and this is the answer the call had before BUG-0036.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "load" "ui/Home.jsx" :unresolved '("api.fetchGame")))
+         (wanted (r-js-function g "fetchGame" "data/api.js")))
+    (r-js-file g "ui/Home.jsx" :imports '("../data/api"))
+    (r-js-file g "data/api.js")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "one edge, and the module scope BUG-0035 added still applies to it")))
+
+(test a-lisp-caller-never-reads-a-dot-as-a-receiver
+  ;; The gate. A dot in a Common Lisp symbol is a character in a name, so the
+  ;; member-call tiers are asked only where MODULE-SCOPED-LANGUAGE-P says the
+  ;; caller is written in a language that has properties.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("log.commit")))
+         (method (r-js-method g "GestureLog.commit" "b/GestureLog.js")))
+    (r-js-file g "b/GestureLog.js")
+    (apply-transaction g (resolve-calls g))
+    (is (null (relationships-from g (id caller) :rel-type :calls))
+        "the name is a symbol Loom does not hold, not a property access")
+    (is (null (relationships-to g (id method) :rel-type :calls)))
+    (is (equal '("log.commit") (getp caller :unresolved-calls))
+        "and it is recorded unresolved rather than guessed at")))
