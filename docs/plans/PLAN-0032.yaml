@@ -279,6 +279,28 @@ body: |
   is caused by any of them. The tie-break belongs to S6's single order and the
   stemming belongs to S4's tokeniser.
 
+  BM25 SCORED AGAINST THE THREE MISSES BEFORE S6 WAS BUILT, 2026-08-17
+
+  The index was built over front-end and the contested entities scored directly,
+  which answers whether S6 fixes these without rewiring anything first.
+
+    changing the type of a map element
+      MapElementTypeEditor  29.2      MapElementType 31.7 (x2)   MapElement 26.7
+    the terrain design surface
+      DesignTerrain         31.3      DesignTerrainInternal 28.8  Loaded 21.8
+    saving a piece design and reporting rejections
+      SaveDesign        42.7, 49.9    DesignPieceHome 26.3        Piece 13.4
+
+  All three are fixed, and one of them differently than expected.
+  MAPELEMENTTYPEEDITOR still loses to MAPELEMENTTYPE, because length
+  normalisation penalises the longer name -- but it beats MAPELEMENT and so
+  reaches the eight seed slots, where today it appears nowhere. The miss was
+  never that it ranked second; it was that it was absent.
+
+  DESIGNTERRAIN outranks DESIGNTERRAININTERNAL, inverting the current order.
+  SAVEDESIGN scores highest of its query by a wide margin, which is the stemming
+  landing: SAVING reaches SAVE.
+
   This set replaces the saturated one. The number to move is 6 of 9.
 
   It does not measure S5, which is the finding that matters here: S5's four
