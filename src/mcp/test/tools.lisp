@@ -47,10 +47,10 @@ passed against the defect."
         (is (not (null (assoc :capabilities result))))
         (is (equal "loom" (cdr (assoc :name (cdr (assoc :server-info result))))))))))
 
-(test tools-list-returns-exactly-fourteen-and-no-lifecycle-write-tool
+(test tools-list-returns-exactly-fifteen-and-no-lifecycle-write-tool
   ;; The negative is the witness for DES-0006's deliberate asymmetry. Without
   ;; it, a later well-meaning restoration of symmetry between the two skins is
-  ;; invisible -- the count would simply be fourteen and every other test would
+  ;; invisible -- the count would simply be fifteen and every other test would
   ;; still pass.
   ;;
   ;; Twelve rather than ten since REQ-0022: the two transition tools are on this
@@ -61,9 +61,12 @@ passed against the defect."
   (with-test-server ()
     (let* ((tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
            (names (mapcar (lambda (tool) (cdr (assoc :name tool))) tools)))
-      (is (= 14 (length tools)) "the tool set is ~a" names)
+      (is (= 15 (length tools)) "the tool set is ~a" names)
       (dolist (present '("loom_set_status" "loom_complete"
-                         "loom_structure" "loom_drift"))
+                         "loom_structure" "loom_drift"
+                         ;; REQ-0034. The workflow tool an agent asks before
+                         ;; the file exists.
+                         "loom_check_document"))
         (is-true (member present names :test #'string=)
                  "~a is missing; REQ-0022 R6 puts the transition on MCP as well
 as REST, and an agent in a prepared worktree has no other way to reach it"

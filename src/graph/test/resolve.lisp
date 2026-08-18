@@ -1243,3 +1243,117 @@ binding, and this edge was the defect")))
     (is (null (relationships-to g (id method) :rel-type :calls)))
     (is (equal '("log.commit") (getp caller :unresolved-calls))
         "and it is recorded unresolved rather than guessed at")))
+
+
+;;; ------------------------------------------------------------------
+;;; None and several are two answers (REQ-0030, DES-0029)
+;;; ------------------------------------------------------------------
+;;;
+;;; RESOLVE-ONE computed the candidate set, found several, returned NIL, and
+;;; RESOLVE-DOCUMENT-LINKS pushed the name onto :UNRESOLVED-REFERENCES beside
+;;; the names that matched nothing. On game-server, writing the four documents
+;;; of one change, every name most central to it was ambiguous and all four
+;;; were reported as rot. On Loom 7 of 15 were.
+
+(defun r-decision (graph doc-id &key affects refines)
+  (let ((e (make-instance 'decision-entity :name doc-id
+                          :origin-file (format nil "docs/design/~a.yaml" doc-id)
+                          :properties (properties-table
+                                       (list :path (format nil "docs/design/~a.yaml" doc-id)
+                                             :doc-id doc-id
+                                             :affects affects
+                                             :refines refines)))))
+    (add-entity graph e)
+    e))
+
+(test resolve-one-hands-back-the-candidates-it-declined-over
+  (let* ((g (make-graph))
+         (one (r-function g "check-database" "server/server.lisp"))
+         (two (r-function g "check-database" "game/test/api.lisp"))
+         (index (loom-graph::linkable-index g)))
+    (multiple-value-bind (target candidates)
+        (loom-graph::resolve-one index "check-database")
+      (is (null target) "an ambiguous name still resolves to nothing")
+      (is (equal (sort (list (id one) (id two)) #'string<)
+                 (sort (mapcar #'id candidates) #'string<))
+          "and the set it declined over is what the caller needs"))
+    (multiple-value-bind (target candidates)
+        (loom-graph::resolve-one index "no-such-name")
+      (is (null target))
+      (is (null candidates)
+          "a name that matched nothing declined over nothing, which is the
+distinction this whole change is"))))
+
+(test the-interface-clause-still-answers-and-declines-over-nothing
+  ;; The exception RESOLVE-ONE has always made, and it must not start looking
+  ;; like an ambiguity: a generic and its methods are one protocol.
+  (let* ((g (make-graph))
+         (generic (r-interface g "analyze-file" "a.lisp"))
+         (index (progn (r-method g "analyze-file" "b.lisp")
+                       (r-method g "analyze-file" "c.lisp")
+                       (loom-graph::linkable-index g))))
+    (multiple-value-bind (target candidates)
+        (loom-graph::resolve-one index "analyze-file")
+      (is (eq generic target))
+      (is (null candidates)))))
+
+(test a-document-may-name-an-entity-by-the-id-find-prints
+  (let* ((g (make-graph))
+         (wanted (r-function g "check-database" "server/server.lisp"))
+         (other  (r-function g "check-database" "game/test/api.lisp"))
+         (doc (r-decision g "DES-0001" :affects (list (id wanted)))))
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id doc) :rel-type :decides)))
+        "the id resolves to exactly the entity it names")
+    (is (null (relationships-to g (id other) :rel-type :decides))
+        "and to no other candidate of the same name")
+    (is (null (getp doc :unresolved-references)))
+    (is (null (getp doc :ambiguous-references))
+        "an id is never ambiguous")))
+
+(test an-id-that-names-nothing-rots-like-a-name-that-names-nothing
+  ;; REQ-0030 R4. The escape hatch may not become a way to assert an edge to
+  ;; something that is not there.
+  (let* ((g (make-graph))
+         (doc (r-decision g "DES-0001"
+                          :affects '("function:src/nowhere.lisp:gone"))))
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (null (relationships-from g (id doc) :rel-type :decides)))
+    (is (equal '("function:src/nowhere.lisp:gone")
+               (getp doc :unresolved-references)))
+    (is (null (getp doc :ambiguous-references)))))
+
+(test an-ambiguous-reference-is-recorded-with-its-candidates-and-not-as-rot
+  (let* ((g (make-graph))
+         (one (r-function g "check-database" "server/server.lisp"))
+         (two (r-function g "check-database" "game/test/api.lisp"))
+         (doc (r-decision g "DES-0001" :affects '("check-database" "missing-name"))))
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (null (relationships-from g (id doc) :rel-type :decides))
+        "still no edge: picking one would be the fabrication CON-0001 forbids")
+    (is (equal '("missing-name") (getp doc :unresolved-references))
+        "the name that matched nothing is the only rot, where both used to be")
+    (let ((entries (getp doc :ambiguous-references)))
+      (is (= 1 (length entries)))
+      (is (equal "check-database" (getf (first entries) :name)))
+      (is (equal (sort (list (id one) (id two)) #'string<)
+                 (sort (copy-list (getf (first entries) :candidates)) #'string<))
+          "the ids are what an author pastes back into the field"))
+    (let ((reported (ambiguous-references g)))
+      (is (= 1 (length reported)))
+      (is (equal "check-database" (getf (first reported) :name)))
+      (is (equal "DES-0001" (getf (first reported) :document))))))
+
+(test the-two-reference-properties-are-rewritten-from-scratch-each-pass
+  ;; DEC-0003. A pass that consumed its own input could not be re-run, and an
+  ;; entry destroyed by a retract would never return.
+  (let* ((g (make-graph))
+         (doc (r-decision g "DES-0001" :affects '("check-database"))))
+    (r-function g "check-database" "server/server.lisp")
+    (r-function g "check-database" "game/test/api.lisp")
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (= 1 (length (getp doc :ambiguous-references))))
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (= 1 (length (getp doc :ambiguous-references)))
+        "asked twice, answered once")))

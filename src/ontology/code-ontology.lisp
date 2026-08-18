@@ -947,6 +947,14 @@ unreported while `status' read zero.")
 index.  SS10.3: not dropped silently -- this is the documentation staleness
 detector, and a decision naming a function that no longer exists is
 detectably rotten.")
+               (:ambiguous-references list
+                :documentation "Declared references that named several
+entities, each as a plist of the name as written and the ids of its candidates.
+Separate from :UNRESOLVED-REFERENCES because the two answer different
+questions: a name that is not there is rot, and a name that is there twice is
+information (DES-0029 D3).  A document naming a class and the interface its own
+accessor generated has made no mistake, and reporting it as rotten is what
+teaches a reader to stop reading the list.")
                (:broken-links list
                 :documentation "Link targets that name no file on disk.
 
@@ -1003,7 +1011,8 @@ this one answers.  A design refines the requirement that asked for it, a plan
 refines the design it sequences.  Resolved into :REFINES edges, which is what
 makes the workflow a walkable chain rather than a naming convention.")
                (:mentions list)
-               (:unresolved-references list)))
+               (:unresolved-references list)
+               (:ambiguous-references list)))
 
 (defentity :decision
   :documentation "A recorded decision: what was chosen, why, and what it
@@ -1048,6 +1057,7 @@ refines the design it sequences.  Resolved into :REFINES edges, which is what
 makes the workflow a walkable chain rather than a naming convention.")
                (:mentions      list)
                (:unresolved-references list)
+               (:ambiguous-references list)
                (:lessons       list
                 :documentation "Learnings worth carrying forward -- the
 \"avoid nested providers\" line of a decision record.")
@@ -1110,6 +1120,7 @@ docstring.")
                 :documentation "Doc-ids of designs this one replaces.")
                (:mentions list)
                (:unresolved-references list)
+               (:ambiguous-references list)
                (:system keyword
                 :documentation "DES-0009 R3: the shared path default, since a
 document has no grouping construct of its own to read.")))
@@ -1170,6 +1181,7 @@ architecture document may answer a requirement that asked for one.")
 replaces, which is how a structural rewrite retires its predecessor.")
                (:mentions list)
                (:unresolved-references list)
+               (:ambiguous-references list)
                (:system keyword)))
 
 (defentity :rule
@@ -1206,6 +1218,7 @@ refines the design it sequences.  Resolved into :REFINES edges, which is what
 makes the workflow a walkable chain rather than a naming convention.")
                (:mentions   list)
                (:unresolved-references list)
+               (:ambiguous-references list)
                (:check     list
                 :documentation "The compiled check clause, or NIL when the
 rule is advisory prose.  A plist: :kind plus the keys that kind needs.")))

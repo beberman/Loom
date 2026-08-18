@@ -285,8 +285,9 @@ command."
   (format t "  watcher    : ~(~a~)~%" (getf status :monitor))
   (format t "  rules      : ~d violation~:p, ~d unenforced~%"
           (getf status :violations) (getf status :unenforced-rules))
-  (format t "  unresolved : ~d document reference~:p, ~d definer macro~:p~%"
+  (format t "  unresolved : ~d document reference~:p, ~d ambiguous, ~d definer macro~:p~%"
           (getf status :unresolved-references)
+          (getf status :ambiguous-references)
           (getf status :unhandled-definer-macros))
   ;; DES-0018 D5. Printed only when git could not be asked, because on a
   ;; healthy tree there is nothing to say and a line reading "ignoring: fine"
@@ -862,6 +863,39 @@ which is CON-0006's expensive error at the scale of one answer."
                           :commit-reason reason
                           :repository (repository-name repository)))))))
 
+(define-command check-document (path &optional designator)
+    "check-document <path> [<name>]"
+    "Resolve one document's declared references without writing or indexing it."
+  ;; REQ-0034. The console half of the operation, and the same function behind
+  ;; it: an author drafting a document asks what its affects: and refines: will
+  ;; resolve to before the file is written, instead of writing it, waiting for
+  ;; the monitor and then subtracting the repository's baseline from `check'.
+  (let ((report (check-document-references (current-repository designator) path)))
+    (let ((problem (getf report :error)))
+      (if problem
+          (format t "~&~a: ~a~%" (getf report :path) problem)
+          (let ((references (getf report :references)))
+            (format t "~&~a  ~a  ~d declared reference~:p~%"
+                    (getf report :document) (getf report :path)
+                    (length references))
+            (dolist (entry references)
+              (case (getf entry :status)
+                (:resolved
+                 (format t "  ~(~a~): ~a -> ~a~%"
+                         (getf entry :field) (getf entry :name) (getf entry :target)))
+                (:self
+                 (format t "  ~(~a~): ~a -> itself, which earns no edge~%"
+                         (getf entry :field) (getf entry :name)))
+                (:ambiguous
+                 (format t "  ~(~a~): ~a -> ambiguous among ~d~%"
+                         (getf entry :field) (getf entry :name)
+                         (length (getf entry :candidates)))
+                 (dolist (candidate (getf entry :candidates))
+                   (format t "      ~a~%" candidate)))
+                (t
+                 (format t "  ~(~a~): ~a -> nothing in the index~%"
+                         (getf entry :field) (getf entry :name))))))))))
+
 (define-command check (&optional designator)
     "check [<name>]"
     "Run the rule checks from docs/rules and print violations."
@@ -895,6 +929,19 @@ which is CON-0006's expensive error at the scale of one answer."
         (format t "~&~d unresolved document reference~:p:~%" (length unresolved))
         (dolist (pair unresolved)
           (format t "  ~a -> ~a~%" (car pair) (cdr pair)))))
+    ;; DES-0029 D4, and a section of its own rather than entries in the list
+    ;; above. A document naming db-handler when a class and an interface both
+    ;; answer to it has made no mistake; asking an author to fix it is what
+    ;; teaches them the list is noise. The candidates print under the name
+    ;; because they are what goes back into the field to say which one.
+    (let ((ambiguous (ambiguous-references graph)))
+      (when ambiguous
+        (format t "~&~d ambiguous document reference~:p, each naming several entities:~%"
+                (length ambiguous))
+        (dolist (entry ambiguous)
+          (format t "  ~a -> ~a~%" (getf entry :document) (getf entry :name))
+          (dolist (candidate (getf entry :candidates))
+            (format t "      ~a~%" candidate)))))
     ;; DES-0025 D6. A backticked token carrying a path separator and a file
     ;; extension is a claim about a file, not an ordinary word, so one that no
     ;; *watched* repository holds is reported. The qualifier is load-bearing and

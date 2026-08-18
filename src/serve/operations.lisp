@@ -345,6 +345,10 @@ references, unread definers, and dropped edges."
                               (entities-of-type graph :rule-violation))
           :unenforced (mapcar #'rule-summary (unenforced-rules graph))
           :unresolved (mapcar #'pair-summary (unresolved-references graph))
+          ;; DES-0029 D3. Additive: a caller reading :UNRESOLVED sees the
+          ;; population that is rot, and one reading :AMBIGUOUS sees the
+          ;; population that is not, with the candidate ids it needs to act.
+          :ambiguous (ambiguous-references graph)
           :unhandled-definer-macros
           (mapcar (lambda (macro)
                     (list :name (name macro)
@@ -357,6 +361,21 @@ references, unread definers, and dropped edges."
           ;; the whole point of the mechanism is that a fourth missing :TO
           ;; entry shows up here instead of taking a repository dark.
           :dropped-edges (mapcar #'dropped-edge-summary (dropped-edges graph)))))
+
+(define-operation :check-document :read (repository path (contents))
+    "What one document's declared references resolve to, before it is written \
+or indexed. Pass contents to check a draft that is not on disk."
+  ;; REQ-0034 R5. A :READ operation and nothing else: the answer is computed
+  ;; from the live index and the draft, and no transaction is built, so R4's
+  ;; "the graph after the call is identical to the graph before it" is a
+  ;; property of the code rather than a promise about it.
+  ;;
+  ;; Scoped to one document, which is the whole requirement. `check' answers
+  ;; what is unresolved in the repository, and an author adding a document has
+  ;; to subtract that baseline by hand before they can tell whether they made
+  ;; things worse. Loom's own baseline is 9 unresolved and 7 ambiguous.
+  (check-document-references (require-repository repository) path
+                             :contents contents))
 
 (define-operation :rules :read (repository)
     "Active rules and what they constrain."

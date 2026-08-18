@@ -1,0 +1,152 @@
+id: DES-0029
+title: A document reference resolves, matches several, or matches none, and an author can ask before the file exists
+status: implemented
+date: 2026-08-18
+refines: [REQ-0030, REQ-0034]
+affects: [resolve-one, linkable-index, resolve-document-links, unresolved-references,
+          ambiguous-references, check-document-references]
+tags: [documents, resolution, ambiguity, workflow, con-0001, con-0004]
+summary: |
+  RESOLVE-ONE computes the candidate set, finds several, and returns NIL --
+  the same NIL it returns for a name that matched nothing. Both land on
+  :UNRESOLVED-REFERENCES and `check` prints them under one word. The candidates
+  exist at the moment the resolver declines and are thrown away one line later.
+
+  Two changes carry REQ-0030. RESOLVE-ONE returns what it declined on, so the
+  caller can tell none from several; and LINKABLE-INDEX keys entity ids as well
+  as names, so an author can write the id `find` just printed and mean exactly
+  one entity.
+
+  REQ-0034 is the same resolution asked earlier. ANALYZE-PATH already takes
+  :CONTENTS for an unsaved buffer, so a draft resolves against the live index
+  without being written, indexed, or asserted.
+body: |
+  WHAT THE PIECES ARE
+
+  RESOLVE-ONE (src/graph/resolve.lisp) reads a name from LINKABLE-INDEX and
+  returns one entity or NIL. RESOLVE-DOCUMENT-LINKS calls it for every declared
+  field of every document, asserts an edge where it answered, and pushes the
+  name onto :UNRESOLVED-REFERENCES where it did not. UNRESOLVED-REFERENCES
+  reads that property, `check` prints it, and `status` counts it.
+
+  D1  RESOLVE-ONE RETURNS WHAT IT DECLINED ON
+
+  Two values: the entity, and the candidates. A name matching nothing answers
+  NIL and NIL; a name matching several answers NIL and the list. Every caller
+  that wants one answer keeps working unchanged, because a second value is
+  invisible to a caller that does not ask for it.
+
+  The alternative -- a separate AMBIGUOUS-P predicate -- would compute the
+  candidate set twice and let the two computations drift. The set is in hand at
+  the moment of the refusal and this is the cheapest place to hand it back.
+
+  The interface-plus-methods clause is untouched. A candidate set of one
+  :INTERFACE and its methods still resolves to the interface, and answers with
+  no second value because it did not decline.
+
+  D2  LINKABLE-INDEX KEYS ENTITY IDS
+
+  An entity is keyed under its downcased name, under its :DOC-ID where it has
+  one, and now under its id. `find` prints
+  function:server/server.lisp:check-database and that string now resolves to
+  that entity and to nothing else.
+
+  This is REQ-0030 R3 and R4 together. An id that names no entity is absent
+  from the index, so it resolves to nothing and is reported unresolved by the
+  path that already reports a misspelt name -- the escape hatch cannot assert
+  an edge to something that is not there, and a stale id rots as visibly as a
+  stale name.
+
+  An id cannot collide with a name. Every id carries a colon and every name
+  that would collide would have to be spelled with one.
+
+  D3  AMBIGUITY IS A SECOND PROPERTY, NOT A SECOND KIND OF ENTRY
+
+  :AMBIGUOUS-REFERENCES sits beside :UNRESOLVED-REFERENCES on every document
+  type, and holds a plist per entry: the name as written, and the ids of the
+  candidates. REQ-0030 R2 asks that the report name the candidates, and the ids
+  are what an author pastes back into the field to fix it.
+
+  Two properties rather than one property with a tag, because the two are read
+  by different questions. UNRESOLVED-REFERENCES answers "what does this
+  document name that is not there", and every existing consumer of it -- the
+  status line, the federation pass, `check`'s unresolved section -- is asking
+  that question and should not start receiving entries where the answer is
+  "it is there twice".
+
+  Rewritten from scratch on every pass, like :UNRESOLVED-REFERENCES and for
+  DEC-0003's reason: a pass that consumed its own input could not be re-run.
+
+  D4  AMBIGUITY IS INFORMATION, AND `status` SAYS WHERE IT WENT
+
+  REQ-0030's first open question asks whether an ambiguous reference is an
+  error, a warning or information. It is information. A document naming
+  db-handler when a class and an interface both answer to it has made no
+  mistake, and a report that asks an author to fix something that is not broken
+  is the report that stops being read.
+
+  So `check` prints it in a section of its own, after unresolved references,
+  with the candidates under each name. It does not count toward the unresolved
+  total.
+
+  That total is what REQ-0030 R6 protects. The skill tells every agent to
+  confirm `unresolved` did not rise, and entries moving out of that number
+  without explanation would read as an improvement. `status` therefore names
+  both on one line -- `unresolved : 15 document references, 4 ambiguous, 4
+  definer macros` -- so the number that fell is printed next to the number that
+  rose.
+
+  D5  CHECK-DOCUMENT-REFERENCES IS ITS OWN READ OPERATION
+
+  REQ-0034's open question is whether this belongs to `check` as a scoped mode
+  or stands alone. It stands alone. `check`'s report is the repository's --
+  violations, unparsed files, dropped edges, definer macros -- and R3 asks for
+  a report scoped to one document with the repository's baseline absent from
+  it. A mode flag on a command whose every other line is repository-wide would
+  have to suppress all of them.
+
+  The operation takes a repository, a path, and optional contents. With
+  contents it resolves those; without them it reads the file. ANALYZE-PATH has
+  taken :CONTENTS since the analyzer protocol was written -- "the hook for
+  analyzing an editor buffer that has not been saved" -- so an agent composing
+  a document in memory needs no scratch file, and an author with a saved draft
+  needs no argument beyond the path.
+
+  It runs the document analyzer for the entity and never applies the
+  transaction. Nothing is asserted, so REQ-0034 R4 holds by construction rather
+  than by care: there is no write path to get wrong.
+
+  The path need not be indexed and need not exist in the repository's tree. It
+  needs an analyzer that claims it, which is what makes the answer a document
+  answer rather than a guess -- and for a YAML document that means a path under
+  docs/, because that is where the document analyzer's claim begins. A path no
+  analyzer claims is refused with a reason. A markdown file is claimed
+  anywhere (REQ-0028) and reports no declared references, which is a different
+  answer from a refusal and is printed as one.
+
+  D6  DECLARED FIELDS ONLY
+
+  The report covers affects:, describes:, applies-to:, supersedes: and
+  refines: -- *DECLARED-LINK-FIELDS*, the five that assert structural edges.
+  Prose mentions are excluded. REQ-0034's second open question notes an author
+  may want to know which backticks will land; a mention that resolves to
+  nothing is dropped in silence by design (REQ-0014), so reporting on it here
+  would describe a population no other command reports and none of the four
+  round trips this requirement measured was spent on one.
+
+  D7  WHAT IS NOT DECIDED HERE
+
+  REQ-0030's second open question -- whether a class and the interface its own
+  accessor generated should resolve to the class -- is left open. The
+  requirement says the way to find out is to classify the ambiguous sets in
+  both trees rather than to reason about it, and the classification needs D1
+  and D3 to exist before it can be run. The measurement belongs to the plan
+  that implements this; a resolution rule, if one is warranted, is a separate
+  design.
+
+  ACCEPTANCE
+
+  REQ-0030 R7 on game-server, and REQ-0034 R6 against the same four documents.
+  On Loom, the 15 unresolved references split into two populations that sum to
+  15, and the :DOCUMENTS, :DECIDES and :REFINES counts are identical before and
+  after.

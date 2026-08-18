@@ -86,6 +86,8 @@
    ;; document link resolution (SS10.3)
    #:resolve-document-links
    #:unresolved-references
+   #:ambiguous-references
+   #:*declared-link-fields*
    ;; BUG-0033: the files and documents the analyzer marked and nothing read.
    #:unparsed-facts
    #:linkable-index

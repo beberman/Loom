@@ -1415,21 +1415,39 @@ enumerated every consequence.")
 
 (defun linkable-index (view)
   "Name -> entities that a document reference could name.
-Keyed on both the entity name and, for documents, the doc-id -- a decision's
-supersedes: names another decision by its id, not by a function name."
+
+Keyed three ways. On the entity name, which is what an author writes. On the
+doc-id, because a decision's supersedes: names another decision by its id
+rather than by a function name. And on the entity id, which is DES-0029 D2:
+`find\' prints function:server/server.lisp:check-database, and an author facing
+a name two functions answer to should be able to paste that back and mean one
+of them.
+
+An id cannot collide with a name. Every id carries a colon, and a name spelled
+with one would have to be written that way in the source."
   (let ((index (make-hash-table :test #'equal)))
     (dolist (entity (all-entities view))
       (when (slot-boundp entity 'name)
         (push entity (gethash (string-downcase (name entity)) index)))
       (let ((doc-id (getp entity :doc-id)))
         (when doc-id
-          (pushnew entity (gethash (string-downcase doc-id) index)))))
+          (pushnew entity (gethash (string-downcase doc-id) index))))
+      (pushnew entity (gethash (string-downcase (id entity)) index)))
     index))
 
 (defun resolve-one (index name)
-  "The single entity NAME identifies, or NIL when it names none or several.
+  "The single entity NAME identifies, and the candidates it was declined over.
+
+Two values. A name that resolves answers the entity and NIL. A name matching
+nothing answers NIL and NIL. A name matching several answers NIL and the
+candidates -- DES-0029 D1, because the set is in hand at the moment of the
+refusal and the caller is the one that has to tell an author which of the two
+NILs it got. A caller wanting one answer ignores the second value and behaves
+exactly as it did.
+
 Refusing an ambiguous name is the same judgement RESOLVE-CALLS makes: a
-fabricated edge is worse than a recorded miss.
+fabricated edge is worse than a recorded miss. What changes is that the refusal
+is now reportable rather than indistinguishable from rot.
 
 A generic function and its methods are the exception, and not by relaxing the
 rule -- they are not several things sharing a name, they are one protocol and
@@ -1439,16 +1457,17 @@ arbitrary and refusing outright reports the reference as rotten when it is
 perfectly good. So a candidate set consisting of exactly one :INTERFACE plus
 methods resolves to the interface."
   (let ((candidates (gethash (string-downcase name) index)))
-    (cond ((null candidates) nil)
-          ((null (rest candidates)) (first candidates))
+    (cond ((null candidates) (values nil nil))
+          ((null (rest candidates)) (values (first candidates) nil))
           (t (let ((interfaces (remove-if-not
                                 (lambda (e) (eq :interface (entity-type e)))
                                 candidates)))
-               (when (and (= 1 (length interfaces))
-                          (every (lambda (e)
-                                   (member (entity-type e) '(:interface :method)))
-                                 candidates))
-                 (first interfaces)))))))
+               (if (and (= 1 (length interfaces))
+                        (every (lambda (e)
+                                 (member (entity-type e) '(:interface :method)))
+                               candidates))
+                   (values (first interfaces) nil)
+                   (values nil candidates)))))))
 
 (defun resolve-document-links (view &key workspace-id)
   "Operations linking each document's declared and mentioned references.
@@ -1471,18 +1490,29 @@ resolved on a previous pass is still in the property, so nothing drifts."
         (ops '()))
     (dolist (type *document-types*)
       (dolist (document (entities-of-type view type))
-        (let ((unresolved '()))
+        (let ((unresolved '())
+              (ambiguous '()))
           ;; --- declared links ------------------------------------------
           (dolist (field-and-type *declared-link-fields*)
             (let* ((field (car field-and-type))
                    (edge-type (declared-edge-type field document)))
               (dolist (name (getp document field))
-                (let ((target (resolve-one index name)))
-                  (if (and target (not (eq target document)))
-                      (push (assert-edge edge-type document target
-                                         :workspace-id workspace-id)
-                            ops)
-                      (pushnew name unresolved :test #'string=))))))
+                (multiple-value-bind (target candidates) (resolve-one index name)
+                  (cond
+                    ((and target (not (eq target document)))
+                     (push (assert-edge edge-type document target
+                                        :workspace-id workspace-id)
+                           ops))
+                    ;; DES-0029 D3. A name several entities answer to is not
+                    ;; the same fact as a name nothing answers to, and it is
+                    ;; the candidates -- not the count -- that let an author
+                    ;; act: the ids are what goes back into the field.
+                    (candidates
+                     (pushnew (list :name name
+                                    :candidates (mapcar #'id candidates))
+                              ambiguous
+                              :test #'string= :key (lambda (e) (getf e :name))))
+                    (t (pushnew name unresolved :test #'string=)))))))
           ;; --- link targets (BUG-0027) ---------------------------------
           ;; The same weak edge a mention earns, and a different failure. A
           ;; link target is a path an author wrote; when it resolves to nothing
@@ -1543,7 +1573,8 @@ resolved on a previous pass is still in the property, so nothing drifts."
                                    :derived-from (list (id target)))
                       ops))))
           (push (update-properties (id document)
-                                   (list :unresolved-references (nreverse unresolved))
+                                   (list :unresolved-references (nreverse unresolved)
+                                         :ambiguous-references (nreverse ambiguous))
                                    workspace-id)
                 ops))))
     (nreverse ops)))
@@ -1578,6 +1609,22 @@ toolchain is absent entirely, is the same fact about the same index."
                                                     (princ-to-string (name entity))))
                                      :type type
                                      :error problem))))
+
+(defun ambiguous-references (view)
+  "Every declared reference that named several entities, as plists carrying the
+document, the name as written, and the candidate ids.
+
+Read separately from UNRESOLVED-REFERENCES because the two are different facts
+about a document. That one answers what the document names that is not there;
+this one answers what it names that is there more than once, which no author
+has to fix and every author has to be able to tell apart from rot (DES-0029
+D4)."
+  (loop for type in *document-types*
+        append (loop for document in (entities-of-type view type)
+                     append (loop for entry in (getp document :ambiguous-references)
+                                  collect (list :document (name document)
+                                                :name (getf entry :name)
+                                                :candidates (getf entry :candidates))))))
 
 (defun unresolved-references (view)
   "Every document reference that named nothing, as (document-name . name).

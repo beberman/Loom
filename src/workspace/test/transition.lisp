@@ -418,3 +418,116 @@ body: |~%  status: implemented is written here too.~%")))
       (let ((report (complete-plan repository "PLAN-0001" :verdicts "DES-0001=partial")))
         (is (null (getf report :problems)) "~a" (getf report :problems))
         (is (= 2 (length (getf report :changed))))))))
+
+
+;;; ------------------------------------------------------------------
+;;; A document is checkable before it is written (REQ-0034, DES-0029 D5)
+;;; ------------------------------------------------------------------
+;;;
+;;; The loop this replaces: write the file, wait for the monitor, run `check',
+;;; subtract the repository's own baseline from the report, edit, repeat. Four
+;;; round trips on the game-server session that prompted the requirement, to
+;;; learn something the index could answer before any file existed.
+
+(defun reference-status (report name)
+  (let ((entry (find name (getf report :references)
+                     :key (lambda (e) (getf e :name)) :test #'string=)))
+    (getf entry :status)))
+
+(defun reference-entry (report name)
+  (find name (getf report :references)
+        :key (lambda (e) (getf e :name)) :test #'string=))
+
+(test a-draft-resolves-against-the-index-without-being-written
+  (with-document-tree (root)
+    ;; A tree with two same-named functions in it, so the ambiguous case is
+    ;; real rather than simulated, and one that is unique.
+    (write-document root "src/server.lisp"
+                    (format nil "(in-package :app)~%(defun check-database () t)~%~
+(defun start-server () (check-database))~%"))
+    (write-document root "src/api.lisp"
+                    (format nil "(in-package :app)~%(defun check-database () t)~%"))
+    (with-indexed-tree (repository root)
+      (let* ((draft (format nil "id: DES-0001~%title: a design~%status: draft~%~
+affects: [start-server, check-database, no-such-name]~%~
+body: |~%  D1  the shape.~%"))
+             (report (check-document-references
+                      repository "docs/design/DES-0001.yaml" :contents draft)))
+        (is (null (getf report :error))
+            "a path the document analyzer claims needs no file on disk: ~a"
+            (getf report :error))
+        (is (equal "DES-0001" (getf report :document)))
+        (is (eq :resolved (reference-status report "start-server"))
+            "the name with one definition")
+        (is (eq :ambiguous (reference-status report "check-database"))
+            "the name with two, and it is not reported as rot")
+        (is (= 2 (length (getf (reference-entry report "check-database") :candidates)))
+            "with the candidates an author pastes back into the field")
+        (is (eq :unresolved (reference-status report "no-such-name"))
+            "and the name that is genuinely not there")))))
+
+(test checking-a-document-asserts-nothing
+  ;; REQ-0034 R4, and the acceptance is the count rather than the intent: a
+  ;; report is worth nothing if asking for it changes the answer.
+  (with-document-tree (root)
+    (write-document root "src/server.lisp"
+                    (format nil "(in-package :app)~%(defun start-server () t)~%"))
+    (with-indexed-tree (repository root)
+      (let* ((graph (repository-graph repository))
+             (before-entities (length (all-entities graph)))
+             (before-edges (length (all-relationships graph)))
+             (draft (format nil "id: DES-0001~%title: a design~%status: draft~%~
+affects: [start-server]~%body: |~%  D1  the shape.~%")))
+        (check-document-references repository "docs/design/DES-0001.yaml"
+                                   :contents draft)
+        (is (= before-entities (length (all-entities graph))))
+        (is (= before-edges (length (all-relationships graph)))
+            "the draft named a function and earned it no edge")))))
+
+(test a-path-no-analyzer-claims-is-refused-with-a-reason
+  ;; A path no analyzer claims produced nothing, and saying so is a different
+  ;; answer from reporting a document with no references. Reporting them alike
+  ;; would be CON-0001's fabricated fact in the report's own shape.
+  ;;
+  ;; .rst rather than .txt: REQ-0028 claims .txt, .md and .markdown wherever
+  ;; the repository keeps them, and a claimed file really is a document -- one
+  ;; with no declared fields, which this operation reports as no references
+  ;; rather than as a refusal.
+  (with-document-tree (root)
+    (write-document root "src/server.lisp"
+                    (format nil "(in-package :app)~%(defun start-server () t)~%"))
+    (with-indexed-tree (repository root)
+      (let ((report (check-document-references repository "notes.rst"
+                                               :contents "id: DES-0001")))
+        (is (stringp (getf report :error)))
+        (is (null (getf report :references))))
+      (let ((markdown (check-document-references repository "notes.md"
+                                                 :contents "# Notes")))
+        (is (null (getf markdown :error))
+            "a markdown file is a document REQ-0028 claims")
+        (is (null (getf markdown :references))
+            "and it declares no references, which is not the same as failing")))))
+
+(test an-id-in-a-draft-names-one-candidate-of-an-ambiguous-name
+  ;; REQ-0030 R3 reaching the author through REQ-0034's operation, which is
+  ;; the pair working: the report says a name is ambiguous and prints the ids,
+  ;; and an id put back in the field resolves to exactly one entity.
+  (with-document-tree (root)
+    (write-document root "src/server.lisp"
+                    (format nil "(in-package :app)~%(defun check-database () t)~%"))
+    (write-document root "src/api.lisp"
+                    (format nil "(in-package :app)~%(defun check-database () t)~%"))
+    (with-indexed-tree (repository root)
+      (let* ((first-pass (check-document-references
+                          repository "docs/design/DES-0001.yaml"
+                          :contents (format nil "id: DES-0001~%title: a design~%~
+status: draft~%affects: [check-database]~%body: |~%  D1~%")))
+             (candidate (first (getf (reference-entry first-pass "check-database")
+                                     :candidates)))
+             (second-pass (check-document-references
+                           repository "docs/design/DES-0001.yaml"
+                           :contents (format nil "id: DES-0001~%title: a design~%~
+status: draft~%affects: [~a]~%body: |~%  D1~%" candidate))))
+        (is (eq :resolved (reference-status second-pass candidate))
+            "the id the first report printed resolves in the second")
+        (is (equal candidate (getf (reference-entry second-pass candidate) :target)))))))

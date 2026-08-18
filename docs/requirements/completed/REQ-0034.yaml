@@ -1,6 +1,6 @@
 id: REQ-0034
 title: A document must be checkable before it is written, because the feedback loop that only closes after the file exists is the one authors stop running
-status: draft
+status: implemented
 date: 2026-08-15
 refines: [CON-0004]
 affects: [resolve-document-links, linkable-index, unresolved-references, resolve-one]

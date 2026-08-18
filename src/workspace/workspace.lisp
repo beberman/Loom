@@ -945,6 +945,10 @@ the last error per thread.\""
           ;; DES-0018 D5: NIL on a healthy tree, so `status' prints nothing.
           :ignore-reason (repository-ignore-reason repository)
           :unresolved-references (length (unresolved-references graph))
+          ;; REQ-0030 R6. Entries that stop being counted as unresolved are
+          ;; counted here instead, on the same line, so a reader told to watch
+          ;; `unresolved' sees where they went rather than an improvement.
+          :ambiguous-references (length (ambiguous-references graph))
           :unenforced-rules (length (unenforced-rules graph))
           :violations (length (entities-of-type graph :rule-violation))
           :uncategorized-documents
@@ -1019,6 +1023,82 @@ the last error per thread.\""
 ;;;; Both files are present. Reporting them as broken would put five confident
 ;;;; falsehoods in front of a reader alongside the two real findings, which is
 ;;;; how a staleness report stops being read.
+
+(defun check-document-references (repository path &key contents)
+  "What one document's declared references resolve to, without writing or
+indexing it.
+
+REQ-0034. The loop it replaces is write, wait for the monitor, run `check',
+subtract the repository's own baseline, edit, repeat -- four round trips
+through the filesystem and the indexer on the session that prompted the
+requirement, to learn something the index could have answered before any file
+existed.
+
+PATH may name a file the repository does not hold and the index has never
+seen. CONTENTS overrides what is on disk, which is DES-0029 D5: ANALYZE-PATH
+has taken that argument since the analyzer protocol was written -- \"the hook
+for analyzing an editor buffer that has not been saved\" -- so an agent
+composing a document in memory needs no scratch file.
+
+Returns a plist: the path, the document's id and type, and one entry per
+declared name saying which field it was written in and what it resolved to --
+:RESOLVED with the target, :AMBIGUOUS with the candidate ids, or :UNRESOLVED.
+An :ERROR instead when no analyzer claims the path or the file holds no
+document, because a path that produced nothing is a different answer from a
+document with no references and reporting them alike would be the fabricated
+fact CON-0001 forbids.
+
+Nothing is asserted. The ops the analyzer returns are read for the entity they
+carry and thrown away, so the graph after the call is the graph before it."
+  (let* ((graph (repository-graph repository))
+         (root (repository-root repository))
+         (full (merge-pathnames path root))
+         (source (or contents
+                     (and (probe-file full) (slurp-file full)))))
+    (cond
+      ((null (find-analyzer full))
+       (list :path path :error "no analyzer claims this path"))
+      ((null source)
+       (list :path path :error "no such file, and no contents given"))
+      (t
+       (let* ((ops (analyze-path full :workspace-root root :contents source))
+              (document (loop for op in ops
+                              when (and (typep op 'assert-entity-op)
+                                        (member (entity-type (op-entity op))
+                                                *document-types*))
+                                return (op-entity op))))
+         (if (null document)
+             (list :path path :error "the file holds no document")
+             (let ((index (linkable-index graph)))
+               (list :path path
+                     :document (or (getp document :doc-id) (name document))
+                     :type (entity-type document)
+                     :references
+                     (loop for (field . nil) in *declared-link-fields*
+                           append (loop for name in (getp document field)
+                                        collect (document-reference-report
+                                                 index field name document)))))))))))
+
+(defun document-reference-report (index field name document)
+  "One declared reference, as what the author needs to act on it.
+
+A reference resolving to the document itself is reported as resolved and
+carries that fact, since RESOLVE-DOCUMENT-LINKS declines to assert an edge
+there and an author reading `resolved' about a self-reference would be told
+an edge exists that does not. Compared by id rather than by identity: the
+entity here came from the analyzer and is a different object from the one in
+the index even when the document is already indexed."
+  (multiple-value-bind (target candidates) (resolve-one index name)
+    (cond
+      ((and target (equal (id target) (id document)))
+       (list :field field :name name :status :self))
+      (target
+       (list :field field :name name :status :resolved
+             :target (id target) :type (entity-type target)))
+      (candidates
+       (list :field field :name name :status :ambiguous
+             :candidates (mapcar #'id candidates)))
+      (t (list :field field :name name :status :unresolved)))))
 
 (defun check-document-links (repository &key workspace-id)
   "Operations recording, per document, the link targets that name no file.

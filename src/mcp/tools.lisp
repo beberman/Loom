@@ -42,6 +42,11 @@
         (make-tool :name "loom_status" :operation :status)
         (make-tool :name "loom_check" :operation :check)
         (make-tool :name "loom_rules" :operation :rules)
+        ;; REQ-0034. The workflow tool: an agent writing a document asks this
+        ;; before the file exists, instead of writing it, waiting for the
+        ;; monitor, running loom_check and subtracting the repository's own
+        ;; baseline from the answer.
+        (make-tool :name "loom_check_document" :operation :check-document)
         ;; Two more read tools, and the line they sit on the right side of.
         ;; :STRUCTURE and :DRIFT answer questions an agent working in a prepared
         ;; worktree asks -- what is the shape of this tree, and where does its
@@ -60,7 +65,7 @@
         (make-tool :name "loom_repl_open" :operation :repl-open)
         (make-tool :name "loom_repl_eval" :operation :repl-eval)
         (make-tool :name "loom_repl_close" :operation :repl-close))
-  "The fourteen tools, in the order tools/list returns them.")
+  "The fifteen tools, in the order tools/list returns them.")
 
 (defun all-tools () *tools*)
 

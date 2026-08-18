@@ -38,6 +38,10 @@
    ;; system can serve: the range is on the entity and the root is on the
    ;; repository, and loom-knowledge cannot see the second.
    #:definition-source
+
+   ;; REQ-0034, DES-0029 D5. One document's declared references resolved
+   ;; against the live index before the file is written, indexed or asserted.
+   #:check-document-references
    #:*source-line-limit*
 
    ;; Cross-repository edges (REQ-0027, DES-0025). The one pass that reads
