@@ -1,0 +1,93 @@
+id: CON-0006
+title: Recall beats precision when the reader is an LLM -- demote, never drop
+status: accepted
+date: 2026-08-16
+affects: [seed-entities, seed-matches, search-entities, search-rank, build-context, admit-seeds]
+tags: [retrieval, ranking, context, agents, purpose]
+summary: |
+  Loom exists to stop an agent grepping. The measured loop it replaces is in
+  REQ-0031: one small change on game-server cost eleven shell commands, five of
+  which existed only to print regions of files Loom had already named.
+
+  That purpose fixes the retrieval trade-off, and it fixes it the opposite way
+  from a search engine for humans. A human reading a result list pays for every
+  wrong entry with attention, so precision is what a ranked list owes them. An
+  LLM discards a wrong entry for a few tokens and no attention at all -- but a
+  *missing* entry sends it back to grep, which is the whole cost Loom was built
+  to remove. The two errors are not symmetric and never were.
+
+  So: a candidate is ranked down, never filtered out. A mechanism that removes
+  a candidate from consideration must justify itself against the grep call it
+  might cause, and "it was probably irrelevant" is not that justification --
+  probably-irrelevant is exactly what the reader is good at throwing away.
+body: |
+  WHY THIS IS A CONCEPT AND NOT A PREFERENCE
+
+  The trade-off is already made correctly in two places in this tree, locally,
+  for reasons that generalise and were never generalised.
+
+  SEARCH-RANK demotes a :CALL-SITE by a whole rank band rather than filtering
+  it, and its docstring says why: "a filtered entity is invisible, and this
+  design exists to stop calls being invisible." REQ-0016 R4 demotes test code
+  rather than excluding it, and the same paragraph is written again in
+  SEED-SCORE. Both are this concept, applied once each, discovered twice.
+
+  Everywhere the question was not asked explicitly, the code filters. The
+  stopword list drops a token before it can match anything. SEED-MATCHES drops
+  a rank-3 match outright. ADMIT-SEEDS holds a candidate back. `find` caps at
+  twenty hits silently, which REQ-0005 records. None of those was argued as a
+  recall decision, because nobody had written down that recall was the axis.
+
+  WHAT IT COSTS TO BE WRONG, IN EACH DIRECTION
+
+  A returned entity that did not matter costs its own tokens and one line of
+  the reader's attention. Under REQ-0031's index tier that is roughly fifteen
+  tokens, and the reader is a system whose entire competence is deciding what
+  in a large context is relevant to the task in front of it. This is the error
+  Loom is allowed to make freely.
+
+  A missing entity costs a grep. Not one grep: the agent does not know what it
+  is missing, so it falls back to searching the tree the way it would have
+  without Loom -- several commands, several file reads, and the re-derivation
+  of meaning from source that DEC-0001 and the context tool exist to prevent.
+  Worse, it is silent. The agent cannot tell a subsystem Loom did not return
+  from a subsystem that does not exist, so a recall failure is indistinguishable
+  from a true negative and does not even prompt a second query.
+
+  This is CON-0001's asymmetry pointed at retrieval rather than at assertion. A
+  fabricated fact is worse than a recorded gap because a gap is visible; a
+  dropped candidate is worse than a demoted one for the same reason, and by
+  the same argument, because a demoted candidate is still visible and a dropped
+  one is not.
+
+  WHAT IT DOES NOT LICENSE
+
+  It does not license returning everything. Ordering still matters and matters
+  a great deal -- what changes is what ordering is *for*. Rank decides what the
+  reader sees first and what gets the expensive treatment; it does not decide
+  what exists. A bundle that returns two hundred one-line entries in a useless
+  order has spent the reader's attention rather than saved it, and is a
+  different failure from the one this concept forbids.
+
+  It does not license unbounded cost. A budget is a real constraint and
+  something must be last. The rule is that the boundary is drawn by cost, in
+  the open, at the cheapest tier available -- not by a heuristic guess about
+  relevance applied before the candidate was ever ranked.
+
+  It does not apply to assertion. Nothing here weakens CON-0001: an ambiguous
+  name still stays unresolved and still gets reported. Ranking may guess where
+  assertion may not, which REQ-0016's TEST-CODE-P paragraph already argues at
+  length. This concept is about what a *query* returns, never about what the
+  index claims is true.
+
+  It does not apply to `check`, `rules` or any command whose answer is a
+  verdict. A violation list that returns probably-violations to be discarded is
+  not a recall improvement, it is a broken check.
+
+  HOW TO APPLY IT
+
+  When a mechanism removes a candidate, ask what the reader does without it. If
+  the answer is "reads one fewer line", the mechanism is fine. If the answer is
+  "greps", the mechanism is a defect however sensible its rule looks, and the
+  repair is almost always the same shape: turn the filter into a band in the
+  sort key, or into a cheaper tier of the output.

@@ -838,3 +838,74 @@ correct rather than a gap: fiveam is external to every indexed tree")))
                (mapcar (lambda (e) (name (impact-entry-entity e)))
                        (impact-result-impacted (impact-set g (id callee)))))
         "after it, the question has an answer")))
+
+;;; ------------------------------------------------------------------
+;;; A broken link is reported; an ordinary word is not (BUG-0027)
+;;; ------------------------------------------------------------------
+
+(test resolution-links-a-target-and-refuses-to-judge-one-it-cannot-place
+  ;; BUG-0027, and the correction that followed the first fix. Resolution makes
+  ;; the edge when a link target names an indexed entity, and says *nothing*
+  ;; when it does not -- because "absent from the index" is not "absent from the
+  ;; disk". game-server links to CLAUDE.md, which REQ-0028 excludes by name, and
+  ;; to a .sql fixture no analyzer claims; both files are present. Reporting
+  ;; those as broken put five confident falsehoods beside two real findings.
+  ;;
+  ;; Whether a path exists is a filesystem question, and loom-graph has no
+  ;; filesystem. CHECK-DOCUMENT-LINKS in loom-workspace owns it.
+  (let* ((g (make-graph))
+         (file (make-instance 'file-entity :name "media/media-handler.lisp"
+                              :origin-file "media/media-handler.lisp"
+                              :properties (properties-table
+                                           '(:path "media/media-handler.lisp"
+                                             :language :lisp))))
+         (doc (make-instance 'document-entity :name "docs/notes.md"
+                             :origin-file "docs/notes.md"
+                             :properties (properties-table
+                                          '(:path "docs/notes.md"
+                                            :format :markdown
+                                            :link-targets ("media/media-handler.lisp"
+                                                           "CLAUDE.md")
+                                            :mentions ("sprite"))))))
+    (add-entity g file)
+    (add-entity g doc)
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (= 1 (length (relationships-from g (id doc) :rel-type :mentions)))
+        "the target that names an indexed file earns the same weak edge a
+mention does")
+    (is (null (unresolved-references g))
+        "and the one it could not place is left for the layer that can stat it: ~a"
+        (unresolved-references g))))
+
+(test a-link-to-another-document-resolves-and-is-not-reported-broken
+  ;; The false positive the first version of BUG-0027's fix produced. A markdown
+  ;; file linking to another markdown file has a *working* link -- the file is
+  ;; right there -- and reporting it as unresolved is exactly the kind of noise
+  ;; that teaches a reader to stop reading the list.
+  ;;
+  ;; It earns no edge because :MENTIONS is declared to terminate at code, and a
+  ;; document-to-document link is a different claim that refines: exists for.
+  ;; The transaction validator caught this rather than a test: asserting the
+  ;; forbidden edge refused the whole transaction, so one bad edge cost an
+  ;; entire repository its document links.
+  (let* ((g (make-graph))
+         (other (make-instance 'document-entity :name "docs/api.md"
+                               :origin-file "docs/api.md"
+                               :properties (properties-table
+                                            '(:path "docs/api.md" :format :markdown))))
+         (doc (make-instance 'document-entity :name "docs/README.md"
+                             :origin-file "docs/README.md"
+                             :properties (properties-table
+                                          '(:path "docs/README.md" :format :markdown
+                                            :link-targets ("docs/api.md"))))))
+    (add-entity g other)
+    (add-entity g doc)
+    (let ((ops (resolve-document-links g :workspace-id "w")))
+      ;; The transaction has to be applicable at all, which is the regression.
+      (finishes (apply-transaction g ops)))
+    (is (null (unresolved-references g))
+        "a link to a document that exists is not broken: ~a"
+        (unresolved-references g))
+    (is (null (relationships-from g (id doc) :rel-type :mentions))
+        "and earns no edge, because :MENTIONS is declared to reach code")))
+

@@ -1,0 +1,671 @@
+id: DES-0026
+title: Two tiers, a weighted index and a cost-ordered walk -- recall in the cheap tier, source in the expensive one
+status: draft
+date: 2026-08-16
+refines: [REQ-0016]
+affects: [build-context, context-item, render-context, seed-entities, seed-matches,
+          seed-score, admit-seeds, task-tokens, task-terms, slot-accessor-p,
+          find-entities, search-entities, match-rank]
+tags: [context, knowledge, ranking, retrieval, expansion, req-0031, con-0006, game-server]
+summary: |
+  REQ-0016's landed half fixed the seeder's arithmetic and left three
+  requirements open. This is the shape of the answer to those, and it is a
+  different shape from the one an earlier draft of this document proposed,
+  because the purpose the tool serves fixes the retrieval trade-off and that
+  purpose was not written down anywhere.
+
+  Loom exists to stop an agent grepping -- REQ-0031 measures the loop: eleven
+  shell commands for one change, five of them printing regions of files Loom
+  had already named. The reader is an LLM. It discards a wrong entry for a few
+  tokens; a missing entry sends it back to grep. CON-0006 states the asymmetry.
+  So the design is recall-first, and almost every mechanism REQ-0016's landed
+  work added is a precision device that has to be re-argued in that light.
+
+  Three parts. **Matching** becomes an inverted index over tokenized names with
+  BM25 weighting, which retires the stopword list, the coverage band's magic 8,
+  the seed share cap and both patches around the "data" fragment -- because
+  each is a hand-tuned proxy for the term-rarity that IDF measures directly
+  from the tree. **Output** becomes two tiers, assuming REQ-0031 lands next: a
+  few entities with their padded source, and a long cheap list of one-line
+  entries for everything else recalled. **Expansion** becomes a best-first walk
+  over a cost table keyed on edge type and direction, which is the only way the
+  hierarchy R6 asks for is reachable at all.
+
+  The two tiers are what reconcile recall with a budget. Recall lives where a
+  candidate costs fifteen tokens and the reader throws it away for free;
+  ranking decides who gets the expensive treatment rather than who exists.
+body: |
+  D1  WHAT THE PURPOSE FIXES
+
+  CON-0006 is the premise and this section is what it costs the existing code.
+
+  REQ-0016 is written as a precision complaint. Its evidence is that 22 entities
+  came back and "almost none of them is what the question was about"; its R6
+  says the bundle "must not spend its budget on server/gameapi.lisp's CORS
+  layer". Read against CON-0006, that framing is half right. Spending the
+  *source tier* on the CORS layer is a defect. The CORS layer appearing at all,
+  in a cheap tier, below the protocol, costs the reader one line and prevents
+  nothing.
+
+  R3 was already written the recall-first way and is the model: "SET-CORS-HANDLER
+  must not displace DHANDLER-GET". Displace, not appear. R6 is the one that
+  reads as exclusion, and D12 restates its acceptance accordingly rather than
+  quietly meeting a weaker bar.
+
+  What follows from the premise is an inventory. Every point in the pipeline
+  that removes a candidate is a possible grep, and each now needs a reason:
+
+    mechanism                       drops                        verdict
+    ------------------------------------------------------------------------
+    *context-stopwords*             48 English words, <3 chars   retire (D5)
+    SEED-MATCHES rank-3 drop        path-only matches            keep, rank last
+    *seed-term-share* = 2           candidates past a share      retire (D5)
+    seed :limit 8                   everything past eight        raise (D3)
+    one-hop expansion               everything at depth >= 2     replaced (D7)
+    *context-token-budget* 2000     everything after truncation  re-set (D3)
+    `find`'s 20-hit cap             REQ-0005, and silently       out of scope,
+                                                                 noted (D13)
+    *context-relation-limit* 12     relations past twelve        RECALL GATE
+                                                                 -- see D1a
+    R4 test demotion                nothing -- it is a band      already right
+
+  The last row is the pattern the others should follow, and it was already
+  argued twice in this tree before anyone named the axis: SEARCH-RANK demotes a
+  call site rather than filtering it because "a filtered entity is invisible",
+  and SEED-SCORE demotes test code for the same reason. CON-0006 is those two
+  paragraphs generalised.
+
+  D1a MEASURED ON GAME-SERVER THROUGH LOOM, 2026-08-16
+
+  Everything this document said about game-server was taken from REQ-0016's
+  recorded numbers. Watching that tree in the running service and asking it
+  directly corrects three things, and the third changes a design decision.
+
+  `context data-handler`, today, with R1/R4/R7/R8 in:
+
+    seeds   DATA-HANDLER (first), DATA-HANDLER-ERROR,
+            DATABASE-UNAVAILABLE-ERROR, DATABASE-ALERT, HANDLER-EXISTS-P,
+            DB-HANDLER (class and interface), data-api/db-handler.lisp
+    band    DATA-DECODER-FN, DATA-ENCODER-FN, RESET-TABLES -- three entries
+    budget  1970 of 2000, truncated
+
+  First: the CRUD protocol is *already arriving*, and not where this document
+  assumed. DATA-HANDLER's own relation list carries DHANDLER-DELETE,
+  DHANDLER-COUNT, DHANDLER-EXISTS, DHANDLER-GET and DHANDLER-WITH-TRANSACTION;
+  DB-HANDLER's carries DHANDLER-UPDATE, DHANDLER-PUT, DHANDLER-GET-ALL-IDS,
+  DHANDLER-ACQUIRE-CONNECTION, DHANDLER-ROLLBACK and DHANDLER-COMMIT. So the
+  channel doing the work on this query is the per-item relation list, not the
+  neighbour band -- which got three entries before the budget ran out.
+
+  CORRECTED AGAIN 2026-08-17, when the walk was built and measured:
+  TABLE-HANDLER and GAME-HANDLER are at cost 1, not 2. They are two :INHERITS
+  hops from DATA-HANDLER and one from DB-HANDLER, which `context data-handler`
+  also seeds. MODEL-HANDLER is at 3. The reachability argument stands -- a
+  one-hop expansion from the *named* seed misses them and a cost-ordered walk
+  does not -- and the hop arithmetic quoted below was wrong.
+
+  Second: those methods arrive on **:USES**, not :IMPLEMENTS. A method
+  specialised on a class reaches it by :USES in this ontology, and :IMPLEMENTS
+  targets an :INTERFACE. D6's table already prices :USES at 2 and is therefore
+  right, but D12's acceptance said "each with :INHERITS or :IMPLEMENTS on its
+  line" and that clause would have failed a correct implementation. Corrected
+  there. DATA-HANDLER's incoming :INHERITS are exactly NULL-HANDLER and
+  DB-HANDLER, which confirms the reachability claim in D6: TABLE-HANDLER,
+  MODEL-HANDLER and GAME-HANDLER hang off DB-HANDLER and are two or more hops
+  out, so no one-hop expansion reaches them at any budget.
+
+  Third, and this is the design change: *CONTEXT-RELATION-LIMIT* = 12 is a
+  recall gate, not a display cap, and D1's inventory classified it wrongly.
+  DATA-HANDLER has 22 relations and shows 12; DB-HANDLER has 21 and shows 12.
+  Nineteen relations are withheld across two seeds on the one query R6 is
+  written about, and the protocol R6 asks for is the population being cut. The
+  bundle does print "... N more", so it is not silent -- but under CON-0006 a
+  count is not a name, and an agent cannot ask for what it cannot see spelled.
+
+  Under D2 the repair is nearly free and needs no new mechanism: relations are
+  one line each and belong in the index tier, so the cap becomes a source-tier
+  concern only. An entity in the index tier lists its relations because they
+  cost what a line costs.
+
+  This section is also the argument for the practice. Three corrections, one of
+  them to a design decision, from two queries against the tree the requirement
+  is about -- none of which was visible from inside Loom's own tree or from the
+  requirement's prose.
+
+  D2  THE OUTPUT IS TWO TIERS, AND REQ-0031 IS ASSUMED
+
+  This design assumes REQ-0031 is implemented next and is written against it.
+  The coupling is deliberate and is recorded on both documents so neither can
+  be read without it: REQ-0031's R8 is the two-tier bundle this section
+  describes, and its R9 is the padding. Its earlier non-goal -- that `context`
+  must not inline source -- is contested there rather than here, since the
+  reason it gave was the 2,000-token budget D3 argues with.
+
+  REQ-0031 makes source available from an operation that already knows where it
+  is. Once a bundle can carry source, the bundle stops being a list of
+  addresses the agent must then fetch and becomes the answer itself -- which is
+  the difference between saving the agent a grep and merely telling it where to
+  grep. But source is expensive. A definition is tens of lines where its index
+  entry is one, so a bundle cannot carry source for everything it recalls, and
+  a bundle that carries source for only what fits has silently become a
+  precision device again.
+
+  So the bundle has two tiers and one budget each:
+
+    source tier   the top N entities, each with its source block, padded --
+                  the preceding comment or docstring block and a line or two
+                  after. This is what the agent reads instead of opening the
+                  file, and REQ-0031's padding is why it does not then open the
+                  file anyway to see what the definition is about.
+
+    index tier    everything else recalled, one line each: type, name,
+                  location, and why it is here -- the seed's matched terms, or
+                  the neighbour's arriving edge and distance. Roughly fifteen
+                  tokens. The agent scans it, discards most of it for free, and
+                  for anything it wants calls `describe` once and gets the
+                  source, because REQ-0031 put it there.
+
+  This is the whole reconciliation. Recall is cheap because it lives in the
+  index tier; precision matters because it decides the source tier; and the
+  failure mode CON-0006 forbids -- a subsystem Loom did not mention, silently
+  indistinguishable from one that does not exist -- cannot happen, because the
+  index tier names it even when the source tier has no room.
+
+  It also changes what a wrong ranking costs, which is the argument for not
+  spending much more on ranking than this design does. Rank the source tier
+  wrongly and the agent makes one extra `describe` call. That is the failure a
+  cross-encoder would buy down, and D11 is why it is not worth buying yet.
+
+  D3  THE BUDGET WAS SET FOR A BUNDLE THAT HELD NO SOURCE
+
+  *CONTEXT-TOKEN-BUDGET* is 2000. REQ-0016 says explicitly that it "does not
+  ask for the token budget to change", and under a names-only bundle that was
+  right -- its argument was that 2,000 tokens is enough to describe a subsystem
+  when the right entities are chosen, and the ~1960 being spent on the wrong
+  ones was the proof that selection rather than budget was the defect.
+
+  Under D2 that argument no longer reaches. A padded source block is 200 to 600
+  tokens, so 2,000 tokens is three to eight definitions *total* and the index
+  tier gets nothing. The number was not wrong; the bundle it was sized for no
+  longer exists.
+
+  Two budgets replace it, and both are much larger:
+
+    *context-source-budget*   the source tier. Sized in definitions rather
+                              than tokens -- N entities with their blocks --
+                              because that is the unit the caller reasons in
+                              and a token count for it is a consequence.
+
+    *context-index-budget*    the index tier. Large: two hundred one-line
+                              entries is about three thousand tokens, which is
+                              affordable in a way it was not when a context
+                              window was small, and is the cheapest recall
+                              available anywhere in this system.
+
+  The old scarcity machinery goes with the old number. DES-0020 D5a's document
+  reserve exists because the document bands were never reached before
+  truncation; with an index tier that cannot happen, so the reserve becomes a
+  tier assignment rather than a claim on someone else's room. Two reserves
+  competing over 2,000 tokens was a design for a constraint that this
+  document's premise removes.
+
+  Sizing both is an acceptance question and D12 sets it, on the tree the
+  requirement was opened against rather than on this one.
+
+  D4  MATCHING IS AN INVERTED INDEX AND BM25, NOT A SUBSTRING SCAN
+
+  FIND-ENTITIES walks every entity in the graph and calls SEARCH on each name,
+  once per query token. That is the retrieval layer under everything above, and
+  it is wrong three separate ways.
+
+  It is slow, and slow in the direction this design pushes. Recall-first means
+  more tokens and more candidates, so a linear scan degrades exactly as the
+  design leans on it, against a purpose whose whole point is speed --
+  CLAUDE.md advertises the MCP path as answering in milliseconds and that is a
+  promise about a warm index, not about an algorithm.
+
+  It matches substrings, which is why MATCH-RANK needs four bands to sort out
+  the damage: "for" matches FORMAT, "data" matches every name containing it.
+  Prefix and substring ranks are artifacts of not having tokens.
+
+  And it cannot count. Nothing in the current pipeline can ask how many
+  entities a term matches, which is precisely the number every hand-tuned
+  constant in SEED-SCORE is approximating.
+
+  So: at index time, tokenize each entity's name into subwords -- split on
+  hyphen, underscore and case boundary, keep the whole name as a token too --
+  and build a term-to-entity postings map. Document frequency falls out of the
+  postings list length. Matching becomes a lookup per query token, and BM25
+  scores the result with length normalisation, which is what handles a short
+  exact name against a long partial one without a ladder of rank bands.
+
+  The field set is the name plus :SIGNATURE, :ARGUMENTS, the path words and the
+  package. All four are already indexed and none is currently matched against;
+  a query naming a parameter finds nothing today. Fields are weighted, name
+  highest, path lowest -- which is the rank-3 drop turned into a weight, so a
+  path-only match survives at the bottom of the index tier instead of being
+  discarded (D1, CON-0006).
+
+  AMENDED 2026-08-17: the field set is five plus :DOCUMENTATION. This section
+  was written when the one field that would matter most did not exist -- "no
+  code entity carries a docstring", and no weighting fixes a query whose words
+  are only in prose. REQ-0035 built it, and the numbers change what BM25 has to
+  handle rather than merely adding a column:
+
+      entities carrying prose      Loom 798   game-server 462   front-end 999
+      volume                       315 KB     50 KB             184 KB
+      mean block                   396 ch     111 ch            ~184 ch
+      longest single block         5,639 ch
+
+  So the length distribution BM25 normalises is no longer names against names.
+  A 5,639-character docstring and a 12-character function name are now fields on
+  one entity, and that spread is the whole reason length normalisation stops
+  being a refinement and becomes the point -- DES-0028 D6 named this and
+  declined to fix it, on the grounds that inventing a second normalisation here
+  would only have to be removed when BM25 arrived.
+
+  Prose keeps the whole-word matching DES-0028 D4 gave it, which the tokenised
+  index makes free rather than special: a postings map is built from words, so
+  "cached" and "cache" are simply different terms and no substring rule is
+  needed to keep them apart.
+
+  D5  WHAT TERM RARITY RETIRES
+
+  IDF is a measurement of this tree. Every constant it replaces is a guess
+  about trees in general, which is the exact defect REQ-0016 was opened to
+  name -- a mechanism correct on the tree it was developed against.
+
+    *context-stopwords*, 48 words. A hardcoded guess about English, and it
+    misses the word that actually broke game-server: "check" is not on the list
+    and "test" is, though "test" is a fine discriminator on a tree where test
+    helpers are the subject.
+
+    CORRECTED 2026-08-17, with the index built and df countable for the first
+    time. This paragraph went on to claim that "under IDF, 'check' is common on
+    game-server and weighs nothing there", and that is false:
+
+                    Loom            game-server      front-end
+        test        df 1218 idf 0.27  df 2205 idf 0.00  df 636 idf 1.74
+        check       df   62 idf 3.78  df   43 idf 4.50  df  41 idf 4.62
+        data        df   37 idf 4.30  df  622 idf 1.68  df 214 idf 2.93
+        handler     df   47 idf 4.06  df  277 idf 2.58  df 111 idf 3.61
+
+    "check" is *rare* on all three trees -- 43 of game-server's 3,946 entities.
+    IDF would not have suppressed it and was never going to. R7's defect was
+    never that the term was common; it was that the CHECK-* family is *many*,
+    and a family sharing one rare term is a diversity problem rather than a
+    term-rarity one. So the share cap's replacement is the MMR penalty named
+    below and not IDF, and this paragraph had the causation backwards.
+
+    What the table does vindicate is the other half. "test" scores 0.27 on Loom
+    and 0.00 on game-server, so the stoplist was right to hold it there -- and
+    1.74 on front-end, where it is informative and the stoplist suppresses it
+    anyway. That is precisely the per-tree judgement a hardcoded list cannot
+    express. And "data" is 4.30 on Loom against 1.68 on game-server, which is
+    the fragment problem solved on the tree it occurred on, exactly as claimed
+    below.
+
+    The coverage band, (max 0 (- 8 (length matches))). Counting matched terms
+    equally is the arbitrariness at the centre of the current score. Summing
+    idf(t) over matched terms is the same idea measured instead of counted, and
+    the 8 disappears with it.
+
+    *seed-term-share* = 2. Its job was that no narrow slice fills the seed set,
+    which under BM25 is mostly automatic -- a low-IDF term contributes little,
+    so its matches do not climb. Mostly, and not entirely: the five
+    CHECK-DATABASE-* definitions match the same terms with the same weight and
+    still crowd. That residue is a *diversity* problem rather than a
+    term-weighting one, and the honest fix is a redundancy penalty in the sort
+    (MMR-style: discount a candidate by its similarity to what is already
+    admitted) rather than a cap that holds candidates back. Under CON-0006 the
+    difference matters: a penalty reorders, a cap drops.
+
+    TASK-TERMS versus TASK-TOKENS, and SLOT-ACCESSOR-P. Both exist to survive
+    one problem -- splitting "data-handler" produces the fragment "data", and
+    game-server has five slot accessors named exactly DATA which took five of
+    eight seeds on an exact match against a word the caller never wrote. Under
+    IDF, df("data") on that tree is enormous, the fragment weighs almost
+    nothing, and the accessors never surface. Splitting compounds stays safe
+    *because* the fragments are self-limiting, which is the distinction two
+    special cases were written to enforce by hand.
+
+  That last one is the general form of the argument. Each retired mechanism is
+  a proxy for term rarity, hand-fitted to the one tree its author could see.
+  IDF is the quantity they were all approximating, it costs a postings-list
+  length, and it is per-tree by construction.
+
+  What survives from SEED-SCORE is the part that is not about words: the type
+  tiers (a definition before a container), R4's test demotion, and :EXPORTED-P,
+  which is in the schema, says whether a definition is API or internal, and is
+  read by nothing today. Those are properties of the entity rather than guesses
+  about the query, and they belong in the sort.
+
+  D6  EXPANSION: A COST-ORDERED WALK, NOT A HOP
+
+  The expansion is fourteen lines that call NEIGHBORS on each seed and PUSHNEW
+  the results. Every edge costs the same, every neighbour is at the same
+  distance, and nothing orders them.
+
+  It also cannot satisfy R6 at any budget, which is the finding that decides
+  this section. R6 asks for a majority of DATA-HANDLER's subclasses;
+  TABLE-HANDLER and MODEL-HANDLER are two and three :INHERITS hops out. No
+  one-hop expansion reaches them however large the bundle grows, so this is a
+  reachability defect wearing a ranking defect's clothes.
+
+  It becomes a multi-source best-first walk. Every seed enters a priority queue
+  at cost 0; popping an entity settles it; expanding pushes each unsettled
+  neighbour at the settled cost plus the edge's cost. Costs are keyed on
+  relationship type *and direction*:
+
+    edge            out   in    what crossing it says
+    ------------------------------------------------------------------
+    :inherits        1     1    the hierarchy is the subsystem
+    :implements      1     1    the protocol is the subsystem
+    :uses            2     2    a declared dependency; also generated to
+                                generator (DES-0002)
+    :serves          2     2    two trees written against one contract
+                                (DES-0025)
+    :calls           3     4    see below
+    :contains        3     3    co-location, and see D8
+    :belongs-to      3     3    the same edge from the other end
+    :tests           5     5    unless the task asked about tests
+    :imports         -     -    container-level; unreachable under D8
+    :depends-on      -     -    container-level; unreachable under D8
+    :decides         -     -    DES-0020 owns these; excluded entirely
+    :documents       -     -
+    :mentions        -     -
+    :applies-to      -     -
+    :refines         -     -
+    :supersedes      -     -
+
+  :INHERITS and :IMPLEMENTS are cheapest because R2 says so and because the
+  ontology agrees: both are declared by an author in a definition form, both
+  have :TRANSITIVE-IMPACT T, and neither can be inferred.
+
+  :CALLS is the interesting row and the asymmetry carries the argument.
+  Outgoing -- what this thing calls -- is its implementation: bounded by the
+  body, and it describes the entity. Incoming -- what calls this thing -- is
+  its client set: unbounded, and it describes them. That is why R7's startup
+  query works at all, since START-SERVER's callees are an outgoing fan and
+  READ-CONFIG, CONFIG-GET and INITIALIZE-GAME-API are the startup sequence in
+  order.
+
+  That row also rules out the obvious alternative. Dropping :CALLS satisfies
+  R2 read narrowly for the class-shaped query and destroys R7's query
+  completely, which is nothing but outgoing :CALLS and is the right answer. One
+  static table serves both shapes because the horizon does the discriminating:
+  an :INHERITS chain runs three or four deep inside a horizon of 4, an outgoing
+  call reaches depth 1 at cost 3, an incoming call reaches depth 1 at cost 4
+  and stops. The query does not choose its depth; the edges available from its
+  seeds do.
+
+  Under CON-0006 the horizon is a budget device, not a relevance judgement. It
+  bounds work, and anything it excludes was going to land in the index tier at
+  best. That is a weaker claim than the earlier draft of this document made for
+  it, and the weaker claim is the true one.
+
+  D7  CONVERGENCE IS THE ONLY CENTRALITY HERE
+
+  REQ-0016 is titled "rank by structural centrality". A centrality is a property
+  of the tree and is the same number whatever was asked, and every centrality
+  available on this ontology ranks containers first: :CONTAINS runs from a file
+  to every definition it holds, so the most connected entity in any indexed tree
+  is the repository and the next are its largest files. That is exactly the
+  ranking *SEED-TYPE-PREFERENCE* was flattened to stop producing, arriving one
+  band later. PageRank is the same answer with more arithmetic and a cost nobody
+  owns on an index rebuilt on every file save.
+
+  DATA-HANDLER is not central in game-server. It is a moderately connected class
+  in one of fourteen subsystems, and no tree-wide measure has a reason to prefer
+  it. It is central *to the query that named it*.
+
+  One measure survives, and it is free: the count of distinct seeds whose paths
+  reach an entity. A Dijkstra visits a node from every neighbour that reaches
+  it, so carrying a seed-origin set and unioning it costs nothing. It is a
+  centrality, but query-relative -- it cannot prefer a file for being large,
+  because a file is reached only by seeds actually in it.
+
+  It is also the design's answer to R5, the requirement none of the landed work
+  touched. R5's case is a prose query where eight seeds are eight guesses and
+  the seeder cannot tell which guessed right. The guesses are not independent:
+  if five of eight converge on one entity within the horizon, that is what the
+  task was about, and no lexical score could have said so because the evidence
+  is not in the names.
+
+  The discount is one unit of cost per additional seed, floored at 1:
+
+      effective-cost = max(1, cost - (convergence - 1))
+
+  One unit and no more, bounded by argument rather than tuning: the cheapest
+  edge costs 1, so a second seed reaching an entity is worth exactly as much as
+  the strongest structural claim the table admits and never more. Convergence
+  can promote past a call hop; it cannot promote past a hierarchy. Three seeds
+  meeting at a utility function is a real possibility and the floor is what
+  stops it outranking a subclass.
+
+  The discount reorders and does not extend -- the horizon is checked against
+  raw cost -- so convergence cannot pull in an entity the walk never reached.
+
+  D8  NO TRANSIT THROUGH A CONTAINER
+
+  A container -- :FILE, :PACKAGE, :MODULE, :REPOSITORY, :WORKSPACE -- may be
+  reached and admitted, and may not be expanded from.
+
+  Without it the cost table is unusable. One seed reaching its own file at cost
+  3 would put all forty of that file's definitions at cost 6, and would make two
+  seeds in the same file mutually reachable through it and convergent under D7
+  for no reason but co-location. The directory listing R1 fought in the seed
+  band would arrive in the neighbour band instead.
+
+  Note what this does *not* violate. The definitions behind a container are not
+  lost to the reader -- they are one `describe` away, and under D2 the file's
+  own index-tier line names it. CON-0006 forbids dropping a candidate the reader
+  would otherwise have to grep for; it does not require enumerating a directory
+  the reader can ask for by name.
+
+  This also settles :IMPORTS and :DEPENDS-ON without costs of their own. Both
+  originate only at containers, so nothing can ever cross them, and giving them
+  a number would record a value no walk can read.
+
+  D9  THE WEIGHTING ALGORITHM, WHOLE
+
+  Two rankings, and they answer different questions.
+
+  **Within the recalled set**, one score orders everything for tier assignment
+  and for display. Seeds and neighbours are commensurable here because the
+  score has a term for each and either may be zero:
+
+    lexical     BM25 over name, signature, arguments, path and package, with
+                field weights (D4). Zero for an entity reached only by the walk.
+    structural  -effective-cost from D7, i.e. proximity to the seed set
+                discounted by convergence. Zero for a seed; absent for an
+                entity the walk never reached.
+    entity      the surviving properties of the entity itself: type tier,
+                :EXPORTED-P, R4's test demotion (D5).
+    redundancy  MMR-style penalty against what is already admitted (D5).
+
+  **Between the tiers**, the source budget takes the top N of that order and
+  everything else goes to the index tier. There is no second ranking and no
+  reserve: the tier boundary is a cost boundary drawn in the open, which is
+  what CON-0006 asks for in place of a heuristic gate.
+
+  Combining lexical and structural into one order needs a constant saying how
+  many hops a BM25 point is worth, and this is the design's one honest tuning.
+  The earlier draft refused the blend and paid for it with a reserve mechanism
+  and a share, which is two tuned quantities pretending to be none. Under D2
+  the constant is also much less consequential than it looked: it decides who
+  gets a source block, not who exists, and being wrong costs one `describe`
+  call. Acceptance sets it; D12.
+
+  D10 THE ARRIVING EDGE AND THE MATCHED TERMS ARE PRINTED
+
+  Every line says why it is there. A seed carries the terms it matched; a
+  neighbour carries its arriving edge and distance:
+
+      function dhandler-get   [<file>:<lines>]   <-implements 1
+
+  DES-0020's argument for band headings is the argument for this, and under D2
+  it is worth more: an index-tier line is all the reader gets about that entity,
+  so it has to carry enough for the reader to decide whether to spend a
+  `describe` on it. A neighbour at distance 1 on :IMPLEMENTS and one at distance
+  4 on :CALLS deserve different decisions and print identically today.
+
+  D11 WHY NOT A CROSS-ENCODER, YET
+
+  Reranking definitions with a cross-encoder is the natural next proposal and
+  the framing behind it is right -- the retrieval unit should be the definition,
+  and Loom already gets that part right where most code search does not.
+
+  Three things say not yet, and the first is the strongest.
+
+  A cross-encoder buys precision at the top of a ranked list. Under CON-0006
+  and D2, top-of-list precision is the *least* valuable thing to buy: a wrong
+  order costs one `describe` call, where a wrong retrieval costs a grep. The
+  budget for improving this system is better spent on recall and on latency,
+  and that is a conclusion from the purpose rather than a preference about
+  models.
+
+  It has almost nothing to read. No code entity carries a docstring (D4), so
+  the "document" for a definition is a name, an arglist and a path -- fifteen
+  tokens of identifiers. A cross-encoder over that is scoring an identifier
+  against a query with a transformer in the middle, and it cannot beat BM25 on
+  an input with no prose in it. The precondition is docstring capture, which is
+  independently the largest retrieval improvement available and helps BM25
+  first.
+
+  It costs per-query latency against a goal that is explicitly speed, in a
+  runtime with no Python and no assumed GPU. If it lands later it should land
+  the way DES-0011's `enrich` did: optional, on demand, off the hot path, and
+  self-aging rather than silently stale.
+
+  REQ-0016 currently forbids this in writing -- "not a request for semantic or
+  embedding-based search... if an architecture document concludes otherwise it
+  should say why the cheaper structural signals were insufficient". This
+  document does not conclude otherwise. It says the cheaper signals have not
+  been tried, names them, and leaves the slot open with the measurement that
+  would justify filling it.
+
+  D12 ACCEPTANCE
+
+  Recall-first changes what acceptance means, so each of REQ-0016's clauses is
+  restated as tier placement rather than as presence.
+
+  On game-server:
+
+    data-handler
+      R6. DATA-HANDLER first in the source tier, and a majority of DB-HANDLER,
+      TABLE-HANDLER, MODEL-HANDLER, NULL-HANDLER and GAME-HANDLER present
+      somewhere, each with :INHERITS or :USES on its line -- :USES and not
+      :IMPLEMENTS, per D1a, because that is the edge a method specialised on a
+      class actually carries in this ontology. DATA-HANDLER, DB-HANDLER and
+      most of the protocol already arrive today through the per-item relation
+      lists; what R6 still lacks is TABLE-HANDLER, MODEL-HANDLER and
+      GAME-HANDLER, so that trio is the measurement. The CORS layer
+      may appear in the index tier and must not appear in the source tier --
+      which is R6 read through CON-0006, and is weaker than R6's text on
+      presence and stronger on what the expensive tier holds. The horizon is
+      tuned here: the smallest value returning the majority, recorded here
+      rather than in a commit message.
+
+    restructure data handler protocol encode decode
+      R4. No test fixture in the source tier. Fixtures in the index tier are
+      not a failure -- R4's subject is displacement.
+
+    start-server startup sequence and database handler health check
+      R7's standing clause, which REQ-0016 says to argue with rather than edit.
+      All six of READ-CONFIG, CONFIG-GET, SET-CORS-HANDLER, INITIALIZE-GAME-API,
+      INITIALIZE-MEDIA and CONFIGURE-LOG are outgoing :CALLS neighbours of
+      START-SERVER at cost 3, so all six should appear; under D2 the clause
+      becomes easy to meet and the interesting question moves to whether they
+      or the DHANDLER-HEALTHY-P protocol get the source tier. Report both.
+
+      Also R5's convergence check: whether the eight seeds meet somewhere
+      sensible, reported either way, including if they do not.
+
+    data-api handler database connection acquire and test connectivity
+      R8, non-negotiable: all three CONNECTION-CONNECT-DATABASE definitions,
+      and under D2 all three in the source tier, since the triplication is the
+      finding and reading one of three is not the finding.
+
+  A recall measure, which this requirement has never had and which CON-0006
+  implies: for each query, the count of entities a human judges relevant that
+  appear in *neither* tier. That number is the one this design exists to move,
+  and it is not the number REQ-0016 has been arguing about.
+
+  On Loom: full suite green, `check` clean, and `context macro definitions`
+  loses nothing it returns today. R6's MAKE-MACRO-ENTITY clause is already
+  recorded as stale on REQ-0016 and is a matching question -- prefix beats
+  substring -- which D4 resolves by retiring substring matching.
+
+  D13 WHAT STAYS THE SAME, AND WHAT IS DELIBERATELY NOT HERE
+
+  No ontology change: no new relationship type, no new entity type, no new
+  property. No analyzer change, no resolution change, no graph write -- the
+  walk is read-only over NEIGHBORS, which already takes :REL-TYPES and
+  :DIRECTION. A relationship type absent from the cost table is uncrossable
+  rather than free, which is the safe default and is why the table has no
+  fallback cost.
+
+  Not here, and each is a requirement of its own:
+
+    Docstring capture -- DONE, 2026-08-17, as REQ-0035 and DES-0028. Listed
+    here as not-this-design's and it was not; it landed first because it is a
+    prerequisite for REQ-0016 R5 rather than a follow-on, since no weighting
+    change can manufacture a candidate whose only distinguishing text was never
+    indexed. D4's field set now includes what it produced.
+
+    `find`'s silent 20-hit cap (REQ-0005). A CON-0006 defect by inspection --
+    it drops, and silently -- but it is `find`'s, not `context`'s.
+
+    R5's other half, "a query naming no known entity must still return
+    something useful". D7's convergence helps a weak seed set and does nothing
+    for an empty one. No seeds, no walk. That case stays open on REQ-0016.
+
+  ALTERNATIVES CONSIDERED
+
+  Keep the 2,000-token budget and rank harder. This is what the earlier draft
+  of this document did, and it produces two reserves competing for a budget
+  sized for a bundle that no longer exists once REQ-0031 lands. The scarcity
+  was real when the number was chosen and mostly is not now.
+
+  One tier, source for everything that fits. Simplest, and it is the current
+  design with bigger blocks: it silently becomes precision-first, because
+  whatever does not fit is invisible and the agent cannot tell it from absent.
+  This is the failure CON-0006 names.
+
+  Degree or PageRank centrality. D7. Ranks containers first on this ontology,
+  is a property of the tree rather than of the question, and cannot produce the
+  answer R6 demands because DATA-HANDLER is not central by any tree-wide
+  measure.
+
+  Expand two hops instead of one. The one-line change, and wrong for a
+  stateable reason: the second hop is dominated by :CALLS fan-out, so it buys
+  the CORS layer back at the same time as TABLE-HANDLER. Depth is not the axis;
+  cost is.
+
+  Weight by entity type rather than edge type -- prefer classes when the seed
+  is a class. Reaches the same answer on R6's query and fails on R7's, because
+  it cannot say an outgoing call is worth more than an incoming one. The
+  direction asymmetry is where the information is and only an edge carries a
+  direction.
+
+  CONSEQUENCES
+
+  Bundles get much larger and that is the point. The index tier is new cost
+  with a new job, and the number that should be watched is not bundle size but
+  the count of grep-equivalent tool calls an agent makes after a bundle --
+  which is REQ-0031's measurement instrument and the reason these two documents
+  are coupled.
+
+  The retrieval layer becomes a real index. That is the largest piece of work
+  here and it pays twice: BM25 needs the postings list, and the linear scan is
+  the latency problem that recall-first would otherwise make worse.
+
+  One tuned constant is introduced where the earlier draft claimed none -- the
+  weight between lexical and structural score in D9. It is honest about being a
+  tuning, it is set by acceptance, and D2 makes it cheap to be wrong about.
+
+  Two parameters replace one budget, and both are sized against a context
+  window rather than against a guess. They are named constants in
+  loom-knowledge and should not become per-tree configuration without a
+  requirement saying why.

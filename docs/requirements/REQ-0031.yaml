@@ -1,0 +1,323 @@
+id: REQ-0031
+title: describe must be able to return the source of what it describes, because every caller that gets a line range next reaches for a file
+status: partial
+date: 2026-08-15
+refines: [CON-0004]
+affects: [describe-entity, search-entities, build-context]
+tags: [knowledge, describe, agents, console, game-server, con-0006, req-0016]
+summary: |
+  DESCRIBE-ENTITY answers with everything about an entity except the entity:
+  its file, its exact line range, its arguments, the names it calls, its
+  neighbours grouped by edge type, and the documents governing it. It does not
+  answer with the code. So the caller reads the line range and immediately
+  spends a second, slower operation outside Loom getting the seven lines Loom
+  just located.
+
+  Measured on game-server, 2026-08-15: one small change, two `context` calls
+  and six `find`/`describe`/`check` calls against Loom -- and eleven shell
+  commands, of which five existed only to print regions of files Loom had
+  already named. `describe database-alert` returned
+  server/server.lisp:49-57 and the caller then ran `sed -n 49,57p` on the same
+  file.
+
+  This asks that the source be available from the operation that already knows
+  where it is. It is the cheapest unclaimed improvement in the tool: the data
+  is on disk, the byte offsets are indexed, and no analysis is involved.
+body: |
+  WHAT IS WRONG
+
+  Nothing is wrong with what DESCRIBE-ENTITY returns. The gap is what it
+  stops short of, and the shape of the gap is that every consumer closes it
+  the same way.
+
+  An agent's loop against a foreign codebase is: ask `context` what bears on
+  the task, ask `find` or `describe` where the interesting entity is, then
+  read it. The third step is the one that changes code, and Loom hands it off.
+  For a human at the console that handoff is free -- the editor is already
+  open and the line number is a jump. For an agent it is a tool call to a
+  different tool with a different failure mode, and for a remote caller over
+  MCP it may not be available at all: the service knows the repository root
+  and the client may not even be on the same machine.
+
+  That last case is the one that makes this a requirement rather than a
+  convenience. REQ-0021 prepares repositories Loom did not write, and REQ-0008
+  put the service behind MCP so that an agent installed in such a worktree
+  reaches Loom over the wire. An agent that can ask Loom where a function is
+  and cannot ask Loom what it says is an agent that must have filesystem
+  access to the tree the service is indexing -- which the deployment REQ-0021
+  describes, with a central service and network-mounted checkouts, does not
+  guarantee in the direction anyone assumed.
+
+  WHAT IT WOULD COST
+
+  Almost nothing, and that is most of the argument. The entity already carries
+  :file, :start-line and :end-line -- DESCRIBE-ENTITY's own properties block
+  returns all three today. Answering with the text is a bounded read of a
+  known range of a known file. There is no analysis, no new index, no schema
+  beyond a field, and no new failure mode except a file that changed under a
+  stale index, which is a condition the monitor already exists to bound and
+  which REQ-0013's reporting obligation already covers in principle.
+
+  WHAT THIS IS NOT
+
+  It is not REQ-0007 reversed, and the distinction is the whole design.
+  REQ-0007 established that `describe` on a *document* must summarise it
+  rather than reprint it, because a document is prose whose whole content is
+  the answer and dumping 800 lines of REQ-0021 into a context window is not
+  describing it. A code entity is the opposite case: a function is bounded,
+  its text is the specification of its behaviour, and no summary of nine lines
+  of Lisp is smaller than the nine lines. Both requirements say the same thing
+  -- return what is useful at the size it is useful -- and reach opposite
+  conclusions because the material differs. R3 below keeps REQ-0007's rule
+  intact by leaving documents alone entirely.
+
+  It is not a request that `context` inline source. `context` is budgeted at
+  2,000 tokens and spends it on breadth; source in that bundle would buy one
+  entity and lose the map, which is the trade REQ-0016 is already arguing
+  about from the other side. The right shape is that `context` names what
+  matters and a second call fetches the few that do.
+
+  It does not ask Loom to become an editor. Reading a region is not writing
+  one, and nothing here implies a patch operation. The :repl tier exists for
+  callers that need to act on the image and is gated for good reasons that
+  DES-0003 and DES-0004 carry.
+
+  It does not ask for the file. A whole-file read is a different operation
+  with a different budget, and the entity's range is what makes this one
+  bounded. A caller that wants the file has the path.
+
+  REQUIREMENTS
+
+  R1  `describe` can return the source text of the entity it describes,
+      bounded by the line range it already reports, on both the REST and MCP
+      surfaces and at the console.
+
+  R2  It is requested rather than assumed. A caller that wants the neighbours
+      and not the body -- which is `describe`'s behaviour today and is right
+      for surveying -- must be able to have exactly that, so the source is a
+      flag on the operation and off by default.
+
+  R3  A document entity is unaffected. REQ-0007 governs what `describe`
+      returns for a REQ, DES, PLAN, REV, BUG, CON, RULE or ARCH, and this
+      requirement does not reopen it: asking for source on a document returns
+      what it returns today.
+
+  R4  The text is served with the range it came from and the commit or index
+      generation it was read at, so a caller can tell that what it read
+      matches what Loom described. A body served without provenance is a
+      quiet way to act on a file that moved.
+
+  R5  A range that no longer exists -- the file shrank, the file is gone --
+      reports that plainly rather than returning a shorter region or an empty
+      string. This is the stale-index case and it must be visible at the point
+      of the answer, per REQ-0013.
+
+  R6  The response is bounded. An entity whose range is enormous -- a 900-line
+      generated file treated as one unit -- must not turn one `describe` into
+      an unbounded payload; the limit and what happens at it are the
+      architecture's to choose, but silence is not among the options.
+
+  R7  Acceptance is measured as a reduction in the handoff. Re-run the
+      game-server session of 2026-08-15 -- the five `sed`/`Read` calls that
+      followed a Loom answer -- and require that each is answerable by
+      `describe` with source. On Loom's own tree, `describe resolve-one
+      --source` must return src/graph/resolve.lisp:1136-1158 verbatim,
+      docstring included, and `describe REQ-0021 --source` must return what
+      REQ-0007 makes it return today.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - Does source belong on `describe` or on its own operation? A separate
+    `source` reads more honestly against REQ-0007's split and costs a caller
+    one more round trip. A flag keeps the "where is it and what is it" question
+    single, which is how it is actually asked.
+  - What does `find` do? It returns several entities and a body for each would
+    be an unbounded answer to a search. Probably nothing, and R1 deliberately
+    does not name it -- but an agent that has found the one entity it wanted
+    will want the body without a second call, and that pressure should be
+    resolved deliberately rather than by whoever implements it first.
+  - Does the range include the docstring and the preceding comment block? The
+    indexed range starts at the form, and in this codebase the paragraph above
+    a function is frequently the most valuable thing about it. Extending the
+    range is a change to what an entity *is* and should not be made silently
+    here.
+  - How does this interact with the enrichment fields that are currently
+    unpopulated everywhere? If an enriched summary lands later, a caller asking
+    for source and a caller asking for a summary want different things and the
+    operation should already have room for both.
+
+  CONTEXT AFTER ALL, AND TWO OPEN QUESTIONS CLOSED, 2026-08-16
+
+  DES-0026 is written against this requirement and assumes it lands next, so
+  the coupling is recorded here as well -- a design depending on a draft
+  requirement is a fact the requirement should carry rather than something only
+  the design knows.
+
+  One non-goal above is contested by that design and is left standing rather
+  than edited, per the convention REQ-0016 set for its own R7 clause.
+
+  "It is not a request that `context` inline source." The reason given is that
+  "`context` is budgeted at 2,000 tokens and spends it on breadth; source in
+  that bundle would buy one entity and lose the map". The arithmetic is right
+  and the conclusion followed from it, but the budget is the premise and
+  DES-0026 D3 argues the premise: 2,000 was sized for a bundle carrying names
+  and locations, and it is not a fact about what a bundle should cost. Sized
+  against a modern context window the bundle can hold both -- a few entities
+  with their source and a long, cheap list of everything else recalled at
+  roughly fifteen tokens a line.
+
+  So the map is not lost, which was the real objection. It moves to a tier that
+  costs almost nothing, and CON-0006 is why that is the right trade: the reader
+  discards a wrong line for free and cannot recover from a missing one without
+  the grep this requirement exists to eliminate. "`context` names what matters
+  and a second call fetches the few that do" was one round trip per interesting
+  entity; the two-tier bundle is zero for the entities ranking highest and one
+  for anything the reader picks out of the index tier.
+
+  R8  `context` may carry source for a bounded number of entities, and must
+      still name every other entity it recalled. The bound is the
+      architecture's -- DES-0026 makes it a count of definitions rather than a
+      token figure -- but the pairing is not optional in either direction: a
+      bundle with source and no index tier is the precision failure CON-0006
+      names, and a bundle with an index tier and no source is what this
+      requirement already exists to fix.
+
+  Two of the open questions above are answered by that design, and one of them
+  is answered harder than it was asked.
+
+  "Does the range include the docstring and the preceding comment block?" Yes,
+  and it stopped being a nicety. No code entity in this index carries a
+  docstring at all -- the :FUNCTION schema holds :SIGNATURE, :ARGUMENTS, the
+  line range and some flags, and :SUMMARY exists only on document types. So the
+  padded block is the *only* route by which prose about a definition reaches a
+  reader, and on this tree that prose is frequently the most valuable thing
+  about the definition. The question asked whether extending the range changes
+  what an entity is; R9 answers that it does not, by extending what is
+  *served* rather than what is indexed.
+
+  R9  Source is served padded: the contiguous comment or docstring block
+      immediately preceding the form, and a small fixed number of lines after
+      it. The entity's indexed range is unchanged -- padding is a property of
+      the answer, not of the entity, so nothing that reads :START-LINE or
+      :END-LINE sees a different number. R4's provenance reports the padded
+      range actually returned, not the indexed one, or the caller cannot tell
+      what it read.
+
+  A THIRD TREE, AND WHAT IT COSTS R9, 2026-08-16
+
+  ~/github/front-end is now watched alongside Loom and game-server -- 508
+  files, 4,249 entities -- and it is the first non-Lisp tree in the index. It
+  contradicts R9 as written and sharpens two other clauses.
+
+  R9 says source is served padded with "the contiguous comment or docstring
+  block immediately preceding the form". That describes Lisp, where the
+  docstring is inside the form and the prose above it is a run of `;;` lines,
+  and a line-by-line walk upward is enough to find it. It does not describe
+  JavaScript. 249 of front-end's 461 source files carry JSDoc -- 980 `/**`
+  blocks -- and a JSDoc block is delimited, not a run of line comments:
+
+      /**
+       * Emit a partition.
+       * @param {Object} p
+       */
+      export function emitPartition(p) {
+
+  Walking upward one line at a time, none of ` */`, ` * @param` or `/**` is
+  recognisable as a comment without knowing a block is open. A padder that
+  tests for a line-comment prefix returns nothing here and silently drops the
+  prose on half the tree -- the exact text the padding exists to deliver.
+
+  R9 is therefore restated rather than merely elaborated:
+
+  R9  (restated) Source is served padded with the comment block attached to
+      the definition, and *what a comment block is* is the analyzer's answer,
+      not a shared line rule. Line-comment runs in Lisp, delimited blocks in
+      JavaScript, and whatever a later analyzer knows about its own language.
+      The entity's indexed range is still unchanged; padding remains a
+      property of the answer, and R4's provenance still reports the padded
+      range actually returned.
+
+      A language whose analyzer does not answer serves the unpadded range
+      rather than guessing. An unpadded body is a smaller answer; a wrongly
+      padded one attributes prose to a definition it was not written about,
+      which REQ-0035 R3 forbids for the stricter reason that it fabricates.
+
+  This is the same primitive REQ-0035 needs. That requirement asks for the
+  prose to be *indexed* and this one asks for it to be *served*, and both need
+  one question answered per language: which comment block belongs to this
+  definition. It should be answered once. The two requirements differ in what
+  they may do with a doubtful answer -- serving may over-include, indexing may
+  not, per DES-0027 D3 -- and that difference is about the consumer, not about
+  the extraction.
+
+  R6 gains a real driver. The bound it asks for was hypothetical against Lisp,
+  where `resolve-one` is 23 lines and `database-alert` is 9. front-end's
+  components are not: LayerEditor is 251 lines and MapElementTypeEditor 249. A
+  `describe --source` on a React component is a payload an order of magnitude
+  larger than anything the first two trees would have produced, so R6's limit
+  is now exercised by ordinary use rather than by the pathological 900-line
+  case it was written against.
+
+  R7's acceptance names two trees and there are three. It gains: a JSDoc'd
+  JavaScript definition returns its block, and a component whose range exceeds
+  R6's bound reports the bound rather than truncating in silence.
+
+  One observation recorded rather than acted on. front-end's components are
+  split across entity types by declaration style -- DesignTerrain, ColorEditor
+  and MapElementTypeEditor are :FUNCTION, while MapEditor and LayerEditor are
+  :VARIABLE because they are arrow consts. A :VARIABLE on this tree can be a
+  129-line component where a :VARIABLE on Loom is a DEFPARAMETER. Nothing in
+  this requirement breaks on that, since R1 is written about the entity's
+  range and not about its type, but "source of a variable" means something
+  very different per language and a design that special-cases :FUNCTION would
+  be wrong here.
+
+  OUTSTANDING, 2026-08-16
+
+  R1 through R7 and R9 landed under DES-0027 and PLAN-0030. Three things did
+  not, and this document is `partial` for them.
+
+  R8, `context` carrying source. Outstanding when this section was written and
+  MET on 2026-08-17 under PLAN-0032 S3. `context` now carries padded source for
+  *CONTEXT-SOURCE-DEFINITIONS* entities and names the rest in an index tier
+  budgeted separately, which is both halves of R8's pairing.
+
+  DEFINITION-SOURCE is reached through a callback rather than called, because
+  loom-knowledge cannot see loom-workspace -- the same layering D1 of DES-0027
+  established, met from the other side. The caller that has the repository
+  passes the fetch in; the tier logic and the rendering stay where the bundle is
+  built.
+
+  R7's acceptance is not repeatable as written, and that is a defect in the
+  clause rather than in the work. It asks to "re-run the game-server session of
+  2026-08-15 -- the five `sed`/`Read` calls" and the transcript naming those
+  five was never committed, so only the one call quoted in this document's
+  summary can be checked. It was: `describe database-alert --source` returns
+  server/server.lisp 49-57, which is exactly the `sed -n 49,57p` that prompted
+  the requirement. The capability was measured instead, across 126 sampled
+  definitions on all three watched trees -- every one served its source, with
+  no unlocated and no failures. A future acceptance clause that names a session
+  should name the calls in the document, or it expires with the terminal
+  scrollback.
+
+  What remains outstanding is BUG-0032 alone, so this document is `partial` for
+  a resolver defect it exposed rather than for anything it failed to build.
+
+  BUG-0032 limits what this delivers on ~/github/front-end, and limits it
+  exactly where the feature is most wanted. `describe LayerEditor --source`
+  answers about LayerEditor.jsx, the file, and prints "this entity records no
+  line range" for a 251-line component three lines away, because a :FILE's
+  SIGNIFICANT-NAME is its basename and both are rank-0 exact matches. Sampling
+  60 of 430 basenames, 37 resolve to the file first. Addressed by id the source
+  path is correct on that tree and always was -- 42 of 42 sampled front-end
+  definitions served -- so this is a resolver defect that this requirement
+  exposed rather than caused. It is filed and not fixed here because the fix
+  changes what `describe` resolves to, which is a decision about a different
+  operation than the one this requirement is about.
+
+  "What does `find` do?" Still open here, but no longer neutral: `find` caps
+  silently at twenty hits (REQ-0005), which CON-0006 makes a defect by
+  inspection -- it drops candidates, and the caller cannot see that it did.
+  That is `find`'s problem rather than this requirement's and belongs in its
+  own document; it is noted because whoever resolves the body-on-`find`
+  question will be looking straight at it.

@@ -1,0 +1,92 @@
+id: BUG-0026
+title: complete drops a verdict for a document its walk never reached, without saying so
+status: closed
+date: 2026-08-13
+refines: [PLAN-0019]
+affects: [complete-plan, set-document-status, parse-verdicts]
+tags: [transitions, con-0001, silent-drop, req-0022]
+summary: |
+  `complete <plan> <doc>=<verdict> ...` looks each verdict up as it walks the
+  refines: chain, and a verdict naming a document the walk never reaches is
+  never consulted and never reported. The caller typed it, nothing happened to
+  it, and the command said nothing.
+
+  Found by using it. `complete PLAN-0022 DES-0022=partial REQ-0021=partial`
+  applied the first verdict, correctly stopped the walk there -- a partial
+  design means the requirement above it is not implemented either -- and
+  silently discarded the second. The report showed two documents changed and
+  listed only DES-0022, so the omission was visible to a reader who counted and
+  invisible to one who did not.
+body: |
+  SYMPTOM
+
+  Run 2026-08-13 on this tree:
+
+      loom> complete PLAN-0022 DES-0022=partial REQ-0021=partial
+        PLAN-0022      plans          draft       -> final
+        DES-0022       design         draft       -> partial
+        PLAN-0022      draft -> final  moved to docs/plans/completed/PLAN-0022.yaml
+        DES-0022       draft -> partial
+      2 documents changed, 1 file moved.
+
+  REQ-0021 appears nowhere: not as changed, not as blocked, not as awaiting a
+  verdict, not as an error. Its status is still draft and the caller has no
+  reason to think so.
+
+  CAUSE
+
+  COMPLETE-PLAN walks the chain and, at each document it reaches, looks up a
+  verdict for it:
+
+      (verdict (cdr (assoc doc-id parsed :test #'string-equal)))
+
+  The lookup is driven by the walk. A verdict whose document the walk never
+  visits is never the subject of an ASSOC, so nothing in the function ever
+  touches it. There is no code path that could report it because there is no
+  code path that reads it.
+
+  The walk stopping was correct and is the behaviour DES-0019 D4a specifies:
+  it continues upward only through a *terminal* verdict, so a design marked
+  partial -- which has an OUTSTANDING section, which is work -- stops the climb
+  before the requirement above it. RULE-0005 says the same thing in prose. The
+  defect is not the stop; it is that the stop silently invalidated an argument
+  the caller had already supplied.
+
+  WHY IT HID
+
+  It cannot fire on the common path. A caller who runs the dry run first is
+  told exactly which documents need verdicts, and supplying that list produces
+  no unused verdict. This requires supplying a verdict for a document the dry
+  run did *not* ask for -- which is what happens when the caller expects the
+  walk to climb further than it does, and that expectation is precisely what a
+  partial verdict falsifies.
+
+  So the case is reachable only when the caller has misunderstood the shape of
+  the cascade, which is the moment they most need to be told.
+
+  It also passed every test. The suite covers a verdict for a blocked document
+  (refused, correctly), a missing verdict (refused, correctly), and a
+  malformed verdict token (refused, correctly). Nobody wrote the fourth case --
+  a well-formed verdict for a document that is neither blocked nor reached --
+  because the walk was one hop when the tests were written and every refined
+  document was visited by construction. D4a made the walk conditional and did
+  not revisit the assumption the tests rested on.
+
+  This is CON-0001's shape at the argument boundary rather than at the fact
+  boundary: an input accepted without complaint, discarded on the way through,
+  and nothing in the output distinguishing that from the input having been
+  applied.
+
+  THE FIX
+
+  Track which verdicts were consulted and refuse the command when any was not,
+  naming them. Refuse rather than warn, for the reason COMPLETE-PLAN already
+  refuses a cascade with a missing verdict: the command is all-or-nothing, and a
+  caller who named a document that is not in the cascade has either mistyped it
+  or misread the chain. Both are worth stopping for, and the refusal costs
+  nothing because the whole thing is re-runnable.
+
+  The message has to say *why* it was not reached, since "REQ-0021 is not in
+  this cascade" invites the reply "it is, it is right there in the refines:
+  chain". The two reasons are the two the walk has: the chain stopped at a
+  non-terminal verdict below it, or it was never on the chain at all.

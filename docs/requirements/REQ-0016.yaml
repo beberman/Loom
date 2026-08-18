@@ -3,8 +3,11 @@ title: context must rank by structural centrality, not by name similarity
 status: draft
 date: 2026-08-06
 affects: [build-context, context-item, seed-entities, search-entities,
-          neighbor-summary, group-neighbors]
-tags: [knowledge, console, context, ranking]
+          neighbor-summary, group-neighbors,
+          seed-matches, seed-score, seed-slice, admit-seeds,
+          seed-type-rank, task-terms, slot-accessor-p, test-code-p,
+          named-by-task-p, production-names, demoted-test-p]
+tags: [knowledge, console, context, ranking, con-0006, req-0031]
 summary: |
   `context` is the command CLAUDE.md and the loom skill both tell an agent to
   reach for first -- "a budgeted bundle: what to know before editing". On
@@ -135,3 +138,359 @@ body: |
       documented example -- `context macro definitions` returning
       MAKE-MACRO-ENTITY and its neighbours -- must not regress, and the full
       suite must stay green.
+
+  FURTHER EVIDENCE, 2026-08-15, AND WHAT IT ADDS
+
+  Still draft, still reproducing, and now with a case the original evidence
+  did not cover: a query that names no entity at all.
+
+  Both queries above are entity-shaped -- `data-handler` is a class that
+  exists, and R1 is written about a "query naming an entity that exists". The
+  case measured here is R5's fallback, the "task described in words" path
+  `context` was built for, and it fails by a mechanism R1 through R4 do not
+  describe.
+
+  Asked, on game-server, for
+
+      start-server startup sequence and database handler health check
+
+  the bundle came back with eight seeds, of which seven were:
+
+      check-not-found-response   test/test-api.lisp
+      check-unknown-response     test/test-api.lisp
+      check-ok-response          test/test-api.lisp
+      check-alist                mpackage/test/obj-defn.lisp
+      check-slot                 mpackage/test/obj-defn.lisp
+      check-slot                 mpackage/struct-types.lisp
+      check-obj                  mpackage/obj-namespace.lisp
+
+  Every one of them is seeded on the English word "check". None has anything
+  to do with startup, databases or health. Six are test helpers, which is R4
+  firing again. The bundle reported 1979 of 2000 tokens and truncated, so the
+  noise was not free -- it was most of the budget.
+
+  (Six of eight when first written from the session transcript; re-measured
+  against a fresh index the same day it was seven, the second CHECK-SLOT being
+  a name game-server defines in two files. The exact count is not the point
+  and is why R7 below is a bound rather than a reproduction.)
+
+  This is worse than a bad ranking of relevant things. A word like "check",
+  "handler", "value", "create" or "test" appears in a large fraction of the
+  natural-language task descriptions an agent will write, and in a large
+  fraction of the entity names in any codebase. Lexical seeding on a prose
+  task therefore does not degrade gracefully as the query gets longer and more
+  descriptive -- it gets worse, because every additional word is another
+  chance to match something irrelevant. The seeding is being driven by whichever
+  of the author's words happens to collide with a name.
+
+  TWO THINGS THE SAME SESSION SHOWED THAT ARE NOT DEFECTS
+
+  The neighbourhood expansion partly rescued it. START-SERVER was the one good
+  seed, and the neighbour band underneath carried READ-CONFIG, CONFIG-GET,
+  SET-CORS-HANDLER, INITIALIZE-GAME-API, INITIALIZE-MEDIA and CONFIGURE-LOG --
+  which is the startup sequence, correctly and in order, and was what the
+  caller actually needed. The structure Loom builds is doing its job; it is
+  reached through seeds chosen badly and is competing for budget with them.
+
+  How badly it competes is worth stating, because the rescue is not reliable.
+  Re-measured against a fresh index the same day, that band was down to four
+  entries and only READ-CONFIG and CONFIG-GET of the six survived; the rest
+  were squeezed out by the seeds. So the expansion is not a floor under the
+  seeding defect -- it is the first thing the defect spends.
+
+  And a second query in the same session was genuinely, decisively useful:
+
+      data-api handler database connection acquire and test connectivity
+
+  returned CONNECTION-CONNECT-DATABASE in three places -- server/server.lisp,
+  game/test/api.lisp and data-api/test/fixture.lisp -- which is a triplication
+  nothing in the file being edited points at, and which changed the design of
+  the change being made. That query also contains "test" and "handler" and
+  still landed, because enough of its other words named real things.
+
+  So the recommendation this evidence supports is narrower than "seed
+  structurally instead of lexically", and it is a signal R1 through R5 do not
+  currently name: a seed matched only on a term that is common in prose should
+  be weighted far below one matched on a term that is distinctive, and the
+  count of seeds a single query word may contribute should probably be
+  bounded. Whether that is inverse document frequency over the tree's own
+  names, a stop-list, or a cap per query term is the architecture's to decide.
+
+  R7  A query term that matches many entities contributes proportionately
+      less, and no narrow slice of the query may fill the seed set. Stated as
+      a bound rather than as a reproduction, because the counts in this
+      section moved within a day: no single task term, and no single set of
+      task terms, may account for more than a quarter of the seeds while
+      another slice still has a candidate waiting. On game-server, the query
+      in this section must seed START-SERVER and must carry READ-CONFIG,
+      CONFIG-GET, SET-CORS-HANDLER, INITIALIZE-GAME-API, INITIALIZE-MEDIA and
+      CONFIGURE-LOG somewhere in the bundle.
+
+  R8  A prose query that lands today must still land. The `data-api handler
+      database connection` query above must continue to return
+      CONNECTION-CONNECT-DATABASE and its siblings; a fix that suppressed
+      common terms hard enough to lose it would trade this defect for a worse
+      one. The triplication is the finding, so all three definitions count --
+      two of three is a regression, not a partial pass.
+
+  WHAT LANDED, 2026-08-15
+
+  R1, R4, R7 and R8. R2, R3 and R5 are untouched and this document stays draft
+  for them; R6 is discussed at the end.
+
+  SEED-ENTITIES was rewritten in three parts (src/knowledge/context.lisp).
+  SEED-MATCHES records every (term . rank) an entity matched rather than only
+  the best one; SEED-SCORE ranks coverage -- how many of the task's distinct
+  terms a name answers to -- above match quality and below type preference;
+  ADMIT-SEEDS caps the number of distinct *names* any one slice of the task
+  may contribute at *SEED-TERM-SHARE*, and relaxes the cap rather than return
+  fewer seeds than there are candidates.
+
+  The defect was one expression. The old ranking scored an entity by
+  (reduce #'min tokens ...) -- the best of its matches -- and a best is the
+  same number whether one term produced it or five, so the entity matching
+  half the sentence tied with the entity matching one common word and the tie
+  fell to a PUSHNEW accumulator that put the task's *last* word first.
+
+  Measured after, on game-server:
+
+    start-server startup sequence and database handler health check
+      seeds     START-SERVER, RESTART-SERVER, CHECK-DATABASE-GAME,
+                CHECK-DATABASE-DEFNS, START-NULL-P?, SERVER-STATUS,
+                DATABASE-ALERT, HANDLER-EXISTS-P
+      band      all six of R7's startup functions, plus GAME-CONFIG and
+                CHECK-DATABASE itself -- which the pre-change bundle did not
+                contain anywhere
+
+    data-api handler database connection acquire and test connectivity
+      seeds     CONNECTION-CONNECT-DATABASE from all three files,
+                DATABASE-ALERT, IS-RESTRICTED-DATABASE, HANDLER-EXISTS-P,
+                CLEAR-TEST-DATA, CLEAR-GAME-DATA
+      band      MAKE-DB-CONNECTION, DB-OPEN
+
+  Two intermediate rules were measured and rejected, and ADMIT-SEEDS records
+  why in full: charging each seed to its narrowest term cost R8 one of the
+  three CONNECTION-CONNECT-DATABASE definitions, and exempting anything that
+  matched more than one term let five of the CHECK-DATABASE-* family take five
+  of eight slots. Counting distinct names against the whole matched slice is
+  what satisfies both.
+
+  R6's Loom-side example is stale and was already stale before this change:
+  `context macro definitions` does not return MAKE-MACRO-ENTITY on the current
+  tree and did not before the rewrite either, because MAKE-MACRO-ENTITY
+  matches "macro" as a substring where MACRO-BODY-INDEX and its siblings match
+  it as a prefix. That is R1 and R3's subject, not R7's. The bundle is
+  otherwise unchanged and lost a test-file entity from it.
+
+  R1 AND R4, SAME DAY
+
+  SEED-SCORE is now six bands, and the two added for R1 and R4 are the third
+  and fourth:
+
+    type      *SEED-TYPE-PREFERENCE*, flattened from fifteen entries to three
+              tiers -- definitions, containers, documents, with an unlisted
+              type (:CALL-SITE) after all of them
+    named     the task named this entity, as a whole word the caller wrote
+    accessor  the name was synthesised from a slot declaration
+    test      test code, when the task did not ask about tests
+    coverage  how many of the task's terms the name answers to
+    match     quality of the best match
+
+  R1's defect was not that naming went unrewarded. It was that :CLASS sat two
+  places below :FUNCTION in a fifteen-entry list whose only recorded argument
+  is about *containers* -- "a file's neighbourhood is a directory listing" --
+  and because the type band dominates the score, that unargued gap meant every
+  function matching any word outranked the class the query was named after. A
+  CLOS subsystem is classes and methods, so a seeder preferring functions
+  cannot describe one. Flattening the tiers is most of R1; the `named` band is
+  what then decides between a class and a function that tie.
+
+  Three things had to be got right and each was measured wrong first:
+
+  - `named` must sit *below* type, not above it. Above, it hands the bundle to
+    whatever container shares a word with the task: a file's SIGNIFICANT-NAME
+    is its basename, so `data-api handler database connection acquire and test
+    connectivity` seeded the DATA-API package, data-api.asd, three more files
+    and one lone definition.
+  - It must fire only on words the caller wrote. TASK-TOKENS splits
+    "data-handler" into "data" and "handler" to widen the search, and
+    game-server has five slot accessors named exactly DATA -- which took five
+    of eight seeds on an exact match against a fragment Loom invented.
+    TASK-TERMS is the task's own words; TASK-TOKENS is Loom's guess about them.
+  - A slot accessor needs a band of its own even so, because excluding it from
+    `named` still leaves it winning on match rank. SLOT-ACCESSOR-P reads
+    :GENERATED-BY on an :INTERFACE, which is a fact the analyzer recorded
+    rather than a guess about a name. A :FUNCTION with :GENERATED-BY is left
+    alone: in a tree that leans on definer macros that is the API.
+
+  R4 needed a notion of test code Loom did not have. The :TEST entity type is
+  a `test' form the analyzer recognised, and the population R4 is about --
+  CHECK-OK-RESPONSE, ENCODE-TEST-OBJ -- are ordinary :FUNCTIONs that happen to
+  live in test/. So TEST-CODE-P is a path guess, and this project has been
+  burned by one: BUG-0006 derived :SYSTEM from a path and every layering rule
+  matched nothing until DES-0009 replaced it with the file's own package name.
+  The difference worth stating is what a wrong answer costs. A wrong :SYSTEM
+  is a fact asserted into the graph and read by rules; a wrong answer here
+  moves one candidate down one band in one bundle. Ranking may guess where
+  assertion may not.
+
+  R4 AGAINST R8, AND WHICH ONE BENDS
+
+  They collide head-on, and the collision is not hypothetical: two of the
+  three CONNECTION-CONNECT-DATABASE definitions R8 protects live in test
+  files. Demoting test code took R8's query from three of three to one of
+  three -- exactly the regression R8 was written to forbid.
+
+  R4 bends, and it does not lose anything by bending. Its subject is a
+  *fixture* displacing the definitions a task asked about; a test definition
+  of a name production code also defines is not competing for that slot, it is
+  part of what the seed is saying about the name. PRODUCTION-NAMES collects
+  the names some non-test candidate carries and DEMOTED-TEST-P exempts them.
+  After it: R8's query returns all three definitions and gains the
+  DHANDLER-ACQUIRE-CONNECTION protocol; R4's query still shows no fixture
+  among its seeds.
+
+  MEASURED AFTER, ON GAME-SERVER
+
+    data-handler
+      seeds  DATA-HANDLER (first), DATA-HANDLER-ERROR,
+             DATABASE-UNAVAILABLE-ERROR, DATABASE-ALERT, HANDLER-EXISTS-P,
+             DB-HANDLER (class and interface), data-api/db-handler.lisp
+      band   DATA-DECODER-FN, DATA-ENCODER-FN, RESET-TABLES
+      R1 met; no CORS layer, no test helpers, no call sites.
+
+    restructure data handler protocol encode decode
+      seeds  the two DATA-HANDLER error classes, SET-ENCODER-DECODER,
+             DATABASE-UNAVAILABLE-ERROR, DATABASE-ALERT, HANDLER-EXISTS-P,
+             ENCODE-MODEL-BASE, ENCODE-TYPESIG
+      R4 met; the ENCODE-TEST-OBJ and DECODE-TEST-OBJ fixtures that dominated
+      this bundle are gone.
+
+  R6 IS NOT MET AND THIS IS WHERE IT STOPS
+
+  R6 asks for "a majority of its subclasses and dhandler-* protocol". DB-HANDLER
+  arrives as a seed and DHANDLER-DELETE, DHANDLER-GET and the rest arrive in
+  the neighbour band, but TABLE-HANDLER, MODEL-HANDLER and GAME-HANDLER do
+  not, and which of the protocol survives varies with what else is competing
+  for the budget. Getting there is R2 and R3's work -- weighting :INHERITS and
+  :IMPLEMENTS above :CALLS when expanding, and ranking structural distance
+  above lexical match -- and those are about the *expansion*, not the seeding.
+  Everything above changes which entities a bundle starts from; nothing above
+  changes how it grows.
+
+  One clause of R7 as restated above is also no longer met on the nose: the
+  startup-sequence query now spends its neighbour band on the
+  DHANDLER-HEALTHY-P protocol and carries only READ-CONFIG and CONFIG-GET of
+  the six functions named there. That is a better bundle for the question
+  asked -- CHECK-DATABASE is a seed and the health-check protocol is what the
+  task was about -- but it is a bundle the clause forbids, and the clause was
+  written a commit earlier against behaviour this change replaced. It is left
+  standing rather than quietly relaxed: R2 and R3 should be measured against
+  it, and if it is still unmet then, it should be argued with rather than
+  edited.
+
+  THE PURPOSE, AND WHAT IT CORRECTS ABOVE, 2026-08-16
+
+  Everything above is written as a precision complaint, and half of it is
+  wrong for a reason that is not visible from inside the evidence. This section
+  states the correction rather than editing the text it corrects.
+
+  The consumer of a bundle is an LLM, and Loom exists to stop it grepping --
+  REQ-0031 measured the loop this requirement is ultimately about: one small
+  change on game-server cost eleven shell commands, five of which existed only
+  to print regions of files Loom had already named. That fixes the retrieval
+  trade-off and fixes it opposite to the way a search engine for humans does.
+  A wrong entry costs the reader a few tokens and no attention. A *missing*
+  entry sends it back to grep, and does so silently, because the reader cannot
+  tell a subsystem Loom did not return from one that does not exist. CON-0006
+  records the asymmetry and its consequence: demote, never drop.
+
+  So the complaint at the top of this document -- 22 entities came back and
+  "almost none of them is what the question was about" -- named the right
+  defect and measured it with the wrong instrument. The defect was never that
+  SET-CORS-HANDLER was present. It was that the DATA-HANDLER protocol was
+  *absent*, which is a recall failure, and the 22 wrong entities were the
+  symptom that made it visible rather than the disease.
+
+  Three clauses above should be read in that light:
+
+  R3 is already right and is the model. "SET-CORS-HANDLER must not displace
+  DHANDLER-GET" -- displace, not appear.
+
+  R6 is not. "Must not spend its budget on server/gameapi.lisp's CORS layer"
+  reads as exclusion, and exclusion of a cheap entry buys nothing. What it
+  should require is that the CORS layer never take a slot the protocol needed.
+
+  "It does not ask for the token budget to change" was correct when written
+  and is now false, and this is the one place the correction has real cost.
+  The argument for it was that 2,000 tokens is enough to *describe a subsystem*
+  when the right entities are chosen -- true of a bundle listing names and
+  locations. Once REQ-0031 lands and a bundle can carry source, 2,000 tokens is
+  three to eight definitions in total. The number was not wrong; the bundle it
+  was sized for stops existing. DES-0026 assumes REQ-0031 is implemented next
+  and is written against it.
+
+  R7'S STANDING CLAUSE IS MET, 2026-08-17
+
+  The clause was left standing rather than relaxed, with the instruction that
+  "R2 and R3 should be measured against it, and if it is still unmet then, it
+  should be argued with rather than edited". It is met, and neither R2 nor R3
+  is what met it.
+
+  On game-server, `start-server startup sequence and database handler health
+  check` now seeds START-SERVER and carries all six of READ-CONFIG, CONFIG-GET,
+  SET-CORS-HANDLER, INITIALIZE-GAME-API, INITIALIZE-MEDIA and CONFIGURE-LOG
+  somewhere in the bundle. Nothing is missing.
+
+  What met it was REQ-0035 -- the prose a definition declares becoming a field
+  the seeder matches. The seeds improved enough that the neighbour band and the
+  per-item relation lines reach the startup sequence without the expansion
+  changing at all. That is worth recording precisely because it was not the
+  predicted route: DES-0026 D12 expected the two-tier bundle to make this clause
+  easy, and it was met before any part of that design landed.
+
+  The measurement counts a relation line as carrying an entity, which the clause
+  permits -- it says "somewhere in the bundle" -- and which is honest for the
+  same reason CON-0006 gives: a named entity is one `describe` away, where an
+  absent one sends the reader to grep. It is not the same as a source block, and
+  DES-0026 D2's tiers are still what would put the right six in the expensive
+  tier rather than merely in the answer.
+
+  R6 IS MET, 2026-08-17
+
+  Both halves, and the Loom half had been recorded as stale.
+
+  On game-server, `context data-handler` returns all ten of DATA-HANDLER,
+  DB-HANDLER, NULL-HANDLER, TABLE-HANDLER, MODEL-HANDLER, GAME-HANDLER and four
+  of the DHANDLER-* protocol, untruncated. The count went 6 of 10 before
+  PLAN-0032, to 7 when the cost-ordered walk made all ten reachable, to 10 when
+  the two tiers gave them somewhere to print.
+
+  On Loom, `context macro definitions` returns MAKE-MACRO-ENTITY. That clause
+  was written into this requirement as an example and then recorded on
+  2026-08-15 as stale -- "does not return MAKE-MACRO-ENTITY on the current tree
+  and did not before the rewrite either", because MAKE-MACRO-ENTITY matches
+  "macro" as a substring where MACRO-BODY-INDEX matches it as a prefix. The
+  substring problem is still there and untouched; what changed is that the
+  bundle is now large enough to hold both, which is the CON-0006 argument
+  arriving where a ranking fix was expected.
+
+  The paragraph below is what R6 looked like before that, kept because the
+  distinction it draws -- reachability against ranking -- is the one that turned
+  out to be right.
+
+  R6 remains unmet and is unchanged by this. Measured the same day,
+  `context data-handler` returns 6 of 10 expected: DATA-HANDLER, DB-HANDLER and
+  four of the DHANDLER-* protocol arrive, and NULL-HANDLER, TABLE-HANDLER,
+  MODEL-HANDLER and GAME-HANDLER do not. That is the residue DES-0026 D1a
+  identified and it is a reachability problem, not a ranking one -- those four
+  are two or more :INHERITS hops from the seed and no one-hop expansion reaches
+  them at any budget.
+
+  R9  Recall is the measure, and it has never been measured. For each
+      acceptance query, the count of entities a competent reader judges
+      relevant that appear *nowhere* in the bundle -- not ranked low, absent.
+      That number is what this requirement exists to move and no clause above
+      reports it. A change that halves it while returning more irrelevant
+      entities than before has succeeded, and every clause above would have
+      called that a regression.

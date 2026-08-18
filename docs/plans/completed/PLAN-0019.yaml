@@ -1,0 +1,146 @@
+id: PLAN-0019
+title: The transition command, built from the primitive up, with the vocabulary in one table and the edit in one line
+status: final
+date: 2026-08-12
+refines: [DES-0019]
+affects: [set-document-status, complete-plan, with-repository-lock, reindex-repository,
+          repository-status, document-category, require-repository]
+tags: [workflow, documents, write-path, transitions, con-0004]
+summary: |
+  DES-0019's shape, sequenced. A new file in loom-workspace holds the whole
+  write path: the per-category status vocabulary, the top-level-status-line
+  scan, the destination rule, the propagation query, and a plan-then-apply
+  split that either writes everything or writes nothing. The console gets two
+  commands, loom-serve gets two :WRITE operations, loom-rest gets its routes
+  for free from the registry, and loom-mcp gets two tools it did not have
+  because REQ-0022 R6 asks for them by name.
+
+  The step order is dependency order and nothing else: the vocabulary table
+  before the validator that reads it, the edit planner before the applier, the
+  primitive before the cascade built on it, and every surface after the
+  function all three call.
+body: |
+  FILES
+
+  src/workspace/transition.lisp   new. The whole write path.
+  src/workspace/package.lisp      exports SET-DOCUMENT-STATUS, COMPLETE-PLAN,
+                                  PARSE-VERDICTS, TRANSITION-PROBLEMS.
+  src/workspace/loom-workspace.asd
+                                  adds the component, and the test component.
+  src/workspace/test/transition.lisp
+                                  new. Scratch trees, not this repository.
+  src/serve/operations.lisp       :SET-STATUS and :COMPLETE, tier :WRITE.
+  src/mcp/tools.lisp              loom_set_status and loom_complete.
+  src/process/console.lisp        `set-status` and `complete`.
+  docs/rules/RULE-0005.yaml       retired to advisory.
+  docs/rules/RULE-0007.yaml       retired to advisory.
+  CLAUDE.md                       the principle names the command.
+  .claude/skills/loom/SKILL.md    the command table and the workflow section.
+
+  Not edited: src/rest/routes.lisp. The route table is the registry itself
+  (routes.lisp:10), so an operation registered in loom-serve is reachable at
+  /v1/<name> without a line changing there. That is worth stating because a
+  plan that lists it would send a coder looking for a table that does not
+  exist.
+
+  BLAST RADIUS
+
+  What Loom says: `impact repository-status 3` reaches the console's
+  PRINT-STATUS, loom-serve's :STATUS entry and the REST and MCP surfaces over
+  it. None of that is edited -- the new operations sit beside :REINDEX rather
+  than inside anything :STATUS touches.
+
+  What Loom cannot see, and it is the larger half here. Nothing in the index
+  connects a YAML file's bytes to the entity read from it, so the edit path has
+  no in-tree callers to report and `impact` on it is empty by construction. The
+  real blast radius is every document in docs/, reached through the filesystem
+  rather than through an edge. That is the reason the tests build scratch trees
+  and the reason the plan-then-apply split is step 4 rather than an afterthought.
+
+  RISKS
+
+  A prose `status:` rewritten in the middle of a document's argument. D2's rule
+  makes this structurally impossible rather than unlikely -- block scalar
+  content must be indented past its key and every top-level key is at column
+  zero -- but the test has to assert it on a document whose body contains an
+  indented `status: draft`, because the rule is only load-bearing if something
+  fails when it is dropped. REQ-0022 and DES-0019 both contain one; the fixture
+  carries its own.
+
+  A moved file leaving a stale entity. A :DOCUMENT's natural key is (:PATH), so
+  a move changes its id and every edge endpoint (RULE-0007 records this).
+  INDEX-REPOSITORY does not retract what is no longer on disk -- only
+  POLL-ONCE's DETECT-DELETIONS does -- so the transition must call
+  REINDEX-REPOSITORY, which discards the graph. Using the cheaper call would
+  leave the old path in the index alongside the new one, and `check` would
+  report every reference to it as ambiguous.
+
+  A category vocabulary that refuses a status already in the tree. Measured
+  before writing the table, across all 97 documents: requirements carry draft,
+  implemented, partial; design adds superseded; plans draft and final; bugs and
+  reviews open and closed; arch accepted; decisions accepted; rules active.
+  Every one is in the table. A table narrower than the tree would make the
+  command refuse documents it is meant to move.
+
+  Concepts have no :STATUS property at all -- :CONCEPT declares none, and
+  CON-0004 carries one in the file that the analyzer never reads. The refusal
+  is D3 and is a test, not a gap.
+
+  STEPS
+
+  1. The vocabulary table and the two readers over it, in
+     src/workspace/transition.lisp: *WORKFLOW-STATUS-VOCABULARY* keyed on
+     document category, DOCUMENT-STATUS-VOCABULARY narrowing it by the
+     ontology's declared :ONE-OF, and TERMINAL-STATUS-P. First runnable step;
+     verified by calling the two on a :DESIGN and a :CONCEPT entity in the
+     REPL and reading the second refuse.
+
+  2. The text layer: TOP-LEVEL-STATUS-LINE returning the character range and
+     the value it read, and REPLACE-STATUS-LINE returning new contents. Pure
+     string functions with no filesystem and no graph, so they are tested
+     directly. Verified by the block-scalar test above.
+
+  3. The location layer: DOCUMENT-FILE from an entity's ORIGIN-FILE, and
+     COMPLETED-DESTINATION computing the path a status implies -- into
+     completed/ when terminal, out of it when not. Derived from the containing
+     directory rather than from a "docs" segment, so a foreign tree prepared by
+     REQ-0021 gets the same answer.
+
+  4. PLAN-TRANSITION and APPLY-TRANSITION-PLAN: the split D6 requires. The
+     first resolves every document, reads every file, locates every status
+     line, validates every status, computes every destination and probes every
+     path, returning edits and problems. The second writes, and is only ever
+     called with an empty problem list. Verified by a test that makes the
+     second of two documents unwritable and asserts the first was not touched.
+
+  5. SET-DOCUMENT-STATUS on top of 1-4: one document, one edit list, the lock,
+     the write, the reindex. The primitive, and the point at which the command
+     does something.
+
+  6. The propagation query: REFINED-DOCUMENTS and BLOCKING-PLANS, keyed on the
+     :CATEGORY property rather than on a PLAN- prefix (D4). Verified against a
+     fixture where two plans refine one design and only one is final.
+
+  7. COMPLETE-PLAN, built from 5 and 6. No verdicts is a dry run that writes
+     nothing (D5). Any verdicts means every non-blocked refined document needs
+     one, so the cascade is all-or-nothing rather than partially applied.
+
+  8. The console commands, then the loom-serve operations, then the MCP tools.
+     In that order because each is a thinner caller than the last and the
+     console is where the behaviour is easiest to read.
+
+  9. The two rules to advisory, and the prose that describes the manual
+     procedure -- CLAUDE.md's principle and SKILL.md's command table -- rewritten
+     to name the command.
+
+  10. Acceptance, which is REQ-0022 R9 and is this plan itself: complete
+      PLAN-0019 through the command, and require that the plan, DES-0019 and
+      REQ-0022 all move together, that the diff is one line per document plus
+      three renames, and that `check` reports no new unresolved references.
+
+  VERIFICATION
+
+  `tools/loom-test.sh` -- nine systems, and the new loom-workspace suite among
+  them. Then `tools/loom.sh 'status' 'check'`: `unenforced` falls from 3 to 1,
+  `unresolved` does not rise, and the document count is unchanged, because a
+  moved file is the same document.

@@ -1,0 +1,337 @@
+id: DES-0027
+title: The source reader belongs to loom-workspace, because it is the only layer that knows both a root and a range
+status: implemented
+date: 2026-08-16
+refines: [REQ-0031]
+affects: [describe-entity, repository-view, stamp-file, file-changed-p, build-context]
+tags: [knowledge, describe, workspace, layering, req-0031, req-0016, con-0006]
+summary: |
+  REQ-0031 asks that `describe` return the source of what it describes. The
+  requirement calls it "the cheapest unclaimed improvement in the tool -- the
+  data is on disk, the byte offsets are indexed, and no analysis is involved",
+  and that is true of the read itself and not of where the read goes.
+
+  An entity's :FILE is relative -- "src/knowledge/context.lisp" -- and the
+  repository root that makes it absolute is REPOSITORY-ROOT, in loom-workspace.
+  loom-workspace depends on loom-knowledge since DES-0022 S3. So DESCRIBE-ENTITY
+  cannot open the file: the layer holding the range cannot reach the layer
+  holding the root, and inverting that would be a cycle.
+
+  The design follows from that constraint rather than working around it.
+  loom-workspace gains DEFINITION-SOURCE, which is the only new capability
+  here; DESCRIBE-ENTITY is untouched; the console and the :DESCRIBE operation
+  compose the two. loom-workspace is the right owner on its own merits and not
+  merely by elimination -- it already owns the monitor, the per-file stamps and
+  every read of a watched file, and R4's provenance and R5's stale-range case
+  are answered out of the stamp table it already maintains.
+
+  Scope: R1 through R7 and R9. R8 -- `context` carrying source -- is the
+  two-tier bundle DES-0026 designs, and this document provides the mechanism it
+  spends rather than spending it. REQ-0031 therefore reaches `partial` on this
+  work, not `implemented`.
+body: |
+  D1  THE READER IS IN LOOM-WORKSPACE
+
+  Three facts fix this and none of them is a preference.
+
+  An entity's :FILE property is a repository-relative path. `describe
+  estimate-tokens` reports src/knowledge/context.lisp:29-36, and that string is
+  what the analyzer wrote.
+
+  REPOSITORY-ROOT is a slot on the REPOSITORY struct in loom-workspace, and
+  nothing below loom-workspace holds it. A graph view is a graph; it does not
+  know which checkout it was built from.
+
+  loom-workspace depends on loom-knowledge -- DES-0022 S3, because it renders
+  that system's structural report into a document. So the dependency cannot run
+  the other way, and DESCRIBE-ENTITY resolving a path would either need the
+  root passed in from above or would be a layering violation of exactly the
+  kind RULE-0001 through RULE-0003 exist to catch.
+
+  Passing the root down was considered and is D7. What is chosen instead:
+
+    loom-workspace   DEFINITION-SOURCE (repository entity-id &key pad limit)
+                     -> a plist: :text :range :padded-range :provenance
+                        :truncated :status
+
+    loom-knowledge   unchanged. DESCRIBE-ENTITY answers what it answers today.
+
+    loom-serve       :DESCRIBE gains an optional SOURCE argument and composes
+                     the two results.
+
+    loom-process     `describe <name> [--source]` does the same at the console.
+
+  This is not elimination dressed as a decision. loom-workspace already owns
+  every read of a watched file: ANALYZE-FILE's contents come through it,
+  STAMP-FILE records what was read, FILE-CHANGED-P decides when to read again.
+  A function that reads a known range of a watched file is that module's work
+  by description, and putting it anywhere else would give two modules opinions
+  about the same file.
+
+  D2  THE FLAG COSTS NOTHING ON THREE SURFACES
+
+  R2 requires the source be requested rather than assumed. R1 requires it on
+  REST, MCP and the console.
+
+  The operation table makes the second nearly free. DEFINE-OPERATION's
+  ARG-SHAPE is walked by loom-rest to check every entry has a route and by
+  loom-mcp to answer tools/list, so declaring the argument declares both
+  surfaces:
+
+      (define-operation :describe :read (repository term (source)) ...)
+
+  The parenthesised SOURCE is optional by that macro's convention, which is
+  precisely R2's "off by default" expressed where the shape is already
+  checked. No route edit, no MCP tool edit, and DES-0006 R5's property holds --
+  console.lisp, loom.lisp and the process package stay unedited by the REST and
+  MCP halves of this.
+
+  The console takes `--source` as an optional token rather than a second
+  positional, because `describe <name> <something>` would read as a type filter
+  by analogy with `find`.
+
+  D3  WHAT IS SERVED, AND THE RANGE THAT IS NOT THE ENTITY'S
+
+  R9 requires padding: the comment or docstring block immediately preceding the
+  form, and a small number of lines after.
+
+  A first draft of this section proposed one mechanical rule: from :START-LINE
+  walk upward while each line is blank-or-comment, stop at the first line that
+  is neither. That rule is Lisp-shaped and wrong, and watching ~/github/front-end
+  is what showed it. 249 of its 461 source files carry JSDoc -- 980 `/**`
+  blocks -- and none of ` */`, ` * @param` or `/**` is recognisable as a comment
+  line without knowing a block is open. The rule returns nothing on half that
+  tree, silently, losing exactly the prose padding exists to deliver.
+
+  So the comment extent is the **analyzer's** answer, per REQ-0031 R9 as
+  restated. Each analyzer exposes "the comment block attached to the definition
+  at this range" in its own language's terms: a run of `;;` lines for Lisp, a
+  delimited block for JavaScript. DEFINITION-SOURCE asks, pads by what comes
+  back, and pads by nothing when an analyzer has no answer -- an unpadded body
+  is a smaller answer, where a wrongly padded one attributes prose to a
+  definition it was not written about.
+
+  Downward padding stays mechanical: a fixed few lines past :END-LINE, which is
+  a courtesy margin and carries no claim about what those lines mean.
+
+  D3a ONE EXTRACTOR, TWO THRESHOLDS
+
+  REQ-0035 needs the same primitive to index prose that this needs to serve it,
+  and the two requirements must not answer it twice. They also must not answer
+  it identically, because they may do different things with a doubtful result.
+
+  The doubtful result is concrete. Walking upward from a Lisp definition will
+  sometimes reach a ;;;; section header, which describes the section rather
+  than whichever definition happens to follow it. In JavaScript the equivalent
+  is a file-level banner block above the first export.
+
+    serving is display. Over-including costs the reader a few tokens that turn
+    out to be about the section. CON-0006 says that is the cheap error.
+
+    indexing is assertion. Attaching a section header to one arbitrary member
+    of its section records a claim the author did not make about that name.
+    CON-0001 says that is the expensive one, and REQ-0035 R3 forbids it.
+
+  So the split is not two extractors. It is one extractor that reports what it
+  found *and how the block is attached* -- adjacent to the form with no blank
+  line between, versus separated by a blank line, versus at a comment level the
+  language uses for sections. The extractor makes no judgement; the caller
+  applies its own threshold to the same evidence.
+
+  This design takes :ADJACENT and :SEPARATED. REQ-0035 takes only :ADJACENT.
+  Neither reimplements the scan, and neither has to argue with the other's bar
+  -- which is what would have happened had each written its own rule and then
+  disagreed about a section header.
+
+  AMENDED IN IMPLEMENTATION, 2026-08-16. This section first said serving takes
+  *everything*, section banners included, on the argument that over-including
+  costs a reader a few tokens. Counting what actually sits above a top-level
+  definition moved it:
+
+                   ;;      ;;;     ;;;;+
+      Loom          1       51       124
+      game-server  89       38        99
+
+  Two corrections came out of that table. The :SECTION threshold is four
+  semicolons and not three: CL style calls `;;;' and `;;;;' both top-level, but
+  a `;;;;' here is a box heading -- `;;;; ====' / `;;;; Running the rule set' /
+  `;;;; ====' above ACTIVE-RULES -- while a `;;;' is commentary about the
+  definition it sits on, and the nine `;;;' lines above EDGES-MATCHING explain
+  why staleness is enforced at that one call. Three would have discarded 51
+  real paragraphs on this tree to catch banners a fourth semicolon marks.
+
+  And serving declines :SECTION after all. There are 124 such banners above a
+  definition on Loom and 99 on game-server, and a three-line box about a
+  different subject prepended to a five-line function does not read as a few
+  tokens of context -- it reads as that function's documentation, which is
+  CON-0001's fabricated fact rather than the over-inclusion CON-0006 excuses.
+  The cheap error stays cheap only while what is over-included is still about
+  the subject. The two consumers still differ; they differ by one band instead
+  of two.
+
+  The third number in that table is the one to carry into REQ-0035. Loom has
+  exactly one adjacent `;;' block above any of its 1,154 top-level definitions,
+  because its prose lives in docstrings *inside* the form and is already within
+  :START-LINE..:END-LINE. Padding buys this tree almost nothing and buys
+  game-server 89 real blocks. A feature measured only against Loom would have
+  been called a no-op and cut -- REQ-0016's thesis arriving one system over.
+
+  A consequence worth stating: the attachment kind is derived at read time from
+  the file and is not a property asserted into the graph, so nothing here
+  constrains REQ-0035's schema. That requirement may store the prose it accepts
+  without storing why it accepted it.
+
+  R9 also requires the indexed range be unchanged, and it is: padding is
+  computed at read time from :START-LINE and :END-LINE and written nowhere.
+  Nothing that reads either property sees a different number, and the entity is
+  still what DES-0012 R1 says it is.
+
+  R4's provenance therefore reports the *padded* range -- what was actually
+  returned -- alongside the entity's own. A caller told 29-36 and handed 22-38
+  cannot otherwise tell what it read.
+
+  D4  PROVENANCE AND STALENESS COME OUT OF THE STAMP TABLE
+
+  R4 wants the text served with something a caller can check it against. R5
+  wants a range that no longer exists reported plainly.
+
+  Both are already paid for. REPOSITORY-STAMPS maps a relative path to a
+  FILE-STAMP of (write-date, content-hash), maintained on every poll so
+  FILE-CHANGED-P can decide whether to reanalyze. DEFINITION-SOURCE re-stamps
+  the file it just read and compares:
+
+    :current    the stamp matches what the index was built from. The text is
+                what the analyzer saw.
+
+    :stale      the file has changed since it was indexed. The text is served
+                anyway, flagged -- it is the truth about the file, which is
+                what the caller asked for, and DEC-0001 says the file is the
+                truth. Refusing would leave the caller with a line range and no
+                way to read it, which is the handoff this requirement exists to
+                remove.
+
+    :missing    the file is gone.
+
+    :short      the file exists and does not reach :START-LINE.
+
+  The last two are R5 exactly, and both report rather than return a shortened
+  region or an empty string. REPOSITORY-INDEXED-AT rides along as the index
+  generation R4 names.
+
+  Nothing here re-indexes. A `describe --source` that found a stale file says
+  so and leaves the monitor to do its job; a read operation that triggered a
+  write would be a surprise in the :READ tier.
+
+  D5  BOUNDED, AND LOUD ABOUT IT
+
+  R6 forbids an unbounded payload and forbids silence at the limit. A line cap
+  with an explicit :TRUNCATED flag and the count of lines withheld. The cap is
+  a parameter; the honest default is generous, because CON-0006's asymmetry
+  applies here too -- a caller who gets three quarters of a function silently
+  is worse off than one who gets three quarters and is told.
+
+  The third tree sets the number. Against Lisp this cap was hypothetical:
+  RESOLVE-ONE is 23 lines and DATABASE-ALERT is 9, so any plausible default was
+  unreachable and R6 was written about a pathological 900-line generated file.
+  front-end's components are ordinary and large -- LAYEREDITOR is 251 lines,
+  MAPELEMENTTYPEEDITOR 249 -- so a cap of 200 would truncate routine React work
+  and a cap of 100 would make the operation useless there.
+
+  400 lines, then, which passes every definition on all three watched trees and
+  still bounds the 900-line case R6 named. A limit nothing normally reaches is
+  the right shape for a limit whose purpose is to stop a payload running away
+  rather than to ration a budget -- the rationing question belongs to
+  `context`'s tiers (DES-0026 D2), where a caller is choosing among many
+  entities rather than asking for one.
+
+  D6  A DOCUMENT IS UNAFFECTED
+
+  R3 keeps REQ-0007 intact. A :DOCUMENT entity asked for source returns what it
+  returns today, and the flag reports that it does not apply rather than being
+  ignored in silence -- a caller that asked for something and got a normal
+  answer should be able to tell that its request was declined.
+
+  The reasoning is REQ-0031's own and does not need restating except to note it
+  is not a special case bolted on: a document's whole content is prose and
+  REQ-0007 established that summarising it is the answer, where a function's
+  text is its specification and no summary of nine lines of Lisp is smaller
+  than the nine lines.
+
+  D7  ALTERNATIVES CONSIDERED
+
+  Pass the repository root into DESCRIBE-ENTITY. Legal -- no cycle, since the
+  caller supplies it -- and rejected because it puts file I/O in a system whose
+  stated role is read-only services over the graph, and because the staleness
+  answer in D4 needs the stamp table as well as the root. Two arguments and a
+  hash table passed downward is a module boundary being negotiated one call at
+  a time.
+
+  A separate `source` operation instead of a flag. REQ-0031's open questions
+  raise it, and R2 settles it by naming a flag. The argument for the flag is
+  that "where is it and what does it say" is one question as actually asked;
+  the argument against is REQ-0007's split, which D6 honours anyway. A separate
+  operation also costs a round trip that the MCP surface pays per call.
+
+  Give `find` bodies too. REQ-0031's second open question, and the answer is
+  no. `find` returns up to twenty entities and a body for each is an unbounded
+  answer to a search -- and under DES-0026 the pressure behind the question
+  goes away, since the caller wanting one body has a bundle that already
+  carries it or a `describe` that is one call. Recorded as decided so the next
+  reader does not reopen it.
+
+  Serve source only when the file is unchanged. Rejected in D4. It makes the
+  operation useless in exactly the case where the caller most needs to see the
+  file -- something moved -- and it converts a reporting problem into a refusal.
+
+  D8  WHAT IS NOT HERE
+
+  R8, `context` carrying source. That is DES-0026's two-tier bundle and
+  spending it now would mean implementing a design that has no plan. This
+  document provides DEFINITION-SOURCE in the layer BUILD-CONTEXT's caller can
+  reach, which is the whole of what DES-0026 needs from it.
+
+  REQ-0031 therefore closes as `partial` with R8 outstanding, and that is the
+  accurate verdict rather than a bookkeeping compromise: seven of its nine
+  requirements are met and the eighth is deliberately another design's.
+
+  D9  ACCEPTANCE
+
+  R7's, plus what R9 adds.
+
+  On Loom: `describe resolve-one --source` returns src/graph/resolve.lisp's
+  definition of RESOLVE-ONE verbatim, docstring included -- and with R9, the
+  comment block above it as well, with the padded range reported. `describe
+  REQ-0021 --source` returns what REQ-0007 makes it return today, plus the
+  notice that source does not apply.
+
+  A file edited under a live index and then asked for reports :stale and still
+  returns the text. A file deleted under a live index reports :missing and
+  returns none.
+
+  On game-server: the five sed/Read calls of the 2026-08-15 session are each
+  answerable by `describe --source`. That is REQ-0031 R7's measurement and it
+  is the number this work exists to move.
+
+  On front-end, which is where this design was wrong before it was written:
+
+    a JSDoc'd definition returns its block. EMITPARTITION in
+    src/domain/partition/interchange.js is the worked example, and a padder
+    built on the line rule D3 first proposed returns nothing for it.
+
+    LAYEREDITOR returns all 251 lines under the 400-line cap, and a definition
+    over the cap reports the bound with the count withheld rather than
+    truncating in silence.
+
+    LAYEREDITOR and MAPEDITOR are :VARIABLE entities holding whole components,
+    where a :VARIABLE on Loom is a DEFPARAMETER. DEFINITION-SOURCE must not
+    special-case :FUNCTION -- it works from :START-LINE and :END-LINE, which
+    every located entity carries, and the acceptance is that asking a
+    :VARIABLE for its source on both trees returns the right text in each.
+
+  Three trees rather than two, and the third is the only one that would have
+  caught D3.
+
+  The full suite stays green and `check` reports no violations. The layering
+  claim in D1 is checkable and should be checked: no new call from
+  loom-knowledge into loom-workspace, which RULE-0001 through RULE-0003 do not
+  currently express and `sbcl --script tools/load-test.lisp` does.

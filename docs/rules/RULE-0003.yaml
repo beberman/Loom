@@ -3,13 +3,40 @@ title: Knowledge Services never write
 status: active
 severity: error
 applies-to: [search-entities, describe-entity, impact-report, build-context]
+refines: [BUG-0009]
 statement: |
   The read side of the graph answers questions and changes nothing. Nothing in
   the knowledge layer may call apply-transaction or any other function that
   submits a transaction. A service that can write is a service that can lie
   about what it read.
+
+  loom-knowledge depends on loom-graph on purpose -- NEIGHBORS, GET-ENTITY,
+  FIND-ENTITIES, IMPACT-SET and the accessors around them are the whole reason
+  the dependency exists, and calling them is the rule being kept, not broken.
+  What is forbidden is the write path: the transaction submitter and the direct
+  mutators named in check.to-names below. That list is a deny list and is only
+  as current as its last edit -- a mutator added to loom-graph later is not
+  covered until its name is added here. BUG-0009 records why it points this way
+  round rather than naming the permitted readers.
 check:
-  kind: no-edge
+  kind: no-call-to
   from-system: loom-knowledge
   to-system: loom-graph
   rel-types: [calls]
+  to-names:
+    # the transaction path (src/graph/transaction.lisp)
+    - apply-transaction
+    - apply-op
+    - cascade-staleness
+    - reindex-entity
+    - absorb-entity
+    - absorb-relationship
+    - absorb-properties
+    - absorb-provenance
+    # the direct mutators (src/graph/graph-manager.lisp)
+    - add-entity
+    - remove-entity
+    - add-relationship
+    - remove-relationship
+    - index-origin
+    - unindex-origin

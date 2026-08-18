@@ -228,12 +228,16 @@ concurrent writer it would mark a set of facts that never existed together."
          (from      (tx-resolve tx (from-id r)))
          (to        (tx-resolve tx (to-id r)))
          (from-type (tx-entity-type tx from))
-         (to-type   (tx-entity-type tx to)))
+         (to-type   (tx-entity-type tx to))
+         (federated (federated-relationship-p r)))
     (append
      (unless from-type
        (list (list :end :from :problem (format nil "unknown FROM entity ~s" from))))
-     (unless to-type
+     (unless (or to-type federated)
        (list (list :end :to :problem (format nil "unknown TO entity ~s" to))))
+     ;; Endpoint types are still checked whenever both are here. A federated
+     ;; edge whose target happens to be local is not special and is validated
+     ;; like any other; only the unknown-target case is exempted.
      (when (and from-type to-type)
        (validate-relationship-endpoints (rel-type r) from-type to-type)))))
 

@@ -1,0 +1,330 @@
+id: REQ-0025
+title: Document ids must be allocated by the service from a ledger it can rebuild, so that two branches of one project never pick the same number
+status: draft
+date: 2026-08-12
+refines: [CON-0004]
+affects: [derive-id, linkable-index, resolve-one, find-repository, watch-repository,
+          repository-name, require-repository, set-document-status, complete-plan,
+          unresolved-references]
+tags: [documents, ids, workflow, multi-user, con-0001, dec-0001, con-0004]
+summary: |
+  A document id is allocated by reading the tree and adding one. That works for
+  one developer on one branch and fails the moment there are two: each reads
+  the state it can see, both pick the same number, and the collision only
+  surfaces at merge -- or, for the id-keyed types, not at all. This asks that
+  allocation become a service operation backed by a small ledger the service
+  owns, keyed on the git history the branches share rather than on the worktree
+  or the branch, so that Alice on one branch gets REQ-0025 and Bob on another
+  gets REQ-0026 and the merge is boring.
+
+  The ledger is not a second system of record and this requirement is written
+  so that it cannot become one. Allocation and creation are one operation, so
+  the ledger never holds an id that no file carries; the id it holds is
+  recoverable by scanning every checkout; and its value is always read as the
+  maximum of what it says and what the trees say, never as its say alone. A
+  ledger that is lost costs a rescan. A ledger that is believed over the files
+  would be the thing DEC-0001 forbids, and the three rules above are what keep
+  it from becoming that.
+
+  UUIDs were considered as the alternative that needs no service at all and are
+  rejected here, because the id is not an internal handle -- it is what a human
+  types in a refines: field and what `ls docs/bugs` sorts by.
+body: |
+  ORDER
+
+  This is independent of REQ-0021 and wanted sooner. REQ-0021 prepares a
+  repository Loom did not write; this is needed on Loom's own tree the day a
+  second person works on it, and on any prepared tree for the same reason. It
+  was carried inside REQ-0021 while the deployment was being worked out, which
+  meant "init prepares a worktree" and "the service allocates ids across a
+  team" had to land together, and neither could ship alone. REQ-0021 now
+  depends on this the way it already depends on REQ-0022.
+
+  WHAT IS WRONG
+
+  There is no allocator. An id is chosen by a human or an agent reading the
+  directory and adding one, which is a read of one working tree at one moment.
+  Two developers on two branches of one project each perform that read and each
+  gets the same answer.
+
+  Git catches the ordinary case, because the filename carries the id: two
+  branches both adding DES-0022.yaml collide add/add and a human resolves it.
+  Two things get past that, and one of them is silent.
+
+    A conflict resolved by keeping both files under different names without
+    changing the `id:` inside them. The filenames now differ and git is
+    satisfied; the ids do not.
+
+    A document copied rather than moved into completed/ -- which the directory
+    convention makes easy to produce, and which the transition command of
+    REQ-0022 now performs often enough that it will happen.
+
+  In those cases the outcome depends on the type:
+
+    id-keyed types -- DEC, DES, ARCH, RULE, CON -- have :natural-key (:doc-id).
+      Two files carrying one id derive one entity id, so the second assert
+      absorbs into the first. Two documents become one entity, later-write-wins
+      on the properties, and nothing reports it. Retracting either file removes
+      the entity they share.
+
+    path-keyed types -- REQ, PLAN, BUG, REV -- have :natural-key (:path). Two
+      files carrying one id stay two entities, LINKABLE-INDEX holds both under
+      that id, and RESOLVE-ONE refuses an ambiguous name. Every reference to
+      that id becomes unresolved and is reported, which is the correct and
+      visible failure.
+
+  So half the taxonomy has a silent failure available to it, and the silent
+  half is the half where a document *governs* code -- a DES or a DEC whose
+  affects: earns a :decides edge. Two designs collapsing into one entity means
+  `impact' reports the wrong design as governing a function, with no gap for a
+  reader to notice.
+
+  A duplicate-doc-id check makes that visible after the fact and is worth
+  having regardless. It is not a substitute for not colliding.
+
+  WHY NOT UUIDS
+
+  A UUID needs no service, no ledger and no coordination, and it is the obvious
+  answer until you look at what the id is for. It is not an internal handle.
+  It is:
+
+    what an author types      refines: [REQ-0025]
+    what `ls docs/bugs` sorts BUG-0001.yaml ... BUG-0024.yaml
+    what an agent quotes back  "REQ-0022 R9 asks for this"
+
+  REQ-0021 R10 requires that a worktree's documents stay readable by a human
+  with no agent runtime present, and the completed/ convention exists because
+  reading a directory listing is faster than starting Loom to ask. Both are
+  claims about a person's eyes on a filename. `refines:
+  [550e8400-e29b-41d4-a716-446655440000]` is not writable by hand, not checkable
+  by eye, and sorts by nothing.
+
+  Loom's own DERIVE-ID already settled the same question one level down, and
+  its reasoning transfers: ids are "readable by design -- \"function:src/graph/
+  query.lisp:impact-set\" rather than a uuid -- because these ids appear in API
+  responses, in impact paths, and in whatever an agent quotes back at a human."
+  A random doc-id would be that decision reversed for the ids humans actually
+  type.
+
+  THE LEDGER, AND WHY IT IS NOT A SECOND SYSTEM OF RECORD
+
+  The service keeps a file it owns -- outside every worktree, in its own state
+  directory -- holding one high-water mark per project and document type. It is
+  a file and not a database because it is one line per pair, because a human
+  should be able to read it with `cat` when an id looks wrong, and because the
+  recovery procedure for a corrupt one is `rm` and a rescan. A database buys
+  nothing at this size and costs that.
+
+  DEC-0001 says anything Loom knows that is not derivable from files must be
+  written back to files or it is not knowledge. A high-water mark is *almost*
+  derivable -- the maximum id across every checkout gives it -- and the only
+  thing it holds that files cannot is an id handed out but not yet written
+  anywhere. Three rules close that gap rather than arguing for an exception:
+
+    Allocation and creation are one operation. Loom writes the document file
+    in the same call that allocates its id, so there is no interval in which
+    the ledger knows a number no file carries. This is the rule that does the
+    work; without it the ledger holds real state and the other two are
+    consolation.
+
+    The ledger is read as a floor, never as the answer. The next id is
+    max(ledger, highest id in every registered checkout) + 1. A ledger that is
+    stale gives a number the scan corrects; a ledger that is missing gives the
+    scan alone.
+
+    The ledger only ever moves forward. It is never lowered to match a scan,
+    for the reason the next section gives.
+
+  Under those three the ledger is a cache with a conservative failure mode,
+  which is what DEC-0001 permits. It is not the system of record and no query
+  reads it.
+
+  WHAT THE LEDGER IS KEYED ON
+
+  Not the worktree, not the branch, and not the repository name. Two branches
+  of one project must share one counter -- that is the entire point, since they
+  will merge -- while keeping two separate indexes, because they hold different
+  code and different documents and an agent asking about one must not be
+  answered about the other.
+
+  So the key is the identity the branches have in common: the git history. Use
+  the root commit.
+
+      git rev-list --max-parents=0 HEAD | tail -1
+
+  Loom's own is 9a067e53338b037f97c3dbee356af5c1dc4c31b6, and it is the same
+  string in every clone, every worktree and every fork of that history. The
+  obvious alternative, `git remote get-url origin`, is not: it changes when a
+  project is renamed, when a mirror is added, and between the `git@` and
+  `https://` spellings of one remote, none of which are changes to the project.
+
+  The ledger key is therefore (root commit, document type). A project with no
+  commits at all -- a tree init has just prepared and nobody has committed --
+  has no root commit and must be handled; the open questions carry it.
+
+  BURNED IDS, AND WHY THEY MUST NEVER BE RECLAIMED
+
+  An allocator that hands out monotonic numbers will leave gaps. A branch that
+  allocates REQ-0031 and is then abandoned burns it. A document written,
+  reconsidered and deleted before it was ever committed burns one. A developer
+  who runs the create operation twice by mistake burns one. `ls
+  docs/requirements` will show 0029, 0030, 0032, and that is correct rather
+  than damage.
+
+  Reclaiming a gap is the one thing that reintroduces exactly the failure this
+  requirement exists to prevent, and it is worse than the original because it
+  is silent. A burned id may already be referenced: the abandoned branch's own
+  documents can name it in refines: or affects:, a review may quote it, a
+  commit message certainly does, and any of those can be merged or read later.
+  Re-issuing that number binds a live reference to a document that has nothing
+  to do with it -- a resolvable, plausible, wrong edge, which is CON-0001's
+  fabricated fact arrived at by tidiness.
+
+  Two consequences follow and both are requirements below:
+
+    The ledger is monotonic. Rebuilding it from a scan takes the maximum of
+    what it holds and what the trees show, never the scan alone. A scan is a
+    view of the checkouts registered *now*, and the branch that burned an id
+    may have been deleted -- so a rebuild that trusted the scan would hand the
+    burned number out again, which is the reclamation this section forbids
+    happening by accident rather than by policy.
+
+    Nothing compacts. There is no renumber operation, no "tidy the ids" tool,
+    and a gap is never reported as a problem by `check`.
+
+  A gap is also information worth having. A missing REQ-0031 says somebody
+  started something and stopped, which is a fact about the project; a
+  contiguous sequence that was achieved by renumbering says nothing and cost
+  the references.
+
+  WHEN THE SERVICE IS NOT THERE
+
+  Allocation must degrade rather than block. An agent halfway through a task
+  that cannot write a document because a service is down is a worse outcome
+  than a rare collision, particularly since the collision has a detector and
+  the stall does not.
+
+  So a caller that cannot reach the allocator falls back to the local rule --
+  the highest id in this checkout, plus one -- and the document records that
+  its id was allocated without the ledger. The duplicate-doc-id check is what
+  catches the result, and the recorded flag is what tells a human which
+  documents to look at first when it fires.
+
+  WHAT THIS DOES TO REQ-0009
+
+  REQ-0009 asks that documents move into a database, explicitly overriding
+  DEC-0001, and names four gaps: no verified status transition, no owner, no
+  structured change reason, and -- added 2026-08-11 -- id allocation across
+  branches. REQ-0022 answered the first with a command rather than a schema.
+  This answers the fourth with a file rather than a schema.
+
+  That does not close REQ-0009, and this document should not be read as
+  claiming it does. Owner and change-reason remain, and they are the two gaps a
+  database is genuinely better at. What it does is remove id allocation from
+  the list of things only a database can do, which is worth recording in
+  REQ-0009 whichever way that requirement eventually goes.
+
+  THE NAMING COLLISION THIS SURFACED
+
+  Measured 2026-08-12, two worktrees of one project registered with one
+  service:
+
+      registered: (Proj Proj)
+      find-repository "Proj"    -> .../bob/Proj/
+      require-repository "Proj" -> .../bob/Proj/
+
+  WATCH-REPOSITORY derives a repository's name from the last component of its
+  root, so two checkouts of one project are both named after the project. The
+  name branch of FIND-REPOSITORY takes the first match, so an agent naming the
+  project by name is silently answered about whichever checkout was registered
+  last. The path branch still works, so this is not a loss of function; it is a
+  wrong answer that looks like a right one.
+
+  REQ-0021 R8 already states the standard this violates -- "an agent that
+  silently answers about a different registered repository is worse than one
+  that fails" -- and it was written for exactly this deployment. It belongs
+  here rather than there because it is a property of one service holding
+  several checkouts, which is what this requirement introduces.
+
+  REQUIREMENTS
+
+  R1  Allocating a document id is a service operation, reachable from the
+      console and over REST and MCP, and it names the repository it allocates
+      for. It returns an id in the tree's own convention -- REQ-0025, not a
+      UUID.
+
+  R2  Allocation and creation are one operation. Loom writes the document file
+      with its id, type and a minimal skeleton in the same call, so the ledger
+      never holds a number that no file carries. A caller that wants only a
+      number is not served; that is the request that reintroduces the state
+      this design is built to avoid.
+
+  R3  The ledger is keyed on (root commit, document type). Two worktrees of one
+      project share one counter and keep two separate indexes. Two different
+      projects served by one Loom share nothing.
+
+  R4  The next id is max(ledger, highest id in every registered checkout of
+      that project) + 1. The ledger is a floor and never the sole authority, so
+      deleting it costs a rescan and never costs an id.
+
+  R5  The ledger is monotonic. It is never lowered, and a rebuild takes the
+      maximum of the ledger and the scan. No operation reclaims, compacts or
+      renumbers, and `check` never reports a gap in the sequence as a problem.
+
+  R6  A caller that cannot reach the allocator falls back to the highest id in
+      its own checkout plus one, and the document it writes records that its id
+      was allocated without the ledger. Allocation never blocks on the service
+      being reachable.
+
+  R7  `check` reports a duplicate doc-id. This is the detector for R6's
+      fallback, for a mis-resolved merge conflict, and for a document copied
+      rather than moved into completed/. For the id-keyed types -- DEC, DES,
+      ARCH, RULE, CON -- it is the difference between a reported problem and a
+      silent one, because two files with one id become one entity there.
+
+  R8  Two repositories registered with one service cannot share a name. A
+      `watch` whose derived name is already taken is refused, or the name is
+      qualified so that it is not -- the branch is the obvious qualifier, since
+      it is what distinguishes the two checkouts to a human as well. Naming a
+      repository must never answer about a different one.
+
+  R9  The ledger is a file in the service's own state directory, readable and
+      repairable by a human, and outside every worktree. Nothing in a prepared
+      repository refers to it, so a worktree remains usable when the service
+      that allocated its ids is gone.
+
+  R10 Acceptance is measured with two checkouts of one project on two branches
+      registered with one service. Allocate a REQ from each and require that
+      the numbers differ, that both files exist with their own ids, and that
+      merging the two branches produces no conflict and no duplicate. Then
+      delete the ledger, allocate again, and require the number does not go
+      backwards. Then abandon one branch, rescan, and require that its burned
+      id is not re-issued. Then, with the service stopped, allocate from one
+      checkout and require that it succeeds, records the fallback, and that
+      `check` reports the duplicate if one results.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - What is the key for a tree with no commits? A worktree init has just
+    prepared, before anything is committed, has no root commit to key on.
+    Deferring allocation until the first commit is honest and makes init unable
+    to write the workflow concept with a local id; a provisional key that is
+    rewritten at the first commit is more useful and is a rename of the
+    ledger's key while ids are outstanding.
+  - Does the fallback flag live in the document or beside it? A field the
+    ontology models means every document carries a property that is nearly
+    always absent; a note in the ledger means the ledger holds something files
+    do not, which is the property R4 exists to protect.
+  - How does the allocator see checkouts that are not registered? R4's scan
+    covers repositories the service is watching. A developer's branch that
+    nobody has run `watch` on is invisible to it, and its ids are allocated by
+    R6's fallback. Whether the service should be told about a project's
+    checkouts independently of watching them is the question that decides how
+    good R4's floor actually is.
+  - Is the root commit stable enough in practice? It is stable under rename,
+    mirror and fork, and it is not stable across a history rewrite -- a
+    squashed or filtered repository has a new root and would start a fresh
+    counter over an old id space. Rare, and destructive when it happens.
+  - Does the skeleton R2 writes belong here or in CON-0004? A created document
+    needs a title, a status, a date and a refines:, and deciding what a fresh
+    REQ looks like is a workflow question rather than an allocation one.

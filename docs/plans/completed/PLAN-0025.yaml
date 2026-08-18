@@ -1,0 +1,192 @@
+id: PLAN-0025
+title: Finish init -- the prose report, the script that does the asking, and taking Loom back out
+status: final
+date: 2026-08-14
+refines: [DES-0022]
+affects: [structure-report, prepare-repository, generate-architecture, read-manifest,
+          unresolved-references, linkable-index]
+tags: [init, prose, removal, shell, req-0021]
+summary: |
+  The three pieces DES-0022 has left: R7's markdown half as a Loom report
+  (D3a), the shell script that finds the service and asks R16's two questions,
+  and S4's removal in two modes.
+
+  Together they close REQ-0021 far enough to judge it. They are one plan
+  because they are one story -- a repository is prepared, described, and can be
+  taken back out -- and because the script is the only caller that needs all
+  three commands to exist at once.
+
+  Removal is the piece to be careful with. It deletes files from a repository
+  Loom does not own, and the mode that deletes more must refuse rather than
+  guess whenever it meets a document nobody can prove init wrote.
+body: |
+  PIECE ONE: THE PROSE REPORT (R7, DES-0022 D3a)
+
+  PROSE-REPORT in loom-knowledge, beside STRUCTURE-REPORT and read-only like it.
+  Per markdown document: how many of its candidate names resolved, how many did
+  not, and the unresolved ones that are shaped like identifiers.
+
+  Ranked by resolution rate, because that is what separates the two findings
+  this report would otherwise conflate: a document resolving most of its names
+  is about this codebase and its misses are candidate drift, while one resolving
+  almost none is about something else and its misses are not drift at all.
+
+  It reports; it does not reconcile. A token that did not resolve is a candidate
+  for a human to read. The prose may be right and the code may have moved, and
+  nothing in the index says which -- so the report may not use the word stale.
+
+  PIECE TWO: THE SCRIPT (R1, R16)
+
+  tools/loom-init.sh <directory> [document-directory]. What only a script can
+  do, which is D3's whole division: ask R16's two questions at a terminal, and
+  drive the three commands in order -- init, watch, architecture -- because a
+  structural report needs an index and init runs before there is one.
+
+  It asks and it does not assume. A run with no terminal, or with
+  --yes/--no-claude-md, takes the answer from the flag; a run with a terminal
+  and no flag prompts. A run with neither declines the CLAUDE.md append, which
+  is the conservative direction: an unappended pointer is recoverable and an
+  unwanted edit to somebody's CLAUDE.md is the thing R3 exists to prevent.
+
+  It prints what it is about to do before doing it. The tree is not ours.
+
+  PIECE THREE: REMOVAL (R13, R13a, R13b, R13c)
+
+  REMOVE-PREPARATION in loom-workspace, two modes, driven by the manifest:
+
+    tooling   the skill, the .mcp.json Loom wrote, the CLAUDE.md region, the
+              manifest itself. Documents stay. The default, because the
+              documents are the point of the exercise and deleting a team's
+              knowledge because the tool is leaving would be the worst outcome
+              this requirement could produce.
+    all       the above plus the workflow concept and the generated ARCH
+              documents -- and nothing else.
+
+  The CLAUDE.md region is cut between markers and the rest of the file is copied
+  through byte for byte, which is the same edit discipline the transition
+  command uses on a status line. A CLAUDE.md Loom *created* is deleted whole;
+  one Loom appended to has its region removed. The manifest's three-valued field
+  is what tells those apart, and getting it wrong deletes somebody's file.
+
+  R13a is the refusal that matters: full mode stops when the document
+  directories hold documents the manifest does not name. It says which, and
+  changes nothing.
+
+  RISKS
+
+  Deleting a file Loom did not write. The manifest is the only authority for
+  what init created, and removal never infers. A file init would have written
+  but which the manifest does not name is left alone -- that is the direction to
+  fail in.
+
+  A manifest that is stale or hand-edited. It is a file in somebody's
+  repository and they may have changed it. Every path is checked before it is
+  deleted, and one that is missing is reported rather than treated as an error;
+  one that is present but was clearly not ours -- a CLAUDE.md with no markers --
+  is refused.
+
+  The script prompting where nobody can answer. The command half never prompts,
+  so the failure is confined to the script, and the flags exist so a
+  non-interactive caller never reaches a prompt at all.
+
+  A removal that half-completes. Same plan-then-apply split as everything else
+  that writes here: resolve every path, check every one, refuse whole.
+
+  STEPS
+
+  1. PROSE-REPORT and RENDER-PROSE in loom-knowledge; `drift` at the console and
+     :DRIFT as a read operation.
+
+  2. Tests for it: a document that resolves most of its names and one that
+     resolves almost none must be ranked and labelled differently; an
+     English-word token must not appear as a candidate; and the report must not
+     call anything stale.
+
+  3. REMOVE-PREPARATION: plan, refuse, apply. The marked-region cut, the
+     three-valued CLAUDE.md disposition, and R13a's refusal.
+
+  4. Tests for removal: tooling mode leaves documents; full mode refuses when a
+     document it did not write is present; the CLAUDE.md region is cut exactly
+     and the author's bytes are unchanged; a created CLAUDE.md is deleted whole.
+
+  5. `remove` at the console and :REMOVE as a write operation.
+
+  6. tools/loom-init.sh, and the prompts.
+
+  7. Acceptance: a fresh copy of game-server, prepared by the script end to end,
+     then `drift` read, then removed in tooling mode and in full mode -- with a
+     hand-written document present for the full mode to refuse on.
+
+  8. Close it: `complete PLAN-0025 DES-0022=<verdict> REQ-0021=<verdict>`. Both
+     verdicts are real judgements this time rather than a formality, and the
+     honest answer is likely still partial for REQ-0021 -- R11 and R12 ask for
+     acceptance measured by running a real task in a prepared tree, which no
+     amount of this plan provides.
+
+  VERIFICATION
+
+  Per step; `tools/loom-test.sh`; `tools/loom.sh 'status' 'check'`; and the
+  acceptance's own before-and-after, which for removal is that `git status` in
+  the copy returns to what it was before the script ran.
+
+  OUTCOME
+
+  All eight steps landed. Nine of nine systems; 6 new tests for the prose
+  report, 9 for removal, 1 for the console token message.
+
+  WHAT USING IT FOUND, WHICH IS MOST OF WHAT THIS PLAN PRODUCED
+
+  Four defects, none found by a test that was written for them.
+
+  A destructive sort. PROSE-REPORT built its plist by sorting the row list in
+  one slot and measuring it in the next two. CL:SORT may rearrange the conses it
+  is handed, so the header read a truncated tail -- eleven documents and one
+  engaged against a body printing twelve and two. Counted before the sort now,
+  and the sort takes a copy. The regression test asserts the counts against the
+  list rather than against a literal, so it survives the fixture changing.
+
+  A repository token in the wrong position. `remove tooling @gs2' gave "No
+  repository named @gs2" -- true, and one word short of what the caller needed.
+  DES-0021 D1 strips a *leading* token only, so anything later arrives as a
+  positional designator. The message now says where the token goes. The same
+  mistake was in this script's own closing advice.
+
+  A generated document the manifest could not account for. `architecture' writes
+  after init -- it needs an index -- and did not record itself, so full removal
+  met ARCH-0001.yaml and refused on it. R13a protecting the tree from Loom's own
+  output. Anything Loom writes now records itself.
+
+  Directories that were never recorded. R13b names directories in as many words
+  and the first implementation recorded only files, so a full removal left nine
+  empty ones behind a `git status' that looked clean -- git does not track an
+  empty directory, which is precisely why the manifest has to. Then the same
+  defect once more in a narrower form: .claude/skills/loom/ is created as a
+  file's parent by ENSURE-DIRECTORIES-EXIST rather than from the plan, so it
+  appeared in no list either. Both recorded now, with the existence check taken
+  before anything is made -- a directory that was already there is not Loom's to
+  delete, and game-server's docs/ long predates all of this.
+
+  ACCEPTANCE
+
+  A fresh copy of game-server, prepared by the script end to end and then
+  removed in full:
+
+      git status        identical to before the script ran
+      directory tree    identical, byte for byte, including empty directories
+
+  The prose report on the prepared copy read 12 documents, 2 of them about that
+  tree: data-layer.md at 55% and semantic-validators.md at 57%, whose candidates
+  include `delete-obj'. The other ten resolve under a third of their names and
+  are correctly not treated as drift -- piece-editor-req.md at 7% is about a
+  JavaScript front-end this repository does not contain.
+
+  Removal in tooling mode was run separately and kept every document, reporting
+  what it kept rather than skipping silently.
+
+  WHAT IS LEFT OF REQ-0021
+
+  R7's comment half, which is the LLM reading source files and is what the
+  script's closing instructions ask for rather than something Loom does. And
+  R11 and R12: acceptance measured by running a real task in a prepared tree.
+  Neither is code.
+

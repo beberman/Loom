@@ -1,0 +1,94 @@
+id: BUG-0024
+title: A vendored dependency directory is indexed like source, so a JavaScript repository contributes hundreds of documents nobody wrote
+status: closed
+date: 2026-08-11
+refines: [REQ-0014]
+affects: [repository-files, analyzable-p, documentation-relative-p, analyzer-handles-p]
+tags: [analyzer, documents, generality, markdown, node_modules]
+summary: |
+  REPOSITORY-FILES walks everything under a repository root and skips only
+  dot-directories. node_modules is not dot-prefixed, so it is walked. Measured
+  on ~/github/front-end, 2026-08-11: 421 markdown files sit in a directory the
+  analyzer claims -- named docs, doc, design or documentation -- and git
+  ignores 394 of them. Pointing Loom at that repository would index those 394
+  vendored documents as first-class :DOCUMENT entities against the project's
+  own 27, each resolving its backticks into :MENTIONS edges against the host
+  project's code.
+
+  The tree Loom was written against has no vendored dependency directory, which
+  is why nothing ever forced the question. This is the same generality failure
+  REQ-0011 found for system identity and REQ-0014 found for documentation
+  directories, in a third place.
+body: |
+  WHAT IS WRONG
+
+  REPOSITORY-FILES skips a path when its filename is dot-prefixed, when any
+  directory segment is dot-prefixed, or when no analyzer claims it. That was
+  sufficient while the analyzers claimed .lisp and .yaml under docs/: a
+  dependency tree of Common Lisp systems is not vendored inside the repository,
+  and node_modules holds almost no YAML in a docs/ directory.
+
+  REQ-0014 widened the exposure by an order of magnitude. The markdown analyzer
+  claims .md and .markdown under any directory named docs, doc, design or
+  documentation -- and every npm package ships a README and many ship a docs/
+  tree. The 394 measured on front-end is the direct consequence, and it is new
+  damage rather than a pre-existing condition.
+
+  WHY IT MATTERS MORE THAN THE COUNT SUGGESTS
+
+  A vendored document is not merely noise in a count. Each one resolves its
+  backticked identifiers against the *host* project's index, so a README from
+  some transitive dependency that happens to mention `render` or `config`
+  earns :MENTIONS edges to the host's definitions of those names. `impact` then
+  reports a dependency's documentation among the documents mentioning the
+  project's own code, which is a fabricated association in the one shape
+  CON-0001 is least able to catch: every individual edge is a true statement
+  that this file names this token, and the conclusion a reader draws from it is
+  false.
+
+  It also inverts the ratio the tool depends on. front-end's own documents --
+  ARCHITECTURE-GUIDE.md, SoftDelete-Architecture.md,
+  TERRAIN_EDITOR_ARCHITECTURE.md, EditorComponentPattern.md and the rest --
+  are 27 against 394 vendored ones, so 6% of the document count, and `context`
+  and `find` would surface them accordingly.
+
+  THE FIX, AND WHY IT IS THE GENERAL ONE
+
+  Respect .gitignore. front-end's lists node_modules, as every JavaScript
+  repository's does, and the general rule reads well: do not index what the
+  repository itself says is not part of it. It costs no configuration, it is
+  correct for vendored dependencies, build output, coverage reports and caches
+  alike, and it is a rule a reader can predict without consulting a list Loom
+  maintains.
+
+  A hardcoded directory list -- node_modules, vendor, target, dist, build --
+  is the alternative and is worse for the reason this bug exists: it is
+  correct for the ecosystems someone thought of, and the next repository is
+  always the one that names its dependency directory something else.
+
+  Two details the fix has to get right. A .gitignore applies to its own
+  directory and below, and a repository may have several; honouring only the
+  root one would miss most of what a monorepo ignores. And an ignored file that
+  is nonetheless tracked -- a checked-in dist/ -- is part of the repository by
+  git's own reckoning, so `git check-ignore` or equivalent is the honest test
+  rather than pattern matching alone.
+
+  MEASURED
+
+      ~/github/front-end
+        markdown in a directory the analyzer claims      421
+        of those, ignored by git -> vendored             394
+        the project's own, surviving the filter           27
+
+  Two figures in the first draft of this bug were wrong and are corrected
+  above. "334" counted only node_modules paths containing a literal /docs/
+  segment, which is narrower than DOCUMENTATION-RELATIVE-P's actual rule -- it
+  matches any segment named docs, doc, design or documentation, anywhere, and
+  ignored directories other than node_modules (dist, coverage, a nested
+  functions/node_modules) contribute too. "5" came from a truncated directory
+  listing; the project's own docs/ holds 10 files and the surviving total
+  across all such directories is 27. Both were understatements: the real
+  vendored count is 394.
+
+  Loom's own tree and ~/lisp/game-server both read zero, which is why this has
+  been invisible: neither vendors a dependency tree inside the repository.

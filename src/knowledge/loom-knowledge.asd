@@ -15,6 +15,16 @@
    (:file "package")
    (:file "services")
    (:file "context")
+   ;; After "context": the walk uses SEED-TYPE-RANK for its tie-break and is
+   ;; called by BUILD-CONTEXT, and :SERIAL T is what makes the parameters it
+   ;; reads available at compile time rather than only at load time.
+   (:file "expand")
+   ;; After "services": the report builds its rows with ENTITY-SUMMARY and
+   ;; ENTITY-LOCATION, which live there.
+   ;; Before "structure": STRUCTURE-REPORT attributes prose to the systems it
+   ;; describes, and reuses DOCUMENT-PROSE-ROW for the resolution rate.
+   (:file "prose")
+   (:file "structure")
    )
   :in-order-to ((test-op (test-op :loom-knowledge/test)))
   )
@@ -36,6 +46,9 @@
    (:file "suite")
    (:file "services")
    (:file "context")
+   (:file "expand")
+   (:file "prose")
+   (:file "structure")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-knowledge-test :test-runner)

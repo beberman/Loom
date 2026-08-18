@@ -1,0 +1,218 @@
+id: REQ-0030
+title: A document reference naming several entities is ambiguous, which is a different fact from naming none, and the difference must reach the author
+status: draft
+date: 2026-08-15
+refines: [CON-0004]
+affects: [resolve-one, linkable-index, resolve-document-links, unresolved-references]
+tags: [documents, resolution, ambiguity, workflow, con-0001, con-0004, game-server]
+summary: |
+  RESOLVE-ONE returns NIL when a name matches nothing and NIL when it matches
+  several, and RESOLVE-DOCUMENT-LINKS pushes both onto the same
+  :UNRESOLVED-REFERENCES property. So `check` reports a typo and a correctly
+  spelled name that happens to be a CLOS accessor in the same list, under the
+  same word, and an author fixing the second one has no signal that there is
+  nothing to fix -- the name is right, the code is there, and Loom simply
+  declines to pick.
+
+  Measured on game-server, 2026-08-15, writing the four documents of one small
+  change: every name most central to that change was ambiguous, and all four
+  were reported as unresolved. `check-database` (2 functions), `db-handler` (a
+  class and an interface), `initialize-media` (a function and a test) and
+  `connection-connect-database` (3 functions) could not be named in an
+  affects: field at all. There is also no escape hatch: the entity id `find`
+  had just printed -- function:server/server.lisp:check-database -- does not
+  resolve either, because LINKABLE-INDEX is keyed on the bare name and the
+  doc-id and on nothing else.
+
+  The result is that the documents describing a change cannot link to the code
+  the change is most about, and the workaround an author reaches for -- linking
+  through an unambiguous neighbour -- puts a slightly wrong edge in the graph
+  and leaves the right one absent.
+body: |
+  WHAT IS WRONG
+
+  src/graph/resolve.lisp:1136-1158. RESOLVE-ONE's own docstring states the rule
+  and, notably, its justification:
+
+      The single entity NAME identifies, or NIL when it names none or several.
+      Refusing an ambiguous name is the same judgement RESOLVE-CALLS makes: a
+      fabricated edge is worse than a recorded miss.
+
+  Two things about that sentence. The first is that it is right about
+  fabrication and CON-0001 backs it: picking one of several candidates would
+  assert a fact nobody established. The second is that the judgement it cites
+  for authority is one this project has already revised. REQ-0015 made exactly
+  this argument against RESOLVE-CALLS -- that the alternative to a fabricated
+  edge is not silence, because the candidates are known and can be recorded as
+  candidates -- and DES-0014 landed it. Ambiguous calls now become N
+  discountable edges hanging off an :ambiguous :CALL-SITE, 371 of them on
+  game-server. RESOLVE-ONE still cites the rule its sibling stopped following.
+
+  The document path is not the call path and the answer here need not be N
+  edges. But the diagnosis transfers whole: the candidate set is computed,
+  it is thrown away, and the author is told a word that means something else.
+
+  RESOLVE-ONE already contains the proof that "several candidates" is not
+  automatically "no answer". Its own second clause resolves a candidate set of
+  exactly one :INTERFACE plus its methods to the interface, on the ground that
+  those are "not several things sharing a name, they are one protocol and its
+  implementations". That is a special case of a general fact -- some candidate
+  sets have a right answer and some do not -- and the general fact is what this
+  requirement is about.
+
+  WHAT WAS MEASURED
+
+  game-server, 2026-08-15, writing REQ-0001, DES-0001, PLAN-0001 and REV-0001
+  for a change adding a database health check to start-server. Every name in
+  the change's own vocabulary, and what `find` says about it:
+
+      check-database              2 x :function     server/server.lisp
+                                                    game/test/api.lisp
+      connection-connect-database 3 x :function     server/server.lisp
+                                                    game/test/api.lisp
+                                                    data-api/test/fixture.lisp
+      initialize-media            :function + :test media/media.lisp
+                                                    media/test/media-test.lisp
+      db-handler                  :class + :interface
+                                                    data-api/db-handler.lisp
+                                                    mpackage/cache-namespace.lisp
+
+  All four fall past RESOLVE-ONE's interface clause -- a class is neither an
+  :interface nor a :method, a test is neither, two plain functions have no
+  interface among them -- and all four were reported by `check` as unresolved,
+  in one list with genuine rot.
+
+  The author's recourse was to delete the four names and link through
+  neighbours that happen to be unique: database-alert and
+  database-unavailable-error stand in for check-database, and dhandler-healthy-p
+  and db-exists-schema stand in for db-handler. Those edges are true, and they
+  are not the edges the documents meant. A later `impact check-database` finds
+  no design governing it, which is false.
+
+  THE ESCAPE HATCH THAT IS NOT THERE
+
+  Faced with an ambiguous name, the obvious move is to say which one you mean,
+  and Loom prints the answer in the shape that would say it:
+
+      loom_find game-server check-database
+        -> function:server/server.lisp:check-database
+           function:game/test/api.lisp:check-database
+
+  Putting that id in an affects: field does not work. LINKABLE-INDEX
+  (src/graph/resolve.lisp:1123-1134) keys on (string-downcase (name entity))
+  and on the doc-id, so an entity id is not a key and resolves to nothing --
+  and, being nothing, it is reported in the same undifferentiated list as the
+  bare name that resolved to too much. An author who follows the tool's own
+  output gets a worse result than one who guesses.
+
+  This is the smaller half of the requirement and the cheaper one. It is also
+  the half that makes the larger half optional rather than urgent: an author
+  who can disambiguate by hand can always express what they mean, whatever
+  the resolver does with a bare name.
+
+  WHY THE WORD MATTERS AND NOT ONLY THE MECHANISM
+
+  `check`'s contract, as the skill states it to every agent that reads it, is
+  "ask `check` and confirm `unresolved` did not rise". That instruction is
+  followed literally, and it teaches the wrong lesson in the ambiguous case:
+  an author who reads "unresolved: check-database" does the thing the word
+  asks for, which is to look for a name that is wrong, and finds a name that
+  is right. The cost is not the lost edge -- it is the minutes spent proving
+  the tool wrong, and the conclusion that `unresolved` is noisy, which is the
+  belief that stops the field being maintained at all.
+
+  Loom's own tree carries 14 unresolved references today and nobody knows
+  offhand how many are rot and how many are accessors. That number is the
+  reason this is worth fixing: a report that mixes two populations cannot be
+  driven to zero, and one that cannot be driven to zero stops being read.
+
+  WHAT THIS IS NOT
+
+  This does not ask that an ambiguous name resolve to something. Fabricating a
+  choice remains forbidden and R1 below is deliberately about reporting rather
+  than resolution.
+
+  It does not ask for REQ-0015's mechanism on the document path. N :DOCUMENTS
+  edges at 1/N confidence from one affects: entry would say that most of the
+  named entities are not what the document is about, which for a document is
+  usually false in a different way than for a call -- a design that names
+  db-handler frequently does mean both the class and the interface. Whether an
+  ambiguous document reference should become several edges, one edge to a
+  chosen candidate, or no edge with a better report, is the architecture's to
+  decide, and R1 is written so that the report improves under any of them.
+
+  It is not REQ-0025 R7. That asks `check` to report a duplicate doc-id, which
+  is two documents claiming one identity -- a defect in the documents. This is
+  one document naming code that legitimately has several definitions, which is
+  a defect in neither and is reported as though it were.
+
+  It does not touch :BROKEN-LINKS. A path the filesystem does not have is
+  genuinely missing, and UNRESOLVED-REFERENCES is right to fold it in with
+  names that named nothing.
+
+  REQUIREMENTS
+
+  R1  A declared reference that matches several entities is reported as
+      ambiguous and separately from one that matches none. Whatever the report
+      is called in JSON and on the console, an author must be able to tell the
+      two apart without running `find` on every name.
+
+  R2  An ambiguous report names the candidates. "check-database matches 2"
+      is not enough to act on; "check-database matches
+      function:server/server.lisp:check-database and
+      function:game/test/api.lisp:check-database" is, and the resolver has
+      both in hand at the moment it declines.
+
+  R3  A declared reference may name an entity by its id, in the spelling
+      `find`, `describe` and `impact` already print, and that reference
+      resolves to exactly that entity. This is the escape hatch, and it must
+      work for every entity type rather than for the ambiguous ones only --
+      an author should not have to know whether a name is ambiguous to write
+      a reference that survives one becoming so later.
+
+  R4  An id that names no entity is unresolved in the ordinary way. The escape
+      hatch does not become a way to assert an edge to something that is not
+      there, and a stale id must rot as visibly as a stale name.
+
+  R5  Nothing regresses for the names that resolve today. The :DOCUMENTS,
+      :DECIDES and :REFINES edge counts on Loom's own tree must be identical
+      before and after, and the interface-plus-methods clause in RESOLVE-ONE
+      keeps behaving exactly as it does now.
+
+  R6  `check`'s existing consumers keep working. The skill tells every agent
+      to confirm `unresolved` did not rise; if ambiguity moves out of that
+      list, an agent following the old instruction must not start reporting
+      success where it previously reported a problem without something in the
+      output saying where the entries went.
+
+  R7  Acceptance is measured on game-server against the four documents named
+      above. Restore each document's original affects: list -- the one naming
+      check-database, db-handler, initialize-media and
+      connection-connect-database -- and require that `check` reports four
+      ambiguous references with their candidates and zero unresolved ones.
+      Then rewrite the four entries as ids and require that `check` reports
+      neither, that `impact` on
+      function:server/server.lisp:check-database finds DES-0001 governing it,
+      and that Loom's own 14 unresolved references are unchanged in number or
+      accounted for one by one.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - Is an ambiguous reference an error, a warning, or information? It is
+    currently fatal to the edge and reported as rot. It could be a third
+    status that `check` counts separately and never asks anyone to fix, which
+    is the honest reading when the ambiguity is a CLOS accessor that will
+    never be disambiguated.
+  - Should some ambiguous sets resolve after all? RESOLVE-ONE already resolves
+    interface-plus-methods. A class and the interface generated by its own
+    accessor -- game-server's db-handler -- may be the same kind of case:
+    two entities, one concept, and picking the class is not arbitrary. If so
+    this requirement shrinks considerably, and the way to find out is to
+    classify the ambiguous sets in both trees rather than to reason about it.
+  - Does the id form belong in `affects:` only, or in every declared field?
+    refines: names documents by doc-id and has no ambiguity problem today,
+    but two trees merged under REQ-0027 could give it one.
+  - What does `drift` do with an ambiguous mention? Prose mentions run through
+    the same index. A backticked `id` in a markdown file matching seven
+    accessors is the same question at a much larger scale, and the answer that
+    is right for a declared field may be wrong for an inferred one.

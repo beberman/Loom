@@ -1,0 +1,167 @@
+id: DES-0024
+title: A family is a second kind of system designator, not a second way to compare one
+status: implemented
+date: 2026-08-15
+refines: [REQ-0029]
+affects: [edges-between-systems, in-system-p, entities-in-system, entity-system,
+          parse-check, run-check]
+tags: [rules, layering, check-kinds, system, des-0009, bug-0009]
+summary: |
+  REQ-0029 asks that a layering rule be writable about a family of packages.
+  The shape is one indirection: EDGES-BETWEEN-SYSTEMS stops comparing its
+  arguments with EQ and starts asking a designator whether a system satisfies
+  it. A keyword designator answers with EQ, which is today's behaviour
+  unchanged and is what every existing rule keeps. A `(:family NAME)`
+  designator answers with a delimiter-anchored prefix test.
+
+  A rule opts in by writing `from-family:`/`to-family:` where it would have
+  written `from-system:`/`to-system:`. Two fields, not a flag and not a glob:
+  the choice is legible in the document without knowing a syntax, and there is
+  no spelling of `game*` available to write by mistake -- which matters,
+  because REQ-0029 R3's whole finding is that the raw prefix is the wrong
+  answer on both trees that have families.
+
+  `:no-call-to` gains family matching without a line of its own, because it
+  already delegates its boundary question. That is the design property worth
+  protecting: a check kind's callee vocabulary and its boundary vocabulary
+  extend separately.
+body: |
+  THE ONE INDIRECTION
+
+  EDGES-BETWEEN-SYSTEMS today asks two EQ questions per relationship:
+
+      (eq from-system (entity-system from))
+      (eq to-system   (entity-system to))     ; or, for :outside,
+      (not (eq target from-system))
+
+  Every one of those is "does this entity's system satisfy the thing the rule
+  named". EQ is one answer to that question and the only one the code can
+  currently give. This design names the question:
+
+      (system-satisfies-p designator system)
+
+  and gives it two methods' worth of behaviour, dispatched on the shape of
+  DESIGNATOR rather than on a class -- a keyword or a two-element list is not
+  worth a generic function, and RUN-CHECK's own dispatch is the precedent for
+  where this project does spend one.
+
+    designator          satisfied by
+    :loom-graph         :loom-graph, and nothing else
+    (:family :game)     :game, :game/map, :game/system
+                        not :game-server, not :game-test
+
+  D1  THE FAMILY TEST IS DELIMITER-ANCHORED, AND THE DELIMITER SET IS FIXED
+
+  SYSTEM satisfies `(:family F)` when, comparing SYMBOL-NAMEs case-insensitively:
+
+    - SYSTEM is F; or
+    - SYSTEM begins with F and the very next character is a family delimiter.
+
+  *SYSTEM-FAMILY-DELIMITERS* is `(#\/ #\.)`, a defparameter in LOOM-GRAPH so
+  it is inspectable and overridable, and its docstring carries the reason `#\-`
+  is absent rather than leaving it to look like an oversight: `-` is the
+  character joining all eight of Loom's production/test package pairs, and
+  admitting it would make `from-family: loom-analyzer` match
+  :LOOM-ANALYZER-TEST -- BUG-0009's cause one, re-opened. REQ-0029 R4.
+
+  Nesting (R5) is not a separate mechanism and needs no code: :DBD.MYSQL.ERROR
+  begins with "DBD" followed by `.`, and begins with "DBD.MYSQL" followed by
+  `.`, so it satisfies both families by the one test.
+
+  D2  :OUTSIDE IS RELATIVE TO THE FROM DESIGNATOR, WHICH IT ALREADY WAS
+
+  The `:outside` branch reads `(not (eq target from-system))` today -- already
+  defined against the from side rather than against a fixed universe. Replacing
+  that EQ with SYSTEM-SATISFIES-P delivers REQ-0029 R6 with no new concept:
+  where a rule's from side is a family, "outside" means outside the family, so
+  the fourteen `game/*` packages calling each other are internal traffic and
+  not fourteen packages' worth of violations. This is the clause that makes
+  RULE-0002's sentence writable on a tree shaped like game-server's, and it
+  is one word of change.
+
+  D3  THE DOCUMENT SPELLS IT WITH A SECOND FIELD
+
+      check:
+        kind: no-edge
+        from-family: game            # instead of from-system:
+        to-system: outside
+        rel-types: [calls, imports, depends-on]
+
+  PARSE-CHECK folds `from-family:` into the same `:from-system` plist slot it
+  already produces, as `(:family :game)`. Nothing downstream learns a new key:
+  RUN-CHECK's `(getf check :from-system)` keeps working, its `(when from ...)`
+  guard keeps working, and `:no-call-to` -- which reads the same two slots and
+  hands them to EDGES-BETWEEN-SYSTEMS untouched -- gains family matching
+  without an edit. REQ-0029 R7.
+
+  A rule that writes both `from-system:` and `from-family:` is a rule whose
+  author does not know what they meant. PARSE-CHECK returns NIL for it, which
+  is the existing refusal path: the document still indexes, the rule falls back
+  to prose, and UNENFORCED-RULES counts it where a human will see it. It is not
+  an error and does not fail the analyzer -- SS10.4's discipline, and the same
+  answer `kind: vibes` already gets.
+
+  D4  IN-SYSTEM-P AND ENTITIES-IN-SYSTEM TAKE DESIGNATORS TOO
+
+  Both are one-line wrappers over the same comparison and both are exported.
+  Leaving them EQ-only would mean a designator is a thing only one of the four
+  system queries understands, which is the kind of partial vocabulary that
+  gets discovered by a caller at the worst moment. They change to call
+  SYSTEM-SATISFIES-P; a keyword argument behaves exactly as before.
+
+  ALTERNATIVES CONSIDERED
+
+  A glob in the existing field -- `from-system: game/*`. Genuinely attractive:
+  the author spells the delimiter themselves, so *SYSTEM-FAMILY-DELIMITERS*
+  would not need to exist, and one field stays one field. Rejected because it
+  makes the wrong answer writable. `game*` is the raw prefix REQ-0029 R3
+  measures as broken on both family trees, and a syntax offering `*` after a
+  delimiter is offering `*` after a letter in the same breath. Catching that
+  needs a validation rule whose failure mode is PARSE-CHECK returning NIL --
+  the rule silently demoted to prose, discovered only by reading an unenforced
+  count. Two fields cannot express the broken form at all, which is a better
+  guarantee than rejecting it well.
+
+  A `match: family` flag beside `from-system:`. Rejected on REQ-0029 R2: the
+  flag sits on its own line and modifies another, so reading `from-system:
+  game` tells you nothing about whether it means one package or fourteen
+  without scanning the rest of the clause. `from-family:` says it in the word.
+
+  Comparing every :system value as a prefix, uniformly. This is DES-0009 R10's
+  own second option and REQ-0029 measures it as re-opening BUG-0009 cause one
+  across all eight of Loom's production/test package pairs. Recorded here as
+  decided rather than open, so the next reader of R10 does not weigh it again.
+
+  A :family entity type, with membership as edges. The heavier design: mint an
+  entity per family, resolve membership, let a rule name it by id. It buys
+  membership that a human could declare against the grain of the naming --
+  `server/content.lisp` joining the `game/` family by fiat, say -- and it costs
+  a resolution pass, an ontology type, and a fact the tree cannot check.
+  DEC-0001 is the objection: family membership as designed here is derivable
+  from the package name, so it stays derived. A declared membership is a fact
+  living only in the graph, and the moment it disagrees with the names it is
+  the graph that is wrong. Revisit only if a real tree produces a family its
+  own names cannot express.
+
+  CONSEQUENCES
+
+  Loom's own tree gains nothing measurable and that is the acceptance
+  criterion, not a disappointment. Its 29 packages are dash-flat, no rule in
+  docs/rules/ writes `from-family:`, and REQ-0029 R8's first clause is that
+  `check` reports exactly what it reported the day before -- no violations, one
+  unenforced rule. The regression surface is the whole value of the change on
+  this tree.
+
+  The feature's only real consumer is a repository Loom does not build. That
+  is stated in REQ-0029 and repeated here because it should not be discovered
+  later as a surprise: acceptance on game-server means writing one rule against
+  that tree and counting what it matches, which is a manual measurement, not a
+  FiveAM assertion. The Loom-side tests can pin SYSTEM-SATISFIES-P against
+  fixtures named for game-server's and cl-dbi's real packages -- :GAME/MAP,
+  :GAME-SERVER, :DBI.DRIVER, :DBI-TEST.DBI -- and that is worth doing, but a
+  fixture named after a package is not the same evidence as the package.
+
+  *SRC-PREFIX* and the path convention are not involved. DES-0009 R5 kept
+  :system as the literal, unrewritten canonical designator specifically so a
+  later family scheme would have a stable string to match; this spends that and
+  adds no rewriting of its own. A nickname still never enters the comparison.

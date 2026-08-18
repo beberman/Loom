@@ -1,0 +1,153 @@
+id: DES-0021
+title: A leading @name is stripped by the dispatcher, so every command takes a repository and none of them has to change
+status: implemented
+date: 2026-08-12
+refines: [REQ-0023]
+affects: [run-command, current-repository, current-graph, split-command-line, find-repository]
+tags: [multi-repo, console, service, req-0023]
+summary: |
+  REQ-0023 R1 asks that every console command can be told which repository it
+  means, and R1a asks that the telling be visible at the point of the query
+  rather than remembered by the session. The obvious answer -- another optional
+  argument -- does not work: `find` already ends in an optional type, `impact`
+  in an optional depth, and `context` and `complete` are variadic, so a trailing
+  designator is indistinguishable from another task word or another verdict.
+
+  So the repository is named by a leading token with a sigil -- `impact
+  @game-server dhandler-delete 3` -- and RUN-COMMAND strips it before the
+  command's own lambda list is applied. One place in the dispatcher, no
+  signature changes anywhere, and it works for the variadic commands and for
+  every command added later without any of them knowing about it.
+
+  It is stateless: the binding lasts one command. There is no `use` mode to
+  forget, which is R1a and is the whole reason the stateful design was not
+  chosen despite being smaller.
+body: |
+  D1  THE TOKEN, AND WHY IT LEADS
+
+  A command line becomes tokens before anything else looks at it, and the
+  dispatcher already owns that step: RUN-COMMAND splits the line, takes the
+  first token as the command name, and applies the rest to the command's
+  handler. This adds one rule between those two steps -- if the first remaining
+  token begins with `@`, it names a repository, and it is removed.
+
+      impact @game-server dhandler-delete 3
+      context @front-end soft delete read path
+      complete @Loom PLAN-0021 DES-0021=implemented
+
+  Leading rather than trailing because trailing is exactly what is not
+  available. It is also the position a reader scans first, so a line's
+  repository is visible without reading to the end of a variadic argument list.
+
+  `@` because it cannot begin a token the console already means. A repository
+  designator is a name or a path; an entity name is a Lisp symbol name; a depth
+  is digits; a verdict is DOC=status. None of those start with `@` in this tree
+  or in the two it is measured against. The sigil is checked at the first
+  character only, so an entity genuinely named `@foo` is still reachable -- by
+  the path branch of any command that takes a designator, and by `find` on a
+  quoted token, which is the escape hatch the console's quoting rule already
+  provides.
+
+  D2  IT IS STRIPPED IN ONE PLACE, SO NO COMMAND CHANGES
+
+  The alternative shape is a designator argument on each command, which is what
+  `check`, `rules` and `status` already have. Adding it to six more would mean
+  six lambda lists, six docstrings, six usage strings, and two of them --
+  `context` and `complete` -- could not take it at all.
+
+  Instead RUN-COMMAND binds a special variable for the dynamic extent of the
+  one command it is running, and CURRENT-REPOSITORY consults it. Every command
+  gets the behaviour, including the ones that already take an explicit
+  designator and including every command written afterwards. DEFINE-COMMAND is
+  untouched.
+
+  Precedence, most specific first:
+
+    an explicit designator argument      `check game-server`
+    the @token                           `check @game-server`
+    the sole watched repository          the single-repository case, unchanged
+    otherwise                            refuse and say which are watched
+
+  The explicit argument wins because a command that declares one has a caller
+  who typed it in that position deliberately, and silently overriding it from a
+  token earlier on the line would be the surprise this design exists to remove.
+
+  D3  STATELESS, WHICH IS R1a AND IS THE POINT
+
+  The smaller design is a `use <repository>` command setting a session default.
+  It costs one command instead of a parsing rule, and it is rejected.
+
+  A selected-repository mode is invisible at the point of the query. An agent --
+  or a developer returning to a terminal -- issues `impact dhandler-delete` and
+  gets a confident, well-formed, entirely wrong answer about the repository
+  selected twenty commands ago, with nothing in the question or the answer
+  saying so. REQ-0021 R8 already names that failure and calls it worse than one
+  that fails, and CON-0001 is the general form: a fabricated fact is worse than
+  a recorded gap, and an answer about the wrong repository is a fact fabricated
+  by omission.
+
+  The binding therefore lasts exactly one command. Reading the line is enough to
+  know which repository answered, which is what R1a asks for.
+
+  D4  WHAT REFUSAL LOOKS LIKE NOW
+
+  CURRENT-REPOSITORY's message today is "Several repositories are watched; name
+  one. Try: status" -- correct, and it does not say how. With a mechanism to
+  point at, it names the mechanism and the repositories:
+
+      Several repositories are watched. Name one with @<name>:
+        @Loom  @game-server  @front-end
+
+  A refusal that lists the available answers is the difference between a
+  developer running `status` and a developer running the command they meant.
+
+  D5  THE SERVICE IS ALREADY RIGHT AND IS NOT TOUCHED
+
+  loom-serve's entries all take a repository and REQUIRE-REPOSITORY refuses to
+  guess -- DES-0006 settled that an operation invoked without a designator is a
+  malformed request rather than an ambiguous one. There is nothing to add and
+  nothing to align: the console's sigil is a console spelling for the thing the
+  service already requires by name, and a program calling an operation passes
+  the argument.
+
+  So this design touches loom-process and nothing else. REQ-0023's second open
+  question is answered no.
+
+  ALTERNATIVES CONSIDERED
+
+  A designator argument per command. Six signatures, and impossible for the two
+  variadic commands, which are the two an agent uses most.
+
+  `use <repository>` as a session mode. Smaller, and rejected under D3: it makes
+  the repository invisible at the point of the query, which is the failure
+  REQ-0021 R8 and CON-0001 both name.
+
+  A `--repo=name` flag anywhere in the line. Works, and is more familiar from
+  shells, but the console is deliberately not a shell -- SS3.2 makes the point
+  that its syntax is "usable by someone who does not write Lisp", and a flag
+  grammar invites the escaping questions the quoting rule was written to avoid.
+  A single leading token needs no grammar.
+
+  Scanning for the designator anywhere in the token list. Rejected because it
+  makes the rule positional-or-not depending on what else is on the line, and
+  because a task word in `context` could then be eaten as a repository name.
+
+  CONSEQUENCES
+
+  A repository whose name begins with `@` cannot be named by token. No such
+  repository exists and the name is derived from a directory's last path
+  component, so producing one requires a directory called `@something`. Recorded
+  rather than guarded.
+
+  The single-repository case is unchanged in every respect: no new argument
+  appears in any usage string, nothing has to be typed, and every existing
+  command line still works. That is what makes this safe to land ahead of
+  REQ-0021, whose prepared worktrees will be one of several checkouts and will
+  need it.
+
+  REQ-0025 R8 asks that two repositories registered with one service cannot
+  share a name, and this design assumes it rather than providing it: `@Loom`
+  picks the first match when two checkouts are both called Loom, which is the
+  defect REQ-0025 measured. The sigil makes naming possible; it does not make a
+  duplicated name unambiguous, and the two requirements are complementary
+  rather than one covering the other.

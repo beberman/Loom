@@ -33,6 +33,18 @@
   ;; In memory only, and DEC-0001 is satisfied rather than bent: the report is
   ;; derivable by re-running the pass, so it is cache and says so.
   (enrichment nil)
+  ;; DES-0025 D4. What .loom/frameworks.yaml declared, re-read on every index
+  ;; pass so an edit to it takes effect on the next reindex rather than on the
+  ;; next restart. NIL is the normal case: every repository Loom indexed before
+  ;; this existed has no such file and needs none.
+  (frameworks nil)
+  ;; DES-0018 D5. Why git could not be asked what this tree ignores, or NIL
+  ;; when it answered. Set on every pass, so it clears itself as soon as the
+  ;; cause goes away. Reported by `status' rather than logged as an error: a
+  ;; directory that is legitimately not a repository would otherwise push a
+  ;; line onto the error list on every poll, for a condition that is stable and
+  ;; expected.
+  (ignore-reason nil)
   ;; DES-0004 R1. One lock per repository rather than a process-wide one:
   ;; *REPOSITORIES* can hold more than one entry and two repositories share no
   ;; state, so serializing one's rebuild against another's poll would cost
@@ -120,6 +132,105 @@ all, and NORMALIZE-ROOT signals on those."
 (defun dot-prefixed-p (name)
   (and (stringp name) (plusp (length name)) (char= #\. (char name 0))))
 
+;;;; ------------------------------------------------------------------
+;;;; What the repository says is not part of it (DES-0018)
+;;;;
+;;;; Loom does not interpret .gitignore. The pattern language has anchoring,
+;;;; directory-only matches, ** and negation whose meaning depends on whether a
+;;;; parent was already excluded, and the inputs are not only .gitignore --
+;;;; git also reads one per directory, .git/info/exclude, and whatever
+;;;; core.excludesFile points at, which may be outside the tree. Since the
+;;;; question is literally "what does git ignore here", git is asked.
+;;;; ------------------------------------------------------------------
+
+(defparameter *ignore-query-timeout-seconds* 20
+  "Bound on the check-ignore subprocess. Generous: it is one process for a
+whole tree, and the cost of it running long is a slow poll rather than a wrong
+answer.")
+
+(defun ignored-paths (root relative-paths)
+  "The subset of RELATIVE-PATHS that git ignores under ROOT, as a hash table.
+
+One subprocess for the whole list, not one per file: `git check-ignore --stdin'
+reads paths and writes back only the ignored ones.
+
+Two things this must not do. It must not treat exit status 1 as a failure --
+that status means none of the paths were ignored, which is the ordinary answer
+for a clean repository, and reading it as an error would make every tree behave
+as though git were missing. And it must not pass --no-index, which is what
+keeps DES-0018 D3 true: git consults the index by default and does not report a
+*tracked* file as ignored, so a checked-in dist/ keeps being indexed while a
+generated one does not.
+
+Returns an empty table, and a second value naming the reason, when git cannot
+answer -- no repository, no git, a timeout, a signal. The caller indexes
+everything in that case (D5): a known unknown beats both a crash and a false
+clean."
+  (let ((ignored (make-hash-table :test #'equal)))
+    (if (null relative-paths)
+        (values ignored nil)
+        (handler-case
+            (multiple-value-bind (out err status)
+                ;; `timeout' rather than thread machinery, on DES-0011's
+                ;; precedent: the inspector bounds its child the same way and
+                ;; reads 124 as the timeout having fired. No new dependency --
+                ;; the binary is already required by that path.
+                (uiop:run-program (list "timeout"
+                                        (princ-to-string *ignore-query-timeout-seconds*)
+                                        "git" "-C" (namestring root)
+                                        "check-ignore" "--stdin")
+                                  :input (make-string-input-stream
+                                          (format nil "~{~a~%~}" relative-paths))
+                                  :output :string
+                                  :error-output :string
+                                  :ignore-error-status t)
+              (declare (ignore err))
+              (cond ((member status '(0 1))
+                     (with-input-from-string (in out)
+                       (loop for line = (read-line in nil nil)
+                             while line
+                             for trimmed = (string-trim '(#\Return #\Space) line)
+                             unless (zerop (length trimmed))
+                               do (setf (gethash trimmed ignored) t)))
+                     (values ignored nil))
+                    (t
+                     ;; 128 and friends: not a repository, or git refused.
+                     ;; 124 is `timeout' having fired. Either way the tree is
+                     ;; indexed whole and the reason is carried back.
+                     (values (make-hash-table :test #'equal)
+                             (if (eql status 124)
+                                 "git check-ignore timed out"
+                                 (format nil "git check-ignore exited ~a" status))))))
+          (error (condition)
+            (values (make-hash-table :test #'equal)
+                    (princ-to-string condition)))))))
+
+(defun repository-commit (repository)
+  "Two values: REPOSITORY's HEAD commit, and why it could not be read.
+
+DES-0022 D5. A structural report has to name the tree it described, or a reader
+meeting a generated architecture document six months later cannot tell whether
+it was ever true. One `git rev-parse HEAD', bounded and guarded the way
+IGNORED-PATHS is, and NIL with a reason when git cannot answer -- not a
+repository, no git, a tree with no commits yet. A known gap beats a fabricated
+commit, and a tree with no commits is exactly the case REQ-0025's first open
+question is about."
+  (handler-case
+      (multiple-value-bind (out err status)
+          (uiop:run-program (list "timeout"
+                                  (princ-to-string *ignore-query-timeout-seconds*)
+                                  "git" "-C" (namestring (repository-root repository))
+                                  "rev-parse" "HEAD")
+                            :output :string :error-output :string
+                            :ignore-error-status t)
+        (declare (ignore err))
+        (if (zerop status)
+            (values (string-trim '(#\Newline #\Return #\Space) out) nil)
+            (values nil (if (eql status 124)
+                            "git rev-parse timed out"
+                            (format nil "git rev-parse exited ~a" status)))))
+    (error (condition) (values nil (princ-to-string condition)))))
+
 (defun repository-files (repository)
   "Every file under the repository root that some analyzer claims.
 
@@ -132,14 +243,35 @@ of it is not even a file: Emacs writes .#foo.yaml as a dangling symlink while a
 buffer is open, which keeps the extension of the thing it locks, so an analyzer
 claims it and then fails to read it. The developer sees an error naming a file
 that does not exist, in a repository where nothing is wrong, for as long as
-they have the real file open."
-  (remove-if-not
-   (lambda (path)
-     (and (pathname-name path)
-          (not (dot-prefixed-p (file-namestring path)))
-          (notany #'dot-prefixed-p (rest (pathname-directory path)))
-          (analyzable-p path)))
-   (directory (merge-pathnames "**/*.*" (repository-root repository)))))
+they have the real file open.
+
+Skips what git ignores, which is DES-0018 and the reason BUG-0024 was opened:
+node_modules is not dot-prefixed, so a vendored dependency tree was walked like
+source. The ignore query runs once for the whole candidate list and after
+ANALYZABLE-P rather than before -- most of a node_modules tree is JavaScript no
+analyzer currently claims, so filtering by analyzer first cuts what git is
+asked about from thousands to hundreds.
+
+A tree git cannot answer for -- not a repository, no git, a timeout -- is
+indexed whole, and the reason is recorded on the repository for `status' to
+report. That is a gap a reader can see rather than a silent clean."
+  (let* ((root (repository-root repository))
+         (claimed (remove-if-not
+                   (lambda (path)
+                     (and (pathname-name path)
+                          (not (dot-prefixed-p (file-namestring path)))
+                          (notany #'dot-prefixed-p (rest (pathname-directory path)))
+                          (analyzable-p path)))
+                   (directory (merge-pathnames "**/*.*" root)))))
+    (multiple-value-bind (ignored reason)
+        (ignored-paths root (mapcar (lambda (p) (workspace-relative-path p root))
+                                    claimed))
+      (setf (repository-ignore-reason repository) reason)
+      (if (zerop (hash-table-count ignored))
+          claimed
+          (remove-if (lambda (path)
+                       (gethash (workspace-relative-path path root) ignored))
+                     claimed)))))
 
 (defun note-error (repository path condition)
   (push (cons path (princ-to-string condition)) (repository-errors repository))
@@ -247,9 +379,15 @@ rather than a preference."
       ;; that way, so the pass cannot see the analyzer's table -- and this is
       ;; the first system that uses both packages, which is exactly the job
       ;; this one exists to do.
+      ;;
+      ;; The registry is per repository since DES-0025 D4: FRAMEWORKS-REGISTRY
+      ;; returns *MACRO-GENERATORS* plus whatever this tree declared in
+      ;; .loom/frameworks.yaml, in a fresh table. game-server declaring
+      ;; easy-routes:defroute must not make Loom's own tree start looking for
+      ;; one, which is exactly what pushing into the global would do.
       (submit "resolve-generated-definitions"
               (resolve-generated-definitions graph :workspace-id workspace
-                                                   :registry *macro-generators*
+                                                   :registry (repository-registry repository)
                                                    :external-packages
                                                    (external-package-exports)))
       ;; EXTERNAL-PACKAGES is handed in for the same reason *MACRO-GENERATORS*
@@ -266,7 +404,27 @@ rather than a preference."
       ;; has not run yet leaves every test covering nothing.
       (submit "resolve-tests"          (resolve-tests graph :workspace-id workspace))
       (submit "resolve-document-links" (resolve-document-links graph :workspace-id workspace))
+      ;; After RESOLVE-DOCUMENT-LINKS and before the rules, because it writes a
+      ;; property that same pass's siblings read, and because a rule check is a
+      ;; query over the finished graph. It takes the repository rather than the
+      ;; graph -- the only pass here that does -- since the question it asks is
+      ;; about the disk (BUG-0027).
+      (submit "check-document-links"   (check-document-links repository
+                                                             :workspace-id workspace))
       (submit "check-rules"            (violation-ops graph :workspace-id workspace)))))
+
+(defun repository-registry (repository)
+  "The generator registry this repository's resolution passes should use.
+
+*MACRO-GENERATORS* when it declared nothing, which is every tree Loom indexed
+before DES-0025. Otherwise a fresh table holding the shipped entries plus its
+own -- fresh so that two watched repositories cannot teach each other their
+frameworks, which is the whole reason this is a function rather than a
+REGISTER-MACRO-GENERATOR call at startup."
+  (let ((frameworks (repository-frameworks repository)))
+    (if frameworks
+        (frameworks-registry frameworks)
+        *macro-generators*)))
 
 (defun index-repository (repository &key quiet)
   "Analyze every analyzable file, then resolve and check.
@@ -283,12 +441,42 @@ thread exists."
           (indexed 0))
       (unless quiet
         (format t "~&Indexing ~a (~d files)...~%" (repository-name repository) (length files)))
-      (dolist (path files)
-        (when (index-file repository path :quiet quiet) (incf indexed)))
+      ;; Before the files, not after: RESOLVE-AND-CHECK reads the registry this
+      ;; builds, and re-reading here rather than at registration is what makes
+      ;; an edit to .loom/frameworks.yaml take effect on a reindex.
+      (setf (repository-frameworks repository)
+            (read-frameworks (repository-root repository)))
+      ;; DES-0025 D1. Bound around this repository's files and nothing else, so
+      ;; front-end's `sendGet' convention cannot make another watched tree read
+      ;; its own string literals as routes.
+      (let ((*route-callers* (getf (repository-frameworks repository) :route-callers)))
+        (dolist (path files)
+          (when (index-file repository path :quiet quiet) (incf indexed))))
       (resolve-and-check repository :quiet quiet)
       (setf (repository-file-count repository) indexed
             (repository-indexed-at repository) (get-universal-time))
+      ;; DES-0025. Outside RESOLVE-AND-CHECK because it is not a pass over this
+      ;; repository: it re-derives every cross-repository edge everywhere, which
+      ;; is how a retraction here cannot leave a dangling edge there (REQ-0027
+      ;; R2). Last, because it reads the graph this function has just finished
+      ;; building. Deferred through a function cell so loom-workspace's own load
+      ;; order does not have to put federate.lisp before this file.
+      (federate-after-index repository :quiet quiet)
       indexed)))
+
+(defun federate-after-index (repository &key quiet)
+  "Re-derive cross-repository edges, if federation is loaded.
+
+Split out and guarded so INDEX-REPOSITORY does not name a function defined in
+a later component. A single watched repository still pays one claim scan that
+finds nothing to pair with, which is cheap and unconditional on purpose --
+guarding on a repository count would mean the pass behaves differently the
+first time a second tree is watched."
+  (declare (ignorable repository quiet))
+  (let ((federate (and (find-package :loom-workspace)
+                       (find-symbol "FEDERATE-REPOSITORIES" :loom-workspace))))
+    (when (and federate (fboundp federate))
+      (funcall federate :quiet quiet))))
 
 (defun reindex-repository (repository &key quiet)
   "Discard the index and rebuild it from disk.
@@ -742,6 +930,8 @@ the last error per thread.\""
           :unhandled-definer-macros
           (+ (length (unhandled-definer-macros graph))
              (length (generated-definition-collisions graph *macro-generators*)))
+          ;; DES-0018 D5: NIL on a healthy tree, so `status' prints nothing.
+          :ignore-reason (repository-ignore-reason repository)
           :unresolved-references (length (unresolved-references graph))
           :unenforced-rules (length (unenforced-rules graph))
           :violations (length (entities-of-type graph :rule-violation))
@@ -788,3 +978,45 @@ the last error per thread.\""
           :recovered-regions (count-file-regions graph :recovered-regions)
           :errors (length (repository-errors repository))
           :last-error (first (repository-errors repository)))))
+
+;;;; ==================================================================
+;;;; Link targets against the filesystem (BUG-0027)
+;;;; ==================================================================
+;;;;
+;;;; The one check in the pipeline that asks the disk rather than the index,
+;;;; and it lives here because this is the layer that knows a repository has a
+;;;; root. loom-graph resolves names against entities and has no filesystem;
+;;;; an analyzer has neither and must not acquire either (SS8.1).
+;;;;
+;;;; The distinction is not pedantry, it is the difference between a report and
+;;;; a fabrication. A link target that does not resolve in the index has not
+;;;; been shown to be broken: game-server links to CLAUDE.md, which REQ-0028
+;;;; excludes by name, and to data-api/sql/test.sql, which no analyzer claims.
+;;;; Both files are present. Reporting them as broken would put five confident
+;;;; falsehoods in front of a reader alongside the two real findings, which is
+;;;; how a staleness report stops being read.
+
+(defun check-document-links (repository &key workspace-id)
+  "Operations recording, per document, the link targets that name no file.
+
+Existence on disk, not presence in the index. A document may legitimately link
+to a licence, a .sql fixture, a CLAUDE.md -- things Loom does not index and has
+no opinion about. What it may not do is link to nothing."
+  (let ((graph (repository-graph repository))
+        (root (repository-root repository))
+        (ops '()))
+    (dolist (type *document-types*)
+      (dolist (document (entities-of-type graph type))
+        (let ((targets (getp document :link-targets)))
+          ;; Only documents that carry link targets are touched, so a YAML
+          ;; document -- which has none -- keeps whatever it had rather than
+          ;; being handed an empty list on every pass.
+          (when targets
+            (let ((broken (remove-if (lambda (target)
+                                       (probe-file (merge-pathnames target root)))
+                                     targets)))
+              (push (update-properties (id document)
+                                       (list :broken-links broken)
+                                       workspace-id)
+                    ops))))))
+    (nreverse ops)))

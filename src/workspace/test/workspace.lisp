@@ -329,7 +329,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 178
+(defparameter *call-site-ceiling* 294
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -367,9 +367,74 @@ LOOM-ANALYZER:*EXTERNAL-PACKAGE-NAMES* would place them; the default does not,
 because that would make the index depend on what the reading image happens to
 have loaded.
 
-So the ceiling stays at 178. Lowering it to track a fall that did not happen
-would be the mistake the paragraph above warns about, in the other
-direction.")
+So the ceiling stayed at 178 through DES-0015. Lowering it to track a fall that
+did not happen would be the mistake the paragraph above warns about, in the
+other direction.
+
+RE-MEASURED 2026-08-12 AT 189, CEILING 208. DES-0022's structural report adds
+one console command and one registry operation, and both are body-swallowing
+macros whose call names become orphaned definer pairs. Census composition
+before and after, which is what makes this growth rather than a defect:
+
+    define-command      79 -> 85
+    define-operation    56 -> 61
+    resolving to a callee   141 -> 141
+    ambiguous occurrences    16 ->  16
+
+Every one of the eleven is a call name inside the two new macro bodies, the
+resolving population is unchanged, and the ambiguous population is unchanged.
+189 measured plus 10% headroom is 208, derived the same way 162 gave 178.
+
+This is the second time in one day the ceiling fired, and the two occasions are
+worth telling apart because only one was a defect. Earlier the same day it went
+to 182 on four ambiguous sites, and the cause was a test helper named K-DOC
+colliding with another of a different arity in one package -- a real bug the
+ceiling caught before the arity error was traced. This time the census shows
+new code and nothing else.
+
+The instrument's cost is now visible: an absolute whole-tree count has to be
+re-measured whenever a command or an operation is added, and each
+re-measurement is an opportunity to raise it without looking. The census is
+what makes that check cheap, and running it is not optional -- a number edited
+to match a red suite is not a ceiling.
+
+RE-MEASURED 2026-08-14 AT 215, CEILING 237. REQ-0021's remaining commands --
+`structure', `architecture', `drift', `remove', `init' and their registry
+entries. Composition, which is what makes this growth rather than a defect:
+
+    define-operation    61 -> 72
+    ambiguous occurrences  16 -> 16
+
+Three re-measurements in three days, all from the same cause: this requirement
+added six commands and six operations, and every one is a body-swallowing macro
+whose call names become orphaned definer pairs. The ambiguous population has
+not moved through any of it, which is the number that would have moved if
+something had gone wrong.
+
+RE-MEASURED 2026-08-14 AT 267, CEILING 294. REQ-0024's JavaScript analyzer and
+its suite. Composition:
+
+    js-test              0 -> 50
+    one interface       13 -> 24
+    resolve to nothing 182 -> 235
+    ambiguous occurrences  16 -> 16
+
+The whole of the growth is JS-TEST, a macro this suite defines for itself so
+that a machine without node skips rather than fails. It is body-swallowing like
+DEFINE-COMMAND and DEFINE-OPERATION, so its twenty uses orphan fifty definer
+pairs by exactly the mechanism the three entries above it did -- a fourth
+instance of one cause, not a fourth cause.
+
+Worth stating because it looks like the opposite: none of this growth is
+JavaScript. Not one :CALL-SITE in the census comes from a .js file. The
+JavaScript analyzer writes :CALL-NAMES on functions and methods only, and
+:CALL-SITE is minted by RESOLVE-GENERATED-DEFINITIONS from *Lisp* definer
+macros, so a JavaScript tree cannot reach this population at all. Confirmed by
+measurement rather than by reading: hiding tools/js/extract.js so that no
+JavaScript was indexed anywhere left the count at 267 unchanged.
+
+The ambiguous population is 16 before and 16 after, which is the number that
+moves when something has gone wrong.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is
@@ -965,3 +1030,45 @@ comparing against nothing and its silence would mean nothing")
       (is (= 1 (length (entities-of-type g :rule-violation))))
       (is (string= "RULE-0001" (getp (first (entities-of-type g :rule-violation))
                                      :rule-id))))))
+
+;;; ------------------------------------------------------------------
+;;; Link targets against the disk (BUG-0027)
+;;; ------------------------------------------------------------------
+
+(test a-link-to-a-file-that-is-not-there-is-reported
+  ;; The finding BUG-0027 exists for. Measured on ~/lisp/game-server: 38 broken
+  ;; link targets across six files while `status' read `unresolved: 0'.
+  (with-workspace-fixture (repository)
+    (write-file "docs/notes.md"
+                "see [alpha](../src/alpha.lisp) and [gone](../src/missing.lisp)
+")
+    (poll-once repository :quiet t)
+    (let ((unresolved (mapcar #'cdr (unresolved-references (repository-graph repository)))))
+      (is (member "src/missing.lisp" unresolved :test #'string=)
+          "the link to nothing is reported: ~a" unresolved)
+      (is (not (member "src/alpha.lisp" unresolved :test #'string=))
+          "and the one that lands is not"))))
+
+(test a-link-to-a-real-file-loom-does-not-index-is-not-reported
+  ;; The false positive the first fix produced, and the reason this check asks
+  ;; the disk rather than the index. A document may legitimately link to a
+  ;; licence, a .sql fixture, a CLAUDE.md -- things no analyzer claims and Loom
+  ;; has no opinion about. What it may not do is link to nothing.
+  ;;
+  ;; Without this, five of game-server's eight reported findings were files
+  ;; sitting right there on disk, which is how a staleness report stops being
+  ;; read.
+  (with-workspace-fixture (repository)
+    (write-file "schema.sql" "-- no analyzer claims this
+")
+    (write-file "CLAUDE.md" "# instructions, excluded from indexing by name
+")
+    (write-file "docs/notes.md"
+                "see [schema](../schema.sql) and [guide](../CLAUDE.md)
+")
+    (poll-once repository :quiet t)
+    (let ((unresolved (mapcar #'cdr (unresolved-references (repository-graph repository)))))
+      (is (not (member "schema.sql" unresolved :test #'string=))
+          "a .sql file no analyzer claims is on disk and is not broken: ~a" unresolved)
+      (is (not (member "CLAUDE.md" unresolved :test #'string=))
+          "and neither is the file REQ-0028 excludes by name"))))

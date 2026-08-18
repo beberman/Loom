@@ -1,0 +1,117 @@
+id: BUG-0028
+title: isError encodes as null rather than false, so an MCP client rejects every successful tools/call and accepts only the failures
+status: fixed
+date: 2026-08-14
+refines: [DES-0006]
+affects: [tool-result, json-value, write-json-value, encode-result]
+tags: [mcp, json, protocol, encoder, con-0003]
+summary: |
+  TOOL-RESULT wrote `:|isError| (and error t)', which is NIL for a call that
+  succeeded. ENCODE-RESULT has no way to write the JSON literal `false' -- NIL
+  encodes as null -- so every successful tools/call answered with
+  "isError":null. The MCP result schema types isError as boolean, so a client
+  that validates before reading rejects the response.
+
+  The failure is inverted in a way that hides it. A tool that *failed* set the
+  field to T, encoded `true', validated, and worked. A tool that *succeeded*
+  produced null and was thrown away by the client. So the endpoint appeared
+  to be up -- initialize and tools/list are clean, curl returns 200 with a
+  complete body -- while every tool that did its job looked broken:
+
+      MCP server "loom" returned a malformed result that failed schema
+      validation: expected boolean, received null   (path: isError)
+
+  Fixed by giving the encoder a value that means JSON false, LOOM-SERVE's
+  *JSON-FALSE*, and having TOOL-RESULT write it.
+body: |
+  WHAT WAS WRONG
+
+  src/mcp/jsonrpc.lisp, TOOL-RESULT:
+
+      :|isError| (and error t)        ; NIL on success
+
+  src/serve/json.lisp, JSON-VALUE, reached with that NIL:
+
+      ((null x) (if (member key *array-valued-keys*) #() nil))
+
+  and WRITE-JSON-VALUE handing NIL to cl-json, which writes null. That third
+  behaviour is not a surprise -- the file's own header names it as one of the
+  three things cl-json does that the file exists to correct:
+
+      (json:encode-json-to-string nil)  => null
+
+  What the header did not have, and what this bug is, is anywhere to go from
+  there. The encoder could write true and it could write null. It could not
+  write false at all.
+
+  This had already bitten once, in the same file, and been worked around
+  locally rather than fixed. DISPATCH-METHOD's initialize branch carries:
+
+      ;; An empty object rather than NIL, which would encode as null: a
+      ;; capabilities field that is null does not declare "no options", it
+      ;; fails to parse as an object.
+      :|capabilities| (list :|tools| (make-hash-table))
+
+  Same root cause, same protocol, one branch away, patched at the producer with
+  a hash table. isError could not be patched the same way because there is no
+  Lisp value that means false.
+
+  WHY THE TESTS DID NOT CATCH IT
+
+  Two reasons, and the second is the one worth keeping.
+
+  The suite asserted isError on a *refusal*
+  (AN-MCP-CALLER-WITH-ONLY-READ-CANNOT-OPEN-A-REPL) and nowhere on a success.
+  That is the ordinary gap: the value was T on the tested path and encoded
+  correctly all along.
+
+  The second reason would have defeated the obvious fix for the first. cl-json
+  decodes JSON `false' and JSON `null' to the same NIL, and every helper in
+  src/mcp/test/tools.lisp goes through JSON:DECODE-JSON-FROM-STRING. A test
+  written the natural way --
+
+      (is-false (cdr (assoc :is-error result)))
+
+  -- passes against the defect and against the fix, indistinguishably. The
+  regression test therefore reads the wire text, through a new RPC-RAW helper,
+  and asserts the literal "isError":false. CON-0003 asks whether a test fails
+  without its change: this one was run against the reverted TOOL-RESULT and
+  does.
+
+  THE FIX
+
+  A JSON-FALSE struct in src/serve/json.lisp with one singleton instance,
+  *JSON-FALSE*, exported from LOOM-SERVE. JSON-VALUE passes it through and
+  WRITE-JSON-VALUE writes the four characters. TOOL-RESULT writes it where it
+  wrote NIL.
+
+  A marker rather than a *BOOLEAN-VALUED-KEYS* list beside *ARRAY-VALUED-KEYS*,
+  and the asymmetry is deliberate. An empty list is still a list whatever key
+  it arrived under, so a key is enough to identify it. A false is
+  indistinguishable from an absent NIL by anything except what the producer
+  meant -- so the producer has to say, and a key list would be guessing on its
+  behalf. It also keeps MCP's protocol requirement stated in MCP's own file,
+  where a reader of jsonrpc.lisp can see it, rather than in a list in another
+  system that jsonrpc.lisp never mentions.
+
+  Deliberately not a general boolean type. `(eq x t)' already encodes true, and
+  a second spelling of true would let two producers disagree about which one the
+  encoder honours.
+
+  WHAT WAS NOT CHANGED
+
+  A bare NIL still encodes as null, and the regression test asserts that
+  alongside the new behaviour. Turning every NIL into false would change every
+  absent field in every REST answer, and for most of them null is right: a
+  :variable's :exported-p NIL and an unset :signature are not the same kind of
+  absence, and the encoder cannot tell them apart. That ambiguity is real and
+  is left standing -- what is fixed is that a producer who knows it means false
+  now has a way to say so.
+
+  HOW IT WAS FOUND
+
+  Not by the suite. By using the tools: a loom_status call during REQ-0024's
+  work returned the schema-validation error above, while tools/loom.sh answered
+  the same question fine. The endpoint had been registered and enabled two
+  commits earlier and had, as far as anything recorded shows, never returned a
+  usable answer to a client that validates.

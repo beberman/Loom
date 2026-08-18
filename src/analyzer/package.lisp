@@ -15,6 +15,13 @@
    #:analyzer-language
    #:analyzer-file-types
    #:analyze-file
+   ;; REQ-0031 R9 and REQ-0035: which comment block belongs to a definition, in
+   ;; this language. One extractor, two thresholds -- DES-0027 D3a.
+   #:comment-extent
+   #:comment-line-text
+   #:attach-comment-documentation
+   #:blank-line-p
+   #:split-lines
    #:analyzer-handles-p
 
    ;; registry
@@ -66,6 +73,21 @@
    ;; what a macro call defines (DES-0002) -- read by LOOM-WORKSPACE, which
    ;; hands it to the resolution pass LOOM-GRAPH cannot reach this package from
    #:*macro-generators*
+
+   ;; what a repository declares about its own frameworks (DES-0025 D4).
+   ;; Handed in the same direction and for the same reason, except that the
+   ;; value is per repository rather than global -- FRAMEWORKS-REGISTRY
+   ;; returns a fresh table so two watched trees cannot teach each other.
+   #:*frameworks-file*
+   #:frameworks-path
+   #:read-frameworks
+   #:parse-frameworks
+   #:frameworks-registry
+   #:frameworks-problems
+   ;; Bound by loom-workspace around one repository's files, so the JavaScript
+   ;; analyzer can tell a route literal from any other string without learning
+   ;; a convention (DES-0025 D1).
+   #:*route-callers*
    ;; Namespaces a Lisp tree uses but does not declare (DES-0015). Handed to
    ;; BUILD-PACKAGE-GRAPH the way *MACRO-GENERATORS* is handed to
    ;; RESOLVE-GENERATED-DEFINITIONS, and for the same layering reason.
@@ -83,8 +105,9 @@
    ;; directory list is exported because it is the seam a foreign repository
    ;; adjusts -- convention with a knob, not configuration; DES-0016 D2.
    #:*documentation-directories*
-   #:register-documentation-directory
    #:documentation-relative-p
+   #:*excluded-directories*
+   #:*assistant-instruction-files*
    #:parse-document
    #:parse-check
    #:*check-kinds*

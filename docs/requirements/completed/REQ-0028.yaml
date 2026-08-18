@@ -1,0 +1,188 @@
+id: REQ-0028
+title: Prose must be indexed by what it says, not by which directory it sits in
+status: implemented
+date: 2026-08-14
+refines: [CON-0004]
+affects: [documentation-relative-p, repository-files, prose-report,
+          structure-report, markdown-analyzer, analyzer-handles-p]
+tags: [markdown, analyzer, generality, req-0014, des-0016, front-end]
+summary: |
+  The markdown analyzer claims a file only when some directory segment of its
+  path is named docs, doc, design or documentation. That rule tests where a
+  file lives instead of what it says, and it misses the most common place
+  architecture actually lives: a README beside the code it describes.
+
+  Measured 2026-08-14. ~/github/front-end tracks 46 markdown files and Loom
+  indexes 27 of them. Among the nineteen it cannot see is src/models/README.md,
+  541 lines titled "Models Directory - Game Object System" -- unambiguous
+  architecture documentation, sitting in the directory it documents, invisible
+  because that directory is called models.
+
+  This asks that the allowlist go, that .md, .markdown and .txt be claimed
+  wherever the repository tracks them, and that what earns a document its place
+  be measured rather than assumed. It reverses DES-0016 D2 deliberately and
+  says why.
+body: |
+  WHAT THE ALLOWLIST WAS FOR, AND WHY IT NO LONGER PAYS
+
+  DES-0016 D2 chose a directory list over indexing everything, and its argument
+  was specific: "A root README.md is as often a build instruction or a badge
+  wall as it is engineering knowledge." That is true, and the concern is real --
+  a CHANGELOG, a licence, a table of CI badges are not architecture and would
+  dilute every query that touches prose.
+
+  The list is a *proxy* for the question that actually matters, which is
+  whether a document says anything about this codebase. It was a reasonable
+  proxy when nothing could measure the real thing. Since DES-0020 and DES-0022
+  something can: a document's resolution rate -- how much of its own backticked
+  vocabulary resolves against the index -- is computed, reported by `drift', and
+  already used to rank the prose a context bundle admits and to attribute prose
+  to the systems it describes.
+
+  So the proxy can be retired in favour of the measurement. A badge wall
+  resolves nothing and ranks last; src/models/README.md resolves against the
+  models it describes and ranks first. Nothing has to be assumed about a
+  directory name.
+
+  WHAT IT COSTS TO KEEP THE LIST, MEASURED
+
+      ~/github/front-end   46 tracked .md, 27 indexed
+      ~/lisp/game-server   15 tracked .md, 12 indexed
+      ~/lisp/Loom          12 tracked .md,  1 indexed
+
+  The nineteen front-end misses include four READMEs under src/ -- 541, 154, 49
+  and 7 lines -- which are the only prose that repository has about its own
+  models, styles and editors.
+
+  THREE POPULATIONS, AND ONLY ONE OF THEM IS WANTED
+
+  The nineteen do not divide evenly, and a rule that admitted all of them would
+  be worse than the rule it replaced.
+
+    Documentation of the code. src/models/README.md and its siblings. This is
+      the population this requirement exists for.
+
+    Instructions to an LLM. .claude/agents/*.md, .windsurf/rules/*.md,
+      CLAUDE.md. These describe how an assistant should behave, not how the
+      software is built, and indexing them would put agent prompts into the
+      graph as though they documented the system -- a fabricated fact with a
+      plausible shape, which is CON-0001's failure in a new place. They are
+      excluded today only as a side effect of REPOSITORY-FILES skipping
+      dot-directories. That exclusion stops being incidental and becomes
+      load-bearing, and must be stated as a rule rather than relied on as an
+      accident.
+
+    Payloads. Loom's own src/workspace/templates/*.md are the text init writes
+      into other people's repositories. They are not documentation of Loom and
+      indexing them would describe this codebase with prose written about a
+      different one.
+
+  PLAIN TEXT IS A WEAKER CASE AND IS ADMITTED ANYWAY
+
+  Two .txt files exist across the three repositories: front-end's design.txt,
+  which is forty lines of real directory structure, and public/robots.txt, which
+  is not prose at all.
+
+  The difficulty is not the ratio, it is that markdown gives an author a way to
+  say "this is a name" and plain text does not. A backtick is a deliberate mark;
+  in a .txt file every word is a candidate, and matching all of them against the
+  index would manufacture edges from ordinary English at a volume that makes the
+  resolution rate meaningless.
+
+  So plain text is indexed -- a findable document is better than an invisible
+  one -- and its links are drawn conservatively: only tokens shaped like
+  identifiers, which is the same filter the drift report already applies to
+  unresolved markdown names. `dhandler-delete' qualifies and `utilities' does
+  not. A .txt file that earns no edges is still a document a query can reach.
+
+  WHAT THIS IS NOT
+
+  It is not a change to what a mention means. A markdown file still earns
+  :MENTIONS and never :DECIDES or :DOCUMENTS -- REQ-0014's distinction between
+  an observation and a declared claim is untouched, and widening what is
+  observed does not strengthen any of it.
+
+  It is not an invitation to index a vendored dependency tree. BUG-0024 already
+  settled that by asking git what it ignores, and that answer is what makes
+  dropping the allowlist affordable at all: the reason a narrow list was cheap
+  insurance in 2026-08 was that node_modules was still being walked.
+
+  REQUIREMENTS
+
+  R1  A file ending .md, .markdown or .txt is indexed wherever the repository
+      tracks it, whatever its directory is called. The documentation-directory
+      allowlist is removed rather than extended, because extending it would be
+      the same proxy with more entries.
+
+  R1a The repository root is included, and the root README with it. DES-0016
+      excluded it by name -- "a root README.md is as often a build instruction
+      or a badge wall as it is engineering knowledge" -- and that exclusion is
+      reversed here rather than left to follow silently from R1.
+
+      The reason is the same one that retires the allowlist: a root README is
+      the first thing a human reads about a repository and often the only
+      overview it has, and whether this one is architecture or a badge wall is
+      now measurable rather than something to guess from its position. front-end
+      and game-server each have one; so does Loom, and Loom's is the entry point
+      to everything else it knows about itself.
+
+  R2  A dot-directory is not indexed, and this is a rule rather than a side
+      effect. `.claude/`, `.windsurf/`, `.github/` and their kind hold
+      instructions to tools, and a document that tells an assistant how to
+      behave is not a document about the software.
+
+  R3  Text Loom wrote, or that instructs an assistant, is not indexed as
+      documentation of the code. Three shapes, and the third was nearly missed:
+
+        template payloads -- Loom's src/workspace/templates/ holds the text init
+          writes into other people's repositories, and it describes those rather
+          than this one. The general form is that text written to be copied
+          elsewhere describes the elsewhere.
+
+        the installed skill -- which lands under .claude/ and is therefore
+          already covered by R2, but is named here because the coverage is
+          incidental to where it happens to go rather than to what it is.
+
+        CLAUDE.md, by name and wherever it sits. It is not dot-prefixed and it
+          is not in a template directory, so neither of the other two rules
+          reaches it -- and it is the single most concentrated piece of
+          instruction-to-an-assistant in any repository that has one. Loom
+          appends to it during init, so indexing it would also mean Loom reading
+          its own output back as a description of the code. AGENTS.md is the
+          same thing under a different convention and is excluded with it.
+
+      The documents Loom writes that *are* documentation -- the transcribed
+      workflow concept and the generated architecture document -- stay indexed.
+      They are YAML in the document tree and they describe the target, which is
+      the whole distinction: what is excluded is text about how to behave, not
+      text about the software.
+
+  R4  A plain-text file earns an edge only from a token shaped like an
+      identifier. Markdown's backtick is an author's signal and plain text has
+      none, so the alternative is manufacturing edges from ordinary English.
+
+  R5  What a document is worth is reported, not assumed. Every prose document
+      carries its resolution rate wherever it is listed, so a reader can tell a
+      badge wall from an architecture note without knowing where either lives.
+
+  R6  Acceptance is measured on all three trees, before and after: the count of
+      indexed documents, the count of unresolved references, and specifically
+      that ~/github/front-end's src/models/README.md is indexed and that no
+      .claude/ or .windsurf/ file is. On Loom, that its own templates are not.
+
+  R7  `context` and the generated architecture document must not get worse. The
+      mention band is capped and ranked, so admitting more prose competes rather
+      than floods -- but the acceptance has to show a bundle that is still about
+      the task rather than about whatever README mentions the most names.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - Does a README beside code deserve a stronger edge than a mention? A file in
+    src/models/ is about src/models/ in a way the mention count only
+    approximates, and proximity is derivable. It would be a new kind of claim,
+    which is why it is a question rather than a requirement.
+  - Should the resolution rate become a stored property rather than being
+    recomputed by each report? Three callers now derive it.
+  - What happens on a repository git does not track -- a directory that is not a
+    repository at all? BUG-0024's answer was to index everything and record the
+    reason; this requirement leans on git harder than that did.

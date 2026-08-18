@@ -8,12 +8,37 @@
   ;; SS4: loom-workspace depends on loom-graph and the analyzers. It is the
   ;; first system that knows both how to analyze and where the result goes,
   ;; which is what lets everything below it stay ignorant of the other half.
-  :depends-on (#:loom-ontology #:loom-graph #:loom-analyzer #:bordeaux-threads)
+  :depends-on (#:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge
+               #:bordeaux-threads
+               ;; UIOP runs `git check-ignore' for DES-0018. Already in the
+               ;; image through loom-analyzer, and named here anyway: a
+               ;; system that uses a library should say so rather than rely
+               ;; on a dependency of a dependency continuing to want it.
+               #:uiop)
   :serial t
   :components
   (
    (:file "package")
    (:file "workspace")
+   ;; After "workspace": the transition takes WITH-REPOSITORY-LOCK and calls
+   ;; REINDEX-REPOSITORY, both defined there, and :SERIAL T is what makes the
+   ;; macro available at compile time rather than only at load time.
+   (:file "transition")
+   ;; After "transition": PREPARE-REPOSITORY reuses LINE-END and
+   ;; WHITESPACE-CHAR-P to scan a manifest, and the plan-then-apply split it
+   ;; follows is that file's.
+   (:file "init")
+   ;; After "init": the generator reuses NEXT-DOCUMENT-ID, READ-MANIFEST and
+   ;; the create-only discipline, and after loom-knowledge because it renders
+   ;; STRUCTURE-REPORT's output.
+   (:file "architecture")
+   ;; After "workspace": it takes WITH-REPOSITORY-LOCK, NOTE-ERROR and
+   ;; *REPOSITORIES*, and is the one pass that reads more than one graph.
+   (:file "federate")
+   ;; After "workspace": REQ-0031's reader takes STAMP-FILE and
+   ;; REPOSITORY-STAMPS to answer whether the text it served is the text the
+   ;; index was built from.
+   (:file "source")
    )
   :in-order-to ((test-op (test-op :loom-workspace/test)))
   )
@@ -34,6 +59,16 @@
   (
    (:file "suite")
    (:file "workspace")
+   (:file "gitignore")
+   (:file "transition")
+   ;; After "transition": PREPARE-REPOSITORY reuses LINE-END and
+   ;; WHITESPACE-CHAR-P to scan a manifest, and the plan-then-apply split it
+   ;; follows is that file's.
+   (:file "init")
+   (:file "architecture")
+   ;; After "workspace": it takes WITH-WORKSPACE-FIXTURE and WRITE-FILE, and
+   ;; the line numbers it asserts are that fixture's src/alpha.lisp.
+   (:file "source")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-workspace-test :test-runner)

@@ -65,6 +65,7 @@
 
    ;; generated definitions (DES-0002) -- the one pass that mints entities
    #:resolve-generated-definitions
+   #:normalize-route
    #:structural-generated-uses
    #:generated-definition-collisions
    #:unhandled-definer-macros
@@ -82,6 +83,12 @@
    #:resolve-document-links
    #:unresolved-references
    #:linkable-index
+   ;; Exported for DES-0022 S3's generator, which has to know whether a name it
+   ;; is about to write into a describes: field will resolve. Duplicating the
+   ;; rule was tried and got it wrong in the worst direction -- see the
+   ;; function's own docstring for the generic-plus-methods case that a naive
+   ;; "one candidate" test drops.
+   #:resolve-one
    #:*document-types*
    #:*mention-confidence*
 
@@ -102,9 +109,13 @@
    ;; queries -- read-only (SS6.3)
    #:find-entities
    #:entity-system
+   #:system-satisfies-p
+   #:*system-family-delimiters*
    #:in-system-p
    #:entities-in-system
    #:edges-between-systems
+   #:federated-relationships
+   #:federated-relationship-p
    #:neighbors
    #:neighbor
    #:neighbor-entity

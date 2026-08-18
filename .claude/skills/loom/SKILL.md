@@ -16,9 +16,35 @@ restating it, because five copies of it went stale twice.
 Every invocation below is known to work. If something fails, the cause is
 almost certainly a real problem rather than a wrong incantation.
 
-## The console
+## Two ways in, and the fast one first
 
-Drive it through `tools/loom.sh` **using the Bash tool**, which takes a whole
+**MCP.** `.mcp.json` registers the running service, so `loom_*` tools may be in
+your tool list already:
+
+    loom_find  loom_describe  loom_impact  loom_context  loom_status
+    loom_check  loom_rules  loom_structure  loom_drift
+    loom_set_status  loom_complete  loom_repl_open/eval/close
+
+Each takes a `repository` argument — the service holds several and refuses to
+guess, because an answer about the wrong tree is worse than none. They run
+against a resident, file-watching index: an `impact` measured at 22ms where the
+script takes minutes, since the script reindexes the whole tree before it can
+answer.
+
+Three caveats, all real:
+
+- The registration needs a **Claude Code restart**. A session that began before
+  `.mcp.json` existed will not have the tools; look at your own list.
+- The service runs **the code it was started with**. After changing Loom's
+  source, `tools/loom-serve.sh update` — it restarts only when something
+  actually changed.
+- `loom_init`, `loom_remove` and `loom_architecture` are deliberately **not**
+  MCP tools. They prepare, describe or dismantle a repository and are driven by
+  `tools/loom-init.sh`, where a terminal can ask the consent REQ-0021 R16
+  requires. REST carries them for that script.
+
+**The console.** Always works, needs no service, and is the answer whenever the
+tools are absent. Drive it through `tools/loom.sh` **using the Bash tool**, which takes a whole
 console session as one quoted argument, watches the tree before the first
 command and stops after the last, and filters compile chatter:
 
@@ -56,6 +82,14 @@ cd ~/lisp/Loom && sbcl --script loom.lisp
 The commands, at the `loom>` prompt or as `loom.sh` arguments:
 
 ```
+@<name> <command> ...     name the repository a command acts on. A leading
+                          @token is stripped by the dispatcher, so it works on
+                          every command including the variadic ones:
+                          `impact @game-server dhandler-delete 3`,
+                          `context @front-end soft delete read path`. It lasts
+                          one command -- there is no selected-repository mode
+                          to forget. With one repository watched, nothing has
+                          to be typed.
 help [command]            the authoritative table; trust it over this list
 watch "~/lisp/Loom"       register, index, and watch. Resumes a paused repo.
 pause                     stop watching, keep the index
@@ -70,6 +104,24 @@ impact <name> [<depth>]   what a change reaches, plus governing decisions
 context <task words>      a budgeted bundle: what to know before editing
 rules                     constraints; [prose only] means unenforced
 check                     rule violations and unresolved doc references
+structure                 systems, the edges between them, protocols, entry
+                          points and hubs — all derived, and it names neither
+                          direction of a cycle wrong
+init "<dir>" [docs] [claude-md] [host:port]
+                          prepare a repository Loom did not write: directories,
+                          conventions, the skill, a manifest. `claude-md` is the
+                          second consent — without it an existing CLAUDE.md is
+                          left alone
+architecture              write an ARCH document from the index into a prepared
+                          tree. Invariants section empty on purpose
+set-status <doc> <status> set one document's status and file it where that
+                          status belongs — into completed/ when terminal, back
+                          out when not. One line changed, one rename, nothing
+                          else in the file touched.
+complete <plan> [<doc>=<status> ...]
+                          set a plan final and restate every document it
+                          implements. With no verdicts it writes nothing and
+                          shows what it would need.
 enrich [repo]             load the tree in a bounded child and add what its own
                           toolchain knows: macro-generated definitions, calls
                           xref sees and the text walk does not
@@ -272,6 +324,15 @@ message are faster and never prompt.
   evidence about the other. Where it matters, say which you ran.
 - **Files ending in `~` are Emacs backups.** Ignore them. Files beginning with
   `.#` are Emacs lock symlinks and are skipped by the indexer.
+- **The indexer skips what git ignores** (DES-0018). It asks
+  `git check-ignore` once per pass rather than interpreting `.gitignore`
+  itself, so `node_modules`, `dist`, `coverage` and anything else the
+  repository excludes contributes nothing — but a *tracked* file stays indexed
+  even when it matches a pattern, because git consults the index and a
+  committed file is part of the repository. A directory that is not a git
+  repository is indexed whole, and `status` prints an `ignores :` line saying
+  git could not be consulted. Measured on `~/github/front-end`: 27 documents
+  instead of 421.
 - **Compile output goes to stdout**, so grep it away rather than reading it.
 - **A running loom-serve goes stale mid-session and nothing tells you.** The
   SessionStart hook makes it current once, at the start; every edit after that
@@ -330,11 +391,61 @@ Two mistakes have each already cost a document its place in the index:
 After writing, run `status` and confirm the document count rose and
 `unresolved` did not.
 
+## Finishing work: `complete`, not a status you remember to edit
+
+A plan reaching `final` makes the `draft` status of every document it refines
+false, and a false status is worse than none — the next agent believes it. That
+transition used to be RULE-0005, a rule nobody could check because `check`
+inspects a state and the rule describes an event. It is now a command:
+
+```bash
+tools/loom.sh 'complete PLAN-0019'
+```
+
+writes nothing and prints the chain with the verdicts it still needs:
+
+```
+  PLAN-0019      plans          draft       -> final
+  DES-0019       design         draft       -> ?            needs a verdict
+  REQ-0022       requirements   draft       -> ?            needs a verdict
+  CON-0004       concepts       -           -               no status field -- the walk stops here
+To apply: complete PLAN-0019 DES-0019=<status> REQ-0022=<status>
+```
+
+Then supply them. What the command does and does not do:
+
+- **The verdict is yours.** `implemented` means every requirement the document
+  states is now true; `partial` means some landed and the document gains an
+  OUTSTANDING section naming what did not. Nothing derives that, and a command
+  that guessed would write a false claim into a file and then index it.
+- **It walks upward, but only through a terminal verdict.** A `partial` design
+  stops the climb, because the requirement above it is not implemented either.
+- **It refuses a document another unfinished plan still refines**, and names the
+  plan in the way. That query is the reason the command exists — it is the one
+  a human closing a long change will not run.
+- **All or nothing.** Give a verdict for every document it asks about, or it
+  writes none of them. It also refuses whole rather than one problem at a time.
+- **The file moves too.** A terminal status files the document under
+  `completed/`, and a status that stops being terminal moves it back out, so
+  placement and `status:` cannot drift apart. That was RULE-0007.
+- **It does not commit.** The tree is left dirty, which is what you want from a
+  command that just edited your documents.
+
+`set-status <doc> <status>` is the same write path for one document, with no
+propagation query — the way to accept a requirement, close a bug, retire a rule,
+or override a block you have looked at. Both are also `/v1/set-status` and
+`/v1/complete` over REST, and `loom_set_status` and `loom_complete` over MCP,
+which is how an agent working outside this tree reaches them.
+
 ## Markdown is indexed, and earns a weaker edge
 
-REQ-0014 and DES-0016. A separate analyzer claims `.md` and `.markdown` under
-any directory named `docs`, `doc`, `design` or `documentation` — not the
-repository root, so a top-level README.md is not indexed. Each file becomes a
+REQ-0014, DES-0016, and REQ-0028 which widened it. A separate analyzer claims
+`.md`, `.markdown` and `.txt` **anywhere the repository keeps them**, root
+README included. Excluded: any dot-directory (`.claude/`, `.windsurf/` instruct
+an assistant rather than describe the code), a `templates/` directory, and
+`CLAUDE.md`/`AGENTS.md` by name. What a document is worth is measured by how
+much of its vocabulary resolves — `drift` reports it — rather than assumed from
+where it sits. Each file becomes a
 `:document` named by its path, titled by its first H1 (the filename when there
 is none), always a plain `:document`: a markdown file in `docs/design` is *not*
 a DES, because the directory-names-the-type registry is this tree's convention
@@ -362,6 +473,7 @@ would bury the staleness signal that `unresolved` exists to carry.
 were `:documents` edges until REQ-0014, so `impact`'s `documents:` line is empty
 on this tree and a `mentions:` line carries what it used to.
 
-To index a repository that keeps documentation somewhere else again, add the
-directory name to `loom-analyzer:*documentation-directories*` — the same seam
-`*external-package-names*` is for packages.
+There is nothing to register any more: the directory name was never the
+question, so `*documentation-directories*` and its registration function are
+gone. A repository keeping prose under `handbook/`, `adr/` or beside its source
+is claimed without anybody configuring anything.

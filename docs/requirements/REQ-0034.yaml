@@ -1,0 +1,150 @@
+id: REQ-0034
+title: A document must be checkable before it is written, because the feedback loop that only closes after the file exists is the one authors stop running
+status: draft
+date: 2026-08-15
+refines: [CON-0004]
+affects: [resolve-document-links, linkable-index, unresolved-references, resolve-one]
+tags: [documents, workflow, agents, con-0004, game-server]
+summary: |
+  The only way to find out whether a document's refines: and affects: names
+  resolve is to write the file, wait for the monitor to reindex it, and run
+  `check` -- which reports every unresolved reference in the repository at
+  once, so the author must then work out which entries are theirs.
+
+  Measured on game-server, 2026-08-15: four documents written, `check` run,
+  four names found not to resolve, four edits made to fix them, `check` run
+  again. The loop worked and it cost four round trips through the filesystem
+  and the indexer to learn something that could have been answered before any
+  file existed. On a tree with a non-zero baseline -- Loom's own has 14 --
+  the author must also diff the report against what was already broken, which
+  nothing helps with.
+
+  This asks for the same resolution, run against a draft, before it is
+  committed to a file. It is a small operation and it is what makes the
+  affects: field cheap enough to keep accurate.
+body: |
+  WHAT IS WRONG
+
+  Nothing, mechanically. RESOLVE-DOCUMENT-LINKS does the right thing, `check`
+  reports the result, the skill tells the author to run it, and the loop
+  terminates. The defect is in the loop's shape rather than in any of its
+  steps, and it shows up as three separate frictions that share one cause.
+
+  The answer arrives after the commitment. An author choosing between two
+  spellings of a name, or deciding whether to name a class or the generic its
+  accessor produced, is making the decision at the moment they write the line
+  -- and that is precisely when Loom has nothing to say. By the time the
+  report exists the wording is settled and the edit is a correction rather
+  than a choice.
+
+  The report is repository-wide. `check` answers "what is unresolved here",
+  which is the right question for the tree and the wrong one for the author
+  of one document. On game-server the baseline was two pre-existing markdown
+  links, small enough to hold in the head. On Loom it is 14, and an author
+  adding a document has to establish which of the 14 were theirs before they
+  can tell whether they made things worse.
+
+  The turnaround is a filesystem round trip. Write, poll, reindex, ask. Each
+  cycle is seconds rather than milliseconds, which is fine once and is why
+  nobody runs it five times while drafting.
+
+  Together those make the affects: field expensive to get right, and an
+  expensive field is one that gets written approximately and then stops being
+  written at all. CON-0001 makes affects: and refines: the two fields that
+  resolve, "the staleness detector, so fill them in accurately or leave them
+  out" -- and the honest reading of the loop today is that it pushes an author
+  toward the second half of that sentence.
+
+  WHAT THE OPERATION IS
+
+  Given a document -- as a path to a file not yet indexed, or as the document
+  body itself -- report for each declared reference whether it resolves, to
+  what, and where it is ambiguous. Nothing is written, nothing is asserted,
+  and the graph is not modified. It is RESOLVE-DOCUMENT-LINKS' resolution half
+  run for its answers rather than for its operations, against LINKABLE-INDEX
+  as it currently stands.
+
+  That is deliberately less than a document linter. It does not check that a
+  requirement has an acceptance criterion, that a status is in the right
+  vocabulary for its type, or that a refines: chain points the right way up.
+  Those may all be worth having and none of them is what cost the four round
+  trips.
+
+  WHY THIS IS NOT REQ-0030 WITH EXTRA STEPS
+
+  REQ-0030 is about what the resolver does with an ambiguous name and what the
+  report calls it. This is about when the author can ask. They compose --
+  a pre-write check that reported "check-database: unresolved" would be
+  repeating REQ-0030's defect earlier, and a post-hoc check that distinguished
+  ambiguity would still be post-hoc -- but neither subsumes the other, and
+  either is worth having without the other.
+
+  If both land, the order is REQ-0030 first: the answer being right matters
+  more than the answer being early, and this operation reports whatever the
+  resolver concludes.
+
+  WHAT THIS IS NOT
+
+  It is not a write path. The operation reports and returns; it does not
+  create the document, fix a name, or suggest one. REQ-0025 R2 makes
+  allocation and creation one operation for reasons that do not apply here,
+  and a validator that also wrote would inherit that requirement's
+  constraints for no benefit.
+
+  It is not a replacement for `check`. The repository-wide report is what
+  catches rot in documents nobody is currently editing -- a design naming a
+  function that was deleted last week -- and that is the case a pre-write
+  check cannot cover by construction.
+
+  It does not ask for the monitor to be faster. The round trip is a symptom
+  and the latency is not the complaint; an instantaneous reindex would still
+  answer after the file was written.
+
+  REQUIREMENTS
+
+  R1  A document's declared references can be resolved without the document
+      being written or indexed. The operation names the repository it
+      resolves against, like every other.
+
+  R2  It accepts a document that does not exist yet. A path to an unindexed
+      file is the common case for an author mid-draft; whether it also
+      accepts the body inline is the architecture's to decide, and an agent
+      composing a document in memory is the case that argues for it.
+
+  R3  The report is per-document and scoped to what was asked. It says which
+      names resolved and to what, and which did not, for this document only
+      -- never the repository's baseline, which is `check`'s job and is the
+      thing an author currently has to subtract by hand.
+
+  R4  Nothing is asserted. The graph after the call is identical to the graph
+      before it, and running it on a document that is already indexed does not
+      disturb that document's existing edges.
+
+  R5  It is reachable from the console, REST and MCP. An agent following the
+      workflow is the caller this exists for, and REQ-0021 R8 puts that agent
+      on the service rather than on a script in Loom's tree.
+
+  R6  Acceptance is measured against the session that prompted this. Take the
+      four game-server documents of 2026-08-15 in their original form, before
+      the names were corrected, and require that the operation reports exactly
+      the four bad references -- check-database, db-handler, initialize-media,
+      connection-connect-database -- and the resolving ones alongside them,
+      with the repository's own pre-existing unresolved references absent from
+      the report. Then run it against a document that is already indexed and
+      require R4: no edge changes.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - Does it belong to `check` as a scoped mode, or is it its own operation?
+    A `check --document <path>` reuses a name authors already know and
+    inherits a report shape built for a different question. A separate
+    operation is a fifteenth MCP tool for a small job.
+  - Should it resolve prose mentions too? Declared fields are the ones that
+    rot loudly. A draft's backticked names become :MENTIONS edges at 0.5
+    confidence and an author may well want to know which of them will land,
+    particularly in a design that leans on prose to carry its argument.
+  - What does it do about a document that refines one not yet written? An
+    author drafting a DES before its REQ exists is following the chain
+    backwards, but a plan drafted alongside its design is ordinary and the two
+    files appear in some order. Reporting it as unresolved is correct and may
+    be unhelpful.

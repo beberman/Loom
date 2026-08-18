@@ -1,0 +1,165 @@
+id: REQ-0026
+title: context must return the documents bearing on a task, not only the ones whose type happens to be a decision
+status: implemented
+date: 2026-08-12
+refines: [CON-0004]
+affects: [build-context, render-context, context-item, impact-report, seed-entities]
+tags: [context, documents, knowledge, req-0014, bug-0023]
+summary: |
+  BUILD-CONTEXT collects the documents bearing on a task by walking four edge
+  types -- :decides, :applies-to, :documents, :mentions -- and then filters what
+  it collected by entity type, keeping :decision, :design, :architecture, :rule
+  and :concept. :DOCUMENT is not in that list, and :DOCUMENT is what four of
+  CON-0004's nine categories land on: requirements, plans, reviews and bugs. It
+  is also what every markdown file is.
+
+  So `context` on this tree can never surface a requirement, a plan, a bug
+  report or a review, however plainly the document declares that it bears on the
+  code in question. On a tree whose documents are all markdown -- which is every
+  repository Loom did not write -- it returns nothing about intent at all, and
+  is a call-graph browser.
+
+  `impact`, over the same graph and the same edges, gets this right: it reports
+  decisions:, documents: and mentions: as three bands with different strengths.
+  This asks `context` to answer the same question the same way, and to say in
+  the rendered bundle why each thing is in it -- which it does not do today for
+  anything, decisions included.
+body: |
+  WHAT IS WRONG
+
+  Measured 2026-08-12 on this tree. SET-DOCUMENT-STATUS is declared by two
+  documents and mentioned by one:
+
+      loom> describe set-document-status
+        <- documents: REQ-0025, PLAN-0019
+        <- mentions: PLAN-0019
+
+  `impact` reports all of it, under headings that distinguish the claims:
+
+      loom> impact set-document-status 2
+      documents: PLAN-0019, REQ-0025
+      mentions: PLAN-0019
+
+  `context` reports none of it. Asked with the words that name this exact area
+  -- "complete plan document status transition" -- the bundle came back with
+  RULE-0006, DES-0016, DES-0014 and DES-0008, and not one requirement, plan,
+  bug or review. The edges are in the graph, DECISIONS-TOUCHING walks them, and
+  the type filter on the line after discards what it just collected.
+
+  On ~/lisp/game-server the effect is total rather than partial. That tree has
+  12 documents, all markdown, all :DOCUMENT. `context data-api handler protocol`
+  returns functions, methods, files and test coverage, and not one line of
+  prose -- including docs/data-layer.md, which describes the data-layer handler
+  protocol and resolves 28 mentions into the index. The whole of what an author
+  wrote down about why that code is shaped the way it is, is present in the
+  index, reached by the collector, and thrown away.
+
+  WHY THE FILTER IS THERE, AND WHY THIS IS NOT SIMPLY A BUG REPORT
+
+  The filter is deliberate and the comment above it makes the case: since
+  REQ-0014 every backtick in every piece of prose earns a :MENTIONS edge, and
+  the collector has to walk :MENTIONS so that a decision reached only by a
+  mention in its own body still reaches a bundle. The type filter is what stops
+  every README that happened to write `config` riding in behind it.
+
+  That argument is correct and any answer has to keep it. Deleting the filter
+  floods the bundle with prose and spends the token budget the bundle exists to
+  ration. This requirement is not "remove the filter"; it is "filter on
+  something that can tell the two apart".
+
+  WHAT THE TYPE CANNOT TELL YOU AND THE EDGE CAN
+
+  The entity type cannot separate a requirement declaring `affects:
+  [set-document-status]` from a README that backticked the name in a sentence.
+  Both are :DOCUMENT. That is not an accident of the taxonomy -- it is REQ-0014
+  deciding, correctly, that a markdown file must never be typed as a REQ or a
+  DEC because the directory-names-the-type registry is this tree's convention
+  and not a fact about markdown.
+
+  The edge separates them exactly, and the separation is structural rather than
+  a heuristic: a declared edge -- :DECIDES, :APPLIES-TO, :DOCUMENTS -- can only
+  come from a field an author wrote in a YAML document, and `check` reports it
+  when it rots. The markdown analyzer has no way to produce one; it produces
+  :MENTIONS and nothing else. So testing the edge rather than the type
+  separates precisely the two populations the type filter was trying and failing
+  to separate, and it does so by construction rather than by listing types.
+
+  WHAT THE READER CANNOT SEE EITHER
+
+  A second defect sits underneath the first and this requirement covers it,
+  because fixing one without the other is invisible. RENDER-CONTEXT prints
+  BUNDLE's :ITEMS as a flat list of entity lines. It never prints the
+  :DECISIONS field at all -- decisions reach the text only because BUILD-CONTEXT
+  admits them into :ITEMS, where they appear as untitled lines among the
+  functions.
+
+  So an agent reading a bundle cannot tell which lines are the code it asked
+  about, which are one hop away, and which are the reasoning. Adding bands to
+  the data and not to the text would be a change nothing could observe.
+
+  REQUIREMENTS
+
+  R1  A document that *declares* it bears on something in the bundle is in the
+      bundle, whatever its entity type. That is any document reached by
+      :DECIDES, :APPLIES-TO or :DOCUMENTS -- which is exactly the set of edges
+      an author produced by writing affects:, applies-to: or describes:, and is
+      what `check` already reports on when it goes stale.
+
+  R2  A document that merely *mentions* something is admitted too, but ranked
+      and capped rather than let in wholesale. The flooding the current filter
+      prevents must stay prevented; a bundle is a token budget and prose is
+      unbounded.
+
+  R3  The ranking is derived, not guessed. A document that names many of the
+      entities in the bundle is more likely to be about them than one that names
+      a single entity once, and the index already knows which.
+
+  R4  The bands carry the vocabulary `impact` already uses -- decisions,
+      documents, mentions -- and mean the same three things they mean there. Two
+      services answering one question with two vocabularies is worse than either
+      vocabulary.
+
+  R5  The rendered bundle says which band each entry is in, and that includes
+      the seeds and the one-hop neighbours it does not label today. An agent
+      must be able to tell the code it asked about from the reasoning about it.
+
+  R6  Nothing that reaches a bundle today stops reaching one. The change is
+      additive: every entity admitted under the current filter is still
+      admitted, so no existing bundle can lose anything.
+
+  R7  Acceptance is measured on both trees. On this one, `context complete plan
+      document status transition` returns the requirements and plans that
+      declare they bear on that code under a documents band. On
+      ~/lisp/game-server, a data-layer task returns docs/data-layer.md under a
+      mentions band, and that band is capped rather than admitting all twelve
+      markdown files.
+
+      CORRECTED 2026-08-12, before this shipped. An earlier draft named
+      REQ-0022 as one of the documents that must appear, and it does not: its
+      affects: names APPLY-TRANSACTION, PLAN-OP, RESOLVE-DOCUMENT-LINKS and
+      four others, because it was written before the functions it led to
+      existed. So it declares no claim on them and correctly earns no edge to
+      them, and a requirement that demanded it appear would have been asking
+      for the fabrication this whole document argues against. What the run
+      returns is PLAN-0019, REQ-0025 and BUG-0022 -- three documents that did
+      declare it. The lesson is worth keeping: an acceptance criterion naming a
+      specific document is a claim about that document's fields, and has to be
+      checked against them rather than assumed from the subject matter.
+
+  WHAT THIS IS NOT
+
+  It is not REQ-0021. That requirement names this gap in its own WHAT THIS IS
+  NOT section -- "a one-line defect and fixing it is cheaper than generating
+  anything" -- and R8 is written so init cannot be justified by it. The
+  consequence is that the gap has had no requirement of its own and would not
+  have been fixed as a side effect of anything. This is that requirement.
+
+  The diagnosis there is right and the estimate is optimistic. It is not one
+  line: the collector discards the edge it arrived on, so there is nothing at
+  the filter to test. What it costs is carrying the edge through, which is
+  small, and a rendering change, which REQ-0021 did not price at all.
+
+  It is not a change to what the analyzers produce, to what resolves, or to any
+  edge in the graph. Every fact this requirement asks to be surfaced is already
+  in the index and already reported by `impact`. The only thing that changes is
+  which of them BUILD-CONTEXT keeps.

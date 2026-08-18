@@ -1,0 +1,158 @@
+id: BUG-0027
+title: A markdown link target is merged into the mention list, so a broken link is dropped in the silence meant for ordinary words
+status: closed
+date: 2026-08-14
+refines: [REQ-0028]
+affects: [markdown-mentions, resolve-document-links, unresolved-references, normalize-link-target]
+tags: [markdown, analyzer, resolution, staleness, con-0001, req-0014]
+summary: |
+  MARKDOWN-MENTIONS reads two different things and returns one list: the
+  backticked code spans, and the normalized link targets. Resolution then
+  applies one rule to both -- a candidate that resolves earns a :MENTIONS edge
+  and a candidate that does not is discarded without a word.
+
+  That rule is right for a backtick and wrong for a link. REQ-0014 drops an
+  unresolved code span because prose is full of ordinary words in backticks and
+  reporting each would bury the staleness signal. A link target is not an
+  ordinary word: it is a path an author wrote, and whether it exists is a
+  fact the index can check.
+
+  Measured on ~/lisp/game-server, 2026-08-14: thirty-eight broken link targets
+  across six markdown files, and `status` reported `unresolved: 0` throughout.
+body: |
+  SYMPTOM
+
+  game-server's documentation was reorganised -- docs/data-layer.md and its
+  siblings moved into docs/design-summary/ -- and every relative link in them
+  broke, because `../media/media-handler.lisp' resolves one directory higher
+  than it used to. Some links had been broken earlier still, by a rename of
+  design/ that predated this session.
+
+  Thirty-eight targets, in six files:
+
+      docs/README.md                            12
+      docs/design-summary/data-layer.md         12
+      docs/design-summary/database-schema.md     6
+      docs/design-summary/media.md               3
+      docs/design-summary/piece-editor-req.md    2
+      docs/design-summary/HexGridRequirements.md 2  (a document that does not exist)
+      docs/design-summary/PlayBoardRendering.md  1  (the same one)
+
+  Loom reported none of it. `status @game-server' read `unresolved: 0
+  document references' before the repair and after it. The only visible trace
+  was in `drift', where the broken targets appear among the candidates -- mixed
+  in with `media_assets' and `model_defns', with nothing saying that one is a
+  path that does not exist and the other is a word that might be anything.
+
+  The repair was found by walking the links with a script, not by asking Loom.
+  A tool whose whole claim is that a rotten reference gets reported missed
+  thirty-eight of them in the tree it was being demonstrated on.
+
+  CAUSE
+
+  MARKDOWN-MENTIONS builds one list from two readings:
+
+      (dolist (span (code-span-contents text)) ... (pushnew ... found))
+      (dolist (target (append (link-targets text) (line-link-targets lines)))
+        (let ((normalized (normalize-link-target target path)))
+          (when normalized (pushnew (string-downcase normalized) found ...))))
+
+  and stores it in :MENTIONS. RESOLVE-DOCUMENT-LINKS has one branch for that
+  property: resolve, edge if it resolved, nothing if it did not. So the
+  distinction the extraction had -- this came from a backtick, this came from a
+  link -- is destroyed one line before the only place that could act on it.
+
+  The silence itself is correct and deliberate. DES-0016 argues it: prose is
+  full of ordinary words in backticks and a report naming each would bury the
+  signal that `unresolved' exists to carry. What is wrong is the population it
+  is applied to.
+
+  WHY IT HID
+
+  The merge reads as a simplification rather than a loss. Both readings produce
+  a name to look up, both earn the same weak edge when they resolve, and the
+  function's own docstring describes the union as its purpose -- "every
+  candidate name CONTENTS offers, from its code spans and its links". Nothing
+  in the code says the two halves deserve different treatment when they fail,
+  because at the point they are joined neither has failed yet.
+
+  It also could not show up on Loom's own tree. Loom's documents are YAML and
+  its markdown is a handful of files with few relative links; the population
+  where this bites is a repository with a real documentation tree, which is
+  exactly the case REQ-0021 exists to serve and which nothing had been measured
+  against until game-server was prepared.
+
+  And the number that would have shown it was zero for a true reason. Nothing
+  in game-server declares an affects: or a refines:, so `unresolved: 0' is the
+  correct answer to the question that count actually asks. It reads as "no
+  rotten references here", which is a different claim.
+
+  THE FIX
+
+  Keep the two populations apart from extraction through resolution.
+
+  A link target goes in its own property. Resolution resolves it the same way
+  and earns the same :MENTIONS edge when it lands -- a link is still only an
+  observation that this file names this thing, and REQ-0014's distinction
+  between an observation and a declared claim does not change. What changes is
+  the failure: a link target that resolves to nothing is recorded in
+  :UNRESOLVED-REFERENCES, which is where `check' and `status' already look.
+
+  A code span that resolves to nothing keeps being dropped in silence.
+
+  WHAT THIS WILL NOT CATCH
+
+  A directory target. NORMALIZE-LINK-TARGET returns NIL for `../data-api/'
+  because Loom mints no directory entity, so a link to a directory that has
+  moved will stay silent. Three of game-server's thirty-eight were of that
+  shape. Recorded rather than fixed: minting directory entities to check links
+  would be a large change for a small class, and a reader who has been told
+  about the other thirty-five is not being misled about the graph.
+
+  An anchor. `rules.md#game-versioning' is checked as far as rules.md and no
+  further -- whether that heading exists is not in the index.
+
+  TWO CORRECTIONS MADE WHILE FIXING IT, BOTH FALSE POSITIVES
+
+  The first fix reported a link as broken when it did not resolve in the index.
+  That is not the same question, and on game-server it produced five confident
+  falsehoods beside two real findings:
+
+      docs/README.md -> claude.md              CLAUDE.md is on disk; REQ-0028
+                                               excludes it from indexing by name
+      docs/README.md -> data-api/sql/test.sql  present; no analyzer claims .sql
+
+  A document may legitimately link to a licence, a fixture, a CLAUDE.md --
+  things Loom does not index and has no opinion about. What it may not do is
+  link to nothing. So the check asks the filesystem, and therefore moved to
+  CHECK-DOCUMENT-LINKS in loom-workspace: loom-graph resolves names against
+  entities and has no filesystem, and an analyzer must acquire neither.
+
+  The second was case. MARKDOWN-LINK-TARGETS downcased its output so the string
+  would match LINKABLE-INDEX's downcased keys, and PROBE-FILE then looked for
+  `claude.md' and `playboardrendering.md' on a case-sensitive filesystem holding
+  CLAUDE.md and PlayBoardRendering.md. Four more files reported missing while
+  sitting on disk under the names their authors gave them. Case is preserved
+  now; nothing is lost, because RESOLVE-ONE downcases its own argument.
+
+  Both are the same mistake in different clothes -- answering a question near
+  the one that was asked -- and both would have made the report worse than the
+  silence it replaced. A staleness report with five false entries in seven is
+  one nobody reads twice.
+
+  MEASURED AFTER
+
+      game-server   2 unresolved, both real: HexGridRequirements.md and
+                    PlayBoardRendering.md reference CounterDisplayScaling.md,
+                    which exists in no directory of that repository.
+      front-end     5 unresolved, all real: four links to game-server's Lisp
+                    files from a document in another repository, and one
+                    ../src/ that needed ../../src/.
+      Loom         13 unresolved, unchanged -- the same thirteen as before.
+
+  A finding worth carrying: game-server's missing CounterDisplayScaling.md is
+  not missing. It lives in ~/github/front-end/docs/pieces/, 11k of it, and two
+  game-server design documents link to it as though the repositories were one
+  tree. That is REQ-0027's cross-repository question arriving as a broken link,
+  and it is the kind of thing this report exists to surface.
+

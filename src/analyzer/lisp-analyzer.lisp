@@ -31,6 +31,87 @@
    :file-types '("lisp" "lsp" "cl" "asd"))
   (:documentation "A reader-based analyzer for Common Lisp source files."))
 
+(defun lisp-comment-level (line)
+  "How many semicolons open LINE's comment, or NIL when it opens none.
+
+Only a comment that starts the line counts. A trailing `(foo) ; why' is a
+remark about that line and is inside the definition's own range already."
+  (let ((start (position-if-not (lambda (c) (member c '(#\Space #\Tab))) line)))
+    (when (and start (char= #\; (char line start)))
+      (- (or (position-if-not (lambda (c) (char= #\; c)) line :start start)
+             (length line))
+         start))))
+
+(defmethod comment-line-text ((analyzer lisp-analyzer) line)
+  "LINE without its leading semicolons and the one space conventionally after
+them. The words are what REQ-0035 indexes; the semicolons are syntax."
+  (declare (ignore analyzer))
+  (let* ((start (or (position-if-not (lambda (c) (member c '(#\Space #\Tab))) line)
+                    (length line)))
+         (after (or (position-if-not (lambda (c) (char= #\; c)) line :start start)
+                    (length line))))
+    (if (= start after)
+        line
+        (subseq line (if (and (< after (length line))
+                              (char= #\Space (char line after)))
+                         (1+ after)
+                         after)))))
+
+(defmethod comment-extent ((analyzer lisp-analyzer) lines start-line)
+  "The run of comment lines above START-LINE, and how it is attached.
+
+**Four** or more semicolons is :SECTION, and the number was measured rather
+than taken from the convention. CL style says `;;;' and `;;;;' are both
+top-level, which suggested three -- and counting what actually sits above a
+top-level definition says otherwise:
+
+                 ;;      ;;;     ;;;;+
+    Loom          1       51       124
+    game-server  89       38        99
+
+A `;;;;' is a box: `;;;; ====' / `;;;; Running the rule set' / `;;;; ===='
+above ACTIVE-RULES, which is a heading for everything below it and says nothing
+about that function. A `;;;' is commentary about the definition it sits on --
+the nine lines above EDGES-MATCHING explain why staleness is enforced at that
+one call, and losing them would lose the reason the function exists. Three
+would have discarded 51 real paragraphs on this tree to catch banners a fourth
+semicolon already marks.
+
+The other number worth carrying out of that table: Loom has exactly one
+adjacent `;;' block above any of its 1,154 top-level definitions. Its prose
+lives in docstrings, inside the form, already inside :START-LINE..:END-LINE.
+Padding is worth almost nothing here and worth something real on game-server,
+which is REQ-0016's thesis arriving in the ontology's neighbour -- a mechanism
+measured only against Loom would have been called a no-op and cut.
+
+A blank line between the block and the definition makes it :SEPARATED rather
+than ending the search. Both callers want to know the block is there; they
+disagree only about what a gap means, and that is theirs to decide rather than
+this function's. :SECTION wins over :SEPARATED when both apply, because the
+stronger reason to distrust the attachment is the one worth reporting.
+
+The walk stops at the first line that is neither blank nor a comment, which is
+the previous form."
+  (declare (ignore analyzer))
+  (let ((i (- start-line 2))                 ; 0-based index of the line above
+        (gap nil))
+    ;; Skip whatever blank lines separate the definition from a block above it.
+    (loop while (and (>= i 0) (blank-line-p (aref lines i)))
+          do (setf gap t) (decf i))
+    (if (or (minusp i) (null (lisp-comment-level (aref lines i))))
+        (values nil nil)
+        ;; Collect upward while the lines stay comments. A blank line *inside*
+        ;; the run ends it: two paragraphs separated by a gap are two remarks,
+        ;; and the nearer one is the one about this definition.
+        (let ((level 0))
+          (loop while (and (>= i 0) (lisp-comment-level (aref lines i)))
+                do (setf level (max level (lisp-comment-level (aref lines i))))
+                   (decf i))
+          (values (+ i 2)                    ; 1-based first line of the block
+                  (cond ((>= level 4) :section)
+                        (gap :separated)
+                        (t :adjacent)))))))
+
 ;;;; ------------------------------------------------------------------
 ;;;; Naming the things a form mentions
 ;;;; ------------------------------------------------------------------
@@ -459,6 +540,22 @@ as a human wrote it in source."
         ((stringp x) x)
         (t (string-downcase (princ-to-string x)))))
 
+(defun first-string-literal (x &optional (depth 0))
+  "The first string literal in X, in reading order, or NIL.
+
+Depth-bounded at three, which is not a performance guard -- a call site's
+argument is small -- but a meaning one. A string buried inside a nested body
+is a message, a docstring, a format control; a string in the first level or
+two of a declarative form is what that form was given. easy-routes puts the
+route one level down, inside the spec list, and nothing this is meant to read
+puts it deeper. Going all the way would find the first string in a handler
+body and call it a route."
+  (cond ((stringp x) x)
+        ((and (consp x) (< depth 3))
+         (loop for element in x
+               for found = (first-string-literal element (1+ depth))
+               when found return found))))
+
 (defun definer-call-site (form start end &optional system)
   "One :DEFINER-CALL-SITES entry for the top-level call FORM.
 
@@ -496,6 +593,19 @@ Indices count the operator as 0, so they line up with a registry entry's
                                   when (and argument (symbolp argument)
                                             (not (keywordp argument)))
                                     collect index)
+          ;; :STRING-ARGUMENTS is :SYMBOL-ARGUMENTS' mirror and exists for the
+          ;; same reason stated above it: a rendered argument cannot be told
+          ;; from a name, so which positions held a real string literal is its
+          ;; own fact. The value rather than the index, because unlike a name
+          ;; -- which resolution looks up in :ARGUMENTS -- the string itself is
+          ;; the thing wanted, and it may be nested: easy-routes writes the
+          ;; route inside a spec form, (defroute name ("/public/games" :method
+          ;; :get) ...), so position 2 holds a list whose first string is the
+          ;; claim. FIRST-STRING-LITERAL is what reaches it.
+          :string-arguments (loop for argument in arguments
+                                  for index from 1
+                                  for literal = (first-string-literal argument)
+                                  when literal collect (cons index literal))
           ;; The whole argument list, not a guessed body: DES-0002 has the
           ;; walk happen here precisely so resolution never has to know which
           ;; argument the body starts at. A non-body argument -- a bare name, a
@@ -511,6 +621,58 @@ Indices count the operator as 0, so they line up with a registry entry's
 ;;; SETP: SS5.1 derives the id from the natural key, and that derivation runs
 ;;; inside INITIALIZE-INSTANCE. A :file or :name arriving later would leave the
 ;;; entity carrying an id computed from values it did not yet have.
+
+;;; --- the prose a definition declares (REQ-0035, DES-0028) ---------
+;;;
+;;; Three sources, and they are three because the trees measured put their
+;;; prose in different places: Loom documents 62% of its functions in body
+;;; docstrings, and game-server documents its classes, carrying 198
+;;; (:documentation ...) options against Loom's 38. A capture reading only the
+;;; first would have served this tree and not that one.
+
+(defun body-docstring (form skip)
+  "The docstring in FORM's body, or NIL. SKIP is how many elements precede the
+body -- 3 for (defun name lambda-list . body).
+
+REQ-0035 R3: a string counts only when some form follows it, because
+
+    (defun f () \"x\")        =>  \"x\" is what F returns
+    (defun f () \"x\" nil)    =>  \"x\" documents F
+
+and recording the first as documentation would put a sentence in the index
+that Loom claims the author wrote *about* the function. That is CON-0001's
+fabricated fact in a shape no count reveals: the field would be populated,
+plausible and wrong. Being too strict costs one unmatched query; being too
+loose costs a false claim, and the asymmetry decides the rule."
+  (let ((body (nthcdr skip form)))
+    (when (and (stringp (first body)) (rest body))
+      (first body))))
+
+(defun variable-docstring (form)
+  "The docstring of a DEFVAR or DEFPARAMETER form, or NIL.
+
+Deliberately not BODY-DOCSTRING. The syntax is (defvar name [value [doc]]), so
+the docstring is the *last* element and nothing follows it -- the rule that
+makes a trailing string safe to reject in a function body would reject every
+one of these. There is no ambiguity to guard against here, because the form
+has no body for a value to be returned from."
+  (let ((doc (fourth form)))
+    (and (stringp doc) doc)))
+
+(defun option-documentation (form)
+  "The (:documentation \"...\") option in FORM, or NIL.
+
+DEFCLASS, DEFINE-CONDITION, DEFGENERIC and DEFPACKAGE all spell it this way.
+Matching on the option's own name rather than on a position, so a slot written
+(name :documentation \"...\") is not mistaken for the class's -- the slot's
+first element is the slot name, and only an option's first element is the word
+itself."
+  (loop for element in (cdr form)
+        when (and (consp element)
+                  (symbolp (first element))
+                  (string-equal "documentation" (token-name (first element)))
+                  (stringp (second element)))
+          return (second element)))
 
 (defun make-file-entity (path contents)
   (make-instance 'file-entity
@@ -530,6 +692,7 @@ Indices count the operator as 0, so they line up with a registry entry's
                                     :start-line start
                                     :end-line end
                                     :arguments (mapcar #'token-name (third form))
+                                    :documentation (body-docstring form 3)
                                     :language :lisp
                                     :system system))))
 
@@ -542,6 +705,7 @@ Indices count the operator as 0, so they line up with a registry entry's
                                     :start-line start
                                     :end-line end
                                     :kind :special
+                                    :documentation (variable-docstring form)
                                     :language :lisp
                                     :system system))))
 
@@ -581,7 +745,8 @@ a setf method keeps an identity distinct from its reader."
       (format nil "(~{~a~^ ~})" (mapcar #'token-name designator))
       (token-name designator)))
 
-(defun make-class-entity (name kind slots superclasses start end path system)
+(defun make-class-entity (name kind slots superclasses start end path system
+                          &key documentation)
   (make-instance 'class-entity
                  :name name
                  :origin-file path
@@ -592,10 +757,12 @@ a setf method keeps an identity distinct from its reader."
                                     :kind kind
                                     :slots slots
                                     :superclass-names superclasses
+                                    :documentation documentation
                                     :language :lisp
                                     :system system))))
 
-(defun make-interface-entity (name start end path system &key members generated-by)
+(defun make-interface-entity (name start end path system
+                              &key members generated-by documentation)
   "A generic function: a declared protocol with no implementation of its own."
   (make-instance 'interface-entity
                  :name name
@@ -606,11 +773,12 @@ a setf method keeps an identity distinct from its reader."
                                     :end-line end
                                     :members members
                                     :generated-by generated-by
+                                    :documentation documentation
                                     :language :lisp
                                     :system system))))
 
 (defun make-method-entity (name qualifier specializers generic arguments start end
-                           path system)
+                           path system &key documentation)
   (make-instance 'method-entity
                  :name name
                  :origin-file path
@@ -622,6 +790,7 @@ a setf method keeps an identity distinct from its reader."
                                     :specializers specializers
                                     :generic-function generic
                                     :arguments arguments
+                                    :documentation documentation
                                     :language :lisp
                                     :system system))))
 
@@ -779,6 +948,7 @@ right answer and not an omission."
                                      :end-line end
                                      :macro-p t
                                      :arguments (mapcar #'token-name (third form))
+                                     :documentation (body-docstring form 3)
                                      :language :lisp
                                      :system system)
                                (macro-generator-properties form)))))
@@ -838,7 +1008,8 @@ accessor its slots declare."
                                     (fourth form)))
          (class (make-class-entity name kind
                                    (mapcar #'token-name slot-specs)
-                                   superclasses start end path system)))
+                                   superclasses start end path system
+                                   :documentation (option-documentation form))))
     (cons class
           (loop for slot in slot-specs
                 append (loop for accessor in (slot-accessor-names slot)
@@ -914,7 +1085,11 @@ resolves to nothing exactly where the real one is called most."
   "The :CLASS for a DEFSTRUCT, and a :FUNCTION for every name it generates."
   (multiple-value-bind (name slots generated superclasses)
       (defstruct-generated-names form)
-    (cons (make-class-entity name :struct slots superclasses start end path system)
+    (cons (make-class-entity name :struct slots superclasses start end path system
+                             ;; (defstruct name-and-options [doc] . slots) --
+                             ;; DEFSTRUCT-SLOT-SPECS already skips it here.
+                             :documentation (let ((d (third form)))
+                                              (and (stringp d) d)))
           (loop for generated-name in generated
                 collect (make-generated-function-entity generated-name start end path
                                                         system name)))))
@@ -939,14 +1114,20 @@ dropping the NIL guard would read () as a qualifier and shift the whole tail
 by one."
   (let* ((qualifier (when (and (first tail) (symbolp (first tail))) (first tail)))
          (lambda-list (if qualifier (second tail) (first tail)))
-         (parameters (lambda-list-parameters lambda-list)))
+         (parameters (lambda-list-parameters lambda-list))
+         ;; The body begins after the lambda list, one further along when a
+         ;; qualifier sits between it and the name. BODY-DOCSTRING's
+         ;; form-must-follow rule then applies exactly as it does to a DEFUN.
+         (body (if qualifier (cddr tail) (cdr tail))))
     (make-method-entity name
                         (when qualifier
                           (intern (string-upcase (token-name qualifier)) :keyword))
                         (mapcar #'specializer-name parameters)
                         name                    ; the generic it implements
                         (mapcar #'token-name lambda-list)
-                        start end path system)))
+                        start end path system
+                        :documentation (when (and (stringp (first body)) (rest body))
+                                         (first body)))))
 
 (defun method-definition-entity (form start end path system)
   "The :METHOD for a DEFMETHOD -- the (DEFMETHOD name . tail) spelling of a
@@ -984,6 +1165,7 @@ contains the clause, where a misattributed one would be a fabricated fact
   (let ((name (definition-name (second form))))
     (cons (cons (make-interface-entity
                  name start end path system
+                 :documentation (option-documentation form)
                  :members (mapcar #'token-name
                                   (lambda-list-parameters (third form))))
                 nil)
@@ -1248,6 +1430,7 @@ bare DEFINE-PACKAGE arrive here identically."
                    :origin-file path
                    :properties (properties-table
                                 (list :qualified-name qualified
+                                      :documentation (option-documentation form)
                                       :nicknames
                                       (loop for c in (package-clauses form "nicknames")
                                             append (mapcar #'package-designator-name
@@ -1374,7 +1557,6 @@ references the other.
 Asserts precede the edges that name them, because the Graph Manager resolves
 an edge's endpoints against the asserts it has already planned in the same
 transaction."
-  (declare (ignore analyzer))
   (let ((file (make-file-entity path contents))
         ;; The package in effect at the form being read (DES-0009 R4). Seeded
         ;; from the path because a definition read before the file's first
@@ -1460,6 +1642,10 @@ transaction."
           owned-call-sites (nreverse owned-call-sites))
 
     ;; --- supersession: what the file defines once loaded (DES-0012 R1) ---
+    ;; REQ-0035 S3: the prose written above a definition, filled in once the
+    ;; definitions exist rather than threaded through every handler.
+    (attach-comment-documentation analyzer definitions (split-lines contents))
+
     ;; Here rather than after pass 2, because the point is that a shadowed
     ;; definition's body is never walked at all: no :CALL-NAMES, no local
     ;; :CALLS edge, no entity op, no :CONTAINS. Left to the graph it would be

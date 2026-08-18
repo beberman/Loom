@@ -97,3 +97,9 @@ body: |
 - **A test that passes for the wrong reason is worse than none.** CON-0003 is
   the standing statement. If a step's verification is "this test now passes",
   confirm the test would fail without the step.
+- **The last step is `complete`, not a list of statuses to edit.** A plan does
+  not need a closing step that says "mark DES-nnnn implemented" — Loom performs
+  that transition. Write the plan's final step as running
+  `complete PLAN-nnnn <doc>=<verdict> ...`, and say which verdict you expect
+  each refined document to earn and why, since that judgement is the one part
+  the command will not make. `.claude/agents/tools.md` has the invocation.

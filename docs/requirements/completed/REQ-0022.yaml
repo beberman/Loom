@@ -1,0 +1,216 @@
+id: REQ-0022
+title: Document state transitions must be a Loom command rather than a rule, because a rule can only describe a transition and never perform one
+status: implemented
+date: 2026-08-11
+refines: [CON-0004]
+affects: [apply-transaction, plan-op, apply-op, resolve-document-links,
+          repository-status, document-category, unresolved-references]
+tags: [workflow, documents, transitions, rules, write-path, con-0004]
+summary: |
+  RULE-0005 says a plan reaching final must move every document it refines out
+  of draft. RULE-0007 says a document whose status is terminal must live in
+  that directory's completed/ subdirectory. Both are severity-bearing active
+  rules, and neither is machine-checked, for the same structural reason: each
+  describes a *transition*, and `check` inspects a state. There is no snapshot
+  in which "a plan reached final and did not restate what it implemented" is
+  visible -- by the time anything looks, the only evidence is a document whose
+  status is now false, which is indistinguishable from one nobody has finished
+  yet.
+
+  So the enforcement has been prose since it was written, and the tree shows
+  it. This asks that the transition become a Loom command instead: an agent
+  says a plan is complete, and Loom sets the plan final, propagates the status
+  to every document it refines, moves each file whose status is now terminal
+  into completed/, and reindexes. The rule stops being a thing to remember and
+  becomes the one way the transition happens.
+
+  This gives Loom its first document-writing capability, which does not exist
+  today -- LOOM_RECORD_DECISION is named in two docstrings and implemented
+  nowhere. That is the substance of the requirement and the source of most of
+  its risk.
+body: |
+  ORDER
+
+  This lands before REQ-0021. That requirement prepares foreign repositories
+  and installs agent definitions into each one, and two of its clauses depend
+  on this command existing: a prepared workspace gets no transcribed workflow
+  rule because the transition is performed rather than remembered, and the
+  installed agents invoke the command rather than describing the manual
+  procedure. Shipping init first would copy instructions for a procedure about
+  to be replaced into every tree it touches, where correcting them costs far
+  more than correcting them here.
+
+  WHY A RULE WAS NEVER GOING TO WORK
+
+  RULE-0005 has severity error and has never fired. RULE-0007, written on
+  2026-08-11, is severity warning and says outright that no check kind can
+  express it. The four kinds SS10.4 defines -- :no-edge, :requires-edge,
+  :property-constraint, :property-absent -- all ask questions about the graph
+  as it stands. Neither rule is a question about the graph as it stands:
+
+    RULE-0005 asks about an *event* -- a plan crossing into final -- and about
+    what should have happened in the same change. Nothing in the index records
+    that a status changed, so there is no way to ask whether the accompanying
+    changes were made.
+
+    RULE-0007 relates a property to a path segment, which no check kind can
+    express either, and is downstream of RULE-0005: a file moves because a
+    status became terminal, so the placement rule can only be violated after
+    the status rule has been applied.
+
+  Adding a fifth check kind would make RULE-0007 checkable and would still
+  leave RULE-0005 unenforceable, because the missing thing is not expressive
+  power but a transition to observe. A command does not have that problem: it
+  *is* the transition, so there is nothing to detect.
+
+  WHAT THE COMMAND MUST DO THAT A HUMAN RELIABLY WILL NOT
+
+  The propagation is not one hop, and this is the strongest argument for
+  building it rather than restating it. When PLAN-0016 reaches final it refines
+  REQ-0014 and DES-0016. Marking both implemented is right only if no *other*
+  unfinished plan also refines them. Loom knows that -- the refines: edges are
+  in the graph and the statuses are properties -- and a human closing a plan at
+  the end of a long change does not, and will not check.
+
+  So the command's real content is a query a person cannot be relied on to run:
+  for each document this plan refines, is every plan refining it now final? If
+  yes, the document may move to implemented. If no, it stays, and saying so is
+  the useful answer.
+
+  WHAT LOOM CANNOT DECIDE
+
+  Whether a plan *fully* implemented what it refines is a judgement about
+  intent, not a fact in the graph. CON-0004's vocabulary offers implemented and
+  partial, and partial requires an OUTSTANDING section naming what did not
+  land. Nothing derivable distinguishes them: a plan can execute every step it
+  listed and still leave a requirement partly unmet, because the steps were
+  written before the work was understood.
+
+  The split is therefore the same one this project draws everywhere. Loom
+  performs the mechanical part -- the propagation query, the status edits, the
+  file moves, the reindex -- and the agent supplies the verdict per document.
+  A command that guessed implemented would be writing a false claim into a file
+  and then indexing it, which is CON-0001's fabricated fact with a commit
+  behind it.
+
+  THE WRITE, WHICH IS WHERE THIS WILL GO WRONG
+
+  Loom has never written a document. Three constraints, and the first two are
+  the ones that will bite an implementation that takes the obvious route.
+
+  It must not round-trip the YAML. Serializing a document back from the graph
+  would destroy key order, block scalars, comments, trailing prose and every
+  field the ontology does not model -- the entity carries a dozen properties
+  and the file carries whatever the author wrote. The edit must be surgical: a
+  targeted replacement of the top-level status line, and a file move. Nothing
+  else in the file may change, and a diff of a completed plan should show one
+  line and one rename.
+
+  It must edit the top-level key and nothing that looks like it. Every document
+  in this tree has a body: block scalar, and prose inside one routinely
+  contains lines like "status: draft" while discussing statuses -- this
+  requirement does. A naive line match would rewrite prose in the middle of a
+  document's argument and index the result. The edit has to know where the
+  mapping ends and the block scalar begins.
+
+  It must plan before it applies. The command touches several files, and a
+  filesystem is not transactional: failing on the third of three leaves the
+  tree half-transitioned, with a plan marked final and a design still draft.
+  Loom already has the discipline for this in APPLY-TRANSACTION, which runs
+  PLAN-OP over every operation and collects problems before APPLY-OP writes
+  anything. The command should do the same -- resolve every document, verify
+  every status is legal for its type, confirm every target path is writable,
+  and only then edit -- so that it either completes or has changed nothing.
+
+  WHERE IT LIVES
+
+  The console needs it, and so does an agent working over the service: REQ-0021
+  requires installed agents to reach Loom through REST or MCP rather than
+  through a path inside Loom's own tree, so a console-only command would be
+  unusable in exactly the deployment that motivated this. It belongs in the
+  operation registry loom-serve owns, with the console command as one caller.
+
+  It must also name its repository. The service holds several at once, and a
+  transition that wrote into the wrong worktree would be a genuinely bad
+  outcome -- unlike a misdirected query, which is merely a wrong answer.
+
+  WHAT HAPPENS TO THE TWO RULES
+
+  RULE-0005 and RULE-0007 do not survive as they are, and should not simply be
+  deleted either -- the invariants they state remain true and are worth reading.
+  The design should decide between superseding both with a single rule that
+  states the transition and names the command as the only way to perform it,
+  and retiring them to advisory once the command exists. The second is more
+  honest if the command can be bypassed by editing a file by hand, which it
+  can, since files are truth and always will be.
+
+  Either way the count of unenforced rules falls, which is the measurable
+  outcome: `status` reports 3 unenforced today, and two of the three are these.
+
+  AGENT TEXT
+
+  The agent definitions currently instruct an agent to follow RULE-0005 by
+  hand -- the planner's closing step restates the documents it refines. That
+  text becomes wrong the moment the command exists, and stale instructions that
+  describe a manual procedure are worse than none, because an agent will follow
+  them and produce the half-updated state the command was built to prevent.
+  The change to the agents is part of this requirement, not a follow-up.
+
+  REQUIREMENTS
+
+  R1  Completing a plan is one command. Given a plan, Loom sets it final,
+      determines every document it refines, and for each reports whether every
+      plan refining that document is now final.
+
+  R2  The verdict per refined document -- implemented or partial -- is supplied
+      by the caller, never derived. A command invoked without one reports what
+      it would change and makes no edit.
+
+  R3  A document whose status becomes terminal is moved into its directory's
+      completed/ subdirectory in the same operation, per the placement RULE-0007
+      states. Placement and status can no longer disagree, because one operation
+      sets both.
+
+  R4  The write is a targeted edit of the top-level status line plus a file
+      move. No YAML round-trip, no reserialization, and no edit to any line
+      inside a block scalar. A completed plan's diff shows one changed line and
+      one rename.
+
+  R5  The command plans before it applies: every document resolved, every status
+      validated against its type's vocabulary, every path checked, and only then
+      any write. A failure leaves the tree exactly as it was.
+
+  R6  The command is an operation in the registry loom-serve owns, reachable
+      over REST and MCP as well as from the console, and it names the repository
+      it acts on.
+
+  R7  Re-running on an already-completed plan changes nothing and says so.
+
+  R8  RULE-0005 and RULE-0007 are superseded or retired, and the agent
+      definitions that describe the manual procedure are rewritten to invoke the
+      command. `status` reports fewer unenforced rules afterwards than before.
+
+  R9  Acceptance is measured on Loom's own tree, which has the material: 15
+      final plans, 13 implemented designs, 8 implemented requirements and a
+      refines: chain connecting them. Take a plan that is currently draft,
+      complete it through the command, and require that the plan, everything it
+      refines, and the files' locations all move together; that the diff is one
+      line per document plus renames; that `check` reports no new unresolved
+      references; and that a document refined by a second unfinished plan is
+      correctly left alone.
+
+  OPEN QUESTIONS FOR THE DESIGN
+
+  - One verb or two? `complete <plan>` performs the cascade; `set-status <doc>
+    <status>` is the primitive underneath it. Both are useful and only the
+    first is what RULE-0005 asks for.
+  - What happens when a document has no status: field at all, or one outside
+    its type's vocabulary? BUG-0019 carried `status: fixed', which AS-KEYWORD
+    dropped to NIL, so the index held no status while the file held a word. The
+    command meets that file eventually.
+  - Does the command commit? REQ-0021 R1a says init writes and never commits,
+    for a reason that applies here too -- but a transition that leaves the tree
+    dirty across several files is a different shape from init's one-time
+    scaffold.
+  - Two agents completing plans concurrently against one service, in one
+    worktree. The graph has a single writer; the filesystem now has two.

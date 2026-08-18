@@ -29,7 +29,16 @@
   ;; on the DES-0011 precedent that a library's spelling should be replaceable
   ;; without touching the code consuming its answers: no other file in the tree
   ;; names an ECLECTOR package, and DES-0013 R1 asserts it.
-  :depends-on (#:loom-ontology #:cl-yaml #:uiop #:eclector)
+  ;; CL-JSON and BORDEAUX-THREADS are REQ-0024's, and neither is new to the
+  ;; system: loom-serve and loom-rest already depend on cl-json, and
+  ;; loom-ontology on bordeaux-threads, so the layering table gains nothing.
+  ;; The JavaScript analyzer reads its child process's replies as JSON -- the
+  ;; child writes them, so only a reader is needed, and the request frame is
+  ;; length-prefixed precisely so no JSON *writer* has to exist here -- and
+  ;; locks the exchange because the file monitor's thread and a console command
+  ;; can both reach ANALYZE-FILE.
+  :depends-on (#:loom-ontology #:cl-yaml #:uiop #:eclector
+               #:cl-json #:bordeaux-threads)
   :serial t
   :components
   (
@@ -42,11 +51,17 @@
    (:file "lisp-reader")
    (:file "lisp-inspector")
    (:file "lisp-analyzer")
+   (:file "js-analyzer")
    (:file "yaml-analyzer")
    ;; After yaml-analyzer, whose PATH-SEGMENTS and *MENTION-MINIMUM-LENGTH* it
    ;; reuses rather than reimplements. The two claim disjoint extensions, so
    ;; registration order does not decide anything between them.
    (:file "markdown-analyzer")
+   ;; Last: it reads YAML through yaml-analyzer's helpers and defaults its
+   ;; base registry to lisp-analyzer's *MACRO-GENERATORS*, so both must be
+   ;; compiled before it. It registers no analyzer of its own -- .loom/ is
+   ;; Loom's own configuration, not a repository's content (DES-0025 D4).
+   (:file "frameworks")
    )
   :in-order-to ((test-op (test-op :loom-analyzer/test)))
   )
@@ -69,8 +84,10 @@
    (:file "inspector")
    (:file "lisp-reader")
    (:file "lisp-analyzer")
+   (:file "js-analyzer")
    (:file "yaml-analyzer")
    (:file "markdown-analyzer")
+   (:file "frameworks")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-analyzer-test :test-runner)

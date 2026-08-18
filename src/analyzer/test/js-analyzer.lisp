@@ -1,0 +1,516 @@
+;;;
+;;; Tests for src/analyzer/js-analyzer.lisp -- REQ-0024 R8.
+;;;
+;;; Fixture strings rather than the acceptance tree. REQ-0024 R7's measurement
+;;; is taken against ~/github/front-end, which is not checked out wherever this
+;;; suite runs; R8 exists precisely so that the acceptance run is a measurement
+;;; and not the test. What is asserted here is the behaviour that produces
+;;; those numbers.
+;;;
+;;; Every test in this file needs a live node. That is a real dependency and it
+;;; is checked once, in JS-AVAILABLE-P: on a machine without node the tests
+;;; skip rather than fail, for the same reason REQ-0024 R2 makes an absent
+;;; toolchain a recorded absence rather than an error. A red suite on a machine
+;;; that was never going to be able to run the analyzer teaches nobody
+;;; anything. THE-TOOLCHAIN-BEING-ABSENT-IS-RECORDED-NOT-FATAL covers the
+;;; absence path itself and does not need node to do it.
+;;;
+
+(in-package :loom-analyzer-test)
+
+(def-suite js-analyzer
+  :in all-tests
+  :description "JavaScript and JSX through acorn in a child process (REQ-0024).")
+
+(in-suite js-analyzer)
+
+;;; ------------------------------------------------------------------
+;;; Harness
+;;; ------------------------------------------------------------------
+
+(defun js-available-p ()
+  "True when a child can actually be started."
+  (bt:with-lock-held (loom-analyzer::*js-child-lock*)
+    (not (null (loom-analyzer::ensure-js-child)))))
+
+(defmacro js-test (name &body body)
+  "A test that needs a live node, and skips rather than fails without one.
+
+The skip is a branch rather than an early return because FiveAM's TEST
+establishes no block to return from: an early-return guard compiles to `return
+for unknown block' and is dead code that reads as though it works. It never
+fired here, since node is present on the machine this was written on -- which
+is exactly the machine where a skip guard proves nothing."
+  `(test ,name
+     (if (js-available-p)
+         (progn ,@body)
+         (skip "node is not on PATH; the JavaScript analyzer cannot run here"))))
+
+(defun js-ops (path contents)
+  (analyze-file (make-instance 'loom-analyzer::js-analyzer) path contents "ws-test"))
+
+(defun js-graph (path contents)
+  (let ((g (make-graph)))
+    (apply-transaction g (js-ops path contents))
+    g))
+
+(defun js-entities (path contents &optional type)
+  (let ((entities (all-entities (js-graph path contents))))
+    (if type
+        (remove-if-not (lambda (e) (eq type (entity-type e))) entities)
+        entities)))
+
+(defun js-named (path contents name)
+  "The one entity called NAME, or NIL."
+  (find name (js-entities path contents) :key #'name :test #'string=))
+
+(defun js-file-entity (path contents)
+  (first (js-entities path contents :file)))
+
+;;; ------------------------------------------------------------------
+;;; Dispatch (R1)
+;;; ------------------------------------------------------------------
+
+(test the-analyzer-claims-js-jsx-mjs-and-cjs
+  (let ((analyzer (make-instance 'loom-analyzer::js-analyzer)))
+    (dolist (path '("src/a.js" "src/a.jsx" "src/a.mjs" "src/a.cjs"))
+      (is-true (analyzer-handles-p analyzer path)
+               "~a should be claimed" path))))
+
+(test the-analyzer-refuses-typescript
+  ;; REQ-0024's WHAT THIS IS NOT. acorn's ecosystem can be made to accept TS,
+  ;; and a parser that did would mint entities whose properties -- types,
+  ;; interfaces, generics -- nothing in the ontology models.
+  (let ((analyzer (make-instance 'loom-analyzer::js-analyzer)))
+    (dolist (path '("src/a.ts" "src/a.tsx" "vite.config.ts"))
+      (is-false (analyzer-handles-p analyzer path)
+                "~a must not be claimed" path))))
+
+;;; ------------------------------------------------------------------
+;;; Definitions (R1)
+;;; ------------------------------------------------------------------
+
+(js-test function-declarations-and-arrow-bindings-both-become-functions
+  ;; The arrow half is not a nicety: it is how most of a modern React tree
+  ;; spells a function, and an analyzer that only saw FunctionDeclaration would
+  ;; miss the majority of front-end's callables.
+  (let* ((source "export function alpha(a, b) { return a + b; }
+const beta = (x) => x * 2;
+export const gamma = async () => { await beta(1); };
+")
+         (functions (js-entities "src/m.js" source :function)))
+    (is (= 3 (length functions)))
+    (is (equal '("alpha" "beta" "gamma")
+               (sort (mapcar #'name functions) #'string<)))))
+
+(js-test a-class-yields-the-class-its-superclass-name-and-a-method-each
+  (let* ((source "export class Widget extends Base {
+  render() { return draw(this); }
+  static make() { return new Widget(); }
+}
+")
+         (class (js-named "src/w.js" source "Widget"))
+         (methods (js-entities "src/w.js" source :method)))
+    (is (eq :class (entity-type class)))
+    ;; A name, not an edge. The superclass can be defined in another file, so
+    ;; the analyzer records what it read and LOOM-GRAPH derives the edge on
+    ;; every pass -- DEC-0003, the same discipline the Lisp analyzer keeps.
+    (is (equal '("Base") (getp class :superclass-names)))
+    (is (equal '("Widget.make" "Widget.render")
+               (sort (mapcar #'name methods) #'string<))
+        "methods are keyed Class.method so two classes with a render() do not collide")))
+
+(js-test the-natural-key-of-a-method-keeps-two-renders-apart
+  ;; CON-0005: one assert per natural key per file. Two classes each with a
+  ;; render() in one file is the ordinary case in a component tree, and an
+  ;; analyzer naming both entities "render" would assert one key twice.
+  (let ((methods (js-entities "src/two.js"
+                              "class A { render() { return one(); } }
+class B { render() { return two(); } }
+"
+                              :method)))
+    (is (= 2 (length methods)))
+    (is (equal '("A.render" "B.render") (sort (mapcar #'name methods) #'string<)))))
+
+;;; ------------------------------------------------------------------
+;;; Calls, and JSX as a call (R4)
+;;; ------------------------------------------------------------------
+
+(js-test a-call-inside-a-function-becomes-a-call-name
+  (let ((entity (js-named "src/m.js" "function outer() { return helper(1); }" "outer")))
+    (is (member "helper" (getp entity :call-names) :test #'string=))))
+
+(js-test a-call-in-a-nested-callback-belongs-to-the-enclosing-named-function
+  ;; An inline callback is not something another file can name, so it gets no
+  ;; entity of its own. Its calls have to land on the enclosing definition or
+  ;; they are lost -- and in a React tree almost everything interesting happens
+  ;; inside a useEffect or a map callback.
+  (let ((entity (js-named "src/m.js"
+                          "function outer() { items.map((i) => transform(i)); }"
+                          "outer")))
+    (is (member "transform" (getp entity :call-names) :test #'string=))))
+
+(js-test jsx-usage-is-a-call-name-and-is-also-recorded-as-jsx
+  ;; R4. A component is invoked by being rendered. If <Thing /> produced no
+  ;; call name, RESOLVE-CALLS would draw no edge and `impact' would answer
+  ;; nothing useful about the majority of a front-end.
+  (let ((entity (js-named "src/App.jsx"
+                          "function App() { return <Panel><Row /></Panel>; }"
+                          "App")))
+    (is (member "Panel" (getp entity :call-names) :test #'string=))
+    (is (member "Row" (getp entity :call-names) :test #'string=))
+    (is (equal '("Panel" "Row") (sort (copy-list (getp entity :jsx-names)) #'string<))
+        ":JSX-NAMES keeps rendering distinguishable from calling")))
+
+(js-test a-host-element-is-not-a-call-name
+  ;; <div> resolves to nothing in any tree, so carrying it would put noise in
+  ;; every component's call list.
+  (let ((entity (js-named "src/App.jsx"
+                          "function App() { return <div><span>hi</span></div>; }"
+                          "App")))
+    (is-false (member "div" (getp entity :call-names) :test #'string-equal))
+    (is-false (getp entity :jsx-names))))
+
+(js-test a-language-global-is-not-a-call-name
+  ;; BUG-0029's first half, and the one an analyzer can fix. Without this,
+  ;; `new Error(...)' records a call to ERROR, and a repository defining a
+  ;; component called Error collects an edge from every throw site: measured at
+  ;; 315 inbound edges each on front-end, which put three error-display
+  ;; components at the top of `structure's hub list ahead of everything real.
+  (let ((entity (js-named "src/m.js"
+                          "function f() {
+  if (!ok) throw new Error('no');
+  return JSON.stringify(Array.isArray(x) ? Math.max(1, 2) : real(x));
+}"
+                          "f")))
+    (let ((calls (getp entity :call-names)))
+      (is (member "real" calls :test #'string=)
+          "a genuine call survives the filter")
+      (dolist (global '("Error" "stringify" "isArray" "max"))
+        (is-false (member global calls :test #'string=)
+                  "~a is a language builtin, not a definition in this tree" global)))))
+
+(js-test a-call-in-a-variable-initialiser-is-dropped-rather-than-mis-attributed
+  ;; The :CALLS relationship's :FROM is (:function :method :test :call-site),
+  ;; so a :VARIABLE is not a legal source and writing call names onto one would
+  ;; ask RESOLVE-CALLS for an edge the ontology forbids. DES-0014's :CALL-SITE
+  ;; is the designed answer for this position (BUG-0017) and is not yet minted
+  ;; here, so the names are dropped. A recorded gap, not a fabrication --
+  ;; CON-0001. This test pins the choice so that minting them later is a
+  ;; deliberate change rather than an accident.
+  (let ((entity (js-named "src/m.js" "const emitter = makeEmitter();" "emitter")))
+    (is (eq :variable (entity-type entity)))
+    (is-false (getp entity :call-names))))
+
+;;; ------------------------------------------------------------------
+;;; Exports and the anonymous default (R1, and REQ-0024's fourth question)
+;;; ------------------------------------------------------------------
+
+(js-test an-exported-function-is-marked-exported
+  (let ((source "export function shown() {}
+function hidden() {}
+"))
+    (is-true (getp (js-named "src/m.js" source "shown") :exported-p))
+    (is-false (getp (js-named "src/m.js" source "hidden") :exported-p))))
+
+(js-test an-anonymous-default-export-is-keyed-on-the-module-basename
+  ;; REQ-0024's fourth open question. The definition site has no name and the
+  ;; importing module names it whatever it likes, so the exported name cannot
+  ;; be the key. The basename is stable and is what importers call it by
+  ;; convention. The requirement's own suggestion, the full path, is rejected:
+  ;; `find' and `context' tokenise names to rank them, so a path-named entity
+  ;; would rank against queries by its directories as much as by itself.
+  (let ((entity (js-named "src/components/Card.jsx"
+                          "export default function () { return <div />; }"
+                          "Card")))
+    (is-true entity "the anonymous default should be named for its module")
+    (is (eq :function (entity-type entity)))))
+
+(js-test a-named-default-export-keeps-its-own-name
+  (let ((entity (js-named "src/components/Card.jsx"
+                          "export default function Panel() { return <div />; }"
+                          "Panel")))
+    (is-true entity "a default export that has a name uses it, not the basename")))
+
+;;; ------------------------------------------------------------------
+;;; The file entity, imports, and :SYSTEM (R5)
+;;; ------------------------------------------------------------------
+
+(js-test the-file-entity-records-its-language-and-line-count
+  (let ((file (js-file-entity "src/core/m.js" "const a = 1;
+const b = 2;
+")))
+    (is (eq :javascript (getp file :language)))
+    (is (= 3 (getp file :line-count)))))
+
+(js-test import-specifiers-are-recorded-and-not-resolved
+  ;; REQ-0024's WHAT THIS IS NOT rules out following an import to the file it
+  ;; names -- that needs node resolution, extension probing and the alias table
+  ;; a project configures for itself. Recording the specifier is what lets a
+  ;; later pass derive :IMPORTS edges without reanalysing the tree (DEC-0003).
+  (let ((file (js-file-entity "src/m.js"
+                              "import React from 'react';
+import { thing } from './local';
+export * from '../other';
+")))
+    (is (equal '("../other" "./local" "react")
+               (sort (copy-list (getp file :import-sources)) #'string<)))))
+
+(js-test the-system-comes-from-the-path-convention
+  ;; R5, decided rather than inherited. The language's own grouping construct
+  ;; is the module, and the module is the file -- keying :SYSTEM on it would
+  ;; make each of front-end's 468 files its own system, which is not a grouping
+  ;; at all. This is the first language where the strongest construct the
+  ;; language offers is weaker than the path convention.
+  (is (eq :domain (getp (js-file-entity "src/domain/game.js" "const a = 1;") :system)))
+  (is (eq :domain (getp (js-named "src/domain/game.js" "export function go() {}" "go")
+                        :system)))
+  (is-false (getp (js-file-entity "src/App.jsx" "const a = 1;") :system)
+            "a file directly under src/ names no system"))
+
+;;; ------------------------------------------------------------------
+;;; Damage (R3) and absence (R2)
+;;; ------------------------------------------------------------------
+
+(js-test a-file-that-will-not-parse-is-still-indexed-with-its-damage-recorded
+  ;; R3. An unparseable file vanishing from the index would be a silent gap,
+  ;; and CON-0001's whole argument is that a recorded gap beats a silence.
+  (let* ((source "function fine() { return 1; }
+function broken( { !!!
+")
+         (file (js-file-entity "src/bad.js" source)))
+    (is-true file "the file entity is asserted anyway")
+    (is-true (getp file :analysis-failed-p))
+    (is-true (getp file :analysis-error))
+    (let ((region (first (getp file :suppressed-regions))))
+      (is-true region "the damage carries a line range")
+      (is (integerp (getf region :start-line)))
+      (is (integerp (getf region :end-line))))))
+
+(test the-toolchain-being-absent-is-recorded-not-fatal
+  ;; R2, on REQ-0018 R2's precedent. Needs no node -- it makes node
+  ;; unfindable on purpose. A developer indexing a mixed tree on a machine
+  ;; without node gets their Lisp answers and a note about the JavaScript,
+  ;; rather than an error or an empty result they cannot explain.
+  (loom-analyzer::stop-js-child)
+  (unwind-protect
+       (let* ((loom-analyzer::*node-program*
+                "loom-no-such-node-binary-should-exist")
+              (file (js-file-entity "src/m.js" "const a = 1;")))
+         (is-true file "the file is indexed even with no toolchain")
+         (is (eq :javascript (getp file :language)))
+         (is-true (getp file :analysis-failed-p))
+         (is-true (search "loom-no-such-node-binary-should-exist"
+                          (or (getp file :analysis-error) ""))
+                  "the reason names what was missing, so a reader can act on it"))
+    ;; The failed probe left *JS-CHILD* nil and a reason set; clear both so a
+    ;; later test in this image is not told the toolchain is missing.
+    (loom-analyzer::stop-js-child)
+    (setf loom-analyzer::*js-unavailable-reason* nil)))
+
+;;; ------------------------------------------------------------------
+;;; Reconciliation (R6, CON-0005)
+;;; ------------------------------------------------------------------
+
+(js-test two-functions-of-one-name-in-one-file-reconcile-to-the-last
+  ;; CON-0005 and R6. JavaScript replaces rather than merges: the second
+  ;; `function dup' is what `dup' means once the module has loaded, and the
+  ;; first is dead code. TypeScript would have to MERGE the same shape, which
+  ;; is one of the reasons REQ-0024 refuses to claim it.
+  (let* ((source "function dup() { return first(); }
+function dup() { return second(); }
+")
+         (functions (js-entities "src/m.js" source :function)))
+    (is (= 1 (length functions))
+        "one natural key, asserted once -- the writer cannot reconcile two")
+    (let ((entity (first functions)))
+      (is (member "second" (getp entity :call-names) :test #'string=)
+          "the surviving definition is the last one in source order")
+      (is-false (member "first" (getp entity :call-names) :test #'string=))
+      (is-true (getp entity :shadowed-definitions)
+               "the superseded definition is recorded as a line range, not dropped in silence"))))
+
+;;; ------------------------------------------------------------------
+;;; The child process
+;;; ------------------------------------------------------------------
+
+(js-test the-child-is-reused-across-files-rather-than-restarted
+  ;; The whole reason ANALYZE-FILE's per-file interface survived REQ-0024's
+  ;; predicted batching change. One process per file would cost ~23ms of node
+  ;; startup 468 times over on front-end; reuse makes the measured whole-tree
+  ;; parse 0.65s.
+  (js-ops "src/one.js" "const a = 1;")
+  (let ((first-process loom-analyzer::*js-child*))
+    (js-ops "src/two.js" "const b = 2;")
+    (is (eq first-process loom-analyzer::*js-child*))))
+
+(js-test a-child-that-dies-is-replaced-and-the-next-file-still-indexes
+  (js-ops "src/one.js" "const a = 1;")
+  (let ((doomed loom-analyzer::*js-child*))
+    (loom-analyzer::stop-js-child)
+    (let ((entity (js-named "src/two.js" "export function after() { return go(); }" "after")))
+      (is-true entity "the file after a dead child still produces entities")
+      (is-false (eq doomed loom-analyzer::*js-child*)
+                "and it is a different process"))))
+
+(js-test non-ascii-source-does-not-desynchronise-the-frame
+  ;; The frame header counts bytes and the stream is character-oriented. A
+  ;; wrong count would not corrupt one file -- it would shift every frame after
+  ;; it, so the failure would appear in an unrelated file later in the tree.
+  ;; The second file is what actually proves the count was right.
+  ;;
+  ;; The characters below must be literal non-ASCII rather than \u escapes: an
+  ;; escape sequence is ASCII on the wire, so a test written that way would
+  ;; pass against a byte count that was wrong.
+  (js-ops "src/accented.js"
+          (format nil "const greeting = 'caf~c ~c na~cve ~c~c';~%~
+                       export function first() { return one(); }~%"
+                  (code-char #xE9)     ; é, two bytes
+                  (code-char #x2014)   ; em dash, three bytes
+                  (code-char #xEF)     ; ï
+                  (code-char #x1F600)  ; emoji, four bytes and a surrogate pair in JS
+                  (code-char #x00A0))) ; non-breaking space
+  (let ((entity (js-named "src/plain.js" "export function second() { return two(); }" "second")))
+    (is-true entity "the file after a non-ASCII one is still read correctly")
+    (is (member "two" (getp entity :call-names) :test #'string=))))
+
+;;; ------------------------------------------------------------------
+;;; COMMENT-EXTENT for JavaScript -- REQ-0031 R9, PLAN-0030 S5
+;;; ------------------------------------------------------------------
+
+(defun js-extent-of (lines start-line)
+  (comment-extent (make-instance 'loom-analyzer::js-analyzer) (coerce lines 'vector) start-line))
+
+(test a-jsdoc-block-is-found-though-none-of-its-lines-is-a-comment-line
+  ;; The case that corrected DES-0027 D3. A shared blank-or-comment line rule
+  ;; recognises none of " */", " * @param" or "/**", and returns nothing on the
+  ;; 249 of front-end's 461 source files that carry JSDoc -- silently.
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("const a = 1;"
+                      ""
+                      "/**"
+                      " * Emit a partition."
+                      " * @param {Object} p"
+                      " */"
+                      "export function emitPartition(p) {")
+                    7)
+    (is (= 3 first) "the opening /**, not the line just above")
+    (is (eq :adjacent attachment))))
+
+(test a-run-of-slash-slash-lines-behaves-like-a-lisp-comment-block
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("const a = 1;"
+                      "// why this component exists"
+                      "// and the second line"
+                      "export function C() {}")
+                    4)
+    (is (= 2 first))
+    (is (eq :adjacent attachment))))
+
+(test a-file-banner-is-a-section-because-nothing-precedes-it
+  ;; JavaScript has no fourth-semicolon convention, so position is the evidence
+  ;; where depth is the evidence in Lisp. A comment at the top of a file is
+  ;; about the file, not about whichever export happens to be first.
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("/**"
+                      " * Partition interchange helpers."
+                      " */"
+                      "export function first() {}")
+                    4)
+    (is (= 1 first))
+    (is (eq :section attachment))))
+
+(test an-inline-remark-is-not-a-block-opener
+  ;; `foo(); /* note */' is about that statement. Treating it as a block would
+  ;; serve the statement above a definition as though it documented it.
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("const a = 1;"
+                      "foo(); /* note */"
+                      "export function C() {}")
+                    3)
+    (is (null first))
+    (is (null attachment))))
+
+(test an-unterminated-block-costs-a-form-and-not-the-file
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("const a = 1;"
+                      " * a block nothing ever opened"
+                      " */"
+                      "export function C() {}")
+                    4)
+    (is (null first) "no opener found, so nothing is claimed")
+    (is (null attachment))))
+
+(test a-blank-line-separates-a-js-block-without-hiding-it
+  (multiple-value-bind (first attachment)
+      (js-extent-of '("const a = 1;"
+                      "/** a remark */"
+                      ""
+                      "export function C() {}")
+                    4)
+    (is (= 2 first))
+    (is (eq :separated attachment) "one line opening and closing a block")))
+
+;;; ------------------------------------------------------------------
+;;; JSDoc as prose -- REQ-0035, DES-0028 D9, PLAN-0031 (JavaScript)
+;;; ------------------------------------------------------------------
+
+(test js-comment-line-text-strips-delimiters-and-keeps-tags
+  ;; DES-0028 D9, measured before deciding: 979 blocks on front-end, only 377
+  ;; carrying any @tag, and 44 KB of tag lines against 199 KB of prose. A tag
+  ;; line is mostly description anyway, and what is not worth matching --
+  ;; "param", "Object" -- is frequent enough that IDF weighs it to nothing
+  ;; without being told.
+  (let ((a (make-instance 'loom-analyzer::js-analyzer)))
+    (is (string= "Emit a partition." (comment-line-text a " * Emit a partition.")))
+    (is (string= "Emit a partition." (comment-line-text a "/** Emit a partition. */")))
+    (is (string= "" (comment-line-text a " */")))
+    (is (string= "why this exists" (comment-line-text a "// why this exists")))
+    (is (string= "@param {Object} p - the partition"
+                 (comment-line-text a " * @param {Object} p - the partition"))
+        "the tag stays: the description after the dash is the prose")))
+
+(js-test a-jsdoc-block-becomes-the-definitions-prose
+    ;; The import matters. A block with no code above it is a file banner, not
+    ;; documentation of whichever export happens to be first, so COMMENT-EXTENT
+    ;; reports :SECTION and indexing declines it -- which is what the first
+    ;; draft of this test tripped over. Real React files open with imports, so
+    ;; the block above the export is :ADJACENT there; BANNER below asserts the
+    ;; other half.
+    (let* ((g (js-graph "src/x.js"
+                        "import { z } from './z.js';
+
+/**
+ * Flatten a partition to an interchange document.
+ * @param {Object} p - the partition
+ */
+export function emitP(p) { return p; }
+
+export function undocumented(p) { return p; }"))
+           (fns (entities-of-type g :function)))
+      (flet ((doc-for (name)
+               (let ((e (find name fns :key (lambda (x) (and (slot-boundp x 'name) (name x)))
+                              :test #'equal)))
+                 (and e (gethash :documentation (properties e))))))
+        (is (search "Flatten a partition" (doc-for "emitP")))
+        (is (search "@param" (doc-for "emitP")) "tags kept, per D9")
+        (is (not (search "/**" (doc-for "emitP"))) "delimiters gone")
+        (is (null (doc-for "undocumented"))
+            "REQ-0035 R7: absence costs the entity nothing"))))
+
+(js-test a-file-banner-is-not-the-first-exports-documentation
+  ;; The other half of the rule above. JavaScript has no fourth-semicolon
+  ;; convention marking a heading, so position is the evidence: nothing precedes
+  ;; the block, therefore it is about the file. Attaching it to whichever export
+  ;; happens to come first would be CON-0001's fabricated fact.
+    (let* ((g (js-graph "src/y.js"
+                        "/**
+ * Partition interchange helpers.
+ */
+export function first(p) { return p; }"))
+           (e (find "first" (entities-of-type g :function)
+                    :key (lambda (x) (and (slot-boundp x 'name) (name x)))
+                    :test #'equal)))
+      (is (not (null e)) "the definition is still indexed")
+      (is (null (gethash :documentation (properties e)))
+          "the banner describes the module, not this function")))

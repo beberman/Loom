@@ -12,11 +12,24 @@
 ;;;; Shared vocabularies
 ;;;; ==================================================================
 
-(defvar *source-languages* '(:lisp :typescript :python)
+(defvar *source-languages* '(:lisp :javascript :typescript :python)
   "Languages the analyzers emit entities for, and the :LANGUAGE vocabulary
 every code entity is validated against.  Phase 1 ships a reader-based Lisp
 analyzer and a Tree-sitter TypeScript one; adding a language is a matter of
-pushing its keyword here and writing the analyzer.")
+pushing its keyword here and writing the analyzer.
+
+:JAVASCRIPT is REQ-0024's, and its arrival is the first evidence that the
+sentence above is very slightly false. Adding a language is indeed an analyzer
+plus a keyword -- but the keyword goes *here*, in loom-ontology, which is below
+the analyzer layer that REQ-0024 R1 predicted would be the only thing to
+change. One word in a shared vocabulary is a small enough exception to state
+rather than to hide: a language the ontology has never heard of cannot have its
+:LANGUAGE property validated, so the vocabulary is genuinely shared rather than
+per-analyzer, and no arrangement of the analyzer layer would have avoided it.
+
+:TYPESCRIPT remains unimplemented and is deliberately not what the JavaScript
+analyzer claims -- REQ-0024's WHAT THIS IS NOT is explicit that a parser
+accepting TS by accident would mint entities whose properties nothing models.")
 
 ;;;; ==================================================================
 ;;;; Workspace and history
@@ -139,6 +152,23 @@ one's body -- an entity with a plausible range over text defining something
 else, which is the fabrication no count would reveal. So this property is the
 whole record that the definitions in these lines are missing, and it is why a
 file with damage in it costs a form rather than the file it used to cost.")
+               (:import-sources list
+                :documentation "Module specifiers this file imports from, as
+written -- \"react\", \"./hooks\", \"../domain/game\". REQ-0024.
+
+Recorded, not resolved, and the distinction is the whole point. Turning
+\"./hooks\" into the :FILE entity it names needs node resolution: extension
+probing, directory index files, and the alias table a project configures for
+itself, which ~/github/front-end really does have in an alias.config.mjs.
+REQ-0024's WHAT THIS IS NOT rules that out as a separate problem, so what an
+analyzer may honestly write is the specifier it read.
+
+Keeping it here is what lets a later pass derive :IMPORTS edges without
+reanalysing the tree, which is DEC-0003's shape: the analyzer writes the name
+once and never rewrites it, and resolution re-derives from it on every pass, so
+an edge a retract destroyed comes back. Until such a pass exists this property
+is a recorded fact with no edge drawn from it -- a gap a reader can see rather
+than one they cannot.")
                (:definer-call-sites list
                 :documentation "Every top-level form in this file whose
 operator is neither a definition nor a declaration -- DES-0002 R2. One plist
@@ -171,6 +201,9 @@ already has somewhere to live. :EXPORTS was already a list property on this
 entity and these two are symmetric with it."
   :natural-key (:qualified-name)
   :properties ((:qualified-name string :required t)
+               (:documentation  string
+                :documentation "Prose this package declares about itself --
+DEFPACKAGE's own (:documentation ...) option. REQ-0035, DES-0028.")
                (:exports        list   :documentation "Exported symbol names.")
                (:nicknames      list
                 :documentation "Declared aliases for :QUALIFIED-NAME. An
@@ -214,7 +247,10 @@ disk: a module may span files, and a file need not declare one."
   :natural-key (:qualified-name)
   :properties ((:qualified-name string :required t)
                (:file           string)
-               (:language       keyword :one-of *source-languages*)))
+               (:language       keyword :one-of *source-languages*)
+               (:documentation  string
+                :documentation "Prose this module declares about itself.
+REQ-0035, DES-0028.")))
 
 (defentity :class
   :documentation "A class definition."
@@ -236,6 +272,15 @@ is a class that is signalled rather than instantiated.  Worth telling apart
 without reopening the file.")
                (:exported-p boolean :default nil)
                (:language   keyword :one-of *source-languages*)
+               (:documentation string
+                :documentation "The prose this definition declares about
+itself. REQ-0035, DES-0028.
+
+Absent rather than empty when there is none, because absence must cost an
+entity nothing: 86% of game-server's functions carry no docstring, and a
+ranking that put undocumented code below documented code would be a recall
+defect on the tree the requirement is measured against (REQ-0035 R7,
+CON-0006).")
                (:shadowed-definitions list
                 :documentation "Line ranges, each \"start-end\", of the
 definitions this one superseded by sharing its natural key in the same file --
@@ -268,6 +313,15 @@ indexed so calls to it resolve, and marked so an agent can tell a derived
 name from one someone wrote.")
                (:exported-p boolean :default nil)
                (:language   keyword :one-of *source-languages*)
+               (:documentation string
+                :documentation "The prose this definition declares about
+itself. REQ-0035, DES-0028.
+
+Absent rather than empty when there is none, because absence must cost an
+entity nothing: 86% of game-server's functions carry no docstring, and a
+ranking that put undocumented code below documented code would be a recall
+defect on the tree the requirement is measured against (REQ-0035 R7,
+CON-0006).")
                (:shadowed-definitions list
                 :documentation "Line ranges, each \"start-end\", of the
 definitions this one superseded by sharing its natural key in the same file --
@@ -304,6 +358,15 @@ name, when it was generated rather than written -- a DEFSTRUCT accessor,
 constructor, predicate or copier.  Unlike a DEFCLASS accessor, which is a
 generic function and so an :INTERFACE, these really are plain functions.")
                (:language   keyword :one-of *source-languages*)
+               (:documentation string
+                :documentation "The prose this definition declares about
+itself. REQ-0035, DES-0028.
+
+Absent rather than empty when there is none, because absence must cost an
+entity nothing: 86% of game-server's functions carry no docstring, and a
+ranking that put undocumented code below documented code would be a recall
+defect on the tree the requirement is measured against (REQ-0035 R7,
+CON-0006).")
                (:shadowed-definitions list
                 :documentation "Line ranges, each \"start-end\", of the
 definitions this one superseded by sharing its natural key in the same file --
@@ -355,6 +418,29 @@ own input could not be re-run.")
 workspace.  Recorded as a property, never as a dangling edge.  Derived from
 :CALL-NAMES on every resolution pass rather than accumulated, so it describes
 the workspace as it stands rather than as it was when a name last resolved.")
+               (:jsx-names list
+                :documentation "Which of this entity's :CALL-NAMES arrived as
+JSX -- `<Thing />' rather than `thing()'. REQ-0024 R4.
+
+Every name here is also in :CALL-NAMES, deliberately and not redundantly. A
+React component is invoked by being rendered, so a component tree in which
+`<Thing />' produced no edge would leave `impact' unable to answer anything
+about the majority of a front-end; putting the name in :CALL-NAMES is what
+makes RESOLVE-CALLS draw the edge, with no new relationship type and no change
+to any resolution pass.
+
+This property is the part that would otherwise be lost. Rendering is not
+calling -- a renderer's relationship to its component is the parent/child edge
+of a UI tree, not a transfer of control the way a call is -- and a consumer
+that wants to ask `what renders this' as opposed to `what calls this' can
+subtract this set from :CALL-NAMES. Spending a relationship type on the
+distinction was considered and refused on DES-0014's arithmetic: a new type
+has to be threaded through impact's propagation, `describe's grouping and both
+JSON encoders before it answers anything, and nothing has yet asked.
+
+Host elements never appear. `<div>' is not a definition in any tree, so it is
+dropped at extraction rather than carried as a call name that can never
+resolve.")
                ;; What a DEFMACRO's template says a call to it defines
                ;; (DES-0002 R1).  Written once from the source text and never
                ;; rewritten, like :SUPERCLASS-NAMES: the decision about a call
@@ -378,7 +464,36 @@ the body, counting the operator as 0.")
 DEFUN, DEFCLASS or DEFMETHOD but the name position is not a bare substitution
 -- a name built with INTERN or FORMAT cannot be read without running the code
 that computes it.  Recorded and counted rather than guessed at, per CON-0001,
-and reported by status the way an unresolved document reference is.")))
+and reported by status the way an unresolved document reference is.")
+               (:routes list
+                :documentation "HTTP routes this entity publishes or consumes,
+normalized -- leading and trailing `/' stripped and nothing else.  DES-0025 D1.
+
+A route is a *claim*, which is why it is a property rather than an edge: one
+repository says \"I serve public/game/create\" and another says \"I call
+public/game/create\", and neither names the other.  FEDERATE-REPOSITORIES
+matches the claims and draws the edge; nothing here knows another repository
+exists.
+
+Written from a literal the source spelled, never from a pattern.  A route
+carrying a parameter segment -- easy-routes' \"/public/game/:gameid\" -- is
+recorded verbatim and matches no client literal, because glob-matching it
+against \"public/game/17\" would manufacture a join the far side never wrote
+(CON-0001, and REQ-0027 R3 by name).  A list because one handler may answer
+several paths, which easy-routes permits and this tree does not yet do.")
+               (:route-role keyword :one-of (:publishes :consumes)
+                :documentation "Which end of an HTTP contract this is.
+:PUBLISHES for a handler, :CONSUMES for a client that calls one.  DES-0025 D1.
+
+Declared rather than inferred, and that is deliberate.  Both ends carry
+:ROUTES and the strings are identical, so nothing about the property itself
+says which is the server -- guessing from the language, or from whether the
+entity came from a definer macro, would be a heuristic standing where a
+declaration already exists.  The repository's own .loom/frameworks.yaml says
+it: a definer-macros entry with a route-index declares an endpoint, a
+route-callers entry declares a consumer.  FEDERATE-REPOSITORIES draws the edge
+from a publisher to a consumer and needs the distinction to know which way it
+runs.")))
 
 (defentity :method
   :documentation "A method on a class, or a CLOS method on a generic function."
@@ -388,9 +503,16 @@ and reported by status the way an unresolved document reference is.")))
                (:end-line         integer :required t)
                (:signature        string)
                (:arguments        list)
+               (:documentation    string
+                :documentation "Prose this method declares about itself.
+REQ-0035, DES-0028.")
                (:qualifier        keyword
                 :documentation "CLOS method qualifier -- :before, :after, :around.")
                (:specializers     list)
+               (:jsx-names        list
+                :documentation "Which of this method's :CALL-NAMES arrived as
+JSX. The :FUNCTION property of the same name carries the reasoning; a class
+component's render() is why methods need it too.")
                (:generic-function string
                 :documentation "Name of the generic function this method extends.")
                (:language         keyword :one-of *source-languages*)
@@ -423,6 +545,15 @@ module-level declaration."
                (:kind       keyword :one-of (:constant :special :parameter :lexical))
                (:exported-p boolean :default nil)
                (:language   keyword :one-of *source-languages*)
+               (:documentation string
+                :documentation "The prose this definition declares about
+itself. REQ-0035, DES-0028.
+
+Absent rather than empty when there is none, because absence must cost an
+entity nothing: 86% of game-server's functions carry no docstring, and a
+ranking that put undocumented code below documented code would be a recall
+defect on the tree the requirement is measured against (REQ-0035 R7,
+CON-0006).")
                (:shadowed-definitions list
                 :documentation "Line ranges, each \"start-end\", of the
 definitions this one superseded by sharing its natural key in the same file --
@@ -624,6 +755,15 @@ whichever signal the language actually offers."
                (:suite      string)
                (:framework  keyword :one-of (:fiveam :vitest :jest :pytest))
                (:language   keyword :one-of *source-languages*)
+               (:documentation string
+                :documentation "The prose this definition declares about
+itself. REQ-0035, DES-0028.
+
+Absent rather than empty when there is none, because absence must cost an
+entity nothing: 86% of game-server's functions carry no docstring, and a
+ranking that put undocumented code below documented code would be a recall
+defect on the tree the requirement is measured against (REQ-0035 R7,
+CON-0006).")
                (:shadowed-definitions list
                 :documentation "Line ranges, each \"start-end\", of the
 definitions this one superseded by sharing its natural key in the same file --
@@ -730,11 +870,39 @@ earns :DOCUMENTS.")
                 :documentation "Entity names found in the prose.  Raw text
 until the workspace resolves them (SS10.3); resolution turns each into an
 :inferred edge and drops it from here.")
+               (:link-targets list
+                :documentation "Workspace-relative paths a markdown document
+links to, normalised against its own directory.
+
+Separate from :MENTIONS because the two fail differently, which is BUG-0027.
+Both earn the same weak :MENTIONS edge when they resolve -- a link is still only
+an observation that this file names this thing.  But an unresolved code span is
+an ordinary word in backticks and is dropped in silence, while an unresolved
+link target is a path an author wrote that is not there, and goes to
+:UNRESOLVED-REFERENCES where `check' reports it.
+
+Merging the two destroyed that distinction one line before the only place that
+could act on it, and thirty-eight broken links in ~/lisp/game-server went
+unreported while `status' read zero.")
                (:unresolved-references list
                 :documentation "Declared references that named nothing in the
 index.  SS10.3: not dropped silently -- this is the documentation staleness
 detector, and a decision naming a function that no longer exists is
 detectably rotten.")
+               (:broken-links list
+                :documentation "Link targets that name no file on disk.
+
+Separate from :UNRESOLVED-REFERENCES because it is established differently and
+by a different layer.  An unresolved reference is a name the *index* could not
+place; a broken link is a path the *filesystem* does not have.  The two are not
+the same question, and conflating them reported game-server's links to
+CLAUDE.md and to a .sql file as broken when both files were present and merely
+unindexed -- one excluded by name, the other claimed by no analyzer.
+
+Written by CHECK-DOCUMENT-LINKS in loom-workspace, which is the layer that
+knows a repository has a root.  UNRESOLVED-REFERENCES reports both, because to
+a reader they are one question: what does this document name that is not
+there.")
                (:analysis-error string
                 :documentation "Set when the YAML would not parse.  The
 document is indexed anyway, for the SS9.3 reason: a known unknown beats an
@@ -1016,6 +1184,36 @@ considered and rejected: every path would have grown a hop, so every depth
 from a :FUNCTION, :METHOD or :TEST still produces the edge it produces today
 and mints nothing.")
 
+(defrelationship :serves
+  :from (:function :method) :to (:function :method)
+  :transitive-impact t :impact-direction :forward
+  :documentation "An HTTP handler answers the route a client calls. DES-0025.
+
+The one edge in this ontology whose endpoints may live in different
+repositories, and the reason REQ-0027 exists: \"what in the front-end breaks
+if I change this endpoint\" is a question neither tree can answer alone. It is
+derived by FEDERATE-REPOSITORIES from two claims that never name each other --
+a handler carrying :ROUTES because a declared definer macro spelled a path,
+and a client carrying :ROUTES because it passed that path to a declared
+route-caller -- so nothing in either analyzer knows the other repository is
+watched.
+
+:IMPACT-DIRECTION is :FORWARD, unlike :CALLS, and that is the whole point of
+the direction the edge runs. A handler changing reaches the clients it serves;
+a client changing does not reach the handler, which knows nothing about it.
+REQ-0027 R6's acceptance is impact on a server-side change arriving at
+front-end code, and this is the hop that carries it.
+
+Confidence is never 1.0. Two literals agreeing is evidence that these two
+working trees were written against one contract, not that the running client
+talks to this server -- REQ-0027's WHAT THIS IS NOT is explicit that a
+federated answer describes two checkouts and not a deployment.
+
+A parameterized route -- easy-routes' \"/public/game/:gameid\" -- produces no
+edge at all. Matching it against a client's \"public/game/17\" would
+manufacture a join neither side wrote, so it stays unmatched and is counted
+(CON-0001, REQ-0027 R3).")
+
 (defrelationship :depends-on
   :from (:module :package :file) :to (:module :package :file)
   :transitive-impact t :impact-direction :reverse
@@ -1108,7 +1306,8 @@ a distinct tests field rather than mixed into the impact set.")
 
 (defrelationship :documents
   :from (:document :design :architecture :decision :rule :concept)
-  :to (:function :method :class :interface :variable :module :package :file :concept :test)
+  :to (:function :method :class :interface :variable :module :package :file :concept :test
+       :document)
   :transitive-impact nil :impact-direction :reverse :collect-as :documents
   :documentation "One step, applied at the end, gathered into a distinct
 documents field.
@@ -1119,11 +1318,28 @@ way. A fiveam test name is prose -- reindexing-produces-an-identical-index --
 so a document discussing that test mentions it by name, RESOLVE-DOCUMENT-LINKS
 resolves the mention, and one illegal endpoint rejected the whole transaction
 rather than one edge. Nothing noticed while the :TEST type held no facts,
-because no mention could resolve to one.")
+because no mention could resolve to one.
+
+:DOCUMENT is the third, BUG-0030, and it took a whole repository rather than a
+whole transaction. A markdown file's relative link to another markdown file is
+what a cross-linked docs/ directory is made of, and ~/github/front-end -- 36
+markdown files, 456 JavaScript and TypeScript ones -- indexed nothing at all
+because ARCHITECTURE-GUIDE.md links to TODO.md. The tell that this was an
+oversight and never a rule is :CONCEPT, three entries to the left: a concept is
+itself a document type, so naming CON-0004 was legal while naming TODO.md was
+not, and nobody decided that.
+
+Three reactive additions is the argument that the enumeration is not the
+defect. BUG-0030 F1 is the real repair -- an op failing *endpoint* validation
+is dropped, counted and reported rather than rejecting its transaction, which
+is the trade the analyzer already makes when a malformed form costs a form
+rather than a file. Until that lands, a fourth missing type still costs a
+fourth tree.")
 
 (defrelationship :mentions
   :from (:document :design :architecture :decision :rule :concept)
-  :to (:function :method :class :interface :variable :module :package :file :concept :test)
+  :to (:function :method :class :interface :variable :module :package :file :concept :test
+       :document)
   :transitive-impact nil :impact-direction :reverse :collect-as :mentions
   :documentation "A document names this entity, and claims nothing further.
 

@@ -7,7 +7,11 @@ defined, what a change reaches, what decisions govern an area.
 ## Ask Loom before reading the tree
 
 Loom indexes itself, so the fastest way to understand this codebase is to use
-it:
+it. **If `loom_*` tools are in your tool list, use those** — `.mcp.json`
+registers the running service and they answer against a warm index in
+milliseconds, where each `tools/loom.sh` call reindexes the tree first. They
+need a Claude Code restart to appear, and `tools/loom-serve.sh update` after any
+change to Loom's own source. The script below is the fallback and always works:
 
 ```
 tools/loom.sh 'context <task words>'  # start here: what to read before editing
@@ -15,6 +19,10 @@ tools/loom.sh 'find <name>'           # where something is defined
 tools/loom.sh 'describe <name>'       # neighbours, grouped by edge type
 tools/loom.sh 'impact <name> 3'       # what a change reaches, plus decisions
                                       #   3 is a narrowing; the default is 5
+tools/loom.sh 'structure'             # systems, protocols, entry points, hubs,
+                                      #   derived from the index. Reports edges
+                                      #   between systems both ways and calls
+                                      #   neither wrong. REQ-0021 R5.
 tools/loom.sh 'rules'                 # constraints, and which are machine-checked
 tools/loom.sh 'check'                 # violations and unresolved doc references
 tools/loom.sh 'enrich'                # ask the toolchain what the text pass
@@ -23,6 +31,10 @@ tools/loom.sh 'enrich'                # ask the toolchain what the text pass
                                       #   re-enriched gives today's text answer
                                       #   rather than yesterday's image answer.
                                       #   DES-0011.
+tools/loom.sh 'impact @game-server foo 3'   # name the repository, when the
+                                      #   service holds several. A leading
+                                      #   @token works on every command and
+                                      #   lasts one command. REQ-0023.
 tools/loom.sh 'status | find foo'     # several commands, run in order
 tools/loom.sh 'help'                  # the authoritative table; trust it first
 ```
@@ -106,8 +118,12 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
     loom-ontology   entity and relationship declarations. Depends on nothing.
     loom-graph      the only writer. Transactions, queries, resolution, rules.
     loom-analyzer   path + contents -> operations. Never touches the graph.
-    loom-knowledge  read-only services: find, describe, impact, context.
-    loom-workspace  indexing pipeline and file monitor.
+    loom-knowledge  read-only services: find, describe, impact, context,
+                    structure.
+    loom-workspace  indexing pipeline, file monitor, and the write path:
+                    document transitions, init, generated architecture. Depends
+                    on loom-knowledge since DES-0022 S3 -- it renders that
+                    system's structural report into a document.
     loom-process    the console.
     loom-serve      the operation registry, tiers, REPL sessions, the listener.
     loom-rest       HTTP/JSON over that registry.
@@ -122,20 +138,34 @@ src/process/package.lisp are unedited by all of it.
 RULE-0001 to RULE-0003 enforce parts of this and are machine-checked. They do
 not fail a FiveAM assertion, so run `check` as well as the suite — and note
 that they cannot see the peer property above at all regardless: they key on
-LOOM-GRAPH:ENTITY-SYSTEM, which reads the segment after `src/` (BUG-0006 fixed
-it to do that; it used to read the segment before the first slash, so every
-file in the tree was system "src" and every layering rule matched nothing —
-`check`'s own layering output was accordingly always vacuous, not just for the
-peer property). `sbcl --script tools/load-test.lisp loom-serve` is still the
-instrument for the peer property specifically; no rule names loom-serve,
-loom-rest, loom-mcp or loom-process, so `check` has nothing to say about them
-either way. Since BUG-0006's fix, `check` **can** report a real RULE-0001
-violation — but RULE-0002 and RULE-0003 currently report 72 false positives of
-their own (BUG-0009): a test file resolves to the same system as the
-production code it tests, and RULE-0003's check clause bans every call from
-loom-knowledge to loom-graph rather than only a write. Read `check`'s own
-output for RULE-0001 as real; read a RULE-0002 or RULE-0003 line as BUG-0009
-until that closes.
+LOOM-GRAPH:ENTITY-SYSTEM, which reads the `:system` property the analyzer
+wrote, and that property holds the file's own package name (DES-0009). It is
+not a path guess: it was one until BUG-0006, when every file in the tree read
+as system "src" and every layering rule matched nothing, and the segment after
+`src/` for a while after that. `sbcl --script tools/load-test.lisp loom-serve`
+is still the instrument for the peer property specifically; no rule names
+loom-serve, loom-rest, loom-mcp or loom-process, so `check` has nothing to say
+about them either way.
+
+`check` reports **no violations** on this tree, and has since BUG-0009 closed
+on 2026-08-15 — so a violation you see is a real one, not the standing noise
+this file used to warn about. Getting there took both of BUG-0009's causes:
+DES-0009's package-derived `:system` stopped classifying a test file into the
+system it tests, and RULE-0003 moved to a fifth check kind, `:no-call-to`,
+which names the loom-graph functions that *mutate* rather than banning every
+call into loom-graph. Reading the graph is what loom-knowledge depends on it
+for; only a write was ever forbidden. That deny list is only as current as its
+`to-names:` — a mutator added to loom-graph is unreported until its name is
+added to `docs/rules/RULE-0003.yaml`. One rule stays unenforceable as a check
+and prints as such: RULE-0004.
+
+A rule names one package by default. `from-family:`/`to-family:` name a family
+instead — every system whose name is the family or begins with it followed by
+`/` or `.`, so one rule covers game-server's fourteen `game/*` packages and
+`to-system: outside` then means outside the *family* (DES-0024). No rule here
+uses it: Loom's packages are dash-flat, and `-` is deliberately not a family
+delimiter because it would rejoin every `loom-x` to its `loom-x-test` sibling
+and re-open BUG-0009.
 
 ## Running it as a service
 
@@ -173,9 +203,14 @@ nothing is reported by `check` rather than dropped. A decision's `affects:`
 target and becomes `:documents`.
 
 Markdown is indexed too, by a separate analyzer, and it earns weaker edges on
-purpose (REQ-0014, DES-0016). A `.md` or `.markdown` file under any directory
-named `docs`, `doc`, `design` or `documentation` becomes a `:document` whose
-title is its first H1 — but never a REQ or a DEC, whatever its directory is
+purpose (REQ-0014, DES-0016). Since REQ-0028 a `.md`, `.markdown` or `.txt` file
+is claimed **wherever the repository keeps it** — the directory-name allowlist
+is gone, because it tested where a file lived rather than what it said and so
+missed a 541-line `src/models/README.md`. Three exclusions remain: any
+dot-directory (`.claude/`, `.windsurf/` — those instruct an assistant, not the
+reader of the code), a `templates/` directory (text written to be copied
+elsewhere describes the elsewhere), and `CLAUDE.md`/`AGENTS.md` by name. A
+claimed file becomes a `:document` whose title is its first H1 — but never a REQ or a DEC, whatever its directory is
 called, because that mapping is this tree's convention rather than a fact about
 markdown. Its backticked identifiers and its relative link targets resolve into
 `:mentions` edges: *this file names this thing*, and nothing more. A `:mentions`
@@ -185,13 +220,57 @@ is dropped in silence rather than counted as a rotten reference — prose is ful
 of ordinary words in backticks.
 
 `:mentions` is where every prose mention now lands, including the ones the YAML
-analyzer finds in a document's own body. They used to be `:documents` edges;
-`impact`'s `documents:` line is consequently empty on this tree, and that is the
-honest report — nothing in CON-0004 currently lets an author *declare* that a
-document documents a function.
+analyzer finds in a document's own body. They used to be `:documents` edges.
+`impact`'s `documents:` line carries the declared kind instead — a requirement's,
+plan's or bug's `affects:`, and an architecture document's `describes:` — which
+it did not until BUG-0023 made `affects:` readable from every document type, so
+a claim that the line is empty on this tree is out of date rather than honest.
+
+`context` bands the same three ways `impact` does (REQ-0026, DES-0020) and says
+which band each entry is in: what the task named, decisions governing it,
+documents bearing on it, prose that names it, and one hop away. The bands are
+assigned by the edge a document arrived on rather than by its type, because
+`:document` is what REQ, PLAN, BUG and REV land on *and* what every markdown
+file is — so the type cannot tell a declared `affects:` from a backtick, and the
+edge can. Prose is ranked by how much of the bundle it actually names and capped
+at `loom-knowledge:*context-mention-limit*`.
+
+## Writing a document, a docstring or a commit message
+
+Every sentence carries a fact the reader can check. Four tests, each from a real
+failure in this tree:
+
+- **A title names the contents.** "DES-0026 in seven steps: the walk, the tiers,
+  the index, the ranking", not "Reach it first, then say why, then hold it
+  cheaply, then stop guessing at rarity". A title that cannot be checked against
+  the document is decoration.
+
+- **The subject is the subject matter, never the document.** Cut "Worth stating,
+  because...", "This is the part to get right", "...comes later on purpose".
+  Each announces that a claim has status instead of making it. If the reason is
+  known it belongs in that sentence; if it is not, the sentence should not exist.
+
+- **A number needs no adjective.** "S4 through S6 are last because query latency
+  is 0.01-0.06s", not "...because the index recovers no latency: every query
+  already answers in 0.01-0.06s". Giving the characterisation and then the
+  measurement says it twice.
+
+- **Replace a metaphor with the measurement it stands for.** Not "the constraint
+  moved from reach to budget" but "all ten are reachable; the neighbour band
+  printed 2 of 157 before the budget ran out".
+
+Prefer two short declarative sentences to one clause-laden one. These documents
+are read later as the record of a decision, so a sentence nobody can check is
+worse than no sentence.
 
 ## Principles worth knowing before changing anything
 
+- **A generated invariant is a defect.** `init` prepares a foreign tree and
+  `architecture` writes an ARCH document into it from the index — and that
+  document's invariants section is empty and says so. Code being consistent
+  with an invariant is not evidence anybody intended it, and a violation is not
+  evidence they did not. What a generator may write is what was measured;
+  what must remain true is the half only a human can supply. REQ-0021 R6.
 - **Files are truth.** The graph is an index over them and can be discarded and
   rebuilt. Anything Loom knows that is not derivable from files must be written
   back to files, or it is not knowledge. DEC-0001.
@@ -207,7 +286,19 @@ document documents a function.
   language's semantics — CL replaces, TypeScript merges — because the writer is
   language-neutral and by the time it sees the ops the evidence is gone.
   Nothing checks this. CON-0005.
-- **Finishing a plan means restating what it implemented.** A plan reaching
-  `final` makes the `draft` status of every document it refines false, so mark
-  those `implemented`, or `partial` with an OUTSTANDING section. Nothing checks
-  this. RULE-0005, and CON-0004 for the status vocabulary.
+- **Finishing a plan is a command, not a chore you remember.** A plan reaching
+  `final` makes the `draft` status of every document it refines false, so
+  `complete` sets both and moves the files:
+
+      tools/loom.sh 'complete PLAN-0019'      # writes nothing; shows what it needs
+      tools/loom.sh 'complete PLAN-0019 DES-0019=implemented REQ-0022=implemented'
+
+  It walks upward while the verdicts stay terminal, refuses to touch a document
+  another unfinished plan still refines, and files each moved document in
+  `completed/`. It will not guess `implemented` versus `partial` — that is a
+  judgement about intent, and a partial needs an OUTSTANDING section. Dry run is
+  the default, so a `complete` with no verdicts has done nothing.
+  `set-status <doc> <status>` is the same write path for one document.
+  REQ-0022 and DES-0019; CON-0004 for the status vocabulary. RULE-0005 and
+  RULE-0007 are retired to advisory — they describe the invariant, the command
+  maintains it.

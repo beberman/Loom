@@ -1,0 +1,835 @@
+id: REQ-0021
+title: Loom must be able to prepare a repository it did not write, deriving the architecture it can see and recording as gaps the parts it cannot
+status: partial
+date: 2026-08-11
+refines: [CON-0004]
+affects: [register-document-type, document-type-for, documentation-relative-p,
+          repository-status, build-context, impact-set, default-system-for-path]
+tags: [init, generality, bootstrap, con-0001, workflow, game-server]
+summary: |
+  Everything Loom's document apparatus does -- refines: chains, affects:
+  resolution, staleness detection, impact attaching the decisions and rules
+  bearing on an entity -- requires documents to exist in the conventions
+  CON-0004 defines. Loom's own tree has 95 of them. ~/lisp/game-server has
+  none, and no repository Loom did not write ever will, so the half of the tool
+  that distinguishes it from a call-graph browser is unavailable on exactly the
+  codebases it is meant to serve.
+
+  This asks for an `init` capability that prepares such a tree: the document
+  directories, the conventions, the agent-facing workflow, and a first
+  architecture document describing the structure Loom can already see. After
+  it, the tree is one where the ordinary workflow -- a requirement, a design,
+  a plan, a review -- can be run for the first time.
+
+  The use case here is a user will install Loom separately and set it up as a
+  running service. Then they will run init on a worktree of code that is tied
+  to a specific git tag and workspace.  This init must set it up so the
+  user can then use Claude (or another LLM) for coding on that worktree and the LLM
+  will follow the Loom workflow as defined in the agents within Loom. Those agents
+  will know to use Loom to understand the structure of the code and impact
+  of new coding changes.
+
+  Any new workspace may already have agents in place so a mechanism for resolving
+  agent conflicts and workflow will need to be designed.
+
+  Any new workspace may already have a docs directory. This is the default directory
+  for placing the Loom workflow documents. The user should be asked if Loom should use
+  the existing directory for the Loom documents and directory structure before
+  writing into the docs directory. The user should be able to set a different
+  directory.
+
+  The Loom setup can be done with a shell script which has write capabilities.
+  It can setup the directories and agents.  It should then launch Loom.
+
+  After setting up the directories and launching Loom, the shell script can
+  generate one or more architecture documents using both Loom and the LLM.  There may
+  be markdown files (labeled md or markdown) and comments that should be reviewed before
+  writing that architecture document.
+
+  No requirements documents, design documents, or any other documents should be constructed
+  only the architecture documents.
+
+  The ids Loom hands out for documents must not collide across a team working
+  on several branches of one git tree. That is REQ-0025 and no longer this
+  requirement's to solve: allocation becomes a service operation backed by a
+  ledger keyed on the history the branches share, so two branches of one
+  project draw from one counter while keeping two indexes. This requirement
+  depends on it and states what init has to do about it.
+
+body: |
+  ORDER
+
+  REQ-0022 must be implemented before this document. REQ-0025 must not.
+
+  REQ-0022 makes document state transitions a Loom command rather than a rule,
+  and this requirement depends on that in two places: R4c says a prepared
+  workspace gets no workflow rule because the transition is performed rather
+  than remembered, and R4d says the installed agents invoke the command rather
+  than describing the manual procedure.
+
+  Preparing workspaces with agent text that teaches a procedure about to be
+  replaced would install the stale instructions REQ-0022 R8 exists to remove,
+  into every tree init has touched, where they are far more expensive to
+  correct than in this one.
+
+  REQ-0025 is a different case and an earlier draft of this paragraph got it
+  wrong by treating the two the same way. It makes id allocation a service
+  operation with a ledger behind it, and the collision it prevents is one that
+  only exists when two people work on two branches of one project. A single
+  developer preparing one worktree has no second reader of the id space, so
+  reading the directory and adding one is not a shortcut there -- it is the
+  correct answer, and it is the answer REQ-0025 R6 itself specifies for any
+  caller that cannot reach an allocator.
+
+  So init is a caller of the allocator like any other, and inherits its
+  fallback. Where a ledger exists init allocates through it; where none does it
+  allocates locally and the document records that it did, which is REQ-0025 R6
+  verbatim and needs nothing from this requirement but the discipline of not
+  inventing a second rule. Init therefore works before REQ-0025 lands and gets
+  better when it does, rather than waiting for it.
+
+  The distinction from REQ-0022 is worth stating because both were listed as
+  hard prerequisites and only one is. REQ-0022's dependency is about *text this
+  requirement copies into other people's repositories*: agent definitions
+  teaching a manual procedure would be installed into every prepared tree and
+  would have to be corrected in all of them. REQ-0025's is about a failure mode
+  a single-developer deployment does not have. The first is expensive to undo
+  and the second does not arise, so the first blocks and the second does not.
+
+  WHAT IS WRONG
+
+  Measured on ~/lisp/game-server, 2026-08-11:
+
+      index      : 146 files, 4173 entities, 21895 relationships
+      documents  : 12          (all markdown, all :document, since REQ-0014)
+      decisions  : 0
+      rules      : 0
+      requirements, designs, plans, reviews : 0
+
+  `impact <anything>` on that tree reports tests and mentions and nothing else,
+  because there is nothing in the index that governs code -- no affects:, no
+  applies-to:, no refines: chain. There is also no way for an agent working
+  there to *record* what it decides, because the directories, the id
+  conventions and the field vocabulary do not exist. Every session starts and
+  ends with the graph knowing exactly what the source says and nothing about
+  why.
+
+  The tree is not undocumented. It has 3,906 lines of markdown, a 171-line
+  CLAUDE.md, and a `.claude/` directory holding one settings file and no
+  agents. What it lacks is the scaffolding that makes any of that addressable
+  as engineering knowledge, and a starting point that an agent can add to.
+
+  THE DEPLOYMENT THIS ASSUMES, AND WHAT IT CHANGES
+
+  Loom is installed separately and runs as a service. The target is a git
+  worktree on a branch -- not pinned to a tag, which an earlier draft assumed
+  and which settled nothing: a worktree pinned to a tag is a detached checkout
+  that cannot hold a commit, and init's entire output is files. On a branch the
+  documents are ordinary tracked files and the normal review path applies. The
+  script prepares that worktree, launches Loom against it, and then writes
+  architecture documents into it. Several consequences follow, and each is a
+  constraint rather than a detail.
+
+  The installed agents cannot drive Loom the way Loom's own do. Every agent
+  definition in this tree reaches Loom through `tools/loom.sh`, a script that
+  lives here and nowhere else. A prepared worktree has no such file. The agents
+  init installs must reach the service -- REST under /v1/ or MCP at /mcp on
+  127.0.0.1:4780 -- and must be written that way from the start, because an
+  agent that shells out to a missing script fails silently in a subagent where
+  nobody sees the prompt.
+
+  The service is shared, and the worktree is one of several. `watch` registers
+  a repository; several may be registered at once, and this tree's own console
+  already refuses an ambiguous `impact` when two are.
+
+  An agent working in a prepared worktree must be able to name its own
+  repository in every query, or it will get answers about somebody else's code.
+  Loom's REST and MCP surfaces already take a repository argument and refuse to
+  guess -- REQUIRE-REPOSITORY is explicit that an operation invoked without a
+  designator is a malformed request rather than an ambiguous one -- so the
+  service half of this is closed. The console half is not: `find`, `describe`,
+  `impact`, `context` and `complete` call CURRENT-REPOSITORY with no designator
+  and refuse outright once two repositories are watched. That gap is REQ-0023 and is
+  named here because init's output depends on it, not because this requirement
+  should fix it.
+
+  WHERE THE SERVICE RUNS, AND WHAT THAT COSTS
+
+  For one developer the service runs on the development machine and the
+  worktree is a local directory. For a team it is a central server that must
+  reach each developer's checkout, which in practice means the checkouts are
+  network-mounted and the service has read and write access to them. When a
+  user inits, they link the service to one git tree and branch.
+
+  That deployment is not free and the costs belong in the requirement rather
+  than in the design, because they bear on whether it is the right shape at
+  all. Three are properties of code that already exists:
+
+    The file monitor is a two-second mtime poll. FILE-CHANGED-P compares
+    FILE-WRITE-DATE against the local clock, and over a network mount those
+    are two clocks. A server ahead of the client by more than
+    *MTIME-SETTLE-SECONDS* makes the comparison negative, so every file falls
+    through to the content-hash branch on every poll -- correct, and it reads
+    the whole tree continuously. A server behind loses edits inside the skew.
+
+    Attribute caching defeats the poll's assumption. A network filesystem may
+    hold a cached mtime for tens of seconds, against a poll designed around
+    two.
+
+    Writing needs an identity. The transition command of REQ-0022 writes into
+    the worktree, and a central service doing that runs as its own user: the
+    files it writes are owned by that user, and `git status` in the
+    developer's tree shows changes made by a process that is not them. Whether
+    that is acceptable is a decision, not a detail.
+
+  None of these is fatal and none is this requirement's to solve. They are the
+  reason the single-developer deployment must remain first-class rather than
+  becoming the degenerate case of the team one.
+
+  WHO IS ASKING
+
+  Because several developers may use one service, Loom needs to associate a
+  caller with the checkouts that are theirs. There is already a seam: a request
+  carries an Authorization header, RESOLVE-CALLER-GRANTS turns it into grants
+  and CHECK-CAPABILITY gates the operation's tier. What does not exist is any
+  notion of *which repositories* a caller may name -- every operation takes a
+  repository designator and any caller may pass any of them.
+
+  So this is an extension of the capability model rather than a second
+  mechanism, and it is a larger change than it reads: the repository set
+  becomes per-caller, which lands on REQUIRE-REPOSITORY and through it on every
+  entry in the registry. The design should say plainly whether it is building
+  authentication or only scoping, because those are different projects and only
+  the second is needed to stop an agent being answered about somebody else's
+  tree.
+
+  WHAT INIT WRITES, AND WHAT IT LEAVES TO THE TEAM
+
+  Init writes files and never commits, never pushes and never opens a merge
+  request. The distinction is not fastidiousness: writing a file into a working
+  tree is reversible with one command and visible in `git status`, while a
+  commit rewrites history a team shares. Loom writing documents is a new
+  capability either way, and the smaller destructive surface is the one to ship
+  first. Committing the branch and raising the merge request belong to the dev
+  team, which is also what moves Loom's documents across branches.
+
+  IDS ACROSS BRANCHES -- REQ-0025
+
+  Documents travelling across branches by merge has a consequence the workflow
+  has never faced, because Loom's own tree has only ever had one line of
+  document history. Two branches that each add a document allocate the next
+  free id from the state each can see, and both pick the same number.
+
+  REQ-0025 answers it and this requirement does not restate the answer: ids are
+  allocated by a service operation from a ledger keyed on the root commit the
+  branches share, so two checkouts of one project draw from one counter while
+  keeping two indexes. UUIDs were the alternative and are rejected there, on
+  grounds this document supplies half of -- R10 requires a prepared worktree's
+  documents stay readable by a human with no agent runtime, and an id nobody
+  can type or sort by is not that.
+
+  What is left here is init's part of it, and it is small. Init writes documents
+  -- the workflow concept and the ARCH documents -- so it is a caller of the
+  allocator like any other, and R14 says it must allocate rather than count
+  files. Init also creates the tree in which the counter's key first exists: a
+  worktree with no commits has no root commit to key on, which is REQ-0025's
+  first open question and reaches it through this requirement.
+
+  The branch also makes the index reproducible in the way a tag would have: a
+  structural report derived from a known commit can name that commit, so a
+  later reader can tell exactly what the generated architecture described.
+
+  THE RETROACTIVE BOUNDARY
+
+  CON-0004's chain is REQ -> DES -> PLAN -> code, each document naming the one
+  it answers. Init runs against a tree where the code already exists and none
+  of those documents were ever written, so every document it writes is
+  retroactive. Per type, whether writing one retroactively is description or
+  fabrication:
+
+    ARCH   Description. An architecture document says what the structure IS.
+           That claim is true or false against the code as it stands, and a
+           reader can check it by reading. Init writes these, and only these.
+
+    REQ    Fabrication. A requirement asserts that someone wanted this. Nobody
+           did; the code exists. REQ-0017 asks for requirements derived from
+           prose that actually states them, which is a different and much
+           better-founded thing.
+
+    DES    Fabrication. A design records alternatives weighed and a choice
+           made. Init has no access to the alternatives, because they were
+           never written down. A design document whose ALTERNATIVES CONSIDERED
+           section was invented is the worst artifact this project could
+           produce: a plausible, indexed, human-looking claim about reasoning
+           that never occurred.
+
+    DEC    Fabrication, same reason as DES.
+
+    PLAN   Fabrication. A plan sequences work that has not happened.
+
+    RULE   Two kinds again, and the derived kind is the most dangerous thing
+           on this list. A rule *inferred from the codebase* is normative and
+           machine-checked: deriving "this must never happen" from "this does
+           not currently happen" is a category error, and it would produce
+           violations against code nobody agreed to constrain. Init writes none
+           of those.
+
+           A workflow rule is transcribed, like the workflow concept, and is
+           permitted on the same grounds -- it constrains how documents are
+           written, not how the target's code is written, so it asserts nothing
+           about a codebase Loom has just met. Whether one is needed at all is
+           the open question below.
+
+    CON    Two kinds, and only one of them is generation. A concept *derived
+           from the codebase* is fabrication for the same reason a DES is:
+           naming a recurring idea is the interpretive act itself, and the
+           result would sit in the graph looking exactly like an authored
+           principle. Init writes none of those.
+
+           The workflow concept is the other kind and is required. It is not
+           derived from anything -- it is Loom's own authored text, describing
+           the document types, the id prefixes, the status vocabularies and the
+           refines: chain, transcribed into the workspace unchanged. Copying a
+           fixed template is not inference, and nothing about the target
+           codebase is being claimed. Without it the workspace has directories
+           whose meaning is written down nowhere, and the agents have no
+           document to point at.
+
+  So init writes two things: the workflow concept, transcribed; and ARCH
+  documents, derived. Nothing else, and in particular nothing else derived.
+  That distinction -- transcribed versus derived -- is what the boundary
+  actually rests on, and it is why the workflow concept does not weaken it.
+
+  WHAT IS DERIVABLE AND WHAT IS NOT
+
+  ARCH-0101, written by hand for Loom's own tree, is the shape to measure
+  against. Splitting it by what the index could have produced:
+
+    Derivable from the graph
+      the systems and their dependency graph
+      which system each file and definition belongs to
+      the protocols -- a generic with many methods, and its implementors
+      the entry points -- definitions with no in-tree callers
+      the hubs -- definitions with the most inbound edges
+      the test coverage per unit
+      the layering that actually holds, as opposed to the one intended
+
+    Not derivable from the graph, and not from anything else either
+      the invariants -- "one writer", "analyzers cannot reach storage",
+        "derive never consume". Every one is a statement of INTENT. Code being
+        consistent with an invariant is not evidence the invariant was
+        intended, and a violation is not evidence that it was not. An LLM asked
+        to infer invariants from source will produce confident, plausible,
+        unfalsifiable prose, and it will be indexed beside ARCH-0101's
+        hand-written ones with no way to tell them apart.
+      why any structure is the way it is
+      what the author considered and rejected
+
+  This split is the requirement's central demand, and it survives the LLM being
+  in the loop. An LLM can write better prose about the first list than a
+  template can. It cannot turn the second list into knowledge, and asking it to
+  is the failure mode -- the output is indistinguishable from the real thing,
+  which is precisely what makes it worse than an empty section.
+
+  THREE SOURCES, AND WHAT EACH IS GOOD FOR
+
+  The index is the only source that is verified. Every name in it resolved
+  against real code, so a describes: field built from the index cannot be
+  rotten on the day it is written -- a property no hand-written document has.
+
+  The markdown is authored but unverified. game-server's twelve files hold real
+  architecture: docs/data-layer.md describes a layered handler protocol with
+  named participants, and its backticked identifiers already resolve to 28
+  indexed entities. It says what the author believed, which is exactly the
+  material the index cannot supply. It may also be stale, and nothing marks
+  which parts.
+
+  The comments are authored, unverified, and outside Loom entirely. Loom does
+  not index comments and deliberately does not: DES-0013 records that a comment
+  is not a gap in what Loom knows, it is what a source file is made of. So
+  reviewing comments means the LLM reading source files directly, and the
+  requirement should say so rather than imply a Loom capability that does not
+  exist. File-header comments are where Lisp codebases put their architecture,
+  and this tree is the proof -- every src/*.lisp here opens with one.
+
+  Precedence when they disagree: the index wins on structure, because it is
+  derived from the code that runs. Prose wins on intent, because the index has
+  no access to intent. A generated document must not silently reconcile the
+  two -- where the markdown describes a structure the index does not show, that
+  is a finding worth reporting, not a conflict to average away.
+
+  AGENTS, AND THE CONFLICT NOBODY HAS HAD YET
+
+  Loom's six agent definitions -- architect, coder, planner, reviewer, tester,
+  tools -- collide by filename with any a target repository already has.
+  game-server has none today, which makes it a poor test of exactly the case
+  the summary calls out. The mechanism has to be designed against a repository
+  that does have them, and the options are not equivalent: namespacing them
+  (`loom-architect`) keeps both and leaves the user with two coders and no
+  guidance; merging edits a file Loom did not write; asking per file is honest
+  and tedious; refusing to touch an occupied directory is safe and leaves the
+  workflow uninstalled.
+
+  CLAUDE.md is the same problem in a more sensitive place. It is the file the
+  LLM reads first, game-server's is 171 lines of the author's own instructions,
+  and Loom's workflow needs to reach the agent somehow. Appending to it edits a
+  human's document; a separate file only works if something points at it.
+
+  Installing the agent files is not optional. It is the mechanism by which the
+  workflow reaches the LLM at all: directories and a conventions document are
+  inert on their own, and a prepared worktree whose agents were skipped is one
+  where the next session works exactly as it did before init ran. So init
+  installs them, and a collision is a case to resolve rather than a reason to
+  decline.
+
+  That is a different claim from the conventions depending on the harness, and
+  both hold at once. The knowledge conventions must not require Claude Code to
+  exist -- a worktree must stay fully usable from the console, and the
+  documents must remain readable by a human with no agent runtime at all --
+  while init, on the deployment this requirement describes, always installs the
+  agents. R10 states the first; R1 states the second.
+
+  REMOVING LOOM, AND THE LINE THAT MAKES IT POSSIBLE
+
+  A user who tries Loom on a branch must be able to take it out again. That is
+  a fair thing to want and it is cheap to provide, but only if init is designed
+  for it from the start, because removal is not a feature that can be added to
+  an installer that edited things.
+
+  R3 already forbids editing or overwriting any existing file. That rule earns
+  its keep twice over here: an init that only ever *adds* files can be undone
+  by deleting them, while an init that appended to CLAUDE.md or merged into an
+  existing agent definition could only be undone by unpicking edits it would
+  have to remember exactly. Removability is the second reason not to edit, and
+  the stronger one.
+
+  What removal must not do is destroy the team's own knowledge. Init writes the
+  workflow concept and some ARCH documents; everything written afterwards -- a
+  requirement someone raised, a design answering it, a plan, a review -- is the
+  team's, and it is the entire point of the exercise. Those documents are plain
+  YAML that a human can read with no tool at all, which is what DEC-0001 means
+  by files being truth. Deleting them because the tool that suggested the
+  directory layout is going away would be the worst outcome this requirement
+  could produce.
+
+  So "remove Loom" is two different operations and the user has to say which:
+
+    Remove the tooling. The agent definitions, the service registration, the
+      recorded directory choice. Documents stay. This is what a team wants when
+      it keeps the knowledge and drops the tool, and it should be the default.
+
+    Remove everything init created. The tooling, plus the workflow concept and
+      the generated ARCH documents -- and nothing else. This returns the tree
+      to its pre-init state and must refuse, or require an explicit override,
+      when documents exist that init did not write.
+
+  Telling those apart requires knowing what init created, which is not
+  something to infer after the fact. A manifest written at init time is the
+  mechanism, and it is the same file R2 already needs for recording the chosen
+  document directory: one place holding what Loom decided and what Loom wrote.
+  Provenance on the generated ARCH documents (R9) is a useful cross-check but
+  not a substitute -- it cannot record a directory that was created empty, or
+  an agent file, or the fact that docs/ was chosen over some alternative.
+
+  Removal operates on the working tree and stops there, exactly as installation
+  does. It deletes files; committing that deletion and carrying it across
+  branches is the dev team's business, the same as with the branch init wrote
+  into. Where the removal happens before the branch was ever committed, git
+  already does the whole job and the command is a convenience.
+
+  WHAT THIS IS NOT
+
+  It is not REQ-0017. That asks for requirements and architecture derived from
+  prose that already states them, with provenance and a status the system
+  refuses to treat as settled. Its source is the markdown; this requirement's
+  primary source is the index, with markdown and comments as secondary. They
+  should share the provenance mechanism and nothing else, and this one should
+  land first because it is the safer half and because it creates the
+  directories the other would write into.
+
+  It is not a substitute for making the existing markdown reachable.
+  game-server's twelve markdown documents are indexed and resolve 28 mentions
+  from docs/data-layer.md alone, but BUILD-CONTEXT cannot surface any of them:
+  DECISIONS-TOUCHING filters collected documents to :decision, :design,
+  :architecture, :rule and :concept, and every markdown file is a :document.
+  That is a one-line defect and fixing it is cheaper than generating anything.
+  Init must not be justified by a gap a filter change would close, and R8 is
+  written so it cannot be.
+
+  It does not ask that init run automatically on `watch`. Preparing a
+  repository writes files into it, which is not something an indexing command
+  should do as a side effect.
+
+  REQUIREMENTS
+
+  R1  A shell script prepares a worktree that is on a branch: it creates the
+      document directories with the completed/ subdirectories RULE-0007 calls
+      for, writes a conventions document naming the id prefixes, status
+      vocabularies and the fields that resolve, installs the workflow text
+      where the LLM will meet it, and then launches or attaches to the Loom
+      service and registers the worktree.
+
+      AMENDED 2026-08-13. This said "installs the agent definitions", and the
+      artifact was the wrong thing to require. Loom's own agents are agents for
+      Loom -- its layering, its nine test systems, its blind spots -- and would
+      be wrong in every paragraph of a repository written in another language,
+      collision or no collision. What has to travel is the workflow, which this
+      tree already factors out of its agents and into a skill.
+
+      So the requirement is that the workflow *reach the LLM*, and the artifact
+      is the design's to choose. DES-0022 D2 chooses a skill and D2a adds the
+      pointer that makes a skill discoverable, because a skill on its own is
+      advertised rather than delivered.
+
+  R1a Init writes files and stops. It does not commit, does not push and does
+      not open a merge request; the branch, its commit and its review belong to
+      the dev team. A prepared worktree is one where `git status` shows exactly
+      what init added and nothing has been done that a single command cannot
+      undo.
+
+  R2  The docs directory is the default and is never written into without
+      consent. Where one already exists, the user is asked whether Loom should
+      use it, and may name a different directory instead. Whatever is chosen is
+      recorded, so a second run and every later agent resolve it the same way
+      rather than re-deriving it.
+
+  R3  No existing file is overwritten or edited, with one bounded exception.
+      This covers existing agent definitions and the markdown already under
+      docs/. Where Loom needs a file a name is already taken by, it asks or
+      declines; it does not merge.
+
+      AMENDED 2026-08-13. The exception is CLAUDE.md, by append only, inside
+      delimiting markers, and only with the consent R16 requires. It exists
+      because CLAUDE.md is the only channel a session receives unprompted -- a
+      skill is advertised by name and description and its content arrives only
+      if the model invokes it -- so a rule that forbade this one edit would
+      forbid the workflow being found at all. DES-0022 D2a is the reasoning.
+
+      The markers are what keep R3's second purpose intact. This rule earns its
+      keep twice: once for not editing a human's document, and once because an
+      init that only adds can be undone by deleting. A delimited region is
+      removable exactly, so R13's full removal stays a property rather than
+      becoming a promise.
+
+      Where no CLAUDE.md exists, init writes one. That is a new file and this
+      rule does not bear on it.
+
+  R4  Init writes the workflow documents and ARCH documents, and nothing else
+      -- no REQ, DES, DEC or PLAN, and no rule or concept derived from the
+      codebase. This is a property of the implementation, not a convention an
+      agent is asked to observe. The line is transcribed versus derived:
+      workflow documents are Loom's own fixed text copied in and assert nothing
+      about the target, while everything init derives from the index is
+      confined to ARCH.
+
+  R4a Transcribed documents take workspace-local ids, allocated the same way
+      every other document in that tree will be. That is the requirement, and
+      it deliberately does not name the mechanism: today it is the highest id in
+      the tree plus one, and when REQ-0025 lands it is that requirement's
+      operation against the project's counter, and init must not care which. A
+      fresh tree has no concepts, so the workflow concept is that tree's
+      CON-0001. Loom's own ids do not travel and Loom's own documents are not
+      renumbered to match: the same text is CON-0004 here and CON-0001 there.
+      The workflow concept defines the document types, id prefixes, status
+      vocabularies and the refines: chain for everything written in that tree
+      afterwards.
+
+  R4b No installed agent may name a transcribed document by an id belonging to
+      Loom's own tree. The same text carries different ids in the two places,
+      so agent text naming CON-0004 is wrong in every workspace it is copied
+      into -- and under R4a the local id is not even predictable, since it comes
+      from that project's counter rather than from being the first of its kind.
+      Agents refer to these by role -- the workflow concept -- or init rewrites
+      the reference to the allocated id as it installs. One agent text has to be
+      correct in both places, which is the point of installing it at all.
+
+  R4c The document state transitions are a Loom command, not a rule
+      transcribed into the workspace -- REQ-0022. A prepared workspace
+      therefore gets no workflow rule at all: the transition is performed
+      rather than remembered, so there is nothing for init to write and nothing
+      for an agent to be told to observe. Where a transcribed rule is needed
+      later for some other reason, R4a's rule applies to it -- its id comes from
+      that project's counter like any other -- but the workflow transition is
+      not that case.
+
+  R4d The installed agents invoke the transition command rather than
+      performing the transition by hand. Loom's own agent definitions currently
+      describe the manual procedure, and copying that text into a prepared
+      workspace would install instructions for producing exactly the
+      half-updated state REQ-0022 exists to prevent. The agent text and the
+      command land together.
+
+  R5  Before any document is written, Loom emits a structural report as data:
+      systems and their dependency graph, protocols and implementors, entry
+      points, hubs, and the layering that actually holds. It is re-runnable and
+      reproducible against a pinned worktree, and it names the tag it was
+      derived from.
+
+  R6  A generated ARCH document fills only what the report derived, and its
+      invariants section is explicitly empty and says so in a form both a human
+      and `check` can see. A generated invariant is a defect. Its describes:
+      field is built from names the report already resolved, so `unresolved`
+      does not rise.
+
+  R7  The markdown and the source comments are reviewed before the document is
+      written, and where they describe structure the index does not show, that
+      disagreement is reported rather than reconciled. Comment review is the
+      LLM reading files directly; Loom does not index comments and this
+      requirement does not ask it to.
+
+  R8  Installed agents reach Loom through the service, never through a path
+      inside Loom's own tree, and every query they make names the repository
+      they are working in. An agent that silently answers about a different
+      registered repository is worse than one that fails.
+
+  R9  Every generated document carries its provenance -- generated, by what,
+      from which tag -- and a status the rest of the system will not treat as
+      settled. Re-running never silently rewrites a document a human has
+      edited. This is REQ-0017's ask and must be answered once for both.
+
+  R10 The knowledge conventions must not require Claude Code to exist. A
+      worktree is fully usable from the console, and its documents readable by
+      a human, with no agent runtime present. This constrains what the
+      conventions may assume; it does not make R1's agent installation
+      optional.
+
+  R10a `check` reports a duplicate doc-id. This is REQ-0025 R7 and lands with
+      it, not here: it is the detector rather than the prevention, and a
+      prepared tree wants it from its first day but is not prevented from being
+      prepared without it. Named in this document because the workflow it
+      installs is what eventually produces the collision -- a conflict resolved
+      by renaming one file without changing the id inside it, a document copied
+      rather than moved into completed/, and an id allocated while no allocator
+      was reachable.
+
+  R14 Init allocates ids through whatever allocator the tree has, and through
+      exactly one rule. Where REQ-0025's operation is reachable, init calls it
+      like any other caller; where it is not, init uses that requirement's own
+      fallback -- the highest id in this checkout plus one, recorded on the
+      document as locally allocated. What init may not do is invent a third
+      rule of its own, because two allocation rules in one tree is how the
+      counter stops being trustworthy.
+
+      This is deliberately weaker than an earlier draft, which required the
+      service unconditionally and would have blocked init on REQ-0025 for a
+      deployment that does not have the problem REQ-0025 solves.
+
+  R16 Init asks two questions and does not conflate them: whether this
+      repository should use Loom for development, and whether Loom may append
+      its pointer to CLAUDE.md. A yes to the first and a no to the second is a
+      supported outcome -- init writes everything else and prints the lines the
+      user may paste themselves. Loom is then installed but undiscovered, which
+      is a recoverable state and not a failed run.
+
+      Consent is recorded in R13b's manifest, because removal has to know
+      whether there is a region to delete.
+
+      A run with no terminal cannot prompt, and a prompt nobody sees is the
+      stall this requirement warns about elsewhere. So the answer is also
+      settable as an argument, and a non-interactive run with no argument
+      declines rather than assuming.
+
+  R17 The pointer is idempotent and exactly removable. A second run finds its
+      own markers and changes nothing (R11), and removal deletes the delimited
+      region and no other byte of a file Loom did not write.
+
+  R18 Where the workflow is reached over MCP, init registers the endpoint in
+      the project's `.mcp.json`, under R3 and R16's terms: a new file where
+      none exists, and a consented, marked, removable edit where one does.
+
+      Recorded because R8 assumed this worked and nothing had tried it. Checked
+      2026-08-13: neither this tree nor ~/github/front-end has an `.mcp.json`,
+      and this tree's own agents reach Loom through tools/loom.sh -- the script
+      a prepared worktree does not have. So the MCP half of R8 is untested
+      rather than merely unimplemented, and a design that assumes it works
+      should demonstrate it before relying on it.
+
+  R15 Two repositories registered with one service cannot share a name. This is
+      REQ-0025 R8 and it lands on init directly: a prepared worktree is one of
+      several checkouts of one project, so the name init registers is the one an
+      agent will type, and today WATCH-REPOSITORY derives it from the last path
+      component -- which is the project name in every checkout. Measured
+      2026-08-12: two checkouts register as two repositories with one name, and
+      both FIND-REPOSITORY and REQUIRE-REPOSITORY silently answer with whichever
+      was registered last. R8 above states why that is worse than failing.
+
+  R11 Acceptance is measured on ~/lisp/game-server, and must separate init's
+      contribution from the filter fix named above. Record `documents`,
+      `unresolved`, and what `context data-api handler protocol` returns.
+      Then, with the filter fixed but init not run, record the same three --
+      that is the free improvement and it is not init's. Then run init and
+      require: the document count rises by exactly the number of files written;
+      `unresolved` stays at 0; `impact dhandler-delete 3` reports a generated
+      ARCH document among the documents describing it; and `context data-api
+      handler protocol` returns it. Finally, a second run changes nothing.
+
+  R13 Loom can be removed from a prepared worktree, in two modes the user
+      chooses between. Removing the tooling deletes the agent definitions, the
+      service registration and the recorded directory choice, and leaves every
+      document in place; this is the default. Removing everything init created
+      additionally deletes the workflow concept and the generated ARCH
+      documents, and nothing else.
+
+  R13a Removal never deletes a document init did not write. Where the full mode
+      would leave team-authored documents orphaned in directories init created,
+      it says so and stops rather than choosing for the user. A tree whose
+      documents were all written by hand after init is one where full removal
+      is nearly a no-op, and that is the correct behaviour.
+
+  R13b Init writes a manifest recording what it created -- directories, agent
+      files, documents -- and the choices it made, including the document
+      directory R2 settled. It is the same file R2 needs and the mechanism R13
+      depends on. Inferring init's output after the fact is not an acceptable
+      substitute: an empty directory and a chosen path leave no trace in any
+      document's provenance.
+
+  R13c Removal, like installation, writes to the working tree and does not
+      commit. Carrying a removal across branches is the dev team's business,
+      the same as carrying the installation was.
+
+  R12 A prepared worktree must support the ordinary workflow on the first real
+      task: a REQ written by hand, answered by a DES, sequenced by a PLAN, with
+      refines: chaining the three and the agents driving it. R11's counts will
+      not reveal whether this works. The acceptance is a real task run on
+      game-server and reported honestly.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - What resolves an agent-name collision? Declining is no longer available:
+    R1 makes installation part of preparing the tree, so the design must choose
+    between namespacing the installed set, asking per file, and writing
+    alongside under a distinct directory. Named first because it is now the
+    only unanswered question that can stop init from finishing.
+    game-server cannot settle it -- it has `.claude/settings.local.json` and no
+    agents -- so the design needs a repository that does.
+  - How does init allocate ids in a tree that has no commits yet? REQ-0025 keys
+    its ledger on the root commit, and a worktree prepared before anything is
+    committed has none. This is REQ-0025's first open question and init is how
+    it is reached, so the two have to be answered together: either init defers
+    the documents it writes until the first commit, or it allocates against a
+    provisional key that is rewritten when the root commit exists -- a rename
+    of the ledger's key while ids are already outstanding.
+  - Is the caller's identity authentication or only scoping? A service serving
+    several developers must at least know which checkouts a caller may name, so
+    that an agent is not answered about somebody else's tree. Whether it must
+    also establish *who* the caller is, rather than trusting a name they supply
+    over a loopback interface, is a separate and much larger project, and the
+    design should say which one it is building.
+  - How is the chosen document directory recorded so that the script, the
+    console and every installed agent agree on it? A file in the worktree is
+    the obvious answer and is itself a Loom-written file, which R3 constrains.
+  - Does an installed agent set need to be versioned against the Loom that
+    installed it? The agents are copied, so a worktree prepared six months ago
+    carries agent text that may name commands the service no longer offers.
+  - How does a generated ARCH document age? It describes structure that will
+    change and, unlike enrichment, cannot silently expire. Naming the tag it
+    was derived from makes staleness detectable but does not make it reported.
+  - Does the shell script belong in Loom's tree, tested by nothing, or is the
+    deterministic half a Loom command the script calls? The nine test systems
+    cover no shell script today, and R1's directory creation is exactly the
+    kind of thing that should be tested.
+
+  OUTSTANDING
+
+  R5 is implemented -- DES-0022 S1, PLAN-0022. `structure` derives systems and
+  their dependency graph, protocols and implementors, entry points with an
+  honest qualifier, hubs and per-system test coverage, and names the commit it
+  was taken at. It found BUG-0025 on its first run.
+
+  Everything else remains, and the honest summary is that this requirement's
+  first stage is done rather than its first half:
+
+  R1, R2, R3, R4, R4a, R4b, R14, R16, R17 are implemented -- DES-0022 S2's Loom
+  half, PLAN-0023. `init` creates the directories, transcribes the workflow
+  concept under the next free id, installs the skill, appends the CLAUDE.md
+  pointer between markers with consent, registers the MCP endpoint, writes the
+  manifest, refuses whole rather than half-preparing, and does nothing at all on
+  a second run. Measured on a copy of game-server: four files written, the
+  author's 171-line CLAUDE.md byte-identical above the appended region, and the
+  prepared tree indexing at 13 documents with `unresolved` still 0.
+
+  R1a and R18 are partly done and the remainder is one artifact. The consent
+  answers are threaded as arguments and nothing prompts, which is what R16
+  requires of the command -- but the *asking* needs a terminal and therefore a
+  shell script, and that script is not written. R18's registration works where
+  no .mcp.json exists and reports rather than merges where one does, which is
+  the honest limit of a format with no comment syntax.
+
+  R4c and R4d are satisfied by construction rather than by work: a prepared
+  workspace gets no transcribed workflow rule, and the installed text tells an
+  agent to run the transition command rather than to move statuses by hand.
+
+  R6 and R9 are implemented -- DES-0022 S3, PLAN-0024. A generated ARCH document
+  fills only what the report derived, its invariants section is empty and says
+  why, its describes: field raises no unresolved reference, and it names the
+  commit it came from.
+
+  R7 is partly implemented and the remainder is worth stating precisely, because
+  three of its five clauses are done and two are not.
+
+    Done: the markdown is reviewed (`drift'), the disagreement is reported
+    rather than reconciled, and the review now precedes the document and feeds
+    it -- the generated ARCH document carries which prose describes which
+    system, attributed with counts.
+
+    Not done: the *source comments*. R7 assigns their review to the LLM reading
+    files, so Loom has nothing to implement -- but the process has nothing that
+    makes it happen either. The script prints an instruction after everything
+    else has run, and no artifact records that anyone read a comment. R7 is the
+    only requirement in this set whose satisfaction cannot be checked
+    afterwards.
+
+    Not done, and larger: `where they describe *structure* the index does not
+    show'. What is implemented finds names that did not resolve, which is
+    missing nouns rather than missing structure. A document saying "the handler
+    layer calls the cache layer" can have every name resolve while the claimed
+    edge does not exist -- and nothing compares a prose claim against the system
+    edges the report already computes. That is a real requirement and probably
+    its own; scoping it into this one produced an implementation narrower than
+    the sentence.
+
+  R13, R13a, R13b, R13c -- removal in two modes and the manifest it rests on.
+  DES-0022 S4, gated on S2 writing the manifest.
+
+  R8 and R10 hold so far as the Loom half goes -- the installed skill reaches
+  the service by URL and names its repository in every example, and a prepared
+  worktree is usable from the console with no agent runtime present. Neither is
+  demonstrated until an agent has actually worked in a prepared tree, which is
+  R12.
+
+  R15 is REQ-0025 R8 and may land there first.
+
+  R10a is REQ-0025 R7 and is that requirement's to deliver, per the ORDER
+  section above.
+
+  R11 and R12 -- acceptance on game-server, and a real task run there. Neither
+  can be measured until init exists. What can be said now is the baseline they
+  will be measured against: game-server holds 4173 entities, 21893
+  relationships, 12 documents and 0 decisions, rules, requirements, designs or
+  plans, and `structure` on it now produces 27 systems and a 23-implementor
+  protocol without any of those documents existing.
+
+  AMENDMENTS MADE 2026-08-13
+
+  R1 no longer names agent definitions; it requires that the workflow reach the
+  LLM and leaves the artifact to the design. R3 gains its one bounded
+  exception. R16, R17 and R18 are new: the consent, the idempotent and exactly
+  removable pointer, and the MCP registration nobody had noticed was missing.
+
+  The question that produced them is worth keeping, because the first design
+  answered it too easily. If init installs no agents, what creates and enforces
+  the workflow? The answer is in three parts. Nothing enforced it before either
+  -- an agent applies only if something spawns it. Half of what "the workflow"
+  means is enforced by the tool rather than by any prompt, and refuses
+  regardless of what an agent read. And what was actually missing was
+  discovery, which needs the one channel a session receives unprompted, which
+  is the file R3 forbade touching.
+
+  STILL OPEN
+
+  Whether one narrow agent should be installed after all. An agent definition
+  can restrict tools -- this tree's reviewer is read-only on source and the
+  harness enforces it -- and a skill cannot, being text. The reviewer role is
+  the one place a namespaced name would buy an enforced property rather than a
+  second coder nobody can choose between. DES-0022 D2a carries it.
+

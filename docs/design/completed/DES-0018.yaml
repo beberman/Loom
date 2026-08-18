@@ -1,0 +1,158 @@
+id: DES-0018
+title: Ask git what it ignores rather than deciding for it, in one subprocess for the whole tree
+status: implemented
+date: 2026-08-11
+refines: [BUG-0024]
+affects: [repository-files, analyzable-p, dot-prefixed-p, index-repository]
+tags: [workspace, indexing, generality, git, node_modules]
+summary: |
+  BUG-0024 measures the cost of walking a vendored dependency directory: 421
+  markdown files in ~/github/front-end sit in a directory the analyzer claims,
+  git ignores 394 of them, and all 394 would index as first-class documents
+  against the project's own 27. The fix is to consult .gitignore, and the
+  design question is who interprets it.
+
+  Loom does not. `git check-ignore --stdin` is asked once for the whole
+  candidate list, and its answer is taken. That gets negation patterns,
+  per-directory .gitignore files, core.excludesFile and .git/info/exclude
+  correct for free, and it gets the case that actually needed thinking about --
+  a checked-in dist/ -- correct without a special case, because check-ignore
+  consults the index and does not report a tracked file as ignored.
+
+  A directory that is not a git repository indexes exactly what it indexes
+  today. No hardcoded directory list, and no silent change of behaviour for
+  anything that is not under version control.
+body: |
+  D1  ASK GIT, DO NOT PARSE .gitignore
+
+  The pattern language is not small: leading-slash anchoring, trailing-slash
+  directory-only matching, `**`, character classes, and `!` negation whose
+  meaning depends on whether a parent directory was already excluded. It is
+  also not the whole input -- git consults .gitignore at every level, plus
+  .git/info/exclude and core.excludesFile, and a repository may set
+  core.excludesFile to something outside the tree entirely.
+
+  A reimplementation would be wrong in ways nobody would notice until an
+  indexed tree quietly disagreed with `git status`. Since the question being
+  asked is literally "what does git ignore here", the authority is git.
+
+  Rejected alternative: a hardcoded list of node_modules, vendor, target, dist,
+  build. BUG-0024 already argues against it -- it is correct for the ecosystems
+  someone thought of, and this bug exists because the tree Loom was written
+  against had no vendored dependency directory at all. Adding a list would be
+  committing the same generality failure a third time while fixing its second
+  instance.
+
+  D2  ONE SUBPROCESS FOR THE WHOLE TREE
+
+  `git check-ignore --stdin` reads paths on stdin and writes back only the
+  ignored ones. So the cost is one process per indexing pass, not one per file,
+  and the answer arrives as a set the walk filters against.
+
+  Two details it would be easy to get wrong. Exit status 1 means "none of these
+  are ignored", which is a successful answer and not a failure -- treating a
+  non-zero status as an error would make a clean repository look broken. And
+  the paths handed in must be repository-relative and forward-slashed, which is
+  what WORKSPACE-RELATIVE-PATH already produces.
+
+  Ordering: the ignore filter runs after ANALYZABLE-P, not before. Most of a
+  node_modules tree is JavaScript that no analyzer currently claims, so
+  filtering by analyzer first cuts the list handed to git from thousands to
+  hundreds. That ordering stops being much of a saving once REQ-0024 lands and
+  a JavaScript analyzer claims those files, but it costs nothing either way.
+
+  D3  A TRACKED FILE IS PART OF THE REPOSITORY, WHATEVER .gitignore SAYS
+
+  This was the case that needed a decision, and git had already made it.
+  Verified directly, 2026-08-11, in a scratch repository with `dist/` ignored:
+
+      dist/kept.md       git add -f, committed  -> not reported ignored
+      dist/untracked.md  never added            -> reported ignored
+
+  `git check-ignore` consults the index by default, so a checked-in build
+  directory keeps being indexed and a generated one does not. That is the right
+  reading of intent -- a team that committed a file said it is part of the
+  repository -- and it needs no code of ours. `--no-index` would defeat it and
+  must not be passed.
+
+  D4  NOT A GIT REPOSITORY MEANS NO CHANGE
+
+  `watch` takes any directory. Where there is no repository, or git is not on
+  the path, the walk indexes what it indexes today. The alternative -- falling
+  back to a built-in exclusion list -- would reintroduce D1's rejected design
+  through the back door and would make behaviour depend on whether a directory
+  happened to be under version control, which is not a property of the source
+  it holds.
+
+  D5  A FAILURE IS A RECORDED ABSENCE, NOT AN ERROR
+
+  If git is missing, times out, or returns something unparsable, the pass
+  indexes everything and records that it could not consult git. It does not
+  fail the indexing pass, and it does not silently pretend the tree was clean.
+  This is DES-0011's discipline for the inspector applied to a much smaller
+  subprocess: a known unknown beats both a crash and a false clean.
+
+  The consequence to state plainly: on such a tree the 394 vendored documents
+  come back. That is visible in the count and in the recorded absence, which is
+  what makes it a gap rather than a regression.
+
+  D6  WHERE IT LIVES
+
+  REPOSITORY-FILES, in loom-workspace. It is already the one function that
+  decides what a repository contributes, it already filters on dot-prefixed
+  names and ANALYZABLE-P, and this is one more filter of the same kind.
+
+  Not in loom-analyzer: an analyzer answers "do I claim this path", which is a
+  question about the file, while this is a question about the repository, and
+  SS8.1 keeps analyzers from knowing anything about the tree they sit in.
+  loom-workspace already runs subprocesses through the inspector, so no layer
+  gains a capability it did not have.
+
+  UIOP is already in the image through loom-analyzer, but loom-workspace should
+  name it in its own :depends-on rather than rely on a dependency of a
+  dependency continuing to want it -- the precedent loom-serve set for
+  random-uuid.
+
+  CONSEQUENCES
+
+  This fixes what is indexed, not what is walked. DIRECTORY still descends into
+  node_modules and still pays for stat-ing every file there; only the analysis
+  and the entity creation are avoided. Pruning the walk itself would want the
+  ignore set consulted during traversal rather than after, which is a larger
+  change to a function that currently gets its whole candidate list from one
+  DIRECTORY call. Not attempted here, and not measured.
+
+  Re-running the ignore query on every poll is accepted. A .gitignore can
+  change between polls, so caching it would need its own invalidation, and one
+  subprocess per poll against a monitor that already re-walks the tree is not
+  where the cost is.
+
+  Loom's own tree and ~/lisp/game-server are unaffected: neither vendors
+  dependencies, and both read zero ignored analyzable files. The change is
+  therefore unobservable on every tree currently in use, which is a poor
+  position to test from -- so the acceptance was measured on front-end and the
+  unit tests build their own repositories.
+
+  AS BUILT, 2026-08-11
+
+  Loom's own tree: 206 files against a 203-file baseline plus the three files
+  this change added, so nothing was dropped. `status` runs in 2.0s, unchanged;
+  the one extra subprocess per pass does not register.
+
+  ~/github/front-end: 27 documents, against 421 markdown files sitting in a
+  directory the analyzer claims. Verified independently of Loom by piping the
+  same candidate list through `git check-ignore`, which reports 394 ignored --
+  the two agree exactly.
+
+  Indexing front-end takes 16s, and effectively all of it is the DIRECTORY walk
+  descending into node_modules to stat files this design then discards. That is
+  the consequence stated above, now measured rather than predicted. It is the
+  argument for pruning during traversal, and it will get worse rather than
+  better when REQ-0024's analyzer starts claiming the .js files in there.
+
+  The timeout is enforced through the `timeout` binary rather than thread
+  machinery, on DES-0011's precedent -- exit 124 is read as the bound having
+  fired. That was not in the design as first written; it was the obvious
+  correction once *IGNORE-QUERY-TIMEOUT-SECONDS* turned out to be a parameter
+  nothing read, which is exactly the kind of unenforced claim this project
+  treats as a defect.

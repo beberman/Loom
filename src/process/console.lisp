@@ -113,19 +113,75 @@ comment."
 ;;;; Choosing what to operate on
 ;;;; ==================================================================
 
+(defparameter *repository-sigil* #\@
+  "The character that makes a leading token a repository name. DES-0021 D1.
+
+Chosen because nothing else the console reads can begin with it: a designator
+is a name or a path, an entity name is a Lisp symbol name, a depth is digits,
+and a verdict is DOC=status. Tested at the first character only, so an entity
+genuinely named `@foo' is still reachable through the console's quoting rule.")
+
+(defvar *command-repository* nil
+  "The repository named by a leading @token, for one command's dynamic extent.
+
+A variable rather than an argument on each command, because two of the commands
+that need one are variadic -- `context' takes the task's words and `complete'
+takes verdicts -- so there is no trailing position to put a designator in.
+RUN-COMMAND strips the token and binds this, which is what lets every command
+take a repository without any command's lambda list changing (DES-0021 D2).
+
+Bound per command and never set, which is REQ-0023 R1a and the reason a `use
+<repository>' mode was rejected: a session that remembers a selection answers a
+later query about the wrong tree with nothing in the question or the answer
+saying so. That is CON-0001's fabricated fact arrived at by omission, and
+REQ-0021 R8 already calls it worse than a failure.")
+
+(defun repository-token-p (token)
+  "True when TOKEN is a leading @name naming a repository."
+  (and (stringp token)
+       (> (length token) 1)
+       (char= *repository-sigil* (char token 0))))
+
+(defun watched-repository-names ()
+  (mapcar #'repository-name (all-repositories)))
+
 (defun current-repository (&optional designator)
   "The repository a command should act on.
 
-With one repository watched, naming it every time is friction for no benefit,
-so it is implied. With several, an ambiguous command is refused rather than
-guessed at."
-  (cond (designator (or (find-repository designator)
-                        (error "No repository named ~a. Try: status" designator)))
-        ((null (all-repositories))
-         (error "Nothing is being watched yet. Try: watch \"/path/to/repo\""))
-        ((rest (all-repositories))
-         (error "Several repositories are watched; name one. Try: status"))
-        (t (first (all-repositories)))))
+DES-0021 D2's precedence, most specific first: an explicit designator argument,
+then the @token RUN-COMMAND stripped from this command line, then the sole
+watched repository, and otherwise a refusal naming what is watched.
+
+The explicit argument wins over the token because a caller who typed one in
+that position meant it, and overriding it from a token earlier on the line
+would be the surprise this exists to remove. With one repository watched
+nothing changes and nothing has to be typed."
+  (let ((named (or designator *command-repository*)))
+    (cond (named (or (find-repository named)
+                     ;; A designator that still carries the sigil got here as a
+                     ;; positional argument rather than being stripped, which
+                     ;; means it was not first on the line. Found by writing
+                     ;; `remove tooling @gs2\' and being told no repository was
+                     ;; named @gs2 -- true, unhelpful, and one word short of the
+                     ;; thing the caller needed to know.
+                     (if (repository-token-p named)
+                         (error "The ~c token names a repository and has to come ~
+first: try `~c~a ...\' rather than putting it after another argument."
+                                *repository-sigil* *repository-sigil* (subseq named 1))
+                         (error "No repository named ~a. Watching: ~{~a~^, ~}"
+                                named (or (watched-repository-names) '("nothing"))))))
+          ((null (all-repositories))
+           (error "Nothing is being watched yet. Try: watch \"/path/to/repo\""))
+          ((rest (all-repositories))
+           ;; Naming the mechanism and the answers, not just the problem. The
+           ;; old message said "name one" and gave no way to; a developer who
+           ;; has to run `status' first to find out how to ask is a developer
+           ;; who ran two commands to ask one question.
+           (error "Several repositories are watched. Name one with ~c<name>:~{ ~c~a~}"
+                  *repository-sigil*
+                  (loop for name in (watched-repository-names)
+                        append (list *repository-sigil* name))))
+          (t (first (all-repositories))))))
 
 (defun current-graph (&optional designator)
   (repository-graph (current-repository designator)))
@@ -219,6 +275,13 @@ command."
   (format t "  unresolved : ~d document reference~:p, ~d definer macro~:p~%"
           (getf status :unresolved-references)
           (getf status :unhandled-definer-macros))
+  ;; DES-0018 D5. Printed only when git could not be asked, because on a
+  ;; healthy tree there is nothing to say and a line reading "ignoring: fine"
+  ;; would be noise on every status call. When it does print, it is the
+  ;; explanation for a document count that includes somebody else's README.
+  (let ((reason (getf status :ignore-reason)))
+    (when reason
+      (format t "  ignores    : not consulted -- ~a~%" reason)))
   ;; DES-0013 R11, beside `unresolved' because it answers the same question a
   ;; reader is asking there: what does this index know it is missing. Printed
   ;; unconditionally for the reason the tests line above gives -- these are
@@ -337,6 +400,109 @@ unconditionally is which units were attempted and what became of them
           (getf report :dropped-unknown-kind)
           (getf report :edges-dropped)))
 
+;;;; ------------------------------------------------------------------
+;;;; Document state transitions (REQ-0022, DES-0019)
+;;;;
+;;;; The two commands that write. Everything else in this table reads an index
+;;;; built from files; these edit the files themselves, so the rendering has one
+;;;; job the others do not: make it obvious what was written and what was not.
+;;;; A report whose :PROBLEMS is non-empty means nothing at all was written, and
+;;;; that sentence is printed rather than left to be inferred from the absence
+;;;; of a change line.
+;;;; ------------------------------------------------------------------
+
+(defun print-transition-problems (report)
+  "The refusals, all of them. True when there were any.
+
+Every problem at once rather than the first, because the underlying command
+collects them that way for a reason: an agent that has to run a command five
+times to discover five problems will stop reading the fifth."
+  (let ((problems (getf report :problems)))
+    (when problems
+      (format t "~&Nothing was written. ~d problem~:p:~%" (length problems))
+      (dolist (problem problems) (format t "  - ~a~%" problem))
+      t)))
+
+(defun transition-action-note (row)
+  "The right-hand column for one document in a transition report."
+  (case (getf row :action)
+    (:no-status        "no status field -- the walk stops here")
+    (:already-finished "already finished")
+    (:blocked          (format nil "blocked by ~{~a~^, ~}" (getf row :blocked-by)))
+    (:awaiting-verdict "needs a verdict")
+    (:unchanged        "already there")
+    (t                 nil)))
+
+(defun transition-target (row)
+  "The status column on the right of the arrow.
+`?' where the caller still owes a verdict, so the gap is visible in the column
+rather than only in the note beside it."
+  (or (getf row :verdict)
+      (case (getf row :action)
+        ((:no-status :already-finished) "-")
+        (t "?"))))
+
+(defun print-transition-documents (report)
+  (dolist (row (getf report :documents))
+    (format t "  ~14a ~14a ~(~11a~) -> ~(~13a~)~@[~a~]~%"
+            (getf row :doc-id)
+            (or (getf row :category) "")
+            (or (getf row :status) "-")
+            (transition-target row)
+            (transition-action-note row))))
+
+(defun print-transition-changes (report)
+  (let ((changed (getf report :changed)))
+    (dolist (change changed)
+      (format t "  ~14a ~(~a~) -> ~(~a~)~@[  moved to ~a~]~%"
+              (getf change :doc-id) (or (getf change :from) "-") (getf change :to)
+              (and (getf change :moved) (getf change :file))))
+    (format t "~&~d document~:p changed, ~d file~:p moved.~%"
+            (length changed)
+            (count-if (lambda (c) (getf c :moved)) changed))))
+
+(define-command set-status (document status &optional designator)
+    "set-status <document> <status> [<name>]"
+    "Set one document's status and file it where that status belongs."
+  ;; The primitive. It runs no propagation query on purpose -- this is the way
+  ;; to say "I know what I am doing" about one document, and files are truth: a
+  ;; developer with an editor can always do the same thing, so a command that
+  ;; refused would only be telling them to use the editor.
+  (let* ((repository (current-repository designator))
+         (report (set-document-status repository document status)))
+    (unless (print-transition-problems report)
+      (log-event "set-status" "~a ~a" document status)
+      (if (getf report :changed)
+          (print-transition-changes report)
+          (format t "~&~a is already ~(~a~), filed at ~a. Nothing to do.~%"
+                  (getf report :document) (getf report :status) (getf report :file))))))
+
+(define-command complete (plan &rest verdicts)
+    "complete <plan> [<doc>=<status> ...]"
+    "Set a plan final and restate every document it implements."
+  ;; With no verdicts this writes nothing and shows what it would do. Dry run by
+  ;; default rather than behind a flag, which is the right default for a command
+  ;; whose failure mode is editing files -- and it means an agent that runs
+  ;; `complete PLAN-0019' and walks away has done nothing.
+  (let* ((repository (current-repository))
+         (report (complete-plan repository plan :verdicts verdicts)))
+    (print-transition-documents report)
+    (unless (print-transition-problems report)
+      (cond ((getf report :dry-run)
+             (format t "~&Dry run: nothing written.~%")
+             (let ((awaiting (remove-if-not
+                              (lambda (row) (eq :awaiting-verdict (getf row :action)))
+                              (getf report :documents))))
+               (when awaiting
+                 ;; The line the caller types next, assembled rather than
+                 ;; described. A verdict per document is a judgement Loom cannot
+                 ;; make, but which documents need one is not.
+                 (format t "~&To apply: complete ~a~{ ~a=<status>~}~%"
+                         (getf report :plan)
+                         (mapcar (lambda (row) (getf row :doc-id)) awaiting)))))
+            (t (log-event "complete" "~a" (getf report :plan))
+               (print-transition-changes report))))))
+
 (define-command find (term &optional type)
     "find <name> [<type>]"
     "Where something is defined. The entry point for \"where is X\"."
@@ -347,12 +513,27 @@ unconditionally is which units were attempted and what became of them
         (format t "~&Nothing matches ~s.~%" term)
         (dolist (hit hits) (print-summary-line hit)))))
 
-(define-command describe (term)
-    "describe <name>"
-    "Full detail for one entity, with its neighbours grouped by edge type."
-  (let* ((graph (current-graph))
+(define-command describe (term &optional flag)
+    "describe <name> [--source]"
+    "Full detail for one entity, with its neighbours grouped by edge type. \
+--source adds the definition's text."
+  (let* ((repository (current-repository))
+         (graph (repository-graph repository))
          (entity (resolve-entity graph term))
-         (detail (describe-entity graph (id entity))))
+         (detail (describe-entity graph (id entity)))
+         ;; REQ-0031 R2: requested rather than assumed. A flag rather than a
+         ;; second positional, because `describe <name> <something>' reads as a
+         ;; type filter by analogy with `find'. An unrecognised token is
+         ;; refused rather than ignored -- a typo that silently returns the
+         ;; answer to a different question is the failure this command is least
+         ;; able to make visible.
+         (source-wanted
+           (cond ((null flag) nil)
+                 ((string-equal flag "--source") t)
+                 ;; Signalled rather than printed: RUN-COMMAND catches every
+                 ;; condition and reports it, and DEFINE-COMMAND's body is an
+                 ;; anonymous lambda with no block to return from.
+                 (t (error "Unknown option ~s. Try: --source" flag)))))
     (print-summary-line (getf detail :entity))
     ;; A document's :BODY is its author's whole concatenation, so printing it
     ;; put the neighbours below an unbounded amount of prose, and for a
@@ -382,6 +563,24 @@ unconditionally is which units were attempted and what became of them
                     (getf doc :truncated)
                     (getf doc :text))
             (format t "~&summary: (none written)~%"))))
+    ;; DES-0025 D1. A route is the one property worth printing beside the
+    ;; neighbours rather than leaving in the :PROPERTIES table: it is the join
+    ;; key two repositories meet in, and a reader checking why a handler did
+    ;; not federate needs to see what it actually claims. Absent on everything
+    ;; that publishes no endpoint, which is nearly everything.
+    (let ((routes (getf (getf detail :properties) :routes)))
+      (when routes
+        (format t "~&routes: ~{~a~^, ~}~%" routes)))
+    ;; DES-0025. Below the routes and above the neighbours: a federated edge
+    ;; is what the route is *for*, and it is not a neighbour -- `find' in this
+    ;; repository will not answer about it, which the repository name makes
+    ;; plain at a glance.
+    (dolist (far (getf detail :federated))
+      (format t "~&  -> ~(~a~) @~a: ~a ~a [~a~@[:~a~]]~@[ via ~a~]~@[ @~a~]~%"
+              (getf far :rel-type) (getf far :repository)
+              (getf far :type) (getf far :name)
+              (getf far :file) (getf far :line)
+              (getf far :via) (getf far :commit)))
     (dolist (group (getf detail :neighbors))
       (format t "~&  ~a ~(~a~): ~{~a~^, ~}~%"
               (if (eq :out (getf group :direction)) "->" "<-")
@@ -397,7 +596,42 @@ unconditionally is which units were attempted and what became of them
               (mapcar (lambda (e)
                         (format nil "~a~@[ (~(~a~))~]"
                                 (getf e :name) (getf e :referrer-kind)))
-                      (getf group :entities))))))
+                      (getf group :entities))))
+    ;; REQ-0031 R1, last because it is the longest thing printed and the
+    ;; neighbours are the survey a reader uses to decide whether they wanted
+    ;; this entity at all.
+    (when source-wanted
+      (print-source (definition-source repository (id entity))))))
+
+(defun print-source (result)
+  "REQ-0031's source block, or why there is none.
+
+Every status prints something. REQ-0031 R5 forbids answering a range that is no
+longer there with a shorter region or an empty string, and a caller that asked
+for source and got silence cannot tell a refusal from an empty definition --
+which is CON-0006's expensive error at the scale of one answer."
+  (let ((status (getf result :status)))
+    (case status
+      ((:current :stale)
+       ;; R4: the range served and the generation it was read against, so a
+       ;; caller can tell that what it read matches what Loom described. The
+       ;; range is what was *served* and may be shorter than the entity's when
+       ;; the cap cut it.
+       (format t "~&~%source ~a~@[ (~d line~:p withheld)~]~@[ -- ~a~]:~%"
+               (getf result :range)
+               (and (getf result :truncated) (getf result :withheld))
+               (when (eq :stale status)
+                 "the file has changed since it was indexed"))
+       (write-string (getf result :text)))
+      (:unlocated
+       (format t "~&~%source: this entity records no line range.~%"))
+      (:missing
+       (format t "~&~%source: ~a is gone.~%" (getf result :file)))
+      (:short
+       (format t "~&~%source: ~a no longer reaches line ~a.~%"
+               (getf result :file) (getf result :range)))
+      (t
+       (format t "~&~%source: unavailable (~(~a~)).~%" status)))))
 
 (define-command impact (term &optional depth)
     "impact <name> [<depth>]"
@@ -429,13 +663,173 @@ unconditionally is which units were attempted and what became of them
     (let ((maybe (getf report :possibly-affected)))
       (when maybe
         (format t "~&possibly affected (reached only through a stale edge): ~{~a~^, ~}~%"
-                (mapcar (lambda (e) (getf e :name)) maybe))))))
+                (mapcar (lambda (e) (getf e :name)) maybe))))
+    ;; DES-0025, and the answer REQ-0027 exists for. Its own heading, naming
+    ;; the repository and the commit, because this is a claim about another
+    ;; working tree and not about anything deployed -- REQ-0027 R5 and its
+    ;; WHAT THIS IS NOT.
+    (let ((far (getf report :federated)))
+      (when far
+        (format t "~&in other repositories:~%")
+        (dolist (e far)
+          (format t "  @~a ~(~a~) ~a~40t~a~@[  [~a~@[:~a~]]~]~@[ @~a~]~%"
+                  (getf e :repository) (getf e :type) (getf e :name)
+                  (or (getf e :via) "")
+                  (getf e :file) (getf e :line) (getf e :commit)))))))
+
+(define-command federation ()
+    "federation"
+    "Routes matched across repositories, and the claims that matched nothing."
+  (let ((report (federation-report)))
+    (format t "~&~d route~:p published, ~d consumed, ~d matched~%"
+            (length (getf report :published))
+            (length (getf report :consumed))
+            (length (getf report :matched)))
+    ;; Both halves of the unmatched set, because a count of edges is not
+    ;; evidence on its own (REQ-0027 R3). A parameterized route that no client
+    ;; spells, and a client call to an endpoint no watched repository serves,
+    ;; are different problems and a reader should be able to tell them apart.
+    (let ((server-only (getf report :unmatched-published)))
+      (when server-only
+        (format t "~&served but never called from a watched repository:~%")
+        (dolist (route server-only) (format t "  ~a~%" route))))
+    (let ((client-only (getf report :unmatched-consumed)))
+      (when client-only
+        (format t "~&called but served by no watched repository:~%")
+        (dolist (route client-only) (format t "  ~a~%" route))))))
 
 (define-command context (&rest words)
     "context <task description>"
     "A budgeted context bundle for a task: what to know before editing."
   (let ((task (format nil "~{~a~^ ~}" words)))
-    (write-string (render-context (build-context (current-graph) task)))))
+    (let ((repo (current-repository)))
+      (write-string
+       (render-context
+        (build-context (repository-graph repo) task
+                       :source-fn (lambda (id) (definition-source repo id))))))))
+
+(define-command init (path &optional document-directory claude-md endpoint)
+    "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>]"
+    "Prepare a repository for the Loom workflow. Writes; never commits."
+  ;; REQ-0021 R16's two consents arrive as arguments rather than as prompts,
+  ;; here as much as in the service: this command has to be callable from a
+  ;; script, and a prompt in a run with no terminal is a stall nobody sees.
+  ;; Running the command at all is the first consent; the literal token
+  ;; `claude-md' is the second, and its absence means an existing CLAUDE.md is
+  ;; left exactly as it was.
+  (let ((report (prepare-repository path
+                                    :document-directory (or document-directory "docs")
+                                    :endpoint (or endpoint *default-endpoint*)
+                                    :append-claude-md
+                                    (and claude-md (string-equal "claude-md" claude-md)))))
+    (cond
+      ((getf report :problems)
+       (format t "~&Nothing was written. ~d problem~:p:~%"
+               (length (getf report :problems)))
+       (dolist (problem (getf report :problems)) (format t "  - ~a~%" problem)))
+      ((getf report :already-prepared)
+       (format t "~&~a is already prepared. Nothing to do.~%" (getf report :root))
+       (format t "  documents in ~a/, workflow concept ~a~%"
+               (getf (getf report :manifest) :document-directory)
+               (getf (getf report :manifest) :workflow-concept)))
+      (t
+       (log-event "init" "~a" (getf report :root))
+       (format t "~&Prepared ~a~%" (getf report :root))
+       (format t "  documents  : ~a/~%" (getf report :document-directory))
+       (format t "  conventions: ~a~%" (getf report :workflow-concept))
+       (format t "  service    : ~a~%" (getf report :endpoint))
+       (format t "  wrote ~d file~:p:~{~%    ~a~}~%"
+               (length (getf report :created)) (getf report :created))
+       (dolist (skip (getf report :skipped))
+         (format t "  skipped ~a -- ~a~%" (car skip) (cdr skip)))
+       ;; The one thing a caller has to do by hand, said rather than buried.
+       (unless (find "CLAUDE.md" (getf report :created) :test #'string=)
+         (let ((skip (find "CLAUDE.md" (getf report :skipped)
+                           :key #'car :test #'string=)))
+           (when skip
+             (format t "~&Nothing points at the skill yet. Re-run with ~
+`claude-md' to append a pointer, or add one by hand.~%"))))
+       (format t "~&Nothing was committed. `git status' shows exactly what was added.~%")))))
+
+(define-command drift (&optional designator)
+    "drift [<name>]"
+    "Where the prose and the index disagree. Candidates, not findings."
+  ;; REQ-0021 R7's markdown half. The comments half is the LLM reading files;
+  ;; Loom does not index comments and DES-0013 says why.
+  (write-string (render-prose
+                 (let ((repository (current-repository designator)))
+                   (prose-report (repository-graph repository)
+                                 :repository (repository-name repository))))))
+
+(define-command remove (&optional mode designator)
+    "remove [tooling|all] [<name>]"
+    "Take Loom out of a prepared repository. Documents stay unless you say all."
+  ;; Two modes because "remove Loom" is two requests. Tooling is the default and
+  ;; keeps every document -- they are the point of the exercise, and deleting a
+  ;; team's knowledge because the tool is leaving would be the worst outcome
+  ;; REQ-0021 could produce.
+  (let* ((repository (current-repository designator))
+         (mode (if (and mode (string-equal "all" mode)) :all :tooling))
+         (report (remove-preparation (repository-root repository) :mode mode)))
+    (if (getf report :problems)
+        (progn (format t "~&Nothing was deleted. ~d problem~:p:~%"
+                       (length (getf report :problems)))
+               (dolist (problem (getf report :problems))
+                 (format t "  - ~a~%" problem)))
+        (progn
+          (log-event "remove" "~(~a~) ~a" mode (getf report :root))
+          (format t "~&Removed ~(~a~) from ~a~%" mode (getf report :root))
+          (format t "  deleted ~d~{~%    ~a~}~%"
+                  (length (getf report :deleted)) (getf report :deleted))
+          (when (getf report :kept)
+            (format t "  kept ~d document~:p~{~%    ~a~}~%"
+                    (length (getf report :kept)) (getf report :kept)))
+          (format t "~&Nothing was committed.~%")))))
+
+(define-command architecture (&optional designator)
+    "architecture [<name>]"
+    "Write an ARCH document from the index. Says only what was measured."
+  ;; REQ-0021 R5/R6, and the second half of preparing a tree: init makes the
+  ;; directories, this puts something in them. Separate from `init' because a
+  ;; structural report needs an index and init runs before there is one -- so
+  ;; the order is prepare, watch, generate.
+  (let* ((repository (current-repository designator))
+         (report (generate-architecture repository)))
+    (if (getf report :problems)
+        (progn (format t "~&Nothing was written. ~d problem~:p:~%"
+                       (length (getf report :problems)))
+               (dolist (problem (getf report :problems))
+                 (format t "  - ~a~%" problem)))
+        (progn
+          (log-event "architecture" "~a ~a" (getf report :repository)
+                     (getf report :document))
+          (format t "~&Wrote ~a~%" (getf report :created))
+          (format t "  document   : ~a (draft, generated)~%" (getf report :document))
+          (format t "  derived at : ~@[~a~]~%" (getf report :commit))
+          (format t "  describes  : ~d name~:p~@[, ~d dropped as ambiguous~]~%"
+                  (getf report :describes)
+                  (let ((n (getf report :dropped))) (and (plusp n) n)))
+          ;; Said every time, because the empty section is the one thing a
+          ;; reader is most likely to take for an oversight.
+          (format t "~&Its invariants section is empty on purpose -- what must remain~%")
+          (format t "true is the half no index can derive, and is yours to write.~%")))))
+
+(define-command structure (&optional designator)
+    "structure [<name>]"
+    "Systems, protocols, entry points and hubs, derived from the index."
+  ;; REQ-0021 R5. Everything it prints was derived from the index, so every
+  ;; name in it resolved against real code -- which is the property that makes
+  ;; a generated architecture document worth writing and a hand-written one
+  ;; hard to keep true. What it will not print is an invariant: code being
+  ;; consistent with one is not evidence anybody intended it.
+  (let ((repository (current-repository designator)))
+    (multiple-value-bind (commit reason) (repository-commit repository)
+      (write-string
+       (render-structure
+        (structure-report (repository-graph repository)
+                          :commit commit
+                          :commit-reason reason
+                          :repository (repository-name repository)))))))
 
 (define-command check (&optional designator)
     "check [<name>]"
@@ -456,6 +850,20 @@ unconditionally is which units were attempted and what became of them
         (format t "~&~d unresolved document reference~:p:~%" (length unresolved))
         (dolist (pair unresolved)
           (format t "  ~a -> ~a~%" (car pair) (cdr pair)))))
+    ;; DES-0025 D6. A backticked token carrying a path separator and a file
+    ;; extension is a claim about a file, not an ordinary word, so one that no
+    ;; *watched* repository holds is reported. The qualifier is load-bearing and
+    ;; is printed rather than assumed: this count is a function of which
+    ;; repositories are registered, and a document naming a file in a tree
+    ;; nobody watched is reported here when it is merely unwatched.
+    (let ((rotten (unresolved-path-references)))
+      (when rotten
+        (format t "~&~d prose file reference~:p no watched repository holds:~%"
+                (length rotten))
+        (dolist (entry rotten)
+          (format t "  @~a ~a -> ~a~%"
+                  (getf entry :repository) (getf entry :document)
+                  (getf entry :reference)))))
     ;; DES-0002 R6/R10, reported the way an unresolved reference is and for
     ;; the same reason: a definer Loom cannot characterise is a definition the
     ;; index knows it is missing, and it should be visible here rather than
@@ -535,10 +943,29 @@ as much as to the watcher: a mistyped command should print a message, not drop
 the developer somewhere they have to know Lisp to escape."
   (let ((tokens (split-command-line line)))
     (when tokens
-      (let ((command (find-command (first tokens))))
+      (let ((command (find-command (first tokens)))
+            (arguments (rest tokens))
+            (repository nil))
+        ;; DES-0021 D1: a leading @name is the repository this one command acts
+        ;; on. Stripped here, between the command lookup and the handler, so
+        ;; that no command's lambda list has to make room for it -- which is
+        ;; what lets the variadic ones take a repository at all, and what makes
+        ;; every command added later take one without knowing about it.
+        ;;
+        ;; Only the first remaining token, and only unquoted-into-existence by
+        ;; the sigil test: SPLIT-COMMAND-LINE has already removed the quotes, so
+        ;; `find "@foo"' arrives here as @foo and would be stripped. That is the
+        ;; known edge, and it is why the sigil is a character no name in these
+        ;; trees begins with rather than a general escape grammar.
+        (when (and command arguments (repository-token-p (first arguments)))
+          (setf repository (subseq (first arguments) 1)
+                arguments (rest arguments)))
         (cond ((null command)
                (format t "~&Unknown command ~s. Try: help~%" (first tokens)))
-              (t (handler-case (apply (command-handler command) (rest tokens))
+              (t (handler-case
+                     ;; Bound for this command's dynamic extent and no longer.
+                     (let ((*command-repository* repository))
+                       (apply (command-handler command) arguments))
                    (error (condition)
                      (log-event "error" "~a: ~a" (first tokens) condition)
                      (format t "~&~a~%" condition))))))))

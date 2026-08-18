@@ -1,0 +1,341 @@
+id: DES-0028
+title: Prose is a property the analyzer writes and the seeder matches whole-word, ranked under coverage and over match quality
+status: implemented
+date: 2026-08-16
+refines: [REQ-0035]
+affects: [make-function-entity, analyze-file, seed-matches, seed-score, seed-entities,
+          find-entities, comment-extent]
+tags: [analyzer, ontology, retrieval, ranking, context, req-0016, req-0031, con-0006]
+summary: |
+  REQ-0035 asks that the prose a definition declares become a field the
+  retrieval path can match. This is the shape, for Lisp first.
+
+  A :DOCUMENTATION property on the code entity types, written by the analyzer
+  that already reads the form, from three sources: the docstring in a body, the
+  (:documentation ...) option on a class, condition, generic or package, and
+  the :ADJACENT comment block COMMENT-EXTENT already finds. Measured, that is
+  638 blocks and 247 KB on Loom and 362 blocks and 39.5 KB on game-server --
+  an index cost of nothing, which retires one of REQ-0035's open questions.
+
+  Two decisions carry the design and both are about the *seeder* rather than
+  the capture.
+
+  Prose is matched **whole-word**, where a name is matched by substring. A name
+  is a chosen identifier and a substring of it is usually meaningful; a
+  paragraph is English, and "test" as a substring finds "latest", "contest" and
+  "tested" in a way that would flood the candidate set with noise the ranking
+  then has to undo.
+
+  A prose match ranks **below** a name match and **above** nothing -- placed
+  under the coverage band, not over it. That ordering is the whole fix, and
+  putting it the other way would silently undo it: the query this requirement
+  exists to repair is won on coverage, by an entity that matches five task
+  words in its docstring and none in its name.
+body: |
+  D1  THE PROPERTY
+
+  :DOCUMENTATION, a string, on :FUNCTION, :METHOD, :CLASS, :INTERFACE,
+  :VARIABLE, :TEST, :PACKAGE and :MODULE. The name is Common Lisp's own word
+  for the thing and is free as a property key -- DEFENTITY's :DOCUMENTATION is
+  metadata about an entity *type* and lives in a different namespace from the
+  properties an instance carries.
+
+  One field rather than several, and REQ-0035's open question asked which. A
+  docstring, a class's :DOCUMENTATION option and a comment block are different
+  kinds of claim, and a retrieval path may eventually want to weight them
+  differently -- but nothing here does, DES-0026's BM25 field weights are where
+  such a distinction would be spent, and a field that exists in three flavours
+  before anything reads the difference is three fields to keep in step for no
+  present gain. One field, and the shape stays available.
+
+  Absent when there is none. Not the empty string: an entity with no prose and
+  an entity documented with "" are the same to every consumer here, and the
+  distinction that matters -- R7's, that absence must not be penalised -- is
+  easier to hold when absence is NIL.
+
+  D2  WHERE IT COMES FROM, IN LISP
+
+  Three sources, in the order they matter on the trees measured:
+
+    the docstring in a body -- (defun f (x) "why" ...) -- which is where Loom
+    puts 62% of its prose and where the position rule in D3 applies;
+
+    the (:documentation ...) option on DEFCLASS, DEFINE-CONDITION, DEFGENERIC
+    and DEFPACKAGE, which is where game-server's prose lives: 198 of them
+    against Loom's 38, because a CLOS codebase documents its classes;
+
+    the :ADJACENT comment block above the form, which COMMENT-EXTENT already
+    finds and PLAN-0030 S4 already shipped. Only :ADJACENT -- not :SEPARATED
+    and not :SECTION -- which is DES-0027 D3a's threshold and is the whole
+    reason that function reports an attachment rather than a range.
+
+  The first two are inside the form and cost the analyzer nothing: it already
+  has the read form, so the docstring is an element of it. The third needs the
+  file's lines threaded to the entity builders, which is the only plumbing in
+  this design and is contained to one analyzer.
+
+  Concatenated when a definition has more than one -- a comment block above a
+  function that also has a docstring is two paragraphs about one thing, and a
+  reader of the field wants both. Order is source order.
+
+  D3  A STRING THAT IS THE ONLY BODY FORM IS A RETURN VALUE
+
+  REQ-0035 R3, and it is the one place this capture can fabricate.
+
+      (defun f () "x")            =>  "x" is the value F returns
+      (defun f () "x" nil)        =>  "x" is F's docstring
+
+  So a body string counts only when some form follows it. Recording a return
+  value as documentation would put a sentence in the index that Loom claims the
+  author wrote *about* the function, which is CON-0001's fabricated fact in a
+  shape no count would reveal -- the field would be populated, plausible and
+  wrong, and the only symptom would be a query landing somewhere strange.
+
+  The cost of the rule being too strict is one unmatched query. The cost of it
+  being too loose is a false claim. The asymmetry decides it.
+
+  D4  PROSE IS MATCHED WHOLE-WORD
+
+  NAME-MATCHES-P is a substring test and that is right for a name: an
+  identifier is chosen, its parts carry meaning, and "overlay" finding
+  RESOLVE-OVERLAY is the behaviour REQ-0016 depends on.
+
+  A paragraph is not an identifier. Substring-matching "test" against 247 KB of
+  English finds "latest", "contest", "tested" and "attestation", and every one
+  of those becomes a candidate the ranking then has to push back down. Under
+  CON-0006 a wrong candidate is the cheap error, but cheap is not free when the
+  mechanism generating them is a substring scan over prose: the noise would
+  arrive in proportion to how much a project documents, which would make this
+  feature worse on exactly the trees that invested most in prose.
+
+  So prose matches on word boundaries. PLAIN-WORDS already splits text that way
+  and is already used on a path and on a raw task.
+
+  D5  WHERE THE PROSE BAND SITS, AND WHY IT IS UNDER COVERAGE
+
+  SEED-SCORE is six lexicographic bands. Prose adds a seventh, and its position
+  is the load-bearing decision in this document.
+
+  It goes **below coverage and above match quality**:
+
+    type -> named -> accessor -> test -> coverage -> PROSE-ONLY -> match
+
+  Above coverage it would undo the fix. The measurement REQ-0035 was opened on
+  is, on Loom's own tree:
+
+      context stop a fixture displacing the definitions a task asked about
+        => STOP-JS-CHILD, STOP-SERVER, FIXTURE-ROOT, a test
+
+  PRODUCTION-NAMES and DEMOTED-TEST-P are absent, and their docstring reads
+  "fixtures stop displacing the definitions a task asked about". Under this
+  design PRODUCTION-NAMES answers to five of the task's terms through its prose
+  and STOP-SERVER answers to one through its name. Coverage is what separates
+  five from one. A band that demoted every prose-only match above coverage
+  would rank STOP-SERVER first again and this requirement would have shipped
+  its own defect.
+
+  Below match quality it does nothing: match rank is 0-3 and the band would
+  never be reached.
+
+  So the ordering says exactly this: how much of the task an entity answers to
+  matters more than where the answer was found, and where it was found breaks
+  the tie. A name match is stronger evidence per term -- an author naming a
+  thing chose that word for it -- but five words of prose beat one word of
+  name, and that is the case the requirement is about.
+
+  D6  A LENGTH PROBLEM THIS DESIGN DOES NOT SOLVE
+
+  Loom's mean prose block is 396 characters and its longest is 3,922;
+  game-server's mean is 111. A long docstring has more chances to match a task
+  term than a short one, for no reason connected to relevance, and coverage
+  counts distinct terms without normalising for that.
+
+  This design does not fix it and should not. Length normalisation is BM25's
+  job and BM25 is DES-0026 D4, which also brings the inverted index and IDF --
+  and IDF is what stops a common word in a long paragraph counting as much as a
+  rare one. Solving it here would mean inventing a second, worse normalisation
+  that DES-0026 then has to remove.
+
+  What is done here instead is to bound the exposure: whole-word matching (D4)
+  removes the largest source of spurious matches, and the prose band (D5) means
+  a long-docstring entity that ties on coverage with a named one still loses.
+  The residue is real, it is measured in the acceptance below rather than
+  assumed away, and it is the argument for DES-0026 D4 landing next.
+
+  D7  ABSENCE IS NEUTRAL, NOT NEGATIVE
+
+  REQ-0035 R7. On game-server 86% of functions carry no docstring, so a score
+  that ranked undocumented code below documented code would be a recall defect
+  on the tree this is measured against -- and under CON-0006 a recall defect is
+  the expensive kind.
+
+  The band in D5 is PROSE-ONLY: it demotes an entity that matched *only*
+  through prose, relative to one that matched a name. An entity with no prose
+  at all is not in that band; it is scored exactly as it is today. Nothing in
+  this design can move an undocumented definition down.
+
+  D8  find AND describe ARE UNCHANGED
+
+  R4 asks that the retrieval path match the field, and R6 that nothing
+  displayed by default changes. Both are satisfied by scoping the match to
+  `context`.
+
+  `find` answers "where is X defined", which is a question about a name. A
+  `find` that started returning entities because their paragraphs mentioned the
+  word would answer a different question than the one asked, and REQ-0005's
+  silent 20-hit cap would then drop real definitions to make room for them.
+
+  `describe` prints what it prints. The prose is already in the source REQ-0031
+  serves, and printing it twice under a property heading would be the
+  duplication DES-0020 removed from bundles.
+
+  So the field is written by every analyzer and read, for now, by one consumer.
+  That is the shape R4 asks for and it is worth saying plainly, because a
+  property populated everywhere and read in one place looks like an oversight
+  until someone writes down that it was chosen.
+
+  D9  JAVASCRIPT IS SECOND
+
+  Lisp first, measured, then JavaScript. Not because the JS half is hard --
+  COMMENT-EXTENT already reads JSDoc blocks -- but because the acceptance for
+  this requirement is one query on one tree that fails today, and a change
+  validated by "the suite is green on three languages" is not the same evidence
+  as a bundle that changed from wrong to right.
+
+  JSDoc also raises a question Lisp does not: a `/** ... @param {Object} p -
+  the partition @returns {Doc} */` block is structured, and its tag names and
+  type annotations are not prose a task would ever match on. Whether they are
+  stripped, kept, or indexed separately is a decision with evidence available
+  -- 979 blocks on front-end.
+
+  ANSWERED, 2026-08-17, before the JS work rather than during it, because the
+  evidence was one measurement away and the guess would have been wrong.
+
+      979 JSDoc blocks
+      377 (38%) contain any @tag at all
+      199.4 KB of prose against 44.0 KB of tag lines -- 18% of the text
+      @param 561, @returns 213, @override 52, @example 19
+
+  The block is kept whole and nothing is stripped. Four-fifths of the text is
+  ordinary prose, only 38% of blocks carry a tag at all, and a tag line is
+  mostly description anyway: "@param {Object} partition - carries `.map` (the
+  rectangle the terrain occupies)" is a sentence about the parameter with six
+  characters of syntax in front of it. Stripping would discard that to remove
+  the tag name.
+
+  What is genuinely not worth matching is the tag *name* and the type
+  annotation -- "param", "returns", "Object" -- and those are exactly what
+  makes them harmless: a token appearing 561 times across one tree is what IDF
+  weighs to nothing without being told. Hand-stripping them now would be the
+  48-word stopword list all over again, a tuned suppression standing in for a
+  measurement the retrieval layer is about to make for itself (D5, DES-0026 D4).
+
+  The other number that came out of this: front-end holds 199 KB of prose
+  against Loom's 315 and game-server's 50. It is the second-richest tree in
+  prose and the largest by entity count -- 3,457 -- so "second" should mean
+  soon rather than someday.
+
+  ACCEPTANCE
+
+  The measurement this exists to move, on Loom:
+
+      context stop a fixture displacing the definitions a task asked about
+
+  must return PRODUCTION-NAMES. It returns it nowhere today, and the query's
+  wording is taken from that function's docstring, which is the point -- an
+  author's sentence about a function should find that function.
+
+  CORRECTED, 2026-08-17. This clause asked for PRODUCTION-NAMES *and*
+  DEMOTED-TEST-P, and the second half was wrong from the moment it was written.
+  The sentence the query paraphrases -- "fixtures stop displacing the
+  definitions a task asked about" -- is in PRODUCTION-NAMES' docstring alone.
+  DEMOTED-TEST-P's own reads "True when ENTITY is test code that R4 should rank
+  below production code", and it contains not one of the query's terms. The two
+  functions are a conceptual pair and were written in one change, which is why
+  they were named together; only one of them carries the text.
+
+  So no prose match can reach DEMOTED-TEST-P for this query and none should.
+  It is a callee of SEED-SCORE alongside PRODUCTION-NAMES, so the route that
+  would bring it is the neighbour band -- DES-0026 D6's cost-ordered walk over
+  :CALLS -- and that is a different requirement's work. Corrected rather than
+  quietly dropped, because an acceptance clause that cannot be met by the
+  mechanism it is testing will otherwise be read as a failure of the mechanism.
+
+  MEASURED, 2026-08-17. PRODUCTION-NAMES is the *first* seed, and
+  STOP-JS-CHILD, STOP-SERVER and FIXTURE-ROOT -- the three entities that
+  crowded the pre-change bundle, each on one English word -- are all gone.
+
+  DEMOTED-TEST-P is in the bundle after all, and by the route the correction
+  above predicted: it is a callee of SEED-SCORE, SEED-SCORE is a seed, and the
+  relation lines under a seed name it. So the corrected clause understated the
+  result -- prose matching cannot reach that function and did not, and the
+  structure Loom already builds carried it anyway. Both halves of the original
+  clause are satisfied; only the mechanism was misattributed.
+
+  The game-server clause is met and its query was chosen mechanically to keep it
+  a test: the longest (:documentation ...) on any class in the tree, which is
+  CLIENT-OP's, with the query taken from that block's first sentence --
+  "operator whose expression serialized json client-side evaluation".
+  CLIENT-OP comes back as the second seed, behind OPERATOR, which the query's
+  first word names. One honest caveat: "client-side" tokenises to "client",
+  which prefix-matches CLIENT-OP, so this clause is not a pure prose win. The
+  Loom query is the clean proof of the mechanism, since PRODUCTION-NAMES shares
+  no word with its task; this one confirms the mechanism reaches game-server's
+  *different* source, the (:documentation ...) option rather than a body
+  docstring, which is R2's whole point.
+
+  On game-server, a query phrased from a class's (:documentation ...) returns
+  that class. The query is chosen from the 198 available *before* the change,
+  so it is a test and not a demonstration.
+
+  Neither tree regresses: REQ-0016's existing acceptance queries -- data-handler,
+  the restructure query, the startup-sequence query, and R8's connection query
+  with all three CONNECTION-CONNECT-DATABASE definitions -- return what they
+  return today or better, and `context macro definitions` on Loom is unchanged.
+
+  REQ-0016 R9's recall count falls on the prose queries and does not rise on
+  the others.
+
+  Index size is reported rather than assumed: entity count unchanged, and the
+  measured 247 KB and 39.5 KB confirmed against the built index.
+
+  Full suite green, `check` clean.
+
+  ALTERNATIVES CONSIDERED
+
+  Store the prose but do not search it. REQ-0035 R4 forbids it in as many
+  words, and rightly: a field populated and never read changes nothing the
+  requirement's measurement reports.
+
+  Substring-match prose the way names are matched. One line simpler and D4 is
+  why not -- the noise would scale with how much a project documents.
+
+  Give prose its own entity or edge, so a docstring is a node that mentions
+  things. That is what the markdown analyzer does for a README and it is right
+  there, because a README is a document with an identity. A docstring has no
+  identity apart from its definition; making one would put a second node beside
+  every documented function and double the graph to express a property.
+
+  Weight the three sources differently now. D1. The distinction is real and
+  nothing yet reads it; DES-0026's field weights are where it would be spent.
+
+  Put the prose band above coverage. D5, and it would have quietly reverted the
+  requirement.
+
+  CONSEQUENCES
+
+  A tree that documents heavily gets better answers than one that does not,
+  which is intended and is worth stating because it is a change in what Loom
+  rewards. game-server documents 14% of its functions and Loom 62%, so the two
+  trees will diverge in how well prose queries land, and that divergence is a
+  fact about the trees rather than a defect in the ranking.
+
+  The graph holds substantial text for the first time. 247 KB against an index
+  that already carries 2,716 entities and 13,928 relationships is nothing, but
+  it is the first property whose size is a function of how much someone wrote
+  rather than of how much code there is, and a future persistence design should
+  know that before it is surprised by it.
+
+  DES-0026 D4 becomes more valuable and more urgent. Its field weights now have
+  a field worth weighting, and D6's length problem is waiting for its length
+  normalisation.

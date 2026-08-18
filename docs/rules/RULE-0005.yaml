@@ -1,9 +1,18 @@
 id: RULE-0005
 title: A plan reaching final restates every document it implements
-status: active
-severity: error
-refines: [CON-0004]
+status: retired
+severity: advisory
+refines: [CON-0004, REQ-0022]
 statement: |
+  RETIRED 2026-08-12. The invariant below is still true and still worth
+  reading; what changed is that it is no longer a thing to remember. Loom's
+  `complete <plan> <doc>=<verdict> ...` performs the transition -- it sets the
+  plan final, walks upward through every document the plan refines, runs the
+  query this rule asks a human to run, and files each moved document where
+  RULE-0007 says it belongs. REQ-0022 and DES-0019 are the reasoning, and the
+  section at the end of this document records what the retirement does and does
+  not claim.
+
   When a plan reaches status: final, every document it refines must be moved
   out of draft in the same change. A plan that fully implements an
   architecture or a requirement makes that document's draft status false, and
@@ -93,6 +102,46 @@ rationale: |
   -- "so that prose-only drift stays visible rather than comfortable". The
   count goes from one to two. If it reaches five, that is evidence the engine
   is too narrow and this argument should be re-opened.
+
+  WHY A CHECK KIND WAS NEVER THE ANSWER, AND WHAT REPLACED IT
+
+  The section above is right that no check kind expresses this and wrong about
+  why it matters, and REQ-0022 is where that was worked out. The missing thing
+  is not expressive power. Every check kind asks a question about the graph as
+  it stands, and this rule asks about an *event* -- a plan crossing into final
+  -- and about what should have happened in the same change. Nothing in the
+  index records that a status changed, so a fifth kind would still have nothing
+  to look at. A command does not have that problem: it *is* the transition, so
+  there is nothing to detect.
+
+  So the enforcement is now `complete`, and this rule is retired to advisory:
+
+    complete PLAN-0016                       what it would do, writing nothing
+    complete PLAN-0016 REQ-0014=implemented DES-0016=implemented
+
+  What the command does that this text asked a human to do: it sets the plan
+  final, finds every document the plan refines, and for each one runs the query
+  in the paragraph below -- is every *other* document refining this one now
+  finished? -- reporting the ones that are blocked and leaving them alone. It
+  continues upward only through a terminal verdict, exactly as the walk
+  described here does, so a partial design stops the climb before the
+  requirement above it. It files each moved document where RULE-0007 says it
+  belongs, in the same operation, so placement and status cannot disagree. And
+  it refuses the whole cascade rather than applying half of it.
+
+  What the command does not do, and what this document is therefore still for:
+  the three-way choice between implemented, partial and superseded is a
+  judgement about intent and is supplied by the caller, never derived. The
+  rationale above -- DES-0003 read wrongly from a plan's scope-out list, and
+  the trap that produced it -- is the guidance for making that choice, and it
+  is the reason this was retired rather than deleted.
+
+  RETIRED AND NOT SUPERSEDED, which is a deliberate distinction. A rule
+  claiming the command is the only way to perform the transition would be false
+  the first time somebody edits a status in an editor, and DEC-0001 says that
+  editing is correct: files are truth, and a command that fought the author for
+  them would be the wrong tool. What changed is that the discipline now has an
+  instrument, not that the manual path was closed.
 
 lessons:
   - A status that no longer describes the tree is not a stale label, it is a

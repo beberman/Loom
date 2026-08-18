@@ -1,0 +1,171 @@
+id: PLAN-0020
+title: Keep the edge, band on it, print the bands
+status: final
+date: 2026-08-12
+refines: [DES-0020]
+affects: [build-context, render-context, documents-touching, context-item]
+tags: [context, documents, knowledge]
+summary: |
+  DES-0020 in five steps, all inside src/knowledge/context.lisp except the
+  JSON key list and the acceptance. The order is dependency order: the
+  collector has to return three bands before BUILD-CONTEXT can admit them,
+  and the items have to carry a band before RENDER-CONTEXT can print one.
+
+  Small and contained. The one thing to be careful about is that this is a
+  change to what an agent reads on every call, so the tests have to pin the
+  bands rather than only the membership -- a bundle that contains REQ-0022
+  somewhere is not the same as one that files it under documents.
+body: |
+  FILES
+
+  src/knowledge/context.lisp     the whole change: DOCUMENTS-TOUCHING,
+                                 *CONTEXT-MENTION-LIMIT*, BUILD-CONTEXT's
+                                 admission order, the :BAND on each item, and
+                                 RENDER-CONTEXT's headings.
+  src/serve/json.lisp            :documents and :mentions into
+                                 *ARRAY-VALUED-KEYS* so an empty band encodes
+                                 as [] rather than null.
+  src/knowledge/test/context.lisp  new tests; the two existing :DECISIONS tests
+                                 stay and must keep passing untouched.
+  CLAUDE.md                      the stale sentence DES-0020's CONSEQUENCES
+                                 names.
+
+  Not edited: src/process/console.lisp. The `context` command calls
+  RENDER-CONTEXT and prints what it returns, so the headings arrive without a
+  console change. Worth stating because a plan that listed it would send a coder
+  looking for formatting that is not there.
+
+  Not edited: any analyzer, any resolution pass, the ontology. No new edge, no
+  new entity type, no change to what resolves. Every fact this surfaces is
+  already in the index.
+
+  BLAST RADIUS
+
+  What Loom says: `impact build-context 3` reaches RENDER-CONTEXT, the console's
+  `context` command, loom-serve's :CONTEXT operation and the REST and MCP
+  surfaces over it. All of them pass the bundle through unchanged, so the reach
+  is real but the edits stop at this file.
+
+  What Loom cannot see: nothing here is driven by a macro, so the impact set is
+  honest for once. The under-reported half is the test suite -- the tests live
+  in `test` forms, whose bodies Loom does not attribute.
+
+  RISKS
+
+  A band assignment that lets a document appear twice. A design reached by both
+  a :DECIDES and a :MENTIONS satisfies two bands, and the fix is that assignment
+  is per document rather than per edge. The test for it needs a fixture where
+  one document has both edges to one seed, which the current k-fixture does not
+  have.
+
+  The mention band swamping the budget on a documentation-heavy tree. Capped at
+  five, and the cap is applied before admission rather than relying on the token
+  budget to truncate -- a bundle that spends its budget on prose and truncates
+  the expansion has lost the structure it was asked for.
+
+  A ranking that depends on hash order. MENTION-RANK counts distinct entities,
+  and ties break on the document name so two runs over one index agree. Without
+  the tie-break this passes locally and reorders in a rebuilt image.
+
+  The two existing tests are the regression guard for DES-0020's additive
+  claim, and they only guard it if they are left alone. A-BUNDLE-CARRIES-THE-
+  DECISIONS-BEARING-ON-WHAT-IT-FOUND and A-BUNDLE-EXCLUDES-STALE-KNOWLEDGE both
+  read (getf bundle :decisions) for an ADR, which is a :DECISION and stays in
+  the decisions band. If either needs editing to pass, the change is not
+  additive and the design is wrong rather than the test.
+
+  STEPS
+
+  1. DOCUMENTS-TOUCHING replaces DECISIONS-TOUCHING: same walk, but it keeps the
+     NEIGHBOR rather than the entity, groups by document, and returns three
+     values -- decisions, documents, mention candidates with their rank. Renamed
+     rather than kept beside the old one; it is internal, and BUILD-CONTEXT is
+     its only caller. First runnable step, verified in the REPL against the
+     k-fixture before anything else moves.
+
+  2. *CONTEXT-MENTION-LIMIT*, default 5, and the rank-then-cap over the third
+     value. Rank is the count of distinct bundle entities each document
+     mentions, ties broken on name.
+
+  3. BUILD-CONTEXT admits in DES-0020 D5's order -- seeds, decisions, documents,
+     mentions, expanded -- and puts :DOCUMENTS and :MENTIONS in the bundle
+     beside :DECISIONS. Verified by the two existing tests still passing, which
+     is the additive check.
+
+  4. CONTEXT-ITEM takes a :BAND and carries it on the item; RENDER-CONTEXT
+     prints a heading when the band changes. This is the step that makes the
+     first three observable, so its verification is reading a real bundle rather
+     than an assertion.
+
+  5. *ARRAY-VALUED-KEYS* gains :documents and :mentions, and CLAUDE.md's stale
+     sentence about `impact`'s empty documents: line is corrected.
+
+  6. Acceptance, REQ-0026 R7, on both trees. On this one, `context complete plan
+     document status transition` must return REQ-0022 and PLAN-0019 under the
+     documents band. On ~/lisp/game-server, `context data-api handler protocol`
+     must return docs/data-layer.md under the mentions band, with the band
+     capped rather than admitting all twelve markdown files.
+
+  7. Close it: `complete PLAN-0020 DES-0020=<verdict> REQ-0026=<verdict>`
+     through the command REQ-0022 built. Both are expected to earn
+     `implemented` -- every requirement in REQ-0026 is answered by DES-0020 and
+     every element of DES-0020 lands in steps 1 to 5 -- but the verdict is a
+     judgement to make against the text after the work, not now.
+
+  VERIFICATION
+
+  Per step above; then `tools/loom-test.sh` for all nine systems, and
+  `tools/loom.sh 'status' 'check'` to confirm `unresolved` has not risen and the
+  document count has moved by exactly the three documents this work added.
+
+  OUTCOME
+
+  All seven steps landed. Three things the plan did not foresee, recorded
+  because each is worth more than the steps that went as written.
+
+  THE BANDS WERE INERT ON THE TREE THEY WERE BUILT FOR. Step 6's acceptance
+  failed the first time: on game-server, `context dhandler-delete soft
+  deletion' spent 1968 of 2000 tokens on eight seeds and their twelve relations
+  apiece and truncated before the first document. The ordering of D5 was
+  necessary and not sufficient -- an order is worthless once the budget is gone
+  before it is consulted. DES-0020 gains D5a and BUILD-CONTEXT reserves what the
+  document bands cost before admitting any seed, capped at half the budget and
+  never at the cost of the first seed. Measured while guarding that last
+  clause: without it a 200-token budget dropped the exact-match seed and
+  admitted a worse one that happened to be cheaper.
+
+  A DUPLICATE THAT PREDATES ALL OF THIS. EXPANDED excludes the seeds and never
+  excluded the documents, so every document within one hop of a seed has been
+  admitted twice and paid for twice for as long as bundles have existed. It was
+  invisible while every item printed as the same kind of line -- two identical
+  lines in a flat list read as one entity mentioned twice rather than as waste.
+  Labelling the bands surfaced it and the test for it caught it. Fixed here;
+  nothing stops reaching a bundle, it arrives once under the stronger claim.
+
+  THE :CALL-SITE CEILING CAUGHT A TEST-HELPER COLLISION. The new fixture helper
+  was called K-DOC, and src/knowledge/test/services.lisp already had a K-DOC of
+  a different arity in the same package. The visible symptom was three unrelated
+  DOCUMENT-SUMMARY tests failing with "invalid number of arguments: 2"; the
+  cause was named precisely by tools/call-site-census.lisp, which reported
+  k-doc among the ambiguous occurrences with four sites, and by
+  A-CALL-SITE-EXISTS-ONLY-WHERE-A-CALLS-EDGE-FROM-A-DEFINITION-IS-IMPOSSIBLE,
+  which failed at 182 against its ceiling of 178 -- exactly four over. The
+  ceiling was written as a tripwire for a generator minting too much and caught
+  a name collision instead, which is a better result than it was designed for.
+  Renamed to BAND-DOC; the count returned to 178 and all nine systems passed.
+  The ceiling was not adjusted, per its own docstring.
+
+  Also caught by the tooling rather than by review: `check` reported two new
+  unresolved references after step 1, because this plan and DES-0020 both listed
+  DECISIONS-TOUCHING in affects: and step 1 renamed it. That is the staleness
+  detector working on the documents describing the change that broke them.
+
+  MEASURED
+
+  `context complete plan document status transition` on this tree returns
+  PLAN-0019, REQ-0025 and BUG-0022 under "documents bearing on them" -- three
+  documents that were collected and discarded before. On game-server,
+  `context dhandler-delete soft deletion' returns docs/data-layer.md under
+  "prose that names them", where the same call returned no prose at all.
+
+  Nine of nine systems, 42 checks in the context suite.

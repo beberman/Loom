@@ -6,7 +6,7 @@
 ;;;; the REPL "is reachable through the same REST and MCP surfaces R2 and R4
 ;;;; expose."
 ;;;;
-;;;; The four write tools -- loom_watch, loom_pause, loom_unwatch,
+;;;; The four lifecycle write tools -- loom_watch, loom_pause, loom_unwatch,
 ;;;; loom_reindex -- are deliberately absent, and this comment is the record of
 ;;;; that rather than an oversight to be tidied up later. DES-0006's
 ;;;; ALTERNATIVES CONSIDERED works through it: R2 enumerates exactly seven read
@@ -16,6 +16,16 @@
 ;;;; text that MCP's surface is meant to be the narrower of the two by design.
 ;;;; Reversing it costs four more entries in the list below, calling registry
 ;;;; entries that already exist and are already tier-checked.
+;;;;
+;;;; The two transition tools are the exception, and are here because a later
+;;;; requirement asked for them by name rather than because the argument above
+;;;; was wrong. REQ-0022 R6 puts the transition on REST *and* MCP, and REQ-0021
+;;;; R8 says why it is not a preference: an agent installed into a prepared
+;;;; worktree reaches Loom through the service and has no tools/loom.sh to shell
+;;;; out to, so a transition missing from MCP is a transition that agent cannot
+;;;; perform. The narrowness DES-0006 chose was about lifecycle commands a
+;;;; service operator runs, not about the workflow an agent is installed to
+;;;; follow.
 
 (in-package :loom-mcp)
 
@@ -32,10 +42,25 @@
         (make-tool :name "loom_status" :operation :status)
         (make-tool :name "loom_check" :operation :check)
         (make-tool :name "loom_rules" :operation :rules)
+        ;; Two more read tools, and the line they sit on the right side of.
+        ;; :STRUCTURE and :DRIFT answer questions an agent working in a prepared
+        ;; worktree asks -- what is the shape of this tree, and where does its
+        ;; prose disagree with its code -- and change nothing.
+        ;;
+        ;; :ARCHITECTURE, :INIT and :REMOVE are deliberately absent, which is
+        ;; the same judgement that keeps the four lifecycle write tools off this
+        ;; surface. Those three prepare, describe or dismantle a repository, and
+        ;; they are driven by tools/loom-init.sh where a terminal can ask the
+        ;; consent REQ-0021 R16 requires. An agent mid-task has no business
+        ;; running any of them, and REST carries them for the script that does.
+        (make-tool :name "loom_structure" :operation :structure)
+        (make-tool :name "loom_drift" :operation :drift)
+        (make-tool :name "loom_set_status" :operation :set-status)
+        (make-tool :name "loom_complete" :operation :complete)
         (make-tool :name "loom_repl_open" :operation :repl-open)
         (make-tool :name "loom_repl_eval" :operation :repl-eval)
         (make-tool :name "loom_repl_close" :operation :repl-close))
-  "The ten tools, in the order tools/list returns them.")
+  "The fourteen tools, in the order tools/list returns them.")
 
 (defun all-tools () *tools*)
 

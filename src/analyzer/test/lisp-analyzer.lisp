@@ -980,8 +980,8 @@ file, and every property with its value, in a stable order."
   '(;; a  plain specializer
     ("(defmethod render ((x hop)) x)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier nil)
+      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
+       (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:signature nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (x))
@@ -989,16 +989,16 @@ file, and every property with its value, in a stable order."
     ;;    the :QUALIFIER property AND into the id's third segment
     ("(defmethod render :around ((x hop)) x)"
      (:method "render" "method:sample.lisp:render:around:hop" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier :around)
+      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
+       (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier :around)
        (:shadowed-definitions nil) (:signature nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (x))
     ;; c  EQL specializer, rendered rather than resolved
     ("(defmethod render ((x (eql :oneof))) x)"
      (:method "render" "method:sample.lisp:render::(eql oneof)" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier nil)
+      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
+       (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:signature nil)
        (:specializers ("(eql oneof)")) (:start-line 1)
        (:system nil) (:unresolved-calls nil)))
@@ -1007,9 +1007,9 @@ file, and every property with its value, in a stable order."
     ("(defmethod (setf render) (v (x hop)) v)"
      (:method "(setf render)" "method:sample.lisp:(setf render)::t,hop"
       "sample.lisp"
-      ((:arguments ("v" "x")) (:call-names nil) (:end-line 1)
+      ((:arguments ("v" "x")) (:call-names nil) (:documentation nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "(setf render)")
-       (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
+       (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:signature nil)
        (:specializers ("t" "hop")) (:start-line 1) (:system nil)
        (:unresolved-calls nil)))
@@ -1019,16 +1019,16 @@ file, and every property with its value, in a stable order."
     ;;    and mints an entity with the body where its arguments belong.
     ("(defmethod render () 1)"
      (:method "render" "method:sample.lisp:render::" "sample.lisp"
-      ((:arguments nil) (:call-names nil) (:end-line 1) (:file "sample.lisp")
-       (:generic-function "render") (:language :lisp) (:qualified-calls nil) (:qualifier nil)
+      ((:arguments nil) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
+       (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:signature nil) (:specializers nil)
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (1))
     ;; f  an & marker stops the specializer walk but not the argument list
     ("(defmethod render ((x hop) &rest args) args)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
-      ((:arguments ("x" "&rest" "args")) (:call-names nil) (:end-line 1)
-       (:file "sample.lisp") (:generic-function "render") (:language :lisp)
+      ((:arguments ("x" "&rest" "args")) (:call-names nil) (:documentation nil) (:end-line 1)
+       (:file "sample.lisp") (:generic-function "render") (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil) (:signature nil)
        (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
@@ -1036,8 +1036,8 @@ file, and every property with its value, in a stable order."
     ;; g  wholly unspecialized, and the only entry with a call in its body
     ("(defmethod render (a b) (helper a b))"
      (:method "render" "method:sample.lisp:render::t,t" "sample.lisp"
-      ((:arguments ("a" "b")) (:call-names ("helper")) (:end-line 1)
-       (:file "sample.lisp") (:generic-function "render") (:language :lisp)
+      ((:arguments ("a" "b")) (:call-names ("helper")) (:documentation nil) (:end-line 1)
+       (:file "sample.lisp") (:generic-function "render") (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil) (:signature nil)
        (:specializers ("t" "t"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
@@ -1051,9 +1051,9 @@ file, and every property with its value, in a stable order."
     ("(defmethod render ((x hop)) (helper x))"
      (:method "render" "method:src/graph/foo.lisp:render::hop"
       "src/graph/foo.lisp"
-      ((:arguments ("x")) (:call-names ("helper")) (:end-line 1)
+      ((:arguments ("x")) (:call-names ("helper")) (:documentation nil) (:end-line 1)
        (:file "src/graph/foo.lisp") (:generic-function "render")
-       (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
+       (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:signature nil)
        (:specializers ("hop")) (:start-line 1) (:system :graph)
        (:unresolved-calls nil)))
@@ -1626,3 +1626,192 @@ name a macro identically and a pass must be able to see the ambiguity")))
   (is (null (find-analyzer "src/ui/DrawingTool.tsx"))
       "no TypeScript analyzer is registered yet, and NIL is how a caller
 sweeping a mixed tree learns to skip the file"))
+
+;;; ------------------------------------------------------------------
+;;; COMMENT-EXTENT -- REQ-0031 R9, DES-0027 D3a, PLAN-0030 S4
+;;; ------------------------------------------------------------------
+
+(defun extent-of (lines start-line)
+  "COMMENT-EXTENT over LINES, a list of strings, as two values."
+  (comment-extent (make-instance 'lisp-analyzer)
+                  (coerce lines 'vector) start-line))
+
+(test a-comment-block-touching-a-definition-is-adjacent
+  (multiple-value-bind (first attachment)
+      (extent-of '(";; why this exists"
+                   ";; and the second line of why"
+                   "(defun f (x) x)")
+                 3)
+    (is (= 1 first) "the top of the run, not the line just above")
+    (is (eq :adjacent attachment))))
+
+(test a-blank-line-separates-a-block-without-hiding-it
+  ;; Both callers want to know the block is there; they disagree only about
+  ;; what the gap means, and DES-0027 D3a leaves that to them rather than to
+  ;; this function.
+  (multiple-value-bind (first attachment)
+      (extent-of '(";; a remark about something"
+                   ""
+                   "(defun f (x) x)")
+                 3)
+    (is (= 1 first))
+    (is (eq :separated attachment))))
+
+(test four-semicolons-is-a-section-and-three-is-not
+  ;; Measured rather than taken from CL style, which calls both top-level:
+  ;; counting what sits above a definition gives Loom 51 ;;; blocks and 124
+  ;; ;;;; ones, and the ;;; are commentary about the definition while the
+  ;;;; ones are box headings for everything below them.
+  (multiple-value-bind (first attachment)
+      (extent-of '(";;;; ================"
+                   ";;;; Running the rule set"
+                   ";;;; ================"
+                   "(defun active-rules (view) view)")
+                 4)
+    (is (= 1 first))
+    (is (eq :section attachment) "a heading for what follows, not about it"))
+  (multiple-value-bind (first attachment)
+      (extent-of '(";;; why staleness is enforced at this one call"
+                   "(defun edges-matching (g) g)")
+                 2)
+    (is (= 1 first))
+    (is (eq :adjacent attachment)
+        "three semicolons is commentary; discarding it would lose 51 real
+         paragraphs on this tree to catch banners a fourth semicolon marks")))
+
+(test a-definition-with-nothing-above-it-pads-by-nothing
+  (multiple-value-bind (first attachment)
+      (extent-of '("(defparameter *x* 1)" "" "(defun f (x) x)") 3)
+    (is (null first) "the previous form is not a comment")
+    (is (null attachment)))
+  (multiple-value-bind (first attachment) (extent-of '("(defun f (x) x)") 1)
+    (is (null first) "the top of the file is not an error")
+    (is (null attachment))))
+
+(test a-trailing-remark-is-not-an-attached-block
+  ;; `(foo) ; why' is a remark about that line and is already inside the
+  ;; previous definition's own range.
+  (multiple-value-bind (first attachment)
+      (extent-of '("(defun g (x) x) ; a trailing remark"
+                   "(defun f (x) x)")
+                 2)
+    (is (null first))
+    (is (null attachment))))
+
+(test a-blank-line-inside-a-run-ends-it-at-the-nearer-paragraph
+  ;; Two paragraphs separated by a gap are two remarks, and the nearer one is
+  ;; the one about this definition.
+  (multiple-value-bind (first attachment)
+      (extent-of '(";; an older paragraph about something else"
+                   ""
+                   ";; the remark about f"
+                   "(defun f (x) x)")
+                 4)
+    (is (= 3 first))
+    (is (eq :adjacent attachment))))
+
+;;; ------------------------------------------------------------------
+;;; The prose a definition declares -- REQ-0035 R3, DES-0028 D3, PLAN-0031 S2
+;;; ------------------------------------------------------------------
+
+(test a-trailing-string-is-a-return-value-and-not-a-docstring
+  ;; The one place this capture can fabricate. Recording "x" below as
+  ;; documentation would put a sentence in the index that Loom claims the
+  ;; author wrote *about* F -- populated, plausible and wrong, which is
+  ;; CON-0001's fabricated fact in the shape no count reveals.
+  (is (null (loom-analyzer::body-docstring '(defun f () "x") 3))
+      "(defun f () \"x\") returns \"x\"")
+  (is (string= "x" (loom-analyzer::body-docstring '(defun f () "x" nil) 3))
+      "a form follows it, so it documents F")
+  (is (null (loom-analyzer::body-docstring '(defun f () nil) 3))
+      "no string at all")
+  (is (string= "d" (loom-analyzer::body-docstring
+                    '(defun f (x) "d" (declare (ignore x)) x) 3))
+      "a declaration is a following form like any other"))
+
+(test a-variable-docstring-is-the-last-element-and-that-is-not-ambiguous
+  ;; Deliberately not BODY-DOCSTRING's rule. (defvar name [value [doc]]) puts
+  ;; the docstring last with nothing after it, so the form-must-follow test
+  ;; would reject every one -- and there is nothing to guard against, because
+  ;; the form has no body for a value to be returned from.
+  (is (string= "why" (loom-analyzer::variable-docstring '(defparameter *x* 1 "why"))))
+  (is (null (loom-analyzer::variable-docstring '(defparameter *x* 1))))
+  (is (null (loom-analyzer::variable-docstring '(defvar *x*)))))
+
+(test the-documentation-option-is-found-and-a-slots-is-not
+  ;; Matched on the option's own name rather than on a position: a slot spelled
+  ;; (name :documentation "...") has the slot name first, and only an option
+  ;; has the word itself first.
+  (is (string= "the class"
+               (loom-analyzer::option-documentation
+                '(defclass c () ((a :accessor a)) (:documentation "the class")))))
+  (is (null (loom-analyzer::option-documentation
+             '(defclass c () ((a :accessor a :documentation "a slot")))))
+      "a slot's documentation is not the class's")
+  (is (string= "pkg" (loom-analyzer::option-documentation
+                      '(defpackage #:p (:documentation "pkg") (:use #:cl))))))
+
+(test a-captured-docstring-reaches-the-entity
+  ;; All three sources through the real pipeline, because the helpers above
+  ;; can each be right while nothing wires them to an entity.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun f (x) \"what f is for\" x)
+(defparameter *v* 1 \"what v is for\")
+(defclass c () () (:documentation \"what c is for\"))
+(defun undocumented (x) x)"
+                      "sample.lisp")
+    (declare (ignore file))
+    (flet ((doc-for (type name)
+             (let ((e (find name (entities-of-type g type)
+                            :key (lambda (x) (and (slot-boundp x 'name) (name x)))
+                            :test #'equal)))
+               (and e (gethash :documentation (properties e))))))
+      (is (string= "what f is for" (doc-for :function "f")))
+      (is (string= "what v is for" (doc-for :variable "*v*")))
+      (is (string= "what c is for" (doc-for :class "c")))
+      (is (null (doc-for :function "undocumented"))
+          "REQ-0035 R7: absence is absence, and must cost the entity nothing"))))
+
+(test a-comment-block-above-a-definition-becomes-its-prose
+  ;; PLAN-0031 S3. game-server's VALID-REFERENCE-TYPE-P is the shape: no
+  ;; docstring at all, and six lines above it explaining what a valid reference
+  ;; type is. Loom gained 5 of these and game-server 76, which is why the step
+  ;; could not have been judged on this tree alone.
+  (multiple-value-bind (g file)
+      (analyze-source ";; why g exists
+(defun g (x) x)
+
+;; a paragraph with a gap under it
+
+(defun separated (x) x)
+
+;;;; ==================================
+;;;; A section heading
+(defun sectioned (x) x)
+
+;; above the docstring
+(defun both (x) \"and its own docstring\" x)"
+                      "sample.lisp")
+    (declare (ignore file))
+    (flet ((doc-for (name)
+             (let ((e (find name (entities-of-type g :function)
+                            :key (lambda (x) (and (slot-boundp x 'name) (name x)))
+                            :test #'equal)))
+               (and e (gethash :documentation (properties e))))))
+      (is (string= (format nil "why g exists~%") (doc-for "g"))
+          "markers stripped -- the words are the prose, the semicolons are syntax")
+      (is (null (doc-for "separated"))
+          "a gap makes it :SEPARATED, which indexing declines (DES-0027 D3a)")
+      (is (null (doc-for "sectioned"))
+          "a heading is about everything below it, not about the next definition")
+      (is (search "above the docstring" (doc-for "both")))
+      (is (search "and its own docstring" (doc-for "both"))
+          "both, comment first, because that is source order"))))
+
+(test comment-line-text-strips-the-marker-and-one-space
+  (let ((a (make-instance 'lisp-analyzer)))
+    (is (string= "why" (comment-line-text a ";; why")))
+    (is (string= "why" (comment-line-text a "   ;;; why")))
+    (is (string= " why" (comment-line-text a ";;  why") ) "only one space is the marker's")
+    (is (string= "(defun f ())" (comment-line-text a "(defun f ())"))
+        "a line that is not a comment is returned untouched")))

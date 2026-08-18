@@ -47,7 +47,26 @@
     ;; empty: a caller iterating them should get [] rather than having to
     ;; treat null as "none".
     :unenforced :collisions :unhandled-definer-macros :items :seeds :relations
-    :properties-filters :call-names)
+    :properties-filters :call-names
+    ;; The transition report (REQ-0022). :PROBLEMS empty is the ordinary
+    ;; answer and :CHANGED empty is what a dry run and an already-completed
+    ;; plan both return, so all three have to encode as [] rather than null --
+    ;; a client branching on "did anything happen" reads these directly.
+    ;; DES-0020's context bands need nothing added: :DOCUMENTS and :MENTIONS are
+    ;; already above, carrying the same meaning for the impact report that they
+    ;; now carry for a bundle, which is the point of the two services sharing
+    ;; one vocabulary.
+    :problems :changed :blocked-by
+    ;; The structural report (DES-0022 S1). Every one of these is a list that is
+    ;; legitimately empty -- a tree with no protocols, or one no analyzer
+    ;; claimed -- and [] against null is exactly the distinction an init script
+    ;; reading this over REST has to make.
+    :systems :system-edges :protocols :implementors :entry-points :hubs
+    ;; The init report (DES-0022 S2). :CREATED empty is what an
+    ;; already-prepared tree returns and :SKIPPED empty is the ordinary answer,
+    ;; so both have to be [] -- a caller branching on "did anything happen"
+    ;; reads them directly.
+    :created :skipped :candidates :deleted :kept)
   "Keys whose value is a sequence even when it is empty.
 
 Two jobs. NIL under one of these encodes as [] rather than null, so an empty
@@ -91,6 +110,31 @@ A struct rather than an alist because an alist is indistinguishable from data
 the walker is supposed to encode as an array."
   (members '()))
 
+(defstruct (json-false (:constructor %make-json-false))
+  "The JSON literal `false', which no Lisp value in this system can express.
+
+NIL is this encoder's third overloaded value, beside the two the file header
+already names: it is false, it is the empty list, and it is absent, and until
+now it always encoded as null. *ARRAY-VALUED-KEYS* separates the empty list
+from the other two by asking which key the value arrived under. This separates
+false, and it cannot use the same instrument -- an empty list is still a list
+whatever key it came under, so a key is enough to identify it, while a false is
+indistinguishable from an absent NIL by anything except what the producer meant.
+So the producer says, by handing over this value instead of NIL.
+
+Wanted because a protocol can require a boolean where this system would
+naturally write NIL. MCP's tools/call result is exactly that: isError is typed
+boolean, a client validates the shape before reading it, and null fails that
+validation for every call including the successful ones. BUG-0028.
+
+Deliberately not a general boolean type. `(eq x t)' already encodes true, and a
+second way to spell true would let two producers disagree about which one the
+encoder honours.")
+
+(defparameter *json-false* (%make-json-false)
+  "The singleton JSON-FALSE. A producer that means the literal `false' writes
+this where it would otherwise write NIL.")
+
 (defun plist-shaped-p (list)
   "True when LIST should be read as a plist rather than as a sequence.
 
@@ -132,6 +176,10 @@ the parent's name down would make a NIL element of :impacted encode as []."
         ((stringp x) x)
         ((numberp x) x)
         ((eq x t) t)
+        ;; Before the NIL clause in intent though not in necessity -- a struct
+        ;; is not NIL -- and before the PRINC-TO-STRING fallback, which would
+        ;; otherwise render it as "#S(JSON-FALSE)".
+        ((json-false-p x) x)
         ((null x) (if (member key *array-valued-keys*) #() nil))
         ((hash-table-p x)
          ;; Sorted by key, because a hash table has no order of its own and an
@@ -155,7 +203,8 @@ the parent's name down would make a NIL element of :impacted encode as []."
         (t (princ-to-string x))))
 
 (defun write-json-value (value stream)
-  (cond ((json-object-p value)
+  (cond ((json-false-p value) (write-string "false" stream))
+        ((json-object-p value)
          (write-char #\{ stream)
          (loop for member in (json-object-members value)
                for first = t then nil

@@ -73,6 +73,63 @@ body: |
   whether YAML stops being the source of truth entirely, is left to the
   architect; either way the decision record must say which.
 
+  A FOURTH GAP, AND WHY IT DOES NOT DECIDE THE QUESTION -- 2026-08-11
+
+  Files as the system of record hold up well for one developer on one branch.
+  Several developers on several branches allocate document ids from the state
+  each can see, and two of them will pick the same number. So the id space is a
+  real gap alongside the three above, and it was invisible while this tree had
+  one line of document history.
+
+  It is smaller than it looks and it does not settle the database question.
+  Git catches the ordinary case, because the filename carries the id: two
+  branches adding REQ-0025.yaml collide add/add and a human resolves it. The
+  residue is a conflict resolved by renaming one file without changing the id
+  inside it, or a document copied rather than moved into completed/. For the
+  id-keyed types -- DEC, DES, ARCH, RULE, CON -- that collapses two documents
+  into one entity with nothing reported, which is the part worth fixing.
+
+  A database is one answer. Merge-safe ids are another and cost far less: a
+  per-branch or per-author prefix, allocation from the shared service, or a
+  duplicate-doc-id check that makes the residual case visible rather than
+  silent. None of those requires overriding DEC-0001, and readable sequential
+  ids -- the thing that makes "REQ-0014" quotable in prose and in a commit
+  message -- survive all three.
+
+  WHAT A DATABASE WOULD COST, WHICH THIS DOCUMENT DID NOT PRICE
+
+  Documents in a database have one global state; code in Git has a state per
+  branch. A REQ marked implemented in the database is implemented on which
+  branch? Today a feature branch carries its own documents, so `impact` on that
+  branch describes that branch, and REQ-0021 depends on this directly -- it
+  installs Loom on a branch and leaves the dev team to carry the documents
+  across branches by merge, exactly as they carry code.
+
+  Moving documents to a database decouples the reasoning from the code it
+  describes. That is the specific thing DEC-0001 exists to prevent, and it is a
+  larger loss than the three gaps above are a cost. An override of DEC-0001 for
+  this category of file is what this requirement asks for and remains
+  defensible -- but the price is branch-locality, and it should be paid
+  knowingly rather than discovered.
+
+  WHAT HAS CHANGED SINCE THIS WAS WRITTEN
+
+  The first gap has a file-based answer now. REQ-0022 makes document state
+  transitions a Loom command rather than a rule, on the grounds that a rule can
+  only describe a transition and never perform one. That is the enforcement
+  this requirement wanted, without a database.
+
+  The second and third gaps -- no owner, no structured reason for a change --
+  are plausibly fields in the YAML written by that same command, since the
+  command is already the one thing performing the transition. If that holds,
+  three of the four gaps close without overriding DEC-0001, and what remains is
+  the id space, which is the cheapest of the four.
+
+  The honest position is therefore: try merge-safe ids and REQ-0022's fields
+  first; revisit the database if ownership and workflow enforcement turn out to
+  need transactions across developers that files cannot give. This requirement
+  stays open as the recorded alternative rather than the plan.
+
   WHY THIS MATTERS NOW
 
   REQ-0008 asks Loom to become a long-lived, in-image service reachable over

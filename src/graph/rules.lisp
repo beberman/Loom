@@ -56,6 +56,47 @@ storage-agnostic\"."
                                      (entity-name-or-id view (from-id edge))
                                      (entity-name-or-id view (to-id edge))))))))
 
+(defmethod run-check ((kind (eql :no-call-to)) view rule check)
+  "No edge of these types may reach any of these named callees.
+
+:NO-EDGE's narrower sibling, and the answer to BUG-0009's cause two. A
+layering rule that names a whole system -- \"analyzers never reach the graph\"
+-- is exactly what :NO-EDGE says, and RULE-0001 and RULE-0002 mean it. But
+RULE-0003 does not: loom-knowledge depends on loom-graph *in order to read
+it*, and its own statement forbids only \"apply-transaction or any other
+function that submits a transaction\". Checked as :NO-EDGE, that rule reported
+every legitimate NEIGHBORS and GET-ENTITY call as an error -- 63 of them on
+this tree, and not one a breach.
+
+TO-NAMES is the list of callee names, compared with STRING-EQUAL against the
+entity's own name. FROM-SYSTEM and TO-SYSTEM keep :NO-EDGE's meaning, TO-SYSTEM
+defaulting to :OUTSIDE, so the check still reads as a statement about a
+boundary rather than a grep: a same-named function inside FROM-SYSTEM is not a
+crossing and is not reported.
+
+This is a deny list, and it is worth being plain about what that costs. A
+writer added to the target system later is not covered until someone adds its
+name here, so the rule is only as current as its TO-NAMES. The alternative --
+listing the permitted readers instead -- fails closed but puts the upkeep on
+every new query, and RULE-0003's prose names the writers, so this is the form
+that keeps the check and the sentence above it saying the same thing."
+  (let ((from (getf check :from-system))
+        (to   (or (getf check :to-system) (getf check :to) :outside))
+        (types (or (getf check :rel-types) '(:calls)))
+        (names (getf check :to-names)))
+    (when (and from names)
+      (loop for edge in (edges-between-systems view from to :rel-types types)
+            for target = (entity-name-or-id view (to-id edge))
+            when (member target names :test #'string-equal)
+              collect (make-violation
+                       :rule-id (getp rule :doc-id)
+                       :severity (getp rule :severity)
+                       :subject (id edge)
+                       :detail (format nil "~(~a~) edge from ~a to ~a"
+                                       (rel-type edge)
+                                       (entity-name-or-id view (from-id edge))
+                                       target))))))
+
 (defmethod run-check ((kind (eql :requires-edge)) view rule check)
   "Every entity of this type must have an edge of one of these types."
   (let ((entity-type (getf check :entity-type))

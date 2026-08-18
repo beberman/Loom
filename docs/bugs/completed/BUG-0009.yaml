@@ -1,9 +1,9 @@
 id: BUG-0009
 title: RULE-0002 and RULE-0003, now that check can see them, report 72 false positives
-status: open
+status: closed
 date: 2026-08-05
 refines: [BUG-0006, PLAN-0008]
-affects: [entity-system, edges-between-systems, run-check]
+affects: [entity-system, edges-between-systems, run-check, parse-check]
 tags: [rules, layering, check, false-positive]
 summary: |
   BUG-0006 fixed `entity-system` to classify a source file by the segment
@@ -21,8 +21,15 @@ summary: |
 
   Half fixed as of 2026-08-06: PLAN-0008 landed DES-0009 and cause one closed
   as a side effect, taking the count from 72 to 32. The title's 72 is the
-  original measurement and is kept as such. See MEASURED AGAIN below. Cause two
-  is untouched, which is why this stays open.
+  original measurement and is kept as such. See MEASURED AGAIN below.
+
+  Closed 2026-08-15. Cause two is fixed by a fifth check kind, :NO-CALL-TO,
+  which keeps :NO-EDGE's from-system/to-system framing and adds a TO-NAMES
+  list of callees, so RULE-0003's check clause can finally say what its own
+  statement says. `check` reports 0 violations on this tree, down from the
+  63 the count had grown to. See CAUSE TWO, FIXED below -- including why
+  that zero is not the vacuous one this document spent two sections warning
+  about.
 body: |
   WHAT WAS MEASURED
 
@@ -176,3 +183,91 @@ body: |
   zero violations for every rule, which is BUG-0006's vacuous pass reached by a
   different route. 32 is the number that says the vocabularies agree; the
   32 named calls above are what it is made of.
+
+  CAUSE TWO, FIXED
+
+  /usr/bin/sbcl, branch foreign-tree, 2026-08-15, `tools/loom.sh 'reindex |
+  check'`:
+
+    0 violations, 1 unenforced rule (RULE-0004)
+
+  Against 63 before. The 32 measured after DES-0009 had grown to 63 in the
+  meantime -- not a regression, just more knowledge-layer code doing more
+  reading: structure's SYSTEM-TALLY, PROTOCOL-REPORT, ENTRY-POINT-REPORT and
+  HUB-REPORT (DES-0022 S3), context's PROSE-ATTRIBUTION and DOCUMENT-PROSE-ROW
+  (DES-0020). Every added violation was the same false positive as the
+  original 32, which is the shape of the cost: a rule reporting noise gets
+  noisier as the code it is wrong about grows.
+
+  THE FIX: A FIFTH CHECK KIND
+
+  :NO-CALL-TO, in src/graph/rules.lisp beside the four kinds that were already
+  there, and in LOOM-ANALYZER:*CHECK-KINDS* so PARSE-CHECK will compile it.
+  It takes :NO-EDGE's FROM-SYSTEM and TO-SYSTEM unchanged -- TO-SYSTEM still
+  defaulting to :OUTSIDE, the crossing still the thing being checked -- and
+  adds TO-NAMES, a list of callee names compared with STRING-EQUAL. RULE-0003
+  now names the fourteen loom-graph functions that mutate: APPLY-TRANSACTION,
+  APPLY-OP, CASCADE-STALENESS, REINDEX-ENTITY, the four ABSORB-*, ADD-ENTITY,
+  REMOVE-ENTITY, ADD-RELATIONSHIP, REMOVE-RELATIONSHIP, INDEX-ORIGIN and
+  UNINDEX-ORIGIN.
+
+  Keeping TO-SYSTEM in the comparison is what stops the kind degenerating into
+  a name grep: loom-knowledge calling its own ADD-ENTITY, were there one,
+  crosses no boundary and is not reported. A-NO-CALL-TO-CHECK-IGNORES-A-SAME-
+  NAMED-CALLEE-INSIDE-THE-SYSTEM pins that.
+
+  WHY A DENY LIST, GIVEN CON-0001
+
+  The alternative was an allow list -- name the permitted readers, report
+  everything else -- which fails closed: a mutator added to loom-graph later is
+  caught with no edit to the rule. That is the safer default and it was not
+  chosen, so the cost should be stated rather than buried. This rule is only as
+  current as its TO-NAMES; a fifteenth mutator is unreported until someone adds
+  it. What the deny list buys is that RULE-0003's check clause and RULE-0003's
+  own sentence name the same things -- "apply-transaction or any other function
+  that submits a transaction" is a claim about writers, and a check that
+  enumerated twenty-five readers instead would be a different claim wearing the
+  same title. The upkeep also falls where the risk is: adding a writer to
+  loom-graph is rare and deliberate, adding a query is neither.
+
+  This is not CON-0001's case. CON-0001 is about minting a fact from ambiguous
+  evidence; a deny list mints nothing and fabricates nothing. It is a stated
+  coverage boundary, which is what CON-0001 asks for in place of a guess.
+
+  WHY THE 0 IS NOT VACUOUS
+
+  This document twice warns that zero is the failure mode, so the guard is
+  named explicitly. Four tests in src/graph/test/rules.lisp and one in
+  src/analyzer/test/yaml-analyzer.lisp run against *RULE-0003-CHECK*, which is
+  RULE-0003.yaml's clause copied verbatim rather than an invented two-name
+  fixture:
+
+    RULE-0003-CATCHES-KNOWLEDGE-WRITING-UNDER-THE-REAL-SRC-LAYOUT
+      DESCRIBE-ENTITY -> APPLY-TRANSACTION is still one violation. If
+      :NO-CALL-TO matched nothing, this is the test that goes red.
+    THE-NO-CALL-TO-CHECK-PERMITS-THE-READ-IT-IS-NOT-ABOUT
+      DESCRIBE-ENTITY -> NEIGHBORS is none. This is the 63, as a test.
+    THE-NO-CALL-TO-CHECK-NAMES-THE-CALLEE-IT-CAUGHT
+      both edges from one caller: the write reported, the read beside it not.
+    A-NO-CALL-TO-CHECK-WITH-NO-NAMES-REPORTS-NOTHING
+      the degenerate clause refuses, as :NO-EDGE does without from-system.
+    THE-RULE-DOCUMENTS-COMPILE-TO-THE-SYSTEM-VOCABULARY-THE-ANALYZER-WRITES
+      reads docs/rules/RULE-0003.yaml itself and asserts the kind is
+      :NO-CALL-TO and that APPLY-TRANSACTION and ADD-RELATIONSHIP are in the
+      parsed TO-NAMES -- the guard against a to-names: that silently failed to
+      parse, which would read as a clean tree.
+
+  Reverting the kind in *RULE-0003-CHECK* to :no-edge and rerunning was done
+  before this was written: three of those fail. CON-0003.
+
+  WHAT IS STILL OPEN, AND IT IS NOT THIS
+
+  DES-0009 R10's family-membership gap -- comparing :system values by prefix
+  rather than by EQ, so "nothing outside this family" is one rule on a tree
+  shaped like game-server's fourteen `game/` packages. R10 pairs it with this
+  document's cause two as "the same class of gap", and it is the same class,
+  but it is a different axis: this one widened what a check may say about the
+  *callee*, R10 wants to widen what FROM-SYSTEM and TO-SYSTEM may match. The
+  two do not interact -- :NO-CALL-TO inherits whatever those two come to mean,
+  since it delegates to EDGES-BETWEEN-SYSTEMS unchanged. Whoever takes R10
+  should not expect to find any of it done here.

@@ -74,28 +74,124 @@ to guess which repository a program meant is the point."
   "The graph REQUIRE-REPOSITORY's answer holds."
   (repository-graph (require-repository designator)))
 
+;;;; ==================================================================
+;;;; Reading a wire value -- one predicate and one converter per type
+;;;; ==================================================================
+;;;;
+;;;; Both skins reach the same entry with different types: an HTTP query
+;;;; parameter is always a string, a JSON body carries a real number or a real
+;;;; boolean, and an entry should not have to know which arrived.
+;;;;
+;;;; Split into a predicate, a converter and a request-level coercer because
+;;;; the three answer different questions and a caller usually wants only one
+;;;; of them. IS-INTEGER-P asks whether a value can be read. TO-INTEGER reads
+;;;; it. REQUEST-INTEGER reads it or refuses the request, which is the one an
+;;;; operation entry wants and the only one that knows what to call the
+;;;; argument in a message.
+;;;;
+;;;; game-server BUG-0001 is what this shape is answering. That tree decodes an
+;;;; integer by signalling on junk and a boolean by returning false on junk,
+;;;; three lines apart in one function, and has three exported predicates
+;;;; disagreeing about what a number is. The lesson taken here is not that
+;;;; strict beats permissive -- it is that the policy must be stated once and
+;;;; shared, because the two branches there were written by the same author on
+;;;; the same day and still disagreed.
+
+(defparameter *true-tokens* '("true" "t" "1" "yes" "on")
+  "Spellings of true a caller may send. Compared case-insensitively.
+
+Wider than a JSON boolean because a query string has no booleans: `?source=1'
+and `?source=true' are both ordinary, and refusing one would make the REST
+surface stricter than the MCP one for no reason a caller could discover.")
+
+(defparameter *false-tokens* '("false" "nil" "0" "no" "off")
+  "Spellings of false. An explicit false is a request and not junk, so it is
+enumerated rather than left to fall through -- the whole point of BUG-0031's
+sibling defect is that unreadable input must not arrive at the same answer an
+author deliberately asked for.")
+
+(defun is-integer-p (value)
+  "True when VALUE can be read as an integer -- already one, or a string
+spelling one exactly. A partial parse is not an integer: \"3x\" is a question
+about intent and REV-0001 finding 4 is why it is not answered as 3."
+  (typecase value
+    (integer t)
+    (string (multiple-value-bind (n end) (parse-integer value :junk-allowed t)
+              (and n (= end (length value)) t)))
+    (t nil)))
+
+(defun to-integer (value)
+  "VALUE as an integer, or NIL when it is not one. IS-INTEGER-P is the test."
+  (typecase value
+    (integer value)
+    (string (multiple-value-bind (n end) (parse-integer value :junk-allowed t)
+              (and n (= end (length value)) n)))
+    (t nil)))
+
+(defun is-boolean-p (value)
+  "True when VALUE can be read as a boolean.
+
+T counts, and so does every spelling in *TRUE-TOKENS* and *FALSE-TOKENS*. NIL
+does not: an absent argument and an argument spelled `false' are different
+requests, and every caller here distinguishes them by testing for NIL first."
+  (or (eq value t)
+      (and (member value '(:true :false)) t)
+      (and (stringp value)
+           (or (member value *true-tokens* :test #'string-equal)
+               (member value *false-tokens* :test #'string-equal))
+           t)))
+
+(defun to-boolean (value)
+  "VALUE as a boolean, and a second value saying whether it could be read.
+
+Two values because one cannot carry the answer: NIL is both a legitimate false
+and the only thing an unreadable value could return, and collapsing them is
+precisely game-server BUG-0001's silent misread. A caller that ignores the
+second value has written the bug that report is about."
+  (cond ((eq value t) (values t t))
+        ((eq value :true) (values t t))
+        ((eq value :false) (values nil t))
+        ((and (stringp value) (member value *true-tokens* :test #'string-equal))
+         (values t t))
+        ((and (stringp value) (member value *false-tokens* :test #'string-equal))
+         (values nil t))
+        (t (values nil nil))))
+
 (defun request-integer (value what)
   "VALUE as a non-negative integer, NIL when absent, or a malformed request.
 
-Both skins reach the same entry with different types: an HTTP query parameter
-is a string and a JSON body carries a number, and the entry should not have to
-know which arrived. Junk is refused rather than truncated, which is
-console.lisp's RESOLVE-COUNT answer and REV-0001 finding 4's reason -- `depth
-3x' meaning 3 is a guess about intent, and a wrong guess about a bound is
-invisible in the output, because the report is simply smaller than the caller
-asked for."
+Junk is refused rather than truncated, which is console.lisp's RESOLVE-COUNT
+answer and REV-0001 finding 4's reason -- `depth 3x' meaning 3 is a guess about
+intent, and a wrong guess about a bound is invisible in the output, because the
+report is simply smaller than the caller asked for."
   (cond ((null value) nil)
-        ((and (integerp value) (not (minusp value))) value)
-        ((stringp value)
-         (multiple-value-bind (n end) (parse-integer value :junk-allowed t)
-           (unless (and n (= end (length value)) (not (minusp n)))
-             (error 'malformed-request
-                    :message (format nil "~a must be a non-negative integer, not ~s."
-                                     what value)))
-           n))
+        ((and (is-integer-p value) (not (minusp (to-integer value))))
+         (to-integer value))
         (t (error 'malformed-request
                   :message (format nil "~a must be a non-negative integer, not ~s."
                                    what value)))))
+
+(defun request-boolean (value what)
+  "VALUE as a flag, NIL when absent, or a malformed request.
+
+REQUEST-INTEGER's policy applied to the other shape the skins disagree about,
+and applied deliberately rather than by coincidence: junk is refused, not read
+as false.
+
+That asymmetry is the whole point and game-server BUG-0001 is the counterexample
+that argues it. A caller who sent `source=yep' asked for something; answering as
+though they had asked for nothing returns a smaller answer than they wanted with
+nothing in it saying so. It is REQUEST-INTEGER's invisible-wrong-bound failure
+in the one place it would be quieter still, because a suppressed body reads
+exactly like a definition that has none."
+  (if (null value)
+      nil
+      (multiple-value-bind (result readable) (to-boolean value)
+        (unless readable
+          (error 'malformed-request
+                 :message (format nil "~a must be true or false, not ~s."
+                                  what value)))
+        result)))
 
 ;;;; ==================================================================
 ;;;; Read tier (R2's seven names)
@@ -123,10 +219,23 @@ The console's own cap, so the two answer the same question the same way.")
                                     (intern (string-upcase (string entity-type)) :keyword))
                          :limit (or (request-integer limit "limit") *find-limit*))))
 
-(define-operation :describe :read (repository term)
-    "Full detail for one entity, with its neighbours grouped by edge type."
-  (let ((graph (repository-view repository)))
-    (describe-entity graph (id (resolve-entity graph term)))))
+(define-operation :describe :read (repository term (source))
+    "Full detail for one entity, with its neighbours grouped by edge type. \
+Pass source=true for the definition's text."
+  ;; REQ-0031 R1 and R2. The optional SOURCE is what makes this available on
+  ;; REST and MCP at once: loom-rest walks ARG-SHAPE for routes and loom-mcp
+  ;; walks it for tools/list, so declaring the argument declares both surfaces
+  ;; and neither file is edited. DES-0006 R5's property, exercised.
+  (let* ((repository-struct (require-repository repository))
+         (graph (repository-graph repository-struct))
+         (entity (resolve-entity graph term))
+         (detail (describe-entity graph (id entity))))
+    (if (request-boolean source "source")
+        ;; Appended under its own key rather than folded into :PROPERTIES: the
+        ;; text is not a fact the analyzer asserted about the entity, it is a
+        ;; read of a file performed now, and its :STATUS is about that read.
+        (append detail (list :source (definition-source repository-struct (id entity))))
+        detail)))
 
 (define-operation :impact :read (repository term (depth))
     "What may need attention if this changes, with paths and depths."
@@ -139,7 +248,32 @@ The console's own cap, so the two answer the same question the same way.")
     "A budgeted context bundle for a task: what to know before editing."
   ;; BUILD-CONTEXT and no RENDER-CONTEXT. The rendering step is what turns the
   ;; bundle into the text a console prints, and a program wants the bundle.
-  (build-context (repository-view repository) task))
+  ;; SOURCE-FN rather than a call from inside BUILD-CONTEXT: DEFINITION-SOURCE
+  ;; is loom-workspace's because it needs REPOSITORY-ROOT, and loom-knowledge
+  ;; cannot reach up there (DES-0027 D1). This entry has the repository, so the
+  ;; fetch is passed in and the tier logic stays where the bundle is built.
+  (let ((repo (require-repository repository)))
+    (build-context (repository-graph repo) task
+                   :source-fn (lambda (id) (definition-source repo id)))))
+
+(define-operation :structure :read (repository)
+    "Systems, protocols, entry points and hubs, derived from the index."
+  ;; REQ-0021 R5, and the shape matters more than usual: DES-0022 D4 requires
+  ;; that the console printer and the document generator walk the same plist,
+  ;; so this returns the report and renders nothing. An init script asking for
+  ;; a tree's structure over REST gets the data a human sees formatted, not a
+  ;; second, prose-shaped answer it would have to parse.
+  (let ((watched (require-repository repository)))
+    (multiple-value-bind (commit reason) (repository-commit watched)
+      (structure-report (repository-graph watched)
+                        :commit commit
+                        :commit-reason reason
+                        :repository (repository-name watched)))))
+
+(define-operation :drift :read (repository)
+    "Where the prose and the index disagree. Candidates for review, not findings."
+  (let ((watched (require-repository repository)))
+    (prose-report (repository-graph watched) :repository (repository-name watched))))
 
 (define-operation :status :read ((repository))
     "Index size, watcher health, unresolved references, rule violations."
@@ -233,6 +367,35 @@ The console's own cap, so the two answer the same question the same way.")
     (let ((watched (require-repository repository)))
       (repository-status (unwatch-repository (repository-name watched))))))
 
+(define-operation :init :write (path (document-directory) (endpoint) (append-claude-md))
+    "Prepare a repository for the Loom workflow. Writes files; never commits."
+  ;; The consent is an argument here for the reason it is one at the console:
+  ;; REQ-0021 R16 puts the asking where a terminal is, and a service has none.
+  ;; A caller that omits APPEND-CLAUDE-MD gets the conservative answer, which
+  ;; is that an existing CLAUDE.md is not touched.
+  (prepare-repository path
+                      :document-directory (or document-directory "docs")
+                      :endpoint (or endpoint *default-endpoint*)
+                      :append-claude-md
+                      (and append-claude-md
+                           (not (string-equal "false" (princ-to-string append-claude-md)))
+                           t)))
+
+(define-operation :architecture :write (repository)
+    "Write an ARCH document from the index. Says only what was measured."
+  ;; :WRITE rather than :READ, and the tier is the whole point: :STRUCTURE
+  ;; returns the same measurements and changes nothing, while this puts a file
+  ;; in somebody's repository.
+  (generate-architecture (require-repository repository)))
+
+(define-operation :remove :write (repository (mode))
+    "Take Loom out of a prepared repository. Documents stay unless mode is all."
+  (let ((watched (require-repository repository)))
+    (remove-preparation (repository-root watched)
+                        :mode (if (and mode (string-equal "all" (princ-to-string mode)))
+                                  :all
+                                  :tooling))))
+
 (define-operation :reindex :write (repository)
     "Discard and rebuild the index from disk. Always safe."
   ;; No registry lock either, for PAUSE's reason: REINDEX-REPOSITORY replaces
@@ -241,3 +404,49 @@ The console's own cap, so the two answer the same question the same way.")
   (let ((watched (require-repository repository)))
     (reindex-repository watched :quiet t)
     (repository-status watched)))
+
+;;;; ------------------------------------------------------------------
+;;;; Document state transitions (REQ-0022 R6, DES-0019 D9)
+;;;;
+;;;; The first two entries in this table that write a file rather than an
+;;;; index, and the reason they are here at all rather than only in the console.
+;;;; REQ-0021 requires installed agents to reach Loom through the service --
+;;;; REST under /v1/ or MCP at /mcp -- rather than through a path inside Loom's
+;;;; own tree, because a prepared worktree has no tools/loom.sh in it. A
+;;;; console-only transition command would be unusable in exactly the deployment
+;;;; that motivated building it.
+;;;;
+;;;; They name their repository like everything else here, and REQUIRE-REPOSITORY
+;;;; refuses to guess. That refusal matters more for these two than for any read
+;;;; entry above: a misdirected query is a wrong answer, while a transition that
+;;;; wrote into the wrong worktree has edited somebody else's documents.
+;;;; ------------------------------------------------------------------
+
+(defun transition-result (report)
+  "REPORT as an answer, or a MALFORMED-REQUEST naming every problem it collected.
+
+A refusal is a statement about the request -- a status outside the document's
+vocabulary, a verdict for a blocked document, a plan whose file has no top-level
+status line -- so it belongs on the 400 path rather than arriving as a 200 with
+a problems array a client has to remember to read. All of them in one message,
+because the underlying command collected them all for that purpose."
+  (let ((problems (getf report :problems)))
+    (if problems
+        (error 'malformed-request
+               :message (format nil "~{~a~^~%~}" problems))
+        report)))
+
+(define-operation :set-status :write (repository document status)
+    "Set one document's status and file it where that status belongs."
+  (transition-result
+   (set-document-status (require-repository repository) document status)))
+
+(define-operation :complete :write (repository plan (verdicts))
+    "Set a plan final and restate every document it implements. Without verdicts, a dry run."
+  ;; VERDICTS is one string -- "DES-0019=implemented REQ-0022=partial" -- and
+  ;; not an object, because an MCP tool argument is declared a string by
+  ;; TOOL-INPUT-SCHEMA and an HTTP query parameter is one whatever it means.
+  ;; One spelling that works on all three surfaces beats a richer shape that
+  ;; works on one of them.
+  (transition-result
+   (complete-plan (require-repository repository) plan :verdicts verdicts)))

@@ -46,6 +46,17 @@ logfile=/tmp/loom-serve-${sanitized}.log
 base=http://127.0.0.1:4780/v1
 repository=${root##*/}
 
+# Extra repositories to watch alongside this one, one absolute path per line,
+# '#' comments and blank lines ignored. Gitignored, because the paths are a
+# property of one machine and not of the project.
+#
+# It exists so dogfooding survives a restart. Loom's recurring defect is a
+# mechanism correct on the tree it was developed against and wrong on the next
+# one -- REQ-0012, REQ-0015 and REQ-0016 are three in one afternoon, and
+# BUG-0030 is a fourth found the moment a third tree was watched. A tree that
+# has to be re-watched by hand after every `update` is a tree nobody queries.
+extra_repos_file=${LOOM_EXTRA_REPOS:-$(dirname "$0")/extra-repos}
+
 # ------------------------------------------------------------------
 # Reading the answers back
 # ------------------------------------------------------------------
@@ -144,7 +155,20 @@ cmd_start() {
         echo "already running ($state)"
         return 0
     fi
-    nohup sbcl --script loom-serve.lisp --headless "$root" >>"$logfile" 2>&1 &
+    # loom-serve.lisp takes any number of repository roots. A missing or empty
+    # file leaves the array empty and the command identical to what it was.
+    local extra=()
+    if [ -f "$extra_repos_file" ]; then
+        local line
+        while IFS= read -r line || [ -n "$line" ]; do
+            line=${line%%#*}
+            line="${line#"${line%%[![:space:]]*}"}"
+            line="${line%"${line##*[![:space:]]}"}"
+            [ -n "$line" ] && extra+=("$line")
+        done < "$extra_repos_file"
+    fi
+    nohup sbcl --script loom-serve.lisp --headless "$root" \
+          ${extra[@]+"${extra[@]}"} >>"$logfile" 2>&1 &
     disown
     # ~20s, a generous multiple of the seconds-scale startup PLAN-0005 measured.
     local i

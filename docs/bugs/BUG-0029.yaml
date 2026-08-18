@@ -1,0 +1,123 @@
+id: BUG-0029
+title: Name resolution folds case, so in a case-sensitive language every logger.error call becomes an edge to a component named Error
+status: open
+date: 2026-08-14
+refines: [REQ-0024]
+affects: [resolve-calls, resolve-one, build-definition-index, impact-set,
+          structure-report]
+tags: [resolution, javascript, generality, con-0001, false-edge, req-0024]
+summary: |
+  RESOLVE-CALLS matches a call name to a definition through an index keyed on
+  STRING-DOWNCASE (resolve.lisp:40 and :1097, read back at :1115). That is
+  correct for Common Lisp, where the reader upcases every symbol and `Error'
+  and `error' genuinely name one thing. It is wrong for every case-sensitive
+  language, and JavaScript is the first one Loom indexes.
+
+  Measured on ~/github/front-end the day the JavaScript analyzer landed: three
+  components named `Error' each collect 116 inbound edges, which makes them the
+  top three hubs in `structure' ahead of every real one. Not one of those edges
+  is a call to any of them. They are `logger.error(...)' call sites -- 116 of
+  them across models, data-api, core, ui and utils -- matching a component
+  named `Error' on a spelling the language does not consider equal.
+
+  The repository really does render `<Error />`, twice, in DesignHome.jsx. So
+  the correct inbound count for the whole tree is 2, and the index reports 348.
+body: |
+  WHAT IS WRONG
+
+  The definition index is built once per resolution pass and keyed on the
+  lowercased name:
+
+      resolve.lisp:40     (push entity (gethash (string-downcase (name entity)) index))
+      resolve.lisp:1097   the same, for the document/definition index
+      resolve.lisp:1115   (gethash (string-downcase name) index)
+
+  Nothing in that lookup knows what language either side was written in. A
+  :FUNCTION carrying :LANGUAGE :JAVASCRIPT and a call name extracted from a
+  JavaScript file are matched by the same case-folding rule as two Lisp
+  symbols.
+
+  Case folding is not a detail of the Lisp analyzer that leaked. It is correct
+  and necessary there: `(defun Foo ...)' and `(foo)' are the same symbol after
+  the reader has run, and an index that distinguished them would resolve
+  nothing. The defect is that the rule is applied globally rather than per
+  language.
+
+  MEASURED, ~/github/front-end, 2026-08-14
+
+      files indexed                                     508
+      entities                                         4249
+      relationships                                    3207
+
+      `structure' hubs, by inbound edges
+        116   function Error   src/ui/common/utils/AsyncRedirect.jsx:32-58
+        116   function Error   src/ui/edit/design/pages/DesignHome.jsx:163-172
+        116   function Error   src/ui/edit/design/pages/SaveDesign.jsx:37-45
+         50   class Mapper     src/core/mapper.js:43-315
+
+      `<Error` in the source                              2
+      `logger.error(` and kin in the source             116
+
+  The first three rows are false and the fourth is the first true one. A reader
+  new to this repository who runs `structure' -- which is what `structure' is
+  for -- is told that an error-display component is the most connected thing in
+  the codebase.
+
+  WHY IT SURVIVED THE EXTRACTOR'S OWN FILTER
+
+  The JavaScript extractor already drops language globals from call names, for
+  a closely related reason: without that, `new Error(...)' recorded a call to
+  ERROR and the same three components collected 315 edges each rather than 116.
+  That filter is in and working -- the extractor now emits zero `Error' call
+  names across all 468 files, and the count still did not drop to 2.
+
+  The residue is a different fault and no extractor filter can reach it. These
+  are calls to a method genuinely named `error', on a logger the repository
+  genuinely defines. Both names are real, both are correctly extracted, and
+  they are distinct identifiers in the language. Only the matcher is wrong.
+
+  WHY IT IS NOT REQ-0015's AMBIGUITY
+
+  Every one of the 116 arrives through DES-0014's :CALL-SITE machinery and is
+  reported `(ambiguous)', because `error' matches several definitions. That
+  makes the output look like a known, disclosed weakness rather than a bug, and
+  it is worth saying why it is not.
+
+  REQ-0015 is about a name that genuinely matches several definitions and a
+  resolver that cannot tell which was meant. Here the name matches several
+  definitions only because the matcher invented the match. `error' and `Error'
+  are not two candidates for one call; they are two identifiers. Fanning out to
+  both at confidence 0.5 is CON-0001's fabricated fact wearing the confidence
+  machinery as a disguise -- and the disguise is what makes it worse than a
+  loud error, because the output is self-describing enough to look considered.
+
+  WHAT A FIX HAS TO DECIDE
+
+  The lookup key is shared by definitions and call names, and both sides carry
+  :LANGUAGE already, so the shape of the fix is available. What it has to
+  settle:
+
+  - Whether the index holds one table keyed on (language, name) or keeps one
+    table and filters candidates by language after lookup. The second is a
+    smaller change and preserves the current behaviour for any pair whose
+    languages agree; the first is what makes the key honest.
+
+  - What happens to a cross-language call. Nothing asserts one today, and
+    REQ-0027 wants exactly that between front-end and game-server, so the
+    answer should not be closed off by accident here.
+
+  - Whether a language's case rule belongs on the analyzer, beside
+    ANALYZER-HANDLES-P, or in the ontology beside *SOURCE-LANGUAGES*. The
+    analyzer knows it; the resolver is what needs it, and the resolver may not
+    depend on the analyzer.
+
+  NOT A REGRESSION
+
+  Nothing that worked before works differently now. Loom indexed no JavaScript
+  at all until 2026-08-14, and the Lisp and YAML analyzers are unaffected --
+  Common Lisp wants exactly the folding this does. What changed is that a
+  case-sensitive language entered the index for the first time and made a
+  language-specific rule visible as a global one. REQ-0024's summary predicted
+  this class in advance: three of the six requirements from the game-server
+  evaluation "are mechanisms that are correct against Loom's own tree and wrong
+  against the next one, for reasons invisible from inside the first."

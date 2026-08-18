@@ -304,6 +304,28 @@ its most durable form."
                (<= index (length arguments)))
       (nth (1- index) arguments))))
 
+(defun normalize-route (route)
+  "ROUTE with a leading and trailing `/' stripped, or NIL.
+
+DES-0025 D1, and deliberately the whole of the normalization. game-server
+writes \"/public/game/create\" and front-end writes \"public/game/create\";
+that one character is the entire difference between the two trees, measured
+rather than assumed. Inventing more -- case folding, collapsing a trailing
+segment, treating a parameter as a wildcard -- is how a matcher starts
+producing joins nobody wrote."
+  (let ((trimmed (and (stringp route) (string-trim "/" route))))
+    (when (and trimmed (plusp (length trimmed))) trimmed)))
+
+(defun definer-site-literal (site index)
+  "The string literal a call site supplied at INDEX, or NIL.
+
+:STRING-ARGUMENTS' counterpart to DEFINER-SITE-NAME above, and NIL for the
+same class of reason: a site that computed its route rather than spelling it
+supplies nothing here, and a route built at runtime is not a claim this pass
+can honestly record."
+  (when index
+    (cdr (assoc index (getf site :string-arguments)))))
+
 (defun generated-natural-key (type file name)
   "The natural key a generated entity of TYPE at FILE named NAME will carry.
 
@@ -416,6 +438,17 @@ belongs."
                              :generated-by (getf entry :name)
                              :call-names (getf site :call-names)
                              :framework (getf entry :framework)
+                             ;; DES-0025 D1. Present only for a declared
+                             ;; :ROUTE-INDEX, which is absent on every definer
+                             ;; that defines no endpoint -- that is, on all of
+                             ;; them but one so far.
+                             :routes (let ((route (normalize-route
+                                                   (definer-site-literal
+                                                    site (getf entry :route-index)))))
+                                       (when route (list route)))
+                             :route-role (when (definer-site-literal
+                                                site (getf entry :route-index))
+                                           :publishes)
                              :language (getp file :language)
                              ;; DES-0009 R6, and the same shortcut :LANGUAGE
                              ;; takes one line up, for the same reason: a
@@ -1157,6 +1190,53 @@ resolved on a previous pass is still in the property, so nothing drifts."
                                          :workspace-id workspace-id)
                             ops)
                       (pushnew name unresolved :test #'string=))))))
+          ;; --- link targets (BUG-0027) ---------------------------------
+          ;; The same weak edge a mention earns, and a different failure. A
+          ;; link target is a path an author wrote; when it resolves to nothing
+          ;; the file is not there, which is a fact rather than the ambiguity a
+          ;; backticked word might be. So it is reported where `check' looks
+          ;; instead of being dropped into REQ-0014's silence, which was written
+          ;; for ordinary prose and inherited by links only because the two
+          ;; populations were merged before anything could tell them apart.
+          (dolist (name (getp document :link-targets))
+            (let ((target (resolve-one index name)))
+              (cond
+                ;; Not in the index. That is NOT the same as not on disk, and
+                ;; the difference is the whole of why this branch does not
+                ;; report anything: game-server links to CLAUDE.md, which
+                ;; REQ-0028 excludes by name, and to data-api/sql/test.sql,
+                ;; which no analyzer claims. Both files are right there. Calling
+                ;; them broken would be a fabricated fact with a plausible
+                ;; shape, which is worse than the silence BUG-0027 set out to
+                ;; end.
+                ;;
+                ;; Whether a path exists is a filesystem question and loom-graph
+                ;; has no filesystem. CHECK-DOCUMENT-LINKS in loom-workspace
+                ;; owns it, because that is the layer that knows a repository
+                ;; has a root.
+                ((null target) nil)
+                ;; A link to another document. It resolved -- the file exists --
+                ;; so it is emphatically not broken, and reporting it would be a
+                ;; false positive of exactly the kind that teaches a reader to
+                ;; stop reading the list. It earns no edge because :MENTIONS may
+                ;; not terminate at a :DOCUMENT: the type is declared to reach
+                ;; code, and a document-to-document link is a different claim
+                ;; that CON-0004's refines: is for.
+                ;;
+                ;; The transaction validator caught this rather than the tests:
+                ;; docs/README.md links to design-summary/api.md, and the first
+                ;; version of this branch tried to assert an edge the ontology
+                ;; refuses. It refused the whole transaction, which is why a
+                ;; whole repository's document links vanished instead of one
+                ;; edge being silently wrong.
+                ((member (entity-type target) *document-types*) nil)
+                ((eq target document) nil)
+                (t (push (assert-edge :mentions document target
+                                      :workspace-id workspace-id
+                                      :source :inferred
+                                      :confidence *mention-confidence*
+                                      :derived-from (list (id target)))
+                         ops)))))
           ;; --- mentioned links -----------------------------------------
           (dolist (name (getp document :mentions))
             (let ((target (resolve-one index name)))
@@ -1177,8 +1257,17 @@ resolved on a previous pass is still in the property, so nothing drifts."
 
 (defun unresolved-references (view)
   "Every document reference that named nothing, as (document-name . name).
-What the status command reports, per SS3.2."
+What the status command reports, per SS3.2.
+
+Two properties, one report. :UNRESOLVED-REFERENCES holds names the index could
+not place -- a decision naming a function that no longer exists. :BROKEN-LINKS
+holds paths the filesystem does not have, which loom-workspace establishes
+because loom-graph cannot stat anything. They are separate where they are
+written, because they are found by different means at different layers, and
+together where they are read, because to somebody fixing a document they are one
+question: what does this name that is not there."
   (loop for type in *document-types*
         append (loop for document in (entities-of-type view type)
-                     append (loop for name in (getp document :unresolved-references)
+                     append (loop for name in (append (getp document :unresolved-references)
+                                                      (getp document :broken-links))
                                   collect (cons (name document) name)))))

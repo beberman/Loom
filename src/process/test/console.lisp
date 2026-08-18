@@ -303,3 +303,140 @@ misused conditional directive hid, printing the flag itself as the text")
                     (run-command "enrich no-such-repository"))))
       (is (search "no-such-repository" output)
           "the message CURRENT-REPOSITORY already produces, unchanged"))))
+
+;;; ------------------------------------------------------------------
+;;; Naming a repository (REQ-0023, DES-0021)
+;;;
+;;; A second fixture repository, because everything above runs against one and
+;;; the whole point of this mechanism only exists when two are watched. Built
+;;; beside the first rather than replacing it, so the single-repository tests
+;;; keep testing the case they were written for -- that case is the one
+;;; DES-0021 promises is unchanged, and a guard whose fixture moved guards
+;;; nothing.
+;;; ------------------------------------------------------------------
+
+(defvar *second-fixture-root* nil)
+
+(defun make-second-fixture-repository ()
+  "A second repository with a differently-named definition in it.
+The name is what the tests key on: asking for `beta' can only be answered by
+this repository, so an answer proves which graph was consulted."
+  (setf *second-fixture-root*
+        (merge-pathnames (format nil "loom-console2-~36r/" (random (expt 2 48)))
+                         (uiop:temporary-directory)))
+  (ensure-directories-exist *second-fixture-root*)
+  (let ((path (merge-pathnames "src/other.lisp" *second-fixture-root*)))
+    (ensure-directories-exist path)
+    (with-open-file (out path :direction :output
+                              :if-exists :supersede :if-does-not-exist :create)
+      (write-string "(defun beta (x) (* x 2))
+" out)))
+  (loom-workspace:watch-repository *second-fixture-root* :monitor nil :quiet t))
+
+(defmacro with-two-console-fixtures (&body body)
+  `(let ((first-repository (make-console-fixture-repository)))
+     (unwind-protect
+          (let ((second-repository (make-second-fixture-repository)))
+            (unwind-protect (progn ,@body)
+              (loom-workspace:unwatch-repository
+               (loom-workspace:repository-name second-repository))
+              (ignore-errors (uiop:delete-directory-tree *second-fixture-root*
+                                                        :validate t))
+              (setf *second-fixture-root* nil)))
+       (loom-workspace:unwatch-repository
+        (loom-workspace:repository-name first-repository))
+       (ignore-errors (uiop:delete-directory-tree *console-fixture-root* :validate t))
+       (setf *console-fixture-root* nil))))
+
+(defun run-to-string (line)
+  (with-output-to-string (*standard-output*) (run-command line)))
+
+(test with-two-watched-a-query-refuses-and-says-how-to-ask
+  ;; The refusal is correct -- answering from an arbitrary repository would be
+  ;; CON-0001's fabricated fact -- but it has to name the mechanism. The old
+  ;; message said "name one" and gave no way to, so a developer ran `status'
+  ;; first and then the command they meant.
+  (with-two-console-fixtures
+    (let ((output (run-to-string "find alpha")))
+      (is (search "Several repositories are watched" output))
+      (is (search "@" output)
+          "the refusal names the mechanism, not just the problem: ~s" output))))
+
+(test a-leading-token-names-the-repository-a-command-acts-on
+  ;; DES-0021 D1. `find' has no designator argument and gets one anyway,
+  ;; because the strip happens in the dispatcher rather than in the command.
+  (with-two-console-fixtures
+    (let ((first-name (loom-workspace:repository-name first-repository))
+          (second-name (loom-workspace:repository-name second-repository)))
+      (let ((output (run-to-string (format nil "find alpha @~a" first-name))))
+        (is (search "Several repositories" output)
+            "a trailing token is not a designator -- only a leading one is"))
+      (let ((output (run-to-string (format nil "find @~a alpha" first-name))))
+        (is (search "alpha" output))
+        (is (not (search "Several repositories" output))))
+      (let ((output (run-to-string (format nil "find @~a beta" second-name))))
+        (is (search "beta" output)
+            "and the second repository answers for its own definition")))))
+
+(test the-token-works-on-a-variadic-command
+  ;; The case a per-command designator argument could not have solved, and the
+  ;; reason the strip lives in the dispatcher: `context' takes the task's words,
+  ;; so a trailing designator is indistinguishable from another word.
+  (with-two-console-fixtures
+    (let ((second-name (loom-workspace:repository-name second-repository)))
+      (let ((output (run-to-string (format nil "context @~a beta" second-name))))
+        (is (search "beta" output))
+        (is (not (search "Several repositories" output)))))))
+
+(test an-explicit-designator-argument-beats-the-token
+  ;; DES-0021 D2's precedence, and the assertion most likely to be written to
+  ;; match whatever the code does. A caller who typed a designator in the
+  ;; position a command declares for one meant it; a token earlier on the line
+  ;; must not silently override it.
+  (with-two-console-fixtures
+    (let ((first-name (loom-workspace:repository-name first-repository))
+          (second-name (loom-workspace:repository-name second-repository)))
+      (let ((output (run-to-string (format nil "status @~a ~a" second-name first-name))))
+        (is (search first-name output)
+            "the explicit argument won: ~s" output)
+        (is (not (search second-name output))
+            "and the token did not override it")))))
+
+(test the-token-does-not-outlive-the-command-that-carried-it
+  ;; REQ-0023 R1a, and the reason a `use <repository>' mode was rejected. A
+  ;; selection that survives its command answers a later query about the wrong
+  ;; tree with nothing in the question saying so.
+  (with-two-console-fixtures
+    (let ((second-name (loom-workspace:repository-name second-repository)))
+      (run-to-string (format nil "find @~a beta" second-name))
+      (let ((output (run-to-string "find beta")))
+        (is (search "Several repositories" output)
+            "the next command starts with no repository selected: ~s" output)))))
+
+(test naming-a-repository-that-is-not-watched-says-what-is
+  (with-two-console-fixtures
+    (let ((output (run-to-string "find @no-such-repository alpha")))
+      (is (search "no-such-repository" output))
+      (is (search "Watching:" output)
+          "the message lists what is watched rather than only what is not"))))
+
+(test a-repository-token-in-the-wrong-position-says-where-it-goes
+  ;; DES-0021 D1 strips a *leading* @token, and a caller who writes it after
+  ;; another argument gets it as a positional designator instead. "No repository
+  ;; named @gs2" is true and one word short of useful; found by writing
+  ;; `remove tooling @gs2' and having to work out why.
+  (with-two-console-fixtures
+    (let* ((second-name (loom-workspace:repository-name second-repository))
+           (output (run-to-string (format nil "check ~a" second-name))))
+      (is (not (search "has to come first" output))
+          "a bare designator in that position is fine and must not be corrected"))
+    (let ((output (run-to-string (format nil "check @~a"
+                                         (loom-workspace:repository-name
+                                          second-repository)))))
+      ;; `check' takes a designator, so a leading token is stripped before the
+      ;; handler sees it and this is the ordinary success path.
+      (is (not (search "has to come first" output))))
+    (let ((output (run-to-string "set-status DOC status @somewhere")))
+      (is (search "has to come first" output)
+          "a token in a later position is told where it goes: ~s" output))))
+

@@ -1,0 +1,177 @@
+id: PLAN-0030
+title: The body first, then the flag, then the prose above it
+status: final
+date: 2026-08-16
+refines: [DES-0027]
+affects: [describe-entity, repository-view, stamp-file, file-changed-p, analyze-file,
+          build-context]
+tags: [knowledge, describe, workspace, analyzer, req-0031, front-end, game-server]
+summary: |
+  DES-0027 in six steps, ordered so that padding -- the part three trees
+  corrected twice -- comes last and nothing waits on it.
+
+  S1 to S3 deliver an unpadded body on all four surfaces and satisfy R1 to R6
+  outright. That is already the whole of REQ-0031's measured complaint: the
+  five `sed` calls of the 2026-08-15 session each asked for a known range of a
+  known file, and none of them wanted the comment above it. S4 and S5 add R9's
+  padding one language at a time, which is where the per-analyzer work lives
+  and where the risk is.
+
+  A stop after any step leaves working software. A stop after S3 leaves a tool
+  that answers the question REQ-0031 was opened about, with the prose still one
+  file-read away; a stop after S4 leaves that plus Lisp docstrings; only S5
+  serves front-end's JSDoc.
+body: |
+  FILES
+
+  src/workspace/source.lisp             new. DEFINITION-SOURCE, the read, the
+                                        stamp comparison, the line cap.
+  src/workspace/package.lisp            export it.
+  src/workspace/loom-workspace.asd      the new component.
+  src/process/console.lisp              `describe <name> [--source]`.
+  src/serve/operations.lisp             :DESCRIBE gains (source).
+  src/analyzer/analyzer.lisp            COMMENT-EXTENT, the generic and its
+                                        default of NIL.
+  src/analyzer/lisp-analyzer.lisp       a run of `;;` lines, and attachment.
+  src/analyzer/js-analyzer.lisp         a delimited /** ... */ block.
+  src/workspace/test/source.lisp        new.
+  src/analyzer/test/*.lisp              extent cases per language.
+
+  S1  DEFINITION-SOURCE, UNPADDED
+
+  In loom-workspace because DES-0027 D1 shows it cannot be anywhere lower: the
+  entity's :FILE is relative, REPOSITORY-ROOT is a loom-workspace slot, and
+  loom-workspace depends on loom-knowledge rather than the reverse.
+
+  Takes a repository and an entity id. Reads :FILE, :START-LINE and :END-LINE
+  off the entity -- every located entity carries all three regardless of type,
+  which is what keeps :VARIABLE working where front-end's LAYEREDITOR is a
+  251-line component and Loom's are DEFPARAMETERs.
+
+  Returns a plist: :text :range :status :truncated :withheld :indexed-at.
+
+  :status is D4's four-way answer and is computed by re-stamping the file and
+  comparing against REPOSITORY-STAMPS -- :current, :stale, :missing, :short.
+  :stale still returns text; refusing would leave the caller with a range and
+  no way to read it, which is the handoff being removed.
+
+  The cap is 400 lines with :TRUNCATED and :WITHHELD, per DES-0027 D5. No
+  padding, no analyzer call, no console change. Testable on its own.
+
+  Test: a known range on all three trees; a file edited under a live index
+  reports :stale and still returns text; a deleted file reports :missing; a
+  range past end-of-file reports :short; a definition over 400 lines reports
+  the count withheld.
+
+  S2  THE CONSOLE FLAG
+
+  `describe <name> [--source]`. An optional token rather than a second
+  positional, because `describe <name> <something>` reads as a type filter by
+  analogy with `find`.
+
+  R3's decline lands here too: a :DOCUMENT asked for source prints that source
+  does not apply and then prints what `describe` prints today. Declining
+  visibly rather than ignoring silently, so a caller can tell its request was
+  refused rather than answered.
+
+  First user-visible delivery, and the first point at which REQ-0031 R7 can be
+  measured at all.
+
+  S3  THE OPERATION, AND WHAT FOLLOWS FROM IT
+
+      (define-operation :describe :read (repository term (source)) ...)
+
+  The parenthesised SOURCE is optional by DEFINE-OPERATION's convention, which
+  is R2's "off by default" stated where the shape is already checked. loom-rest
+  walks ARG-SHAPE for routes and loom-mcp walks it for tools/list, so REST and
+  MCP are expected to follow with no edit in either.
+
+  Expected, and therefore verified rather than assumed: the step is done when a
+  REST call with source=true and an MCP loom_describe with the argument both
+  return the body. If either needs an edit, that is a finding about the
+  derivation DES-0006 R5 claims, and it belongs in a bug rather than in a quiet
+  patch here.
+
+  S4  COMMENT EXTENT FOR LISP, AND PADDING ON
+
+  COMMENT-EXTENT in loom-analyzer: given contents and a start line, the extent
+  of the comment block attached above it and how it is attached -- :adjacent,
+  :separated, or :section. The generic defaults to NIL so a language that has
+  no answer pads by nothing rather than guessing.
+
+  Lisp: a run of `;;` lines immediately above, stopping at a blank line or at
+  the previous form. `;;;;` is reported as :section, per DES-0027 D3a -- this
+  design takes it, REQ-0035 will not, and the extractor judges neither.
+
+  DEFINITION-SOURCE gains :pad, on by default, and reports :padded-range beside
+  :range so R4's provenance names what was actually returned.
+
+  Test: a Loom function with a `;;` block above it returns the block; one with
+  a `;;;;` section header above returns it and labels the attachment; one with
+  a blank line between returns :separated; a function at the top of a file
+  returns nothing and does not error.
+
+  S5  COMMENT EXTENT FOR JAVASCRIPT
+
+  The step this plan is ordered around. 249 of front-end's 461 source files
+  carry JSDoc and none of ` */`, ` * @param` or `/**` is recognisable as a
+  comment line without knowing a block is open, so a line-prefix test returns
+  nothing on half that tree in silence.
+
+  A delimited scan: from the line above the definition, if it closes a block
+  comment, walk up to the opener. Also handle a `//` run, which front-end uses
+  4,075 times and which is the same shape as Lisp's case.
+
+  Test: EMITPARTITION in src/domain/partition/interchange.js returns its JSDoc
+  block. A component preceded by a `//` run returns it. A file-level banner
+  above the first export reports :section. An unterminated block comment
+  returns nothing rather than swallowing the file -- the analyzer's standing
+  rule that damage costs a form rather than a file.
+
+  S6  ACCEPTANCE, ON THREE TREES
+
+  DES-0027 D9 in full.
+
+  Loom: `describe resolve-one --source` returns the definition verbatim,
+  docstring included, with the comment block above it and the padded range
+  reported. `describe REQ-0021 --source` returns what REQ-0007 makes it return
+  today plus the decline.
+
+  game-server: each of the five sed/Read calls of the 2026-08-15 session is
+  answerable by one `describe --source`. This is REQ-0031 R7's measurement and
+  the number the work exists to move.
+
+  front-end: EMITPARTITION returns its JSDoc; LAYEREDITOR returns 251 lines
+  under the cap; a :VARIABLE returns a component on this tree and a
+  DEFPARAMETER on Loom from the same code path.
+
+  Full suite green, `check` clean, and no new call from loom-knowledge into
+  loom-workspace -- `sbcl --script tools/load-test.lisp` is the instrument,
+  since no rule expresses that property.
+
+  RISKS
+
+  The console's optional token. DEFINE-COMMAND's arguments are positional and
+  `find` already takes an &optional. A flag that is not a value may need
+  parsing the command line differently, and if it does, S2 is where that is
+  discovered rather than S3.
+
+  MCP and REST following for free. DES-0006 R5's claim is that the arg-shape
+  table drives both. S3 tests it rather than trusting it; this is the first
+  optional argument added to an existing operation since that claim was made.
+
+  Reading a file mid-reindex. The monitor may be rewriting stamps while
+  DEFINITION-SOURCE reads. The read is a bounded read of a file that either
+  exists or does not, and the status field reports what the stamp said at the
+  moment of comparison -- a race yields :stale, which is a true answer about a
+  moving tree rather than an error.
+
+  A definition whose range is stale in the other direction. The index may name
+  lines 26-30 of a file that has grown, so the text returned is whatever now
+  occupies those lines. This is why :status exists and why :stale is not
+  silent, and it is the reason R4 asks for provenance at all.
+
+  Scope creep into REQ-0035. S4 and S5 build the extractor that requirement
+  needs, and it will be tempting to store what they find. They must not: the
+  attachment kind is derived at read time, no schema changes here, and DES-0027
+  D3a records why the two consumers take different thresholds on one answer.

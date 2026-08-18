@@ -100,3 +100,23 @@
             "~a is missing from the encoded answer" key))
       (is (search "\"neighbors\":[" text)
           "the neighbour groups encoded as something other than an array"))))
+
+(test the-json-false-marker-encodes-as-false-and-nil-still-encodes-as-null
+  ;; BUG-0028. NIL is this encoder's third overloaded value -- false, empty
+  ;; list, absent -- and until *JSON-FALSE* existed there was no way to write
+  ;; the JSON literal `false' at all. MCP's isError is typed boolean, so null
+  ;; failed client-side schema validation on every successful call.
+  ;;
+  ;; Both halves asserted together: the marker must encode as false AND a bare
+  ;; NIL must go on encoding as null, because a fix that quietly turned every
+  ;; NIL into false would change every absent field in every REST answer.
+  (is (equal "{\"flag\":false}" (encode-result (list :flag *json-false*))))
+  (is (equal "{\"flag\":null}" (encode-result (list :flag nil))))
+  (is (equal "{\"flag\":true}" (encode-result (list :flag t))))
+  ;; And it survives nesting, since a tools/call result carries it one level
+  ;; down inside the result object rather than at the top.
+  (is (equal "{\"outer\":{\"flag\":false}}"
+             (encode-result (list :outer (list :flag *json-false*)))))
+  ;; An empty array-valued key is still [], not false: the two NIL cases stay
+  ;; separate from each other as well as from null.
+  (is (equal "{\"impacted\":[]}" (encode-result (list :impacted nil)))))

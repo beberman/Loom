@@ -1,0 +1,94 @@
+id: {{CONCEPT-ID}}
+title: How engineering knowledge is written down in this repository
+status: accepted
+date: {{DATE}}
+tags: [workflow, conventions, loom]
+summary: |
+  This repository is indexed by Loom, which reads the documents under
+  {{DOCUMENT-DIRECTORY}}/ and the source alongside them, and answers questions
+  about both: where something is defined, what a change reaches, which
+  decisions govern an area.
+
+  This document is the convention those documents follow. It was transcribed by
+  `loom init` and is the same text in every repository Loom prepares -- it
+  describes how to write a document, and asserts nothing about this codebase.
+body: |
+  WHERE DOCUMENTS LIVE
+
+  Under {{DOCUMENT-DIRECTORY}}/, one directory per kind, and the directory is
+  what gives a document its type:
+
+      {{DOCUMENT-DIRECTORY}}/requirements/  what is wanted           REQ-nnnn
+      {{DOCUMENT-DIRECTORY}}/design/        the shape of an answer   DES-nnnn
+      {{DOCUMENT-DIRECTORY}}/decisions/     decisions and rationale  DEC-nnnn
+      {{DOCUMENT-DIRECTORY}}/arch/          structure and mechanism  ARCH-nnnn
+      {{DOCUMENT-DIRECTORY}}/plans/         ordered steps            PLAN-nnnn
+      {{DOCUMENT-DIRECTORY}}/reviews/       review findings          REV-nnnn
+      {{DOCUMENT-DIRECTORY}}/bugs/          defects worth keeping    BUG-nnnn
+      {{DOCUMENT-DIRECTORY}}/concepts/      recurring ideas          CON-nnnn
+      {{DOCUMENT-DIRECTORY}}/rules/         constraints              RULE-nnnn
+
+  YAML, not markdown. A markdown file in one of these directories is indexed,
+  but only as prose that mentions things -- it can never be a requirement or a
+  decision, because "the directory names the type" is this convention rather
+  than a fact about markdown.
+
+  THE CHAIN
+
+  A requirement asks for something. A design answers it. A plan sequences the
+  design. A review or a bug closes the loop. Each names the one above it:
+
+      refines: [REQ-0001]
+
+  That is what makes the chain walkable rather than a naming convention, and it
+  is why `impact` on a function can tell you which requirement it came from.
+
+  THE FIELDS THAT RESOLVE
+
+  Two fields are checked against the index, and a name in either that resolves
+  to nothing is reported by `check` rather than dropped. That is the staleness
+  detector, so fill them in accurately or leave them out.
+
+      refines:     [REQ-0001]        the document this one answers
+      affects:     [function-name]   code this document bears on
+
+  What affects: means depends on who writes it. A decision or a design
+  *governs* the code it names. A requirement, plan, bug or review *bears on*
+  it, which is a weaker claim and is reported separately.
+
+  An architecture document writes `describes:` instead, and has no affects: --
+  it describes structure, it does not govern it.
+
+  STATUS, AND WHO MOVES IT
+
+  Every document carries status:, and the vocabulary is per kind:
+
+      REQ    draft -> accepted -> implemented | partial
+      DES    draft -> accepted -> implemented | partial | superseded
+      ARCH   draft -> accepted -> superseded
+      DEC    accepted | superseded
+      PLAN   draft -> final
+      BUG    open -> closed
+      REV    open -> closed
+      RULE   active | retired
+      CON    accepted | superseded
+
+  Do not edit a status by hand and do not move files into completed/ yourself.
+  When work lands, run the transition command -- it sets the plan final, walks
+  every document the plan refines, refuses to touch one that another unfinished
+  document still refines, and files each finished document under completed/ in
+  the same operation, so the status and the directory cannot disagree.
+
+  With no verdicts it writes nothing and shows you the chain and what it needs.
+  The implemented-versus-partial judgement is yours: implemented means every
+  requirement the document states is now true, and partial means some landed
+  and the document gains an OUTSTANDING section naming what did not.
+
+  TWO MISTAKES THAT EACH COST A DOCUMENT ITS PLACE IN THE INDEX
+
+  An unindented block scalar. Content under `summary: |` must be indented, and
+  a line at column zero ends the block -- which makes the rest of the file
+  unparseable and the document nameless.
+
+  A duplicated id. Two documents with one id are ambiguous to every reference
+  that names them, and for some kinds they silently become one entity.

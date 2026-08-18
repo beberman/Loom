@@ -1,0 +1,102 @@
+id: PLAN-0017
+title: Sequence DES-0018 -- the ignore query, its failure path, and the measurement that needs a third repository
+status: final
+date: 2026-08-11
+refines: [DES-0018, BUG-0024]
+affects: [repository-files, index-repository]
+tags: [plan, workspace, indexing, git]
+summary: |
+  Five steps. The fix itself is one function and one filter, so most of the
+  work is in the two things that are easy to skip: the failure path, which must
+  index everything rather than fail, and the measurement, which cannot be taken
+  on either tree currently in use because neither vendors dependencies.
+
+  Ordered so the tests exist before the behaviour changes, since the behaviour
+  is unobservable on this tree.
+body: |
+  BASELINE
+
+      tools/loom.sh 'status'
+
+  2026-08-11: 203 files, 2064 entities, 10690 relationships, 100 documents, 13
+  unresolved. Every one of those numbers must be identical afterwards -- Loom's
+  own tree ignores nothing that any analyzer claims, so a change here is a
+  regression by definition.
+
+  And the number the fix is for, taken directly rather than through Loom:
+
+      cd ~/github/front-end
+      find . -type d \( -name docs -o -name doc -o -name design \
+                        -o -name documentation \) -not -path './.git/*' \
+        | while read d; do find "$d" -name '*.md' -o -name '*.markdown'; done \
+        | wc -l                                                  -> 421
+      ... of those, git check-ignore reports ignored             -> 394
+
+  Step 1. The ignore query, with no caller.
+
+    A function in loom-workspace taking a repository root and a list of
+    workspace-relative paths, returning the subset git reports as ignored.
+    One `git check-ignore --stdin` invocation, paths written to stdin,
+    forward-slashed. Exit status 1 means none were ignored and is a success.
+    A missing git, a non-repository, a timeout or unparsable output returns
+    the empty set and signals nothing.
+    Add UIOP to loom-workspace's :depends-on rather than leaning on
+    loom-analyzer's.
+    Check: unit tests, built against scratch repositories the test creates --
+    Loom's own tree cannot exercise this.
+    Risk: none, nothing calls it yet.
+
+  Step 2. Tests first, and they must fail.
+
+    In src/workspace/test/: a scratch repository with a .gitignore, an ignored
+    file an analyzer would claim, a tracked-but-ignored file, and a directory
+    that is not a repository at all. The tracked case is the one worth writing
+    carefully -- DES-0018 D3 rests on git consulting the index, and a test that
+    did not commit anything would pass for the wrong reason.
+    CON-0003: run them before step 3 and watch them fail.
+    Risk: a test that creates a git repository needs git on the path in CI. It
+    is already required by nothing else in the suite, so the tests skip with a
+    recorded reason where git is absent rather than failing.
+
+  Step 3. Wire it into REPOSITORY-FILES.
+
+    After the existing dot-prefix and ANALYZABLE-P filters, per D2's ordering.
+    One call per pass, not per file.
+    Check: `tools/loom-test.sh` green, and `tools/loom.sh 'status'` identical
+    to the baseline above -- same files, same entities, same relationships.
+    Risk: this is where a subprocess enters the indexing hot path. If the
+    baseline timing moves noticeably on a 203-file tree, the ordering in D2 is
+    wrong or the process is being spawned per file.
+
+  Step 4. Measure on ~/github/front-end.
+
+      tools/loom.sh 'watch "~/github/front-end" | unwatch "Loom" | status'
+
+    Required: documents reads 27, not 421. Note what else the tree contributes
+    -- with no JavaScript analyzer (REQ-0024) the code count is expected to be
+    zero, and that is the point of REQ-0024 rather than a fault here.
+    Unwatch afterwards.
+    Risk: front-end's node_modules is large and DIRECTORY still walks it, per
+    DES-0018's stated consequence. If indexing takes long enough to be
+    annoying, that is the unpruned walk and it is a separate problem -- record
+    the time rather than fixing it here.
+
+  Step 5. The reckoning.
+
+    BUG-0024 to closed, DES-0018 to implemented, this plan to final, and all
+    three moved into completed/ per RULE-0007. CLAUDE.md and the loom skill
+    both describe what the indexer skips -- ".git and any dot-directory" -- and
+    both become incomplete the moment step 3 lands.
+
+  WHAT COULD GO WRONG, RANKED
+
+  1. Treating exit status 1 as failure. It means "nothing ignored", which is
+     the common case on a clean repository, and would make the fix behave as
+     though git were unavailable everywhere.
+  2. Passing --no-index, which would defeat D3 and start ignoring checked-in
+     build output.
+  3. Spawning a process per file. Correct, and slow enough to notice on a tree
+     with a dependency directory -- which is the only kind of tree this
+     feature is for.
+  4. A test that asserts the tracked-file case without actually committing
+     anything, and therefore passes whatever the code does.

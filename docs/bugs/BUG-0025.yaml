@@ -1,0 +1,136 @@
+id: BUG-0025
+title: A let binding is recorded as a call, so every local variable name that matches a function somewhere becomes an edge to it
+status: open
+date: 2026-08-13
+refines: [PLAN-0022]
+affects: [impact-set, resolve-document-links, document-summary, entity-system]
+tags: [analyzer, resolution, con-0001, des-0015, false-edge]
+summary: |
+  The Lisp analyzer records the name bound by a `let` or `let*` as a called
+  function. A binding pair `(field (compute x))` is syntactically identical to
+  a call `(field (compute x))`, and the walker does not know which form it is
+  inside, so both are read the same way.
+
+  The consequence is not a miscount. When a binding name happens to match a
+  real definition somewhere else in the tree, RESOLVE-CALLS matches it by
+  spelling and asserts a :CALLS edge that does not exist. Measured on this
+  tree: four such edges, all to LOOM-MCP's FIELD, three of them from systems
+  that cannot depend on loom-mcp at all -- loom-graph, loom-knowledge and
+  loom-process. `impact-set` has no call to any function named `field`; it has
+  a local variable called `field`.
+
+  That is CON-0001's failure in its worst shape. The edge is resolvable,
+  plausible, and wrong, and it survives every check the tree has: `check`
+  reports unresolved references and this one resolved.
+body: |
+  SYMPTOM
+
+  Found by the structural report DES-0022 S1 added, on its first run against
+  this tree, which is worth recording because the individual edges had been in
+  the index for as long as the analyzer has existed and nothing had surfaced
+  them. Aggregated by system they read as an impossible dependency:
+
+      LOOM-GRAPH               -> LOOM-MCP                     2  calls
+      LOOM-KNOWLEDGE           -> LOOM-MCP                     1  calls
+      LOOM-PROCESS             -> LOOM-MCP                     1  calls
+
+  loom-graph depends on loom-ontology and nothing else; loom-mcp is a peer of
+  loom-process near the top of the tree. An edge from the first to the second
+  is not a layering violation to investigate, it is an edge that cannot exist.
+
+  All four point at one definition:
+
+      impact-set             [src/graph/query.lisp]      --CALLS--> field [src/mcp/jsonrpc.lisp]
+      resolve-document-links [src/graph/resolve.lisp]    --CALLS--> field [src/mcp/jsonrpc.lisp]
+      document-summary       [src/knowledge/services.lisp] --CALLS--> field [src/mcp/jsonrpc.lisp]
+      field@src/process/console.lisp:558                 --CALLS--> field [src/mcp/jsonrpc.lisp]
+
+  src/mcp/jsonrpc.lisp:41 defines `(defun field (object key) ...)`, which is
+  real. src/graph/query.lisp:321 is:
+
+      (let ((field (relationship-type-collect-as (cdr pair)))
+            (way   (relationship-type-impact-direction (cdr pair))))
+
+  `field` there is a local variable. IMPACT-SET calls no function of that name
+  and never has.
+
+  CAUSE
+
+  Reproduced directly against ANALYZE-PATH, on a definition whose only mention
+  of two names is as `let` bindings:
+
+      (defun probe (x)
+        (let ((field (compute x))
+              (way   (other x)))
+          (list field way)))
+
+      FUNCTION probe  call-names=("other" "way" "compute" "field")
+
+  Four names recorded, two of them real. The walker descends into the binding
+  list of a `let` and reads each binding pair as a form in call position:
+  `(field (compute x))` has a symbol at its head and a subform after it, which
+  is exactly the shape of a call. Nothing distinguishes it except knowing that
+  the enclosing form is a `let`, and the walker does not track that.
+
+  So every `let` and `let*` in the tree contributes its binding names to the
+  enclosing definition's :CALL-NAMES. Most of them resolve to nothing and land
+  in :UNRESOLVED-CALLS, which is why this has been invisible: an unresolved
+  call name is expected and populous, and nobody reads the list. The damage is
+  confined to the names that *do* resolve, and those are the ones that produce
+  a false edge rather than a harmless miscount.
+
+  This is not DES-0015's fault and package-aware resolution does not fix it.
+  DES-0015 makes resolution ask which definition a name reaches from the
+  caller's package; the defect here is that the name should never have been
+  offered for resolution at all. Where the package cannot be placed the
+  spelling fallback makes it worse, but a correctly placed `field` in a package
+  that inherits loom-mcp's would resolve just as wrongly.
+
+  WHY IT HID
+
+  Three reasons, and the third is the one worth carrying forward.
+
+  `check` cannot see it. Its unresolved-reference report is about names that
+  resolved to *nothing*; this is a name that resolved to something. A
+  fabricated edge is invisible to a check designed to find missing ones.
+
+  The counts do not move. A false :CALLS edge among 11,708 relationships
+  changes no number anybody reads. `status` reports totals, and totals are
+  exactly the wrong instrument for an edge that should not exist.
+
+  Nothing asked the question the report asks. RULE-0001 to RULE-0003 are
+  :no-edge checks keyed on system pairs, and they would have caught this if
+  they covered loom-mcp -- but no rule names loom-serve, loom-rest, loom-mcp or
+  loom-process, which CLAUDE.md already records. The structural report found it
+  in one run by doing the thing no rule does: reporting every system pair that
+  has an edge, and letting a reader see one that cannot be right.
+
+  WHAT IT DOES NOT AFFECT
+
+  The scale is worth bounding before anyone panics. This mints an edge only
+  where a local variable name collides with a definition name somewhere the
+  caller can reach. Four such edges exist on this tree out of 11,708, and the
+  three cross-system ones are the whole of the damage a reader would notice.
+  `impact` on FIELD reports three callers it does not have; `impact` on
+  anything else is unaffected.
+
+  What is not bounded is other trees. game-server holds 21,893 relationships
+  and 4,173 entities with short, ordinary names, and the collision rate depends
+  entirely on how often a local variable name matches a function name -- which
+  in a large Lisp codebase with names like `table`, `handler`, `selector` and
+  `key` is not rare. This was measured on Loom and should be measured there
+  before the fix is scoped.
+
+  THE FIX, AND WHY IT IS NOT IN THIS COMMIT
+
+  The walker has to know the shape of the binding forms: `let`, `let*`, and the
+  same problem in `flet`, `labels`, `macrolet`, `do`, `do*`, `symbol-macrolet`
+  and destructuring lambda lists. That is a real change to the Lisp analyzer
+  with its own tests, and PLAN-0022 was the structural report -- fixing this
+  inside it would be an unrelated change riding in on a plan that did not name
+  it.
+
+  Filed rather than fixed, with the measurement, so the fix can be scoped
+  against `flet` and `labels` too rather than patching `let` and calling it
+  done. The census already reports `let*` among the macros contributing
+  orphaned definer names, which is the same defect seen from the other end.

@@ -1,0 +1,119 @@
+id: PLAN-0027
+title: Delete the allowlist, add two exclusions, claim plain text
+status: final
+date: 2026-08-14
+refines: [DES-0023]
+affects: [documentation-relative-p, markdown-analyzer, analyzer-handles-p,
+          prose-report, markdown-mentions]
+tags: [markdown, analyzer, req-0028]
+summary: |
+  DES-0023 in one analyzer file plus its tests. The change is mostly deletion:
+  the directory allowlist and its registration seam go, two exclusion tests
+  replace them, and .txt is claimed with a narrower extraction.
+
+  The care is in the acceptance rather than the code. This widens what enters
+  the graph on every tree at once, so the before-and-after has to be measured on
+  all three, and the context bundle has to be shown still answering the question
+  it was asked.
+body: |
+  FILES
+
+  src/analyzer/markdown-analyzer.lisp   the rule, the exclusions, .txt.
+  src/analyzer/package.lisp             *DOCUMENTATION-DIRECTORIES* and
+                                        REGISTER-DOCUMENTATION-DIRECTORY leave.
+  src/analyzer/test/markdown-analyzer.lisp   the tests that assert the old rule.
+  CLAUDE.md, .claude/skills/loom/SKILL.md    both state the old rule.
+
+  RISKS
+
+  A test that asserts the rule being deleted. src/analyzer/test/markdown-analyzer.lisp
+  registers "handbook" as a documentation directory, which is a test of the seam
+  D5 removes. It has to be rewritten rather than deleted: what it was really
+  guarding is that a directory name does not decide the answer, and that is now
+  true by construction and worth an assertion of its own.
+
+  Loom indexing its own templates. src/workspace/templates/*.md are markdown and
+  are not dot-prefixed, so without D1's second exclusion they arrive as
+  documentation of Loom describing a repository that does not exist yet.
+
+  A context bundle that gets worse. More prose competes for the mention band.
+  The band is capped and ranked so the mechanism is already there, but "already
+  there" is a claim to test rather than assume -- R7 asks for a bundle that is
+  still about its task.
+
+  The document count on Loom rising by eleven, which will look like a defect in
+  every status line until somebody reads this plan. Worth stating in the outcome
+  with the number.
+
+  STEPS
+
+  1. DOCUMENTATION-RELATIVE-P becomes an exclusion test: true unless some
+     directory segment is dot-prefixed or named templates. The allowlist and
+     REGISTER-DOCUMENTATION-DIRECTORY go with it.
+
+  2. The analyzer claims "txt" alongside "md" and "markdown", and MARKDOWN-MENTIONS
+     takes the extraction rule as a parameter: backticks and link targets for
+     markdown, identifier-shaped tokens for plain text.
+
+  3. Tests: a README under src/ is claimed; a file under .claude/ is not; one
+     under templates/ is not; a root README is; a .txt file is claimed and earns
+     an edge only from an identifier-shaped token.
+
+  4. Rewrite the handbook test as an assertion that the directory name does not
+     decide.
+
+  5. CLAUDE.md and the loom skill, both of which state the rule being replaced.
+
+  6. Acceptance on all three trees: documents and unresolved before and after,
+     src/models/README.md present on front-end, nothing from .claude/ or
+     .windsurf/ anywhere, no template on Loom. Then a context bundle on
+     game-server that is still about its task.
+
+  7. Close it: `complete PLAN-0027 DES-0023=<verdict> REQ-0028=<verdict>`.
+
+  VERIFICATION
+
+  Per step; `tools/loom-test.sh`; and the three-tree acceptance, whose important
+  number is that `unresolved` does not move -- a markdown mention that resolves
+  to nothing is dropped in silence, so widening the input must not touch it.
+
+  OUTCOME
+
+  All seven steps landed. Nine of nine systems; the markdown suite gained four
+  tests and lost one, which is the registration-seam test rewritten as an
+  assertion that the directory name no longer decides.
+
+  MEASURED ON THREE TREES
+
+      Loom          119 -> 123 documents
+      game-server    12 ->  14
+      front-end      27 ->  37
+
+  front-end's ten include src/models/README.md -- 541 lines, the file that
+  prompted the change -- and the root README. Nothing from .claude/, .windsurf/
+  or src/workspace/templates/ is indexed on any tree, checked by name.
+
+  A context bundle on game-server for "dhandler-delete soft deletion" still
+  returns docs/data-layer.md alone in its mention band, which is R7: more prose
+  competes for the band rather than flooding it, because the band was already
+  capped and ranked by how much of the bundle each document names.
+
+  THE ONE NUMBER THAT MOVED, AND WHY IT WAS NOT THE PROSE
+
+  `unresolved` on Loom went 13 -> 17 immediately after the change, and
+  DES-0023's CONSEQUENCES had claimed it could not move -- a markdown mention
+  that resolves to nothing is dropped in silence, so more prose cannot make it
+  worse.
+
+  The claim held. All four were `-> register-documentation-directory`, named in
+  the affects: of REQ-0021 and of this change's own three new documents, and
+  deleted by step 1. The staleness detector caught a function removed out from
+  under four documents that declared they bore on it -- within minutes of the
+  deletion, which is what that field is for. Corrected in all four, and back to
+  the same thirteen as before.
+
+  Worth recording because the first reading of a number moving is usually the
+  wrong one: the change under test was widening what prose gets indexed, the
+  number that moved was the prose-adjacent one, and the cause was a deletion in
+  the same commit.
+

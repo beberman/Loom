@@ -101,34 +101,112 @@ re-confirmed."
   "The system ENTITY belongs to, as a keyword, or NIL."
   (getp entity :system))
 
+(defparameter *system-family-delimiters* '(#\/ #\.)
+  "The characters that separate a package-name family from its members.
+
+game-server spells its two families with `/' -- :GAME/MAP, :MPACKAGE/OBJECT --
+and cl-dbi spells its three with `.' -- :DBI.DRIVER, :DBD.MYSQL.ERROR. Both
+were counted directly (REQ-0029), and a scheme hard-coding either one answers
+half the trees that have families at all.
+
+`#\\-' is absent deliberately and this is the load-bearing omission. It is the
+character joining all eight of Loom's own production/test package pairs --
+:LOOM-ANALYZER and :LOOM-ANALYZER-TEST, and seven more of the same shape -- so
+admitting it would make (:family :loom-analyzer) match the test package and
+re-open BUG-0009's cause one, the thirty-seven RULE-0002 false positives
+DES-0009 closed. cl-dbi reproduces the trap independently: :DBI-TEST.DBI would
+join family :DBI. A dash is how a Lisp package name spells a space, not how it
+spells a hierarchy.")
+
+(defun system-satisfies-p (designator system)
+  "Does SYSTEM satisfy DESIGNATOR?
+
+Two designator shapes, and the first is the one every rule in docs/rules/ uses:
+
+  :loom-graph      satisfied by :loom-graph and nothing else -- EQ, which is
+                   what this comparison was before DES-0024 and what it stays
+                   for every caller that passes a keyword.
+  (:family :game)  satisfied by :game itself, and by any system whose name
+                   begins with GAME followed by a family delimiter --
+                   :GAME/MAP, :GAME/SYSTEM. Not :GAME-SERVER, not :GAME-TEST.
+
+The anchoring is the whole design (REQ-0029 R3). A raw string prefix was
+measured wrong on both trees that have families: `game' captures four
+game-server packages belonging to no family, and `dbi' captures cl-dbi's two
+test packages. Requiring a delimiter after the family name is what separates
+a hierarchy from a coincidence of spelling.
+
+Nesting needs no code of its own: :DBD.MYSQL.ERROR begins with DBD followed by
+`.' and with DBD.MYSQL followed by `.', so it satisfies both families by this
+one test."
+  (cond ((null system) nil)
+        ((keywordp designator) (eq designator system))
+        ((and (consp designator) (eq :family (first designator)))
+         (let ((family (string (second designator)))
+               (name (string system)))
+           (and (<= (length family) (length name))
+                (string-equal family name :end2 (length family))
+                (or (= (length family) (length name))
+                    (member (char name (length family))
+                            *system-family-delimiters* :test #'char=)))))))
+
 (defun in-system-p (view id system)
   (let ((entity (get-entity view id)))
-    (and entity (eq system (entity-system entity)))))
+    (and entity (system-satisfies-p system (entity-system entity)))))
 
 (defun entities-in-system (view system)
-  (remove-if-not (lambda (e) (eq system (entity-system e))) (all-entities view)))
+  (remove-if-not (lambda (e) (system-satisfies-p system (entity-system e)))
+                 (all-entities view)))
 
 (defun edges-between-systems (view from-system to-system &key rel-types include-stale)
   "Relationships of REL-TYPES running from FROM-SYSTEM into TO-SYSTEM.
 
-TO-SYSTEM may be :OUTSIDE, meaning any system other than FROM-SYSTEM, which
-is the form the layering rules want: \"no edge leaves loom-ontology\" is a
-question about everything that is not itself. Edges to entities with no
-identifiable system are not counted -- an unplaceable endpoint is not evidence
-of a violation."
+Both are system designators in SYSTEM-SATISFIES-P's sense: a keyword names one
+system, `(:family NAME)' names a family. Passing keywords is the behaviour this
+function has always had.
+
+TO-SYSTEM may be :OUTSIDE, meaning any system that does not satisfy FROM-SYSTEM,
+which is the form the layering rules want: \"no edge leaves loom-ontology\" is a
+question about everything that is not itself. That relative reading is what
+makes a family rule useful rather than deafening -- where the from side is
+`(:family :game)', outside means outside the family, so game-server's fourteen
+`game/*' packages calling each other is internal traffic and not fourteen
+packages' worth of findings. DES-0024 D2; the clause was already defined
+against the from side, so this cost one word.
+
+Edges to entities with no identifiable system are not counted -- an unplaceable
+endpoint is not evidence of a violation."
   (loop for r in (all-relationships view)
         for from = (get-entity view (from-id r))
         for to   = (get-entity view (to-id r))
         when (and from to
                   (or include-stale (not (stale-p r)))
                   (or (null rel-types) (member (rel-type r) rel-types))
-                  (eq from-system (entity-system from))
+                  (system-satisfies-p from-system (entity-system from))
                   (let ((target (entity-system to)))
                     (and target
                          (if (eq to-system :outside)
-                             (not (eq target from-system))
-                             (eq to-system target)))))
+                             (not (system-satisfies-p from-system target))
+                             (system-satisfies-p to-system target)))))
           collect r))
+
+(defun federated-relationships (view id &key (direction :out))
+  "Edges at ID whose far endpoint lives in another repository. DES-0025.
+
+NEIGHBORS cannot answer this and should not learn to. It returns entities, and
+the far end of a federated edge has no entity in this graph by construction --
+that is what federation means -- so NEIGHBORS drops these edges and every
+caller of it stays correct. This returns the relationships themselves, which
+carry enough to name the far end without reading another graph: the
+repository, the entity's name, file and line, and the commit the tree was at
+when the edge was derived.
+
+loom-graph therefore learns nothing about repositories. It hands back edges
+whose properties a caller may read, exactly as it does for every other edge."
+  (remove-if-not
+   (lambda (r) (getp r :federated))
+   (append (when (member direction '(:out :both)) (relationships-from view id))
+           (when (member direction '(:in :both)) (relationships-to view id)))))
 
 ;;;; ==================================================================
 ;;;; Neighbors (SS5.3)

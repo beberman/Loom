@@ -83,8 +83,11 @@ rationale: |
   architecture is not what it says. This one is about the source of whatever
   tree is being indexed, and Loom has no standing to call another project's
   dead code an error. It also prints as "warning RULE-0006", which
-  distinguishes it at a glance from the thirty-two "error RULE-0003" lines
-  BUG-0009 currently produces.
+  distinguishes it at a glance from an "error RULE-0001" to "error RULE-0003"
+  line about Loom's own layering. When this was written BUG-0009 was producing
+  thirty-two of those and every one was false; it closed on 2026-08-15 and
+  `check` reports none, so the severity now separates two kinds of real
+  finding rather than a real one from standing noise.
 
   THE KNOWN FALSE POSITIVE
 
@@ -96,6 +99,48 @@ rationale: |
   natural key, not editing the source. Its appearance is the tell that the
   narrow key has started to cost something.
 
+  WHERE THIS SHOWS, AND THE FIELD THAT LOOKS LIKE IT BUT IS NOT
+
+  `check' already prints a `collisions' field and it answers a different
+  question: GENERATED-DEFINITION-COLLISIONS, the definer-macro call sites left
+  alone because the definition they would generate already exists. On both
+  trees it reads empty while real shadowing is present, so the one field named
+  for the word a reader is hunting is the one field that has nothing to say
+  about it.
+
+  Measured 2026-08-15, by a reader arriving at this defect cold. The route
+  taken was `find make-encoded-value', which returns one entity at the
+  surviving range with nothing marked -- correct, and read as proof that the
+  index cannot represent the duplicate at all. From there DERIVE-ID confirms
+  the collision at the natural-key layer, `collisions' reads empty, and the
+  conclusion drawn was that Loom sees none of this. Every step is a true
+  observation and the destination is wrong, because the whole mechanism sits
+  one layer up in the analyzer and reports through a fifth channel.
+
+  So, plainly, where it shows:
+
+    - the survivor carries :SHADOWED-DEFINITIONS with the dropped ranges, and
+      `describe' prints it in the properties block;
+    - this rule reports every carrier, so `check' and `rules' name it as a
+      warning against the entity;
+    - `find' shows one entity and always will. That is supersession working
+      -- DES-0012 R1 drops the shadowed definition before any operation is
+      emitted, which is what stops the survivor's edges describing a body its
+      own properties deny -- and the cost is that the query a reader reaches
+      for first is the one that cannot carry the finding.
+
+  WHAT THIS RULE DOES NOT SEE
+
+  Supersession is per-analyzer and per-file, which is what CON-0005 requires:
+  two definitions deriving one key are reconciled in their own language's
+  semantics, by the analyzer that read them, while the evidence still exists.
+  Two *analyzers* deriving one natural key for one file collide later, at
+  assert time, where no analyzer saw both and no :SHADOWED-DEFINITIONS is
+  written. Nothing reports that, and nothing in this tree produces it yet --
+  a multi-language repository eventually will. It is not a gap in this rule
+  but the boundary of what an analyzer-side fix can reach, and the graph is
+  the only place that sees every source.
+
 check:
   kind: property-absent
   property: shadowed-definitions
@@ -106,3 +151,10 @@ lessons:
     distinct, or it cannot be reported later at any price.
   - A rule that reports thirteen false findings alongside six real ones has
     not made anything louder.
+  - A field named for the defect a reader is hunting will be read as the check
+    for it. `collisions' and this rule are two questions sharing one word, and
+    the one a reader finds first is the one that answers neither.
+  - A finding reported through a channel the reader is not in cannot be found
+    by reasoning forward from the mechanism. Someone who reads DERIVE-ID and
+    concludes the collision is unreportable has read the code correctly; the
+    answer was never in that file.
