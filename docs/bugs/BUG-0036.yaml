@@ -1,0 +1,75 @@
+id: BUG-0036
+title: A member call is matched by its bare method name, so log.commit() reaches every commit in the repository
+status: open
+date: 2026-08-18
+refines: [BUG-0035]
+affects: [call-targets, resolve-calls, entities-by-name]
+tags: [resolution, javascript, methods, receiver, con-0001, req-0015, bug-0035]
+severity: medium
+body: |
+  PRIORITY: P3, 2026-08-18
+
+  Below BUG-0033 because the fan-out is labelled: every one of these arrives
+  through DES-0014's :CALL-SITE machinery and is reported `(ambiguous)' at 1/N,
+  which is CON-0001's recorded guess rather than its fabricated fact. Above the
+  rest of the P3 tier because it is the largest single population of
+  imprecision left on the tree Loom is most likely to be pointed at next, and
+  because a reader of `impact' sees the guess without being able to see how
+  wrong it is.
+
+  WHAT HAPPENS
+
+  `log.commit()' contributes the call name `commit'. GestureLog.js defines a
+  method of that name, CircleGraphic.js defines another, and nothing in the
+  call name says which object the call was made on -- so resolution matches the
+  bare spelling and fans out to every `commit' in the repository.
+
+  Module scope cannot narrow it, which is what makes it a separate defect from
+  BUG-0035 rather than the rest of it. A method is a property of an object, not
+  a module binding: `log.commit()' requires no import of `commit' and is not
+  shadowed by a local definition of one. BUG-0035's two tiers both decline to
+  fire here by design -- the rule may only ever reduce a candidate set, and a
+  name it does not govern keeps every candidate it had.
+
+  MEASURED, ~/github/front-end, 2026-08-18
+
+      :CALL-SITE fan-outs, after BUG-0029 and BUG-0035     50
+        aliased specifiers, recorded on BUG-0035           10
+        member calls, this document                        40
+
+  The 40 is the residue of 284 -- BUG-0029 removed 121 by fixing case,
+  BUG-0035 removed 113 by fixing scope, and what is left is dominated by this.
+
+  WHY IT IS HARD, STATED HONESTLY
+
+  The receiver's type is the question, and it is the question a JavaScript type
+  checker exists to answer. `log' is a parameter, a destructured field or the
+  result of a call, and following it to a class needs inference Loom does not
+  do and REQ-0024 explicitly did not ask for.
+
+  Three cheaper things are available and none is obviously right:
+
+  - Record the receiver. The extractor sees `log.commit()' and emits `commit';
+    emitting `log.commit' as well would let resolution match a method entity by
+    its own qualified name, which is how game-server's :SERVES federation
+    already matches `gameIntf.getGame'. It narrows only where the receiver's
+    spelling matches the class's, which on this tree is sometimes.
+
+  - Rank by proximity rather than resolve. A candidate in an imported module
+    is likelier than one in an unrelated subtree, and `impact' could order the
+    fan-out without claiming to have resolved it.
+
+  - Leave it and report it. 40 labelled guesses on 4,015 entities is a small
+    and honest number, and the alternative to a guess here is an unresolved
+    name, which tells a reader less.
+
+  What should not happen is a rule that picks one candidate on a tiebreak. That
+  turns a reported guess into a confident wrong edge, which is the trade
+  BUG-0035 refused for aliased specifiers and the same trade here.
+
+  ACCEPTANCE
+
+  Undecided on purpose: the fix's shape decides what to measure. Whatever
+  lands, front-end's member-call fan-outs fall from 40, no fan-out becomes a
+  single edge without evidence naming the receiver, and Loom and game-server
+  index with the counts they have now.

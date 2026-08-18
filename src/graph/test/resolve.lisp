@@ -992,3 +992,140 @@ Lisp's folding by being compared against a Lisp definition")
   ;; DEFINITIONS asking whether a name reaches anything at all -- and keeps the
   ;; old answer rather than acquiring a stricter one.
   (is (loom-graph::same-identifier-p "Error" "error" nil nil)))
+
+;;; ------------------------------------------------------------------
+;;; A module is a namespace (BUG-0035)
+;;; ------------------------------------------------------------------
+;;;
+;;; After BUG-0029 removed the case fabrications, DesignHome.jsx still drew
+;;; three edges to three different components named `Error' -- one of which it
+;;; defines itself, at line 163, and renders twice. A name defined in the
+;;; calling module shadows every other definition of it in the repository, and
+;;; a name from a module nobody imported is not a candidate at all. Neither is
+;;; true in Common Lisp, where a symbol is visible throughout its package
+;;; however many files that package spans, so the rule is the language's.
+
+(defun r-js-file (graph path &key imports)
+  (let ((e (make-instance 'file-entity :name path :origin-file path
+                          :properties (properties-table
+                                       (list :path path :language :javascript
+                                             :import-sources imports)))))
+    (add-entity graph e)
+    e))
+
+(test a-definition-in-the-calling-file-shadows-every-other-of-that-name
+  (let* ((g (make-graph))
+         (caller (r-js-function g "render" "ui/Home.jsx" :unresolved '("Widget")))
+         (local  (r-js-function g "Widget" "ui/Home.jsx"))
+         (far    (r-js-function g "Widget" "ui/Other.jsx")))
+    (r-js-file g "ui/Home.jsx")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id local))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "one edge, to the definition in the caller's own file")
+    (is (null (relationships-to g (id far) :rel-type :calls))
+        "and none at all to the same name in another module")))
+
+(test an-imported-module-is-in-scope-and-an-unimported-one-is-not
+  (let* ((g (make-graph))
+         (caller (r-js-function g "render" "ui/Home.jsx" :unresolved '("Widget")))
+         (wanted (r-js-function g "Widget" "ui/parts/Widget.jsx"))
+         (other  (r-js-function g "Widget" "ui/Other.jsx")))
+    (r-js-file g "ui/Home.jsx" :imports '("./parts/Widget"))
+    (r-js-file g "ui/parts/Widget.jsx")
+    (r-js-file g "ui/Other.jsx")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "the specifier resolves through the extension the file actually has")
+    (is (null (relationships-to g (id other) :rel-type :calls)))))
+
+(test a-specifier-can-name-a-directory-index
+  (let* ((g (make-graph))
+         (caller (r-js-function g "render" "ui/Home.jsx" :unresolved '("Widget")))
+         (wanted (r-js-function g "Widget" "ui/parts/index.js")))
+    (r-js-file g "ui/Home.jsx" :imports '("./parts"))
+    (r-js-file g "ui/parts/index.js")
+    (r-js-function g "Widget" "ui/Other.jsx")
+    (r-js-file g "ui/Other.jsx")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls))))))
+
+(test a-specifier-climbing-out-of-its-directory-resolves
+  (let* ((g (make-graph))
+         (caller (r-js-function g "render" "ui/edit/pages/Home.jsx" :unresolved '("Widget")))
+         (wanted (r-js-function g "Widget" "ui/common/Widget.jsx")))
+    (r-js-file g "ui/edit/pages/Home.jsx" :imports '("../../common/Widget"))
+    (r-js-file g "ui/common/Widget.jsx")
+    (r-js-function g "Widget" "ui/Other.jsx")
+    (r-js-file g "ui/Other.jsx")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls))))))
+
+(test a-name-no-tier-governs-keeps-the-candidates-it-had
+  ;; The rule may only ever reduce a candidate set, never empty one. A method
+  ;; call records the bare name -- `log.commit()' contributes "commit" -- and a
+  ;; method is a property of an object rather than a module binding, so nothing
+  ;; here has anything to say about it. 33 of front-end's 163 fan-outs are that
+  ;; shape and every one must survive untouched.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "run" "ui/Home.jsx" :unresolved '("commit")))
+         (one    (r-js-function g "commit" "a/Log.js"))
+         (two    (r-js-function g "commit" "b/Store.js")))
+    (r-js-file g "ui/Home.jsx")
+    (r-js-file g "a/Log.js")
+    (r-js-file g "b/Store.js")
+    (apply-transaction g (resolve-calls g))
+    (is (null (relationships-from g (id caller) :rel-type :calls))
+        "the caller takes no direct edge, which is REQ-0015's refusal")
+    (dolist (target (list one two))
+      (is (relationships-to g (id target) :rel-type :calls)
+          "and both candidates are still reached, through the call site"))))
+
+(test a-bare-specifier-narrows-nothing
+  ;; `react' names a package outside the tree and `@/x' needs a bundler
+  ;; configuration Loom does not read. Both resolve to nothing, which must
+  ;; leave the call exactly as unnarrowed as it is today rather than making
+  ;; the importing file appear to import nothing at all.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "run" "ui/Home.jsx" :unresolved '("Widget")))
+         (one    (r-js-function g "Widget" "a/One.jsx"))
+         (two    (r-js-function g "Widget" "b/Two.jsx")))
+    (r-js-file g "ui/Home.jsx" :imports '("react" "@/components/Widget"))
+    (r-js-file g "a/One.jsx")
+    (r-js-file g "b/Two.jsx")
+    (apply-transaction g (resolve-calls g))
+    (dolist (target (list one two))
+      (is (relationships-to g (id target) :rel-type :calls)
+          "both are still candidates, because nothing was learned"))))
+
+(test a-lisp-caller-is-untouched-by-module-scope
+  ;; The guard. A Common Lisp symbol is visible throughout its package however
+  ;; many files that package spans, so a file boundary tells resolution
+  ;; nothing -- and narrowing on one would silently delete the cross-file edges
+  ;; RESOLVE-CALLS exists to draw.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("callee")))
+         (callee (r-function g "callee" "b.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id callee))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "the edge across a file boundary is the whole point of the pass")))
+
+(test resolve-module-specifier-answers-against-the-index-and-not-the-disk
+  (let ((known (make-hash-table :test #'equal)))
+    (setf (gethash "ui/parts/Widget.jsx" known) t
+          (gethash "ui/parts/index.js" known) t)
+    (is (equal "ui/parts/Widget.jsx"
+               (loom-graph::resolve-module-specifier "./parts/Widget" "ui/Home.jsx" known)))
+    (is (equal "ui/parts/index.js"
+               (loom-graph::resolve-module-specifier "./parts" "ui/Home.jsx" known)))
+    (is (equal "ui/parts/Widget.jsx"
+               (loom-graph::resolve-module-specifier "../parts/Widget" "ui/edit/Home.jsx" known)))
+    (is (null (loom-graph::resolve-module-specifier "react" "ui/Home.jsx" known))
+        "a bare specifier names something outside the tree")
+    (is (null (loom-graph::resolve-module-specifier "./nowhere" "ui/Home.jsx" known))
+        "and a relative one naming no indexed file resolves to nothing rather
+than to a path nobody holds")))

@@ -42,6 +42,104 @@ the same name, and pretending otherwise is how a resolver invents edges."
 
 (defun callable-index (view) (entities-by-name view *callable-types*))
 
+(defparameter *module-file-extensions*
+  '(".js" ".jsx" ".mjs" ".cjs" ".ts" ".tsx")
+  "Extensions a module specifier may have left off, in the order tried.
+
+A specifier is written without one -- `import { X } from \'./widget\'` -- and the
+file on disk is widget.js, widget.jsx or widget/index.js. Resolution here is
+against the *index* and never against the filesystem: loom-graph has no
+filesystem and must not acquire one, and a specifier naming a file no analyzer
+claimed is a specifier that resolves to nothing, which is the right answer
+either way.")
+
+(defun path-segments (path)
+  (loop with start = 0
+        for pos = (position #\/ path :start start)
+        collect (subseq path start (or pos (length path)))
+        while pos do (setf start (1+ pos))))
+
+(defun normalize-segments (segments)
+  "SEGMENTS with `.', `..' and empty components resolved away."
+  (let ((out '()))
+    (dolist (segment segments (nreverse out))
+      (cond ((or (string= segment ".") (string= segment "")) nil)
+            ((string= segment "..") (pop out))
+            (t (push segment out))))))
+
+(defun resolve-module-specifier (specifier importer known)
+  "The workspace path SPECIFIER names when written in IMPORTER, or NIL.
+KNOWN is a table of every file path the index holds.
+
+Relative specifiers only. A bare one -- `react', `lodash' -- names a package
+outside the tree, and an aliased one -- `@/components/x' -- needs a bundler
+configuration Loom does not read; both resolve to nothing here, which leaves
+their call names exactly as unnarrowed as they are today."
+  (when (and (stringp specifier) (plusp (length specifier))
+             (char= (char specifier 0) #\.))
+    (let* ((directory (butlast (path-segments importer)))
+           (target (format nil "~{~a~^/~}"
+                           (normalize-segments
+                            (append directory (path-segments specifier))))))
+      (or (and (gethash target known) target)
+          (loop for extension in *module-file-extensions*
+                for candidate = (concatenate 'string target extension)
+                when (gethash candidate known) do (return candidate))
+          (loop for extension in *module-file-extensions*
+                for candidate = (concatenate 'string target "/index" extension)
+                when (gethash candidate known) do (return candidate))))))
+
+(defun build-module-scope (view)
+  "File path -> the paths of the files it imports, for module-scoped languages.
+
+Empty for a tree of Common Lisp, which is what makes this cost nothing where it
+buys nothing: VISIBLE-CANDIDATES asks the table only after
+MODULE-SCOPED-LANGUAGE-P has already said yes."
+  (let ((known (make-hash-table :test #'equal))
+        (scope (make-hash-table :test #'equal)))
+    (dolist (file (entities-of-type view :file))
+      (let ((path (getp file :path)))
+        (when path (setf (gethash path known) t))))
+    (dolist (file (entities-of-type view :file))
+      (let ((path (getp file :path)))
+        (when (and path (module-scoped-language-p (getp file :language)))
+          (let ((targets '()))
+            (dolist (specifier (getp file :import-sources))
+              (let ((target (resolve-module-specifier specifier path known)))
+                (when target (pushnew target targets :test #'equal))))
+            (setf (gethash path scope) targets)))))
+    scope))
+
+(defun visible-candidates (candidates caller scope)
+  "CANDIDATES reduced to the ones the module CALLER is written in can see.
+
+Two tiers, and the order is the language's. A definition in the calling file
+shadows every same-named definition elsewhere, so if any candidate is local
+the local ones are the whole answer. Otherwise the candidates in files this one
+imports are, because a name from a module nobody imported is not in scope at
+all.
+
+Never empties the set. Where neither tier applies the original is returned
+unchanged, which is what keeps a method call intact: `log.commit()' records the
+bare name `commit', and a method is a property of an object rather than a
+module binding, so module scope has nothing to say about it. 33 of front-end's
+163 fan-outs are that shape and this leaves every one of them as it was. What
+the rule can do is reduce a fan-out; what it must never do is refuse a name
+this reasoning does not govern."
+  (let ((language (and caller (getp caller :language)))
+        (file     (and caller (getp caller :file))))
+    (if (or (null scope) (null file) (not (module-scoped-language-p language)))
+        candidates
+        (let ((local (remove-if-not (lambda (e) (equal file (getp e :file)))
+                                    candidates)))
+          (or local
+              (let ((visible (gethash file scope)))
+                (and visible
+                     (remove-if-not (lambda (e)
+                                      (member (getp e :file) visible :test #'equal))
+                                    candidates)))
+              candidates)))))
+
 (defstruct (name-lookup (:constructor %make-name-lookup))
   "Entities under a name, keyed two ways (DES-0015).
 
@@ -59,7 +157,11 @@ place can regress, which is what lets game-server's 7085 at-risk edges move in
 one step and still be reviewable."
   (by-name       (make-hash-table :test #'equal) :type hash-table)
   (by-home       (make-hash-table :test #'equal) :type hash-table)
-  (package-graph nil))
+  (package-graph nil)
+  ;; BUG-0035. Empty on a tree with no module-scoped language in it, and
+  ;; consulted only after MODULE-SCOPED-LANGUAGE-P has said the caller is
+  ;; written in one, so a Lisp-only tree pays one empty table.
+  (module-scope  (make-hash-table :test #'equal) :type hash-table))
 
 (defun name-lookup (view types &key external-packages package-graph)
   "ENTITIES-BY-NAME plus the package-aware index over the same entities.
@@ -76,7 +178,8 @@ one pass, so the graph is assembled once rather than once per index."
                    (when home
                      (push e (gethash (cons home name) by-home))))))
              by-name)
-    (%make-name-lookup :by-name by-name :by-home by-home :package-graph pg)))
+    (%make-name-lookup :by-name by-name :by-home by-home :package-graph pg
+                       :module-scope (build-module-scope view))))
 
 (defun callable-lookup (view &key external-packages package-graph)
   "The callable half of NAME-LOOKUP, which is what RESOLVE-CALLS wants."
@@ -132,27 +235,36 @@ anything at all -- still gets the unrestricted answer.
 Both index paths are filtered through SAME-IDENTIFIER-CANDIDATES on the way
 out, including the package-placed one: DES-0015 establishes that a name is one
 *symbol*, which is a Common Lisp question, and answering it does not make the
-spelling right in a language that has no packages."
+spelling right in a language that has no packages.
+
+VISIBLE-CANDIDATES follows it on the NAME-LOOKUP path, and only there: the
+bare-hash-table path is RESOLVE-GENERATED-DEFINITIONS asking whether a definer
+name reaches anything at all, which is a Common Lisp question about a tree with
+no module scope in it. The two filters compose in the order they are named --
+which spellings are this identifier, then which of those this module can see --
+and neither can ever add a candidate."
   (let ((key (string-downcase name)))
-    (etypecase index
-      (hash-table
-       (values (same-identifier-candidates (gethash key index) name caller) nil))
-      (name-lookup
-       (let* ((home (and caller
-                         (home-package (name-lookup-package-graph index)
-                                       name (entity-package caller))))
-              (placed (and home (gethash (cons home key)
-                                         (name-lookup-by-home index)))))
-         ;; The second value says whether symbol identity was established.
-         ;; A caller that fans out across the candidate set needs to know:
-         ;; fanning across a set assembled by spelling alone would assert
-         ;; edges between definitions that share nothing but a name, which is
-         ;; the fabrication DES-0015 exists to stop.
-         (if placed
-             (values (same-identifier-candidates placed name caller) t)
-             (values (same-identifier-candidates
-                      (gethash key (name-lookup-by-name index)) name caller)
-                     nil)))))))
+    (flet ((admit (candidates)
+             (visible-candidates
+              (same-identifier-candidates candidates name caller)
+              caller
+              (and (typep index 'name-lookup) (name-lookup-module-scope index)))))
+      (etypecase index
+        (hash-table (values (admit (gethash key index)) nil))
+        (name-lookup
+         (let* ((home (and caller
+                           (home-package (name-lookup-package-graph index)
+                                         name (entity-package caller))))
+                (placed (and home (gethash (cons home key)
+                                           (name-lookup-by-home index)))))
+           ;; The second value says whether symbol identity was established.
+           ;; A caller that fans out across the candidate set needs to know:
+           ;; fanning across a set assembled by spelling alone would assert
+           ;; edges between definitions that share nothing but a name, which is
+           ;; the fabrication DES-0015 exists to stop.
+           (if placed
+               (values (admit placed) t)
+               (values (admit (gethash key (name-lookup-by-name index))) nil))))))))
 
 (defun unique-match (index name &optional referrer)
   "The one entity INDEX holds under NAME as REFERRER sees it, or NIL for none

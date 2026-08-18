@@ -55,6 +55,29 @@ top three hubs in `structure', ahead of the real one at 50. All 348 were
 `logger.error(...)' call sites matched to `Error' on a spelling JavaScript does
 not consider equal; the repository renders `<Error />' twice.")
 
+(defvar *module-scoped-languages* '(:javascript :typescript)
+  "Languages in which a top-level definition is private to its file unless the
+file exports it and the reader imports it.
+
+Common Lisp is the other kind and is why this list exists rather than a flag: a
+symbol is visible throughout its package however many files that package spans,
+so a file boundary tells resolution nothing there. In JavaScript it tells it
+almost everything -- a name defined in the calling module shadows every other
+definition of that name in the repository, and a name defined in a module this
+one does not import is not a candidate at all.
+
+BUG-0035. After BUG-0029 removed the case fabrications, ~/github/front-end
+still drew three edges from DesignHome.jsx to three different components named
+`Error', one of which DesignHome.jsx defines itself at line 163 and renders
+twice. 130 of the repository's 163 remaining fan-outs had a candidate either in
+the calling file or in a file it imports.")
+
+(defun module-scoped-language-p (language)
+  "True when LANGUAGE gives each file its own namespace. NIL -- no :LANGUAGE --
+is not one: the narrowing this gates is only ever a reduction of a candidate
+set, and reducing one for a language Loom cannot name would be guessing."
+  (and language (member language *module-scoped-languages*) t))
+
 (defun case-insensitive-language-p (language)
   "True when LANGUAGE folds case in identifiers. NIL -- an entity with no
 :LANGUAGE property -- is treated as case-insensitive, which is the answer that
