@@ -4,6 +4,7 @@ status: open
 date: 2026-08-16
 affects: [apply-transaction, resolve-document-links, analyze-file]
 tags: [graph, ontology, markdown, transaction, front-end, con-0001, con-0006]
+severity: critical
 summary: |
   Watching ~/github/front-end -- 36 markdown files, 456 JavaScript and
   TypeScript files -- indexes nothing at all:
@@ -119,6 +120,33 @@ body: |
   D2's error path is a third piece and should be localised before F1 lands,
   because F1 changes what that path reports and a wrong report is what made
   this take a detour to read.
+
+  PRIORITY: CRITICAL
+
+  Raised 2026-08-17 on the strength of the reproduction below, which is a second
+  trigger and a worse failure than the one this document opened on.
+
+  Three properties together, none of which is true of the other open bugs.
+
+  The blast radius is a whole repository. One edge Loom is unsure it may draw
+  costs every entity, relationship and document in the tree. F2 removed one
+  cause; the mechanism is untouched and there are at least sixteen relationship
+  types whose :TO lists could omit an endpoint the analyzers produce.
+
+  It is silent in the direction that matters. A tree that fails to index is
+  indistinguishable, to an agent, from a tree with nothing in it -- CON-0006's
+  expensive error at the largest scale this system can produce it.
+
+  And the failure now outlives the request. The 2026-08-17 reproduction left the
+  service answering every subsequent call with the same TYPE-ERROR until the
+  process was restarted, so one bad reindex takes the service down for every
+  repository it holds, not only the one being indexed.
+
+  F1 is the fix and it is ahead of BUG-0031, BUG-0032 and BUG-0033 in this
+  tree's queue. F2's precedent argues for it rather than against: three
+  relationship types have been added reactively, each after a tree went dark,
+  and the fourth will be found the same way unless an illegal endpoint stops
+  being fatal.
 
   ACCEPTANCE
 

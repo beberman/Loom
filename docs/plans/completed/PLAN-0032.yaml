@@ -1,6 +1,6 @@
 id: PLAN-0032
 title: "DES-0026 in seven steps: the walk, the tiers, the index, the ranking"
-status: draft
+status: final
 date: 2026-08-17
 refines: [DES-0026]
 affects: [build-context, context-item, render-context, seed-entities, seed-matches,

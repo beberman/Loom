@@ -1,0 +1,79 @@
+id: BUG-0033
+title: A document that fails to parse is dropped without a count, a violation or a line in status
+status: open
+date: 2026-08-17
+affects: [analyze-file, repository-status, index-file, note-error, resolve-document-links]
+tags: [analyzer, documents, yaml, reporting, con-0001, con-0006]
+severity: high
+summary: |
+  PLAN-0032's title was changed to "DES-0026 in seven steps: the walk, the tiers,
+  the index, the ranking". The colon is unquoted, so the file stopped being
+  YAML.
+
+  Loom said nothing. `check` reported "No violations" on every run for the next
+  fifteen commits. `status` reported no error and no unread region. The document
+  count fell by one and no line named which document was gone. The plan was
+  edited, committed, quoted in other documents and referenced by its own
+  requirement for a day and a half while being absent from the index.
+
+  It was found by accident: `complete PLAN-0032` answered "No document in Loom
+  is named PLAN-0032", which is the first and only time anything reported it.
+body: |
+  WHY THIS IS NOT A SMALL REPORTING GAP
+
+  The index is meant to know what it is missing. That principle is already built
+  twice over.
+
+  `status` carries an `unread` line summing what the analyzer passed over -- a
+  `#+`/`#-` branch not taken, a refused `#.`, a form it repaired -- and CLAUDE.md
+  says of it that "a number there is the index saying which definitions it knows
+  it is missing". A malformed Lisp file costs a form and reports it. A malformed
+  YAML document costs the whole document and reports nothing.
+
+  `check` exists to report unresolved document references. A document that never
+  parsed has no references, so it produces no unresolved reference, and the
+  command whose job is to notice rotten links reports a clean tree. The silence
+  is not incidental to the design; it is produced by it.
+
+  CON-0001's argument is that a recorded gap beats a fabrication because a gap
+  is visible. This gap is not visible. Under CON-0006 the cost lands on the
+  reader: an agent asking `context` about work described in that plan gets a
+  bundle with the plan absent, and cannot tell that from the plan not existing.
+
+  WHAT MAKES IT LIKELY RATHER THAN RARE
+
+  A colon followed by a space inside an unquoted YAML scalar. Every document in
+  this tree has a `title:` field, titles are prose, and prose takes colons --
+  CLAUDE.md now asks for titles that name their contents, which makes a
+  subtitle-shaped title more likely rather than less. ARCH-0101, DES-0026 and
+  REQ-0031 all have titles that would break if a colon were added.
+
+  The same applies to any unquoted value: a `#` starting a comment, a leading
+  `-`, a stray tab.
+
+  WHAT IT WOULD TAKE
+
+  Three parts, and the first is most of the value.
+
+  Count it. INDEX-FILE already wraps analysis in a HANDLER-CASE and calls
+  NOTE-ERROR, so a document that fails to parse should be arriving there. Either
+  it is not reaching that path or the count is not surfaced -- which of the two
+  is the first thing to find out, and it decides whether this is a reporting bug
+  or a swallowing one.
+
+  Say it in `status`. An `unparsed` line beside `unread`, naming the paths. One
+  number that reads zero on a healthy tree is what makes a non-zero one mean
+  something.
+
+  Fail `check`. A document under docs/ that did not parse is exactly the kind of
+  thing that command is for, and it is the command CLAUDE.md tells an agent to
+  run after editing documents.
+
+  ACCEPTANCE
+
+  A docs/ YAML file with an unquoted colon in its title is counted, named in
+  `status`, and reported by `check`. The tree stays indexed otherwise -- one
+  malformed document costs that document, which is the trade the Lisp analyzer
+  already makes for a malformed form.
+
+  Re-breaking PLAN-0032's title reproduces the report rather than the silence.
