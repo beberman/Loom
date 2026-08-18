@@ -217,46 +217,75 @@ body: |
   entity looked for in the bundle: 25 of 25 found. Prose retrieval on that tree
   is not the weak point.
 
-  Ten task queries written in a developer's words rather than the author's score
-  7 of 11 expected entities. Written out in full, because an acceptance set that
-  lives only in a transcript expires with it -- REQ-0031 R7 named "the five sed
-  calls" of one session and became unrepeatable when that session was not kept.
+  Ten task queries written in a developer's words rather than the author's, with
+  every query and expectation written out, because an acceptance set that lives
+  only in a transcript expires with it. REQ-0031 R7 named "the five sed calls" of
+  one session and became unrepeatable when that session was not kept.
+
+  Judged 2026-08-17. An expectation counts as met when the named entity is a seed
+  or an item, not when it appears only as a relation line under something else.
 
     query                                          expected              result
     ---------------------------------------------------------------------------
     how does the working set track edited layers   WorkingSet            ok
-                                                   LayerEditor           MISS
     flatten a partition to an interchange document emitPartition         ok
     rewrite bare import specifiers through an      resolve               ok
       alias
     editing colours in the graphics editor         ColorEditor           ok
     changing the type of a map element             MapElementTypeEditor  MISS
-    the terrain design surface                     DesignTerrain         ok
-    admin permission to edit media                 isAdminFlag           MISS
+    the terrain design surface                     DesignTerrain         MISS
+    admin permission to edit media                 MediaEditorState      ok
+                                                     .adminMode
     segment terrain into region polygons           polygonsToPartition   ok
     switching between editor modes                 EditorModeToggle      ok
     saving a piece design and reporting            SaveDesign            MISS
       rejections
 
-  Four of the ten pass on a looser reading than the table records. "the terrain
-  design surface" returned DESIGNTERRAININTERNAL and DESIGNTERRAINLOADED rather
-  than DESIGNTERRAIN itself; "segment terrain into region polygons" returned
-  SEGMENT and DISSOLVESAMETYPEBOUNDARIES rather than POLYGONSTOPARTITION. Both
-  are counted ok because the expected name appears somewhere in the bundle, and
-  both are worth re-judging: a bundle that answers with a neighbour of the right
-  entity is not the same as one that answers with it.
+  Six of nine. Two expectations were dropped as wrong rather than counted as
+  failures.
 
-  MAPELEMENTTYPEEDITOR is the clearest. Its name tokenises to map, element,
-  type and editor, so it answers three of the query's four terms -- and
-  MAPELEMENTTYPE, which answers the same three from a shorter name, seeds twice
-  and it does not seed at all. The shorter name wins on match quality, and no
-  band above match quality separates them. That is REQ-0016 R3 restated: an
-  entity matching lexically outranks one matching lexically and structurally.
+    LAYEREDITOR for "how does the working set track edited layers". The query
+    asks how the working set tracks, and WORKINGSET, WORKINGSET.CONSTRUCTOR and
+    LAYER_EDITED are what came back. The editor component is not what was asked
+    about.
 
-  This set replaces the saturated one for S5. The number to move is 7 of 11.
-  Two of the four misses may be my expectation rather than a defect --
-  MEDIAEDITORSTATE.ADMINMODE is a defensible answer for "admin permission to edit
-  media" -- so each should be judged before it is counted as a target.
+    ISADMINFLAG for "admin permission to edit media". It is one line in
+    server/server.js, the Node proxy. MEDIAEDITORSTATE.ADMINMODE and
+    .TOGGLEADMIN are the client-side answer and are what a front-end query
+    should return.
+
+  One recorded pass was wrong and is now a miss. DESIGNTERRAIN does not seed;
+  DESIGNTERRAININTERNAL and DESIGNTERRAINLOADED do, and DESIGNTERRAIN reached
+  the earlier count only as a relation line under them. One recorded doubt was
+  unfounded: POLYGONSTOPARTITION is the fifth seed of its query.
+
+  THE THREE MISSES HAVE TWO CAUSES
+
+  A longer same-stem name outranks the exact one. MAPELEMENTTYPEEDITOR answers
+  map, element and type and does not seed, while MAPELEMENTTYPE answers the same
+  three and seeds twice. DESIGNTERRAIN answers design and terrain exactly and
+  loses to DESIGNTERRAININTERNAL, which answers the same two plus a word the
+  query does not contain. Both are REQ-0016 R3: match quality decides, and no
+  band above it separates a name that answers the query from one that answers it
+  and more.
+
+  No stemming. "saving a piece design" tokenises to saving, and SAVEDESIGN
+  tokenises to save. They are different terms, so the entity named after the
+  task matches none of it. INDEX-TOKENS splits on case and punctuation and does
+  nothing about inflection.
+
+  Neither cause is on S5's list. S5 retires a stopword list, a coverage
+  constant, a share cap and two fragment patches, and none of the three misses
+  is caused by any of them. The tie-break belongs to S6's single order and the
+  stemming belongs to S4's tokeniser.
+
+  This set replaces the saturated one. The number to move is 6 of 9.
+
+  It does not measure S5, which is the finding that matters here: S5's four
+  retirements cannot move 6 of 9, because none of the three misses is caused by
+  a stopword list, a coverage constant, a share cap or a fragment patch. S6 and
+  S4 own these. S5 should be re-argued or deferred rather than run against a set
+  it cannot affect.
 
   S5 also forces the caching decision S4 deferred. Retiring the stoplist and the
   coverage band requires IDF at query time, so BUILD-SEARCH-INDEX moves onto the
