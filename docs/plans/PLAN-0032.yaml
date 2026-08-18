@@ -146,7 +146,7 @@ body: |
   and a share cap both widen the set -- and a single 2,000-token budget would
   spend that increase on truncation instead of on entities.
 
-  S4  THE POSTINGS INDEX AND BM25
+  S4  THE POSTINGS INDEX AND BM25 (BUILT, MEASURED, MOVED TO A BRANCH)
 
   D4, and the largest single step here.
 
@@ -174,7 +174,7 @@ body: |
   faster and couples loom-graph to a retrieval concern; the first is honest and
   costs a rebuild. Measure before choosing.
 
-  S5  RETIRE THE CONSTANTS
+  S5  RETIRE THE CONSTANTS (NOT ATTEMPTED -- see the baseline note below)
 
   D5. Each is a proxy for term rarity, hand-fitted to one tree, and IDF is the
   quantity they were approximating.
@@ -546,9 +546,24 @@ body: |
   map, no IDF and no length normalisation.
 
   That is a much smaller change with a measured gain available: put
-  STEM-VARIANTS into TASK-TOKENS on the live path and re-run. If it holds 30/32
-  and adds SAVEDESIGN it is 31/32 at the current latency, which is more than
-  either S6 attempt achieved.
+  STEM-VARIANTS into TASK-TOKENS on the live path and re-run.
+
+  DONE 2026-08-17, and it is 31 of 32 at 0.07s. SAVEDESIGN is found, nothing is
+  lost, and the latency is the baseline's. Two attempts to replace the seeder
+  with a postings index gained exactly one entity between them and cost eight
+  times the latency; moving forty lines of tokeniser gained the same entity and
+  cost nothing.
+
+  The index is removed from this branch and kept on `search-index`, at
+  3278c63, with both S6 attempts and every measurement that produced them. It is
+  not deleted because the work is sound and the measurements are the record of
+  why it does not land: BM25 and BM25F disagree per query, fusing them beats
+  either alone, and all of it is still net worse than a substring scan on these
+  three trees.
+
+  Whoever picks it up should start from what the two attempts did not explain:
+  BM25 dropped WORKINGSET and COLOREDITOR, which are ordinary name matches, and
+  no measurement says why.
 
   WHAT S6 STILL NEEDS
 
@@ -558,7 +573,7 @@ body: |
   decode" -- and until it is understood the same rewrite will regress the same
   way.
 
-  S6  ONE ORDER OVER THE RECALLED SET
+  S6  ONE ORDER OVER THE RECALLED SET (ATTEMPTED TWICE, REVERTED TWICE)
 
   D9. Seeds and neighbours become commensurable: BM25 lexical score, the
   structural term from S1 and S2, entity properties, and the redundancy penalty

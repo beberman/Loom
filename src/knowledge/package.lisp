@@ -38,21 +38,6 @@
    #:document-summary
 
    ;; context building -- SS11's loom_context
-   ;; DES-0026 D4: the postings index and BM25.
-   #:index-tokens
-   #:build-search-index
-   #:search-index
-   #:sx-document-count
-   #:sx-postings
-   #:sx-average-length
-   #:sx-field-tokens
-   #:bm25-score
-   #:bm25f-score
-   #:term-classes
-   #:search-candidates
-   #:document-frequency
-   #:inverse-document-frequency
-   #:*field-weights*
    #:build-context
    ;; DES-0026 D6/D8: the cost-ordered expansion.
    #:expand-from-seeds

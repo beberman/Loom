@@ -14,8 +14,6 @@
   (
    (:file "package")
    (:file "services")
-   ;; Before "context": the seeder asks it for candidates and for IDF.
-   (:file "search-index")
    (:file "context")
    ;; After "context": the walk uses SEED-TYPE-RANK for its tie-break and is
    ;; called by BUILD-CONTEXT, and :SERIAL T is what makes the parameters it
@@ -48,9 +46,6 @@
    (:file "suite")
    (:file "services")
    (:file "context")
-   ;; After "context": (DEF-SUITE CONTEXT) lives there and (IN-SUITE CONTEXT)
-   ;; here needs it to exist first.
-   (:file "search-index")
    (:file "expand")
    (:file "prose")
    (:file "structure")

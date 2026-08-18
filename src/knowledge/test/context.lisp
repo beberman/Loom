@@ -526,3 +526,28 @@ not enough -- they have to be countable"))
                 "widget-maker")))
     (is (string= "widget-maker" (first names))
         "no prose, and still first: absence is neutral, not negative")))
+
+(test task-tokens-reaches-a-definition-named-for-the-task
+  ;; The one entity two reverted attempts at a postings index gained, gained
+  ;; here instead. "saving a piece design" tokenised to SAVING and SAVEDESIGN
+  ;; tokenises to SAVE, so the definition named after the task matched none of
+  ;; the query.
+  (let ((tokens (loom-knowledge::task-tokens "saving a piece design")))
+    (is (member "save" tokens :test #'string=)))
+  (is (member "edit" (loom-knowledge::task-tokens "editing colours") :test #'string=))
+  (is (member "layer" (loom-knowledge::task-tokens "edited layers") :test #'string=)))
+
+(test a-stem-is-added-and-never-substituted
+  ;; A wrong guess then costs nothing: a stem matching no name never matches,
+  ;; where a substitution would have lost the word the caller wrote.
+  (let ((tokens (loom-knowledge::task-tokens "saving")))
+    (is (member "saving" tokens :test #'string=))
+    (is (member "sav" tokens :test #'string=) "dropping -ing, which matches nothing")
+    (is (member "save" tokens :test #'string=) "and the -e restoration, which does")))
+
+(test stemming-keeps-short-identifiers-whole
+  (is (not (member "clas" (loom-knowledge::task-tokens "class") :test #'string=))
+      "a double s is refused")
+  (is (not (member "addres" (loom-knowledge::task-tokens "address") :test #'string=)))
+  (is (member "type" (loom-knowledge::task-tokens "types") :test #'string=)
+      "and an ordinary plural still folds"))
