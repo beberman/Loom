@@ -19,6 +19,31 @@ summary: |
   It was found by accident: `complete PLAN-0032` answered "No document in Loom
   is named PLAN-0032", which is the first and only time anything reported it.
 body: |
+  A SECOND INSTANCE, FOUND 2026-08-18, TWELVE DAYS OLD
+
+  BUG-0013 has never been in the index. Its title is
+
+      title: affects: is read only on a decision, so 44 of 63 documents ...
+
+  and the unquoted colon is the same break PLAN-0032's title made -- filed
+  2026-08-06, so it had been invisible for twelve days rather than the day and
+  a half this document opens with. It was found the same way: `set-status
+  BUG-0013 closed` answered "No document in Loom is named BUG-0013", which is
+  again the only thing in the system that said so. `check` was clean, `status`
+  reported no error, and BUG-0013 was a duplicate of BUG-0023 that nobody
+  spotted for five days partly because no cross-reference to it could resolve.
+
+  This makes the defect a recurring one rather than an incident, and it changes
+  what the count is worth. Two instances, both from an unquoted colon in a
+  title, both silent, both found by a command that happened to look a document
+  up by id. A third is a matter of time, and until `status` carries the number
+  nothing will report it.
+
+  A sweep of all 148 YAML files under docs/ on 2026-08-18 found exactly these
+  two -- one already repaired, BUG-0013 repaired by quoting its title -- so the
+  tree is clean today. That sweep is four lines of Python and is not a
+  substitute for the count: it ran because someone went looking.
+
   WHY THIS IS NOT A SMALL REPORTING GAP
 
   The index is meant to know what it is missing. That principle is already built

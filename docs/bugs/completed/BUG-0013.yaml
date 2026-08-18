@@ -1,6 +1,6 @@
 id: BUG-0013
-title: affects: is read only on a decision, so 44 of 63 documents declare references that resolve to nothing and are never reported
-status: open
+title: "affects: is read only on a decision, so 44 of 63 documents declare references that resolve to nothing and are never reported"
+status: closed
 date: 2026-08-06
 refines: [PLAN-0009]
 affects: [document-properties, resolve-document-links, analyze-file]
@@ -21,6 +21,23 @@ summary: |
   GENERIC-DEFINITION-ENTITY and whose step 6 was written to observe exactly two
   unresolved references appear and then go away. Neither can happen.
 body: |
+  CLOSED AS A DUPLICATE OF BUG-0023, 2026-08-18
+
+  BUG-0023 is this defect, filed again five days later with a wider count --
+  "affects: was read only from a decision, so 63 of 67 documents declared what
+  they touch and nothing recorded it" -- and it is closed. The fix is in
+  DOCUMENT-PROPERTIES' :DOCUMENT method, which now reads :AFFECTS with a
+  comment stating the same arithmetic this document opens with.
+
+  Verified rather than assumed: `check` on this tree reports unresolved
+  document references from PLAN-0003, PLAN-0005, PLAN-0008, PLAN-0009,
+  PLAN-0010, REQ-0014, REQ-0017, DES-0006, BUG-0029 and BUG-0032 -- every one a
+  non-decision document whose affects: is now read, resolved and reported. That
+  is exactly the staleness detector this document says is "silently off for
+  those documents", running.
+
+  Nothing below was wrong. It was fixed under another number.
+
   SYMPTOM
 
   A document that is not a decision may declare any affects: list at all,
