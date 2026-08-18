@@ -31,6 +31,41 @@ per-analyzer, and no arrangement of the analyzer layer would have avoided it.
 analyzer claims -- REQ-0024's WHAT THIS IS NOT is explicit that a parser
 accepting TS by accident would mint entities whose properties nothing models.")
 
+(defvar *case-insensitive-languages* '(:lisp)
+  "Languages in which two identifiers differing only in case are one
+identifier.
+
+Common Lisp is one because its reader upcases: `(defun Foo ...)' and `(foo)'
+name the same symbol, and a resolver that distinguished them would resolve
+nothing. Every other language here is case-sensitive, and a language absent
+from *SOURCE-LANGUAGES* entirely is treated as case-sensitive too -- the safe
+default, because exact matching can only fail to draw an edge, while folding
+can draw one that does not exist.
+
+Here rather than in an analyzer because it is a fact about the language and
+not about how Loom reads it, and because the code that needs it is
+RESOLVE-CALLS, which may not depend on the analyzer layer (RULE-0001 to
+RULE-0003). *SOURCE-LANGUAGES* above is already the precedent for a language
+fact living below both.
+
+BUG-0029 is what this exists for. The definition index folds case globally,
+which was invisible while every indexed language was Lisp: on ~/github/front-end
+three components named `Error' collected 116 inbound edges each and were the
+top three hubs in `structure', ahead of the real one at 50. All 348 were
+`logger.error(...)' call sites matched to `Error' on a spelling JavaScript does
+not consider equal; the repository renders `<Error />' twice.")
+
+(defun case-insensitive-language-p (language)
+  "True when LANGUAGE folds case in identifiers. NIL -- an entity with no
+:LANGUAGE property -- is treated as case-insensitive, which is the answer that
+leaves resolution as it was rather than the one that is safest, and is
+deliberate: every callable this tree indexes carries a language, so a NIL here
+means a caller that never had one to give (RESOLVE-GENERATED-DEFINITIONS asks
+whether a name reaches anything at all, with no caller) rather than a language
+Loom failed to record."
+  (or (null language)
+      (and (member language *case-insensitive-languages*) t)))
+
 ;;;; ==================================================================
 ;;;; Workspace and history
 ;;;; ==================================================================

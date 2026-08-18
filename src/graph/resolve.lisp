@@ -83,6 +83,43 @@ one pass, so the graph is assembled once rather than once per index."
   (name-lookup view *callable-types*
                :external-packages external-packages :package-graph package-graph))
 
+(defun same-identifier-p (a b language-a language-b)
+  "True when the identifiers A and B, written in LANGUAGE-A and LANGUAGE-B, are
+the same identifier.
+
+Case is folded only when *both* languages fold it. That asymmetry is the whole
+of BUG-0029: the index is keyed on a downcased name and therefore matches
+`error\' to `Error\', which is right for two Common Lisp symbols and wrong for
+two JavaScript ones. Requiring both sides rather than either is the
+conservative reading -- a pair that disagrees about case gets the strict rule,
+so a language Loom has never seen cannot inherit Lisp\'s folding by being
+compared against a Lisp definition."
+  (if (and (case-insensitive-language-p language-a)
+           (case-insensitive-language-p language-b))
+      (string-equal a b)
+      (string= a b)))
+
+(defun same-identifier-candidates (candidates name caller)
+  "CANDIDATES reduced to those whose name really is NAME, read from CALLER.
+
+The downcased index is a *search structure* after BUG-0029 and not the
+equality itself: it returns a superset keyed on a fold every language may not
+share, and this is where the pair-wise judgement happens. It has to be
+pair-wise, because whether two spellings are one identifier depends on both
+languages and no single hash key can express that.
+
+A NIL CALLER keeps the whole set. That is RESOLVE-GENERATED-DEFINITIONS asking
+whether a name reaches anything at all, with nothing to take a language from,
+and the old answer is the only one available."
+  (let ((language (and caller (getp caller :language))))
+    (if (null caller)
+        candidates
+        (remove-if-not (lambda (entity)
+                         (and (slot-boundp entity 'name)
+                              (same-identifier-p name (name entity)
+                                                 language (getp entity :language))))
+                       candidates))))
+
 (defun candidate-entities (index name caller)
   "The definitions NAME could name, as read from CALLER.
 
@@ -90,10 +127,16 @@ INDEX may be a bare hash table, which is what CALLABLE-INDEX returns and what
 every caller passed before DES-0015. That path is the old behaviour exactly,
 which is why tools/call-site-census.lisp keeps working unchanged and why a
 CALLER of NIL -- RESOLVE-GENERATED-DEFINITIONS asking whether a name reaches
-anything at all -- still gets the unrestricted answer."
+anything at all -- still gets the unrestricted answer.
+
+Both index paths are filtered through SAME-IDENTIFIER-CANDIDATES on the way
+out, including the package-placed one: DES-0015 establishes that a name is one
+*symbol*, which is a Common Lisp question, and answering it does not make the
+spelling right in a language that has no packages."
   (let ((key (string-downcase name)))
     (etypecase index
-      (hash-table (values (gethash key index) nil))
+      (hash-table
+       (values (same-identifier-candidates (gethash key index) name caller) nil))
       (name-lookup
        (let* ((home (and caller
                          (home-package (name-lookup-package-graph index)
@@ -106,8 +149,10 @@ anything at all -- still gets the unrestricted answer."
          ;; edges between definitions that share nothing but a name, which is
          ;; the fabrication DES-0015 exists to stop.
          (if placed
-             (values placed t)
-             (values (gethash key (name-lookup-by-name index)) nil)))))))
+             (values (same-identifier-candidates placed name caller) t)
+             (values (same-identifier-candidates
+                      (gethash key (name-lookup-by-name index)) name caller)
+                     nil)))))))
 
 (defun unique-match (index name &optional referrer)
   "The one entity INDEX holds under NAME as REFERRER sees it, or NIL for none

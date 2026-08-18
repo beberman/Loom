@@ -13,6 +13,8 @@
 
    ;; shared vocabularies
    #:*source-languages*
+   #:*case-insensitive-languages*
+   #:case-insensitive-language-p
 
    ;; mixins
    #:identified

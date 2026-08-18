@@ -909,3 +909,86 @@ mention does")
     (is (null (relationships-from g (id doc) :rel-type :mentions))
         "and earns no edge, because :MENTIONS is declared to reach code")))
 
+
+;;; ------------------------------------------------------------------
+;;; Case sensitivity is the language's, not the index's (BUG-0029)
+;;; ------------------------------------------------------------------
+;;;
+;;; The definition index is keyed on a downcased name, which is correct for
+;;; Common Lisp -- the reader upcases, so `Error' and `error' are one symbol --
+;;; and was applied to every language because every language indexed was Lisp.
+;;; On ~/github/front-end it made three components named `Error' the top three
+;;; hubs in `structure' with 116 inbound edges each, all of them
+;;; `logger.error(...)' call sites. 348 edges, and the repository renders
+;;; `<Error />' twice.
+
+(defun r-js-function (graph name file &key unresolved)
+  (let ((e (make-instance 'function-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :javascript
+                                             :call-names unresolved)))))
+    (add-entity graph e)
+    e))
+
+(test a-javascript-call-does-not-reach-a-definition-differing-only-in-case
+  (let* ((g (make-graph))
+         (caller (r-js-function g "logSomething" "a.js" :unresolved '("error")))
+         (wrong  (r-js-function g "Error" "b.jsx")))
+    (apply-transaction g (resolve-calls g))
+    (is (null (relationships-from g (id caller) :rel-type :calls))
+        "`error' and `Error' are two identifiers in JavaScript")
+    (is (null (relationships-to g (id wrong) :rel-type :calls))
+        "and the component collects none of them")
+    (is (equal '("error") (getp caller :unresolved-calls))
+        "the name is recorded unresolved, which is the honest answer")))
+
+(test a-javascript-call-still-reaches-the-definition-it-does-name
+  ;; The other half, and the one that would make the fix worthless if it
+  ;; failed: exact matching must still resolve.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "logSomething" "a.js" :unresolved '("error")))
+         (callee (r-js-function g "error" "logger.js")))
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id callee))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls))))))
+
+(test a-lisp-call-still-folds-case-because-the-reader-does
+  ;; Common Lisp is why the index folds at all, and this is the behaviour that
+  ;; must survive the fix untouched. `(defun Foo ...)' and `(foo)' are one
+  ;; symbol, and an index that distinguished them would resolve nothing.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("Analyze-Path")))
+         (callee (r-function g "analyze-path" "b.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id callee))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls))))))
+
+(test a-lisp-caller-does-not-reach-a-javascript-definition-by-folding
+  ;; The mixed pair, which is what a repository holding both languages
+  ;; produces. SAME-IDENTIFIER-P folds only when both sides fold, so the
+  ;; stricter language decides -- a JavaScript definition cannot be reached by
+  ;; a spelling only Lisp considers equal.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("handler")))
+         (wrong  (r-js-function g "Handler" "b.js")))
+    (apply-transaction g (resolve-calls g))
+    (is (null (relationships-from g (id caller) :rel-type :calls)))
+    (is (null (relationships-to g (id wrong) :rel-type :calls)))))
+
+(test same-identifier-p-folds-only-when-both-languages-fold
+  ;; Named with the double colon: the predicate is internal to loom-graph and
+  ;; exporting it to be tested would widen the system's surface for the test's
+  ;; convenience. The four tests above are the behaviour; this one pins the
+  ;; rule they all rest on.
+  (is (loom-graph::same-identifier-p "Error" "error" :lisp :lisp))
+  (is (not (loom-graph::same-identifier-p "Error" "error" :javascript :javascript)))
+  (is (not (loom-graph::same-identifier-p "Error" "error" :lisp :javascript))
+      "the stricter side decides, so an unknown language cannot inherit
+Lisp's folding by being compared against a Lisp definition")
+  (is (not (loom-graph::same-identifier-p "Error" "error" :javascript :lisp)))
+  (is (loom-graph::same-identifier-p "error" "error" :javascript :javascript))
+  ;; A NIL language is a caller that never had one -- RESOLVE-GENERATED-
+  ;; DEFINITIONS asking whether a name reaches anything at all -- and keeps the
+  ;; old answer rather than acquiring a stricter one.
+  (is (loom-graph::same-identifier-p "Error" "error" nil nil)))

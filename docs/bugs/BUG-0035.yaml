@@ -1,0 +1,85 @@
+id: BUG-0035
+title: A JavaScript call matches every same-named definition in the repository, including when the calling file defines one itself
+status: open
+date: 2026-08-18
+refines: [BUG-0029]
+affects: [candidate-entities, call-targets, resolve-calls, entities-by-name]
+tags: [resolution, javascript, scope, modules, con-0001, req-0015, bug-0029]
+severity: high
+body: |
+  PRIORITY: P2, 2026-08-18
+
+  Filed on the strength of the measurement below rather than on an argument.
+  73 of front-end's 163 call sites fan out to a set containing a definition
+  from the calling file, which is the subset where the answer was available and
+  a guess was recorded instead. It is behind BUG-0025 because the fan-out is
+  labelled -- a reported guess is CON-0001's recorded gap, where BUG-0025's
+  false edge is CON-0001's fabricated fact -- and ahead of the P3 tier because
+  it is wrong on the tree Loom is most likely to be pointed at next.
+
+  WHAT HAPPENS
+
+  src/ui/edit/design/pages/DesignHome.jsx defines a component at line 163:
+
+      const Error = (error) => { ... }
+
+  and renders it twice, at 273 and 308. Loom draws three edges, one to each
+  component in the repository named exactly `Error' -- the local one, and two
+  in AsyncRedirect.jsx and SaveDesign.jsx that the file neither imports nor
+  mentions. Each is reported `(ambiguous)' through a :CALL-SITE at 1/3.
+
+  One of the three is right. The other two are the resolver matching a bare
+  name across a whole repository in a language where a module's top-level
+  binding is private unless exported and unreachable unless imported.
+
+  MEASURED, ~/github/front-end, 2026-08-18
+
+      :CALL-SITE entities                                    163
+      fanning out to two or more candidates                  163
+        of which one candidate is defined in the calling file 73
+
+  All 163 are after BUG-0029's fix; before it there were 284. The 73 is the
+  cheaply decidable subset, not the whole defect: a call whose target is
+  imported from a named module is equally determinable and is not counted here,
+  because Loom does not record imports.
+
+  WHY IT IS NOT REQ-0015's AMBIGUITY, AND WHY IT LOOKS LIKE IT
+
+  REQ-0015 is about a name that genuinely matches several definitions and a
+  resolver that cannot tell which was meant. Here the language can tell. A
+  definition in the calling file shadows every same-named definition elsewhere
+  unless the file imports one, and a definition in another module is not a
+  candidate at all unless it is exported and imported. The candidate set is not
+  ambiguous; it was assembled without the information that would have narrowed
+  it.
+
+  This is the same shape as BUG-0029 one level up. There the matcher lacked the
+  language's case rule; here it lacks the language's scope rule. Both were
+  invisible while every indexed language was Common Lisp, where a symbol is
+  global to its package and a file boundary means nothing to resolution.
+
+  WHAT A FIX HAS TO DECIDE
+
+  - Whether the narrowing is the analyzer's or the resolver's. The JavaScript
+    analyzer sees `import { X } from './y'` and records nothing of it today.
+    An :IMPORTS edge or an :IMPORTED-NAMES property is a change to what a
+    JavaScript file *is* in the index, and it is what a correct answer needs;
+    same-file-wins is a resolver-only approximation of it.
+
+  - Whether same-file-wins is worth landing on its own. It closes 73 of 163
+    with no new analyzer output and no new entity property, and it is right in
+    every case it fires -- a local definition does shadow. It is also a rule
+    Common Lisp does not want, so it has to be conditioned on the language the
+    way BUG-0029's case rule now is, through
+    LOOM-ONTOLOGY:*CASE-INSENSITIVE-LANGUAGES*' precedent rather than beside it.
+
+  - What an unresolvable name should do. A call to something genuinely
+    imported from node_modules has no definition in the index, and the honest
+    answer is the unresolved record it already gets.
+
+  ACCEPTANCE
+
+  DesignHome.jsx's `<Error />` draws one edge, to DesignHome.jsx:163. The
+  same-file subset of front-end's fan-outs falls from 73 to 0. Loom and
+  game-server index with the entity and relationship counts they have now,
+  because neither has a language this rule applies to.
