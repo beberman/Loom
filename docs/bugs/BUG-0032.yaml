@@ -4,6 +4,7 @@ status: open
 date: 2026-08-16
 affects: [resolve-entity, search-entities, search-rank, significant-name, describe-entity]
 tags: [knowledge, describe, find, ranking, front-end, req-0031, req-0016]
+severity: high
 summary: |
   `describe LayerEditor` on ~/github/front-end answers about
   src/ui/edit/terrain/Editor/LayerEditor.jsx, the file. The 251-line component
@@ -25,6 +26,14 @@ summary: |
   That argument is sound for `find` and does not transfer to `describe`, which
   reuses the same resolution and asks a different question.
 body: |
+  PRIORITY: P3, 2026-08-18
+
+  Still exact on the running service: `describe LayerEditor --source' answers
+  about LayerEditor.jsx and returns status "unlocated", while the 251-line
+  component three lines away serves its source in full when addressed by id.
+  37 of 60 sampled front-end basenames resolve to the file first. This is the
+  only thing keeping REQ-0031 at `partial'.
+
   WHY find AND describe WANT DIFFERENT ANSWERS
 
   `find` is a locator. A caller who types `find LayerEditor` and gets the file

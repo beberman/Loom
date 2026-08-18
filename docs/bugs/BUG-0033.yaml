@@ -19,6 +19,15 @@ summary: |
   It was found by accident: `complete PLAN-0032` answered "No document in Loom
   is named PLAN-0032", which is the first and only time anything reported it.
 body: |
+  PRIORITY: P2, 2026-08-18
+
+  Two instances now, and the second had been invisible for twelve days -- see
+  the section above. Both are an unquoted colon in a title, both were found by
+  a command that happened to look a document up by id, and nothing in `status'
+  or `check' has ever said so. That makes this a recurring defect rather than
+  an incident. The fix is the size of BUG-0030 F1's reporting half: a count on
+  `status', a line in `check'.
+
   A SECOND INSTANCE, FOUND 2026-08-18, TWELVE DAYS OLD
 
   BUG-0013 has never been in the index. Its title is

@@ -5,6 +5,7 @@ date: 2026-08-08
 refines: [PLAN-0011]
 affects: [resolve-tests, print-status]
 tags: [graph, knowledge, tests, honesty]
+severity: low
 summary: |
   RESOLVE-TESTS derives a :TESTS edge from every :CALLS edge a :TEST entity has
   to a :FUNCTION, :METHOD or :INTERFACE, and says so plainly (DES-0002 R9).
@@ -21,6 +22,12 @@ summary: |
   are not the same size: relabel, or teach the derivation that a :FUNCTION whose
   origin file is itself a test file is a fixture rather than a subject.
 body: |
+  PRIORITY: P5, 2026-08-18
+
+  A label that overclaims, over a derivation that is honest and documented.
+  Nothing reads the number to make a decision, and the smaller of the two
+  candidate fixes is a rewording.
+
   SYMPTOM
 
   `status` reports, on this tree, /usr/bin/sbcl, 2026-08-08:

@@ -5,6 +5,7 @@ date: 2026-08-08
 refines: [PLAN-0010]
 affects: [enrich-repository, enrich-ops, enriched-edge, union-sources, resolve-calls,
           resolve-and-check, absorb-relationship, absorb-properties]
+severity: low
 summary: |
   DES-0011 R6 records agreement between the text pass and the image pass as a
   :SOURCES property on the one surviving edge, "so agreement between the passes
@@ -21,6 +22,14 @@ summary: |
   therefore inert for confirmed edges -- the majority case and the only case it
   exists for -- and is re-erased by every subsequent POLL-ONCE as well.
 body: |
+  PRIORITY: P5, 2026-08-18
+
+  Last, and the reason is in the section above rather than in the defect's
+  size. The first erasure is fixed, the second is asserted by a test rather
+  than assumed, and what it costs a reader is written down. Enrichment is
+  on-demand, so an index nobody enriched is unaffected. A documented
+  degradation with a test on it is the cheapest state an open bug can be in.
+
   SYMPTOM
 
   Observed, with a two-function graph in exactly the shape src/graph/test/

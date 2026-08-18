@@ -22,6 +22,14 @@ summary: |
   first pass happened to derive, and no later index of either tree changes
   them.
 body: |
+  PRIORITY: P4, 2026-08-18
+
+  High severity and fourth in the queue, because the two are different
+  questions. Every reindex of a tree that federates reports the rejection and
+  the cross-repository edges stay frozen at whatever the first pass drew -- but
+  it bites only a service holding two or more repositories, where the three
+  above it are wrong on a single tree.
+
   WHAT HAPPENS
 
   Reproduced 2026-08-18 with three repositories watched -- Loom, game-server,

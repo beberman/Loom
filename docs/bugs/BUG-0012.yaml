@@ -5,6 +5,7 @@ date: 2026-08-06
 refines: [PLAN-0009, DES-0010]
 affects: [generic-definition-entities, method-entity-from-tail, absorb-entity]
 tags: [analyzer, graph, lisp, clos, blind-spot]
+severity: medium
 summary: |
   DES-0010 R4 discloses that an inline (:method ...) clause and a standalone
   DEFMETHOD with identical name, qualifier and specializers in the same file
@@ -24,6 +25,13 @@ summary: |
   ~/lisp/game-server (mpackage/obj-types.lisp ADD-DEFN, mpackage/object.lisp
   COMPUTED-ID-P), so this is not a constructed edge case.
 body: |
+  PRIORITY: P4, 2026-08-18
+
+  The same fabrication class as BUG-0025 and far rarer: two measured instances
+  in ~/lisp/game-server against BUG-0025's six on this tree. It needs a name, a
+  qualifier and a specializer list to collide inside one file, which is why the
+  population is small and why it is below BUG-0025 rather than beside it.
+
   SYMPTOM
 
   A fixture with a standalone DEFMETHOD and a colliding inline clause, both

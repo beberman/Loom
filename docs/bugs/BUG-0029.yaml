@@ -6,6 +6,7 @@ refines: [REQ-0024]
 affects: [resolve-calls, resolve-one, build-definition-index, impact-set,
           structure-report]
 tags: [resolution, javascript, generality, con-0001, false-edge, req-0024]
+severity: critical
 summary: |
   RESOLVE-CALLS matches a call name to a definition through an index keyed on
   STRING-DOWNCASE (resolve.lisp:40 and :1097, read back at :1115). That is
@@ -23,6 +24,15 @@ summary: |
   The repository really does render `<Error />`, twice, in DesignHome.jsx. So
   the correct inbound count for the whole tree is 2, and the index reports 348.
 body: |
+  PRIORITY: P1, 2026-08-18
+
+  The largest measured fabrication in the tree. Re-measured on the running
+  service: three components named `Error' carry 116 inbound edges each and are
+  the top three hubs in `structure' on front-end, ahead of MAPPER at 50, which
+  is the real one. 348 edges against a true count of 2. The same edges feed
+  `impact' and rank `context', so a wrong answer arrives first in the reply an
+  agent reads -- CON-0001's fabricated fact at the top of the page.
+
   WHAT IS WRONG
 
   The definition index is built once per resolution pass and keyed on the

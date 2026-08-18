@@ -5,6 +5,7 @@ date: 2026-08-13
 refines: [PLAN-0022]
 affects: [impact-set, resolve-document-links, document-summary, entity-system]
 tags: [analyzer, resolution, con-0001, des-0015, false-edge]
+severity: high
 summary: |
   The Lisp analyzer records the name bound by a `let` or `let*` as a called
   function. A binding pair `(field (compute x))` is syntactically identical to
@@ -23,6 +24,15 @@ summary: |
   plausible, and wrong, and it survives every check the tree has: `check`
   reports unresolved references and this one resolved.
 body: |
+  PRIORITY: P1, 2026-08-18
+
+  Re-measured and worse than filed. LOOM-MCP's FIELD now carries six inbound
+  :CALLS edges, not the four this document records: from loom-process,
+  loom-knowledge, loom-graph twice and loom-analyzer. Only the two from
+  jsonrpc.lisp itself are real. Every fabricated one crosses a layer boundary
+  RULE-0001 to RULE-0003 exist to police, so this defect can fabricate a
+  violation and can hide one, and `check' reports the tree clean either way.
+
   SYMPTOM
 
   Found by the structural report DES-0022 S1 added, on its first run against

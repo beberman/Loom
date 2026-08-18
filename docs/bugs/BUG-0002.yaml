@@ -4,6 +4,7 @@ status: open
 date: 2026-07-29
 refines: [REQ-0003]
 affects: [search-entities, split-command-line]
+severity: medium
 summary: |
   `find` passes :limit 20 to search-entities and prints whatever comes back with
   no indication that anything was dropped, so a common term returns twenty
@@ -13,6 +14,13 @@ summary: |
   these mean the console cannot answer "how many entities of type X are there",
   which is the acceptance criterion REQ-0003 R5 states for itself.
 body: |
+  PRIORITY: P5, 2026-08-18
+
+  Confirmed unchanged: a find returns twenty rows and the answer carries no
+  total and no truncation flag, so a caller cannot tell a complete answer from
+  a cut one. CON-0006 by inspection. Below the tiers above because a caller who
+  suspects it can narrow the term; a fabricated edge offers no such recourse.
+
   SYMPTOM
 
   Asking which test entities exist, on Loom indexing Loom:
