@@ -47,21 +47,36 @@ passed against the defect."
         (is (not (null (assoc :capabilities result))))
         (is (equal "loom" (cdr (assoc :name (cdr (assoc :server-info result))))))))))
 
-(test tools-list-returns-exactly-fifteen-and-no-lifecycle-write-tool
+(defmacro with-grants ((grants) &body body)
+  "Run BODY with *STATIC-GRANTS* set to GRANTS, restoring it after.
+
+SETF and not LET, for the reason loom-rest's copy of this macro states at
+length: grants are resolved in a Hunchentoot worker thread, and a special bound
+in this thread is invisible there. A test that got it wrong would pass while
+testing nothing."
+  (let ((saved (gensym "GRANTS")))
+    `(let ((,saved loom-serve:*static-grants*))
+       (unwind-protect (progn (setf loom-serve:*static-grants* ,grants) ,@body)
+         (setf loom-serve:*static-grants* ,saved)))))
+
+(test tools-list-returns-what-the-caller-may-call-and-no-lifecycle-write-tool
   ;; The negative is the witness for DES-0006's deliberate asymmetry. Without
   ;; it, a later well-meaning restoration of symmetry between the two skins is
-  ;; invisible -- the count would simply be fifteen and every other test would
+  ;; invisible -- the count would simply be the count and every other test would
   ;; still pass.
   ;;
-  ;; Twelve rather than ten since REQ-0022: the two transition tools are on this
-  ;; surface because R6 puts them there and REQ-0021 R8 says why -- an agent
-  ;; installed into a prepared worktree reaches Loom through the service and has
-  ;; no tools/loom.sh to shell out to. The four names below stay absent, which
-  ;; is the part of DES-0006's asymmetry that was actually argued for.
+  ;; Twelve rather than fifteen since REQ-0032: RESOLVE-CALLER-GRANTS answers
+  ;; :read and :write and deliberately not :repl, so the three repl tools were
+  ;; advertised to every caller and callable by none. An agent on game-server
+  ;; planned around them, spent five `sbcl --load' launches doing by shell what
+  ;; a session does in one, and was refused at the end of the task.
   (with-test-server ()
     (let* ((tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
            (names (mapcar (lambda (tool) (cdr (assoc :name tool))) tools)))
-      (is (= 15 (length tools)) "the tool set is ~a" names)
+      (is (= 12 (length tools)) "the tool set is ~a" names)
+      (dolist (repl '("loom_repl_open" "loom_repl_eval" "loom_repl_close"))
+        (is-false (member repl names :test #'string=)
+                  "~a is advertised to a caller that cannot call it" repl))
       (dolist (present '("loom_set_status" "loom_complete"
                          "loom_structure" "loom_drift"
                          ;; REQ-0034. The workflow tool an agent asks before
@@ -88,6 +103,56 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
         (is (equal "object" (cdr (assoc :type (cdr (assoc :input-schema describe))))))
         (is (equal '("repository" "term")
                    (cdr (assoc :required (cdr (assoc :input-schema describe))))))))))
+
+(test granting-repl-adds-the-three-tools-and-nothing-else
+  ;; REQ-0032 R4's second assertion, and the one that says the filter reads the
+  ;; grant rather than a list of names it was told to hide. On the day
+  ;; RESOLVE-CALLER-GRANTS answers :repl for some callers, those callers' lists
+  ;; grow by exactly three and nothing else changes.
+  (with-test-server ()
+    (let ((without (cdr (assoc :tools (result-of (rpc "tools/list"))))))
+      (with-grants ('(:read :write :repl))
+        (let* ((with (cdr (assoc :tools (result-of (rpc "tools/list")))))
+               (names (mapcar (lambda (tool) (cdr (assoc :name tool))) with)))
+          (is (= 15 (length with)))
+          (is (= 3 (- (length with) (length without))))
+          (dolist (repl '("loom_repl_open" "loom_repl_eval" "loom_repl_close"))
+            (is-true (member repl names :test #'string=)
+                     "~a is callable now and must be advertised" repl)))))))
+
+(test a-read-only-caller-is-shown-only-read-tools
+  ;; The other direction, and the one that shows the filter is per-tier rather
+  ;; than per-name: with :write withdrawn, the two transition tools go too.
+  (with-test-server ()
+    (with-grants ('(:read))
+      (let* ((tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
+             (names (mapcar (lambda (tool) (cdr (assoc :name tool))) tools)))
+        (is-true (member "loom_find" names :test #'string=))
+        (dolist (write '("loom_set_status" "loom_complete"))
+          (is-false (member write names :test #'string=)
+                    "~a is a :write tool and this caller has no :write" write))))))
+
+(test a-tool-that-was-never-shown-is-still-refused-at-the-call
+  ;; REQ-0032 R3. Filtering the advertisement removes a misleading claim and
+  ;; removes no enforcement: a client may call a tool it was never shown, and
+  ;; CHECK-CAPABILITY must refuse it exactly as it did. The answer is a tool
+  ;; result carrying isError, not "no such tool" -- the server has the tool,
+  ;; and telling a caller otherwise would be a different and false thing.
+  (with-test-server ()
+    (let* ((response (rpc "tools/call"
+                          :params (list :name "loom_repl_open"
+                                        :arguments (list :repository "nope"))))
+           (result (result-of response)))
+      (is (not (null result)) "the envelope was well formed, so this is a result")
+      (is-true (cdr (assoc :is-error result))
+               "and the refusal is inside it: ~a" result)
+      ;; The reason, not merely a failure. A missing repository would also set
+      ;; isError, so asserting the flag alone would pass against a server that
+      ;; had stopped checking the tier entirely.
+      (let ((structured (cdr (assoc :structured-content result))))
+        (is (equal "CAPABILITY-ERROR" (cdr (assoc :name structured)))
+            "the refusal is the tier check and not some other failure: ~a"
+            structured)))))
 
 (test an-unknown-method-is-a-json-rpc-error-with-the-right-code
   (with-test-server ()

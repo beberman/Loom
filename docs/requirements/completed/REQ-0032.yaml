@@ -1,9 +1,9 @@
 id: REQ-0032
 title: tools/list must advertise what the caller can actually call, because a tool that always fails is worse than one that is absent
-status: draft
+status: implemented
 date: 2026-08-15
 refines: [CON-0004]
-affects: [all-tools, find-tool, resolve-caller-grants, check-capability]
+affects: [all-tools, find-tool, tool-permitted-p, resolve-caller-grants, check-capability]
 tags: [mcp, capability, agents, serve, req-0008]
 summary: |
   *TOOLS* is a static list of fourteen and tools/list returns all fourteen to
@@ -24,6 +24,56 @@ summary: |
   it. What is wrong is that the advertisement and the grant are two facts that
   nothing reconciles, so the only way to discover the boundary is to cross it.
 body: |
+  IMPLEMENTED 2026-08-18
+
+  ALL-TOOLS takes the caller's resolved grants and returns the tools whose
+  operations those grants reach. TOOL-PERMITTED-P asks the registry entry for
+  its tier and the grants for membership, which is CHECK-CAPABILITY's question
+  asked of the same two facts -- R2's single answer, rather than a second list
+  of names to hide. DISPATCH-METHOD passes the grants HANDLE-JSONRPC already
+  resolved for the request, so the seam is threaded rather than stubbed and
+  the list is per-caller on the day RESOLVE-CALLER-GRANTS distinguishes
+  callers.
+
+  FIND-TOOL stays unfiltered, which is R3. A client may call a tool it was
+  never shown, and it is refused by CHECK-CAPABILITY exactly as before -- the
+  live service answers isError with CAPABILITY-ERROR and "repl-open requires
+  the repl capability." A NIL from FIND-TOOL would say "no such tool", which
+  is a different and false thing to tell a caller about a tool this server has.
+
+  MEASURED AGAINST THE RUNNING SERVICE
+
+      before   14 tools, three of them repl
+      after    12 tools, none of them repl
+
+  Twelve rather than R4's eleven, and fifteen rather than fourteen: REQ-0034
+  added loom_check_document between this requirement being written and being
+  implemented. The two assertions R4 asks for are the ones that landed --
+  twelve with *STATIC-GRANTS* at its default and no repl tool among them,
+  fifteen with :repl added and exactly three more.
+
+  A third test takes the other direction. With :write withdrawn the two
+  transition tools go as well, which is what shows the filter reads a tier
+  rather than a list of repl names.
+
+  THE OPEN QUESTIONS, ANSWERED
+
+  Hidden rather than shown as disabled. MCP has no disabled tool and hiding is
+  the only thing the protocol expresses. Nothing was added to initialize or to
+  the server instructions to explain the absence: a human debugging their own
+  deployment reads capability.lisp, where the reason is already written at
+  length, and a note in the protocol would be a second place for it to go
+  stale.
+
+  The seam is threaded now rather than stubbed. It cost one optional argument
+  and one call site, and the alternative -- a constant with the shape in
+  place -- would have to be unpicked by whoever lands the credential model.
+
+  REST is unchanged and owes nothing yet. It has no enumeration endpoint, and
+  a route that refuses is an ordinary 403 against an endpoint a caller looked
+  up deliberately. If an enumeration endpoint is ever added it inherits this
+  question rather than deciding it fresh.
+
   WHAT IS WRONG
 
   src/mcp/tools.lisp:36-63 builds *TOOLS* as a literal list, and ALL-TOOLS

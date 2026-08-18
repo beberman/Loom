@@ -67,9 +67,48 @@
         (make-tool :name "loom_repl_close" :operation :repl-close))
   "The fifteen tools, in the order tools/list returns them.")
 
-(defun all-tools () *tools*)
+(defun tool-permitted-p (tool grants)
+  "True when GRANTS reach the tier TOOL's operation declares.
+
+The same question CHECK-CAPABILITY asks at dispatch, asked of the same grants
+and the same registry entry. REQ-0032 R2: two places deciding what a caller may
+reach is how they drift, and a tool whose operation is not registered at all is
+not permitted rather than assumed harmless."
+  (let ((operation (find-operation (tool-operation tool))))
+    (and operation (member (operation-tier operation) grants) t)))
+
+(defun all-tools (&optional (grants nil grants-supplied-p))
+  "The tools GRANTS may call, or every tool when no grants are given.
+
+REQ-0032. *TOOLS* was returned whole to every client, and RESOLVE-CALLER-GRANTS
+answers :read and :write and deliberately not :repl -- so the three repl tools
+were advertised to every caller and callable by none, in every deployment.
+
+A tool list is an interface description read by a machine that plans with it.
+The cost measured on game-server was both halves of that at once: the agent
+spent five `sbcl --load' launches doing by shell what a persistent session does
+in one, and then discovered at the end of the task that the tool it had been
+ignoring would have refused it anyway.
+
+The grants are the caller's resolved ones, passed down from the request rather
+than resolved again here. On the day RESOLVE-CALLER-GRANTS starts answering
+:repl for some callers, those callers' lists grow and nothing else changes.
+
+No grants at all is the whole list, which is what a caller enumerating the tool
+set for its own sake wants -- loom-rest's route coverage check, and the tests
+that assert what the set contains."
+  (if grants-supplied-p
+      (remove-if-not (lambda (tool) (tool-permitted-p tool grants)) *tools*)
+      *tools*))
 
 (defun find-tool (name)
+  "The tool called NAME, whatever the caller may reach.
+
+Unfiltered on purpose. REQ-0032 R3: filtering the advertisement removes a
+misleading claim and removes no enforcement, so a client calling a tool it was
+never shown finds it here and is refused by CHECK-CAPABILITY at dispatch,
+exactly as it is today. A NIL here would answer \"no such tool\", which is a
+different and false thing to tell a caller about a tool this server has."
   (find name *tools* :key #'tool-name :test #'string=))
 
 (defun schema-property-name (key)

@@ -3,7 +3,7 @@ title: find silently caps at twenty hits and cannot enumerate a type
 status: closed
 date: 2026-07-29
 refines: [REQ-0003]
-affects: [search-entities, split-command-line, find]
+affects: [search-entities, split-command-line]
 severity: medium
 summary: |
   `find` passes :limit 20 to search-entities and prints whatever comes back with
