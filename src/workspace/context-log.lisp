@@ -69,38 +69,44 @@ consumer that never calls it gets the default of writing nothing."
   "True when VALUE is a list that ends in NIL."
   (and (listp value) (null (cdr (last value)))))
 
-(defun plist-object-p (value)
-  "True when VALUE is a plist meant to encode as a JSON object.
+(defun alist-object-p (value)
+  "True when VALUE is an alist, which is the only shape that becomes a JSON
+object here.
 
-A keyword in the first position, a proper list, and an even length. CL-JSON's
-own plist encoder treats only the top level as an object and encodes a nested
-plist as an array, which is how a record's `repository' block arrived as an
-array of its own keys and values instead of an object. The rule is stated
-rather than inferred because it is the one place this file guesses: a record
-never holds a list of keywords, so nothing else can match it."
+One shape for an object and one for an array, which is what removes the guess.
+An alist entry is a cons whose cdr is the value, so `(:name . \"x\")' is
+structurally unlike the list `(\"x\")' and no test has to decide between them.
+
+The first attempt used plists and had to guess: `((:name \"x\" :how \"y\"))' is
+a list holding one plist, and it is also an alist whose single entry is
+(:name . (\"x\" :how \"y\")). Nothing in the data says which, so a used set of
+plists encoded as an object and every reader of it broke. game-server's
+utils/serialize.lisp solved this before Loom met it -- its JSON-ENCODE-HELPER
+has an ALISTP branch and no plist branch at all -- and this is that answer."
   (and (consp value)
-       (keywordp (first value))
        (proper-list-p value)
-       (evenp (length value))))
+       (every (lambda (entry) (and (consp entry) (keywordp (car entry)))) value)))
 
 (defun encode-record-value (value stream)
   "Write VALUE to STREAM as JSON, recursively.
 
-Written out rather than delegated because the shapes a record holds are a
-closed set -- plists, lists, strings, numbers, T, :FALSE and NIL -- and
-CL-JSON's plist encoder flattens the nested ones. Nothing decoded is ever
-encoded again: see RECORD-CONTEXT-USE for why a record is never rewritten. The string escaping is still CL-JSON's, which is the half a
-hand-rolled emitter gets wrong."
+Five cases and no guess: NIL is null, T is true, :FALSE is false, an alist is an
+object, any other proper list is an array, and everything else is a scalar
+CL-JSON escapes. The escaping is CL-JSON's because a task string is arbitrary
+text with quotes and newlines in it, and that is the half a hand-rolled emitter
+gets wrong.
+
+Written out rather than delegated because CL-JSON's own dispatch encodes an
+alist as an array, which is the opposite of what a record needs."
   (cond ((null value) (write-string "null" stream))
         ((eq value t) (write-string "true" stream))
-        ;; JSON false, which NIL cannot express here: NIL is how a plist says
-        ;; "no value" and a record uses it for a reason that is absent. A
-        ;; boolean field writes :FALSE so that a reader sees a boolean rather
-        ;; than a null it has to interpret.
+        ;; JSON false, which NIL cannot express here: NIL is also how a record
+        ;; says a value is absent, and a boolean field writes :FALSE so a reader
+        ;; sees a boolean rather than a null it has to interpret.
         ((eq value :false) (write-string "false" stream))
-        ((plist-object-p value)
+        ((alist-object-p value)
          (write-char #\{ stream)
-         (loop for (key sub) on value by #'cddr
+         (loop for (key . sub) in value
                for first = t then nil
                do (unless first (write-char #\, stream))
                   (json:encode-json (json:lisp-to-camel-case (symbol-name key))
@@ -108,17 +114,7 @@ hand-rolled emitter gets wrong."
                   (write-char #\: stream)
                   (encode-record-value sub stream))
          (write-char #\} stream))
-        ;; A dotted pair is not a shape JSON has, and LENGTH signals on one, so
-        ;; this is tested before anything measures the list. Encoded as a
-        ;; two-element array so a record carrying one is readable rather than a
-        ;; write that fails and loses the whole judgement.
-        ((and (consp value) (not (proper-list-p value)))
-         (write-char #\[ stream)
-         (encode-record-value (car value) stream)
-         (write-char #\, stream)
-         (encode-record-value (cdr value) stream)
-         (write-char #\] stream))
-        ((consp value)
+        ((proper-list-p value)
          (write-char #\[ stream)
          (loop for item in value
                for first = t then nil
@@ -127,7 +123,7 @@ hand-rolled emitter gets wrong."
          (write-char #\] stream))
         ((keywordp value) (json:encode-json (string-downcase (symbol-name value))
                                             stream))
-        (t (json:encode-json value stream)))) 
+        (t (json:encode-json value stream))))
 
 (defun write-json-record (path record)
   "Write RECORD, a plist, to PATH as JSON."
@@ -156,10 +152,10 @@ commit whose scores differ, differ because the corpus did."
   (multiple-value-bind (commit commit-reason) (git-commit root)
     (multiple-value-bind (diff diff-reason) (git-diff-hash root)
       (multiple-value-bind (branch branch-reason) (git-branch root)
-        (list :branch branch
-              :commit commit
-              :diff-hash diff
-              :reason (or commit-reason diff-reason branch-reason))))))
+        (list (cons :branch branch)
+              (cons :commit commit)
+              (cons :diff-hash diff)
+              (cons :reason (or commit-reason diff-reason branch-reason)))))))
 
 (defvar *record-random-state* nil
   "A time-seeded random state for record ids.
@@ -236,17 +232,21 @@ how a test or a harness says it needs the file now."
            ;; could read a repository that had been unwatched in between.
            (name (repository-name repository))
            (root (repository-root repository))
-           (record-head (list :id id
-                              :at (format-timestamp (get-universal-time))
-                              :task (getf bundle :task)
-                              :tokens (getf instrumentation :tokens)
-                              :latency-seconds (or seconds 0)))
-           (returned (list :returned
-                           (list :seeds (getf instrumentation :seeds)
-                                 :items (getf instrumentation :items)
-                                 :budget (getf bundle :budget)
-                                 :tokens-used (getf bundle :tokens)
-                                 :truncated (if (getf bundle :truncated) t :false)))))
+           (head (list (cons :id id)
+                       (cons :at (format-timestamp (get-universal-time)))
+                       (cons :task (getf bundle :task))
+                       (cons :tokens (getf instrumentation :tokens))
+                       (cons :latency-seconds (or seconds 0))))
+           (returned
+             (list (cons :returned
+                         (list (cons :seeds (mapcar #'seed-alist
+                                                    (getf instrumentation :seeds)))
+                               (cons :items (mapcar #'item-alist
+                                                    (getf instrumentation :items)))
+                               (cons :budget (getf bundle :budget))
+                               (cons :tokens-used (getf bundle :tokens))
+                               (cons :truncated (if (getf bundle :truncated)
+                                                    t :false)))))))
       (let ((thread
               (bt:make-thread
                (lambda ()
@@ -254,10 +254,11 @@ how a test or a harness says it needs the file now."
                       (handler-case
                           (write-json-record
                            (context-record-path id directory)
-                           (append record-head
-                                   (list :repository (list* :name name
-                                                            (git-fingerprint root))
-                                         :loom (git-fingerprint (loom-root)))
+                           (append head
+                                   (list (cons :repository
+                                               (cons (cons :name name)
+                                                     (git-fingerprint root)))
+                                         (cons :loom (git-fingerprint (loom-root))))
                                    returned))
                         ;; A log that cannot be written must not take the answer
                         ;; down with it -- and on another thread it could not
@@ -271,6 +272,26 @@ how a test or a harness says it needs the file now."
         (bt:with-lock-held (*context-log-thread-lock*)
           (push thread *context-log-threads*)))
       id)))
+
+(defun seed-alist (seed)
+  "One seed of BUILD-CONTEXT's instrumentation, as the alist a record holds.
+
+Written out rather than converted, because converting a plist to an alist has
+to decide where a nested plist stops and a list of them begins -- which is the
+guess ALIST-OBJECT-P exists not to make. The keys are five and they are known."
+  (list (cons :id (getf seed :id))
+        (cons :name (getf seed :name))
+        (cons :rank (getf seed :rank))
+        (cons :score (getf seed :score))
+        (cons :terms (loop for term in (getf seed :terms)
+                           collect (list (cons :term (getf term :term))
+                                         (cons :weight (getf term :weight)))))))
+
+(defun item-alist (item)
+  "One bundle item, as the alist a record holds."
+  (list (cons :id (getf item :id))
+        (cons :name (getf item :name))
+        (cons :band (getf item :band))))
 
 (defvar *context-log-failure* nil
   "The last reason a record could not be written, or NIL.
@@ -338,12 +359,28 @@ judgement about a query nobody asked is CON-0001's fabricated fact wearing the
 shape of evidence."
   (unless directory
     (error 'context-record-error :id id))
-  (let ((record-path (context-record-path id directory)))
+  ;; The record is written off the caller's path, so a caller quoting the id it
+  ;; was just handed can arrive before the file does. Waited for here because
+  ;; the feedback call is not what R8's latency ceiling is about, and because
+  ;; the alternative is refusing a judgement over a race.
+  (drain-context-log)
+  (let ((record-path (context-record-path id directory))
+        (entries (mapcar #'used-alist used)))
     (unless (probe-file record-path)
       (error 'context-record-error :id id))
     (write-json-record (context-use-path id directory)
-                       (list :id id :used used))
+                       (list (cons :id id) (cons :used entries)))
     (list :id id
           :record (read-json-record record-path)
           :used (cdr (assoc :used (read-json-record (context-use-path id directory)))))))
 
+
+(defun used-alist (entry)
+  "One used entry, as the alist a record holds.
+
+ENTRY is a plist because that is what the operation layer builds from the JSON
+array a caller sent. Two keys, both known."
+  (if (and (consp entry) (consp (car entry)))
+      entry
+      (list (cons :name (getf entry :name))
+            (cons :how (getf entry :how)))))

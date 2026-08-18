@@ -72,10 +72,22 @@ body: |
   D3  WHAT THE FILE HOLDS
 
   The record is JSON because tools/acceptance.py reads it (R10) and Python does
-  not read plists. cl-json rather than a hand-rolled emitter: a task string is
-  arbitrary text with quotes and newlines in it, and an escaping bug there
+  not read plists. CL-JSON escapes the strings, because a task string is
+  arbitrary text with quotes and newlines in it and an escaping bug there
   produces a record that parses as something else -- a fabricated fact in the
   one place the whole requirement exists to prevent one.
+
+  An alist is the object and a list is the array, and nothing else is either.
+  That is the whole of why the encoder has no guess in it. The first attempt
+  used plists and had to decide whether `((:name "x" :how "y"))\' was a list
+  holding one plist or an alist whose single entry was (:name . ("x" :how
+  "y")) -- nothing in the data says which, so a used set encoded as an object
+  and every reader of it broke. game-server\'s utils/serialize.lisp had solved
+  this already: JSON-ENCODE-HELPER has an ALISTP branch and no plist branch at
+  all, and the shapes stay distinct because an alist entry\'s cdr is its value.
+  SEED-ALIST, ITEM-ALIST and USED-ALIST build the record\'s alists by naming
+  their keys rather than converting a plist, since a converter would have to
+  make the same guess one layer up.
 
     id, at, task, tokens, latency_seconds
     repository   name, branch, commit, diff_hash, reason
@@ -140,13 +152,18 @@ body: |
   would and can be read later by a person.
 
   The used set is a sibling file, <id>.used.json, rather than the record
-  rewritten in place. That reverses what this design first said, for a reason
-  found in the building: merging means decoding the record and encoding it
-  again, and JSON's distinction between an object and an array does not survive
-  that round trip through Lisp, where both are lists. A record written once and
-  never rewritten cannot be corrupted by its own serialiser. The join R3 asks
-  for is then two files with one id, which is a worse ergonomic and a better
-  guarantee.
+  rewritten in place. That reverses what this design first said, and the reason
+  narrowed once the alist shape landed: an object and an array now survive the
+  round trip, and a JSON boolean does not. CL-JSON decodes `false\' to the same
+  NIL it decodes `null\' to, so a record read and written again turns
+  `"truncated": false\' into `"truncated": null\'. st-json keeps the three
+  apart and is what game-server reaches for when it needs them to -- adopting
+  it here would make one file safe, and the second file is the cheaper answer
+  while nothing needs a record rewritten.
+
+  A record written once and never touched again cannot be corrupted by its own
+  serialiser at all, which is worth more than the ergonomics of one file. The
+  join R3 asks for is two files with one id.
 
   D6  WHAT IS NOT DECIDED
 

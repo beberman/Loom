@@ -117,6 +117,26 @@ second file: a record written once cannot be corrupted by its own
 serialiser"))))
         (drop-tree repository)))))
 
+(test feedback-does-not-race-the-writer
+  ;; The record is written off the caller's path, so a caller quoting the id it
+  ;; was just handed can arrive before the file does. Refusing a judgement over
+  ;; that race would lose the half of the log no offline scorer can supply, so
+  ;; RECORD-CONTEXT-USE waits. No DRAIN-CONTEXT-LOG here on purpose: this test
+  ;; fails if the wait is removed.
+  (with-document-tree (root)
+    (let ((repository (log-fixture-repository root)))
+      (unwind-protect
+           (with-log-directory (directory)
+             (multiple-value-bind (bundle instrumentation)
+                 (build-context (repository-graph repository) "resolve overlay")
+               (let ((id (record-context-call repository bundle instrumentation
+                                              :directory directory)))
+                 (finishes
+                   (record-context-use id (list (list :name "resolve-overlay"
+                                                      :how "returned"))
+                                       :directory directory)))))
+        (drop-tree repository)))))
+
 (test an-id-no-record-has-is-refused-rather-than-created
   ;; A record minted because somebody quoted a wrong id is a judgement about a
   ;; query nobody asked -- CON-0001's fabricated fact wearing the shape of
