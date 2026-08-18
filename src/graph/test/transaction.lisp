@@ -149,3 +149,52 @@ transaction.")
       (one-pass (assert-entity a) (assert-entity o))
       (is (= 0 (dropped-edge-count g))
           "and a pass that no longer draws the edge reports none"))))
+
+;;; ------------------------------------------------------------------
+;;; A retract names a fact, not only an entity (BUG-0034)
+;;; ------------------------------------------------------------------
+;;;
+;;; FEDERATED-RETRACTIONS builds one RETRACT-OP per federated edge it holds,
+;;; and a relationship id resolved to no entity -- so PLAN-OP reported "cannot
+;;; retract unknown entity" and one op took the whole federation transaction
+;;; with it. Invisible on a first pass, which has no federated edges yet to
+;;; retract, and fatal on every pass after.
+
+(test a-retract-of-a-relationship-removes-the-edge-and-keeps-its-endpoints
+  (let* ((g (make-graph))
+         (a (tx-node "a" "src/one.lisp"))
+         (b (tx-node "b" "src/one.lisp"))
+         (edge (tx-edge a b "src/one.lisp")))
+    (apply-transaction g (list (assert-entity a) (assert-entity b)
+                               (assert-relationship edge)))
+    (is (not (null (get-relationship g (id edge)))))
+    (apply-transaction g (list (retract (id edge))))
+    (is (null (get-relationship g (id edge))))
+    (is (not (null (get-entity g (id a)))) "an edge is not its endpoints")
+    (is (not (null (get-entity g (id b)))))
+    (is (null (relationships-from g (id a) :rel-type :graph-test-edge))
+        "and the indices no longer name it either")))
+
+(test a-retract-of-an-entity-still-removes-the-entity
+  ;; The guard on the clause order: an id that names an entity must take the
+  ;; entity path, cascade included, exactly as it always did.
+  (let* ((g (make-graph))
+         (a (tx-node "a" "src/one.lisp"))
+         (b (tx-node "b" "src/one.lisp")))
+    (apply-transaction g (list (assert-entity a) (assert-entity b)
+                               (assert-relationship (tx-edge a b "src/one.lisp"))))
+    (apply-transaction g (list (retract (id b))))
+    (is (null (get-entity g (id b))))
+    (is (not (null (get-entity g (id a)))))
+    (is (null (relationships-from g (id a) :rel-type :graph-test-edge))
+        "removing an entity takes the edges touching it, as it always has")))
+
+(test a-retract-of-an-id-that-names-nothing-is-still-fatal
+  ;; Widened to relationships and no further. An op that cannot say what it
+  ;; means to remove is not endpoint validation, and dropping it silently would
+  ;; leave a stale edge behind while reporting success.
+  (let* ((g (make-graph))
+         (a (tx-node "a" "src/one.lisp")))
+    (signals transaction-error
+      (apply-transaction g (list (assert-entity a) (retract "no-such-id"))))
+    (is (null (get-entity g (id a))) "nothing applied")))

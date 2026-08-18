@@ -60,6 +60,10 @@
    (:file "suite")
    (:file "workspace")
    (:file "gitignore")
+   ;; BUG-0034. After "workspace" only for its fixtures' sake; the tests build
+   ;; their repositories by hand, because FEDERATE-REPOSITORIES reads route
+   ;; claims off entities and never touches a filesystem.
+   (:file "federate")
    (:file "transition")
    ;; After "transition": PREPARE-REPOSITORY reuses LINE-END and
    ;; WHITESPACE-CHAR-P to scan a manifest, and the plan-then-apply split it

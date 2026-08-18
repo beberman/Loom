@@ -319,15 +319,31 @@ two get sequenced once it exists."
 ;;;; ==================================================================
 
 (defmethod plan-op (tx (op retract-op))
+  ;; An entity or a relationship (BUG-0034). TX-FIND-FACT is MARK-STALE-OP's
+  ;; and is reused rather than copied, because the two ops ask the same
+  ;; question of the same two tables: staleness applies to both kinds of fact
+  ;; and so does removal. TX-ENTITY-TYPE stays alongside it for the entity a
+  ;; transaction is about to create and the graph does not hold yet.
   (let ((target (tx-resolve tx (target-id op))))
-    (unless (tx-entity-type tx target)
-      (list (list :problem (format nil "cannot retract unknown entity ~s" target))))))
+    (unless (or (tx-entity-type tx target) (tx-find-fact tx target))
+      (list (list :problem (format nil "cannot retract unknown fact ~s" target))))))
 
 (defmethod apply-op (tx (op retract-op))
-  (let ((graph  (tx-graph tx))
-        (target (tx-resolve tx (target-id op))))
-    (cascade-staleness graph target)
-    (remove-entity graph target)))
+  "Remove the fact TARGET-ID names, whichever kind it is.
+
+An entity cascades staleness to the facts derived from it and a relationship
+does not, which is the same asymmetry RETRACT-FILE-OP already has: it removes a
+file's edges outright and cascades only for its entities. Nothing in this tree
+derives a fact from a relationship id -- a dispatch edge's :DERIVED-FROM names
+the generic's *entity* -- so a cascade per removed edge would be a full scan of
+both tables buying nothing, and federation removes every edge it owns on every
+pass."
+  (let* ((graph  (tx-graph tx))
+         (target (tx-resolve tx (target-id op))))
+    (if (get-entity graph target)
+        (progn (cascade-staleness graph target)
+               (remove-entity graph target))
+        (remove-relationship graph target))))
 
 ;;;; ==================================================================
 ;;;; mark-stale

@@ -1,6 +1,6 @@
 id: BUG-0034
 title: A federated edge cannot be retracted, so the second federation pass over two repositories is rejected whole
-status: open
+status: closed
 date: 2026-08-18
 affects: [federated-retractions, federate-repositories, plan-op, apply-op]
 tags: [federation, transaction, graph, workspace, bug-0030, dec-0003]
@@ -22,6 +22,93 @@ summary: |
   first pass happened to derive, and no later index of either tree changes
   them.
 body: |
+  FIXED 2026-08-18
+
+  Option A, which this document argued for and MARK-STALE-OP had already
+  precedented. PLAN-OP for a RETRACT-OP accepts a target TX-FIND-FACT can
+  resolve -- an entity or a relationship, the same two tables staleness already
+  applies to -- and APPLY-OP takes the entity path when the id names an entity
+  and REMOVE-RELATIONSHIP when it does not.
+
+  A relationship does not cascade staleness and an entity still does. That
+  asymmetry is RETRACT-FILE-OP\'s, which removes a file\'s edges outright and
+  cascades only for its entities. Nothing in this tree derives a fact from a
+  relationship id -- a dispatch edge\'s :DERIVED-FROM names the generic\'s
+  *entity* -- so a cascade per removed edge would be a full scan of both tables
+  buying nothing, on a pass that removes every edge it owns every time it runs.
+
+  Widened to relationships and no further: a retract of an id naming neither is
+  still fatal. BUG-0030 F1 drops an op that fails *endpoint* validation, and an
+  op that cannot say what it means to remove is not that -- dropping it silently
+  would leave a stale federated edge behind while reporting success.
+
+  THE TRIGGER IS SHARPER THAN THIS DOCUMENT SAID
+
+  "Two watched repositories, indexed twice" does not reproduce it, and the
+  reason is worth recording because it is why nobody hit this deliberately.
+  REINDEX-REPOSITORY discards the graph and rebuilds, so reindexing the
+  *publisher* destroys the very federated edges the next pass would retract and
+  the pass finds nothing to fail on. The failure needs a repository to be
+  indexed while some *other* repository still holds federated edges -- which is
+  what the 2026-08-17 reproduction was doing when it reindexed Loom with
+  game-server and front-end also watched.
+
+  MEASURED, THREE WATCHED REPOSITORIES, 2026-08-18
+
+  Loom reindexed three times, with game-server publishing 14 :SERVES edges into
+  front-end:
+
+                          federated edges    errors on game-server
+      before the fix
+        after first index        14                  0
+        after reindex 1          14                  1
+        after reindex 2          14                  2
+        after reindex 3          14                  3
+
+      after the fix
+        after first index        14                  0
+        after reindex 1          14                  0
+        after reindex 2          14                  0
+        after reindex 3          14                  0
+
+  The edge count does not move in either column, which is the point: a rejected
+  transaction applies nothing, so the edges the first pass drew simply stayed,
+  correct or not, while every later pass added an error and changed nothing.
+  The error accumulating one per reindex is what the fix removes.
+
+  NOTHING TESTED THIS PASS AT ALL
+
+  This document\'s WHAT WOULD HAVE CAUGHT IT asked for "a federation test that
+  runs the pass twice" and observed that "every existing one runs it once". The
+  stronger fact, found while writing them: there were no federation tests. Not
+  one file under any src/*/test/ named federation, so DES-0025 and REQ-0027\'s
+  whole mechanism was unexercised, and a defect that made every pass after the
+  first a no-op survived in plain sight.
+
+  src/workspace/test/federate.lisp is six tests. One pass draws the edge; a
+  second retracts and re-derives rather than being rejected; four passes neither
+  accumulate nor erode, which is DEC-0003\'s derive-never-consume measured; a
+  claim that goes away takes its edge with it, which is REQ-0027 R2 and was
+  inert while the retraction was rejected; and a repository does not federate
+  with itself. Three more in the graph suite cover the op itself: a relationship
+  retract removes the edge and keeps its endpoints, an entity retract still
+  cascades, and an id naming neither is still fatal.
+
+  Synthetic repositories rather than trees on disk. FEDERATE-REPOSITORIES reads
+  route claims off :FUNCTION entities and touches no filesystem, so a graph
+  built by hand exercises exactly what a fixture tree would at no I/O.
+
+  Verified against CON-0003 by restoring the entity-only check: the four
+  federation tests that run the pass twice fail, the relationship retract errors
+  outright, and every guard -- the first pass, the entity retract, the unknown
+  id, self-federation -- keeps passing.
+
+  ACCEPTANCE MET
+
+  Two watched repositories that federate, indexed repeatedly, report no error
+  and hold the same federated edges. A federated edge whose consuming claim is
+  deleted is gone after the next pass.
+
   PRIORITY: P4, 2026-08-18
 
   High severity and fourth in the queue, because the two are different
