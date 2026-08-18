@@ -446,11 +446,34 @@ body: |
   repository as much as the ranking. The 26/26 figure quoted throughout this
   document is therefore a reading taken at a moment, not a fixed floor.
 
-  Two ways out, and the choice belongs with whoever runs S6 next. Pin the Loom
-  measurements to a commit, so the corpus is fixed while the ranking varies. Or
-  drop the Loom clause and measure on game-server and front-end, neither of which
-  this work commits to. The second is simpler and loses the tree whose naming
-  conventions are least like the others.
+  SETTLED 2026-08-17: the Loom clauses are dropped and the set is
+  tools/acceptance.py, over game-server and front-end. Neither is written to by
+  this work, so their corpora hold still while the ranking varies.
+
+  The Loom prose clause is replaced rather than lost. REQ-0035's mechanism is
+  now checked by a game-server query built from CLIENT-OP's own
+  (:documentation ...), chosen mechanically as the longest on any class in that
+  tree.
+
+  BASELINE, 30 of 32
+
+    R6 10/10   R8 1/1   R7 7/7   R4 3/3   prose 1/1
+    fe-1 to fe-10, one expectation each, 8 of 10
+    slowest query 0.06s
+
+  Two misses, both diagnosed and both already known to be fixed by the index:
+
+    MapElementTypeEditor  the exact name loses to MapElementType, a shorter
+                          same-stem name. S6's tie-break.
+    SaveDesign            SAVING and SAVE are different terms on the live path.
+                          STEM-VARIANTS fixes it and is not wired in.
+
+  The script reports a strict count and a lenient one -- strict counts an entity
+  that is a seed or an item, lenient also counts one named on a relation line
+  beneath something else. They agree at 30 of 32 today. Reporting both settles
+  an argument that was had per query and got one call wrong: DESIGNTERRAIN was
+  judged relation-only on the strength of the seed list alone, and it is an item
+  in the neighbour band.
 
   FUSING THE TWO SCORERS, MEASURED WITH THE SHARE CAP APPLIED, 2026-08-17
 
