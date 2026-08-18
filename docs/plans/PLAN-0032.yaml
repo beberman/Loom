@@ -452,6 +452,37 @@ body: |
   this work commits to. The second is simpler and loses the tree whose naming
   conventions are least like the others.
 
+  FUSING THE TWO SCORERS, MEASURED WITH THE SHARE CAP APPLIED, 2026-08-17
+
+  Since BM25 and BM25F disagree per query and neither dominates, both were run
+  and their rankings combined -- as a set union and as reciprocal rank fusion,
+  score(d) = sum 1/(60 + rank). RRF needs no score calibration, which matters
+  because the two scores are not on one scale.
+
+  Live seeds retained, out of eight, with ADMIT-SEEDS applied to every column:
+
+    query                                    BM25  BM25F  union  RRF@8
+    ------------------------------------------------------------------
+    restructure data handler protocol ...      2      4    4 (9)     4
+    data-handler                               3      3    3 (8)     3
+    macro definitions                          3      3    4 (11)    4
+
+  Fusion beats either scorer alone on two queries and ties on the third, and it
+  is nearly free: the two top-eight lists overlap so heavily that their union is
+  8 to 11 names. On the R4 query RRF returns BASE-DECODER and BASE-ENCODER,
+  which BM25 alone loses.
+
+  It does not close the gap. No variant keeps more than four of the live
+  seeder's eight, and on R4 the live seeder returns all three acceptance targets
+  where RRF returns two. Fusion is the better of the index-based options and is
+  still behind what is deployed.
+
+  That is the finding S6 has to answer. The index does not lose to the substring
+  scan on the entities it was built to find -- MAKE-MACRO-ENTITY, BASE-ENCODER,
+  DESIGNTERRAIN all come back. It loses on the other five or six seeds per
+  query, and nothing yet says whether those are seeds worth keeping or seeds the
+  live scan produces by accident.
+
   WHAT S6 STILL NEEDS
 
   The regression is not diagnosed. R4's three losses are the sharpest lead --
