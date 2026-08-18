@@ -167,7 +167,12 @@ check:
       (dolist (key '(:test-entities :tested-units :unhandled-definer-macros))
         (is (member key status) "~s is missing from status" key)
         (is (eql 0 (getf status key))
-            "~s must be nought for a fixture with no definer calls" key)))))
+            "~s must be nought for a fixture with no definer calls" key))
+      ;; BUG-0030 F1, read the same way and for the same reason: a dropped edge
+      ;; is a relationship the index knows it is missing, and a key that is
+      ;; absent reads through GETF exactly like a count that is nought.
+      (is (member :dropped-edges status))
+      (is (eql 0 (getf status :dropped-edges))))))
 
 (test re-watching-a-registered-repository-starts-watching-it-again
   ;; The console's lifecycle in a live image: MAIN stops the monitors on its
@@ -329,7 +334,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 294
+(defparameter *call-site-ceiling* 326
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -434,7 +439,24 @@ measurement rather than by reading: hiding tools/js/extract.js so that no
 JavaScript was indexed anywhere left the count at 267 unchanged.
 
 The ambiguous population is 16 before and 16 after, which is the number that
-moves when something has gone wrong.")
+moves when something has gone wrong.
+
+RE-MEASURED 2026-08-18 AT 296, CEILING 326. Two causes, and only the second is
+this session's. Composition against the 2026-08-14 census, both from
+tools/call-site-census.lisp:
+
+    define-command      85 -> 110
+    define-operation    72 ->  81
+    js-test             50 ->  58
+    ambiguous occurrences  16 -> 16
+
+Most of that is the four days between the measurements, which added commands
+and operations and their tests: the tree read 293 with this session's source
+stashed. BUG-0030 F1 adds the last three -- one DROPPED-EDGES call in the
+`check' command and DROPPED-EDGES plus DROPPED-EDGE-SUMMARY in the :CHECK
+operation, all three inside a body-swallowing macro. The fifth instance of one
+cause and not a fifth cause: the ambiguous population has not moved through any
+of it.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is
@@ -756,12 +778,33 @@ not unusual for a library to use."))
   (declare (ignore root))
   (error 'bare-condition-toolchain-failure :text "toolchain misbehaved, not an error"))
 
+(test a-recorded-error-is-a-plist-and-status-can-carry-it
+  ;; BUG-0030 D2's producer. This recorded `(cons path message)`, which
+  ;; REPOSITORY-STATUS puts on :LAST-ERROR and every REST and MCP caller has
+  ;; serialized to JSON -- and the walker in loom-serve reaches an improper
+  ;; list through its LISTP clause and signals a TYPE-ERROR naming the cdr.
+  ;; Nothing here can encode JSON, which is why the assertion is the shape: a
+  ;; proper list with the two keys, which is what json.lisp's own test then
+  ;; encodes. The entry outlives its request, so the wrong shape took every
+  ;; later `status' with it until the process was restarted.
+  (with-workspace-fixture (repository)
+    (let ((report (enrich-repository repository :quiet t
+                                     :inspectors (list (make-instance 'erroring-inspector)))))
+      (declare (ignore report))
+      (let ((entry (first (repository-errors repository))))
+        (is (listp (cdr entry)) "an improper list is what wedged the encoder")
+        (is (equal "enrich" (getf entry :path)))
+        (is (search "misbehaved" (getf entry :message))))
+      (let ((last (getf (repository-status repository) :last-error)))
+        (is (listp (cdr last)))
+        (is (search "misbehaved" (getf last :message)))))))
+
 (test enrich-repository-survives-an-inspector-that-signals-an-ordinary-error
   (with-workspace-fixture (repository)
     (let ((report (enrich-repository repository :quiet t
                                      :inspectors (list (make-instance 'erroring-inspector)))))
       (is (not (null report)) "the call must return rather than unwind the caller")
-      (is (search "misbehaved" (cdr (first (repository-errors repository)))))
+      (is (search "misbehaved" (getf (first (repository-errors repository)) :message)))
       (is (= 1 (length (getf report :absences)))))))
 
 (test enrich-repository-survives-an-inspector-that-signals-a-bare-condition
@@ -775,7 +818,7 @@ not unusual for a library to use."))
     (let ((report (enrich-repository repository :quiet t
                                      :inspectors (list (make-instance 'bare-condition-inspector)))))
       (is (not (null report)) "the call must return rather than unwind the caller")
-      (is (search "misbehaved" (cdr (first (repository-errors repository)))))
+      (is (search "misbehaved" (getf (first (repository-errors repository)) :message)))
       (is (= 1 (length (getf report :absences)))))))
 
 (test a-poll-never-enriches-and-can-be-shown-not-to-have
@@ -914,7 +957,7 @@ cons this loop is already holding."
               (dotimes (i n nil)
                 (funcall thunk)
                 (dolist (entry (repository-errors repository))
-                  (push (cdr entry) texts)))
+                  (push (getf entry :message) texts)))
             (serious-condition (condition) condition))
           texts)))
 

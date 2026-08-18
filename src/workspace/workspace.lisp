@@ -274,7 +274,19 @@ report. That is a gap a reader can see rather than a silent clean."
                      claimed)))))
 
 (defun note-error (repository path condition)
-  (push (cons path (princ-to-string condition)) (repository-errors repository))
+  "Record CONDITION against PATH on REPOSITORY, newest first.
+
+A plist and not a `(cons path message)`, which is what this recorded until
+BUG-0030 D2. REPOSITORY-STATUS puts the first entry on :LAST-ERROR, that plist
+is serialized for every REST and MCP caller, and JSON-VALUE reaches a dotted
+pair through its LISTP clause and hands an improper list to LENGTH or to MAP.
+Both signal `The value <message> is not of type LIST` -- and the entry stays on
+REPOSITORY-ERRORS, so every later `status` re-encoded the same cons and
+re-signalled until the process was restarted. A plist is what the rest of this
+codebase carries structured values in and what JSON-OBJECT-FROM-PLIST already
+encodes."
+  (push (list :path (princ-to-string path) :message (princ-to-string condition))
+        (repository-errors repository))
   (when (> (length (repository-errors repository)) 50)
     (setf (repository-errors repository)
           (subseq (repository-errors repository) 0 50))))
@@ -976,6 +988,11 @@ the last error per thread.\""
           ;; stopped being indexed and this is the only place that says so.
           :suppressed-regions (count-file-regions graph :suppressed-regions)
           :recovered-regions (count-file-regions graph :recovered-regions)
+          ;; BUG-0030 F1, and beside the two counts above for the reason
+          ;; their comment gives: an edge the ontology would not permit is a
+          ;; relationship the index knows it is missing. Zero on all three
+          ;; watched trees, and unconditional so that zero can be read.
+          :dropped-edges (dropped-edge-count graph)
           :errors (length (repository-errors repository))
           :last-error (first (repository-errors repository)))))
 

@@ -292,6 +292,14 @@ command."
   (format t "  unread     : ~d suppressed region~:p, ~d recovered region~:p~%"
           (getf status :suppressed-regions)
           (getf status :recovered-regions))
+  ;; BUG-0030 F1, and the same reading as the line above it: an edge whose two
+  ;; endpoint types the ontology does not permit is a relationship the index
+  ;; knows it is missing. Unconditional, zero included -- a count that vanishes
+  ;; at nought cannot be told from a count nobody computes, and until this
+  ;; existed such an edge rejected the whole pass instead of being counted.
+  ;; `check' names the rel-type and the two types; this is the number.
+  (format t "  dropped    : ~d edge~:p the ontology does not permit~%"
+          (getf status :dropped-edges))
   ;; DES-0011. "never run" is spelled out rather than left as three zeroes,
   ;; because enrichment is optional and on demand: a reader who sees zeroes
   ;; cannot tell a tree the image agreed with completely from one nobody has
@@ -303,7 +311,8 @@ command."
       (format t "  enrichment : never run~%"))
   (when (plusp (getf status :errors))
     (format t "  errors     : ~d, last: ~a~%"
-            (getf status :errors) (cdr (getf status :last-error)))))
+            (getf status :errors)
+            (getf (getf status :last-error) :message))))
 
 ;;;; ==================================================================
 ;;;; Commands (SS3.2)
@@ -864,6 +873,18 @@ which is CON-0006's expensive error at the scale of one answer."
           (format t "  @~a ~a -> ~a~%"
                   (getf entry :repository) (getf entry :document)
                   (getf entry :reference)))))
+    ;; BUG-0030 F1. The three keywords are the point of the line: a drop is
+    ;; reported so that somebody can decide whether the :TO list of that
+    ;; relationship is missing an entry, and rel-type, from-type and to-type
+    ;; are exactly what that decision needs. Three types have been added to a
+    ;; :TO list reactively, each after a tree went dark; this is the report
+    ;; that makes the fourth visible while the tree still indexes.
+    (let ((dropped (dropped-edges graph)))
+      (when dropped
+        (format t "~&~d edge~:p dropped, endpoints the ontology does not permit:~%"
+                (length dropped))
+        (dolist (drop dropped)
+          (format t "  ~a  [~a]~%" (getf drop :problem) (getf drop :origin-file)))))
     ;; DES-0002 R6/R10, reported the way an unresolved reference is and for
     ;; the same reason: a definer Loom cannot characterise is a definition the
     ;; index knows it is missing, and it should be visible here rather than

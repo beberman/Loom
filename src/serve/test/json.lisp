@@ -120,3 +120,30 @@
   ;; An empty array-valued key is still [], not false: the two NIL cases stay
   ;; separate from each other as well as from null.
   (is (equal "{\"impacted\":[]}" (encode-result (list :impacted nil)))))
+
+(test a-dotted-pair-is-rendered-rather-than-signalled-from-inside-the-encoder
+  ;; BUG-0030 D2, and the reason the whole service went down rather than one
+  ;; request. NOTE-ERROR recorded `(cons path message)`, REPOSITORY-STATUS put
+  ;; that on :LAST-ERROR, and this walker reached it through its LISTP clause:
+  ;; PLIST-SHAPED-P calls LENGTH and JSON-ARRAY calls MAP, and both signal
+  ;; `The value <message> is not of type LIST` on an improper list. The entry
+  ;; stayed on REPOSITORY-ERRORS, so every later /v1/status re-encoded the same
+  ;; cons and re-signalled until the process was restarted.
+  ;;
+  ;; The producer is fixed and this is the guard that the next one costs an
+  ;; ugly field rather than the service. The bottom clause's own comment is the
+  ;; contract being kept: a shape this encoder was not supposed to receive is
+  ;; made visible in the answer rather than signalled from inside an encoder.
+  (is (search "last-error" (encode-result (list :last-error (cons "src/a.lisp" "boom")))))
+  (is (equal "{\"n\":1}" (encode-result (list :n 1)))
+      "and the ordinary case is untouched"))
+
+(test the-improper-list-guard-does-not-catch-an-atom-or-a-vector
+  ;; The guard's own failure mode, and it is not hypothetical: written without
+  ;; its CONSP test the predicate fell through to its FINALLY clause and
+  ;; reported every non-NIL atom as improper, which rendered the MCP tools list
+  ;; -- a vector -- as one PRINC-TO-STRING string and failed tools/list.
+  (is (equal "{\"items\":[1,2]}" (encode-result (list :items #(1 2)))))
+  (is (equal "{\"n\":7}" (encode-result (list :n 7))))
+  (is (equal "{\"impacted\":[{\"a\":1}]}"
+             (encode-result (list :impacted (list (list :a 1)))))))

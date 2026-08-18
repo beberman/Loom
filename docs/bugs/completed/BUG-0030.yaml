@@ -1,6 +1,6 @@
 id: BUG-0030
 title: One illegal edge endpoint rejects a whole repository's transaction, and the third missing type took the whole of front-end
-status: open
+status: closed
 date: 2026-08-16
 affects: [apply-transaction, resolve-document-links, analyze-file]
 tags: [graph, ontology, markdown, transaction, front-end, con-0001, con-0006]
@@ -159,6 +159,54 @@ body: |
 
   A synthetic tree with a deliberately illegal edge indexes everything else and
   reports the drop, which is F1 and is what no existing test covers.
+
+  FIXED 2026-08-18, PLAN-0033
+
+  D2 was localised and it was not on the error path at all. NOTE-ERROR recorded
+  `(cons path (princ-to-string condition))`, REPOSITORY-STATUS puts the first
+  such entry on :LAST-ERROR, and JSON-VALUE reaches a dotted pair through its
+  LISTP clause: PLIST-SHAPED-P calls LENGTH and JSON-ARRAY calls MAP, and both
+  signal `The value <message> is not of type LIST` on an improper list. The
+  string inside the TYPE-ERROR was the cdr of the cons, which is why the real
+  diagnosis was readable inside it. It outlived the request because the entry
+  stays on REPOSITORY-ERRORS, so every later /v1/status re-encoded the same cons
+  and re-signalled. Nothing stringified a condition into a list-shaped slot;
+  the shape was wrong from the moment it was recorded.
+
+  NOTE-ERROR now records a plist, and JSON-VALUE refuses an improper list ahead
+  of every clause that walks one -- the encoder's own contract, which its
+  bottom clause states, is that a shape it was not supposed to receive is
+  rendered rather than signalled from inside an encoder.
+
+  F1 landed as designed. Every problem PLAN-OP produces for an
+  ASSERT-RELATIONSHIP-OP -- unknown FROM, unknown TO, a type pair the
+  declaration does not permit -- is marked droppable. An op whose problems are
+  all droppable is dropped from the apply pass, recorded against its origin
+  file, and reported; anything else rejects the transaction exactly as before.
+  The record is keyed by origin file so RETRACT-FILE clears it, which makes the
+  count a function of the tree rather than of history.
+
+  `status` prints a `dropped` line and `check` prints the ontology's own
+  sentence with the origin file:
+
+      dropped    : 1 edge the ontology does not permit
+      :TESTS cannot originate at :FUNCTION  [a.lisp]
+
+  ACCEPTANCE MET
+
+  ~/github/front-end watches and answers `find`, `describe` and `context`: 508
+  files, 4249 entities, 3217 relationships, 37 documents. game-server is
+  unchanged at 155 files, 3946 entities, 22032 relationships. All three trees
+  report zero drops. A synthetic tree carrying a deliberately illegal :TESTS
+  edge indexes its other three entities and three relationships and reports the
+  drop.
+
+  The D2 reproduction below was re-run against the running service. The same
+  rejection now arrives as text on `last-error` and /v1/status, /v1/check and
+  /v1/find all answer afterwards. What it was hiding is a federated :SERVES
+  retract targeting a relationship id through an entity-only RETRACT-OP, which
+  is BUG-0034 and is deliberately still fatal -- an op that cannot say what it
+  means to remove is not endpoint validation.
 
   D2 REPRODUCED, 2026-08-17
 

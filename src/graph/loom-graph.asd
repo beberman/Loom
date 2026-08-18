@@ -58,6 +58,10 @@
    (:file "resolve")
    (:file "enrich")
    (:file "retract-file")
+   ;; After graph-manager: BUG-0030 F1's tests reuse its :GRAPH-TEST-EDGE
+   ;; fixture, which is the one declaration in this system with an entity type
+   ;; deliberately outside its :TO list.
+   (:file "transaction")
    (:file "rules")
    (:file "concurrency")
    )

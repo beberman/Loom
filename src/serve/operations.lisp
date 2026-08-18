@@ -317,8 +317,19 @@ Pass source=true for the definition's text."
 (defun pair-summary (pair)
   (list :from (car pair) :to (cdr pair)))
 
+(defun dropped-edge-summary (drop)
+  "One BUG-0030 F1 drop, as the four facts a caller can act on: which
+relationship, between which two types, from which file, and the ontology's own
+sentence about it."
+  (list :rel-type (getf drop :rel-type)
+        :from-type (getf drop :from-type)
+        :to-type (getf drop :to-type)
+        :origin-file (getf drop :origin-file)
+        :problem (getf drop :problem)))
+
 (define-operation :check :read (repository)
-    "Rule violations, unresolved document references, and unread definers."
+    "Rule violations, unresolved document references, unread definers, and
+dropped edges."
   (let ((graph (repository-view repository)))
     (list :violations (mapcar #'violation-summary
                               (entities-of-type graph :rule-violation))
@@ -331,7 +342,11 @@ Pass source=true for the definition's text."
                           :start-line (getp macro :start-line)))
                   (unhandled-definer-macros graph))
           :collisions (mapcar #'pair-summary
-                              (generated-definition-collisions graph *macro-generators*)))))
+                              (generated-definition-collisions graph *macro-generators*))
+          ;; BUG-0030 F1. Empty on all three watched trees, and carried anyway:
+          ;; the whole point of the mechanism is that a fourth missing :TO
+          ;; entry shows up here instead of taking a repository dark.
+          :dropped-edges (mapcar #'dropped-edge-summary (dropped-edges graph)))))
 
 (define-operation :rules :read (repository)
     "Active rules and what they constrain."

@@ -223,6 +223,21 @@ concurrent writer it would mark a set of facts that never existed together."
         r
         (rebind-relationship r :from-id from :to-id to))))
 
+(defun strip-plist (plist keys)
+  "PLIST without the entries named in KEYS."
+  (loop for (key value) on plist by #'cddr
+        unless (member key keys) append (list key value)))
+
+(defun droppable-problem (plist)
+  "PLIST marked as an endpoint problem, which BUG-0030 F1 drops rather than
+signals. Every problem this method produces is one: a relationship whose FROM
+is unknown, whose TO is unknown, or whose two types the declaration does not
+permit is an edge that cannot be drawn, and refusing to draw it damages
+nothing the graph already holds. No other op type is droppable -- an entity
+that fails validation, a retract of an unknown target and an update naming an
+undeclared property all still reject their transaction."
+  (list* :droppable t plist))
+
 (defmethod plan-op (tx (op assert-relationship-op))
   (let* ((r         (op-rel op))
          (from      (tx-resolve tx (from-id r)))
@@ -230,16 +245,25 @@ concurrent writer it would mark a set of facts that never existed together."
          (from-type (tx-entity-type tx from))
          (to-type   (tx-entity-type tx to))
          (federated (federated-relationship-p r)))
-    (append
-     (unless from-type
-       (list (list :end :from :problem (format nil "unknown FROM entity ~s" from))))
-     (unless (or to-type federated)
-       (list (list :end :to :problem (format nil "unknown TO entity ~s" to))))
-     ;; Endpoint types are still checked whenever both are here. A federated
-     ;; edge whose target happens to be local is not special and is validated
-     ;; like any other; only the unknown-target case is exempted.
-     (when (and from-type to-type)
-       (validate-relationship-endpoints (rel-type r) from-type to-type)))))
+    (mapcar
+     ;; Every problem carries the rel-type and both endpoint types before it
+     ;; is marked droppable. VALIDATE-RELATIONSHIP-ENDPOINTS returns prose, and
+     ;; a reader of `check' needs the keywords: they are what names the missing
+     ;; entry in the relationship's :TO list. FROM-TYPE or TO-TYPE is NIL in
+     ;; exactly the case its own problem reports, which is the unknown entity.
+     (lambda (problem)
+       (droppable-problem (list* :rel-type (rel-type r) :from-type from-type
+                                 :to-type to-type problem)))
+     (append
+      (unless from-type
+        (list (list :end :from :problem (format nil "unknown FROM entity ~s" from))))
+      (unless (or to-type federated)
+        (list (list :end :to :problem (format nil "unknown TO entity ~s" to))))
+      ;; Endpoint types are still checked whenever both are here. A federated
+      ;; edge whose target happens to be local is not special and is validated
+      ;; like any other; only the unknown-target case is exempted.
+      (when (and from-type to-type)
+        (validate-relationship-endpoints (rel-type r) from-type to-type))))))
 
 (defmethod apply-op (tx (op assert-relationship-op))
   (let* ((graph    (tx-graph tx))
@@ -261,7 +285,7 @@ concurrent writer it would mark a set of facts that never existed together."
   '())
 
 (defmethod apply-op (tx (op retract-file-op))
-  "Remove every fact read from this file.
+  "Remove every fact read from this file, and forget what it could not record.
 
 SS5.4: \"reanalyzing a changed file is retract-file followed by the fresh
 asserts.\" The pairing is what lets a *deleted* definition leave the index: an
@@ -278,6 +302,7 @@ again. That is idempotent and cheap, and the workspace monitor is where the
 two get sequenced once it exists."
   (let ((graph (tx-graph tx)))
     (with-graph-lock (graph)
+      (forget-dropped-edges graph (path op))
       (let* ((facts (facts-from-file graph (path op)))
              (entities (remove-if-not (lambda (f) (typep f 'entity)) facts))
              (edges    (remove-if     (lambda (f) (typep f 'entity)) facts)))
@@ -380,6 +405,26 @@ and the reason every precondition an op has is checked in PLAN-OP.
 
 Returns the remap table: the id each op named, mapped to the id it landed on.
 A caller that wants the entity it just asserted looks its own id up there.
+Second value: the problems of the ops that were dropped rather than applied.
+
+Atomicity has one deliberate hole in it, and BUG-0030 F1 is the argument for
+the hole. An op whose every problem is an endpoint problem -- an edge the
+ontology does not permit between those two types, or one whose endpoint is not
+in the graph -- is dropped, counted against its origin file, and reported by
+`status' and by `check'; it does not reject the transaction. SS5.2's
+all-or-nothing is right for a transaction expressing one coherent change and
+is the wrong unit for one indexing pass over a whole repository: front-end's
+36 markdown files indexed nothing at all because one of them linked to
+another and :MENTIONS had no :DOCUMENT in its :TO list. A dropped edge is
+CON-0001's recorded gap and the same trade the analyzer already makes when a
+malformed form costs a form rather than a file.
+
+Dropping an edge is safe in a way dropping an entity would not be. The remap
+is keyed by entity id and an edge contributes nothing to it, so every op after
+a dropped one plans and applies against exactly the graph it would have. Which
+is why endpoint problems are the only droppable kind: a failed VALIDATE-ENTITY,
+a retract of an unknown target and an update naming an undeclared property all
+still reject the transaction and leave GRAPH untouched.
 
 The whole body is under the graph lock, which extends DES-0003 R4 rather than
 following it -- R4 requires the bodies it lists to be wrapped, not that no
@@ -396,12 +441,41 @@ wait on a whole transaction rather than one primitive -- one file's operations
 in the common case, at worst one resolution pass's batch."
   (with-graph-lock (graph)
     (let ((tx (make-tx graph))
-          (problems '()))
+          (fatal '())
+          (dropped '())
+          (dropped-ops (make-hash-table :test #'eq)))
       (loop for op in ops
             for index from 0
-            do (dolist (problem (plan-op tx op))
-                 (push (list* :index index :op op problem) problems)))
-      (when problems
-        (error 'transaction-error :ops ops :problems (nreverse problems)))
-      (dolist (op ops) (apply-op tx op))
-      (tx-remap tx))))
+            do (let ((problems (plan-op tx op)))
+                 (dolist (problem problems)
+                   (let ((noted (list* :index index :op op problem)))
+                     (if (getf problem :droppable)
+                         (push noted dropped)
+                         (push noted fatal))))
+                 ;; An op is dropped only when *every* problem it has is
+                 ;; droppable. One op cannot mix the two kinds today -- only
+                 ;; PLAN-OP for an assert-relationship marks anything droppable
+                 ;; and it marks all of them -- and stating the condition this
+                 ;; way means a method that later mixes them fails loudly
+                 ;; rather than half-applying.
+                 (when (and problems (every (lambda (p) (getf p :droppable)) problems))
+                   (setf (gethash op dropped-ops) t))))
+      (when fatal
+        (error 'transaction-error :ops ops :problems (nreverse fatal)))
+      (setf dropped (nreverse dropped))
+      (dolist (op ops)
+        (unless (gethash op dropped-ops) (apply-op tx op)))
+      ;; After the apply pass, not before it. An analysis pass opens with a
+      ;; RETRACT-FILE, and RETRACT-FILE clears the drops recorded against that
+      ;; file -- so recording first meant this transaction's own drops were
+      ;; forgotten by its own retract, and the count read zero on the pass that
+      ;; produced it.
+      (dolist (problem dropped)
+        ;; Recorded without the :OP, which is the one key on it that is an
+        ;; object rather than a value. The record outlives the transaction and
+        ;; is serialized for REST and MCP callers, and holding an op would keep
+        ;; a whole relationship instance alive to render as #<ASSERT-...>.
+        ;; :REL-TYPE, :FROM-TYPE and :TO-TYPE carry what a reader needs.
+        (record-dropped-edge graph (origin-file (op-rel (getf problem :op)))
+                             (strip-plist problem '(:op :droppable :index))))
+      (values (tx-remap tx) dropped))))

@@ -27,6 +27,9 @@
    #:remove-entity
    #:facts-from-file
    #:origin-files
+   ;; BUG-0030 F1: the edges the ontology would not let the graph record.
+   #:dropped-edges
+   #:dropped-edge-count
    #:all-entities
    #:entities-of-type
 
