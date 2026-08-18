@@ -1,9 +1,9 @@
 id: BUG-0002
 title: find silently caps at twenty hits and cannot enumerate a type
-status: open
+status: closed
 date: 2026-07-29
 refines: [REQ-0003]
-affects: [search-entities, split-command-line]
+affects: [search-entities, split-command-line, find]
 severity: medium
 summary: |
   `find` passes :limit 20 to search-entities and prints whatever comes back with
@@ -14,6 +14,52 @@ summary: |
   these mean the console cannot answer "how many entities of type X are there",
   which is the acceptance criterion REQ-0003 R5 states for itself.
 body: |
+  FIXED 2026-08-18
+
+  SEARCH-ENTITIES returns two values: the summaries, and how many matched
+  before LIMIT cut the list. `find' prints the second when it differs from the
+  first --
+
+      loom> find "" test
+      ... twenty rows ...
+      20 of 798 shown. Narrow the term, or name a type.
+
+  -- and prints nothing when the answer is whole, so the line means something
+  every time it appears. The :FIND operation carries :TOTAL and :TRUNCATED
+  beside :ENTITIES, which is what an agent asking how many of a type exist
+  needs; the count is the answer and no new command was written for it.
+
+  A count rather than a word. `impact' prints "(truncated)", and this document
+  proposed copying that; what a reader needs here is the size of what they did
+  not see, because it is what decides whether to narrow the term. 20 of 22 and
+  20 of 798 are different situations and "(truncated)" describes both.
+
+  The enumeration half of this bug was already fixed. SPLIT-COMMAND-LINE keeps
+  a zero-length quoted token -- its ANY flag exists for exactly that, and a
+  comment at the site says so -- so `find "" test' reaches SEARCH-ENTITIES with
+  an empty name and a real type and enumerates the type. That made the cap
+  worse rather than better: enumeration is the question a cap answers most
+  wrongly, and it worked without saying it was cut.
+
+  MEASURED, 2026-08-18
+
+      find "" test        Loom          20 of 798 shown
+      find "" class       front-end     20 of 211 shown
+      find resolve-one    Loom          2 rows, no line printed
+      find persist        front-end     under twenty, no line printed
+
+  WHAT WAS NOT CHANGED
+
+  The cap itself. Twenty rows is a reasonable answer to "where is X" and the
+  parameter is now named -- *CONSOLE-FIND-LIMIT* -- rather than a literal in
+  the command body.
+
+  RESOLVE-ENTITY's EXACT-NAME-MATCHES still asks for twenty and ignores the
+  total. It is picking one entity rather than listing several, so a cap can
+  only matter where twenty-one entities share one exact name, and no tree Loom
+  watches has such a name. Recorded here because the number is a literal in
+  that call too.
+
   PRIORITY: P5, 2026-08-18
 
   Confirmed unchanged: a find returns twenty rows and the answer carries no

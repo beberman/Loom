@@ -218,12 +218,19 @@ The console's own cap, so the two answer the same question the same way.")
   ;; therefore an object. A bare list would also make an empty result encode as
   ;; null instead of [], which is the ambiguity *ARRAY-VALUED-KEYS* exists to
   ;; prevent and which a top-level value has no key to be rescued by.
-  (list :entities
-        (search-entities (repository-view repository)
-                         :name term
-                         :type (and entity-type
-                                    (intern (string-upcase (string entity-type)) :keyword))
-                         :limit (or (request-integer limit "limit") *find-limit*))))
+  (multiple-value-bind (entities total)
+      (search-entities (repository-view repository)
+                       :name term
+                       :type (and entity-type
+                                  (intern (string-upcase (string entity-type)) :keyword))
+                       :limit (or (request-integer limit "limit") *find-limit*))
+    ;; BUG-0002. :TOTAL and :TRUNCATED alongside the rows, because a caller
+    ;; that received the limit and nothing else cannot tell a complete answer
+    ;; from a cut one -- and an agent asking how many of a type exist gets a
+    ;; number rather than a page of rows to count.
+    (list :entities entities
+          :total total
+          :truncated (> total (length entities)))))
 
 (define-operation :describe :read (repository term (source))
     "Full detail for one entity, with its neighbours grouped by edge type. \

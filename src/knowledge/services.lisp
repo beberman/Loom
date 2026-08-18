@@ -157,12 +157,23 @@ leaves room, which on this tree is every term with 20 hits or fewer."
 
 (defun search-entities (view &key name type limit property-filters)
   "Entities matching NAME (substring, case-insensitive) and TYPE, best match
-first. Returns summaries."
+first, and how many matched before LIMIT cut the list.
+
+Two values, because one of them was a false answer. BUG-0002: the console asked
+for twenty and printed twenty with nothing to say a twenty-first existed, so
+`find \"\" test\' answered 20 where Loom holds 798 tests -- a population question
+answered with a location answer, and no way for the caller to tell. The count
+is what IMPACT-REPORT already carries for the same reason one command over.
+
+The total is the length before truncation, so a caller comparing it with what
+it received knows whether it saw everything."
   (let ((hits (find-entities view :entity-type type :name-like name
                                   :property-filters property-filters)))
     (when name
       (setf hits (stable-sort hits #'< :key (lambda (e) (search-rank e name)))))
-    (summarize-entities (if limit (subseq hits 0 (min limit (length hits))) hits))))
+    (values (summarize-entities
+             (if limit (subseq hits 0 (min limit (length hits))) hits))
+            (length hits))))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Picking one entity, which is a different question from listing several

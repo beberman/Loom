@@ -79,6 +79,24 @@ costs the agent a read")
   (let ((f (make-k-fixture)))
     (is (= 1 (length (search-entities (k-graph f) :name "overlay" :limit 1))))))
 
+(test search-says-how-many-matched-before-the-limit-cut-the-list
+  ;; BUG-0002. Twenty rows and no total read as the whole truth: `find "" test\'
+  ;; answered 20 where Loom holds 798 tests. The count is what tells a caller
+  ;; which of the two questions they asked -- where is X, or what is there.
+  (let ((f (make-k-fixture)))
+    (multiple-value-bind (hits total)
+        (search-entities (k-graph f) :name "overlay" :type :function :limit 1)
+      (is (= 1 (length hits)) "the limit is still honoured")
+      (is (= 2 total) "and the caller is told what it did not see"))
+    (multiple-value-bind (hits total)
+        (search-entities (k-graph f) :name "overlay" :type :function)
+      (is (= 2 (length hits)))
+      (is (= 2 total) "an uncut answer reports its own length, not a flag"))
+    (multiple-value-bind (hits total)
+        (search-entities (k-graph f) :name "leaflet")
+      (is (null hits))
+      (is (= 0 total)))))
+
 (test search-with-no-match-returns-nothing-rather-than-guessing
   (is (null (search-entities (k-graph (make-k-fixture)) :name "leaflet"))))
 

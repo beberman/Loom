@@ -535,15 +535,33 @@ rather than only in the note beside it."
             (t (log-event "complete" "~a" (getf report :plan))
                (print-transition-changes report))))))
 
+(defparameter *console-find-limit* 20
+  "How many rows `find\' prints.
+
+Twenty, unchanged since the command was written. What changed with BUG-0002 is
+that the command says when it cut the list: a cap is a reasonable answer to
+\"where is X\" and a false one to \"what is there\", and the count is what lets
+the reader tell which question they asked.")
+
 (define-command find (term &optional type)
     "find <name> [<type>]"
     "Where something is defined. The entry point for \"where is X\"."
-  (let ((hits (search-entities (current-graph) :name term
-                               :type (and type (intern (string-upcase type) :keyword))
-                               :limit 20)))
-    (if (null hits)
-        (format t "~&Nothing matches ~s.~%" term)
-        (dolist (hit hits) (print-summary-line hit)))))
+  (multiple-value-bind (hits total)
+      (search-entities (current-graph) :name term
+                       :type (and type (intern (string-upcase type) :keyword))
+                       :limit *console-find-limit*)
+    (cond
+      ((null hits) (format t "~&Nothing matches ~s.~%" term))
+      (t (dolist (hit hits) (print-summary-line hit))
+         ;; BUG-0002. Printed only when it happened, and printed as a count
+         ;; rather than a word: twenty rows read as the whole truth, and the
+         ;; number that says otherwise is the one the caller needs to decide
+         ;; whether to narrow the term. `impact' has carried its own
+         ;; "(truncated)" since it was written; this is the same fact in the
+         ;; same interface.
+         (when (> total (length hits))
+           (format t "~&~d of ~d shown. Narrow the term, or name a type.~%"
+                   (length hits) total))))))
 
 (define-command describe (term &optional flag)
     "describe <name> [--source]"

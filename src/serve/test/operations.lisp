@@ -296,3 +296,30 @@ check:
   (is (eq t (request-boolean "TRUE" "source")))
   (signals malformed-request (request-integer "-1" "depth")
            "the bound is REQUEST-INTEGER's, not IS-INTEGER-P's"))
+
+
+;;; ------------------------------------------------------------------
+;;; A cut answer says it was cut (BUG-0002)
+;;; ------------------------------------------------------------------
+;;;
+;;; :ENTITIES and nothing else let a caller that asked for twenty and received
+;;; twenty conclude there were twenty. On Loom `find "" test' answered 20 where
+;;; the tree holds 798, and an agent asking how many of a type exist had no way
+;;; to find out it had been handed a page.
+
+(test find-reports-the-total-and-whether-it-cut-the-list
+  (with-operations-fixture (repository)
+    (let ((cut (call-operation :find '(:read)
+                               :repository (repository-name repository)
+                               :term "alpha" :limit "1")))
+      (is (= 1 (length (getf cut :entities))) "the limit is honoured")
+      (is (= 2 (getf cut :total)) "and the caller is told what it did not see")
+      (is-true (getf cut :truncated)))
+    (let ((whole (call-operation :find '(:read)
+                                 :repository (repository-name repository)
+                                 :term "alpha")))
+      (is (= 2 (length (getf whole :entities))))
+      (is (= 2 (getf whole :total)))
+      (is-false (getf whole :truncated)
+                "an uncut answer must not claim to be one, or the flag is noise
+in every response and stops being read"))))
