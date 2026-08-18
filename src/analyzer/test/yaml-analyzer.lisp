@@ -368,6 +368,25 @@ title: A rule with no system
       (is (stringp (getp e :analysis-error))
           "a known unknown beats an absence an agent cannot explain"))))
 
+(test an-unquoted-colon-in-a-title-reports-the-line-it-is-on
+  ;; BUG-0033's trigger, twice over: PLAN-0032 and BUG-0013 both broke this
+  ;; way. The line number is the whole point of the message -- it is what makes
+  ;; the difference between "a document is missing" and "quote the title" --
+  ;; and cl-yaml counts lines from zero while everything else Loom reports
+  ;; counts from one, so the parser's own report sends a reader one line above
+  ;; the mistake.
+  (let* ((ops (analyze-file (make-instance 'document-analyzer)
+                            "docs/plans/PLAN-0001.yaml"
+                            (format nil "id: PLAN-0001~%title: DES-0026 in seven steps: the walk~%status: draft~%")
+                            "ws-test"))
+         (g (make-graph)))
+    (apply-transaction g ops)
+    (let ((problem (getp (first (entities-of-type g :document)) :analysis-error)))
+      (is (search "line 2" problem)
+          "the title is on line 2 of the file; cl-yaml says 1")
+      (is (search "column 31" problem)
+          "and the column is the offending colon, counted the same way"))))
+
 (test a-document-that-is-not-a-mapping-is-a-validation-error
   (signals document-error (parse-document "- just" "docs/decisions/list.yaml")))
 

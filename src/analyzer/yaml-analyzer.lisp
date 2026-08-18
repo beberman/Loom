@@ -27,6 +27,28 @@
 
 (in-package :loom-analyzer)
 
+(defun yaml-problem (condition)
+  "CONDITION as a message a reader can act on.
+
+cl-yaml numbers lines from zero. Every other line number Loom reports counts
+from one -- a definition's :START-LINE, a suppressed region, the ranges
+`find' and `describe' print -- so the parser's own report sends a reader to
+the line above the mistake. YAML.ERROR:PARSING-ERROR carries LINE and COLUMN
+as exported readers, so the number is corrected here rather than by editing
+the string it appears in: rewriting a library's prose would break the first
+time the library rephrased it, and would be a fabricated fact in the shape
+CON-0001 is least able to catch.
+
+Anything without those readers renders as itself. BUG-0033 is why this
+matters at all: the line number is the whole distance between \"a document is
+missing\" and \"quote the title\"."
+  (if (typep condition 'yaml.error:parsing-error)
+      (format nil "~a at line ~d, column ~d"
+              (yaml.error:message condition)
+              (1+ (yaml.error:line condition))
+              (1+ (yaml.error:column condition)))
+      (princ-to-string condition)))
+
 (define-condition document-error (error)
   ((path    :initarg :path    :reader document-error-path)
    (problem :initarg :problem :reader document-error-problem))
@@ -149,7 +171,7 @@ half of why SS10.2 chose YAML."
   (let ((parsed (handler-case (yaml:parse contents)
                   ((or error yaml.error:yaml-error) (condition)
                     (error 'document-error :path path
-                                           :problem (princ-to-string condition))))))
+                                           :problem (yaml-problem condition))))))
     (unless (hash-table-p parsed)
       (error 'document-error :path path
                              :problem "expected a YAML mapping at the top level"))

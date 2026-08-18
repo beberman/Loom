@@ -174,6 +174,59 @@ check:
       (is (member :dropped-edges status))
       (is (eql 0 (getf status :dropped-edges))))))
 
+(test a-document-that-will-not-parse-is-counted-and-named
+  ;; BUG-0033, and the shape is the one that caused it twice: a colon and a
+  ;; space inside an unquoted YAML scalar. The analyzer's half has always
+  ;; worked -- SS3.3 marks rather than omits, and the entity lands carrying
+  ;; :ANALYSIS-ERROR with the parser's own line and column -- and nothing read
+  ;; the property, so `status' said nothing and `check' reported a clean tree
+  ;; while PLAN-0032 sat unindexed for a day and a half and BUG-0013 for twelve
+  ;; days.
+  ;;
+  ;; The zero is asserted first and is not ceremony: a count that is only ever
+  ;; read when it is non-zero cannot be told from a count nobody computes,
+  ;; which is the DES-0002 R10 reading the two lines beside it already take.
+  (with-workspace-fixture (repository)
+    (is (eql 0 (getf (repository-status repository) :unparsed))
+        "the fixture parses, which is what makes the next assertion mean something")
+    (let ((path (write-file "docs/plans/PLAN-0001.yaml"
+                            "id: PLAN-0001
+title: DES-0026 in seven steps: the walk, the tiers, the index, the ranking
+status: draft
+")))
+      (loom-workspace::index-file repository path :quiet t)
+      (let ((status (repository-status repository))
+            (unparsed (unparsed-facts (repository-graph repository))))
+        (is (eql 1 (getf status :unparsed)))
+        (is (= 1 (length unparsed)))
+        (is (search "PLAN-0001.yaml" (getf (first unparsed) :path))
+            "named, because a count without a path is a fact nobody can act on")
+        (is (search "line 2" (getf (first unparsed) :error))
+            "and the parser's own message, which is the distance between
+\"a document is missing\" and \"quote the title\"")))))
+
+(test a-document-that-parses-again-stops-being-counted
+  ;; The count is a function of the tree rather than of history, the same way
+  ;; BUG-0030's dropped edges are: RETRACT-FILE clears the marked entity along
+  ;; with everything else read from the file, and the re-analysis decides
+  ;; again.
+  (with-workspace-fixture (repository)
+    (let ((broken (write-file "docs/plans/PLAN-0001.yaml"
+                              "id: PLAN-0001
+title: A title: with a colon
+status: draft
+")))
+      (loom-workspace::index-file repository broken :quiet t)
+      (is (eql 1 (getf (repository-status repository) :unparsed)))
+      (write-file "docs/plans/PLAN-0001.yaml"
+                  "id: PLAN-0001
+title: \"A title: with a colon\"
+status: draft
+")
+      (loom-workspace::index-file repository broken :quiet t)
+      (is (eql 0 (getf (repository-status repository) :unparsed))
+          "quoting the title is the whole repair, and the count says so"))))
+
 (test re-watching-a-registered-repository-starts-watching-it-again
   ;; The console's lifecycle in a live image: MAIN stops the monitors on its
   ;; way out but leaves *REPOSITORIES* populated, so the next (main) re-watches

@@ -1,6 +1,6 @@
 id: BUG-0033
 title: A document that fails to parse is dropped without a count, a violation or a line in status
-status: open
+status: closed
 date: 2026-08-17
 affects: [analyze-file, repository-status, index-file, note-error, resolve-document-links]
 tags: [analyzer, documents, yaml, reporting, con-0001, con-0006]
@@ -19,6 +19,94 @@ summary: |
   It was found by accident: `complete PLAN-0032` answered "No document in Loom
   is named PLAN-0032", which is the first and only time anything reported it.
 body: |
+  FIXED 2026-08-18
+
+  A reporting bug, not a swallowing one, which is the first thing this document
+  asked to find out. The analyzer\'s half has always worked: SS3.3 says a file
+  that will not parse is marked and not omitted, and DOCUMENT-ANALYZER already
+  emitted a :DOCUMENT entity named by the path and carrying :ANALYSIS-ERROR --
+  with the parser\'s own line and column in it. The property is declared on
+  :DOCUMENT and on :FILE and nothing anywhere read either one.
+
+  One claim above is wrong and the correction matters, because it is what made
+  the silence so complete. The document count does *not* fall. The marked entity
+  is a :DOCUMENT like any other, so `documents` counts it, and the number looked
+  right for the whole day and a half -- while the document had no id, no fields,
+  no references and no title. Nothing was missing from any total. That is
+  CON-0006\'s expensive error in its purest form: not an absence a reader might
+  notice, but a presence that says nothing.
+
+  UNPARSED-FACTS in loom-graph returns every file and document carrying
+  :ANALYSIS-ERROR, as plists of :PATH, :TYPE and :ERROR. :FILE is in it beside
+  the document types because it carries the same property for the same reason --
+  a JavaScript file acorn could not parse, or one whose toolchain is absent
+  entirely, is the same fact about the same index.
+
+  `status` gains an `unparsed` line above `unread`, because it is the coarser
+  measure of the same thing: `unread` counts source that would have defined
+  something and did not, and this counts whole files whose every definition is
+  missing.
+
+      unparsed   : 1 file the analyzer could not read
+      unread     : 0 suppressed regions, 0 recovered regions
+      dropped    : 0 edges the ontology does not permit
+
+  `check` prints the paths and the parser\'s message *before* the rule verdict.
+  Under "No violations." it would be a footnote to a clean bill of health, which
+  is exactly the reading that let both instances stand. The :CHECK operation
+  carries the same list first for REST and MCP callers, where it encodes as []
+  on a healthy tree rather than null.
+
+  THE LINE NUMBER WAS OFF BY ONE
+
+  Found while writing the test, and in scope because the line number is the
+  entire distance between "a document is missing" and "quote the title".
+  cl-yaml numbers lines from zero; every other line number Loom reports --
+  :START-LINE, a suppressed region, the ranges `find` and `describe` print --
+  counts from one. So the parser\'s own report sent a reader to the line above
+  the mistake.
+
+  YAML.ERROR:PARSING-ERROR carries LINE and COLUMN as exported readers, so
+  YAML-PROBLEM renders the message itself rather than editing the string the
+  library produced. Rewriting a library\'s prose would break the first time it
+  was rephrased, and would be a fabricated fact in the shape CON-0001 is least
+  able to catch. A condition without those readers renders as itself.
+
+  ACCEPTANCE MET
+
+  Re-breaking PLAN-0032\'s title on this tree reproduces the report rather than
+  the silence:
+
+      unparsed   : 1 file the analyzer could not read
+
+      1 file the analyzer could not read:
+        docs/plans/completed/PLAN-0032.yaml
+          docs/plans/completed/PLAN-0032.yaml: mapping values are not allowed
+          in this context at line 2, column 31
+
+  Line 2 column 31 is the second colon in the title, counted the way every
+  other line number in this system is counted. The rest of the tree stayed
+  indexed: 155 documents before and after, which is the count that was always
+  right and always uninformative.
+
+  All three watched trees read `unparsed: 0`, which is what makes a non-zero
+  one mean something.
+
+  WHAT THE TESTS COVER
+
+  Five, across three systems, because the defect spanned them. The analyzer
+  suite asserts the line and the column on the exact shape that caused both
+  instances -- a colon and a space in an unquoted title. The workspace suite
+  asserts the count is zero on a clean fixture, one when a document breaks, and
+  zero again when the title is quoted, which is the same files-are-truth
+  property BUG-0030\'s dropped edges have: RETRACT-FILE clears the marked
+  entity and the re-analysis decides again.
+
+  Verified against CON-0003 twice. Emptying UNPARSED-FACTS\' type list fails
+  five assertions and leaves the two zero-on-a-clean-tree assertions passing,
+  which is correct -- those are true either way and are there for DES-0002 R10.
+  Disabling the line correction fails the analyzer\'s two.
+
   PRIORITY: P2, 2026-08-18
 
   Two instances now, and the second had been invisible for twelve days -- see

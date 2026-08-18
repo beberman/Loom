@@ -328,10 +328,14 @@ sentence about it."
         :problem (getf drop :problem)))
 
 (define-operation :check :read (repository)
-    "Rule violations, unresolved document references, unread definers, and
-dropped edges."
+    "Files that would not parse, rule violations, unresolved document
+references, unread definers, and dropped edges."
   (let ((graph (repository-view repository)))
-    (list :violations (mapcar #'violation-summary
+    (list ;; BUG-0033, first for the reason console.lisp gives: every other key
+          ;; here describes something the index knows and got wrong, and this
+          ;; one describes a file it does not know at all.
+          :unparsed (unparsed-facts graph)
+          :violations (mapcar #'violation-summary
                               (entities-of-type graph :rule-violation))
           :unenforced (mapcar #'rule-summary (unenforced-rules graph))
           :unresolved (mapcar #'pair-summary (unresolved-references graph))

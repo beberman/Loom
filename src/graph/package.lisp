@@ -85,6 +85,8 @@
    ;; document link resolution (SS10.3)
    #:resolve-document-links
    #:unresolved-references
+   ;; BUG-0033: the files and documents the analyzer marked and nothing read.
+   #:unparsed-facts
    #:linkable-index
    ;; Exported for DES-0022 S3's generator, which has to know whether a name it
    ;; is about to write into a describes: field will resolve. Duplicating the

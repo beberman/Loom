@@ -71,7 +71,11 @@
     ;; list here whose ordinary value is the empty one. Follows :VIOLATIONS
     ;; exactly: `check' returns the list under this key and `status' returns
     ;; its length, and a number is a number to the walker either way.
-    :dropped-edges)
+    :dropped-edges
+    ;; BUG-0033. Empty on a healthy tree, like :DROPPED-EDGES beside it, and
+    ;; for the same reason it must encode as [] rather than null: a client
+    ;; branching on "did anything fail to parse" reads it directly.
+    :unparsed)
   "Keys whose value is a sequence even when it is empty.
 
 Two jobs. NIL under one of these encodes as [] rather than null, so an empty

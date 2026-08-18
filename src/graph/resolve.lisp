@@ -1412,6 +1412,37 @@ resolved on a previous pass is still in the property, so nothing drifts."
                 ops))))
     (nreverse ops)))
 
+(defun unparsed-facts (view)
+  "Every file and document the analyzer could not read, as plists carrying
+:PATH, :TYPE and :ERROR.
+
+The analyzer\'s half of this has always worked and is SS3.3\'s contract: a file
+that will not parse is *marked, not omitted*, so a YAML document whose title
+carries an unquoted colon lands in the index as a :DOCUMENT named by its path
+and carrying :ANALYSIS-ERROR -- with the parser\'s own line and column in it.
+Nothing read that property. BUG-0033 is the reporting half arriving twelve days
+and two lost documents later.
+
+Worth being exact about what the silence was, because the bug document offered
+two hypotheses and the answer is the less obvious one. The document is not
+dropped and the count does not fall: `documents\' counts the entity like any
+other, so the number looks right while the document has no id, no fields, no
+references and no title. That is the shape CON-0006 calls the expensive error --
+a reader cannot tell it from a document that says nothing.
+
+:FILE is here beside the document types because it carries the same property
+for the same reason. A JavaScript file acorn could not parse, or one whose
+toolchain is absent entirely, is the same fact about the same index."
+  (loop for type in (cons :file *document-types*)
+        append (loop for entity in (entities-of-type view type)
+                     for problem = (getp entity :analysis-error)
+                     when problem
+                       collect (list :path (or (getp entity :path)
+                                               (and (slot-boundp entity \'name)
+                                                    (princ-to-string (name entity))))
+                                     :type type
+                                     :error problem))))
+
 (defun unresolved-references (view)
   "Every document reference that named nothing, as (document-name . name).
 What the status command reports, per SS3.2.

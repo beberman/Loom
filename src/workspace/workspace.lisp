@@ -988,6 +988,13 @@ the last error per thread.\""
           ;; stopped being indexed and this is the only place that says so.
           :suppressed-regions (count-file-regions graph :suppressed-regions)
           :recovered-regions (count-file-regions graph :recovered-regions)
+          ;; BUG-0033, and first among the three gap counts because it is the
+          ;; largest unit any of them measures: a suppressed region costs a
+          ;; definition and a dropped edge costs a relationship, but an
+          ;; unparsed file costs everything the file would have said. Zero on
+          ;; all three watched trees, and printed even so, for the reason the
+          ;; comment above gives.
+          :unparsed (length (unparsed-facts graph))
           ;; BUG-0030 F1, and beside the two counts above for the reason
           ;; their comment gives: an edge the ontology would not permit is a
           ;; relationship the index knows it is missing. Zero on all three

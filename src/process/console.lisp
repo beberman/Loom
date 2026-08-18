@@ -289,6 +289,15 @@ command."
   ;; "unread" rather than "skipped": a comment is skipped too, and a reader who
   ;; sees a number here should understand it as source that would have defined
   ;; something and did not.
+  ;; BUG-0033, above `unread' because it is the coarser measure of the same
+  ;; thing: `unread' counts source that would have defined something and did
+  ;; not, and this counts whole files whose every definition is missing. The
+  ;; document that prompted it sat in the index for a day and a half with its
+  ;; title, its id and its body all absent while `documents' counted it and
+  ;; `check' reported a clean tree. `check' names the paths and the parser's
+  ;; own message; this is the number.
+  (format t "  unparsed   : ~d file~:p the analyzer could not read~%"
+          (getf status :unparsed))
   (format t "  unread     : ~d suppressed region~:p, ~d recovered region~:p~%"
           (getf status :suppressed-regions)
           (getf status :recovered-regions))
@@ -846,6 +855,20 @@ which is CON-0006's expensive error at the scale of one answer."
   (let* ((graph (current-graph designator))
          (violations (entities-of-type graph :rule-violation))
          (unenforced (unenforced-rules graph)))
+    ;; BUG-0033, and printed before the rule verdict rather than after it. A
+    ;; file the analyzer could not read is the largest gap this command
+    ;; reports: every other line here describes something the index knows and
+    ;; got wrong, and this one describes a file it does not know at all. Under
+    ;; "No violations." it would be a footnote to a clean bill of health, which
+    ;; is exactly the reading that let PLAN-0032 sit unindexed for a day and a
+    ;; half and BUG-0013 for twelve days. The parser's message carries a line
+    ;; and a column on a YAML failure, which is the whole distance between "a
+    ;; document is missing" and "quote the title".
+    (let ((unparsed (unparsed-facts graph)))
+      (when unparsed
+        (format t "~&~d file~:p the analyzer could not read:~%" (length unparsed))
+        (dolist (entry unparsed)
+          (format t "  ~a~%    ~a~%" (getf entry :path) (getf entry :error)))))
     (if (null violations)
         (format t "~&No violations.~%")
         (dolist (v violations)
