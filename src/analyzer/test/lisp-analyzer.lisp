@@ -931,11 +931,14 @@ what resolution has to refuse, not the whole entry"))))
       (is (equal (list (id helper))
                  (mapcar #'to-id (relationships-from g (id run) :rel-type :calls)))
           "the lambda body is still walked -- the quotation must not shadow it")
-      ;; "item" is the head of the lambda list, the same pre-existing
-      ;; imprecision that records "selector" for a LET binding head. BUG-0011
-      ;; puts that out of scope; the exact list is how this test notices if
-      ;; someone fixes it here anyway, or adds a name that is not a name.
-      (is (equal '("item") (getp run :call-names))))))
+      ;; "item" was the head of the lambda list, and the comment this replaces
+      ;; said the exact list "is how this test notices if someone fixes it here
+      ;; anyway". BUG-0025 is that fix, arriving from the LET side five days
+      ;; later, and the tripwire did its job: a lambda list is bound names, and
+      ;; the walk now skips it. The list is empty rather than shortened because
+      ;; "mapcar" and "helper" were never in it -- STANDARD-OPERATOR-P removes
+      ;; the first and the second resolves inside the file.
+      (is (equal '() (getp run :call-names))))))
 
 ;;; ------------------------------------------------------------------
 ;;; What a DEFMETHOD produces, recorded bit for bit (DES-0010 R3)
@@ -1815,3 +1818,115 @@ sweeping a mixed tree learns to skip the file"))
     (is (string= " why" (comment-line-text a ";;  why") ) "only one space is the marker's")
     (is (string= "(defun f ())" (comment-line-text a "(defun f ())"))
         "a line that is not a comment is returned untouched")))
+
+;;; ------------------------------------------------------------------
+;;; A binding list is not a sequence of forms (BUG-0025)
+;;; ------------------------------------------------------------------
+;;;
+;;; `(field (compute x))' inside a LET is character-for-character a call, and
+;;; the walk had no way to know it was not one. Most bound names resolved to
+;;; nothing and were invisible; the ones matching a real definition became a
+;;; :CALLS edge that `check' could not see, because `check' reports names that
+;;; resolved to nothing and this is a name that resolved to something.
+;;;
+;;; The reproduction below is BUG-0025's own, verbatim from the document.
+
+(defun call-names-of (source &optional (name "f"))
+  (multiple-value-bind (g file) (analyze-source source)
+    (declare (ignore file))
+    (sort (copy-list (getp (find-by-name g :function name) :call-names)) #'string<)))
+
+(test a-let-binding-name-is-not-a-call
+  (let ((names (call-names-of
+                "(defun f (x) (let ((field (compute x)) (way (other x))) (use-them field way)))")))
+    (is (null (member "field" names :test #'string=))
+        "`field' is bound here, not called -- the four false edges to
+LOOM-MCP's FIELD all came from a line of exactly this shape")
+    (is (null (member "way" names :test #'string=)))
+    (is (member "compute" names :test #'string=)
+        "and the init form is still walked, which is the half that must survive")
+    (is (member "other" names :test #'string=))
+    (is (member "use-them" names :test #'string=)
+        "as is the body -- LIST would not appear whatever happened here,
+because STANDARD-OPERATOR-P filters every name naming a CL symbol")))
+
+(test let-star-and-symbol-macrolet-bind-the-same-way
+  (dolist (operator '("let*" "symbol-macrolet"))
+    (let ((names (call-names-of
+                  (format nil "(defun f (x) (~a ((field (compute x))) (use field)))"
+                          operator))))
+      (is (null (member "field" names :test #'string=)) "~a" operator)
+      (is (member "compute" names :test #'string=) "~a" operator)
+      (is (member "use" names :test #'string=) "~a" operator))))
+
+(test a-do-binding-walks-its-init-and-its-step
+  ;; Three elements rather than two, and the third is a form like the second.
+  (let ((names (call-names-of
+                "(defun f () (do ((i (start) (advance i))) ((done i) (finish)) (body i)))")))
+    (is (null (member "i" names :test #'string=)))
+    (is (member "start" names :test #'string=))
+    (is (member "advance" names :test #'string=) "the step form is evaluated too")
+    (is (member "done" names :test #'string=) "and the end test is an ordinary form")
+    (is (member "finish" names :test #'string=))
+    (is (member "body" names :test #'string=))))
+
+(test an-flet-binding-hides-its-name-and-its-lambda-list-and-not-its-body
+  ;; Two things to skip rather than one. The name is a definition here, so a
+  ;; call to it from the body is what should be recorded -- and is.
+  (let ((names (call-names-of
+                "(defun f (x) (flet ((helper (item) (inner item))) (helper x)))")))
+    (is (null (member "item" names :test #'string=))
+        "the lambda list is parameters, not calls")
+    (is (member "inner" names :test #'string=) "the local body is walked")
+    (is (member "helper" names :test #'string=)
+        "and the call to it from the outer body is a call like any other")))
+
+(test labels-and-macrolet-bind-the-same-way-as-flet
+  (dolist (operator '("labels" "macrolet"))
+    (let ((names (call-names-of
+                  (format nil "(defun f (x) (~a ((helper (item) (inner item))) (g x)))"
+                          operator))))
+      (is (null (member "item" names :test #'string=)) "~a" operator)
+      (is (member "inner" names :test #'string=) "~a" operator)
+      (is (member "g" names :test #'string=) "~a" operator))))
+
+(test a-lambda-list-is-parameters-and-its-defaults-are-forms
+  (let ((names (call-names-of
+                "(defun f () (mapcar (lambda (item &optional (n (default-n))) (use item n)) xs))")))
+    (is (null (member "item" names :test #'string=)))
+    (is (member "default-n" names :test #'string=)
+        "an &optional default is evaluated and must still be walked")
+    (is (member "use" names :test #'string=))))
+
+(test multiple-value-bind-and-destructuring-bind-bind-their-first-element
+  (let ((names (call-names-of
+                "(defun f () (multiple-value-bind (value present) (lookup k) (use value present)))")))
+    (is (null (member "value" names :test #'string=)))
+    (is (member "lookup" names :test #'string=))
+    (is (member "use" names :test #'string=)))
+  (let ((names (call-names-of
+                "(defun f () (destructuring-bind (head &rest tail) (parts x) (use head tail)))")))
+    (is (null (member "head" names :test #'string=)))
+    (is (member "parts" names :test #'string=))
+    (is (member "use" names :test #'string=))))
+
+(test dolist-and-dotimes-bind-one-name-rather-than-a-list-of-them
+  (let ((names (call-names-of "(defun f () (dolist (item (items x)) (use item)))")))
+    (is (null (member "item" names :test #'string=)))
+    (is (member "items" names :test #'string=))
+    (is (member "use" names :test #'string=))))
+
+(test a-binding-operator-from-another-package-still-evaluates-its-arguments
+  ;; The guard, and the reason BINDING-FORM-SHAPE takes UNQUALIFIED-CL-P. A
+  ;; `mypkg:let' is somebody else's macro and Loom knows nothing about what it
+  ;; binds, so its arguments are forms like any other -- refusing to walk them
+  ;; would be the silent miss BUG-0011 and the foreign-quote case are made of.
+  (let ((names (call-names-of "(defun f (x) (mypkg:let ((field (compute x))) (use field)))")))
+    (is (member "field" names :test #'string=)
+        "not this LET, so nothing here is known to be a binding")
+    (is (member "compute" names :test #'string=))))
+
+(test a-binding-operator-with-nothing-to-bind-walks-what-is-there
+  ;; `(let)' and `(let ())' are degenerate and must not error or swallow.
+  (let ((names (call-names-of "(defun f () (let) (let () (still-called)))")))
+    (is (member "still-called" names :test #'string=))))

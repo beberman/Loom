@@ -130,6 +130,59 @@ element X (which may be a destructuring pair like (KEY DEFAULT))."
         ((consp x) (token-name (car x)))
         (t (princ-to-string x))))
 
+(defparameter *binding-forms*
+  '(("let"             . :bindings)
+    ("let*"            . :bindings)
+    ("symbol-macrolet" . :bindings)
+    ("do"              . :bindings)
+    ("do*"             . :bindings)
+    ("lambda"          . :bindings)
+    ("destructuring-bind" . :bindings)
+    ("multiple-value-bind" . :bindings)
+    ("flet"            . :function-bindings)
+    ("labels"          . :function-bindings)
+    ("macrolet"        . :function-bindings)
+    ("dolist"          . :one-binding)
+    ("dotimes"         . :one-binding))
+  "Common Lisp operators whose *second* element binds names rather than
+evaluating forms, and the shape of that element.
+
+BUG-0025 is why this table exists. `(field (compute x))' inside a LET binding
+list is character-for-character a call, and the walk had no way to know it was
+not one, so every LET and LET* in every tree contributed its binding names to
+the enclosing definition's :CALL-NAMES. Most resolved to nothing and were
+invisible; the ones that matched a real definition somewhere became a :CALLS
+edge that no `check' could see, because `check' reports names that resolved to
+*nothing* and this is a name that resolved to something.
+
+  :BINDINGS           a list of bindings, each `(name . forms)'. The name is
+                      bound, the rest is evaluated. Covers a lambda list too:
+                      `(&optional (x (default)))' has the same shape, and a
+                      plain `(x y)' contributes nothing because an atom is not
+                      walked at all.
+  :FUNCTION-BINDINGS  a list of `(name lambda-list . body)'. Two things to
+                      skip rather than one, and the name is a *definition*
+                      here -- a call to it from the body is recorded by the
+                      ordinary walk, which is what keeps FLET honest.
+  :ONE-BINDING        a single binding rather than a list of them:
+                      `(dolist (item list result) ...)'.
+
+Deliberately absent, each for a reason rather than by oversight. WITH-ACCESSORS
+binds `(var accessor)' where the accessor really is a function name, so
+suppressing it would lose a real call -- the opposite defect, and it wants its
+own thought. WITH-SLOTS is the same shape without that hazard and is left
+beside it rather than split from it. PROG and PROG* are LET-shaped and are out
+because no tree measured here contains one. A HANDLER-CASE clause head is a
+condition type read as a call, which is a different shape and not a binding.")
+
+(defun binding-form-shape (head unqualified-p)
+  "How HEAD's second element binds, or NIL when it evaluates like any other.
+UNQUALIFIED-P is the caller's answer to whether HEAD could be the CL operator
+its name suggests -- a `mypkg:let' is not this LET and its arguments are
+forms."
+  (and (symbolp head) (not (keywordp head)) unqualified-p
+       (cdr (assoc (token-name head) *binding-forms* :test #'string=))))
+
 (defun collect-call-names (body &key reading)
   "Two values: every operator-position symbol name appearing anywhere in BODY,
 a sequence of forms, skipping quoted data so a literal list is never mistaken
@@ -236,6 +289,29 @@ of this one can change that. BUG-0017."
                           (string= (token-name head)
                                    (ecase kind (:quote "quote") (:function "function")))
                           (unqualified-cl-p head)))))
+             (walk-bindings (shape section)
+               ;; The bound names are skipped and everything else in the
+               ;; section is walked as forms. Each clause takes the part of a
+               ;; binding that is evaluated: past the name for a value
+               ;; binding, past the name and the lambda list for a function
+               ;; one. An atom in the section -- `(let (x) ...)' -- is a bare
+               ;; name and contributes nothing, which the CONSP test already
+               ;; gives without a clause of its own.
+               (flet ((walk-forms (forms)
+                        (loop for tail = forms then (cdr tail)
+                              while (consp tail)
+                              do (walk (car tail)))))
+                 (ecase shape
+                   (:bindings
+                    (loop for tail = section then (cdr tail)
+                          while (consp tail)
+                          do (when (consp (car tail)) (walk-forms (cdr (car tail))))))
+                   (:function-bindings
+                    (loop for tail = section then (cdr tail)
+                          while (consp tail)
+                          do (when (consp (car tail)) (walk-forms (cddr (car tail))))))
+                   (:one-binding
+                    (when (consp section) (walk-forms (cdr section)))))))
              (walk (form)
                (when (consp form)
                  (let ((head (car form)))
@@ -313,12 +389,27 @@ of this one can change that. BUG-0017."
                                      (not (keywordp (second designator))))
                                 (push (definition-name designator) names)))))
                      (when (consp head) (walk head))   ; ((lambda ...) x)
-                     ;; The arguments are forms in their own right. LOOP over
-                     ;; the tail rather than recursing on it, and stop at a
-                     ;; dotted end rather than treating the atom as a form.
-                     (loop for tail = (cdr form) then (cdr tail)
-                           while (consp tail)
-                           do (walk (car tail))))))))
+                     ;; The arguments are forms in their own right -- except
+                     ;; the first one, when the head is a binding operator.
+                     ;; BUG-0025: a LET binding list is not a sequence of
+                     ;; forms, and reading it as one records every bound name
+                     ;; as a call. WALK-BINDINGS takes that element and the
+                     ;; loop below starts one later; everything else is
+                     ;; unchanged, which is what keeps the common path -- every
+                     ;; form in the tree whose head is not in *BINDING-FORMS*
+                     ;; -- reading exactly as it did.
+                     ;;
+                     ;; A binding operator with no second element, `(let)',
+                     ;; falls through to the ordinary loop and walks nothing,
+                     ;; which is what it should do with nothing to walk.
+                     (let ((shape (and (consp (cdr form))
+                                       (binding-form-shape
+                                        head (unqualified-cl-p head)))))
+                       (when shape (walk-bindings shape (second form)))
+                       (loop for tail = (if shape (cddr form) (cdr form))
+                               then (cdr tail)
+                             while (consp tail)
+                             do (walk (car tail)))))))))
       (dolist (form body) (walk form)))
     (values names (nreverse qualified))))
 

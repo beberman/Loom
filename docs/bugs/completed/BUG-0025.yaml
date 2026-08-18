@@ -1,6 +1,6 @@
 id: BUG-0025
 title: A let binding is recorded as a call, so every local variable name that matches a function somewhere becomes an edge to it
-status: open
+status: closed
 date: 2026-08-13
 refines: [PLAN-0022]
 affects: [impact-set, resolve-document-links, document-summary, entity-system]
@@ -24,6 +24,93 @@ summary: |
   plausible, and wrong, and it survives every check the tree has: `check`
   reports unresolved references and this one resolved.
 body: |
+  FIXED 2026-08-18
+
+  The walk now knows which operators bind. *BINDING-FORMS* maps a Common Lisp
+  operator to the shape of its second element, and WALK skips the bound names
+  in that element while still walking everything in it that is evaluated. The
+  ordinary path is untouched: a form whose head is not in the table reads
+  exactly as it did.
+
+  Three shapes cover thirteen operators. :BINDINGS is a list of `(name . forms)`
+  -- LET, LET*, SYMBOL-MACROLET, DO, DO*, and a lambda list too, since
+  `(&optional (x (default)))` has the same shape and a plain `(x y)`
+  contributes nothing because an atom is never walked. :FUNCTION-BINDINGS is
+  `(name lambda-list . body)` for FLET, LABELS and MACROLET, where the name is
+  a definition rather than a call and a call to it from the body is recorded by
+  the ordinary walk. :ONE-BINDING is a single binding rather than a list, for
+  DOLIST and DOTIMES.
+
+  Guarded by UNQUALIFIED-CL-P, which the walk already computes for its
+  quotation test. A `mypkg:let` is somebody else's macro and Loom knows nothing
+  about what it binds, so its arguments stay forms -- refusing to walk them
+  would be the silent miss the foreign-quote case is made of.
+
+  WHAT WAS LEFT OUT, AND WHY
+
+  WITH-ACCESSORS binds `(var accessor)` where the accessor genuinely is a
+  function name, so suppressing it would lose a real call -- the opposite
+  defect, and it wants its own thought rather than a table entry. WITH-SLOTS is
+  the same shape without that hazard and is left beside it rather than split
+  from it. PROG and PROG* are LET-shaped and are out because neither measured
+  tree contains one. A HANDLER-CASE clause head is a condition type read as a
+  call, which is a different shape and not a binding at all.
+
+  MEASURED, ALL THREE TREES, 2026-08-18
+
+                        entities              relationships
+      Loom            2837 -> 2827           14692 -> 14524
+      game-server     3946 -> 3873           22032 -> 21163
+      front-end       4128 -> 4128            2731 ->  2731
+
+  This document asked for game-server to be measured before the fix was scoped,
+  on the grounds that a large Lisp codebase with names like `table`, `handler`
+  and `key` would collide far more often than Loom does. It does: 869
+  relationships against Loom's 168, and 73 :CALL-SITE entities against Loom's
+  10. front-end does not move at all, which is the number that would have moved
+  if a rule about Common Lisp binding forms had reached a JavaScript tree.
+
+  No definition was lost anywhere. game-server's entity census is identical
+  either side except for :CALL-SITE, 1453 -> 1380: FUNCTION 792, METHOD 624,
+  TEST 360, INTERFACE 320, FILE 134, VARIABLE 112, CLASS 89, PACKAGE 41,
+  DOCUMENT 18 before and after.
+
+  THE FOUR EDGES THIS DOCUMENT OPENED ON
+
+  FIELD in src/mcp/jsonrpc.lisp now has exactly two inbound :CALLS edges, both
+  from src/mcp/jsonrpc.lisp itself, which are the two real ones. The impossible
+  system pairs are gone from `structure':
+
+      LOOM-GRAPH     -> LOOM-MCP       gone
+      LOOM-KNOWLEDGE -> LOOM-MCP       gone
+      LOOM-PROCESS   -> LOOM-MCP       gone
+
+  What remains into loom-mcp is `docs -> mcp` and `docs -> loom-mcp`, which are
+  :MENTIONS and :DOCUMENTS edges from documents that name it, and one
+  :CONTAINS. All four of the edges this document named were gone by the time
+  the count was taken; re-measured at six rather than four when the bug was
+  prioritised on 2026-08-18, because the tree had grown since the filing.
+
+  The :CALL-SITE census fell from 296 to 284 on this tree, which is the same
+  fact from the other end: the census already reported `let*` among the macros
+  contributing orphaned definer names, and it no longer does.
+
+  WHAT THE TESTS COVER
+
+  Ten in the analyzer suite. Eight assert a shape -- the bound name absent and
+  every evaluated part still present -- and two are guards: a binding operator
+  from another package still evaluates its arguments, and `(let)` with nothing
+  to bind walks what is there rather than erroring. Verified against CON-0003
+  by emptying *BINDING-FORMS*, which fails thirteen assertions across the
+  eight, and leaves every "still walked" assertion and both guards passing.
+
+  One pre-existing test changed, and it was written to be changed. BUG-0011's
+  A-LAMBDA-QUOTATION-RECORDS-NO-NAME-AND-LOSES-NO-CALL pinned `run`'s
+  :CALL-NAMES to the exact list `("item")` -- the head of a lambda list -- and
+  said in its own comment that the exact list "is how this test notices if
+  someone fixes it here anyway". This is that fix, arriving from the LET side,
+  and the tripwire fired.
+
   PRIORITY: P1, 2026-08-18
 
   Re-measured and worse than filed. LOOM-MCP's FIELD now carries six inbound
