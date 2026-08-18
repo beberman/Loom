@@ -131,3 +131,21 @@ body: |
 
   A synthetic tree with a deliberately illegal edge indexes everything else and
   reports the drop, which is F1 and is what no existing test covers.
+
+  D2 REPRODUCED, 2026-08-17
+
+  A reindex of Loom with all three trees watched wedged the service:
+
+      TYPE-ERROR: The value "Transaction rejected, nothing applied:
+        op 0 #<RETRACT-OP serves:function:server/gameapi.lisp:loop-post:
+          function:src/data-api/test/handler.test.js ...
+
+  Every subsequent request to /v1/status returned the same TYPE-ERROR until the
+  process was restarted, so the service stayed up and answered nothing.
+
+  Two things this adds to D2 as first written. The trigger is a cross-repository
+  :SERVES retract, not the :MENTIONS endpoint F2 fixed -- so the error path is
+  reachable from federation as well as from document links, and F2 narrowed the
+  causes without touching this. And the failure is not confined to the request
+  that caused it: the condition leaves the service answering every later call
+  with the same type error, which is worse than the rejection it was hiding.

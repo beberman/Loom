@@ -1,5 +1,5 @@
 id: PLAN-0032
-title: DES-0026 in seven steps: the walk, the tiers, the index, the ranking
+title: "DES-0026 in seven steps: the walk, the tiers, the index, the ranking"
 status: draft
 date: 2026-08-17
 refines: [DES-0026]
@@ -25,6 +25,34 @@ summary: |
   reachable. After S3 REQ-0031 is closed and a bundle can carry source. After S5
   no hardcoded list of English words decides which entities a query reaches.
 body: |
+  OUTCOME, 2026-08-17
+
+  Four of seven steps landed and the acceptance set went from a saturated 26/26
+  on three trees to 31/32 on two, with one diagnosed miss.
+
+    S1  cost-ordered walk, no transit through a container      landed
+    S2  convergence                                            landed
+    S3  two tiers; REQ-0031 R8 closed                          landed
+    S4  postings index and BM25                                built, branched
+    S5  retire the four constants                              not attempted
+    S6  one order over the recalled set                        twice reverted
+    S7  acceptance                                             tools/acceptance.py
+
+  S5 was not attempted because the baseline showed it could not be measured: the
+  set was 26/26 before it, so its four retirements could only hold or regress it.
+  Its premise -- that each constant is fitted to one tree -- is still defensible
+  and now has one measurement against it, since "check" turned out rare on all
+  three trees and IDF would not have suppressed it.
+
+  S6 was attempted twice and reverted twice, at 21/26 and then 29/32. Both times
+  an offline score justified the rewrite and the acceptance set rejected it. The
+  rule that came out of it: a ranking change is measured by running
+  tools/acceptance.py, and nothing else counts as evidence for landing one.
+
+  The one thing S4 produced that landed is STEM-VARIANTS, moved into TASK-TOKENS.
+  It gained SAVEDESIGN, which is the single entity two index attempts gained
+  between them, at no latency cost.
+
   WHAT IS ALREADY TRUE
 
   DES-0026 was written before REQ-0031 and REQ-0035 landed. Four of its premises

@@ -1,496 +1,195 @@
 id: REQ-0016
-title: context must rank by structural centrality, not by name similarity
-status: draft
+title: context must reach the subsystem a task names, not the entities whose names resemble it
+status: partial
 date: 2026-08-06
-affects: [build-context, context-item, seed-entities, search-entities,
-          neighbor-summary, group-neighbors,
-          seed-matches, seed-score, seed-slice, admit-seeds,
-          seed-type-rank, task-terms, slot-accessor-p, test-code-p,
-          named-by-task-p, production-names, demoted-test-p]
-tags: [knowledge, console, context, ranking, con-0006, req-0031]
+affects: [build-context, context-item, render-context, seed-entities, search-entities,
+          seed-matches, seed-score, seed-slice, admit-seeds, seed-type-rank,
+          task-tokens, task-terms, stem-variants, slot-accessor-p, test-code-p,
+          named-by-task-p, production-names, demoted-test-p,
+          expand-from-seeds, edge-cost, container-p, effective-cost]
+tags: [knowledge, console, context, ranking, retrieval, con-0006, req-0031, req-0035]
 summary: |
-  `context` is the command CLAUDE.md and the loom skill both tell an agent to
-  reach for first -- "a budgeted bundle: what to know before editing". On
-  Loom's own tree it works. Asked about a foreign codebase it returns the
-  wrong subsystem entirely, because its seeding is lexical: it matches query
-  words against entity names and expands from whatever it hits. Asked
-  `context data-handler` against ~/lisp/game-server -- a codebase whose
-  data-api subsystem defines a DATA-HANDLER class, six subclasses and 21
-  `dhandler-*` CRUD generics across nine files -- it returned 22 entities
-  consisting of CORS handlers from the web layer, mpackage event callbacks,
-  and test helpers. The DATA-HANDLER class itself and its CRUD protocol are
-  absent. Every entity returned contains the substring "handler" and almost
-  none of them is what the question was about. This asks that seeding and
-  ranking use the structure Loom has already built -- degree, edge type,
-  clustering, distance from the named entity -- rather than treating a name
-  match as the answer.
+  Asked `context data-handler` against ~/lisp/game-server on 2026-08-06, Loom
+  returned 22 entities: CORS handlers from the web layer, mpackage event
+  callbacks and two test fixtures. The DATA-HANDLER class, its six subclasses
+  and its 21 `dhandler-*` CRUD generics were all absent. Every entity returned
+  contained the substring "handler" and almost none was what the question was
+  about.
+
+  The same command on Loom's own tree answered well, and that is why the defect
+  survived: Loom's names are long and unique, so a lexical match usually lands
+  on the right entity. game-server's are short and repeated and grouped by CLOS
+  class, and the seeding failed immediately.
+
+  Rewritten 2026-08-17. The original document carried eight dated amendment
+  sections, several correcting its own claims, and its framing was wrong in a
+  way the amendments could not repair. Git holds it; this states what is now
+  known.
+
+  Two things it got wrong. The title asked for "structural centrality", and no
+  centrality measure was ever used or wanted -- every one available ranks
+  containers first, because :CONTAINS runs from a file to everything in it. What
+  was needed was proximity to the seeds under a weighted edge cost, which is a
+  property of the query rather than of the tree. And the whole document was
+  written as a precision complaint -- 22 entities returned and almost none
+  relevant -- when the defect was that the protocol was *absent*. CON-0006
+  records the correction: the reader is an LLM, a wrong entry costs a few tokens,
+  a missing one costs a grep.
 body: |
-  WHAT IS WRONG
+  WHAT WAS ACTUALLY WRONG
 
-  Run against game-server:
+  Three separate defects, found in that order and fixed in reverse.
 
-      # Context for: data-handler
-      # 24 entities, ~1960/2000 tokens (truncated)
-      function handler-exists-p        [mpackage/mpackage.lisp:250-253]
-      function set-cors-handler        [server/gameapi.lisp:29-36]
-      function make-cors-handler       [server/gameapi.lisp:21-27]
-      function get-handler             [server/content.lisp:104-120]
-      function make-table-handler      [mpackage/test/cache-namespace.lisp:43-52]
-      function make-null-handler       [mpackage/test/cache-namespace.lisp:24-25]
-      function ns-make-handler         [mpackage/mpackage.lisp:208-241]
-      ...
+  The seeder scored an entity by the best of its matches, so an entity matching
+  half the sentence tied with one matching a single common word, and the tie
+  fell to token order. `start-server startup sequence and database handler
+  health check` seeded seven of eight entities on the English word "check".
 
-  The full set of 22 distinct entities contains CORS request handling, event
-  callbacks, two test fixtures, and `make-handler`. It does not contain the
-  DATA-HANDLER class (data-api/handler.lisp:26), DB-HANDLER, TABLE-HANDLER,
-  MODEL-HANDLER, NULL-HANDLER, GAME-HANDLER, or any of DHANDLER-GET,
-  DHANDLER-PUT, DHANDLER-UPDATE, DHANDLER-DELETE and the rest of the protocol.
+  The expansion was one hop, unordered, every edge the same price. TABLE-HANDLER
+  and GAME-HANDLER are one :INHERITS hop from DB-HANDLER and two from
+  DATA-HANDLER; MODEL-HANDLER is three. No ranking reaches an entity the
+  expansion never visits, so a defect that read as ranking was reachability.
 
-  An agent following the documented workflow -- start with `context`, then
-  narrow with `find` -- would read the wrong nine files and form a wrong model
-  of the subsystem before writing a line.
+  The budget was 2,000 tokens, sized for a bundle of names and locations. Once
+  the walk reached 157 entities it printed two of them, so R6 was failing on
+  room after it had stopped failing on reach.
 
-  A second, looser query behaves the same way. `context restructure data
-  handler protocol encode decode` returned predominantly `test/fixture.lisp`
-  and `test/test-api.lisp` entities: functions named `decode-obj`,
-  `decode-slot`, `decode-defn-item`, `alist-value`. They match the query's
-  words. They are test fixtures for a different subsystem.
+  A fourth was found later and belongs to REQ-0035: no code entity carried the
+  prose its own definition declared, so a query describing what a function does
+  could not match the sentence in which its author described it.
 
-  WHY IT LOOKS FINE ON LOOM
-
-  Loom's own entity names are unusually descriptive and unusually unique --
-  APPLY-TRANSACTION, RESOLVE-GENERATED-DEFINITIONS, EDGES-BETWEEN-SYSTEMS --
-  so a lexical match against a task description lands on the right entity
-  most of the time, and the neighbourhood expansion around a correct seed does
-  the rest. The ranking is not being tested by that tree; the naming is
-  carrying it. game-server's names are shorter, more repeated, and grouped by
-  CLOS class rather than by unique verb, and the seeding fails immediately.
-
-  This is the third instance of one pattern found in a single afternoon's
-  evaluation, alongside REQ-0012's inline methods and REQ-0015's ambiguous
-  calls: a mechanism that is correct on the tree it was developed against, and
-  wrong on the next one, for reasons invisible from inside the first.
-
-  WHAT THE GRAPH ALREADY KNOWS THAT THE RANKING IGNORES
-
-  DATA-HANDLER is reachable, and richly so. `impact data-handler 5` returns
-  over 128 entities and correctly walks the whole hierarchy -- d1 to
-  NULL-HANDLER and DB-HANDLER, d2 to TABLE-HANDLER, GAME-HANDLER,
-  GAME-SET-HANDLER and every method specialized on them, deeper to
-  MODEL-BASE-HANDLER, MODEL-HANDLER and OPERATOR-HANDLER -- with the
-  `inherits>` and `uses>` path on each row explaining why it is there. The
-  structure needed to answer `context data-handler` well is present in the
-  graph and was built by the same indexing pass. Only the selection is wrong.
-
-  Signals available and unused: in-degree and out-degree; edge type (an
-  :INHERITS or :IMPLEMENTS edge says more about subsystem membership than a
-  :CALLS edge does); co-location in a file or directory; whether an entity is
-  a class with many specialized methods, which is what a CLOS subsystem's
-  centre looks like; and, once REQ-0014 lands, whether a document mentions it.
-
-  WHAT THIS IS NOT
-
-  This is not REQ-0005. That requirement governs `impact`'s depth labelling and
-  its boolean `(truncated)` flag, both of which are real and both of which also
-  affect `context`'s "(truncated)" line. Neither is about which entities are
-  selected, which is the whole of this requirement. REQ-0005 stands unchanged
-  and should be read alongside this one.
-
-  This is not a request for semantic or embedding-based search. A query is a
-  handful of words and the graph is a graph; the claim here is that structure
-  is a stronger signal than string similarity, not that a language model
-  belongs in the ranking. If an architecture document concludes otherwise it
-  should say why the cheaper structural signals were insufficient.
-
-  It does not ask for the token budget to change. 2,000 tokens is enough to
-  describe a subsystem when the right entities are chosen; the current output
-  spends nearly all of it (~1,960) on the wrong ones, which is the argument
-  that selection rather than budget is the defect.
-
-  REQUIREMENTS
+  THE REQUIREMENTS, AND WHERE EACH STANDS
 
   R1  A query naming an entity that exists must seed from that entity, not from
-      every entity whose name contains the query as a substring. `context
-      data-handler` must include the DATA-HANDLER class.
+      every entity whose name contains the query as a substring.
 
-  R2  Expansion from a seed must weight edge types rather than treat them
-      alike. For a class-shaped seed, :INHERITS, :IMPLEMENTS and :USES identify
-      the subsystem; :CALLS from unrelated code does not.
+      MET. *SEED-TYPE-PREFERENCE* was fifteen entries with :CLASS two below
+      :FUNCTION, and the type band dominates the score, so every function
+      matching any word outranked the class the query was named after. Three
+      tiers now: definitions, containers, documents.
+
+  R2  Expansion must weight edge types rather than treat them alike.
+
+      MET. *EDGE-COSTS* prices each relationship type and direction --
+      :INHERITS and :IMPLEMENTS 1, :USES 2, :CALLS 3 outward and 4 inward -- and
+      EXPAND-FROM-SEEDS is a best-first walk bounded by cost rather than hops. A
+      type absent from the table is uncrossable rather than free.
+
+      :CALLS is asymmetric because what a thing calls is bounded by its body and
+      describes it, where what calls it is unbounded and describes the callers.
 
   R3  Entities matching the query lexically but sitting in an unrelated part of
       the graph must rank below entities reached structurally from the seed.
-      SET-CORS-HANDLER must not displace DHANDLER-GET.
+
+      PARTIAL. The walk orders neighbours by cost, and SET-CORS-HANDLER no
+      longer displaces DHANDLER-GET. What remains is a tie between two lexical
+      matches: on front-end, `changing the type of a map element` returns
+      MAPELEMENTTYPE and not MAPELEMENTTYPEEDITOR, which answers the same three
+      terms from a longer name. That is the one miss in the acceptance set.
 
   R4  Test fixtures must rank below production code when both match, unless the
-      query asks about tests. Two of the 22 entities returned above are test
-      helpers from a different subsystem, and the looser query returned
-      predominantly test fixtures.
-
-  R5  A query naming no known entity must still return something useful -- the
-      current lexical behaviour is the fallback, not the primary path, and
-      must not regress for the "task described in words" case `context` was
-      built for.
-
-  R6  Acceptance is measured on both trees. On game-server, `context
-      data-handler` must return the DATA-HANDLER class and a majority of its
-      subclasses and `dhandler-*` protocol from data-api/, and must not spend
-      its budget on server/gameapi.lisp's CORS layer. On Loom, the existing
-      documented example -- `context macro definitions` returning
-      MAKE-MACRO-ENTITY and its neighbours -- must not regress, and the full
-      suite must stay green.
-
-  FURTHER EVIDENCE, 2026-08-15, AND WHAT IT ADDS
-
-  Still draft, still reproducing, and now with a case the original evidence
-  did not cover: a query that names no entity at all.
-
-  Both queries above are entity-shaped -- `data-handler` is a class that
-  exists, and R1 is written about a "query naming an entity that exists". The
-  case measured here is R5's fallback, the "task described in words" path
-  `context` was built for, and it fails by a mechanism R1 through R4 do not
-  describe.
-
-  Asked, on game-server, for
-
-      start-server startup sequence and database handler health check
-
-  the bundle came back with eight seeds, of which seven were:
-
-      check-not-found-response   test/test-api.lisp
-      check-unknown-response     test/test-api.lisp
-      check-ok-response          test/test-api.lisp
-      check-alist                mpackage/test/obj-defn.lisp
-      check-slot                 mpackage/test/obj-defn.lisp
-      check-slot                 mpackage/struct-types.lisp
-      check-obj                  mpackage/obj-namespace.lisp
-
-  Every one of them is seeded on the English word "check". None has anything
-  to do with startup, databases or health. Six are test helpers, which is R4
-  firing again. The bundle reported 1979 of 2000 tokens and truncated, so the
-  noise was not free -- it was most of the budget.
-
-  (Six of eight when first written from the session transcript; re-measured
-  against a fresh index the same day it was seven, the second CHECK-SLOT being
-  a name game-server defines in two files. The exact count is not the point
-  and is why R7 below is a bound rather than a reproduction.)
-
-  This is worse than a bad ranking of relevant things. A word like "check",
-  "handler", "value", "create" or "test" appears in a large fraction of the
-  natural-language task descriptions an agent will write, and in a large
-  fraction of the entity names in any codebase. Lexical seeding on a prose
-  task therefore does not degrade gracefully as the query gets longer and more
-  descriptive -- it gets worse, because every additional word is another
-  chance to match something irrelevant. The seeding is being driven by whichever
-  of the author's words happens to collide with a name.
-
-  TWO THINGS THE SAME SESSION SHOWED THAT ARE NOT DEFECTS
-
-  The neighbourhood expansion partly rescued it. START-SERVER was the one good
-  seed, and the neighbour band underneath carried READ-CONFIG, CONFIG-GET,
-  SET-CORS-HANDLER, INITIALIZE-GAME-API, INITIALIZE-MEDIA and CONFIGURE-LOG --
-  which is the startup sequence, correctly and in order, and was what the
-  caller actually needed. The structure Loom builds is doing its job; it is
-  reached through seeds chosen badly and is competing for budget with them.
-
-  How badly it competes is worth stating, because the rescue is not reliable.
-  Re-measured against a fresh index the same day, that band was down to four
-  entries and only READ-CONFIG and CONFIG-GET of the six survived; the rest
-  were squeezed out by the seeds. So the expansion is not a floor under the
-  seeding defect -- it is the first thing the defect spends.
-
-  And a second query in the same session was genuinely, decisively useful:
-
-      data-api handler database connection acquire and test connectivity
-
-  returned CONNECTION-CONNECT-DATABASE in three places -- server/server.lisp,
-  game/test/api.lisp and data-api/test/fixture.lisp -- which is a triplication
-  nothing in the file being edited points at, and which changed the design of
-  the change being made. That query also contains "test" and "handler" and
-  still landed, because enough of its other words named real things.
-
-  So the recommendation this evidence supports is narrower than "seed
-  structurally instead of lexically", and it is a signal R1 through R5 do not
-  currently name: a seed matched only on a term that is common in prose should
-  be weighted far below one matched on a term that is distinctive, and the
-  count of seeds a single query word may contribute should probably be
-  bounded. Whether that is inverse document frequency over the tree's own
-  names, a stop-list, or a cap per query term is the architecture's to decide.
-
-  R7  A query term that matches many entities contributes proportionately
-      less, and no narrow slice of the query may fill the seed set. Stated as
-      a bound rather than as a reproduction, because the counts in this
-      section moved within a day: no single task term, and no single set of
-      task terms, may account for more than a quarter of the seeds while
-      another slice still has a candidate waiting. On game-server, the query
-      in this section must seed START-SERVER and must carry READ-CONFIG,
-      CONFIG-GET, SET-CORS-HANDLER, INITIALIZE-GAME-API, INITIALIZE-MEDIA and
-      CONFIGURE-LOG somewhere in the bundle.
-
-  R8  A prose query that lands today must still land. The `data-api handler
-      database connection` query above must continue to return
-      CONNECTION-CONNECT-DATABASE and its siblings; a fix that suppressed
-      common terms hard enough to lose it would trade this defect for a worse
-      one. The triplication is the finding, so all three definitions count --
-      two of three is a regression, not a partial pass.
-
-  WHAT LANDED, 2026-08-15
-
-  R1, R4, R7 and R8. R2, R3 and R5 are untouched and this document stays draft
-  for them; R6 is discussed at the end.
-
-  SEED-ENTITIES was rewritten in three parts (src/knowledge/context.lisp).
-  SEED-MATCHES records every (term . rank) an entity matched rather than only
-  the best one; SEED-SCORE ranks coverage -- how many of the task's distinct
-  terms a name answers to -- above match quality and below type preference;
-  ADMIT-SEEDS caps the number of distinct *names* any one slice of the task
-  may contribute at *SEED-TERM-SHARE*, and relaxes the cap rather than return
-  fewer seeds than there are candidates.
-
-  The defect was one expression. The old ranking scored an entity by
-  (reduce #'min tokens ...) -- the best of its matches -- and a best is the
-  same number whether one term produced it or five, so the entity matching
-  half the sentence tied with the entity matching one common word and the tie
-  fell to a PUSHNEW accumulator that put the task's *last* word first.
-
-  Measured after, on game-server:
-
-    start-server startup sequence and database handler health check
-      seeds     START-SERVER, RESTART-SERVER, CHECK-DATABASE-GAME,
-                CHECK-DATABASE-DEFNS, START-NULL-P?, SERVER-STATUS,
-                DATABASE-ALERT, HANDLER-EXISTS-P
-      band      all six of R7's startup functions, plus GAME-CONFIG and
-                CHECK-DATABASE itself -- which the pre-change bundle did not
-                contain anywhere
-
-    data-api handler database connection acquire and test connectivity
-      seeds     CONNECTION-CONNECT-DATABASE from all three files,
-                DATABASE-ALERT, IS-RESTRICTED-DATABASE, HANDLER-EXISTS-P,
-                CLEAR-TEST-DATA, CLEAR-GAME-DATA
-      band      MAKE-DB-CONNECTION, DB-OPEN
-
-  Two intermediate rules were measured and rejected, and ADMIT-SEEDS records
-  why in full: charging each seed to its narrowest term cost R8 one of the
-  three CONNECTION-CONNECT-DATABASE definitions, and exempting anything that
-  matched more than one term let five of the CHECK-DATABASE-* family take five
-  of eight slots. Counting distinct names against the whole matched slice is
-  what satisfies both.
-
-  R6's Loom-side example is stale and was already stale before this change:
-  `context macro definitions` does not return MAKE-MACRO-ENTITY on the current
-  tree and did not before the rewrite either, because MAKE-MACRO-ENTITY
-  matches "macro" as a substring where MACRO-BODY-INDEX and its siblings match
-  it as a prefix. That is R1 and R3's subject, not R7's. The bundle is
-  otherwise unchanged and lost a test-file entity from it.
-
-  R1 AND R4, SAME DAY
-
-  SEED-SCORE is now six bands, and the two added for R1 and R4 are the third
-  and fourth:
-
-    type      *SEED-TYPE-PREFERENCE*, flattened from fifteen entries to three
-              tiers -- definitions, containers, documents, with an unlisted
-              type (:CALL-SITE) after all of them
-    named     the task named this entity, as a whole word the caller wrote
-    accessor  the name was synthesised from a slot declaration
-    test      test code, when the task did not ask about tests
-    coverage  how many of the task's terms the name answers to
-    match     quality of the best match
-
-  R1's defect was not that naming went unrewarded. It was that :CLASS sat two
-  places below :FUNCTION in a fifteen-entry list whose only recorded argument
-  is about *containers* -- "a file's neighbourhood is a directory listing" --
-  and because the type band dominates the score, that unargued gap meant every
-  function matching any word outranked the class the query was named after. A
-  CLOS subsystem is classes and methods, so a seeder preferring functions
-  cannot describe one. Flattening the tiers is most of R1; the `named` band is
-  what then decides between a class and a function that tie.
-
-  Three things had to be got right and each was measured wrong first:
-
-  - `named` must sit *below* type, not above it. Above, it hands the bundle to
-    whatever container shares a word with the task: a file's SIGNIFICANT-NAME
-    is its basename, so `data-api handler database connection acquire and test
-    connectivity` seeded the DATA-API package, data-api.asd, three more files
-    and one lone definition.
-  - It must fire only on words the caller wrote. TASK-TOKENS splits
-    "data-handler" into "data" and "handler" to widen the search, and
-    game-server has five slot accessors named exactly DATA -- which took five
-    of eight seeds on an exact match against a fragment Loom invented.
-    TASK-TERMS is the task's own words; TASK-TOKENS is Loom's guess about them.
-  - A slot accessor needs a band of its own even so, because excluding it from
-    `named` still leaves it winning on match rank. SLOT-ACCESSOR-P reads
-    :GENERATED-BY on an :INTERFACE, which is a fact the analyzer recorded
-    rather than a guess about a name. A :FUNCTION with :GENERATED-BY is left
-    alone: in a tree that leans on definer macros that is the API.
-
-  R4 needed a notion of test code Loom did not have. The :TEST entity type is
-  a `test' form the analyzer recognised, and the population R4 is about --
-  CHECK-OK-RESPONSE, ENCODE-TEST-OBJ -- are ordinary :FUNCTIONs that happen to
-  live in test/. So TEST-CODE-P is a path guess, and this project has been
-  burned by one: BUG-0006 derived :SYSTEM from a path and every layering rule
-  matched nothing until DES-0009 replaced it with the file's own package name.
-  The difference worth stating is what a wrong answer costs. A wrong :SYSTEM
-  is a fact asserted into the graph and read by rules; a wrong answer here
-  moves one candidate down one band in one bundle. Ranking may guess where
-  assertion may not.
-
-  R4 AGAINST R8, AND WHICH ONE BENDS
-
-  They collide head-on, and the collision is not hypothetical: two of the
-  three CONNECTION-CONNECT-DATABASE definitions R8 protects live in test
-  files. Demoting test code took R8's query from three of three to one of
-  three -- exactly the regression R8 was written to forbid.
-
-  R4 bends, and it does not lose anything by bending. Its subject is a
-  *fixture* displacing the definitions a task asked about; a test definition
-  of a name production code also defines is not competing for that slot, it is
-  part of what the seed is saying about the name. PRODUCTION-NAMES collects
-  the names some non-test candidate carries and DEMOTED-TEST-P exempts them.
-  After it: R8's query returns all three definitions and gains the
-  DHANDLER-ACQUIRE-CONNECTION protocol; R4's query still shows no fixture
-  among its seeds.
-
-  MEASURED AFTER, ON GAME-SERVER
-
-    data-handler
-      seeds  DATA-HANDLER (first), DATA-HANDLER-ERROR,
-             DATABASE-UNAVAILABLE-ERROR, DATABASE-ALERT, HANDLER-EXISTS-P,
-             DB-HANDLER (class and interface), data-api/db-handler.lisp
-      band   DATA-DECODER-FN, DATA-ENCODER-FN, RESET-TABLES
-      R1 met; no CORS layer, no test helpers, no call sites.
-
-    restructure data handler protocol encode decode
-      seeds  the two DATA-HANDLER error classes, SET-ENCODER-DECODER,
-             DATABASE-UNAVAILABLE-ERROR, DATABASE-ALERT, HANDLER-EXISTS-P,
-             ENCODE-MODEL-BASE, ENCODE-TYPESIG
-      R4 met; the ENCODE-TEST-OBJ and DECODE-TEST-OBJ fixtures that dominated
-      this bundle are gone.
-
-  R6 IS NOT MET AND THIS IS WHERE IT STOPS
-
-  R6 asks for "a majority of its subclasses and dhandler-* protocol". DB-HANDLER
-  arrives as a seed and DHANDLER-DELETE, DHANDLER-GET and the rest arrive in
-  the neighbour band, but TABLE-HANDLER, MODEL-HANDLER and GAME-HANDLER do
-  not, and which of the protocol survives varies with what else is competing
-  for the budget. Getting there is R2 and R3's work -- weighting :INHERITS and
-  :IMPLEMENTS above :CALLS when expanding, and ranking structural distance
-  above lexical match -- and those are about the *expansion*, not the seeding.
-  Everything above changes which entities a bundle starts from; nothing above
-  changes how it grows.
-
-  One clause of R7 as restated above is also no longer met on the nose: the
-  startup-sequence query now spends its neighbour band on the
-  DHANDLER-HEALTHY-P protocol and carries only READ-CONFIG and CONFIG-GET of
-  the six functions named there. That is a better bundle for the question
-  asked -- CHECK-DATABASE is a seed and the health-check protocol is what the
-  task was about -- but it is a bundle the clause forbids, and the clause was
-  written a commit earlier against behaviour this change replaced. It is left
-  standing rather than quietly relaxed: R2 and R3 should be measured against
-  it, and if it is still unmet then, it should be argued with rather than
-  edited.
-
-  THE PURPOSE, AND WHAT IT CORRECTS ABOVE, 2026-08-16
-
-  Everything above is written as a precision complaint, and half of it is
-  wrong for a reason that is not visible from inside the evidence. This section
-  states the correction rather than editing the text it corrects.
-
-  The consumer of a bundle is an LLM, and Loom exists to stop it grepping --
-  REQ-0031 measured the loop this requirement is ultimately about: one small
-  change on game-server cost eleven shell commands, five of which existed only
-  to print regions of files Loom had already named. That fixes the retrieval
-  trade-off and fixes it opposite to the way a search engine for humans does.
-  A wrong entry costs the reader a few tokens and no attention. A *missing*
-  entry sends it back to grep, and does so silently, because the reader cannot
-  tell a subsystem Loom did not return from one that does not exist. CON-0006
-  records the asymmetry and its consequence: demote, never drop.
-
-  So the complaint at the top of this document -- 22 entities came back and
-  "almost none of them is what the question was about" -- named the right
-  defect and measured it with the wrong instrument. The defect was never that
-  SET-CORS-HANDLER was present. It was that the DATA-HANDLER protocol was
-  *absent*, which is a recall failure, and the 22 wrong entities were the
-  symptom that made it visible rather than the disease.
-
-  Three clauses above should be read in that light:
-
-  R3 is already right and is the model. "SET-CORS-HANDLER must not displace
-  DHANDLER-GET" -- displace, not appear.
-
-  R6 is not. "Must not spend its budget on server/gameapi.lisp's CORS layer"
-  reads as exclusion, and exclusion of a cheap entry buys nothing. What it
-  should require is that the CORS layer never take a slot the protocol needed.
-
-  "It does not ask for the token budget to change" was correct when written
-  and is now false, and this is the one place the correction has real cost.
-  The argument for it was that 2,000 tokens is enough to *describe a subsystem*
-  when the right entities are chosen -- true of a bundle listing names and
-  locations. Once REQ-0031 lands and a bundle can carry source, 2,000 tokens is
-  three to eight definitions in total. The number was not wrong; the bundle it
-  was sized for stops existing. DES-0026 assumes REQ-0031 is implemented next
-  and is written against it.
-
-  R7'S STANDING CLAUSE IS MET, 2026-08-17
-
-  The clause was left standing rather than relaxed, with the instruction that
-  "R2 and R3 should be measured against it, and if it is still unmet then, it
-  should be argued with rather than edited". It is met, and neither R2 nor R3
-  is what met it.
-
-  On game-server, `start-server startup sequence and database handler health
-  check` now seeds START-SERVER and carries all six of READ-CONFIG, CONFIG-GET,
-  SET-CORS-HANDLER, INITIALIZE-GAME-API, INITIALIZE-MEDIA and CONFIGURE-LOG
-  somewhere in the bundle. Nothing is missing.
-
-  What met it was REQ-0035 -- the prose a definition declares becoming a field
-  the seeder matches. The seeds improved enough that the neighbour band and the
-  per-item relation lines reach the startup sequence without the expansion
-  changing at all. That is worth recording precisely because it was not the
-  predicted route: DES-0026 D12 expected the two-tier bundle to make this clause
-  easy, and it was met before any part of that design landed.
-
-  The measurement counts a relation line as carrying an entity, which the clause
-  permits -- it says "somewhere in the bundle" -- and which is honest for the
-  same reason CON-0006 gives: a named entity is one `describe` away, where an
-  absent one sends the reader to grep. It is not the same as a source block, and
-  DES-0026 D2's tiers are still what would put the right six in the expensive
-  tier rather than merely in the answer.
-
-  R6 IS MET, 2026-08-17
-
-  Both halves, and the Loom half had been recorded as stale.
-
-  On game-server, `context data-handler` returns all ten of DATA-HANDLER,
-  DB-HANDLER, NULL-HANDLER, TABLE-HANDLER, MODEL-HANDLER, GAME-HANDLER and four
-  of the DHANDLER-* protocol, untruncated. The count went 6 of 10 before
-  PLAN-0032, to 7 when the cost-ordered walk made all ten reachable, to 10 when
-  the two tiers gave them somewhere to print.
-
-  On Loom, `context macro definitions` returns MAKE-MACRO-ENTITY. That clause
-  was written into this requirement as an example and then recorded on
-  2026-08-15 as stale -- "does not return MAKE-MACRO-ENTITY on the current tree
-  and did not before the rewrite either", because MAKE-MACRO-ENTITY matches
-  "macro" as a substring where MACRO-BODY-INDEX matches it as a prefix. The
-  substring problem is still there and untouched; what changed is that the
-  bundle is now large enough to hold both, which is the CON-0006 argument
-  arriving where a ranking fix was expected.
-
-  The paragraph below is what R6 looked like before that, kept because the
-  distinction it draws -- reachability against ranking -- is the one that turned
-  out to be right.
-
-  R6 remains unmet and is unchanged by this. Measured the same day,
-  `context data-handler` returns 6 of 10 expected: DATA-HANDLER, DB-HANDLER and
-  four of the DHANDLER-* protocol arrive, and NULL-HANDLER, TABLE-HANDLER,
-  MODEL-HANDLER and GAME-HANDLER do not. That is the residue DES-0026 D1a
-  identified and it is a reachability problem, not a ranking one -- those four
-  are two or more :INHERITS hops from the seed and no one-hop expansion reaches
-  them at any budget.
-
-  R9  Recall is the measure, and it has never been measured. For each
-      acceptance query, the count of entities a competent reader judges
-      relevant that appear *nowhere* in the bundle -- not ranked low, absent.
-      That number is what this requirement exists to move and no clause above
-      reports it. A change that halves it while returning more irrelevant
-      entities than before has succeeded, and every clause above would have
-      called that a regression.
+      query asks about tests.
+
+      MET. TEST-CODE-P is a path guess, which this project has been burned by
+      once -- BUG-0006 derived :SYSTEM from a path. The difference is what a
+      wrong answer costs: a wrong :SYSTEM is asserted into the graph and read by
+      rules, where a wrong answer here moves one candidate down one band in one
+      bundle. Ranking may guess where assertion may not.
+
+      A test definition sharing a name with production code is exempt
+      (PRODUCTION-NAMES), because it is evidence about that name rather than a
+      fixture competing for the slot.
+
+  R5  A query naming no known entity must still return something useful.
+
+      PARTIAL, and answered from two directions rather than one.
+
+      REQ-0035 indexed the prose a definition declares, so a query describing
+      what a function does can match the sentence its author wrote. TASK-TOKENS
+      also stems four suffixes, so `saving a piece design` reaches SAVEDESIGN.
+
+      Convergence answers the other half: an entity reached by several of the
+      bundle's own seeds is discounted by one cost unit per additional seed,
+      floored at 1. Eight seeds on a prose query are eight guesses and they are
+      not independent.
+
+      Still open: no seeds means no walk and no bundle.
+
+  R6  Acceptance is measured on more than one tree.
+
+      MET. `context data-handler` on game-server returns all ten of
+      DATA-HANDLER, DB-HANDLER, NULL-HANDLER, TABLE-HANDLER, MODEL-HANDLER,
+      GAME-HANDLER and four of the DHANDLER-* protocol, untruncated. The count
+      went 6 of 10, to 7 when the walk made them reachable, to 10 when the two
+      tiers gave them room.
+
+      The Loom clause is retired rather than met. It named MAKE-MACRO-ENTITY on
+      `context macro definitions`, and Loom is one of the indexed trees: a
+      session's own commits grew its index from 140 items to 144 and pushed that
+      entity out of eighth place with no change to any ranking. A clause whose
+      corpus moves under it measures the repository.
+
+  R7  A query term matching many entities contributes proportionately less, and
+      no narrow slice of the query may fill the seed set.
+
+      MET. SEED-SCORE ranks coverage above match quality, and ADMIT-SEEDS caps
+      the distinct names one slice of the task may contribute, relaxing the cap
+      rather than returning fewer seeds than there are candidates.
+
+      The standing clause is met too. `start-server startup sequence and
+      database handler health check` seeds START-SERVER and carries all six of
+      READ-CONFIG, CONFIG-GET, SET-CORS-HANDLER, INITIALIZE-GAME-API,
+      INITIALIZE-MEDIA and CONFIGURE-LOG. What met it was REQ-0035, not R2 or
+      R3: better seeds let the existing expansion reach the startup sequence.
+
+  R8  A prose query that lands today must still land.
+
+      MET throughout. `data-api handler database connection acquire and test
+      connectivity` returns all three CONNECTION-CONNECT-DATABASE definitions at
+      every stage of this work. The triplication is the finding, so two of three
+      is a regression rather than a partial pass.
+
+  R9  Recall is the measure.
+
+      MET, and it is tools/acceptance.py: fifteen queries over game-server and
+      front-end, 31 of 32 expected entities present, slowest query 0.07s.
+
+      Loom is deliberately absent for the reason R6 gives. The script reports a
+      strict count and a lenient one -- strict for an entity that is a seed or an
+      item, lenient also for one named on a relation line beneath something else
+      -- because that difference decides real cases and arguing it per query
+      wasted a measurement.
+
+  WHAT WAS TRIED AND DOES NOT WORK
+
+  Recorded because the measurements cost more than the code and the next reader
+  should not repeat them. Branch `search-index` at 3278c63 holds all of it.
+
+  A tokenised postings index with BM25 over six weighted fields replaces the
+  substring scan and is net worse on these three trees: 29 of 32 against 31, and
+  0.16-0.48s against 0.07s. BM25 and BM25F disagree per query and neither
+  dominates -- BM25F recovers BASE-ENCODER and BASE-DECODER on the protocol
+  query, BM25 recovers MAKE-MACRO-ENTITY on `macro definitions`. Fusing them by
+  reciprocal rank beats either alone and is still worse than what is deployed.
+
+  Between them the two attempts gained exactly one entity, SAVEDESIGN, and
+  STEM-VARIANTS is what gained it. Moving forty lines of tokeniser onto the live
+  path gained the same entity at the same latency.
+
+  IDF did not do what this document expected of it. "check" is rare on all three
+  trees -- 43 of game-server's 3,946 entities, idf 4.50 -- so the word that broke
+  R7 would not have been suppressed. R7's defect was that the CHECK-* family is
+  many, which is a diversity problem rather than a term-rarity one.
+
+  WHAT IS OUTSTANDING
+
+  R3's tie-break. MAPELEMENTTYPEEDITOR answers three of four query terms and
+  loses to MAPELEMENTTYPE, which answers the same three from a shorter name.
+  One entity of thirty-two.
+
+  R5's empty case. No seeds, no bundle.
+
+  Neither is addressed by anything on the `search-index` branch, and both
+  attempts to fix R3 through scoring were reverted. Whoever takes it up should
+  start from what neither attempt explained: BM25 dropped WORKINGSET and
+  COLOREDITOR, which are ordinary name matches, and no measurement says why.
