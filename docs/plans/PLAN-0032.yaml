@@ -506,6 +506,50 @@ body: |
   query, and nothing yet says whether those are seeds worth keeping or seeds the
   live scan produces by accident.
 
+  S6 RETRIED WITH RANK FUSION, 29 OF 32, REVERTED, 2026-08-17
+
+  SEED-ENTITIES was wired onto both scorers fused by reciprocal rank, with the
+  four bands still above the fused score and ADMIT-SEEDS still applied. It was
+  measured against tools/acceptance.py rather than against a saturated set, and
+  every lesson from the first attempt was carried in.
+
+    baseline   30/32   0.02-0.06s
+    fused      29/32   0.16-0.48s
+
+    gained     SaveDesign          the stemming landing
+    lost       WorkingSet, ColorEditor
+    unfixed    MapElementTypeEditor
+
+  All five game-server clauses held: R6 10/10, R8, R7, R4 3/3 and the prose
+  query. Every loss is on front-end.
+
+  Net one entity worse and eight times slower, so it does not land.
+
+  THE OFFLINE PREDICTION WAS WRONG IN SITU, AND THAT IS THE LESSON
+
+  MAPELEMENTTYPEEDITOR was scored offline at 29.2 against MAPELEMENT's 26.7 and
+  recorded above as reaching the eight seed slots. It does not. Scoring a
+  handful of named entities against each other predicts nothing about a bundle,
+  because the bundle is decided by the whole candidate set, the type bands and
+  the share cap acting together -- and the first attempt was reverted for
+  believing exactly this kind of evidence.
+
+  Twice now an offline number has justified a rewrite that the acceptance set
+  then rejected. The rule to keep: a ranking change is measured by running
+  tools/acceptance.py, and nothing else counts as evidence for landing one.
+
+  WHAT THE TWO ATTEMPTS TOGETHER SHOW
+
+  The valuable part of S4 is the stemming, not the scoring. SAVEDESIGN is the
+  one entity the index gained, and it was gained by STEM-VARIANTS rather than by
+  BM25 -- \"saving\" reaching \"save\" is a tokeniser fact and needs no postings
+  map, no IDF and no length normalisation.
+
+  That is a much smaller change with a measured gain available: put
+  STEM-VARIANTS into TASK-TOKENS on the live path and re-run. If it holds 30/32
+  and adds SAVEDESIGN it is 31/32 at the current latency, which is more than
+  either S6 attempt achieved.
+
   WHAT S6 STILL NEEDS
 
   The regression is not diagnosed. R4's three losses are the sharpest lead --
