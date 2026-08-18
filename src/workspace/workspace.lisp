@@ -205,31 +205,78 @@ clean."
             (values (make-hash-table :test #'equal)
                     (princ-to-string condition)))))))
 
-(defun repository-commit (repository)
-  "Two values: REPOSITORY's HEAD commit, and why it could not be read.
+(defun git-output (root &rest arguments)
+  "Two values: what git printed for ARGUMENTS in ROOT, and why it could not.
 
-DES-0022 D5. A structural report has to name the tree it described, or a reader
-meeting a generated architecture document six months later cannot tell whether
-it was ever true. One `git rev-parse HEAD', bounded and guarded the way
-IGNORED-PATHS is, and NIL with a reason when git cannot answer -- not a
-repository, no git, a tree with no commits yet. A known gap beats a fabricated
-commit, and a tree with no commits is exactly the case REQ-0025's first open
-question is about."
+One shape for every git question Loom asks, bounded by `timeout\' and guarded,
+the way IGNORED-PATHS established and REPOSITORY-COMMIT followed. NIL and a
+recorded reason when git cannot answer -- not a repository, no git, a tree with
+no commits yet -- because a known gap beats a fabricated commit (CON-0001)."
   (handler-case
       (multiple-value-bind (out err status)
-          (uiop:run-program (list "timeout"
-                                  (princ-to-string *ignore-query-timeout-seconds*)
-                                  "git" "-C" (namestring (repository-root repository))
-                                  "rev-parse" "HEAD")
+          (uiop:run-program (append (list "timeout"
+                                          (princ-to-string *ignore-query-timeout-seconds*)
+                                          "git" "-C" (namestring root))
+                                    arguments)
                             :output :string :error-output :string
                             :ignore-error-status t)
         (declare (ignore err))
         (if (zerop status)
-            (values (string-trim '(#\Newline #\Return #\Space) out) nil)
+            (values out nil)
             (values nil (if (eql status 124)
-                            "git rev-parse timed out"
-                            (format nil "git rev-parse exited ~a" status)))))
+                            (format nil "git ~a timed out" (first arguments))
+                            (format nil "git ~a exited ~a" (first arguments) status)))))
     (error (condition) (values nil (princ-to-string condition)))))
+
+(defun git-commit (root)
+  "Two values: ROOT's HEAD commit, and why it could not be read."
+  (multiple-value-bind (out reason) (git-output root "rev-parse" "HEAD")
+    (if out
+        (values (string-trim '(#\Newline #\Return #\Space) out) nil)
+        (values nil reason))))
+
+(defun git-branch (root)
+  "Two values: the branch ROOT has checked out, and why it could not be read.
+
+A detached HEAD answers \"HEAD\", which is what git prints and is the honest
+answer rather than NIL: the tree is on no branch and saying so is a fact."
+  (multiple-value-bind (out reason)
+      (git-output root "rev-parse" "--abbrev-ref" "HEAD")
+    (if out
+        (values (string-trim '(#\Newline #\Return #\Space) out) nil)
+        (values nil reason))))
+
+(defun fnv-1a (text)
+  "A 64-bit FNV-1a hash of TEXT, as sixteen hex digits.
+
+Deterministic across images, which SXHASH is not, and needing no library.
+DES-0030 D4: this identifies a working state so that two records can be
+compared, and is not a security claim about anything."
+  (let ((hash 14695981039346656037))
+    (loop for char across text
+          do (setf hash (ldb (byte 64 0)
+                             (* (logxor hash (ldb (byte 8 0) (char-code char)))
+                                1099511628211))))
+    (format nil "~(~16,'0x~)" hash)))
+
+(defun git-diff-hash (root)
+  "Two values: a hash of ROOT\'s uncommitted changes, and why it could not be
+read.
+
+The commit alone would attribute a judgement to code that was not what answered
+it: a tree under active work is dirty for most of the sessions that produce
+these records. An empty diff hashes to the hash of the empty string, which is a
+clean tree and is reported as such rather than as NIL."
+  (multiple-value-bind (out reason) (git-output root "diff" "HEAD")
+    (if out (values (fnv-1a out) nil) (values nil reason))))
+
+(defun repository-commit (repository)
+  "Two values: REPOSITORY\'s HEAD commit, and why it could not be read.
+
+DES-0022 D5. A structural report has to name the tree it described, or a reader
+meeting a generated architecture document six months later cannot tell whether
+it was ever true."
+  (git-commit (repository-root repository)))
 
 (defun repository-files (repository)
   "Every file under the repository root that some analyzer claims.

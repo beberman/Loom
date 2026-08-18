@@ -14,7 +14,18 @@
                ;; image through loom-analyzer, and named here anyway: a
                ;; system that uses a library should say so rather than rely
                ;; on a dependency of a dependency continuing to want it.
-               #:uiop)
+               #:uiop
+               ;; DES-0030 D3. A context record is JSON because
+               ;; tools/acceptance.py reads it and Python does not read plists,
+               ;; and it is cl-json rather than a hand-rolled emitter because a
+               ;; task string is arbitrary text with quotes and newlines in it.
+               ;; An escaping bug there produces a record that parses as
+               ;; something else, which is CON-0001's fabricated fact in the one
+               ;; place the whole requirement exists to prevent one.
+               #:cl-json
+               ;; Record ids. Transitive through loom-ontology, and named because
+               ;; context-log.lisp calls it directly.
+               #:random-uuid)
   :serial t
   :components
   (
@@ -39,6 +50,9 @@
    ;; REPOSITORY-STAMPS to answer whether the text it served is the text the
    ;; index was built from.
    (:file "source")
+   ;; After "workspace": the record writer takes GIT-COMMIT, GIT-DIFF-HASH and
+   ;; GIT-BRANCH, and REPOSITORY-NAME and REPOSITORY-ROOT off the struct.
+   (:file "context-log")
    )
   :in-order-to ((test-op (test-op :loom-workspace/test)))
   )
@@ -73,6 +87,9 @@
    ;; After "workspace": it takes WITH-WORKSPACE-FIXTURE and WRITE-FILE, and
    ;; the line numbers it asserts are that fixture's src/alpha.lisp.
    (:file "source")
+   ;; After "workspace": the record writer takes GIT-COMMIT, GIT-DIFF-HASH and
+   ;; GIT-BRANCH, and REPOSITORY-NAME and REPOSITORY-ROOT off the struct.
+   (:file "context-log")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-workspace-test :test-runner)

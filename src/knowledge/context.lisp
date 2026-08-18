@@ -559,8 +559,35 @@ waiting (ADMIT-SEEDS)."
                                          (seed-score (car pair) (cdr pair)
                                                      :demote-tests demote-tests
                                                      :terms terms
-                                                     :production production)))))
-    (admit-seeds ranked limit)))
+                                                     :production production))))
+         (chosen     (admit-seeds ranked limit)))
+    ;; Second value: the chosen seeds with the score and the terms each
+    ;; answered to. DES-0030 D3 -- a record holding the seeds without their
+    ;; scores cannot show why the eighth slot went where it did, and the score
+    ;; is the number every ranking change moves.
+    ;;
+    ;; Recomputed for the chosen few rather than threaded through ADMIT-SEEDS,
+    ;; which reads (entity . terms) pairs and would have to read something else.
+    ;; Eight SEED-SCORE calls against a bundle that has already walked the graph
+    ;; is not a cost the latency clauses can see.
+    (values chosen
+            (loop for entity in chosen
+                  for rank from 1
+                  for pair = (assoc entity matches :test #'eq)
+                  collect (list :id (id entity)
+                                :name (name entity)
+                                :rank rank
+                                :score (seed-score entity (cdr pair)
+                                                   :demote-tests demote-tests
+                                                   :terms terms
+                                                   :production production)
+                                ;; The terms as objects rather than the
+                                ;; (term . weight) conses SEED-MATCHES builds.
+                                ;; A dotted pair is not a shape JSON has, and a
+                                ;; record is read by tools/acceptance.py.
+                                :terms (loop for (term . weight) in (cdr pair)
+                                             collect (list :term term
+                                                           :weight weight)))))))
 
 ;;;; ==================================================================
 ;;;; Instrumentation (SS11)
@@ -787,8 +814,9 @@ now loses its fortieth structural neighbour rather than the document explaining
 the design.
 
 Every call is logged to *CONTEXT-LOG*."
-  (let* ((seeds     (seed-entities view task :limit seed-limit :types types))
-         ;; DES-0026 D6/D8, PLAN-0032 S1. Was: NEIGHBORS on each seed, PUSHNEW,
+  (multiple-value-bind (seeds seed-detail)
+      (seed-entities view task :limit seed-limit :types types)
+   (let* (;; DES-0026 D6/D8, PLAN-0032 S1. Was: NEIGHBORS on each seed, PUSHNEW,
          ;; every edge the same price and nothing ordering the result. A one-hop
          ;; expansion cannot satisfy REQ-0016 R6 at any budget -- the four
          ;; classes it misses are two or more :INHERITS hops out -- so the fix
@@ -932,7 +960,16 @@ Every call is logged to *CONTEXT-LOG*."
                                       :budget budget
                                       :tokens used)
               *context-log*)
-        bundle))))
+        ;; Second value: what a durable record needs and a reader does not
+        ;; (DES-0030 D3). The bundle is unchanged, so nothing that renders or
+        ;; encodes one sees this unless it asks.
+        (values bundle
+                (list :tokens (task-tokens task)
+                      :seeds seed-detail
+                      :items (loop for item in (getf bundle :items)
+                                   collect (list :id (getf (getf item :entity) :id)
+                                                 :name (getf (getf item :entity) :name)
+                                                 :band (getf item :band))))))))))
 
 ;;;; ==================================================================
 ;;;; Rendering -- what an agent actually reads

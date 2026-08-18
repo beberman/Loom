@@ -17,3 +17,10 @@
 *.wx32fsl
 *.*~
 tools/extra-repos
+
+# DES-0030 D7. The retrieval log: one record per context call, holding whatever
+# task string somebody typed. R6 puts it in Loom's tree rather than the searched
+# one, so the corpus being judged holds still; whether a record is committed is
+# a publication decision somebody makes after reading it, not one this file
+# makes by default.
+.loom/

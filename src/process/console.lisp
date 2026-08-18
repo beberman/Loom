@@ -752,11 +752,20 @@ which is CON-0006's expensive error at the scale of one answer."
     "context <task description>"
     "A budgeted context bundle for a task: what to know before editing."
   (let ((task (format nil "~{~a~^ ~}" words)))
-    (let ((repo (current-repository)))
-      (write-string
-       (render-context
-        (build-context (repository-graph repo) task
-                       :source-fn (lambda (id) (definition-source repo id))))))))
+    (let* ((repo (current-repository))
+           (started (get-internal-real-time)))
+      (multiple-value-bind (bundle instrumentation)
+          (build-context (repository-graph repo) task
+                         :source-fn (lambda (id) (definition-source repo id)))
+        (write-string (render-context bundle))
+        ;; REQ-0036 R1 is every context call rather than every call over the
+        ;; service, so the console records too. Nothing is written and nothing
+        ;; is printed unless an operator set the directory.
+        (let ((id (record-context-call
+                   repo bundle instrumentation
+                   :seconds (/ (float (- (get-internal-real-time) started))
+                               internal-time-units-per-second))))
+          (when id (format t "~&record ~a~%" id)))))))
 
 (define-command init (path &optional document-directory claude-md endpoint)
     "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>]"
@@ -1110,11 +1119,21 @@ the developer somewhere they have to know Lisp to escape."
 SS3.1: the process is \"started by the developer and pointed at a
 repository\", so `loom /path/to/repo` indexes it and hands over a prompt."
   (install-debugger-hook)
+  ;; REQ-0036 R9, DES-0030 D1. The operator's switch, read once at startup:
+  ;; LOOM_CONTEXT_LOG names a directory, or is any non-empty value to mean
+  ;; <loom>/.loom/context/. Unset -- the default -- and nothing here writes
+  ;; anything, which is what keeps :CONTEXT a read for every deployment that
+  ;; did not ask otherwise.
+  (configure-context-log-from-environment)
   (format t "~&Loom -- engineering knowledge graph. Type help.~%")
   (dolist (path arguments)
     (handler-case (run-command (format nil "watch ~s" path))
       (error (condition) (format t "~&~a~%" condition))))
   (console)
+  ;; A record is written on another thread (REQ-0036 R8), and a console process
+  ;; that exited immediately would lose the last one. Waited for here rather
+  ;; than after each command, which is where waiting would cost the reader.
+  (drain-context-log)
   (dolist (repository (all-repositories)) (stop-monitor repository))
   (format t "~&Paused ~d repositor~:@p; indexes kept.~%" (length (all-repositories)))
   (values))

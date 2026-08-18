@@ -1,6 +1,6 @@
 id: REQ-0036
 title: retrieval must be measured against queries somebody asked, so every context call and what the agent actually used are logged as one record
-status: draft
+status: implemented
 date: 2026-08-18
 refines: [REQ-0016]
 affects: [build-context, seed-entities, task-tokens, render-context, check-capability,

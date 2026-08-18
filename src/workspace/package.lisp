@@ -42,6 +42,22 @@
    ;; REQ-0034, DES-0029 D5. One document's declared references resolved
    ;; against the live index before the file is written, indexed or asserted.
    #:check-document-references
+
+   ;; REQ-0036, DES-0030. The retrieval log: one record per context call, and
+   ;; the feedback call that completes it. Off unless an operator sets the
+   ;; directory.
+   #:*context-log-directory*
+   #:default-context-log-directory
+   #:configure-context-log-from-environment
+   #:loom-root
+   #:record-context-call
+   #:drain-context-log
+   #:record-context-use
+   #:context-record-path
+   #:context-use-path
+   #:read-json-record
+   #:context-record-error
+   #:*context-log-failure*
    #:*source-line-limit*
 
    ;; Cross-repository edges (REQ-0027, DES-0025). The one pass that reads

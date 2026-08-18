@@ -116,6 +116,10 @@ that for them.")
     (error "A Loom service is already running on ~a:~d. Stop it first."
            (hunchentoot:acceptor-address *server*)
            (hunchentoot:acceptor-port *server*)))
+  ;; REQ-0036 R9, DES-0030 D1. Read once at startup so --headless gets the
+  ;; operator's switch too: the console entry point reads it in MAIN, and a
+  ;; listener with no console has no MAIN to read it in.
+  (configure-context-log-from-environment)
   (let ((acceptor (make-instance 'loom-acceptor
                                  :port port
                                  :address address

@@ -266,8 +266,22 @@ Pass source=true for the definition's text."
   ;; cannot reach up there (DES-0027 D1). This entry has the repository, so the
   ;; fetch is passed in and the tier logic stays where the bundle is built.
   (let ((repo (require-repository repository)))
-    (build-context (repository-graph repo) task
-                   :source-fn (lambda (id) (definition-source repo id)))))
+    (let ((started (get-internal-real-time)))
+      (multiple-value-bind (bundle instrumentation)
+          (build-context (repository-graph repo) task
+                         :source-fn (lambda (id) (definition-source repo id)))
+        ;; REQ-0036 R1 and R8. The record is additive: the identifier is one
+        ;; more key on a bundle a caller already reads, and with
+        ;; *CONTEXT-LOG-DIRECTORY* NIL -- the default -- RECORD-CONTEXT-CALL
+        ;; returns NIL and writes nothing, so this is what it was before.
+        ;;
+        ;; The latency is measured around the build rather than reported by it,
+        ;; because what a judgement needs is what the caller waited for.
+        (let ((id (record-context-call
+                   repo bundle instrumentation
+                   :seconds (/ (float (- (get-internal-real-time) started))
+                               internal-time-units-per-second))))
+          (if id (append bundle (list :record id)) bundle))))))
 
 (define-operation :structure :read (repository)
     "Systems, protocols, entry points and hubs, derived from the index."
@@ -383,6 +397,43 @@ or indexed. Pass contents to check a draft that is not on disk."
   ;; things worse. Loom's own baseline is 9 unresolved and 7 ambiguous.
   (check-document-references (require-repository repository) path
                              :contents contents))
+
+(define-operation :context-used :write (record used)
+    "Record what an agent went on to use for a context call, quoting the \
+identifier that call returned. `used' is a JSON array of {name, how}."
+  ;; REQ-0036 R2. :WRITE because it writes, and nothing about it is a read --
+  ;; the tier it would have had if it had been designed on its own.
+  ;;
+  ;; USED as a JSON array inside a string because BUG-0031 types every MCP
+  ;; argument as a string, and a shape a caller builds in one line beats three
+  ;; parallel arguments it has to keep aligned. What it names is deliberately
+  ;; not restricted to what the bundle returned: a feedback channel sampling
+  ;; only from the returned items can never record a miss, and the miss is the
+  ;; population that would raise recall.
+  (let ((entries (decode-used-entries used)))
+    (handler-case (record-context-use record entries)
+      (context-record-error (condition)
+        (error 'malformed-request
+               :detail (princ-to-string condition))))))
+
+(defun decode-used-entries (used)
+  "The JSON array USED as a list of plists, or a refusal.
+
+Refused rather than salvaged: an entry Loom could not read would become a
+judgement about an entity nobody named, and a used set that silently lost half
+its entries is worse than a call that failed."
+  (let ((decoded (handler-case (json:decode-json-from-string (or used "[]"))
+                   (error (condition)
+                     (error 'malformed-request
+                            :detail (format nil "used is not JSON: ~a" condition))))))
+    (unless (listp decoded)
+      (error 'malformed-request :detail "used must be a JSON array."))
+    (loop for entry in decoded
+          unless (and (consp entry) (consp (first entry)))
+            do (error 'malformed-request
+                      :detail "each used entry must be a JSON object.")
+          collect (list :name (cdr (assoc :name entry))
+                        :how (cdr (assoc :how entry))))))
 
 (define-operation :rules :read (repository)
     "Active rules and what they constrain."

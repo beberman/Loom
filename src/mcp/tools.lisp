@@ -47,6 +47,11 @@
         ;; monitor, running loom_check and subtracting the repository's own
         ;; baseline from the answer.
         (make-tool :name "loom_check_document" :operation :check-document)
+        ;; REQ-0036 R2. The other half of a retrieval judgement, and the half
+        ;; no offline scorer can supply: what the agent went on to use, from
+        ;; any source, including what it found by grep. A :WRITE tool, so a
+        ;; read-only caller is not shown it.
+        (make-tool :name "loom_context_used" :operation :context-used)
         ;; Two more read tools, and the line they sit on the right side of.
         ;; :STRUCTURE and :DRIFT answer questions an agent working in a prepared
         ;; worktree asks -- what is the shape of this tree, and where does its
@@ -65,7 +70,7 @@
         (make-tool :name "loom_repl_open" :operation :repl-open)
         (make-tool :name "loom_repl_eval" :operation :repl-eval)
         (make-tool :name "loom_repl_close" :operation :repl-close))
-  "The fifteen tools, in the order tools/list returns them.")
+  "The sixteen tools, in the order tools/list returns them.")
 
 (defun tool-permitted-p (tool grants)
   "True when GRANTS reach the tier TOOL's operation declares.
