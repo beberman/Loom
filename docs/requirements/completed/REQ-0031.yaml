@@ -1,6 +1,6 @@
 id: REQ-0031
 title: describe must be able to return the source of what it describes, because every caller that gets a line range next reaches for a file
-status: partial
+status: implemented
 date: 2026-08-15
 refines: [CON-0004]
 affects: [describe-entity, search-entities, build-context]
@@ -302,6 +302,20 @@ body: |
 
   What remains outstanding is BUG-0032 alone, so this document is `partial` for
   a resolver defect it exposed rather than for anything it failed to build.
+
+  CLOSED 2026-08-18. BUG-0032 is fixed and this document is `implemented`.
+  RESOLVE-ENTITY resolves through BEST-NAME-MATCH, which breaks a match-rank tie
+  with the type tiers `context` already seeds by, so a definition wins over the
+  file named after it. `describe LayerEditor --source` on front-end returns the
+  251-line component at 176-426 with status `current`, which is R1 and R7 met on
+  the tree that exposed the gap. `find` is untouched and still lists the file
+  first.
+
+  The gap was wider than this section recorded. All 218 of front-end's colliding
+  basenames resolved to the file, not the 60 sampled -- and Loom and game-server
+  had the same collision twelve and twenty-five times, so `describe analyzer`
+  answered about analyzer.lisp rather than the protocol class the file is named
+  after. Every one of those now answers about the definition.
 
   BUG-0032 limits what this delivers on ~/github/front-end, and limits it
   exactly where the feature is most wanted. `describe LayerEditor --source`

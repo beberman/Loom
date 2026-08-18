@@ -65,8 +65,14 @@ the three ways that dependency arrives looking reasonable. CURRENT-REPOSITORY,
 which sits beside it in that file, is deliberately *not* reproduced: refusing
 to guess which repository a program meant is the point."
   (or (get-entity graph term)
-      (let ((hits (search-entities graph :name term :limit 1)))
-        (when hits (get-entity graph (getf (first hits) :id))))
+      ;; BEST-NAME-MATCH rather than SEARCH-ENTITIES with a limit of one
+      ;; (BUG-0032). The two differ only where a file and a definition match a
+      ;; name equally well, and there the caller of *this* function wants the
+      ;; definition: `describe' and `impact' both ask questions a container
+      ;; answers badly. `find' still calls SEARCH-ENTITIES and still lists the
+      ;; file first.
+      (let ((hit (best-name-match graph term)))
+        (when hit (get-entity graph (getf hit :id))))
       (error 'unknown-entity
              :message (format nil "Nothing in the index matches ~s." term))))
 

@@ -209,8 +209,21 @@ developer needs in order to ask again precisely."
   (or (get-entity graph term)
       (let ((exact (exact-name-matches graph term)))
         (cond ((null (rest exact))
-               (let ((hits (search-entities graph :name term :limit 1)))
-                 (when hits (get-entity graph (getf (first hits) :id)))))
+               ;; BEST-NAME-MATCH rather than SEARCH-ENTITIES with a limit of
+               ;; one (BUG-0032): where a file and a definition match a name
+               ;; equally well, the caller of this function wants the
+               ;; definition. `find' is unaffected -- it calls SEARCH-ENTITIES
+               ;; directly and still lists the file first.
+               ;;
+               ;; EXACT is consulted first when it holds exactly one entity,
+               ;; which it did not before. The old code computed EXACT, took
+               ;; this branch for both nought and one, and then threw it away
+               ;; to re-search -- so a single exact match could lose to a
+               ;; higher-ranked inexact one. An exact match is the strongest
+               ;; evidence this function has and now decides.
+               (or (and exact (get-entity graph (getf (first exact) :id)))
+                   (let ((hit (best-name-match graph term)))
+                     (when hit (get-entity graph (getf hit :id))))))
               ;; The id carries the file, so it is both the disambiguator and
               ;; the thing to type next.
               (t (error "~d things are named ~s. Name one:~{~%  ~a~}"

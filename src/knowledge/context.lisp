@@ -195,44 +195,6 @@ which in a tree that leans on definer macros is the API itself."
        (getp entity :generated-by)
        t))
 
-(defparameter *seed-type-preference*
-  '((:function :method :class :interface :variable :test)
-    (:module :package :file)
-    (:concept :architecture :design :decision :rule :document))
-  "Entity types in tiers, by how much a seed match on one is worth having.
-
-Definitions first, containers next, and that much earns its keep: a task
-mentioning \"the graph manager\" matches the *file* graph-manager.lisp on the
-word \"graph\" as readily as it matches any function in it, and a file's
-neighbourhood is every definition it holds. Seeded on the file, a bundle
-spends its whole budget listing a directory back at the agent. Seeded on the
-definitions, it spends it on code.
-
-Tiers rather than a total order since REQ-0016 R1, and the flattening is the
-point. This was a fifteen-entry list in which :CLASS sat two places below
-:FUNCTION for no recorded reason, and because the type band dominates the
-score, that gap meant every function matching any word of the task outranked
-the class the task was *named after*. On game-server `context data-handler`
-put four functions above the DATA-HANDLER class and never reached DB-HANDLER,
-TABLE-HANDLER or the DHANDLER-* protocol at all -- a CLOS subsystem is classes
-and methods, so a ranking that prefers functions cannot describe one. A class
-and a function are both definitions and the argument above says nothing to
-separate them; what it separates is definitions from the things that contain
-them.
-
-Documents rank last rather than mid-list: they reach a bundle through the
-decision, document and mention bands DES-0020 built for them, and a document
-arriving as a *seed* would be counted twice and expand as though it were code.
-
-A type named in no tier -- :CALL-SITE, which prefix-matches its own callee's
-name and would otherwise seed as readily as the callee -- sorts after all of
-them. PLAN-0014 step 10 made the same judgement for `find'.")
-
-(defun seed-type-rank (entity)
-  (or (position-if (lambda (tier) (member (entity-type entity) tier))
-                   *seed-type-preference*)
-      (length *seed-type-preference*)))
-
 (defparameter *test-path-segments* '("test" "tests")
   "Path segments that mark a definition as test code, for ranking only.
 

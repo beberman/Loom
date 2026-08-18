@@ -91,6 +91,49 @@ IMPACT-SET first and IMPACT-SET-TRUNCATED-P second, not both in hash order."
           ((search pattern name :test #'char-equal) 2)
           (t 3))))
 
+(defparameter *seed-type-preference*
+  '((:function :method :class :interface :variable :test)
+    (:module :package :file)
+    (:concept :architecture :design :decision :rule :document))
+  "Entity types in tiers, by how much a seed match on one is worth having.
+
+Definitions first, containers next, and that much earns its keep: a task
+mentioning \"the graph manager\" matches the *file* graph-manager.lisp on the
+word \"graph\" as readily as it matches any function in it, and a file's
+neighbourhood is every definition it holds. Seeded on the file, a bundle
+spends its whole budget listing a directory back at the agent. Seeded on the
+definitions, it spends it on code.
+
+Tiers rather than a total order since REQ-0016 R1, and the flattening is the
+point. This was a fifteen-entry list in which :CLASS sat two places below
+:FUNCTION for no recorded reason, and because the type band dominates the
+score, that gap meant every function matching any word of the task outranked
+the class the task was *named after*. On game-server `context data-handler`
+put four functions above the DATA-HANDLER class and never reached DB-HANDLER,
+TABLE-HANDLER or the DHANDLER-* protocol at all -- a CLOS subsystem is classes
+and methods, so a ranking that prefers functions cannot describe one. A class
+and a function are both definitions and the argument above says nothing to
+separate them; what it separates is definitions from the things that contain
+them.
+
+Documents rank last rather than mid-list: they reach a bundle through the
+decision, document and mention bands DES-0020 built for them, and a document
+arriving as a *seed* would be counted twice and expand as though it were code.
+
+A type named in no tier -- :CALL-SITE, which prefix-matches its own callee's
+name and would otherwise seed as readily as the callee -- sorts after all of
+them. PLAN-0014 step 10 made the same judgement for `find'.
+Read by two callers since BUG-0032, which is why it lives here rather than
+beside the seeder that first needed it. `context' seeds with it and
+RESOLUTION-RANK breaks a `describe' tie with it, and both are asking the same
+question -- when two entities match a name equally well, which one did the
+caller mean -- so the answer belongs in one list.")
+
+(defun seed-type-rank (entity)
+  (or (position-if (lambda (tier) (member (entity-type entity) tier))
+                   *seed-type-preference*)
+      (length *seed-type-preference*)))
+
 (defun search-rank (entity pattern)
   "MATCH-RANK, with a :CALL-SITE placed below every entity that is not one.
 
@@ -120,6 +163,49 @@ first. Returns summaries."
     (when name
       (setf hits (stable-sort hits #'< :key (lambda (e) (search-rank e name)))))
     (summarize-entities (if limit (subseq hits 0 (min limit (length hits))) hits))))
+
+;;;; ------------------------------------------------------------------
+;;;; Picking one entity, which is a different question from listing several
+;;;; ------------------------------------------------------------------
+;;;;
+;;;; BUG-0032. `find' lists and `describe' picks, and a tie means opposite
+;;;; things to them. On ~/github/front-end a file is named after the component
+;;;; it exports, so SIGNIFICANT-NAME reduces
+;;;; src/ui/edit/terrain/Editor/LayerEditor.jsx to "LayerEditor" and the file
+;;;; and the 251-line component are both exact matches. `find' printing the
+;;;; file first is right and argued -- the caller asked where to look, and the
+;;;; definition is the next line of the same listing. `describe' picking the
+;;;; file answers three questions badly at once: its neighbours are a
+;;;; directory listing, it has no :START-LINE so REQ-0031's --source prints
+;;;; "this entity records no line range", and the component is three lines
+;;;; away. 37 of 60 sampled front-end basenames resolved that way.
+;;;;
+;;;; So the tie-break is here rather than in SEARCH-RANK, which `find' shares.
+
+(defun resolution-rank (entity pattern)
+  "SEARCH-RANK, with a definition preferred to the container that holds it.
+
+Multiplied out rather than consed into a list, so this stays a single number a
+STABLE-SORT can compare: the match rank keeps its bands -- an exact match still
+beats a prefix, whatever either one is -- and the type tier orders only what is
+left tied inside a band. That order is exactly the one `context' seeds with,
+which is the point of *SEED-TYPE-PREFERENCE* having moved up here: a caller
+that must choose one entity for a name is asking the question the seeder
+already answers."
+  (+ (* 10 (search-rank entity pattern)) (seed-type-rank entity)))
+
+(defun best-name-match (view term)
+  "The summary of the one entity TERM most likely names, or NIL.
+
+For a caller that has to choose -- `describe' and `impact' -- rather than list.
+Nothing here filters: a file still wins where no definition shares its name,
+which is every entity on both Lisp trees."
+  (let ((hits (find-entities view :name-like term)))
+    (when hits
+      (first (summarize-entities
+              (list (first (stable-sort hits #'<
+                                        :key (lambda (e)
+                                               (resolution-rank e term))))))))))
 
 ;;;; ==================================================================
 ;;;; describe-entity -- SS11 loom_describe
