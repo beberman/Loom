@@ -28,6 +28,40 @@
 ;;;; One tokeniser, used by both sides
 ;;;; ==================================================================
 
+(defun stem-variants (word)
+  "WORD's plausible uninflected forms, or NIL.
+
+Not a stemmer in the Porter sense and deliberately not one. Four suffixes cover
+the inflections that appear in task descriptions -- saving a piece design,
+changing the type, edited layers, reporting rejections -- and a full stemmer
+would also fold identifiers this index depends on keeping apart.
+
+Variants are *added* to the token set rather than replacing the word, so nothing
+can be lost by a wrong guess: a stem corresponding to no real term simply never
+matches. That is why SAVING emits both SAV and SAVE instead of picking one --
+dropping -ing gives SAV, which matches nothing, and the -e restoration is what
+reaches SAVEDESIGN.
+
+The minimum lengths stop the rules eating short identifiers: -ing needs six
+characters so RING survives, and -s needs four and refuses a double so CLASS and
+ADDRESS survive."
+  (let ((n (length word))
+        (out '()))
+    (flet ((ends (suffix)
+             (let ((k (length suffix)))
+               (and (> n k) (string= suffix word :start2 (- n k))))))
+      (when (and (ends "ies") (>= n 5))
+        (push (concatenate 'string (subseq word 0 (- n 3)) "y") out))
+      (when (and (ends "s") (>= n 4) (not (ends "ss")) (not (ends "ies")))
+        (push (subseq word 0 (1- n)) out))
+      (when (and (ends "ing") (>= n 6))
+        (push (subseq word 0 (- n 3)) out)
+        (push (concatenate 'string (subseq word 0 (- n 3)) "e") out))
+      (when (and (ends "ed") (>= n 5))
+        (push (subseq word 0 (- n 2)) out)
+        (push (concatenate 'string (subseq word 0 (- n 2)) "e") out)))
+    out))
+
 (defun index-tokens (string)
   "STRING as index terms: lowercased words, split at every non-alphanumeric
 character and at every lower-to-upper case boundary.
@@ -65,6 +99,12 @@ and a query naming one thing hits it directly rather than through its parts."
     (let ((whole (string-downcase string)))
       (when (and (plusp (length whole)) (not (member whole tokens :test #'string=)))
         (push whole tokens)))
+    ;; Inflected forms last, so a query saying "saving" reaches SAVEDESIGN and a
+    ;; query saying "edited layers" reaches LAYER. Added rather than substituted;
+    ;; STEM-VARIANTS says why.
+    (dolist (token (copy-list tokens))
+      (dolist (variant (stem-variants token))
+        (pushnew variant tokens :test #'string=)))
     tokens))
 
 ;;;; ==================================================================

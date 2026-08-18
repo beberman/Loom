@@ -16,7 +16,10 @@
     (is (equal '("editor" "layer" "layereditor") (toks "LayerEditor"))
         "the case boundary is what makes a React tree searchable at all")
     (is (equal '("emit" "emitpartition" "partition") (toks "emitPartition")))
-    (is (equal '("*call-site-ceiling*" "call" "ceiling" "site")
+    ;; CEIL and CEILE are STEM-VARIANTS on "ceiling", which ends in -ing. They
+    ;; are listed rather than tolerated: the assertion stays exact so that an
+    ;; unexpected extra term fails this test, which is what it is for.
+    (is (equal '("*call-site-ceiling*" "call" "ceil" "ceile" "ceiling" "site")
                (toks "*call-site-ceiling*"))
         "the stars are separators and the whole spelling is still a term")
     (is (equal '("dhandler" "dhandler-get" "get") (toks "DHANDLER-GET")))
@@ -109,3 +112,35 @@ corpus to be rare *in*."
     (is (= 2 (length names)))
     (is (null (search-candidates sx '("nothing-carries-this")))
         "a term nothing carries costs no walk at all")))
+
+(test stemming-reaches-a-definition-named-for-the-task
+  ;; The third of the three misses in the front-end set. "saving a piece design"
+  ;; tokenises to SAVING and SAVEDESIGN tokenises to SAVE, so the entity named
+  ;; after the task matched none of the query.
+  (let ((q (index-tokens "saving a piece design"))
+        (e (index-tokens "SaveDesign")))
+    (is (member "save" q :test #'string=) "the query reaches the uninflected form")
+    (is (member "save" e :test #'string=))
+    (is (intersection q e :test #'string=) "so the two now share a term"))
+  (is (member "edit" (index-tokens "editing colours") :test #'string=))
+  (is (member "layer" (index-tokens "edited layers") :test #'string=))
+  (is (member "change" (index-tokens "changing the type") :test #'string=))
+  (is (member "report" (index-tokens "reporting rejections") :test #'string=)))
+
+(test a-stem-is-added-and-never-substituted
+  ;; A wrong guess can then cost nothing: a stem corresponding to no real term
+  ;; simply never matches, where a substitution would have lost the word.
+  (let ((toks (index-tokens "saving")))
+    (is (member "saving" toks :test #'string=) "the word itself survives")
+    (is (member "sav" toks :test #'string=) "dropping -ing, which matches nothing")
+    (is (member "save" toks :test #'string=) "and the -e restoration, which does")))
+
+(test the-minimum-lengths-keep-short-identifiers-whole
+  ;; A full stemmer would fold identifiers this index depends on keeping apart.
+  (is (not (member "clas" (index-tokens "class") :test #'string=))
+      "a double s is refused, so CLASS survives")
+  (is (not (member "addres" (index-tokens "address") :test #'string=)))
+  (is (not (member "r" (index-tokens "ring") :test #'string=))
+      "-ing needs six characters, so RING survives")
+  (is (member "type" (index-tokens "types") :test #'string=)
+      "and an ordinary plural still folds"))
