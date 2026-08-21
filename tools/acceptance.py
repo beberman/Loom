@@ -69,7 +69,53 @@ CASES = [
     ("utils", "read a whole file into a string", ["read-file"], "r39-1"),
     ("utils", "split a string on a delimiter character", ["string-lines"], "r39-2"),
     ("loom", "test whether a string starts with a prefix", ["dot-prefixed-p"], "r39-3"),
-    ("loom", "look up a value in an alist or plist by key", ["alist-plist"], "r39-4"),
+    ("loom", "look up a value in an alist or plist by key",
+     ["alist-plist", "plist-shaped-p"], "r39-4"),
+
+    # ---------------------------------------------------------------------
+    # Loaded from the judged records in .loom/context, 2026-08-21. These are
+    # queries somebody asked and answers somebody used, which is the corpus
+    # REQ-0036 exists to build and REQ-0016 is measured against; promoting them
+    # here makes them regression guards rather than a set re-read from disk on
+    # every run.
+    #
+    # Loaded by hand, and that is the finding rather than a shortcut. Of the 15
+    # judged records, an automatic import produces garbage three ways:
+    #
+    #   * 12 of the 41 `used' entries are not entity names at all -- "(overflow)",
+    #     "the bundle itself", "cross-repository comparison", a file path, a
+    #     slash-joined list of three names.
+    #   * 9 name entities that no longer resolve, because PLAN-0002 and PLAN-0036
+    #     moved them: slurp-file, split-lines, alist-object-p, dict-value,
+    #     config-get, make-dict. The corpus decays as the trees move, which is
+    #     what REQ-0036 R4's unverifiable state is about.
+    #   * and the verdict lives in prose. DES-0001 was returned and the agent
+    #     wrote "not relevant -- it is the dhandler health-check design"; an
+    #     importer reading `name' alone would make noise into an expectation and
+    #     the harness would then defend it. Every entry below was read.
+    #
+    # REQ-0044 asks for the probe flag. This is the same defect one level up:
+    # a judgement's verdict is as unreadable to a program as its exclusion is.
+    # ---------------------------------------------------------------------
+    ("loom", "trim whitespace from a string",
+     ["js-trim", "whitespace-char-p"], "log-1"),
+    ("loom", "encode a value as JSON",
+     ["json-value", "json-array"], "log-2"),
+    # The judged answer was SPLIT-LINES and it is gone; SPLIT-COMMAND-LINE was
+    # the seed that was used, so that is what this guards.
+    ("loom", "split a string on a delimiter character",
+     ["split-command-line"], "log-3"),
+    # The half of the question that survived PLAN-0036: the file reader moved to
+    # the library (r39-1), the range slicer did not.
+    ("loom", "read a source file from disk and slice a line range out of it",
+     ["definition-source"], "log-4"),
+    # ARCH-0001 is the one document band hit anybody recorded as good. DES-0001
+    # came back on the same call and is deliberately absent here.
+    ("game-server",
+     "split the utils system into a residual gs-utils and the standalone utils "
+     "library: rename the package, repoint config-get dict-value read-config "
+     "make-dict call sites, and set the JSON key policy",
+     ["read-config", "ARCH-0001"], "log-5"),
 ]
 
 # REQ-0037: the queries whose right answer is that nothing here does that. They

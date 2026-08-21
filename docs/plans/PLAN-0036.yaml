@@ -143,6 +143,24 @@ body: |
   existing records still checkable; a non-ASCII input is asserted to differ, so
   the change is recorded as intended rather than discovered.
 
+  AND THERE IS A THIRD IMPLEMENTATION, found while loading the log into the
+  harness. tools/acceptance.py has its own FNV1A in Python, whose docstring says
+  it is "a second implementation of a fixed algorithm rather than a second
+  decision: the spec is the spec". It is not the same spec: it hashes the UTF-8
+  bytes of the string. So one algorithm has three behaviours --
+
+      "a<em dash>b"   Lisp fnv-1a          e5fba1190449795e   low octet per char
+                      Python fnv1a         5b3acf01c4b58b94   utf-8 bytes
+                      content-fingerprint  14def182498c786e   all octets, LE
+
+  -- which agree on ASCII and on nothing else. The consequence is in the harness
+  rather than in the service: FRESHNESS compares the live diff hash against the
+  recorded one, so a record whose repository has any non-ASCII in `git diff HEAD'
+  can never be classified `current'. In a tree whose own documents are full of em
+  dashes, R4's strongest classification is unreachable. All three converge on
+  CONTENT-FINGERPRINT in this stage, and the Python one gets a test against a
+  known non-ASCII vector rather than a comment claiming it agrees.
+
   S3  TEXT-LINES, WHICH RETURNS THE OTHER SHAPE
 
   markdown-analyzer.lisp's TEXT-LINES returns a list; STRING-LINES returns a
