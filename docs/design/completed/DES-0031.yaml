@@ -1,6 +1,6 @@
 id: DES-0031
 title: One record per answered read, written at the one seam both skins pass through
-status: partial
+status: implemented
 date: 2026-08-21
 refines: [REQ-0038]
 affects: [invoke-operation, record-query, record-context-call, write-record-async,

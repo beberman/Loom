@@ -1,6 +1,6 @@
 id: REQ-0038
 title: Every read query must be logged, not only context, because the log currently measures Loom's worst surface and is blind to its best
-status: draft
+status: partial
 date: 2026-08-21
 refines: [REQ-0036]
 affects: [record-context-call, record-context-use, drain-context-log, define-operation,
@@ -98,6 +98,32 @@ body: |
 
   Not a general request log. The record exists to be judged, so it holds what a
   judgement needs and not a transcript.
+
+  OUTSTANDING, at 50a85c4
+
+  R1, R2, R3, R4 and R5 are true of the tree. R6 is half true and that is why this
+  is partial rather than implemented.
+
+  A session can be reconstructed for one caller: `acceptance.py --sessions` cuts
+  .loom/context on the gap between consecutive records and prints each run in
+  order, which is where the recovery this requirement describes -- context, then
+  find, then describe on what find returned -- became readable. What R6 also asks
+  for is "whatever identifies a caller across calls", and no record carries it. Two
+  agents against one service would interleave into one session and the printed
+  sequence would be wrong in a way nothing detects.
+
+  Deliberately not built, and the first open question below is why: MCP has no
+  session concept to borrow, and a field designed against a hypothetical second
+  caller is a field nobody fills. The trigger for building it is the log showing
+  two callers interleaved. Until then the gap threshold is a heuristic whose two
+  failure modes -- merging sessions that abut, splitting one that paused -- are
+  visible in the output rather than hidden inside a statistic.
+
+  One thing S3 found that this requirement did not anticipate, now in DES-0031 D7:
+  the scorer was discarding 12 of its 15 judged records as `unverifiable', not
+  because a definition had moved but because 18 of the 41 `used' entries are not
+  entity names and the freshness gate resolved every one of them. R4 named the
+  corruption one level above where it lived. Both are repaired.
 
   OPEN QUESTIONS
 

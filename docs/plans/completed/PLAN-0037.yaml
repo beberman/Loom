@@ -1,6 +1,6 @@
 id: PLAN-0037
 title: "DES-0031 in four steps: the writer, the seam, the scorer, the session"
-status: draft
+status: final
 date: 2026-08-21
 refines: [DES-0031]
 affects: [invoke-operation, record-query, write-record-async, answer-shape,
