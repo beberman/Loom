@@ -1,0 +1,140 @@
+id: PLAN-0033
+title: "BUG-0030 in four steps: the dotted cons, the drop, the report, the third tree"
+status: final
+date: 2026-08-18
+refines: [BUG-0030]
+affects: [note-error, json-value, apply-transaction, plan-op, make-graph,
+          repository-status, print-status]
+tags: [graph, transaction, ontology, json, workspace, bug-0030, con-0001, con-0006]
+summary: |
+  BUG-0030 names two defects and orders them: D2's error path is localised
+  first, because F1 changes what that path reports.
+
+  D2 is localised. NOTE-ERROR stores `(cons path (princ-to-string condition))`,
+  REPOSITORY-STATUS puts that dotted cons on `:last-error`, and JSON-VALUE
+  reaches it through `(listp x)` and hands an improper list to LENGTH or to
+  MAP -- both of which signal `The value "Transaction rejected, nothing
+  applied: ..." is not of type LIST`. The string in the type error is the cdr
+  of the cons, which is why the real diagnosis was readable inside it. It
+  outlives the request because the entry stays on REPOSITORY-ERRORS, so every
+  later /v1/status re-encodes the same cons and re-signals.
+
+  F1 makes an assert-relationship op that fails endpoint validation drop out
+  of its transaction instead of rejecting it. The op is counted against its
+  origin file, so a reanalysis clears the count the way RETRACT-FILE clears
+  every other fact read from that file, and `status` and `check` report it.
+
+  F2 landed on 2026-08-16: :DOCUMENT is in the :TO list of :MENTIONS and of
+  :DOCUMENTS. Nothing here repeats it.
+body: |
+  OUTCOME, 2026-08-18
+
+  All four steps landed. The suite is 9 of 9 systems, and the three watched
+  trees index with the counts they had: game-server 155 files, 3946 entities,
+  22032 relationships; front-end 508 files, 4249 entities, 3217 relationships;
+  Loom's counts move only by this change's own source. All three report
+  `dropped: 0 edges the ontology does not permit`.
+
+    S1  the dotted cons, and the encoder guard              landed
+    S2  endpoint problems drop rather than reject           landed
+    S3  counted per file, reported by status and check      landed
+    S4  three trees, and a synthetic illegal edge           landed
+
+  D2 verified against the running service rather than only in the suite. The
+  same reindex that wedged it on 2026-08-17 -- Loom reindexed with all three
+  trees watched -- now returns the rejection as text on `last-error`, and
+  /v1/status, /v1/check and /v1/find all answer afterwards. The rejection it
+  was hiding is a federated :SERVES retract, filed as BUG-0034.
+
+  Two defects the suite caught that the design did not anticipate, both worth
+  the record.
+
+  The drops were recorded before the apply pass, and an analysis pass opens
+  with a RETRACT-FILE that clears the drops for the file it is about to re-read
+  -- so a transaction forgot its own drops and the count read zero on the pass
+  that produced them. Recording moved after the apply pass.
+
+  IMPROPER-LIST-P was written without a CONSP test, so it fell through to its
+  FINALLY clause and reported every non-NIL atom as improper. That rendered the
+  MCP tools list -- a vector -- as one PRINC-TO-STRING string and failed
+  tools/list. Both now have a test naming the failure.
+
+  The :CALL-SITE ceiling was re-measured with tools/call-site-census.lisp at
+  296, ceiling 326. Three of the growth are this change (one DROPPED-EDGES call
+  in the `check' command, two in the :CHECK operation, all inside
+  body-swallowing macros); the tree read 293 before it. The ambiguous
+  population is 16 before and after.
+
+  S1  D2: the dotted cons
+
+  NOTE-ERROR records a plist -- `(:path p :message m)` -- rather than a dotted
+  cons. A plist is what every other structured value in this codebase travels
+  as, JSON-OBJECT-FROM-PLIST already encodes one, and the console's
+  `(cdr (getf status :last-error))` becomes `(getf ... :message)`.
+
+  JSON-VALUE gains a proper-list guard ahead of its PLIST-SHAPED-P and LISTP
+  clauses. The encoder's own comment says a value it was not supposed to
+  receive is rendered with PRINC-TO-STRING "rather than signalling from inside
+  an encoder"; a dotted pair defeats that, because both PLIST-SHAPED-P's
+  LENGTH and JSON-ARRAY's MAP signal before the fallback is reached. The guard
+  is what stops a future improper list from wedging the service, which the
+  NOTE-ERROR fix alone does not.
+
+  Test: a repository whose index has recorded an error answers `status`
+  without signalling, and the JSON encoder renders a dotted pair rather than
+  signalling on it.
+
+  S2  F1: an illegal endpoint costs an edge
+
+  PLAN-OP on an ASSERT-RELATIONSHIP-OP produces three problems and all three
+  are endpoint validation: unknown FROM, unknown TO, and a type pair the
+  relationship's declaration does not permit. Each is marked `:droppable t`.
+
+  APPLY-TRANSACTION partitions. An op whose problems are all droppable is
+  dropped from the apply pass and recorded; any problem that is not droppable
+  rejects the transaction exactly as it does now, with the same structured
+  error. An entity that fails VALIDATE-ENTITY, a retract of an unknown target,
+  an update naming a property a type does not declare -- all still fatal.
+
+  Dropping an edge is safe in a way dropping an entity is not: no later op
+  resolves through an edge. The remap is keyed by entity id and an edge
+  contributes nothing to it, so the ops after a dropped one plan and apply
+  against exactly the graph they would have.
+
+  APPLY-TRANSACTION returns the remap table as it does now and the dropped
+  problems as a second value, so a caller that wants them need not go to the
+  graph for them.
+
+  S3  F1: counted against the file, reported by status and check
+
+  The record lives on the graph in an eighth protected table keyed by the
+  edge's origin file, which every edge carries -- ASSERT-EDGE defaults it to
+  the FROM entity's file, so a document link's drop is filed under the
+  document. RETRACT-FILE-OP clears that file's entry, so the count is rebuilt
+  by the same reanalysis that rebuilds the file's facts and a drop that stops
+  happening stops being reported. That is DEC-0001's files-as-truth applied to
+  a gap rather than to a fact.
+
+  `status` prints a `dropped` line, unconditionally and including zero, on the
+  DES-0002 R10 precedent the `tests` and `unread` lines above it already
+  follow: zero drops and an index nobody asked is not the same fact.
+
+  `check` prints the drops with the rel-type and the two entity types, which
+  is what names the missing ontology entry. The :CHECK operation carries the
+  same list for REST and MCP callers.
+
+  S4  the third tree
+
+  ~/github/front-end is watched, indexed, and answers `find`, `describe` and
+  `context`. Loom and game-server index with the entity and relationship
+  counts they have now. A synthetic tree with a deliberately illegal edge
+  indexes everything else and reports the drop.
+
+  WHAT IS NOT HERE
+
+  The D2 reproduction's fatal op is a RETRACT-OP whose target is a :SERVES
+  relationship id, and PLAN-OP for RETRACT-OP looks that up as an entity and
+  refuses it. F1 leaves it fatal by design -- a retract is not endpoint
+  validation. What S1 changes is that the rejection is now reported as the
+  rejection it is instead of a TYPE-ERROR that wedges the service. The retract
+  itself wants a bug of its own.

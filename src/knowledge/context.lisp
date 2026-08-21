@@ -195,44 +195,6 @@ which in a tree that leans on definer macros is the API itself."
        (getp entity :generated-by)
        t))
 
-(defparameter *seed-type-preference*
-  '((:function :method :class :interface :variable :test)
-    (:module :package :file)
-    (:concept :architecture :design :decision :rule :document))
-  "Entity types in tiers, by how much a seed match on one is worth having.
-
-Definitions first, containers next, and that much earns its keep: a task
-mentioning \"the graph manager\" matches the *file* graph-manager.lisp on the
-word \"graph\" as readily as it matches any function in it, and a file's
-neighbourhood is every definition it holds. Seeded on the file, a bundle
-spends its whole budget listing a directory back at the agent. Seeded on the
-definitions, it spends it on code.
-
-Tiers rather than a total order since REQ-0016 R1, and the flattening is the
-point. This was a fifteen-entry list in which :CLASS sat two places below
-:FUNCTION for no recorded reason, and because the type band dominates the
-score, that gap meant every function matching any word of the task outranked
-the class the task was *named after*. On game-server `context data-handler`
-put four functions above the DATA-HANDLER class and never reached DB-HANDLER,
-TABLE-HANDLER or the DHANDLER-* protocol at all -- a CLOS subsystem is classes
-and methods, so a ranking that prefers functions cannot describe one. A class
-and a function are both definitions and the argument above says nothing to
-separate them; what it separates is definitions from the things that contain
-them.
-
-Documents rank last rather than mid-list: they reach a bundle through the
-decision, document and mention bands DES-0020 built for them, and a document
-arriving as a *seed* would be counted twice and expand as though it were code.
-
-A type named in no tier -- :CALL-SITE, which prefix-matches its own callee's
-name and would otherwise seed as readily as the callee -- sorts after all of
-them. PLAN-0014 step 10 made the same judgement for `find'.")
-
-(defun seed-type-rank (entity)
-  (or (position-if (lambda (tier) (member (entity-type entity) tier))
-                   *seed-type-preference*)
-      (length *seed-type-preference*)))
-
 (defparameter *test-path-segments* '("test" "tests")
   "Path segments that mark a definition as test code, for ranking only.
 
@@ -597,8 +559,35 @@ waiting (ADMIT-SEEDS)."
                                          (seed-score (car pair) (cdr pair)
                                                      :demote-tests demote-tests
                                                      :terms terms
-                                                     :production production)))))
-    (admit-seeds ranked limit)))
+                                                     :production production))))
+         (chosen     (admit-seeds ranked limit)))
+    ;; Second value: the chosen seeds with the score and the terms each
+    ;; answered to. DES-0030 D3 -- a record holding the seeds without their
+    ;; scores cannot show why the eighth slot went where it did, and the score
+    ;; is the number every ranking change moves.
+    ;;
+    ;; Recomputed for the chosen few rather than threaded through ADMIT-SEEDS,
+    ;; which reads (entity . terms) pairs and would have to read something else.
+    ;; Eight SEED-SCORE calls against a bundle that has already walked the graph
+    ;; is not a cost the latency clauses can see.
+    (values chosen
+            (loop for entity in chosen
+                  for rank from 1
+                  for pair = (assoc entity matches :test #'eq)
+                  collect (list :id (id entity)
+                                :name (name entity)
+                                :rank rank
+                                :score (seed-score entity (cdr pair)
+                                                   :demote-tests demote-tests
+                                                   :terms terms
+                                                   :production production)
+                                ;; The terms as objects rather than the
+                                ;; (term . weight) conses SEED-MATCHES builds.
+                                ;; A dotted pair is not a shape JSON has, and a
+                                ;; record is read by tools/acceptance.py.
+                                :terms (loop for (term . weight) in (cdr pair)
+                                             collect (list :term term
+                                                           :weight weight)))))))
 
 ;;;; ==================================================================
 ;;;; Instrumentation (SS11)
@@ -825,8 +814,9 @@ now loses its fortieth structural neighbour rather than the document explaining
 the design.
 
 Every call is logged to *CONTEXT-LOG*."
-  (let* ((seeds     (seed-entities view task :limit seed-limit :types types))
-         ;; DES-0026 D6/D8, PLAN-0032 S1. Was: NEIGHBORS on each seed, PUSHNEW,
+  (multiple-value-bind (seeds seed-detail)
+      (seed-entities view task :limit seed-limit :types types)
+   (let* (;; DES-0026 D6/D8, PLAN-0032 S1. Was: NEIGHBORS on each seed, PUSHNEW,
          ;; every edge the same price and nothing ordering the result. A one-hop
          ;; expansion cannot satisfy REQ-0016 R6 at any budget -- the four
          ;; classes it misses are two or more :INHERITS hops out -- so the fix
@@ -970,7 +960,16 @@ Every call is logged to *CONTEXT-LOG*."
                                       :budget budget
                                       :tokens used)
               *context-log*)
-        bundle))))
+        ;; Second value: what a durable record needs and a reader does not
+        ;; (DES-0030 D3). The bundle is unchanged, so nothing that renders or
+        ;; encodes one sees this unless it asks.
+        (values bundle
+                (list :tokens (task-tokens task)
+                      :seeds seed-detail
+                      :items (loop for item in (getf bundle :items)
+                                   collect (list :id (getf (getf item :entity) :id)
+                                                 :name (getf (getf item :entity) :name)
+                                                 :band (getf item :band))))))))))
 
 ;;;; ==================================================================
 ;;;; Rendering -- what an agent actually reads

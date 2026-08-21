@@ -209,8 +209,21 @@ developer needs in order to ask again precisely."
   (or (get-entity graph term)
       (let ((exact (exact-name-matches graph term)))
         (cond ((null (rest exact))
-               (let ((hits (search-entities graph :name term :limit 1)))
-                 (when hits (get-entity graph (getf (first hits) :id)))))
+               ;; BEST-NAME-MATCH rather than SEARCH-ENTITIES with a limit of
+               ;; one (BUG-0032): where a file and a definition match a name
+               ;; equally well, the caller of this function wants the
+               ;; definition. `find' is unaffected -- it calls SEARCH-ENTITIES
+               ;; directly and still lists the file first.
+               ;;
+               ;; EXACT is consulted first when it holds exactly one entity,
+               ;; which it did not before. The old code computed EXACT, took
+               ;; this branch for both nought and one, and then threw it away
+               ;; to re-search -- so a single exact match could lose to a
+               ;; higher-ranked inexact one. An exact match is the strongest
+               ;; evidence this function has and now decides.
+               (or (and exact (get-entity graph (getf (first exact) :id)))
+                   (let ((hit (best-name-match graph term)))
+                     (when hit (get-entity graph (getf hit :id))))))
               ;; The id carries the file, so it is both the disambiguator and
               ;; the thing to type next.
               (t (error "~d things are named ~s. Name one:~{~%  ~a~}"
@@ -272,8 +285,9 @@ command."
   (format t "  watcher    : ~(~a~)~%" (getf status :monitor))
   (format t "  rules      : ~d violation~:p, ~d unenforced~%"
           (getf status :violations) (getf status :unenforced-rules))
-  (format t "  unresolved : ~d document reference~:p, ~d definer macro~:p~%"
+  (format t "  unresolved : ~d document reference~:p, ~d ambiguous, ~d definer macro~:p~%"
           (getf status :unresolved-references)
+          (getf status :ambiguous-references)
           (getf status :unhandled-definer-macros))
   ;; DES-0018 D5. Printed only when git could not be asked, because on a
   ;; healthy tree there is nothing to say and a line reading "ignoring: fine"
@@ -289,9 +303,26 @@ command."
   ;; "unread" rather than "skipped": a comment is skipped too, and a reader who
   ;; sees a number here should understand it as source that would have defined
   ;; something and did not.
+  ;; BUG-0033, above `unread' because it is the coarser measure of the same
+  ;; thing: `unread' counts source that would have defined something and did
+  ;; not, and this counts whole files whose every definition is missing. The
+  ;; document that prompted it sat in the index for a day and a half with its
+  ;; title, its id and its body all absent while `documents' counted it and
+  ;; `check' reported a clean tree. `check' names the paths and the parser's
+  ;; own message; this is the number.
+  (format t "  unparsed   : ~d file~:p the analyzer could not read~%"
+          (getf status :unparsed))
   (format t "  unread     : ~d suppressed region~:p, ~d recovered region~:p~%"
           (getf status :suppressed-regions)
           (getf status :recovered-regions))
+  ;; BUG-0030 F1, and the same reading as the line above it: an edge whose two
+  ;; endpoint types the ontology does not permit is a relationship the index
+  ;; knows it is missing. Unconditional, zero included -- a count that vanishes
+  ;; at nought cannot be told from a count nobody computes, and until this
+  ;; existed such an edge rejected the whole pass instead of being counted.
+  ;; `check' names the rel-type and the two types; this is the number.
+  (format t "  dropped    : ~d edge~:p the ontology does not permit~%"
+          (getf status :dropped-edges))
   ;; DES-0011. "never run" is spelled out rather than left as three zeroes,
   ;; because enrichment is optional and on demand: a reader who sees zeroes
   ;; cannot tell a tree the image agreed with completely from one nobody has
@@ -303,7 +334,8 @@ command."
       (format t "  enrichment : never run~%"))
   (when (plusp (getf status :errors))
     (format t "  errors     : ~d, last: ~a~%"
-            (getf status :errors) (cdr (getf status :last-error)))))
+            (getf status :errors)
+            (getf (getf status :last-error) :message))))
 
 ;;;; ==================================================================
 ;;;; Commands (SS3.2)
@@ -503,15 +535,33 @@ rather than only in the note beside it."
             (t (log-event "complete" "~a" (getf report :plan))
                (print-transition-changes report))))))
 
+(defparameter *console-find-limit* 20
+  "How many rows `find\' prints.
+
+Twenty, unchanged since the command was written. What changed with BUG-0002 is
+that the command says when it cut the list: a cap is a reasonable answer to
+\"where is X\" and a false one to \"what is there\", and the count is what lets
+the reader tell which question they asked.")
+
 (define-command find (term &optional type)
     "find <name> [<type>]"
     "Where something is defined. The entry point for \"where is X\"."
-  (let ((hits (search-entities (current-graph) :name term
-                               :type (and type (intern (string-upcase type) :keyword))
-                               :limit 20)))
-    (if (null hits)
-        (format t "~&Nothing matches ~s.~%" term)
-        (dolist (hit hits) (print-summary-line hit)))))
+  (multiple-value-bind (hits total)
+      (search-entities (current-graph) :name term
+                       :type (and type (intern (string-upcase type) :keyword))
+                       :limit *console-find-limit*)
+    (cond
+      ((null hits) (format t "~&Nothing matches ~s.~%" term))
+      (t (dolist (hit hits) (print-summary-line hit))
+         ;; BUG-0002. Printed only when it happened, and printed as a count
+         ;; rather than a word: twenty rows read as the whole truth, and the
+         ;; number that says otherwise is the one the caller needs to decide
+         ;; whether to narrow the term. `impact' has carried its own
+         ;; "(truncated)" since it was written; this is the same fact in the
+         ;; same interface.
+         (when (> total (length hits))
+           (format t "~&~d of ~d shown. Narrow the term, or name a type.~%"
+                   (length hits) total))))))
 
 (define-command describe (term &optional flag)
     "describe <name> [--source]"
@@ -702,11 +752,20 @@ which is CON-0006's expensive error at the scale of one answer."
     "context <task description>"
     "A budgeted context bundle for a task: what to know before editing."
   (let ((task (format nil "~{~a~^ ~}" words)))
-    (let ((repo (current-repository)))
-      (write-string
-       (render-context
-        (build-context (repository-graph repo) task
-                       :source-fn (lambda (id) (definition-source repo id))))))))
+    (let* ((repo (current-repository))
+           (started (get-internal-real-time)))
+      (multiple-value-bind (bundle instrumentation)
+          (build-context (repository-graph repo) task
+                         :source-fn (lambda (id) (definition-source repo id)))
+        (write-string (render-context bundle))
+        ;; REQ-0036 R1 is every context call rather than every call over the
+        ;; service, so the console records too. Nothing is written and nothing
+        ;; is printed unless an operator set the directory.
+        (let ((id (record-context-call
+                   repo bundle instrumentation
+                   :seconds (/ (float (- (get-internal-real-time) started))
+                               internal-time-units-per-second))))
+          (when id (format t "~&record ~a~%" id)))))))
 
 (define-command init (path &optional document-directory claude-md endpoint)
     "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>]"
@@ -831,12 +890,59 @@ which is CON-0006's expensive error at the scale of one answer."
                           :commit-reason reason
                           :repository (repository-name repository)))))))
 
+(define-command check-document (path &optional designator)
+    "check-document <path> [<name>]"
+    "Resolve one document's declared references without writing or indexing it."
+  ;; REQ-0034. The console half of the operation, and the same function behind
+  ;; it: an author drafting a document asks what its affects: and refines: will
+  ;; resolve to before the file is written, instead of writing it, waiting for
+  ;; the monitor and then subtracting the repository's baseline from `check'.
+  (let ((report (check-document-references (current-repository designator) path)))
+    (let ((problem (getf report :error)))
+      (if problem
+          (format t "~&~a: ~a~%" (getf report :path) problem)
+          (let ((references (getf report :references)))
+            (format t "~&~a  ~a  ~d declared reference~:p~%"
+                    (getf report :document) (getf report :path)
+                    (length references))
+            (dolist (entry references)
+              (case (getf entry :status)
+                (:resolved
+                 (format t "  ~(~a~): ~a -> ~a~%"
+                         (getf entry :field) (getf entry :name) (getf entry :target)))
+                (:self
+                 (format t "  ~(~a~): ~a -> itself, which earns no edge~%"
+                         (getf entry :field) (getf entry :name)))
+                (:ambiguous
+                 (format t "  ~(~a~): ~a -> ambiguous among ~d~%"
+                         (getf entry :field) (getf entry :name)
+                         (length (getf entry :candidates)))
+                 (dolist (candidate (getf entry :candidates))
+                   (format t "      ~a~%" candidate)))
+                (t
+                 (format t "  ~(~a~): ~a -> nothing in the index~%"
+                         (getf entry :field) (getf entry :name))))))))))
+
 (define-command check (&optional designator)
     "check [<name>]"
     "Run the rule checks from docs/rules and print violations."
   (let* ((graph (current-graph designator))
          (violations (entities-of-type graph :rule-violation))
          (unenforced (unenforced-rules graph)))
+    ;; BUG-0033, and printed before the rule verdict rather than after it. A
+    ;; file the analyzer could not read is the largest gap this command
+    ;; reports: every other line here describes something the index knows and
+    ;; got wrong, and this one describes a file it does not know at all. Under
+    ;; "No violations." it would be a footnote to a clean bill of health, which
+    ;; is exactly the reading that let PLAN-0032 sit unindexed for a day and a
+    ;; half and BUG-0013 for twelve days. The parser's message carries a line
+    ;; and a column on a YAML failure, which is the whole distance between "a
+    ;; document is missing" and "quote the title".
+    (let ((unparsed (unparsed-facts graph)))
+      (when unparsed
+        (format t "~&~d file~:p the analyzer could not read:~%" (length unparsed))
+        (dolist (entry unparsed)
+          (format t "  ~a~%    ~a~%" (getf entry :path) (getf entry :error)))))
     (if (null violations)
         (format t "~&No violations.~%")
         (dolist (v violations)
@@ -850,6 +956,19 @@ which is CON-0006's expensive error at the scale of one answer."
         (format t "~&~d unresolved document reference~:p:~%" (length unresolved))
         (dolist (pair unresolved)
           (format t "  ~a -> ~a~%" (car pair) (cdr pair)))))
+    ;; DES-0029 D4, and a section of its own rather than entries in the list
+    ;; above. A document naming db-handler when a class and an interface both
+    ;; answer to it has made no mistake; asking an author to fix it is what
+    ;; teaches them the list is noise. The candidates print under the name
+    ;; because they are what goes back into the field to say which one.
+    (let ((ambiguous (ambiguous-references graph)))
+      (when ambiguous
+        (format t "~&~d ambiguous document reference~:p, each naming several entities:~%"
+                (length ambiguous))
+        (dolist (entry ambiguous)
+          (format t "  ~a -> ~a~%" (getf entry :document) (getf entry :name))
+          (dolist (candidate (getf entry :candidates))
+            (format t "      ~a~%" candidate)))))
     ;; DES-0025 D6. A backticked token carrying a path separator and a file
     ;; extension is a claim about a file, not an ordinary word, so one that no
     ;; *watched* repository holds is reported. The qualifier is load-bearing and
@@ -864,6 +983,18 @@ which is CON-0006's expensive error at the scale of one answer."
           (format t "  @~a ~a -> ~a~%"
                   (getf entry :repository) (getf entry :document)
                   (getf entry :reference)))))
+    ;; BUG-0030 F1. The three keywords are the point of the line: a drop is
+    ;; reported so that somebody can decide whether the :TO list of that
+    ;; relationship is missing an entry, and rel-type, from-type and to-type
+    ;; are exactly what that decision needs. Three types have been added to a
+    ;; :TO list reactively, each after a tree went dark; this is the report
+    ;; that makes the fourth visible while the tree still indexes.
+    (let ((dropped (dropped-edges graph)))
+      (when dropped
+        (format t "~&~d edge~:p dropped, endpoints the ontology does not permit:~%"
+                (length dropped))
+        (dolist (drop dropped)
+          (format t "  ~a  [~a]~%" (getf drop :problem) (getf drop :origin-file)))))
     ;; DES-0002 R6/R10, reported the way an unresolved reference is and for
     ;; the same reason: a definer Loom cannot characterise is a definition the
     ;; index knows it is missing, and it should be visible here rather than
@@ -988,11 +1119,21 @@ the developer somewhere they have to know Lisp to escape."
 SS3.1: the process is \"started by the developer and pointed at a
 repository\", so `loom /path/to/repo` indexes it and hands over a prompt."
   (install-debugger-hook)
+  ;; REQ-0036 R9, DES-0030 D1. The operator's switch, read once at startup:
+  ;; LOOM_CONTEXT_LOG names a directory, or is any non-empty value to mean
+  ;; <loom>/.loom/context/. Unset -- the default -- and nothing here writes
+  ;; anything, which is what keeps :CONTEXT a read for every deployment that
+  ;; did not ask otherwise.
+  (configure-context-log-from-environment)
   (format t "~&Loom -- engineering knowledge graph. Type help.~%")
   (dolist (path arguments)
     (handler-case (run-command (format nil "watch ~s" path))
       (error (condition) (format t "~&~a~%" condition))))
   (console)
+  ;; A record is written on another thread (REQ-0036 R8), and a console process
+  ;; that exited immediately would lose the last one. Waited for here rather
+  ;; than after each command, which is where waiting would cost the reader.
+  (drain-context-log)
   (dolist (repository (all-repositories)) (stop-monitor repository))
   (format t "~&Paused ~d repositor~:@p; indexes kept.~%" (length (all-repositories)))
   (values))

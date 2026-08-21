@@ -909,3 +909,451 @@ mention does")
     (is (null (relationships-from g (id doc) :rel-type :mentions))
         "and earns no edge, because :MENTIONS is declared to reach code")))
 
+
+;;; ------------------------------------------------------------------
+;;; Case sensitivity is the language's, not the index's (BUG-0029)
+;;; ------------------------------------------------------------------
+;;;
+;;; The definition index is keyed on a downcased name, which is correct for
+;;; Common Lisp -- the reader upcases, so `Error' and `error' are one symbol --
+;;; and was applied to every language because every language indexed was Lisp.
+;;; On ~/github/front-end it made three components named `Error' the top three
+;;; hubs in `structure' with 116 inbound edges each, all of them
+;;; `logger.error(...)' call sites. 348 edges, and the repository renders
+;;; `<Error />' twice.
+
+(defun r-js-function (graph name file &key unresolved)
+  (let ((e (make-instance 'function-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :javascript
+                                             :call-names unresolved)))))
+    (add-entity graph e)
+    e))
+
+(test a-javascript-call-does-not-reach-a-definition-differing-only-in-case
+  (let* ((g (make-graph))
+         (caller (r-js-function g "logSomething" "a.js" :unresolved '("error")))
+         (wrong  (r-js-function g "Error" "b.jsx")))
+    (apply-transaction g (resolve-calls g))
+    (is (null (relationships-from g (id caller) :rel-type :calls))
+        "`error' and `Error' are two identifiers in JavaScript")
+    (is (null (relationships-to g (id wrong) :rel-type :calls))
+        "and the component collects none of them")
+    (is (equal '("error") (getp caller :unresolved-calls))
+        "the name is recorded unresolved, which is the honest answer")))
+
+(test a-javascript-call-still-reaches-the-definition-it-does-name
+  ;; The other half, and the one that would make the fix worthless if it
+  ;; failed: exact matching must still resolve.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "logSomething" "a.js" :unresolved '("error")))
+         (callee (r-js-function g "error" "logger.js")))
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id callee))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls))))))
+
+(test a-lisp-call-still-folds-case-because-the-reader-does
+  ;; Common Lisp is why the index folds at all, and this is the behaviour that
+  ;; must survive the fix untouched. `(defun Foo ...)' and `(foo)' are one
+  ;; symbol, and an index that distinguished them would resolve nothing.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("Analyze-Path")))
+         (callee (r-function g "analyze-path" "b.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id callee))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls))))))
+
+(test a-lisp-caller-does-not-reach-a-javascript-definition-by-folding
+  ;; The mixed pair, which is what a repository holding both languages
+  ;; produces. SAME-IDENTIFIER-P folds only when both sides fold, so the
+  ;; stricter language decides -- a JavaScript definition cannot be reached by
+  ;; a spelling only Lisp considers equal.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("handler")))
+         (wrong  (r-js-function g "Handler" "b.js")))
+    (apply-transaction g (resolve-calls g))
+    (is (null (relationships-from g (id caller) :rel-type :calls)))
+    (is (null (relationships-to g (id wrong) :rel-type :calls)))))
+
+(test same-identifier-p-folds-only-when-both-languages-fold
+  ;; Named with the double colon: the predicate is internal to loom-graph and
+  ;; exporting it to be tested would widen the system's surface for the test's
+  ;; convenience. The four tests above are the behaviour; this one pins the
+  ;; rule they all rest on.
+  (is (loom-graph::same-identifier-p "Error" "error" :lisp :lisp))
+  (is (not (loom-graph::same-identifier-p "Error" "error" :javascript :javascript)))
+  (is (not (loom-graph::same-identifier-p "Error" "error" :lisp :javascript))
+      "the stricter side decides, so an unknown language cannot inherit
+Lisp's folding by being compared against a Lisp definition")
+  (is (not (loom-graph::same-identifier-p "Error" "error" :javascript :lisp)))
+  (is (loom-graph::same-identifier-p "error" "error" :javascript :javascript))
+  ;; A NIL language is a caller that never had one -- RESOLVE-GENERATED-
+  ;; DEFINITIONS asking whether a name reaches anything at all -- and keeps the
+  ;; old answer rather than acquiring a stricter one.
+  (is (loom-graph::same-identifier-p "Error" "error" nil nil)))
+
+;;; ------------------------------------------------------------------
+;;; A module is a namespace (BUG-0035)
+;;; ------------------------------------------------------------------
+;;;
+;;; After BUG-0029 removed the case fabrications, DesignHome.jsx still drew
+;;; three edges to three different components named `Error' -- one of which it
+;;; defines itself, at line 163, and renders twice. A name defined in the
+;;; calling module shadows every other definition of it in the repository, and
+;;; a name from a module nobody imported is not a candidate at all. Neither is
+;;; true in Common Lisp, where a symbol is visible throughout its package
+;;; however many files that package spans, so the rule is the language's.
+
+(defun r-js-file (graph path &key imports)
+  (let ((e (make-instance 'file-entity :name path :origin-file path
+                          :properties (properties-table
+                                       (list :path path :language :javascript
+                                             :import-sources imports)))))
+    (add-entity graph e)
+    e))
+
+(test a-definition-in-the-calling-file-shadows-every-other-of-that-name
+  (let* ((g (make-graph))
+         (caller (r-js-function g "render" "ui/Home.jsx" :unresolved '("Widget")))
+         (local  (r-js-function g "Widget" "ui/Home.jsx"))
+         (far    (r-js-function g "Widget" "ui/Other.jsx")))
+    (r-js-file g "ui/Home.jsx")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id local))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "one edge, to the definition in the caller's own file")
+    (is (null (relationships-to g (id far) :rel-type :calls))
+        "and none at all to the same name in another module")))
+
+(test an-imported-module-is-in-scope-and-an-unimported-one-is-not
+  (let* ((g (make-graph))
+         (caller (r-js-function g "render" "ui/Home.jsx" :unresolved '("Widget")))
+         (wanted (r-js-function g "Widget" "ui/parts/Widget.jsx"))
+         (other  (r-js-function g "Widget" "ui/Other.jsx")))
+    (r-js-file g "ui/Home.jsx" :imports '("./parts/Widget"))
+    (r-js-file g "ui/parts/Widget.jsx")
+    (r-js-file g "ui/Other.jsx")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "the specifier resolves through the extension the file actually has")
+    (is (null (relationships-to g (id other) :rel-type :calls)))))
+
+(test a-specifier-can-name-a-directory-index
+  (let* ((g (make-graph))
+         (caller (r-js-function g "render" "ui/Home.jsx" :unresolved '("Widget")))
+         (wanted (r-js-function g "Widget" "ui/parts/index.js")))
+    (r-js-file g "ui/Home.jsx" :imports '("./parts"))
+    (r-js-file g "ui/parts/index.js")
+    (r-js-function g "Widget" "ui/Other.jsx")
+    (r-js-file g "ui/Other.jsx")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls))))))
+
+(test a-specifier-climbing-out-of-its-directory-resolves
+  (let* ((g (make-graph))
+         (caller (r-js-function g "render" "ui/edit/pages/Home.jsx" :unresolved '("Widget")))
+         (wanted (r-js-function g "Widget" "ui/common/Widget.jsx")))
+    (r-js-file g "ui/edit/pages/Home.jsx" :imports '("../../common/Widget"))
+    (r-js-file g "ui/common/Widget.jsx")
+    (r-js-function g "Widget" "ui/Other.jsx")
+    (r-js-file g "ui/Other.jsx")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls))))))
+
+(test a-name-no-tier-governs-keeps-the-candidates-it-had
+  ;; The rule may only ever reduce a candidate set, never empty one. A bare
+  ;; call to a name defined in two modules the caller neither holds nor imports
+  ;; is the shape nothing here governs, and it must survive untouched.
+  ;;
+  ;; `commit' and not `log.commit': BUG-0036 gave a member call its receiver,
+  ;; so the name that arrives here with nothing to narrow it is the bare one.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "run" "ui/Home.jsx" :unresolved '("commit")))
+         (one    (r-js-function g "commit" "a/Log.js"))
+         (two    (r-js-function g "commit" "b/Store.js")))
+    (r-js-file g "ui/Home.jsx")
+    (r-js-file g "a/Log.js")
+    (r-js-file g "b/Store.js")
+    (apply-transaction g (resolve-calls g))
+    (is (null (relationships-from g (id caller) :rel-type :calls))
+        "the caller takes no direct edge, which is REQ-0015's refusal")
+    (dolist (target (list one two))
+      (is (relationships-to g (id target) :rel-type :calls)
+          "and both candidates are still reached, through the call site"))))
+
+(test a-bare-specifier-narrows-nothing
+  ;; `react' names a package outside the tree and `@/x' needs a bundler
+  ;; configuration Loom does not read. Both resolve to nothing, which must
+  ;; leave the call exactly as unnarrowed as it is today rather than making
+  ;; the importing file appear to import nothing at all.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "run" "ui/Home.jsx" :unresolved '("Widget")))
+         (one    (r-js-function g "Widget" "a/One.jsx"))
+         (two    (r-js-function g "Widget" "b/Two.jsx")))
+    (r-js-file g "ui/Home.jsx" :imports '("react" "@/components/Widget"))
+    (r-js-file g "a/One.jsx")
+    (r-js-file g "b/Two.jsx")
+    (apply-transaction g (resolve-calls g))
+    (dolist (target (list one two))
+      (is (relationships-to g (id target) :rel-type :calls)
+          "both are still candidates, because nothing was learned"))))
+
+(test a-lisp-caller-is-untouched-by-module-scope
+  ;; The guard. A Common Lisp symbol is visible throughout its package however
+  ;; many files that package spans, so a file boundary tells resolution
+  ;; nothing -- and narrowing on one would silently delete the cross-file edges
+  ;; RESOLVE-CALLS exists to draw.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("callee")))
+         (callee (r-function g "callee" "b.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id callee))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "the edge across a file boundary is the whole point of the pass")))
+
+(test resolve-module-specifier-answers-against-the-index-and-not-the-disk
+  (let ((known (make-hash-table :test #'equal)))
+    (setf (gethash "ui/parts/Widget.jsx" known) t
+          (gethash "ui/parts/index.js" known) t)
+    (is (equal "ui/parts/Widget.jsx"
+               (loom-graph::resolve-module-specifier "./parts/Widget" "ui/Home.jsx" known)))
+    (is (equal "ui/parts/index.js"
+               (loom-graph::resolve-module-specifier "./parts" "ui/Home.jsx" known)))
+    (is (equal "ui/parts/Widget.jsx"
+               (loom-graph::resolve-module-specifier "../parts/Widget" "ui/edit/Home.jsx" known)))
+    (is (null (loom-graph::resolve-module-specifier "react" "ui/Home.jsx" known))
+        "a bare specifier names something outside the tree")
+    (is (null (loom-graph::resolve-module-specifier "./nowhere" "ui/Home.jsx" known))
+        "and a relative one naming no indexed file resolves to nothing rather
+than to a path nobody holds")))
+
+
+;;; ------------------------------------------------------------------
+;;; A member call names a receiver (BUG-0036)
+;;; ------------------------------------------------------------------
+;;;
+;;; `log.commit()' contributed COMMIT, which matched every plain function of
+;;; that name in the repository and no method at all, since a method entity is
+;;; named Class.method. Module scope cannot narrow it -- a property is not a
+;;; module binding -- so BUG-0035's two tiers both declined by design and the
+;;; name reached resolution with nothing on it. On ~/github/front-end that was
+;;; 40 of 50 fan-outs, and the largest single one was `set.persist()' pointing
+;;; at two test-local `function persist' and one arrow in a mock.
+;;;
+;;; The extractor now records the receiver the source wrote, and resolution
+;;; reads it back: the receiver names the class, or it does not and the
+;;; property is what is left to go on.
+
+(defun r-js-method (graph name file &key unresolved)
+  (let ((e (make-instance 'method-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :javascript
+                                             :call-names unresolved)))))
+    (add-entity graph e)
+    e))
+
+(test member-call-parts-reads-one-dot-and-refuses-the-rest
+  (multiple-value-bind (receiver property)
+      (loom-graph:member-call-parts "log.commit")
+    (is (equal "log" receiver))
+    (is (equal "commit" property)))
+  (is (null (loom-graph:member-call-parts "commit"))
+      "a bare call is not a member call")
+  (is (null (loom-graph:member-call-parts "obj.a.b"))
+      "two dots means the receiver was an expression, and the extractor
+reports the property alone for that case")
+  (is (null (loom-graph:member-call-parts ".commit")))
+  (is (null (loom-graph:member-call-parts "log."))))
+
+(test a-receiver-naming-the-class-resolves-to-that-class-method
+  ;; `this.commit()' inside GestureLog, which the extractor records as
+  ;; GestureLog.commit because the enclosing class is not a guess.
+  (let* ((g (make-graph))
+         (caller (r-js-method g "GestureLog.record" "a/GestureLog.js"
+                              :unresolved '("GestureLog.commit")))
+         (wanted (r-js-method g "GestureLog.commit" "a/GestureLog.js"))
+         (other  (r-js-method g "CircleGraphic.commit" "b/CircleGraphic.js"))
+         (plain  (r-js-function g "commit" "c/util.js")))
+    (r-js-file g "a/GestureLog.js")
+    (r-js-file g "b/CircleGraphic.js")
+    (r-js-file g "c/util.js")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "one edge, to the method of the class the receiver names")
+    (is (null (relationships-to g (id other) :rel-type :calls))
+        "and none to the other class's method of the same property")
+    (is (null (relationships-to g (id plain) :rel-type :calls))
+        "nor to the plain function, which a property access cannot reach")))
+
+(test a-member-call-fans-out-over-methods-and-never-over-functions
+  ;; The population BUG-0036 measured. `set.persist()' names no class, so the
+  ;; property is all there is: every method of it is a candidate, at 1/N, and
+  ;; the plain functions that used to collect these edges get none.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "run" "ui/Home.jsx" :unresolved '("set.persist")))
+         (one    (r-js-method g "TypeSet.persist" "core/TypeSet.js"))
+         (two    (r-js-method g "WorkingSet.persist" "core/WorkingSet.js"))
+         (plain  (r-js-function g "persist" "test/reload.test.js")))
+    (r-js-file g "ui/Home.jsx")
+    (r-js-file g "core/TypeSet.js")
+    (r-js-file g "core/WorkingSet.js")
+    (r-js-file g "test/reload.test.js")
+    (apply-transaction g (resolve-calls g))
+    (let ((edges (relationships-from g (id caller) :rel-type :calls)))
+      (is (equal (sort (list (id one) (id two)) #'string<)
+                 (sort (mapcar #'to-id edges) #'string<))
+          "both methods, and only the methods")
+      (is (every (lambda (r) (< (confidence r) 0.51)) edges)
+          "each at 1/N, which is the recorded guess CON-0001 asks for"))
+    (is (null (relationships-to g (id plain) :rel-type :calls))
+        "the plain function collects nothing: a property is not a module
+binding, and this edge was the defect")))
+
+(test a-member-call-with-no-method-of-that-property-falls-back-to-the-name
+  ;; The namespace import -- `import * as api' then `api.fetchGame()'. The
+  ;; receiver is a module rather than an object, the property really is a plain
+  ;; function, and this is the answer the call had before BUG-0036.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "load" "ui/Home.jsx" :unresolved '("api.fetchGame")))
+         (wanted (r-js-function g "fetchGame" "data/api.js")))
+    (r-js-file g "ui/Home.jsx" :imports '("../data/api"))
+    (r-js-file g "data/api.js")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "one edge, and the module scope BUG-0035 added still applies to it")))
+
+(test a-lisp-caller-never-reads-a-dot-as-a-receiver
+  ;; The gate. A dot in a Common Lisp symbol is a character in a name, so the
+  ;; member-call tiers are asked only where MODULE-SCOPED-LANGUAGE-P says the
+  ;; caller is written in a language that has properties.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("log.commit")))
+         (method (r-js-method g "GestureLog.commit" "b/GestureLog.js")))
+    (r-js-file g "b/GestureLog.js")
+    (apply-transaction g (resolve-calls g))
+    (is (null (relationships-from g (id caller) :rel-type :calls))
+        "the name is a symbol Loom does not hold, not a property access")
+    (is (null (relationships-to g (id method) :rel-type :calls)))
+    (is (equal '("log.commit") (getp caller :unresolved-calls))
+        "and it is recorded unresolved rather than guessed at")))
+
+
+;;; ------------------------------------------------------------------
+;;; None and several are two answers (REQ-0030, DES-0029)
+;;; ------------------------------------------------------------------
+;;;
+;;; RESOLVE-ONE computed the candidate set, found several, returned NIL, and
+;;; RESOLVE-DOCUMENT-LINKS pushed the name onto :UNRESOLVED-REFERENCES beside
+;;; the names that matched nothing. On game-server, writing the four documents
+;;; of one change, every name most central to it was ambiguous and all four
+;;; were reported as rot. On Loom 7 of 15 were.
+
+(defun r-decision (graph doc-id &key affects refines)
+  (let ((e (make-instance 'decision-entity :name doc-id
+                          :origin-file (format nil "docs/design/~a.yaml" doc-id)
+                          :properties (properties-table
+                                       (list :path (format nil "docs/design/~a.yaml" doc-id)
+                                             :doc-id doc-id
+                                             :affects affects
+                                             :refines refines)))))
+    (add-entity graph e)
+    e))
+
+(test resolve-one-hands-back-the-candidates-it-declined-over
+  (let* ((g (make-graph))
+         (one (r-function g "check-database" "server/server.lisp"))
+         (two (r-function g "check-database" "game/test/api.lisp"))
+         (index (loom-graph::linkable-index g)))
+    (multiple-value-bind (target candidates)
+        (loom-graph::resolve-one index "check-database")
+      (is (null target) "an ambiguous name still resolves to nothing")
+      (is (equal (sort (list (id one) (id two)) #'string<)
+                 (sort (mapcar #'id candidates) #'string<))
+          "and the set it declined over is what the caller needs"))
+    (multiple-value-bind (target candidates)
+        (loom-graph::resolve-one index "no-such-name")
+      (is (null target))
+      (is (null candidates)
+          "a name that matched nothing declined over nothing, which is the
+distinction this whole change is"))))
+
+(test the-interface-clause-still-answers-and-declines-over-nothing
+  ;; The exception RESOLVE-ONE has always made, and it must not start looking
+  ;; like an ambiguity: a generic and its methods are one protocol.
+  (let* ((g (make-graph))
+         (generic (r-interface g "analyze-file" "a.lisp"))
+         (index (progn (r-method g "analyze-file" "b.lisp")
+                       (r-method g "analyze-file" "c.lisp")
+                       (loom-graph::linkable-index g))))
+    (multiple-value-bind (target candidates)
+        (loom-graph::resolve-one index "analyze-file")
+      (is (eq generic target))
+      (is (null candidates)))))
+
+(test a-document-may-name-an-entity-by-the-id-find-prints
+  (let* ((g (make-graph))
+         (wanted (r-function g "check-database" "server/server.lisp"))
+         (other  (r-function g "check-database" "game/test/api.lisp"))
+         (doc (r-decision g "DES-0001" :affects (list (id wanted)))))
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (equal (list (id wanted))
+               (mapcar #'to-id (relationships-from g (id doc) :rel-type :decides)))
+        "the id resolves to exactly the entity it names")
+    (is (null (relationships-to g (id other) :rel-type :decides))
+        "and to no other candidate of the same name")
+    (is (null (getp doc :unresolved-references)))
+    (is (null (getp doc :ambiguous-references))
+        "an id is never ambiguous")))
+
+(test an-id-that-names-nothing-rots-like-a-name-that-names-nothing
+  ;; REQ-0030 R4. The escape hatch may not become a way to assert an edge to
+  ;; something that is not there.
+  (let* ((g (make-graph))
+         (doc (r-decision g "DES-0001"
+                          :affects '("function:src/nowhere.lisp:gone"))))
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (null (relationships-from g (id doc) :rel-type :decides)))
+    (is (equal '("function:src/nowhere.lisp:gone")
+               (getp doc :unresolved-references)))
+    (is (null (getp doc :ambiguous-references)))))
+
+(test an-ambiguous-reference-is-recorded-with-its-candidates-and-not-as-rot
+  (let* ((g (make-graph))
+         (one (r-function g "check-database" "server/server.lisp"))
+         (two (r-function g "check-database" "game/test/api.lisp"))
+         (doc (r-decision g "DES-0001" :affects '("check-database" "missing-name"))))
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (null (relationships-from g (id doc) :rel-type :decides))
+        "still no edge: picking one would be the fabrication CON-0001 forbids")
+    (is (equal '("missing-name") (getp doc :unresolved-references))
+        "the name that matched nothing is the only rot, where both used to be")
+    (let ((entries (getp doc :ambiguous-references)))
+      (is (= 1 (length entries)))
+      (is (equal "check-database" (getf (first entries) :name)))
+      (is (equal (sort (list (id one) (id two)) #'string<)
+                 (sort (copy-list (getf (first entries) :candidates)) #'string<))
+          "the ids are what an author pastes back into the field"))
+    (let ((reported (ambiguous-references g)))
+      (is (= 1 (length reported)))
+      (is (equal "check-database" (getf (first reported) :name)))
+      (is (equal "DES-0001" (getf (first reported) :document))))))
+
+(test the-two-reference-properties-are-rewritten-from-scratch-each-pass
+  ;; DEC-0003. A pass that consumed its own input could not be re-run, and an
+  ;; entry destroyed by a retract would never return.
+  (let* ((g (make-graph))
+         (doc (r-decision g "DES-0001" :affects '("check-database"))))
+    (r-function g "check-database" "server/server.lisp")
+    (r-function g "check-database" "game/test/api.lisp")
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (= 1 (length (getp doc :ambiguous-references))))
+    (apply-transaction g (resolve-document-links g :workspace-id "w"))
+    (is (= 1 (length (getp doc :ambiguous-references)))
+        "asked twice, answered once")))

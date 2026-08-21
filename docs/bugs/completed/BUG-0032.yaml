@@ -1,0 +1,203 @@
+id: BUG-0032
+title: describe inherits find's preference for an exactly-named file, and on a tree that names files after their exports that is 62% of the time
+status: closed
+date: 2026-08-16
+affects: [resolve-entity, search-entities, search-rank, significant-name, describe-entity]
+tags: [knowledge, describe, find, ranking, front-end, req-0031, req-0016]
+severity: high
+summary: |
+  `describe LayerEditor` on ~/github/front-end answers about
+  src/ui/edit/terrain/Editor/LayerEditor.jsx, the file. The 251-line component
+  of the same name, three lines further in, is not what comes back.
+
+  Sampling 60 of front-end's 430 source basenames: 37 resolve to the file ahead
+  of a same-named definition. On a tree whose convention is one export per file
+  named after it -- which is every React codebase -- this is the normal case
+  and not an edge.
+
+  The ranking is not accidental and that is what makes this worth a document.
+  SEARCH-RANK sorts by match quality, a :FILE's SIGNIFICANT-NAME is its
+  basename without extension, so "LayerEditor" is a rank-0 exact match against
+  the file and a rank-0 exact match against the component, and the tie falls to
+  whatever order the index yielded. SEED-ENTITIES' own comment records the
+  choice deliberately: "loom_find answers 'where is this thing', where an
+  exactly-named file is the right answer."
+
+  That argument is sound for `find` and does not transfer to `describe`, which
+  reuses the same resolution and asks a different question.
+body: |
+  FIXED 2026-08-18
+
+  What this document guessed at was right. RESOLVE-ENTITY now calls
+  BEST-NAME-MATCH instead of SEARCH-ENTITIES with a limit of one, and
+  BEST-NAME-MATCH sorts on RESOLUTION-RANK: the match rank multiplied out, plus
+  SEED-TYPE-RANK. So the type tier orders only what is left tied inside a match
+  band and can never cross one -- an exactly-named file still beats a
+  prefix-matched definition, or the fix would have traded `describe LayerEditor`
+  answering about the file for it answering about LayerEditorState.
+
+  *SEED-TYPE-PREFERENCE* and SEED-TYPE-RANK moved from context.lisp up into
+  services.lisp, unchanged. That is this document's own suggestion -- "a matter
+  of letting a second caller reach them rather than of inventing a rule" -- and
+  the move is the whole of it: `context` seeds with the tiers and `describe`
+  breaks a tie with them, and both are asking when two entities match a name
+  equally well which one the caller meant.
+
+  `find` is untouched. It calls SEARCH-ENTITIES directly and still lists the
+  file first, which REQ-0016 R1 argued for and this document asked to keep.
+
+  ONE MORE THING THE CONSOLE WAS DOING
+
+  Found on the way. CONSOLE:RESOLVE-ENTITY computed EXACT-NAME-MATCHES, took
+  the same branch for nought matches and for one, and then discarded the list to
+  re-search -- so a single exact match could lose to a higher-ranked inexact
+  one. An exact match is the strongest evidence that function has and now
+  decides. It changes no answer on any watched tree; it removes a way for one to
+  be wrong.
+
+  MEASURED, ALL THREE TREES, 2026-08-18
+
+  Every file basename that also names a definition, and whether the definition
+  is still shadowed by its own file:
+
+                     basenames colliding   still shadowed   names that moved
+      front-end              218                 0            214 of 3530
+      Loom                    12                 0             11 of 2789
+      game-server             25                 0             21 of 3190
+
+  front-end's 218 is the population this document sampled 60 of. None is
+  shadowed now.
+
+  THE ACCEPTANCE CLAUSE WAS WRONG ABOUT THE OTHER TWO TREES
+
+  It asked that "on Loom and game-server every existing `describe` answer is
+  unchanged, which is checkable because neither tree has the collision in
+  quantity". Eleven answers moved on Loom and twenty-one on game-server, and
+  every one is a file giving way to a definition:
+
+      describe protected-table   file  ->  class  protected-table
+      describe lisp-analyzer     file  ->  class  lisp-analyzer
+      describe analyzer          file  ->  class  analyzer
+      describe response          file  ->  class  server/response.lisp:response
+      describe mpackage          .asd  ->  class  mpackage/mpackage.lisp:mpackage
+
+  So the premise was the mistake rather than the fix. Both Lisp trees do have
+  the collision -- twelve times and twenty-five -- and were answering about the
+  container in almost all of them. `describe analyzer` returned analyzer.lisp
+  rather than the protocol class the file is named after, which is the same
+  defect front-end has structurally, at a rate low enough that nobody noticed.
+  Checking the claim rather than the count is what found it.
+
+  ACCEPTANCE MET
+
+  `describe LayerEditor` on front-end answers about the :VARIABLE at
+  src/ui/edit/terrain/Editor/LayerEditor.jsx:176-426, and `--source` returns
+  its 251 lines with status `current` rather than `unlocated`. MapEditor,
+  ColorEditor and DesignTerrain do the same. `find LayerEditor` still lists the
+  file first, with the component second and LayerEditorState third. No
+  definition on any of the three trees is shadowed by its own file.
+
+  THE QUESTION LEFT OPEN, ANSWERED
+
+  "Whether `describe` on a file should say that a same-named definition
+  exists." It should not, and the reason is that the question was about the old
+  behaviour. CON-0006's expensive failure was answering about the file while a
+  better answer sat unmentioned; now the better answer is the one returned. The
+  inverse is not symmetrical: a caller who wants the file can name it by path or
+  by id, `find` lists both, and the file's neighbours are the directory listing
+  REQ-0016 R1 already calls the wrong answer. Adding a field to every
+  `describe` result to mention a container would spend a key on the case that is
+  now correct.
+
+  WHAT THE TESTS COVER
+
+  Five in the knowledge suite: the definition wins over the file named after
+  it, `find` still lists the file first and filters nothing, the tier breaks a
+  tie and never crosses a match band, a file still wins where no definition
+  shares its name, and an unmatched name returns nothing rather than guessing.
+  Verified against CON-0003 by dropping the tier from RESOLUTION-RANK, which
+  fails two assertions and leaves every guard passing.
+
+  PRIORITY: P3, 2026-08-18
+
+  Still exact on the running service: `describe LayerEditor --source' answers
+  about LayerEditor.jsx and returns status "unlocated", while the 251-line
+  component three lines away serves its source in full when addressed by id.
+  37 of 60 sampled front-end basenames resolve to the file first. This is the
+  only thing keeping REQ-0031 at `partial'.
+
+  WHY find AND describe WANT DIFFERENT ANSWERS
+
+  `find` is a locator. A caller who types `find LayerEditor` and gets the file
+  has been told where to look, which is what they asked, and the definition is
+  one line below it in the same listing. Nothing is lost, and REQ-0016 R1's
+  argument for demoting containers was explicitly scoped away from `find` --
+  the comment above SEED-ENTITIES contrasts the two by name.
+
+  `describe` is not a locator. It answers "what is this thing, what does it
+  touch, and -- since REQ-0031 -- what does it say". Every one of those is a
+  question about a definition, and a file answers all three badly:
+
+    its neighbours are a directory listing, which is REQ-0016 R1's phrase for
+    exactly this failure;
+
+    it has no :START-LINE, so DEFINITION-SOURCE returns :UNLOCATED and
+    `describe LayerEditor --source` prints "this entity records no line range"
+    for a 251-line component that is sitting right there.
+
+  So REQ-0031 sharpened a defect that was survivable while `describe` returned
+  only neighbours. A caller who wanted the body now gets a refusal, and the
+  refusal is accurate about the entity it was given and wrong about the
+  question that was asked.
+
+  WHY IT DID NOT SHOW UP BEFORE
+
+  Neither Lisp tree reproduces it. Loom names files after subjects rather than
+  after definitions -- context.lisp holds SEED-SCORE, ADMIT-SEEDS and thirty
+  others -- and game-server does the same. A file basename therefore rarely
+  collides with a definition name in either, and where it does the definition
+  usually wins on some other tie.
+
+  front-end is the first watched tree whose convention is one exported
+  component per file named after it, and there the collision is structural
+  rather than occasional: 430 source basenames, and a definition of the same
+  name in most of them. This is REQ-0016's thesis for a fourth time -- a
+  mechanism correct on the trees it was developed against -- and the fourth
+  time it arrived through the resolver rather than the seeder, the expansion or
+  the ontology.
+
+  WHAT THE FIX IS NOT
+
+  It is not to demote files in SEARCH-RANK. That would change `find`, whose
+  behaviour here is argued and wanted, and the argument is recorded in a place
+  the next reader will find.
+
+  It is not to make DEFINITION-SOURCE serve a file. A file has a range only in
+  the sense that all of it is the range, R6 caps at 400 lines, and REQ-0031's
+  own WHAT THIS IS NOT says a whole-file read "is a different operation with a
+  different budget".
+
+  WHAT IT PROBABLY IS
+
+  RESOLVE-ENTITY takes a preference, and `describe` passes one that puts
+  definitions above containers while `find` keeps today's ordering. The tiers
+  already exist as *SEED-TYPE-PREFERENCE* and SEED-TYPE-RANK in
+  loom-knowledge, argued in REQ-0016 R1 and flattened to three bands there, so
+  this is a matter of letting a second caller reach them rather than of
+  inventing a rule.
+
+  Worth deciding at the same time: whether `describe` on a file should say that
+  a same-named definition exists. Answering about the file and silently not
+  mentioning the component is the shape of failure CON-0006 calls expensive --
+  the caller cannot tell that a better answer was available.
+
+  ACCEPTANCE
+
+  `describe LayerEditor` on front-end answers about the :VARIABLE, and
+  `describe LayerEditor --source` returns its 251 lines.
+
+  `find LayerEditor` still lists the file, and still lists it first.
+
+  Re-sampling the 60 basenames above, no definition is shadowed by its own
+  file. On Loom and game-server every existing `describe` answer is unchanged,
+  which is checkable because neither tree has the collision in quantity.

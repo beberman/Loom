@@ -79,8 +79,100 @@ costs the agent a read")
   (let ((f (make-k-fixture)))
     (is (= 1 (length (search-entities (k-graph f) :name "overlay" :limit 1))))))
 
+(test search-says-how-many-matched-before-the-limit-cut-the-list
+  ;; BUG-0002. Twenty rows and no total read as the whole truth: `find "" test\'
+  ;; answered 20 where Loom holds 798 tests. The count is what tells a caller
+  ;; which of the two questions they asked -- where is X, or what is there.
+  (let ((f (make-k-fixture)))
+    (multiple-value-bind (hits total)
+        (search-entities (k-graph f) :name "overlay" :type :function :limit 1)
+      (is (= 1 (length hits)) "the limit is still honoured")
+      (is (= 2 total) "and the caller is told what it did not see"))
+    (multiple-value-bind (hits total)
+        (search-entities (k-graph f) :name "overlay" :type :function)
+      (is (= 2 (length hits)))
+      (is (= 2 total) "an uncut answer reports its own length, not a flag"))
+    (multiple-value-bind (hits total)
+        (search-entities (k-graph f) :name "leaflet")
+      (is (null hits))
+      (is (= 0 total)))))
+
 (test search-with-no-match-returns-nothing-rather-than-guessing
   (is (null (search-entities (k-graph (make-k-fixture)) :name "leaflet"))))
+
+
+;;; ------------------------------------------------------------------
+;;; Picking one entity for a name (BUG-0032)
+;;; ------------------------------------------------------------------
+;;;
+;;; A file named after what it exports is the whole convention of a React
+;;; codebase, and SIGNIFICANT-NAME reduces LayerEditor.jsx to "LayerEditor" --
+;;; so the file and the 251-line component are both exact matches and the tie
+;;; fell to index order. `find' listing the file first is argued and wanted;
+;;; `describe' picking it answers about a directory listing and, since
+;;; REQ-0031, refuses to serve source for a definition three lines away.
+
+(defun bnm-fixture ()
+  "A graph where a file and a definition share one name, and a second
+definition prefix-matches it."
+  (let* ((g (make-graph))
+         (file (make-instance 'file-entity :name "src/ui/LayerEditor.jsx"
+                              :origin-file "src/ui/LayerEditor.jsx"
+                              :properties (properties-table
+                                           '(:path "src/ui/LayerEditor.jsx"
+                                             :language :javascript))))
+         (component (make-instance 'variable-entity :name "LayerEditor"
+                                   :origin-file "src/ui/LayerEditor.jsx"
+                                   :properties (properties-table
+                                                '(:file "src/ui/LayerEditor.jsx"
+                                                  :start-line 176 :end-line 426
+                                                  :language :javascript))))
+         (longer (make-instance 'function-entity :name "LayerEditorState"
+                                :origin-file "src/ui/hooks.js"
+                                :properties (properties-table
+                                             '(:file "src/ui/hooks.js"
+                                               :start-line 32 :end-line 393
+                                               :language :javascript)))))
+    (dolist (e (list file component longer)) (add-entity g e))
+    (values g file component longer)))
+
+(test best-name-match-prefers-the-definition-to-the-file-named-after-it
+  (multiple-value-bind (g file component) (bnm-fixture)
+    (declare (ignore file))
+    (is (equal (id component) (getf (best-name-match g "LayerEditor") :id))
+        "the 251-line component, not the file whose basename spells it")))
+
+(test find-still-lists-the-file-first
+  ;; The half that must not move. REQ-0016 R1's argument for demoting
+  ;; containers was explicitly scoped away from `find', which answers "where is
+  ;; this thing" -- and there an exactly-named file is the right answer, with
+  ;; the definition on the next line of the same listing.
+  (multiple-value-bind (g file) (bnm-fixture)
+    (let ((hits (search-entities g :name "LayerEditor")))
+      (is (equal (id file) (getf (first hits) :id)))
+      (is (= 3 (length hits)) "and nothing is filtered out of the listing"))))
+
+(test the-type-tier-breaks-a-tie-and-never-crosses-a-match-band
+  ;; RESOLUTION-RANK multiplies the match rank out so the two cannot interleave.
+  ;; A file that matches a name exactly must still beat a definition that only
+  ;; prefix-matches it, or the fix would trade one wrong answer for another:
+  ;; `describe LayerEditor' would answer about LayerEditorState.
+  (multiple-value-bind (g file component longer) (bnm-fixture)
+    (declare (ignore file))
+    (is (< (loom-knowledge::resolution-rank component "LayerEditor")
+           (loom-knowledge::resolution-rank longer "LayerEditor"))
+        "exact beats prefix, which is MATCH-RANK's band and not the tier's")
+    (is (equal (id component) (getf (best-name-match g "LayerEditor") :id)))))
+
+(test a-file-still-wins-when-no-definition-shares-its-name
+  ;; Nothing here filters. A file is the right answer whenever it is the only
+  ;; one, which on both Lisp trees is nearly every file.
+  (let ((f (make-k-fixture)))
+    (is (equal (id (k-file f)) (getf (best-name-match (k-graph f) "overlay") :id))
+        "no definition is named `overlay\', so the file is the answer")))
+
+(test best-name-match-returns-nothing-rather-than-guessing
+  (is (null (best-name-match (k-graph (make-k-fixture)) "leaflet"))))
 
 (test a-call-site-ranks-below-a-real-definition-it-would-otherwise-outrank
   ;; PLAN-0014 step 10's fallback. "overlay" is a prefix of the call site's

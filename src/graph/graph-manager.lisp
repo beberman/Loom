@@ -20,7 +20,8 @@ or VALIDATE-RELATIONSHIP-ENDPOINTS returned.")
 
 (defstruct (graph (:constructor %make-graph (lock entities relationships
                                              from-index to-index entity-keys
-                                             rel-keys origin-index)))
+                                             rel-keys origin-index
+                                             dropped-index)))
   "The whole in-memory graph: entities and relationships by id, plus indices
 from an entity id to the relationship ids touching it, so traversal doesn't
 require a scan.
@@ -34,8 +35,15 @@ index by origin file \"is what makes file-scoped retraction O(facts in the
 file) rather than a scan\", and file-scoped retraction is what makes
 reanalyzing a changed file a well-defined operation.
 
-All seven tables are PROTECTED-TABLEs sharing the one lock in LOCK (DES-0003
-R3, R11). One lock and not seven: ADD-RELATIONSHIP alone needs four of these
+DROPPED-INDEX is the fourth and the only one that holds what the graph does
+*not* contain: origin file -> the endpoint-validation problems of the edges
+APPLY-TRANSACTION declined to record from it (BUG-0030 F1). Keyed by origin
+file for the same reason ORIGIN-INDEX is -- RETRACT-FILE clears the entry
+along with the file's facts, so a reanalysis rebuilds the gap report from
+scratch and a drop that stops happening stops being reported.
+
+All eight tables are PROTECTED-TABLEs sharing the one lock in LOCK (DES-0003
+R3, R11). One lock and not eight: ADD-RELATIONSHIP alone needs four of these
 tables held together, and four separate locks acquired in whatever order each
 caller happened to write would deadlock the first time two callers disagreed.
 With one lock there is no order to get wrong.
@@ -43,8 +51,8 @@ With one lock there is no order to get wrong.
 The initforms below are never evaluated -- the BOA constructor supplies every
 slot, and MAKE-GRAPH is its only caller. They are NIL rather than a plausible
 table because a plausible one would suggest a graph could be built without
-going through MAKE-GRAPH, which is the one thing that would leave the seven
-tables holding seven different locks."
+going through MAKE-GRAPH, which is the one thing that would leave the eight
+tables holding eight different locks."
   (lock          nil)
   (entities      nil :type protected-table)
   (relationships nil :type protected-table)
@@ -52,10 +60,11 @@ tables holding seven different locks."
   (to-index      nil :type protected-table)
   (entity-keys   nil :type protected-table)
   (rel-keys      nil :type protected-table)
-  (origin-index  nil :type protected-table))
+  (origin-index  nil :type protected-table)
+  (dropped-index nil :type protected-table))
 
 (defun make-graph ()
-  "A graph whose seven tables are guarded by one reentrant lock.
+  "A graph whose eight tables are guarded by one reentrant lock.
 
 A function rather than DEFSTRUCT's own constructor, and the reason is
 mechanical: a slot initform cannot see another slot's value, so there is no
@@ -65,7 +74,8 @@ arguments -- so this is a change to how a graph is built and not to who may
 build one."
   (let ((lock (bt:make-recursive-lock "loom-graph")))
     (flet ((table () (make-protected-table :test #'equal :lock lock)))
-      (%make-graph lock (table) (table) (table) (table) (table) (table) (table)))))
+      (%make-graph lock (table) (table) (table) (table) (table) (table) (table)
+                   (table)))))
 
 (defmacro with-graph-lock ((graph) &body body)
   "Run BODY holding GRAPH's lock, so a multi-step mutation appears atomic.
@@ -110,6 +120,40 @@ Backs RETRACT-FILE-OP, and answers \"what does Loom think this file says\"."
 (defun origin-files (graph)
   "Every file the index currently holds facts from."
   (pt-keys (graph-origin-index graph)))
+
+;;;; ------------------------------------------------------------------
+;;;; Dropped edges (BUG-0030 F1)
+;;;; ------------------------------------------------------------------
+;;;;
+;;;; An edge whose endpoints the ontology does not permit is a claim Loom
+;;;; declines to record. Before BUG-0030 it rejected the transaction it
+;;;; arrived in, which on a whole-repository pass meant one edge cost every
+;;;; entity, relationship and document in the tree -- CON-0001's recorded gap
+;;;; traded away for CON-0006's missing answer at the largest scale this
+;;;; system can produce it. The claim is now dropped and the drop is kept
+;;;; here, so `status' counts it and `check' names the rel-type and the two
+;;;; entity types it would take to permit it.
+
+(defun record-dropped-edge (graph origin-file problem)
+  "Record that an edge read from ORIGIN-FILE was not stored, and why.
+PROBLEM is the plist PLAN-OP built, carrying the op it came from."
+  (pt-push (graph-dropped-index graph) (or origin-file "") problem))
+
+(defun forget-dropped-edges (graph origin-file)
+  "Discard the drops recorded against ORIGIN-FILE.
+Called by RETRACT-FILE-OP: the file is about to be re-read, so what its last
+pass could not record is about to be decided again."
+  (pt-rem (graph-dropped-index graph) (or origin-file "")))
+
+(defun dropped-edges (graph)
+  "Every recorded drop, newest file first, each plist carrying :ORIGIN-FILE."
+  (loop for file in (pt-keys (graph-dropped-index graph))
+        append (loop for problem in (pt-get (graph-dropped-index graph) file)
+                     collect (list* :origin-file file problem))))
+
+(defun dropped-edge-count (graph)
+  (loop for file in (pt-keys (graph-dropped-index graph))
+        sum (length (pt-get (graph-dropped-index graph) file))))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Entities

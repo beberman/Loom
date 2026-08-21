@@ -1,9 +1,10 @@
 id: BUG-0030
 title: One illegal edge endpoint rejects a whole repository's transaction, and the third missing type took the whole of front-end
-status: open
+status: closed
 date: 2026-08-16
 affects: [apply-transaction, resolve-document-links, analyze-file]
 tags: [graph, ontology, markdown, transaction, front-end, con-0001, con-0006]
+severity: critical
 summary: |
   Watching ~/github/front-end -- 36 markdown files, 456 JavaScript and
   TypeScript files -- indexes nothing at all:
@@ -120,6 +121,33 @@ body: |
   because F1 changes what that path reports and a wrong report is what made
   this take a detour to read.
 
+  PRIORITY: CRITICAL
+
+  Raised 2026-08-17 on the strength of the reproduction below, which is a second
+  trigger and a worse failure than the one this document opened on.
+
+  Three properties together, none of which is true of the other open bugs.
+
+  The blast radius is a whole repository. One edge Loom is unsure it may draw
+  costs every entity, relationship and document in the tree. F2 removed one
+  cause; the mechanism is untouched and there are at least sixteen relationship
+  types whose :TO lists could omit an endpoint the analyzers produce.
+
+  It is silent in the direction that matters. A tree that fails to index is
+  indistinguishable, to an agent, from a tree with nothing in it -- CON-0006's
+  expensive error at the largest scale this system can produce it.
+
+  And the failure now outlives the request. The 2026-08-17 reproduction left the
+  service answering every subsequent call with the same TYPE-ERROR until the
+  process was restarted, so one bad reindex takes the service down for every
+  repository it holds, not only the one being indexed.
+
+  F1 is the fix and it is ahead of BUG-0031, BUG-0032 and BUG-0033 in this
+  tree's queue. F2's precedent argues for it rather than against: three
+  relationship types have been added reactively, each after a tree went dark,
+  and the fourth will be found the same way unless an illegal endpoint stops
+  being fatal.
+
   ACCEPTANCE
 
   ~/github/front-end watches, indexes and answers `find`, `describe` and
@@ -131,3 +159,69 @@ body: |
 
   A synthetic tree with a deliberately illegal edge indexes everything else and
   reports the drop, which is F1 and is what no existing test covers.
+
+  FIXED 2026-08-18, PLAN-0033
+
+  D2 was localised and it was not on the error path at all. NOTE-ERROR recorded
+  `(cons path (princ-to-string condition))`, REPOSITORY-STATUS puts the first
+  such entry on :LAST-ERROR, and JSON-VALUE reaches a dotted pair through its
+  LISTP clause: PLIST-SHAPED-P calls LENGTH and JSON-ARRAY calls MAP, and both
+  signal `The value <message> is not of type LIST` on an improper list. The
+  string inside the TYPE-ERROR was the cdr of the cons, which is why the real
+  diagnosis was readable inside it. It outlived the request because the entry
+  stays on REPOSITORY-ERRORS, so every later /v1/status re-encoded the same cons
+  and re-signalled. Nothing stringified a condition into a list-shaped slot;
+  the shape was wrong from the moment it was recorded.
+
+  NOTE-ERROR now records a plist, and JSON-VALUE refuses an improper list ahead
+  of every clause that walks one -- the encoder's own contract, which its
+  bottom clause states, is that a shape it was not supposed to receive is
+  rendered rather than signalled from inside an encoder.
+
+  F1 landed as designed. Every problem PLAN-OP produces for an
+  ASSERT-RELATIONSHIP-OP -- unknown FROM, unknown TO, a type pair the
+  declaration does not permit -- is marked droppable. An op whose problems are
+  all droppable is dropped from the apply pass, recorded against its origin
+  file, and reported; anything else rejects the transaction exactly as before.
+  The record is keyed by origin file so RETRACT-FILE clears it, which makes the
+  count a function of the tree rather than of history.
+
+  `status` prints a `dropped` line and `check` prints the ontology's own
+  sentence with the origin file:
+
+      dropped    : 1 edge the ontology does not permit
+      :TESTS cannot originate at :FUNCTION  [a.lisp]
+
+  ACCEPTANCE MET
+
+  ~/github/front-end watches and answers `find`, `describe` and `context`: 508
+  files, 4249 entities, 3217 relationships, 37 documents. game-server is
+  unchanged at 155 files, 3946 entities, 22032 relationships. All three trees
+  report zero drops. A synthetic tree carrying a deliberately illegal :TESTS
+  edge indexes its other three entities and three relationships and reports the
+  drop.
+
+  The D2 reproduction below was re-run against the running service. The same
+  rejection now arrives as text on `last-error` and /v1/status, /v1/check and
+  /v1/find all answer afterwards. What it was hiding is a federated :SERVES
+  retract targeting a relationship id through an entity-only RETRACT-OP, which
+  is BUG-0034 and is deliberately still fatal -- an op that cannot say what it
+  means to remove is not endpoint validation.
+
+  D2 REPRODUCED, 2026-08-17
+
+  A reindex of Loom with all three trees watched wedged the service:
+
+      TYPE-ERROR: The value "Transaction rejected, nothing applied:
+        op 0 #<RETRACT-OP serves:function:server/gameapi.lisp:loop-post:
+          function:src/data-api/test/handler.test.js ...
+
+  Every subsequent request to /v1/status returned the same TYPE-ERROR until the
+  process was restarted, so the service stayed up and answered nothing.
+
+  Two things this adds to D2 as first written. The trigger is a cross-repository
+  :SERVES retract, not the :MENTIONS endpoint F2 fixed -- so the error path is
+  reachable from federation as well as from document links, and F2 narrowed the
+  causes without touching this. And the failure is not confined to the request
+  that caused it: the condition leaves the service answering every later call
+  with the same type error, which is worse than the rejection it was hiding.

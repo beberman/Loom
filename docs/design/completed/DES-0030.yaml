@@ -1,0 +1,213 @@
+id: DES-0030
+title: "A context call writes one record, a feedback call completes it, and two fingerprints say what it was answered against"
+status: implemented
+date: 2026-08-18
+refines: [REQ-0036]
+affects: [build-context, seed-entities, record-context-call, record-context-use,
+          drain-context-log, git-fingerprint, repository-commit, check-capability]
+tags: [retrieval, context, ranking, evaluation, req-0016, con-0001, dec-0001]
+summary: |
+  Every `context` call already computes what a relevance judgement needs and
+  discards all of it. This keeps it: one JSON file per call under
+  <loom>/.loom/context/, holding the task, the tokens TASK-TOKENS derived, the
+  seeds in rank order with their scores, the items with their bands, the
+  latency, and two git fingerprints -- the searched repository's and Loom's.
+  A later call quoting the record's id writes the used set into the same file,
+  and the join of the two halves is the judgement.
+
+  Off unless an operator turns it on, which is what answers REQ-0036 R9. A
+  :READ operation may write to Loom's own state directory because the tier
+  governs what a caller may change in an indexed repository and the log is
+  outside every index by R7 -- but the caller cannot switch it on, so no
+  deployment acquires a write it did not ask for.
+body: |
+  D1  THE TIER, WHICH DECIDES EVERYTHING ELSE
+
+  REQ-0036 R9 asks that the permission tier be decided rather than fall out.
+  `:context' is `:read' and CHECK-CAPABILITY enforces the split, so a read
+  operation that writes a file changes that contract.
+
+  It is decided as: recording happens inside the operation, and a :READ
+  operation may write to Loom's own state directory. Two things make that
+  narrow enough to be honest.
+
+  The tier governs what a caller may change in a repository Loom indexes. The
+  log is in no index -- R7 puts it under a dot-directory and REPOSITORY-FILES
+  skips those before any analyzer is consulted -- and it is in Loom's own tree
+  rather than the searched one (R6), so no `check', `find' or `impact' answer
+  moves because a record was written.
+
+  And it is off by default. *CONTEXT-LOG-DIRECTORY* is NIL until an operator
+  sets it, no request can set it, and with it NIL the operation is byte for
+  byte what it is today. A deployment that never turns it on never acquires a
+  write, which is the property a tier system exists to give.
+
+  The feedback half is a :WRITE operation, because it writes and nothing about
+  it is a read. That is the tier it would have had if it had been designed on
+  its own, and it needs no argument.
+
+  D2  ONE FILE PER RECORD, UNDER A DOT-DIRECTORY, IN LOOM'S TREE
+
+  <loom-root>/.loom/context/<id>.json.
+
+  REQ-0036's first open question asks one-file-per-record against one appended
+  file per session, and says to decide it by how the set is read back. It is
+  read back three ways and each wants a file: an acceptance run scores records
+  one at a time, a human deletes a record whose task string should not have
+  been kept, and a reviewer reads the git history of a corpus that grew. An
+  append log makes the first awkward, the second an edit, and the third one
+  diff per session with several judgements in it.
+
+  Interleaving is the argument for appending and it is answered by the
+  filename: a record is written once by the thread that answered the call, and
+  the id in the name is unique, so two concurrent listeners never touch one
+  file.
+
+  Loom's root is derived from the ASDF source directory of loom-workspace,
+  which is where the running image was loaded from. Not the current directory,
+  which is whatever the operator started the service in, and not a watched
+  repository named "Loom", which a deployment serving other trees need not
+  have.
+
+  D3  WHAT THE FILE HOLDS
+
+  The record is JSON because tools/acceptance.py reads it (R10) and Python does
+  not read plists. CL-JSON escapes the strings, because a task string is
+  arbitrary text with quotes and newlines in it and an escaping bug there
+  produces a record that parses as something else -- a fabricated fact in the
+  one place the whole requirement exists to prevent one.
+
+  An alist is the object and a list is the array, and nothing else is either.
+  That is the whole of why the encoder has no guess in it. The first attempt
+  used plists and had to decide whether `((:name "x" :how "y"))\' was a list
+  holding one plist or an alist whose single entry was (:name . ("x" :how
+  "y")) -- nothing in the data says which, so a used set encoded as an object
+  and every reader of it broke. game-server\'s utils/serialize.lisp had solved
+  this already: JSON-ENCODE-HELPER has an ALISTP branch and no plist branch at
+  all, and the shapes stay distinct because an alist entry\'s cdr is its value.
+  SEED-ALIST, ITEM-ALIST and USED-ALIST build the record\'s alists by naming
+  their keys rather than converting a plist, since a converter would have to
+  make the same guess one layer up.
+
+    id, at, task, tokens, latency_seconds
+    repository   name, branch, commit, diff_hash, reason
+    loom         commit, diff_hash, reason
+    returned     seeds  [id, name, rank, score, terms]
+                 items  [id, name, band]
+                 budget, tokens, truncated
+    used         written by the feedback call, absent until then
+
+  The tokens and not only the task, which is R1's own emphasis: TASK-TOKENS is
+  where stopwords and stemming act, it is where the only measured ranking win
+  came from, and a record holding the raw string cannot show that the tokeniser
+  dropped the discriminating word.
+
+  The seeds carry their scores, which the bundle does not. SEED-ENTITIES gains
+  a second value -- the chosen seeds with the score and the terms they answered
+  to -- and the primary value is unchanged, so nothing a reader receives moves.
+  BUILD-CONTEXT passes it through the same way.
+
+  D4  TWO FINGERPRINTS, EACH A COMMIT AND A DIFF HASH
+
+  R4 and R5. The searched repository's state and Loom's own move independently,
+  and one field cannot separate their effects: two records against one
+  game-server commit whose returned sets differ, differ because the ranking
+  changed, and acceptance.py's header already records the other direction
+  measured -- "R6-loom went 1/1 to 0/1 with no seeder change".
+
+  GIT-COMMIT and GIT-DIFF-HASH generalise what REPOSITORY-COMMIT already does
+  for one root: `timeout git -C <root> ...', NIL and a recorded reason when git
+  cannot answer, never a fabricated commit. The precedent is IGNORED-PATHS and
+  DES-0022 D5 states it.
+
+  The diff and not only the commit. A tree under active work is dirty for most
+  of the sessions that produce these records, and a fingerprint naming only the
+  last commit attributes a judgement to code that was not what answered it. The
+  hash is FNV-1a over `git diff HEAD', which is deterministic across images and
+  needs no library; it identifies a working state and is not a security claim.
+
+  D5  THE FEEDBACK CALL
+
+  `:context-used', :WRITE, taking the record id and a JSON array of entries.
+  Each entry names what was used and how it was found:
+
+    [{"name": "TypeSet.persist", "how": "returned"},
+     {"name": "WorkingSet", "how": "grep -r 'persist' src/core"}]
+
+  A JSON array inside a string argument because BUG-0031 types every MCP
+  argument as a string, and a shape a caller can build in one line beats three
+  parallel arguments it has to keep aligned.
+
+  What was used is deliberately not restricted to what was returned. R2 is
+  explicit that a feedback channel sampling only from the bundle can never
+  record a miss, and the miss is the population that would raise recall. The
+  `how' field is what separates "found by grepping the exact identifier" from
+  "found three files from something the bundle returned", which R3 says imply
+  different repairs.
+
+  One boolean and a free-text `how', not a graded scale. REQ-0036's fourth open
+  question notes an agent may not reliably know at reporting time whether it
+  read and acted or read and discarded, and a grade it cannot assign honestly
+  is worse than a field it can. The `how' string carries more than a grade
+  would and can be read later by a person.
+
+  The used set is a sibling file, <id>.used.json, rather than the record
+  rewritten in place. That reverses what this design first said, and the reason
+  narrowed once the alist shape landed: an object and an array now survive the
+  round trip, and a JSON boolean does not. CL-JSON decodes `false\' to the same
+  NIL it decodes `null\' to, so a record read and written again turns
+  `"truncated": false\' into `"truncated": null\'. st-json keeps the three
+  apart and is what game-server reaches for when it needs them to -- adopting
+  it here would make one file safe, and the second file is the cheaper answer
+  while nothing needs a record rewritten.
+
+  A record written once and never touched again cannot be corrupted by its own
+  serialiser at all, which is worth more than the ergonomics of one file. The
+  join R3 asks for is two files with one id.
+
+  D6  WHAT IS NOT DECIDED
+
+  Sessions are not bounded. REQ-0036's fifth open question wants queries
+  grouped by task for R11's held-out discipline, and nothing in the service
+  knows where one task ends. Each record stands alone and carries its task
+  string; grouping by that string is available to anything that later needs it,
+  and a real session boundary can be added when a split is actually made.
+
+  D7  PUBLICATION
+
+  `.loom/' is git-ignored in Loom's tree. REQ-0036's third open question asks
+  whether a task string should be committed, and the answer is: not by
+  accident. R6's reasoning is that a record must not land in the searched tree,
+  because that would end the corpus holding still -- which writing to Loom's
+  tree satisfies whether or not the file is tracked. Moving a record into a
+  committed acceptance set is then a deliberate act by somebody who read it.
+
+  An operator who enables logging is consenting to record their own task
+  strings. A deployment answering for a third party should leave it off, and
+  the default does.
+
+  D8  THE WRITE IS OFF THE CALLER\'S PATH
+
+  RECORD-CONTEXT-CALL returns the id at once and writes the file on another
+  thread. Measured: the two fingerprints are six `git\' invocations, and
+  spawning a process from an SBCL image of this size costs about 13ms each --
+  with the write on the caller\'s path the 32 acceptance clauses went from
+  0.02-0.07s to 0.12-0.15s, which is REQ-0036 R8\'s ceiling exceeded by the
+  instrument that exists to measure ranking against it.
+
+  Nothing in the record depends on the caller waiting. DRAIN-CONTEXT-LOG is how
+  a test, a harness or a console about to exit says it needs the file now, and
+  MAIN calls it once after the loop rather than after each command, which is
+  where waiting would cost the reader again.
+
+  ACCEPTANCE
+
+  REQ-0036's, with one narrowing stated rather than assumed: R10's generated
+  acceptance companion reads the record directory and reports the three
+  populations R3 names, and the four-way freshness check of R4 -- current,
+  checkable, unverifiable, unwatched -- is computed there rather than in Lisp,
+  because it is a question about a scoring run and acceptance.py is what scores.
+
+  Latency on the five game-server clauses stays inside 0.02-0.07s with logging
+  on, and Loom's own index is unchanged by the log's existence: the same entity
+  and relationship counts with a populated log directory as without one.

@@ -104,7 +104,11 @@ itself decides comes back as a result with isError."
                               :|capabilities| (list :|tools| (make-hash-table))
                               :|serverInfo| *server-info*)))
         ((string= method "tools/list")
-         (rpc-result id (list :|tools| (map 'vector #'tool-descriptor (all-tools)))))
+         ;; REQ-0032 R1, and GRANTS rather than a second resolution: this is
+         ;; the set the caller can actually call, decided from the grants
+         ;; HANDLE-JSONRPC already resolved for this request.
+         (rpc-result id (list :|tools|
+                              (map 'vector #'tool-descriptor (all-tools grants)))))
         ((string= method "tools/call")
          (multiple-value-bind (result code message) (call-tool parameters grants)
            (if code (rpc-error id code message) (rpc-result id result))))

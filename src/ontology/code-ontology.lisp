@@ -31,6 +31,64 @@ per-analyzer, and no arrangement of the analyzer layer would have avoided it.
 analyzer claims -- REQ-0024's WHAT THIS IS NOT is explicit that a parser
 accepting TS by accident would mint entities whose properties nothing models.")
 
+(defvar *case-insensitive-languages* '(:lisp)
+  "Languages in which two identifiers differing only in case are one
+identifier.
+
+Common Lisp is one because its reader upcases: `(defun Foo ...)' and `(foo)'
+name the same symbol, and a resolver that distinguished them would resolve
+nothing. Every other language here is case-sensitive, and a language absent
+from *SOURCE-LANGUAGES* entirely is treated as case-sensitive too -- the safe
+default, because exact matching can only fail to draw an edge, while folding
+can draw one that does not exist.
+
+Here rather than in an analyzer because it is a fact about the language and
+not about how Loom reads it, and because the code that needs it is
+RESOLVE-CALLS, which may not depend on the analyzer layer (RULE-0001 to
+RULE-0003). *SOURCE-LANGUAGES* above is already the precedent for a language
+fact living below both.
+
+BUG-0029 is what this exists for. The definition index folds case globally,
+which was invisible while every indexed language was Lisp: on ~/github/front-end
+three components named `Error' collected 116 inbound edges each and were the
+top three hubs in `structure', ahead of the real one at 50. All 348 were
+`logger.error(...)' call sites matched to `Error' on a spelling JavaScript does
+not consider equal; the repository renders `<Error />' twice.")
+
+(defvar *module-scoped-languages* '(:javascript :typescript)
+  "Languages in which a top-level definition is private to its file unless the
+file exports it and the reader imports it.
+
+Common Lisp is the other kind and is why this list exists rather than a flag: a
+symbol is visible throughout its package however many files that package spans,
+so a file boundary tells resolution nothing there. In JavaScript it tells it
+almost everything -- a name defined in the calling module shadows every other
+definition of that name in the repository, and a name defined in a module this
+one does not import is not a candidate at all.
+
+BUG-0035. After BUG-0029 removed the case fabrications, ~/github/front-end
+still drew three edges from DesignHome.jsx to three different components named
+`Error', one of which DesignHome.jsx defines itself at line 163 and renders
+twice. 130 of the repository's 163 remaining fan-outs had a candidate either in
+the calling file or in a file it imports.")
+
+(defun module-scoped-language-p (language)
+  "True when LANGUAGE gives each file its own namespace. NIL -- no :LANGUAGE --
+is not one: the narrowing this gates is only ever a reduction of a candidate
+set, and reducing one for a language Loom cannot name would be guessing."
+  (and language (member language *module-scoped-languages*) t))
+
+(defun case-insensitive-language-p (language)
+  "True when LANGUAGE folds case in identifiers. NIL -- an entity with no
+:LANGUAGE property -- is treated as case-insensitive, which is the answer that
+leaves resolution as it was rather than the one that is safest, and is
+deliberate: every callable this tree indexes carries a language, so a NIL here
+means a caller that never had one to give (RESOLVE-GENERATED-DEFINITIONS asks
+whether a name reaches anything at all, with no caller) rather than a language
+Loom failed to record."
+  (or (null language)
+      (and (member language *case-insensitive-languages*) t)))
+
 ;;;; ==================================================================
 ;;;; Workspace and history
 ;;;; ==================================================================
@@ -889,6 +947,14 @@ unreported while `status' read zero.")
 index.  SS10.3: not dropped silently -- this is the documentation staleness
 detector, and a decision naming a function that no longer exists is
 detectably rotten.")
+               (:ambiguous-references list
+                :documentation "Declared references that named several
+entities, each as a plist of the name as written and the ids of its candidates.
+Separate from :UNRESOLVED-REFERENCES because the two answer different
+questions: a name that is not there is rot, and a name that is there twice is
+information (DES-0029 D3).  A document naming a class and the interface its own
+accessor generated has made no mistake, and reporting it as rotten is what
+teaches a reader to stop reading the list.")
                (:broken-links list
                 :documentation "Link targets that name no file on disk.
 
@@ -945,7 +1011,8 @@ this one answers.  A design refines the requirement that asked for it, a plan
 refines the design it sequences.  Resolved into :REFINES edges, which is what
 makes the workflow a walkable chain rather than a naming convention.")
                (:mentions list)
-               (:unresolved-references list)))
+               (:unresolved-references list)
+               (:ambiguous-references list)))
 
 (defentity :decision
   :documentation "A recorded decision: what was chosen, why, and what it
@@ -990,6 +1057,7 @@ refines the design it sequences.  Resolved into :REFINES edges, which is what
 makes the workflow a walkable chain rather than a naming convention.")
                (:mentions      list)
                (:unresolved-references list)
+               (:ambiguous-references list)
                (:lessons       list
                 :documentation "Learnings worth carrying forward -- the
 \"avoid nested providers\" line of a decision record.")
@@ -1052,6 +1120,7 @@ docstring.")
                 :documentation "Doc-ids of designs this one replaces.")
                (:mentions list)
                (:unresolved-references list)
+               (:ambiguous-references list)
                (:system keyword
                 :documentation "DES-0009 R3: the shared path default, since a
 document has no grouping construct of its own to read.")))
@@ -1112,6 +1181,7 @@ architecture document may answer a requirement that asked for one.")
 replaces, which is how a structural rewrite retires its predecessor.")
                (:mentions list)
                (:unresolved-references list)
+               (:ambiguous-references list)
                (:system keyword)))
 
 (defentity :rule
@@ -1148,6 +1218,7 @@ refines the design it sequences.  Resolved into :REFINES edges, which is what
 makes the workflow a walkable chain rather than a naming convention.")
                (:mentions   list)
                (:unresolved-references list)
+               (:ambiguous-references list)
                (:check     list
                 :documentation "The compiled check clause, or NIL when the
 rule is advisory prose.  A plist: :kind plus the keys that kind needs.")))

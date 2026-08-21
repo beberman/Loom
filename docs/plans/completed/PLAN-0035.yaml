@@ -1,0 +1,142 @@
+id: PLAN-0035
+title: "DES-0030 in seven steps: the fingerprints, the scores, the writer, the operation, the feedback, the harness, the measurement"
+status: final
+date: 2026-08-18
+refines: [DES-0030]
+affects: [build-context, seed-entities, record-context-call, record-context-use,
+          drain-context-log, git-fingerprint, repository-commit]
+tags: [retrieval, context, evaluation]
+summary: |
+  Seven steps. S1 and S2 add what the record needs and change nothing a reader
+  sees; S3 writes the file; S4 and S5 are the two operations; S6 is the harness
+  that reads the set back; S7 measures the two properties REQ-0036 R8 protects.
+body: |
+  S1  GIT-COMMIT AND GIT-DIFF-HASH
+
+  Generalise REPOSITORY-COMMIT to take a root rather than a repository, and add
+  the diff hash beside it: `git -C <root> diff HEAD' through FNV-1a. Both
+  bounded by `timeout' and both answering NIL with a recorded reason, which is
+  what REPOSITORY-COMMIT already does and what IGNORED-PATHS set the precedent
+  for. REPOSITORY-COMMIT becomes a one-line call so the two cannot drift.
+
+  Test: a root that is not a repository answers NIL and a reason rather than
+  signalling; the same root hashed twice gives one answer; a modified file
+  changes it.
+
+  S2  SEED SCORES SURVIVE THE RANKING
+
+  SEED-ENTITIES returns a second value: the chosen seeds with their rank, score
+  and the terms they answered to. BUILD-CONTEXT passes it through as a second
+  value of its own. The primary values are untouched, which is the test.
+
+  Risk: the score is recomputed for the chosen seeds rather than threaded
+  through ADMIT-SEEDS, which discards it. Eight recomputations of SEED-SCORE
+  against a bundle that already walked the graph is not a cost S7 can measure,
+  and threading it would change the shape ADMIT-SEEDS reads.
+
+  S3  THE RECORD AND ITS DIRECTORY
+
+  *CONTEXT-LOG-DIRECTORY*, NIL by default. LOOM-ROOT from the ASDF source
+  directory of loom-workspace. RECORD-CONTEXT-CALL writes one JSON file and
+  returns its id; with the directory NIL it returns NIL and writes nothing.
+
+  Test: with a directory bound to a scratch path, one call writes one file
+  whose JSON round-trips and holds every field DES-0030 D3 names; with it NIL,
+  nothing is written and no directory is created.
+
+  S4  THE CONTEXT OPERATION RECORDS
+
+  The :CONTEXT entry times the build, records it, and puts the id in the
+  bundle under :RECORD. The console command records too, so R1's "every context
+  call" is every call rather than every call over the service.
+
+  Risk: a bundle gaining a key. RENDER-CONTEXT ignores unknown keys and the
+  JSON encoders carry what they are given, so the id travels to an MCP caller
+  without a schema change.
+
+  S5  THE FEEDBACK OPERATION
+
+  :CONTEXT-USED, :WRITE, taking a record id and a JSON array. It reads the
+  record, merges the used set, and rewrites the file. An id naming no record is
+  a refusal with a reason, not a new file: a record that appeared because
+  somebody quoted a wrong id is a fabricated judgement.
+
+  Test: a record written by S4 and completed by S5 holds both halves; an
+  unknown id refuses; an entry naming an entity the bundle did not return is
+  kept, which is R2's whole point.
+
+  S6  THE HARNESS READS THE SET BACK
+
+  tools/acceptance.py gains a mode that reads the record directory and reports
+  the three populations R3 names -- in both, used-not-returned,
+  returned-not-used -- and the four-way freshness check of R4 against the
+  repositories the service currently watches. The 32 hand-written cases score
+  exactly as they do now, which is the regression test for the mode existing.
+
+  S7  MEASURE
+
+  Latency on the five game-server clauses with logging on, against the
+  0.02-0.07s baseline two rewrites were reverted for exceeding. And Loom's
+  entity and relationship counts with a populated .loom/context/ against the
+  counts without one, which is R7: a log that entered the index would be a
+  corpus judging itself.
+
+  MEASURED, 2026-08-18
+
+  R8, the five game-server clauses, against the 0.02-0.07s baseline:
+
+      logging off     0.02  0.03  0.03  0.03  0.04
+      logging on      0.05  0.06  0.06  0.06  0.07
+
+  Inside the ceiling, and about twice the cost of not logging. What remains is
+  the writer thread's six `git' invocations competing for CPU with the next
+  query; with the write on the caller's path it was 0.12-0.15s, which is the
+  measurement that moved it off (DES-0030 D8).
+
+  tools/acceptance.py scores 31 of 32 with logging on and 31 of 32 with it off,
+  which is what it scored before this work.
+
+  R7, Loom indexing itself with 90 records in .loom/context/ and with none:
+
+      entities 2984, relationships 15506      both ways
+
+  The log does not enter the index it judges.
+
+  R4's four outcomes, exercised against a real record: a fresh record on an
+  unchanged tree reports current and scores; the same record with its commit
+  edited and a used entry naming a function nobody wrote reports unverifiable
+  and is not scored; with the repository renamed it reports unwatched. The
+  checkable case is every record older than the tree it was answered against,
+  which on a tree under active work is most of them.
+
+  TWO THINGS FOUND IN THE BUILDING
+
+  A record id repeated across processes. SBCL starts every image with the same
+  *RANDOM-STATE*, so RANDOM-UUID minted the same first UUID in a console
+  process and a service process -- two records, one filename, and the second
+  would have overwritten the first. A judgement lost to a filename collision is
+  the one failure this log cannot detect afterwards. The state is now seeded
+  from the clock and the id carries its timestamp; measured by running the
+  console twice and comparing.
+
+  A plist cannot say whether it is an object or an array. `((:name "x" :how
+  "y"))' is a list holding one plist and it is also an alist whose single entry
+  is (:name . ("x" :how "y")), and the encoder guessed. The fix was in
+  game-server the whole time: utils/serialize.lisp encodes an alist as an object
+  and has no plist branch, so the two shapes are structurally distinct and
+  nothing has to decide. The record is built as alists by SEED-ALIST,
+  ITEM-ALIST and USED-ALIST, and the emitted JSON is byte-identical to what the
+  guessing version produced when it guessed right.
+
+  A third, found by the end-to-end run rather than by a test: a caller quoting
+  the id it was just handed arrived before the file did, because the write is
+  off the caller's path. RECORD-CONTEXT-USE waits for outstanding writes before
+  deciding a record does not exist -- refusing a judgement over that race would
+  lose the half of the log no offline scorer can supply, and the feedback call
+  is not what R8's ceiling is about.
+
+  A record is still not rewritten, for what is left of that reason: CL-JSON
+  decodes `false' to the same NIL it decodes `null' to, so a record read and
+  written again would turn `"truncated": false' into `"truncated": null'.
+  st-json keeps the three apart -- game-server keeps it for exactly that -- and
+  the sibling file is the cheaper answer while nothing needs a rewrite.

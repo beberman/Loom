@@ -4,6 +4,7 @@ status: open
 date: 2026-08-16
 affects: [define-operation, validate-arguments, request-integer, request-boolean]
 tags: [mcp, serve, registry, schema, req-0031, des-0006]
+severity: low
 summary: |
   tools/list advertises loom_describe as
 
@@ -25,6 +26,12 @@ summary: |
   arguments before sending is told to send "true" for a boolean, and a client
   that reads the schema to build a form gets a text box for a checkbox.
 body: |
+  PRIORITY: P5, 2026-08-18
+
+  Nothing is broken: REQUEST-INTEGER and REQUEST-BOOLEAN accept both encodings,
+  so every client is answered. What is false is the schema, which is a claim
+  about the interface rather than a defect in it.
+
   HOW IT ARRIVES
 
   DEFINE-OPERATION's argument list is names, with a parenthesised name meaning

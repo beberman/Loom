@@ -1,0 +1,134 @@
+id: PLAN-0034
+title: "DES-0029 in six steps: the second value, the id key, the property, the report, the operation, the measurement"
+status: final
+date: 2026-08-18
+refines: [DES-0029]
+affects: [resolve-one, linkable-index, resolve-document-links, unresolved-references,
+          ambiguous-references, check-document-references]
+tags: [documents, resolution, ambiguity, workflow]
+summary: |
+  Six steps, ordered so that each is testable on its own and none leaves the
+  tree unable to index. S1 and S2 are the resolver; S3 carries the answer onto
+  the document; S4 prints it; S5 is REQ-0034's operation, which reuses all four;
+  S6 measures the population S4 makes visible and answers DES-0029 D7.
+body: |
+  S1  RESOLVE-ONE RETURNS THE CANDIDATES IT DECLINED ON
+
+  Second value: the candidate list when the name matched several, NIL when it
+  matched none or resolved. No caller changes. Test that a name matching two
+  functions answers NIL and both, that a name matching nothing answers NIL and
+  NIL, and that the interface-plus-methods clause still answers the interface
+  with no second value.
+
+  Risk: none. A second value is invisible to every existing caller.
+
+  S2  LINKABLE-INDEX KEYS ENTITY IDS
+
+  Key each entity under its id as well as its name and doc-id. Test that the
+  id `find` prints resolves to exactly that entity, that a stale id resolves to
+  nothing, and that the name it shares a spelling with still resolves as before.
+
+  Risk: an id keyed into the same table could make a bare name ambiguous where
+  it was not. It cannot -- every id carries a colon -- and the test that Loom's
+  edge counts are unchanged is what proves it rather than the argument.
+
+  S3  :AMBIGUOUS-REFERENCES ON EVERY DOCUMENT TYPE
+
+  Declare the property beside :UNRESOLVED-REFERENCES in code-ontology.lisp for
+  the same six types. RESOLVE-DOCUMENT-LINKS writes an entry per ambiguous
+  declared name -- the name, and the candidate ids -- and stops pushing that
+  name onto :UNRESOLVED-REFERENCES. AMBIGUOUS-REFERENCES reads it back the way
+  UNRESOLVED-REFERENCES reads its own.
+
+  Test: a document naming a name two functions answer to gets one ambiguous
+  entry carrying both ids and no unresolved entry; a document naming nothing
+  gets the unresolved entry it gets today; both are rewritten from scratch on a
+  second pass.
+
+  Risk: the property must be declared for every type that declares
+  :UNRESOLVED-REFERENCES or the transaction validator refuses the write. That
+  is BUG-0022's shape and the test that catches it is a document of each type.
+
+  S4  THE REPORT
+
+  `check` prints an ambiguous section after the unresolved one, each name with
+  its candidates. The :CHECK operation carries :AMBIGUOUS alongside :UNRESOLVED.
+  `status` names both counts on one line, which is REQ-0030 R6: the number that
+  fell is printed beside the number that rose.
+
+  Risk: a consumer reading the status line by position. The line is prose and
+  the JSON keys are additive.
+
+  S5  CHECK-DOCUMENT-REFERENCES
+
+  A function in loom-workspace: repository, path, optional contents. It runs
+  ANALYZE-PATH, takes the document entity out of the ops without applying them,
+  and resolves its five declared fields against LINKABLE-INDEX, returning one
+  report per name -- resolved to what, ambiguous among what, or unresolved.
+  A :READ operation and a console command over it.
+
+  Test: a draft naming a name that resolves, one that is ambiguous and one that
+  is absent reports one of each; the graph's relationship count is identical
+  before and after; a path no analyzer claims is refused with a reason rather
+  than reported as a document with no references.
+
+  Risk: the ops an analyzer returns are not all entity asserts, and the
+  document entity has to be found among them rather than assumed to be first.
+
+  S6  MEASURE, AND ANSWER D7
+
+  Run `check` on Loom and game-server and classify every ambiguous entry by the
+  types of its candidates. DES-0029 D7 leaves open whether a class and the
+  interface its own accessor generated should resolve to the class; this is the
+  measurement REQ-0030 asks for before that question is answered. Record the
+  counts in the two requirements' closing sections, and file a follow-on
+  document only if the classification shows a population worth a rule.
+
+  Loom's 15 unresolved references must sum, split between the two lists, to 15.
+
+  MEASURED, 2026-08-18
+
+  Loom's 15 split 8 and 7. The seven are three references to `resolve-entity',
+  three to the inspector's `discover-units', `write-driver-script' and
+  `read-inspection-file', and one to `initialize-instance'.
+
+  Every one of the seven is a same-type collision, and six of them pair a
+  definition in src/ with one of the same name in a test file. None is the
+  class-and-its-generated-interface case DES-0029 D7 left open. game-server
+  holds four in the set REQ-0030 measured -- two functions, a class and an
+  interface, a function and a test, three functions -- so one of eleven
+  ambiguous references across two trees is the shape a resolution rule would
+  have to be written for.
+
+  So D7 stays open and no rule is written. The escape hatch answers all eleven:
+  an author who means the src/ definition writes its id. Recording the
+  src-versus-test pattern is worth more than a rule for it, because picking the
+  src one would be the tiebreak REQ-0030 forbids and the author is the only one
+  who knows which they meant.
+
+  ACCEPTANCE MET
+
+  REQ-0030 R7 and REQ-0034 R6 together, on game-server, through
+  CHECK-DOCUMENT-REFERENCES rather than by editing that tree's documents back
+  to their original form:
+
+      check-database               ambiguous, 2 candidates
+      db-handler                   ambiguous, an interface and a class
+      initialize-media             ambiguous, a test and a function
+      connection-connect-database  ambiguous, 3 candidates
+      start-server                 resolved
+
+  Zero unresolved among the four, and game-server's own two unresolved
+  references absent from the report, which is R3's scoping.
+
+  R5's non-regression, both trees:
+
+                    documents  decides  refines  mentions  unresolved
+      Loom          680 -> 682 300 -> 302   149  2532 -> 2536  19 -> 8 + 7
+      game-server           60        9       3        420       2 + 0
+
+  game-server is identical in every column. Loom's four movements are this
+  work's own documents: DES-0029 and PLAN-0034 each name AMBIGUOUS-REFERENCES
+  and CHECK-DOCUMENT-REFERENCES, which did not exist when the baseline was
+  taken, so four names that resolved to nothing now resolve -- 19 minus those
+  four is 15, and 15 is 8 unresolved plus 7 ambiguous.

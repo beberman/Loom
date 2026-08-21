@@ -27,6 +27,9 @@
    #:remove-entity
    #:facts-from-file
    #:origin-files
+   ;; BUG-0030 F1: the edges the ontology would not let the graph record.
+   #:dropped-edges
+   #:dropped-edge-count
    #:all-entities
    #:entities-of-type
 
@@ -52,6 +55,7 @@
    #:resolve-specializers
    #:resolve-method-protocols
    #:callable-index
+   #:member-call-parts
    #:callable-lookup
    #:name-lookup
    #:candidate-entities
@@ -82,6 +86,10 @@
    ;; document link resolution (SS10.3)
    #:resolve-document-links
    #:unresolved-references
+   #:ambiguous-references
+   #:*declared-link-fields*
+   ;; BUG-0033: the files and documents the analyzer marked and nothing read.
+   #:unparsed-facts
    #:linkable-index
    ;; Exported for DES-0022 S3's generator, which has to know whether a name it
    ;; is about to write into a describes: field will resolve. Duplicating the

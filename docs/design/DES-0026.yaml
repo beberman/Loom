@@ -1,6 +1,6 @@
 id: DES-0026
 title: Two tiers, a weighted index and a cost-ordered walk -- recall in the cheap tier, source in the expensive one
-status: draft
+status: partial
 date: 2026-08-16
 refines: [REQ-0016]
 affects: [build-context, context-item, render-context, seed-entities, seed-matches,

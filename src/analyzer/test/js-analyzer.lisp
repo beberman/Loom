@@ -190,6 +190,46 @@ class B { render() { return two(); } }
         (is-false (member global calls :test #'string=)
                   "~a is a language builtin, not a definition in this tree" global)))))
 
+(js-test a-member-call-records-the-receiver-the-source-wrote
+  ;; BUG-0036. `log.commit()' contributed COMMIT alone, which matched every
+  ;; plain function of that name and no method at all, since a method entity is
+  ;; named Class.method. The receiver is the one piece of evidence the source
+  ;; actually wrote, and recording it is what lets LOOM-GRAPH place the call.
+  (let ((entity (js-named "src/m.js"
+                          "function f() {
+  log.commit();
+  helper();
+  obj.a.b();
+  JSON.stringify(x);
+}"
+                          "f")))
+    (let ((calls (getp entity :call-names)))
+      (is (member "log.commit" calls :test #'string=)
+          "the receiver travels with the property")
+      (is-false (member "commit" calls :test #'string=)
+                "and replaces the bare property rather than joining it: two
+names would be two lookups and two fan-outs for one call")
+      (is (member "helper" calls :test #'string=)
+          "a bare call is unchanged")
+      (is (member "b" calls :test #'string=)
+          "a receiver that is an expression has nothing to qualify with, and
+the property alone is the answer it had before")
+      (is-false (member "stringify" calls :test #'string=)
+                "a language global still contributes nothing"))))
+
+(js-test a-this-call-is-qualified-by-the-class-it-is-written-in
+  ;; The one member call whose receiver's type is not a guess: `this' inside a
+  ;; class body is that class, so GestureLog.commit resolves to exactly one
+  ;; method instead of fanning out over every `commit' in the repository.
+  (let ((entity (js-named "src/m.js"
+                          "class GestureLog {
+  record(g) { this.commit(g); }
+  commit(g) { return g; }
+}"
+                          "GestureLog.record")))
+    (is (member "GestureLog.commit" (getp entity :call-names) :test #'string=))
+    (is-false (member "this.commit" (getp entity :call-names) :test #'string=))))
+
 (js-test a-call-in-a-variable-initialiser-is-dropped-rather-than-mis-attributed
   ;; The :CALLS relationship's :FROM is (:function :method :test :call-site),
   ;; so a :VARIABLE is not a legal source and writing call names onto one would

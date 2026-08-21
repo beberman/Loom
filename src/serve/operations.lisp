@@ -65,8 +65,14 @@ the three ways that dependency arrives looking reasonable. CURRENT-REPOSITORY,
 which sits beside it in that file, is deliberately *not* reproduced: refusing
 to guess which repository a program meant is the point."
   (or (get-entity graph term)
-      (let ((hits (search-entities graph :name term :limit 1)))
-        (when hits (get-entity graph (getf (first hits) :id))))
+      ;; BEST-NAME-MATCH rather than SEARCH-ENTITIES with a limit of one
+      ;; (BUG-0032). The two differ only where a file and a definition match a
+      ;; name equally well, and there the caller of *this* function wants the
+      ;; definition: `describe' and `impact' both ask questions a container
+      ;; answers badly. `find' still calls SEARCH-ENTITIES and still lists the
+      ;; file first.
+      (let ((hit (best-name-match graph term)))
+        (when hit (get-entity graph (getf hit :id))))
       (error 'unknown-entity
              :message (format nil "Nothing in the index matches ~s." term))))
 
@@ -212,12 +218,19 @@ The console's own cap, so the two answer the same question the same way.")
   ;; therefore an object. A bare list would also make an empty result encode as
   ;; null instead of [], which is the ambiguity *ARRAY-VALUED-KEYS* exists to
   ;; prevent and which a top-level value has no key to be rescued by.
-  (list :entities
-        (search-entities (repository-view repository)
-                         :name term
-                         :type (and entity-type
-                                    (intern (string-upcase (string entity-type)) :keyword))
-                         :limit (or (request-integer limit "limit") *find-limit*))))
+  (multiple-value-bind (entities total)
+      (search-entities (repository-view repository)
+                       :name term
+                       :type (and entity-type
+                                  (intern (string-upcase (string entity-type)) :keyword))
+                       :limit (or (request-integer limit "limit") *find-limit*))
+    ;; BUG-0002. :TOTAL and :TRUNCATED alongside the rows, because a caller
+    ;; that received the limit and nothing else cannot tell a complete answer
+    ;; from a cut one -- and an agent asking how many of a type exist gets a
+    ;; number rather than a page of rows to count.
+    (list :entities entities
+          :total total
+          :truncated (> total (length entities)))))
 
 (define-operation :describe :read (repository term (source))
     "Full detail for one entity, with its neighbours grouped by edge type. \
@@ -253,8 +266,22 @@ Pass source=true for the definition's text."
   ;; cannot reach up there (DES-0027 D1). This entry has the repository, so the
   ;; fetch is passed in and the tier logic stays where the bundle is built.
   (let ((repo (require-repository repository)))
-    (build-context (repository-graph repo) task
-                   :source-fn (lambda (id) (definition-source repo id)))))
+    (let ((started (get-internal-real-time)))
+      (multiple-value-bind (bundle instrumentation)
+          (build-context (repository-graph repo) task
+                         :source-fn (lambda (id) (definition-source repo id)))
+        ;; REQ-0036 R1 and R8. The record is additive: the identifier is one
+        ;; more key on a bundle a caller already reads, and with
+        ;; *CONTEXT-LOG-DIRECTORY* NIL -- the default -- RECORD-CONTEXT-CALL
+        ;; returns NIL and writes nothing, so this is what it was before.
+        ;;
+        ;; The latency is measured around the build rather than reported by it,
+        ;; because what a judgement needs is what the caller waited for.
+        (let ((id (record-context-call
+                   repo bundle instrumentation
+                   :seconds (/ (float (- (get-internal-real-time) started))
+                               internal-time-units-per-second))))
+          (if id (append bundle (list :record id)) bundle))))))
 
 (define-operation :structure :read (repository)
     "Systems, protocols, entry points and hubs, derived from the index."
@@ -317,13 +344,32 @@ Pass source=true for the definition's text."
 (defun pair-summary (pair)
   (list :from (car pair) :to (cdr pair)))
 
+(defun dropped-edge-summary (drop)
+  "One BUG-0030 F1 drop, as the four facts a caller can act on: which
+relationship, between which two types, from which file, and the ontology's own
+sentence about it."
+  (list :rel-type (getf drop :rel-type)
+        :from-type (getf drop :from-type)
+        :to-type (getf drop :to-type)
+        :origin-file (getf drop :origin-file)
+        :problem (getf drop :problem)))
+
 (define-operation :check :read (repository)
-    "Rule violations, unresolved document references, and unread definers."
+    "Files that would not parse, rule violations, unresolved document
+references, unread definers, and dropped edges."
   (let ((graph (repository-view repository)))
-    (list :violations (mapcar #'violation-summary
+    (list ;; BUG-0033, first for the reason console.lisp gives: every other key
+          ;; here describes something the index knows and got wrong, and this
+          ;; one describes a file it does not know at all.
+          :unparsed (unparsed-facts graph)
+          :violations (mapcar #'violation-summary
                               (entities-of-type graph :rule-violation))
           :unenforced (mapcar #'rule-summary (unenforced-rules graph))
           :unresolved (mapcar #'pair-summary (unresolved-references graph))
+          ;; DES-0029 D3. Additive: a caller reading :UNRESOLVED sees the
+          ;; population that is rot, and one reading :AMBIGUOUS sees the
+          ;; population that is not, with the candidate ids it needs to act.
+          :ambiguous (ambiguous-references graph)
           :unhandled-definer-macros
           (mapcar (lambda (macro)
                     (list :name (name macro)
@@ -331,7 +377,63 @@ Pass source=true for the definition's text."
                           :start-line (getp macro :start-line)))
                   (unhandled-definer-macros graph))
           :collisions (mapcar #'pair-summary
-                              (generated-definition-collisions graph *macro-generators*)))))
+                              (generated-definition-collisions graph *macro-generators*))
+          ;; BUG-0030 F1. Empty on all three watched trees, and carried anyway:
+          ;; the whole point of the mechanism is that a fourth missing :TO
+          ;; entry shows up here instead of taking a repository dark.
+          :dropped-edges (mapcar #'dropped-edge-summary (dropped-edges graph)))))
+
+(define-operation :check-document :read (repository path (contents))
+    "What one document's declared references resolve to, before it is written \
+or indexed. Pass contents to check a draft that is not on disk."
+  ;; REQ-0034 R5. A :READ operation and nothing else: the answer is computed
+  ;; from the live index and the draft, and no transaction is built, so R4's
+  ;; "the graph after the call is identical to the graph before it" is a
+  ;; property of the code rather than a promise about it.
+  ;;
+  ;; Scoped to one document, which is the whole requirement. `check' answers
+  ;; what is unresolved in the repository, and an author adding a document has
+  ;; to subtract that baseline by hand before they can tell whether they made
+  ;; things worse. Loom's own baseline is 9 unresolved and 7 ambiguous.
+  (check-document-references (require-repository repository) path
+                             :contents contents))
+
+(define-operation :context-used :write (record used)
+    "Record what an agent went on to use for a context call, quoting the \
+identifier that call returned. `used' is a JSON array of {name, how}."
+  ;; REQ-0036 R2. :WRITE because it writes, and nothing about it is a read --
+  ;; the tier it would have had if it had been designed on its own.
+  ;;
+  ;; USED as a JSON array inside a string because BUG-0031 types every MCP
+  ;; argument as a string, and a shape a caller builds in one line beats three
+  ;; parallel arguments it has to keep aligned. What it names is deliberately
+  ;; not restricted to what the bundle returned: a feedback channel sampling
+  ;; only from the returned items can never record a miss, and the miss is the
+  ;; population that would raise recall.
+  (let ((entries (decode-used-entries used)))
+    (handler-case (record-context-use record entries)
+      (context-record-error (condition)
+        (error 'malformed-request
+               :detail (princ-to-string condition))))))
+
+(defun decode-used-entries (used)
+  "The JSON array USED as a list of plists, or a refusal.
+
+Refused rather than salvaged: an entry Loom could not read would become a
+judgement about an entity nobody named, and a used set that silently lost half
+its entries is worse than a call that failed."
+  (let ((decoded (handler-case (json:decode-json-from-string (or used "[]"))
+                   (error (condition)
+                     (error 'malformed-request
+                            :detail (format nil "used is not JSON: ~a" condition))))))
+    (unless (listp decoded)
+      (error 'malformed-request :detail "used must be a JSON array."))
+    (loop for entry in decoded
+          unless (and (consp entry) (consp (first entry)))
+            do (error 'malformed-request
+                      :detail "each used entry must be a JSON object.")
+          collect (list :name (cdr (assoc :name entry))
+                        :how (cdr (assoc :how entry))))))
 
 (define-operation :rules :read (repository)
     "Active rules and what they constrain."

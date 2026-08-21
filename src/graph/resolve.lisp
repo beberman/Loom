@@ -42,6 +42,109 @@ the same name, and pretending otherwise is how a resolver invents edges."
 
 (defun callable-index (view) (entities-by-name view *callable-types*))
 
+(defparameter *module-file-extensions*
+  '(".js" ".jsx" ".mjs" ".cjs" ".ts" ".tsx")
+  "Extensions a module specifier may have left off, in the order tried.
+
+A specifier is written without one -- `import { X } from \'./widget\'` -- and the
+file on disk is widget.js, widget.jsx or widget/index.js. Resolution here is
+against the *index* and never against the filesystem: loom-graph has no
+filesystem and must not acquire one, and a specifier naming a file no analyzer
+claimed is a specifier that resolves to nothing, which is the right answer
+either way.")
+
+(defun path-segments (path)
+  (loop with start = 0
+        for pos = (position #\/ path :start start)
+        collect (subseq path start (or pos (length path)))
+        while pos do (setf start (1+ pos))))
+
+(defun normalize-segments (segments)
+  "SEGMENTS with `.', `..' and empty components resolved away."
+  (let ((out '()))
+    (dolist (segment segments (nreverse out))
+      (cond ((or (string= segment ".") (string= segment "")) nil)
+            ((string= segment "..") (pop out))
+            (t (push segment out))))))
+
+(defun resolve-module-specifier (specifier importer known)
+  "The workspace path SPECIFIER names when written in IMPORTER, or NIL.
+KNOWN is a table of every file path the index holds.
+
+Relative specifiers only. A bare one -- `react', `lodash' -- names a package
+outside the tree, and an aliased one -- `@/components/x' -- needs a bundler
+configuration Loom does not read; both resolve to nothing here, which leaves
+their call names exactly as unnarrowed as they are today."
+  (when (and (stringp specifier) (plusp (length specifier))
+             (char= (char specifier 0) #\.))
+    (let* ((directory (butlast (path-segments importer)))
+           (target (format nil "~{~a~^/~}"
+                           (normalize-segments
+                            (append directory (path-segments specifier))))))
+      (or (and (gethash target known) target)
+          (loop for extension in *module-file-extensions*
+                for candidate = (concatenate 'string target extension)
+                when (gethash candidate known) do (return candidate))
+          (loop for extension in *module-file-extensions*
+                for candidate = (concatenate 'string target "/index" extension)
+                when (gethash candidate known) do (return candidate))))))
+
+(defun build-module-scope (view)
+  "File path -> the paths of the files it imports, for module-scoped languages.
+
+Empty for a tree of Common Lisp, which is what makes this cost nothing where it
+buys nothing: VISIBLE-CANDIDATES asks the table only after
+MODULE-SCOPED-LANGUAGE-P has already said yes."
+  (let ((known (make-hash-table :test #'equal))
+        (scope (make-hash-table :test #'equal)))
+    (dolist (file (entities-of-type view :file))
+      (let ((path (getp file :path)))
+        (when path (setf (gethash path known) t))))
+    (dolist (file (entities-of-type view :file))
+      (let ((path (getp file :path)))
+        (when (and path (module-scoped-language-p (getp file :language)))
+          (let ((targets '()))
+            (dolist (specifier (getp file :import-sources))
+              (let ((target (resolve-module-specifier specifier path known)))
+                (when target (pushnew target targets :test #'equal))))
+            (setf (gethash path scope) targets)))))
+    scope))
+
+(defun visible-candidates (candidates caller scope)
+  "CANDIDATES reduced to the ones the module CALLER is written in can see.
+
+Two tiers, and the order is the language's. A definition in the calling file
+shadows every same-named definition elsewhere, so if any candidate is local
+the local ones are the whole answer. Otherwise the candidates in files this one
+imports are, because a name from a module nobody imported is not in scope at
+all.
+
+Never empties the set. Where neither tier applies the original is returned
+unchanged. What the rule can do is reduce a fan-out; what it must never do is
+refuse a name this reasoning does not govern.
+
+A member call is the name this reasoning does not govern, and after BUG-0036 it
+no longer arrives here at all: `log.commit()' is recorded as LOG.COMMIT and
+answered by MEMBER-CALL-CANDIDATES, whose property tier does not call this
+function. A method is a property of an object rather than a module binding, so
+which modules the caller imports says nothing about which class the receiver
+holds. What still passes through here is that call's third tier -- the property
+as a bare name, where no method of it exists anywhere and the receiver is a
+module namespace."
+  (let ((language (and caller (getp caller :language)))
+        (file     (and caller (getp caller :file))))
+    (if (or (null scope) (null file) (not (module-scoped-language-p language)))
+        candidates
+        (let ((local (remove-if-not (lambda (e) (equal file (getp e :file)))
+                                    candidates)))
+          (or local
+              (let ((visible (gethash file scope)))
+                (and visible
+                     (remove-if-not (lambda (e)
+                                      (member (getp e :file) visible :test #'equal))
+                                    candidates)))
+              candidates)))))
+
 (defstruct (name-lookup (:constructor %make-name-lookup))
   "Entities under a name, keyed two ways (DES-0015).
 
@@ -59,7 +162,17 @@ place can regress, which is what lets game-server's 7085 at-risk edges move in
 one step and still be reviewable."
   (by-name       (make-hash-table :test #'equal) :type hash-table)
   (by-home       (make-hash-table :test #'equal) :type hash-table)
-  (package-graph nil))
+  (package-graph nil)
+  ;; BUG-0035. Empty on a tree with no module-scoped language in it, and
+  ;; consulted only after MODULE-SCOPED-LANGUAGE-P has said the caller is
+  ;; written in one, so a Lisp-only tree pays one empty table.
+  (module-scope  (make-hash-table :test #'equal) :type hash-table)
+  ;; BUG-0036. Property name -> the methods defined under it, whatever class
+  ;; each belongs to. A method entity is named Class.method, so BY-NAME can
+  ;; only be asked about a member call whose receiver is spelled like the
+  ;; class; this is the index for the ones that are not, and it holds methods
+  ;; alone because a plain function is not what a property access reaches.
+  (by-property   (make-hash-table :test #'equal) :type hash-table))
 
 (defun name-lookup (view types &key external-packages package-graph)
   "ENTITIES-BY-NAME plus the package-aware index over the same entities.
@@ -76,12 +189,158 @@ one pass, so the graph is assembled once rather than once per index."
                    (when home
                      (push e (gethash (cons home name) by-home))))))
              by-name)
-    (%make-name-lookup :by-name by-name :by-home by-home :package-graph pg)))
+    (%make-name-lookup :by-name by-name :by-home by-home :package-graph pg
+                       :module-scope (build-module-scope view)
+                       :by-property (methods-by-property by-name))))
 
 (defun callable-lookup (view &key external-packages package-graph)
   "The callable half of NAME-LOOKUP, which is what RESOLVE-CALLS wants."
   (name-lookup view *callable-types*
                :external-packages external-packages :package-graph package-graph))
+
+(defun member-call-parts (name)
+  "The receiver and the property of a member call name -- `log.commit\' is LOG
+and COMMIT -- or NIL for a name that is not one.
+
+One dot, with a non-empty half on each side. A second dot means the receiver
+was itself an expression rather than a name, and the extractor reports the
+property alone for that case (BUG-0036), so a two-dot name arriving here is
+not something this can read.
+
+A Common Lisp caller never takes this path: CANDIDATE-ENTITIES asks
+MODULE-SCOPED-LANGUAGE-P first, and a dot in a Lisp symbol is a character in a
+name rather than a property access."
+  (let ((dot (position #\. name)))
+    (when (and dot (plusp dot) (< (1+ dot) (length name))
+               (not (find #\. name :start (1+ dot))))
+      (values (subseq name 0 dot) (subseq name (1+ dot))))))
+
+(defun methods-by-property (by-name)
+  "BY-NAME\'s methods, re-keyed on the property half of their names.
+
+Methods only. A member call reaches a property of an object, and a plain
+module-level function of the same spelling is not one -- which is the whole of
+BUG-0036: `set.persist()\' matched three unrelated `function persist\' in test
+files and none of the eight `persist\' methods, because a method entity is
+named TypeSet.persist and nothing was asking for it under PERSIST."
+  (let ((index (make-hash-table :test #'equal)))
+    (maphash (lambda (key entities)
+               (multiple-value-bind (receiver property) (member-call-parts key)
+                 (declare (ignore receiver))
+                 (when property
+                   (dolist (entity entities)
+                     (when (and (eq :method (entity-type entity))
+                                (module-scoped-language-p (getp entity :language)))
+                       (push entity (gethash property index)))))))
+             by-name)
+    index))
+
+(defun same-identifier-p (a b language-a language-b)
+  "True when the identifiers A and B, written in LANGUAGE-A and LANGUAGE-B, are
+the same identifier.
+
+Case is folded only when *both* languages fold it. That asymmetry is the whole
+of BUG-0029: the index is keyed on a downcased name and therefore matches
+`error\' to `Error\', which is right for two Common Lisp symbols and wrong for
+two JavaScript ones. Requiring both sides rather than either is the
+conservative reading -- a pair that disagrees about case gets the strict rule,
+so a language Loom has never seen cannot inherit Lisp\'s folding by being
+compared against a Lisp definition."
+  (if (and (case-insensitive-language-p language-a)
+           (case-insensitive-language-p language-b))
+      (string-equal a b)
+      (string= a b)))
+
+(defun same-identifier-candidates (candidates name caller)
+  "CANDIDATES reduced to those whose name really is NAME, read from CALLER.
+
+The downcased index is a *search structure* after BUG-0029 and not the
+equality itself: it returns a superset keyed on a fold every language may not
+share, and this is where the pair-wise judgement happens. It has to be
+pair-wise, because whether two spellings are one identifier depends on both
+languages and no single hash key can express that.
+
+A NIL CALLER keeps the whole set. That is RESOLVE-GENERATED-DEFINITIONS asking
+whether a name reaches anything at all, with nothing to take a language from,
+and the old answer is the only one available."
+  (let ((language (and caller (getp caller :language))))
+    (if (null caller)
+        candidates
+        (remove-if-not (lambda (entity)
+                         (and (slot-boundp entity 'name)
+                              (same-identifier-p name (name entity)
+                                                 language (getp entity :language))))
+                       candidates))))
+
+(defun property-candidates (candidates property caller)
+  "CANDIDATES reduced to the methods whose own property really is PROPERTY.
+
+METHODS-BY-PROPERTY keys on a downcased half, the way ENTITIES-BY-NAME keys on
+a downcased name, and for the same reason: the table is a search structure and
+not the equality. SAME-IDENTIFIER-P decides, so a JavaScript `Commit\' and a
+JavaScript `commit\' stay two properties (BUG-0029).
+
+VISIBLE-CANDIDATES deliberately does not follow. A property is not a module
+binding -- that is what makes BUG-0036 a separate defect from BUG-0035 -- so
+which modules the caller imports is evidence about its own bindings and not
+about what its receiver holds. Narrowing this fan-out by imports would often
+leave one candidate, and a single :CALLS edge asserting that `set.persist()\'
+reaches TypeSet.persist because the file imports TypeSet is the confident wrong
+edge BUG-0036 refuses. Fanned out at 1/N it stays a reported guess (CON-0001)."
+  (let ((language (and caller (getp caller :language))))
+    (remove-if-not
+     (lambda (entity)
+       (and (slot-boundp entity 'name)
+            (multiple-value-bind (receiver own) (member-call-parts (name entity))
+              (declare (ignore receiver))
+              (and own (same-identifier-p property own
+                                          language (getp entity :language))))))
+     candidates)))
+
+(defun member-call-candidates (index name property caller)
+  "The definitions the member call NAME could reach, read from CALLER.
+
+Three tiers, tried in order, and the first that answers is the answer. This is
+DES-0015\'s shape in a language with no packages: place the name where the
+source actually put it, and fall back to the spelling only when it cannot be
+placed.
+
+  the receiver names a class  the methods named exactly NAME. `this.commit()\'
+                              inside GestureLog is recorded as
+                              GestureLog.commit by the extractor, so the
+                              enclosing class -- which is not a guess -- makes
+                              this one edge at full confidence.
+
+  some method has the
+  property                    every method of that property, whatever class.
+                              `set.persist()\' reaches one of the eight
+                              `persist\' methods and the source does not say
+                              which, which is a union of genuine possibilities
+                              and so fans out as dispatch does (DES-0001)
+                              rather than as an ambiguity.
+
+  none does                   the property as a bare name, which is exactly
+                              what this call resolved to before BUG-0036. It is
+                              the namespace import -- `import * as api\' then
+                              `api.fetchGame()\' -- where the receiver is a
+                              module and the property really is a plain
+                              function.
+
+What the tiers never do is let a member call reach a plain function while any
+method of that property exists. That is the population BUG-0036 measured: 18 of
+front-end\'s 50 fan-outs were `persist\' pointing at two test-local `function
+persist\' and one arrow in a mock."
+  (flet ((admit (candidates spelling)
+           (visible-candidates
+            (same-identifier-candidates candidates spelling caller)
+            caller
+            (name-lookup-module-scope index))))
+    (or (admit (gethash (string-downcase name) (name-lookup-by-name index)) name)
+        (property-candidates
+         (gethash (string-downcase property) (name-lookup-by-property index))
+         property caller)
+        (admit (gethash (string-downcase property) (name-lookup-by-name index))
+               property))))
 
 (defun candidate-entities (index name caller)
   "The definitions NAME could name, as read from CALLER.
@@ -90,24 +349,58 @@ INDEX may be a bare hash table, which is what CALLABLE-INDEX returns and what
 every caller passed before DES-0015. That path is the old behaviour exactly,
 which is why tools/call-site-census.lisp keeps working unchanged and why a
 CALLER of NIL -- RESOLVE-GENERATED-DEFINITIONS asking whether a name reaches
-anything at all -- still gets the unrestricted answer."
+anything at all -- still gets the unrestricted answer.
+
+Both index paths are filtered through SAME-IDENTIFIER-CANDIDATES on the way
+out, including the package-placed one: DES-0015 establishes that a name is one
+*symbol*, which is a Common Lisp question, and answering it does not make the
+spelling right in a language that has no packages.
+
+A member call takes neither path. MEMBER-CALL-CANDIDATES answers it, because
+`log.commit\' is placed by its receiver and not by a package, and the tiers it
+tries are what BUG-0036 is. Only where the caller\'s language is module-scoped:
+a dot in a Common Lisp symbol is a character in a name.
+
+VISIBLE-CANDIDATES follows it on the NAME-LOOKUP path, and only there: the
+bare-hash-table path is RESOLVE-GENERATED-DEFINITIONS asking whether a definer
+name reaches anything at all, which is a Common Lisp question about a tree with
+no module scope in it. The two filters compose in the order they are named --
+which spellings are this identifier, then which of those this module can see --
+and neither can ever add a candidate."
   (let ((key (string-downcase name)))
-    (etypecase index
-      (hash-table (values (gethash key index) nil))
-      (name-lookup
-       (let* ((home (and caller
-                         (home-package (name-lookup-package-graph index)
-                                       name (entity-package caller))))
-              (placed (and home (gethash (cons home key)
-                                         (name-lookup-by-home index)))))
-         ;; The second value says whether symbol identity was established.
-         ;; A caller that fans out across the candidate set needs to know:
-         ;; fanning across a set assembled by spelling alone would assert
-         ;; edges between definitions that share nothing but a name, which is
-         ;; the fabrication DES-0015 exists to stop.
-         (if placed
-             (values placed t)
-             (values (gethash key (name-lookup-by-name index)) nil)))))))
+    (flet ((admit (candidates)
+             (visible-candidates
+              (same-identifier-candidates candidates name caller)
+              caller
+              (and (typep index 'name-lookup) (name-lookup-module-scope index)))))
+      (etypecase index
+        (hash-table (values (admit (gethash key index)) nil))
+        (name-lookup
+         (multiple-value-bind (receiver property)
+             (when (and caller (module-scoped-language-p (getp caller :language)))
+               (member-call-parts name))
+           (declare (ignore receiver))
+           (when property
+             ;; A member call is placed by its receiver, not by its package:
+             ;; the home-package lookup below has nothing to say about a
+             ;; language with no packages, and the spelling lookup it falls
+             ;; back to is the defect. Second value NIL -- symbol identity is
+             ;; a Common Lisp question and was not established here.
+             (return-from candidate-entities
+               (values (member-call-candidates index name property caller) nil))))
+         (let* ((home (and caller
+                           (home-package (name-lookup-package-graph index)
+                                         name (entity-package caller))))
+                (placed (and home (gethash (cons home key)
+                                           (name-lookup-by-home index)))))
+           ;; The second value says whether symbol identity was established.
+           ;; A caller that fans out across the candidate set needs to know:
+           ;; fanning across a set assembled by spelling alone would assert
+           ;; edges between definitions that share nothing but a name, which is
+           ;; the fabrication DES-0015 exists to stop.
+           (if placed
+               (values (admit placed) t)
+               (values (admit (gethash key (name-lookup-by-name index))) nil))))))))
 
 (defun unique-match (index name &optional referrer)
   "The one entity INDEX holds under NAME as REFERRER sees it, or NIL for none
@@ -1122,21 +1415,39 @@ enumerated every consequence.")
 
 (defun linkable-index (view)
   "Name -> entities that a document reference could name.
-Keyed on both the entity name and, for documents, the doc-id -- a decision's
-supersedes: names another decision by its id, not by a function name."
+
+Keyed three ways. On the entity name, which is what an author writes. On the
+doc-id, because a decision's supersedes: names another decision by its id
+rather than by a function name. And on the entity id, which is DES-0029 D2:
+`find\' prints function:server/server.lisp:check-database, and an author facing
+a name two functions answer to should be able to paste that back and mean one
+of them.
+
+An id cannot collide with a name. Every id carries a colon, and a name spelled
+with one would have to be written that way in the source."
   (let ((index (make-hash-table :test #'equal)))
     (dolist (entity (all-entities view))
       (when (slot-boundp entity 'name)
         (push entity (gethash (string-downcase (name entity)) index)))
       (let ((doc-id (getp entity :doc-id)))
         (when doc-id
-          (pushnew entity (gethash (string-downcase doc-id) index)))))
+          (pushnew entity (gethash (string-downcase doc-id) index))))
+      (pushnew entity (gethash (string-downcase (id entity)) index)))
     index))
 
 (defun resolve-one (index name)
-  "The single entity NAME identifies, or NIL when it names none or several.
+  "The single entity NAME identifies, and the candidates it was declined over.
+
+Two values. A name that resolves answers the entity and NIL. A name matching
+nothing answers NIL and NIL. A name matching several answers NIL and the
+candidates -- DES-0029 D1, because the set is in hand at the moment of the
+refusal and the caller is the one that has to tell an author which of the two
+NILs it got. A caller wanting one answer ignores the second value and behaves
+exactly as it did.
+
 Refusing an ambiguous name is the same judgement RESOLVE-CALLS makes: a
-fabricated edge is worse than a recorded miss.
+fabricated edge is worse than a recorded miss. What changes is that the refusal
+is now reportable rather than indistinguishable from rot.
 
 A generic function and its methods are the exception, and not by relaxing the
 rule -- they are not several things sharing a name, they are one protocol and
@@ -1146,16 +1457,17 @@ arbitrary and refusing outright reports the reference as rotten when it is
 perfectly good. So a candidate set consisting of exactly one :INTERFACE plus
 methods resolves to the interface."
   (let ((candidates (gethash (string-downcase name) index)))
-    (cond ((null candidates) nil)
-          ((null (rest candidates)) (first candidates))
+    (cond ((null candidates) (values nil nil))
+          ((null (rest candidates)) (values (first candidates) nil))
           (t (let ((interfaces (remove-if-not
                                 (lambda (e) (eq :interface (entity-type e)))
                                 candidates)))
-               (when (and (= 1 (length interfaces))
-                          (every (lambda (e)
-                                   (member (entity-type e) '(:interface :method)))
-                                 candidates))
-                 (first interfaces)))))))
+               (if (and (= 1 (length interfaces))
+                        (every (lambda (e)
+                                 (member (entity-type e) '(:interface :method)))
+                               candidates))
+                   (values (first interfaces) nil)
+                   (values nil candidates)))))))
 
 (defun resolve-document-links (view &key workspace-id)
   "Operations linking each document's declared and mentioned references.
@@ -1178,18 +1490,29 @@ resolved on a previous pass is still in the property, so nothing drifts."
         (ops '()))
     (dolist (type *document-types*)
       (dolist (document (entities-of-type view type))
-        (let ((unresolved '()))
+        (let ((unresolved '())
+              (ambiguous '()))
           ;; --- declared links ------------------------------------------
           (dolist (field-and-type *declared-link-fields*)
             (let* ((field (car field-and-type))
                    (edge-type (declared-edge-type field document)))
               (dolist (name (getp document field))
-                (let ((target (resolve-one index name)))
-                  (if (and target (not (eq target document)))
-                      (push (assert-edge edge-type document target
-                                         :workspace-id workspace-id)
-                            ops)
-                      (pushnew name unresolved :test #'string=))))))
+                (multiple-value-bind (target candidates) (resolve-one index name)
+                  (cond
+                    ((and target (not (eq target document)))
+                     (push (assert-edge edge-type document target
+                                        :workspace-id workspace-id)
+                           ops))
+                    ;; DES-0029 D3. A name several entities answer to is not
+                    ;; the same fact as a name nothing answers to, and it is
+                    ;; the candidates -- not the count -- that let an author
+                    ;; act: the ids are what goes back into the field.
+                    (candidates
+                     (pushnew (list :name name
+                                    :candidates (mapcar #'id candidates))
+                              ambiguous
+                              :test #'string= :key (lambda (e) (getf e :name))))
+                    (t (pushnew name unresolved :test #'string=)))))))
           ;; --- link targets (BUG-0027) ---------------------------------
           ;; The same weak edge a mention earns, and a different failure. A
           ;; link target is a path an author wrote; when it resolves to nothing
@@ -1250,10 +1573,58 @@ resolved on a previous pass is still in the property, so nothing drifts."
                                    :derived-from (list (id target)))
                       ops))))
           (push (update-properties (id document)
-                                   (list :unresolved-references (nreverse unresolved))
+                                   (list :unresolved-references (nreverse unresolved)
+                                         :ambiguous-references (nreverse ambiguous))
                                    workspace-id)
                 ops))))
     (nreverse ops)))
+
+(defun unparsed-facts (view)
+  "Every file and document the analyzer could not read, as plists carrying
+:PATH, :TYPE and :ERROR.
+
+The analyzer\'s half of this has always worked and is SS3.3\'s contract: a file
+that will not parse is *marked, not omitted*, so a YAML document whose title
+carries an unquoted colon lands in the index as a :DOCUMENT named by its path
+and carrying :ANALYSIS-ERROR -- with the parser\'s own line and column in it.
+Nothing read that property. BUG-0033 is the reporting half arriving twelve days
+and two lost documents later.
+
+Worth being exact about what the silence was, because the bug document offered
+two hypotheses and the answer is the less obvious one. The document is not
+dropped and the count does not fall: `documents\' counts the entity like any
+other, so the number looks right while the document has no id, no fields, no
+references and no title. That is the shape CON-0006 calls the expensive error --
+a reader cannot tell it from a document that says nothing.
+
+:FILE is here beside the document types because it carries the same property
+for the same reason. A JavaScript file acorn could not parse, or one whose
+toolchain is absent entirely, is the same fact about the same index."
+  (loop for type in (cons :file *document-types*)
+        append (loop for entity in (entities-of-type view type)
+                     for problem = (getp entity :analysis-error)
+                     when problem
+                       collect (list :path (or (getp entity :path)
+                                               (and (slot-boundp entity \'name)
+                                                    (princ-to-string (name entity))))
+                                     :type type
+                                     :error problem))))
+
+(defun ambiguous-references (view)
+  "Every declared reference that named several entities, as plists carrying the
+document, the name as written, and the candidate ids.
+
+Read separately from UNRESOLVED-REFERENCES because the two are different facts
+about a document. That one answers what the document names that is not there;
+this one answers what it names that is there more than once, which no author
+has to fix and every author has to be able to tell apart from rot (DES-0029
+D4)."
+  (loop for type in *document-types*
+        append (loop for document in (entities-of-type view type)
+                     append (loop for entry in (getp document :ambiguous-references)
+                                  collect (list :document (name document)
+                                                :name (getf entry :name)
+                                                :candidates (getf entry :candidates))))))
 
 (defun unresolved-references (view)
   "Every document reference that named nothing, as (document-name . name).

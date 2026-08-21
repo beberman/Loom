@@ -78,7 +78,7 @@ NOTE-ERROR conses a fresh head and never mutates a cons this loop holds."
               (dotimes (i iterations nil)
                 (push (funcall thunk) statuses)
                 (dolist (entry (repository-errors repository))
-                  (push (cdr entry) texts)))
+                  (push (getf entry :message) texts)))
             ;; SERIOUS-CONDITION, not ERROR: a condition escaping a worker
             ;; would be re-signalled by JOIN-THREAD on the main thread and
             ;; reported as a suite that fell over rather than a test that

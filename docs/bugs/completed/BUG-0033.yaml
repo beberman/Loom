@@ -1,0 +1,201 @@
+id: BUG-0033
+title: A document that fails to parse is dropped without a count, a violation or a line in status
+status: closed
+date: 2026-08-17
+affects: [analyze-file, repository-status, index-file, note-error, resolve-document-links]
+tags: [analyzer, documents, yaml, reporting, con-0001, con-0006]
+severity: high
+summary: |
+  PLAN-0032's title was changed to "DES-0026 in seven steps: the walk, the tiers,
+  the index, the ranking". The colon is unquoted, so the file stopped being
+  YAML.
+
+  Loom said nothing. `check` reported "No violations" on every run for the next
+  fifteen commits. `status` reported no error and no unread region. The document
+  count fell by one and no line named which document was gone. The plan was
+  edited, committed, quoted in other documents and referenced by its own
+  requirement for a day and a half while being absent from the index.
+
+  It was found by accident: `complete PLAN-0032` answered "No document in Loom
+  is named PLAN-0032", which is the first and only time anything reported it.
+body: |
+  FIXED 2026-08-18
+
+  A reporting bug, not a swallowing one, which is the first thing this document
+  asked to find out. The analyzer\'s half has always worked: SS3.3 says a file
+  that will not parse is marked and not omitted, and DOCUMENT-ANALYZER already
+  emitted a :DOCUMENT entity named by the path and carrying :ANALYSIS-ERROR --
+  with the parser\'s own line and column in it. The property is declared on
+  :DOCUMENT and on :FILE and nothing anywhere read either one.
+
+  One claim above is wrong and the correction matters, because it is what made
+  the silence so complete. The document count does *not* fall. The marked entity
+  is a :DOCUMENT like any other, so `documents` counts it, and the number looked
+  right for the whole day and a half -- while the document had no id, no fields,
+  no references and no title. Nothing was missing from any total. That is
+  CON-0006\'s expensive error in its purest form: not an absence a reader might
+  notice, but a presence that says nothing.
+
+  UNPARSED-FACTS in loom-graph returns every file and document carrying
+  :ANALYSIS-ERROR, as plists of :PATH, :TYPE and :ERROR. :FILE is in it beside
+  the document types because it carries the same property for the same reason --
+  a JavaScript file acorn could not parse, or one whose toolchain is absent
+  entirely, is the same fact about the same index.
+
+  `status` gains an `unparsed` line above `unread`, because it is the coarser
+  measure of the same thing: `unread` counts source that would have defined
+  something and did not, and this counts whole files whose every definition is
+  missing.
+
+      unparsed   : 1 file the analyzer could not read
+      unread     : 0 suppressed regions, 0 recovered regions
+      dropped    : 0 edges the ontology does not permit
+
+  `check` prints the paths and the parser\'s message *before* the rule verdict.
+  Under "No violations." it would be a footnote to a clean bill of health, which
+  is exactly the reading that let both instances stand. The :CHECK operation
+  carries the same list first for REST and MCP callers, where it encodes as []
+  on a healthy tree rather than null.
+
+  THE LINE NUMBER WAS OFF BY ONE
+
+  Found while writing the test, and in scope because the line number is the
+  entire distance between "a document is missing" and "quote the title".
+  cl-yaml numbers lines from zero; every other line number Loom reports --
+  :START-LINE, a suppressed region, the ranges `find` and `describe` print --
+  counts from one. So the parser\'s own report sent a reader to the line above
+  the mistake.
+
+  YAML.ERROR:PARSING-ERROR carries LINE and COLUMN as exported readers, so
+  YAML-PROBLEM renders the message itself rather than editing the string the
+  library produced. Rewriting a library\'s prose would break the first time it
+  was rephrased, and would be a fabricated fact in the shape CON-0001 is least
+  able to catch. A condition without those readers renders as itself.
+
+  ACCEPTANCE MET
+
+  Re-breaking PLAN-0032\'s title on this tree reproduces the report rather than
+  the silence:
+
+      unparsed   : 1 file the analyzer could not read
+
+      1 file the analyzer could not read:
+        docs/plans/completed/PLAN-0032.yaml
+          docs/plans/completed/PLAN-0032.yaml: mapping values are not allowed
+          in this context at line 2, column 31
+
+  Line 2 column 31 is the second colon in the title, counted the way every
+  other line number in this system is counted. The rest of the tree stayed
+  indexed: 155 documents before and after, which is the count that was always
+  right and always uninformative.
+
+  All three watched trees read `unparsed: 0`, which is what makes a non-zero
+  one mean something.
+
+  WHAT THE TESTS COVER
+
+  Five, across three systems, because the defect spanned them. The analyzer
+  suite asserts the line and the column on the exact shape that caused both
+  instances -- a colon and a space in an unquoted title. The workspace suite
+  asserts the count is zero on a clean fixture, one when a document breaks, and
+  zero again when the title is quoted, which is the same files-are-truth
+  property BUG-0030\'s dropped edges have: RETRACT-FILE clears the marked
+  entity and the re-analysis decides again.
+
+  Verified against CON-0003 twice. Emptying UNPARSED-FACTS\' type list fails
+  five assertions and leaves the two zero-on-a-clean-tree assertions passing,
+  which is correct -- those are true either way and are there for DES-0002 R10.
+  Disabling the line correction fails the analyzer\'s two.
+
+  PRIORITY: P2, 2026-08-18
+
+  Two instances now, and the second had been invisible for twelve days -- see
+  the section above. Both are an unquoted colon in a title, both were found by
+  a command that happened to look a document up by id, and nothing in `status'
+  or `check' has ever said so. That makes this a recurring defect rather than
+  an incident. The fix is the size of BUG-0030 F1's reporting half: a count on
+  `status', a line in `check'.
+
+  A SECOND INSTANCE, FOUND 2026-08-18, TWELVE DAYS OLD
+
+  BUG-0013 has never been in the index. Its title is
+
+      title: affects: is read only on a decision, so 44 of 63 documents ...
+
+  and the unquoted colon is the same break PLAN-0032's title made -- filed
+  2026-08-06, so it had been invisible for twelve days rather than the day and
+  a half this document opens with. It was found the same way: `set-status
+  BUG-0013 closed` answered "No document in Loom is named BUG-0013", which is
+  again the only thing in the system that said so. `check` was clean, `status`
+  reported no error, and BUG-0013 was a duplicate of BUG-0023 that nobody
+  spotted for five days partly because no cross-reference to it could resolve.
+
+  This makes the defect a recurring one rather than an incident, and it changes
+  what the count is worth. Two instances, both from an unquoted colon in a
+  title, both silent, both found by a command that happened to look a document
+  up by id. A third is a matter of time, and until `status` carries the number
+  nothing will report it.
+
+  A sweep of all 148 YAML files under docs/ on 2026-08-18 found exactly these
+  two -- one already repaired, BUG-0013 repaired by quoting its title -- so the
+  tree is clean today. That sweep is four lines of Python and is not a
+  substitute for the count: it ran because someone went looking.
+
+  WHY THIS IS NOT A SMALL REPORTING GAP
+
+  The index is meant to know what it is missing. That principle is already built
+  twice over.
+
+  `status` carries an `unread` line summing what the analyzer passed over -- a
+  `#+`/`#-` branch not taken, a refused `#.`, a form it repaired -- and CLAUDE.md
+  says of it that "a number there is the index saying which definitions it knows
+  it is missing". A malformed Lisp file costs a form and reports it. A malformed
+  YAML document costs the whole document and reports nothing.
+
+  `check` exists to report unresolved document references. A document that never
+  parsed has no references, so it produces no unresolved reference, and the
+  command whose job is to notice rotten links reports a clean tree. The silence
+  is not incidental to the design; it is produced by it.
+
+  CON-0001's argument is that a recorded gap beats a fabrication because a gap
+  is visible. This gap is not visible. Under CON-0006 the cost lands on the
+  reader: an agent asking `context` about work described in that plan gets a
+  bundle with the plan absent, and cannot tell that from the plan not existing.
+
+  WHAT MAKES IT LIKELY RATHER THAN RARE
+
+  A colon followed by a space inside an unquoted YAML scalar. Every document in
+  this tree has a `title:` field, titles are prose, and prose takes colons --
+  CLAUDE.md now asks for titles that name their contents, which makes a
+  subtitle-shaped title more likely rather than less. ARCH-0101, DES-0026 and
+  REQ-0031 all have titles that would break if a colon were added.
+
+  The same applies to any unquoted value: a `#` starting a comment, a leading
+  `-`, a stray tab.
+
+  WHAT IT WOULD TAKE
+
+  Three parts, and the first is most of the value.
+
+  Count it. INDEX-FILE already wraps analysis in a HANDLER-CASE and calls
+  NOTE-ERROR, so a document that fails to parse should be arriving there. Either
+  it is not reaching that path or the count is not surfaced -- which of the two
+  is the first thing to find out, and it decides whether this is a reporting bug
+  or a swallowing one.
+
+  Say it in `status`. An `unparsed` line beside `unread`, naming the paths. One
+  number that reads zero on a healthy tree is what makes a non-zero one mean
+  something.
+
+  Fail `check`. A document under docs/ that did not parse is exactly the kind of
+  thing that command is for, and it is the command CLAUDE.md tells an agent to
+  run after editing documents.
+
+  ACCEPTANCE
+
+  A docs/ YAML file with an unquoted colon in its title is counted, named in
+  `status`, and reported by `check`. The tree stays indexed otherwise -- one
+  malformed document costs that document, which is the trade the Lisp analyzer
+  already makes for a malformed form.
+
+  Re-breaking PLAN-0032's title reproduces the report rather than the silence.

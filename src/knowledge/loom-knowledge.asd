@@ -15,9 +15,11 @@
    (:file "package")
    (:file "services")
    (:file "context")
-   ;; After "context": the walk uses SEED-TYPE-RANK for its tie-break and is
-   ;; called by BUILD-CONTEXT, and :SERIAL T is what makes the parameters it
-   ;; reads available at compile time rather than only at load time.
+   ;; After "context": the walk is called by BUILD-CONTEXT, and :SERIAL T is
+   ;; what makes the parameters it reads available at compile time rather than
+   ;; only at load time. SEED-TYPE-RANK itself moved up into "services" for
+   ;; BUG-0032, which needs it one file earlier; the ordering requirement is
+   ;; unchanged, it is just satisfied further up.
    (:file "expand")
    ;; After "services": the report builds its rows with ENTITY-SUMMARY and
    ;; ENTITY-LOCATION, which live there.

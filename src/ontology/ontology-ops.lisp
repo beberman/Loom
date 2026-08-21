@@ -61,8 +61,16 @@ finding, so absence can only be expressed by clearing the file first."))
 
 (defclass retract-op (ontology-op)
   ((target-id :initarg :target-id :reader target-id))
-  (:documentation "Remove an entity and cascade staleness to the facts
-derived from it."))
+  (:documentation "Remove one fact -- an entity or a relationship -- by id.
+An entity also cascades staleness to the facts derived from it.
+
+Entities only until BUG-0034, which is how a whole federation pass came to be
+rejected. FEDERATED-RETRACTIONS builds one of these per federated edge it
+holds, and a relationship id resolved to no entity, so the op reported
+\"cannot retract unknown entity\" and took the transaction with it -- every
+retraction and every re-derived cross-repository edge alike. It was invisible
+on a first pass, which has no federated edges yet to retract, and fatal on
+every pass after."))
 
 (defclass mark-stale-op (ontology-op)
   ((target-id :initarg :target-id :reader target-id)

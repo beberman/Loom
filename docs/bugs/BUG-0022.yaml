@@ -6,6 +6,7 @@ refines: [PLAN-0015]
 affects: [validate-entity, properties-table, getp, ontology-schema,
           entity-type-properties]
 tags: [ontology, validation, test-quality, con-0003]
+severity: medium
 summary: |
   PROPERTIES-TABLE accepts any keyword and VALIDATE-ENTITY checks only that
   required properties are present and declared ones are well-typed, so an
@@ -19,6 +20,14 @@ summary: |
   property name has the same shape and is worse, because nothing anywhere
   reports it.
 body: |
+  PRIORITY: P5, 2026-08-18
+
+  First within its tier, because of what it costs the suite rather than the
+  index: a test written against an undeclared property passes with the
+  declaration stashed, which is CON-0003 violated by a test written to honour
+  it. Nothing in an answer is wrong today; what is weakened is the instrument
+  that would catch the next thing that is.
+
   SYMPTOM
 
   Observed 2026-08-10 while implementing PLAN-0015 step 2. Two tests were

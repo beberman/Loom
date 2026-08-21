@@ -1,11 +1,12 @@
 id: BUG-0029
 title: Name resolution folds case, so in a case-sensitive language every logger.error call becomes an edge to a component named Error
-status: open
+status: closed
 date: 2026-08-14
 refines: [REQ-0024]
 affects: [resolve-calls, resolve-one, build-definition-index, impact-set,
           structure-report]
 tags: [resolution, javascript, generality, con-0001, false-edge, req-0024]
+severity: critical
 summary: |
   RESOLVE-CALLS matches a call name to a definition through an index keyed on
   STRING-DOWNCASE (resolve.lisp:40 and :1097, read back at :1115). That is
@@ -23,6 +24,98 @@ summary: |
   The repository really does render `<Error />`, twice, in DesignHome.jsx. So
   the correct inbound count for the whole tree is 2, and the index reports 348.
 body: |
+  FIXED 2026-08-18
+
+  The index still folds case and is now a search structure rather than the
+  equality itself. CANDIDATE-ENTITIES passes everything it retrieves through
+  SAME-IDENTIFIER-CANDIDATES, which asks per pair whether the two spellings are
+  one identifier, judged by the languages both sides were written in. It has to
+  be per pair -- whether `error' and `Error' are one name depends on both
+  languages, and no single hash key can express that.
+
+  SAME-IDENTIFIER-P folds only when *both* languages fold. Requiring both
+  rather than either is the conservative reading and answers this document's
+  second open question without closing anything off: a language Loom has never
+  seen cannot inherit Lisp's folding by being compared against a Lisp
+  definition, and nothing here decides whether a cross-language :CALLS edge may
+  exist.
+
+  The third open question -- analyzer or ontology -- went to the ontology.
+  *CASE-INSENSITIVE-LANGUAGES* sits beside *SOURCE-LANGUAGES* in
+  code-ontology.lisp, because case sensitivity is a fact about a language
+  rather than about how Loom reads one, and because the code that needs it is
+  RESOLVE-CALLS, which may not depend on the analyzer layer. *SOURCE-LANGUAGES*
+  was already the precedent for a language fact living below both.
+
+  The first open question is answered by not arising: one table, keyed as
+  before, filtered on the way out. Every existing caller of CALLABLE-INDEX is
+  unchanged, including tools/call-site-census.lisp.
+
+  MEASURED, ALL THREE TREES, 2026-08-18
+
+                        entities              relationships
+      Loom            2826 -> 2830           14608 -> 14617
+      game-server     3946 -> 3946           22032 -> 22032
+      front-end       4249 -> 4128            3217 -> 2731
+
+  Loom's four entities and nine edges are this change's own source. game-server
+  is identical in both columns, which is the number that would have moved if
+  the rule had touched Lisp: it holds both languages, and no Lisp-to-JavaScript
+  pair was matching on a fold.
+
+  front-end loses 486 edges and 121 entities. Every one of the 121 is a
+  :CALL-SITE that stopped being minted because its name stopped being falsely
+  ambiguous -- the entity census is otherwise identical, METHOD 1452, FUNCTION
+  1012, VARIABLE 782, FILE 471, CLASS 211, DOCUMENT 37 before and after. No
+  definition was lost.
+
+  `structure' on front-end now reports its real hubs:
+
+      50  class    Mapper          src/core/mapper.js:43-315
+      49  function fromObj         src/core/mapper.js:721-784
+      40  function getPoJo         src/utils/operators.js:79-83
+      38  class    BaseGameObject  src/core/BaseGameObject.js:28-133
+
+  The three `Error' components are gone from the list. 348 inbound edges became
+  3.
+
+  WHY 3 AND NOT 2, AND WHY THAT IS A DIFFERENT BUG
+
+  This document predicted 2, counting the two `<Error />` renders in the
+  source. What remains is one edge from DesignHome.jsx to each of the three
+  components named exactly `Error', reported `(ambiguous)' through a
+  :CALL-SITE. Both renders share one caller, so they are one edge per
+  candidate rather than one per occurrence.
+
+  One of those three is right and two are not. DesignHome.jsx defines its own
+  `Error' at line 163 and renders it at 273 and 308; the components in
+  AsyncRedirect.jsx and SaveDesign.jsx are unrelated. Loom matches on the bare
+  name across the whole repository and knows nothing about JavaScript module
+  scope or imports, so a definition in the calling file does not win.
+
+  That is a scope defect rather than a case defect and it is filed as BUG-0035.
+  Measured while closing this one: 73 of front-end's remaining 163 call sites
+  fan out to a candidate set that contains a definition from the calling file
+  itself.
+
+  WHAT THE TESTS COVER
+
+  Five in the resolve suite, and the two that would make the fix worthless if
+  they failed are among them: a JavaScript call still reaches the definition it
+  does name, and a Lisp call still folds case because the reader does.
+  Verified against CON-0003 by declaring :JAVASCRIPT case-insensitive, which
+  fails eight assertions across the three tests that turn on the rule and
+  leaves those two passing.
+
+  PRIORITY: P1, 2026-08-18
+
+  The largest measured fabrication in the tree. Re-measured on the running
+  service: three components named `Error' carry 116 inbound edges each and are
+  the top three hubs in `structure' on front-end, ahead of MAPPER at 50, which
+  is the real one. 348 edges against a true count of 2. The same edges feed
+  `impact' and rank `context', so a wrong answer arrives first in the reply an
+  agent reads -- CON-0001's fabricated fact at the top of the page.
+
   WHAT IS WRONG
 
   The definition index is built once per resolution pass and keyed on the

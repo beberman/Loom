@@ -18,5 +18,6 @@
    #:tool-name
    #:tool-operation
    #:all-tools
+   #:tool-permitted-p
    #:find-tool
    #:handle-jsonrpc))

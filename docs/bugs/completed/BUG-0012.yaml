@@ -1,10 +1,11 @@
 id: BUG-0012
 title: A collided entity's outgoing edges are a union of every colliding definition's edges, not the surviving one's
-status: open
+status: closed
 date: 2026-08-06
 refines: [PLAN-0009, DES-0010]
 affects: [generic-definition-entities, method-entity-from-tail, absorb-entity]
 tags: [analyzer, graph, lisp, clos, blind-spot]
+severity: medium
 summary: |
   DES-0010 R4 discloses that an inline (:method ...) clause and a standalone
   DEFMETHOD with identical name, qualifier and specializers in the same file
@@ -24,6 +25,78 @@ summary: |
   ~/lisp/game-server (mpackage/obj-types.lisp ADD-DEFN, mpackage/object.lisp
   COMPUTED-ID-P), so this is not a constructed edge case.
 body: |
+  ALREADY FIXED, VERIFIED AND CLOSED 2026-08-18
+
+  Nothing was changed to close this. DES-0012 and PLAN-0012 fixed it, and the
+  fix is neither of the two shapes weighed below -- it is a third one, and the
+  reason it is third is the whole of CON-0005.
+
+  Both candidates here put the repair in the writer: (a) retract the absorbed
+  entity\'s edges before the fresh asserts land, (b) accept the union and make
+  the collision loud. CON-0005 argues the writer cannot do it, for a reason
+  this document half-states and does not follow through. By the time the writer
+  sees the ops the evidence is gone -- ids derive from the natural key, so both
+  definitions\' edges name the same endpoint, carry the same origin file and the
+  same provenance, and nothing distinguishes the dead definition\'s edge from
+  the live one\'s. And there is no reconciliation rule right for every language:
+  Common Lisp replaces, TypeScript merges interface declarations of one name.
+  A writer that hardcoded either would be wrong for the other.
+
+  So the reconciliation is the *analyzer\'s*. SUPERSEDE-SHADOWED-DEFINITIONS
+  runs between pass 1 and pass 2 of ANALYZE-FILE, groups the pass-1 definitions
+  by natural key, keeps the last in source order and drops the rest -- so the
+  dead body is never walked and no entity op, :CONTAINS edge, :CALL-NAMES or
+  local :CALLS edge is ever emitted for it. The union cannot form because the
+  second edge is never built.
+
+  VERIFIED, 2026-08-18
+
+  This document\'s own reproduction, run through the real analyzer:
+
+      1 :METHOD entity
+      calls -> second-callee          (the surviving definition\'s)
+      shadowed-definitions ("3-3")    (the standalone DEFMETHOD\'s range)
+
+  FIRST-CALLEE is absent, and absent because the op was never built rather than
+  because anything retracted it. The dead definition is not erased either: its
+  line range is on the survivor, which is CON-0001 applied to a collision --
+  the source still exists on disk, so its existence is recorded.
+
+  The two real instances this document measured are both present and both
+  handled. ~/lisp/game-server carries six:
+
+      :METHOD    computed-id-p    mpackage/object.lisp          54-54
+      :METHOD    add-defn         mpackage/obj-types.lisp       438-441
+      :FUNCTION  make-encoded-value  mpackage/obj-types.lisp    904-906
+      :METHOD    mp-typename      mpackage/mpackage.lisp        419-422
+      :METHOD    initialize-instance  data-api/operator-handler.lisp  45-49
+      :INTERFACE db-select        data-api/db/connection.lisp   433-434
+
+  Loom carries none.
+
+  The loud half arrived too, which is candidate (b) delivered alongside rather
+  than instead. RULE-0006 reports every carrier of :SHADOWED-DEFINITIONS, and
+  it fires end to end -- a synthetic tree holding this document\'s fixture and
+  a copy of the rule reports
+
+      warning RULE-0006: render (src/a.lisp:5) carries shadowed-definitions 3-3
+
+  naming the survivor, its line and the range it replaced. game-server reports
+  nothing only because rules are read from each repository\'s own docs/ and
+  RULE-0006 is Loom\'s.
+
+  A-COLLIDED-METHODS-CALLS-EDGES-ARE-A-UNION-NOT-A-REPLACEMENT still carries
+  its old name and now asserts the opposite of it. This document asked for "a
+  fix to turn red"; PLAN-0012 turned it red and then inverted it, which is the
+  record of exactly when the behaviour changed.
+
+  PRIORITY: P4, 2026-08-18
+
+  The same fabrication class as BUG-0025 and far rarer: two measured instances
+  in ~/lisp/game-server against BUG-0025's six on this tree. It needs a name, a
+  qualifier and a specializer list to collide inside one file, which is why the
+  population is small and why it is below BUG-0025 rather than beside it.
+
   SYMPTOM
 
   A fixture with a standalone DEFMETHOD and a colliding inline clause, both

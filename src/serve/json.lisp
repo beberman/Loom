@@ -66,7 +66,16 @@
     ;; already-prepared tree returns and :SKIPPED empty is the ordinary answer,
     ;; so both have to be [] -- a caller branching on "did anything happen"
     ;; reads them directly.
-    :created :skipped :candidates :deleted :kept)
+    :created :skipped :candidates :deleted :kept
+    ;; BUG-0030 F1's drops, which are empty on a healthy tree and are the one
+    ;; list here whose ordinary value is the empty one. Follows :VIOLATIONS
+    ;; exactly: `check' returns the list under this key and `status' returns
+    ;; its length, and a number is a number to the walker either way.
+    :dropped-edges
+    ;; BUG-0033. Empty on a healthy tree, like :DROPPED-EDGES beside it, and
+    ;; for the same reason it must encode as [] rather than null: a client
+    ;; branching on "did anything fail to parse" reads it directly.
+    :unparsed)
   "Keys whose value is a sequence even when it is empty.
 
 Two jobs. NIL under one of these encodes as [] rather than null, so an empty
@@ -156,6 +165,19 @@ heuristic is sound."
        (evenp (length list))
        (loop for rest on list by #'cddr always (keywordp (car rest)))))
 
+(defun improper-list-p (x)
+  "True when X is a cons whose last cdr is not NIL -- a dotted pair, or a list
+ending in one. CL has no such predicate and loom-serve depends on no library
+that supplies one, so it is three lines here rather than a dependency."
+  (and (consp x)
+       ;; The CONSP guard is the whole predicate for every value that is not a
+       ;; list: without it the loop falls straight to its FINALLY and reports
+       ;; any non-NIL atom as improper -- a vector, a number, a string -- and
+       ;; JSON-VALUE would render the MCP tools list as one PRINC-TO-STRING.
+       (loop for tail = x then (cdr tail)
+             while (consp tail)
+             finally (return (not (null tail))))))
+
 (defun json-array (sequence)
   "SEQUENCE as a vector of encoded elements.
 
@@ -192,6 +214,16 @@ the parent's name down would make a NIL element of :impacted encode as []."
                              members))
                      x)
             (sort members #'string< :key #'car))))
+        ;; A dotted pair before anything that walks a list. BUG-0030 D2: the
+        ;; three clauses below each assume a proper list -- PLIST-SHAPED-P
+        ;; calls LENGTH, JSON-ARRAY calls MAP -- and both signal a TYPE-ERROR
+        ;; naming the cdr on an improper one. That is a shape this encoder was
+        ;; not supposed to receive, and the PRINC-TO-STRING clause at the
+        ;; bottom already says what to do with those: make it visible in the
+        ;; answer "rather than signalling from inside an encoder". The one
+        ;; producer was NOTE-ERROR and it now writes a plist; this is what
+        ;; stops the next one from taking the service down with it.
+        ((improper-list-p x) (princ-to-string x))
         ((and (listp x) (member key *array-valued-keys*)) (json-array x))
         ((plist-shaped-p x) (json-object-from-plist x))
         ((listp x) (json-array x))

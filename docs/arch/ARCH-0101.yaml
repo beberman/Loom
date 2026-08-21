@@ -135,10 +135,49 @@ body: |
   types declare a collect-as, not because the traversal knows about documents.
 
   DESCRIBE-ENTITY groups a node's neighbours by (direction, type), so a new
-  relationship type gets its own heading with no edit. SEARCH-ENTITIES matches
-  substrings and ranks by match quality. BUILD-CONTEXT seeds on task words and
-  expands, which is the naive half of the design and the half most obviously
-  worth replacing.
+  relationship type gets its own heading with no edit. It also serves the
+  definition's source on request, through a callback the caller supplies:
+  DEFINITION-SOURCE reads the file and lives in loom-workspace, because an
+  entity's :FILE is repository-relative and REPOSITORY-ROOT is a slot up there
+  (REQ-0031, DES-0027).
+
+  SEARCH-ENTITIES matches substrings and ranks by match quality, and `find`
+  wants that -- an exactly-named file is the right answer to "where is X".
+  `describe` inherits the same resolution and should not; BUG-0032 records that.
+
+  BUILD-CONTEXT was one sentence here -- "seeds on task words and expands" --
+  and is now four steps, which REQ-0016 and DES-0026 argue and PLAN-0032
+  measured.
+
+  It seeds by matching task words against names and against the
+  :DOCUMENTATION every code entity now carries (REQ-0035), scoring an entity by
+  how many of the task's distinct terms it answers to rather than by its best
+  single match. TASK-TOKENS splits compounds, stems four suffixes, and adds
+  every variant rather than substituting, so a wrong guess matches nothing
+  instead of losing a word.
+
+  It expands by a multi-source best-first walk over edges that cost different
+  amounts -- :INHERITS 1, :USES 2, :CALLS 3 outward and 4 inward -- bounded by
+  accumulated cost rather than by hops. One number then serves two shapes of
+  query: a hierarchy runs four deep inside the horizon where a call fan reaches
+  one, and the query does not choose, the edges available from its seeds do. A
+  container may be reached and never expanded from, or one seed reaching its own
+  file would put every definition in that file two hops out.
+
+  An entity reached by several seeds is discounted by one cost unit per
+  additional seed, floored at the cheapest edge. Convergence is the only measure
+  here that is a centrality, and it is relative to the query rather than to the
+  tree -- every tree-wide centrality on this ontology ranks containers first,
+  because :CONTAINS runs from a file to everything in it.
+
+  It answers in two tiers: a few entities carrying padded source, and a line
+  each for everything else recalled. Recall lives in the cheap tier, where a
+  wrong entry costs the reader fifteen tokens and a missing one costs a grep
+  (CON-0006).
+
+  What was tried and does not work is on branch `search-index`: a postings index
+  with BM25 over six weighted fields, measured at 29 of 32 against the substring
+  scan's 31, and eight times slower.
 
   WHAT THE DOCUMENT TIERS MEAN
 

@@ -143,12 +143,14 @@ function collectPathLiterals(call, callee, out) {
   }
 }
 
-// The name of a callee, for :call-names. Only the parts that can resolve to a
-// definition somewhere in the tree are worth recording.
+// The name of a callee, for :call-names, and the bare property that name was
+// built from. Only the parts that can resolve to a definition somewhere in the
+// tree are worth recording.
 //
 //   foo()               -> foo
-//   obj.method()        -> method   (the property; the receiver is a value)
-//   obj.a.b()           -> b
+//   obj.method()        -> obj.method   (the receiver, and the property)
+//   this.method()       -> Class.method inside a class body
+//   obj.a.b()           -> b            (the receiver is not a name)
 //   JSON.stringify(x)   -> nothing  (the receiver is a language global)
 //   Array.isArray(x)    -> nothing
 //
@@ -159,21 +161,52 @@ function collectPathLiterals(call, callee, out) {
 // property when the receiver is a global keeps the true calls to the local
 // isArray and discards the builtin's.
 //
+// BUG-0036 is why a member call carries its receiver rather than the property
+// alone. `log.commit()' contributed COMMIT, which matched every plain function
+// of that name in the repository and no method, since a method entity is named
+// Class.method. Module scope cannot narrow it -- a property is not a module
+// binding -- so the name arrived at resolution with nothing on it to narrow by.
+// The receiver is the one piece of evidence the source actually wrote, and
+// LOOM-GRAPH:MEMBER-CALL-PARTS is what reads it back: OBJ.METHOD matches a
+// method of a class spelled OBJ, and falls back to the property when no class
+// is spelled that way.
+//
+// `this.method()' is the case where the receiver's type is not a guess: the
+// enclosing class is the one the extractor is walking. It is qualified with
+// that class's name, which resolves to exactly one method.
+//
 // A computed member call -- obj[expr]() -- yields nothing, which is CON-0001:
 // an unresolvable name is a recorded gap, not a guess.
-function calleeName(node) {
+//
+// PROPERTY is reported alongside NAME because the route join reads it. DES-0025
+// declares route-carrying callees by their bare spelling -- get, post, sendGet,
+// sendPost -- and front-end writes most of them as `this.post(...)', so a
+// qualified callee on a literal argument would leave every route unmatched.
+function calleeNames(node, className) {
   if (!node) return null;
   if (node.type === 'Identifier') {
-    return GLOBAL_VALUES.has(node.name) ? null : node.name;
+    return GLOBAL_VALUES.has(node.name)
+      ? null
+      : { name: node.name, property: node.name };
   }
   if (node.type === 'MemberExpression' && !node.computed) {
-    if (node.object && node.object.type === 'Identifier'
-        && GLOBAL_VALUES.has(node.object.name)) {
-      return null;
-    }
-    return node.property && node.property.type === 'Identifier'
+    const property = node.property && node.property.type === 'Identifier'
       ? node.property.name
       : null;
+    if (!property) return null;
+    const object = node.object;
+    if (object && object.type === 'Identifier') {
+      if (GLOBAL_VALUES.has(object.name)) return null;
+      return { name: object.name + '.' + property, property: property };
+    }
+    if (object && object.type === 'ThisExpression' && className) {
+      return { name: className + '.' + property, property: property };
+    }
+    // A receiver that is not a name -- a nested member, a call's result, or
+    // `this' outside a class body. There is nothing to qualify with, so this
+    // is the property alone: the answer every member call gave before
+    // BUG-0036, kept for the population the receiver cannot narrow.
+    return { name: property, property: property };
   }
   return null;
 }
@@ -182,6 +215,14 @@ function calleeName(node) {
 // Lowercase single-word names are host elements (div, span) and never resolve
 // to a definition, so they are dropped here rather than travelling as call
 // names nothing can match.
+// A superclass expression names a class entity, and a class entity's name is
+// never qualified -- so this is the property alone, which is what CALLEE-NAMES
+// reported for every member expression before BUG-0036 gave calls a receiver.
+function superclassName(node) {
+  const named = calleeNames(node, null);
+  return named ? named.property : null;
+}
+
 function jsxName(node) {
   const name = node.name;
   if (!name) return null;
@@ -244,7 +285,7 @@ function extract(source, ast) {
   // something another file can name -- so their calls belong to the enclosing
   // named definition, which is what makes `impact` on a hook reach the
   // component that uses it.
-  function walkBody(node, owner) {
+  function walkBody(node, owner, className) {
     const calls = owner ? owner.calls : fileCalls;
     const usages = owner ? owner.jsx : fileJsx;
     const literals = owner ? owner.literalArgs : fileLiteralArgs;
@@ -252,9 +293,11 @@ function extract(source, ast) {
     while (stack.length) {
       const current = stack.pop();
       if (current.type === 'CallExpression' || current.type === 'NewExpression') {
-        const name = calleeName(current.callee);
-        if (name) calls.push(name);
-        if (name) collectPathLiterals(current, name, literals);
+        const callee = calleeNames(current.callee, className);
+        if (callee) {
+          calls.push(callee.name);
+          collectPathLiterals(current, callee.property, literals);
+        }
       } else if (current.type === 'JSXOpeningElement') {
         const name = jsxName(current);
         if (name) usages.push(name);
@@ -275,7 +318,7 @@ function extract(source, ast) {
         static: !!member.static,
         params: member.value && member.value.params ? paramNames(member.value.params) : [],
       });
-      if (member.value) walkBody(member.value, definition);
+      if (member.value) walkBody(member.value, definition, className);
     }
   }
 
@@ -299,7 +342,7 @@ function extract(source, ast) {
       } else if (init && init.type === 'ClassExpression') {
         record('class', name, declarator, {
           exported,
-          superclass: init.superClass ? calleeName(init.superClass) : null,
+          superclass: init.superClass ? superclassName(init.superClass) : null,
         });
         walkClass(init, name);
       } else {
@@ -329,7 +372,7 @@ function extract(source, ast) {
         if (!node.id) break;
         record('class', node.id.name, node, {
           exported,
-          superclass: node.superClass ? calleeName(node.superClass) : null,
+          superclass: node.superClass ? superclassName(node.superClass) : null,
         });
         walkClass(node, node.id.name);
         break;

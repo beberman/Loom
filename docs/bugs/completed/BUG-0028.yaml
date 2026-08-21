@@ -1,6 +1,6 @@
 id: BUG-0028
 title: isError encodes as null rather than false, so an MCP client rejects every successful tools/call and accepts only the failures
-status: fixed
+status: closed
 date: 2026-08-14
 refines: [DES-0006]
 affects: [tool-result, json-value, write-json-value, encode-result]

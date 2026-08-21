@@ -167,7 +167,65 @@ check:
       (dolist (key '(:test-entities :tested-units :unhandled-definer-macros))
         (is (member key status) "~s is missing from status" key)
         (is (eql 0 (getf status key))
-            "~s must be nought for a fixture with no definer calls" key)))))
+            "~s must be nought for a fixture with no definer calls" key))
+      ;; BUG-0030 F1, read the same way and for the same reason: a dropped edge
+      ;; is a relationship the index knows it is missing, and a key that is
+      ;; absent reads through GETF exactly like a count that is nought.
+      (is (member :dropped-edges status))
+      (is (eql 0 (getf status :dropped-edges))))))
+
+(test a-document-that-will-not-parse-is-counted-and-named
+  ;; BUG-0033, and the shape is the one that caused it twice: a colon and a
+  ;; space inside an unquoted YAML scalar. The analyzer's half has always
+  ;; worked -- SS3.3 marks rather than omits, and the entity lands carrying
+  ;; :ANALYSIS-ERROR with the parser's own line and column -- and nothing read
+  ;; the property, so `status' said nothing and `check' reported a clean tree
+  ;; while PLAN-0032 sat unindexed for a day and a half and BUG-0013 for twelve
+  ;; days.
+  ;;
+  ;; The zero is asserted first and is not ceremony: a count that is only ever
+  ;; read when it is non-zero cannot be told from a count nobody computes,
+  ;; which is the DES-0002 R10 reading the two lines beside it already take.
+  (with-workspace-fixture (repository)
+    (is (eql 0 (getf (repository-status repository) :unparsed))
+        "the fixture parses, which is what makes the next assertion mean something")
+    (let ((path (write-file "docs/plans/PLAN-0001.yaml"
+                            "id: PLAN-0001
+title: DES-0026 in seven steps: the walk, the tiers, the index, the ranking
+status: draft
+")))
+      (loom-workspace::index-file repository path :quiet t)
+      (let ((status (repository-status repository))
+            (unparsed (unparsed-facts (repository-graph repository))))
+        (is (eql 1 (getf status :unparsed)))
+        (is (= 1 (length unparsed)))
+        (is (search "PLAN-0001.yaml" (getf (first unparsed) :path))
+            "named, because a count without a path is a fact nobody can act on")
+        (is (search "line 2" (getf (first unparsed) :error))
+            "and the parser's own message, which is the distance between
+\"a document is missing\" and \"quote the title\"")))))
+
+(test a-document-that-parses-again-stops-being-counted
+  ;; The count is a function of the tree rather than of history, the same way
+  ;; BUG-0030's dropped edges are: RETRACT-FILE clears the marked entity along
+  ;; with everything else read from the file, and the re-analysis decides
+  ;; again.
+  (with-workspace-fixture (repository)
+    (let ((broken (write-file "docs/plans/PLAN-0001.yaml"
+                              "id: PLAN-0001
+title: A title: with a colon
+status: draft
+")))
+      (loom-workspace::index-file repository broken :quiet t)
+      (is (eql 1 (getf (repository-status repository) :unparsed)))
+      (write-file "docs/plans/PLAN-0001.yaml"
+                  "id: PLAN-0001
+title: \"A title: with a colon\"
+status: draft
+")
+      (loom-workspace::index-file repository broken :quiet t)
+      (is (eql 0 (getf (repository-status repository) :unparsed))
+          "quoting the title is the whole repair, and the count says so"))))
 
 (test re-watching-a-registered-repository-starts-watching-it-again
   ;; The console's lifecycle in a live image: MAIN stops the monitors on its
@@ -329,7 +387,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 294
+(defparameter *call-site-ceiling* 326
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -434,7 +492,24 @@ measurement rather than by reading: hiding tools/js/extract.js so that no
 JavaScript was indexed anywhere left the count at 267 unchanged.
 
 The ambiguous population is 16 before and 16 after, which is the number that
-moves when something has gone wrong.")
+moves when something has gone wrong.
+
+RE-MEASURED 2026-08-18 AT 296, CEILING 326. Two causes, and only the second is
+this session's. Composition against the 2026-08-14 census, both from
+tools/call-site-census.lisp:
+
+    define-command      85 -> 110
+    define-operation    72 ->  81
+    js-test             50 ->  58
+    ambiguous occurrences  16 -> 16
+
+Most of that is the four days between the measurements, which added commands
+and operations and their tests: the tree read 293 with this session's source
+stashed. BUG-0030 F1 adds the last three -- one DROPPED-EDGES call in the
+`check' command and DROPPED-EDGES plus DROPPED-EDGE-SUMMARY in the :CHECK
+operation, all three inside a body-swallowing macro. The fifth instance of one
+cause and not a fifth cause: the ambiguous population has not moved through any
+of it.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is
@@ -756,12 +831,33 @@ not unusual for a library to use."))
   (declare (ignore root))
   (error 'bare-condition-toolchain-failure :text "toolchain misbehaved, not an error"))
 
+(test a-recorded-error-is-a-plist-and-status-can-carry-it
+  ;; BUG-0030 D2's producer. This recorded `(cons path message)`, which
+  ;; REPOSITORY-STATUS puts on :LAST-ERROR and every REST and MCP caller has
+  ;; serialized to JSON -- and the walker in loom-serve reaches an improper
+  ;; list through its LISTP clause and signals a TYPE-ERROR naming the cdr.
+  ;; Nothing here can encode JSON, which is why the assertion is the shape: a
+  ;; proper list with the two keys, which is what json.lisp's own test then
+  ;; encodes. The entry outlives its request, so the wrong shape took every
+  ;; later `status' with it until the process was restarted.
+  (with-workspace-fixture (repository)
+    (let ((report (enrich-repository repository :quiet t
+                                     :inspectors (list (make-instance 'erroring-inspector)))))
+      (declare (ignore report))
+      (let ((entry (first (repository-errors repository))))
+        (is (listp (cdr entry)) "an improper list is what wedged the encoder")
+        (is (equal "enrich" (getf entry :path)))
+        (is (search "misbehaved" (getf entry :message))))
+      (let ((last (getf (repository-status repository) :last-error)))
+        (is (listp (cdr last)))
+        (is (search "misbehaved" (getf last :message)))))))
+
 (test enrich-repository-survives-an-inspector-that-signals-an-ordinary-error
   (with-workspace-fixture (repository)
     (let ((report (enrich-repository repository :quiet t
                                      :inspectors (list (make-instance 'erroring-inspector)))))
       (is (not (null report)) "the call must return rather than unwind the caller")
-      (is (search "misbehaved" (cdr (first (repository-errors repository)))))
+      (is (search "misbehaved" (getf (first (repository-errors repository)) :message)))
       (is (= 1 (length (getf report :absences)))))))
 
 (test enrich-repository-survives-an-inspector-that-signals-a-bare-condition
@@ -775,7 +871,7 @@ not unusual for a library to use."))
     (let ((report (enrich-repository repository :quiet t
                                      :inspectors (list (make-instance 'bare-condition-inspector)))))
       (is (not (null report)) "the call must return rather than unwind the caller")
-      (is (search "misbehaved" (cdr (first (repository-errors repository)))))
+      (is (search "misbehaved" (getf (first (repository-errors repository)) :message)))
       (is (= 1 (length (getf report :absences)))))))
 
 (test a-poll-never-enriches-and-can-be-shown-not-to-have
@@ -914,7 +1010,7 @@ cons this loop is already holding."
               (dotimes (i n nil)
                 (funcall thunk)
                 (dolist (entry (repository-errors repository))
-                  (push (cdr entry) texts)))
+                  (push (getf entry :message) texts)))
             (serious-condition (condition) condition))
           texts)))
 

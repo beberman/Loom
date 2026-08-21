@@ -1,6 +1,6 @@
 id: REQ-0030
 title: A document reference naming several entities is ambiguous, which is a different fact from naming none, and the difference must reach the author
-status: draft
+status: implemented
 date: 2026-08-15
 refines: [CON-0004]
 affects: [resolve-one, linkable-index, resolve-document-links, unresolved-references]

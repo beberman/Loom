@@ -205,31 +205,78 @@ clean."
             (values (make-hash-table :test #'equal)
                     (princ-to-string condition)))))))
 
-(defun repository-commit (repository)
-  "Two values: REPOSITORY's HEAD commit, and why it could not be read.
+(defun git-output (root &rest arguments)
+  "Two values: what git printed for ARGUMENTS in ROOT, and why it could not.
 
-DES-0022 D5. A structural report has to name the tree it described, or a reader
-meeting a generated architecture document six months later cannot tell whether
-it was ever true. One `git rev-parse HEAD', bounded and guarded the way
-IGNORED-PATHS is, and NIL with a reason when git cannot answer -- not a
-repository, no git, a tree with no commits yet. A known gap beats a fabricated
-commit, and a tree with no commits is exactly the case REQ-0025's first open
-question is about."
+One shape for every git question Loom asks, bounded by `timeout\' and guarded,
+the way IGNORED-PATHS established and REPOSITORY-COMMIT followed. NIL and a
+recorded reason when git cannot answer -- not a repository, no git, a tree with
+no commits yet -- because a known gap beats a fabricated commit (CON-0001)."
   (handler-case
       (multiple-value-bind (out err status)
-          (uiop:run-program (list "timeout"
-                                  (princ-to-string *ignore-query-timeout-seconds*)
-                                  "git" "-C" (namestring (repository-root repository))
-                                  "rev-parse" "HEAD")
+          (uiop:run-program (append (list "timeout"
+                                          (princ-to-string *ignore-query-timeout-seconds*)
+                                          "git" "-C" (namestring root))
+                                    arguments)
                             :output :string :error-output :string
                             :ignore-error-status t)
         (declare (ignore err))
         (if (zerop status)
-            (values (string-trim '(#\Newline #\Return #\Space) out) nil)
+            (values out nil)
             (values nil (if (eql status 124)
-                            "git rev-parse timed out"
-                            (format nil "git rev-parse exited ~a" status)))))
+                            (format nil "git ~a timed out" (first arguments))
+                            (format nil "git ~a exited ~a" (first arguments) status)))))
     (error (condition) (values nil (princ-to-string condition)))))
+
+(defun git-commit (root)
+  "Two values: ROOT's HEAD commit, and why it could not be read."
+  (multiple-value-bind (out reason) (git-output root "rev-parse" "HEAD")
+    (if out
+        (values (string-trim '(#\Newline #\Return #\Space) out) nil)
+        (values nil reason))))
+
+(defun git-branch (root)
+  "Two values: the branch ROOT has checked out, and why it could not be read.
+
+A detached HEAD answers \"HEAD\", which is what git prints and is the honest
+answer rather than NIL: the tree is on no branch and saying so is a fact."
+  (multiple-value-bind (out reason)
+      (git-output root "rev-parse" "--abbrev-ref" "HEAD")
+    (if out
+        (values (string-trim '(#\Newline #\Return #\Space) out) nil)
+        (values nil reason))))
+
+(defun fnv-1a (text)
+  "A 64-bit FNV-1a hash of TEXT, as sixteen hex digits.
+
+Deterministic across images, which SXHASH is not, and needing no library.
+DES-0030 D4: this identifies a working state so that two records can be
+compared, and is not a security claim about anything."
+  (let ((hash 14695981039346656037))
+    (loop for char across text
+          do (setf hash (ldb (byte 64 0)
+                             (* (logxor hash (ldb (byte 8 0) (char-code char)))
+                                1099511628211))))
+    (format nil "~(~16,'0x~)" hash)))
+
+(defun git-diff-hash (root)
+  "Two values: a hash of ROOT\'s uncommitted changes, and why it could not be
+read.
+
+The commit alone would attribute a judgement to code that was not what answered
+it: a tree under active work is dirty for most of the sessions that produce
+these records. An empty diff hashes to the hash of the empty string, which is a
+clean tree and is reported as such rather than as NIL."
+  (multiple-value-bind (out reason) (git-output root "diff" "HEAD")
+    (if out (values (fnv-1a out) nil) (values nil reason))))
+
+(defun repository-commit (repository)
+  "Two values: REPOSITORY\'s HEAD commit, and why it could not be read.
+
+DES-0022 D5. A structural report has to name the tree it described, or a reader
+meeting a generated architecture document six months later cannot tell whether
+it was ever true."
+  (git-commit (repository-root repository)))
 
 (defun repository-files (repository)
   "Every file under the repository root that some analyzer claims.
@@ -274,7 +321,19 @@ report. That is a gap a reader can see rather than a silent clean."
                      claimed)))))
 
 (defun note-error (repository path condition)
-  (push (cons path (princ-to-string condition)) (repository-errors repository))
+  "Record CONDITION against PATH on REPOSITORY, newest first.
+
+A plist and not a `(cons path message)`, which is what this recorded until
+BUG-0030 D2. REPOSITORY-STATUS puts the first entry on :LAST-ERROR, that plist
+is serialized for every REST and MCP caller, and JSON-VALUE reaches a dotted
+pair through its LISTP clause and hands an improper list to LENGTH or to MAP.
+Both signal `The value <message> is not of type LIST` -- and the entry stays on
+REPOSITORY-ERRORS, so every later `status` re-encoded the same cons and
+re-signalled until the process was restarted. A plist is what the rest of this
+codebase carries structured values in and what JSON-OBJECT-FROM-PLIST already
+encodes."
+  (push (list :path (princ-to-string path) :message (princ-to-string condition))
+        (repository-errors repository))
   (when (> (length (repository-errors repository)) 50)
     (setf (repository-errors repository)
           (subseq (repository-errors repository) 0 50))))
@@ -933,6 +992,10 @@ the last error per thread.\""
           ;; DES-0018 D5: NIL on a healthy tree, so `status' prints nothing.
           :ignore-reason (repository-ignore-reason repository)
           :unresolved-references (length (unresolved-references graph))
+          ;; REQ-0030 R6. Entries that stop being counted as unresolved are
+          ;; counted here instead, on the same line, so a reader told to watch
+          ;; `unresolved' sees where they went rather than an improvement.
+          :ambiguous-references (length (ambiguous-references graph))
           :unenforced-rules (length (unenforced-rules graph))
           :violations (length (entities-of-type graph :rule-violation))
           :uncategorized-documents
@@ -976,6 +1039,18 @@ the last error per thread.\""
           ;; stopped being indexed and this is the only place that says so.
           :suppressed-regions (count-file-regions graph :suppressed-regions)
           :recovered-regions (count-file-regions graph :recovered-regions)
+          ;; BUG-0033, and first among the three gap counts because it is the
+          ;; largest unit any of them measures: a suppressed region costs a
+          ;; definition and a dropped edge costs a relationship, but an
+          ;; unparsed file costs everything the file would have said. Zero on
+          ;; all three watched trees, and printed even so, for the reason the
+          ;; comment above gives.
+          :unparsed (length (unparsed-facts graph))
+          ;; BUG-0030 F1, and beside the two counts above for the reason
+          ;; their comment gives: an edge the ontology would not permit is a
+          ;; relationship the index knows it is missing. Zero on all three
+          ;; watched trees, and unconditional so that zero can be read.
+          :dropped-edges (dropped-edge-count graph)
           :errors (length (repository-errors repository))
           :last-error (first (repository-errors repository)))))
 
@@ -995,6 +1070,82 @@ the last error per thread.\""
 ;;;; Both files are present. Reporting them as broken would put five confident
 ;;;; falsehoods in front of a reader alongside the two real findings, which is
 ;;;; how a staleness report stops being read.
+
+(defun check-document-references (repository path &key contents)
+  "What one document's declared references resolve to, without writing or
+indexing it.
+
+REQ-0034. The loop it replaces is write, wait for the monitor, run `check',
+subtract the repository's own baseline, edit, repeat -- four round trips
+through the filesystem and the indexer on the session that prompted the
+requirement, to learn something the index could have answered before any file
+existed.
+
+PATH may name a file the repository does not hold and the index has never
+seen. CONTENTS overrides what is on disk, which is DES-0029 D5: ANALYZE-PATH
+has taken that argument since the analyzer protocol was written -- \"the hook
+for analyzing an editor buffer that has not been saved\" -- so an agent
+composing a document in memory needs no scratch file.
+
+Returns a plist: the path, the document's id and type, and one entry per
+declared name saying which field it was written in and what it resolved to --
+:RESOLVED with the target, :AMBIGUOUS with the candidate ids, or :UNRESOLVED.
+An :ERROR instead when no analyzer claims the path or the file holds no
+document, because a path that produced nothing is a different answer from a
+document with no references and reporting them alike would be the fabricated
+fact CON-0001 forbids.
+
+Nothing is asserted. The ops the analyzer returns are read for the entity they
+carry and thrown away, so the graph after the call is the graph before it."
+  (let* ((graph (repository-graph repository))
+         (root (repository-root repository))
+         (full (merge-pathnames path root))
+         (source (or contents
+                     (and (probe-file full) (slurp-file full)))))
+    (cond
+      ((null (find-analyzer full))
+       (list :path path :error "no analyzer claims this path"))
+      ((null source)
+       (list :path path :error "no such file, and no contents given"))
+      (t
+       (let* ((ops (analyze-path full :workspace-root root :contents source))
+              (document (loop for op in ops
+                              when (and (typep op 'assert-entity-op)
+                                        (member (entity-type (op-entity op))
+                                                *document-types*))
+                                return (op-entity op))))
+         (if (null document)
+             (list :path path :error "the file holds no document")
+             (let ((index (linkable-index graph)))
+               (list :path path
+                     :document (or (getp document :doc-id) (name document))
+                     :type (entity-type document)
+                     :references
+                     (loop for (field . nil) in *declared-link-fields*
+                           append (loop for name in (getp document field)
+                                        collect (document-reference-report
+                                                 index field name document)))))))))))
+
+(defun document-reference-report (index field name document)
+  "One declared reference, as what the author needs to act on it.
+
+A reference resolving to the document itself is reported as resolved and
+carries that fact, since RESOLVE-DOCUMENT-LINKS declines to assert an edge
+there and an author reading `resolved' about a self-reference would be told
+an edge exists that does not. Compared by id rather than by identity: the
+entity here came from the analyzer and is a different object from the one in
+the index even when the document is already indexed."
+  (multiple-value-bind (target candidates) (resolve-one index name)
+    (cond
+      ((and target (equal (id target) (id document)))
+       (list :field field :name name :status :self))
+      (target
+       (list :field field :name name :status :resolved
+             :target (id target) :type (entity-type target)))
+      (candidates
+       (list :field field :name name :status :ambiguous
+             :candidates (mapcar #'id candidates)))
+      (t (list :field field :name name :status :unresolved)))))
 
 (defun check-document-links (repository &key workspace-id)
   "Operations recording, per document, the link targets that name no file.
