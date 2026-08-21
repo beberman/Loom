@@ -1,0 +1,80 @@
+id: REQ-0042
+title: A definition must be findable by resemblance to another definition, including one in a different repository, because that is the question a shared library creates
+status: draft
+date: 2026-08-21
+refines: [REQ-0027]
+affects: [search-entities, find-entities, describe-entity, structure-report]
+importance: Major
+tags: [retrieval, similarity, multi-repo, duplication, req-0027, req-0035]
+summary: |
+  Two tasks in this log had the same shape -- does this codebase already have its
+  own version of what that library provides -- and neither could be asked. Names
+  are how the index is searched, and a duplicate is precisely the case where the
+  two names differ: slurp-file and read-file, split-lines and string-lines,
+  alist-object-p and alistp, fnv-1a and content-fingerprint.
+
+  Asking `find` for each of the library's 44 exported names against Loom returned
+  two hits, one of them a test helper. All ten real duplicates were found by
+  grepping Loom's own definition names for utility-shaped words and reading the
+  bodies -- the method the index exists to replace.
+body: |
+  THE EVIDENCE
+
+  From the utils-migration judgement: *"cross-repository comparison -- No query
+  exists for it. The core question was how two registered repositories' packages
+  differ -- game-server's #:utils versus ~/lisp/utils' #:utils and #:utils-dict.
+  Assembled by hand from a describe in one repository and a package.lisp read in
+  the other."*
+
+  From PLAN-0036's survey, the same gap met from the other side: ten duplicates
+  between Loom and the utils library, every one named differently, none findable
+  by name.
+
+  THE CHEAP SIGNAL, and it is already indexed
+
+  A function extracted from another codebase carries its ancestor's prose.
+  UTILS:CONTENT-FINGERPRINT and Loom's FNV-1A share whole sentences --
+  "Deterministic across images, which SXHASH is not". ALIST-OBJECT-P's docstring
+  credits game-server's serialize.lisp by name, and the library's ALISTP is that
+  same rule written out. Four of the ten pairs share docstring text.
+
+  REQ-0035 indexes that prose. Nothing asks it whether two definitions say the
+  same thing.
+
+  REQUIREMENTS
+
+  R1  A query takes a definition and returns definitions that resemble it, ranked,
+      with the reason -- shared prose, shared name tokens, same arity.
+
+  R2  It crosses repository boundaries. Every query names one repository today,
+      and this is the question that inherently names two. REQ-0027 built
+      cross-repository edges for a product assembled from several trees; this is
+      the other reason two graphs need to meet, and it needs no edge -- only a
+      query that reads both.
+
+  R3  A repository-to-repository form exists: given two repositories, report the
+      definitions that resemble each other. That is the migration survey, and
+      doing it by hand is what produced PLAN-0036's table.
+
+  R4  The answer never asserts equivalence. Every one of the ten pairs was read
+      on both sides before being called a duplicate, and five of them were not:
+      FNV-1A truncates a character to its low octet where CONTENT-FINGERPRINT
+      does not, TEXT-LINES returns a list where STRING-LINES returns a vector,
+      PLIST-SHAPED-P and PLISTP disagree about the empty list. The query points
+      at a pair and says why it is suspicious; a human decides. CON-0001's rule,
+      applied to a ranking that would otherwise invite a mechanical rewrite.
+
+  ACCEPTANCE
+
+  Given UTILS:READ-FILE, the query returns Loom's SLURP-FILE at the commit before
+  PLAN-0036 S1. Given the two repositories, it returns at least the ten pairs
+  PLAN-0036's survey lists by hand, and its false positives are countable
+  against that survey.
+
+  OPEN QUESTIONS
+
+  - Prose similarity is the cheap start and it fails on a tree with no
+    docstrings, which is most of front-end. Name-token and arity resemblance are
+    the fallback and are much weaker.
+  - Cost. R3 is a cross product of two repositories' definitions, which is fine
+    at Loom's scale and needs a bound stated before it is not.

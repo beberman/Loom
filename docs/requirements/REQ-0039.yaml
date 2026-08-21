@@ -1,0 +1,118 @@
+id: REQ-0039
+title: A seed must be chosen for what a definition says it does, because the prose that answers the task is already indexed and the ranking does not read it
+status: draft
+date: 2026-08-21
+refines: [REQ-0016]
+affects: [seed-score, seed-entities, admit-seeds, build-context, plain-words]
+importance: Critical
+tags: [retrieval, context, ranking, docstring, req-0016, req-0035]
+summary: |
+  REQ-0035 landed: the prose a definition carries is indexed. The seeder still
+  scores on tokens shared with the entity's *name*, and the judged records show
+  exactly what that costs -- the task "read a whole file into a string" did not
+  return SLURP-FILE, whose docstring reads "The full contents of the file at PATH
+  as a string." Nine words, seven of them the task's.
+
+  Four recorded misses have this shape, and in each the answer was recovered with
+  `find` on a substring of the name. The seeder is doing worse than a substring
+  match while sitting on the one field that would have answered.
+body: |
+  THE MISSES, and what would have matched
+
+  - "read a whole file into a string" → SLURP-FILE missed. *"it is the exact
+    answer to the task as worded. Found by grepping with-open-file. The bundle
+    returned definition-source and read-source, which read source for other
+    purposes."* Its docstring is the task, restated.
+
+  - "split a string on a delimiter character" → SPLIT-LINES missed. *"A splitter
+    question that misses the splitter named split-lines is the sharpest kind of
+    miss."* Here the *name* would have matched too, on the token "split", and
+    did not -- SPLIT-COMMAND-LINE was seeded instead. So this one is not only a
+    prose failure; it is the ranking preferring one of three splitters for
+    reasons the record cannot see.
+
+  - "test whether a string starts with a prefix" → DOT-PREFIXED-P and its two
+    siblings missed; seeds were COMMENT-EXTENT, READING, STRESS-PUSHER,
+    STRESS-WRITER. *"none related."*
+
+  - "parse a number out of a string" → four PARSE-* functions seeded, none about
+    numbers. *"Ranking on the shared token rather than on the subject."*
+
+  The last is the general statement and the first is the proof: a task is a
+  sentence about a capability, and a docstring is a sentence about a capability,
+  and the seeder compares the task to an identifier.
+
+  REQUIREMENTS
+
+  R1  A definition's indexed prose participates in its seed score. REQ-0035 put
+      it in the index; nothing reads it here.
+
+  R2  A name match and a prose match are not the same evidence and are not summed
+      blind. A task token appearing in a docstring sentence about what the
+      function does is stronger evidence than the same token appearing inside a
+      compound identifier, and PARSE-JAVASCRIPT scoring on "parse" for a task
+      about parsing numbers is that weakness in one row.
+
+  R3  The seed record says which field a term matched. Records today carry
+      `terms` with a weight per term; a caller reading a bundle -- and REQ-0038's
+      scorer reading the log -- cannot tell a name hit from a prose hit, so the
+      ranking cannot be diagnosed from its own output.
+
+  R4  A term from the task that names a *path* is not a term about an entity.
+      The "migrate game/ and server/" record: *"five of eight seeds... are
+      keyword matches on the words 'game' and 'server' in the task string, which
+      named directories rather than entities. A task saying 'migrate game/ and
+      server/' means the trees, not the function GAME."*
+
+  R5  A package or module entity is seedable. From the utils migration:
+      *"`describe` on the package name returned all 103 exported symbols in one
+      answer, which is what the entire old-versus-new overlap map was built from.
+      A task that says 'split the utils system' and 'rename the package' seeding
+      only four functions and no package entity looks like a real ranking gap."*
+
+  ACCEPTANCE
+
+  Measured with the harness that exists. The 32 hand-written cases in
+  tools/acceptance.py were at 30/32 strict and must not fall; the four misses
+  above were added as cases r39-1..r39-4, and the run is now 33/36.
+
+  Read that number carefully, because measuring it moved the argument. Two of
+  the four PASS, and they pass for a reason that is not this requirement being
+  met: PLAN-0036 moved the answers to the utils library, and the library's names
+  -- READ-FILE, STRING-LINES -- contain the task's own words where Loom's
+  SLURP-FILE and SPLIT-LINES did not. The same question against the same
+  capability succeeds or fails on whether somebody happened to name the function
+  after the words the asker used.
+
+  That is the clearest statement of the defect available, and it is sharper than
+  the one this document was drafted with. r39-1 and r39-2 are regression guards
+  on a name match. r39-3 is the target: DOT-PREFIXED-P shares no token with
+  "test whether a string starts with a prefix" except through its docstring, and
+  it still misses. r39-4 passes and always did.
+
+  "parse a number out of a string" is not a case here: its right answer is that
+  nothing exists, which is REQ-0037's, and the harness has no way to assert it.
+  The three such queries are written down in ABSENCE_CASES against the day it
+  does.
+
+  The log-derived set is the second measure and the honest one: 15 judgements, 3
+  currently scorable, 5 hit and 1 missed. It is small because it is real, and it
+  grows by being used rather than by being written.
+
+  WHAT THIS IS NOT
+
+  Not embeddings. A vector index is the obvious answer and brings a model
+  dependency, a build step and an answer nobody can explain to the caller who got
+  it; DEC-0001's posture is that a recorded gap beats a confident guess, and an
+  unexplainable ranking is the confident guess. Term overlap against indexed
+  prose is one more field in a scorer that already exists.
+
+  OPEN QUESTIONS
+
+  - Docstrings are absent from most of front-end, which is 60 of the 106 recorded
+    queries. What R1 does for a tree with no prose is unanswered, and the
+    fallback cannot be worse than today's behaviour.
+  - How is "the subject" of a task identified without parsing English? "parse a
+    number" and "parse a document" share a verb and differ in the noun, and the
+    cheap approximation -- weight the rarer term higher -- is worth trying before
+    anything cleverer.

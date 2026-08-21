@@ -50,6 +50,36 @@ CASES = [
     ("front-end", "segment terrain into region polygons", ["polygonsToPartition"], "fe-8"),
     ("front-end", "switching between editor modes", ["EditorModeToggle"], "fe-9"),
     ("front-end", "saving a piece design and reporting rejections", ["SaveDesign"], "fe-10"),
+    # loom -- the four misses the context log recorded against Loom's own tree on
+    # 2026-08-18, turned into cases by REQ-0039. Each was recovered by the agent
+    # with `find` after `context` returned lexical matches, and each names the
+    # entity the judgement says was the answer. They are expected to fail until
+    # REQ-0039 lands: a case that fails is what a target looks like, and the
+    # summary line counts them separately from the ones that guard a behaviour.
+    # The first two moved: PLAN-0036 S1 deleted Loom's SLURP-FILE and SPLIT-LINES
+    # for the library's, so the tree that now holds the answer is `utils' and a
+    # case naming `loom' would fail for a reason that is not the ranking's.
+    #
+    # Retargeted they PASS, and that is worth reading carefully rather than as
+    # good news: they pass because READ-FILE and STRING-LINES contain the task's
+    # own words, where SLURP-FILE and SPLIT-LINES did not and were missed. So
+    # these two are regression guards on a name match, not targets for REQ-0039.
+    # r39-3 is the target: DOT-PREFIXED-P shares no token with "starts with a
+    # prefix" except through its docstring, and it is the one that still misses.
+    ("utils", "read a whole file into a string", ["read-file"], "r39-1"),
+    ("utils", "split a string on a delimiter character", ["string-lines"], "r39-2"),
+    ("loom", "test whether a string starts with a prefix", ["dot-prefixed-p"], "r39-3"),
+    ("loom", "look up a value in an alist or plist by key", ["alist-plist"], "r39-4"),
+]
+
+# REQ-0037: the queries whose right answer is that nothing here does that. They
+# are not in CASES because CASES asks "is this name present"; the assertion here
+# is the opposite one and there is nothing yet to assert it against. Recorded so
+# that the day absence becomes reportable, the cases are already written.
+ABSENCE_CASES = [
+    ("loom", "join a list of strings with a separator", "r37-1"),
+    ("loom", "parse a number out of a string", "r37-2"),
+    ("loom", "reading a file with an encoding fallback when it is not UTF-8", "r37-3"),
 ]
 
 def names_in(bundle):

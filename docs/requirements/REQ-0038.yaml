@@ -1,0 +1,110 @@
+id: REQ-0038
+title: Every read query must be logged, not only context, because the log currently measures Loom's worst surface and is blind to its best
+status: draft
+date: 2026-08-21
+refines: [REQ-0036]
+affects: [record-context-call, record-context-use, drain-context-log, define-operation,
+          search-entities, describe-entity, impact-set, structure-report]
+importance: Critical
+tags: [retrieval, evaluation, logging, measurement, req-0036, des-0030]
+summary: |
+  DES-0030 logs `context` and nothing else. The judged records say, repeatedly
+  and in the agent's own words, that the answers which decided the work came
+  from `describe`, `structure` and `find` -- none of which is recorded, and each
+  of which is presently written into the corpus as a *context miss*.
+
+  So the one operation whose ranking is under measurement is the one the
+  evidence says performed worst, and the three that performed best appear in the
+  data only as its failures. tools/acceptance.py --log prints
+  `miss describe inbound-calls edges` under a line the agent wrote as *"THE MOST
+  VALUABLE THING LOOM DID THIS SESSION"*. That is not a coverage gap; it is a
+  measurement that inverts its own subject.
+body: |
+  WHAT THE LOG SEES AND WHAT IT MISSES
+
+  106 records, all of them `context`. Meanwhile, from the `used` judgements on
+  those same records:
+
+  - *"describe inbound-calls edges -- THE MOST VALUABLE THING LOOM DID THIS
+    SESSION, and it is not a context feature -- it is loom_describe. Deleting
+    dead code from gs-utils, a regex call graph was wrong three times and loom
+    right three times... 33 definitions were deleted on describe's answer."*
+  - *"structure system-edges -- Used heavily and it came from `structure`, not
+    from this bundle: 32 systems calling utils, ~800 call edges. That is what
+    established the blast radius before any file was opened."*
+  - *"describe per exported symbol (103 calls over REST) -- Used to build the
+    per-symbol caller tally... caught a bug in my own shell work."*
+  - *"loom_structure commit field -- USED, and it should be advertised."*
+
+  And four separate records where a `context` miss was recovered by `find`:
+  *"found afterwards with find term=split"*, *"Confirmed with find term=join
+  returning nothing"*, *"Found with find term=prefix"*, *"`find` returning empty
+  was right and is how the dead export was caught"*.
+
+  That last one is the shape of the whole argument. A `find` that returns nothing
+  is the cheapest true answer the service gives, it is what REQ-0037 wants
+  `context` to learn, and it is not recorded anywhere. The service cannot count
+  how often its best answer is the empty one.
+
+  REQUIREMENTS
+
+  R1  Every :READ operation writes a record: find, describe, impact, context,
+      structure, check, rules, status, drift, check-document. The writer is
+      RECORD-CONTEXT-CALL generalised, and the natural seam is DEFINE-OPERATION
+      -- one place that already knows the operation name, its tier and its
+      arguments, so a new operation is logged by existing.
+
+  R2  A record says which operation it was and carries that operation's own
+      arguments and answer shape. A `find` record needs the term and the number
+      of entities returned; a `describe` record needs the entity and its inbound
+      and outbound edge counts; an `impact` record needs the depth, the count and
+      whether it truncated. One schema with an operation field, not ten schemas.
+
+  R3  An empty answer is recorded as an answer. `find` returning nothing is the
+      single most informative event in the log and today leaves no trace.
+
+  R4  A judgement names the operation it judges. RECORD-CONTEXT-USE takes a
+      record id, so this follows from R1 -- but the scorer must stop reading
+      every judgement as a statement about `context`. The three judgements
+      quoted above are `describe` and `structure` successes and are currently
+      counted as `context` misses, which corrupts both numbers at once: recall
+      for context is understated and describe's record is invisible.
+
+  R5  Write cost stays where DES-0030 put it. A `find` is 40ms and the log must
+      not change that; the recorded latency across 106 context calls is a median
+      of 47ms and a maximum of 131ms, and that is the budget a record has to
+      disappear inside.
+
+  R6  A session can be reconstructed. The recoveries are sequences -- context
+      returns eight lexical matches, the caller runs `find`, the caller runs
+      `describe` on what find returned -- and that sequence is the evidence that
+      the first answer was insufficient. Records carry enough (an ordering, and
+      whatever identifies a caller across calls) to see the sequence, without
+      requiring the caller to declare a session.
+
+  ACCEPTANCE
+
+  A run of the five recoveries above against the current tree produces, for each,
+  a context record followed by a find record, with the find's result count
+  recorded and zero where the answer was empty. tools/acceptance.py --log scores
+  a judgement against the operation it names rather than against context. The
+  three judgements quoted above stop appearing as context misses.
+
+  WHAT THIS IS NOT
+
+  Not logging writes. set-status, complete, watch and init change the tree, and
+  what they need is an audit trail with different retention and different
+  permission questions. This is about measuring retrieval.
+
+  Not a general request log. The record exists to be judged, so it holds what a
+  judgement needs and not a transcript.
+
+  OPEN QUESTIONS
+
+  - Does R6 need a caller identity, or is a time-ordered read of one directory
+    enough? A single-agent session says yes; two agents against one service say
+    no, and MCP has no session concept to borrow.
+  - 106 context records in three days is a rate a directory of files can carry.
+    Ten operations at `find`'s frequency is not obviously the same problem.
+    Retention, or sampling, or a different store -- unresolved, and cheap to
+    defer until the rate is observed rather than guessed.
