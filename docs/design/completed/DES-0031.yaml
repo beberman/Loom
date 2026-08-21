@@ -195,8 +195,14 @@ body: |
   A gap threshold is a heuristic and is named as one: it will merge two sessions
   that abut and split one that paused. Both failures are visible in the printed
   sequence, which is the argument for printing the sequence rather than a count
-  derived from it. The identity that would make it exact is still deferred, and
-  its trigger is unchanged: the log showing two callers interleaved.
+  derived from it.
+
+  The caller identity that would make it exact was dropped rather than deferred
+  when R6 was amended on 2026-08-21. There is nothing in MCP to identify a caller
+  by, so the field would have to be invented and then declared by every caller,
+  and a field a caller must remember to fill is empty in exactly the long sessions
+  worth reading. A directory of files, purged when it grows past what is useful,
+  is the whole mechanism.
 
   WHAT IS BUILT AND WHAT IS NOT
 
@@ -209,7 +215,7 @@ body: |
   tools/acceptance.py and neither touches the service, which is what the split
   between S2 and S3 was predicting.
 
-  Deferred, with its trigger: the caller identity R6 would need to reconstruct a
-  session when two agents share one service. Nothing in the corpus needs it and
-  designing it against a hypothetical second caller is how a field nobody fills
-  gets added.
+  Nothing is deferred. The caller identity an earlier R6 asked for was dropped
+  from the requirement rather than left pending: designing it against a
+  hypothetical second caller is how a field nobody fills gets added, and MCP
+  offers nothing to fill it with.

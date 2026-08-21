@@ -396,10 +396,12 @@ def parse_at(record):
 def sessions(all_records, gap=SESSION_GAP_SECONDS):
     """The directory cut into runs of calls, by the gap between consecutive ones.
 
-    DES-0031 D11, which is R6 for the single agent this corpus holds. No field, no
+    DES-0031 D11, and the whole of R6 rather than a stand-in for it. No field, no
     caller declaration and no concept MCP does not have: the records are already
     time-ordered in one directory, and where they stop for half an hour the
-    session stopped.
+    session stopped. The caller identity an earlier draft of R6 asked for was
+    dropped -- a field every caller must remember to declare is empty in exactly
+    the long sessions worth reading.
 
     A heuristic, and named as one -- it merges two sessions that abut and splits
     one that paused. Both failures are visible in the printed sequence, which is
@@ -456,8 +458,9 @@ def sessions_main():
                   f"find or describe")
     print(f"\n{len(all_records)} record(s) in {len(runs)} session(s), "
           f"cut on a {SESSION_GAP_SECONDS // 60}-minute gap")
-    print("A session is the directory in time order. The caller identity two "
-          "agents would need is deferred; its trigger is the log showing two.")
+    print("A session is the directory in time order, which is the whole "
+          "mechanism: there is nothing in MCP to identify a caller by, so R6 "
+          "asks for the ordering and not for an identity.")
     return 0
 
 

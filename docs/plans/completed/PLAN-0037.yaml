@@ -14,7 +14,7 @@ summary: |
   discarded, and a used entry that is not a name is classified before the
   freshness gate rather than resolved by it, which is what had been dropping 12
   judgements of 15. S4 is sessions, built as the directory's time order; the
-  caller identity stays deferred with its trigger.
+  caller identity R6 once asked for was dropped, not deferred.
 body: |
   BASELINE, before S1, on commit c93465e
 
@@ -95,10 +95,10 @@ body: |
   S4  SESSIONS  -- DONE, AS THE TIME ORDER AND NOT AS AN IDENTITY
 
   R6. Deferred here on the grounds that two agents against one service need an
-  identity MCP has no concept for. That is still true and still deferred. What was
-  wrong was treating it as the whole of R6: the requirement's own open question
-  asks whether a time-ordered read of one directory is enough and answers yes for
-  a single agent, which is the corpus that exists.
+  identity MCP has no concept for. The premise held and the conclusion did not:
+  what was wrong was treating the identity as the whole of R6. The requirement's
+  own open question asks whether a time-ordered read of one directory is enough
+  and answers yes for a single agent, which is the corpus that exists.
 
   So --sessions cuts the directory on the gap between consecutive records and
   prints each run of them in order. The recovery R6 describes -- context returns
@@ -108,8 +108,10 @@ body: |
   which is the argument for printing the sequence rather than a statistic over it.
   D11.
 
-  Still deferred, trigger unchanged: the caller identity, when the log shows two
-  callers interleaved.
+  The caller identity was then dropped from R6 outright rather than left pending.
+  MCP has nothing to identify a caller by, a field every caller must remember to
+  declare is empty in the sessions worth reading, and a directory of files --
+  purged when it grows past what is useful -- is the whole mechanism. R6 is met.
 
   WHAT THIS PLAN DOES NOT DO
 

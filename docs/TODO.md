@@ -334,18 +334,12 @@ the usage log.
   this document's status" call short of `check-document`, which reports
   references rather than status.
 
-### Three items no document carries
+### Items no document carries
 
-- **The harness contaminates the corpus it measures.** `acceptance.py --log`
-  asks `/find` whether each used name still resolves, and since REQ-0038 S2
-  every one of those is a logged read that writes a record. The directory went
-  from 193 records to 281 across this session, ~78 of them written by the thing
-  measuring it. They carry no judgement so they score nothing, but they are
-  most of the population any rate or retention decision would be taken against,
-  and `--sessions` shows them as sessions. Memoising `resolves` cut it by
-  roughly half and does not fix it. The fix is a way for a caller to say this
-  read is not evidence — which is REQ-0044's problem shape (a fact about a
-  record that a program can read) one level up, and neither document says it.
+- ~~The harness contaminates the corpus it measures.~~ Written here on
+  2026-08-21 and moved the same day: REQ-0038's DECIDED section carries it, along
+  with the purge that answers it — keep records carrying a judgement, drop
+  unjudged `find` records older than the current commit.
 
 - **`tools/loom-serve.sh update` reports failure while the service is starting.**
   It printed `nothing answering on http://127.0.0.1:4780/v1 after ~20s` and the

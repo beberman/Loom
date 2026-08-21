@@ -1,6 +1,6 @@
 id: REQ-0038
 title: Every read query must be logged, not only context, because the log currently measures Loom's worst surface and is blind to its best
-status: partial
+status: implemented
 date: 2026-08-21
 refines: [REQ-0036]
 affects: [record-context-call, record-context-use, drain-context-log, define-operation,
@@ -75,12 +75,21 @@ body: |
       of 47ms and a maximum of 131ms, and that is the budget a record has to
       disappear inside.
 
-  R6  A session can be reconstructed. The recoveries are sequences -- context
-      returns eight lexical matches, the caller runs `find`, the caller runs
-      `describe` on what find returned -- and that sequence is the evidence that
-      the first answer was insufficient. Records carry enough (an ordering, and
-      whatever identifies a caller across calls) to see the sequence, without
-      requiring the caller to declare a session.
+  R6  A session can be reconstructed from the directory in time order. The
+      recoveries are sequences -- context returns eight lexical matches, the
+      caller runs `find`, the caller runs `describe` on what find returned -- and
+      that sequence is the evidence that the first answer was insufficient. A
+      record carries when it happened; reading the directory in `at` order is
+      what shows the sequence, and that is the whole of the clause.
+
+      An earlier draft of R6 also asked for whatever identifies a caller across
+      calls. That is dropped, not deferred. MCP has no session concept to borrow,
+      so there is nothing to identify a caller *by* that the caller would not
+      have to invent and then remember to declare -- and a field a caller must
+      remember to fill is empty in precisely the long sessions worth reading.
+      Files in a directory work. If two agents ever do interleave, the printed
+      sequence is visibly wrong, which is a better trigger than a field added in
+      advance against a caller who does not exist.
 
   ACCEPTANCE
 
@@ -99,38 +108,25 @@ body: |
   Not a general request log. The record exists to be judged, so it holds what a
   judgement needs and not a transcript.
 
-  OUTSTANDING, at 50a85c4
+  DECIDED
 
-  R1, R2, R3, R4 and R5 are true of the tree. R6 is half true and that is why this
-  is partial rather than implemented.
+  Both open questions were answered on 2026-08-21, once the rate could be
+  observed rather than guessed.
 
-  A session can be reconstructed for one caller: `acceptance.py --sessions` cuts
-  .loom/context on the gap between consecutive records and prints each run in
-  order, which is where the recovery this requirement describes -- context, then
-  find, then describe on what find returned -- became readable. What R6 also asks
-  for is "whatever identifies a caller across calls", and no record carries it. Two
-  agents against one service would interleave into one session and the printed
-  sequence would be wrong in a way nothing detects.
+  - **R6 needs no caller identity.** A time-ordered read of one directory is the
+    answer, and there is nothing to identify a second caller with that MCP would
+    carry. R6 now says so, and the clause is met rather than deferred.
+  - **Retention is purging old files.** 106 context records in three days was a
+    rate a directory carries easily; every read operation at `find`'s frequency
+    is a higher one, and the same directory carries that too. A record
+    fingerprints the tree it was written against, so one that has aged past that
+    tree is not evidence any more and deleting it costs nothing that could be
+    recovered by keeping it. No sampling, no rotation policy, no second store:
+    when the directory grows past what is useful, old files go.
 
-  Deliberately not built, and the first open question below is why: MCP has no
-  session concept to borrow, and a field designed against a hypothetical second
-  caller is a field nobody fills. The trigger for building it is the log showing
-  two callers interleaved. Until then the gap threshold is a heuristic whose two
-  failure modes -- merging sessions that abut, splitting one that paused -- are
-  visible in the output rather than hidden inside a statistic.
-
-  One thing S3 found that this requirement did not anticipate, now in DES-0031 D7:
-  the scorer was discarding 12 of its 15 judged records as `unverifiable', not
-  because a definition had moved but because 18 of the 41 `used' entries are not
-  entity names and the freshness gate resolved every one of them. R4 named the
-  corruption one level above where it lived. Both are repaired.
-
-  OPEN QUESTIONS
-
-  - Does R6 need a caller identity, or is a time-ordered read of one directory
-    enough? A single-agent session says yes; two agents against one service say
-    no, and MCP has no session concept to borrow.
-  - 106 context records in three days is a rate a directory of files can carry.
-    Ten operations at `find`'s frequency is not obviously the same problem.
-    Retention, or sampling, or a different store -- unresolved, and cheap to
-    defer until the rate is observed rather than guessed.
+    One thing to purge with, noted where it will be looked for: the harness
+    contaminates its own corpus. `acceptance.py --log` asks `find` whether each
+    used name still resolves, and since R1 every one of those is itself a
+    recorded read. A purge that keeps records carrying a judgement and drops
+    unjudged `find` records older than the current commit removes most of that
+    population without touching anything that scores.
