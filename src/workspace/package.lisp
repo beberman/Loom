@@ -58,6 +58,7 @@
    #:configure-context-log-from-environment
    #:loom-root
    #:record-context-call
+   #:record-query
    #:drain-context-log
    #:record-context-use
    #:context-record-path

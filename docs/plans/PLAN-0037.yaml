@@ -1,0 +1,90 @@
+id: PLAN-0037
+title: "DES-0031 in four steps: the writer, the seam, the scorer, the session"
+status: draft
+date: 2026-08-21
+refines: [DES-0031]
+affects: [invoke-operation, record-query, write-record-async, answer-shape,
+          query-argument-alist, record-context-call]
+tags: [retrieval, evaluation, logging, req-0038]
+summary: |
+  S1 and S2 are done: the generic writer exists and INVOKE-OPERATION calls it, so
+  every read but :context is recorded and the suite is 9 of 9. S3 is the change
+  that makes the corpus mean what it says -- the scorer reading a judgement
+  against the operation it names -- and S4 is sessions, deliberately last.
+body: |
+  BASELINE, before S1, on commit c93465e
+
+      LOOM-ONTOLOGY 367   LOOM-WORKSPACE 405   LOOM-SERVE 175   LOOM-MCP  49
+      LOOM-ANALYZER 749   LOOM-KNOWLEDGE 231   LOOM-REST   97
+      LOOM-GRAPH    503   LOOM-PROCESS   135
+                                              2711 checks, 9 of 9  (2720 after S2)
+
+  S1  THE GENERIC WRITER  -- DONE
+
+  RECORD-QUERY in context-log.lisp, beside RECORD-CONTEXT-CALL and sharing its
+  machinery: same directory, same id scheme, same two git fingerprints. NIL
+  directory writes nothing, which is the default.
+
+  WRITE-RECORD-ASYNC factored out of RECORD-CONTEXT-CALL at the same time, since
+  the thread bookkeeping and the argument for it were about to exist twice. It
+  takes a thunk rather than a record so the fingerprints stay off the caller's
+  path, and the facts that could change under the caller -- the repository's name
+  and root -- are read before it is called.
+
+  ANSWER-SHAPE and QUERY-ARGUMENT-ALIST are D3 and D4. The context record gains
+  :OPERATION "context" so both writers share the discriminator.
+
+  S2  THE SEAM  -- DONE
+
+  INVOKE-OPERATION measures the call and hands it to RECORD-READ-QUERY, which
+  records when the tier is :read and the operation is not :context, and swallows
+  its own failures. Five tests in src/serve/test/operations.lisp over the real
+  fixture repository: the record names its operation and its arguments, an empty
+  answer records none, a write records nothing, a large argument records its
+  length, and the log off writes nothing and answers normally.
+
+  RESULT: 9 of 9, LOOM-SERVE 175 -> 184 (nine checks in five tests).
+
+  One defect found by its own test and worth keeping in the record, because it is
+  the requirement's subject: the first ANSWER-SHAPE selected its countable key
+  with GETF, which cannot tell an absent key from one whose value is NIL. `find'
+  returning nothing has :ENTITIES present and empty, so the one event R3 calls
+  the most informative in the log was the one event the implementation skipped.
+  GET-PROPERTIES' indicator is the fix.
+
+  S3  THE SCORER READS THE OPERATION  -- NEXT
+
+  R4. tools/acceptance.py reads every judgement as a statement about `context',
+  so a `describe' success is counted as a context miss -- literally, in the
+  current output: `miss describe inbound-calls edges' under a line the agent
+  wrote as the most valuable thing Loom did that session.
+
+  The change: a judgement is scored against the record's :OPERATION. A judgement
+  on a `find' record asks whether find returned the entity; one on a `describe'
+  record asks whether describe's neighbours held it. Records written before
+  :OPERATION existed have no field to read and are reported as unattributed
+  rather than assumed to be context, which is the same posture R4 takes toward a
+  stale fingerprint.
+
+  Test: the three judgements quoted in REQ-0038 stop appearing as context misses,
+  and the context recall figure moves because its denominator was wrong.
+
+  S4  SESSIONS  -- LAST, AND ONLY WHEN THE LOG SHOWS TWO CALLERS
+
+  R6. The recoveries are sequences -- context returns eight lexical matches, the
+  caller runs `find', the caller runs `describe' on what find returned -- and the
+  sequence is the evidence that the first answer was insufficient. One directory
+  in time order answers this for a single agent, which is what the corpus holds
+  today.
+
+  Not built now, on purpose. Two agents against one service need an identity MCP
+  has no concept for, and designing it against a hypothetical caller is how a
+  field nobody fills gets added. The trigger is the log showing interleaved
+  callers.
+
+  WHAT THIS PLAN DOES NOT DO
+
+  Retention. 106 context records in three days is a rate a directory of files
+  carries easily; ten operations at `find''s frequency may not be, and the answer
+  -- sampling, rotation, a different store -- should be chosen against a measured
+  rate rather than a guessed one. The rate is now measurable, which is the point.

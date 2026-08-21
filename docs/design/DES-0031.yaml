@@ -1,0 +1,98 @@
+id: DES-0031
+title: One record per answered read, written at the one seam both skins pass through
+status: partial
+date: 2026-08-21
+refines: [REQ-0038]
+affects: [invoke-operation, record-query, record-context-call, write-record-async,
+          answer-shape, query-argument-alist]
+tags: [retrieval, evaluation, logging, req-0038, des-0030]
+summary: |
+  REQ-0038 asks for every read query to be recorded. The design question is where,
+  and there is one honest answer: INVOKE-OPERATION. It is the function both skins
+  call, it already holds the operation, its tier and its decoded arguments, and it
+  already wraps the call -- so a new operation is logged by existing, which is the
+  requirement's own argument for why per-operation instrumentation is the wrong
+  shape.
+
+  The record is DES-0030's, generalised. Same directory, same id scheme, same
+  off-thread write, same two git fingerprints, plus an :OPERATION field that both
+  kinds of record now carry so a reader of the directory can tell what it is
+  looking at without inferring it from which keys are present.
+body: |
+  D1  THE SEAM IS INVOKE-OPERATION, NOT THE OPERATION BODIES
+
+  The alternative is a call at the bottom of twelve operation bodies, and it is
+  wrong for the reason REQ-0038 R1 gives: an operation added later is an
+  operation nobody remembered to instrument, and the gap is invisible because a
+  missing record looks exactly like a query nobody ran.
+
+  What that costs is precision. INVOKE-OPERATION sees a result, not an answer: it
+  cannot know that :FIND's list is entities and :IMPACT's is an impact set. D3 is
+  how much of that is worth recovering.
+
+  D2  :CONTEXT KEEPS ITS OWN RECORD AND IS SKIPPED HERE
+
+  A judgement about ranking needs the seeds with their scores and the band each
+  item landed in, and that lives where the bundle is built -- BUILD-CONTEXT's
+  second value, which INVOKE-OPERATION never sees. So :CONTEXT continues to call
+  RECORD-CONTEXT-CALL from its own body and is excluded from the generic hook.
+
+  Two writers, one schema, one directory. The discriminator is :OPERATION, which
+  the context record now carries too. Without it a reader distinguishes them by
+  which keys are present, which is the guess ALIST-OBJECT-P exists not to make.
+
+  D3  THE ANSWER IS RECORDED AS A SHAPE, NOT AS A COPY
+
+  ANSWER-SHAPE reduces a result to what a judgement needs: which collection it
+  held, how many, and whether none. The countable keys are tried in the order the
+  operations return them and the first *present* one wins.
+
+  Present, not true, and this is the design's one sharp edge. GETF cannot tell an
+  absent key from one whose value is NIL, and the second is the whole subject:
+  an empty :ENTITIES list is `find' answering nothing, which R3 calls the most
+  informative event in the log. The first implementation selected with GETF and
+  therefore skipped exactly the case the requirement exists for, recording the
+  empty answer as unremarkable. GET-PROPERTIES' indicator is what distinguishes
+  them.
+
+  A result shape nothing recognises records its type and no count. Honest, and it
+  makes a new operation visible as unmodelled rather than silently counted as
+  empty.
+
+  D4  AN ARGUMENT IS RECORDED ONLY WHEN IT IS A FACT ABOUT THE QUESTION
+
+  CHECK-DOCUMENT takes a whole document in :CONTENTS. A log holding those is a
+  second copy of docs/ that nobody asked for and that ages badly, so a value
+  longer than *RECORD-ARGUMENT-LIMIT* is recorded as its length. What a judgement
+  about retrieval needs to know about a 4KB argument is that it was 4KB.
+
+  D5  WRITES ARE EXCLUDED, AND THAT IS A SCOPE DECISION
+
+  set-status, complete, watch and init change the tree. An audit trail for them
+  has different retention, a different permission question and a different
+  reader, and REQ-0038 says so. The tier test is one line here and the discipline
+  is worth stating: this directory is a retrieval corpus.
+
+  D6  FAILURE TO RECORD NEVER REACHES THE CALLER
+
+  The answer is computed, correct and about to be returned. Losing it to Loom's
+  own bookkeeping would be the worst trade in the file, so the hook is wrapped
+  and the write itself is on another thread, where it could not take the answer
+  down even if it tried. DES-0030's measurement stands: the two fingerprints are
+  six `git' invocations at about 13ms each, which is why they are deferred.
+
+  WHAT IS BUILT AND WHAT IS NOT
+
+  R1, R2, R3, R5 and the write exclusion are in. WRITE-RECORD-ASYNC was factored
+  out of RECORD-CONTEXT-CALL when the second writer arrived, so the thread
+  bookkeeping and its reasoning are one copy rather than two.
+
+  R4 -- the scorer reading a judgement against the operation it names -- is not.
+  tools/acceptance.py still reads every judgement as a statement about `context',
+  which is what makes a `describe' success appear as a context miss. It is the
+  next step and it is a change to the harness rather than to the service.
+
+  R6 -- reconstructing a session -- is not, and is deliberately last. The records
+  are time-ordered in one directory, which answers it for a single agent; two
+  agents against one service need something MCP has no concept for, and the right
+  time to design that is when the log shows two.

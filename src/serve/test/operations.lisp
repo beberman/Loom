@@ -323,3 +323,101 @@ check:
       (is-false (getf whole :truncated)
                 "an uncut answer must not claim to be one, or the flag is noise
 in every response and stops being read"))))
+
+;;; ------------------------------------------------------------------
+;;; REQ-0038: every read query is recorded, not only context
+;;; ------------------------------------------------------------------
+
+(defun records-in (directory)
+  "Every record file in DIRECTORY, decoded."
+  (mapcar (lambda (p) (with-open-file (in p) (json:decode-json in)))
+          (directory (merge-pathnames "ctx-*.json" directory))))
+
+(defmacro with-recorded-log ((directory) &body body)
+  "Run BODY with the query log on in a fresh DIRECTORY, which stays bound
+throughout BODY so the assertions can read it.
+
+BODY drains before it reads: the write is on another thread precisely so that a
+caller never waits for it, and DRAIN-CONTEXT-LOG is how a test says it needs the
+file now."
+  `(let* ((,directory (merge-pathnames (format nil "loom-req-0038-~36r/"
+                                               (random (expt 2 48)))
+                                       (uiop:temporary-directory)))
+          (loom-workspace:*context-log-directory* ,directory))
+     (ensure-directories-exist ,directory)
+     (unwind-protect (progn ,@body)
+       (ignore-errors (uiop:delete-directory-tree ,directory :validate t)))))
+
+(defun drained-records (directory)
+  "Every record written so far, after waiting for the writer threads."
+  (loom-workspace:drain-context-log)
+  (records-in directory))
+
+(test a-read-operation-writes-a-record-naming-itself
+  ;; R1 and R2. The point of the hook living in INVOKE-OPERATION is that FIND is
+  ;; recorded without FIND knowing anything about it.
+  (with-operations-fixture (repository)
+    (with-recorded-log (directory)
+      (call-operation :find '(:read)
+                      :repository (repository-name repository) :term "alpha")
+      (let ((records (drained-records directory)))
+      (is (= 1 (length records)) "one read, one record")
+      (when records
+        (let ((r (first records)))
+          (is (string= "find" (cdr (assoc :operation r)))
+              "the record says which operation it was")
+          (is (string= "alpha" (cdr (assoc :term (cdr (assoc :arguments r)))))
+              "and what was asked")))))))
+
+(test an-empty-answer-is-recorded-as-an-answer
+  ;; R3, and the reason this requirement exists: a find that returns nothing is
+  ;; the cheapest true answer the service gives and left no trace at all.
+  (with-operations-fixture (repository)
+    (with-recorded-log (directory)
+      (call-operation :find '(:read)
+                      :repository (repository-name repository)
+                      :term "no-such-name-anywhere-in-this-fixture")
+      (let* ((r (first (drained-records directory)))
+             (answer (and r (cdr (assoc :answer r)))))
+        (is-true answer "the empty answer was recorded at all")
+        (when answer
+          (is (eq t (cdr (assoc :none answer)))
+              "an empty answer records none: true"))))))
+
+(test a-write-operation-is-not-recorded
+  ;; The excluded tier. An audit trail is a different requirement with different
+  ;; retention, and this is a retrieval corpus.
+  (with-operations-fixture (repository)
+    (with-recorded-log (directory)
+      (call-operation :set-status '(:read :write)
+                      :repository (repository-name repository)
+                      :document "DEC-0001" :status "accepted")
+      (is (zerop (length (drained-records directory))) "a write adds no record"))))
+
+(test a-large-argument-is-recorded-as-its-size
+  ;; A record says what was asked, not what was sent. CHECK-DOCUMENT carries a
+  ;; whole document, and a log holding those is a second copy of docs/.
+  (with-operations-fixture (repository)
+    (with-recorded-log (directory)
+      (ignore-errors
+       (call-operation :check-document '(:read)
+                       :repository (repository-name repository)
+                       :path "docs/decisions/DEC-0002.yaml"
+                       :contents (format nil "id: DEC-0002~%title: ~a~%"
+                                         (make-string 500 :initial-element #\x))))
+      (let* ((r (first (drained-records directory)))
+             (contents (and r (cdr (assoc :contents (cdr (assoc :arguments r)))))))
+        (is-true contents "check-document was recorded")
+        (when contents
+          (is (search "characters" contents)
+              "the length is recorded and the payload is not"))))))
+
+(test the-log-is-off-unless-a-directory-is-set
+  ;; The default, and the whole of the tier argument: NIL writes nothing and the
+  ;; read is unaffected.
+  (with-operations-fixture (repository)
+    (let ((loom-workspace:*context-log-directory* nil))
+      (is-true (call-operation :find '(:read)
+                               :repository (repository-name repository)
+                               :term "alpha")
+               "a read with the log off answers normally"))))
