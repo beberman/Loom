@@ -24,3 +24,4 @@ tools/extra-repos
 # a publication decision somebody makes after reading it, not one this file
 # makes by default.
 .loom/
+__pycache__/

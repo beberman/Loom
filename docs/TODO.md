@@ -282,3 +282,80 @@ WHERE IT COULD NOT HELP, AND THIS IS THE FINDING
    state where the two agree and the content does not. REQ-0036 R4 already knows
    this -- it pairs the commit with a diff hash for precisely this reason -- and
    the same pairing belongs in `structure` and `status`.
+
+---
+
+## Using Loom to implement REQ-0038, 2026-08-21
+
+A record of what the index answered while S3 and S4 were written, kept because
+REQ-0038 is the requirement about measuring Loom and a session spent inside it
+is evidence of the same kind. Three items below are in no document; the rest is
+the usage log.
+
+### Where the index answered and the shell would have been worse
+
+- **Locating the six entities in DES-0031's `affects:`.** `find` on
+  `record-query`, `answer-shape`, `record-read-query`, `invoke-operation`,
+  `record-context-call`, `record-context-use` and `drain-context-log` returned
+  `file:line-range` for each, one line apiece. Two of the seven were not where
+  the design implied — `record-read-query` is in `src/serve/registry.lisp`, not
+  in `context-log.lisp` beside the writer it calls, and `find` said so without
+  a file being opened.
+- **`record-context-call` had two call sites and `find` listed both** —
+  `src/serve/operations.lisp:260` and `src/process/console.lisp:751`. The
+  console one was not in view from the design and is the second skin D1 argues
+  about.
+- **`structure`'s commit field, before trusting anything.** `cf51f6f` against
+  `git rev-parse HEAD`, equal, so every answer above was about the tree on
+  disk. This is the discipline the corpus itself recommends, in the judgement
+  reading *"loom_structure commit field — USED, and it should be advertised"*,
+  and it cost one call.
+- **`check-document` after each of the two documents was edited.** Both parsed,
+  both `refines:` resolved, every `affects:` name still resolved. A block scalar
+  spliced by a script is exactly the malformed-document case it exists for.
+
+### Where the shell was required
+
+- **`tools/acceptance.py` is invisible.** `find acceptance` and
+  `find score_judgement` both return nothing: Python is not analyzed, so the
+  entire subject of S3 and S4 — 400 lines of harness — has no entity, no
+  callers and no documents attached to it. Every question about it was `sed`,
+  `grep` and reading the file. This is a known absence rather than a defect
+  (REQ-0019 and DES-0013 record the rejected approaches), but it is worth
+  stating in one place that the tree's own measurement harness is the part of
+  the tree Loom cannot answer questions about.
+- **The corpus itself.** `.loom/context/` is a dot-directory and deliberately
+  unindexed, so every fact that drove the design — 193 records, 10 carrying an
+  `:operation` field, 15 judged, 18 of 41 used entries not being names — came
+  from `python3` over the raw JSON. Correct that it is excluded; worth knowing
+  that reasoning about the log is always shell work.
+- **Document statuses.** `sed`/`grep` over `docs/*/`, because the `loom_*` MCP
+  tools were not in this session's tool list and the REST skin has no "show me
+  this document's status" call short of `check-document`, which reports
+  references rather than status.
+
+### Three items no document carries
+
+- **The harness contaminates the corpus it measures.** `acceptance.py --log`
+  asks `/find` whether each used name still resolves, and since REQ-0038 S2
+  every one of those is a logged read that writes a record. The directory went
+  from 193 records to 281 across this session, ~78 of them written by the thing
+  measuring it. They carry no judgement so they score nothing, but they are
+  most of the population any rate or retention decision would be taken against,
+  and `--sessions` shows them as sessions. Memoising `resolves` cut it by
+  roughly half and does not fix it. The fix is a way for a caller to say this
+  read is not evidence — which is REQ-0044's problem shape (a fact about a
+  record that a program can read) one level up, and neither document says it.
+
+- **`tools/loom-serve.sh update` reports failure while the service is starting.**
+  It printed `nothing answering on http://127.0.0.1:4780/v1 after ~20s` and the
+  service was answering normally moments later; the cold start is longer than
+  the script's timeout. The failure text names a log file and reads as broken,
+  which is what CLAUDE.md tells every session to run first.
+
+- **`find term=join` against Loom now returns 2.** The judgement recorded on
+  2026-08-18 says *"Confirmed with find term=join returning nothing"* and it was
+  the corpus's cleanest correct-negative. The tree has changed under it. Nothing
+  is wrong — the record is right about what it saw — but it is a worked example
+  of REQ-0036 R4's decay, and the absence cases in `ABSENCE_CASES` should be
+  re-checked before REQ-0037 is measured against them.

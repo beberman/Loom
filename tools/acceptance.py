@@ -7,14 +7,21 @@ no seeder change, because a session's own commits grew the index from 140 items
 to 144 and pushed MAKE-MACRO-ENTITY out of eighth place. game-server and
 front-end are not written to by this work, so their corpora hold still.
 
-Usage:  python3 tools/acceptance.py            the 32 hand-written cases
-        python3 tools/acceptance.py --log     the cases the log recorded
+Usage:  python3 tools/acceptance.py             the hand-written cases
+        python3 tools/acceptance.py --log      the judgements the log recorded
+        python3 tools/acceptance.py --sessions the log as the sequences it holds
 
 REQ-0036 R10 and R11. The --log mode reads .loom/context/, joins each record
 with the used set an agent filed against it, and reports the three populations
 R3 names. The hand-written cases stay: they are the only judgements in the
 system not shaped by what the current seeder returned, and R11 makes them the
 held-out set. Nothing here trains on them and nothing here rewrites them.
+
+REQ-0038 R4 and R6, DES-0031 D7-D11. A judgement is scored against the operation
+its record names rather than against `context'; a used entry that is not an
+entity name is classified before the freshness gate rather than resolved by it;
+and --sessions prints the directory in time order, which is how a recovery --
+context, then find, then describe on what find returned -- is read back.
 """
 import urllib.request, urllib.parse, json, time, sys, os, glob
 
@@ -165,6 +172,17 @@ def watched_repositories():
     return {r["name"]: r for r in status.get("repositories", [])}
 
 
+def records(directory):
+    """Every record in DIRECTORY, in the order it was written."""
+    out = []
+    for path in sorted(glob.glob(os.path.join(directory, "ctx-*.json"))):
+        if path.endswith(".used.json"):
+            continue
+        with open(path) as f:
+            out.append(json.load(f))
+    return out
+
+
 def judgements(directory):
     """Every record that has a used set, as (record, used) pairs.
 
@@ -184,6 +202,92 @@ def judgements(directory):
             used = json.load(f).get("used") or []
         out.append((record, used))
     return out
+
+
+# REQ-0038 R1's ten read operations, in the spellings a judgement uses. The MCP
+# skin prefixes them, so `loom_structure' credits `structure'.
+OPERATIONS = {"context", "find", "describe", "impact", "structure", "check",
+              "rules", "status", "drift", "check-document"}
+
+# The markers the agent invented in the `name' slot when the entry was not a
+# name. Recognised here rather than parsed out of `how': REQ-0044 asks for a
+# field that would make this unnecessary and this does not preempt it -- these
+# are three literal strings in a slot the scorer already reads, not a reading of
+# the prose beside them.
+MARKERS = {
+    "(nothing)": "absent",     # the correct answer was that nothing exists (REQ-0037)
+    "(overflow)": "unread",    # the bundle was right and could not be read (REQ-0040)
+    "(probe)": "probe",        # not a real question; exclude from measurement (REQ-0044)
+}
+
+
+def classify_used(entry):
+    """One used entry as the claims it actually makes.
+
+    DES-0031 D7. A used entry is not always an entity name, and reading it as one
+    is what dropped 12 of the 15 judged records: FRESHNESS resolves every name
+    and discards the record when one fails, so an agent that named the readability
+    failure or flagged its own probe deleted its record from the measurement.
+
+    Returns a list because a slash-joined list of names is several claims. The
+    kinds are:
+
+      entity  a bare name, and the only kind that is a claim about ranking. Only
+              this kind is asked to resolve.
+      credit  the entry names another operation as where the answer came from,
+              recognised by its first token. D9: a label, never a score.
+      marker  one of MARKERS.
+      note    prose. Reported, not scored, and not evidence against anything."""
+    name = (entry.get("name") or "").strip()
+    if not name:
+        return []
+    if name in MARKERS:
+        return [(MARKERS[name], name)]
+    parts = [p.strip() for p in name.split(" / ")]
+    if len(parts) > 1 and all(p and " " not in p for p in parts):
+        # Several names under one verdict, and the verdict is in `how'. Splitting
+        # them into separate claims was tried and is wrong: the entry reading
+        # "game / ensure-game-row / encode-response / outcome-unchanged /
+        # grid-version" is judged NOISE -- returned and deliberately not used --
+        # and five independent claims read it as five hits, which is the exact
+        # inversion this step exists to repair. Under-counting a miss is a stated
+        # limitation; manufacturing a hit is a corrupted number. REQ-0044's field
+        # is what would let these be read.
+        return [("note", name)]
+    first = name.split()[0].lower()
+    if first.startswith("loom_"):
+        first = first[len("loom_"):].replace("_", "-")
+    if first in OPERATIONS:
+        return [("credit", first)]
+    if " " not in name:
+        return [("entity", name)]
+    return [("note", name)]
+
+
+def attribution(record):
+    """Which operation this record is about, and how that was decided.
+
+    DES-0031 D8. `declared' reads the :OPERATION field. `inferred' reads the
+    schema that predates it -- `task' with `returned.seeds' and `returned.items'
+    is a context record and nothing else in this directory has that shape -- and
+    is reported as an inference so anybody who doubts it can check it. `unknown'
+    is neither, and is the only one that goes unscored."""
+    declared = record.get("operation")
+    if declared:
+        return declared, "declared"
+    returned = record.get("returned") or {}
+    if "task" in record and "seeds" in returned and "items" in returned:
+        return "context", "inferred"
+    return None, "unknown"
+
+
+def returned_names(record):
+    """The names a context record says came back, in rank order.
+
+    Empty for every other operation, and that is D10 rather than a gap: R2
+    records a `find''s count and not its list, so a judgement against one cannot
+    be resolved into a rank and is scored on whether the answer was empty."""
+    return [i["name"] for i in (record.get("returned") or {}).get("items") or []]
 
 
 def fnv1a(text):
@@ -216,19 +320,31 @@ def live_fingerprint(root):
     return {"commit": commit.strip(), "diffHash": fnv1a(diff)}
 
 
+_RESOLVED = {}
+
+
 def resolves(repository, name):
-    """True when NAME still names something in the live index."""
+    """True when NAME still names something in the live index.
+
+    Memoised: the freshness pass asks the same name of the same repository once
+    per record and each miss is an HTTP round trip, which on this corpus was the
+    whole of the harness's runtime."""
+    key = (repository, name)
+    if key in _RESOLVED:
+        return _RESOLVED[key]
     try:
         found = json.load(urllib.request.urlopen(
             B + "/find?" + urllib.parse.urlencode({"repository": repository,
                                                    "term": name}),
             timeout=60))
+        answer = any(e.get("name") == name for e in found.get("entities", []))
     except Exception:
-        return False
-    return any(e.get("name") == name for e in found.get("entities", []))
+        answer = False
+    _RESOLVED[key] = answer
+    return answer
 
 
-def freshness(record, used, watched):
+def freshness(record, entity_names, watched):
     """R4's four outcomes for one record, against the trees now watched.
 
     A fingerprint that no longer matches is not itself a verdict. Every commit to
@@ -246,8 +362,14 @@ def freshness(record, used, watched):
       unwatched     nobody is watching that repository, so nothing can be
                     checked at all. Reported rather than assumed to pass, which
                     is the posture `check` already takes toward a prose file
-                    reference no watched repository holds."""
+                    reference no watched repository holds.
+
+    ENTITY_NAMES is what CLASSIFY_USED kept, not every `used' name. That is the
+    whole of D7: a marker or a sentence resolves to nothing because it is not a
+    name, and letting it reach this test discards the record it was explaining."""
     declared = record.get("repository") or {}
+    if not isinstance(declared, dict):
+        return "unwatched"
     name = declared.get("name")
     if name not in watched:
         return "unwatched"
@@ -255,10 +377,88 @@ def freshness(record, used, watched):
     if live and (live["commit"] == declared.get("commit")
                  and live["diffHash"] == declared.get("diffHash")):
         return "current"
-    for entry in used:
-        if entry.get("name") and not resolves(name, entry["name"]):
+    for entity in entity_names:
+        if not resolves(name, entity):
             return "unverifiable"
     return "checkable"
+
+
+SESSION_GAP_SECONDS = 30 * 60
+
+
+def parse_at(record):
+    try:
+        return time.mktime(time.strptime(record["at"], "%Y-%m-%dT%H:%M:%SZ"))
+    except Exception:
+        return None
+
+
+def sessions(all_records, gap=SESSION_GAP_SECONDS):
+    """The directory cut into runs of calls, by the gap between consecutive ones.
+
+    DES-0031 D11, which is R6 for the single agent this corpus holds. No field, no
+    caller declaration and no concept MCP does not have: the records are already
+    time-ordered in one directory, and where they stop for half an hour the
+    session stopped.
+
+    A heuristic, and named as one -- it merges two sessions that abut and splits
+    one that paused. Both failures are visible in the printed sequence, which is
+    why the sequence is printed rather than a statistic taken over it."""
+    out, current, previous = [], [], None
+    for record in sorted(all_records, key=lambda r: r.get("at") or ""):
+        at = parse_at(record)
+        if previous is not None and at is not None and at - previous > gap:
+            out.append(current); current = []
+        current.append(record)
+        if at is not None:
+            previous = at
+    if current:
+        out.append(current)
+    return out
+
+
+def one_line(record):
+    """A record as the one line a session listing shows it as."""
+    operation, how = attribution(record)
+    label = f"{operation or '?'}{'*' if how == 'inferred' else ''}"
+    if operation == "context":
+        subject = repr(record.get("task", "")[:52])
+        answer = f"{len(returned_names(record))} items"
+    else:
+        arguments = record.get("arguments") or {}
+        subject = " ".join(f"{k}={v}" for k, v in arguments.items()
+                           if k not in ("repository",))[:52] or "-"
+        shape = record.get("answer") or {}
+        answer = ("none" if shape.get("none") is True
+                  else f"{shape.get('count', '?')} {shape.get('kind', '')}".strip())
+    repository = (record.get("repository") or {})
+    repository = repository.get("name", "-") if isinstance(repository, dict) else "-"
+    return f"  {record['at'][11:19]}  {label:10} {repository:12} {subject:54} -> {answer}"
+
+
+def sessions_main():
+    """R6: print the log as the sequences it recorded."""
+    all_records = records(LOG_DIRECTORY)
+    if not all_records:
+        print(f"no records in {LOG_DIRECTORY}")
+        return 0
+    runs = sessions(all_records)
+    for run in runs:
+        print(f"\n=== {run[0]['at'][:10]} {run[0]['at'][11:19]}"
+              f"-{run[-1]['at'][11:19]}  {len(run)} calls")
+        for record in run:
+            print(one_line(record))
+        kinds = [attribution(r)[0] for r in run]
+        recoveries = sum(1 for i, k in enumerate(kinds[:-1])
+                         if k == "context" and kinds[i + 1] in ("find", "describe"))
+        if recoveries:
+            print(f"  -- {recoveries} context call(s) followed directly by "
+                  f"find or describe")
+    print(f"\n{len(all_records)} record(s) in {len(runs)} session(s), "
+          f"cut on a {SESSION_GAP_SECONDS // 60}-minute gap")
+    print("A session is the directory in time order. The caller identity two "
+          "agents would need is deferred; its trigger is the log showing two.")
+    return 0
 
 
 def log_main():
@@ -271,30 +471,96 @@ def log_main():
         return 0
     watched = watched_repositories()
     hits = misses = unused = 0
+    per_operation = {}
+    populations = {"absent": 0, "unread": 0, "note": 0, "credit": 0}
+    scored = probes = unattributed = 0
+
     for record, used in pairs:
-        returned = [i["name"] for i in (record.get("returned") or {}).get("items") or []]
-        used_names = [e.get("name") for e in used if e.get("name")]
-        in_both = [n for n in used_names if n in returned]
-        used_only = [(n, e.get("how")) for n, e in zip(used_names, used)
-                     if n not in returned]
-        returned_only = [n for n in returned if n not in used_names]
-        state = freshness(record, used, watched)
-        if state in ("current", "checkable"):
-            hits += len(in_both); misses += len(used_only); unused += len(returned_only)
-        print(f"[{record['id']}] {state:12} {record['task'][:48]!r}")
-        for name in in_both:
-            rank = returned.index(name) + 1
-            print(f"    hit    {name}  at {rank} of {len(returned)}")
-        for name, how in used_only:
-            print(f"    miss   {name}  found by: {how}")
-        if returned_only:
-            print(f"    unused {len(returned_only)} of {len(returned)} returned")
-    scored = sum(1 for r, u in pairs
-                 if freshness(r, u, watched) in ("current", "checkable"))
-    print(f"\n{len(pairs)} judgement(s), {scored} scored: {hits} hit, "
-          f"{misses} missed, {unused} returned and not used")
+        operation, how = attribution(record)
+        claims = [c for entry in used for c in classify_used(entry)]
+        by_name = {}
+        for entry in used:
+            for kind, value in classify_used(entry):
+                by_name.setdefault((kind, value), entry)
+
+        label = f"{operation or 'unattributed'}{'*' if how == 'inferred' else ''}"
+        if any(kind == "probe" for kind, _ in claims):
+            state = "probe"
+        elif operation is None:
+            state = "unattributed"
+        else:
+            state = freshness(record,
+                              [v for k, v in claims if k == "entity"], watched)
+        subject = record.get("task") or " ".join(
+            f"{k}={v}" for k, v in (record.get("arguments") or {}).items())
+        print(f"[{record['id']}] {label:11} {state:12} {subject[:44]!r}")
+
+        counting = state in ("current", "checkable")
+        if state == "probe":
+            probes += 1
+        elif state == "unattributed":
+            unattributed += 1
+        if counting:
+            scored += 1
+
+        returned = returned_names(record)
+        shape = record.get("answer") or {}
+        for kind, value in claims:
+            entry = by_name[(kind, value)]
+            how_found = (entry.get("how") or "")
+            if kind == "entity" and operation == "context":
+                if value in returned:
+                    if counting:
+                        hits += 1
+                    print(f"    hit    {value}  at {returned.index(value) + 1} "
+                          f"of {len(returned)}")
+                else:
+                    if counting:
+                        misses += 1
+                    print(f"    miss   {value}  found by: {how_found[:100]}")
+            elif kind == "entity":
+                # D10: the record holds a count and not a list, so the question a
+                # judgement against it can answer is whether the answer was empty.
+                verdict = "empty" if shape.get("none") is True else "answered"
+                if counting:
+                    hits += 1
+                print(f"    {verdict:6} {value}  ({operation} returned "
+                      f"{shape.get('count', '?')})")
+            elif kind == "credit":
+                populations["credit"] += 1
+                per_operation[value] = per_operation.get(value, 0) + 1
+                print(f"    credit {value}  {entry.get('name')!r}")
+            elif kind == "absent":
+                populations["absent"] += 1
+                print(f"    absent correct negative: {how_found[:88]}")
+            elif kind == "unread":
+                populations["unread"] += 1
+                print(f"    unread the answer could not be read: {how_found[:70]}")
+            elif kind == "probe":
+                print(f"    probe  excluded: {how_found[:88]}")
+            else:
+                populations["note"] += 1
+                print(f"    note   {value[:60]!r}")
+
+        if operation == "context":
+            named = {v for k, v in claims if k == "entity"}
+            leftover = [n for n in returned if n not in named]
+            if leftover and counting:
+                unused += len(leftover)
+            if leftover:
+                print(f"    unused {len(leftover)} of {len(returned)} returned")
+
+    print(f"\n{len(pairs)} judgement(s): {scored} scored, {probes} probe, "
+          f"{unattributed} unattributed")
+    print(f"ranking: {hits} hit, {misses} missed, {unused} returned and not used")
+    if per_operation:
+        credits = ", ".join(f"{k} {v}" for k, v in sorted(per_operation.items()))
+        print(f"credited to another operation: {credits}")
+    print(f"not a ranking claim: {populations['absent']} correct negative, "
+          f"{populations['unread']} unreadable, {populations['note']} note(s)")
     print("A miss is the only record that raises recall. A hit's rank says how "
-          "nearly it was not one.")
+          "nearly it was not one. A credit is a label and adds to no recall "
+          "figure: a record holding a count and no names cannot support one.")
     return 0
 
 
@@ -328,4 +594,6 @@ def main():
     return 1 if missing_lenient else 0
 
 if __name__ == "__main__":
+    if "--sessions" in sys.argv:
+        sys.exit(sessions_main())
     sys.exit(log_main() if "--log" in sys.argv else main())

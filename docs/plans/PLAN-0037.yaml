@@ -7,10 +7,14 @@ affects: [invoke-operation, record-query, write-record-async, answer-shape,
           query-argument-alist, record-context-call]
 tags: [retrieval, evaluation, logging, req-0038]
 summary: |
-  S1 and S2 are done: the generic writer exists and INVOKE-OPERATION calls it, so
-  every read but :context is recorded and the suite is 9 of 9. S3 is the change
-  that makes the corpus mean what it says -- the scorer reading a judgement
-  against the operation it names -- and S4 is sessions, deliberately last.
+  Four steps, all landed. S1 and S2 are the service: the generic writer exists and
+  INVOKE-OPERATION calls it, so every read but :context is recorded. S3 is the
+  change that makes the corpus mean what it says, and it corrected this plan twice
+  -- a record predating :OPERATION is attributed by the schema rather than
+  discarded, and a used entry that is not a name is classified before the
+  freshness gate rather than resolved by it, which is what had been dropping 12
+  judgements of 15. S4 is sessions, built as the directory's time order; the
+  caller identity stays deferred with its trigger.
 body: |
   BASELINE, before S1, on commit c93465e
 
@@ -52,35 +56,60 @@ body: |
   the most informative in the log was the one event the implementation skipped.
   GET-PROPERTIES' indicator is the fix.
 
-  S3  THE SCORER READS THE OPERATION  -- NEXT
+  S3  THE SCORER READS THE OPERATION  -- DONE
 
-  R4. tools/acceptance.py reads every judgement as a statement about `context',
-  so a `describe' success is counted as a context miss -- literally, in the
-  current output: `miss describe inbound-calls edges' under a line the agent
-  wrote as the most valuable thing Loom did that session.
+  R4, and it grew in the doing. The sketch here was "score a judgement against the
+  record's :OPERATION", which is one of the three things the corpus turned out to
+  need. DES-0031 D7-D10 is the design as built; what follows is what changed and
+  why, because both changes are corrections to this plan rather than elaborations
+  of it.
 
-  The change: a judgement is scored against the record's :OPERATION. A judgement
-  on a `find' record asks whether find returned the entity; one on a `describe'
-  record asks whether describe's neighbours held it. Records written before
-  :OPERATION existed have no field to read and are reported as unattributed
-  rather than assumed to be context, which is the same posture R4 takes toward a
-  stale fingerprint.
+  FIRST CORRECTION. This plan said records predating :OPERATION are reported as
+  unattributed rather than assumed to be context. Every judged record predates it
+  -- all 15 -- so the rule as written scores nothing at all. What it should have
+  said is that the context schema was the discriminator before the field existed
+  and is unambiguous: `task' with `returned.seeds' and `returned.items' is a
+  context record and nothing else in the directory has that shape. Attribution is
+  now `declared', `inferred' or `unknown' and reports which, so an inference is
+  checkable rather than silent. D8.
 
-  Test: the three judgements quoted in REQ-0038 stop appearing as context misses,
-  and the context recall figure moves because its denominator was wrong.
+  SECOND CORRECTION, and the larger one. The plan assumed the scoring was wrong
+  and the population was right. The population was wrong. FRESHNESS resolves every
+  used name against the live index and drops the whole record when one fails, and
+  18 of the 41 used entries are not names -- three markers the agent invented,
+  five slash-joined lists, ten sentences. So 12 of 15 records were discarded as
+  `unverifiable' for reasons that had nothing to do with a moved definition, and
+  the better the judgement the more certainly it was thrown away. That is why the
+  before-run reads 3 scored of 15. CLASSIFY-USED now runs before the gate, and
+  only a bare name is asked to resolve. D7.
 
-  S4  SESSIONS  -- LAST, AND ONLY WHEN THE LOG SHOWS TWO CALLERS
+  What R4's acceptance clause asked for falls out of the two: a credit to another
+  operation is recognised by its first token, reported as a credit to `describe'
+  or `structure', and no longer counted as a `context' miss. It adds nothing to
+  describe's recall -- a record holding a count and no names cannot support a
+  recall claim, and D10 says why that is correct rather than pending.
 
-  R6. The recoveries are sequences -- context returns eight lexical matches, the
-  caller runs `find', the caller runs `describe' on what find returned -- and the
-  sequence is the evidence that the first answer was insufficient. One directory
-  in time order answers this for a single agent, which is what the corpus holds
-  today.
+  RESULT: 15 judgements, 13 scored (2 probes excluded by their own marker), and
+  the four judgements REQ-0038 quotes now print as credits.
 
-  Not built now, on purpose. Two agents against one service need an identity MCP
-  has no concept for, and designing it against a hypothetical caller is how a
-  field nobody fills gets added. The trigger is the log showing interleaved
-  callers.
+  S4  SESSIONS  -- DONE, AS THE TIME ORDER AND NOT AS AN IDENTITY
+
+  R6. Deferred here on the grounds that two agents against one service need an
+  identity MCP has no concept for. That is still true and still deferred. What was
+  wrong was treating it as the whole of R6: the requirement's own open question
+  asks whether a time-ordered read of one directory is enough and answers yes for
+  a single agent, which is the corpus that exists.
+
+  So --sessions cuts the directory on the gap between consecutive records and
+  prints each run of them in order. The recovery R6 describes -- context returns
+  lexical matches, the caller runs `find', the caller runs `describe' on what find
+  returned -- is visible without a field, a declaration or a new concept. The gap
+  threshold is a heuristic and both its failures show up in the printed sequence,
+  which is the argument for printing the sequence rather than a statistic over it.
+  D11.
+
+  Still deferred, trigger unchanged: the caller identity, when the log shows two
+  callers interleaved.
 
   WHAT THIS PLAN DOES NOT DO
 

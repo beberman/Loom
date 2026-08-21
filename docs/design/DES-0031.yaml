@@ -81,18 +81,135 @@ body: |
   down even if it tried. DES-0030's measurement stands: the two fingerprints are
   six `git' invocations at about 13ms each, which is why they are deferred.
 
+  D7  A USED ENTRY IS NOT ALWAYS AN ENTITY NAME
+
+  Written while implementing R4, because the corpus said something the requirement
+  did not know. tools/acceptance.py resolves every `used' name against the live
+  index and, when one does not resolve, declares the whole record `unverifiable'
+  and drops it. That gate exists for a good reason -- counting a deleted function
+  as a ranking miss attributes to the seeder a failure that belongs to the corpus
+  -- and on this corpus it fires 12 times in 15 for a reason that has nothing to
+  do with deletion.
+
+  18 of the 41 used entries are not entity names. Three are markers the agent
+  invented -- `(nothing)', `(overflow)', `(probe)'. Five are slash-joined lists of
+  three or four names. Ten are prose: `the bundle itself', `structure
+  system-edges', `cross-repository comparison', `behavioural equivalence of the
+  two camel-casers'. None of them resolves, because none of them is a name.
+
+  So an agent that answers the feedback call well -- naming the readability
+  failure, flagging the probe, reporting that the correct answer was that nothing
+  exists -- deletes its own record from the measurement. The richer the judgement,
+  the more certainly it is discarded. That is R4's "corrupts both numbers at once"
+  one level below where R4 looked, and it is why the current run prints 3 scored
+  out of 15.
+
+  The fix is to classify before scoring, not to loosen the gate. A used entry is
+  a marker, a credit to another operation, a bare name, or prose; only a bare name
+  is a claim about ranking, and only a bare name is asked to resolve. The others
+  are reported in their own populations, where they say what they were always
+  saying.
+
+  A slash-joined list of names is prose, and that was learned by getting it wrong.
+  Splitting it into one claim per name recovers twelve genuine misses -- the
+  entries reading `json-encode / json-decode / symbol-to-camel-case' really are
+  three things the bundle should have returned -- so the first implementation
+  split. It also turns `game / ensure-game-row / encode-response /
+  outcome-unchanged / grid-version', whose `how' reads NOISE, five of eight
+  seeds, into five hits: an entry saying these were returned and deliberately not
+  used, scored as five things returned and used. That is the precise inversion
+  this step exists to repair, arrived at by a different route.
+
+  So the list is a note. One verdict written over several names cannot be
+  distributed across them without reading the verdict, and the verdict is in
+  `how'. Under-counting a miss is a limitation that can be stated; manufacturing
+  a hit is a number that lies. REQ-0044's field -- a judgement carrying its
+  verdict where a program can read it -- is what would let these be scored, and
+  this is the second place in the harness that wants it.
+
+  D8  ATTRIBUTION IS WHAT THE RECORD DECLARES, THEN THE SCHEMA THAT PREDATES IT
+
+  PLAN-0037 S3 said a record written before :OPERATION existed should be reported
+  as unattributed rather than assumed to be context. Applied to this corpus that
+  is every judged record -- all 15 predate the field -- and the scorer measures
+  nothing at all.
+
+  The caution was right about the direction and wrong about the evidence
+  available. :OPERATION was added so a reader need not infer the kind from which
+  keys are present, but before it existed the keys *were* the discriminator, and
+  they are unambiguous: `task' with `returned.seeds' and `returned.items' is a
+  context record and nothing else in this directory has that shape. Reading it is
+  not assuming.
+
+  So attribution has three outcomes and says which it used: `declared' from the
+  field, `inferred' from the context schema, `unknown' when neither. Only
+  `unknown' goes unscored. A record labelled `inferred' is a record whose
+  attribution can be checked by anybody who doubts it, which is the property that
+  makes the inference honest rather than convenient.
+
+  D9  A CREDIT TO ANOTHER OPERATION IS A LABEL, NOT A SCORE
+
+  The four judgements R4 quotes -- `describe inbound-calls edges', `structure
+  system-edges', `describe per exported symbol', `loom_structure commit field' --
+  were filed against `context' records because at the time no other operation
+  wrote one. R1 fixes that going forward: a judgement about `describe' now has a
+  `describe' record to be filed against. It cannot fix these, and retro-attributing
+  them means reading prose, which is the thing this file already refuses to do.
+
+  What can be read is the first token. Each of the four begins with the name of
+  the operation it credits, optionally in its MCP spelling, and matching that one
+  token is mechanical in a way that parsing `how' is not. The result is a label:
+  the entry is reported as a credit to `describe' rather than as a miss against
+  `context'. It adds nothing to describe's recall, because a record that holds a
+  count and no names cannot support a recall claim, and inventing one from a
+  sentence would be exactly the corruption being repaired.
+
+  That is the whole of R4's acceptance clause. The three judgements stop appearing
+  as context misses, and they appear instead as what they said they were.
+
+  D10 A NON-CONTEXT RECORD IS SCORED ON ITS ANSWER, NOT ON ITS RANKING
+
+  R2 records a count and not the names, deliberately: what a judgement needs to
+  know about a `find' is the term and how many came back. The consequence for the
+  scorer is worth stating rather than discovering. A judgement filed against a
+  `find' record cannot be resolved into hit-at-rank-n, because the record does not
+  hold the list the rank would index into. It is scored as answered or empty, and
+  the rank column is left off rather than filled with a number nothing supports.
+
+  This is not a gap to be closed by recording names later. `find' returning
+  nothing is R3's most informative event and the count carries it; a bundle's
+  ranking is what a rank measures, and `find' does not rank.
+
+  D11 A SESSION IS THE DIRECTORY IN TIME ORDER, WHICH IS R6 FOR ONE AGENT
+
+  REQ-0038's own open question asks whether R6 needs a caller identity or whether
+  a time-ordered read of one directory is enough, and answers it: enough for a
+  single agent, not for two. The corpus holds one agent.
+
+  So the sequence is reconstructed by reading the directory in `at' order and
+  cutting it where the gap between consecutive records exceeds a threshold. That
+  recovers exactly what R6 asks to see -- context returns eight lexical matches,
+  the caller runs `find', the caller runs `describe' on what `find' returned --
+  and it requires no field, no caller declaration and no new concept in MCP.
+
+  A gap threshold is a heuristic and is named as one: it will merge two sessions
+  that abut and split one that paused. Both failures are visible in the printed
+  sequence, which is the argument for printing the sequence rather than a count
+  derived from it. The identity that would make it exact is still deferred, and
+  its trigger is unchanged: the log showing two callers interleaved.
+
   WHAT IS BUILT AND WHAT IS NOT
 
-  R1, R2, R3, R5 and the write exclusion are in. WRITE-RECORD-ASYNC was factored
-  out of RECORD-CONTEXT-CALL when the second writer arrived, so the thread
-  bookkeeping and its reasoning are one copy rather than two.
+  R1, R2, R3 and R5 and the write exclusion are the service side and are in.
+  WRITE-RECORD-ASYNC was factored out of RECORD-CONTEXT-CALL when the second
+  writer arrived, so the thread bookkeeping and its reasoning are one copy rather
+  than two.
 
-  R4 -- the scorer reading a judgement against the operation it names -- is not.
-  tools/acceptance.py still reads every judgement as a statement about `context',
-  which is what makes a `describe' success appear as a context miss. It is the
-  next step and it is a change to the harness rather than to the service.
+  R4 and R6 are the harness side and are in as D7 through D11. Both are changes to
+  tools/acceptance.py and neither touches the service, which is what the split
+  between S2 and S3 was predicting.
 
-  R6 -- reconstructing a session -- is not, and is deliberately last. The records
-  are time-ordered in one directory, which answers it for a single agent; two
-  agents against one service need something MCP has no concept for, and the right
-  time to design that is when the log shows two.
+  Deferred, with its trigger: the caller identity R6 would need to reconstruct a
+  session when two agents share one service. Nothing in the corpus needs it and
+  designing it against a hypothetical second caller is how a field nobody fills
+  gets added.
