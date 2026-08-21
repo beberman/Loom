@@ -571,7 +571,7 @@ path expected to be taken."
         (setf (gethash file cache)
               (handler-case
                   (let ((reading (read-source
-                                  (slurp-file (merge-pathnames file root)))))
+                                  (read-file (merge-pathnames file root)))))
                     (unless (or (reading-fatal reading) (reading-recovered reading))
                       (reading-forms reading)))
                 (condition () nil))))))

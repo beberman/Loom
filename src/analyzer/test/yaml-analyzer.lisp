@@ -24,7 +24,7 @@
   (let ((path (merge-pathnames relative *repo-root*)))
     (analyze-file (make-instance 'document-analyzer)
                   (concatenate 'string "docs/" (subseq relative 5))
-                  (slurp-file path)
+                  (utils:read-file path)
                   "ws-test")))
 
 (defun docs-entity (relative)

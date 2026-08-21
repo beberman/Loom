@@ -10,6 +10,12 @@
   ;; which is what lets everything below it stay ignorant of the other half.
   :depends-on (#:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge
                #:bordeaux-threads
+               ;; The standalone library's kernel: READ-FILE, STRING-LINES,
+               ;; PROPER-LIST-P and ALISTP. The last two were defined in
+               ;; context-log.lisp, the first two were loom-analyzer's -- named
+               ;; here on the same principle the UIOP comment below states, that
+               ;; a system using a library says so rather than inheriting it.
+               #:utils
                ;; UIOP runs `git check-ignore' for DES-0018. Already in the
                ;; image through loom-analyzer, and named here anyway: a
                ;; system that uses a library should say so rather than rely
@@ -66,6 +72,7 @@
 	       #:loom-knowledge
 	       #:loom-graph
 	       #:loom-ontology
+	       #:utils
 	       #:fiveam)
   :serial t
   :pathname "test/"

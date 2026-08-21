@@ -65,27 +65,16 @@ consumer that never calls it gets the default of writing nothing."
 (defun context-record-path (id &optional (directory *context-log-directory*))
   (merge-pathnames (format nil "~a.json" id) directory))
 
-(defun proper-list-p (value)
-  "True when VALUE is a list that ends in NIL."
-  (and (listp value) (null (cdr (last value)))))
-
-(defun alist-object-p (value)
-  "True when VALUE is an alist, which is the only shape that becomes a JSON
-object here.
-
-One shape for an object and one for an array, which is what removes the guess.
-An alist entry is a cons whose cdr is the value, so `(:name . \"x\")' is
-structurally unlike the list `(\"x\")' and no test has to decide between them.
-
-The first attempt used plists and had to guess: `((:name \"x\" :how \"y\"))' is
-a list holding one plist, and it is also an alist whose single entry is
-(:name . (\"x\" :how \"y\")). Nothing in the data says which, so a used set of
-plists encoded as an object and every reader of it broke. game-server's
-utils/serialize.lisp solved this before Loom met it -- its JSON-ENCODE-HELPER
-has an ALISTP branch and no plist branch at all -- and this is that answer."
-  (and (consp value)
-       (proper-list-p value)
-       (every (lambda (entry) (and (consp entry) (keywordp (car entry)))) value)))
+;;; PROPER-LIST-P and ALIST-OBJECT-P are the library's now: UTILS:PROPER-LIST-P
+;;; and (UTILS:ALISTP value :KEY-TEST #'KEYWORDP). The alist rule they encoded
+;;; is unchanged and is the reason the encoder below needs no guess -- one shape
+;;; for an object, one for an array, an entry being a cons whose cdr is the
+;;; value. That rule came from game-server's serialize.lisp, which had an ALISTP
+;;; branch and no plist branch at all, and the library is where it lives now.
+;;;
+;;; The library's PROPER-LIST-P is also the stronger of the two: it records the
+;;; tails it has visited, so a circular list returns NIL where the LAST-based
+;;; version here would not have returned at all.
 
 (defun encode-record-value (value stream)
   "Write VALUE to STREAM as JSON, recursively.
@@ -104,7 +93,7 @@ alist as an array, which is the opposite of what a record needs."
         ;; says a value is absent, and a boolean field writes :FALSE so a reader
         ;; sees a boolean rather than a null it has to interpret.
         ((eq value :false) (write-string "false" stream))
-        ((alist-object-p value)
+        ((alistp value :key-test #'keywordp)
          (write-char #\{ stream)
          (loop for (key . sub) in value
                for first = t then nil

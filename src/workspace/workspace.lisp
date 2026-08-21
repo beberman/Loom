@@ -371,7 +371,7 @@ cannot answer the question -- is the file read and hashed."
           ((not (eql write-date (file-stamp-write-date known))) t)
           ((> (- now write-date) *mtime-settle-seconds*) nil)
           (t (not (eql (file-stamp-content-hash known)
-                       (sxhash (handler-case (slurp-file path)
+                       (sxhash (handler-case (read-file path)
                                  (error () ""))))))))) ; unreadable => reanalyze
 
 (defun index-file (repository path &key quiet)
@@ -385,7 +385,7 @@ counted and reported; the pass continues."
         ;; ANALYZE-PATH takes :CONTENTS for exactly this, and the stamp has to
         ;; describe the bytes that were analyzed rather than whatever is on
         ;; disk by the time it is taken.
-        (let* ((contents (slurp-file path))
+        (let* ((contents (read-file path))
                (ops (analyze-path path
                                   :contents contents
                                   :workspace-id (repository-name repository)
@@ -1101,7 +1101,7 @@ carry and thrown away, so the graph after the call is the graph before it."
          (root (repository-root repository))
          (full (merge-pathnames path root))
          (source (or contents
-                     (and (probe-file full) (slurp-file full)))))
+                     (and (probe-file full) (read-file full)))))
     (cond
       ((null (find-analyzer full))
        (list :path path :error "no analyzer claims this path"))

@@ -1,0 +1,194 @@
+id: PLAN-0036
+title: "Loom onto the utils library: five stages, one of them landed and measured"
+status: draft
+date: 2026-08-21
+tags: [refactor, dependency, utils, json, analyzer, workspace, serve]
+summary: |
+  Loom writes its own utilities. So did game-server, until PLAN-0002 moved half
+  of them to the standalone library at ~/lisp/utils; the same library answers
+  ten of Loom's, and Loom is the codebase whose FNV-1a and ALISTP rule the
+  library was partly built from. This plan takes them back.
+
+  Not a sweep. Each candidate was read on both sides before being called a
+  duplicate, and the survey's real output is the split: five functions are
+  identical or strictly weaker than the library's and land unchanged, and five
+  more look identical and are not -- a fingerprint that differs on non-ASCII, a
+  line splitter that returns a list where the library returns a vector, a plist
+  predicate that disagrees about the empty list. Those are the ones that would
+  have gone wrong silently, and each has a stage of its own with the difference
+  written down rather than discovered from a failing test.
+
+  S1 is done and green. It is in this plan as measured evidence rather than as
+  a proposal: 9 of 9 suites pass, every count at its baseline except the
+  analyzer's, which drops by four because a test moved to the library with the
+  function it tests.
+body: |
+  WHAT THE SURVEY FOUND
+
+  The library exports 44 names in #:utils and 30 in #:utils-dict. Ten are
+  answers to something Loom defines for itself. Read both sides of each before
+  believing it:
+
+    Loom                              library                    verdict
+    ------------------------------    -----------------------    ------------
+    slurp-file        (analyzer)      utils:read-file            identical + a
+                                                                 missing-file
+                                                                 option
+    split-lines       (analyzer)      utils:string-lines         identical,
+                                                                 same contract
+    improper-list-p   (serve/json)    utils:improper-list-p      identical
+    proper-list-p     (context-log)   utils:proper-list-p        library is
+                                                                 stronger: it
+                                                                 terminates on
+                                                                 a circular list
+    alist-object-p    (context-log)   utils:alistp :key-test     identical,
+                                      #'keywordp                 clause for
+                                                                 clause
+    ------------------------------    -----------------------    ------------
+    fnv-1a            (workspace)     utils:content-fingerprint  DIFFERENT on
+                                                                 non-ASCII
+    text-lines        (markdown)      utils:string-lines         list vs vector
+    plist-shaped-p    (serve/json)    utils:plistp :key-test     disagree on
+                                      #'keywordp                 the empty list
+    encode-record-value (context-log) utils:json-encode          no :FALSE, and
+                                                                 key naming is
+                                                                 a binding
+    read-json-record  (context-log)   utils:read-json-file       identical once
+                                                                 the probe-file
+                                                                 guard becomes
+                                                                 :if-does-not-
+                                                                 exist nil
+
+  Two things are NOT candidates and the reason is worth stating so nobody
+  revisits it. src/serve/json.lisp stays: it walks plists, pins a key
+  vocabulary, and keeps *ARRAY-VALUED-KEYS* so an empty impact set encodes as
+  [] rather than null. That is policy this service owns, and the library encodes
+  alists. And split-command-line stays: quoting-aware argument splitting is not
+  what STRING-SPLIT does.
+
+  HOW EACH STAGE IS CHECKED
+
+      ./tools/loom-test.sh
+
+  Baseline, recorded 2026-08-21 before any change, on commit 41eb4b6:
+
+      LOOM-ONTOLOGY   367     LOOM-PROCESS    135
+      LOOM-ANALYZER   745     LOOM-SERVE      175
+      LOOM-GRAPH      503     LOOM-REST        97
+      LOOM-WORKSPACE  405     LOOM-MCP         49
+      LOOM-KNOWLEDGE  231
+                                        2707 checks, 9 of 9 systems
+
+  Every stage keeps every count, with one exception per stage that retires a
+  test to the library, and each such drop is named in the stage that causes it.
+
+  FINDING THE LIBRARY AT ALL
+
+  Loom's bootstraps -- loom-serve.lisp, tools/loom-test.sh, tools/load-test.lisp
+  -- run under `sbcl --script', which reads no init file, so the source-registry
+  in ~/.sbclrc that game-server relies on does not exist for them. They do load
+  quicklisp, which scans ~/quicklisp/local-projects, so a symlink there is
+  enough and no script changes:
+
+      ln -sfn /home/beberman/lisp/utils ~/quicklisp/local-projects/utils
+
+  That is environment state and not in the repository, which is the one thing
+  about S1 that does not travel to another machine. Naming ~/lisp/utils in each
+  bootstrap's *central-registry* push is the in-repo alternative and is worth
+  doing if this is ever built anywhere else.
+
+  S1  THE FIVE THAT ARE IDENTICAL  -- DONE, 2026-08-21
+
+  #:utils named in loom-analyzer, loom-workspace and loom-serve, and in the
+  three test systems whose files reference it directly, on the principle
+  loom-workspace.asd already states about UIOP: a system that uses a library
+  says so rather than inheriting it from a dependency.
+
+  Deleted: slurp-file and split-lines from src/analyzer/analyzer.lisp,
+  improper-list-p from src/serve/json.lisp, proper-list-p and alist-object-p
+  from src/workspace/context-log.lisp. Each package imports what it now uses
+  by name, so no facade re-exports anything and `describe' on a caller shows
+  the library as the callee.
+
+  25 call sites moved. slurp-file had 16 in source across two systems and 2 in
+  tests, which is why this was worth the index rather than a grep -- the string
+  also appears in docstrings and in a comment about where files get read.
+
+  RESULT: 9 of 9, 2703 checks. The analyzer is 741 against a baseline of 745:
+  split-lines-keeps-the-last-line-and-drops-a-carriage-return is four checks and
+  the library's suite makes the same four assertions about STRING-LINES. That
+  drop is the only one, it was predicted, and nothing is less tested.
+
+  S2  THE FINGERPRINT, WHICH IS NOT THE SAME FUNCTION
+
+  workspace.lisp's FNV-1a feeds each character as `(ldb (byte 8 0) (char-code
+  char))' -- the low octet and nothing else. The library's CONTENT-FINGERPRINT
+  feeds every octet of the code, least significant first. On ASCII they agree
+  exactly. On anything else they do not: U+20AC is one octet 172 to Loom and two
+  octets 172, 32 to the library, and Loom's version cannot distinguish it from
+  U+00AC.
+
+  So this is a behaviour change and not a substitution, and what it changes is
+  a value that gets written down. GIT-DIFF-HASH is its only caller, DES-0030 D4
+  compares two records by it, and a diff of this tree contains em dashes on
+  most days. Every record written before the swap compares unequal to every
+  record written after.
+
+  The stage: swap it, delete FNV-1a, and drain the context log first. The log
+  went on in 6f4e0df and holds days of records rather than months, which is why
+  this is cheap now and will not stay cheap. If it is ever not, the fallback is
+  to keep both and name the algorithm in the record.
+
+  Test: an ASCII input hashes the same under both, which is what makes the
+  existing records still checkable; a non-ASCII input is asserted to differ, so
+  the change is recorded as intended rather than discovered.
+
+  S3  TEXT-LINES, WHICH RETURNS THE OTHER SHAPE
+
+  markdown-analyzer.lisp's TEXT-LINES returns a list; STRING-LINES returns a
+  vector. Three callers -- markdown-mentions, markdown-link-targets, analyze-file
+  -- and each has to be read for LOOP ... IN, DOLIST, NTH and the rest before
+  the type under it changes. This is a stage rather than a line because the
+  compiler will not catch a sequence function that accepts both.
+
+  Test: the markdown analyzer's existing suite, unchanged, is the whole check.
+
+  S4  THE TWO PREDICATES THAT DISAGREE AT THE EDGE
+
+  PLIST-SHAPED-P requires a non-empty list; UTILS:PLISTP answers T for NIL, and
+  says in its docstring that this asymmetry with ALISTP is deliberate. JSON-VALUE
+  asks the question precisely to decide whether an empty list is an object or an
+  array, so the swap is `(and x (plistp x :key-test #'keywordp))' and never the
+  bare call.
+
+  What is lost is PLIST-SHAPED-P's docstring, which records a known hole -- a
+  two-element list of keywords encodes as an object -- and names
+  *ARRAY-VALUED-KEYS* as the escape hatch. test/json.lisp asserts that
+  misencoding on purpose. The comment moves to the call site or the stage does
+  not happen: an inspectable guess that has lost its record of being a guess is
+  worse than the duplicate.
+
+  S5  THE CONTEXT LOG'S JSON
+
+  ENCODE-RECORD-VALUE is the library's model already: alist is an object, any
+  other proper list is an array, NIL is null. Two differences and both are
+  small. Keys go through JSON:LISP-TO-CAMEL-CASE, which the library expresses as
+  a binding of *JSON-KEY-NAME*; and the encoder has a :FALSE case the library
+  has no representation for outside an ST-JSON:JSO.
+
+  So: bind the key policy, and either drop :FALSE if nothing writes one or keep
+  a two-line wrapper that handles it and calls JSON-ENCODE for everything else.
+  READ-JSON-RECORD becomes READ-JSON-FILE, its PROBE-FILE guard becoming
+  :IF-DOES-NOT-EXIST NIL.
+
+  Test: a record written before the change reads back identically after it.
+  That is the acceptance criterion for the whole stage, and tools/acceptance.py
+  reads these files, so a key-spelling regression here is a Python-side break
+  that no Lisp test sees.
+
+  WHAT THIS PLAN DOES NOT DO
+
+  It does not touch src/serve/json.lisp beyond S4, does not adopt #:utils-dict
+  anywhere -- Loom has no alist-configuration layer for CONFIG-SEARCH to serve --
+  and does not put ~/lisp/utils in the repository's own registry setup, which is
+  the one piece of S1 that lives outside the tree.

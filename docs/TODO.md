@@ -195,11 +195,90 @@ Three items.
    separate the noise from the two entries that are saying something, which is
    the better outcome.
 
-Also, and smaller: `tools/loom-serve.sh update` failed at the start of the
-session with *"nothing answering on http://127.0.0.1:4780/v1 after ~20s"*, and
-the service answered normally twenty minutes later without intervention. So the
-first thing the CLAUDE.md section tells an agent to do is the thing that failed,
-and the fallback it trains is the grep habit the rest of that section exists to
-prevent. Whatever the cold-start cost is on this machine, ~20s does not cover
-it; a longer wait, or a failure message that says "still starting, retry" rather
-than reading as "Loom is unavailable", would change what the agent does next.
+Also, and smaller, now measured: **`tools/loom-serve.sh update`'s start timeout
+is too short, and it is off by about ten seconds.** It failed twice in one day
+with *"nothing answering on http://127.0.0.1:4780/v1 after ~20s"*. The second
+time the service was polled immediately afterwards and answered within a further
+ten -- so the real cold start with 9 repositories is roughly 25-30s against a
+20s wait, and the script reports a healthy service as a dead one. The first
+thing the CLAUDE.md section tells an agent to do is therefore the thing that
+fails, and the fallback it trains is the grep habit the rest of that section
+exists to prevent. A longer wait, a wait that scales with the number of watched
+repositories, or a message that says "still starting, retry" rather than reading
+as "Loom is unavailable".
+
+---
+
+## From migrating Loom onto the utils library, 2026-08-21
+
+The task: find what ~/lisp/utils already does, delete Loom's own version, depend
+on the library. It produced PLAN-0036 and landed that plan's S1. It was also the
+first task deliberately run as a measurement of Loom, so what the index did and
+did not do is recorded here at the same grain as the work.
+
+WHERE THE INDEX WAS DECISIVE
+
+- **`describe slurp-file` returned 16 source callers and 2 tests, by location,
+  across three systems.** `grep -rn slurp-file src/` returns 27 lines, of which
+  four are a docstring, an export, a comment about where files get read, and the
+  definition. Deciding "is this safe to delete and how much moves" from the grep
+  means reading all 27; the index answered it once. This is the case
+  "before deleting anything, ask Loom" was written for, and it held.
+- **Eight candidates described in one pass gave the ordering of the plan.**
+  Caller counts are what separates a five-minute swap (improper-list-p, one
+  caller) from a stage (slurp-file, eighteen). The plan's stage boundaries are
+  those counts.
+- **`structure` showed Loom has no utility system.** The duplicates are scattered
+  through loom-analyzer, loom-serve and loom-workspace, which is why the plan
+  edits three .asd files rather than one, and why there was nothing to delete
+  wholesale.
+- **The watcher stayed current through the edits.** After the deletions,
+  `find slurp-file` returned nothing while the tree was still uncommitted and no
+  restart had happened. Worth knowing that the index tracks the working tree.
+
+WHERE IT COULD NOT HELP, AND THIS IS THE FINDING
+
+1. **The task's central question -- does this codebase already have its own X --
+   is a similarity question, and `find` matches names.** All ten duplicates are
+   named differently: slurp-file/read-file, split-lines/string-lines,
+   alist-object-p/alistp, fnv-1a/content-fingerprint, text-lines/string-lines.
+   Asking `find` for each of the library's 44 exported names against Loom
+   returned two hits, one of them a test helper. Every real duplicate was found
+   by grepping Loom's own definition names for utility-shaped words
+   (`string|split|join|trim|slurp|file|json|alist|hash|...`) and reading the
+   bodies. That is the method the index was supposed to replace.
+
+   What would have answered it: a query that takes a definition and returns
+   definitions like it -- by signature, by body shape, or by docstring. The
+   cheapest useful version is the last one, because a function extracted from
+   another codebase carries its ancestor's prose. UTILS:CONTENT-FINGERPRINT and
+   Loom's FNV-1A share whole sentences ("Deterministic across images, which
+   SXHASH is not"), as do ALIST-OBJECT-P and ALISTP. A near-duplicate docstring
+   detector would have found four of the ten pairs in one call. REQ-0035 already
+   indexes the prose; nothing asks it this question.
+
+2. **Two functions being the same function is not something the index can say,
+   and half of the pairs that looked identical were not.** FNV-1A hashes the low
+   octet of each character and CONTENT-FINGERPRINT hashes all of them, so they
+   agree on ASCII and diverge on the em dashes this repository's own diffs are
+   full of -- and that value gets written into context records. TEXT-LINES
+   returns a list where STRING-LINES returns a vector. PLIST-SHAPED-P and PLISTP
+   disagree about the empty list, at exactly the decision the caller uses them
+   for. Each was caught by reading both bodies. `describe source=true` makes
+   that reading one call instead of two file opens, which is real but small: the
+   judgement is entirely manual and the index offers nothing toward it.
+
+3. **Cross-repository, again, and this time expensively.** The whole task is
+   "compare repository A against repository B", both registered, and every query
+   names one of them. There is no call that takes two and reports what they have
+   in common. The 2026-08-21 entry above asks for `find` to answer across
+   repositories; this is the same gap met from the other side, and the shape it
+   wants here is a *diff* rather than a lookup.
+
+4. **`commit` in a `structure` answer is not the state of what was indexed.**
+   The field named the last commit while the index reflected a working tree with
+   twenty-four modified files. It is not wrong, and CLAUDE.md's advice to compare
+   it against `git rev-parse HEAD` reads as "the index is current" in exactly the
+   state where the two agree and the content does not. REQ-0036 R4 already knows
+   this -- it pairs the commit with a diff hash for precisely this reason -- and
+   the same pairing belongs in `structure` and `status`.

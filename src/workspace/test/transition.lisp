@@ -43,7 +43,7 @@
     path))
 
 (defun document-text (root relative)
-  (loom-analyzer:slurp-file (merge-pathnames relative root)))
+  (utils:read-file (merge-pathnames relative root)))
 
 (defun watch-tree (root)
   "Index ROOT without starting a monitor. A poll would race every write below."

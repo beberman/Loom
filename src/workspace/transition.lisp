@@ -351,7 +351,7 @@ a command five times to discover five problems will stop reading the fifth."
             ((null source) (refuse "the index does not record which file it came from."))
             ((null (probe-file source)) (refuse "~a is not on disk." source))
             (t
-             (let ((contents (handler-case (slurp-file source)
+             (let ((contents (handler-case (read-file source)
                                (error (condition)
                                  (refuse "~a cannot be read: ~a" source condition)
                                  nil))))

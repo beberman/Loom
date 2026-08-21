@@ -11,6 +11,13 @@
 
 (defpackage #:loom-workspace
   (:use #:cl #:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge)
+
+  ;; From the standalone library. PROPER-LIST-P and ALISTP replace two
+  ;; predicates context-log.lisp defined for itself -- ALISTP with
+  ;; :KEY-TEST #'KEYWORDP is ALIST-OBJECT-P clause for clause -- and READ-FILE
+  ;; and STRING-LINES replace loom-analyzer's SLURP-FILE and SPLIT-LINES.
+  (:import-from #:utils #:read-file #:string-lines #:proper-list-p #:alistp)
+
   (:export
    ;; the registry
    #:repository

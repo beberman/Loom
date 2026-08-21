@@ -151,8 +151,8 @@ surprise in the :READ tier, and the monitor already owns that job."
            (t
             (let ((path (merge-pathnames relative (repository-root repository))))
               (handler-case
-                  (let* ((contents (slurp-file path))
-                         (lines    (split-lines contents))
+                  (let* ((contents (read-file path))
+                         (lines    (string-lines contents))
                          (total    (length lines)))
                     (if (> start total)
                         (list :status :short :file relative

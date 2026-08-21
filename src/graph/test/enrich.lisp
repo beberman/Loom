@@ -596,7 +596,7 @@ it -- correctly, and without demonstrating anything."
   (let* ((root (inspect-fixture-root))
          (path (merge-pathnames "fixture-ok/fixture-ok.lisp" root))
          (relative (loom-analyzer:workspace-relative-path path root))
-         (contents (loom-analyzer:slurp-file path))
+         (contents (utils:read-file path))
          (graph (make-graph)))
     (is (find #\/ relative)
         "the shape neither fixture above exercises: more than one path segment")

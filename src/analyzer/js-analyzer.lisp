@@ -704,7 +704,7 @@ whole argument is that a recorded gap beats both a fabrication and a silence."
       ;; PLAN-0031, JavaScript. The block above a definition is the only source
       ;; this language has -- there is no in-form docstring position -- and
       ;; front-end keeps 199 KB of prose in 979 JSDoc blocks.
-      (attach-comment-documentation analyzer entities (split-lines contents))
+      (attach-comment-documentation analyzer entities (string-lines contents))
       (list* (retract-file path workspace-id)
              (assert-entity (make-js-file-entity path contents reply reason)
                             workspace-id)

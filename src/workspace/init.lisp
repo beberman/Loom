@@ -84,7 +84,7 @@ Loom's own, so a line scan is honest here in a way it would not be for a
 document somebody wrote."
   (let ((path (manifest-path root)))
     (when (probe-file path)
-      (let ((contents (handler-case (slurp-file path) (error () nil))))
+      (let ((contents (handler-case (read-file path) (error () nil))))
         (when contents
           (let ((values '()))
             (loop with start = 0
@@ -159,7 +159,7 @@ Templates are files in this tree rather than strings in this source, so a human
 can read what a prepared workspace will be told without reading Lisp. That is
 worth one path lookup: the text travels into other people's repositories and
 should be reviewable as text."
-  (let ((contents (slurp-file (template-path name))))
+  (let ((contents (read-file (template-path name))))
     (loop for (key value) on substitutions by #'cddr
           do (let ((token (format nil "{{~a}}" key)))
                (loop for at = (search token contents)
@@ -303,7 +303,7 @@ and leaves the tree exactly as it was."
       ;; --- the CLAUDE.md pointer ----------------------------------
       (let* ((path (merge-pathnames "CLAUDE.md" root))
              (existing (and (probe-file path)
-                            (handler-case (slurp-file path) (error () nil))))
+                            (handler-case (read-file path) (error () nil))))
              (text (render-template
                     "claude-md-pointer.md"
                     (list "DOCUMENT-DIRECTORY" document-directory
@@ -478,7 +478,7 @@ Read from the `created:' list, which APPLY-PREPARATION writes before it writes
 the files, so a run that died halfway still has something to work from."
   (let ((path (manifest-path root)))
     (when (probe-file path)
-      (let ((contents (handler-case (slurp-file path) (error () nil)))
+      (let ((contents (handler-case (read-file path) (error () nil)))
             (paths '())
             (in-list nil))
         (when contents
@@ -670,7 +670,7 @@ or move ~:*~:[it~;them~] first:~{~%    ~a~}"
                     (delete-file claude)
                     (push "CLAUDE.md" deleted))
                    ((string-equal "appended" disposition)
-                    (let ((contents (slurp-file claude)))
+                    (let ((contents (read-file claude)))
                       (multiple-value-bind (without found) (cut-marked-region contents)
                         (cond (found
                                (with-open-file (out claude :direction :output
