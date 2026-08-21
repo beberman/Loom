@@ -20,4 +20,55 @@ without it:
 - When work lands, do not edit a status by hand. Run the transition command,
   which moves every document the plan implements and files it correctly.
 
+### Reach for the index, not for the shell
+
+Saying "ask Loom first" once is not enough — the shell gets reached for anyway,
+out of habit, on exactly the questions the index answers better. So, concretely:
+
+If the question is *where is this*, *who calls this*, *does this exist*, *what
+does this reach*, or *what has been decided about this* — the first tool is
+`loom_*`. Not `grep`, not `find`, not `rg`, not `ls -R`.
+
+| Question | Use | Not |
+|---|---|---|
+| where is X defined | `loom_find` | `grep -rn "defun X"` |
+| who calls X, how many, from where | `loom_describe` | `grep -rn "X"` |
+| does X exist at all | `loom_find` | `grep -rl` over a tree |
+| what breaks if X changes | `loom_impact` | reading callers by hand |
+| the shape of a system | `loom_structure` | `ls -R` and guessing |
+| what governs this area | `loom_impact`, `loom_context` | reading docs by hand |
+| X's source and docstring | `loom_describe` with `source=true` | `sed -n` on the file |
+
+**Use `find` and `describe` for a yes/no; save `context` for an edit.**
+`context` answers "I am about to change this, what bears on it" and returns a
+large bundle — large enough to overflow a caller's output limit. To learn
+whether something exists, `find` is one line of answer instead of sixty.
+
+**Counting callers of a generic function: describe the methods, not the name.**
+`describe` on a generic's name returns the interface, whose inbound `calls`
+count is near zero, because the calls attach to its methods. `find` the name,
+keep every `method:` and `function:` entity, and `describe` each id —
+`describe` accepts a full entity id, not only a name. Skipping this reads a
+codebase's most-called function as unused.
+
+### What the index cannot see
+
+Not an invitation to fall back to the shell generally — these are the specific
+gaps, and the shell is the right tool for each:
+
+- **Build-file component lists.** A source file is indexed whether or not any
+  system loads it, so a file missing from its `.asd` (or equivalent) looks
+  healthy while nothing can call it. Read the build file.
+- **Byte-identical duplicates.** One name defined at two paths is the signal
+  `find` gives you; `diff` is what confirms the two files are the same file.
+- **`templates/` and dot-directories.** Deliberately unindexed, so text that
+  lives there is invisible to every query — including this file.
+- **Anything not yet written.** A document's `affects:`/`describes:` must name
+  code that exists, or `check` reports it as rot. Leave the field out until the
+  code lands.
+
+After writing any document, run `check-document` on its path — it reports the
+id it parsed and whether each `refines:` resolved — then `check`, and confirm
+`unresolved` did not rise.
+
 <!-- loom:end -->
