@@ -3,6 +3,7 @@ title: An agent must be able to get a running, current loom-serve without a huma
 status: implemented
 date: 2026-08-03
 affects: [start-server, stop-server, server-status, serve-forever, main]
+importance: Major
 tags: [process, service, mcp, agents, lifecycle, prototype]
 summary: |
   DES-0006 built loom-serve, loom-rest and loom-mcp; PLAN-0005 landed them,

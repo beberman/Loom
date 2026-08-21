@@ -5,6 +5,7 @@ date: 2026-08-15
 refines: [DES-0009, BUG-0009]
 affects: [edges-between-systems, in-system-p, entity-system, run-check,
           parse-check]
+importance: Minor
 tags: [rules, layering, check-kinds, system, generality, game-server, cl-dbi]
 summary: |
   DES-0009 R10 recorded a gap and declined to design a fix: `:system` holds a

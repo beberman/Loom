@@ -4,6 +4,7 @@ status: implemented
 date: 2026-08-15
 refines: [CON-0004]
 affects: [resolve-document-links, linkable-index, unresolved-references, resolve-one]
+importance: Major
 tags: [documents, workflow, agents, con-0004, game-server]
 summary: |
   The only way to find out whether a document's refines: and affects: names

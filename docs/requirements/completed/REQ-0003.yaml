@@ -9,6 +9,7 @@ resolution: |
   Loading additional macro-generator registrations for third-party packages
   without rebuilding Loom was scoped out of this requirement at the time it
   was written ("deferred to REQ-0004") and stays open there, still draft.
+importance: Critical
 tags: [analyzer, macros, tests]
 summary: |
   A macro that expands into a defun or a test creates a named definition that

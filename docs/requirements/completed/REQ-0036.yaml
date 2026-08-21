@@ -5,6 +5,7 @@ date: 2026-08-18
 refines: [REQ-0016]
 affects: [build-context, seed-entities, task-tokens, render-context, check-capability,
           ignored-paths, repository-commit]
+importance: Critical
 tags: [retrieval, context, ranking, acceptance, evaluation, req-0016, req-0035,
        con-0001, con-0006, dec-0001]
 summary: |

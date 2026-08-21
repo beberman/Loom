@@ -3,6 +3,7 @@ title: Loom must run as a long-lived service, reachable over MCP and later REST
 status: implemented
 date: 2026-08-02
 affects: [main, console, run-command, current-repository, current-graph]
+importance: Critical
 tags: [process, service, mcp, rest, agents, interface]
 summary: |
   Loom today is one process per call: `tools/loom.sh` starts `sbcl --script

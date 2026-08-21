@@ -6,6 +6,7 @@ refines: [CON-0004]
 affects: [derive-id, linkable-index, resolve-one, find-repository, watch-repository,
           repository-name, require-repository, set-document-status, complete-plan,
           unresolved-references]
+importance: Major
 tags: [documents, ids, workflow, multi-user, con-0001, dec-0001, con-0004]
 summary: |
   A document id is allocated by reading the tree and adding one. That works for

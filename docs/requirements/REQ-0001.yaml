@@ -1,6 +1,7 @@
 id: REQ-0001
 title: Multiple Workspace Support
 status: draft
+importance: Major
 summary: |
  Currntly we can index multiple workspaces but only query one.  
  If multiple are being indexed, we currently cannot query at all.

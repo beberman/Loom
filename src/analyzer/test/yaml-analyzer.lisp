@@ -403,3 +403,82 @@ title: A rule with no system
     (let ((ids (mapcar #'id (all-entities g))))
       (apply-transaction g (docs-ops "docs/decisions/DEC-0001.yaml"))
       (is (equal ids (mapcar #'id (all-entities g)))))))
+
+;;; ------------------------------------------------------------------
+;;; importance: (REQ-0037..REQ-0044 carry it; every requirement does)
+;;;
+;;; The field is read for every workflow document, not only for requirements,
+;;; for the reason the :DOCUMENT method already gives about :DOC-ID and
+;;; :AFFECTS: a field only one method reads is a field the other categories
+;;; write into a void. What is asserted here is that it arrives as a keyword
+;;; from the vocabulary, that a value outside the vocabulary arrives as nothing
+;;; rather than as a fourth level, and that Loom's own requirements all carry
+;;; one -- the last being the check that keeps the field true of the tree
+;;; rather than merely available in it.
+;;; ------------------------------------------------------------------
+
+(defun requirement-entity-from (contents)
+  "The document entity the analyzer makes of CONTENTS, read as a requirement."
+  (let ((g (make-graph)))
+    (apply-transaction g (analyze-file (make-instance 'document-analyzer)
+                                       "docs/requirements/REQ-9999.yaml"
+                                       contents "ws-test"))
+    (first (remove-if-not (lambda (e) (eq :document (entity-type e)))
+                          (all-entities g)))))
+
+(test importance-is-read-as-a-keyword-from-the-vocabulary
+  (let ((e (docs-entity "docs/requirements/REQ-0037.yaml")))
+    (is (eq :critical (getp e :importance))
+        "REQ-0037 says Critical and the analyzer must record it as :CRITICAL"))
+  (let ((e (docs-entity "docs/requirements/REQ-0044.yaml")))
+    (is (eq :minor (getp e :importance)))))
+
+(test importance-outside-the-vocabulary-is-not-recorded
+  ;; Not an error and not a fourth level. AS-KEYWORD's allowed list drops it,
+  ;; which is what keeps :ONE-OF on the ontology property true by construction.
+  (let ((e (requirement-entity-from
+            (format nil "id: REQ-9999~%title: t~%status: draft~%importance: Blocker~%summary: s~%"))))
+    (is (null (getp e :importance))
+        "a value outside Critical/Major/Minor records nothing")))
+
+(test a-document-without-importance-is-still-a-document
+  ;; Most categories do not carry it, so its absence must not change anything
+  ;; else about the entity.
+  (let ((e (requirement-entity-from
+            (format nil "id: REQ-9999~%title: t~%status: draft~%summary: s~%"))))
+    (is (null (getp e :importance)))
+    (is (string= "REQ-9999" (getp e :doc-id))
+        "the rest of the document is unaffected by the missing field")))
+
+(test importance-is-lowercase-insensitive
+  ;; The tree writes Critical; a human writing critical means the same thing.
+  (let ((e (requirement-entity-from
+            (format nil "id: REQ-9999~%title: t~%status: draft~%importance: critical~%summary: s~%"))))
+    (is (eq :critical (getp e :importance)))))
+
+(test every-requirement-in-this-tree-declares-its-importance
+  ;; The assertion that keeps the field honest. A requirement without one is not
+  ;; a parse failure -- the analyzer is happy -- so nothing else would report it,
+  ;; and an importance field two thirds of the requirements carry is worse than
+  ;; none: it reads as a judgement about the ones that have it.
+  (let ((missing '())
+        (counted 0))
+    (dolist (path (append
+                   (directory (merge-pathnames "docs/requirements/*.yaml" *repo-root*))
+                   (directory (merge-pathnames "docs/requirements/completed/*.yaml" *repo-root*))))
+      (let* ((relative (format nil "docs/requirements/~@[completed/~*~]~a.~a"
+                               (search "completed" (namestring path))
+                               (pathname-name path) (pathname-type path)))
+             (g (make-graph)))
+        (apply-transaction g (analyze-file (make-instance 'document-analyzer)
+                                           relative (utils:read-file path) "ws-test"))
+        (let* ((e (first (remove-if-not (lambda (x) (eq :document (entity-type x)))
+                                        (all-entities g))))
+               (importance (and e (getp e :importance))))
+          (incf counted)
+          (unless (member importance '(:critical :major :minor))
+            (push (list relative importance) missing)))))
+    (is (plusp counted) "the requirements directory is not empty")
+    (is (null missing)
+        "every requirement declares importance: Critical, Major or Minor; these do not: ~s"
+        missing)))

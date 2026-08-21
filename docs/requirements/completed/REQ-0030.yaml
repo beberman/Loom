@@ -4,6 +4,7 @@ status: implemented
 date: 2026-08-15
 refines: [CON-0004]
 affects: [resolve-one, linkable-index, resolve-document-links, unresolved-references]
+importance: Major
 tags: [documents, resolution, ambiguity, workflow, con-0001, con-0004, game-server]
 summary: |
   RESOLVE-ONE returns NIL when a name matches nothing and NIL when it matches

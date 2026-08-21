@@ -6,6 +6,7 @@ resolution: |
   `pause' command stops watching and keeps the index, `watch' on an already
   registered repository resumes it, `stop' pauses everything on the way out and
   says so, and status reports the state as paused rather than stopped.
+importance: Major
 summary: |
   Stopping in SLIME ends the monitor thread but does not remove the workspace
   from the monitored list. Either stopping should remove it, or there should be

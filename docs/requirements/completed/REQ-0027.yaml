@@ -5,6 +5,7 @@ date: 2026-08-12
 refines: [CON-0004]
 affects: [impact-set, resolve-calls, linkable-index, build-context, entity-natural-key,
           apply-transaction, retract-file]
+importance: Major
 tags: [multi-repo, cross-repository, ontology, game-server, front-end, req-0024]
 summary: |
   The question worth asking across a repository boundary -- what in the

@@ -4,6 +4,7 @@ status: implemented
 date: 2026-08-15
 refines: [CON-0004]
 affects: [describe-entity, search-entities, build-context]
+importance: Major
 tags: [knowledge, describe, agents, console, game-server, con-0006, req-0016]
 summary: |
   DESCRIBE-ENTITY answers with everything about an entity except the entity:

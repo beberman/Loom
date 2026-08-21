@@ -5,6 +5,7 @@ date: 2026-08-11
 refines: [CON-0004]
 affects: [register-document-type, document-type-for, documentation-relative-p,
           repository-status, build-context, impact-set, default-system-for-path]
+importance: Critical
 tags: [init, generality, bootstrap, con-0001, workflow, game-server]
 summary: |
   Everything Loom's document apparatus does -- refines: chains, affects:

@@ -4,6 +4,7 @@ status: partial
 date: 2026-08-06
 affects: [resolve-calls, call-targets, callable-index, generated-entity,
           impact-set, describe-entity]
+importance: Major
 tags: [graph, resolution, clos, confidence, con-0001]
 summary: |
   MET EXCEPT R5, 2026-08-10. The mechanism landed (DES-0014) and fires 371

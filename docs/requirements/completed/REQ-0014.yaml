@@ -4,6 +4,7 @@ status: implemented
 date: 2026-08-06
 affects: [analyzer-handles-p, analyze-file, document-properties, document-type-for,
           resolve-document-references, unresolved-references]
+importance: Major
 tags: [analyzer, documents, markdown, generality, con-0001]
 summary: |
   Loom's document analyzer claims `.yaml` and `.yml` under `docs/` and nothing

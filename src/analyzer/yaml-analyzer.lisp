@@ -327,6 +327,14 @@ and registering a type\" stays true of the fields as well as the directory."))
   ;; refines: naming it resolves to nothing.
   (append (base-properties table path category body)
           (list :doc-id (or (as-string (yaml-value table :id)) path)
+                ;; AS-KEYWORD with an allowed list, so a value outside the three
+                ;; lands as NIL rather than as a fourth level nobody defined.
+                ;; Silent, and deliberately: a typo'd importance is a document
+                ;; whose author said something the vocabulary does not have, and
+                ;; the report for that belongs to `check' over the whole tree
+                ;; rather than to an analyzer reading one file.
+                :importance (as-keyword (yaml-value table :importance)
+                                        '(:critical :major :minor))
                 ;; Read here for the same reason :DOC-ID is: every workflow
                 ;; category lands on :DOCUMENT, so a field only the :DECISION
                 ;; method reads is a field fifteen architecture notes, fourteen

@@ -5,6 +5,7 @@ date: 2026-08-10
 refines: [REQ-0015, DES-0014]
 affects: [call-targets, resolve-calls, slot-accessor-names, class-definition-entities,
           make-interface-entity, callable-index, dispatch-confidence, impact-set]
+importance: Major
 tags: [graph, analyzer, resolution, clos, accessor, generic-function, con-0001,
        game-server]
 summary: |
