@@ -57,6 +57,17 @@ repository=${root##*/}
 # has to be re-watched by hand after every `update` is a tree nobody queries.
 extra_repos_file=${LOOM_EXTRA_REPOS:-$(dirname "$0")/extra-repos}
 
+# Context logging, DES-0030 D1. CONFIGURE-CONTEXT-LOG-FROM-ENVIRONMENT reads
+# LOOM_CONTEXT_LOG once, at startup, and writes nothing when it is unset -- so
+# turning the log on has to be a line somebody wrote, and this is that line.
+# The service inherits this export through the nohup below.
+#
+# Honours a value already in the environment, so a one-off
+# `LOOM_CONTEXT_LOG=/tmp/probe tools/loom-serve.sh restart' still wins. `1'
+# means the default directory, <loom>/.loom/context/ -- inside a dot-directory,
+# where REPOSITORY-FILES skips it, so the log cannot enter the index it judges.
+export LOOM_CONTEXT_LOG=${LOOM_CONTEXT_LOG:-1}
+
 # ------------------------------------------------------------------
 # Reading the answers back
 # ------------------------------------------------------------------
