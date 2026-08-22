@@ -1,0 +1,141 @@
+id: DES-0037
+title: "BUG-0041 by a second count in ADMIT-SEEDS: a slice may spend two names, a name may spend three entities"
+status: implemented
+date: 2026-08-22
+refines: [BUG-0041, REQ-0016]
+affects: [admit-seeds, seed-slice, seed-entities]
+tags: [retrieval, context, ranking, req-0016, bug-0041]
+summary: |
+  ADMIT-SEEDS charges a candidate against the slice of the task it answered and
+  counts names. Eight entities named LOGGER are one name, so they are one
+  charge -- and nothing counted the eight. `wrapped logger set level' returned
+  eight variables named LOGGER; over the 450 known-item cases, 34 bundles
+  returned eight seeds carrying three or fewer distinct names and 9 returned a
+  single name eight times.
+
+  The fix is a second count against a second key: a name may be
+  *SEED-NAME-SHARE* entities, which is 3 because REQ-0016 R8 pins it there.
+  Both counts are advisory in the same way, so a task whose candidates are all
+  one name still fills its set from them.
+
+  Measured: known-item recall 390 to 393 of 450, three cases gained and none
+  lost; bundles carrying one name eight times, 9 to 0; the held-out acceptance
+  set 42 of 45 before and after, with R8 returning all three
+  CONNECTION-CONNECT-DATABASE definitions throughout.
+body: |
+  D1  WHAT THE EXISTING CAP COUNTS, AND WHAT IT DOES NOT
+
+  ADMIT-SEEDS admits a candidate when its slice -- the sorted set of terms it
+  matched -- has fewer than *SEED-TERM-SHARE* distinct names charged to it, or
+  when its own name is already one of them. The second branch is the gap. A
+  name that has paid its charge is admitted with nothing further asked, so the
+  loop's only remaining bound is (< taken limit).
+
+  That branch is not an oversight. REQ-0016 R8 is an acceptance case whose
+  finding is a triplication: `data-api handler database connection acquire and
+  test connectivity' must return all three CONNECTION-CONNECT-DATABASE
+  definitions, and a cap that counted entities instead of names would return
+  two. Counting names is what keeps R8 passing.
+
+  So the defect is not that one name is one charge. It is that one charge could
+  take every slot the bundle had.
+
+  D2  A SECOND COUNT, NOT A CHANGED RULE
+
+  Two counters against two keys, both consulted before a candidate is admitted:
+
+      slice -> distinct names charged to it     at most *SEED-TERM-SHARE*  (2)
+      name  -> entities admitted under it       at most *SEED-NAME-SHARE*  (3)
+
+  The first is unchanged, down to the hash table and the STRING-EQUAL member
+  test. The second is a hash table keyed by SIGNIFICANT-NAME under EQUALP,
+  which hashes a string the way STRING-EQUAL compares one, so the two keys
+  agree on what counts as the same name.
+
+  The count is global to the bundle rather than per slice. Eight entities named
+  LOGGER need not answer identical term sets -- one matching {logger} and
+  another {logger, wrapped} are two slices and would be two budgets -- and a
+  bundle reads as a listing whichever slices its repetitions came from.
+
+  D3  WHY THREE, AND WHY A CONSTANT
+
+  Three is read off R8 rather than chosen. Two fails that clause. Four or more
+  bounds less than the evidence allows, and BUG-0041's own reading -- "some
+  number of same-named definitions is evidence and a larger number is a
+  listing" -- puts the line at the largest number a case actually needs.
+
+  Two other shapes the bug left open, and why neither is here:
+
+    A share of the limit. At limit 8 a half-share is 4, which is looser than R8
+    needs; at limit 3 it is 1, which fails R8 outright. The clause pins an
+    absolute number of definitions, so expressing it as a proportion of a limit
+    R8 does not mention makes the acceptance case depend on a caller's argument.
+
+    A function of how many terms the name answered. Tempting, because
+    CONNECTION-CONNECT-DATABASE answers several terms and LOGGER answers one.
+    It does not bound the top: a name answering four terms would still be free
+    to take all eight slots, which is the same defect with a smaller
+    population. It would also need a constant tuned per tree, which
+    *SEED-TERM-SHARE*'s docstring gives as the reason that cap is a share
+    rather than a weight.
+
+  D4  ADVISORY, LIKE THE FIRST COUNT
+
+  The held-back candidates are appended in score order when the admitted set is
+  short. That relaxation is unchanged, and it applies to the new count for the
+  reason it applies to the old one: a task whose candidates are all one name
+  must still get a full set, and a small tree must behave as it did before
+  either cap existed.
+
+  It shows itself on this tree. `context @game-server to alist' returns three
+  TO-ALIST methods, the one other candidate the query has, then four more
+  TO-ALIST methods -- the bound spent, the alternative admitted, the remainder
+  relaxed back in. Five of 449 measured bundles are over the bound this way.
+
+  D5  WHAT WAS MEASURED
+
+  One index, one instrument, the change toggled in and out between runs. The
+  450 known-item cases are on game-server and front-end only, so editing Loom's
+  own source between runs does not move the corpus.
+
+  Recall, tools/recall.py over tools/cases/known-item.json:
+
+                  before        after
+      name        125/150       126/150
+      inflected   134/150       134/150
+      prose       131/150       133/150
+      ALL         390/450       393/450     3 gained, 0 lost
+
+  The three: `wrapped logger set level' now reaches wrappedLogger.setLevel,
+  `true val internal typedobj has typename' reaches isTypedObj, and `capability
+  whose referenced capability' reaches piece-type-speed. Each was a bundle
+  spending its slots on one name that the target was not.
+
+  Diversity, which is what the bug is about and what recall cannot see -- a
+  bundle of eight LOGGERs still scores a hit when the target is one of them:
+
+                                                 before     after
+      one name eight times                            9         0
+      eight seeds, three distinct names or fewer     34         8
+      most-repeated name above three            54 of 449  5 of 449
+      mean distinct names per bundle               6.77      6.96
+
+  tools/recall.py records each bundle's seed names in its --json output for
+  this. It recorded the count and not the names, and the count cannot see a
+  defect that leaves eight seeds eight.
+
+  Held out, tools/acceptance.py: 42 of 45 strict before and after, the same
+  three misses (config-get, MapElementTypeEditor, dot-prefixed-p), the same
+  three REQ-0037 absence cases still absent, slowest query 0.08s. R8 returns
+  all three CONNECTION-CONNECT-DATABASE definitions in both runs.
+
+  D6  WHAT THIS DOES NOT FIX
+
+  The eight bundles still carrying three or fewer distinct names are the
+  relaxation working as designed: their queries have almost no other candidate.
+  `get type from obj' on front-end still misses getTypeFromObj -- its bundle is
+  now six distinct names rather than eight OBJTYPEs, so the miss moved from the
+  admission to what reaches the pool at all. docs/SeekAndSeeds.md names the
+  next two causes: *CONTEXT-STOPWORDS* discards get, set, add, new and make,
+  which are among the commonest identifier words in a code tree, and candidate
+  generation is lexical. Neither is this bug.

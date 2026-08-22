@@ -313,6 +313,25 @@ share is the form that does not need a tuned constant per tree.
 Advisory: ADMIT-SEEDS relaxes it rather than return fewer seeds than there are
 candidates.")
 
+(defparameter *seed-name-share* 3
+  "How many definitions of one name may be seeds of one bundle.
+
+The second of ADMIT-SEEDS' two counts, and the one BUG-0041 found missing.
+*SEED-TERM-SHARE* bounds how many distinct names a slice of the task may
+contribute; one name is one charge against that however many definitions carry
+it, and nothing bounded how many of them were admitted. `wrapped logger set
+level' returned eight variables named LOGGER and `mp deleting obj' eight
+methods named DELETE-OBJ.
+
+Three because REQ-0016 R8 pins it there. That clause is an acceptance case --
+`data-api handler database connection acquire and test connectivity' must
+return all three CONNECTION-CONNECT-DATABASE definitions, because three files
+defining one name is the finding the query exists to produce -- so two fails
+it, and a larger number bounds less than the evidence allows.
+
+Advisory in the same way and for the same reason as *SEED-TERM-SHARE*: a task
+whose candidates are all one name still fills its set from them.")
+
 (defun derived-token-p (token origins)
   "True when TOKEN is something Loom made from the task rather than a word of it.
 
@@ -808,34 +827,48 @@ The key the share in ADMIT-SEEDS is counted against."
   (format nil "~{~a~^ ~}" (sort (mapcar #'car matches) #'string<)))
 
 (defun admit-seeds (ranked limit)
-  "The first LIMIT entities of RANKED, holding back a slice past its share.
+  "The first LIMIT entities of RANKED, holding back a slice past its share and
+a name past its own.
 
 The cap is a filter on the way in rather than another term in the score,
 because it is a property of the set being built and not of any candidate in
 it: whether a seventh \"check\" is worth admitting depends entirely on whether
 anything else is still waiting.
 
-What it counts against is the *set* of terms a seed answers to, and what it
-counts is names rather than entities. Both halves were measured rather than
-reasoned to, and each fixes what the simpler rule got wrong:
+Two counts against two keys, because a candidate crowds a bundle two ways.
 
-  Charging each seed to one term -- its narrowest -- cost REQ-0016 R8's query
-  one of the three CONNECTION-CONNECT-DATABASE definitions, the one in
-  server/server.lisp. Three files defining one name is the finding that query
-  exists to produce, and a cap counting entities destroys it. Counting names
-  does not: they are one name, so they are one charge.
+  A slice -- the *set* of terms a seed answers to -- may contribute
+  *SEED-TERM-SHARE* distinct names, and what it counts is names rather than
+  entities. Both halves were measured rather than reasoned to, and each fixes
+  what the simpler rule got wrong:
 
-  Exempting anything that answered to more than one term let five members of
-  the CHECK-DATABASE-* family take five of eight slots, because they all match
-  {check, database} and nothing capped a pair of words the way a single word
-  was capped. A family sharing a slice is the same crowding as a family
-  sharing a word.
+    Charging each seed to one term -- its narrowest -- cost REQ-0016 R8's query
+    one of the three CONNECTION-CONNECT-DATABASE definitions, the one in
+    server/server.lisp. Three files defining one name is the finding that query
+    exists to produce, and a cap counting entities destroys it. Counting names
+    does not: they are one name, so they are one charge.
 
-Relaxed rather than enforced. When the held-back candidates are all there is
-they are admitted in score order, so a task naming one thing still seeds on
-that thing as many times as the tree offers and a small tree behaves exactly
-as it did before the cap existed."
+    Exempting anything that answered to more than one term let five members of
+    the CHECK-DATABASE-* family take five of eight slots, because they all
+    match {check, database} and nothing capped a pair of words the way a single
+    word was capped. A family sharing a slice is the same crowding as a family
+    sharing a word.
+
+  A name may be *SEED-NAME-SHARE* entities. One charge is right; the slots that
+  charge could take were unbounded until BUG-0041, because the branch admitting
+  a name already charged to its slice asked nothing further. Measured over the
+  450 known-item cases on 2026-08-22, 34 returned eight seeds carrying three or
+  fewer distinct names and 9 returned a single name eight times.
+
+Relaxed rather than enforced, both of them. When the held-back candidates are
+all there is they are admitted in score order, so a task naming one thing still
+seeds on that thing as many times as the tree offers and a small tree behaves
+exactly as it did before either cap existed."
   (let ((spent  (make-hash-table :test #'equal))
+        ;; EQUALP hashes a string the way STRING-EQUAL compares one -- by
+        ;; character, ignoring case -- so this table and the MEMBER below agree
+        ;; on what counts as the same name.
+        (copies (make-hash-table :test #'equalp))
         (chosen '())
         (held   '())
         (taken  0))
@@ -844,9 +877,11 @@ as it did before the cap existed."
         (let* ((slice (seed-slice (cdr pair)))
                (names (gethash slice spent))
                (name  (significant-name (car pair))))
-          (cond ((or (< (length names) *seed-term-share*)
-                     (member name names :test #'string-equal))
+          (cond ((and (or (< (length names) *seed-term-share*)
+                          (member name names :test #'string-equal))
+                      (< (gethash name copies 0) *seed-name-share*))
                  (pushnew name (gethash slice spent) :test #'string-equal)
+                 (incf (gethash name copies 0))
                  (incf taken)
                  (push (car pair) chosen))
                 (t (push (car pair) held))))))

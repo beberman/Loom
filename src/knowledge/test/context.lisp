@@ -210,6 +210,80 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
     (is (member "database-alert" names :test #'string=)
         "and what it was crowding out has to arrive")))
 
+(defun same-name-graph (name count &rest others)
+  "COUNT definitions of NAME, one per file, plus one definition of each of OTHERS.
+
+One file each because the graph keys an entity by its natural key, and a name
+asserted twice against one file is one entity -- which is the wrong fixture
+entirely for a bound that counts entities per name."
+  (let ((g (make-graph)))
+    (dotimes (i count)
+      (add-entity g (k-def 'function-entity name (format nil "src/one/f~d.lisp" i))))
+    (loop for other in others
+          for i from 0
+          do (add-entity g (k-def 'function-entity other
+                                  (format nil "src/other/g~d.lisp" i))))
+    g))
+
+(test one-name-may-not-take-every-seed-slot
+  ;; BUG-0041. Eight definitions of DELETE-OBJ answer the same two terms, so
+  ;; they are one name and one charge against their slice -- and until DES-0037
+  ;; nothing counted the eight. Measured on game-server, `mp deleting obj'
+  ;; returned eight methods named DELETE-OBJ and nothing else; 9 of the 450
+  ;; known-item cases returned a single name eight times.
+  ;;
+  ;; Five other candidates and not fewer, spread over three slices, because
+  ;; that is what fills the five slots the bound frees: the slice cap lets
+  ;; {delete, obj} contribute two names, {delete} two and {obj} two. With fewer
+  ;; the relaxation hands slots back to DELETE-OBJ and the count measures the
+  ;; fixture rather than the bound.
+  (let* ((names (seed-names (same-name-graph "delete-obj" 8
+                                             "delete-obj-cascade"
+                                             "delete-game" "delete-media"
+                                             "obj-encode" "obj-decode")
+                            "delete obj"))
+         (copies (count "delete-obj" names :test #'string-equal)))
+    (is (= 8 (length names))
+        "the bound holds candidates back, it does not shorten the bundle")
+    (is (= copies loom-knowledge::*seed-name-share*)
+        "some definitions of a name are evidence; eight of them are a listing")
+    (is (member "delete-obj-cascade" names :test #'string-equal)
+        "and the slots the bound freed carry something else the task matched")))
+
+(test three-definitions-of-one-name-are-all-seeds
+  ;; REQ-0016 R8, in a unit test rather than only over the network. The clause
+  ;; is an acceptance case whose finding is the triplication itself -- `data-api
+  ;; handler database connection acquire and test connectivity' must return all
+  ;; three CONNECTION-CONNECT-DATABASE definitions -- and it is the reason the
+  ;; slice cap counts names rather than entities. It is also what pins
+  ;; *SEED-NAME-SHARE* at three: a bound of two fails this.
+  ;;
+  ;; tools/acceptance.py cannot see it. It scores a set of names, so one
+  ;; definition and three read alike there.
+  (let ((names (seed-names (same-name-graph "connection-connect-database" 3
+                                            "check-database" "database-alert"
+                                            "db-handler" "table-handler"
+                                            "connection-pool" "connection-close")
+                           "data-api handler database connection acquire and test connectivity")))
+    (is (= 3 (count "connection-connect-database" names :test #'string-equal))
+        "three files defining one name is the finding the query exists to produce")))
+
+(test a-name-with-nothing-to-crowd-out-still-fills-the-set
+  ;; The relaxation, which the bound must not take away. ADMIT-SEEDS holds a
+  ;; candidate back rather than refusing it, and returns the held ones in score
+  ;; order when nothing else is waiting -- so a tree that offers eight
+  ;; definitions of one name and nothing else seeds on all eight, exactly as it
+  ;; did before either count existed.
+  ;;
+  ;; Not a test of the bound: it passes without DES-0037. It is what a bound
+  ;; written as a refusal rather than as a charge would break, and 5 of the 449
+  ;; measured bundles reach their eighth seed this way.
+  (let ((names (seed-names (same-name-graph "to-alist" 8) "to-alist")))
+    (is (= 8 (length names))
+        "a full set, from the only candidates there are")
+    (is (every (lambda (n) (string-equal "to-alist" n)) names)
+        "all of them, because there is nothing the bound could admit instead")))
+
 ;;; ------------------------------------------------------------------
 ;;; Which candidate a match is worth having -- REQ-0016 R1 and R4.
 ;;;

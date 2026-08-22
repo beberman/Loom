@@ -1,6 +1,6 @@
 id: BUG-0041
 title: ADMIT-SEEDS charges a slice per name rather than per entity, so a name with eight definitions spends all eight seed slots on one charge
-status: open
+status: closed
 date: 2026-08-22
 refines: [REQ-0016]
 affects: [admit-seeds, seed-slice, build-context]
