@@ -32,7 +32,13 @@ set -u
 root=$(cd "$(dirname "$0")/.." && pwd) || exit 1
 
 # category prefix : directory under docs/
-types="REQ:requirements ARCH:arch DEC:design PLAN:plans REV:reviews BUG:bugs CON:concepts RULE:rules"
+#
+# DEC names docs/decisions and DES names docs/design, and BUG-0039 is what one
+# row conflating them cost: `DEC' globbed docs/design, matched no DEC-nnnn, and
+# answered DEC-0001 while four decisions already existed, and `DES' -- the
+# category CON-0004's chain passes through between a requirement and a plan --
+# had no row at all and exited 1.
+types="REQ:requirements ARCH:arch DEC:decisions DES:design PLAN:plans REV:reviews BUG:bugs CON:concepts RULE:rules"
 
 next_for() {
     local type=$1 dir=$2 highest=0 f base n
@@ -65,5 +71,5 @@ for pair in $types; do
 done
 
 printf 'Unknown document type: %s\n' "$1" >&2
-printf 'One of: REQ ARCH DEC PLAN REV BUG CON RULE\n' >&2
+printf 'One of: REQ ARCH DEC DES PLAN REV BUG CON RULE\n' >&2
 exit 1
