@@ -336,6 +336,21 @@ the usage log.
 
 ### Items no document carries
 
+- **Context logging is off by default during work on Loom, and the corpus was
+  purged to what scores.** On 2026-08-22 `.loom/context` held 2032 records and
+  27MB, of which 15 carried a judgement. Two runs of the 450-case known-item
+  harness contributed 900 by themselves; 1100 earlier records covered 39
+  distinct tasks. Purged to the 15 judgements and the 15 records they judge,
+  following REQ-0038's rule of keeping what scores; the whole directory is
+  archived first at `.loom/context-archive-20260822.tar.gz`, which is
+  gitignored along with the rest of `.loom/`. `tools/loom-serve.sh` no longer
+  defaults `LOOM_CONTEXT_LOG` to `1` -- a session meant to produce judgements
+  turns it on with `LOOM_CONTEXT_LOG=1 tools/loom-serve.sh restart`. This is a
+  workaround for REQ-0044, which asks for a field marking a record as a probe;
+  with one, probe traffic could be written and then excluded rather than not
+  written at all.
+
+
 - **Loom-side acceptance cases cannot measure Loom-side commits, and prose is
   the vector.** On 2026-08-22 `log-1` ("trim whitespace from a string") went
   from a hit to a miss with no semantic change to the seeder: `js-trim` was

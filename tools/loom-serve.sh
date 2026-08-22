@@ -58,15 +58,29 @@ repository=${root##*/}
 extra_repos_file=${LOOM_EXTRA_REPOS:-$(dirname "$0")/extra-repos}
 
 # Context logging, DES-0030 D1. CONFIGURE-CONTEXT-LOG-FROM-ENVIRONMENT reads
-# LOOM_CONTEXT_LOG once, at startup, and writes nothing when it is unset -- so
-# turning the log on has to be a line somebody wrote, and this is that line.
-# The service inherits this export through the nohup below.
+# LOOM_CONTEXT_LOG once, at startup, and writes nothing when it is unset. This
+# line used to default it to `1', which turned the log on for every service on
+# this machine including the ones being restarted a dozen times an afternoon
+# while Loom itself was being worked on.
 #
-# Honours a value already in the environment, so a one-off
-# `LOOM_CONTEXT_LOG=/tmp/probe tools/loom-serve.sh restart' still wins. `1'
-# means the default directory, <loom>/.loom/context/ -- inside a dot-directory,
+# Off by default since 2026-08-22, and the reason is measured rather than
+# tidiness. The log is a corpus REQ-0036 built so a ranking change could be
+# measured; a session developing the ranking fills it with that session's own
+# probes. On 2026-08-22 it held 2032 records, of which 15 carried a judgement:
+# two runs of the 450-case known-item harness contributed 900 by themselves,
+# and 39 distinct tasks accounted for 1100 records. Records that nobody judged
+# and that answer a query nobody asked are not evidence, and they are what
+# REQ-0044 asks for a field to mark.
+#
+# Turn it on for a session meant to produce judgements, which is what it is for:
+#
+#     LOOM_CONTEXT_LOG=1 tools/loom-serve.sh restart          the default directory
+#     LOOM_CONTEXT_LOG=/tmp/probe tools/loom-serve.sh restart  somewhere else
+#
+# A value already in the environment still wins, so neither line above needs
+# this file edited. `1' means <loom>/.loom/context/ -- inside a dot-directory,
 # where REPOSITORY-FILES skips it, so the log cannot enter the index it judges.
-export LOOM_CONTEXT_LOG=${LOOM_CONTEXT_LOG:-1}
+export LOOM_CONTEXT_LOG=${LOOM_CONTEXT_LOG:-}
 
 # ------------------------------------------------------------------
 # Reading the answers back
