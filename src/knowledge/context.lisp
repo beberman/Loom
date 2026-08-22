@@ -113,47 +113,90 @@ ADDRESS survive."
         (push (concatenate 'string (subseq word 0 (- n 2)) "e") out)))
     out))
 
+(defun task-token-origins (task)
+  "The tokens of TASK paired with the word each came from, in TASK-TOKENS order.
+
+A word the caller wrote maps to itself. A compound part and a stem variant map
+to the word that produced them, so \"str\" and \"stre\" both map to \"string\"
+and the ranking can tell what a match cost the caller to write (DES-0033 D1).
+
+Recorded here rather than reconstructed later, which is DES-0033 D3 and is not
+a preference: \"str\" is derivable from \"string\" and from \"strings\" alike,
+so a pass that asks afterwards which written word could have produced a
+fragment has to guess between them, and a guess about provenance is the thing
+CON-0001 refuses.
+
+A token reachable two ways keeps the first origin recorded for it, because
+PUSHNEW keeps the first and the alist has to agree with the token list it is
+built beside."
+  (let ((origins '())
+        (current (make-string-output-stream)))
+    (flet ((remember (token origin)
+             (unless (assoc token origins :test #'string=)
+               (push (cons token origin) origins))))
+      (flet ((finish ()
+               (let ((word (string-downcase (get-output-stream-string current))))
+                 (when (and (>= (length word) 3)
+                            (not (member word *context-stopwords* :test #'string=)))
+                   (remember word word)
+                   ;; a compound also seeds on its parts
+                   (let ((start 0))
+                     (dotimes (i (1+ (length word)))
+                       (when (or (= i (length word))
+                                 (member (char word i) '(#\- #\_)))
+                         (let ((part (subseq word start i)))
+                           (when (and (>= (length part) 3)
+                                      (not (member part *context-stopwords* :test #'string=)))
+                             (remember part word)))
+                         (setf start (1+ i)))))))))
+        (loop for char across task
+              do (if (or (alphanumericp char) (member char '(#\- #\_ #\* #\%)))
+                     (write-char char current)
+                     (finish))
+              finally (finish)))
+      ;; Inflections last. "saving a piece design" reaches SAVEDESIGN, which it
+      ;; could not while SAVING and SAVE were unrelated strings -- that entity
+      ;; was the one measured gain of two reverted attempts to replace this
+      ;; function with a postings index, and it was never the index that gained
+      ;; it.
+      ;;
+      ;; Added rather than substituted, so a wrong guess costs nothing: a stem
+      ;; matching no name simply never matches. The stopword filter is not
+      ;; re-applied to a variant, because a variant of a word that passed the
+      ;; filter is a word the caller wrote.
+      ;;
+      ;; BUG-0040 measured that claim as false and this pass is half of what
+      ;; makes it true: "string" is six characters and ends in -ing, so it
+      ;; stems to "str" and "stre", and "stre" reached STRESS-PUSHER at the
+      ;; strongest rank the scale has. A variant carries its origin from here
+      ;; so that SEED-SCORE can rank it below the word it came from rather
+      ;; than beside it.
+      ;; ORIGINS is in reverse insertion order here, exactly as the token list
+      ;; it replaced was when the loop that used to stand here read
+      ;; (COPY-LIST TOKENS). Iterating it forwards rather than reversing it
+      ;; first is not a detail: the variants are emitted in the order this walk
+      ;; reaches their base words, that order survives the NREVERSE below, and
+      ;; SEED-MATCHES reaches candidates in token order -- which is the tie
+      ;; break for every candidate scoring the same. Reversing it here reordered
+      ;; "start stre str" to "stre str start" for "test whether a string
+      ;; starts with a prefix", and cost acceptance case log-1 its JS-TRIM.
+      (dolist (pair origins)
+        (dolist (variant (stem-variants (car pair)))
+          (remember variant (cdr pair)))))
+    (nreverse origins)))
+
 (defun task-tokens (task)
   "The candidate identifiers in TASK: words and hyphenated or underscored
 compounds, lowercased, three characters or more, stopwords dropped.
 
 Compounds are kept whole *and* split, so \"impact-set\" seeds on the exact
-name and, failing that, on \"impact\"."
-  (let ((tokens '())
-        (current (make-string-output-stream)))
-    (flet ((finish ()
-             (let ((word (string-downcase (get-output-stream-string current))))
-               (when (and (>= (length word) 3)
-                          (not (member word *context-stopwords* :test #'string=)))
-                 (pushnew word tokens :test #'string=)
-                 ;; a compound also seeds on its parts
-                 (let ((start 0))
-                   (dotimes (i (1+ (length word)))
-                     (when (or (= i (length word))
-                               (member (char word i) '(#\- #\_)))
-                       (let ((part (subseq word start i)))
-                         (when (and (>= (length part) 3)
-                                    (not (member part *context-stopwords* :test #'string=)))
-                           (pushnew part tokens :test #'string=)))
-                       (setf start (1+ i)))))))))
-      (loop for char across task
-            do (if (or (alphanumericp char) (member char '(#\- #\_ #\* #\%)))
-                   (write-char char current)
-                   (finish))
-            finally (finish)))
-    ;; Inflections last. "saving a piece design" reaches SAVEDESIGN, which it
-    ;; could not while SAVING and SAVE were unrelated strings -- that entity was
-    ;; the one measured gain of two reverted attempts to replace this function
-    ;; with a postings index, and it was never the index that gained it.
-    ;;
-    ;; Added rather than substituted, so a wrong guess costs nothing: a stem
-    ;; matching no name simply never matches. The stopword filter is not
-    ;; re-applied to a variant, because a variant of a word that passed the
-    ;; filter is a word the caller wrote.
-    (dolist (token (copy-list tokens))
-      (dolist (variant (stem-variants token))
-        (pushnew variant tokens :test #'string=)))
-    (nreverse tokens)))
+name and, failing that, on \"impact\".
+
+The keys of TASK-TOKEN-ORIGINS, which is where the list is actually built.
+Splitting the two keeps this function's contract -- every caller wants the
+tokens and only the ranking wants their provenance -- without two functions
+walking the same string and drifting apart."
+  (mapcar #'car (task-token-origins task)))
 
 (defun task-terms (task)
   "The task's words as written: compounds intact, stopwords kept.
@@ -229,7 +272,23 @@ share is the form that does not need a tuned constant per tree.
 Advisory: ADMIT-SEEDS relaxes it rather than return fewer seeds than there are
 candidates.")
 
-(defun seed-matches (view tokens types)
+(defun derived-token-p (token origins)
+  "True when TOKEN is something Loom made from the task rather than a word of it.
+
+A compound part or a stem variant. The distinction is TASK-TERMS' -- \"those
+are Loom's own manufacture rather than anything the caller typed\" -- which
+NAMED-BY-TASK-P has applied to the 100000 band since REQ-0016 R1 and which the
+two bands below it do not apply at all.
+
+Nothing reads this today. DES-0033 D1 ranked a derived match three worse than a
+written one and the acceptance run refused it, at 41 of 45 against a baseline
+of 42. Kept because REQ-0045 and REQ-0046 both need the distinction and the
+predicate is not what was wrong: what was wrong was spending precision for it,
+which DEC-0005 does not permit."
+  (let ((origin (cdr (assoc token origins :test #'string=))))
+    (and origin (not (string= token origin)))))
+
+(defun seed-matches (view origins types)
   "How TOKENS meet the index: an alist of (entity . ((token . rank) ...)).
 
 In the order the entities were first reached, so a bundle does not reorder
@@ -245,9 +304,17 @@ A rank of :PROSE is a match in the entity's :DOCUMENTATION rather than in its
 name (REQ-0035 R4, DES-0028). It is a keyword and not a fourth integer because
 the two are not points on one scale -- a name match is evidence an author chose
 that word *for this thing*, and a prose match is evidence they used it while
-explaining it. SEED-SCORE bands them separately for that reason."
+explaining it. SEED-SCORE bands them separately for that reason.
+
+ORIGINS is TASK-TOKEN-ORIGINS' alist rather than a bare token list, and a
+match on a token the caller did not write is recorded three ranks worse than
+the same match on one they did (DES-0033 D1). BUG-0040 is why: \"string\" stems
+to \"str\" and \"stre\", and a prefix match on \"stre\" scored 1 while a
+substring match on \"string\" scored 2, so STRESS-PUSHER and STRESS-WRITER
+took two of eight slots on a query about string prefixes."
   (let ((hits  (make-hash-table :test #'eq))
-        (order '()))
+        (order '())
+        (tokens (mapcar #'car origins)))
     (flet ((record (entity token rank)
              (unless (gethash entity hits)
                (push entity order))
@@ -297,7 +364,11 @@ with corroboration, and demoting it would punish the documentation."
 
 3 rather than an error, because the band this feeds is about how well a *name*
 matched and a prose-only candidate has no answer to give -- it is already
-separated by PROSE-ONLY-P one band above."
+separated by PROSE-ONLY-P one band above.
+
+DES-0033 D1 moved this to 6 as part of ranking a derived token below a written
+one, and the acceptance run took that back: 41 of 45, losing JS-TRIM on \"trim
+whitespace from a string\". The design records the measurement."
   (let ((ranks (remove :prose (mapcar #'cdr matches))))
     (if ranks (reduce #'min ranks) 3)))
 
@@ -381,7 +452,35 @@ why."
        (test-code-p entity)
        (not (gethash (significant-name entity) production))))
 
-(defun seed-score (entity matches &key demote-tests terms production)
+(defun match-coverage (matches origins)
+  "How many distinct words of the task MATCHES answers to.
+
+Distinct *words*, not distinct matches: a candidate reached by \"string\" and
+by \"str\" answered one word of the task twice. SEED-SCORE's coverage band has
+always been described as \"how many of the task's distinct terms this name
+answers to\", and this computes that.
+
+It is nonetheless NOT what the coverage band uses, and the measurement is why.
+DES-0033 D2 proposed it and PLAN-0039 S3 built it; the acceptance run went from
+42 of 45 to 40, losing WorkingSet (fe-1) and SaveDesign (fe-10) on front-end --
+a tree that work did not commit to, so neither loss is corpus drift.
+
+SaveDesign is the case. \"saving a piece design\" reaches it through the stem
+\"save\", and folding \"save\" and \"sav\" back into \"saving\" drops its
+coverage from 3 to 2 while a rival answering \"design\" and \"piece\" keeps 2.
+Correcting the count cost the stemmer its one recorded gain, and DEC-0005 does
+not buy a more defensible band with two entities that stop being recalled.
+
+Kept rather than deleted so the next attempt starts from the measurement. The
+inflated count is a real defect; what is wrong with this correction is that it
+deflates a true positive and a false one by the same amount."
+  (let ((seen (make-hash-table :test #'equal)))
+    (dolist (m matches (hash-table-count seen))
+      (let* ((token (car m))
+             (origin (or (cdr (assoc token origins :test #'string=)) token)))
+        (setf (gethash origin seen) t)))))
+
+(defun seed-score (entity matches &key demote-tests terms production origins)
   "Sort key for one candidate seed, lower first: type, then coverage, then match.
 
 Coverage -- how many of the task's distinct terms this name answers to -- is
@@ -620,7 +719,8 @@ waiting (ADMIT-SEEDS)."
   ;; will break.
   (let* ((demote-tests (not (task-wants-tests-p task)))
          (terms      (task-terms task))
-         (matches    (seed-matches view (task-tokens task) types))
+         (origins    (task-token-origins task))
+         (matches    (seed-matches view origins types))
          (production (production-names matches))
          ;; COPY-LIST because STABLE-SORT is destructive on a list and MATCHES
          ;; is read again below. Without it MATCHES names whatever cons cell was
@@ -634,7 +734,8 @@ waiting (ADMIT-SEEDS)."
                                          (seed-score (car pair) (cdr pair)
                                                      :demote-tests demote-tests
                                                      :terms terms
-                                                     :production production))))
+                                                     :production production
+                                                     :origins origins))))
          (chosen     (admit-seeds ranked limit)))
     ;; Second value: the chosen seeds with the score and the terms each
     ;; answered to. DES-0030 D3 -- a record holding the seeds without their
@@ -658,7 +759,8 @@ waiting (ADMIT-SEEDS)."
                                 :score (seed-score entity (cdr pair)
                                                    :demote-tests demote-tests
                                                    :terms terms
-                                                   :production production)
+                                                   :production production
+                                                   :origins origins)
                                 ;; The terms as objects rather than the
                                 ;; (term . weight) conses SEED-MATCHES builds.
                                 ;; A dotted pair is not a shape JSON has, and a

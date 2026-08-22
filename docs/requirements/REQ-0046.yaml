@@ -1,0 +1,88 @@
+id: REQ-0046
+title: A term must be weighted by how common it is, because every hand-written rule about common words is a missing idf
+status: draft
+date: 2026-08-22
+refines: [REQ-0016]
+affects: [seed-score, seed-matches, admit-seeds, build-context]
+importance: Critical
+tags: [retrieval, context, ranking, idf, con-0007]
+summary: |
+  Nothing in SEED-SCORE weights a term by how rare it is. The coverage band
+  counts every matched token identically, so "check" and "connectivity" are
+  worth the same to a candidate that answers one of them.
+
+  Every workaround this tree has for that is a hand-written rule. REQ-0016 R7
+  reasons in prose about words that "name something in almost any codebase".
+  ADMIT-SEEDS caps a slice at *SEED-TERM-SHARE* because one common word could
+  otherwise fill the set. DES-0032 measured a per-term frequency spread of 0 to
+  150 across six queries and then declined to rank on it, because a constant
+  fitted to six queries on one tree is not a model.
+
+  These are three approximations of one quantity the index can compute exactly.
+body: |
+  WHAT THE LITERATURE SAYS THIS COSTS
+
+  CON-0007 records Hill's qualification: how stemming affects retrieval is
+  mediated by other factors, among them the use of tf-idf to filter commonly
+  occurring terms. Loom takes stemming's recall and skips that weighting, which
+  is why BUG-0040's "stre" could reach STRESS-PUSHER at rank 1 and cost two of
+  eight slots -- a rare-looking token drawing a strong rank with nothing to say
+  it is meaningless.
+
+  WHAT IS ALREADY MEASURED
+
+  Per-term index frequency over six queries on Loom, 2026-08-22, from DES-0032:
+
+    present   rank/15  seeds/8  context/48  bundle/10  starts/4
+              resolve/59  document/135  reference/23  entity/150
+              watch/19  repository/148  changes/7
+    absent    join/2  list/41  strings/1  separator/0
+              parse/26  number/2  string/15
+              reading/14  encoding/2  fallback/1  utf-8/0
+
+  The spread is three orders of magnitude and it is derivable from the index
+  Loom already holds. DES-0032 refused to place a threshold in it and was right
+  to: the gap between `starts' at 4 and `join' at 2 is two entities. A
+  continuous weight is not a threshold and does not have that problem.
+
+  REQUIREMENTS
+
+  R1  A term's contribution to a seed's score falls as the number of entities
+      it matches rises. Continuous, not a cutoff.
+
+  R2  The weight is derived from the index being searched, per repository. A
+      constant fitted to Loom is not a fact about game-server, and REQ-0023 put
+      several repositories behind one service precisely so they could differ.
+
+  R3  Computing it costs no query latency the clauses can see. Context latency
+      is 0.01-0.20s across the acceptance run; a per-term document frequency is
+      one count against an index that already answers FIND-ENTITIES.
+
+  R4  The hand-written approximations are reconsidered against it rather than
+      left beside it. *SEED-TERM-SHARE*, REQ-0016 R7's reasoning and DES-0032's
+      refusal are all about the same quantity, and three rules plus a weight is
+      worse than either alone.
+
+  ACCEPTANCE
+
+  tools/acceptance.py at 42 of 45 or better, and the three ABSENCE_CASES still
+  reporting their subject terms as weak or unmatched. A weight that improves
+  ranking and destroys the absence report has moved the defect rather than
+  fixed it.
+
+  DEC-0005 governs the trade: this may reorder and must not withhold.
+
+  WHAT THIS IS NOT
+
+  Not a relevance model. tf-idf here is one number per term used to weight a
+  band that already exists, not a scoring framework replacing SEED-SCORE's
+  bands. The bands encode decisions -- type preference, the naming band, the
+  test demotion -- that no term weight expresses.
+
+  OPEN QUESTIONS
+
+  - What is a "document" for idf over a code index? An entity is the obvious
+    unit; a file and a system are both defensible and give different numbers.
+  - Does prose share the term statistics of names? A word common in docstrings
+    and rare in identifiers is the case REQ-0045 R2 separates, and it may need
+    two frequencies rather than one.

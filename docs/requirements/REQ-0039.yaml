@@ -2,10 +2,10 @@ id: REQ-0039
 title: A seed must be chosen for what a definition says it does, because the prose that answers the task is already indexed and the ranking does not read it
 status: draft
 date: 2026-08-21
-refines: [REQ-0016]
+refines: [REQ-0016, CON-0007]
 affects: [seed-score, seed-entities, admit-seeds, build-context, plain-words]
 importance: Critical
-tags: [retrieval, context, ranking, docstring, req-0016, req-0035]
+tags: [retrieval, context, ranking, docstring, stemming, req-0016, req-0035, con-0007]
 summary: |
   REQ-0035 landed: the prose a definition carries is indexed. The seeder still
   scores on tokens shared with the entity's *name*, and the judged records show
@@ -44,19 +44,50 @@ body: |
 
   REQUIREMENTS
 
-  R1  A definition's indexed prose participates in its seed score. REQ-0035 put
-      it in the index; nothing reads it here.
+  R1  RESTATED 2026-08-22, having been measured. As written: "A definition's
+      indexed prose participates in its seed score. REQ-0035 put it in the
+      index; nothing reads it here."
 
-  R2  A name match and a prose match are not the same evidence and are not summed
-      blind. A task token appearing in a docstring sentence about what the
-      function does is stronger evidence than the same token appearing inside a
-      compound identifier, and PARSE-JAVASCRIPT scoring on "parse" for a task
-      about parsing numbers is that weakness in one row.
+      Prose is read, and has been since REQ-0035 and DES-0028. SEED-SCORE's
+      coverage band counts a prose match, and PROSE-ONLY-P bands prose-only
+      candidates one step below. Measured on this requirement's own target
+      query, `context test whether a string starts with a prefix', the winning
+      seed is COMMENT-EXTENT at 100413 answering four terms *entirely* in
+      prose, and the second is READING at 100513 answering three the same way.
 
-  R3  The seed record says which field a term matched. Records today carry
-      `terms` with a weight per term; a caller reading a bundle -- and REQ-0038's
-      scorer reading the log -- cannot tell a name hit from a prose hit, so the
-      ranking cannot be diagnosed from its own output.
+      What is wrong is the opposite of what was written. Prose participates as
+      though it were a name: the coverage band cannot tell a docstring hit from
+      a name hit, and coverage is the widest band under type and naming, so
+      four incidental words in a docstring outrank a name that is the subject
+      of the query.
+
+      CON-0007 gives the practice this violates. A search over code uses an
+      analyzer per field -- stemming and English morphology on comments and
+      docstrings, identifiers left alone -- where SEED-MATCHES walks one token
+      list twice, once against names and once against :DOCUMENTATION.
+
+  R2  A name match and a prose match are not the same evidence and are not
+      summed blind. A task token appearing in a docstring sentence about what
+      the function does is stronger evidence than the same token appearing
+      inside a compound identifier, and PARSE-JAVASCRIPT scoring on "parse" for
+      a task about parsing numbers is that weakness in one row.
+
+      This survives R1's restatement and is the requirement. Note that its
+      example runs the other way from R1's measurement -- a docstring sentence
+      beating a fragment of a compound -- and both are true: the two kinds of
+      evidence are incomparable today, and which one wins is an accident of
+      how many tokens happened to land.
+
+  R3  MET, and the reason it looked unmet is BUG-0037. The seed record carries
+      a weight per term and that weight is :PROSE for a docstring hit and an
+      integer for a name hit, so the two are distinguishable in the log and
+      always were. What was not readable was the record: 207 of 246 bundles
+      carried `"terms": null' because STABLE-SORT was destructive and MATCHES
+      was read after it. The field was right and four fifths of the corpus was
+      empty.
+
+      Since DES-0032 the bundle carries the same distinction to the caller, as
+      a per-term state of answered, weak or unmatched.
 
   R4  A term from the task that names a *path* is not a term about an entity.
       The "migrate game/ and server/" record: *"five of eight seeds... are
@@ -86,9 +117,25 @@ body: |
 
   That is the clearest statement of the defect available, and it is sharper than
   the one this document was drafted with. r39-1 and r39-2 are regression guards
-  on a name match. r39-3 is the target: DOT-PREFIXED-P shares no token with
-  "test whether a string starts with a prefix" except through its docstring, and
-  it still misses. r39-4 passes and always did.
+  on a name match. r39-4 passes and always did.
+
+  r39-3 is the target, and its rationale as first written is wrong. It said
+  DOT-PREFIXED-P "shares no token with 'test whether a string starts with a
+  prefix' except through its docstring". It has no docstring: Loom holds no
+  :DOCUMENTATION property for it at all, so no amount of prose seeding can
+  reach it and the case as written argued for a mechanism that could never
+  satisfy it.
+
+  What it does share is a name. "prefix" is a substring of "dot-prefixed-p",
+  and `find prefix' returns it among 13. So the case is reachable, ranks
+  ninth or worse, and is a *name-match ranking* case rather than a prose case.
+
+  CON-0007 says what would seat it, and it is not a change to the scoring at
+  all. Porter takes "prefixed" to "prefix". Stemming the index with the same
+  analyzer as the query turns a substring match at rank 2 into an exact match
+  at rank 0. Loom stems only the query and then matches the result against raw
+  names, which is the one rule every text search obeys and this tree obeys on
+  neither side.
 
   "parse a number out of a string" is not a case here: its right answer is that
   nothing exists, which is REQ-0037's, and the harness has no way to assert it.
@@ -113,6 +160,18 @@ body: |
     queries. What R1 does for a tree with no prose is unanswered, and the
     fallback cannot be worse than today's behaviour.
   - How is "the subject" of a task identified without parsing English? "parse a
-    number" and "parse a document" share a verb and differ in the noun, and the
-    cheap approximation -- weight the rarer term higher -- is worth trying before
-    anything cleverer.
+    number" and "parse a document" share a verb and differ in the noun. The
+    cheap approximation named here -- weight the rarer term higher -- is now
+    REQ-0046, which is idf and is the quantity three hand-written rules in this
+    tree are already approximating.
+
+  SEPARATED OUT, 2026-08-22
+
+  Two questions were folded into this requirement and are answered better on
+  their own. REQ-0045 is that `find` and `context` should not share a matching
+  policy, because one is navigational and wants exactness and the other is
+  concept location and wants recall. REQ-0046 is the term weighting above.
+  CON-0007 carries the literature both rest on.
+
+  What is left here is R2, R4 and R5: the two kinds of evidence are
+  incomparable, a path term is not an entity term, and a package is seedable.

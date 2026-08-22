@@ -336,6 +336,21 @@ the usage log.
 
 ### Items no document carries
 
+- **Loom-side acceptance cases cannot measure Loom-side commits, and prose is
+  the vector.** On 2026-08-22 `log-1` ("trim whitespace from a string") went
+  from a hit to a miss with no semantic change to the seeder: `js-trim` was
+  displaced by `task-token-origins`, `seed-matches` and `best-name-rank`, three
+  functions whose docstrings had just been written to explain BUG-0040 and so
+  are dense in "string", "str", "stre" and "trim". `tools/acceptance.py`'s
+  header already warns that "every commit to it changes the corpus a Loom-side
+  clause measures", and that warning was written about code; the measured
+  vector was documentation. `log-1`, `r39-3` and the three `ABSENCE_CASES` are
+  all Loom-side and all inherit the problem. DES-0033 records the three
+  attempts it took to establish, including one experiment that moved two
+  variables at once by stashing the source file and thereby removing the new
+  docstrings with it.
+
+
 - ~~The harness contaminates the corpus it measures.~~ Written here on
   2026-08-21 and moved the same day: REQ-0038's DECIDED section carries it, along
   with the purge that answers it — keep records carrying a judgement, drop

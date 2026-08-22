@@ -1,0 +1,176 @@
+id: DES-0033
+title: "REQ-0039 after the literature: Porter replaces the hand-rolled suffix rules, and the two mechanisms measured against acceptance are recorded rather than shipped"
+status: draft
+date: 2026-08-22
+refines: [REQ-0039, CON-0007]
+affects: [stem-variants, task-tokens, seed-score, best-name-rank, seed-matches]
+tags: [retrieval, context, ranking, stemming, req-0016, req-0035, con-0007]
+summary: |
+  Two mechanisms were designed, built and measured against tools/acceptance.py
+  on 2026-08-22. A coverage band counting distinct words is refuted: it cost
+  fe-1 and fe-10 on front-end, a tree this work does not commit to, and under
+  DEC-0005 a lost case is the design failing rather than a trade. A
+  provenance-ordered rank scale is neither refuted nor confirmed -- it moved no
+  case outside Loom, and the one Loom case that moved was displaced by this
+  design's own docstrings rather than by its code.
+
+  What replaces them came out of CON-0007's literature search and is smaller
+  than either. Loom's STEM-VARIANTS is four hand-written suffix rules; Porter's
+  algorithm is in Quicklisp as the `stem' system, and on this tree's own tokens
+  it does not have BUG-0040 -- it leaves "string" alone, because "string" is
+  not an inflection -- while keeping "saving" to "save", which is the one gain
+  the hand-written rules were kept for.
+body: |
+  WHAT WAS BUILT AND MEASURED
+
+  Baseline before any change: 42 of 45 strict, missing config-get (R7),
+  MapElementTypeEditor (fe-5) and dot-prefixed-p (r39-3).
+
+  D1, A RANK SCALE ORDERED BY PROVENANCE -- NOT REFUTED, NOT YET MEASURABLE
+
+  MATCH-RANK returns 0 exact, 1 prefix, 2 substring. The scale was extended so
+  a match on a token Loom derived scored three worse than the same match on a
+  word the caller wrote, with the prose-only fallback moving from 3 to 6.
+
+  It does what it was built to do. BUG-0040's inversion -- a prefix match on
+  the invented "stre" at 1 beating a substring match on the written "string" at
+  2 -- is gone.
+
+  The acceptance run read 41 of 45 against a baseline of 42, and the missing
+  case was log-1, "trim whitespace from a string", which stopped returning
+  JS-TRIM. That number is not this design's doing and the reason took three
+  attempts to establish, which is worth writing down because the same trap is
+  set for the next person.
+
+  JS-TRIM's seat was taken by TASK-TOKEN-ORIGINS, SEED-MATCHES and
+  BEST-NAME-RANK -- three functions of this design's own implementation, whose
+  docstrings explain BUG-0040 and therefore contain "string", "str", "stre" and
+  "trim" many times over. Loom indexes Loom. Documenting a defect in string
+  handling made Loom's own definitions the best prose match for a query about
+  string handling, and pushed a real answer out of the eighth slot.
+
+  The first attempt to test this stashed src/knowledge/context.lisp and
+  measured 42 of 45, which looked like proof that the code change was at fault.
+  It is not: stashing that file removes the new docstrings and the new code
+  together, so the experiment moved two variables and could not separate them.
+  The isolating measurement is the one that finally settled it -- with D1
+  removed and TASK-TOKENS verified byte-identical to its predecessor over all
+  26 acceptance queries, log-1 still fails, and its top three seeds are the
+  three newly-documented functions.
+
+  What is therefore known about D1: on every case outside Loom -- R7 on
+  game-server, the ten front-end cases, r39-1, r39-2 and r39-4 on utils -- it
+  changed nothing. It has no measured cost and no measured benefit, and
+  DEC-0005 permits a precision mechanism that costs no recall.
+
+  What is not known is whether it helps, because the query that would show it
+  is a Loom query and Loom-side cases cannot measure Loom-side commits.
+  tools/acceptance.py says so in its own header -- "Loom is deliberately absent
+  ... every commit to it changes the corpus a Loom-side clause measures" -- and
+  log-1, r39-3 and the three ABSENCE_CASES were all added to the Loom side
+  afterwards. That is REQ-0036 R4's decay arriving through prose rather than
+  through code, and it makes four of this requirement's measurements unstable
+  in the direction of whatever the session happened to write about.
+
+  D2, COVERAGE COUNTING DISTINCT WORDS -- REFUTED
+
+  The coverage band counts matches, so a candidate reached by "string" and by
+  "str" is scored as covering two terms where the caller wrote one.
+  MATCH-COVERAGE counts distinct origins instead, which is what SEED-SCORE's
+  docstring has always said the band measures.
+
+  40 of 45. It loses WorkingSet (fe-1) and SaveDesign (fe-10), both on
+  front-end -- a tree this work does not commit to, so neither loss is drift.
+
+  SaveDesign is the case. "saving a piece design" reaches it through the stem
+  "save", and folding "save" and "sav" back into "saving" drops its coverage
+  from 3 to 2 while a rival answering "design" and "piece" keeps 2. The
+  correction deflates a true positive and a false one by the same amount, which
+  is what a coverage count cannot distinguish and an idf can. REQ-0046.
+
+  MATCH-COVERAGE is kept in the source, unused by the score, carrying that
+  measurement in its docstring.
+
+  D3, THE ORIGINS MAP -- KEPT
+
+  TASK-TOKEN-ORIGINS returns (token . origin) in TASK-TOKENS' order, and
+  TASK-TOKENS is its keys. A written word maps to itself; a compound part and a
+  stem variant map to the word that produced them.
+
+  Recorded at construction rather than reconstructed, because "str" is
+  derivable from "string" and from "strings" alike and a later pass has to
+  guess. It changes no ranking on its own, every existing test over TASK-TOKENS
+  passes untouched, and anything that later distinguishes a caller's word from
+  Loom's needs it.
+
+  D4, PORTER REPLACES THE SUFFIX RULES
+
+  STEM-VARIANTS is four hand-written rules over -ies, -s, -ing and -ed, with
+  minimum lengths chosen to protect specific words. Quicklisp's `stem' system
+  is Porter's algorithm, hand-translated to Common Lisp by Steven Haflich and
+  served from Porter's own site. One file, no dependencies, one exported
+  symbol.
+
+  Measured on the tokens this tree's cases produce:
+
+      string     -> string      the hand-written rule gives str and stre
+      strings    -> string
+      saving     -> save        the gain the hand-written rules were kept for
+      prefixed   -> prefix      acceptance case r39-3
+      starts     -> start
+      reading    -> read
+      encoding   -> encod
+      parse      -> pars
+      parsing    -> pars
+      whitespace -> whitespac
+
+  The first row is BUG-0040 not happening. Porter leaves "string" alone because
+  "string" is not an inflection; Loom's rule fires on three characters at the
+  end of a word and cannot tell. The third row is why the swap is safe: the one
+  case the hand-written rules exist for still works.
+
+  Added rather than substituted, exactly as today. A Porter stem is emitted as
+  an additional token when it differs from the word, so nothing that matches
+  now stops matching, which is what keeps this inside DEC-0005.
+
+  Two properties of the library are worth stating rather than discovering
+  later. Its .asd declares the license as "Probably LLGPL", which is an
+  ambiguity in the packaging rather than in Porter's algorithm, and is a
+  question for whoever decides what Loom may depend on. And it wants a string
+  with a fill-pointer, creating one otherwise and calling that "an efficiency
+  hit" -- which matters because this runs per token per query.
+
+  WHAT IS NOT DESIGNED HERE
+
+  Stemming both sides. CON-0007's sharpest finding is that Loom stems the query
+  and matches the result against raw names, where every text search analyses
+  index and query alike. Porter takes "prefixed" to "prefix", so an index
+  stemmed with the same analyzer turns r39-3's substring match at rank 2 into
+  an exact match at rank 0 -- which is the acceptance case this requirement was
+  written for, seated by a change to the analyzer rather than to the scoring.
+
+  It is not designed here because it is REQ-0045's subject rather than
+  REQ-0039's: `find' and `context' would have to stop sharing a matching
+  policy first, since a stemmed index is wrong for a command whose job is to
+  locate an exact name.
+
+  An analyzer per field, for the same reason. REQ-0045 R2.
+
+  Term weighting. D2's refutation is an argument for REQ-0046 and not for a
+  better coverage count.
+
+  MONTEZUMA CONSIDERED
+
+  Quicklisp holds montezuma, a Common Lisp port of Lucene, which would supply
+  per-field analyzers, index-side and query-side analysis through one path, and
+  tf-idf -- CON-0007's three findings and REQ-0045 and REQ-0046 in one
+  dependency.
+
+  Not proposed. Loom's index is a graph whose entities carry names and
+  documentation, not a document store, and REQ-0016's ranking is a set of
+  banded decisions -- type preference, the naming band, the test demotion --
+  that a relevance model does not express and would have to be rebuilt on top
+  of. The three findings are worth taking; a second index to keep in step with
+  the first is not, and DEC-0001 makes the graph derivable from files rather
+  than authoritative, which a Lucene index alongside it would complicate. It is
+  recorded here so the next reader knows it was weighed.

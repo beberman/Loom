@@ -1,0 +1,72 @@
+id: REQ-0045
+title: Navigational search and concept location must not share a matching policy, because one is answered by an exact name and the other by a description
+status: draft
+date: 2026-08-22
+refines: [REQ-0016]
+affects: [seed-matches, match-rank, search-entities, find-entities, task-tokens]
+importance: Major
+tags: [retrieval, context, find, stemming, con-0007]
+summary: |
+  `find` answers "where is JS-TRIM". `context` answers "where is the code that
+  trims whitespace". Both go through the same tokens and the same MATCH-RANK,
+  and the two questions want opposite things: the first wants exactness and is
+  damaged by a loose match, the second wants recall and is damaged by
+  insisting on the caller's spelling.
+
+  CON-0007 records the industry and research split that says so. Zoekt, which
+  backs Sourcegraph, does no stemming at all -- trigram exact matching, with
+  ctags symbols used to rank. Hill's study over 500 search tasks found stemming
+  beat not stemming for software search, and heavy over-stemming stemmers beat
+  light ones. Neither is wrong; they answer different questions, and Loom asks
+  both through one path.
+body: |
+  WHERE THEY ALREADY DIVERGE, AND WHERE THEY DO NOT
+
+  SEED-SCORE and SEARCH-RANK already disagree deliberately, and the disagreement
+  is documented: SEED-ENTITIES prefers a definition over an exactly-named file
+  where SEARCH-ENTITIES prefers the exact name, "because loom_find answers
+  'where is this thing' ... a context bundle answers 'what should I know before
+  editing'". That is this requirement's principle, applied to type preference
+  and to nothing else.
+
+  Below that, both read MATCH-RANK's 0 exact / 1 prefix / 2 substring over the
+  same token set. A stem or a compound part reaching a name is indistinguishable
+  from the caller's own word reaching it, in both directions, for both commands.
+
+  REQUIREMENTS
+
+  R1  The token set a query is matched on is a property of the operation, not
+      of the tree. `find` matches what the caller typed; `context` may match
+      what the caller typed, its parts, and its stems.
+
+  R2  A name pass and a prose pass do not share a token set. CON-0007: the
+      practice is an analyzer per field, stemming applied to natural language
+      and identifiers left alone. Today SEED-MATCHES walks `tokens' twice, once
+      against names and once against :DOCUMENTATION, with one list.
+
+  R3  Whichever policy applies, it applies to both sides. Loom stems the query
+      and matches the result against raw names, so "prefixed" in an identifier
+      is reachable from the query "prefix" only as a substring. Index and query
+      analysed alike is the oldest rule in text search and this tree follows it
+      on neither side.
+
+  R4  `find`'s behaviour does not change. It is the command an agent falls back
+      to when a bundle fails, and four of REQ-0037's judged records are
+      recoveries through it. A requirement that makes the fallback worse has
+      taken away the thing that was working.
+
+  ACCEPTANCE
+
+  tools/acceptance.py measures `context` and holds at 42 of 45. `find` has no
+  harness; R4's guard is that no `find`-side code changes, which is checkable
+  by inspection rather than by measurement, and is the honest statement of what
+  is protected.
+
+  OPEN QUESTIONS
+
+  - Does the split belong in the analyzer or in the caller? An operation
+    parameter is the smaller change and puts a retrieval policy in the
+    service's API, where a caller will eventually set it wrongly.
+  - REQ-0042 asks for finding a definition by resemblance to another
+    definition, which is a third question again. Whether it shares a policy
+    with `context` or wants its own is not answered here.

@@ -1,0 +1,77 @@
+id: BUG-0040
+title: An exact match on a token Loom invented outranks a substring match on the word the caller wrote, so STRESS-PUSHER seeds a query about string prefixes
+status: open
+date: 2026-08-22
+refines: [REQ-0039]
+affects: [stem-variants, task-tokens, seed-score, best-name-rank]
+tags: [retrieval, context, ranking, stemming, req-0016, req-0039]
+severity: high
+summary: |
+  STEM-VARIANTS applies its -ing rule to any word of six characters or more.
+  "string" is exactly six and ends in "ing", so it is stemmed as though it were
+  a gerund and emits two variants, "str" and "stre". Neither is a word the
+  caller wrote.
+
+  MATCH-RANK then scores a name against whichever token reached it -- 0 exact,
+  1 prefix, 2 substring -- and SEED-SCORE's last band takes the best of those
+  ranks with no regard for whether the token was written or manufactured. So a
+  prefix match on "stre" scores 1 and a substring match on the real word
+  "string" scores 2, and the invented fragment wins.
+
+  Measured on Loom on 2026-08-22, `context test whether a string starts with a
+  prefix':
+
+    stress-pusher         score=100601   stre(w1) str(w1)
+    stress-writer         score=100601   stre(w1) str(w1)
+    first-string-literal  score=100602   string(w2) str(w2)
+
+  STRESS-PUSHER and STRESS-WRITER take two of the eight seed slots on a query
+  about string prefixes, beating a candidate that matched the caller's actual
+  word. DOT-PREFIXED-P, whose name contains "prefix", matches one term, scores
+  about 100701 and does not appear at all -- which is acceptance case r39-3,
+  standing as a miss.
+body: |
+  WHY THE STEMMER IS NOT THE DEFECT
+
+  It would be easy to read this as a bad stem and fix the rule. Raising the -ing
+  minimum from six to seven spares "string" and breaks "saving", which is the
+  stemmer's one recorded gain: its docstring records that "saving a piece
+  design" reaches SAVEDESIGN and that this was "the one measured gain of two
+  reverted attempts to replace this function with a postings index".
+
+  A blocklist of -ing nouns -- string, thing, spring, during -- would work and
+  is a word list nobody can maintain against three trees in two languages.
+
+  The defect is that a manufactured token carries the same evidential weight as
+  a written one. Fix that and the mis-stem costs nothing, which is what
+  STEM-VARIANTS already claims:
+
+      Added rather than substituted, so a wrong guess costs nothing: a stem
+      matching no name simply never matches.
+
+  The measurement above falsifies the sentence as written. This wrong guess
+  matched two names, at the strongest rank the scale has, and cost two of eight
+  slots in a bundle whose right answer did not fit. "Stre" is the sharper half:
+  it is not a word, not an abbreviation of anything, and it is what reached
+  STRESS-PUSHER.
+
+  WHY IT HID
+
+  The principle is already in this file and is applied to exactly one band.
+  TASK-TERMS exists to separate the caller's words from Loom's, and says so --
+  "TASK-TOKENS is the wrong list to ask, because it also returns the parts it
+  split compounds into, and those are Loom's own manufacture rather than
+  anything the caller typed". NAMED-BY-TASK-P reads TASK-TERMS and is worth
+  100000. The coverage band and the match band below it both read raw tokens.
+
+  A test guards the same inversion one band up and passes.
+  AN-EXACT-MATCH-ON-A-FRAGMENT-LOOM-INVENTED-DOES-NOT-PROMOTE asserts that an
+  entity named exactly DATA does not outrank DATA-HANDLER for the task
+  "data-handler". It covers the *named* band and a compound split; nothing
+  covers the match band, and nothing covers a stem.
+
+  Coverage counts tokens rather than distinct words of the task, so the same
+  mis-stem inflates a candidate twice over: FIRST-STRING-LITERAL answers to
+  "string" and "str" and is scored as covering two terms where the caller wrote
+  one. SEED-SCORE's own docstring calls this band "how many of the task's
+  distinct terms this name answers to", which is not what it computes.
