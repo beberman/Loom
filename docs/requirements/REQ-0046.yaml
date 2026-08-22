@@ -63,14 +63,67 @@ body: |
       refusal are all about the same quantity, and three rules plus a weight is
       worse than either alone.
 
-  ACCEPTANCE
+  ACCEPTANCE, AND THE NUMBERS TO BEAT
 
-  tools/acceptance.py at 42 of 45 or better, and the three ABSENCE_CASES still
-  reporting their subject terms as weak or unmatched. A weight that improves
-  ranking and destroys the absence report has moved the defect rather than
-  fixed it.
+  Measured 2026-08-22 on both instruments, with the stemmer that DES-0035
+  settled on. These are the target: a term weighting has to clear them, not
+  merely leave them alone.
+
+    instrument                          hybrid      Porter alone
+    acceptance.py, 24 judged cases      42 of 45    40 of 45
+    known-item, 450 generated cases     390 (86.7%) 391 (86.9%)
+      name       150                    125 (83.3%) 124 (82.7%)
+      inflected  150                    134 (89.3%) 134 (89.3%)
+      prose      150                    131 (87.3%) 133 (88.7%)
+
+  Porter alone is listed because it is the only other stemmer measured on both,
+  and because the pair shows what a change of this size looks like when it is
+  not an improvement: two cases apart on the judged instrument and one case
+  apart on the generated one, which at 450 is 0.2% and is churn.
+
+  So the bar is 42 of 45 and 390 of 450, and a weighting that returns 42 and
+  392 has not been shown to do anything. What would show it:
+
+    R1  The `name' family rises. It is the floor of the generated instrument
+        and its weakest at 83.3%, below `inflected' at 89.3% and `prose' at
+        87.3% -- a query that is literally a definition's name in words fails
+        one time in six. The misses are dotted and compound names on the larger
+        tree whose words are the commonest in their repository:
+        Game.addDefinition, wrappedLogger.setLevel, getDefinitionList,
+        PieceRepresentation.fromPoJo. 37 of 60 misses are front-end, which
+        holds 3457 definitions to game-server's 1811. Nothing but a term
+        weighting separates "definition" naming this thing from "definition"
+        naming four hundred others.
+
+    R2  dot-prefixed-p (r39-3) is seated. DES-0034 promoted it to an exact
+        rank-0 match on "prefix" and it still did not reach the eighth slot,
+        because rank is worth 1 against coverage's 100. A weighting is the only
+        mechanism tried that reaches it.
+
+    R3  The three ABSENCE_CASES still report their subject terms as weak or
+        unmatched. A weight that improves ranking and destroys the absence
+        report has moved the defect rather than fixed it -- which DES-0034 did,
+        answering "join" and "encoding" while losing two cases.
 
   DEC-0005 governs the trade: this may reorder and must not withhold.
+
+  WHY THIS IS THE LEVER, MEASURED THREE WAYS
+
+  Three mechanisms have now failed against the same missing quantity, each
+  from a different direction:
+
+    DES-0033 D2 corrected the coverage band to count distinct words rather
+    than matches, and lost WorkingSet and SaveDesign -- because the count
+    cannot tell a true positive it deflates from a false one.
+
+    DES-0033 D1 ranked a token Loom derived below a word the caller wrote,
+    and moved no case outside Loom at all.
+
+    DES-0034 analysed names so an exact part match scored 0, and fell to 38 of
+    45 -- because promoting most candidates to 0 flattens the band that was
+    breaking the ties, and nothing replaces it.
+
+  Each is a proxy for rarity built without measuring rarity.
 
   WHAT THIS IS NOT
 

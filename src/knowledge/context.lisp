@@ -445,13 +445,21 @@ substring match on \"string\" scored 2, so STRESS-PUSHER and STRESS-WRITER
 took two of eight slots on a query about string prefixes."
   (let ((hits  (make-hash-table :test #'eq))
         (order '())
+        (frequencies '())
         (tokens (mapcar #'car origins)))
     (flet ((record (entity token rank)
              (unless (gethash entity hits)
                (push entity order))
              (push (cons token rank) (gethash entity hits))))
       (dolist (token tokens)
-        (dolist (entity (find-entities view :name-like token))
+        ;; The length of this list is TOKEN's document frequency in this
+        ;; repository -- taken on every query since REQ-0016 and discarded
+        ;; until DES-0036 D1. Recorded before the type filter, because how
+        ;; common a word is in a tree is a fact about the tree and not about
+        ;; which types a caller asked for.
+        (let ((reached (find-entities view :name-like token)))
+          (push (cons token (length reached)) frequencies)
+        (dolist (entity reached)
           (when (or (null types) (member (entity-type entity) types))
             ;; MATCH-RANK, not ANALYZED-RANK. DES-0034 measured the analyzer
             ;; at 38 of 45 against 40, and its own closing line predicted why:
@@ -460,7 +468,7 @@ took two of eight slots on a query about string prefixes."
             ;; else discriminates them. REQ-0046 first.
             (let ((rank (match-rank entity token)))
               (unless (= rank 3)
-                (record entity token rank))))))
+                (record entity token rank)))))))
       ;; The prose pass, second so that a name match wins the de-duplication
       ;; below: one entry per (entity, token) is what keeps SEED-SCORE's
       ;; coverage band a count of *distinct terms* rather than of matches.
@@ -484,8 +492,9 @@ took two of eight slots on a query about string prefixes."
                 (when (and (gethash token words)
                            (not (assoc token (gethash entity hits) :test #'string=)))
                   (record entity token :prose))))))))
-    (loop for entity in (nreverse order)
-          collect (cons entity (nreverse (gethash entity hits))))))
+    (values (loop for entity in (nreverse order)
+                  collect (cons entity (nreverse (gethash entity hits))))
+            (nreverse frequencies))))
 
 (defun prose-only-p (matches)
   "True when every one of MATCHES came from prose rather than from a name.
@@ -616,7 +625,85 @@ deflates a true positive and a false one by the same amount."
              (origin (or (cdr (assoc token origins :test #'string=)) token)))
         (setf (gethash origin seen) t)))))
 
-(defun seed-score (entity matches &key demote-tests terms production origins)
+(defun term-weight (token frequencies corpus-size)
+  "How much a match on TOKEN is worth, from 1 for a term naming one entity down
+towards 0 for one naming everything.
+
+Inverse document frequency, normalised by log of the corpus size:
+
+    w(t) = log(N / df(t)) / log(N)
+
+The normalisation is what makes a weight comparable between repositories.
+front-end holds 3457 definitions to game-server's 1811, and an unnormalised idf
+would make every front-end term look rarer than every game-server one; REQ-0023
+put several repositories behind one service precisely so that \"check\" could be
+common in one and absent from another.
+
+Measured on Loom, where N is about 3000: separator at df 0 and fallback at df 1
+weigh 1.00, join at df 2 weighs 0.91, starts at df 4 weighs 0.83, parse at df 26
+weighs 0.59, and entity at df 150 weighs 0.38. A rare term is worth about two
+and a half times a common one, which is the whole spread -- REQ-0046 asks for a
+continuous weight rather than a cutoff, and DES-0032 refused a threshold because
+the gap between `starts' at 4 entities and `join' at 2 is two entities.
+
+1 when the frequency is unknown or the corpus is too small to say anything. A
+token with no recorded frequency is one the prose pass reached and the name pass
+did not, and treating it as rare is the reading that does not silently demote a
+docstring match."
+  (let ((df (cdr (assoc token frequencies :test #'string=))))
+    (cond ((or (null df) (<= corpus-size 1)) 1)
+          ((<= df 1) 1)
+          ((>= df corpus-size) 0)
+          (t (/ (log (/ corpus-size df)) (log corpus-size))))))
+
+(defparameter *coverage-resolution* 1
+  "Steps per whole term in the coverage band.
+
+1 until the weighting was measured. With weights running from 0.38 for the
+commonest term on this tree to 1.00 for a term naming one entity, a whole-number
+count puts almost every candidate on 1, 2 or 3 and throws the weighting away in
+the rounding: three common terms and one rare one both count 1.
+
+10 gives the band a tenth of a term, which is finer than the spread between any
+two terms this tree has. SEED-SCORE's other constants are multiplied to match --
+the deficit now runs 0 to 80 rather than 0 to 8, so it is worth 100 a step
+rather than 100 a term, and the bands above it move up a decade each.")
+
+(defun weighted-coverage (matches frequencies corpus-size)
+  "How many of the task's terms MATCHES answers to, counting each by its rarity.
+
+DES-0036 D3. The band this feeds stays an integer from 0 to 8 and stays worth
+100, so no other band moves: what changes is that a candidate answering three
+words nearly every file uses now counts about 1 where it counted 3, and one
+answering three words peculiar to this repository still counts 3.
+
+Rounded rather than kept continuous. A fractional coverage puts a continuous
+quantity in the digits SEED-SCORE gives to the prose band at 10 and the rank
+band at 0-3, and needs every constant in that function multiplied.
+
+NOT CALLED BY SEED-SCORE. DES-0036 records the measurement. At a whole term the
+weighting returned 42 of 45 and 390 of 450 -- exactly the numbers REQ-0046 set
+as the bar, unchanged. At tenths of a term, with every band above multiplied to
+make room, it returned 40 of 45 and 389 of 450, losing ColorEditor and
+EditorModeToggle.
+
+The diagnosis is that idf discriminates between the terms *within* a query, and
+the queries REQ-0046 R1 was written for have no rare term to find. "game add
+definition" against front-end weighs game at df 252, add at 38 and definition
+at 17; every candidate matching them is weighted alike, and three of the four
+named misses came back with byte-identical item counts.
+
+Kept because the frequency it rests on is recorded by SEED-MATCHES at no cost,
+and because what those queries need -- a candidate whose name carries all of the
+terms beating one that carries the commonest of them -- is a proximity signal
+that no per-term weight expresses."
+  (round (* *coverage-resolution*
+            (reduce #'+ matches
+                    :key (lambda (m) (term-weight (car m) frequencies corpus-size))
+                    :initial-value 0))))
+
+(defun seed-score (entity matches &key demote-tests terms production origins
+                                        frequencies (corpus-size 0))
   "Sort key for one candidate seed, lower first: type, then coverage, then match.
 
 Coverage -- how many of the task's distinct terms this name answers to -- is
@@ -702,10 +789,15 @@ The bands are separated rather than blended, widest first:
   match      quality of the best match, which is what keeps a single-term task
              ranked exactly as it was: every candidate then has coverage 1 and
              that band cancels."
+  (declare (ignore frequencies corpus-size))
   (+ (* 1000000 (seed-type-rank entity))
      (*  100000 (if (named-by-task-p entity matches terms) 0 1))
      (*   10000 (if (slot-accessor-p entity) 1 0))
      (*    1000 (if (demoted-test-p entity demote-tests production) 1 0))
+     ;; (LENGTH MATCHES), not WEIGHTED-COVERAGE, and the constants are back
+     ;; where they were. DES-0036 built the weighting and measured it at exactly
+     ;; the two numbers it set out to beat, both unchanged; that design records
+     ;; why, and WEIGHTED-COVERAGE keeps the mechanism.
      (*     100 (max 0 (- 8 (length matches))))
      (*      10 (if (prose-only-p matches) 1 0))
      (best-name-rank matches)))
@@ -853,10 +945,12 @@ waiting (ADMIT-SEEDS)."
   ;; matched loosely is worth more than a file matched exactly: the file's
   ;; neighbourhood is a directory listing, the function's is the code that
   ;; will break.
-  (let* ((demote-tests (not (task-wants-tests-p task)))
+  (multiple-value-bind (matches frequencies)
+      (seed-matches view (task-token-origins task) types)
+   (let* ((demote-tests (not (task-wants-tests-p task)))
          (terms      (task-terms task))
          (origins    (task-token-origins task))
-         (matches    (seed-matches view origins types))
+         (corpus-size (length (all-entities view)))
          (production (production-names matches))
          ;; COPY-LIST because STABLE-SORT is destructive on a list and MATCHES
          ;; is read again below. Without it MATCHES names whatever cons cell was
@@ -871,7 +965,9 @@ waiting (ADMIT-SEEDS)."
                                                      :demote-tests demote-tests
                                                      :terms terms
                                                      :production production
-                                                     :origins origins))))
+                                                     :origins origins
+                                                     :frequencies frequencies
+                                                     :corpus-size corpus-size))))
          (chosen     (admit-seeds ranked limit)))
     ;; Second value: the chosen seeds with the score and the terms each
     ;; answered to. DES-0030 D3 -- a record holding the seeds without their
@@ -896,7 +992,9 @@ waiting (ADMIT-SEEDS)."
                                                    :demote-tests demote-tests
                                                    :terms terms
                                                    :production production
-                                                   :origins origins)
+                                                   :origins origins
+                                                   :frequencies frequencies
+                                                   :corpus-size corpus-size)
                                 ;; The terms as objects rather than the
                                 ;; (term . weight) conses SEED-MATCHES builds.
                                 ;; A dotted pair is not a shape JSON has, and a
@@ -905,7 +1003,7 @@ waiting (ADMIT-SEEDS)."
                                              collect (list :term term
                                                            :weight weight))))
             (classify-terms (term-coverage matches (reported-terms task))
-                            chosen))))
+                            chosen)))))
 
 ;;;; ==================================================================
 ;;;; Instrumentation (SS11)

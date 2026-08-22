@@ -81,11 +81,22 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
        "check the database handler health")
     (is (= (length seeds) (length detail))
         "one recorded row per admitted seed")
-    (dolist (row detail)
-      (is (getf row :terms)
-          (format nil "~a was recorded with no terms" (getf row :name)))
-      (is (< (getf row :score) 100813)
-          (format nil "~a scored as if it had matched nothing" (getf row :name))))))
+    ;; The sentinel is computed rather than written down. It was the literal
+    ;; 100813 until DES-0036 multiplied SEED-SCORE's bands by ten, at which
+    ;; point a test asserting a number from the old scale failed for a reason
+    ;; that had nothing to do with what it covers. SEED-SCORE of no matches is
+    ;; the thing being guarded against, so ask for it.
+    (let ((matched-nothing
+            (loom-knowledge::seed-score (first seeds) '()
+                                        :demote-tests t
+                                        :terms '()
+                                        :production (make-hash-table :test #'equalp))))
+      (dolist (row detail)
+        (is (getf row :terms)
+            (format nil "~a was recorded with no terms" (getf row :name)))
+        (is (< (getf row :score) matched-nothing)
+            (format nil "~a scored ~a, as if it had matched nothing"
+                    (getf row :name) (getf row :score)))))))
 
 (test a-noun-ending-in-ing-is-not-stemmed-as-a-verb
   ;; BUG-0040, DES-0033 D4, CON-0007. The four hand-written suffix rules that

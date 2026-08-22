@@ -1,0 +1,70 @@
+id: BUG-0041
+title: ADMIT-SEEDS charges a slice per name rather than per entity, so a name with eight definitions spends all eight seed slots on one charge
+status: open
+date: 2026-08-22
+refines: [REQ-0016]
+affects: [admit-seeds, seed-slice, build-context]
+tags: [retrieval, context, ranking, req-0016, req-0040]
+severity: high
+summary: |
+  `context "wrapped logger set level"` against front-end returns eight seeds,
+  every one of them named `logger'. The bundle names one thing eight times and
+  says nothing else.
+
+  ADMIT-SEEDS holds a candidate back when its slice already has
+  *SEED-TERM-SHARE* names in it, and what it counts is names rather than
+  entities. That is deliberate and documented: REQ-0016 R8's query expects all
+  three CONNECTION-CONNECT-DATABASE definitions, and "three files defining one
+  name is the finding that query exists to produce, and a cap counting entities
+  destroys it. Counting names does not: they are one name, so they are one
+  charge."
+
+  One charge is right. Eight slots for one charge is not, and nothing bounds
+  the second.
+
+  Measured over the 450 known-item cases on 2026-08-22: 35 return a set of
+  eight seeds carrying three or fewer distinct names, and 8 of those carry a
+  single name eight times -- mp-deleting-obj returning `delete-obj' eight
+  times, `referenced-objs' eight times, `initialize-handler' eight times.
+body: |
+  WHAT IT COSTS
+
+  Not always recall. The target of such a query is often one of the duplicates,
+  so the case can still score a hit -- `mp deleting obj' finds `delete-obj'
+  because eight of them are there.
+
+  What it costs is the bundle. Eight seeds is the whole budget for what a task
+  named, and REQ-0040 measured that a caller reads about nine items of the
+  hundred it is given; spending all eight on one name leaves the neighbour band
+  to carry everything else the task was about. The `logger' case is the extreme:
+  four terms in the query, one of them answered, and seven slots spent
+  re-answering it.
+
+  WHY THE EXISTING CAP DOES NOT CATCH IT
+
+  *SEED-TERM-SHARE* is 2 and is charged against the slice -- the sorted set of
+  terms a seed answered to. Eight entities named `logger' answering the same one
+  term share one slice and one name, so they cost one of the two charges that
+  slice is allowed. The cap is working exactly as written.
+
+  The gap is that nothing else bounds them. ADMIT-SEEDS' loop admits while
+  (< taken limit), and a name that is one charge can still be many takes.
+
+  WHAT A FIX MUST NOT BREAK
+
+  REQ-0016 R8, which is an acceptance case: "data-api handler database
+  connection acquire and test connectivity" expects CONNECTION-CONNECT-DATABASE
+  and the finding is that three files define it. A fix that admits one
+  definition per name breaks the case the current rule was written for.
+
+  So the shape is a bound rather than a rule change -- some number of
+  same-named definitions is evidence and a larger number is a listing. Three is
+  what R8 needs; eight is what this reports. Whether the bound is a constant, a
+  share of the limit, or a function of how many terms the name answered is a
+  design question and is not settled here.
+
+  HOW IT WAS FOUND
+
+  Diagnosing why DES-0036's term weighting could not move REQ-0046 R1's named
+  misses. `wrapped logger set level' was one of them, and its item count did not
+  change under the weighting because its bundle is not a ranking problem.
