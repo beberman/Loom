@@ -1,0 +1,108 @@
+id: BUG-0038
+title: FEDERATION-REPORT sorts PUBLISHED and MATCHED and then computes the unmatched sets from the same variables, so a matched route is dropped from the unmatched list
+status: closed
+date: 2026-08-22
+refines: [BUG-0037]
+affects: [federation-report]
+tags: [federation, req-0027, destructive-sort, bug-0037]
+severity: medium
+summary: |
+  FEDERATION-REPORT builds its plist in one LIST form, and the first three
+  slots sort the three variables the last two then read:
+
+      (list :published (sort published #'string<)
+            :consumed  (sort consumed  #'string<)
+            :matched   (sort matched   #'string<)
+            :unmatched-published (sort (set-difference published matched ...) ...)
+            :unmatched-consumed  (sort (set-difference consumed  matched ...) ...))
+
+  CL:SORT is destructive on a list and the arguments are evaluated left to
+  right, so by the time SET-DIFFERENCE runs, PUBLISHED names the sorted list
+  from its old head onwards rather than the whole of it, and MATCHED likewise.
+  The difference is therefore taken over a suffix of the claims and a suffix of
+  the matches.
+
+  Measured under sbcl with PUBLISHED holding "e" "d" "c" "b" "a" and MATCHED
+  holding "b": `:published' comes back correct as (a b c d e), and
+  `:unmatched-published' comes back as (d e) where the answer is (a c d e).
+  Two unmatched routes reported as if they had matched something.
+
+  This is BUG-0037's defect in a second function, found by sweeping every SORT
+  and STABLE-SORT in src/ for a variable read after the sort that consumed it.
+  Those two call sites are the only ones in production code; every other sort
+  either binds its return value, assigns it back with SETF, or is handed a
+  freshly consed list.
+body: |
+  WHAT IT BREAKS
+
+  The docstring names the requirement: "REQ-0027 R3 asks that an unmatched
+  claim be reported rather than dropped, and a parameterized route --
+  'public/game/:gameid' -- is designed to match nothing and would otherwise
+  look like a silent failure." Dropping a claim from `unmatched-published' is
+  that silent failure, produced by the function written to prevent it.
+
+  The error runs in both directions. A truncated PUBLISHED hides an unmatched
+  claim; a truncated MATCHED reports a route as unmatched that federation did
+  match. Which of the two a given workspace sees depends on where the sort
+  moved each list's old head, so the report is wrong in a way that changes
+  with the data rather than failing the same way twice.
+
+  WHY IT HID
+
+  Nothing tests it. FEDERATION-REPORT has one caller, the `federation' console
+  command at src/process/console.lisp:733, and no test in any of the nine
+  systems binds it.
+
+  It is invisible on a small workspace. A one-element list is returned by SORT
+  unchanged, so the variable still names all of it; the loss needs a list whose
+  head sorts away from the front, which needs several repositories publishing
+  several routes. The console command is normally run on exactly the workspace
+  that cannot show it.
+
+  Both halves of the plist come from the same three variables, so a reader
+  comparing `:published' against `:unmatched-published' sees a full list beside
+  a short one and reads the short one as the answer.
+
+  THE FIX
+
+  Sort into the variables before building the plist, so nothing reads a
+  half-consumed list:
+
+      (setf published (sort published #'string<)
+            consumed  (sort consumed  #'string<)
+            matched   (sort matched   #'string<))
+
+  and COPY-LIST each SET-DIFFERENCE before sorting it. That second half is a
+  separate hazard in the same lines: CLHS permits SET-DIFFERENCE to share
+  structure with its first argument, so sorting the difference in place can
+  relink conses that `:published' has already been handed.
+
+  THE-UNMATCHED-SETS-AGREE-WITH-THE-LISTS-THE-REPORT-RETURNS in
+  src/workspace/test/federate.lisp is the guard, and it is the first test to
+  call FEDERATION-REPORT at all. The fixture publishes six routes from one
+  repository and consumes two from another, of which one route is claimed at
+  both ends.
+
+  Two properties of that fixture are what make it fail rather than pass by
+  accident, and both were arrived at by running it against the unfixed
+  function. The list has to be long enough for the sort to move its head:
+  MAPHASH yields "/api/deck" last, PUSHNEW makes it the head, and the sort
+  moves it to second, so PUBLISHED goes on to name five of its six routes. And
+  the route it loses has to be an unmatched one -- a lost route that is in
+  MATCHED anyway is subtracted either way and the report comes out right
+  despite the defect, which is what a first fixture consuming "/api/board" did.
+
+  Measured. Against the unfixed function the test reports
+
+      unmatched-published (/api/deck /api/match /api/player /api/zone)
+        against (/api/board /api/deck /api/match /api/player /api/zone)
+
+  -- "/api/board" is published by the server, consumed by nobody, and missing
+  from the list whose whole job is to name it. With the fix, 5 of 5 checks
+  pass and all nine systems stay green.
+
+  The assertions compare the report against itself, taking the difference of
+  the `:published' and `:matched' lists it returned, rather than against a
+  literal. Which routes are lost depends on the order MAPHASH yields the
+  claims in, and a literal would have to be re-derived every time the fixture
+  changed.

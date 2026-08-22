@@ -554,7 +554,14 @@ waiting (ADMIT-SEEDS)."
          (terms      (task-terms task))
          (matches    (seed-matches view (task-tokens task) types))
          (production (production-names matches))
-         (ranked     (stable-sort matches #'<
+         ;; COPY-LIST because STABLE-SORT is destructive on a list and MATCHES
+         ;; is read again below. Without it MATCHES names whatever cons cell was
+         ;; first before the sort, which after the sort is a *suffix* of the
+         ;; sorted list -- so the ASSOC building the record detail searched part
+         ;; of the alist and missed the rest. BUG-0037: 207 of 246 recorded
+         ;; bundles carried a null `terms' and a score recomputed from no matches
+         ;; at all, which is the corpus REQ-0036 measures the ranking against.
+         (ranked     (stable-sort (copy-list matches) #'<
                                   :key (lambda (pair)
                                          (seed-score (car pair) (cdr pair)
                                                      :demote-tests demote-tests

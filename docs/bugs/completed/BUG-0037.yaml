@@ -1,0 +1,122 @@
+id: BUG-0037
+title: STABLE-SORT is destructive and MATCHES is read after it, so 207 of 246 recorded bundles carry a null seed detail
+status: closed
+date: 2026-08-21
+refines: [PLAN-0035]
+affects: [seed-entities]
+tags: [retrieval, context, evaluation, req-0036, des-0030, req-0037, destructive-sort]
+severity: high
+summary: |
+  SEED-ENTITIES sorts its candidate alist with STABLE-SORT and then reads the
+  same variable again to build the record detail DES-0030 D3 asks for:
+
+      (matches (seed-matches view (task-tokens task) types))
+      (ranked  (stable-sort matches #'< :key ...))
+      ...
+      for pair = (assoc entity matches :test #'eq)
+
+  STABLE-SORT is destructive on a list, and MATCHES still names the cons cell
+  that happened to be first before the sort -- which after the sort is a
+  *suffix* of the sorted list. The ASSOC therefore searches part of the alist
+  and misses the rest, and every seed it misses is recorded with
+
+      "terms": null,  "score": 100813
+
+  100813 is not a number the ranking ever produced. It is SEED-SCORE recomputed
+  from an empty match list: 100000 for `not named', 800 for a coverage of zero
+  matches, 10 for PROSE-ONLY-P being vacuously true of no matches, and
+  BEST-NAME-RANK's fallback 3. A seed's whole evidence, replaced by the score of
+  a seed that matched nothing.
+
+  Measured over .loom/context on 2026-08-21: 246 records carrying seeds, of
+  which 132 have a null `terms' on every seed, 75 on some of their seeds, and
+  39 are correct. 84% of the corpus is wrong, and the partial ones are the
+  proof of the mechanism -- a suffix is exactly what produces "some seeds and
+  not others".
+body: |
+  WHY IT MATTERS MORE THAN A WRONG FIELD
+
+  The bundle itself is correct. RANKED is the sort's return value, ADMIT-SEEDS
+  reads RANKED, and the seeds a caller receives are the seeds the ranking chose.
+  Nothing an agent read was ever wrong.
+
+  What is wrong is the record, and the record is the instrument. REQ-0036 built
+  .loom/context so that a ranking change could be measured rather than argued;
+  DES-0030 D3 put the score and the matched terms in it for one stated reason --
+  "a record holding the seeds without their scores cannot show why the eighth
+  slot went where it did, and the score is the number every ranking change
+  moves". Both were null for four fifths of the corpus, so the measurement
+  REQ-0036 exists to enable could not be taken, and the failure is silent: a
+  null field reads as "not recorded" rather than as "recorded wrongly".
+
+  It was found while measuring REQ-0037, whose whole subject is what evidence a
+  seed was admitted on. The first probe printed eight seeds with identical
+  scores of 100813 and no terms, which is not a thing a ranking does.
+
+  WHY IT HID
+
+  Nothing read the second value. SEED-ENTITIES has returned the detail since
+  PLAN-0035 S2, and until this bug the suite's three callers all read the
+  first: SEEDING-FINDS-THE-ENTITIES-A-TASK-NAMES takes (first seeds), and
+  SEED-NAMES -- which every ranking test goes through -- MAPCARs NAME over it.
+  A value no test binds is a value no test can contradict.
+
+  tools/acceptance.py could not see it either. Its --log mode scores a hit
+  against `returned', the list of names, and never opens `seeds[].terms'. So
+  the two instruments over this code both watched the half that was right.
+
+  The field typesets as `null', which reads as "not recorded" rather than as
+  "recorded wrongly". A record carrying `"terms": null' looks like a schema
+  that has not been filled in yet, and 246 of them look like a feature that
+  was never finished -- which is why four fifths of a corpus could carry it
+  for three days without anyone asking.
+
+  The class was already known here. THE-COUNTS-AGREE-WITH-THE-LIST-THEY-COUNT
+  in src/knowledge/test/prose.lisp guards the same defect in PROSE-REPORT: a
+  destructive sort in one slot of a plist and a measurement of the same
+  variable in the next, which printed eleven documents in the header and
+  twelve in the body. That test was written before this sort was, and no
+  reading of the new code asked whether the old lesson applied to it.
+
+  THE FIX
+
+      (ranked (stable-sort (copy-list matches) #'< :key ...))
+
+  One cons per candidate, on a path that has already walked the graph. The
+  alternative -- capturing the detail inside the sort, or threading it through
+  ADMIT-SEEDS -- is what the code's own comment declined for good reasons that
+  have not changed.
+
+  EVERY-RECORDED-SEED-CARRIES-THE-TERMS-IT-WAS-ADMITTED-ON in
+  src/knowledge/test/context.lisp is the guard, and it binds the second value
+  that nothing bound before. Its fixture is five functions and the task "check
+  the database handler health": SEED-MATCHES walks the tokens in order, so
+  "check" makes CHECK-SLOT the head of the alist, and DATABASE-HANDLER-HEALTH
+  covers three terms to CHECK-SLOT's one and sorts ahead of it. Without
+  COPY-LIST the test fails on two assertions, both against the rank-1 seed:
+  `database-handler-health was recorded with no terms' and `... scored as if
+  it had matched nothing'. With it, 11 of 11 checks pass and all nine systems
+  stay green.
+
+  THE SWEEP
+
+  Every SORT and STABLE-SORT in src/ outside the test directories was read for
+  the same shape: a variable read again after the sort that consumed it. There
+  are two. This one, and FEDERATION-REPORT, which sorts PUBLISHED and MATCHED
+  in the first slots of a plist and computes SET-DIFFERENCE over the same two
+  variables in the last -- BUG-0038, fixed in the same change. Everything else
+  either binds the sort's return value, assigns it back with SETF, or hands the
+  sort a freshly consed list.
+
+  WHAT IS NOT REPAIRED
+
+  The 207 records already written. They cannot be recomputed: the trees have
+  moved under them, which is REQ-0036 R4's decay, and a record is a statement
+  about the index at the time it was answered. They keep their null fields and
+  a reader of the corpus should treat `terms: null' with `score: 100813' as
+  this bug rather than as a seed that matched nothing.
+
+  A judgement filed against such a record is still sound. The used set names
+  entities, the returned list of names is intact, and tools/acceptance.py's
+  --log mode scores hits against `returned', not against the seed detail. What
+  is lost is the ability to ask why a hit landed at rank 6.

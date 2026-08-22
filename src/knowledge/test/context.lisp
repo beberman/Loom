@@ -60,6 +60,33 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
 (defun seed-names (graph task &key (limit 8))
   (mapcar #'name (loom-knowledge::seed-entities graph task :limit limit)))
 
+(test every-recorded-seed-carries-the-terms-it-was-admitted-on
+  ;; BUG-0037, and the same destructive-sort defect THE-COUNTS-AGREE-WITH-THE-
+  ;; LIST-THEY-COUNT guards in prose.lisp. STABLE-SORT rearranges the conses it
+  ;; is given, so a variable read again after the sort names the sorted list
+  ;; from its old head onwards -- and the ASSOC building this second value then
+  ;; found nothing for any seed that sorted ahead of that head. Those rows were
+  ;; recorded with `terms' NIL and a score of 100813, which is SEED-SCORE of no
+  ;; matches at all.
+  ;;
+  ;; The fixture puts the loss on the seed that answers the task. SEED-MATCHES
+  ;; walks the tokens in order, so "check" makes CHECK-SLOT the head of the
+  ;; alist; DATABASE-HANDLER-HEALTH covers three terms to CHECK-SLOT's one and
+  ;; sorts first. Without COPY-LIST, MATCHES names the four-element suffix from
+  ;; CHECK-SLOT on, and the rank-1 seed is the one recorded with nothing.
+  (multiple-value-bind (seeds detail)
+      (loom-knowledge::seed-entities
+       (seed-graph "check-slot" "check-obj" "database-handler-health"
+                   "database-alert" "connection-connect-database")
+       "check the database handler health")
+    (is (= (length seeds) (length detail))
+        "one recorded row per admitted seed")
+    (dolist (row detail)
+      (is (getf row :terms)
+          (format nil "~a was recorded with no terms" (getf row :name)))
+      (is (< (getf row :score) 100813)
+          (format nil "~a scored as if it had matched nothing" (getf row :name))))))
+
 (test a-name-answering-more-of-the-task-outranks-one-answering-a-common-word
   ;; Match quality alone cannot tell these apart: every candidate here matches
   ;; some token as a prefix, so before REQ-0016 R7 they all scored identically
