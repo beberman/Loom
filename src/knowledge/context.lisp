@@ -299,6 +299,96 @@ which DEC-0005 does not permit."
   (let ((origin (cdr (assoc token origins :test #'string=))))
     (and origin (not (string= token origin)))))
 
+(defun split-name-parts (name)
+  "NAME split on - and _ and on a lower-to-upper case change, lowercased.
+
+The half of CON-0007's first mechanism Loom has never had. TASK-TOKENS splits a
+compound in the *query* on - and _; nothing has ever split an entity's name,
+and nothing split either on case, so MapElementTypeEditor was one token to this
+index and SaveDesign was another.
+
+Case change is a boundary and a run of capitals is not: HTTPServer yields http
+and server rather than h, t, t, p and server. The rule is a lowercase or a
+digit followed by an uppercase, which is what leaves an acronym whole."
+  (let ((parts '())
+        (current (make-string-output-stream)))
+    (flet ((finish ()
+             (let ((part (string-downcase (get-output-stream-string current))))
+               (when (plusp (length part)) (push part parts)))))
+      (loop for i below (length name)
+            for char = (char name i)
+            do (cond ((or (char= char #\-) (char= char #\_) (char= char #\/))
+                      (finish))
+                     ((and (upper-case-p char)
+                           (plusp i)
+                           (let ((previous (char name (1- i))))
+                             (or (lower-case-p previous) (digit-char-p previous))))
+                      (finish)
+                      (write-char char current))
+                     (t (write-char char current))))
+      (finish))
+    (nreverse parts)))
+
+(defun name-tokens (entity)
+  "ENTITY's name as the seeder matches it: parts, their stems, and the whole.
+
+DES-0034 D1, and the side of CON-0007's rule Loom did not have. A query was
+analysed -- split, stemmed -- and the result was compared against a raw name,
+where every text search analyses index and query alike. So \"prefix\" reached
+DOT-PREFIXED-P as a substring and never as the word it is, because nothing
+split that name into dot/prefixed/p or stemmed \"prefixed\" to \"prefix\".
+
+The whole is kept beside the parts, which is Lucene's preserve_original and
+what TASK-TOKENS already does on the query side.
+
+Computed per candidate at match time rather than stored on the entity: the
+candidates are the few hundred FIND-ENTITIES already returned, and a stored
+form would make the graph carry a retrieval decision when DEC-0001 has it
+derivable from files instead."
+  (let ((name (significant-name entity)))
+    (when name
+      (let* ((whole (string-downcase name))
+             (parts (split-name-parts name))
+             (tokens (list whole)))
+        (dolist (part parts)
+          (pushnew part tokens :test #'string=)
+          (let ((stemmed (stem:stem part)))
+            (unless (string= stemmed part)
+              (pushnew stemmed tokens :test #'string=))))
+        tokens))))
+
+(defun analyzed-rank (entity token)
+  "How well TOKEN matches ENTITY's analyzed name: 0 exact, 1 prefix, 2 substring.
+
+DES-0034 D2. The same three ranks MATCH-RANK returns, over NAME-TOKENS rather
+than over the raw name, and with the token's own stem tried as well.
+
+MATCH-RANK's answer is the floor: this never returns worse than the rank the
+raw name would have earned, so a candidate that matches today cannot rank lower
+tomorrow. That is what keeps an analyzer inside DEC-0005 -- it promotes and
+never demotes.
+
+`find' does not call this. REQ-0045 R1 makes the token set a property of the
+operation, and this is that at its smallest: one function the seeder uses and
+the navigational commands do not."
+  (let ((raw (match-rank entity token)))
+    ;; 3 is not a rank, it is MATCH-RANK saying the name does not contain this
+    ;; token at all -- SEED-MATCHES drops it so that a token which reached an
+    ;; entity only through its path is not recorded as evidence. Promoting from
+    ;; 3 would turn every such non-match into a match, which is a wider change
+    ;; than analysing the ones that already matched.
+    (if (or (zerop raw) (= raw 3))
+        raw
+        (let ((analyzed (name-tokens entity))
+              (stemmed  (stem:stem token))
+              (best raw))
+          (dolist (candidate analyzed best)
+            (dolist (probe (if (string= stemmed token) (list token) (list token stemmed)))
+              (cond ((string= candidate probe) (setf best (min best 0)))
+                    ((and (<= (length probe) (length candidate))
+                          (string= probe candidate :end2 (length probe)))
+                     (setf best (min best 1))))))))))
+
 (defun seed-matches (view origins types)
   "How TOKENS meet the index: an alist of (entity . ((token . rank) ...)).
 
@@ -333,6 +423,11 @@ took two of eight slots on a query about string prefixes."
       (dolist (token tokens)
         (dolist (entity (find-entities view :name-like token))
           (when (or (null types) (member (entity-type entity) types))
+            ;; MATCH-RANK, not ANALYZED-RANK. DES-0034 measured the analyzer
+            ;; at 38 of 45 against 40, and its own closing line predicted why:
+            ;; promoting an exact part match to 0 flattens the band that was
+            ;; breaking ties between equal-coverage candidates, and nothing
+            ;; else discriminates them. REQ-0046 first.
             (let ((rank (match-rank entity token)))
               (unless (= rank 3)
                 (record entity token rank))))))
