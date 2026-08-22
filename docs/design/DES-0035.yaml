@@ -1,0 +1,125 @@
+id: DES-0035
+title: "The stemmer is a hybrid: four suffix rules generate the surface forms, Porter decides whether to believe them"
+status: draft
+date: 2026-08-22
+refines: [REQ-0039, CON-0007]
+affects: [stem-variants, surface-variants, inflected-p, task-tokens]
+tags: [retrieval, context, ranking, stemming, con-0007, req-0046]
+summary: |
+  Neither stemmer works alone and each fails where the other succeeds. The four
+  hand-written suffix rules mis-parse "string" as a gerund and emit "str" and
+  "stre" (BUG-0040). Porter does not, but its output is a stem class rather than
+  a surface form, and Loom stems only the query -- so a Porter stem matches only
+  where it happens to be a prefix of the written word. "encod" is; "kei" is not,
+  and "kei" cost acceptance case r39-4.
+
+  So the rules generate and Porter gates: a variant is emitted only when Porter
+  finds an inflection to remove. Measured on both instruments, the hybrid is
+  the best of the three on the judged one and a tie on the generated one.
+body: |
+  THE THREE-WAY MEASUREMENT
+
+  Two instruments, described under THE SECOND INSTRUMENT below.
+
+    stemmer      acceptance (24 judged cases, 45 names)   known-item (450)
+    hand-written 42 of 45, with BUG-0040 open             not measured
+    Porter       40 of 45                                 391 of 450, 86.9%
+    hybrid       42 of 45, BUG-0040 closed                390 of 450, 86.7%
+
+  The hybrid recovers both cases Porter lost -- SaveDesign (fe-10) and
+  ALIST-PLIST (r39-4) -- while keeping "str" and "stre" out of the token set.
+  The three cases still missing are config-get, MapElementTypeEditor and
+  dot-prefixed-p, all of which predate every stemmer change this month.
+
+  On the generated instrument the two differ by one case in 450, and the
+  per-case diff says that is churn rather than mechanism: the hybrid gains four
+  and loses five, spread across all three families, none of them a case whose
+  outcome the stemming rules predict. At this size a single case is 0.2% and
+  the honest reading is a tie.
+
+  D1  SURFACE-VARIANTS GENERATES
+
+  The four rules over -ies, -s, -ing and -ed, unchanged and now named for what
+  they produce. Their output is a word as it would be written, which is what
+  Loom needs: a query token is matched against a raw name, so "save" reaches
+  SAVEDESIGN and "sav" reaches nothing, and both are offered because neither
+  rule knows which is right.
+
+  Emitting both halves of a pair is also what keeps fe-10. SaveDesign answers
+  "sav" and "save", and SEED-SCORE's coverage band counts matches rather than
+  words, so it is credited with 2. DES-0033 D4 recorded that as the reason
+  Porter lost the case and called it a double count, which it is. It is kept
+  because DEC-0005 spends precision to buy recall and correcting the count is a
+  precision gain that costs a recalled entity -- twice measured, at 40 of 45
+  under Porter and 40 of 45 under DES-0033 D2's coverage correction, which
+  reached the same loss from the other side. The band is REQ-0046's to fix.
+
+  D2  INFLECTED-P GATES
+
+  Porter is asked one question and never for a token: does this word have an
+  inflection to remove. A suffix rule asks what the last three characters are;
+  Porter asks whether a measurable stem remains once a suffix is removed, and
+  that is what tells "saving" from "string".
+
+    string     Porter: not inflected            -> nothing emitted
+    saving     Porter: inflected, rules fire    -> "sav", "save"
+    strings    Porter: inflected, -s fires      -> "string"
+    key, value Porter: inflected, no rule fires -> nothing emitted
+
+  The last row is the gate working in the direction the rules alone could not
+  reach: Porter thinks "key" reduces to "kei" and "value" to "valu", and the
+  rules decline to produce either, so neither enters the token set. Porter
+  alone emitted both and lost r39-4.
+
+  THE SECOND INSTRUMENT
+
+  tools/acceptance.py holds 24 hand-written cases and 45 expected names, judged
+  by a human, and REQ-0036 R11 makes it the held-out set. It is small enough
+  that one case is 2%, and four mechanisms this month moved it by one or two
+  cases each -- a range a single case of corpus drift also covers.
+
+  So a second and larger one was built, and it is deliberately a different kind
+  of instrument rather than more of the same:
+
+    tools/entity-dump.lisp   dumps a repository's definitions as JSON
+    tools/make-cases.py      builds known-item cases from that dump
+    tools/recall.py          runs them and reports recall per family
+    tools/cases/known-item.json  450 cases, sampled with a fixed seed
+
+  Ground truth is constructed rather than judged: a case is built *from* an
+  entity, so that entity answers it by construction. Three families, reported
+  apart because each is biased and the bias is the point:
+
+    name       the definition's name as plain words. A floor.
+    inflected  the name with one word replaced by an inflection -- the family
+               the stemmer question turns on.
+    prose      the docstring with every word of the name removed, so it cannot
+               win on a literal name match. REQ-0039's subject.
+
+  450 cases against 3457 front-end and 1811 game-server definitions, sampled
+  150 per family with a fixed seed so two runs are comparable. Loom is excluded
+  for the reason docs/TODO.md records: Loom-side cases cannot measure Loom-side
+  commits, and this month a session's own docstrings displaced a real answer.
+
+  WHAT THE SECOND INSTRUMENT SAYS BESIDES THE STEMMER ANSWER
+
+  The floor is the weakest family. `name' scores 83.3% where `inflected' scores
+  89.3% and `prose' 87.3% -- a query that is literally the definition's name in
+  words fails one time in six, and fails more often than a query that inflects
+  that name or describes it.
+
+  The misses say why, and it is not stemming. They are dotted and compound
+  names on the larger tree -- Game.addDefinition, PieceRepresentation.fromPoJo,
+  wrappedLogger.setLevel, getDefinitionList -- whose words are the commonest in
+  their repository, crowded out by everything else those words reach. 37 of the
+  60 misses are front-end, which holds 3457 definitions to game-server's 1811.
+
+  That is REQ-0046, measured from a third direction. A term weighting is what
+  separates "definition" naming this thing from "definition" naming four
+  hundred others, and no stemmer, rank scale or analyzer reaches it.
+
+  One case of the 450 is unanswerable by construction: "from ll" for fromLL,
+  whose words are a stopword and a two-character token, so the query yields no
+  tokens and the bundle is empty. Left in rather than removed, because a case
+  set edited after its result is read is no longer an instrument. It is one
+  case and it is counted as a miss.

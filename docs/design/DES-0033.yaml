@@ -103,7 +103,24 @@ body: |
   passes untouched, and anything that later distinguishes a caller's word from
   Loom's needs it.
 
-  D4, PORTER REPLACES THE SUFFIX RULES
+  D4, PORTER REPLACES THE SUFFIX RULES -- SUPERSEDED BY DES-0035
+
+  Adopted on 2026-08-22 at 40 of 45 and superseded the same day. DES-0035 keeps
+  Porter as a gate and returns the four suffix rules as the generator, scoring
+  42 of 45 with BUG-0040 still closed: both cases this section spent are
+  recovered, so the argument below for spending them no longer applies.
+
+  The diagnosis here is right and DES-0035 rests on it -- the hand-written
+  rules cannot tell "string" from "saving" and Porter can. What is wrong is the
+  conclusion that Porter should therefore emit the tokens. Its output is a stem
+  class, meant to be compared against stemmed text, and Loom stems only the
+  query; a Porter stem matches only where it happens to be a prefix of the
+  written word. "encod" is, "kei" is not, and r39-4 is what that cost.
+
+  The rest of this section is the original, kept because DES-0035's decision
+  rests on its measurement.
+
+  D4, PORTER REPLACES THE SUFFIX RULES (AS ADOPTED, NOW SUPERSEDED)
 
   STEM-VARIANTS is four hand-written rules over -ies, -s, -ing and -ed, with
   minimum lengths chosen to protect specific words. Quicklisp's `stem' system

@@ -79,50 +79,80 @@ honoured to the token."
 Not a language model -- just enough that \"how does the drawing tool work\"
 seeds on \"drawing\" and \"tool\" rather than on \"does\" and \"work\".")
 
-(defun stem-variants (word)
-  "WORD's uninflected form, as a one-element list, or NIL when it is already one.
+(defun surface-variants (word)
+  "WORD's plausible uninflected surface forms, by four suffix rules.
 
-Porter's algorithm, through Quicklisp's `stem' system -- one file, no
-dependencies, one exported function, hand-translated from Porter's C by Steven
-Haflich and served from Porter's own site. Public domain.
+The generator half of the hybrid. These rules stood alone until DES-0033 D4 and
+their outputs are *surface forms* -- \"saving\" gives \"sav\" and \"save\",
+words as they would be written -- which matters because Loom matches a query
+token against a raw name. Porter's output is a stem class, not a surface form:
+it is correct only when both sides are stemmed, which is REQ-0045 and is not
+built. \"key\" to \"kei\" is the case: neither a prefix of nor a word in
+anything, and it cost acceptance case r39-4 when Porter emitted it alone.
 
-Four hand-written suffix rules stood here until DES-0033 D4, over -ies, -s,
--ing and -ed, with minimum lengths chosen to protect particular words. They
-mis-parsed \"string\": it is six characters and ends in -ing, so the -ing rule
-fired and emitted \"str\" and \"stre\". Neither is a word anyone typed, and
-\"stre\" prefix-matched STRESS-PUSHER and STRESS-WRITER at the strongest rank
-the scale has, taking two of eight seed slots on a query about string prefixes
-(BUG-0040).
+The -e restoration is why both halves of a pair are emitted. Dropping -ing from
+\"saving\" gives \"sav\", which matches nothing; restoring the -e gives
+\"save\", which reaches SAVEDESIGN. Neither rule knows which is right, so both
+are offered and the index decides.
 
-Porter does not have that defect, and the difference is not a better rule but a
-different question. A suffix rule asks what the last three characters are;
-Porter asks whether the word has a measurable stem left once the suffix is
-removed, which \"string\" does not:
+The minimum lengths stop the rules eating short identifiers: -ing needs six
+characters so RING survives, and -s needs four and refuses a double so CLASS and
+ADDRESS survive."
+  (let ((n (length word))
+        (out '()))
+    (flet ((ends (suffix)
+             (let ((k (length suffix)))
+               (and (> n k) (string= suffix word :start2 (- n k))))))
+      (when (and (ends "ies") (>= n 5))
+        (push (concatenate 'string (subseq word 0 (- n 3)) "y") out))
+      (when (and (ends "s") (>= n 4) (not (ends "ss")) (not (ends "ies")))
+        (push (subseq word 0 (1- n)) out))
+      (when (and (ends "ing") (>= n 6))
+        (push (subseq word 0 (- n 3)) out)
+        (push (concatenate 'string (subseq word 0 (- n 3)) "e") out))
+      (when (and (ends "ed") (>= n 5))
+        (push (subseq word 0 (- n 2)) out)
+        (push (concatenate 'string (subseq word 0 (- n 2)) "e") out)))
+    out))
 
-    string -> string      strings -> string     saving -> save
-    starts -> start       reading -> read        prefixed -> prefix
+(defun inflected-p (word)
+  "True when Porter's algorithm finds an inflection to remove from WORD.
 
-The third column is what the hand-written rules were kept for -- CON-0007
-records that \"saving a piece design\" reaching SAVEDESIGN was their one measured
-gain, and Porter keeps it.
+The gate half of the hybrid, and the only thing Porter is asked here. A suffix
+rule asks what the last three characters are; Porter asks whether a measurable
+stem remains once a suffix is removed, and that is the question the four rules
+above cannot answer. \"string\" is six characters and ends in -ing and is not a
+gerund, which is BUG-0040 -- the -ing rule fired and emitted \"str\" and
+\"stre\", and \"stre\" reached STRESS-PUSHER at rank 1.
 
-Added rather than substituted, exactly as before: the stem is an extra token
-beside the word, never a replacement, so nothing that matches today stops
-matching. That is what keeps this inside DEC-0005, which spends precision to
-buy recall and not the reverse.
-
-`stem' wants a string with a fill-pointer and makes one otherwise, calling that
-an efficiency hit. This runs once per task token, a handful of times per query,
-against a walk of the index -- not a cost the latency clauses can see, and
-measured at 0.05-0.17s across the acceptance run either way.
-
-CON-0007 also records what this deliberately does not do. \"str\" for \"string\"
-is abbreviation expansion, not stemming; it is mined as a dictionary from the
-corpus and no rule over word endings produces it, so the loss of \"str\" here is
-the removal of a coincidence rather than of a capability."
+Used as a predicate rather than as a source of tokens. CON-0007 records why:
+Porter's stems are meant to be compared against stemmed text, and Loom stems
+only the query, so an emitted stem works only where it happens to be a prefix
+of the surface form. \"encod\" is; \"kei\" is not."
   (let ((stemmed (stem:stem word)))
-    (unless (string= stemmed word)
-      (list stemmed))))
+    (not (string= stemmed word))))
+
+(defun stem-variants (word)
+  "WORD's uninflected forms, or NIL when Porter says it is not inflected.
+
+DES-0035: the four suffix rules generate, Porter decides whether to believe
+them. Both halves earn their place and each fails alone.
+
+  string      Porter: not inflected           -> nothing
+              The rules alone gave \"str\" and \"stre\" (BUG-0040).
+  saving      Porter: inflected, rules fire   -> \"sav\", \"save\"
+              Porter alone gave \"save\" only, and the coverage band -- which
+              counts matches rather than words -- then scored SaveDesign one
+              lower and dropped it (acceptance case fe-10).
+  key, value  Porter: inflected, no rule fires -> nothing
+              Porter alone gave \"kei\" and \"valu\", which reach nothing by
+              prefix and cost acceptance case r39-4.
+
+Added rather than substituted, as always: a variant is an extra token beside
+the word, never a replacement, so nothing that matches today stops matching.
+DEC-0005 spends precision to buy recall and this spends none of either."
+  (when (inflected-p word)
+    (surface-variants word)))
 
 (defun task-token-origins (task)
   "The tokens of TASK paired with the word each came from, in TASK-TOKENS order.

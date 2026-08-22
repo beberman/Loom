@@ -1,0 +1,2702 @@
+[
+ [
+  "game-server",
+  "delete all definitions definition",
+  "mp-clear-defns",
+  "prose"
+ ],
+ [
+  "game-server",
+  "every external symbol package names nothing",
+  "undefined-exports",
+  "prose"
+ ],
+ [
+  "front-end",
+  "capabilities grouped their top level root display",
+  "PieceTypeEditorState.carriedGroups",
+  "prose"
+ ],
+ [
+  "game-server",
+  "type definitions dependency order leaf",
+  "get-capability-defns",
+  "prose"
+ ],
+ [
+  "game-server",
+  "definition object one basic types",
+  "base-type-defn",
+  "prose"
+ ],
+ [
+  "game-server",
+  "tbm add optional additional checking",
+  "derived-type-defn",
+  "prose"
+ ],
+ [
+  "game-server",
+  "enabled definition nil otherwise",
+  "cascade-delete",
+  "prose"
+ ],
+ [
+  "front-end",
+  "proxy objects object requested makes easier",
+  "Game",
+  "prose"
+ ],
+ [
+  "front-end",
+  "post public explicit ids filter gameid tags created",
+  "mediaIntf.fetchBatch",
+  "prose"
+ ],
+ [
+  "front-end",
+  "whole game key toplevelname slotnames",
+  "CapabilitySet.resolvePath",
+  "prose"
+ ],
+ [
+  "front-end",
+  "helper function object one",
+  "getRawIfProxy",
+  "prose"
+ ],
+ [
+  "game-server",
+  "special case automatically will find install reference type",
+  "create-obj",
+  "prose"
+ ],
+ [
+  "game-server",
+  "object must typed object",
+  "struct-obj-slot",
+  "prose"
+ ],
+ [
+  "front-end",
+  "freshly added capability node type",
+  "defaultValue",
+  "prose"
+ ],
+ [
+  "front-end",
+  "editor option metadata modulation fields mirrors getavailablelineoptions",
+  "getAvailableBoundaryOptions",
+  "prose"
+ ],
+ [
+  "game-server",
+  "find best move player according eval",
+  "alpha-beta",
+  "prose"
+ ],
+ [
+  "game-server",
+  "true object dictionary nil included utils",
+  "dict-listp",
+  "prose"
+ ],
+ [
+  "front-end",
+  "every arc partition arc illegally crosses",
+  "crossingArcs",
+  "prose"
+ ],
+ [
+  "game-server",
+  "configuration file filename keys interned package any",
+  "read-config",
+  "prose"
+ ],
+ [
+  "game-server",
+  "log failure put front whoever typed start server log",
+  "database-alert",
+  "prose"
+ ],
+ [
+  "front-end",
+  "override updates center side rotation pojo",
+  "Square.applyEdit",
+  "prose"
+ ],
+ [
+  "front-end",
+  "library stand picker reconstructed stored",
+  "mediaFromIcon",
+  "prose"
+ ],
+ [
+  "game-server",
+  "selects data table based row",
+  "db-select-id",
+  "prose"
+ ],
+ [
+  "game-server",
+  "true request body contains",
+  "admin-p",
+  "prose"
+ ],
+ [
+  "front-end",
+  "far end null touch",
+  "PartitionArc.otherNode",
+  "prose"
+ ],
+ [
+  "front-end",
+  "sand intensifies stipple hatch toward water",
+  "beachMaterial",
+  "prose"
+ ],
+ [
+  "front-end",
+  "override ray casting cross product test",
+  "Triangle.contains",
+  "prose"
+ ],
+ [
+  "front-end",
+  "polygon clipping polygon ring geojson polygon multipolygon null",
+  "geomToGeoJSON",
+  "prose"
+ ],
+ [
+  "front-end",
+  "take structure encoded send server",
+  "gameIntf.persistGame",
+  "prose"
+ ],
+ [
+  "front-end",
+  "all sets ref dependency order computed fresh game current",
+  "WorkingSet.persist",
+  "prose"
+ ],
+ [
+  "front-end",
+  "symbol renderer can bake see play board symbollayer",
+  "GLYPHS",
+  "prose"
+ ],
+ [
+  "front-end",
+  "exact tag breaking change mints new tag there version negotiation",
+  "FORMAT",
+  "prose"
+ ],
+ [
+  "game-server",
+  "any combination single key list keys filter operaton",
+  "selector",
+  "prose"
+ ],
+ [
+  "front-end",
+  "post gameid multipart node stores file registers lisp",
+  "mediaIntf.uploadMedia",
+  "prose"
+ ],
+ [
+  "front-end",
+  "boundary polylines boundarydistances turf native lng lat",
+  "asLines",
+  "prose"
+ ],
+ [
+  "front-end",
+  "push onto existing mesh shader live editing",
+  "updateMaterialUniforms",
+  "prose"
+ ],
+ [
+  "front-end",
+  "unknown absent requested historical",
+  "DEFAULT_TILE_TYPE",
+  "prose"
+ ],
+ [
+  "front-end",
+  "top level selected drop all",
+  "PieceTypeEditorState.removeCapability",
+  "prose"
+ ],
+ [
+  "game-server",
+  "single axial coordinates offset indices",
+  "hex-cell",
+  "prose"
+ ],
+ [
+  "front-end",
+  "capture onmapready callback without calling can call later",
+  "capturedOnMapReady",
+  "prose"
+ ],
+ [
+  "front-end",
+  "northwest coord southeast coord visible",
+  "IRenderer.getBounds",
+  "prose"
+ ],
+ [
+  "front-end",
+  "reuse mock golden gate fixturegame map ops run",
+  "BOUNDS",
+  "prose"
+ ],
+ [
+  "front-end",
+  "editor option metadata edge line fields",
+  "getAvailableSurfOptions",
+  "prose"
+ ],
+ [
+  "front-end",
+  "open flat base marks shimmer relief comes later",
+  "waterMaterial",
+  "prose"
+ ],
+ [
+  "front-end",
+  "persisted capability vocabulary returned natives carry game ids",
+  "seedCaps",
+  "prose"
+ ],
+ [
+  "front-end",
+  "helper create real test data",
+  "makeGameInstance",
+  "prose"
+ ],
+ [
+  "front-end",
+  "maps canonical terrain representation draw mode names",
+  "GEOMAN_TYPE",
+  "prose"
+ ],
+ [
+  "game-server",
+  "don want create drop tables here through sql",
+  "*restricted-databases*",
+  "prose"
+ ],
+ [
+  "game-server",
+  "minutes game description nil",
+  "get-turn-duration",
+  "prose"
+ ],
+ [
+  "front-end",
+  "one face new type one unit one step",
+  "doPaint",
+  "prose"
+ ],
+ [
+  "front-end",
+  "deepest path length tree flat all leaves root",
+  "CapabilityEditorState.levels",
+  "prose"
+ ],
+ [
+  "game-server",
+  "check data specified object",
+  "struct-is-type-p",
+  "prose"
+ ],
+ [
+  "front-end",
+  "latlng constructed lng lat stores lng lat",
+  "berlin",
+  "prose"
+ ],
+ [
+  "front-end",
+  "find descendant dot path names within",
+  "Capability.getSlot",
+  "prose"
+ ],
+ [
+  "front-end",
+  "render data counterconfig svg fill dynamic",
+  "ShapeOutline",
+  "prose"
+ ],
+ [
+  "front-end",
+  "corner junction cut landed",
+  "MapBoundary.hasNode",
+  "prose"
+ ],
+ [
+  "front-end",
+  "true while gesture drag vertex edit etc progress",
+  "DrawingTool.isActive",
+  "prose"
+ ],
+ [
+  "game-server",
+  "tbm run both handlers",
+  "cache-namespace-test",
+  "prose"
+ ],
+ [
+  "front-end",
+  "read inject vite vars import meta works webpack",
+  "loadDotEnv",
+  "prose"
+ ],
+ [
+  "game-server",
+  "read key slot definition",
+  "defn-value",
+  "prose"
+ ],
+ [
+  "front-end",
+  "true val internal typedobj has typename",
+  "isTypedObj",
+  "prose"
+ ],
+ [
+  "game-server",
+  "registered type name against full data any",
+  "run-semantic-validator",
+  "prose"
+ ],
+ [
+  "front-end",
+  "public game scope permissions enforced server",
+  "mediaIntf.getMediaById",
+  "prose"
+ ],
+ [
+  "front-end",
+  "semantic equality two layers same they have same name type",
+  "FeatureLayer.equals",
+  "prose"
+ ],
+ [
+  "front-end",
+  "production factory seeds default primary has none",
+  "GameMapSet.create",
+  "prose"
+ ],
+ [
+  "game-server",
+  "flat top hex clockwise conv",
+  "+edge-directions+",
+  "prose"
+ ],
+ [
+  "front-end",
+  "layer request satellite roadmap hybrid terrain mapid",
+  "TILE_PROXY_TYPE",
+  "prose"
+ ],
+ [
+  "front-end",
+  "rectangle exact compare crossing points set onto edges",
+  "insideRect",
+  "prose"
+ ],
+ [
+  "front-end",
+  "progress dashed snapped end glowing red until lands something",
+  "CUT_PREVIEW",
+  "prose"
+ ],
+ [
+  "front-end",
+  "owns vertices already own area form",
+  "Polygon.asPolygon",
+  "prose"
+ ],
+ [
+  "front-end",
+  "classes hasfunction getfunction tests",
+  "TestClass",
+  "prose"
+ ],
+ [
+  "game-server",
+  "images gameid yyyy media ext ext mime",
+  "gen-object-key",
+  "prose"
+ ],
+ [
+  "game-server",
+  "data full prospective alist check every shape",
+  "map-element-valid-p",
+  "prose"
+ ],
+ [
+  "front-end",
+  "todo canedit should computed lisp server based real session auth",
+  "isAdminFlag",
+  "prose"
+ ],
+ [
+  "front-end",
+  "across rather extend past away",
+  "reflect",
+  "prose"
+ ],
+ [
+  "front-end",
+  "column per editor name color optional faction one row per",
+  "makeDefaultPlayer",
+  "prose"
+ ],
+ [
+  "game-server",
+  "hex scenario scenario northeast southwest",
+  "generate-map",
+  "prose"
+ ],
+ [
+  "front-end",
+  "pixel bounding box covering every hex full extent given size",
+  "gridBounds",
+  "prose"
+ ],
+ [
+  "front-end",
+  "true every supplied point interior check",
+  "hullContainsAll",
+  "prose"
+ ],
+ [
+  "game-server",
+  "only top level objects placed namespace via interface only those get handles",
+  "add-obj",
+  "prose"
+ ],
+ [
+  "front-end",
+  "top level capabilities add yet carried",
+  "PieceTypeEditorState.availableRoots",
+  "prose"
+ ],
+ [
+  "front-end",
+  "mock golden gate rectangle fixturegame bbox",
+  "MAP_BOUNDS",
+  "prose"
+ ],
+ [
+  "front-end",
+  "convenience just upstream see tilesourcefor rest",
+  "tileUrlFor",
+  "prose"
+ ],
+ [
+  "front-end",
+  "uses including walking ring cyclically",
+  "walk",
+  "prose"
+ ],
+ [
+  "game-server",
+  "manage derived types these types derived",
+  "is-typesig-p",
+  "prose"
+ ],
+ [
+  "front-end",
+  "resolve item enum overlay native",
+  "toLayoutContent",
+  "prose"
+ ],
+ [
+  "front-end",
+  "resolved repo root regardless cwd server trials",
+  "FIXTURE_PATH",
+  "prose"
+ ],
+ [
+  "front-end",
+  "defines extent moves only through resize never drag",
+  "MapBoundary.isCorner",
+  "prose"
+ ],
+ [
+  "game-server",
+  "setf fiveam verbose failures",
+  "get-color",
+  "prose"
+ ],
+ [
+  "front-end",
+  "snap point onto grid every constructed point must pass through here",
+  "quantize",
+  "prose"
+ ],
+ [
+  "game-server",
+  "model definition particular mpackage",
+  "mp-delete-defn",
+  "prose"
+ ],
+ [
+  "game-server",
+  "create layer type map matching polygon circle",
+  "terrain-element",
+  "prose"
+ ],
+ [
+  "front-end",
+  "neutral preview isn fixed real color resolves",
+  "SAMPLE_AFFILIATION_FILL",
+  "prose"
+ ],
+ [
+  "front-end",
+  "syntactic sugar delta point",
+  "Geometry.applyMove",
+  "prose"
+ ],
+ [
+  "game-server",
+  "remove any semantic registered name",
+  "unregister-type-validator",
+  "prose"
+ ],
+ [
+  "front-end",
+  "simple conifer glyph two stacked triangles trunk color",
+  "bakeTree",
+  "prose"
+ ],
+ [
+  "game-server",
+  "base class all errors",
+  "api-error",
+  "prose"
+ ],
+ [
+  "front-end",
+  "typenames slot struct type",
+  "directRefTargets",
+  "prose"
+ ],
+ [
+  "front-end",
+  "true serving type maps api upstream",
+  "requiresGoogleKey",
+  "prose"
+ ],
+ [
+  "game-server",
+  "substring starting index ending index length",
+  "string-trim-ends",
+  "prose"
+ ],
+ [
+  "front-end",
+  "signed grid area exact integer arithmetic grid pairs also works unmodified",
+  "shoelace",
+  "prose"
+ ],
+ [
+  "front-end",
+  "placing terrain prefer user explicit selection",
+  "LayerEditorState.activeMap",
+  "prose"
+ ],
+ [
+  "game-server",
+  "list definitions match filter",
+  "mp-find-defns",
+  "prose"
+ ],
+ [
+  "front-end",
+  "human readable derived axial coords via even offset",
+  "hexLabel",
+  "prose"
+ ],
+ [
+  "game-server",
+  "file extension falls back subtype default",
+  "mime->ext",
+  "prose"
+ ],
+ [
+  "front-end",
+  "subdivisions control point fixed every consumer agrees",
+  "SEGMENTS_PER_SPAN",
+  "prose"
+ ],
+ [
+  "front-end",
+  "called switching different subclasses must call super",
+  "DrawingTool.deactivate",
+  "prose"
+ ],
+ [
+  "front-end",
+  "boundaryfalloff keyword shader int",
+  "FALLOFF_CODE",
+  "prose"
+ ],
+ [
+  "game-server",
+  "check function form fnname arg1 arg2",
+  "is-fn-call",
+  "prose"
+ ],
+ [
+  "front-end",
+  "committed cut split background square along both ends corners",
+  "editDiagonal",
+  "prose"
+ ],
+ [
+  "game-server",
+  "list match filter namespace",
+  "find-objs",
+  "prose"
+ ],
+ [
+  "front-end",
+  "structural view tree ignores ephemeral ids comparison",
+  "summary",
+  "prose"
+ ],
+ [
+  "game-server",
+  "ray casting test lng lat inside pts list",
+  "point-in-polygon-p",
+  "prose"
+ ],
+ [
+  "game-server",
+  "hex edge length meters supplied overrides",
+  "get-scale",
+  "prose"
+ ],
+ [
+  "front-end",
+  "renderer built mode committed new shape payload layer shape",
+  "DRAW_COMMIT",
+  "prose"
+ ],
+ [
+  "front-end",
+  "slippy map edge pixels web mercator convention leaflet also uses",
+  "TILE_SIZE",
+  "prose"
+ ],
+ [
+  "front-end",
+  "boolean true currently cached",
+  "IRenderer.hasViewportCanvas",
+  "prose"
+ ],
+ [
+  "game-server",
+  "small box near metz france lat north lng east",
+  "*gen-map-ne*",
+  "prose"
+ ],
+ [
+  "game-server",
+  "create new object game version object type",
+  "parse-json-obj",
+  "prose"
+ ],
+ [
+  "game-server",
+  "all objects matches constructed selector",
+  "dhandler-count",
+  "prose"
+ ],
+ [
+  "front-end",
+  "junction every arc meets here holds same instance they all follow",
+  "PartitionNode.moveTo",
+  "prose"
+ ],
+ [
+  "front-end",
+  "wire form server oneof colon prefixed stipple",
+  "toMarkKindKeyword",
+  "prose"
+ ],
+ [
+  "front-end",
+  "read game next access identity cached natives must",
+  "GenericTypeSet.reset",
+  "prose"
+ ],
+ [
+  "front-end",
+  "choose view place terrain persists shared active",
+  "LayerEditorState.selectMap",
+  "prose"
+ ],
+ [
+  "front-end",
+  "configured env override public default",
+  "overpassEndpoint",
+  "prose"
+ ],
+ [
+  "front-end",
+  "one centripetal catmull rom tangent context",
+  "sampleSpan",
+  "prose"
+ ],
+ [
+  "front-end",
+  "pop stack run reverts reverse move redo stack label",
+  "GestureLog.undo",
+  "prose"
+ ],
+ [
+  "front-end",
+  "accept keyword polygon polygon bare name legacy alias",
+  "normalizeRepresentation",
+  "prose"
+ ],
+ [
+  "front-end",
+  "signed indexed summed triangles planar",
+  "meshArea",
+  "prose"
+ ],
+ [
+  "game-server",
+  "target object has refobj otherwise nil",
+  "references",
+  "prose"
+ ],
+ [
+  "game-server",
+  "guarantee gameid has row games table dependent rows",
+  "game-system-ensure-persisted",
+  "prose"
+ ],
+ [
+  "front-end",
+  "map rectangle validate needs tell boundary arc referenced one ring",
+  "BOUNDS",
+  "prose"
+ ],
+ [
+  "game-server",
+  "capability whose referenced capability",
+  "piece-type-speed",
+  "prose"
+ ],
+ [
+  "game-server",
+  "great circle distance between two lat lng points",
+  "haversine-meters",
+  "prose"
+ ],
+ [
+  "game-server",
+  "selects data table keys nil all",
+  "db-select",
+  "prose"
+ ],
+ [
+  "game-server",
+  "reference target refobj referers target",
+  "delete-ref",
+  "prose"
+ ],
+ [
+  "front-end",
+  "attack capability infantry type platoon attack pattern ech",
+  "seed",
+  "prose"
+ ],
+ [
+  "game-server",
+  "compact fillable containment tests",
+  "shape-descriptor",
+  "prose"
+ ],
+ [
+  "game-server",
+  "collection object typename may inline type signature",
+  "encode-typesig",
+  "prose"
+ ],
+ [
+  "front-end",
+  "grid resolution degrees one unit 11cm latitude",
+  "SCALE",
+  "prose"
+ ],
+ [
+  "game-server",
+  "symbol config structure new",
+  "change-package-encoding",
+  "prose"
+ ],
+ [
+  "game-server",
+  "semantic validator enforces matches",
+  "capability-value-valid-p",
+  "prose"
+ ],
+ [
+  "front-end",
+  "dims basemap inside map rectangle enough chrome read enough hide imagery",
+  "INTERIOR_SCRIM",
+  "prose"
+ ],
+ [
+  "front-end",
+  "passes native instances directly avoid getpojo round trip",
+  "MapElement.clone",
+  "prose"
+ ],
+ [
+  "front-end",
+  "recursively object document owns key",
+  "assertNoXY",
+  "prose"
+ ],
+ [
+  "game-server",
+  "encoded item original object package",
+  "obj-decode",
+  "prose"
+ ],
+ [
+  "front-end",
+  "compared degrees tolerance absorbs float assembly grid coordinates",
+  "COVERAGE_TOL",
+  "prose"
+ ],
+ [
+  "front-end",
+  "unit four nodes four arcs two faces cut shared",
+  "square",
+  "prose"
+ ],
+ [
+  "game-server",
+  "fetch multiple objects list public ids excluding deleted rows",
+  "dhandler-get-batch",
+  "prose"
+ ],
+ [
+  "game-server",
+  "resets namespace namespace clean state namespace has database cache",
+  "reset-tables",
+  "prose"
+ ],
+ [
+  "front-end",
+  "squaring apply edit",
+  "Square.applyEdit",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "caching namespace test",
+  "cache-namespace-test",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "initializing media",
+  "initialize-media",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "naming only object keys",
+  "nameOnlyObject.keys",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "layers editor state edit current element type",
+  "LayerEditorState.editCurrentElementType",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "structs type defn find",
+  "structTypeDefn.find",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "obj errors",
+  "obj-error",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "styling build line params",
+  "Style.buildLineParams",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "obj encoding",
+  "obj-encode",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "operations update",
+  "operation-update",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "circling mapper to native",
+  "CircleMapper.toNative",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "gaming media",
+  "GameMedia",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "lasts decoded",
+  "*last-decoded*",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "mocks map get zoom",
+  "MockMap.getZoom",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "medias catalog",
+  "MediaCatalog",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "shaping line descriptor",
+  "shape-line-descriptor",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "valids collection type start p",
+  "valid-collection-type-start-p",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "posts with error handling",
+  "postWithErrorHandling",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "dumps default game",
+  "dump-default-game",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "layouts glue mapper",
+  "LayoutGlueMapper",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "axials to pixel",
+  "axialToPixel",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "db selects",
+  "db-select",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "installs base types",
+  "installBaseTypes",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "mp deleting obj",
+  "mp-delete-obj",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "msg handlers process callback",
+  "msgHandler.processCallback",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "map elements valid p",
+  "map-element-valid-p",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "medias asset decode",
+  "media-asset-decode",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "splits tool is active",
+  "SplitTool.isActive",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "highlights styles",
+  "HIGHLIGHT_STYLES",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "icons mapper register obj",
+  "IconMapper.registerObj",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "polygons add point",
+  "Polygon.addPoint",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "mp applies to slot",
+  "mp-apply-to-slot",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "tints for",
+  "tintFor",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "basing type mapper constructor",
+  "BaseTypeMapper.constructor",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "now secondses",
+  "now-seconds",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "put gaming version",
+  "put-game-version",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "movements points per turn rule",
+  "*movement-points-per-turn-rule*",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "publics api defn delete",
+  "public-api-defn-delete",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "servers url",
+  "SERVER_URL",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "paging registry",
+  "pageRegistry",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "typeds obj value",
+  "typedObj.value",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "dissolving redundant nodes",
+  "dissolveRedundantNodes",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "layers editor state default layer name",
+  "LayerEditorState._defaultLayerName",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "groups types",
+  "groupTypes",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "map symbolses",
+  "map-symbols",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "map boundses",
+  "MAP_BOUNDS",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "coords key",
+  "coordKey",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "gaming media required params",
+  "GameMedia.requiredParams",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "medias editor state scope",
+  "MediaEditorState.scope",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "parsing gameid",
+  "parse-gameid",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "triangling mapper",
+  "TriangleMapper",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "messaging or list p",
+  "message-or-list-p",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "gaming cascade hard delete obj",
+  "Game.cascadeHardDeleteObj",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "sizing bytes",
+  "size-bytes",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "obj decoding",
+  "obj-decode",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "tr num rowses",
+  "tr-num-rows",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "icons clone",
+  "Icon.clone",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "renders engine leaflet on each layer",
+  "RenderEngineLeaflet.onEachLayer",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "gaming intf get game",
+  "gameIntf.getGame",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "gaming context",
+  "GameContext",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "renders engine leaflet enable draw",
+  "RenderEngineLeaflet.enableDraw",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "tests runner",
+  "test-runner",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "locals offset meters",
+  "local-offset-meters",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "tests namespace add and find",
+  "test-namespace-add-and-find",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "inserts island",
+  "insertIsland",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "is obj handling",
+  "is-obj-handle",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "rings is ccw",
+  "ringIsCCW",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "fills style to leaflet options",
+  "fillStyleToLeafletOptions",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "finds objs",
+  "find-objs",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "tests namespace add and remove",
+  "test-namespace-add-and-remove",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "groups type",
+  "group-type",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "visuals editor state selected node id",
+  "VisualEditorState.selectedNodeId",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "piecing type editor state set value",
+  "PieceTypeEditorState.setValue",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "creating test media",
+  "create-test-media",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "db selects id",
+  "db-select-id",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "geo shaping representation",
+  "geo-shape-representation",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "finds objs",
+  "find-objs",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "renders engine leaflet normalize event",
+  "RenderEngineLeaflet._normalizeEvent",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "is fn handling",
+  "is-fn-handle",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "texts geometry mapper",
+  "TextGeometryMapper",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "facing selected opacity",
+  "FACE_SELECTED_OPACITY",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "medias editor state admin mode",
+  "MediaEditorState.adminMode",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "placing text",
+  "PlaceText",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "making layer",
+  "makeLayer",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "layers group clear",
+  "LayerGroup.clear",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "deleting obj",
+  "deleteObj",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "structs type defn",
+  "struct-type-defn",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "dhandlers count selector",
+  "dhandler-count-selector",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "referenceds objs",
+  "referenced-objs",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "shaping outline",
+  "ShapeOutline",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "projects vertices",
+  "projectVertices",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "msg handlers constructor",
+  "msgHandler.constructor",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "making media",
+  "makeMedia",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "piecing editor state add piece",
+  "PieceEditorState.addPiece",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "gaming map set update map",
+  "GameMapSet.updateMap",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "initializing handler",
+  "initialize-handler",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "events emitter constructor",
+  "EventEmitter.constructor",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "persists all",
+  "persist-all",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "gaming media mapper constructor",
+  "GameMediaMapper.constructor",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "lining clone",
+  "Line.clone",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "making cors handler",
+  "make-cors-handler",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "medias remap id clause",
+  "media-remap-id-clause",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "gaming constructor",
+  "Game.constructor",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "dhandlers with transaction",
+  "dhandler-with-transaction",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "froms ll",
+  "fromLL",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "db updating",
+  "db-update",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "basing type mapper",
+  "BaseTypeMapper",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "get medias batch",
+  "get-media-batch",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "nameds id obj p",
+  "named-id-obj-p",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "visuals editor state type set",
+  "VisualEditorState.typeSet",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "get dot valuing",
+  "getDotValue",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "fills style constructor",
+  "FillStyle.constructor",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "deriveds typed obj value",
+  "derivedTypedObj.value",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "builtins sym val",
+  "builtin-sym-val",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "is strings",
+  "isString",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "deeps log",
+  "deepLog",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "collections delete obj",
+  "collection-delete-obj",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "converts numbers",
+  "%convert-numbers",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "homing props",
+  "homeProps",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "medias insert columns",
+  "+media-insert-columns+",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "registers struct decoder",
+  "register-struct-decoder",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "naming only object",
+  "nameOnlyObject",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "arc use starts node",
+  "ArcUse.startNode",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "gaming map required params",
+  "GameMap.requiredParams",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "saturations floor",
+  "SATURATION_FLOOR",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "naming only object fixed keys",
+  "nameOnlyObject.fixedKeys",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "typeds obj clone",
+  "typedObj.clone",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "objectses section",
+  "ObjectsSection",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "is basing type defn p",
+  "is-base-type-defn-p",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "resolving ref",
+  "resolve-ref",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "materials has surf",
+  "Material.hasSurf",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "get valuing",
+  "get-value",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "dhandlers exists selector",
+  "dhandler-exists-selector",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "resets package",
+  "reset-package",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "i renderers get bounds",
+  "IRenderer.getBounds",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "db inserts",
+  "db-insert",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "gaming map set get primary map name",
+  "GameMapSet.getPrimaryMapName",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "generics type set find by id",
+  "GenericTypeSet.findById",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "i renderers",
+  "IRenderer",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "renders engine leaflet get container",
+  "RenderEngineLeaflet.getContainer",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "messaging bus",
+  "messageBus",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "marks fields",
+  "MARK_FIELDS",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "gaming system test",
+  "game-system-test",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "edging wire",
+  "edge->wire",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "all basing objects",
+  "allBaseObjects",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "tests wrapper",
+  "TestWrapper",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "layouts container mapper constructor",
+  "LayoutContainerMapper.constructor",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "mp num objses",
+  "mp-num-objs",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "tests namespace persist",
+  "test-namespace-persist",
+  "inflected"
+ ],
+ [
+  "front-end",
+  "finds node",
+  "findNode",
+  "inflected"
+ ],
+ [
+  "game-server",
+  "is list type defn p",
+  "is-list-type-defn-p",
+  "name"
+ ],
+ [
+  "game-server",
+  "shape descriptor",
+  "shape-descriptor",
+  "name"
+ ],
+ [
+  "front-end",
+  "get dot obj",
+  "getDotObj",
+  "name"
+ ],
+ [
+  "front-end",
+  "base typed obj constructor",
+  "baseTypedObj.constructor",
+  "name"
+ ],
+ [
+  "front-end",
+  "get interface",
+  "getInterface",
+  "name"
+ ],
+ [
+  "front-end",
+  "piece representation from po jo",
+  "PieceRepresentation.fromPoJo",
+  "name"
+ ],
+ [
+  "game-server",
+  "db reconnect",
+  "db-reconnect",
+  "name"
+ ],
+ [
+  "front-end",
+  "map bounds",
+  "MAP_BOUNDS",
+  "name"
+ ],
+ [
+  "front-end",
+  "base type defn",
+  "baseTypeDefn",
+  "name"
+ ],
+ [
+  "front-end",
+  "player type constructor",
+  "PlayerType.constructor",
+  "name"
+ ],
+ [
+  "game-server",
+  "game system exists gameid",
+  "game-system-exists-gameid",
+  "name"
+ ],
+ [
+  "front-end",
+  "layer editor state editing layer properties",
+  "LayerEditorState.editingLayerProperties",
+  "name"
+ ],
+ [
+  "front-end",
+  "default zoom",
+  "DEFAULT_ZOOM",
+  "name"
+ ],
+ [
+  "front-end",
+  "use dispatch and redirect",
+  "useDispatchAndRedirect",
+  "name"
+ ],
+ [
+  "front-end",
+  "tree node",
+  "TreeNode",
+  "name"
+ ],
+ [
+  "game-server",
+  "initialize instance",
+  "initialize-instance",
+  "name"
+ ],
+ [
+  "game-server",
+  "send ok",
+  "send-ok",
+  "name"
+ ],
+ [
+  "front-end",
+  "from ll",
+  "fromLL",
+  "name"
+ ],
+ [
+  "game-server",
+  "pop obj",
+  "pop-obj",
+  "name"
+ ],
+ [
+  "front-end",
+  "octagon scale",
+  "Octagon._scale",
+  "name"
+ ],
+ [
+  "front-end",
+  "typed obj constructor",
+  "typedObj.constructor",
+  "name"
+ ],
+ [
+  "game-server",
+  "mp find obj",
+  "mp-find-obj",
+  "name"
+ ],
+ [
+  "front-end",
+  "capability editor state add child",
+  "CapabilityEditorState.addChild",
+  "name"
+ ],
+ [
+  "front-end",
+  "geometry is area",
+  "Geometry.isArea",
+  "name"
+ ],
+ [
+  "front-end",
+  "split tool update preview",
+  "SplitTool._updatePreview",
+  "name"
+ ],
+ [
+  "front-end",
+  "boundary distances",
+  "boundaryDistances",
+  "name"
+ ],
+ [
+  "front-end",
+  "list mapper to native",
+  "ListMapper.toNative",
+  "name"
+ ],
+ [
+  "game-server",
+  "get default value",
+  "get-default-value",
+  "name"
+ ],
+ [
+  "front-end",
+  "backend server",
+  "backendServer",
+  "name"
+ ],
+ [
+  "game-server",
+  "dhandler count",
+  "dhandler-count",
+  "name"
+ ],
+ [
+  "front-end",
+  "base group type create obj internal",
+  "baseGroupType.createObjInternal",
+  "name"
+ ],
+ [
+  "front-end",
+  "render engine leaflet enable global edit mode",
+  "RenderEngineLeaflet.enableGlobalEditMode",
+  "name"
+ ],
+ [
+  "front-end",
+  "polygon convex hull",
+  "Polygon._convexHull",
+  "name"
+ ],
+ [
+  "front-end",
+  "store ref",
+  "storeRef",
+  "name"
+ ],
+ [
+  "game-server",
+  "mime ext alist",
+  "*mime->ext-alist*",
+  "name"
+ ],
+ [
+  "front-end",
+  "fetch media batch",
+  "fetchMediaBatch",
+  "name"
+ ],
+ [
+  "game-server",
+  "dhandler get selector",
+  "dhandler-get-selector",
+  "name"
+ ],
+ [
+  "front-end",
+  "do cut",
+  "doCut",
+  "name"
+ ],
+ [
+  "front-end",
+  "arc use constructor",
+  "ArcUse.constructor",
+  "name"
+ ],
+ [
+  "front-end",
+  "common source",
+  "COMMON_SOURCE",
+  "name"
+ ],
+ [
+  "game-server",
+  "add reference group",
+  "add-reference-group",
+  "name"
+ ],
+ [
+  "front-end",
+  "match tags",
+  "matchTags",
+  "name"
+ ],
+ [
+  "front-end",
+  "collection typed obj children",
+  "collectionTypedObj.children",
+  "name"
+ ],
+ [
+  "game-server",
+  "make hex cell",
+  "make-hex-cell",
+  "name"
+ ],
+ [
+  "front-end",
+  "wrapped logger set level",
+  "wrappedLogger.setLevel",
+  "name"
+ ],
+ [
+  "game-server",
+  "get value",
+  "get-value",
+  "name"
+ ],
+ [
+  "game-server",
+  "dhandler delete all",
+  "dhandler-delete-all",
+  "name"
+ ],
+ [
+  "game-server",
+  "dhandler copy",
+  "dhandler-copy",
+  "name"
+ ],
+ [
+  "front-end",
+  "media editor state scope",
+  "MediaEditorState.scope",
+  "name"
+ ],
+ [
+  "game-server",
+  "turn duration rule",
+  "*turn-duration-rule*",
+  "name"
+ ],
+ [
+  "front-end",
+  "is proxy",
+  "isProxy",
+  "name"
+ ],
+ [
+  "game-server",
+  "obj equal",
+  "obj-equal",
+  "name"
+ ],
+ [
+  "front-end",
+  "format bytes",
+  "formatBytes",
+  "name"
+ ],
+ [
+  "game-server",
+  "dhandler put",
+  "dhandler-put",
+  "name"
+ ],
+ [
+  "front-end",
+  "import error message",
+  "importErrorMessage",
+  "name"
+ ],
+ [
+  "front-end",
+  "compile list of objects",
+  "compileListOfObjects",
+  "name"
+ ],
+ [
+  "front-end",
+  "default min area fraction",
+  "DEFAULT_MIN_AREA_FRACTION",
+  "name"
+ ],
+ [
+  "front-end",
+  "drawing context constructor",
+  "DrawingContext.constructor",
+  "name"
+ ],
+ [
+  "front-end",
+  "game get updated objects",
+  "Game.getUpdatedObjects",
+  "name"
+ ],
+ [
+  "front-end",
+  "pin set",
+  "PinSet",
+  "name"
+ ],
+ [
+  "game-server",
+  "base encoder",
+  "base-encoder",
+  "name"
+ ],
+ [
+  "game-server",
+  "slot defn",
+  "slot-defn",
+  "name"
+ ],
+ [
+  "front-end",
+  "child class child method",
+  "ChildClass.childMethod",
+  "name"
+ ],
+ [
+  "front-end",
+  "media intf copy from common",
+  "mediaIntf.copyFromCommon",
+  "name"
+ ],
+ [
+  "front-end",
+  "map boundary contains",
+  "MapBoundary.contains",
+  "name"
+ ],
+ [
+  "game-server",
+  "hmac sha256 bytes",
+  "hmac-sha256-bytes",
+  "name"
+ ],
+ [
+  "front-end",
+  "game add definition",
+  "Game.addDefinition",
+  "name"
+ ],
+ [
+  "front-end",
+  "polygon get center",
+  "Polygon.getCenter",
+  "name"
+ ],
+ [
+  "game-server",
+  "ref polyline defn",
+  "ref-polyline-defn",
+  "name"
+ ],
+ [
+  "game-server",
+  "collect terrain features",
+  "collect-terrain-features",
+  "name"
+ ],
+ [
+  "front-end",
+  "octagon mapper to native",
+  "OctagonMapper.toNative",
+  "name"
+ ],
+ [
+  "front-end",
+  "initialize map system",
+  "initializeMapSystem",
+  "name"
+ ],
+ [
+  "game-server",
+  "remove value",
+  "remove-value",
+  "name"
+ ],
+ [
+  "game-server",
+  "collection obj copy",
+  "collection-obj-copy",
+  "name"
+ ],
+ [
+  "front-end",
+  "to public id",
+  "toPublicId",
+  "name"
+ ],
+ [
+  "front-end",
+  "get type from obj",
+  "getTypeFromObj",
+  "name"
+ ],
+ [
+  "front-end",
+  "polygon mapper",
+  "PolygonMapper",
+  "name"
+ ],
+ [
+  "front-end",
+  "typed obj defn obj",
+  "typedObj.defnObj",
+  "name"
+ ],
+ [
+  "front-end",
+  "subtract tool keydown",
+  "SubtractTool.keydown",
+  "name"
+ ],
+ [
+  "front-end",
+  "i renderer unproject",
+  "IRenderer.unproject",
+  "name"
+ ],
+ [
+  "game-server",
+  "tr get row",
+  "tr-get-row",
+  "name"
+ ],
+ [
+  "front-end",
+  "identity map for",
+  "identityMapFor",
+  "name"
+ ],
+ [
+  "front-end",
+  "capability editor state toggle expand",
+  "CapabilityEditorState.toggleExpand",
+  "name"
+ ],
+ [
+  "front-end",
+  "on rect boundary",
+  "onRectBoundary",
+  "name"
+ ],
+ [
+  "front-end",
+  "mapper to native",
+  "Mapper.toNative",
+  "name"
+ ],
+ [
+  "game-server",
+  "points compact encoder",
+  "points-compact-encoder",
+  "name"
+ ],
+ [
+  "front-end",
+  "coast ring",
+  "COAST_RING",
+  "name"
+ ],
+ [
+  "game-server",
+  "dhandler exists",
+  "dhandler-exists",
+  "name"
+ ],
+ [
+  "front-end",
+  "is oneof type defn",
+  "isOneofTypeDefn",
+  "name"
+ ],
+ [
+  "front-end",
+  "media editor state set picker mode",
+  "MediaEditorState.setPickerMode",
+  "name"
+ ],
+ [
+  "game-server",
+  "visit collection obj",
+  "visit-collection-obj",
+  "name"
+ ],
+ [
+  "game-server",
+  "make client op",
+  "make-client-op",
+  "name"
+ ],
+ [
+  "front-end",
+  "working state",
+  "workingState",
+  "name"
+ ],
+ [
+  "game-server",
+  "is struct type defn",
+  "is-struct-type-defn",
+  "name"
+ ],
+ [
+  "game-server",
+  "db list schema",
+  "db-list-schema",
+  "name"
+ ],
+ [
+  "game-server",
+  "game system persist game",
+  "game-system-persist-game",
+  "name"
+ ],
+ [
+  "game-server",
+  "min scale meters",
+  "*min-scale-meters*",
+  "name"
+ ],
+ [
+  "game-server",
+  "get graphic defns",
+  "get-graphic-defns",
+  "name"
+ ],
+ [
+  "front-end",
+  "color swatch",
+  "colorSwatch",
+  "name"
+ ],
+ [
+  "front-end",
+  "almost equal",
+  "almostEqual",
+  "name"
+ ],
+ [
+  "game-server",
+  "map value",
+  "map-value",
+  "name"
+ ],
+ [
+  "front-end",
+  "net equals",
+  "Net.equals",
+  "name"
+ ],
+ [
+  "front-end",
+  "get definition list",
+  "getDefinitionList",
+  "name"
+ ],
+ [
+  "front-end",
+  "visual overlay from po jo",
+  "VisualOverlay.fromPoJo",
+  "name"
+ ],
+ [
+  "game-server",
+  "operation delete",
+  "operation-delete",
+  "name"
+ ],
+ [
+  "front-end",
+  "feature layer",
+  "FeatureLayer",
+  "name"
+ ],
+ [
+  "front-end",
+  "line style mapper to obj",
+  "LineStyleMapper._toObj",
+  "name"
+ ],
+ [
+  "game-server",
+  "test fns",
+  "test-fns",
+  "name"
+ ],
+ [
+  "front-end",
+  "struct group type",
+  "structGroupType",
+  "name"
+ ],
+ [
+  "game-server",
+  "decode slot",
+  "decode-slot",
+  "name"
+ ],
+ [
+  "front-end",
+  "save state",
+  "saveState",
+  "name"
+ ],
+ [
+  "game-server",
+  "referenced objs",
+  "referenced-objs",
+  "name"
+ ],
+ [
+  "front-end",
+  "layout container constructor",
+  "LayoutContainer.constructor",
+  "name"
+ ],
+ [
+  "front-end",
+  "check candidate",
+  "checkCandidate",
+  "name"
+ ],
+ [
+  "front-end",
+  "ref type defn is type p",
+  "refTypeDefn.isTypeP",
+  "name"
+ ],
+ [
+  "front-end",
+  "visual editor",
+  "VisualEditor",
+  "name"
+ ],
+ [
+  "front-end",
+  "icon from po jo",
+  "Icon.fromPoJo",
+  "name"
+ ],
+ [
+  "game-server",
+  "make table handler",
+  "make-table-handler",
+  "name"
+ ],
+ [
+  "game-server",
+  "db select id",
+  "db-select-id",
+  "name"
+ ],
+ [
+  "front-end",
+  "capability constructor",
+  "Capability.constructor",
+  "name"
+ ],
+ [
+  "game-server",
+  "unregister type validator",
+  "unregister-type-validator",
+  "name"
+ ],
+ [
+  "game-server",
+  "model handler p",
+  "model-handler-p",
+  "name"
+ ],
+ [
+  "game-server",
+  "symbol decode",
+  "symbol-decode",
+  "name"
+ ],
+ [
+  "front-end",
+  "select button",
+  "SelectButton",
+  "name"
+ ],
+ [
+  "front-end",
+  "i renderer get zoom",
+  "IRenderer.getZoom",
+  "name"
+ ],
+ [
+  "front-end",
+  "use layer editor menus",
+  "useLayerEditorMenus",
+  "name"
+ ],
+ [
+  "game-server",
+  "is base type p",
+  "is-base-type-p",
+  "name"
+ ],
+ [
+  "front-end",
+  "tag set",
+  "TagSet",
+  "name"
+ ],
+ [
+  "front-end",
+  "polygon split",
+  "Polygon.split",
+  "name"
+ ],
+ [
+  "front-end",
+  "partition defns",
+  "PARTITION_DEFNS",
+  "name"
+ ],
+ [
+  "game-server",
+  "op type defn",
+  "op-type-defn",
+  "name"
+ ],
+ [
+  "front-end",
+  "number base defn",
+  "numberBaseDefn",
+  "name"
+ ],
+ [
+  "front-end",
+  "generic type set reset",
+  "GenericTypeSet.reset",
+  "name"
+ ],
+ [
+  "game-server",
+  "add operator group",
+  "add-operator-group",
+  "name"
+ ],
+ [
+  "game-server",
+  "last content",
+  "*last-content*",
+  "name"
+ ],
+ [
+  "game-server",
+  "data decoder fn",
+  "data-decoder-fn",
+  "name"
+ ],
+ [
+  "front-end",
+  "tag ref constructor",
+  "TagRef.constructor",
+  "name"
+ ],
+ [
+  "game-server",
+  "game system loadable games",
+  "game-system-loadable-games",
+  "name"
+ ],
+ [
+  "front-end",
+  "map element equals",
+  "MapElement.equals",
+  "name"
+ ],
+ [
+  "front-end",
+  "delegate methods",
+  "delegateMethods",
+  "name"
+ ],
+ [
+  "game-server",
+  "get filter",
+  "get-filter",
+  "name"
+ ],
+ [
+  "front-end",
+  "design selectors",
+  "designSelectors",
+  "name"
+ ],
+ [
+  "front-end",
+  "partition arc",
+  "PartitionArc",
+  "name"
+ ],
+ [
+  "front-end",
+  "tag bag set",
+  "TagBagSet",
+  "name"
+ ],
+ [
+  "front-end",
+  "get feature layer",
+  "getFeatureLayer",
+  "name"
+ ],
+ [
+  "game-server",
+  "to alist",
+  "to-alist",
+  "name"
+ ],
+ [
+  "front-end",
+  "game definitions file",
+  "gameDefinitionsFile",
+  "name"
+ ],
+ [
+  "game-server",
+  "create obj",
+  "create-obj",
+  "name"
+ ],
+ [
+  "game-server",
+  "get database config",
+  "get-database-config",
+  "name"
+ ],
+ [
+  "game-server",
+  "is reference type obj",
+  "is-reference-type-obj",
+  "name"
+ ]
+]
