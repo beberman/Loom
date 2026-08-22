@@ -1,0 +1,82 @@
+id: BUG-0042
+title: "*CONTEXT-STOPWORDS* drops the sixteen words a code tree names things with, so a query loses its load-bearing word before matching starts"
+status: closed
+date: 2026-08-22
+refines: [REQ-0016]
+affects: ['*context-stopwords*', task-token-origins, task-tokens]
+tags: [retrieval, context, seeding, stopwords, req-0016]
+severity: high
+summary: |
+  `context @front-end get type from obj' searched on `type' and `obj'. `get'
+  was a stopword, so GETTYPEFROMOBJ competed on two of the caller's four words
+  and the query missed it.
+
+  The list holds two populations under one heading. Thirty-four of its words
+  are English function vocabulary -- the, when, would, please -- and name
+  nothing in any tree. Sixteen are the commonest words a code tree names things
+  with: add, new, use, make, get, set, fix, change, update, code, function,
+  class, file, test, tests, from.
+
+  Measured over the 450 known-item cases on 2026-08-22, with BUG-0041 already
+  closed: 21 of the 57 remaining misses lost a word from the second population
+  before matching began, and in every one of the 21 that word appears in the
+  expected name.
+body: |
+  WHAT IT COSTS
+
+  Two of the 21 lost the query's only distinguishing word:
+
+      `pin set'    expected PINSET    searched on `pin'
+      `tag set'    expected TAGSET    searched on `tag'
+
+  A query one token long cannot separate PIN from PINSET, and did not.
+
+  The rest lost one word of several, which the coverage band charges directly:
+
+      get definition list           GETDEFINITIONLIST      lost get
+      game add definition           GAME.ADDDEFINITION     lost add
+      make table handler            MAKE-TABLE-HANDLER     lost make
+      test fns                      TEST-FNS               lost test
+      get feature layer             GETFEATURELAYER        lost get
+      piecing type editor state
+        set value                   PIECETYPEEDITORSTATE.SETVALUE   lost set
+      get type from obj             GETTYPEFROMOBJ         lost get, from
+      piece representation
+        from po jo                  PIECEREPRESENTATION.FROMPOJO    lost from
+
+  WHY THE LIST READ AS CORRECT
+
+  Its docstring: "Words too common to be worth matching an entity name
+  against... just enough that `how does the drawing tool work' seeds on
+  `drawing' and `tool' rather than on `does' and `work'." That is true of the
+  English half and is the reason the list exists.
+
+  Applied to the second half it is a different claim wearing the same words. A
+  word is on the list because it is common; GET is common in a code tree
+  *because things are named after it*, which is the opposite of evidence that
+  matching it is worthless. The list conflates "common and meaningless" with
+  "common and load-bearing", and there is no way to tell them apart by
+  frequency -- which is what DES-0036 measured and withdrew.
+
+  WHAT A FIX MUST NOT BREAK
+
+  Freeing these words is not free. `get' reaches every GETX in the repository,
+  and a candidate answering `get' and nothing else is noise that REQ-0016 R7's
+  share cap bounds to two seeds rather than to none.
+
+  Measured: freeing the sixteen and stopping there scored 408 of 450 against a
+  baseline of 393, and lost three cases it had been finding -- among them `get
+  database config', a NAME case, whose bundle filled with GET-GAME-DB-ID and
+  GET-TYPEID and no longer held GET-DATABASE-CONFIG at all.
+
+  "and" is a separate finding. Freeing it scored three generated cases better
+  and cost REQ-0016 R8, a judged acceptance case, which stopped returning
+  CONNECTION-CONNECT-DATABASE entirely. REQ-0036 R11 makes the judged set the
+  held-out one.
+
+  HOW IT WAS FOUND
+
+  docs/SeekAndSeeds.md, reviewing why an 86.7% score on a set built from the
+  entities' own names is evidence of mechanical defects rather than of a
+  lexical ceiling. This is the second of the two it named; BUG-0041 was the
+  first.

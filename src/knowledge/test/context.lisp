@@ -210,6 +210,67 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
     (is (member "database-alert" names :test #'string=)
         "and what it was crowding out has to arrive")))
 
+(test a-word-a-code-tree-names-things-with-is-searched-rather-than-dropped
+  ;; DES-0038. Every one of these was a stopword, and each was measured losing
+  ;; a case whose answer is named after it: `game add definition' for
+  ;; GAME.ADDDEFINITION, `get feature layer' for GETFEATURELAYER, `pin set' for
+  ;; PINSET, `make table handler' for MAKE-TABLE-HANDLER.
+  ;;
+  ;; "pin set" is the one to read. Dropping `set' left that query one token
+  ;; long, so the word carrying the whole distinction between PIN and PINSET
+  ;; never reached the index at all.
+  (let ((tokens (loom-knowledge::task-tokens "get type from obj")))
+    (is (member "get" tokens :test #'string=)
+        "the commonest verb in a code tree is a word the caller meant")
+    (is (member "from" tokens :test #'string=)
+        "and FROMPOJO and FROMLL are named after this one"))
+  (dolist (word '("set" "add" "make" "test" "file" "class" "new" "update"))
+    (is (member word (loom-knowledge::task-tokens (format nil "pin ~a" word))
+                :test #'string=)
+        (format nil "~a reaches the index" word))))
+
+(test and-stays-a-stopword-because-a-judged-case-says-so
+  ;; The one word DES-0038 measured and did not free. Freeing it scored 3 of
+  ;; the 450 generated cases better and cost REQ-0016 R8, whose query is
+  ;; `data-api handler database connection acquire and test connectivity' and
+  ;; which stopped returning CONNECTION-CONNECT-DATABASE at all. REQ-0036 R11
+  ;; makes the judged set the held-out one; a generated case does not outvote
+  ;; it.
+  (is (not (member "and" (loom-knowledge::task-tokens "namespace add and find")
+                   :test #'string=))
+      "and is English here, whatever TEST-NAMESPACE-ADD-AND-FIND is called")
+  (is (member "add" (loom-knowledge::task-tokens "namespace add and find")
+              :test #'string=)
+      "which is not an argument about the word beside it"))
+
+(test a-candidate-answering-only-a-weak-word-is-not-a-seed
+  ;; The half of DES-0038 that makes the other half safe. `get' names something
+  ;; in almost any code tree, so searching it without this admits every GETX in
+  ;; the repository as a seed in its own right -- measured on game-server, `get
+  ;; database config' returned GET-GAME-DB-ID and GET-TYPEID and lost
+  ;; GET-DATABASE-CONFIG, which it had found while `get' was a stopword.
+  (let ((names (seed-names (seed-graph "get-database-config" "get-typeid"
+                                       "get-game-db-id" "database-alert")
+                           "get database config")))
+    (is (string= "get-database-config" (first names))
+        "three terms answered beats one, and only this candidate answers three")
+    (is (not (member "get-typeid" names :test #'string=))
+        "a candidate whose only answer is `get' is not a candidate")
+    (is (member "database-alert" names :test #'string=)
+        "while a candidate answering a term that is not weak stays one")))
+
+(test a-task-written-entirely-out-of-weak-words-still-seeds
+  ;; The relaxation, the same shape ADMIT-SEEDS uses and for the same reason.
+  ;; The filter drops a candidate that answered nothing but weak terms, which
+  ;; for this task is every candidate there is -- and a bundle of nothing is a
+  ;; worse answer than a bundle of what the words actually reached.
+  (let ((names (seed-names (seed-graph "get-set" "settings" "getter")
+                           "get set")))
+    (is (plusp (length names))
+        "an empty pool is returned whole rather than as no seeds at all")
+    (is (member "get-set" names :test #'string=)
+        "and the candidate answering both of the task's words is among them")))
+
 (defun same-name-graph (name count &rest others)
   "COUNT definitions of NAME, one per file, plus one definition of each of OTHERS.
 

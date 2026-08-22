@@ -70,14 +70,49 @@ honoured to the token."
 ;;;; ==================================================================
 
 (defparameter *context-stopwords*
-  '("the" "and" "for" "with" "that" "this" "from" "into" "when" "what" "which"
-    "add" "new" "use" "using" "make" "get" "set" "fix" "change" "update" "code"
-    "function" "class" "file" "test" "tests" "should" "would" "need" "needs"
-    "want" "please" "can" "does" "how" "why" "where" "are" "was" "will" "not"
-    "its" "have" "has" "had" "them" "they" "then" "than")
-  "Words too common to be worth matching an entity name against.
+  '("the" "and" "for" "with" "that" "this" "into" "when" "what" "which"
+    "using" "should" "would" "need" "needs" "want" "please" "can" "does"
+    "how" "why" "where" "are" "was" "will" "not" "its" "have" "has"
+    "had" "them" "they" "then" "than")
+  "Words dropped before matching begins: English a code tree names nothing after.
+
 Not a language model -- just enough that \"how does the drawing tool work\"
-seeds on \"drawing\" and \"tool\" rather than on \"does\" and \"work\".")
+seeds on \"drawing\" and \"tool\" rather than on \"does\" and \"work\".
+
+One list until DES-0038, which is where sixteen of these went. \"Too common to
+match a name against\" was two claims wearing one coat: a word can be common in
+English and name nothing, or common *because* a code tree names things with it.
+GET, SET, ADD, MAKE, TEST and FILE are the second, and dropping them cost the
+queries that meant them -- \"wrapped logger set level\" competed on three words
+of four, and `set' is the one that separates SETLEVEL from eight bare LOGGERs.
+They are in *CONTEXT-WEAK-TERMS* now, searched but unable to seed alone.
+
+What is left is the first claim only. Every word here is English function
+vocabulary, and no measured case wants one of them matched against a name.")
+
+(defparameter *context-weak-terms*
+  '("add" "new" "use" "make" "get" "set" "fix" "change" "update" "code"
+    "function" "class" "file" "test" "tests" "from")
+  "Words searched for, but never enough on their own to make a candidate a seed.
+
+The second population. A stopword is dropped before matching begins; these are
+matched and count toward coverage like any other term, and only a candidate
+that answered *nothing else* is dropped. So `get type from obj' reaches
+GETTYPEFROMOBJ on three terms, while GETTYPEID -- which answered to `get' and
+to nothing else -- is not a candidate at all.
+
+Every one of these was a stopword until this list existed, and each is among
+the commonest words a code tree names things with. Measured over the 450
+known-item cases, 21 of the 57 remaining misses lost a word from this list
+before matching began, and the word was in the expected name every time:
+GAME.ADDDEFINITION, WRAPPEDLOGGER.SETLEVEL, GETDEFINITIONLIST, PINSET,
+MAKE-TABLE-HANDLER, TEST-FNS.
+
+\"and\" is not here and stays a stopword. Freeing it measured 3 known-item
+cases better and cost REQ-0016 R8, which is a judged acceptance case: `data-api
+handler database connection acquire and test connectivity' stopped returning
+CONNECTION-CONNECT-DATABASE at all. REQ-0036 R11 makes the judged set the
+held-out one, and a generated case does not outvote it.")
 
 (defun surface-variants (word)
   "WORD's plausible uninflected surface forms, by four suffix rules.
@@ -515,6 +550,40 @@ took two of eight slots on a query about string prefixes."
                   collect (cons entity (nreverse (gethash entity hits))))
             (nreverse frequencies))))
 
+(defun weak-term-p (token origins)
+  "True when TOKEN is one of *CONTEXT-WEAK-TERMS*, or came from one.
+
+Both, because a weak word reaches SEED-MATCHES two ways. It is written -- `get
+definition list' -- or it is the part a compound was split into, and
+\"get-definition-list\" splits to a `get' whose origin is the compound rather
+than itself. Asking only the origin misses the second; asking only the token
+misses \"tests\" reaching the index as its own stem."
+  (let ((origin (cdr (assoc token origins :test #'string=))))
+    (and (or (member token *context-weak-terms* :test #'string=)
+             (and origin (member origin *context-weak-terms* :test #'string=)))
+         t)))
+
+(defun strong-candidates (matches origins)
+  "MATCHES, less every candidate whose terms are all weak ones.
+
+Relaxed rather than enforced, in ADMIT-SEEDS' sense and for its reason: a task
+written entirely out of weak words -- `get set' -- would otherwise have no
+candidates at all, so when the filter empties the pool the pool is returned
+whole.
+
+The filter and not the stopword list is what makes a weak term safe to search
+on. A word like `get' names something in almost any code tree, so dropping it
+costs the queries that meant it; searching it without this admits every GETX in
+the repository as a seed in its own right. Measured on game-server, `get
+database config' with `get' searched and unfiltered returned GET-GAME-DB-ID,
+GET-TYPEID and GAME-GET-DEFAULT-CONFIG and lost GET-DATABASE-CONFIG, which it
+had found when `get' was a stopword."
+  (let ((kept (remove-if (lambda (pair)
+                           (every (lambda (m) (weak-term-p (car m) origins))
+                                  (cdr pair)))
+                         matches)))
+    (or kept matches)))
+
 (defun prose-only-p (matches)
   "True when every one of MATCHES came from prose rather than from a name.
 
@@ -586,9 +655,14 @@ part of what the seed is telling you about that name."
   "True when TASK asks about tests, so R4's demotion must not fire.
 
 Whole words, because \"the latest handler\" is not a question about tests.
-Read off the raw task rather than off TASK-TOKENS, which drops \"test\" as a
-stopword -- it is too common to *match a name* against and is perfectly good
-evidence of what the caller wants."
+
+Read off the raw task rather than off TASK-TOKENS, and still, though the reason
+has changed. TASK-TOKENS dropped \"test\" as a stopword until DES-0038; it now
+returns it as a weak term, so the two lists would agree today. The raw task
+stays the source because this asks what the caller *wants*, which the words
+they wrote answer directly, while TASK-TOKENS also holds compound parts and
+stem variants Loom manufactured -- \"latest\" is not one, but nothing here
+should depend on that."
   (intersection (plain-words task) '("test" "tests" "testing" "fixture" "fixtures")
                 :test #'string=))
 
@@ -986,15 +1060,22 @@ waiting (ADMIT-SEEDS)."
          (terms      (task-terms task))
          (origins    (task-token-origins task))
          (corpus-size (length (all-entities view)))
-         (production (production-names matches))
+         ;; MATCHES stays whole for the term report below: a term answered only
+         ;; by candidates this drops is WEAK, and calling it UNMATCHED would say
+         ;; the index holds nothing of the kind. CANDIDATES is what the ranking
+         ;; and the admission see.
+         (candidates (strong-candidates matches origins))
+         (production (production-names candidates))
          ;; COPY-LIST because STABLE-SORT is destructive on a list and MATCHES
-         ;; is read again below. Without it MATCHES names whatever cons cell was
+         ;; is read again below -- and CANDIDATES is MATCHES itself whenever
+         ;; STRONG-CANDIDATES removed nothing, so sorting it in place is sorting
+         ;; MATCHES. Without the copy MATCHES names whatever cons cell was
          ;; first before the sort, which after the sort is a *suffix* of the
          ;; sorted list -- so the ASSOC building the record detail searched part
          ;; of the alist and missed the rest. BUG-0037: 207 of 246 recorded
          ;; bundles carried a null `terms' and a score recomputed from no matches
          ;; at all, which is the corpus REQ-0036 measures the ranking against.
-         (ranked     (stable-sort (copy-list matches) #'<
+         (ranked     (stable-sort (copy-list candidates) #'<
                                   :key (lambda (pair)
                                          (seed-score (car pair) (cdr pair)
                                                      :demote-tests demote-tests

@@ -1,0 +1,135 @@
+id: DES-0038
+title: "BUG-0042 by splitting the stopword list in two: a weak term is searched and counted, and cannot seed a candidate on its own"
+status: implemented
+date: 2026-08-22
+refines: [BUG-0042, REQ-0016]
+affects: ['*context-stopwords*', '*context-weak-terms*', weak-term-p, strong-candidates, seed-entities, task-wants-tests-p]
+tags: [retrieval, context, seeding, stopwords, bug-0042, req-0016]
+summary: |
+  *CONTEXT-STOPWORDS* keeps the English half. The sixteen words a code tree
+  names things with move to *CONTEXT-WEAK-TERMS*, which is searched and counted
+  toward coverage like any other term -- and STRONG-CANDIDATES drops any
+  candidate that answered nothing else.
+
+  Four variants were measured against one index. Known-item recall, from a
+  baseline of 393 of 450:
+
+      free the sixteen                         405    acceptance 42/45
+      also free "and"                          408    acceptance 41/45, R8 fails
+      also free "from"                         408    acceptance 42/45
+      free the sixteen and "from", plus the
+        weak-candidate filter                  410    acceptance 42/45
+
+  The last is what shipped: 410 of 450, no family below its baseline, 19 cases
+  gained and 2 lost, acceptance unchanged at 42 of 45 with R8 and the three
+  REQ-0037 absence cases intact.
+body: |
+  D1  TWO POPULATIONS, ONE HEADING
+
+  The list's docstring stated the rule it was built on: "too common to be worth
+  matching an entity name against". Two different facts satisfy that sentence.
+
+  THE is common in English and names nothing in any tree. GET is common in a
+  code tree *because things are named after it*. Frequency cannot separate
+  them -- DES-0036 built the weighting that would have to and measured it at
+  the numbers it set out to beat, unchanged -- so the separation is a list
+  someone writes, which is what this is.
+
+  Thirty-four words stay stopwords. Sixteen move: add, new, use, make, get,
+  set, fix, change, update, code, function, class, file, test, tests, from.
+
+  D2  WHAT A WEAK TERM DOES
+
+  Everything an ordinary term does, except carry a candidate alone.
+
+  It is tokenised, searched, recorded in SEED-MATCHES, counted by the coverage
+  band and reported by the term report. The single difference is
+  STRONG-CANDIDATES, which runs between SEED-MATCHES and the sort and removes
+  every candidate all of whose matched terms are weak.
+
+  So `get type from obj' reaches GETTYPEFROMOBJ on three terms, while GETTYPEID
+  -- which answered `get' and nothing else -- is not a candidate at all.
+
+  The filter is what makes freeing the words safe rather than a trade. Measured
+  on game-server without it, `get database config' returned GET-GAME-DB-ID,
+  GET-TYPEID and GAME-GET-DEFAULT-CONFIG and lost GET-DATABASE-CONFIG, which it
+  had found while `get' was a stopword. Three of the four variants below differ
+  only in this.
+
+  D3  RELAXED, NOT ENFORCED
+
+  When the filter empties the pool, the pool is returned whole. `get set' is a
+  task written entirely out of weak words, and a bundle of nothing is a worse
+  answer than a bundle of what those words reached.
+
+  The same shape ADMIT-SEEDS uses for both of its counts, and adopted
+  deliberately rather than by imitation: every cap in this seeder is advisory,
+  because each was written against a tree large enough for the cap to bite and
+  each must leave a small tree behaving as it did.
+
+  D4  THE TERM REPORT READS THE UNFILTERED MATCHES
+
+  SEED-ENTITIES binds CANDIDATES beside MATCHES rather than shadowing it. The
+  ranking and the admission see CANDIDATES; TERM-COVERAGE still sees MATCHES.
+
+  A term answered only by candidates the filter dropped is :WEAK -- "candidates
+  matched it, but no admitted seed matched it by name", which is exactly true.
+  Building the report from the filtered list would call it :UNMATCHED, whose
+  definition is "nothing in the index matched it, by name or in prose". That is
+  a statement about the index, it would be false, and CON-0001 is the rule it
+  would break.
+
+  D5  "and" STAYS A STOPWORD
+
+  It is an identifier word on game-server -- TEST-NAMESPACE-ADD-AND-FIND -- and
+  freeing it scored three of the generated cases better. It also cost REQ-0016
+  R8, whose query is `data-api handler database connection acquire and test
+  connectivity' and which stopped returning CONNECTION-CONNECT-DATABASE at all.
+
+  REQ-0036 R11 makes tools/acceptance.py the held-out set: those judgements are
+  the only ones in the system not shaped by what the seeder already returned. A
+  generated case does not outvote one. The weak tier does not rescue it either
+  -- the candidates `and' drags in answer other terms too, so the filter has
+  nothing to remove.
+
+  D6  WHAT WAS MEASURED
+
+  One index, one instrument, one variable per run. Known-item is
+  tools/recall.py over the 450 generated cases; acceptance is
+  tools/acceptance.py's 45 judged expectations.
+
+      variant                         name  infl  prose   ALL   acceptance
+      baseline, BUG-0041 closed        126   134    133   393      42/45
+      free the sixteen                 132   141    132   405      42/45
+      also free "and" and "from"       135   141    132   408      41/45
+      also free "from" only            135   141    132   408      42/45
+      the above plus the filter        135   142    133   410      42/45
+
+  Adopted: the last. 410 of 450 is 91.1%, against 86.7% before BUG-0041 was
+  closed this morning.
+
+  Nineteen cases gained. Eleven are NAME -- PINSET, TAGSET, TAGBAGSET,
+  GAME.ADDDEFINITION, GETTYPEFROMOBJ, GETFEATURELAYER, GETDEFINITIONLIST,
+  MAKE-TABLE-HANDLER, TEST-FNS, PIECEREPRESENTATION.FROMPOJO,
+  VISUALOVERLAY.FROMPOJO, FROMLL -- and eight INFLECTED.
+
+  Two lost, both NAME, both on game-server and front-end:
+
+      get database config     GET-DATABASE-CONFIG
+      child class child method   CHILDCLASS.CHILDMETHOD
+
+  GET-DATABASE-CONFIG survives the filter's intent and loses anyway:
+  GET-GAME-DB-ID answers `get' by name and `database' or `config' in its
+  documentation, so it is not a weak-only candidate and the filter has no
+  grounds to remove it. Tightening the rule to require a *name* match on a
+  non-weak term would fix these two and would delete prose-only seeding, which
+  is REQ-0035 R4 and a passing test. Two cases do not buy that.
+
+  Latency is unchanged: slowest acceptance query 0.09s, the 450 cases in 16s.
+
+  D7  WHAT THIS DOES NOT FIX
+
+  The three-character minimum in TASK-TOKEN-ORIGINS. `from ll' now finds FROMLL
+  through `from', but `ll' itself never reaches the index, and neither does the
+  `db' in a query about DB-HANDLER or the `mp' in one about MP-DELETE-OBJ. That
+  is a separate rule with its own measurement to do.

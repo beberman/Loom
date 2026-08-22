@@ -1,0 +1,70 @@
+id: PLAN-0041
+title: "DES-0038 in four steps: size the prize, measure the list alone, add the filter, guard the word that was refused"
+status: final
+date: 2026-08-22
+refines: [DES-0038, BUG-0042]
+affects: ['*context-stopwords*', '*context-weak-terms*', strong-candidates, seed-entities]
+tags: [retrieval, context, seeding, stopwords, bug-0042]
+summary: |
+  The list edit and the filter are one change and were measured as two, because
+  the filter's whole justification is the three cases the list edit alone lost.
+  A run that changed both at once could not have shown that.
+body: |
+  S1  SIZE THE PRIZE BEFORE CHANGING ANYTHING
+
+  Over the 57 misses recall.py recorded with BUG-0041 closed, count the ones
+  whose query loses a word to *CONTEXT-STOPWORDS*, and of those the ones where
+  the lost word appears in the expected name.
+
+  21 of 57, and 21 of 21. Done first because it decides whether the list is
+  worth touching at all, and because a defect nobody has counted is a defect
+  whose fix cannot be judged.
+
+  RISK: none -- it reads a JSON file.
+
+  S2  THE LIST EDIT, MEASURED ALONE
+
+  Move the sixteen code words out of *CONTEXT-STOPWORDS* and measure. Then add
+  "from". Then add "and". Three runs, one variable each, restarting the service
+  between them so the change is in the running image.
+
+  This is where "and" is refused: it scores 3 generated cases better and fails
+  REQ-0016 R8, which is judged. Recording that took a run of its own and is D5.
+
+  RISK: R8 and the three REQ-0037 absence cases. Run tools/acceptance.py at
+  every variant, not only at the end -- a known-item number that improves while
+  a judged case breaks is the shape of every ranking change this project has
+  withdrawn.
+
+  S3  THE FILTER
+
+  In src/knowledge/context.lisp:
+
+    - *CONTEXT-WEAK-TERMS*, the sixteen words plus "from".
+    - WEAK-TERM-P, which asks the token and its origin, because a weak word
+      arrives both as something the caller wrote and as a part a compound was
+      split into.
+    - STRONG-CANDIDATES, which removes a candidate whose every matched term is
+      weak, and returns the pool whole when that empties it.
+    - SEED-ENTITIES binds CANDIDATES beside MATCHES. The sort and the admission
+      read CANDIDATES; TERM-COVERAGE keeps reading MATCHES.
+
+  RISK: the term report. Filtering the list TERM-COVERAGE reads would turn a
+  :WEAK term into an :UNMATCHED one, which asserts the index holds nothing of
+  the kind. D4; CON-0001.
+
+  S4  TESTS AND THE STALE DOCSTRINGS
+
+  Four tests in src/knowledge/test/context.lisp, each naming the world it
+  guards against, because they do not all guard against the same one:
+
+    - the sixteen are tokens               fails against the old single list
+    - "get set" still seeds                fails against the old single list
+    - a weak-only candidate is not a seed  fails against S2 without S3
+    - "and" is still a stopword            fails against the variant D5 refused
+
+  Two docstrings become false and are rewritten: *CONTEXT-STOPWORDS*' own, and
+  TASK-WANTS-TESTS-P's, which says TASK-TOKENS "drops \"test\" as a stopword".
+
+  Then the full suite, `check', a final pair of instrument runs, and
+  `complete PLAN-0041'.
