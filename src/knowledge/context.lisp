@@ -527,6 +527,74 @@ as it did before the cap existed."
           held   (nreverse held))
     (append chosen (subseq held 0 (min (- limit taken) (length held))))))
 
+(defun reported-terms (task)
+  "The task's words that the seeder actually looked for, in the caller's spelling.
+
+The intersection of TASK-TERMS and TASK-TOKENS, which is what makes the term
+report a statement about the query rather than about Loom's handling of it.
+Each list alone is the wrong one. TASK-TERMS keeps stopwords, so a report built
+from it says `a' and `to' matched nothing, which is true and is noise.
+TASK-TOKENS holds the fragments compounds were split into, so a report built
+from it says `utf-8', `utf' and `encod' each matched nothing, which is one
+absence counted three times and two words the caller never wrote.
+
+Their intersection is the words the caller typed that the seeder searched on:
+for \"reading a file with an encoding fallback when it is not UTF-8\", the four
+terms reading, encoding, fallback and utf-8 out of nine tokens and twelve
+terms."
+  (let ((tokens (task-tokens task)))
+    (remove-if-not (lambda (term) (member term tokens :test #'string=))
+                   (task-terms task))))
+
+(defun term-coverage (matches terms)
+  "Per term of TERMS, the candidates in MATCHES that answered it, split by how.
+
+An alist of (term :name (entity ...) :prose (entity ...)), in the order TERMS
+gives. MATCHES is SEED-MATCHES' alist, keyed by entity; this is the same data
+keyed by term, which is the direction nothing has needed until now -- the
+seeder reads a candidate's terms to score it, and never asks a term which
+candidates it reached.
+
+Every term of TERMS gets a row, including one no candidate matched at all. A
+table built from the matches alone would hold no row for it, and the term with
+nothing under it is the one the whole report exists to name."
+  (let ((rows (mapcar (lambda (term) (list term :name '() :prose '())) terms)))
+    (dolist (pair matches)
+      (loop for (term . rank) in (cdr pair)
+            for row = (assoc term rows :test #'string=)
+            when row
+              do (if (eq rank :prose)
+                     (push (car pair) (getf (cdr row) :prose))
+                     (push (car pair) (getf (cdr row) :name)))))
+    rows))
+
+(defun classify-terms (coverage chosen)
+  "Each term of COVERAGE as :ANSWERED, :WEAK or :UNMATCHED. DES-0032 D2.
+
+  :ANSWERED   an admitted seed carries this term in its name
+  :WEAK       candidates matched it, but no admitted seed matched it by name --
+              which is where a prose-only term lands, and where a term whose
+              name matches all ranked below the eighth slot lands too
+  :UNMATCHED  nothing in the index matched it, by name or in prose
+
+Three states and not a number. REQ-0037's WHAT THIS IS NOT rules out a
+confidence score per seed, and :UNMATCHED needs no judgement to be true of an
+index: it is what `find' returning nothing says, which is what all four of the
+judged records behind REQ-0037 ran by hand once the bundle had failed to say
+it.
+
+CHOSEN is what separates the first two, so this runs after ADMIT-SEEDS. A term
+answered only by a candidate the cap held back is a term the caller cannot see
+an answer to, and calling it answered would describe the ranking rather than
+the bundle."
+  (loop for (term . how) in coverage
+        collect (cons term
+                      (cond ((intersection (getf how :name) chosen :test #'eq)
+                             :answered)
+                            ((or (getf how :name) (getf how :prose))
+                             :weak)
+                            (t :unmatched)))))
+
 (defun seed-entities (view task &key (limit 8) types)
   "Entities whose names the words of TASK point at, best match first.
 
@@ -577,6 +645,9 @@ waiting (ADMIT-SEEDS)."
     ;; which reads (entity . terms) pairs and would have to read something else.
     ;; Eight SEED-SCORE calls against a bundle that has already walked the graph
     ;; is not a cost the latency clauses can see.
+    ;; Third value, not second: the record detail BUG-0037 fixed is the second
+    ;; and tools/acceptance.py reads it positionally. DES-0032 D2's report goes
+    ;; after it.
     (values chosen
             (loop for entity in chosen
                   for rank from 1
@@ -594,7 +665,9 @@ waiting (ADMIT-SEEDS)."
                                 ;; record is read by tools/acceptance.py.
                                 :terms (loop for (term . weight) in (cdr pair)
                                              collect (list :term term
-                                                           :weight weight)))))))
+                                                           :weight weight))))
+            (classify-terms (term-coverage matches (reported-terms task))
+                            chosen))))
 
 ;;;; ==================================================================
 ;;;; Instrumentation (SS11)
@@ -821,7 +894,7 @@ now loses its fortieth structural neighbour rather than the document explaining
 the design.
 
 Every call is logged to *CONTEXT-LOG*."
-  (multiple-value-bind (seeds seed-detail)
+  (multiple-value-bind (seeds seed-detail term-states)
       (seed-entities view task :limit seed-limit :types types)
    (let* (;; DES-0026 D6/D8, PLAN-0032 S1. Was: NEIGHBORS on each seed, PUSHNEW,
          ;; every edge the same price and nothing ordering the result. A one-hop
@@ -940,6 +1013,17 @@ Every call is logged to *CONTEXT-LOG*."
                         budget))))
       (let ((bundle (list :task task
                           :seeds (summarize-entities seeds)
+                          ;; DES-0032 D3. What the task's words reached, so a
+                          ;; caller can tell a bundle whose subject is here
+                          ;; from one whose seeds all rode a common word. The
+                          ;; seeder's evidence reached the record writer and
+                          ;; nothing else before this: :SEEDS is
+                          ;; SUMMARIZE-ENTITIES output, so the REST response
+                          ;; carried "score": null and "terms": [] on every
+                          ;; seed and no caller could see it.
+                          :terms (loop for (term . state) in term-states
+                                       collect (list :term term
+                                                     :state state))
                           :items (reverse items)
                           :decisions (summarize-entities decisions)
                           ;; Beside :DECISIONS rather than folded into it. A
@@ -1037,6 +1121,12 @@ made true rather than merely asserted."
             (loop for line = (read-line in nil nil)
                   while line do (format out "      ~a~%" line))))))))
 
+(defun terms-in-state (bundle state)
+  "The reported terms of BUNDLE in STATE, in the order the caller wrote them."
+  (loop for row in (getf bundle :terms)
+        when (eq state (getf row :state))
+          collect (getf row :term)))
+
 (defun render-context (bundle)
   "BUNDLE as the text block an agent receives.
 
@@ -1051,6 +1141,33 @@ whose text is not has not saved anybody anything."
             (getf bundle :budget) (getf bundle :truncated))
     (when (null (getf bundle :items))
       (format out "No indexed entity matched this task.~%"))
+    ;; DES-0032 D4, above the seeds rather than below them: the caller reads
+    ;; this to decide whether to read the rest. REQ-0037's evidence is four
+    ;; judged records in which the answer was that nothing exists and the
+    ;; bundle returned eight lexical matches typeset exactly like a bundle
+    ;; whose answer was present.
+    (let ((unmatched (terms-in-state bundle :unmatched))
+          (weak      (terms-in-state bundle :weak))
+          (said nil))
+      (when unmatched
+        (format out "No indexed entity matches: ~{~a~^, ~}~%" unmatched)
+        (setf said t))
+      (when weak
+        (format out "Matched only in prose, or below the last seed: ~{~a~^, ~}~%"
+                weak)
+        (setf said t))
+      ;; R2's stated finding. Not an empty list for the caller to interpret,
+      ;; and not an error -- the seeds are still printed below, because the
+      ;; acceptance clause requires the negatives without buying them with the
+      ;; positives.
+      (when (and (getf bundle :terms)
+                 (null (terms-in-state bundle :answered)))
+        (format out "No word of this task is answered by any name in this ~
+repository.~%")
+        (setf said t))
+      ;; Only when something was said. A bundle whose every term is answered
+      ;; renders exactly as it did before this design, blank lines included.
+      (when said (terpri out)))
     (dolist (item (getf bundle :items))
       ;; The heading changes when the band does, so an agent can tell the code
       ;; it asked about from the reasoning about it and from a neighbour two

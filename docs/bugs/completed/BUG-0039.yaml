@@ -2,7 +2,6 @@ id: BUG-0039
 title: next-doc-id.sh maps DEC to docs/design, so it answers DEC-0001 for a category whose fourth document already exists and refuses DES entirely
 status: closed
 date: 2026-08-22
-affects: [next-doc-id.sh]
 tags: [documents, tooling, con-0004, duplicate-id]
 severity: medium
 summary: |

@@ -1,0 +1,109 @@
+id: PLAN-0038
+title: "DES-0032 in five steps: the term index, the three states, the bundle field, the rendering, the acceptance cases"
+status: final
+date: 2026-08-22
+refines: [DES-0032]
+affects: [seed-matches, seed-entities, admit-seeds, build-context, render-context]
+tags: [retrieval, context, absence, req-0037]
+summary: |
+  Five steps. S1 and S2 compute the term report and change nothing a caller
+  sees; S3 puts it in the bundle; S4 renders it; S5 turns REQ-0037's three
+  ABSENCE_CASES from recorded text into assertions the harness runs.
+
+  The order is chosen so that the first failure is cheap. S1 and S2 are pure
+  functions over data SEED-MATCHES already has, testable without building a
+  bundle at all, and S4 is the only step whose output any existing test reads.
+body: |
+  S1  TERM-COVERAGE, OVER THE MATCHES SEED-MATCHES ALREADY BUILT
+
+  SEED-MATCHES returns an alist keyed by entity, each entry carrying the terms
+  that reached it with a rank -- an integer for a name match, :PROSE for a
+  docstring match. Add TERM-COVERAGE, which inverts it: term -> a plist holding
+  the candidates that matched it by name and the ones that matched it in prose.
+
+  A pure function over the alist, so it needs no view and no second walk of the
+  index. Its tests are a literal alist in, a plist out, and no graph.
+
+  Every term of the task appears in the result, including the ones no candidate
+  matched -- the whole point is the term with nothing under it, and a table
+  built only from the matches would drop exactly that row. The task's terms
+  come from TASK-TERMS, not TASK-TOKENS: DES-0032 D2's states are claims about
+  the words the caller wrote, and TASK-TOKENS also holds the fragments Loom
+  split compounds into, which nobody typed. `utf-8' would otherwise be reported
+  three times, as utf-8, utf and encod.
+
+  S2  THE THREE STATES
+
+  CLASSIFY-TERMS takes the S1 table and the admitted seeds and labels each
+  term ANSWERED, WEAK or UNMATCHED, per DES-0032 D2:
+
+    ANSWERED   some admitted seed matched it by name
+    WEAK       candidates matched it, but no admitted seed matched it by name
+    UNMATCHED  nothing in the index matched it, by name or prose
+
+  The admitted set is what separates ANSWERED from WEAK, so this runs after
+  ADMIT-SEEDS rather than beside SEED-MATCHES. SEED-ENTITIES returns it as a
+  third value; the second is the record detail BUG-0037 fixed, and adding to
+  the front of that list would be the same defect in reverse.
+
+  The measured expectations, from DES-0032:
+
+    resolve a document reference to an entity   0 weak, 0 unmatched
+    watch a repository for file changes         0 weak, 0 unmatched
+    rank the seeds a context bundle starts from 1 weak (starts), 0 unmatched
+    join a list of strings with a separator     1 weak (join), 1 unmatched
+    parse a number out of a string              1 weak (number), 0 unmatched
+    reading a file ... encoding fallback        2 weak, 1 unmatched (utf-8)
+
+  S3  THE BUNDLE FIELD
+
+  BUILD-CONTEXT takes the third value and puts it in the bundle as :TERMS. The
+  JSON encoder reaches it through the same path :SEEDS takes, so the REST and
+  MCP responses carry it without either being edited -- worth checking rather
+  than assuming, because a plist whose values are lists of strings is the shape
+  DES-0030 D3 records as having been guessed wrong once.
+
+  Nothing is removed. :SEEDS keeps its current shape, so every existing reader
+  -- tools/acceptance.py's names_in among them -- goes on working.
+
+  S4  THE RENDERING
+
+  RENDER-CONTEXT prints the unmatched and weak terms above the seed list, and
+  prints REQ-0037 R2's sentence in place of the seeds when no term is ANSWERED.
+
+  The one step that changes text an existing test reads.
+  A-BUNDLE-THAT-MATCHES-NOTHING-SAYS-SO-RATHER-THAN-INVENTING asserts on "No
+  indexed entity matched" and must keep passing unchanged: its fixture matches
+  nothing at all, which is UNMATCHED for every term, so the new sentence has to
+  be a superset of the old one rather than a replacement.
+
+  S5  THE ACCEPTANCE CASES
+
+  tools/acceptance.py holds REQ-0037's three ABSENCE_CASES as data with the
+  comment "there is nothing yet to assert it against". S5 is that assertion:
+  each case passes when its subject-bearing term comes back WEAK or UNMATCHED.
+
+  The 32 cases in CASES are the guard REQ-0037's acceptance names, currently
+  30 of 32, and S5 must not move that number. Run it before S1 as well as
+  after S4, because a 30 that was already a 29 would otherwise be read as this
+  plan's doing.
+
+  RISKS
+
+  The seeder is on every context query, and CONTEXT-LATENCY is 0.01-0.06s. S1
+  walks the match alist once more; the alist is at most a few hundred entries
+  and the walk allocates one hash table. Measure it at S3 rather than argue it.
+
+  TASK-TERMS keeps stopwords, so a term report over `resolve a document
+  reference to an entity' would print `a' and `to' as UNMATCHED and read as
+  noise. The stopword list TASK-TOKENS already applies is the filter, applied
+  to the report rather than to the matching -- the terms are still matched as
+  written, only not reported.
+
+  OUT OF SCOPE
+
+  REQ-0037 R4, the variable seed count. The term report says which words went
+  unanswered; making the *number* of seeds respond to that is a ranking change
+  and belongs with REQ-0039, which rewrites what a seed is chosen on.
+
+  REQ-0037 R5, the indexing exclusions. DES-0032 says why it is not here.

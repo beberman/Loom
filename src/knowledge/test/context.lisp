@@ -87,6 +87,61 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
       (is (< (getf row :score) 100813)
           (format nil "~a scored as if it had matched nothing" (getf row :name))))))
 
+(test the-reported-terms-are-the-caller-s-words-the-seeder-searched-on
+  ;; DES-0032, PLAN-0038 S1. Neither list alone is the right one to report.
+  ;; TASK-TERMS keeps stopwords; TASK-TOKENS holds the fragments Loom split
+  ;; compounds into. The intersection is what the caller wrote and the seeder
+  ;; looked for, and it is what keeps one absent word from being reported as
+  ;; three.
+  (let ((reported (loom-knowledge::reported-terms
+                   "reading a file with an encoding fallback when it is not UTF-8")))
+    (is (member "utf-8" reported :test #'string=)
+        "the caller wrote utf-8 and the seeder searched it")
+    (is (not (member "utf" reported :test #'string=))
+        "utf is Loom's fragment of the caller's word, not a word of the task")
+    (is (not (member "encod" reported :test #'string=)))
+    (dolist (stopword '("a" "with" "when" "it" "is" "not"))
+      (is (not (member stopword reported :test #'string=))
+          (format nil "~a is a stopword and would report as an absence" stopword)))))
+
+(test a-term-nothing-matched-still-gets-a-row
+  ;; The row the whole report exists for. A table built by walking the matches
+  ;; holds a row per term that matched something, which is every term except
+  ;; the one worth naming.
+  (let* ((a (k-function "parse-document" 10))
+         (matches (list (cons a (list (cons "parse" 1)))))
+         (coverage (loom-knowledge::term-coverage matches '("parse" "number"))))
+    (is (= 2 (length coverage)) "one row per reported term, matched or not")
+    (let ((row (assoc "number" coverage :test #'string=)))
+      (is (not (null row)) "the unmatched term has a row")
+      (is (null (getf (cdr row) :name)))
+      (is (null (getf (cdr row) :prose))))))
+
+(test a-term-is-answered-only-when-an-admitted-seed-carries-it-in-its-name
+  ;; DES-0032 D2's three states, and the two boundaries that matter. A term
+  ;; matched only in prose is WEAK, not ANSWERED -- that is the join case,
+  ;; where two candidates use the word in a docstring and no name has it. A
+  ;; term whose name matches were all held back by the cap is WEAK too: the
+  ;; caller cannot see an answer, and calling it answered would describe the
+  ;; ranking rather than the bundle.
+  (let* ((named    (k-function "parse-document" 10))
+         (prosed   (k-function "comment-extent" 30))
+         (unchosen (k-function "parse-verdicts" 50))
+         (matches (list (cons named    (list (cons "parse" 1)))
+                        (cons prosed   (list (cons "number" :prose)))
+                        (cons unchosen (list (cons "verdict" 1)))))
+         (coverage (loom-knowledge::term-coverage
+                    matches '("parse" "number" "verdict" "separator")))
+         (states (loom-knowledge::classify-terms coverage (list named prosed))))
+    (is (eq :answered  (cdr (assoc "parse" states :test #'string=)))
+        "an admitted seed has parse in its name")
+    (is (eq :weak      (cdr (assoc "number" states :test #'string=)))
+        "matched in prose only, by an admitted seed -- still not a name")
+    (is (eq :weak      (cdr (assoc "verdict" states :test #'string=)))
+        "a name match on a candidate no slot went to is not an answer")
+    (is (eq :unmatched (cdr (assoc "separator" states :test #'string=)))
+        "nothing in the index matched it at all")))
+
 (test a-name-answering-more-of-the-task-outranks-one-answering-a-common-word
   ;; Match quality alone cannot tell these apart: every candidate here matches
   ;; some token as a prefix, so before REQ-0016 R7 they all scored identically
@@ -270,6 +325,37 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
     (is (null (getf bundle :seeds)))
     (is (null (getf bundle :items)))
     (is (search "No indexed entity matched" (render-context bundle)))))
+
+(test a-bundle-says-which-of-the-task-s-words-reached-nothing
+  ;; REQ-0037 R2 and R5, DES-0032 D4. The defect this covers is not that the
+  ;; bundle was empty -- it never was. It is that a task naming a capability
+  ;; the tree does not have returned eight lexical matches typeset exactly like
+  ;; a bundle whose answer was present, and four judged records in .loom/context
+  ;; say in the agent's own words that the caller could not tell the two apart.
+  ;;
+  ;; The fixture's graph holds RESOLVE-OVERLAY and its neighbours and nothing
+  ;; about separators, so "overlay" is answered and "separator" reached nothing.
+  (let* ((bundle (build-context (k-graph (make-k-fixture))
+                                "resolve the overlay with a separator"))
+         (text (render-context bundle)))
+    (is (search "No indexed entity matches: separator" text)
+        "the word that reached nothing is named, which is what `find' says and
+what the bundle could not")
+    (is (find :answered (getf bundle :terms) :key (lambda (r) (getf r :state)))
+        "and a word that did reach something is not reported as an absence")
+    (is (not (search "No word of this task is answered" text))
+        "the whole-task finding is for a task where nothing is answered")))
+
+(test a-task-answered-by-nothing-says-so-as-a-finding
+  ;; R2 proper: the stated finding, not an empty list the caller has to
+  ;; interpret. The seeds are still printed -- REQ-0037's acceptance requires
+  ;; the negative without buying it with the positives, so nothing is withheld.
+  (let ((text (render-context
+               (build-context (k-graph (make-k-fixture))
+                              "rewrite the leaflet cartography"))))
+    (is (search "No word of this task is answered by any name" text))
+    (is (search "No indexed entity matches:" text)
+        "and the words themselves are named")))
 
 ;;; ------------------------------------------------------------------
 ;;; Bands (REQ-0026, DES-0020)

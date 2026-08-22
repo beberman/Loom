@@ -126,14 +126,66 @@ CASES = [
 ]
 
 # REQ-0037: the queries whose right answer is that nothing here does that. They
-# are not in CASES because CASES asks "is this name present"; the assertion here
-# is the opposite one and there is nothing yet to assert it against. Recorded so
-# that the day absence becomes reportable, the cases are already written.
+# are not in CASES because CASES asks "is this name present" and the assertion
+# here is the opposite one. Since DES-0032 there is something to assert against:
+# a bundle reports each of the caller's words as answered, weak or unmatched,
+# and these cases pass when the word carrying the subject is not answered.
+#
+# The subject word is named per case rather than inferred. "parse a number out
+# of a string" has three reportable terms and two of them -- parse, string --
+# are answered by names that exist and are not what the task asked for; the
+# claim being tested is about `number' specifically. Inferring it would make the
+# case pass on any word going unanswered, which every real query also does.
+#
+# Re-checked on 2026-08-22 against a tree that had moved under them: `find join'
+# now returns 2 and `find encoding' 2, where the judged record for the first
+# read "confirmed with find term=join returning nothing". Both hits in each are
+# unrelated -- "disjoint extensions" and "joins a test package"; two tests about
+# JSON integer encodings -- so all three remain true negatives. The counts
+# drifted, the verdicts did not.
 ABSENCE_CASES = [
-    ("loom", "join a list of strings with a separator", "r37-1"),
-    ("loom", "parse a number out of a string", "r37-2"),
-    ("loom", "reading a file with an encoding fallback when it is not UTF-8", "r37-3"),
+    ("loom", "join a list of strings with a separator", ["join", "separator"], "r37-1"),
+    ("loom", "parse a number out of a string", ["number"], "r37-2"),
+    ("loom", "reading a file with an encoding fallback when it is not UTF-8",
+     ["encoding", "fallback"], "r37-3"),
 ]
+
+
+def term_states(bundle):
+    """Reported term -> state, from the bundle's DES-0032 D3 field."""
+    return {r["term"]: str(r.get("state", "")).lower()
+            for r in (bundle.get("terms") or [])}
+
+
+def run_absence_cases():
+    """REQ-0037's acceptance: the subject word must not come back answered.
+
+    Returns the number of failures. A case fails two ways and they are worth
+    telling apart: the subject word reported `answered', which is the defect
+    REQ-0037 exists to remove, and the subject word not reported at all, which
+    means the term never reached the report and the case is measuring nothing.
+    """
+    failures = 0
+    print()
+    for repo, q, subjects, label in ABSENCE_CASES:
+        t = time.time()
+        b = json.load(urllib.request.urlopen(
+            B + "/context?" + urllib.parse.urlencode({"repository": repo, "task": q}),
+            timeout=240))
+        el = time.time() - t
+        states = term_states(b)
+        bad = []
+        for w in subjects:
+            if w not in states:
+                bad.append("%s not reported" % w)
+            elif states[w] == "answered":
+                bad.append("%s answered" % w)
+        failures += 1 if bad else 0
+        shown = ", ".join("%s=%s" % (w, states.get(w, "-")) for w in subjects)
+        print("[%-7s] %s  seeds %d  %.2fs  %s"
+              % (label, "absent " if not bad else "FAIL   ", len(b.get("seeds") or []),
+                 el, shown if not bad else "; ".join(bad)))
+    return failures
 
 def names_in(bundle):
     """Two readings of what a bundle returned: strict and lenient.
@@ -594,7 +646,12 @@ def main():
     print(f"\nstrict  {total-missing_strict}/{total} present, {missing_strict} missing")
     print(f"lenient {total-missing_lenient}/{total} present, {missing_lenient} missing")
     print(f"slowest {slowest:.2f}s")
-    return 1 if missing_lenient else 0
+    # REQ-0037's clause: the negatives must not be bought by refusing to answer
+    # the positives, so these run after the recall count and both must hold.
+    absent_failures = run_absence_cases()
+    if absent_failures:
+        print(f"{absent_failures} of {len(ABSENCE_CASES)} absence cases failed")
+    return 1 if (missing_lenient or absent_failures) else 0
 
 if __name__ == "__main__":
     if "--sessions" in sys.argv:

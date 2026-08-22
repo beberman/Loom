@@ -1,6 +1,6 @@
 id: REQ-0037
 title: A bundle must be able to answer that nothing here does that, because absence is the answer a caller cannot get any other way
-status: draft
+status: partial
 date: 2026-08-21
 refines: [REQ-0016]
 affects: [build-context, seed-entities, admit-seeds, render-context, seed-score]
@@ -94,8 +94,11 @@ body: |
   rather than returning as-list-of-strings, and `context "parse a number out of a
   string"` does the same. Against game-server, `context "read a whole file into a
   string"` still returns SLURP-FILE's successor -- the negative must not be
-  bought by refusing to answer the positives, and the 32 hand-written cases in
-  tools/acceptance.py are the guard on that, currently 30 of 32.
+  bought by refusing to answer the positives, and the hand-written cases in
+  tools/acceptance.py are the guard on that. The "32 cases, currently 30 of 32"
+  written here on 2026-08-21 was already stale when DES-0032 measured it: the
+  harness holds 45 expectations across 24 cases and stands at 42 of 45, missing
+  config-get (R7), MapElementTypeEditor (fe-5) and dot-prefixed-p (r39-3).
 
   WHAT THIS IS NOT
 
@@ -103,12 +106,41 @@ body: |
   nobody agreed and reads as precision the ranking does not have. The claim being
   asked for is about the answer as a whole.
 
-  OPEN QUESTIONS
+  OPEN QUESTIONS, ANSWERED BY DES-0032
 
-  - What is evidence, concretely? A score floor is the obvious answer and the
-    weakest: scores are not comparable between tasks of different lengths. A
-    ratio against the best seed, or a token-coverage test -- did the seed match
-    the words that carry the subject, or only the common ones -- are the two
-    candidates.
-  - Does R5 need the exclusion list per query, or is naming the excluded
-    directories once in the bundle enough?
+  - What is evidence, concretely? Measured on 2026-08-22 over six queries,
+    three present and three absent. A score floor cannot work: the eight
+    admitted seeds of an absent query score 100502-100613 and of a present one
+    100301-100502, so a floor anywhere between them cuts both. A ratio against
+    the best seed cannot work either: SEED-SCORE is banded in units of 100000,
+    so every seed of every query sits within 0.2% of every other, the worst
+    ratio in the six being 1.0011. The third candidate is the answer, and it
+    needs no threshold at all -- report per term whether any admitted seed
+    answered it by name, and let the caller read the absence off the list.
+
+  - Does R5 need the exclusion list per query? Still open. R5 is not
+    implemented; see OUTSTANDING.
+
+  OUTSTANDING
+
+  R3 is implemented. A bundle names the words of the task that no admitted seed
+  answered by name, and the three absence cases in tools/acceptance.py assert
+  it: join and separator, number, encoding and fallback all come back weak,
+  while recall over the 45 hand-written expectations holds at 42.
+
+  R2 is implemented as a stated finding -- "No word of this task is answered by
+  any name in this repository." -- but not as an empty seed list, because that
+  half depends on R1.
+
+  R1 is not implemented. Seeds are still admitted eight at a time whatever
+  their evidence. The bundle now says what its words reached; it does not yet
+  withhold a seed that reached nothing. DES-0032 D5 designs the gate and
+  PLAN-0038 deliberately left it out: holding a seed back removes an entity
+  from a bundle, and that is worth building against the recall measurement
+  rather than ahead of it.
+
+  R4, the variable seed count, is not implemented. It is a ranking change and
+  belongs with REQ-0039, which rewrites what a seed is chosen on.
+
+  R5, reporting the indexing exclusions, is not implemented. DES-0032 records
+  why it is a different kind of absence from the one this work reports.
