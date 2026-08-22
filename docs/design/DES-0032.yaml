@@ -121,12 +121,35 @@ body: |
       which happens only when the whole index matched nothing -- the empty
       repository, not the absent capability.
 
-  D5  R1's admission gate is the same rule read from the other side: a seed
-      whose every match is on a term already answered by name by another seed,
-      and which answers no term of its own, is held back rather than admitted.
-      That is ADMIT-SEEDS' existing shape -- it already holds back a seed past
-      its slice's share and relaxes when the held-back candidates are all there
-      is -- so this is a second reason to hold, not a new mechanism.
+  D5  RETIRED by DEC-0005 on 2026-08-22, before it was built. It designed
+      REQ-0037 R1's admission gate: a seed bringing no evidence another
+      admitted seed did not already bring is held back rather than admitted.
+
+      It is retired because it can only lower recall. A gate that withholds a
+      candidate has no mechanism by which recall rises, and DEC-0005 decides
+      that the seeder spends precision to buy recall rather than the reverse.
+      That is a refusal rather than a deferral: no measurement could argue for
+      a mechanism whose only effect is in the direction being traded away.
+
+      It was also underspecified as written above, which is how the retirement
+      came about -- working it against the measured data needed three
+      qualifications the text does not carry. Only a *name* match may open the
+      gate, or the prose-only candidates that are the sole thing touching
+      `join' and `separator' re-admit themselves and the noise returns. The
+      unit has to be the significant name and not the entity, or REQ-0016 R8's
+      three CONNECTION-CONNECT-DATABASE definitions become one admission and
+      two holds, destroying the three-files-one-name finding that query exists
+      to produce. And the gate must not relax the way the share cap does, or
+      it is vacuous exactly when it matters: in the join case seven of eight
+      candidates are held and the limit is eight, so relaxation re-admits all
+      seven.
+
+      Even fully specified it does not deliver R2's empty seed list. Walked
+      against the join case it admits AS-LIST-OF-STRINGS on its name matches
+      for `list' and `strings' and holds the other seven -- one seed rather
+      than eight, not zero. Calling that admission unjustified needs `list'
+      and `strings' known to be common words, which is the rarity model this
+      design refused two sections above.
 
   WHAT THIS DESIGN DOES NOT DO
 
@@ -155,21 +178,13 @@ body: |
 
   OUTSTANDING
 
-  D5 is not implemented. PLAN-0038 sequenced D1 through D4 and the acceptance
-  cases, and left the admission gate out: seeds are still admitted eight at a
-  time whatever their evidence, and the report says what the words reached
-  without changing which entities the ranking chose.
+  Nothing. D1 through D4 are implemented by PLAN-0038 and D5 is retired by
+  DEC-0005, so this design has no unbuilt part left -- the status is `partial'
+  rather than `implemented' because a retired section is not a delivered one.
 
   What landed is the reporting half, and it satisfies REQ-0037's acceptance on
-  its own -- a caller reading "Matched only in prose, or below the last seed:
-  separator, join" has the answer the four judged records asked for. What did
-  not land is R1's "a seed is admitted on evidence, not on rank", which is a
-  change to what the bundle *contains* rather than to what it says about
-  itself.
-
-  D5 is deliberately still open rather than wrong. Holding a seed back on weak
-  evidence removes an entity from a bundle, and the acceptance clause protects
-  recall at 42 of 45 across two trees; a gate is worth building against that
-  measurement rather than ahead of it. REQ-0039 rewrites what a seed is chosen
-  on, which moves the boundary D5 would gate at, so building the gate first
-  would mean building it twice.
+  its own: a caller reading "Matched only in prose, or below the last seed:
+  separator, join" has the answer the four judged records asked for. It is
+  also recall-neutral by construction -- it adds a line of text and withholds
+  nothing -- which is why it was implementable ahead of D5 and why DEC-0005
+  leaves it untouched.

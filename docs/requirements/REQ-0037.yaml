@@ -60,11 +60,17 @@ body: |
 
   REQUIREMENTS
 
-  R1  A seed is admitted on evidence, not on rank. ADMIT-SEEDS takes the top
-      eight by score whatever the scores are; a score that reflects only a shared
-      token with nothing behind it must not qualify. What "enough" means is
-      DES-level, and the observable is that a query for a capability the tree
-      does not have admits no seeds.
+  R1  SUPERSEDED by DEC-0005 on 2026-08-22. As written: a seed is admitted on
+      evidence, not on rank; ADMIT-SEEDS takes the top eight by score whatever
+      the scores are, a score reflecting only a shared token with nothing behind
+      it must not qualify, and the observable is that a query for a capability
+      the tree does not have admits no seeds.
+
+      That observable is refused. It is bought by withholding a seed, and
+      DEC-0005 decides that the seeder spends precision to buy recall rather
+      than the reverse: a bundle's reader can discard what it does not need and
+      cannot recover what it was never given. DES-0032 D5 designed the gate and
+      is retired with this clause.
 
   R2  A bundle with no admitted seeds says so, in the answer, as a stated
       finding: nothing in this repository matches this task. Not an empty list
@@ -75,12 +81,21 @@ body: |
       and five lexical ones is a different answer from eight strong ones, and
       today they are typeset identically.
 
-  R4  The seed count responds to the evidence rather than being a constant. 105
-      of the 106 recorded calls returned exactly eight seeds; the 106th returned
-      zero because the repository was empty at the time. A fixed eight is why a
-      task that has three real answers spends five slots on noise -- measured in
-      the "migrate game/ and server/" record, where five of eight seeds were
-      matches on directory names in the task string.
+  R4  SUPERSEDED by DEC-0005 in the downward direction. As written: the seed
+      count responds to the evidence rather than being a constant, because a
+      fixed eight is why a task with three real answers spends five slots on
+      noise -- measured in the "migrate game/ and server/" record, where five of
+      eight seeds matched directory names in the task string.
+
+      Spending five slots on noise is no longer a defect: the slots are cheap
+      and the recall is not. The count may still respond upward, and that was
+      measured on 2026-08-22 rather than assumed -- swept at 8, 16 and 32
+      against tools/acceptance.py, recall held at 42 of 45 with the same three
+      misses at every setting, so a larger set recovered nothing. It also cost
+      this requirement's own report: with 32 seeds actually served, r37-3 failed
+      because `encoding' came back ANSWERED rather than WEAK. Every extra slot
+      is another chance to answer a word nothing really answers. The limit stays
+      at eight.
 
   R5  What the bundle could not look at is reported alongside what it found. The
       "CLAUDE.md text loom init writes" record is the case: the file holding the
@@ -132,15 +147,17 @@ body: |
   any name in this repository." -- but not as an empty seed list, because that
   half depends on R1.
 
-  R1 is not implemented. Seeds are still admitted eight at a time whatever
-  their evidence. The bundle now says what its words reached; it does not yet
-  withhold a seed that reached nothing. DES-0032 D5 designs the gate and
-  PLAN-0038 deliberately left it out: holding a seed back removes an entity
-  from a bundle, and that is worth building against the recall measurement
-  rather than ahead of it.
+  R1 is not implemented and will not be: DEC-0005 refuses its observable, and
+  DES-0032 D5, which designed the gate, is retired. The bundle says what its
+  words reached and deliberately withholds nothing.
 
-  R4, the variable seed count, is not implemented. It is a ranking change and
-  belongs with REQ-0039, which rewrites what a seed is chosen on.
+  R4 is superseded downward and measured upward, and neither leaves work here.
+  The limit stays at eight; DEC-0005 carries the numbers.
+
+  Recall is to be bought where a candidate is missing from the candidate set
+  rather than ranked low in it, which is REQ-0039's subject. The three standing
+  acceptance misses are not seed-count-limited, and dot-prefixed-p is one of
+  REQ-0039's own cases.
 
   R5, reporting the indexing exclusions, is not implemented. DES-0032 records
   why it is a different kind of absence from the one this work reports.
