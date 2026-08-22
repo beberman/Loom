@@ -140,6 +140,58 @@ body: |
   with a fill-pointer, creating one otherwise and calling that "an efficiency
   hit" -- which matters because this runs per token per query.
 
+  D4 MEASURED: 40 OF 45, AND ONE OF THE TWO LOSSES IS A FINDING
+
+  Adopted on 2026-08-22 at 40 of 45, down from 42, with both losses diagnosed.
+
+  fe-10, "saving a piece design and reporting rejections", stops returning
+  SaveDesign. The token sets say why:
+
+      old rules   ... "reporte" "report" "save" "sav"
+      Porter      ... "report"  "reject" "save"
+
+  The -ing rule dropped the suffix and restored an -e as two separate guesses
+  and emitted both, so SaveDesign matched "sav" and "save" -- two tokens for
+  one word of the task. The coverage band counts matches rather than words, so
+  it was credited with 2. Porter emits one stem, the count falls to 1, and
+  SaveDesign leaves the eighth slot.
+
+  That is the same mechanism by which D2 lost fe-10, from the other side:
+  folding "sav" and "save" back into "saving" dropped the same count from 3 to
+  2. Two independent corrections, the same casualty, the same cause. fe-10 is
+  recalled today because one word is counted twice, which is CON-0003's
+  failure inverted -- a case passing for a reason unrelated to what it claims
+  to measure.
+
+  r39-4, "look up a value in an alist or plist by key", stops returning
+  ALIST-PLIST, and is an ordinary loss rather than a finding. Porter adds "kei"
+  by its y-to-i rule and "valu", and both reach candidates that take slots.
+  CON-0007 records Hill's finding that heavier stemmers over-stem and that this
+  helped in his corpus; here it costs a case.
+
+  log-1 returns to a hit, which is the corpus drift of D1's section unwinding
+  rather than a gain: the tokens "str" and "stre" no longer exist, so this
+  design's own docstrings stop matching a query about strings.
+
+  Adopted against DEC-0005 rather than under it, and the departure is
+  deliberate. DEC-0005 spends precision for recall, and this spends two cases.
+  The argument is that one of them is not recall: holding SaveDesign requires
+  keeping a token nobody typed so that a band can count one word twice. The
+  other is a real loss and is the price of the position -- see below.
+
+  WHY THE PRICE IS WORTH PAYING ONLY IF REQ-0045 FOLLOWS
+
+  Porter alone is a half-measure and CON-0007 says which half. Loom stems the
+  query and matches the result against raw names, where every text search
+  analyses index and query alike. Stemmed on both sides, "SaveDesign" splits to
+  "save" and "design", the query's "save" matches at rank 0 rather than through
+  a fragment, and the case is seated on merit rather than on an artefact. The
+  same change seats r39-3: "prefixed" stems to "prefix".
+
+  So D4's measured cost is an intermediate state. If REQ-0045 does not follow,
+  this design has bought a correct stemmer and paid two acceptance cases for
+  it, and reverting to the hand-written rules would be the better trade.
+
   WHAT IS NOT DESIGNED HERE
 
   Stemming both sides. CON-0007's sharpest finding is that Loom stems the query

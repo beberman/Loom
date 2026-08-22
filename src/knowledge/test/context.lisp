@@ -87,6 +87,30 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
       (is (< (getf row :score) 100813)
           (format nil "~a scored as if it had matched nothing" (getf row :name))))))
 
+(test a-noun-ending-in-ing-is-not-stemmed-as-a-verb
+  ;; BUG-0040, DES-0033 D4, CON-0007. The four hand-written suffix rules that
+  ;; stood in STEM-VARIANTS fired the -ing rule on any word of six characters
+  ;; or more. "string" is exactly six, so it emitted "str" and "stre" -- and
+  ;; "stre" prefix-matched STRESS-PUSHER and STRESS-WRITER at rank 1, taking
+  ;; two of eight seed slots on a query about string prefixes.
+  ;;
+  ;; The assertions are a pair on purpose. Dropping the rule would pass the
+  ;; first and fail the second: "saving" -> "save" is what reaches SAVEDESIGN
+  ;; on front-end, is acceptance case fe-10, and is the one measured gain the
+  ;; hand-written rules were ever kept for.
+  (let ((tokens (loom-knowledge::task-tokens "trim whitespace from a string")))
+    (is (not (member "str" tokens :test #'string=))
+        "\"string\" is not the -ing form of \"str\"")
+    (is (not (member "stre" tokens :test #'string=))
+        "and \"stre\" is not a word anybody typed")
+    (is (member "string" tokens :test #'string=)
+        "the word the caller wrote survives"))
+  (let ((tokens (loom-knowledge::task-tokens "saving a piece design")))
+    (is (member "save" tokens :test #'string=)
+        "a real inflection still stems, which is what reaches SAVEDESIGN")
+    (is (member "saving" tokens :test #'string=)
+        "added beside the word rather than replacing it")))
+
 (test the-reported-terms-are-the-caller-s-words-the-seeder-searched-on
   ;; DES-0032, PLAN-0038 S1. Neither list alone is the right one to report.
   ;; TASK-TERMS keeps stopwords; TASK-TOKENS holds the fragments Loom split
@@ -653,10 +677,19 @@ not enough -- they have to be countable"))
 (test a-stem-is-added-and-never-substituted
   ;; A wrong guess then costs nothing: a stem matching no name never matches,
   ;; where a substitution would have lost the word the caller wrote.
+  ;;
+  ;; This asserted a third token, "sav", until DES-0033 D4 -- and described it
+  ;; in its own failure message as "dropping -ing, which matches nothing". It
+  ;; was an artefact of the hand-written rule, which dropped the suffix and
+  ;; then restored an -e as two separate guesses and emitted both. Porter makes
+  ;; one guess and emits "save". Asserting the useless half of a discarded
+  ;; mechanism is not a property of stemming, and its absence is the point of
+  ;; the change rather than a casualty of it.
   (let ((tokens (loom-knowledge::task-tokens "saving")))
-    (is (member "saving" tokens :test #'string=))
-    (is (member "sav" tokens :test #'string=) "dropping -ing, which matches nothing")
-    (is (member "save" tokens :test #'string=) "and the -e restoration, which does")))
+    (is (member "saving" tokens :test #'string=)
+        "the word the caller wrote is never replaced")
+    (is (member "save" tokens :test #'string=)
+        "and its stem is added beside it, which is what reaches SAVEDESIGN")))
 
 (test stemming-keeps-short-identifiers-whole
   (is (not (member "clas" (loom-knowledge::task-tokens "class") :test #'string=))

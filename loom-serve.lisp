@@ -44,7 +44,7 @@
 ;; part of the service needs one.
 (handler-bind ((warning #'muffle-warning))
   (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector"
+           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem"
              "hunchentoot" "cl-json")
            :silent t)
   ;; The two protocol systems register their handlers on loom-serve's seam in

@@ -1,6 +1,6 @@
 id: BUG-0040
 title: An exact match on a token Loom invented outranks a substring match on the word the caller wrote, so STRESS-PUSHER seeds a query about string prefixes
-status: open
+status: closed
 date: 2026-08-22
 refines: [REQ-0039]
 affects: [stem-variants, task-tokens, seed-score, best-name-rank]
@@ -41,6 +41,19 @@ body: |
 
   A blocklist of -ing nouns -- string, thing, spring, during -- would work and
   is a word list nobody can maintain against three trees in two languages.
+
+  FIXED by DES-0033 D4, and not in the way this document proposed. The four
+  hand-written rules are gone; STEM-VARIANTS is Porter's algorithm through
+  Quicklisp's `stem' system, which leaves "string" alone because "string" is
+  not an inflection. "str" and "stre" are no longer produced, so nothing has to
+  rank them.
+
+  The rest of this section is what was believed before CON-0007's literature
+  search and is kept because the reasoning was half right. The claim that a
+  manufactured token should not carry a written one's weight is true and is now
+  REQ-0045 and REQ-0046; the claim that it was the *only* available fix was
+  wrong, and rested on not knowing that a stemmer which does not make the
+  mistake was one dependency away.
 
   The defect is that a manufactured token carries the same evidential weight as
   a written one. Fix that and the mis-stem costs nothing, which is what

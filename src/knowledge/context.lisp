@@ -80,38 +80,49 @@ Not a language model -- just enough that \"how does the drawing tool work\"
 seeds on \"drawing\" and \"tool\" rather than on \"does\" and \"work\".")
 
 (defun stem-variants (word)
-  "WORD's plausible uninflected forms, or NIL.
+  "WORD's uninflected form, as a one-element list, or NIL when it is already one.
 
-Not a stemmer in the Porter sense and deliberately not one. Four suffixes cover
-the inflections that appear in task descriptions -- saving a piece design,
-changing the type, edited layers, reporting rejections -- and a full stemmer
-would also fold identifiers this index depends on keeping apart.
+Porter's algorithm, through Quicklisp's `stem' system -- one file, no
+dependencies, one exported function, hand-translated from Porter's C by Steven
+Haflich and served from Porter's own site. Public domain.
 
-Variants are *added* to the token set rather than replacing the word, so nothing
-can be lost by a wrong guess: a stem corresponding to no real term simply never
-matches. That is why SAVING emits both SAV and SAVE instead of picking one --
-dropping -ing gives SAV, which matches nothing, and the -e restoration is what
-reaches SAVEDESIGN.
+Four hand-written suffix rules stood here until DES-0033 D4, over -ies, -s,
+-ing and -ed, with minimum lengths chosen to protect particular words. They
+mis-parsed \"string\": it is six characters and ends in -ing, so the -ing rule
+fired and emitted \"str\" and \"stre\". Neither is a word anyone typed, and
+\"stre\" prefix-matched STRESS-PUSHER and STRESS-WRITER at the strongest rank
+the scale has, taking two of eight seed slots on a query about string prefixes
+(BUG-0040).
 
-The minimum lengths stop the rules eating short identifiers: -ing needs six
-characters so RING survives, and -s needs four and refuses a double so CLASS and
-ADDRESS survive."
-  (let ((n (length word))
-        (out '()))
-    (flet ((ends (suffix)
-             (let ((k (length suffix)))
-               (and (> n k) (string= suffix word :start2 (- n k))))))
-      (when (and (ends "ies") (>= n 5))
-        (push (concatenate 'string (subseq word 0 (- n 3)) "y") out))
-      (when (and (ends "s") (>= n 4) (not (ends "ss")) (not (ends "ies")))
-        (push (subseq word 0 (1- n)) out))
-      (when (and (ends "ing") (>= n 6))
-        (push (subseq word 0 (- n 3)) out)
-        (push (concatenate 'string (subseq word 0 (- n 3)) "e") out))
-      (when (and (ends "ed") (>= n 5))
-        (push (subseq word 0 (- n 2)) out)
-        (push (concatenate 'string (subseq word 0 (- n 2)) "e") out)))
-    out))
+Porter does not have that defect, and the difference is not a better rule but a
+different question. A suffix rule asks what the last three characters are;
+Porter asks whether the word has a measurable stem left once the suffix is
+removed, which \"string\" does not:
+
+    string -> string      strings -> string     saving -> save
+    starts -> start       reading -> read        prefixed -> prefix
+
+The third column is what the hand-written rules were kept for -- CON-0007
+records that \"saving a piece design\" reaching SAVEDESIGN was their one measured
+gain, and Porter keeps it.
+
+Added rather than substituted, exactly as before: the stem is an extra token
+beside the word, never a replacement, so nothing that matches today stops
+matching. That is what keeps this inside DEC-0005, which spends precision to
+buy recall and not the reverse.
+
+`stem' wants a string with a fill-pointer and makes one otherwise, calling that
+an efficiency hit. This runs once per task token, a handful of times per query,
+against a walk of the index -- not a cost the latency clauses can see, and
+measured at 0.05-0.17s across the acceptance run either way.
+
+CON-0007 also records what this deliberately does not do. \"str\" for \"string\"
+is abbreviation expansion, not stemming; it is mined as a dictionary from the
+corpus and no rule over word endings produces it, so the loss of \"str\" here is
+the removal of a coincidence rather than of a capability."
+  (let ((stemmed (stem:stem word)))
+    (unless (string= stemmed word)
+      (list stemmed))))
 
 (defun task-token-origins (task)
   "The tokens of TASK paired with the word each came from, in TASK-TOKENS order.

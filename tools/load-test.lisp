@@ -41,7 +41,7 @@
 
 (handler-bind ((warning #'muffle-warning))
   (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "random-uuid") :silent t))
+           '("cl-yaml" "bordeaux-threads" "random-uuid" "stem") :silent t))
 
 (let* ((name (or (second sb-ext:*posix-argv*)
                  (error "Usage: sbcl --script tools/load-test.lisp <system>")))

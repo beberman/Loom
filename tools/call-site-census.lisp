@@ -37,7 +37,7 @@
 
 (handler-bind ((warning #'muffle-warning))
   (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector") :silent t)
+           '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem") :silent t)
   (asdf:load-system :loom-workspace))
 
 (defpackage #:loom-census

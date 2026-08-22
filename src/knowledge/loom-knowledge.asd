@@ -8,7 +8,12 @@
   ;; SS2/SS12.3: Knowledge Services read the graph and never write it. Nothing
   ;; here may call APPLY-TRANSACTION -- loom_record_decision, the one MCP tool
   ;; that writes, belongs to the layer above this one.
-  :depends-on (#:loom-ontology #:loom-graph)
+  ;; #:stem is Porter's algorithm -- one file, no dependencies of its own,
+  ;; exporting one function. CON-0007 and DES-0033 D4 are why it replaced four
+  ;; hand-written suffix rules: those mis-parsed "string" as a gerund and
+  ;; emitted "str" and "stre", and "stre" reached STRESS-PUSHER at the
+  ;; strongest rank the scale has (BUG-0040). Porter leaves "string" alone.
+  :depends-on (#:loom-ontology #:loom-graph #:stem)
   :serial t
   :components
   (
