@@ -843,3 +843,40 @@ not enough -- they have to be countable"))
   (is (not (member "addres" (loom-knowledge::task-tokens "address") :test #'string=)))
   (is (member "type" (loom-knowledge::task-tokens "types") :test #'string=)
       "and an ordinary plural still folds"))
+
+;;; ------------------------------------------------------------------
+;;; The absent embedder -- REQ-0048 R6, PLAN-0043 S3
+;;; ------------------------------------------------------------------
+
+(test with-no-embedder-configured-nothing-is-asked
+  ;; The step whose failure has no symptom. A bundle comes back either way,
+  ;; still correct, and the damage is latency or a stray condition that no
+  ;; recall count would show. So the assertion is about what was *not* done.
+  (let ((loom-knowledge::*context-embedder* nil)
+        (loom-knowledge::*context-vector-store* nil))
+    (is (null (loom-knowledge::semantic-candidates
+               (seed-graph "alpha" "beta") "alpha"))
+        "no embedder means no candidates and no call")))
+
+(test an-embedder-with-no-store-asks-nothing-either
+  ;; Three ways to get nothing -- no embedder, no store, a store that refuses --
+  ;; and REQ-0048 R6 gives them one meaning. A caller that had to tell them
+  ;; apart would have three paths where the requirement asks for one.
+  (let ((loom-knowledge::*context-embedder*
+          (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3))
+        (loom-knowledge::*context-vector-store* nil))
+    (is (null (loom-knowledge::semantic-candidates
+               (seed-graph "alpha" "beta") "alpha")))))
+
+(test the-bundle-is-unchanged-by-the-seam
+  ;; The seam appends SEMANTIC-CANDIDATES to the candidate pool. With no
+  ;; embedder that is APPEND to NIL, and this asserts the identity rather than
+  ;; assuming it: a seam that reordered or copied would move ties, and a tie
+  ;; moved is a seed lost at the eighth slot.
+  (let ((expected '("database-handler-health" "check-slot")))
+    (let ((loom-knowledge::*context-embedder* nil))
+      (is (equal expected
+                 (subseq (seed-names (seed-graph "database-handler-health"
+                                                 "check-slot" "check-obj")
+                                     "database handler health check")
+                         0 2))))))

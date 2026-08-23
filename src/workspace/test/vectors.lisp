@@ -16,13 +16,13 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
 
 (defmacro with-clean-store ((&optional (name '*test-repository-name*)) &body body)
   "Run BODY with no store for NAME, and leave none behind."
-  `(unwind-protect (progn (delete-vector-store ,name) ,@body)
-     (delete-vector-store ,name)))
+  `(unwind-protect (progn (loom-embed:delete-vector-store ,name) ,@body)
+     (loom-embed:delete-vector-store ,name)))
 
 (defun sample-store (&key (embedder-id "fixed:test") (dimensions 3)
                           (ids #("a" "b")) (digests #(1 2))
                           (vectors #(1.0 0.0 0.0  0.0 1.0 0.0)))
-  (make-vector-store :embedder-id embedder-id
+  (loom-embed:make-vector-store :embedder-id embedder-id
                      :dimensions dimensions
                      :count (length ids)
                      :built-at (get-universal-time)
@@ -35,17 +35,17 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
 (test a-store-reads-back-as-it-was-written
   (with-clean-store ()
     (let ((embedder (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
-      (write-vector-store (sample-store) *test-repository-name*)
-      (let ((loaded (load-vector-store *test-repository-name* embedder)))
+      (loom-embed:write-vector-store (sample-store) *test-repository-name*)
+      (let ((loaded (loom-embed:load-vector-store *test-repository-name* embedder)))
         (is (not (null loaded)) "a store written by this embedder must load")
-        (is (string= "fixed:test" (vector-store-embedder-id loaded)))
-        (is (= 3 (vector-store-dimensions loaded)))
-        (is (= 2 (vector-store-count loaded)))
-        (is (string= "a" (vector-store-entity-id loaded 0)))
-        (is (string= "b" (vector-store-entity-id loaded 1)))
-        (is (= 6 (length (vector-store-vectors loaded))))
-        (is (= 1.0 (aref (vector-store-vectors loaded) 0)))
-        (is (= 1.0 (aref (vector-store-vectors loaded) 4)))))))
+        (is (string= "fixed:test" (loom-embed:vector-store-embedder-id loaded)))
+        (is (= 3 (loom-embed:vector-store-dimensions loaded)))
+        (is (= 2 (loom-embed:vector-store-count loaded)))
+        (is (string= "a" (loom-embed:vector-store-entity-id loaded 0)))
+        (is (string= "b" (loom-embed:vector-store-entity-id loaded 1)))
+        (is (= 6 (length (loom-embed:vector-store-vectors loaded))))
+        (is (= 1.0 (aref (loom-embed:vector-store-vectors loaded) 0)))
+        (is (= 1.0 (aref (loom-embed:vector-store-vectors loaded) 4)))))))
 
 (test a-negative-component-survives-the-round-trip
   ;; WRITE-BYTE writes an unsigned word and SB-KERNEL:MAKE-SINGLE-FLOAT takes a
@@ -55,14 +55,14 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
   ;; that loaded cleanly and reports the right count.
   (with-clean-store ()
     (let ((embedder (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 2)))
-      (write-vector-store (sample-store :dimensions 2 :ids #("x") :digests #(9)
+      (loom-embed:write-vector-store (sample-store :dimensions 2 :ids #("x") :digests #(9)
                                         :vectors #(-0.6 0.8))
                           *test-repository-name*)
-      (let ((loaded (load-vector-store *test-repository-name* embedder)))
+      (let ((loaded (loom-embed:load-vector-store *test-repository-name* embedder)))
         (is (not (null loaded)))
-        (is (< (abs (- -0.6 (aref (vector-store-vectors loaded) 0))) 1e-6)
+        (is (< (abs (- -0.6 (aref (loom-embed:vector-store-vectors loaded) 0))) 1e-6)
             "a negative component must not come back positive")
-        (is (< (abs (- 0.8 (aref (vector-store-vectors loaded) 1))) 1e-6))))))
+        (is (< (abs (- 0.8 (aref (loom-embed:vector-store-vectors loaded) 1))) 1e-6))))))
 
 (test a-store-another-embedder-wrote-is-refused
   ;; DEC-0006's invariant and the reason the whole file exists. A cosine
@@ -70,14 +70,14 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
   ;; property that marks it wrong, so this check is the only thing standing
   ;; between a model swap and plausible nonsense forever.
   (with-clean-store ()
-    (write-vector-store (sample-store :embedder-id "ollama:nomic-embed-text")
+    (loom-embed:write-vector-store (sample-store :embedder-id "ollama:nomic-embed-text")
                         *test-repository-name*)
     (let ((other (loom-embed:make-fixed-embedder :id "ollama:bge-m3" :dimensions 3)))
-      (is (null (load-vector-store *test-repository-name* other))
+      (is (null (loom-embed:load-vector-store *test-repository-name* other))
           "a store written by another embedder must not load"))
     (let ((same (loom-embed:make-fixed-embedder :id "ollama:nomic-embed-text"
                                                 :dimensions 3)))
-      (is (not (null (load-vector-store *test-repository-name* same)))
+      (is (not (null (loom-embed:load-vector-store *test-repository-name* same)))
           "and the one that wrote it must, or every restart rebuilds"))))
 
 (test a-truncated-data-file-is-refused
@@ -86,10 +86,10 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
   ;; parses, reports a plausible count, and holds fewer vectors than it claims.
   (with-clean-store ()
     (let ((embedder (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
-      (write-vector-store (sample-store) *test-repository-name*)
-      (is (not (null (load-vector-store *test-repository-name* embedder))))
+      (loom-embed:write-vector-store (sample-store) *test-repository-name*)
+      (is (not (null (loom-embed:load-vector-store *test-repository-name* embedder))))
       (multiple-value-bind (header-path data-path)
-          (vector-store-paths *test-repository-name*)
+          (loom-embed:vector-store-paths *test-repository-name*)
         (declare (ignore header-path))
         ;; Drop the last word: six floats and a magic word become six words.
         (let ((words '()))
@@ -99,7 +99,7 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
                                          :element-type '(unsigned-byte 32)
                                          :if-exists :supersede)
             (dolist (word (rest (nreverse words))) (write-byte word out)))))
-      (is (null (load-vector-store *test-repository-name* embedder))
+      (is (null (loom-embed:load-vector-store *test-repository-name* embedder))
           "a data file short of what the header promises must not load"))))
 
 (test a-data-file-without-the-magic-word-is-refused
@@ -109,9 +109,9 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
   ;; nothing else in the format could catch it.
   (with-clean-store ()
     (let ((embedder (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
-      (write-vector-store (sample-store) *test-repository-name*)
+      (loom-embed:write-vector-store (sample-store) *test-repository-name*)
       (multiple-value-bind (header-path data-path)
-          (vector-store-paths *test-repository-name*)
+          (loom-embed:vector-store-paths *test-repository-name*)
         (declare (ignore header-path))
         (let ((words '()))
           (with-open-file (in data-path :element-type '(unsigned-byte 32))
@@ -122,7 +122,7 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
                                          :element-type '(unsigned-byte 32)
                                          :if-exists :supersede)
             (dolist (word words) (write-byte word out)))))
-      (is (null (load-vector-store *test-repository-name* embedder))
+      (is (null (loom-embed:load-vector-store *test-repository-name* embedder))
           "a data file whose first word is not the magic must not load"))))
 
 (test a-missing-store-is-nil-rather-than-an-error
@@ -131,7 +131,7 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
   ;; between them.
   (with-clean-store ()
     (let ((embedder (loom-embed:make-fixed-embedder)))
-      (is (null (load-vector-store *test-repository-name* embedder))))))
+      (is (null (loom-embed:load-vector-store *test-repository-name* embedder))))))
 
 (test a-corrupt-header-is-nil-rather-than-an-error
   ;; RULE-0004's reflex applied here: a malformed sidecar must not take a query
@@ -139,7 +139,7 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
   (with-clean-store ()
     (let ((embedder (loom-embed:make-fixed-embedder)))
       (multiple-value-bind (header-path data-path)
-          (vector-store-paths *test-repository-name*)
+          (loom-embed:vector-store-paths *test-repository-name*)
         (ensure-directories-exist header-path)
         (with-open-file (out header-path :direction :output :if-exists :supersede)
           (write-string "this is not json {{{" out))
@@ -147,7 +147,7 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
                                        :element-type '(unsigned-byte 32)
                                        :if-exists :supersede)
           (write-byte 0 out)))
-      (is (null (load-vector-store *test-repository-name* embedder))))))
+      (is (null (loom-embed:load-vector-store *test-repository-name* embedder))))))
 
 ;;; ------------------------------------------------------------------
 ;;; What gets embedded
@@ -197,10 +197,10 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
 
 (defun store-vector-for (store id)
   "The vector STORE holds for ID, as a list, or NIL."
-  (let ((dimensions (vector-store-dimensions store)))
-    (dotimes (i (vector-store-count store))
-      (when (string= id (vector-store-entity-id store i))
-        (return (coerce (subseq (vector-store-vectors store)
+  (let ((dimensions (loom-embed:vector-store-dimensions store)))
+    (dotimes (i (loom-embed:vector-store-count store))
+      (when (string= id (loom-embed:vector-store-entity-id store i))
+        (return (coerce (subseq (loom-embed:vector-store-vectors store)
                                 (* i dimensions) (* (1+ i) dimensions))
                         'list))))))
 
@@ -237,7 +237,7 @@ full rebuild that happened to produce the same vectors."))
         (is (= 2 after-build) "the build embeds both documents")
         (let ((store (update-vector-store repository embedder)))
           (is (not (null store)))
-          (is (= 2 (vector-store-count store)) "both entities survive")
+          (is (= 2 (loom-embed:vector-store-count store)) "both entities survive")
           (is (= after-build (counting-embedder-texts embedder))
               "an update with nothing changed must not reach the embedder"))))))
 
@@ -249,7 +249,7 @@ full rebuild that happened to produce the same vectors."))
                                        (vec-entity "beta" "The second thing."))))
       (build-vector-store repository embedder)
       (let ((baseline (counting-embedder-texts embedder))
-            (before (store-vector-for (load-vector-store *test-repository-name* embedder)
+            (before (store-vector-for (loom-embed:load-vector-store *test-repository-name* embedder)
                                       "function:src/thing.lisp:alpha")))
         ;; One docstring rewritten, the other untouched.
         (setf repository (vec-repository *test-repository-name*
@@ -258,7 +258,7 @@ full rebuild that happened to produce the same vectors."))
         (let ((store (update-vector-store repository embedder)))
           (is (= (1+ baseline) (counting-embedder-texts embedder))
               "exactly one document is re-embedded, not both")
-          (is (= 2 (vector-store-count store)))
+          (is (= 2 (loom-embed:vector-store-count store)))
           (is (equal before (store-vector-for store "function:src/thing.lisp:alpha"))
               "and the unchanged entity keeps the vector it had"))))))
 
@@ -269,8 +269,8 @@ full rebuild that happened to produce the same vectors."))
   (let ((before (vec-entity "alpha" "The first thing."))
         (after (vec-entity "alpha" "The first thing.")))
     (setf (gethash :end-line (properties after)) 400)
-    (is (eql (document-digest (entity-document before))
-             (document-digest (entity-document after))))))
+    (is (eql (loom-embed:document-digest (entity-document before))
+             (loom-embed:document-digest (entity-document after))))))
 
 (test an-entity-that-left-the-index-leaves-the-store
   (with-clean-store ()
@@ -283,8 +283,8 @@ full rebuild that happened to produce the same vectors."))
                     (vec-repository *test-repository-name*
                                     (vec-entity "alpha" "The first thing."))
                     embedder)))
-        (is (= 1 (vector-store-count store)))
-        (is (string= "function:src/thing.lisp:alpha" (vector-store-entity-id store 0)))))))
+        (is (= 1 (loom-embed:vector-store-count store)))
+        (is (string= "function:src/thing.lisp:alpha" (loom-embed:vector-store-entity-id store 0)))))))
 
 (test updating-a-repository-with-no-store-does-nothing
   ;; Opt-in. A repository nobody built a store for stays without one, so
@@ -322,11 +322,11 @@ full rebuild that happened to produce the same vectors."))
   ;; answered against an index that had moved on, forever.
   (with-clean-store ()
     (let ((embedder (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
-      (write-vector-store (sample-store) *test-repository-name*)
+      (loom-embed:write-vector-store (sample-store) *test-repository-name*)
       (multiple-value-bind (header-path data-path)
-          (vector-store-paths *test-repository-name*)
+          (loom-embed:vector-store-paths *test-repository-name*)
         (declare (ignore data-path))
         (let ((header (with-open-file (in header-path) (json:decode-json in))))
           (with-open-file (out header-path :direction :output :if-exists :supersede)
             (json:encode-json (remove :digests header :key #'car) out))))
-      (is (null (load-vector-store *test-repository-name* embedder))))))
+      (is (null (loom-embed:load-vector-store *test-repository-name* embedder))))))

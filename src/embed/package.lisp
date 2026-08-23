@@ -25,4 +25,31 @@
 
    ;; a stand-in for tests and for callers with no embedder configured
    #:fixed-embedder
-   #:make-fixed-embedder))
+   #:make-fixed-embedder
+
+   ;; not asking again, REQ-0048 R6
+   #:memoing-embedder
+   #:make-memoing-embedder
+   #:memoing-embedder-inner
+   #:memoing-embedder-suppressed
+   #:*embedder-retry-after*
+
+   ;; the sidecar's file format, DES-0040 D2
+   #:vector-store
+   #:vector-store-p
+   #:make-vector-store
+   #:vector-store-embedder-id
+   #:vector-store-dimensions
+   #:vector-store-count
+   #:vector-store-built-at
+   #:vector-store-ids
+   #:vector-store-digests
+   #:vector-store-vectors
+   #:vector-store-entity-id
+   #:vector-store-directory
+   #:vector-store-paths
+   #:write-vector-store
+   #:load-vector-store
+   #:delete-vector-store
+   #:document-digest
+   #:*vector-store-magic*))

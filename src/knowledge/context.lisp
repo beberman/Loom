@@ -1031,6 +1031,43 @@ the bundle."
                              :weak)
                             (t :unmatched)))))
 
+(defparameter *context-embedder* nil
+  "The embedder semantic seeding uses, or NIL for none. REQ-0048 R6.
+
+NIL is the default and is not a degraded mode. Loom answers from the lexical
+seeder alone, returns what it returns today, and reports nothing -- an optional
+dependency that announced its absence would not be optional.
+
+Set by whoever knows the deployment rather than read from the environment here:
+loom-serve configures it at startup, a test binds it, and a library consumer
+that never sets it never reaches an embedder. The same argument DES-0030 D1
+makes for the context log.")
+
+(defparameter *context-vector-store* nil
+  "The vector store for the repository being searched, or NIL for none.
+
+Passed in rather than loaded here, because loom-knowledge is handed a VIEW and
+never learns which repository it belongs to. The caller knows, and the caller
+is where the store is loaded.")
+
+(defun semantic-candidates (view task)
+  "Candidates the embedder proposes for TASK, or NIL when there is no embedder.
+
+NIL for every reason there is: no embedder configured, no store, a store whose
+identity does not match, an embedder that cannot be reached. REQ-0048 R6 gives
+them one meaning, so they get one return value and the caller needs no branch.
+
+Empty until PLAN-0043 S4 puts a scan behind it. The seam is here rather than
+there because S3's whole subject is the path where this returns nothing, and
+that path is the one whose failure has no symptom: a bundle is still returned,
+still correct, and merely slower or -- worse -- occasionally wrong in a way no
+recall count would show."
+  (declare (ignore view task))
+  (when (and *context-embedder* *context-vector-store*)
+    ;; S4. Until then the answer is the same as having no embedder, which is
+    ;; what every test of R6 is written against.
+    nil))
+
 (defun seed-entities (view task &key (limit 8) types)
   "Entities whose names the words of TASK point at, best match first.
 
@@ -1064,7 +1101,11 @@ waiting (ADMIT-SEEDS)."
          ;; by candidates this drops is WEAK, and calling it UNMATCHED would say
          ;; the index holds nothing of the kind. CANDIDATES is what the ranking
          ;; and the admission see.
-         (candidates (strong-candidates matches origins))
+         (candidates (append (strong-candidates matches origins)
+                             ;; Nothing today, and the call is here rather than
+                             ;; in S4 so that the absent path is the one that
+                             ;; has been exercised by every run since.
+                             (semantic-candidates view task)))
          (production (production-names candidates))
          ;; COPY-LIST because STABLE-SORT is destructive on a list and MATCHES
          ;; is read again below -- and CANDIDATES is MATCHES itself whenever

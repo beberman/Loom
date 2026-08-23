@@ -35,6 +35,10 @@
    (:file "package")
    (:file "protocol")
    (:file "ollama")
+   ;; After "protocol": the store is keyed by EMBEDDER-ID and refuses on it.
+   (:file "store")
+   ;; After "protocol": REQ-0048 R6, and it decorates any of the above.
+   (:file "memo")
    )
   :in-order-to ((test-op (test-op :loom-embed/test)))
   )
@@ -55,6 +59,9 @@
   :components
   (
    (:file "suite")
+   ;; One file, holding the protocol, the stand-ins and the memo. The memo's
+   ;; tests need FAILING-EMBEDDER and nothing else does, so splitting them
+   ;; would put a fixture in one file and its only user in another.
    (:file "protocol")
    )
   :perform (test-op (op c)

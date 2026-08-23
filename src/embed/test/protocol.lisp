@@ -121,3 +121,75 @@
     (is (search "port refused" (embedder-unavailable-detail condition)))
     (is (search "port refused" (princ-to-string condition))
         "the report has to name the detail, or a log line says nothing")))
+
+;;; ------------------------------------------------------------------
+;;; Not asking again -- REQ-0048 R6
+;;; ------------------------------------------------------------------
+
+(defclass failing-embedder ()
+  ((calls :initform 0 :accessor failing-embedder-calls)
+   (fail :initarg :fail :initform t :accessor failing-embedder-fail))
+  (:documentation "Fails on demand and counts how often it was reached."))
+
+(defmethod embedder-id ((e failing-embedder)) "fixed:failing")
+(defmethod embedder-dimensions ((e failing-embedder)) 3)
+(defmethod embed-texts ((e failing-embedder) texts)
+  (incf (failing-embedder-calls e))
+  (if (failing-embedder-fail e)
+      (error 'embedder-unavailable :detail "nothing listening")
+      (map 'simple-vector (lambda (text) (declare (ignore text))
+                            (loom-embed::normalise #(1.0 0.0 0.0)))
+           (coerce texts 'list))))
+
+(test a-remembered-failure-is-not-asked-again
+  ;; The measurement this exists for: a call to an absent ollama costs 2001 ms
+  ;; against a query that costs 0.01-0.09 s, so a bounded failure repeated per
+  ;; query is still twenty times today's behaviour. R6 asks for today's.
+  (let* ((inner (make-instance 'failing-embedder))
+         (embedder (make-memoing-embedder inner)))
+    (dotimes (i 5)
+      (handler-case (embed-texts embedder '("anything"))
+        (embedder-unavailable () nil)))
+    (is (= 1 (failing-embedder-calls inner))
+        "five queries must reach an absent embedder once, not five times")
+    (is (= 4 (memoing-embedder-suppressed embedder))
+        "and the other four are suppressed rather than merely fast")))
+
+(test a-suppressed-call-still-signals
+  ;; The caller's handling must not depend on whether the memo was warm. A
+  ;; suppressed call that returned NIL would make the absent path two paths.
+  (let ((embedder (make-memoing-embedder (make-instance 'failing-embedder))))
+    (handler-case (embed-texts embedder '("first")) (embedder-unavailable () nil))
+    (is (eq :signalled
+            (handler-case (progn (embed-texts embedder '("second")) :returned)
+              (embedder-unavailable () :signalled))))))
+
+(test the-memo-expires-so-starting-ollama-later-works
+  ;; A process-lifetime memo is simpler and never retries, so somebody who
+  ;; starts ollama after Loom gets nothing until they restart the service --
+  ;; which reads as Loom being broken rather than as a cache being cold.
+  (let* ((inner (make-instance 'failing-embedder))
+         (embedder (make-memoing-embedder inner :retry-after 0)))
+    (handler-case (embed-texts embedder '("first")) (embedder-unavailable () nil))
+    (setf (failing-embedder-fail inner) nil)
+    (is (= 1 (length (embed-texts embedder '("second"))))
+        "a window that has passed lets the next call through")
+    (is (= 2 (failing-embedder-calls inner)))))
+
+(test a-success-clears-the-memo
+  (let* ((inner (make-instance 'failing-embedder))
+         (embedder (make-memoing-embedder inner :retry-after 0)))
+    (handler-case (embed-texts embedder '("a")) (embedder-unavailable () nil))
+    (setf (failing-embedder-fail inner) nil)
+    (embed-texts embedder '("b"))
+    (setf (failing-embedder-fail inner) t)
+    (handler-case (embed-texts embedder '("c")) (embedder-unavailable () nil))
+    (is (= 3 (failing-embedder-calls inner))
+        "each of the three reached the inner embedder, so nothing was stale")))
+
+(test the-memo-passes-identity-through
+  ;; A decorated embedder must key the same store as an undecorated one, or
+  ;; wrapping it would invalidate every sidecar ever built.
+  (let ((inner (make-ollama-embedder :model "nomic-embed-text")))
+    (is (string= (embedder-id inner)
+                 (embedder-id (make-memoing-embedder inner))))))
