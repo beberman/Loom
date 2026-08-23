@@ -716,6 +716,113 @@ which is CON-0006's expensive error at the scale of one answer."
       (t
        (format t "~&~%source: unavailable (~(~a~)).~%" status)))))
 
+(defun print-resemblance-row (row &optional (indent 2))
+  "One candidate: what it is, where, how close, and why it might be the same.
+
+The cosine leads because it is what ordered the list, and the reasons follow on
+their own line because DES-0041 D7 has them point rather than conclude -- five
+of the ten pairs REQ-0042 was written from were read on both sides and were not
+duplicates."
+  (let ((pad (make-string indent :initial-element #\Space))
+        (shared-name (getf row :shared-name-words))
+        (shared-prose (getf row :shared-prose-words))
+        (arity (getf row :arity))
+        (subject-arity (getf row :subject-arity)))
+    (format t "~&~a~,4f  ~(~a~) ~a~@[  [~a]~]~%"
+            pad (getf row :similarity) (getf row :type) (getf row :name)
+            (getf row :location))
+    (when (or shared-name shared-prose arity subject-arity)
+      (format t "~a        ~@[name: ~{~a~^ ~}  ~]~@[prose: ~{~a~^ ~}  ~]~
+~@[arity ~a~]~@[ against ~a~]~%"
+              pad shared-name shared-prose arity
+              (and arity subject-arity (/= arity subject-arity) subject-arity)))))
+
+(defun repository-for-similar (&optional designator)
+  "A repository and its vector store, or a refusal naming what is missing.
+
+DES-0041 D10. `context' without a store answers lexically and says nothing,
+because it still has an answer. This has no lexical fallback -- REQ-0045 R4 is
+why it should not get one -- so an empty result would mean both `nothing
+resembles this' and `nothing could have', and the two need telling apart. No
+ollama, no store, and a store whose embedder identity does not match are still
+one state with one meaning (REQ-0048 R6); the meaning is reported rather than
+returned as an empty list."
+  (let* ((repository (current-repository designator))
+         (store (repository-vectors repository)))
+    (unless store
+      (error "~a has no vector store. Run `embed ~:*~a' first."
+             (repository-name repository)))
+    (values repository store)))
+
+(define-command similar (term &optional against)
+    "similar <name> [<repository>]"
+    "Definitions that resemble one, by meaning rather than by name."
+  ;; REQ-0042 R1 and R2. The question `find' cannot ask: a duplicate is
+  ;; precisely the case where the two names differ, so every one of the ten
+  ;; pairs PLAN-0036 found by hand was invisible to a name search.
+  (multiple-value-bind (source source-store) (repository-for-similar)
+    (let* ((subject (resolve-entity (repository-graph source) term)))
+      (multiple-value-bind (target target-store)
+          (if against
+              (repository-for-similar against)
+              (values source source-store))
+        (let ((rows (resembling subject source-store
+                                (repository-graph target) target-store)))
+          (print-summary-line (entity-summary subject))
+          (format t "~&  resembling, in ~a:~%" (repository-name target))
+          (if rows
+              (dolist (row rows) (print-resemblance-row row))
+              ;; Not an empty list: the store exists, so this is the answer
+              ;; rather than the absence of one.
+              (format t "~&    Nothing in ~a is close to it.~%"
+                      (repository-name target))))))))
+
+(define-command survey (first-repository second-repository &optional cut)
+    "survey <repository> <repository> [<cut>]"
+    "Definitions in the first that resemble something in the second."
+  ;; REQ-0042 R3, the migration survey PLAN-0036 assembled by hand. One row per
+  ;; entity carrying its single best match, because every pair above a flat
+  ;; threshold reports one fact several ways -- DEFAULT-JSON-KEY-NAME came back
+  ;; four times against four different utils entities.
+  (multiple-value-bind (source source-store) (repository-for-similar first-repository)
+    (multiple-value-bind (target target-store) (repository-for-similar second-repository)
+      (let ((floor (if cut
+                       (let ((parsed (ignore-errors (read-from-string cut))))
+                         (unless (realp parsed)
+                           (error "~s is not a number. The cut is a cosine, ~
+between 0 and 1." cut))
+                         (float parsed 1.0))
+                       *survey-cut*)))
+        (multiple-value-bind (rows name-equal reached)
+            (resemblance-survey (repository-graph source) source-store
+                                (repository-graph target) target-store
+                                :cut floor)
+          (format t "~&~a against ~a, at ~,2f:~%"
+                  (repository-name source) (repository-name target) floor)
+          (if rows
+              (dolist (row rows)
+                ;; The subject's location, because two entities in one tree can
+                ;; carry one name -- front-end has two makePolygonShape, and
+                ;; without the file the two rows read as one row printed twice.
+                (format t "~&  ~,4f  ~28a ~~ ~a~%           ~a~%"
+                        (getf row :similarity)
+                        (getf row :subject-name)
+                        (getf row :name)
+                        (getf row :subject-location)))
+              (format t "~&  No pair reaches ~,2f.~%" floor))
+          ;; BUG-0002 in a second place. Forty rows read as the whole truth,
+          ;; and the number that says otherwise is what tells a caller to raise
+          ;; the cut rather than to believe the table.
+          (when (> reached (length rows))
+            (format t "~&  ~d of ~d shown. Raise the cut.~%"
+                    (length rows) reached))
+          ;; DES-0041 D4. Counted rather than listed: these are what `find'
+          ;; already answers, and every one of them scores 1.0000, so listing
+          ;; them would spend the readable rows on the question that was not
+          ;; asked.
+          (format t "~&  ~d pair~:p share a name and are not listed; ~
+`find' answers those.~%" name-equal))))))
+
 (define-command impact (term &optional depth)
     "impact <name> [<depth>]"
     ;; Built from the variable rather than written out, because the number in a

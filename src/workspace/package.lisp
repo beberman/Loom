@@ -75,7 +75,6 @@
    #:update-vector-store
    #:vector-store-staleness
    #:entity-document
-   #:name-as-words
    #:*vector-definition-types*
    #:*vector-batch*
    #:record-context-call

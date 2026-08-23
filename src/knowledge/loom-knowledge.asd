@@ -36,6 +36,9 @@
    ;; describes, and reuses DOCUMENT-PROSE-ROW for the resolution rate.
    (:file "prose")
    (:file "structure")
+   ;; After "services": ENTITY-SUMMARY and NAME-AS-WORDS live there. After
+   ;; "context": PLAIN-WORDS does.
+   (:file "similar")
    )
   :in-order-to ((test-op (test-op :loom-knowledge/test)))
   )
@@ -61,6 +64,7 @@
    (:file "expand")
    (:file "prose")
    (:file "structure")
+   (:file "similar")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-knowledge-test :test-runner)

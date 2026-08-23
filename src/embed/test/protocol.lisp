@@ -258,3 +258,40 @@
          (result (nearest store (query-vector 3.0 4.0 0.0) 1)))
     (is (< (abs (- 1.0 (cdr (first result)))) 1e-5)
         "a vector against itself is cosine 1 whatever magnitude it went in with")))
+
+;;; ------------------------------------------------------------------
+;;; Reading one vector back out -- PLAN-0044 S2, DES-0041 D1
+;;; ------------------------------------------------------------------
+
+(test a-stored-vector-is-read-back-by-its-entity-id
+  ;; What makes a resemblance query cost no embedding call: the subject's
+  ;; vector was written when the store was built.
+  (let* ((store (scan-store :rows '(("east"  . #(1.0 0.0 0.0))
+                                    ("north" . #(0.0 1.0 0.0)))))
+         (east (vector-for store "east")))
+    (is (typep east 'loom-embed:float-vector))
+    (is (= 3 (length east)))
+    ;; NEAREST against the vector the store holds for "east" puts "east" first,
+    ;; which is the property the caller actually depends on.
+    (is (string= "east" (car (first (nearest store east 2)))))))
+
+(test an-id-the-store-does-not-hold-reads-as-nil
+  ;; A store is derived from an index that has since moved. SEMANTIC-CANDIDATES
+  ;; passes over a stale id rather than raising, and this returns the value that
+  ;; lets a caller do the same.
+  (is (null (vector-for (scan-store :rows '(("east" . #(1.0 0.0 0.0))))
+                        "no-such-entity"))))
+
+(test writing-to-a-vector-read-out-does-not-reach-the-store
+  ;; The reason VECTOR-FOR copies. DOT-AT walks VECTOR-STORE-VECTORS at safety
+  ;; 0, so an alias would make one caller's mutation silently wrong every cosine
+  ;; afterwards -- no error, no symptom, nothing in the arithmetic to report it.
+  ;; This is the only test here that fails if the copy is dropped.
+  (let* ((store (scan-store :rows '(("east"  . #(1.0 0.0 0.0))
+                                    ("north" . #(0.0 1.0 0.0)))))
+         (east (vector-for store "east")))
+    (fill east 99.0)
+    (let ((again (vector-for store "east")))
+      (is (< (abs (- 1.0 (aref again 0))) 1e-5)
+          "the store still holds the vector it was built with")
+      (is (string= "east" (car (first (nearest store again 2))))))))

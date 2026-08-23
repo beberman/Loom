@@ -387,7 +387,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 326
+(defparameter *call-site-ceiling* 364
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -509,7 +509,30 @@ stashed. BUG-0030 F1 adds the last three -- one DROPPED-EDGES call in the
 `check' command and DROPPED-EDGES plus DROPPED-EDGE-SUMMARY in the :CHECK
 operation, all three inside a body-swallowing macro. The fifth instance of one
 cause and not a fifth cause: the ambiguous population has not moved through any
-of it.")
+of it.
+
+RE-MEASURED 2026-08-23 AT 331, CEILING 364. PLAN-0044 S5 and S6, and the
+composition says the whole of it is two console commands:
+
+    define-command     120 -> 132
+    define-operation    92 ->  92
+    js-test             57 ->  57
+    ambiguous occurrences   20 ->  20
+
+Measured both ways in one sitting: the tree reads 319 with this change stashed
+and 331 with it applied, and `similar' and `survey' are the twelve. The
+ambiguous population did not move, which is the number that does when something
+has gone wrong.
+
+It moved once during this work, and how it was found is worth keeping. The new
+test file named its fixture helper R-FUNCTION, which already exists in
+src/graph/test/resolve.lisp. Different packages, so nothing collided at
+runtime and the suite was green -- but Loom cannot place a package for a test
+file, falls back to matching on the spelling (DES-0015), and reported all 50
+calls as ambiguous. 16 became 70, this ceiling failed, and the census named
+R-FUNCTION in one line. Renaming the helper put it back to 20. A test suite
+that indexes its own tree caught a defect in itself that no assertion in it
+was written to catch.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is

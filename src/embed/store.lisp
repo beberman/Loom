@@ -76,6 +76,34 @@ cache-friendly walk, and no pointer chase per candidate."
   (svref (vector-store-ids store) index))
 
 
+(defun vector-for (store id)
+  "STORE's vector for entity ID as a fresh FLOAT-VECTOR, or NIL if it holds none.
+
+The other direction of VECTOR-STORE-ENTITY-ID, and what makes a resemblance
+query cost no embedding call: the subject of DES-0041's `similar' is a
+definition Loom already indexed, so its vector was written here when the store
+was built and is read rather than computed. NEAREST takes the result unchanged.
+
+A copy, never a displaced array into VECTOR-STORE-VECTORS. DOT-AT walks that
+array at safety 0 while it scans, so an alias handed to a caller turns one
+caller's mutation into wrong cosines for every query afterwards -- no error, no
+symptom, and nothing in the arithmetic that could report it. That is DEC-0006's
+two-embedder cosine in a second place, and the copy is what keeps the store's
+bytes reachable only from here.
+
+NIL for an id the store does not hold, which happens whenever the index has
+moved since the store was written. A caller reads that the way
+SEMANTIC-CANDIDATES reads a stale id: something to pass over, not to raise."
+  (let ((index (position id (vector-store-ids store) :test #'equal)))
+    (when index
+      (let* ((dimensions (vector-store-dimensions store))
+             (vector (make-array dimensions :element-type 'single-float))
+             (base (* index dimensions)))
+        (replace vector (vector-store-vectors store)
+                 :start2 base :end2 (+ base dimensions))
+        vector))))
+
+
 (defun document-digest (text)
   "A 32-bit FNV-1a hash of TEXT.
 

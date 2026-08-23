@@ -163,18 +163,6 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
                                       (when documentation
                                         (list :documentation documentation))))))
 
-(test a-compound-name-is-split-into-words-before-embedding
-  ;; DES-0040 D3. An embedder tokenizes English and GETTYPEFROMOBJ is not
-  ;; English. This is the same split TASK-TOKENS makes on a query, for the same
-  ;; reason, against a different consumer.
-  (is (string= "get type from obj" (name-as-words "getTypeFromObj")))
-  (is (string= "connection connect database" (name-as-words "connection-connect-database")))
-  (is (string= "piece type editor state set value"
-               (name-as-words "PieceTypeEditorState.setValue")))
-  (is (string= "min scale meters" (name-as-words "*min-scale-meters*")))
-  (is (string= "url" (name-as-words "URL"))
-      "an all-capitals name is one word, not three letters"))
-
 (test an-undocumented-definition-still-gets-a-document
   ;; 3861 of the tree's 5268 definitions carry no docstring. DES-0040 D3
   ;; embeds them on their name rather than skipping them: a name is a weaker

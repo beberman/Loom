@@ -1,0 +1,319 @@
+id: DES-0041
+title: "REQ-0042 in two verbs: a vector read rather than embedded, name equality reported apart from the ranking, and one row per entity"
+status: implemented
+date: 2026-08-23
+refines: [REQ-0042, DEC-0006]
+affects: [nearest, load-vector-store, repository-vectors, name-as-words, describe-entity]
+tags: [retrieval, similarity, multi-repo, duplication, embeddings, req-0042, dec-0006]
+summary: |
+  REQ-0042 asks for a definition found by resemblance to another, across
+  repositories, and names prose similarity as the cheap start. DES-0040 built
+  the general form of that signal for a different reason. Nine vector stores
+  exist on this tree, every one written by ollama:nomic-embed-text at 768
+  dimensions, and each is keyed by entity id -- so a definition's vector is
+  already on disk and a cosine between any two stores is a number that means
+  something.
+
+  What is missing is two verbs and one filter. `similar' answers R1 and R2 and
+  costs no embedding call, because the query vector is read rather than
+  computed. `survey' answers R3 by reporting one row per entity rather than
+  every pair above a threshold. The filter is name equality: measured on
+  Loom against utils, a flat ranking puts all 27 name-equal pairs above every
+  other pair, and those are the ones `find' already answers.
+body: |
+  D1  THE QUERY VECTOR IS READ, NOT COMPUTED
+
+  `context' pays 31 ms per query to embed the task string, which is the median
+  DEC-0006 measured and the whole of the latency it accepted. A resemblance
+  query pays none of it. Its subject is a definition Loom already indexed, so
+  its vector is in that repository's store under its entity id, and the query
+  is a lookup followed by a scan.
+
+  loom-embed gains one accessor -- the vector at an entity id, as a
+  FLOAT-VECTOR -- which VECTOR-STORE-IDS and VECTOR-STORE-VECTORS already make
+  derivable and which nothing exports today. NEAREST then takes it unchanged.
+
+  The cost is the scan alone. DES-0040 measured that at 0.87 ms declared for
+  1655 by 768, against the 31 ms embedding call it sits behind in `context'. A
+  resemblance query is the cheaper of the two by a factor of thirty-five, and
+  it reaches the network never.
+
+  D2  COMPARABILITY IS ALREADY GUARANTEED, BY THE MECHANISM DEC-0006 BUILT
+      FOR A DIFFERENT REASON
+
+  REQ-0042 R2 asks that the query cross repository boundaries and observes that
+  it needs no edge. What it does need is that two stores be comparable, and
+  that is the invariant DEC-0006 exists for: vectors from two embedders are not
+  comparable, a cosine between them is a number in the ordinary range with
+  nothing marking it wrong, and no arithmetic anywhere reports it.
+
+  LOAD-VECTOR-STORE refuses a store whose EMBEDDER-ID is not the configured
+  embedder's, and REPOSITORY-VECTORS loads every repository through it against
+  one CURRENT-EMBEDDER. Two stores held at once therefore carry the same
+  embedder by construction, and a store that would have been incomparable was
+  never loaded. Measured on this tree, 2026-08-23:
+
+      Loom 1720   front-end 3457   game-server 1811   datascience 739
+      linear-algebra 504   numerical-utilities 414   cl-dbi 213
+      cl-mysql 152   utils 113
+        all ollama:nomic-embed-text, 768 dimensions
+
+  So this design adds no invariant and no check. It adds a second caller to one
+  that already exists, and the reason to say so is that a cross-repository
+  cosine is the exact shape CON-0001 refuses -- a fabricated fact that returns
+  plausible answers forever and fails no count.
+
+  D3  TWO VERBS, BECAUSE R1 AND R3 HAVE DIFFERENT OUTPUT SHAPES
+
+      similar <name> [in <repository>]     R1 and R2
+      survey <repository> <repository>     R3
+
+  `similar' takes one definition and returns ranked neighbours. `survey' takes
+  two repositories and returns a table. They share the scan and share nothing
+  else: one is read at a terminal in a sentence, the other is the migration
+  survey PLAN-0036 assembled by hand into a ten-row table.
+
+  Splitting them is what keeps R3's filter out of R1. A caller asking what
+  resembles FNV-1A wants the answer whatever it is called; a caller surveying
+  two repositories wants the pairs `find' cannot already give them, which is
+  D4.
+
+  D4  NAME EQUALITY IS REPORTED APART FROM THE RANKING
+
+  Measured, Loom against utils, every pair at cosine 0.70 or better:
+
+      332 pairs
+       27 name-equal
+      305 names differ, 301 of them distinct name pairs
+
+  The 27 are not 8% of the answer, they are the whole top of it: an entity with
+  no docstring embeds its name as words, so two entities with the same name
+  embed the same document and score 1.0000. Ranking by cosine puts every one of
+  them above FNV-1A ~ CONTENT-FINGERPRINT at 0.8700. The first survey run for
+  this design returned fourteen rows and thirteen of them read
+  `test-runner ~ test-runner'.
+
+  Those pairs are what `find' answers. REQ-0042's opening measurement is that
+  asking `find' for each of the library's 44 exported names against Loom
+  returned two hits -- the survey exists for the other 42, and a survey whose
+  top is the 2 has spent its readable rows on the question already answered.
+
+  So `survey' reports them under their own heading with a count and keeps them
+  out of the ranking. The comparison is NAME-AS-WORDS on both sides, which is
+  already what the store embedded, so two entities compare equal here exactly
+  when their vectors could not tell them apart.
+
+  `similar' does not filter. A caller who names one definition is not asking a
+  question `find' answers better, and a same-named definition in another
+  repository is the first thing they want to know about.
+
+  D5  A SURVEY REPORTS THE BEST MATCH PER ENTITY, NOT EVERY PAIR ABOVE A CUT
+
+  Measured, Loom against utils, one row per Loom entity carrying its single
+  best match in utils:
+
+      cut     rows   names differ
+      0.90     11      1
+      0.85     15      4
+      0.80     21      9
+      0.75     49     34
+      0.70    154    139
+
+  Against 301 distinct differing-name pairs under a flat threshold at 0.70. The
+  flat form returns DEFAULT-JSON-KEY-NAME four times against four different
+  utils entities, which is one fact reported four ways.
+
+  At 0.80 the nine rows are:
+
+      0.9257  full-test              ~ run-all-tests
+      0.8858  default-json-key-name  ~ *json-key-name*
+      0.8700  fnv-1a                 ~ content-fingerprint
+      0.8600  plist-shaped-p         ~ plistp
+      0.8493  read-json              ~ %with-json-decoding
+      0.8263  encode-record-value    ~ json-encode
+      0.8254  run-test               ~ *test-systems*
+      0.8160  encode-result          ~ json-encode-to-string
+      0.8131  json-false             ~ json-decode
+
+  Three of those are pairs PLAN-0036's hand survey lists. About half are the
+  same subject area rather than the same function, which is D7's subject and
+  not a defect to tune away.
+
+  The cut is a parameter with 0.80 as its default, chosen off this table
+  because it is where the list becomes readable by hand and not because any
+  case was fitted to it. REQ-0042's acceptance is the instrument that would
+  move it: it names the ten pairs PLAN-0036 found and asks that the false
+  positives be countable against them.
+
+  D5a  THE CUT DOES NOT TRAVEL, SO THERE IS A ROW LIMIT AS WELL
+
+  Added 2026-08-23, on a measurement the table above could not have produced.
+
+  At 0.80 the same survey run over front-end against game-server returns 486
+  rows. The two are one product built by one team in two languages, so they
+  resemble each other everywhere: the list starts at 0.9864 with
+  Game.decodeGame against decode-game and stays above 0.80 for hundreds of
+  entries. Nine rows and 486 rows are the same command at the same setting.
+
+  The cut alone therefore cannot keep the table readable, and a caller cannot
+  be expected to guess a per-pair cut before seeing the pair. *SURVEY-LIMIT* is
+  40 rows, and what is cut off is counted and reported -- "40 of 486 shown.
+  Raise the cut." That is BUG-0002's answer to the same problem in `find',
+  where a capped list read as the whole truth is the failure and the count is
+  what tells a caller to narrow rather than to believe it.
+
+  The two controls do different jobs. The cut decides what counts as a
+  resemblance and belongs to the subject matter; the limit decides how much of
+  it prints at once and belongs to the reader.
+
+  D6  THE REASON, AND ALL THREE OF ITS PARTS ARE ALREADY INDEXED
+
+  R1 asks for the reason a pair is suspicious and names three: shared prose,
+  shared name tokens, same arity.
+
+  Shared name tokens is NAME-AS-WORDS on both sides, intersected. Shared prose
+  is the same over :DOCUMENTATION, which REQ-0035 indexes and which four of
+  REQ-0042's ten pairs share whole sentences of -- UTILS:CONTENT-FINGERPRINT
+  and Loom's FNV-1A both say "Deterministic across images, which SXHASH is
+  not".
+
+  Same arity is already indexed, and the first draft of this design said it was
+  not. :FUNCTION and :METHOD both declare an :ARGUMENTS property holding the
+  parsed parameter list, LAMBDA-LIST-PARAMETERS fills it, and measured on Loom
+  2026-08-23 every one of the 1287 :FUNCTION entities carries it -- 933 with a
+  non-empty list and 354 with an empty one, which is what a zero-arity DEFUN
+  writes. So all three of R1's reasons are computable today and none of them
+  waits on anything.
+
+  REQ-0041 is not what would have supplied it. Its five clauses are about a
+  *call site* -- how many arguments A passes B, which of DICT-VALUE's 454 call
+  forms pass a third, the distribution `describe' should report. A definition's
+  own parameter list is a different fact, and it was in the index before this
+  design was written.
+
+  Arity is the weakest of the three and is reported rather than ranked on.
+  Measured over the 933: 415 are arity 1, 227 arity 2, 146 arity 3. A signal
+  that fires on 44% of one-argument functions cannot separate PLIST-SHAPED-P ~
+  PLISTP from JSON-FALSE ~ JSON-DECODE, both of which are pairs of
+  single-argument functions and only one of which is a duplicate. It earns its
+  place as a line in the answer a human reads, not as a term in the ranking,
+  and D7 is why.
+
+  All three reasons are computed after the ranking, over the pairs that
+  survived it, so none costs a pass over the store.
+
+  :SIGNATURE is declared beside :ARGUMENTS on both entity types and is written
+  0 times in 1287. Nothing here needs it -- the parameter list is the fact and
+  the rendering is a display concern -- but a declared property no analyzer
+  fills is worth a bug of its own rather than a line in a design.
+
+  D7  WHAT THE ANSWER MAY SAY
+
+  Not "duplicate" and not "equivalent". A cosine, the shared evidence D6
+  computes, and both locations.
+
+  REQ-0042 R4 is the clause and its evidence is that half the set fails it.
+  Five of the ten pairs were read on both sides and were not duplicates: FNV-1A
+  truncates a character to its low octet where CONTENT-FINGERPRINT does not,
+  TEXT-LINES returns a list where STRING-LINES returns a vector, PLIST-SHAPED-P
+  and PLISTP disagree about the empty list. A ranking that asserted equivalence
+  would have invited a mechanical rewrite in five cases out of ten.
+
+  The measurement above says the same thing from the other side. JSON-FALSE ~
+  JSON-DECODE at 0.8131 is two functions in one subject area, and nothing in
+  the cosine distinguishes it from PLIST-SHAPED-P ~ PLISTP at 0.8600.
+
+  D8  COST, WHICH IS REQ-0042'S OPEN QUESTION
+
+  Measured 2026-08-23 with LOOM-EMBED:DOT-AT, the declared scan DES-0040 uses:
+
+      Loom x utils              1720 x 113     0.08 s
+      front-end x game-server   3457 x 1811    2.55 s
+
+  The second is the largest pair of stores this tree holds. R3's bound is
+  therefore stated rather than open: a survey of the two biggest repositories
+  registered here is under three seconds, and the cost is |A| x |B| x 768
+  multiply-adds with no allocation in the inner loop.
+
+  `similar' is one scan of one store and is 0.87 ms.
+
+  MEASURED AGAIN AFTER IT WAS BUILT, 2026-08-23. End to end through
+  RESEMBLANCE-SURVEY rather than the scan alone:
+
+      Loom x utils              0.13 s   against 0.08 s scanning
+      front-end x game-server   3.69 s   against 2.55 s scanning
+
+  The other 45% is the work this section did not count: one ENTITY-SUMMARY, one
+  GET-ENTITY and one set of D6 reasons per surviving row. It is not consing in
+  the inner loop, which is what the figure was written to detect -- that would
+  have shown as minutes.
+
+  D9  WHERE IT LIVES
+
+  loom-knowledge, beside `find', `describe' and `context', because it is a
+  read-only service over the index.
+
+  It cannot reach REPOSITORY-VECTORS: loom-workspace owns the store cache and
+  depends on loom-knowledge, so the dependency would run backwards. The caller
+  binds the stores instead, which is the arrangement console.lisp and
+  operations.lisp already use for *CONTEXT-VECTOR-STORE* and
+  *CONTEXT-EMBEDDER*. `survey' binds two.
+
+  Nothing here touches loom-embed's layering: it stays a leaf, and gains one
+  accessor over a structure it already owns.
+
+  D10  AN ABSENT EMBEDDER IS STATED HERE, NOT SWALLOWED
+
+  REQ-0048 R6 says Loom with no embedder behaves exactly as Loom does today,
+  and `context' honours it by answering lexically and reporting nothing. That
+  posture cannot carry over unchanged, because the two commands fail
+  differently.
+
+  `context' without a store loses its semantic candidates and keeps its answer.
+  `similar' and `survey' without a store have no answer at all -- there is no
+  lexical resemblance query to fall back to, and REQ-0045 R4 is the reason
+  there should not be one. So an empty result would mean two things: nothing
+  resembles this, and nothing could have.
+
+  Both verbs therefore say which one it is. No store, no ollama, or a store
+  whose embedder identity does not match are still one state and still not an
+  error -- REQ-0048 R6's three cases stay three cases with one meaning -- and
+  the meaning reported is "this repository has no vectors; run embed", not an
+  empty list. That is REQ-0037's rule about absence, applied to the surface
+  REQ-0037 was not written about.
+
+  WHAT THIS IS NOT
+
+  Not a change to seeding. SEED-ENTITIES, the RRF fusion and the eight-seed
+  limit are untouched, and no clause here reads on `context'.
+
+  Not a second vector store. This reads the sidecar DES-0040 already builds and
+  the watcher already refreshes.
+
+  Not a change to `find'. REQ-0045 R4 keeps that lexical and DEC-0006's
+  consequences make it a measurement rather than a preference.
+
+  Not an edge in the graph. A resemblance is computed per query and never
+  written, because DEC-0001 has the graph derivable from files and a cosine is
+  derivable from a store that is itself derived.
+
+  OPEN
+
+  - Whether `similar' within one repository is worth the verb. Measured on
+    Loom: SEED-SCORE's nearest neighbours are *SEED-TYPE-PREFERENCE*,
+    SEED-MATCHES and SEED-ENTITIES, which are the same module rather than the
+    same function, and `describe' already answers that better. FNV-1A ->
+    DOCUMENT-DIGEST at 0.7985 is the exception and is a true relative --
+    DOCUMENT-DIGEST's docstring reads "A 32-bit FNV-1a hash of TEXT". One case
+    in three is not enough to settle it, and R1 is written cross-repository
+    anyway.
+
+  - What `survey' does with three or more repositories. REQ-0027 put several
+    behind one service and the utils migration compared two; a fan-out over
+    every registered pair is nine choose two on this tree, which at D8's
+    numbers is minutes rather than seconds.
+
+  - Whether the cut belongs to the caller or the command. D5 makes it a
+    parameter defaulting to 0.80, and a caller who sets it to 0.5 gets 139 rows
+    they will not read. The same argument REQ-0045's open question makes about
+    a retrieval policy in the service's API applies here.

@@ -346,3 +346,26 @@ assertion that fails if someone later \"fixes\" describe by truncating there")))
 
 (test impact-report-returns-nil-for-an-unknown-id
   (is (null (impact-report (k-graph (make-k-fixture)) "no-such-id"))))
+
+
+;;; ------------------------------------------------------------------
+;;; A name as English (DES-0040 D3, DES-0041 D4)
+;;; ------------------------------------------------------------------
+
+;;; Moved here from the loom-workspace suite by PLAN-0044 S1, with the
+;;; assertions unchanged. Rewriting them would have thrown away the only thing
+;;; that witnesses the move changed nothing -- and a changed NAME-AS-WORDS
+;;; invalidates the digest of every vector store on the machine without
+;;; signalling anything.
+
+(test a-compound-name-is-split-into-words-before-embedding
+  ;; DES-0040 D3. An embedder tokenizes English and GETTYPEFROMOBJ is not
+  ;; English. This is the same split TASK-TOKENS makes on a query, for the same
+  ;; reason, against a different consumer.
+  (is (string= "get type from obj" (name-as-words "getTypeFromObj")))
+  (is (string= "connection connect database" (name-as-words "connection-connect-database")))
+  (is (string= "piece type editor state set value"
+               (name-as-words "PieceTypeEditorState.setValue")))
+  (is (string= "min scale meters" (name-as-words "*min-scale-meters*")))
+  (is (string= "url" (name-as-words "URL"))
+      "an all-capitals name is one word, not three letters"))

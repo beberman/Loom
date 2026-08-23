@@ -34,32 +34,6 @@ failure discards, and neither side of that is sharp enough to tune.")
 ;;; What gets embedded
 ;;; ------------------------------------------------------------------
 
-(defun name-as-words (name)
-  "NAME split on separators and at a lower-to-upper boundary, space-joined.
-
-DES-0040 D3. An embedder tokenizes English and GETTYPEFROMOBJ is not English;
-split, it is three words the model has seen a great many times. The same
-reasoning TASK-TOKENS applies to a compound before matching it, for the same
-reason, against a different consumer."
-  (let ((words '())
-        (current (make-string-output-stream)))
-    (flet ((finish ()
-             (let ((word (get-output-stream-string current)))
-               (when (plusp (length word)) (push (string-downcase word) words)))))
-      (loop for i from 0 below (length name)
-            for char = (char name i)
-            do (cond ((not (alphanumericp char)) (finish))
-                     ;; A lower-to-upper boundary starts a word, so "getType"
-                     ;; splits and "URL" does not fragment into three.
-                     ((and (upper-case-p char)
-                           (plusp i)
-                           (lower-case-p (char name (1- i))))
-                      (finish)
-                      (write-char char current))
-                     (t (write-char char current)))
-            finally (finish)))
-    (format nil "~{~a~^ ~}" (nreverse words))))
-
 (defun entity-document (entity)
   "The text embedded for ENTITY: its name as words, then its documentation.
 

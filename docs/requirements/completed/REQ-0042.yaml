@@ -1,6 +1,6 @@
 id: REQ-0042
 title: A definition must be findable by resemblance to another definition, including one in a different repository, because that is the question a shared library creates
-status: draft
+status: implemented
 date: 2026-08-21
 refines: [REQ-0027]
 affects: [search-entities, find-entities, describe-entity, structure-report]

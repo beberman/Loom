@@ -46,6 +46,8 @@
    #:vector-store-digests
    #:vector-store-vectors
    #:vector-store-entity-id
+   ;; DES-0041 D1: the query vector is read, not embedded.
+   #:vector-for
    #:vector-store-directory
    #:vector-store-paths
    #:write-vector-store
