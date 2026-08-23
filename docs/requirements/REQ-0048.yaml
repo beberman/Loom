@@ -89,12 +89,40 @@ body: |
   R8  The three instruments are run together and no family falls.
 
       known-item not below 410 of 450 and no family below its own number --
-      name 135, inflected 142, prose 133. tools/acceptance.py not below 42 of
-      45 with the same three misses. The mismatch family above 9 of 120.
+      name 135, inflected 142, prose 133. tools/acceptance.py not below 42, and
+      the mismatch family above 9 of 120.
 
       Reported per family and never summed, which is REQ-0047 R9 and
       tools/make-cases.py's reason: they are biased differently and a total
       hides which one moved.
+
+      Still 45, but a different 45 since BUG-0043. R7's config-get named an
+      entity renamed to config-search and moved to the utils library, so no
+      mechanism could return it; it is gone from R7, which is now 6 of 6, and
+      the judgement it carried is a utils case of its own, cfg-1.
+
+      All three remaining misses are ranking misses and the dense spike reached
+      every one: MapElementTypeEditor at rank 6, config-search at rank 5,
+      dot-prefixed-p at rank 5. The judged ceiling is 45 of 45, which it was
+      not before -- one of the three was previously unreachable by anything.
+
+  R9  R6 and R7 do not fall, and they are what the fusion weight is chosen
+      against.
+
+      Named rather than left to the aggregate, because the aggregate hides
+      them. Between them they carry 16 of the judged set's 45 expectations, and
+      pure dense scores 3 of 10 on R6 and 1 of 6 on R7 where the lexical bundle
+      scores 10 and 6.
+
+      They are the two cases that ask for a family rather than a thing --
+      data-handler with its dhandler-get, dhandler-put, dhandler-delete and
+      dhandler-update, and the startup sequence with its seven steps. Those
+      names arrive through the neighbour band walking out from a lexical match,
+      and a fusion that spends the seed slots on semantically similar entities
+      instead loses the launch points the expansion needs.
+
+      A weight that raises the generated families while R6 falls from 10 of 10
+      is refused. The aggregate would report that as a gain.
 
   WHAT THIS IS NOT
 

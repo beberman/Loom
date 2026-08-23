@@ -34,8 +34,16 @@ CASES = [
       "game-handler","dhandler-get","dhandler-put","dhandler-delete","dhandler-update"], "R6"),
     ("game-server", "data-api handler database connection acquire and test connectivity",
      ["connection-connect-database"], "R8"),
+    # config-get is gone from this list and BUG-0043 is why: it was renamed to
+    # config-search and moved to the standalone utils library, so it is not a
+    # game-server entity under either spelling and no ranking, expansion or
+    # embedding could ever have returned it. R7 was scored 6 of 7 for as long
+    # as it existed, and the seventh was unreachable rather than missed. The
+    # judgement it carried -- that configuration belongs to the startup
+    # sequence -- is kept by read-config, which is a game-server entity and is
+    # found. The key lookup is judged as a utils case below.
     ("game-server", "start-server startup sequence and database handler health check",
-     ["start-server","read-config","config-get","set-cors-handler","initialize-game-api",
+     ["start-server","read-config","set-cors-handler","initialize-game-api",
       "initialize-media","configure-log"], "R7"),
     ("game-server", "restructure data handler protocol encode decode",
      ["base-encoder","base-decoder","set-encoder-decoder"], "R4"),
@@ -75,6 +83,10 @@ CASES = [
     # prefix" except through its docstring, and it is the one that still misses.
     ("utils", "read a whole file into a string", ["read-file"], "r39-1"),
     ("utils", "split a string on a delimiter character", ["string-lines"], "r39-2"),
+    # BUG-0043's other half. A fresh judgement rather than R7's retargeted: the
+    # query was written once, before it was run, and whatever it scores is what
+    # it scores. It inherits no standing from the expectation it replaces.
+    ("utils", "look up a configuration value by its key", ["config-search"], "cfg-1"),
     ("loom", "test whether a string starts with a prefix", ["dot-prefixed-p"], "r39-3"),
     ("loom", "look up a value in an alist or plist by key",
      ["alist-plist", "plist-shaped-p"], "r39-4"),

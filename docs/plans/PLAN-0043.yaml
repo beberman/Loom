@@ -96,9 +96,23 @@ body: |
   them may return as items once a fused seed set gets an expansion. Every one
   of the mismatch family's nine current lexical hits arrives that way.
 
+  The weight is judged on R6 and R7 by name, not on the acceptance total.
+  REQ-0048 R9: those two carry 17 of the 44 judged expectations between them,
+  they are the two that ask for a family rather than a thing, and pure dense
+  scores 3 of 10 and 1 of 6 on them where the lexical bundle scores 10 and 6.
+  Their names arrive through the neighbour band walking out from a lexical
+  match, so they are precisely what a fusion that spends seed slots on
+  similarity would break -- and a total of 42 would report that as no change.
+
   RISK: tuning to the generated families. tools/acceptance.py is the held-out
-  set (REQ-0036 R11) and its 42 of 45 is a floor, not a tiebreak -- a weight
-  that gains generated cases and loses a judged one is refused.
+  set (REQ-0036 R11) and its floor is not a tiebreak -- a weight that gains
+  generated cases and loses a judged one is refused.
+
+  The judged set was repaired before this plan was implemented, which is why
+  its numbers can be trusted at all. BUG-0043 removed R7's config-get -- an
+  expectation naming an entity that had moved to the utils library and could
+  not be returned by anything -- and judged the successor where it lives, as
+  cfg-1. R7 is 6 of 6 and the total is 45 again, composed differently.
 
   S7  MEASURE, RECORD, CLOSE
 
@@ -108,8 +122,14 @@ body: |
       tools/recall.py tools/cases/mismatch.json
       tools/acceptance.py
 
-  The bar is REQ-0048 R8: known-item not below 410 and no family below its own
-  number, acceptance not below 42 of 45 with the same three misses, mismatch
-  above 9 of 120. Latency reported against R5's 0.12 s.
+  The bar is REQ-0048 R8 and R9: known-item not below 410 and no family below
+  its own number, acceptance not below 42 of 45 with R6 at 10 of 10 and R7 at
+  6 of 6, mismatch above 9 of 120. Latency reported against R5's 0.12 s.
+
+  All three judged misses are expected to fall, and any that does not is a
+  finding rather than a neutral outcome. The spike reached MapElementTypeEditor
+  at rank 6, config-search at rank 5 and dot-prefixed-p at rank 5, so a fusion
+  that returns one of them has lost the others between the ranking and the
+  bundle.
 
   Then DES-0040 gets the numbers, and `complete PLAN-0043'.
