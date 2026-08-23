@@ -1,0 +1,177 @@
+id: REQ-0050
+title: An answer must say which tree it is about, because the commit it reports is the tree's and the answer came from an index that may be older
+status: draft
+date: 2026-08-23
+refines: [REQ-0036]
+affects: [structure-report, repository-status, git-diff-hash, repository-commit, definition-source]
+importance: Critical
+tags: [staleness, provenance, measurement, req-0036, con-0001, harness]
+summary: |
+  `structure` reports a `commit` field. It is `git rev-parse HEAD` on the
+  repository root, read at query time. CLAUDE.md tells an agent to compare it
+  against `git rev-parse HEAD` to confirm the answer is about the tree on disk,
+  and that comparison always succeeds -- it is the same command run twice.
+
+  What it does not measure is whether the *index* matches either of them. The
+  index is built by a watcher over a working tree, so its content can differ
+  from HEAD by every uncommitted edit, and it can lag the working tree by
+  however long since the last poll. A commit field agreeing with HEAD is
+  consistent with an index built from entirely different bytes.
+
+  REQ-0036 R4 already solved this for one surface. A context record carries the
+  commit *and* a hash of `git diff HEAD`, for the stated reason that "the
+  commit alone would attribute a judgement to code that was not what answered
+  it: a tree under active work is dirty for most of the sessions that produce
+  these records". Nothing else in Loom carries the pair.
+body: |
+  HOW FRESHNESS IS MEASURED TODAY, PER SURFACE
+
+    structure    :COMMIT, from GIT-COMMIT on the repository root, read when the
+                 report is built. Plus :COMMIT-REASON when it cannot be read.
+                 Nothing about the index.
+
+    status       prints the file, entity and relationship counts, and
+                 `watcher : watching'. The counts describe the index; nothing
+                 ties them to a revision.
+
+    describe --source
+                 :INDEXED-AT, from REPOSITORY-INDEXED-AT -- a generation
+                 counter that increments per reindex. It answers "has this
+                 repository been reindexed since" and not "as of what tree".
+
+    context      the bundle carries no revision at all. The *record* does,
+                 through GIT-FINGERPRINT, and only when the context log is on.
+
+    tools/acceptance.py, tools/recall.py
+                 nothing. Both drive a running service over REST and report a
+                 score with no statement of what produced it.
+
+  WHY THE COMMIT FIELD IS THE WRONG MEASUREMENT
+
+  It measures the tree and is read as measuring the index. Three things move
+  independently and the field sees one:
+
+    the commit          moves on `git commit'
+    the working tree    moves on every save, and is what the analyzer reads
+    the index           moves when the watcher polls, which is after the save
+                        and before nothing in particular
+
+  So `commit` agreeing with HEAD tells a caller that Loom and git are looking
+  at the same repository. It says nothing about whether the index was built
+  from the bytes now on disk. The 2026-08-21 record in docs/TODO.md is the case
+  measured: the field named the last commit while the index reflected a working
+  tree with twenty-four modified files. It was not wrong; it answered a
+  different question than the one CLAUDE.md tells an agent to ask it.
+
+  WHAT IT COST, TWICE IN ONE WEEK
+
+  The narrow instance is `structure`. The general one is that an instrument
+  reporting a number without saying what produced it will be believed.
+
+  On 2026-08-23, tools/acceptance.py was run four times and reported 43 of 45
+  each time, and every run measured a headless service started before any of
+  that day's work. It was proved rather than guessed: the running service
+  returned only :TOKENS, none of the fields added that morning, and silently
+  ignored a budget sent to it. Three of those runs were reported as
+  verification of changes they could not have seen. The number happened not to
+  move, which is exactly why nobody looked.
+
+  The same week, tools/call-site-census.lisp could not load at all -- its
+  registry and quickload list predate loom-embed, which loom-knowledge has
+  depended on since PLAN-0043 -- so the instrument that *CALL-SITE-CEILING*'s
+  failure message tells a developer to re-run had been broken since that plan
+  landed and nothing said so.
+
+  Two harnesses, one week, the same shape: a measurement that cannot say what
+  it measured. This is CON-0001 applied to Loom's own answers rather than to
+  the graph's contents -- a fabricated fact is worse than a recorded gap, and a
+  score attributed to the wrong build is a fabricated fact about the tool
+  itself.
+
+  REQUIREMENTS
+
+  R1  Every answer that could be about a stale tree carries the same triple the
+      context record already carries: the commit, a hash of the uncommitted
+      diff, and the branch. GIT-FINGERPRINT computes it and REQ-0036 R4 argues
+      it; this asks that it stop being the context log's private fact.
+
+      The diff hash is the load-bearing half. A commit is stable for hours of
+      editing and the working tree is not, so the commit distinguishes weeks
+      and the diff hash distinguishes saves.
+
+  R2  It says when the *index* was built, not only what the tree says now.
+      Those are different instants and the gap between them is the whole
+      subject: the analyzer reads the working tree, the watcher polls after the
+      save, and a query answers from whatever the last poll produced.
+
+      A revision recorded at index time and reported at query time is the
+      shape. REPOSITORY-INDEXED-AT is the generation counter that exists and it
+      is not enough on its own -- it orders reindexes and names no tree.
+
+  R3  A disagreement is reported rather than left for the caller to compute.
+      A surface that prints an index fingerprint beside a current one has moved
+      the comparison to the reader; the answer should say `index is 3 commits
+      and 24 modified files behind this tree' or say that it is current.
+
+  R4  A harness states what it measured. tools/acceptance.py and
+      tools/recall.py drive a running service, so the service's revision is
+      what produced the score and neither prints it. The score and the
+      fingerprint belong on the same line, so that a run against a stale
+      service is visible in its own output rather than by suspicion.
+
+      This is not a Loom feature; it is the instrument obeying the rule it
+      exists to enforce.
+
+  R5  A tool that loads a system says so when it cannot. The census failed by
+      not loading, which is the easy case, and reported it as a backtrace
+      rather than as "this instrument is broken, the ceiling is unmeasured".
+      A measurement that did not happen must not read like one that returned
+      nothing to say.
+
+  ACCEPTANCE
+
+  `structure` on a tree with uncommitted edits reports that the index is behind,
+  and on a clean freshly-indexed tree reports that it is current. Both against
+  the same repository, minutes apart, with one `touch` between them.
+
+  `tools/acceptance.py` prints the service's commit and diff hash beside its
+  score. Running it against a deliberately stale service -- start one, edit a
+  file, reindex, run -- produces a line that differs from `git rev-parse HEAD`,
+  and that is the whole test.
+
+  `check` continues to report 0 violations and its 8 unresolved document
+  references, because nothing here touches resolution.
+
+  WHAT THIS IS NOT
+
+  Not a new fingerprinting mechanism. GIT-FINGERPRINT, GIT-DIFF-HASH,
+  GIT-COMMIT and REPOSITORY-INDEXED-AT all exist. What is missing is that four
+  of the five surfaces do not carry what one of them already does.
+
+  Not a staleness *check*. Loom already has :STALE on an entity for a different
+  thing -- a fact whose evidence was not re-confirmed. This is about the answer
+  as a whole, not about a row in it.
+
+  Not a refusal. An index behind the tree is usable and often the only thing
+  available mid-refactor; DEC-0001 has the graph derived and rebuildable, not
+  authoritative. The requirement is that the caller be told, not that the
+  answer be withheld -- which is REQ-0037's posture applied to provenance
+  rather than to absence.
+
+  OPEN QUESTIONS
+
+  - What a non-git tree reports. GIT-FINGERPRINT already returns a reason per
+    missing field rather than NIL, so the shape exists; whether "not a git
+    repository" should read as current or as unknown is not obvious, and
+    guessing wrong makes every answer on such a tree look suspect.
+
+  - Whether the diff hash should cover untracked files. `git diff HEAD` does
+    not, and an untracked new source file is indexed by the analyzer and
+    invisible to the fingerprint. That is a real gap in the mechanism REQ-0036
+    R4 already relies on, and it means the existing pairing is weaker than its
+    docstring claims.
+
+  - Cost. GIT-DIFF-HASH shells out to `git diff HEAD` and hashes the output.
+    On the context log that is once per recorded call; on `find` it would be
+    once per query, which is a subprocess in the latency path of the cheapest
+    command Loom has.
