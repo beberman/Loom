@@ -1,0 +1,155 @@
+id: DEC-0006
+title: Dense retrieval is adopted as candidate generation behind an embedder protocol, reversing REQ-0039's refusal of embeddings on evidence that requirement did not have
+status: accepted
+date: 2026-08-22
+supersedes: []
+refines: [REQ-0039, REQ-0047, REQ-0016]
+affects: [seed-entities, seed-matches, build-context]
+tags: [retrieval, context, seeding, embeddings, dense, req-0039, req-0047]
+rationale: |
+  Three things are decided here. Dense retrieval enters as candidate
+  generation and is fused with the lexical seeder rather than replacing it. The
+  embedder is reached through a protocol with one implementation today and room
+  for another. The vectors are a derived sidecar keyed by which embedder made
+  them.
+
+  WHAT THIS REVERSES
+
+  REQ-0039, WHAT THIS IS NOT:
+
+    "Not embeddings. A vector index is the obvious answer and brings a model
+    dependency, a build step and an answer nobody can explain to the caller who
+    got it; DEC-0001's posture is that a recorded gap beats a confident guess,
+    and an unexplainable ranking is the confident guess."
+
+  Three objections. Two of them stand and are accepted; the third is the one
+  the clause rests on, and it has stopped being true.
+
+  A model dependency. Stands. It is 274 MB of nomic-embed-text and an ollama
+  process on 127.0.0.1:11434. What makes it acceptable is that it is
+  replaceable: the protocol below makes the dependency one implementation of
+  three generic functions, so exchanging it for a hosted embedder is a subclass
+  rather than a rewrite. A dependency nobody can leave is a different decision
+  from a dependency behind an interface, and this is the second.
+
+  A build step. Stands, and it is measured: 5268 definitions embed in 261
+  seconds, once, at about 20 a second. That is the posture DEC-0001 already
+  takes toward the index -- files are truth, the index is derived and can be
+  discarded and rebuilt. A vector sidecar is a second artifact under the same
+  rule: never committed, rebuilt from the tree, and worth nothing away from it.
+
+  An answer nobody can explain. This is what the clause rests on and it is no
+  longer the case -- not because embeddings became explainable, but because the
+  bundle learned to explain itself in the year between. DES-0032's term report
+  did not exist when REQ-0039 was written. It labels every seed with the terms
+  it answered and classifies every word of the task as ANSWERED, WEAK or
+  UNMATCHED. A dense seed carries a label of its own, answers no term, and so
+  reads as what it is: a candidate that arrived on similarity rather than on a
+  word the caller wrote. The caller can still see which of their words reached
+  nothing, which is the part REQ-0039 was protecting.
+
+  WHAT WAS MEASURED
+
+  2026-08-22, nomic-embed-text, top-8, game-server and front-end. Lexical is
+  the tuned seeder with BUG-0041 and BUG-0042 closed, counting its whole bundle;
+  dense is eight names and no expansion at all.
+
+      known-item 450    lexical 410  91.1%    dense 437  97.1%    union 448  99.6%
+      mismatch   120    lexical   9   7.5%    dense  34  28.3%    union  42  35.0%
+
+  Per family on known-item, dense against lexical: name 145 to 135, inflected
+  149 to 142, prose 143 to 133. Every family, and eight dense names beat a
+  lexical bundle carrying its seeds plus up to two hundred neighbour-band items.
+
+  Four ranking mechanisms were measured on this tree this month -- coverage by
+  word, provenance rank, the name analyzer, and DES-0036's idf -- and all four
+  came in at baseline or below and were withdrawn. This is the first that did
+  not, and the margin is not close.
+
+  WHY FUSION AND NOT REPLACEMENT
+
+  The overlap decides it. On the mismatch family the two mechanisms find the
+  same case once in a hundred and twenty:
+
+      both 1    dense only 33    lexical only 8    neither 78
+
+  On known-item, 11 cases are found only by the lexical seeder, and they are
+  overwhelmingly exact-name queries: slot-defn, Mapper.toNative,
+  ListMapper.toNative, ArcUse.constructor, IRenderer.unproject, BaseTypeMapper.
+  REQ-0045 R4 asks that `find' stay lexical and that a query naming a thing
+  reach it by name. That was a preference when it was written and is a
+  measurement now: replacing the lexical seeder with this one would lose those
+  eleven to gain thirty-eight.
+
+  THE EMBEDDER IS REACHED THROUGH A PROTOCOL
+
+  A leaf system, loom-embed, depending on nothing above loom-ontology:
+
+      (defgeneric embed-texts       (embedder texts))
+      (defgeneric embedder-id       (embedder))
+      (defgeneric embedder-dimensions (embedder))
+
+  loom-workspace builds the sidecar, because it owns the write path.
+  loom-knowledge reads it at query time, because it owns seeding. Neither
+  arrangement disturbs the peer property DES-0006 R5 holds for loom-serve,
+  loom-rest, loom-mcp and loom-process.
+
+  The client needs no new library. drakma is already a dependency of
+  loom-rest/test and cl-json of four systems, and both ollama and a hosted
+  embedder are a JSON POST.
+
+  THE INVARIANT THE PROTOCOL EXISTS FOR
+
+  Vectors from two embedders are not comparable. A cosine between a
+  nomic-embed-text vector and a voyage-code-3 vector is a number, it is
+  meaningless, and no arithmetic anywhere reports that. So the store records
+  EMBEDDER-ID beside the vectors, and a store whose id does not match the
+  embedder in hand is invalid rather than degraded: it is discarded and rebuilt.
+
+  This is CON-0001's fabricated fact in the one shape no count would reveal. A
+  wrong vector store does not fail, does not warn, and does not look wrong --
+  it returns plausible neighbours for every query forever. The interface is
+  worth having mostly because it gives that rule somewhere to live.
+consequences: |
+  REQ-0039's WHAT THIS IS NOT clause is superseded. The rest of REQ-0039
+  stands: seeding on what a definition's prose says it does is what DES-0028
+  built and what the prose family measures, and nothing here retires it.
+
+  Dense may not replace lexical anywhere. Not in `find', which REQ-0045 R4
+  keeps lexical; not in the seeder, where the eleven exact-name cases above are
+  what replacement would cost. A design proposing replacement has to overturn
+  this decision rather than cite the 97.1%.
+
+  A semantic seed must never mark a term ANSWERED. DES-0032 D2 makes a term
+  ANSWERED when an admitted seed carries it in its name, and a dense seed
+  carries no term by construction. The three REQ-0037 absence cases are the
+  check: cosine always returns nearest neighbours, so dense makes "nothing here
+  does that" harder to say, not easier, and DEC-0005 already recorded that seed
+  count and the absence signal are coupled one-directionally.
+
+  The seed limit stays at eight. DEC-0005 settled it and this changes what
+  fills the slots rather than how many there are.
+
+  Latency rises by about 31 ms per query, the median for one embedding call
+  measured over twenty (p90 37 ms). Against today's 0.01-0.09 s that roughly
+  doubles a typical bundle. The scan itself is not the cost: 5268 vectors of
+  768 single-floats is about 4 million multiply-adds, two milliseconds in a
+  declared loop, and fifteen times smaller than the call that precedes it. A
+  design that cannot hold the added latency to the embedding call has got the
+  arithmetic wrong somewhere.
+
+  Loom without an embedder behaves exactly as it does today. No ollama, no
+  sidecar, or a sidecar whose EMBEDDER-ID does not match are three states and
+  all three mean the same thing: the lexical seeder answers alone, and nothing
+  reports an error. The dependency is optional or it is not behind an interface.
+
+  The union figures are a ceiling and not a delivery. 448 of 450 and 42 of 120
+  are what a perfect fusion would reach; RRF will reach less, and the gap
+  between the two is what the design has to report rather than round away.
+
+  Two measurements are known to flatter dense and belong in any comparison
+  built on them. The mismatch family's targets were sampled for docstrings of
+  45 characters or more, while 3861 of the tree's 5268 definitions carry no
+  docstring at all -- for those, the embedded document is the name as words,
+  which is close to the lexical signal. And known-item's prose family is built
+  from docstrings, which is what dense embeds.

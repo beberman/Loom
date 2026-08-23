@@ -1,0 +1,115 @@
+id: PLAN-0043
+title: "DES-0040 in seven steps: the leaf system, the sidecar, the absent-embedder path first, then fusion, then the weight the simulation could not set"
+status: draft
+date: 2026-08-22
+refines: [DES-0040, REQ-0048]
+affects: [seed-entities, seed-matches, admit-seeds, build-context]
+tags: [retrieval, context, seeding, embeddings, dense, req-0048]
+summary: |
+  The absent-embedder path is built and tested third, before any fusion exists,
+  because it is the behaviour every other step can silently break and the only
+  one with no visible symptom when it does. Everything after it is measured
+  against three instruments at once.
+body: |
+  S1  THE LEAF SYSTEM
+
+  src/embed/, a new ASDF system loom-embed depending on drakma and cl-json and
+  on nothing of Loom's above loom-ontology. The three generic functions of
+  DES-0040 D1, one OLLAMA-EMBEDDER class, and a batch POST to /api/embed.
+
+  Tests: a fake embedder subclass returning fixed vectors, so nothing in the
+  suite needs a running ollama. One test that EMBEDDER-ID differs when the
+  model name does, because D2's whole check rests on that string.
+
+  RISK: the layering rules. RULE-0001 to RULE-0003 key on the file's own
+  package name (DES-0009), so a new package needs no rule change, but `check'
+  must be run: no rule names loom-embed and a violation would be silent.
+
+  S2  THE SIDECAR
+
+  In loom-workspace, which owns the write path. Build over a repository's
+  definitions, write .loom/vectors/<repo>.dat and .json, and a loader that
+  refuses on any disagreement in embedder-id, dimensions or count.
+
+  Tests: a store written and read back; a store whose recorded id differs from
+  the embedder in hand returns nothing rather than vectors; a truncated file
+  returns nothing. Each of the three failing without the check.
+
+  RISK: .loom/ must stay outside the index. REPOSITORY-FILES already skips
+  dot-directories and the context log relies on it, so this needs confirming
+  rather than building -- `status' reporting a rise in file count after a build
+  is the symptom.
+
+  S3  THE ABSENT-EMBEDDER PATH, BEFORE ANY FUSION
+
+  SEED-ENTITIES asks for vectors, gets none, and behaves exactly as it does
+  today. Three ways to get none -- nothing listening, no sidecar, a sidecar that
+  refuses -- and one behaviour for all three.
+
+  Measured here, not asserted: with no ollama reachable, known-item reads 410
+  of 450, acceptance 42 of 45, mismatch 9 of 120. Those are today's numbers and
+  this step must not move them by one case.
+
+  RISK: this is the step whose failure is invisible. A timeout that blocks, an
+  error that escapes, a log line per query -- none of them fail a test that
+  only checks recall. The suite gets a test that SEED-ENTITIES returns without
+  touching the network when no embedder is configured.
+
+  S4  THE DENSE RANKING
+
+  Cosine of the query vector against the store, top-N. A declared loop over
+  (simple-array single-float (*)) -- 5268 by 768 is about 4 million
+  multiply-adds and DEC-0006 costs it at two milliseconds against a 31 ms
+  embedding call.
+
+  Not linear-algebra's INNER-PRODUCT-VECTOR: it is a LOOP ... ACROSS with no
+  type declarations, so it cannot specialise on element type and would be
+  slower than ten declared lines, for a dependency.
+
+  RISK: consing per query. The store is loaded once and the scan allocates
+  nothing but the top-N heap; a scan that conses shows up as latency and is
+  what R5's 0.12 s bound is there to catch.
+
+  S5  FUSION
+
+  RRF over the two ranked lists into ADMIT-SEEDS' input, per DES-0040 D4.
+  A dense-only candidate carries (:similarity . cosine) per D5 and is exempt
+  from the slice cap and subject to the name cap per D6.
+
+  Tests, each failing without the change: a dense-only candidate reaches the
+  bundle; a candidate on both lists outranks one on either alone; a dense-only
+  candidate does not make its term ANSWERED; eight dense-only candidates of one
+  name are held to *SEED-NAME-SHARE*.
+
+  RISK: REQ-0048 R2. The eleven exact-name cases are named in DEC-0006 and are
+  the check -- slot-defn, Mapper.toNative, ListMapper.toNative,
+  ArcUse.constructor, IRenderer.unproject among them. A total that rises while
+  those fall is a failure.
+
+  S6  THE WEIGHT
+
+  Sweep the dense weight at 1.0, 1.5 and 2.0 against all three instruments with
+  the neighbour band running, and set the default on that.
+
+  The simulation could not set it: at the seed level equal weight scores 448
+  and 24 and dense-weighted scores 443 and 34, and the ten cases that separate
+  them may return as items once a fused seed set gets an expansion. Every one
+  of the mismatch family's nine current lexical hits arrives that way.
+
+  RISK: tuning to the generated families. tools/acceptance.py is the held-out
+  set (REQ-0036 R11) and its 42 of 45 is a floor, not a tiebreak -- a weight
+  that gains generated cases and loses a judged one is refused.
+
+  S7  MEASURE, RECORD, CLOSE
+
+      tools/loom-test.sh
+      tools/loom.sh 'check'
+      tools/recall.py tools/cases/known-item.json
+      tools/recall.py tools/cases/mismatch.json
+      tools/acceptance.py
+
+  The bar is REQ-0048 R8: known-item not below 410 and no family below its own
+  number, acceptance not below 42 of 45 with the same three misses, mismatch
+  above 9 of 120. Latency reported against R5's 0.12 s.
+
+  Then DES-0040 gets the numbers, and `complete PLAN-0043'.
