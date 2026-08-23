@@ -212,7 +212,7 @@ cmd_start() {
             return 0
         fi
     done
-    echo "start: nothing answering on $base after ~20s; see $logfile" >&2
+    echo "start: nothing answering on $base after ~150s; see $logfile" >&2
     return 1
 }
 
