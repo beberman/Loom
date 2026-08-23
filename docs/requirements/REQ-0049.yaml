@@ -1,0 +1,165 @@
+id: REQ-0049
+title: An index line must say what a definition does, because relevance is decided on prose and the only tier carrying prose costs a thousand tokens
+status: draft
+date: 2026-08-23
+refines: [REQ-0040, REQ-0035]
+affects: [render-item, describe-entity, entity-summary, build-context, render-context]
+importance: Critical
+tags: [retrieval, context, readability, prose, req-0035, req-0040, req-0042]
+summary: |
+  A bundle item reads `function fnv-1a [src/workspace/workspace.lisp:265-276]`
+  and its relations. It says where the thing is and never what it does.
+  `describe fnv-1a` says the same and adds a signature. The docstring exists,
+  REQ-0035 indexed it, DESCRIBE-ENTITY returns it inside :PROPERTIES, and no
+  surface prints it for a code entity.
+
+  So a caller deciding whether a definition is relevant to their task has two
+  options: guess from the name, or spend a body. Measured on Loom, a body in a
+  bundle costs 348 to 1208 tokens and an index line costs about 17. The middle
+  tier -- the one sentence that says what the thing is for -- costs about 30
+  and does not exist.
+body: |
+  THE MEASUREMENT THAT MAKES THIS A DEFECT RATHER THAN A PREFERENCE
+
+  A source body is mostly not code. Measured 2026-08-23 over non-test source,
+  by character:
+
+      tree          comments   strings/docstrings   code
+      Loom             23%            39%            37%
+      utils            25%            40%            34%
+      game-server      12%            13%            74%
+
+  On Loom a body is about 62% prose. Sending a 1000-token body sends roughly
+  620 tokens of description and 380 of code, so the expensive tier is already
+  mostly delivering the cheap tier's content -- at three times the price, and
+  only to the three entities that fit.
+
+  Two caveats belong with the numbers. `strings' counts every string literal
+  rather than only docstrings; on Loom and utils docstrings dominate, on
+  game-server that 13% is more mixed. And the ratio is a property of the tree:
+  game-server is 74% code, so a design tuned on Loom is tuned on the most
+  prose-heavy repository in the set.
+
+  RELEVANCE AND VERIFICATION ARE DIFFERENT QUESTIONS
+
+  They want different evidence, and the current bundle answers neither well
+  because it fuses them.
+
+  Relevance -- "is this definition about my task?" -- is decided on prose.
+  FNV-1A and CONTENT-FINGERPRINT are both hash loops over octets and read
+  nearly identically as code; what says they are the same intent is that both
+  docstrings say "Deterministic across images, which SXHASH is not".
+
+  Verification -- "are these two actually interchangeable?" -- is decided on
+  code, and prose actively misleads. REQ-0042 R4's evidence is that five of ten
+  hand-checked Loom/utils pairs were not duplicates, and every disagreement was
+  invisible in the documentation: FNV-1A truncates a character to its low octet
+  where CONTENT-FINGERPRINT does not, TEXT-LINES returns a list where
+  STRING-LINES returns a vector, PLIST-SHAPED-P and PLISTP disagree about the
+  empty list.
+
+  Three behavioural facts, none documented, all decisive. So the answer is not
+  that prose is enough; it is that prose is enough to *choose what to read*,
+  and only then is code worth its tokens.
+
+  THE WORKFLOW THIS IS FOR
+
+  "Refactor Loom to use Utils where needed", which is a real task this tree has
+  run by hand (PLAN-0036) and is the case REQ-0042 was written from.
+
+      stage                                     tokens   who chooses   exists
+      1  LOCATE   survey Loom utils               ~200    Loom          yes
+      2  TRIAGE   both docstrings per pair        ~540    Loom          NO
+      3  VERIFY   describe <name> --source       ~4000    the agent     yes
+      4  IMPACT   impact <name>                   ~300    the agent     yes
+      5  PLAN     from survivors and blast radius    --   the agent     --
+
+  Stage 1 returns nine pairs above the default cut. Stage 2 is where
+  `full-test ~ run-all-tests' and `json-false ~ json-decode' are discarded --
+  different jobs, obvious from one sentence each, and today that sentence is
+  unreachable from any command. Stage 3 is where REQ-0042 R4's three
+  behavioural differences surface, and it is worth its 4000 tokens precisely
+  because stage 2 narrowed nine pairs to four.
+
+  What happens instead today is one `context` call returning about 130 bare
+  names and three bodies, and the three are chosen before anything is known
+  about which pairs matter. The depth budget is spent before the triage that
+  would say where to spend it.
+
+  REQUIREMENTS
+
+  R1  A bundle item carries what the definition says about itself, bounded.
+      One sentence or one line, not the whole docstring: DOCUMENT-SUMMARY
+      already solves this shape for documents against *SUMMARY-TOKEN-BUDGET*,
+      and a code entity needs the same treatment for the same reason.
+
+  R2  `describe` prints it. A definition's documentation is the first thing a
+      reader wants after knowing where it is, and DESCRIBE-ENTITY already
+      returns it in :PROPERTIES -- the console reads that plist and prints
+      every other field it holds.
+
+  R3  Not every item. 130 items at 30 tokens is 3900, which is the whole
+      budget, so this cannot be uniform. Seeds and the near neighbours are the
+      band where relevance is still undecided; the tail of a cost-ordered walk
+      is already cheap enough to skim on names.
+
+      What the cut is, and whether it is a count or a cost, is unmeasured. The
+      arithmetic to beat: about twenty items carrying a description costs
+      roughly 600 tokens, which is half of one body.
+
+  R4  An entity with no documentation says nothing rather than something
+      invented. 3861 of 5268 definitions across the indexed trees carry no
+      docstring, so the common case is absence and it must not read as a
+      claim. CON-0001.
+
+  R5  The source tier is not removed. A caller asking about one subject
+      genuinely wants that subject's code without a round trip, and DES-0026 D2
+      is right about that. What changes is that a body stops being the only way
+      to learn what something does.
+
+  ACCEPTANCE
+
+  `describe fnv-1a` prints the sentence that distinguishes it from
+  CONTENT-FINGERPRINT. `survey Loom utils` followed by one description per side
+  discards `full-test ~ run-all-tests` without reading either body.
+
+  The floors are REQ-0040's and do not move: tools/acceptance.py at 43 of 45,
+  known-item at 443 of 450 with no family below name 148, inflected 148, prose
+  147, and the three ABSENCE_CASES still weak. A description band that buys
+  relevance by losing recall has moved the defect.
+
+  Bundle size is the second measure and the honest one. Adding prose to twenty
+  items and reclaiming it from the source tier should leave the total where
+  DES-0042 put it -- every measured task inside its budget -- or the trade has
+  not been made, only the cost.
+
+  WHAT THIS IS NOT
+
+  Not a new field in the index. REQ-0035 indexed the prose; this is about
+  which surfaces print it.
+
+  Not the whole docstring on every line. Loom's docstrings run to paragraphs,
+  and a bundle that inlined them would be the readability defect REQ-0040
+  exists for, arriving from the other direction.
+
+  Not a change to seeding or ranking. What a line says does not change which
+  lines are chosen.
+
+  OPEN QUESTIONS
+
+  - Whether this dissolves REQ-0040 R2 rather than answering it. R2 asks
+    whether breadth yields to depth, and PLAN-0045 S5 measured three settings
+    that scored identically. If twenty descriptions are worth more than one
+    body, the choice was never breadth against depth -- it was both against a
+    middle tier nobody had built.
+
+  - Whether the first line of a docstring is the right sentence. Loom's
+    convention puts the claim first, which is why tools/entity-dump.lisp takes
+    line one for the `prose' case family. A tree whose docstrings open with
+    parameter lists would need a different rule, and guessing one is worse than
+    taking the first line and saying so.
+
+  - What a JavaScript tree does. game-server is 74% code and front-end has few
+    docstrings at all, so the band that pays for itself on Loom may be empty
+    elsewhere. The dogfooding rule applies and this requirement was written
+    from Loom's numbers.
