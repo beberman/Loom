@@ -150,10 +150,23 @@
          (sourced (build-context g "alpha" :source-fn #'stub-source
                                            :source-definitions 3)))
     (is (plusp (getf sourced :source-tokens)) "the bodies cost something")
-    (is (<= (getf sourced :tokens) (getf plain :tokens))
+    ;; :INDEX-TOKENS rather than :TOKENS since DES-0042. The budget now covers
+    ;; both tiers and :TOKENS reports both, so `sourced' legitimately exceeds
+    ;; `plain' by what the bodies cost -- that is the requirement, not a
+    ;; regression. What must still never happen is a body inflating the tier
+    ;; that is supposed to be cheap, and :INDEX-TOKENS is where that is now
+    ;; visible.
+    (is (<= (getf sourced :index-tokens) (getf plain :index-tokens))
         "and none of it came out of the index tier")
     ;; The invariant stated the other way round, on a budget tight enough to
     ;; bite: bodies must not cost the index tier a single entry.
+    ;;
+    ;; DES-0042 narrowed what that claims. Under one budget covering both
+    ;; tiers, spending on bodies does leave less for lines -- deliberately, and
+    ;; that is D1. What survives is the bound: the source tier may not take
+    ;; more than *CONTEXT-SOURCE-SHARE* of the total, so bodies cannot crowd
+    ;; the index tier out however expensive they are, which is the failure
+    ;; DES-0026 D2 measured at 14 of 157 entities named.
     (let ((tight-plain (build-context g "alpha" :budget 40))
           (tight-sourced (build-context g "alpha" :budget 40
                                                   :source-fn #'stub-source
