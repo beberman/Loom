@@ -100,6 +100,42 @@ JavaScript one is a call, so printing either in the other's shape is a small
 lie about the source. Two entries rather than a generic function, because there
 are two analyzers and a protocol for this would cost more than the fact.")
 
+(defparameter *definition-summary-budget* 24
+  "Tokens a definition's own description may spend in an answer. REQ-0049 R1.
+
+Small on purpose and much smaller than *SUMMARY-TOKEN-BUDGET*'s 120, which
+bounds a *document's* summary. A document's summary is the thing the reader
+came for; a definition's is a label deciding whether to read further, and this
+tree's docstrings run to paragraphs -- inlining one would be the readability
+defect REQ-0040 exists for, arriving from the other direction.
+
+Twenty-four tokens is about one line of prose. What it is not is measured:
+REQ-0049 R3 asks which band carries a description at all, and that needs usage
+the corpus does not yet hold.")
+
+(defun definition-summary (entity)
+  "The first sentence of ENTITY's documentation, bounded, or NIL if it has none.
+
+REQ-0049. An index line says where a definition is and never what it does,
+while the only tier carrying prose costs 348 to 1208 tokens -- so a caller
+judging relevance could guess from the name or spend a body. This is the middle
+tier: about 24 tokens to say what the thing is for.
+
+The first sentence rather than the first line, because a docstring's opening
+sentence is where this tree's convention puts the claim and a line break is a
+fact about formatting. Falling back to the whole bounded text when there is no
+sentence break keeps a one-clause docstring intact.
+
+NIL rather than a placeholder when there is no documentation. 3861 of 5268
+definitions across the indexed trees carry none, so absence is the common case
+and must not read as a claim about the entity (CON-0001)."
+  (let ((documentation (getp entity :documentation)))
+    (when (and (stringp documentation) (plusp (length documentation)))
+      (let* ((stop (position #\. documentation))
+             (sentence (if stop (subseq documentation 0 (1+ stop)) documentation))
+             (flat (substitute #\Space #\Newline sentence)))
+        (bounded-text (string-trim " " flat) *definition-summary-budget*)))))
+
 (defun render-signature (entity)
   "ENTITY's signature as its own language writes it, or NIL for a type that has
 no parameter list.
@@ -484,6 +520,10 @@ unknown."
             ;; a :METHOD, so a consumer can print it unconditionally.
             :signature  (render-signature entity)
             :arity      (entity-arity entity)
+            ;; REQ-0049 R2. DESCRIBE-ENTITY already returned the whole
+            ;; docstring inside :PROPERTIES and no surface printed it, so a
+            ;; caller could read where a definition is and not what it does.
+            :summary    (definition-summary entity)
             :properties (loop for key being the hash-keys of (properties entity)
                                 using (hash-value value)
                               unless (null value) append (list key value))

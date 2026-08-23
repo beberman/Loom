@@ -23,6 +23,17 @@
   (name "")
   (graph (make-graph))
   (indexed-at nil)
+  ;; REQ-0050 R2. The commit and diff hash of the tree *as the analyzer read
+  ;; it*, captured when indexing finishes rather than when a caller asks.
+  ;;
+  ;; Reading git at request time is the defect this field exists to fix, and
+  ;; the first attempt at REQ-0050 R4 made exactly that mistake: a status that
+  ;; shells out to `git rev-parse HEAD' when asked reports the tree now, so a
+  ;; service whose index is two hours old still answers with today's commit and
+  ;; today's diff, and a harness comparing the two sees agreement. Three things
+  ;; move independently -- the commit, the working tree, the index -- and only
+  ;; a value recorded at index time speaks for the third.
+  (indexed-fingerprint nil)
   (file-count 0)
   (errors '())                  ; (path . condition-text), most recent first
   (stamps (make-hash-table :test #'equal))   ; relative path -> FILE-STAMP
@@ -529,7 +540,9 @@ thread exists."
           (when (index-file repository path :quiet quiet) (incf indexed))))
       (resolve-and-check repository :quiet quiet)
       (setf (repository-file-count repository) indexed
-            (repository-indexed-at repository) (get-universal-time))
+            (repository-indexed-at repository) (get-universal-time)
+            (repository-indexed-fingerprint repository)
+            (index-fingerprint (repository-root repository)))
       ;; DES-0025. Outside RESOLVE-AND-CHECK because it is not a pass over this
       ;; repository: it re-derives every cross-repository edge everywhere, which
       ;; is how a retraction here cannot leave a dangling edge there (REQ-0027
@@ -815,7 +828,9 @@ it."
           ;; index last changed", so a poll that found nothing must leave it
           ;; alone. `now' rather than a fresh GET-UNIVERSAL-TIME, because it is
           ;; the instant the change was observed at.
-          (setf (repository-indexed-at repository) now)))
+          (setf (repository-indexed-at repository) now
+                (repository-indexed-fingerprint repository)
+                (index-fingerprint (repository-root repository)))))
       (length changed)))
     ;; Outside the lock, and only when something actually moved. A store the
     ;; index has outgrown answers queries with vectors for definitions that no
@@ -1038,6 +1053,19 @@ a file with nothing to report contributes nothing rather than an empty list."
   (loop for file in (entities-of-type graph :file)
         sum (length (getp file property))))
 
+(defun index-fingerprint (root)
+  "ROOT's commit and diff hash as a plist, for recording at index time.
+
+REQ-0050 R2. Both halves, because they answer different questions: a commit is
+stable across hours of editing so it distinguishes weeks, and the diff hash
+moves on every save so it distinguishes the states an index is actually built
+from. GIT-DIFF-HASH does not see untracked files, which is a real gap in the
+pairing REQ-0036 R4 already relies on and is recorded as open there."
+  (multiple-value-bind (commit commit-reason) (git-commit root)
+    (multiple-value-bind (diff diff-reason) (git-diff-hash root)
+      (list :commit commit :commit-reason commit-reason
+            :diff diff :diff-reason diff-reason))))
+
 (defun repository-status (repository)
   "SS3.2's status, as plain data: \"indexing progress, entity and relationship
 counts, watcher health, unresolved document references, unenforced rules, and
@@ -1052,6 +1080,19 @@ the last error per thread.\""
           ;; the one that says why the waiting would happen.
           :state (repository-state repository)
           :indexed-at (repository-indexed-at repository)
+          ;; REQ-0050 R1 and R2. INDEXED-AT is a generation counter: it orders
+          ;; reindexes and names no tree. The commit alone is not enough either
+          ;; -- it moves on `git commit' where the working tree, which is what
+          ;; the analyzer reads, moves on every save -- so a commit agreeing
+          ;; with HEAD is consistent with an index built from entirely
+          ;; different bytes. The pair is what REQ-0036 R4 already carries on
+          ;; every context record and what nothing else carried.
+          ;;
+          ;; From the stored fingerprint, not from git: what is wanted is the
+          ;; tree the index was built from, and asking git now answers about
+          ;; the tree now.
+          :commit (getf (repository-indexed-fingerprint repository) :commit)
+          :diff (getf (repository-indexed-fingerprint repository) :diff)
           :files (repository-file-count repository)
           :entities (length (all-entities graph))
           :relationships (length (all-relationships graph))

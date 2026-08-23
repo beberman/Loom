@@ -1649,6 +1649,10 @@ neighbour two hops out all read as the same kind of line."
                     all)))
     (list :entity (entity-summary entity)
           :band band
+          ;; REQ-0049 R1. Computed for every item and printed only for a seed
+          ;; (ITEM-SUMMARY-LINE), so a consumer over REST or MCP can read it on
+          ;; any band while the rendered text stays inside its budget.
+          :summary (definition-summary entity)
           ;; DES-0026 D10. A neighbour at distance 1 on :IMPLEMENTS and one at
           ;; distance 4 on :CALLS are worth different amounts of reading, and
           ;; before this they printed identically. NIL on a seed, which has no
@@ -1996,6 +2000,21 @@ Every band is named, seeds included, so no line in the block is unlabelled."
     (:neighbour "one hop away")
     (t          (string-downcase (princ-to-string band)))))
 
+(defun item-summary-line (item)
+  "A seed's own description, indented, or NIL. REQ-0049 R1.
+
+Seeds only, which is narrower than R1 asks and is deliberate: R3 wants the band
+measured and the corpus does not yet hold the usage to measure it. Eight seeds
+at *DEFINITION-SUMMARY-BUDGET* is about 190 tokens against a 4000 budget, where
+the same treatment over a 130-item bundle would be 3900 and is the whole thing.
+
+The seed band is where it pays. A neighbour arrived because a seed reached it
+and its relevance is already implied by the edge; a seed is what the task's own
+words or the embedder proposed, and whether it is the right one is exactly the
+open question."
+  (when (eq :seed (getf item :band))
+    (getf item :summary)))
+
 (defun render-item (item)
   "One bundle item as the text a reader sees.
 
@@ -2010,7 +2029,8 @@ because the tier then bought a fifth of what it was budgeted for. Measured:
 This function's docstring is the reason RENDER-CONTEXT gives for living beside
 the builder -- \"the rendering is where the token budget is really spent\" --
 made true rather than merely asserted."
-  (let ((entity (getf item :entity)))
+  (let ((entity (getf item :entity))
+        (summary (item-summary-line item)))
     (with-output-to-string (out)
       (format out "~(~a~) ~a~@[  [~a]~]~@[  (stale)~]~@[  ~a~]~%"
               (getf entity :type) (getf entity :name)
@@ -2021,6 +2041,10 @@ made true rather than merely asserted."
                         (getf item :via) (getf item :cost)
                         (let ((c (getf item :convergence)))
                           (and c (> c 1) c)))))
+      ;; REQ-0049 R1, on its own line rather than appended to the one above:
+      ;; the entity line is already five fields wide and a sentence on the end
+      ;; of it would wrap unpredictably against every terminal.
+      (when summary (format out "    ~a~%" summary))
       (dolist (rel (getf item :relations))
         (format out "    ~a ~(~a~) ~a~%"
                 (if (eq :out (getf rel :direction)) "->" "<-")

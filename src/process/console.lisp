@@ -624,6 +624,11 @@ the reader tell which question they asked.")
     ;; `find' and `impact' and a signature would widen every row of both.
     (when (getf detail :signature)
       (format t "~&  ~a~%" (getf detail :signature)))
+    ;; REQ-0049 R2. Below the signature and above the edges, because it is what
+    ;; a reader wants after knowing what the thing takes and before knowing
+    ;; what it touches.
+    (when (getf detail :summary)
+      (format t "~&  ~a~%" (getf detail :summary)))
     ;; A document's :BODY is its author's whole concatenation, so printing it
     ;; put the neighbours below an unbounded amount of prose, and for a
     ;; decision printed the rationale twice -- once under its own key and once

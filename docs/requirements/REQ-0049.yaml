@@ -119,9 +119,29 @@ body: |
 
   ACCEPTANCE
 
-  `describe fnv-1a` prints the sentence that distinguishes it from
-  CONTENT-FINGERPRINT. `survey Loom utils` followed by one description per side
-  discards `full-test ~ run-all-tests` without reading either body.
+  AMENDED 2026-08-23, on measuring it. The clause first read "`describe fnv-1a`
+  prints the sentence that distinguishes it from CONTENT-FINGERPRINT", and that
+  is false. Built, the two summaries are:
+
+      fnv-1a               A 64-bit FNV-1a hash of TEXT, as sixteen hex digits.
+      content-fingerprint  A 64-bit FNV-1a hash of STRING, as sixteen lowercase
+                           hex digits.
+
+  They do not distinguish the pair. They near enough confirm it is one
+  function, and the fact that separates them -- FNV-1A feeds
+  `(ldb (byte 8 0) (char-code char))', the low octet and nothing else -- appears
+  nowhere in either docstring. It is in the code.
+
+  Which is this requirement's own argument, arriving as a correction to its own
+  acceptance. A description is the right evidence for *relevance* and the wrong
+  evidence for *equivalence*, and here it does both jobs correctly: it says
+  these two are candidates for the same work, and it does not say they are
+  interchangeable, because nothing in the prose knows that.
+
+  So the acceptance is that `describe fnv-1a` prints a sentence at all, that it
+  is the first sentence rather than the paragraph, and that `survey Loom utils`
+  followed by one description per side discards `full-test ~ run-all-tests`
+  without reading either body -- a pair the descriptions genuinely do separate.
 
   The floors are REQ-0040's and do not move: tools/acceptance.py at 43 of 45,
   known-item at 443 of 450 with no family below name 148, inflected 148, prose

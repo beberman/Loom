@@ -29,6 +29,9 @@
    ;; BUG-0044: a rendering is a display concern, so it is built rather than
    ;; stored and :SIGNATURE is gone from the ontology.
    #:render-signature
+   ;; REQ-0049: what a definition says about itself, bounded.
+   #:definition-summary
+   #:*definition-summary-budget*
    #:lambda-marker-p
 
    ;; services (SS11's read-only tools)
