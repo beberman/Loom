@@ -9,6 +9,7 @@ Same review as the 2026-08-21 pass below, run again after the week's work.
 | "a size-aware `context` that trims to a budget the caller names would be the fix, and nothing asks for one" | REQ-0040 asks for it and PLAN-0045 built it: `--budget`, one budget covering both tiers, and a cutoff signal saying what a larger one would buy |
 | "a query that takes a definition and returns definitions like it... A near-duplicate docstring detector would have found four of the ten pairs in one call" | REQ-0042, implemented as `similar`. `survey Loom utils` returns nine differing-name pairs including three of the ten found by hand |
 | "There is no call that takes two [repositories] and reports what they have in common... the shape it wants here is a *diff*" | REQ-0042 R3, implemented as `survey` |
+| "`commit` in a `structure` answer is not the state of what was indexed" | REQ-0050, which generalises it: the commit measures the tree and is read as measuring the index, and the same defect made four acceptance runs report a stale service's score |
 | `tools/loom-serve.sh`'s 20-second start timeout | Fixed. It is ~150s now, sized against a cold fasl cache. Its failure message still says "after ~20s" and that string is corrected here |
 
 What stayed was checked the same way. Two items were rewritten rather than
@@ -232,14 +233,6 @@ WHERE IT COULD NOT HELP, AND THIS IS THE FINDING
    for. Each was caught by reading both bodies. `describe source=true` makes
    that reading one call instead of two file opens, which is real but small: the
    judgement is entirely manual and the index offers nothing toward it.
-
-2. **`commit` in a `structure` answer is not the state of what was indexed.**
-   The field named the last commit while the index reflected a working tree with
-   twenty-four modified files. It is not wrong, and CLAUDE.md's advice to compare
-   it against `git rev-parse HEAD` reads as "the index is current" in exactly the
-   state where the two agree and the content does not. REQ-0036 R4 already knows
-   this -- it pairs the commit with a diff hash for precisely this reason -- and
-   the same pairing belongs in `structure` and `status`.
 
 ---
 
