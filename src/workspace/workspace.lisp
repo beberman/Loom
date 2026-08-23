@@ -38,6 +38,11 @@
   ;; next restart. NIL is the normal case: every repository Loom indexed before
   ;; this existed has no such file and needs none.
   (frameworks nil)
+  ;; The vector sidecar for this repository, DEC-0006. :UNLOADED until first
+  ;; asked for, then the store or NIL. Cached because LOAD-VECTOR-STORE reads
+  ;; 5 MB off disk and a context query must not do that per call, and marked
+  ;; rather than left NIL so that "there is no store" is looked up once too.
+  (cached-vectors :unloaded)
   ;; DES-0018 D5. Why git could not be asked what this tree ignores, or NIL
   ;; when it answered. Set on every pass, so it clears itself as soon as the
   ;; cause goes away. Reported by `status' rather than logged as an error: a

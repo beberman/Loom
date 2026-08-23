@@ -224,3 +224,46 @@ when there is no store. Reaches no embedder; for `status' and for tests."
             (unless (eql known-digest (loom-embed:document-digest (entity-document entity)))
               (incf changed))))))))
 
+
+;;; ------------------------------------------------------------------
+;;; What a query gets
+;;; ------------------------------------------------------------------
+
+(defparameter *embedder* nil
+  "The embedder every repository uses, or NIL to build the default on demand.
+
+A parameter so a test can bind one and so a deployment can install a different
+implementation without touching a call site. DEC-0006 put the protocol in
+loom-embed precisely so that this is the only line that names ollama.")
+
+(defun current-embedder ()
+  "The configured embedder, memoing, built once.
+
+Constructing one opens no socket -- OLLAMA-EMBEDDER holds a host string and a
+model name -- so this is free on a machine that has no ollama and never asks
+for one."
+  (or *embedder*
+      (setf *embedder*
+            (loom-embed:make-memoing-embedder (loom-embed:make-ollama-embedder)))))
+
+(defun repository-vectors (repository)
+  "REPOSITORY\'s vector store, or NIL when there is not one worth using.
+
+Read from disk once and remembered, including the answer NIL: a repository with
+no store must not re-probe the filesystem on every query, and a 5 MB read must
+not happen per call.
+
+REQ-0048 R6 falls out of the order of operations here. Loading a store is file
+I/O and nothing else, so a machine with no store never reaches the network at
+all -- the embedder is constructed, asked for its id, and never called. Only a
+repository that has a store can cost a query anything."
+  (let ((cached (repository-cached-vectors repository)))
+    (if (eq cached :unloaded)
+        (setf (repository-cached-vectors repository)
+              (loom-embed:load-vector-store (repository-name repository)
+                                            (current-embedder)))
+        cached)))
+
+(defun forget-repository-vectors (repository)
+  "Drop the cached store so the next query reads from disk again."
+  (setf (repository-cached-vectors repository) :unloaded))

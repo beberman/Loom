@@ -60,6 +60,10 @@
 
    ;; the vector sidecar, DEC-0006 and DES-0040 D2
    #:build-vector-store
+   #:repository-vectors
+   #:forget-repository-vectors
+   #:current-embedder
+   #:*embedder*
    #:update-vector-store
    #:vector-store-staleness
    #:entity-document

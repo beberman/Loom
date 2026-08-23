@@ -268,8 +268,16 @@ Pass source=true for the definition's text."
   (let ((repo (require-repository repository)))
     (let ((started (get-internal-real-time)))
       (multiple-value-bind (bundle instrumentation)
-          (build-context (repository-graph repo) task
-                         :source-fn (lambda (id) (definition-source repo id)))
+          ;; DEC-0006. Bound here rather than read inside BUILD-CONTEXT for the
+          ;; reason the SOURCE-FN comment above gives: loom-knowledge is handed
+          ;; a graph and never learns which repository it belongs to, and this
+          ;; entry has the repository. REPOSITORY-VECTORS is NIL until somebody
+          ;; builds a store, so on an ordinary tree both bindings are NIL and
+          ;; SEED-ENTITIES takes the path it has taken since S3.
+          (let ((loom-knowledge:*context-vector-store* (repository-vectors repo))
+                (loom-knowledge:*context-embedder* (current-embedder)))
+            (build-context (repository-graph repo) task
+                           :source-fn (lambda (id) (definition-source repo id))))
         ;; REQ-0036 R1 and R8. The record is additive: the identifier is one
         ;; more key on a bundle a caller already reads, and with
         ;; *CONTEXT-LOG-DIRECTORY* NIL -- the default -- RECORD-CONTEXT-CALL

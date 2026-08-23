@@ -755,8 +755,16 @@ which is CON-0006's expensive error at the scale of one answer."
     (let* ((repo (current-repository))
            (started (get-internal-real-time)))
       (multiple-value-bind (bundle instrumentation)
-          (build-context (repository-graph repo) task
-                         :source-fn (lambda (id) (definition-source repo id)))
+          ;; DEC-0006. Bound here rather than read inside BUILD-CONTEXT for the
+          ;; reason the SOURCE-FN comment above gives: loom-knowledge is handed
+          ;; a graph and never learns which repository it belongs to, and this
+          ;; entry has the repository. REPOSITORY-VECTORS is NIL until somebody
+          ;; builds a store, so on an ordinary tree both bindings are NIL and
+          ;; SEED-ENTITIES takes the path it has taken since S3.
+          (let ((loom-knowledge:*context-vector-store* (repository-vectors repo))
+                (loom-knowledge:*context-embedder* (current-embedder)))
+            (build-context (repository-graph repo) task
+                           :source-fn (lambda (id) (definition-source repo id))))
         (write-string (render-context bundle))
         ;; REQ-0036 R1 is every context call rather than every call over the
         ;; service, so the console records too. Nothing is written and nothing

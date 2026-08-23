@@ -939,7 +939,7 @@ that the difference between rank 1 and rank 2 is small next to the difference
 between appearing on a list and not appearing on it, which is the property that
 makes fusion robust to two scores that share no scale.")
 
-(defparameter *semantic-weight* 1.0
+(defparameter *semantic-weight* 1.5
   "How much a place on the semantic list is worth against a place on the
 lexical one.
 
@@ -1148,7 +1148,7 @@ Passed in rather than loaded here, because loom-knowledge is handed a VIEW and
 never learns which repository it belongs to. The caller knows, and the caller
 is where the store is loaded.")
 
-(defparameter *semantic-limit* 8
+(defparameter *semantic-limit* 6
   "How many entities the scan proposes.
 
 The same eight ADMIT-SEEDS may admit, and deliberately not more. DES-0040 D4
