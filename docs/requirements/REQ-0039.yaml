@@ -1,6 +1,6 @@
 id: REQ-0039
 title: A seed must be chosen for what a definition says it does, because the prose that answers the task is already indexed and the ranking does not read it
-status: draft
+status: partial
 date: 2026-08-21
 refines: [REQ-0016, CON-0007]
 affects: [seed-score, seed-entities, admit-seeds, build-context, plain-words]
@@ -175,3 +175,42 @@ body: |
 
   What is left here is R2, R4 and R5: the two kinds of evidence are
   incomparable, a path term is not an entity term, and a package is seedable.
+
+  OUTSTANDING, 2026-08-23
+
+  r39-3 still misses. `test whether a string starts with a prefix' does not
+  return DOT-PREFIXED-P, which is the case this requirement was written from and
+  the one PLAN-0039 existed to move.
+
+  What is now known is why, on both mechanisms, and neither is a defect to fix:
+
+    Lexically it is a candidate and ranks outside the eight. `prefix' is a
+    substring of "dot-prefixed-p" so NAME-MATCHES-P reaches it, and the term
+    report says so -- `prefix' and `starts' both come back WEAK, which is
+    DES-0032 D2's way of saying something matched them and no admitted seed did.
+    Five terms, and "test" and "string" pull in most of the tree.
+
+    Densely it is rank 5 at cosine 0.5627 against a top of 0.6255, and
+    DES-0040's relative cut of 0.90 keeps 0.5629 and above. It is dropped by
+    0.0002. The cut is behaving as designed rather than misfiring: the whole
+    distribution is flat, which is the shape of a query the embedder has no
+    confident answer for, and the three candidates it does keep -- AS-STRING,
+    RUN-TEST, TEST-CODE-P -- are not better answers.
+
+  So the case is reachable by neither mechanism as they stand, and lowering the
+  cut to rescue it is refused by measurement: 0.90 was chosen over 0.95 and 0
+  against all three instruments, and the cut is what recovered POLYGONSTOPARTITION.
+
+  What this requirement did deliver is DES-0028's prose seeding, which is in
+  the tree and which the prose family measures at 147 of 150. r39-1 and r39-2
+  pass. The judged set stands at 43 of 45 with r39-3 and fe-5 the only misses.
+
+  SUPERSEDED, 2026-08-22
+
+  The WHAT THIS IS NOT clause above rejected embeddings on three grounds: a
+  model dependency, a build step, and an answer nobody can explain. DEC-0006
+  reverses it, accepting the first two and answering the third -- DES-0032's
+  term report did not exist when this was written, and a dense seed carries
+  :SIMILARITY where a term would be, so a caller can see it arrived on
+  similarity and the absence report still says which of their words reached
+  nothing. The rest of this requirement stands.

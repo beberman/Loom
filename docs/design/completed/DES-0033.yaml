@@ -1,6 +1,6 @@
 id: DES-0033
 title: "REQ-0039 after the literature: Porter replaces the hand-rolled suffix rules, and the two mechanisms measured against acceptance are recorded rather than shipped"
-status: draft
+status: implemented
 date: 2026-08-22
 refines: [REQ-0039, CON-0007]
 affects: [stem-variants, task-tokens, seed-score, best-name-rank, seed-matches]

@@ -1,6 +1,6 @@
 id: DES-0035
 title: "The stemmer is a hybrid: four suffix rules generate the surface forms, Porter decides whether to believe them"
-status: draft
+status: implemented
 date: 2026-08-22
 refines: [REQ-0039, CON-0007]
 affects: [stem-variants, surface-variants, inflected-p, task-tokens]

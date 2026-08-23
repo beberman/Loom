@@ -1,6 +1,6 @@
 id: PLAN-0039
 title: "DES-0033 in four steps: the origins map, the ranked scale, the coverage band, the measurement"
-status: draft
+status: final
 date: 2026-08-22
 refines: [DES-0033]
 affects: [task-tokens, seed-score, best-name-rank, seed-matches]
