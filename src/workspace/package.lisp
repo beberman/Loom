@@ -72,6 +72,10 @@
    #:vector-store-vectors
    #:vector-store-entity-id
    #:build-vector-store
+   #:update-vector-store
+   #:vector-store-staleness
+   #:vector-store-digests
+   #:document-digest
    #:write-vector-store
    #:load-vector-store
    #:delete-vector-store

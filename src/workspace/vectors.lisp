@@ -76,6 +76,11 @@ cache-friendly walk, and no pointer chase per candidate."
   (count 0 :type fixnum)
   (built-at 0)
   (ids (make-array 0) :type simple-vector)
+  ;; One digest per id, of the text that was embedded. What makes an update
+  ;; incremental: an entity whose document is unchanged keeps its vector, and
+  ;; the document is the name and the docstring, so editing a function's *body*
+  ;; changes nothing here at all.
+  (digests (make-array 0) :type simple-vector)
   (vectors (make-array 0 :element-type 'single-float)
    :type (simple-array single-float (*))))
 
@@ -129,6 +134,25 @@ below."
         (format nil "~a. ~a" words documentation)
         words)))
 
+(defun document-digest (text)
+  "A 32-bit FNV-1a hash of TEXT.
+
+Written out rather than SXHASH because a store outlives the image that wrote
+it, and SXHASH's value for a string is only promised to be consistent within
+one implementation -- which is a promise about the wrong axis. FNV-1a is four
+lines and is the same number on every run of every build.
+
+A collision means a changed document keeps its old vector. Over a few thousand
+documents against a 32-bit space that is not a risk worth a wider hash, and the
+failure is one stale vector rather than a corrupt store."
+  (let ((hash 2166136261))
+    (declare (type (unsigned-byte 32) hash))
+    (loop for char across text
+          do (setf hash (logand #xFFFFFFFF
+                                (* (logxor hash (logand (char-code char) #xFFFF))
+                                   16777619))))
+    hash))
+
 (defun vector-candidates (graph)
   "Every entity in GRAPH worth a vector, in a stable order.
 
@@ -148,47 +172,134 @@ stores impossible."
 ;;; Building
 ;;; ------------------------------------------------------------------
 
-(defun build-vector-store (repository embedder &key (batch *vector-batch*))
-  "Embed REPOSITORY's definitions and write the store. Returns it.
-
-Signals LOOM-EMBED:EMBEDDER-UNAVAILABLE if the embedder cannot answer, and
-writes nothing in that case -- a half-written store whose header claims a count
-the data does not have is the one state the loader cannot tell from a good
-one."
-  (let* ((entities (vector-candidates (repository-graph repository)))
-         (count (length entities))
-         (ids (make-array count))
-         (dimensions nil)
-         (flat nil)
-         (index 0))
-    (loop for rest on entities by (lambda (l) (nthcdr batch l))
+(defun embed-documents (embedder documents batch)
+  "Embed DOCUMENTS, a list of strings, BATCH at a time. A list of vectors."
+  (let ((out '()))
+    (loop for rest on documents by (lambda (l) (nthcdr batch l))
           for chunk = (subseq rest 0 (min batch (length rest)))
-          do (let ((vectors (loom-embed:embed-texts
-                             embedder (mapcar #'entity-document chunk))))
-               (loop for entity in chunk
-                     for i from 0
-                     for v = (aref vectors i)
-                     do (when (null dimensions)
-                          (setf dimensions (length v)
-                                flat (make-array (* count dimensions)
-                                                 :element-type 'single-float
-                                                 :initial-element 0.0)))
-                        (unless (= (length v) dimensions)
-                          (error 'loom-embed:embedder-unavailable
-                                 :detail (format nil "vector ~d has ~d components, not ~d"
-                                                 index (length v) dimensions)))
-                        (setf (svref ids index) (princ-to-string (id entity)))
-                        (replace flat v :start1 (* index dimensions))
-                        (incf index))))
+          do (let ((vectors (loom-embed:embed-texts embedder chunk)))
+               (loop for i from 0 below (length vectors)
+                     do (push (aref vectors i) out))))
+    (nreverse out)))
+
+(defun assemble-vector-store (repository embedder rows dimensions)
+  "Write a store from ROWS, each (id digest . vector), and return it."
+  (let* ((count (length rows))
+         (ids (make-array count))
+         (digests (make-array count))
+         (flat (make-array (* count dimensions) :element-type 'single-float
+                                                :initial-element 0.0))
+         (index 0))
+    (dolist (row rows)
+      (destructuring-bind (id digest . vector) row
+        (unless (= (length vector) dimensions)
+          (error 'loom-embed:embedder-unavailable
+                 :detail (format nil "vector for ~a has ~d components, not ~d"
+                                 id (length vector) dimensions)))
+        (setf (svref ids index) id
+              (svref digests index) digest)
+        (replace flat vector :start1 (* index dimensions))
+        (incf index)))
     (let ((store (make-vector-store
                   :embedder-id (loom-embed:embedder-id embedder)
-                  :dimensions (or dimensions 0)
+                  :dimensions dimensions
                   :count count
                   :built-at (get-universal-time)
                   :ids ids
-                  :vectors (or flat (make-array 0 :element-type 'single-float)))))
+                  :digests digests
+                  :vectors flat)))
       (write-vector-store store (repository-name repository))
       store)))
+
+(defun build-vector-store (repository embedder &key (batch *vector-batch*))
+  "Embed every definition in REPOSITORY and write the store. Returns it.
+
+Signals LOOM-EMBED:EMBEDDER-UNAVAILABLE if the embedder cannot answer, and
+writes nothing in that case -- a half-written store whose header claims a count
+the data does not have is the one state the loader cannot tell from a good one.
+
+Slow, and unavoidably so: the cost is the model's forward pass, measured at
+about 3.7 documents a second on this machine and flat across every batch size
+from 8 to 128 and across two, four and eight concurrent requests. 1655
+definitions take 319 seconds. UPDATE-VECTOR-STORE is what makes that a
+one-time cost rather than the price of every reindex."
+  (let* ((entities (vector-candidates (repository-graph repository)))
+         (documents (mapcar #'entity-document entities))
+         (vectors (embed-documents embedder documents batch)))
+    (assemble-vector-store
+     repository embedder
+     (loop for entity in entities
+           for document in documents
+           for vector in vectors
+           collect (list* (princ-to-string (id entity))
+                          (document-digest document)
+                          vector))
+     (if vectors (length (first vectors)) 0))))
+
+(defun update-vector-store (repository embedder &key (batch *vector-batch*))
+  "Bring REPOSITORY's store up to date, embedding only what changed.
+
+Returns the store, or NIL when there is no store to update -- which is what
+makes this opt-in. A repository nobody has built a store for stays without one,
+and REQ-0048 R6's absent case is reached by doing nothing rather than by
+deciding not to.
+
+What is re-embedded is a document that changed, not an entity that did. The
+document is the name as words and the docstring, so a body rewritten line by
+line embeds to the same text and keeps its vector. Editing one docstring in a
+tree of 1655 definitions costs one embedding call.
+
+Signals LOOM-EMBED:EMBEDDER-UNAVAILABLE if there is work to do and the embedder
+cannot answer. When nothing changed it does not reach the embedder at all,
+which is the ordinary case on a reindex."
+  (let ((existing (load-vector-store (repository-name repository) embedder)))
+    (when existing
+      (let ((known (make-hash-table :test #'equal))
+            (dimensions (vector-store-dimensions existing)))
+        (dotimes (i (vector-store-count existing))
+          (setf (gethash (vector-store-entity-id existing i) known) i))
+        (let* ((entities (vector-candidates (repository-graph repository)))
+               (rows '())
+               (fresh '()))
+          ;; First pass: reuse what is unchanged, and collect what is not.
+          (dolist (entity entities)
+            (let* ((id (princ-to-string (id entity)))
+                   (document (entity-document entity))
+                   (digest (document-digest document))
+                   (index (gethash id known)))
+              (if (and index (eql digest (svref (vector-store-digests existing) index)))
+                  (push (list* id digest
+                               (subseq (vector-store-vectors existing)
+                                       (* index dimensions)
+                                       (* (1+ index) dimensions)))
+                        rows)
+                  (push (list id digest document) fresh))))
+          (setf rows (nreverse rows) fresh (nreverse fresh))
+          ;; Second pass: one embedding call per batch of what actually moved.
+          (when fresh
+            (let ((vectors (embed-documents embedder (mapcar #'third fresh) batch)))
+              (loop for (id digest nil) in fresh
+                    for vector in vectors
+                    do (push (list* id digest vector) rows))))
+          ;; An entity gone from the index takes its vector with it: it is
+          ;; simply not in ENTITIES, so nothing collected it.
+          (assemble-vector-store repository embedder rows dimensions))))))
+
+(defun vector-store-staleness (repository embedder)
+  "How many of REPOSITORY's documents an update would have to embed, or NIL
+when there is no store. Reaches no embedder; for `status' and for tests."
+  (let ((existing (load-vector-store (repository-name repository) embedder)))
+    (when existing
+      (let ((known (make-hash-table :test #'equal))
+            (changed 0))
+        (dotimes (i (vector-store-count existing))
+          (setf (gethash (vector-store-entity-id existing i)
+                         known)
+                (svref (vector-store-digests existing) i)))
+        (dolist (entity (vector-candidates (repository-graph repository)) changed)
+          (let ((known-digest (gethash (princ-to-string (id entity)) known)))
+            (unless (eql known-digest (document-digest (entity-document entity)))
+              (incf changed))))))))
 
 ;;; ------------------------------------------------------------------
 ;;; Writing
@@ -224,7 +335,8 @@ promising data that is not there yet."
          ("dimensions"  . ,(vector-store-dimensions store))
          ("count"       . ,(vector-store-count store))
          ("built-at"    . ,(vector-store-built-at store))
-         ("ids"         . ,(coerce (vector-store-ids store) 'list)))
+         ("ids"         . ,(coerce (vector-store-ids store) 'list))
+         ("digests"     . ,(coerce (vector-store-digests store) 'list)))
        out)
       (terpri out))
     store))
@@ -254,7 +366,8 @@ every query forever."
                  (dimensions (cdr (assoc :dimensions header)))
                  (count (cdr (assoc :count header)))
                  (built-at (cdr (assoc :built-at header)))
-                 (ids (cdr (assoc :ids header))))
+                 (ids (cdr (assoc :ids header)))
+                 (digests (cdr (assoc :digests header))))
             (when (and (stringp stored-id)
                        (integerp dimensions) (plusp dimensions)
                        (integerp count)
@@ -263,7 +376,13 @@ every query forever."
                        ;; a corrupt file; this one is a *valid* file written by
                        ;; something else.
                        (string= stored-id (loom-embed:embedder-id embedder))
-                       (= count (length ids)))
+                       (= count (length ids))
+                       ;; A store written before digests existed cannot be
+                       ;; updated incrementally, and a store that loads but
+                       ;; cannot be updated is worse than none: it would be
+                       ;; queried forever against an index that had moved.
+                       (listp digests)
+                       (= count (length digests)))
               (let ((flat (read-vector-data data-path (* count dimensions))))
                 (when flat
                   (make-vector-store :embedder-id stored-id
@@ -271,6 +390,7 @@ every query forever."
                                      :count count
                                      :built-at (or built-at 0)
                                      :ids (coerce ids 'simple-vector)
+                                     :digests (coerce digests 'simple-vector)
                                      :vectors flat))))))
       ;; SERIOUS-CONDITION, not ERROR: cl-yaml's conditions are not ERROR
       ;; subtypes and RULE-0004 is about exactly this reflex. A malformed

@@ -20,12 +20,14 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
      (delete-vector-store ,name)))
 
 (defun sample-store (&key (embedder-id "fixed:test") (dimensions 3)
-                          (ids #("a" "b")) (vectors #(1.0 0.0 0.0  0.0 1.0 0.0)))
+                          (ids #("a" "b")) (digests #(1 2))
+                          (vectors #(1.0 0.0 0.0  0.0 1.0 0.0)))
   (make-vector-store :embedder-id embedder-id
                      :dimensions dimensions
                      :count (length ids)
                      :built-at (get-universal-time)
                      :ids ids
+                     :digests digests
                      :vectors (make-array (length vectors)
                                           :element-type 'single-float
                                           :initial-contents (coerce vectors 'list))))
@@ -53,7 +55,7 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
   ;; that loaded cleanly and reports the right count.
   (with-clean-store ()
     (let ((embedder (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 2)))
-      (write-vector-store (sample-store :dimensions 2 :ids #("x")
+      (write-vector-store (sample-store :dimensions 2 :ids #("x") :digests #(9)
                                         :vectors #(-0.6 0.8))
                           *test-repository-name*)
       (let ((loaded (load-vector-store *test-repository-name* embedder)))
@@ -182,3 +184,149 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
         (documented (vec-entity "make-hex-cell" "Build one empty cell.")))
     (is (string= "make hex cell" (entity-document bare)))
     (is (string= "make hex cell. Build one empty cell." (entity-document documented)))))
+
+;;; ------------------------------------------------------------------
+;;; Updating without rebuilding
+;;; ------------------------------------------------------------------
+
+(defun vec-repository (name &rest entities)
+  "A repository named NAME whose graph holds ENTITIES."
+  (let ((graph (make-graph)))
+    (dolist (entity entities) (add-entity graph entity))
+    (loom-workspace::make-repository :root #p"/tmp/vec/" :name name :graph graph)))
+
+(defun store-vector-for (store id)
+  "The vector STORE holds for ID, as a list, or NIL."
+  (let ((dimensions (vector-store-dimensions store)))
+    (dotimes (i (vector-store-count store))
+      (when (string= id (vector-store-entity-id store i))
+        (return (coerce (subseq (vector-store-vectors store)
+                                (* i dimensions) (* (1+ i) dimensions))
+                        'list))))))
+
+(defclass counting-embedder (loom-embed:fixed-embedder)
+  ((calls :initform 0 :accessor counting-embedder-calls)
+   (texts :initform 0 :accessor counting-embedder-texts))
+  (:documentation "A FIXED-EMBEDDER that records how much it was asked to do.
+
+The point of an incremental update is the work it does *not* do, and a test
+that only compared the resulting store could not tell a correct update from a
+full rebuild that happened to produce the same vectors."))
+
+(defmethod loom-embed:embed-texts ((embedder counting-embedder) texts)
+  (incf (counting-embedder-calls embedder))
+  (incf (counting-embedder-texts embedder) (length (coerce texts 'list)))
+  (call-next-method))
+
+(defun counting-embedder (&key (dimensions 4))
+  (make-instance 'counting-embedder :id "fixed:test" :dimensions dimensions
+                                    :table (make-hash-table :test #'equal)))
+
+(test an-unchanged-document-is-not-embedded-again
+  ;; The whole point. Building Loom's own store takes 319 seconds at about 3.7
+  ;; documents a second, and that cost is the model's forward pass rather than
+  ;; anything a batch size can move. A reindex that re-embedded everything
+  ;; would make the file watcher unusable.
+  (with-clean-store ()
+    (let* ((embedder (counting-embedder))
+           (repository (vec-repository *test-repository-name*
+                                       (vec-entity "alpha" "The first thing.")
+                                       (vec-entity "beta" "The second thing."))))
+      (build-vector-store repository embedder)
+      (let ((after-build (counting-embedder-texts embedder)))
+        (is (= 2 after-build) "the build embeds both documents")
+        (let ((store (update-vector-store repository embedder)))
+          (is (not (null store)))
+          (is (= 2 (vector-store-count store)) "both entities survive")
+          (is (= after-build (counting-embedder-texts embedder))
+              "an update with nothing changed must not reach the embedder"))))))
+
+(test only-the-document-that-changed-is-embedded-again
+  (with-clean-store ()
+    (let* ((embedder (counting-embedder))
+           (repository (vec-repository *test-repository-name*
+                                       (vec-entity "alpha" "The first thing.")
+                                       (vec-entity "beta" "The second thing."))))
+      (build-vector-store repository embedder)
+      (let ((baseline (counting-embedder-texts embedder))
+            (before (store-vector-for (load-vector-store *test-repository-name* embedder)
+                                      "function:src/thing.lisp:alpha")))
+        ;; One docstring rewritten, the other untouched.
+        (setf repository (vec-repository *test-repository-name*
+                                         (vec-entity "alpha" "The first thing.")
+                                         (vec-entity "beta" "Something else entirely.")))
+        (let ((store (update-vector-store repository embedder)))
+          (is (= (1+ baseline) (counting-embedder-texts embedder))
+              "exactly one document is re-embedded, not both")
+          (is (= 2 (vector-store-count store)))
+          (is (equal before (store-vector-for store "function:src/thing.lisp:alpha"))
+              "and the unchanged entity keeps the vector it had"))))))
+
+(test a-changed-body-is-not-a-changed-document
+  ;; What is embedded is the name and the docstring. A function rewritten line
+  ;; by line embeds to the same text, so the commonest edit in a working tree
+  ;; costs no embedding at all.
+  (let ((before (vec-entity "alpha" "The first thing."))
+        (after (vec-entity "alpha" "The first thing.")))
+    (setf (gethash :end-line (properties after)) 400)
+    (is (eql (document-digest (entity-document before))
+             (document-digest (entity-document after))))))
+
+(test an-entity-that-left-the-index-leaves-the-store
+  (with-clean-store ()
+    (let* ((embedder (counting-embedder))
+           (repository (vec-repository *test-repository-name*
+                                       (vec-entity "alpha" "The first thing.")
+                                       (vec-entity "beta" "The second thing."))))
+      (build-vector-store repository embedder)
+      (let ((store (update-vector-store
+                    (vec-repository *test-repository-name*
+                                    (vec-entity "alpha" "The first thing."))
+                    embedder)))
+        (is (= 1 (vector-store-count store)))
+        (is (string= "function:src/thing.lisp:alpha" (vector-store-entity-id store 0)))))))
+
+(test updating-a-repository-with-no-store-does-nothing
+  ;; Opt-in. A repository nobody built a store for stays without one, so
+  ;; REQ-0048 R6's absent case is reached by doing nothing rather than by
+  ;; deciding not to.
+  (with-clean-store ()
+    (let ((embedder (counting-embedder)))
+      (is (null (update-vector-store
+                 (vec-repository *test-repository-name*
+                                 (vec-entity "alpha" "The first thing."))
+                 embedder)))
+      (is (= 0 (counting-embedder-texts embedder))
+          "and it must not reach the embedder to find that out"))))
+
+(test staleness-counts-what-an-update-would-embed
+  (with-clean-store ()
+    (let* ((embedder (counting-embedder))
+           (repository (vec-repository *test-repository-name*
+                                       (vec-entity "alpha" "The first thing.")
+                                       (vec-entity "beta" "The second thing."))))
+      (build-vector-store repository embedder)
+      (is (= 0 (vector-store-staleness repository embedder)))
+      (is (= 1 (vector-store-staleness
+                (vec-repository *test-repository-name*
+                                (vec-entity "alpha" "The first thing.")
+                                (vec-entity "beta" "Changed."))
+                embedder)))
+      (let ((calls (counting-embedder-texts embedder)))
+        (vector-store-staleness repository embedder)
+        (is (= calls (counting-embedder-texts embedder))
+            "and it answers without reaching the embedder")))))
+
+(test a-store-written-before-digests-existed-is-refused
+  ;; It would load and query fine and could never be updated, so it would be
+  ;; answered against an index that had moved on, forever.
+  (with-clean-store ()
+    (let ((embedder (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
+      (write-vector-store (sample-store) *test-repository-name*)
+      (multiple-value-bind (header-path data-path)
+          (vector-store-paths *test-repository-name*)
+        (declare (ignore data-path))
+        (let ((header (with-open-file (in header-path) (json:decode-json in))))
+          (with-open-file (out header-path :direction :output :if-exists :supersede)
+            (json:encode-json (remove :digests header :key #'car) out))))
+      (is (null (load-vector-store *test-repository-name* embedder))))))

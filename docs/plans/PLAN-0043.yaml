@@ -1,5 +1,5 @@
 id: PLAN-0043
-title: "DES-0040 in eight steps: the leaf system, the sidecar, the absent-embedder path first, then fusion, then the weight the simulation could not set, then what a reader has to install"
+title: "DES-0040 in nine steps: the leaf system, the sidecar, the absent-embedder path first, then fusion, then the weight the simulation could not set, then what a reader has to install"
 status: draft
 date: 2026-08-22
 refines: [DES-0040, REQ-0048]
@@ -39,6 +39,36 @@ body: |
   dot-directories and the context log relies on it, so this needs confirming
   rather than building -- `status' reporting a rise in file count after a build
   is the symptom.
+
+  S2b  UPDATING A STORE WITHOUT REBUILDING IT
+
+  A full build is 319 seconds for Loom's 1655 definitions and 622 for
+  game-server and front-end together, and the cost is the model's forward pass
+  rather than anything a caller can arrange around. Measured: throughput is
+  3.2-4.1 documents a second and flat across every batch size from 8 to 128 and
+  across two, four and eight concurrent requests. Batching is already done and
+  is not a lever.
+
+  So a store that rebuilt on reindex would put five minutes of CPU behind every
+  file save, and the watcher would be unusable. UPDATE-VECTOR-STORE re-embeds
+  only what changed, and what counts as changed is the *document* -- the name
+  as words and the docstring -- rather than the entity. A function rewritten
+  line by line embeds to the same text, so the commonest edit in a working tree
+  costs no embedding at all.
+
+  The store carries a digest per id for this. A store written without them is
+  refused on load: it would query correctly and could never be updated, so it
+  would be answered against an index that had moved on, forever.
+
+  RISK: silent staleness. An update that fails leaves a store that still loads
+  and still answers, against a tree it no longer describes. VECTOR-STORE-
+  STALENESS counts what an update would embed without reaching the embedder,
+  which is what `status' would report and what a test can assert.
+
+  RISK: wiring it to the watcher is a separate decision and is not taken here.
+  UPDATE-VECTOR-STORE returns NIL when no store exists, so it is opt-in by
+  having built one; making a reindex call it puts an embedder round trip in the
+  indexing path, and that belongs with S3's memo rather than ahead of it.
 
   S3  THE ABSENT-EMBEDDER PATH, BEFORE ANY FUSION
 
