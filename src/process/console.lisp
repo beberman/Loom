@@ -894,10 +894,41 @@ between 0 and 1." cut))
         (format t "~&called but served by no watched repository:~%")
         (dolist (route client-only) (format t "  ~a~%" route))))))
 
+(defun take-budget-flag (words)
+    "WORDS with any --budget N removed, and the N, as two values.
+
+A flag rather than a trailing positional, for DESCRIBE's reason one command
+over: `context <words>' takes the whole line as the task, so a number on the
+end is a task word until something says otherwise -- and `list the top 10
+handlers' is a task whose last word is a number. A positional budget would read
+that as a budget of 10 and return four lines, with nothing in the output saying
+it had done so.
+
+An unrecognised --flag is refused rather than swallowed into the task, because
+a typo that silently answers a different question is what this command is least
+able to make visible."
+  (let ((task '()) (budget nil) (rest words))
+    (loop while rest
+          for word = (pop rest)
+          do (cond ((string-equal word "--budget")
+                    (let ((value (pop rest)))
+                      (unless value
+                        (error "--budget needs a number after it."))
+                      (let ((parsed (ignore-errors (parse-integer value))))
+                        (unless (and parsed (plusp parsed))
+                          (error "~s is not a budget. Give a positive number ~
+of tokens." value))
+                        (setf budget parsed))))
+                   ((and (> (length word) 2) (string= "--" (subseq word 0 2)))
+                    (error "Unknown option ~s. Try: --budget <tokens>" word))
+                   (t (push word task))))
+    (values (nreverse task) budget)))
+
 (define-command context (&rest words)
-    "context <task description>"
+    "context <task description> [--budget <tokens>]"
     "A budgeted context bundle for a task: what to know before editing."
-  (let ((task (format nil "~{~a~^ ~}" words)))
+  (multiple-value-bind (task-words budget) (take-budget-flag words)
+   (let ((task (format nil "~{~a~^ ~}" task-words)))
     (let* ((repo (current-repository))
            (started (get-internal-real-time)))
       (multiple-value-bind (bundle instrumentation)
@@ -910,6 +941,7 @@ between 0 and 1." cut))
           (let ((loom-knowledge:*context-vector-store* (repository-vectors repo))
                 (loom-knowledge:*context-embedder* (current-embedder)))
             (build-context (repository-graph repo) task
+                           :budget (or budget *context-token-budget*)
                            :source-fn (lambda (id) (definition-source repo id))))
         (write-string (render-context bundle))
         ;; REQ-0036 R1 is every context call rather than every call over the
@@ -919,7 +951,7 @@ between 0 and 1." cut))
                    repo bundle instrumentation
                    :seconds (/ (float (- (get-internal-real-time) started))
                                internal-time-units-per-second))))
-          (when id (format t "~&record ~a~%" id)))))))
+          (when id (format t "~&record ~a~%" id))))))))
 
 (define-command init (path &optional document-directory claude-md endpoint)
     "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>]"

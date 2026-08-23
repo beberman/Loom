@@ -1,0 +1,217 @@
+id: DES-0042
+title: "REQ-0040 by making the budget cover the whole bundle: one number from the caller, two allowances inside it, and a cutoff signal saying what a larger number would buy"
+status: implemented
+date: 2026-08-23
+refines: [REQ-0040, DES-0026]
+affects: [build-context, render-context, estimate-tokens, admit-seeds, context-item]
+tags: [retrieval, context, budget, readability, req-0040, des-0026]
+summary: |
+  A bundle reports 2477 of 4000 tokens and hands the caller 7777. The budget
+  covers the index tier and the source tier is outside it by construction
+  (DES-0026 D2), so the number a caller reads is the smaller of the two things
+  they were sent.
+
+  The caller names the budget, and the bundle answers with what fraction of
+  what it found that budget bought and what number would buy the rest. A
+  budget nobody can set is REQ-0040 R1's defect; a budget set without seeing
+  what a larger one would return is the same defect one step along.
+
+  Measured on Loom, 2026-08-23, at the default budget of 4000:
+
+      task                                items bodies index source total  xbudget
+      context bundle token budget ...      148     5    2477   5279  7777    1.94
+      data-handler                         105     5    1696   1741  3479    0.87
+      how a context bundle is rendered     143     5    2266   6040  8335    2.08
+      the startup sequence                 109     5    1732   2799  4558    1.14
+
+  Three of four exceed the budget. ESTIMATE-TOKENS is not the problem: its sum
+  agrees with the rendered text to within 1% on every row, so this is a
+  question of what the budget is scoped over rather than of how well it counts.
+
+  AFTER, measured 2026-08-23 at the same 4000 with PLAN-0045 landed:
+
+      task                                items bodies index source total  xbudget
+      context bundle token budget ...      109     4    1722   1825  3615    0.90
+      data-handler                         105     5    1696   1742  3480    0.87
+      how a context bundle is rendered     131     3    2127   1873  4081    1.02
+      the startup sequence                 111     2    1863   1833  3757    0.94
+
+  Every task inside its budget, the worst at 1.02 rather than 2.08, and
+  tools/acceptance.py unchanged at 43 of 45. The overshoot that remains is the
+  estimator's 1% plus the header text, which is not accounted against any tier.
+body: |
+  D1  ONE BUDGET, COVERING WHAT THE CALLER RECEIVES
+
+  REQ-0040 R1 asks that the caller name a budget and the bundle honour it.
+  Neither half holds. `:context` takes `(repository task)` and the console
+  takes `context <words>`, so no surface accepts a budget; and the budget that
+  does exist measures 32% of the largest bundle above.
+
+  The fix is scope, not arithmetic. BUILD-CONTEXT's BUDGET becomes the total
+  the caller receives, and the two tiers are allowances inside it rather than
+  one allowance and one exemption.
+
+  WHAT THIS MUST NOT UNDO
+
+  DES-0026 D2 made the source tier free on evidence, and the evidence is still
+  good: "Charging a 400-token body to the index budget spends the cheap tier on
+  the expensive one -- measured before this guard, `context data-handler'
+  printed 31 items for 3979 tokens ... and named 14 of the 157 entities the
+  walk had reached."
+
+  That measurement is about *ordering*, and it stays true: bodies and lines
+  drawn from one undifferentiated pot means the first three bodies eat the
+  bundle. What was wrong was the conclusion that the way to stop that is to put
+  bodies outside the budget entirely. Two allowances inside one total keeps the
+  rationing DES-0026 D2 bought and gives the caller a number that means
+  something.
+
+  D2  THE SOURCE TIER IS BOUNDED BY TOKENS AS WELL AS BY A COUNT
+
+  *CONTEXT-SOURCE-DEFINITIONS* is 5 and is the only thing bounding the source
+  tier today. Five bodies cost 1741 tokens on one task and 6040 on another,
+  because a body is 348 to 1208 tokens depending on which five they are.
+
+  DES-0026 D2 sized it: "A padded source block is 200-600 tokens". Measured on
+  this tree today it is 348 to 1208, and the mean on the two worst tasks is
+  over 1000. The estimate is out by roughly a factor of two, and the reason is
+  visible in this repository's own style -- Loom's functions carry docstrings
+  longer than their bodies, and a body block carries both.
+
+  A count is still the unit a caller reasons in and D2 was right about that, so
+  it stays. What is added is that the source allowance also has a token
+  ceiling, and bodies are admitted in seed order until either bound binds. A
+  caller asking for five bodies inside 4000 tokens gets as many of the five as
+  fit and is told how many they did not get, which is D3.
+
+  D3  THE BUNDLE SAYS WHAT FRACTION IT SENT AND WHAT BUDGET SENDS THE REST
+
+  `truncated' is a boolean. It says that a bundle was cut and never what or how
+  much, so a caller cannot tell a bundle that lost its 148th neighbour from one
+  that lost forty entities and three bodies -- and, more to the point, cannot
+  tell whether asking again would be worth anything.
+
+  It becomes a cutoff signal the caller can act on:
+
+      # 148 entities, ~2477/4000 tokens
+      #   sent 32% of what this walk found; 7756 tokens sends all of it
+      #   index   148 of 148 items,   2477 tokens, nothing withheld
+      #   source    1 of 5 bodies,    1056 tokens, 4 withheld at 4223 tokens
+
+  Three facts, and each answers a different question. The percentage says
+  whether the answer in hand is most of the answer. The suggested budget says
+  what to ask for, which is the number a caller cannot compute from anything
+  they were sent today. The per-tier lines say *which* budget to raise, because
+  more index budget buys names and more source budget buys bodies and one
+  number cannot distinguish them.
+
+  This is what makes D4 usable rather than a guess. A caller who can name a
+  budget and cannot see what a larger one would buy is choosing blind, and will
+  either under-ask permanently or pad the number until something overflows --
+  which is the behaviour REQ-0040's two overflow records already describe.
+
+  It also removes the reason to tune the default hard. A default that is wrong
+  for one repository costs one extra call rather than a wrong answer, and a
+  caller who wanted more can see that they wanted more.
+
+  WHAT THE SIGNAL MAY NOT CLAIM
+
+  "All of it" is all of what the walk found, and the wording says so in those
+  words. *CONTEXT-EXPANSION-HORIZON* is 4 and bounds the walk by accumulated
+  cost before any budget is consulted, so a larger budget prints more of what
+  was reached and never more of what was searched. A signal reading "8000 sends
+  everything" would be a completeness claim about the graph, which is CON-0001's
+  fabricated fact wearing a percentage.
+
+  The cost is a running total rather than a pass. ADMIT-ITEM already computes
+  every rejected item's cost and throws it away to set a flag; keeping the sum
+  is one INCF in the branch that currently discards it.
+
+  D4  THE CALLER NAMES IT
+
+  `:context` gains an optional `budget`, the console gains
+  `context <words> [budget]`, and REST and MCP inherit both from the registry.
+  Absent, the default is *CONTEXT-TOKEN-BUDGET* and behaviour is what it is
+  today except that the number reported is now true.
+
+  An MCP caller has a hard output limit and no way to say so, which is the
+  clause REQ-0040 R1 was written from. This is the whole of the fix for that.
+
+  D5  TOKENS, AND BYTES REPORTED BESIDE THEM
+
+  REQ-0040's open question asks whether the unit is tokens or bytes. Measured:
+  ESTIMATE-TOKENS' sum over the admitted items agrees with four-characters-to-
+  the-token over the rendered text to within 1% on all four tasks above. So the
+  crude estimator is adequate for the job and the unit stays tokens.
+
+  Bytes are reported alongside, because an MCP output limit is in bytes and a
+  caller converting one to the other is a caller guessing at the ratio this
+  design just measured. Reporting both costs one LENGTH.
+
+  D6  THE SPLIT BETWEEN THE ALLOWANCES, AND WHY D3 MAKES IT A SMALLER QUESTION
+
+  REQ-0040 R2 says breadth yields to depth: "Given a choice between naming forty
+  more entities and carrying the source of five, the bundle is more useful
+  carrying the source -- 194 unused items of 203 is what breadth-first spending
+  buys."
+
+  There is measured evidence on both sides and this design settles neither by
+  assertion.
+
+    For depth. The judged corpus: 203 items returned and 9 used, 128 and 3.
+    Three scored calls, which is thin, and REQ-0036 exists because thin is what
+    a judged corpus starts as.
+
+    For breadth. PLAN-0032 S1, and it is the reason the budget went from 2000
+    to 4000: "the cost-ordered walk reaches 157 entities on `context
+    data-handler' and the old budget printed 2 of them, so REQ-0016 R6 was
+    failing on room rather than on reach". Starving breadth is a failure this
+    tree has already had and already fixed once.
+
+  D3 is what makes it possible not to settle it. A split is a default, and with
+  a cutoff signal a wrong default costs a caller one more call with a bigger
+  number -- where without one it silently returns a third of the answer and
+  says 2477/4000. The ratio still gets a measured default against
+  tools/acceptance.py rather than R2's argument, because four ranking
+  mechanisms were measured on this tree in August 2026 and all four came in at
+  baseline or below; but it is now a default rather than a decision the caller
+  cannot see or override.
+
+  The floor is unchanged and is what a measured default has to hold: 43 of 45
+  on the judged instrument, and no known-item family below its own number. A
+  split that cannot hold those has bought readability with recall, which is
+  DEC-0005's trade run backwards.
+
+  WHAT THIS IS NOT
+
+  Not a better token estimator. The crude one is accurate to 1% against the
+  rendering, and REQ-0040 is not a measurement defect.
+
+  Not a change to seeding, to ranking, or to the eight-seed limit DEC-0005
+  settled. What changes is how much of what the walk already found gets
+  printed.
+
+  Not per-item budgeting. A caller names one number for the answer, and the
+  bundle decides how to spend it -- an API where the caller apportions between
+  tiers is a retrieval policy in the service's interface, which is the hazard
+  REQ-0045's open question names.
+
+  OPEN
+
+  - Whether a caller who asked for depth wants the top five bodies or the top
+    one. REQ-0040's own open question, still unmeasured, and D2's token ceiling
+    makes it answerable for the first time: a bundle that reports how many
+    bodies it withheld gives the log something to judge.
+
+  - Whether the default budget should stay 4000 once it covers both tiers. At
+    4000 total, the worst task above would lose most of its source tier, which
+    is a different bundle from the one measured at 43 of 45. The measurement
+    D6 asks for decides this and the two cannot be separated. D3 lowers what
+    getting it wrong costs, and does not make it right.
+
+  - Whether the walk's own horizon should be reported beside the budget's
+    cutoff. D3 is careful to claim only what the walk found, which leaves a
+    caller unable to tell a bundle that reached everything from one the horizon
+    also cut. EXPAND-FROM-SEEDS knows whether its frontier was still non-empty
+    at *CONTEXT-EXPANSION-HORIZON* and does not report it. That is a second
+    cutoff signal of the same shape and it is not designed here.

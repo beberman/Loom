@@ -38,6 +38,43 @@ them. That is CON-0006's asymmetry bought cheaply: the reader discards a wrong
 line for almost nothing and cannot recover from a missing one without the grep
 this whole tool exists to remove.")
 
+(defparameter *context-source-share* 1/2
+  "The fraction of the budget the source tier may spend. DES-0042 D1, PLAN-0045 S3.
+
+Until PLAN-0045 the source tier was outside the budget entirely (DES-0026 D2),
+so a bundle reporting 2477 of 4000 tokens handed the caller 7777 -- three of
+four measured tasks exceeded their stated budget, the worst by 2.08 times.
+
+D2's reasoning for the exemption was about *ordering* and is still right: a
+body and a line drawn from one undifferentiated pot means the first three
+bodies eat the bundle, measured there as 31 items for 3979 tokens naming 14 of
+157 entities reached. What was wrong was concluding that the way to stop that
+is to exempt bodies rather than to ration them. Two allowances inside one total
+keeps the ordering and gives the caller a number that means something.
+
+A half, and PLAN-0045 S5 measured 1/3, 1/2 and 2/3 against tools/acceptance.py
+on a service restarted for each. All three score 43 of 45 with the same two
+misses, fe-5 and r39-3, so recall does not choose between them:
+
+    share   judged   bundle at a 4000 budget, two tasks
+    1/3     43/45    154 items 2 bodies 3879 tokens | 111 items 4 bodies 2972
+    1/2     43/45    131 items 3 bodies 4080        | 111 items 2 bodies 3757
+    2/3     43/45    104 items 4 bodies 4091        |  93 items 4 bodies 4065
+
+What separates them is composition, and no instrument scores that. 2/3 carries
+the most bodies and would be the setting REQ-0040 R2's argument picks; 1/3
+leaves a fifth of the budget unspent on two of the four tasks measured.
+
+A half is chosen because it is the one that leans on nothing. Adopting 2/3
+would be asserting R2 -- that depth beats breadth -- and R2 is the clause
+DES-0042 D6 declined to settle, because the evidence for it is three judged
+calls and the evidence against it is PLAN-0032 S1's 157 entities reached and 2
+printed. Whether a caller who asked for depth wants five bodies or one is
+REQ-0040's own open question and is still unmeasured.
+
+DES-0042 D3 is what makes that acceptable: a wrong default now costs one call
+with a larger number rather than a silently smaller answer.")
+
 (defparameter *context-source-definitions* 5
   "How many entities carry their source. DES-0026 D2.
 
@@ -1675,7 +1712,15 @@ Every call is logged to *CONTEXT-LOG*."
          (items     '())
          (used      0)
          (sourced-tokens 0)
-         (truncated nil))
+         (truncated nil)
+         ;; PLAN-0045 S1, DES-0042 D3. What the budget refused, kept rather
+         ;; than discarded: ADMIT-ITEM already computes the cost of every item
+         ;; it rejects and threw it away to set the boolean above. The sum is
+         ;; what lets a bundle say what a larger budget would buy, which is the
+         ;; number a caller cannot compute from anything they are sent.
+         (withheld-items 0)
+         (withheld-tokens 0)
+         (withheld-source-tokens 0))
     (multiple-value-bind (decisions documents mentions)
         (documents-touching view (append seeds expanded))
       ;; A document one hop from a seed is in EXPANDED as well as in its band,
@@ -1741,7 +1786,10 @@ Every call is logged to *CONTEXT-LOG*."
                           (incf used cost)
                           (push item items)
                           t)
-                         (t (setf truncated t) nil))))
+                         (t (setf truncated t)
+                            (incf withheld-items)
+                            (incf withheld-tokens cost)
+                            nil))))
                (item-for (entity relations band)
                  (context-item view entity :relations relations :band band)))
           ;; DES-0026 D2's source tier, admitted first and outside the index
@@ -1764,22 +1812,68 @@ Every call is logged to *CONTEXT-LOG*."
           ;; whole recalled set, and that order does not exist until PLAN-0032
           ;; S6. Until then a neighbour cannot outrank a seed for a body, however
           ;; near it is.
-          (loop for entity in seeds
-                for rank from 0
-                for wants-source = (and source-fn (< rank source-definitions))
-                do (admit-item (context-item view entity :relations t :band :seed
-                                             :source (when wants-source
-                                                       (funcall source-fn (id entity))))
-                               (if (zerop rank) budget (- budget reserve))
-                               :free wants-source))
+          ;;
+          ;; PLAN-0045 S3. The bodies are decided before any line is charged,
+          ;; rather than interleaved with them, and the reason is that a seed
+          ;; carries its line and its body as one item: costing them in one
+          ;; pass would mean the index allowance was known only after it had
+          ;; already been spent. So the source plan is settled first -- at most
+          ;; *CONTEXT-SOURCE-DEFINITIONS* items, five today -- and the index
+          ;; tier is then capped at what the source tier did not use, so an
+          ;; unspent source allowance becomes lines rather than being wasted.
+          ;;
+          ;; A body that does not fit costs its body and not its seed. The item
+          ;; is admitted without :SOURCE and charged to the index tier like any
+          ;; other line, because a seed the task named is what the bundle is
+          ;; for and dropping it to save a body would spend the answer on the
+          ;; illustration.
+          (let* ((source-cap (floor (* budget *context-source-share*)))
+                 (planned
+                   (when source-fn
+                     (loop with spent = 0
+                           for entity in seeds
+                           for rank from 0
+                           while (< rank source-definitions)
+                           for source = (funcall source-fn (id entity))
+                           for item = (context-item view entity :relations t
+                                                              :band :seed :source source)
+                           for cost = (estimate-tokens (render-item item))
+                           if (<= (+ spent cost) source-cap)
+                             collect (cons (id entity) item)
+                             and do (incf spent cost) (incf sourced-tokens cost)
+                           else
+                             ;; Costed even though it was refused. Without this
+                             ;; the suggested budget under-states what it would
+                             ;; take to receive everything by exactly the bodies
+                             ;; a caller most wants -- and a caller who raises
+                             ;; the budget to the number they were given and
+                             ;; still does not get them has been told something
+                             ;; false.
+                             do (setf truncated t)
+                                (incf withheld-source-tokens cost))))
+                 (index-cap (- budget sourced-tokens)))
+            (dolist (pair planned) (push (cdr pair) items))
+            (loop for entity in seeds
+                  for rank from 0
+                  ;; Already admitted with its body above.
+                  unless (assoc (id entity) planned :test #'equal)
+                    do (admit-item (item-for entity t :seed)
+                                   (if (zerop rank) index-cap (- index-cap reserve)))))
           ;; Then the reserve is released: these are measured against the full
           ;; budget, and fit by construction unless the ceiling clipped them.
-          (dolist (item document-items) (admit-item item budget))
-          (dolist (r reaches)
-            (admit-item (context-item view (reach-entity r)
-                                      :relations nil :band :neighbour :reach r)
-                        budget))))
-      (let ((bundle (list :task task
+          ;; The reserve is released: these are measured against the whole
+          ;; index allowance, and fit by construction unless the ceiling
+          ;; clipped them. BUDGET minus what the bodies took, not BUDGET --
+          ;; that difference is the whole of DES-0042 D1.
+          (let ((index-cap (- budget sourced-tokens)))
+            (dolist (item document-items) (admit-item item index-cap))
+            (dolist (r reaches)
+              (admit-item (context-item view (reach-entity r)
+                                        :relations nil :band :neighbour :reach r)
+                          index-cap)))))
+      (let* ((sourced (count-if (lambda (i) (getf i :source)) items))
+             (wanted (if source-fn (min source-definitions (length seeds)) 0))
+             (bundle (list :task task
                           :seeds (summarize-entities seeds)
                           ;; DES-0032 D3. What the task's words reached, so a
                           ;; caller can tell a bundle whose subject is here
@@ -1804,15 +1898,69 @@ Every call is logged to *CONTEXT-LOG*."
                           :documents (summarize-entities documents)
                           :mentions (summarize-entities mentions)
                           :budget budget
-                          :tokens used
+                          ;; Both tiers, because since PLAN-0045 S3 the budget
+                          ;; is both tiers. Reporting the index alone here is
+                          ;; the defect DES-0042 was written about, and it
+                          ;; survived being written about: this field said
+                          ;; `used' until the cutoff signal made the shortfall
+                          ;; visible on screen.
+                          :tokens (+ used sourced-tokens)
+                          :index-tokens used
                           :truncated truncated
+                          ;; DES-0042 D3. :FOUND-TOKENS is used plus withheld:
+                          ;; what this walk found, and therefore the budget that
+                          ;; would send all of it. All of what the *walk* found
+                          ;; -- *CONTEXT-EXPANSION-HORIZON* bounds the search
+                          ;; before any budget is consulted, so a larger budget
+                          ;; prints more of what was reached and never more of
+                          ;; what was searched. Anything here that read as a
+                          ;; claim about the graph would be CON-0001's
+                          ;; fabricated fact wearing a percentage.
+                          :withheld-items withheld-items
+                          ;; The total, for the arithmetic below; the two tiers
+                          ;; separately, because the per-tier lines say which
+                          ;; budget to raise and a line that folded the other
+                          ;; tier's shortfall into its own would send a caller
+                          ;; to the wrong one.
+                          :withheld-tokens (+ withheld-tokens withheld-source-tokens)
+                          :withheld-index-tokens withheld-tokens
+                          :withheld-source-tokens withheld-source-tokens
+                          ;; The budget that would withhold nothing, which is
+                          ;; not simply what the walk cost. The source tier is
+                          ;; capped at *CONTEXT-SOURCE-SHARE* of the total, so a
+                          ;; bundle whose bodies are expensive needs a total
+                          ;; large enough that the share covers them -- and a
+                          ;; caller who raises the budget to the number they
+                          ;; were given and still does not get the bodies has
+                          ;; been told something false. Measured while building
+                          ;; this: a suggestion of 10019 delivered 4 of 5 bodies
+                          ;; and reported a fifth still withheld.
+                          :found-tokens
+                          (let ((total (+ used sourced-tokens
+                                          withheld-tokens withheld-source-tokens))
+                                (source-needed (+ sourced-tokens withheld-source-tokens)))
+                            (max total (ceiling source-needed *context-source-share*)))
                           ;; What the source tier actually spent, reported rather
                           ;; than inferred: a caller comparing two bundles wants
                           ;; to know whether it got bodies without scanning for
                           ;; them.
                           :source-tokens sourced-tokens
                           :source-definitions (if source-fn source-definitions 0)
-                          :sourced (count-if (lambda (i) (getf i :source)) items))))
+                          :sourced sourced
+                          ;; Bodies asked for and not carried. Not a counter in
+                          ;; ADMIT-ITEM: the source tier is admitted with :FREE
+                          ;; and never reaches the rejecting branch, so a
+                          ;; counter written there would report the index tier
+                          ;; and read as correct until the tiers share a budget.
+                          ;;
+                          ;; WANTED is bounded by the seeds as well as by the
+                          ;; count, because a bundle with three seeds and five
+                          ;; slots withheld nothing -- there were two fewer
+                          ;; bodies to carry, which is a fact about the query
+                          ;; rather than about the budget. Reporting those two
+                          ;; as withheld would send a caller to raise a number
+                          ;; that would buy them nothing.
+                          :withheld-bodies (max 0 (- wanted sourced)))))
         (push (make-context-log-entry :task task
                                       :seeds (length seeds)
                                       :entities (length items)
@@ -1895,6 +2043,48 @@ made true rather than merely asserted."
         when (eq state (getf row :state))
           collect (getf row :term)))
 
+(defun render-cutoff (bundle out)
+  "The bundle\'s size, and what a larger budget would buy. DES-0042 D3.
+
+Three facts answering three questions. The percentage says whether the answer
+in hand is most of the answer. The suggested budget says what to ask for, which
+is the one number a caller cannot compute from anything they are sent. The
+per-tier lines say *which* budget to raise, because index budget buys names and
+source budget buys bodies and one figure cannot tell them apart.
+
+`what this walk found\' is the exact claim and the wording is not a matter of
+taste. *CONTEXT-EXPANSION-HORIZON* bounds the search by accumulated cost before
+any budget is consulted, so a larger budget prints more of what was reached and
+never more of what was searched. A line reading `8000 sends everything\' would
+be a completeness claim about the graph, which is CON-0001\'s fabricated fact
+wearing a percentage.
+
+Printed only when something was withheld. A bundle that fits says so in its
+first line by having nothing after it, and four lines of accounting on every
+answer would spend the budget this exists to report."
+  (let* ((tokens (getf bundle :tokens))
+         (found (or (getf bundle :found-tokens) tokens))
+         (withheld-items (or (getf bundle :withheld-items) 0))
+         (withheld-bodies (or (getf bundle :withheld-bodies) 0))
+         (withheld-tokens (or (getf bundle :withheld-tokens) 0))
+         (sourced (or (getf bundle :sourced) 0))
+         (wanted (or (getf bundle :source-definitions) 0)))
+    (format out "~&# ~d entities, ~~~d/~d tokens~@[ (truncated)~]~%"
+            (length (getf bundle :items)) tokens
+            (getf bundle :budget) (getf bundle :truncated))
+    (when (or (plusp withheld-items) (plusp withheld-bodies))
+      (format out "~&#   sent ~d% of what this walk found; ~d tokens sends all of it~%"
+              (round (* 100 tokens) (max 1 found)) found)
+      (when (plusp withheld-items)
+        (format out "~&#   index    ~d items sent, ~d withheld at ~d tokens~%"
+                (length (getf bundle :items)) withheld-items
+                (or (getf bundle :withheld-index-tokens) 0)))
+      (when (plusp withheld-bodies)
+        (format out "~&#   source   ~d of ~d bodies sent, ~d withheld at ~d tokens~%"
+                sourced wanted withheld-bodies
+                (or (getf bundle :withheld-source-tokens) 0))))
+    (terpri out)))
+
 (defun render-context (bundle)
   "BUNDLE as the text block an agent receives.
 
@@ -1904,9 +2094,7 @@ whose text is not has not saved anybody anything."
   (let ((band nil))
    (with-output-to-string (out)
     (format out "~&# Context for: ~a~%" (getf bundle :task))
-    (format out "~&# ~d entities, ~~~d/~d tokens~@[ (truncated)~]~2%"
-            (length (getf bundle :items)) (getf bundle :tokens)
-            (getf bundle :budget) (getf bundle :truncated))
+    (render-cutoff bundle out)
     (when (null (getf bundle :items))
       (format out "No indexed entity matched this task.~%"))
     ;; DES-0032 D4, above the seeds rather than below them: the caller reads

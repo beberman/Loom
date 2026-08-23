@@ -1113,3 +1113,155 @@ not enough -- they have to be countable"))
                (mapcar (lambda (p) (name (car p)))
                        (loom-knowledge::fuse-rankings lexical semantic
                                                       :protected '()))))))
+
+
+;;; ------------------------------------------------------------------
+;;; What the budget refused (PLAN-0045 S1, DES-0042 D3)
+;;; ------------------------------------------------------------------
+
+(test a-truncated-bundle-counts-what-it-withheld
+  ;; :TRUNCATED said that a bundle was cut and never how much, so a caller
+  ;; could not tell one that lost its last neighbour from one that lost forty
+  ;; entities -- nor whether asking again with a bigger number was worth
+  ;; anything.
+  (let* ((f (make-k-fixture))
+         (bundle (build-context (k-graph f) "change resolve-overlay" :budget 150)))
+    (is-true (getf bundle :truncated) "the budget has to actually bite")
+    (is (plusp (getf bundle :withheld-items)))
+    (is (plusp (getf bundle :withheld-tokens)))
+    (is (> (getf bundle :found-tokens) (getf bundle :tokens))
+        "what the walk found exceeds what this budget sent")))
+
+(test what-was-sent-plus-what-was-withheld-is-what-an-unbounded-budget-sends
+  ;; The identity the whole signal rests on, and the one an off-by-one breaks
+  ;; without any reading finding it. Stated without naming a number, so the
+  ;; fixture can change and the claim cannot.
+  (let* ((f (make-k-fixture))
+         (tight (build-context (k-graph f) "change resolve-overlay" :budget 150))
+         (loose (build-context (k-graph f) "change resolve-overlay" :budget 100000)))
+    (is (zerop (getf loose :withheld-items)) "nothing is withheld at this budget")
+    (is (= (getf loose :tokens) (getf tight :found-tokens))
+        "a tight bundle's :FOUND-TOKENS is what the same walk costs unbounded")
+    (is (= (getf tight :found-tokens)
+           (+ (getf tight :tokens) (getf tight :withheld-tokens)))
+        "found is sent plus withheld, by construction")))
+
+(test a-bundle-that-fits-withholds-nothing-and-says-so
+  ;; The inert half, and it is what S1 could be checked against before the
+  ;; tiers shared a budget: with room to spare the counts are zero rather than
+  ;; absent, so a consumer reads them unconditionally.
+  (let* ((f (make-k-fixture))
+         (bundle (build-context (k-graph f) "change resolve-overlay" :budget 100000)))
+    (is (null (getf bundle :truncated)))
+    (is (eql 0 (getf bundle :withheld-items)))
+    (is (eql 0 (getf bundle :withheld-tokens)))
+    (is (= (getf bundle :tokens) (getf bundle :found-tokens)))))
+
+(test a-body-that-was-never-available-is-not-reported-as-withheld
+  ;; WANTED is bounded by the seeds as well as by the count. A bundle with
+  ;; fewer seeds than source slots withheld nothing -- there were fewer bodies
+  ;; to carry -- and reporting the difference would send a caller to raise a
+  ;; number that would buy them nothing.
+  (let* ((f (make-k-fixture))
+         (bundle (build-context (k-graph f) "change resolve-overlay"
+                                ;; A source plist, which is DEFINITION-SOURCE's
+                                ;; shape: :status, :text, :range, :file.
+                                :source-fn (lambda (id)
+                                             (declare (ignore id))
+                                             (list :status :current
+                                                   :text "(defun x ())"
+                                                   :range "1-1"
+                                                   :file "src/lib.lisp"))
+                                :source-definitions 50)))
+    (is (eql 0 (getf bundle :withheld-bodies))
+        "50 slots against a handful of seeds withholds nothing")
+    (is (< (getf bundle :sourced) (getf bundle :source-definitions))
+        "fewer bodies were carried than slots were offered")
+    (is (eql 50 (getf bundle :source-definitions))
+        "and the count asked for is still reported as asked for, so the
+difference is visible without being called a withholding")))
+
+
+;;; ------------------------------------------------------------------
+;;; The cutoff signal (PLAN-0045 S3/S4, DES-0042 D1 and D3)
+;;; ------------------------------------------------------------------
+
+(defun fat-source-fn (lines)
+  "A source callback whose every body is LINES lines long."
+  (lambda (id)
+    (declare (ignore id))
+    (list :status :current
+          :text (format nil "~{~a~%~}"
+                        (loop repeat lines collect "(some-fairly-long-form-of-source a b c)"))
+          :range "1-1" :file "src/lib.lisp")))
+
+(test the-budget-a-bundle-suggests-is-one-that-withholds-nothing
+  ;; The whole claim the signal makes, and it is not the same as "what the walk
+  ;; cost". The source tier is capped at *CONTEXT-SOURCE-SHARE* of the total, so
+  ;; a bundle whose bodies are expensive needs a total large enough that the
+  ;; share covers them. Measured while this was being written: a suggestion
+  ;; computed as the walk's cost delivered 4 of 5 bodies and reported a fifth
+  ;; still withheld, which is a false answer to the only question the number is
+  ;; asked.
+  (let* ((f (make-k-fixture))
+         (tight (build-context (k-graph f) "change resolve-overlay"
+                               :budget 400 :source-fn (fat-source-fn 40)))
+         (suggested (getf tight :found-tokens))
+         (again (build-context (k-graph f) "change resolve-overlay"
+                               :budget suggested :source-fn (fat-source-fn 40))))
+    (is-true (getf tight :truncated) "the tight budget has to actually bite")
+    (is (zerop (getf again :withheld-items))
+        "at the suggested budget no item is withheld")
+    (is (zerop (getf again :withheld-bodies))
+        "at the suggested budget no body is withheld either, which is the half
+a suggestion computed from the walk's cost alone gets wrong")))
+
+(test the-reported-token-count-covers-both-tiers
+  ;; DES-0042's subject in one assertion. :TOKENS reported the index tier while
+  ;; the source tier was exempt, so a bundle said 2477 of 4000 and handed the
+  ;; caller 7777. Since the budget covers both, the number does.
+  (let* ((f (make-k-fixture))
+         (bundle (build-context (k-graph f) "change resolve-overlay"
+                                :budget 100000 :source-fn (fat-source-fn 20))))
+    (is (plusp (getf bundle :source-tokens)) "the fixture has to carry bodies")
+    (is (= (getf bundle :tokens)
+           (+ (getf bundle :index-tokens) (getf bundle :source-tokens)))
+        "the headline number is both tiers, not the cheaper one")))
+
+(test a-body-that-does-not-fit-costs-its-body-and-not-its-seed
+  ;; A seed the task named is what the bundle is for. Dropping it to save a
+  ;; body would spend the answer on the illustration.
+  (let* ((f (make-k-fixture))
+         (roomy (build-context (k-graph f) "change resolve-overlay"
+                               :budget 100000 :source-fn (fat-source-fn 40)))
+         (tight (build-context (k-graph f) "change resolve-overlay"
+                               :budget 900 :source-fn (fat-source-fn 40))))
+    (is (< (getf tight :sourced) (getf roomy :sourced))
+        "the tight budget carries fewer bodies")
+    (is (plusp (getf tight :withheld-bodies)))
+    (is (find "resolve-overlay" (getf tight :items)
+              :key (lambda (i) (getf (getf i :entity) :name)) :test #'equal)
+        "and the seed itself is still named")))
+
+(test the-signal-claims-only-what-the-walk-found
+  ;; The wording is the requirement. *CONTEXT-EXPANSION-HORIZON* bounds the
+  ;; search before any budget is consulted, so a larger budget prints more of
+  ;; what was reached and never more of what was searched. A line reading
+  ;; "sends everything" would be a completeness claim about the graph.
+  (let* ((f (make-k-fixture))
+         (text (render-context (build-context (k-graph f) "change resolve-overlay"
+                                              :budget 400
+                                              :source-fn (fat-source-fn 40)))))
+    (is (search "of what this walk found" text)
+        "the claim is scoped to the walk, in those words")
+    (is (null (search "sends everything" text)))))
+
+(test a-bundle-that-fits-prints-no-cutoff-lines
+  ;; Four lines of accounting on every answer would spend the budget this
+  ;; exists to report.
+  (let* ((f (make-k-fixture))
+         (text (render-context (build-context (k-graph f) "change resolve-overlay"
+                                              :budget 100000))))
+    (is (null (search "of what this walk found" text)))
+    (is (null (search "withheld" text)))))
+

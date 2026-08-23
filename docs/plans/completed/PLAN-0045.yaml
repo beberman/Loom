@@ -1,0 +1,242 @@
+id: PLAN-0045
+title: "DES-0042 in six steps: the accounting before the scope change, the caller's budget before it can bind, and the two defaults measured together because they are one question"
+status: final
+date: 2026-08-23
+refines: [DES-0042, REQ-0040]
+affects: [build-context, render-context, estimate-tokens, context-item, admit-seeds]
+tags: [retrieval, context, budget, readability, req-0040, des-0042]
+summary: |
+  The cutoff signal is built first and is inert when it lands: with the source
+  tier still free, every bundle reports that it sent all of what it found. That
+  is the point. The counter is proved against a state whose answer is known
+  before S3 makes it the thing a caller reads.
+
+  S3 is the only step that changes what a bundle contains, and it is measured
+  against tools/acceptance.py at 43 of 45 and the 450 known-item cases. The two
+  defaults it needs -- the split between the allowances, and whether 4000 is
+  still the right total -- are settled in one step because at 4000 covering
+  both tiers the worst measured task loses most of its source tier, so choosing
+  either alone measures the other by accident.
+body: |
+  S1  THE ACCOUNTING, WHILE IT STILL HAS A KNOWN ANSWER
+
+  ADMIT-ITEM's rejecting branch sets `truncated' to T and discards the cost it
+  just computed. It keeps a running sum instead, per tier: items withheld,
+  tokens they would have cost, bodies withheld.
+
+  The bundle gains :WITHHELD-ITEMS, :WITHHELD-TOKENS, :WITHHELD-BODIES and
+  :FOUND-TOKENS, the last being used plus withheld -- what the walk found and
+  a budget of that size would send. :TRUNCATED stays a boolean beside them, so
+  nothing reading it today has to change in the same step that adds the counts.
+
+  First and alone because it is inert. The source tier is still free at this
+  point, so nothing is ever withheld from it and every bundle reports sending
+  all of what it found. An inert step whose output is a constant is exactly
+  what can be checked without judgement.
+
+  Tests, and the second is the one that would catch an off-by-one no reading
+  finds:
+
+    - a bundle at a budget too small for its second item reports the items it
+      withheld and a :FOUND-TOKENS larger than its :TOKENS.
+    - :TOKENS + :WITHHELD-TOKENS equals the :TOKENS of the same bundle built
+      with a budget large enough to withhold nothing. The identity is the whole
+      claim the signal makes, and it is checkable without naming a number.
+
+  RISK: the source tier is admitted with :FREE and never passes through the
+  rejecting branch, so a counter written in the obvious place counts the index
+  tier only and reads as correct for two more steps. S3 is where that would
+  surface as a wrong percentage, which is too late. The bodies counter is
+  written now, against the count of definitions that were asked for and not
+  supplied.
+
+  S2  THE CALLER NAMES THE BUDGET, BEFORE IT CAN BIND ANYTHING
+
+  `:context' gains an optional `budget'; the console gains
+  `context <words> [budget]'. REST and MCP inherit both from the registry.
+
+  Before S3 rather than after, so that the parameter and the scope change are
+  separately bisectable: a caller passing 4000 after S2 gets exactly what they
+  get today, and after S3 gets something different, and those are two commits.
+
+  Tests: a small budget truncates and the counts from S1 say by how much; an
+  absent budget is *CONTEXT-TOKEN-BUDGET* and the bundle is byte-identical to
+  the one built without the argument.
+
+  RISK: a budget is a number arriving from a caller, so it is validated where
+  it enters. Zero, negative and non-numeric are refused with a sentence rather
+  than producing an empty bundle that reads like an absence -- which is
+  REQ-0037's failure mode reached through a new door.
+
+  S3  ONE BUDGET, TWO ALLOWANCES
+
+  The behaviour change, and the only one. BUILD-CONTEXT's BUDGET becomes the
+  total; the source tier is charged against a source allowance rather than
+  admitted free; bodies are admitted in seed order until the count or the
+  tokens bind, whichever comes first.
+
+  DES-0026 D2's ordering property has to survive, and it is not the same claim
+  as its exemption. A body may not be charged to the index allowance and a line
+  may not be charged to the source allowance, or the first three bodies eat the
+  bundle -- measured in D2 as 31 items for 3979 tokens, naming 14 of 157
+  entities reached.
+
+  Tests: a bundle whose five bodies exceed the source allowance carries fewer
+  and reports the rest withheld; the index tier at the same budget is unchanged
+  by how expensive the bodies happened to be, which is the property the two
+  allowances exist for and the one a single pot destroys.
+
+  S4  THE SIGNAL A CALLER READS
+
+  RENDER-CONTEXT prints D3's three lines. The percentage, the budget that would
+  send the rest, and the per-tier detail.
+
+  The wording is fixed here and is not a matter of taste: "sent N% of what this
+  walk found". *CONTEXT-EXPANSION-HORIZON* bounds the walk before any budget is
+  consulted, so a signal claiming a larger budget sends everything would be a
+  completeness claim about the graph. The test asserts the string, because this
+  is a clause where the sentence is the requirement.
+
+  Bytes beside tokens, which is D5 and one LENGTH.
+
+  S5  THE TWO DEFAULTS, MEASURED TOGETHER
+
+  The split between the allowances and whether the total stays 4000.
+
+  Together because they are one question. At a 4000 total covering both tiers,
+  the worst task measured in DES-0042 -- 2266 index and 6040 source -- loses
+  most of its source tier, so a split measured at 4000 is measuring the total
+  as much as the ratio.
+
+  The instruments, all three, reported per family and never summed:
+
+    tools/acceptance.py     43 of 45, and the three ABSENCE_CASES still weak
+    known-item              443 of 450, no family below name 135, inflected
+                            142, prose 133
+    the judged corpus       what a bundle now costs, which is this
+                            requirement's own subject and has no pass/fail
+
+  A setting that reaches the floors and returns a smaller bundle is the win;
+  one that reaches them by returning the same bundle has changed nothing. Both
+  numbers are recorded whatever the outcome, because DES-0034 and DES-0036 were
+  both measured and withdrawn and the record of what did not work is what stops
+  it being tried a third time.
+
+  RISK, and it is this plan's largest: a smaller bundle can lose a judged case
+  without losing recall, because acceptance.py scores what the bundle contains
+  and REQ-0040 is about what a reader can hold. A case lost here is not
+  automatically a regression -- it may be the requirement working -- and
+  deciding which needs the case read rather than the total compared. DEC-0005
+  governs the direction: the seeder spends precision to buy recall, and a
+  budget that withholds a seed has run that trade backwards.
+
+  S6  MEASURE, RECORD, CLOSE
+
+  Full suite, `check', all three instruments, and the four DES-0042 tasks
+  re-measured so the table in the design has an after column.
+
+  Then `complete PLAN-0045'. REQ-0040 R1, R3 and R4 land; R2 is a default
+  chosen by S5 rather than a mechanism, so whether the requirement is
+  `implemented' or `partial' depends on what S5 returns and is not decided
+  here.
+
+  WHAT IS DELIBERATELY NOT IN THIS PLAN
+
+  The walk's own horizon reporting whether it was still finding things at
+  cost 4. DES-0042 leaves it open, it is a second signal of the same shape,
+  and folding it in would make S5's measurement unable to say which of two
+  changes moved a case.
+
+  OUTCOME, 2026-08-23
+
+  All six steps landed. Every measured task is inside its budget:
+
+      task                                before  after   xbudget
+      context bundle token budget ...      7777    3615    1.94 -> 0.90
+      data-handler                         3479    3480    0.87 -> 0.87
+      how a context bundle is rendered     8335    4081    2.08 -> 1.02
+      the startup sequence                 4558    3757    1.14 -> 0.94
+
+  Every instrument held, reported per family and not summed:
+
+      tools/acceptance.py   43 of 45, the three ABSENCE_CASES still weak
+      known-item            443 of 450 -- name 148 of 150, inflected 148,
+                            prose 147, each above its floor of 135, 142, 133
+      mismatch              39 of 120, its floor exactly
+      suite                 10 of 10 systems
+      check                 0 violations, 8 unresolved document references
+
+  A setting that reaches the floors and returns a smaller bundle is what S5
+  asked for, and that is what these are: the same recall from bundles that are
+  half the size on the two worst tasks.
+
+  WHAT S4 FOUND IN S3, WHICH IS THE ARGUMENT FOR BUILDING THE SIGNAL AT ALL
+
+  Three defects, none of which a reading had caught, and each visible the
+  moment a percentage appeared on screen.
+
+    :TOKENS still reported the index tier alone. That is the exact defect
+    DES-0042 was written about, surviving being written about and implemented
+    against, in the same field.
+
+    A refused body was not costed, so the suggested budget under-stated what
+    everything would take by exactly the bodies a caller most wants.
+
+    A suggestion computed as the walk's cost is still false, because the share
+    binds as well as the total. Raising to a suggested 10019 delivered 4 of 5
+    bodies and reported a fifth withheld -- a false answer to the only question
+    that number is asked. :FOUND-TOKENS now covers both bounds, and the test is
+    the convergence rather than a figure: the budget a bundle suggests is one
+    that withholds nothing.
+
+  S5, AND WHAT THE MEASUREMENT DECLINED TO DO
+
+  1/3, 1/2 and 2/3 measured against tools/acceptance.py on a service restarted
+  for each. All three score 43 of 45 with the same two misses:
+
+      share   judged   two tasks at a 4000 budget
+      1/3     43/45    154 items 2 bodies 3879 | 111 items 4 bodies 2972
+      1/2     43/45    131 items 3 bodies 4080 | 111 items 2 bodies 3757
+      2/3     43/45    104 items 4 bodies 4091 |  93 items 4 bodies 4065
+
+  Recall does not choose between them and composition is not scored by any
+  instrument. A half is adopted because it leans on nothing: 2/3 is the setting
+  REQ-0040 R2's argument picks, and R2 is the clause DES-0042 D6 declined to
+  settle. *CONTEXT-TOKEN-BUDGET* stays 4000, because at a half share no
+  measured task needs more.
+
+  A MEASUREMENT ERROR THAT RAN FOR MOST OF THIS PLAN
+
+  tools/acceptance.py drives the service over REST on 127.0.0.1:4780, and a
+  headless service had been running since before any of this work. Every
+  acceptance run through S2 measured that image rather than the tree, and the
+  results were reported as verification three times before the staleness was
+  noticed. Proved rather than assumed: the running service returned only
+  :TOKENS, none of the new fields, and ignored a budget sent to it.
+
+  The figures above are from a restarted service. The number did not change --
+  43 of 45 before and after -- which is why it went unnoticed, and is the
+  reason to state the error rather than quietly re-run.
+
+  Worth a rule of its own, and it is the same shape as PLAN-0044's broken
+  census: an instrument that runs against a service rather than against the
+  tree is measuring whatever was last deployed, and nothing in its output says
+  which. `tools/loom-serve.sh update' exists for exactly this and was not
+  called.
+
+  R4 IS MET, AND ITS HEADLINE NUMBER IS NOT MOVEABLE
+
+  `ranking: ... returned and not used' is in the summary rather than per case,
+  which is what R4 asks. The 194 of 203 that REQ-0040 opens with is read from
+  the stored record rather than re-run, so no change to the builder can move
+  it. That is correct: REQ-0036 R4 keeps a record and qualifies it rather than
+  rewriting it, and what this plan moves is the bundles made after it.
+
+  WHAT IS LEFT FOR REQ-0040
+
+  R1 and R3 are implemented. R4 is met by the harness. R2 -- breadth yields to
+  depth -- has its mechanism and not its verdict: the share exists, three
+  settings were measured, and none of the instruments prefers the one R2 argues
+  for. Whether that is the requirement met or the requirement outstanding is a
+  judgement about intent, and REQ-0040 keeps an OUTSTANDING section for it.
+

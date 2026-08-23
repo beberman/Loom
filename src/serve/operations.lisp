@@ -295,7 +295,7 @@ Pass source=true for the definition's text."
                    :max-depth (or (request-integer depth "depth")
                                   *default-impact-depth*))))
 
-(define-operation :context :read (repository task)
+(define-operation :context :read (repository task (budget))
     "A budgeted context bundle for a task: what to know before editing."
   ;; BUILD-CONTEXT and no RENDER-CONTEXT. The rendering step is what turns the
   ;; bundle into the text a console prints, and a program wants the bundle.
@@ -314,7 +314,14 @@ Pass source=true for the definition's text."
           ;; SEED-ENTITIES takes the path it has taken since S3.
           (let ((loom-knowledge:*context-vector-store* (repository-vectors repo))
                 (loom-knowledge:*context-embedder* (current-embedder)))
+            ;; PLAN-0045 S2. REQ-0040 R1: an MCP caller has a hard output
+            ;; limit and until now no way to say so. REQUEST-INTEGER refuses
+            ;; junk rather than truncating it -- a budget silently read as 3
+            ;; from "3x" returns a bundle that is simply smaller than the one
+            ;; asked for, with nothing in the output saying why.
             (build-context (repository-graph repo) task
+                           :budget (or (request-integer budget "budget")
+                                       *context-token-budget*)
                            :source-fn (lambda (id) (definition-source repo id))))
         ;; REQ-0036 R1 and R8. The record is additive: the identifier is one
         ;; more key on a bundle a caller already reads, and with
