@@ -1,6 +1,6 @@
 id: BUG-0044
 title: ":SIGNATURE is declared on two entity types and written 0 times in 5146 of them, and :ARGUMENTS is documented as a parsed parameter list while holding the whole lambda list"
-status: open
+status: closed
 severity: minor
 date: 2026-08-23
 affects: [entity-arity, lambda-list-parameters, analyze-file, describe-entity]
@@ -127,3 +127,87 @@ body: |
   and count `(loom-ontology:getp e :signature)`. Zero on every tree. For the
   second half, read `:ARGUMENTS` on FIND-ENTITIES and compare its length with
   the number of arguments the function takes.
+
+  RESOLVED 2026-08-23
+
+  :SIGNATURE is removed from :FUNCTION and :METHOD, and the rendering it was
+  declared for is built at display time instead. The decision was taken against
+  a third option this document did not offer, found by asking what `describe'
+  actually prints: it showed every edge of a function and nothing about what the
+  function takes, while :ARGUMENTS held every token needed to say so.
+
+  So the fact was never missing from the index -- only from the answer:
+
+      loom> describe find-entities
+      function find-entities  [src/graph/query.lisp:42-55]
+        (find-entities view &key entity-type name-like property-filters
+         include-stale)
+
+      loom> describe @front-end Game.decodeGame
+      method Game.decodeGame  [src/models/game.js:346-356]
+        Game.decodeGame(definitions, objects)
+
+  LOOM-KNOWLEDGE:RENDER-SIGNATURE builds it, keyed on the entity\'s :LANGUAGE. A
+  Lisp signature is a form and a JavaScript one is a call, and that difference
+  is the one job :SIGNATURE was declared for and the part worth keeping;
+  printing either in the other\'s punctuation misstates the source.
+
+  Built rather than stored, which is DEC-0001 applied one level down. A
+  rendering of :ARGUMENTS is derived from an index that is itself derived from
+  files, and a stored copy would be a second thing to keep true -- the property
+  it renders can move under it with nothing reporting the disagreement. That is
+  how the field came to be declared and written zero times without anything
+  noticing.
+
+  DESCRIBE-ENTITY carries :SIGNATURE and :ARITY; ENTITY-SUMMARY carries
+  neither, because it is read in bulk by `find\' and `impact\' and holds what is
+  true of every entity. What a definition takes is type-specific detail and
+  DESCRIBE-ENTITY is where that lives.
+
+  On the :ARGUMENTS half, the property keeps its value and loses its
+  description: it is documented as the lambda list with markers left in, and
+  the declaration now says so and names ENTITY-ARITY as what stops at the first
+  marker. ENTITY-ARITY moved to services.lisp beside RENDER-SIGNATURE, both
+  being about reading a definition\'s shape.
+
+  WHAT THE FIXTURE COMMENT NOW SAYS
+
+  The Lisp analyzer\'s key fixture kept its sentence about walking the whole
+  property table and lost :signature from the example, with the reason recorded
+  in its place: walking the whole table catches a property that is dropped and
+  cannot catch one that was never produced, because the expected output records
+  the absence and then defends it. Eight (:signature nil) expectations are gone.
+
+  A SECOND TEST FAILED FOR A RELATED REASON AND IS FIXED HERE
+
+  IMPORTANCE-IS-READ-AS-A-KEYWORD-FROM-THE-VOCABULARY read
+  docs/requirements/REQ-0037.yaml and asserted :CRITICAL. REQ-0037 was repriced
+  to Minor on 2026-08-23 and the test failed -- correctly reporting a fact about
+  a document and nothing at all about the analyzer it is named for. An
+  importance is a judgement meant to change, and pinning one makes every reprice
+  look like a regression in the code that reads it.
+
+  Split in two. Three fixtures cover the Critical/Major/Minor mapping, which is
+  what the name claims; a second test reads REQ-0037 from disk and asserts its
+  importance arrives as *some* vocabulary keyword rather than as the string it
+  was written as, which is the live path and does not move.
+
+  VERIFICATION
+
+  Ten of ten systems, which the suite had not reported in this session before
+  the importance test was fixed. `check\' 0 violations and 8 unresolved document
+  references. tools/acceptance.py 43 of 45. REQ-0042\'s verbs unmoved --
+  `similar fnv-1a utils\' still returns CONTENT-FINGERPRINT at 0.8700 after
+  ENTITY-ARITY changed systems.
+
+  Dogfooded on three trees. game-server gives the case REQ-0041 was written
+  from, and it is the argument for having done this at all:
+
+      loom> describe @game-server read-config
+      function read-config  [utils/config.lisp:21-24]
+        (read-config filename &optional package &key parameters)
+
+  REQ-0041\'s evidence is that "19 of 27 call sites pass a package argument the
+  library\'s version does not have", a fact found with a hand-written
+  s-expression walker. The `&optional package\' half of it is now on the screen.
+

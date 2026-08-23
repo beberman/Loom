@@ -618,6 +618,12 @@ the reader tell which question they asked.")
                  ;; anonymous lambda with no block to return from.
                  (t (error "Unknown option ~s. Try: --source" flag)))))
     (print-summary-line (getf detail :entity))
+    ;; BUG-0044. `describe find-entities' answered every question about the
+    ;; function except what it takes, while :ARGUMENTS held every token. Its own
+    ;; line rather than the summary line, because the summary is shared with
+    ;; `find' and `impact' and a signature would widen every row of both.
+    (when (getf detail :signature)
+      (format t "~&  ~a~%" (getf detail :signature)))
     ;; A document's :BODY is its author's whole concatenation, so printing it
     ;; put the neighbours below an unbounded amount of prose, and for a
     ;; decision printed the rationale twice -- once under its own key and once

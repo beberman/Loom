@@ -26,6 +26,10 @@
    ;; DES-0040 D3 built it for the embedder; DES-0041 D4 compares two names on
    ;; it. One function or the identity in D4 is not one.
    #:name-as-words
+   ;; BUG-0044: a rendering is a display concern, so it is built rather than
+   ;; stored and :SIGNATURE is gone from the ontology.
+   #:render-signature
+   #:lambda-marker-p
 
    ;; services (SS11's read-only tools)
    #:search-entities

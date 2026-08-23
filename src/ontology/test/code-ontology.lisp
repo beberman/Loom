@@ -431,7 +431,10 @@ constrained on both ends")))
     (setf (function-entity-file f) "src/ontology/root-ontology.lisp"
           (function-entity-start-line f) 214
           (function-entity-end-line f) 232
-          (function-entity-signature f) "(validate-entity e)"
+          ;; :SIGNATURE was set here and is gone (BUG-0044). :ARGUMENTS is the
+          ;; property that carries the parameter list, and a rendering of it is
+          ;; built at display time by LOOM-KNOWLEDGE:RENDER-SIGNATURE.
+          (function-entity-arguments f) (list "e")
           (function-entity-exported-p f) t
           (function-entity-language f) :lisp)
     (is (null (validate-entity f)))

@@ -402,8 +402,19 @@ DES-0009.")))
   :properties ((:file       string  :required t)
                (:start-line integer :required t)
                (:end-line   integer :required t)
-               (:signature  string  :documentation "Rendered for display.")
-               (:arguments  list    :documentation "Parsed parameter list.")
+               ;; :SIGNATURE was declared here as "Rendered for display" and
+               ;; written 0 times in 5146 entities across three repositories and
+               ;; both analyzers. Removed by BUG-0044 rather than filled: a
+               ;; rendering is derivable from :ARGUMENTS, and DEC-0001 has the
+               ;; graph hold what is derived from files rather than what is
+               ;; convenient to print. LOOM-KNOWLEDGE:RENDER-SIGNATURE builds it
+               ;; at display time and `describe' shows it.
+               (:arguments  list
+                :documentation "The lambda list, flattened to strings, with its
+markers left in: FIND-ENTITIES stores (\"view\" \"&key\" \"entity-type\" ...).
+Not a required-parameter list -- reading its LENGTH as the arity is wrong on
+the 210 of Loom's 1304 functions that carry a marker, and BUG-0044 is that
+mistake made twice. LOOM-KNOWLEDGE:ENTITY-ARITY stops at the first marker.")
                (:exported-p boolean :default nil)
                (:generic-p  boolean :default nil
                 :documentation "A CLOS generic function rather than a plain defun.")
@@ -559,8 +570,10 @@ runs.")))
   :properties ((:file             string  :required t)
                (:start-line       integer :required t)
                (:end-line         integer :required t)
-               (:signature        string)
-               (:arguments        list)
+               ;; BUG-0044 removed :SIGNATURE here for the reason above.
+               (:arguments        list
+                :documentation "The lambda list, flattened to strings, markers
+included. See the :FUNCTION declaration above.")
                (:documentation    string
                 :documentation "Prose this method declares about itself.
 REQ-0035, DES-0028.")

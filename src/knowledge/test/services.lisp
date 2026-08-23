@@ -369,3 +369,57 @@ assertion that fails if someone later \"fixes\" describe by truncating there")))
   (is (string= "min scale meters" (name-as-words "*min-scale-meters*")))
   (is (string= "url" (name-as-words "URL"))
       "an all-capitals name is one word, not three letters"))
+
+
+;;; ------------------------------------------------------------------
+;;; A definition's parameter list (BUG-0044)
+;;; ------------------------------------------------------------------
+
+(defun sig-function (name arguments &key (language :lisp) (type 'function-entity))
+  (make-instance type :name name
+                 :origin-file "src/lib.lisp"
+                 :properties (properties-table
+                              (list :file "src/lib.lisp" :start-line 1 :end-line 9
+                                    :language language :arguments arguments))))
+
+(test a-signature-is-rendered-in-the-language-that-wrote-it
+  ;; The one job :SIGNATURE was declared for, and the reason removing it did not
+  ;; mean dropping the fact. A Lisp signature is a form and a JavaScript one is
+  ;; a call; printing either in the other's shape misstates the source.
+  (is (string= "(find-entities view &key entity-type)"
+               (render-signature
+                (sig-function "find-entities" '("view" "&key" "entity-type")))))
+  (is (string= "Game.decodeGame(definitions, objects)"
+               (render-signature
+                (sig-function "Game.decodeGame" '("definitions" "objects")
+                              :language :javascript)))))
+
+(test a-function-taking-nothing-renders-its-name-and-a-class-renders-nothing
+  ;; Different facts that read alike in the property table: an absent
+  ;; :ARGUMENTS and an empty one are both NIL, so the entity type decides.
+  ;; "()" would claim a class takes no arguments, which is a statement about
+  ;; something a class does not have.
+  (is (string= "(pidfile-path)" (render-signature (sig-function "pidfile-path" '()))))
+  (is (null (render-signature
+             (sig-function "protected-table" '() :type 'class-entity)))))
+
+(test describe-carries-the-signature-and-the-arity-without-widening-a-summary
+  ;; Type-specific detail belongs in DESCRIBE-ENTITY. ENTITY-SUMMARY is read in
+  ;; bulk by `find' and `impact' and carries what is true of every entity, so a
+  ;; signature there would widen every row of both.
+  (let* ((f (make-k-fixture))
+         (detail (describe-entity (k-graph f) (id (k-resolve f)))))
+    (is (string= "(resolve-overlay)" (getf detail :signature)))
+    (is (eql 0 (getf detail :arity)))
+    (is (eq :absent (getf (entity-summary (k-resolve f)) :signature :absent))
+        "the summary does not carry the key at all, so no `find' row widens")))
+
+(test the-ontology-no-longer-declares-a-signature-property
+  ;; BUG-0044's own claim, asserted rather than described. A property declared
+  ;; and never written is indistinguishable from one whose value is absent, and
+  ;; that is how this one survived: the analyzer's key fixture recorded
+  ;; (:signature nil) on every source and passed.
+  (let ((f (sig-function "anything" '("x"))))
+    (is (null (getp f :signature))
+        "nothing writes it, and nothing declares it either")))
+
