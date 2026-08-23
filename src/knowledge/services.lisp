@@ -55,6 +55,76 @@ surface as a survey reporting a pair it had already filtered."
 
 
 ;;;; ==================================================================
+;;;; A definition's parameter list (BUG-0044)
+;;;; ==================================================================
+
+(defun lambda-marker-p (token)
+  "True for a lambda-list keyword: &optional, &key, &rest and the rest."
+  (let ((text (princ-to-string token)))
+    (and (plusp (length text)) (char= #\& (char text 0)))))
+
+(defun entity-arity (entity)
+  "How many arguments ENTITY must be called with, or NIL for a type with no
+parameter list at all.
+
+The *required* count, stopping at the first lambda-list marker, and the
+stopping is the whole of this function. :ARGUMENTS is documented as a parsed
+parameter list and is in fact the entire lambda list flattened to strings --
+FIND-ENTITIES stores (\"view\" \"&key\" \"entity-type\" \"name-like\"
+\"property-filters\" \"include-stale\"), so its LENGTH is 6 and it takes one
+argument. Reading the length as the arity, which is the obvious thing to do and
+what this function did when it was written, reports a one-argument function as
+a six-argument one. BUG-0044.
+
+NIL for an entity type that has no parameter list, decided on the type rather
+than on the property. An absent :ARGUMENTS and an empty one are both NIL in the
+property table, so a :CLASS and a zero-argument DEFUN are indistinguishable
+there -- 354 of Loom's 1303 :FUNCTION entities are the second kind. The type
+tells them apart where the value cannot."
+  (when (member (entity-type entity) '(:function :method))
+    (let ((arguments (getp entity :arguments)))
+      (loop for token in arguments
+            until (lambda-marker-p token)
+            count t))))
+
+(defparameter *signature-styles*
+  '((:javascript . :call) (:typescript . :call))
+  "How a language writes a signature, defaulting to :FORM.
+
+  :form   (find-entities view &key entity-type)   the name is inside
+  :call   findEntities(view, opts)                the name is outside
+
+The one job :SIGNATURE was declared for and the only part worth keeping. The
+two differ in more than punctuation: a Lisp signature is a form and a
+JavaScript one is a call, so printing either in the other's shape is a small
+lie about the source. Two entries rather than a generic function, because there
+are two analyzers and a protocol for this would cost more than the fact.")
+
+(defun render-signature (entity)
+  "ENTITY's signature as its own language writes it, or NIL for a type that has
+no parameter list.
+
+Built here rather than stored, which is BUG-0044's decision. The tokens are
+already in :ARGUMENTS, so a rendering of them is derived from a derived index,
+and DEC-0001 has the graph hold what files say rather than what a console wants
+to print. A stored copy would be a second thing to keep true: the property it
+renders can change under it and nothing would report the disagreement -- which
+is how :SIGNATURE came to be declared and written zero times without anything
+noticing.
+
+NIL for a :CLASS and \"(name)\" for a function that takes nothing. Those are
+different facts and the entity type separates them, because an absent
+:ARGUMENTS and an empty one are both NIL in the property table."
+  (when (member (entity-type entity) '(:function :method))
+    (let* ((name (if (slot-boundp entity 'name) (princ-to-string (name entity)) ""))
+           (arguments (mapcar #'princ-to-string (getp entity :arguments)))
+           (style (or (cdr (assoc (getp entity :language) *signature-styles*)) :form)))
+      (ecase style
+        (:form (format nil "(~{~a~^ ~})" (cons name arguments)))
+        (:call (format nil "~a(~{~a~^, ~})" name arguments))))))
+
+
+;;;; ==================================================================
 ;;;; Summaries -- the shared vocabulary of every answer
 ;;;; ==================================================================
 
@@ -407,6 +477,13 @@ unknown."
   (let ((entity (get-entity view id)))
     (when entity
       (list :entity     (entity-summary entity)
+            ;; BUG-0044. Here rather than in ENTITY-SUMMARY, which is read in
+            ;; bulk by `find' and `impact' and is deliberately what is true of
+            ;; every entity. What a definition takes is type-specific detail,
+            ;; and this is where that lives. NIL for anything but a :FUNCTION or
+            ;; a :METHOD, so a consumer can print it unconditionally.
+            :signature  (render-signature entity)
+            :arity      (entity-arity entity)
             :properties (loop for key being the hash-keys of (properties entity)
                                 using (hash-value value)
                               unless (null value) append (list key value))

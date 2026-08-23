@@ -953,8 +953,16 @@ what resolution has to refuse, not the whole entry"))))
 ;;; id, cannot hide inside a refactor advertised as inert.
 ;;;
 ;;; The whole property table is walked rather than a chosen few. A spot check
-;;; of :qualifier and :specializers would not catch a dropped :signature or a
-;;; :system that stopped defaulting.
+;;; of :qualifier and :specializers would not catch a :system that stopped
+;;; defaulting.
+;;;
+;;; That sentence named :signature until BUG-0044, and the naming is worth
+;;; keeping as a warning about what this fixture can and cannot witness. It
+;;; rendered (:signature nil) on all eight sources and passed, every run, from
+;;; the day it was written -- because the property was declared on :FUNCTION
+;;; and :METHOD and no analyzer ever wrote it. Walking the whole table catches
+;;; a property that is dropped. It cannot catch one that was never produced:
+;;; the expected output records the absence and then defends it.
 ;;;
 ;;; The corpus is eight sources: one per branch of the tail parsing, plus one
 ;;; that repeats a branch at a path carrying a system, because the other seven
@@ -985,7 +993,7 @@ file, and every property with its value, in a stable order."
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
       ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
-       (:shadowed-definitions nil) (:signature nil) (:specializers ("hop"))
+       (:shadowed-definitions nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (x))
     ;; b  a qualifier, which is a natural-key component: it must survive into
@@ -994,7 +1002,7 @@ file, and every property with its value, in a stable order."
      (:method "render" "method:sample.lisp:render:around:hop" "sample.lisp"
       ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier :around)
-       (:shadowed-definitions nil) (:signature nil) (:specializers ("hop"))
+       (:shadowed-definitions nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (x))
     ;; c  EQL specializer, rendered rather than resolved
@@ -1002,7 +1010,7 @@ file, and every property with its value, in a stable order."
      (:method "render" "method:sample.lisp:render::(eql oneof)" "sample.lisp"
       ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
-       (:shadowed-definitions nil) (:signature nil)
+       (:shadowed-definitions nil)
        (:specializers ("(eql oneof)")) (:start-line 1)
        (:system nil) (:unresolved-calls nil)))
      (x))
@@ -1013,7 +1021,6 @@ file, and every property with its value, in a stable order."
       ((:arguments ("v" "x")) (:call-names nil) (:documentation nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "(setf render)")
        (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
-       (:signature nil)
        (:specializers ("t" "hop")) (:start-line 1) (:system nil)
        (:unresolved-calls nil)))
      (v))
@@ -1024,7 +1031,7 @@ file, and every property with its value, in a stable order."
      (:method "render" "method:sample.lisp:render::" "sample.lisp"
       ((:arguments nil) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
-       (:shadowed-definitions nil) (:signature nil) (:specializers nil)
+       (:shadowed-definitions nil) (:specializers nil)
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (1))
     ;; f  an & marker stops the specializer walk but not the argument list
@@ -1032,7 +1039,7 @@ file, and every property with its value, in a stable order."
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
       ((:arguments ("x" "&rest" "args")) (:call-names nil) (:documentation nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "render") (:jsx-names nil) (:language :lisp)
-       (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil) (:signature nil)
+       (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      (args))
@@ -1041,7 +1048,7 @@ file, and every property with its value, in a stable order."
      (:method "render" "method:sample.lisp:render::t,t" "sample.lisp"
       ((:arguments ("a" "b")) (:call-names ("helper")) (:documentation nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "render") (:jsx-names nil) (:language :lisp)
-       (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil) (:signature nil)
+       (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:specializers ("t" "t"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
      ((helper a b)))
@@ -1057,7 +1064,6 @@ file, and every property with its value, in a stable order."
       ((:arguments ("x")) (:call-names ("helper")) (:documentation nil) (:end-line 1)
        (:file "src/graph/foo.lisp") (:generic-function "render")
        (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
-       (:signature nil)
        (:specializers ("hop")) (:start-line 1) (:system :graph)
        (:unresolved-calls nil)))
      ((helper x))

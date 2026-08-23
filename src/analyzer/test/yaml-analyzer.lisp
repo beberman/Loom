@@ -427,11 +427,29 @@ title: A rule with no system
                           (all-entities g)))))
 
 (test importance-is-read-as-a-keyword-from-the-vocabulary
-  (let ((e (docs-entity "docs/requirements/REQ-0037.yaml")))
-    (is (eq :critical (getp e :importance))
-        "REQ-0037 says Critical and the analyzer must record it as :CRITICAL"))
-  (let ((e (docs-entity "docs/requirements/REQ-0044.yaml")))
-    (is (eq :minor (getp e :importance)))))
+  ;; All three levels, from fixtures rather than from documents in this tree.
+  ;; It read REQ-0037 for :CRITICAL and REQ-0044 for :MINOR until 2026-08-23,
+  ;; when REQ-0037 was repriced to Minor and this test failed -- correctly
+  ;; reporting a fact about the document and nothing at all about the analyzer.
+  ;; An importance is a judgement that is meant to change; pinning one makes
+  ;; every reprice look like a regression in the code that reads it.
+  (dolist (case '(("Critical" . :critical) ("Major" . :major) ("Minor" . :minor)))
+    (let ((e (requirement-entity-from
+              (format nil "id: REQ-9999~%title: t~%status: draft~%~
+importance: ~a~%summary: s~%" (car case)))))
+      (is (eq (cdr case) (getp e :importance))
+          "~a must be recorded as ~s" (car case) (cdr case)))))
+
+(test a-real-documents-importance-arrives-as-a-vocabulary-keyword
+  ;; The live path the test above used to cover, asserting what does not move:
+  ;; a document in this tree that declares an importance has it read as one of
+  ;; the three keywords rather than as the string it was written as. Which of
+  ;; the three is the author's business.
+  (let ((importance (getp (docs-entity "docs/requirements/REQ-0037.yaml")
+                          :importance)))
+    (is (member importance '(:critical :major :minor))
+        "REQ-0037 declares an importance and it must reach the graph as a ~
+keyword from the vocabulary, not as ~s" importance)))
 
 (test importance-outside-the-vocabulary-is-not-recorded
   ;; Not an error and not a fourth level. AS-KEYWORD's allowed list drops it,
