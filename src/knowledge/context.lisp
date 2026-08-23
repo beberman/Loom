@@ -601,8 +601,17 @@ separated by PROSE-ONLY-P one band above.
 
 DES-0033 D1 moved this to 6 as part of ranking a derived token below a written
 one, and the acceptance run took that back: 41 of 45, losing JS-TRIM on \"trim
-whitespace from a string\". The design records the measurement."
-  (let ((ranks (remove :prose (mapcar #'cdr matches))))
+whitespace from a string\". The design records the measurement.
+
+INTEGERP rather than removing :PROSE by name, and the difference is not
+cosmetic. A MATCH-RANK is an integer; every other value in that position marks
+a match that did not come from a name and has no rank to contribute. Written as
+(REMOVE :PROSE ...) it happened to be right while :PROSE was the only such
+value, and stopped being right the moment DES-0040 D5 added (:SIMILARITY .
+<cosine>): a cosine of 0.83 is not :PROSE, so it survived the remove and became
+the minimum -- ranking a semantic candidate that matched no word at all as
+better than a prefix match on a word the caller wrote."
+  (let ((ranks (remove-if-not #'integerp (mapcar #'cdr matches))))
     (if ranks (reduce #'min ranks) 3)))
 
 (defun plain-words (string)
@@ -1050,23 +1059,48 @@ Passed in rather than loaded here, because loom-knowledge is handed a VIEW and
 never learns which repository it belongs to. The caller knows, and the caller
 is where the store is loaded.")
 
+(defparameter *semantic-limit* 8
+  "How many entities the scan proposes.
+
+The same eight ADMIT-SEEDS may admit, and deliberately not more. DES-0040 D4
+fuses two ranked lists by reciprocal rank, and a dense list twice as long as
+the lexical one would win slots by being longer rather than by being better.")
+
 (defun semantic-candidates (view task)
-  "Candidates the embedder proposes for TASK, or NIL when there is no embedder.
+  "Candidates the embedder proposes for TASK, as an alist of entity to matches.
+
+Each carries one match, (:SIMILARITY . <cosine>), which is DES-0040 D5 and does
+three things no extra code is needed for. CLASSIFY-TERMS walks matched terms
+and :SIMILARITY is not one of the task\'s words, so a semantic seed can never
+mark a term ANSWERED -- REQ-0048 R4 holds by construction rather than by a
+guard. BEST-NAME-RANK keeps only integers, so a cosine contributes no name
+rank. And the record shows the caller that this seed arrived on similarity
+rather than on a word they wrote.
 
 NIL for every reason there is: no embedder configured, no store, a store whose
-identity does not match, an embedder that cannot be reached. REQ-0048 R6 gives
-them one meaning, so they get one return value and the caller needs no branch.
+identity does not match, an embedder that cannot be reached, an id in the store
+that is no longer in the view. REQ-0048 R6 gives them one meaning, so they get
+one return value and the caller needs no branch.
 
-Empty until PLAN-0043 S4 puts a scan behind it. The seam is here rather than
-there because S3's whole subject is the path where this returns nothing, and
-that path is the one whose failure has no symptom: a bundle is still returned,
-still correct, and merely slower or -- worse -- occasionally wrong in a way no
-recall count would show."
-  (declare (ignore view task))
+An id the view does not hold is dropped rather than reported. The store is
+derived from an index that has since moved -- PLAN-0043 S2b makes that rare and
+does not make it impossible -- and a stale id is exactly the fabricated fact
+CON-0001 refuses, not an error to raise at a caller who asked about something
+else."
   (when (and *context-embedder* *context-vector-store*)
-    ;; S4. Until then the answer is the same as having no embedder, which is
-    ;; what every test of R6 is written against.
-    nil))
+    (handler-case
+        (let* ((vectors (loom-embed:embed-texts *context-embedder* (list task)))
+               (query (and (plusp (length vectors)) (aref vectors 0)))
+               (hits (and query (loom-embed:nearest *context-vector-store*
+                                                    query *semantic-limit*))))
+          (loop for (id . cosine) in hits
+                for entity = (get-entity view id)
+                when entity
+                  collect (cons entity (list (cons :similarity cosine)))))
+      ;; REQ-0048 R6: an embedder that cannot answer is an embedder that is not
+      ;; there, and neither is reported. The memo is what stops the next query
+      ;; paying for the discovery again.
+      (loom-embed:embedder-unavailable () nil))))
 
 (defun seed-entities (view task &key (limit 8) types)
   "Entities whose names the words of TASK point at, best match first.

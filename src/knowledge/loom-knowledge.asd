@@ -13,7 +13,11 @@
   ;; hand-written suffix rules: those mis-parsed "string" as a gerund and
   ;; emitted "str" and "stre", and "stre" reached STRESS-PUSHER at the
   ;; strongest rank the scale has (BUG-0040). Porter leaves "string" alone.
-  :depends-on (#:loom-ontology #:loom-graph #:stem)
+  ;; DEC-0006. loom-embed is a leaf below this one: the seeder embeds the query
+  ;; and scans the sidecar at query time, and loom-workspace -- which builds the
+  ;; sidecar -- depends on this system, so the loader could not have lived
+  ;; there.
+  :depends-on (#:loom-ontology #:loom-graph #:stem #:loom-embed)
   :serial t
   :components
   (
@@ -41,7 +45,8 @@
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  :depends-on (#:loom-knowledge
+  :depends-on (#:loom-embed/test #:loom-knowledge
+	       #:loom-embed
 	       #:loom-graph
 	       #:loom-ontology
 	       #:loom-analyzer

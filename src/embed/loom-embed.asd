@@ -39,6 +39,8 @@
    (:file "store")
    ;; After "protocol": REQ-0048 R6, and it decorates any of the above.
    (:file "memo")
+   ;; After "store": it reads one.
+   (:file "scan")
    )
   :in-order-to ((test-op (test-op :loom-embed/test)))
   )

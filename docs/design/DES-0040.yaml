@@ -179,12 +179,46 @@ body: |
     that is not one of the task's words, so REQ-0048 R4 holds by construction
     rather than by a guard someone has to remember.
 
-    PROSE-ONLY-P and BEST-NAME-RANK already handle a non-integer rank -- :PROSE
-    is one -- so a second keyword needs no new branch in either.
+    PROSE-ONLY-P handles a non-integer rank already: it asks (EQ :PROSE ...)
+    and a cosine is not :PROSE, so a semantic candidate is not prose-only.
+
+    BEST-NAME-RANK did not, and this design said it did. It read
+    (REMOVE :PROSE (MAPCAR #'CDR MATCHES)) and took the minimum of what was
+    left, which was right only while :PROSE was the one non-integer value in
+    that position. A cosine of 0.83 is not :PROSE, so it survived the remove
+    and became the minimum -- ranking a candidate that matched no word the
+    caller wrote ahead of a prefix match on a word they did, in the band that
+    breaks every tie. It now keeps integers by INTEGERP, which is what a
+    MATCH-RANK is; the change is invisible to every existing measurement
+    because no other non-integer rank exists.
 
     DES-0032's record shows :similarity in the seed's terms line, which is
     REQ-0048 R3: the caller sees that the seed arrived on similarity and not on
     a word they wrote.
+
+  D5a  THE MODEL'S TASK PREFIXES, MEASURED AND NOT ADOPTED
+
+  nomic-embed-text-v1.5 is trained with instruction prefixes -- search_document:
+  on what is indexed, search_query: on what is asked -- and its own
+  documentation says retrieval degrades without them. D3 uses neither.
+
+  Tested on 303 of Loom's own definitions with five hand-written oblique
+  queries, embedded both ways, comparing the rank of the intended answer:
+
+      query                                  no prefix   prefixed
+      the first line of a block of...             1          1
+      refuse a stored file another model made     5         16
+      turn a sentence into words to search for   28         27
+      how far apart two directions point         85        142
+      stop asking a service that is not...      115        103
+
+  Two better by a little, two much worse, one unchanged. The absolute cosines
+  rise with the prefixes -- 0.577 to 0.622 at the top -- and the ordering does
+  not improve, which is the distinction that matters: a similarity scale that
+  shifts uniformly ranks nothing differently.
+
+  Not adopted. Recorded because the documentation says otherwise and the next
+  reader will want to try it.
 
   D6  WHAT ADMIT-SEEDS DOES WITH A CANDIDATE THAT HAS NO SLICE
 

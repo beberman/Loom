@@ -52,4 +52,8 @@
    #:load-vector-store
    #:delete-vector-store
    #:document-digest
-   #:*vector-store-magic*))
+   #:*vector-store-magic*
+
+   ;; the scan, PLAN-0043 S4
+   #:nearest
+   #:float-vector))

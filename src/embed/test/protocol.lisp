@@ -193,3 +193,68 @@
   (let ((inner (make-ollama-embedder :model "nomic-embed-text")))
     (is (string= (embedder-id inner)
                  (embedder-id (make-memoing-embedder inner))))))
+
+;;; ------------------------------------------------------------------
+;;; The scan -- PLAN-0043 S4
+;;; ------------------------------------------------------------------
+
+(defun scan-store (&key (dimensions 3) rows)
+  "A store holding ROWS, an alist of id to vector."
+  (let* ((count (length rows))
+         (flat (make-array (* count dimensions) :element-type 'single-float
+                                                :initial-element 0.0)))
+    (loop for (nil . v) in rows
+          for i from 0
+          do (replace flat (loom-embed::normalise v) :start1 (* i dimensions)))
+    (make-vector-store :embedder-id "fixed:test" :dimensions dimensions
+                       :count count
+                       :ids (map 'simple-vector #'car rows)
+                       :digests (make-array count :initial-element 0)
+                       :vectors flat)))
+
+(defun query-vector (&rest components)
+  (loom-embed::normalise (coerce components 'vector)))
+
+(test the-nearest-vector-is-the-one-pointing-the-same-way
+  (let ((store (scan-store :rows '(("east"  . #(1.0 0.0 0.0))
+                                   ("north" . #(0.0 1.0 0.0))
+                                   ("up"    . #(0.0 0.0 1.0))))))
+    (is (string= "north" (car (first (nearest store (query-vector 0.1 1.0 0.0) 3)))))
+    (is (string= "east"  (car (first (nearest store (query-vector 1.0 0.1 0.0) 3)))))))
+
+(test the-scan-returns-them-best-first
+  (let* ((store (scan-store :rows '(("a" . #(1.0 0.0 0.0))
+                                    ("b" . #(0.8 0.6 0.0))
+                                    ("c" . #(0.0 1.0 0.0)))))
+         (result (nearest store (query-vector 1.0 0.0 0.0) 3)))
+    (is (equal '("a" "b" "c") (mapcar #'car result)))
+    (is (apply #'> (mapcar #'cdr result))
+        "the cosines have to descend, or the order is not the ranking")))
+
+(test the-scan-honours-its-limit
+  (let ((store (scan-store :rows '(("a" . #(1.0 0.0 0.0))
+                                   ("b" . #(0.8 0.6 0.0))
+                                   ("c" . #(0.0 1.0 0.0))))))
+    (is (= 2 (length (nearest store (query-vector 1.0 0.0 0.0) 2))))
+    (is (= 3 (length (nearest store (query-vector 1.0 0.0 0.0) 99)))
+        "a limit past the end returns the store, not an error")))
+
+(test a-query-of-the-wrong-width-returns-nothing
+  ;; The second guard on pairing an embedder with a store another one wrote.
+  ;; LOAD-VECTOR-STORE should have refused it already; if it did not, indexing
+  ;; a 768-float query against 3-float rows at safety 0 reads past the array.
+  (let ((store (scan-store :dimensions 3 :rows '(("a" . #(1.0 0.0 0.0))))))
+    (is (null (nearest store (query-vector 1.0 0.0) 4)))
+    (is (null (nearest store (query-vector 1.0 0.0 0.0 0.0) 4)))))
+
+(test an-empty-store-returns-nothing
+  (is (null (nearest (scan-store :rows '()) (query-vector 1.0 0.0 0.0) 4))))
+
+(test the-cosine-is-the-dot-product-because-everything-is-unit-length
+  ;; EMBED-TEXTS normalises at the protocol, so the scan divides by nothing.
+  ;; If that ever stopped being true the scores would stop being cosines and
+  ;; nothing here would signal -- the ordering would just quietly change.
+  (let* ((store (scan-store :rows '(("a" . #(3.0 4.0 0.0)))))
+         (result (nearest store (query-vector 3.0 4.0 0.0) 1)))
+    (is (< (abs (- 1.0 (cdr (first result)))) 1e-5)
+        "a vector against itself is cosine 1 whatever magnitude it went in with")))

@@ -880,3 +880,84 @@ not enough -- they have to be countable"))
                                                  "check-slot" "check-obj")
                                      "database handler health check")
                          0 2))))))
+
+(test only-an-integer-is-a-name-rank
+  ;; DES-0040 D5 claimed BEST-NAME-RANK already handled a non-integer rank
+  ;; because :PROSE is one. It did not: the code removed :PROSE by name and
+  ;; took the minimum of what was left, so a cosine survived and won. A
+  ;; semantic candidate that matched no word the caller wrote would have ranked
+  ;; ahead of a prefix match on a word they did.
+  (is (= 3 (loom-knowledge::best-name-rank '(("x" . :prose))))
+      "prose-only still has no rank to give")
+  (is (= 3 (loom-knowledge::best-name-rank '((:similarity . 0.83))))
+      "and neither does similarity, whatever the number looks like")
+  (is (= 1 (loom-knowledge::best-name-rank '(("x" . 1) (:similarity . 0.83))))
+      "a real name match is not displaced by a cosine that sorts lower")
+  (is (= 0 (loom-knowledge::best-name-rank '(("x" . 2) ("y" . 0)))))
+  (is (= 3 (loom-knowledge::best-name-rank '()))))
+
+(test a-semantic-candidate-carries-similarity-and-answers-no-term
+  ;; DES-0040 D5. The shape is what makes REQ-0048 R4 hold by construction:
+  ;; CLASSIFY-TERMS marks a term ANSWERED when an admitted seed carries it in
+  ;; its name, it walks the matched terms, and :SIMILARITY is not one of the
+  ;; caller's words. Cosine returns nearest neighbours for every query ever
+  ;; asked, so a mechanism that let similarity answer a word would make the
+  ;; absence report unable to report an absence.
+  (let* ((graph (seed-graph "compose-view" "unrelated-thing"))
+         (target (first (find-entities graph :name-like "compose-view")))
+         (store (loom-embed:make-vector-store
+                 :embedder-id "fixed:test" :dimensions 3 :count 1
+                 :ids (vector (id target))
+                 :digests (vector 0)
+                 :vectors (make-array 3 :element-type 'single-float
+                                        :initial-contents '(1.0 0.0 0.0))))
+         (loom-knowledge::*context-vector-store* store)
+         (loom-knowledge::*context-embedder*
+           (loom-embed:make-fixed-embedder
+            :id "fixed:test" :dimensions 3
+            :vectors '(("the bit that merges edits" . #(1.0 0.0 0.0)))))
+         (candidates (loom-knowledge::semantic-candidates
+                      graph "the bit that merges edits")))
+    (is (= 1 (length candidates)) "the scan proposes the entity it is nearest")
+    (is (eq target (car (first candidates))))
+    (let ((matches (cdr (first candidates))))
+      (is (= 1 (length matches)))
+      (is (eq :similarity (car (first matches))))
+      (is (< 0.99 (cdr (first matches))) "and carries the cosine it scored"))
+    ;; The consequence, asserted rather than assumed.
+    (let ((coverage (loom-knowledge::term-coverage candidates '("merges" "edits"))))
+      (is (every (lambda (row) (null (getf (cdr row) :name))) coverage)
+          "a semantic candidate answers no term by name")
+      (is (equal '(:unmatched :unmatched)
+                 (mapcar #'cdr (loom-knowledge::classify-terms
+                                coverage (list target))))
+          "so the report still says the query's words reached nothing"))))
+
+(test an-embedder-that-cannot-answer-is-an-embedder-that-is-not-there
+  ;; REQ-0048 R6 again, on the path that only exists once there is a scan: the
+  ;; store and the embedder are both configured and the call fails.
+  (let* ((graph (seed-graph "alpha"))
+         (loom-knowledge::*context-vector-store*
+           (loom-embed:make-vector-store :embedder-id "fixed:test" :dimensions 3
+                                         :count 0))
+         (loom-knowledge::*context-embedder*
+           (loom-embed:make-memoing-embedder
+            (make-instance 'loom-embed-test::failing-embedder))))
+    (is (null (loom-knowledge::semantic-candidates graph "alpha"))
+        "a failure is nothing, not a condition reaching the caller")))
+
+(test a-stale-id-in-the-store-is-dropped-rather-than-fabricated
+  ;; The store is derived from an index that has since moved. PLAN-0043 S2b
+  ;; makes that rare and not impossible, and an id nothing in the view holds is
+  ;; CON-0001's fabricated fact if it is returned anyway.
+  (let* ((graph (seed-graph "alpha"))
+         (loom-knowledge::*context-vector-store*
+           (loom-embed:make-vector-store
+            :embedder-id "fixed:test" :dimensions 3 :count 1
+            :ids (vector "function:src/gone.lisp:deleted-thing")
+            :digests (vector 0)
+            :vectors (make-array 3 :element-type 'single-float
+                                   :initial-contents '(1.0 0.0 0.0))))
+         (loom-knowledge::*context-embedder*
+           (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
+    (is (null (loom-knowledge::semantic-candidates graph "alpha")))))
