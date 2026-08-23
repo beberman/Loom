@@ -961,3 +961,105 @@ not enough -- they have to be countable"))
          (loom-knowledge::*context-embedder*
            (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
     (is (null (loom-knowledge::semantic-candidates graph "alpha")))))
+
+;;; ------------------------------------------------------------------
+;;; Fusion -- PLAN-0043 S5, DES-0040 D4 and D6
+;;; ------------------------------------------------------------------
+
+(defun fused-names (lexical semantic)
+  (mapcar (lambda (pair) (name (car pair)))
+          (loom-knowledge::fuse-rankings lexical semantic)))
+
+(defun ranked-pair (entity &rest matches)
+  (cons entity matches))
+
+(test with-no-semantic-list-the-lexical-order-is-returned-unchanged
+  ;; REQ-0048 R6 as an identity rather than an arithmetic coincidence. Fusing
+  ;; one list would reproduce its order, and returning it outright is what
+  ;; makes that true by construction on every query on a machine with no
+  ;; embedder -- which is every query today.
+  (let* ((a (k-function "alpha" 10))
+         (b (k-function "beta" 30))
+         (lexical (list (ranked-pair a '("x" . 0)) (ranked-pair b '("y" . 1)))))
+    (is (eq lexical (loom-knowledge::fuse-rankings lexical nil))
+        "the very list, not a copy of it")))
+
+(test a-candidate-on-both-lists-outranks-one-on-either-alone
+  ;; The property RRF is chosen for: agreement between two mechanisms that
+  ;; share no scale is worth more than a good place on one of them.
+  (let* ((both (k-function "on-both" 10))
+         (lex  (k-function "lexical-only" 30))
+         (sem  (k-function "semantic-only" 50))
+         (lexical (list (ranked-pair lex '("x" . 0))
+                        (ranked-pair both '("y" . 1))))
+         (semantic (list (ranked-pair sem '(:similarity . 0.9))
+                         (ranked-pair both '(:similarity . 0.8)))))
+    (is (string= "on-both" (first (fused-names lexical semantic)))
+        "second on each list beats first on one")))
+
+(test a-fused-candidate-carries-both-kinds-of-match
+  ;; DES-0040 D6: a candidate on both lists is not dense-only, so ADMIT-SEEDS
+  ;; charges it to the slice its terms make, exactly as it would have without
+  ;; an embedder.
+  (let* ((e (k-function "both" 10))
+         (fused (loom-knowledge::fuse-rankings
+                 (list (ranked-pair e '("term" . 0)))
+                 (list (ranked-pair e '(:similarity . 0.8))))))
+    (is (= 1 (length fused)) "one entity, not two")
+    (let ((matches (cdr (first fused))))
+      (is (= 2 (length matches)))
+      (is (not (loom-knowledge::dense-only-p matches)))
+      (is (string= "term" (loom-knowledge::seed-slice matches))
+          "and similarity is not part of the slice"))))
+
+(test similarity-is-not-part-of-a-slice
+  ;; Left in, every dense candidate would share one slice and
+  ;; *SEED-TERM-SHARE* would hold the whole bundle to two of them.
+  (is (string= "" (loom-knowledge::seed-slice '((:similarity . 0.9)))))
+  (is (loom-knowledge::dense-only-p '((:similarity . 0.9))))
+  (is (not (loom-knowledge::dense-only-p '(("word" . 1) (:similarity . 0.9))))))
+
+(test dense-only-candidates-are-exempt-from-the-slice-cap
+  ;; They all share the empty slice, so the cap would admit two and hold back
+  ;; the rest -- a cap written to stop one English word filling the set,
+  ;; applied to candidates that answered no word at all.
+  (let ((ranked (loop for i from 0 below 6
+                      collect (ranked-pair (k-function (format nil "dense-~d" i) (* 10 i))
+                                           (cons :similarity (- 0.9 (* 0.01 i)))))))
+    (is (= 6 (length (loom-knowledge::admit-seeds ranked 8)))
+        "six dense-only candidates all reach the bundle")))
+
+(test dense-only-candidates-still-pay-the-name-cap
+  ;; BUG-0041 bounds definitions of one name however the candidate arrived.
+  ;; Five other names as well, because ADMIT-SEEDS relaxes rather than
+  ;; enforces: with nothing else waiting the held-back copies come back and the
+  ;; count would measure the fixture instead of the cap. BUG-0041's own test
+  ;; needed the same fixture for the same reason.
+  (let* ((ranked (append
+                  (loop for i from 0 below 8
+                        collect (ranked-pair
+                                 (k-def 'function-entity "delete-obj"
+                                        (format nil "src/f~d.lisp" i))
+                                 (cons :similarity (- 0.9 (* 0.01 i)))))
+                  (loop for i from 0 below 5
+                        collect (ranked-pair
+                                 (k-function (format nil "other-~d" i) (* 10 i))
+                                 (cons :similarity (- 0.5 (* 0.01 i)))))))
+         (chosen (loom-knowledge::admit-seeds ranked 8)))
+    (is (= 8 (length chosen)) "the bundle still fills")
+    (is (= loom-knowledge::*seed-name-share*
+           (count "delete-obj" chosen :key #'name :test #'string=))
+        "but eight vectors for one name are still three seeds")))
+
+(test a-dense-only-seed-does-not-answer-a-term
+  ;; REQ-0048 R4 through the whole path rather than at SEMANTIC-CANDIDATES.
+  ;; Cosine returns nearest neighbours for every query ever asked, so a
+  ;; mechanism that let similarity answer a word would make the absence report
+  ;; unable to report an absence.
+  (let* ((e (k-function "compose-view" 10))
+         (ranked (list (ranked-pair e '(:similarity . 0.87))))
+         (chosen (loom-knowledge::admit-seeds ranked 8))
+         (coverage (loom-knowledge::term-coverage ranked '("merges" "edits"))))
+    (is (equal (list e) chosen))
+    (is (equal '(:unmatched :unmatched)
+               (mapcar #'cdr (loom-knowledge::classify-terms coverage chosen))))))

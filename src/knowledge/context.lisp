@@ -904,10 +904,98 @@ The bands are separated rather than blended, widest first:
      (*      10 (if (prose-only-p matches) 1 0))
      (best-name-rank matches)))
 
+(defun lexical-terms (matches)
+  "The terms of MATCHES that are words of the task.
+
+A term is a string. DES-0040 D5 puts (:SIMILARITY . <cosine>) in the same
+position, and a keyword there is the marker that this match came from a vector
+rather than from a word -- so everything reasoning about *what the task asked*
+filters on STRINGP and everything reasoning about *how a candidate arrived*
+does not."
+  (remove-if-not #'stringp matches :key #'car))
+
+(defun dense-only-p (matches)
+  "True when MATCHES holds similarity and nothing else.
+
+Such a candidate answered no word the caller wrote. It is exempt from
+ADMIT-SEEDS' slice cap, which counts how much of the *task* a group of seeds
+answers -- a question a similarity match does not participate in."
+  (and matches (null (lexical-terms matches))))
+
 (defun seed-slice (matches)
   "The slice of the task a seed answers to: its matched terms, sorted.
-The key the share in ADMIT-SEEDS is counted against."
-  (format nil "~{~a~^ ~}" (sort (mapcar #'car matches) #'string<)))
+The key the share in ADMIT-SEEDS is counted against.
+
+Similarity is not part of a slice. Left in, every dense candidate in a bundle
+would share one slice and *SEED-TERM-SHARE* would hold them to two -- which is
+the wrong reading of a cap written to stop one English word filling the set."
+  (format nil "~{~a~^ ~}" (sort (mapcar #'car (lexical-terms matches)) #'string<)))
+
+(defparameter *rrf-k* 60
+  "Reciprocal rank fusion's constant. DES-0040 D4.
+
+60 is what the RRF literature settles on and is not tuned here. What it buys is
+that the difference between rank 1 and rank 2 is small next to the difference
+between appearing on a list and not appearing on it, which is the property that
+makes fusion robust to two scores that share no scale.")
+
+(defparameter *semantic-weight* 1.0
+  "How much a place on the semantic list is worth against a place on the
+lexical one.
+
+Simulated at the seed level before the fusion existed: equal weight reached 448
+of 450 on known-item -- the union ceiling exactly, losing none of the eleven
+exact-name cases REQ-0048 R2 protects -- and 24 of 120 on the mismatch family
+against dense-alone's 34. At 1.5 and above those invert to 443 and 34.
+
+Equal, because the simulation could not see the neighbour band and the band is
+where every one of the mismatch family's nine lexical hits comes from. A fused
+seed set gets an expansion too, and whether the ten cases equal weight appears
+to lose return as items is a question only a measurement with the band running
+can answer. PLAN-0043 S6 is that measurement and is what sets this number.")
+
+(defun fuse-rankings (lexical semantic)
+  "One ranked list from two, by reciprocal rank. DES-0040 D4.
+
+    score(c) = sum over the lists holding c of  w / (*RRF-K* + rank(c))
+
+Rank rather than score, because a cosine and a SEED-SCORE band are not on one
+scale and nothing here should pretend they are. DES-0032 refused to place a
+threshold in a quantity it had measured across six queries; this refuses to
+calibrate two.
+
+A candidate on both lists carries both kinds of match: its lexical terms and
+its similarity. That is what makes it not dense-only, so ADMIT-SEEDS charges it
+to the slice its terms make, exactly as it would have without an embedder.
+
+LEXICAL is returned unchanged when SEMANTIC is empty. Fusing one list would
+reproduce its order -- the weights are positive and the ranks distinct -- but
+returning it outright is what makes REQ-0048 R6 an identity rather than an
+arithmetic coincidence, and it is the path every query takes on a machine with
+no embedder."
+  (if (null semantic)
+      lexical
+      (let ((scores (make-hash-table :test #'eq))
+            (matches (make-hash-table :test #'eq))
+            (order '()))
+        (flet ((note (entity rank weight found)
+                 (unless (nth-value 1 (gethash entity scores))
+                   (push entity order))
+                 (incf (gethash entity scores 0.0d0)
+                       (/ weight (+ *rrf-k* rank)))
+                 (setf (gethash entity matches)
+                       (append (gethash entity matches) found))))
+          (loop for (entity . found) in lexical
+                for rank from 1
+                do (note entity rank 1.0d0 found))
+          (loop for (entity . found) in semantic
+                for rank from 1
+                do (note entity rank (float *semantic-weight* 1.0d0) found)))
+        (let ((fused (loop for entity in (nreverse order)
+                           collect (cons entity (gethash entity matches)))))
+          ;; STABLE-SORT so that a tie keeps the order the lists gave it, which
+          ;; on a tie between two lexical candidates is SEED-SCORE\'s order.
+          (stable-sort fused #'> :key (lambda (pair) (gethash (car pair) scores)))))))
 
 (defun admit-seeds (ranked limit)
   "The first LIMIT entities of RANKED, holding back a slice past its share and
@@ -960,7 +1048,8 @@ exactly as it did before either cap existed."
         (let* ((slice (seed-slice (cdr pair)))
                (names (gethash slice spent))
                (name  (significant-name (car pair))))
-          (cond ((and (or (< (length names) *seed-term-share*)
+          (cond ((and (or (dense-only-p (cdr pair))
+                          (< (length names) *seed-term-share*)
                           (member name names :test #'string-equal))
                       (< (gethash name copies 0) *seed-name-share*))
                  (pushnew name (gethash slice spent) :test #'string-equal)
@@ -1135,11 +1224,8 @@ waiting (ADMIT-SEEDS)."
          ;; by candidates this drops is WEAK, and calling it UNMATCHED would say
          ;; the index holds nothing of the kind. CANDIDATES is what the ranking
          ;; and the admission see.
-         (candidates (append (strong-candidates matches origins)
-                             ;; Nothing today, and the call is here rather than
-                             ;; in S4 so that the absent path is the one that
-                             ;; has been exercised by every run since.
-                             (semantic-candidates view task)))
+         (candidates (strong-candidates matches origins))
+         (semantic   (semantic-candidates view task))
          (production (production-names candidates))
          ;; COPY-LIST because STABLE-SORT is destructive on a list and MATCHES
          ;; is read again below -- and CANDIDATES is MATCHES itself whenever
@@ -1150,7 +1236,7 @@ waiting (ADMIT-SEEDS)."
          ;; of the alist and missed the rest. BUG-0037: 207 of 246 recorded
          ;; bundles carried a null `terms' and a score recomputed from no matches
          ;; at all, which is the corpus REQ-0036 measures the ranking against.
-         (ranked     (stable-sort (copy-list candidates) #'<
+         (lexical    (stable-sort (copy-list candidates) #'<
                                   :key (lambda (pair)
                                          (seed-score (car pair) (cdr pair)
                                                      :demote-tests demote-tests
@@ -1159,6 +1245,10 @@ waiting (ADMIT-SEEDS)."
                                                      :origins origins
                                                      :frequencies frequencies
                                                      :corpus-size corpus-size))))
+         ;; DES-0040 D4. With no embedder this is LEXICAL itself, so nothing
+         ;; below this line can behave differently than it did before dense
+         ;; retrieval existed.
+         (ranked     (fuse-rankings lexical semantic))
          (chosen     (admit-seeds ranked limit)))
     ;; Second value: the chosen seeds with the score and the terms each
     ;; answered to. DES-0030 D3 -- a record holding the seeds without their
@@ -1175,7 +1265,13 @@ waiting (ADMIT-SEEDS)."
     (values chosen
             (loop for entity in chosen
                   for rank from 1
-                  for pair = (assoc entity matches :test #'eq)
+                  ;; RANKED and not MATCHES: a dense-only candidate is not in
+                  ;; SEED-MATCHES at all, and ASSOC would return NIL -- which
+                  ;; SEED-SCORE reads as "matched nothing" and the record
+                  ;; writer writes as a null `terms\'. That is precisely the
+                  ;; shape BUG-0037 left behind when a destructive sort lost
+                  ;; the matches, and 207 of 246 recorded bundles carried it.
+                  for pair = (assoc entity ranked :test #'eq)
                   collect (list :id (id entity)
                                 :name (name entity)
                                 :rank rank

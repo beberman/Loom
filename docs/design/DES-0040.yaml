@@ -217,8 +217,37 @@ body: |
   not improve, which is the distinction that matters: a similarity scale that
   shifts uniformly ranks nothing differently.
 
-  Not adopted. Recorded because the documentation says otherwise and the next
-  reader will want to try it.
+  Five queries over 303 documents is not enough to conclude from, and the
+  paragraph above concluded from it. Run against the instrument instead -- 120
+  mismatch cases with known answers over game-server and front-end, top-8 --
+  the answer comes out the other way:
+
+      no prefix    34 of 120    28.3%
+      prefixed     37 of 120    30.8%
+
+  Three cases, and in the direction the model's documentation predicts. The
+  small sample was not merely weak evidence, it pointed the wrong way, which is
+  what a sample of five does. The five-query table is left above as the record
+  of that rather than deleted.
+
+  One explanation ruled out rather than left standing: ollama does not add a
+  prefix of its own, so the prefixed run was not double-prefixed.
+  `ollama show nomic-embed-text --modelfile' gives TEMPLATE {{ .Prompt }},
+  which passes the text through verbatim.
+
+  NOT ADOPTED IN S5, AND WHAT ADOPTING IT COSTS
+
+  Two changes rather than two string concatenations. EMBED-TEXTS would need to
+  know whether it is embedding a document or a query, because the whole point
+  of the prefixes is that the two sides are treated differently -- so the
+  protocol grows a role argument. And EMBEDDER-ID would have to name the
+  prefix scheme: this design's own rule is that the id names everything that
+  changes the vectors, prefixed vectors are not comparable with unprefixed
+  ones, and a store built before the change must be refused rather than mixed.
+
+  Three cases of 120 is worth that, and it is not worth doing in the middle of
+  a step measuring something else. PLAN-0043 S6 sweeps the fusion weight and is
+  where a second measured constant belongs.
 
   D6  WHAT ADMIT-SEEDS DOES WITH A CANDIDATE THAT HAS NO SLICE
 
