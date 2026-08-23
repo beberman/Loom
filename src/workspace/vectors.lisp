@@ -246,6 +246,63 @@ for one."
       (setf *embedder*
             (loom-embed:make-memoing-embedder (loom-embed:make-ollama-embedder)))))
 
+(defparameter *vector-build-wait* 300
+  "Seconds a query waits for a build in flight before answering without it.
+
+A bound rather than a promise. Building front-end's 3457 definitions took 183
+seconds and game-server's 1811 took 66, so 300 covers both with room; a tree
+larger than anything measured here would exhaust it and get the lexical answer,
+which REQ-0048 R6 guarantees is correct rather than merely available.
+
+Waiting at all is the decision worth defending. A query answered while the
+store is half-built is not wrong -- it is the answer Loom gave before any of
+this existed -- but it is quietly worse, and quietly worse is the failure this
+whole requirement was written against. Waiting makes the cost visible. The
+launcher starting the build and returning is what keeps that cost off the path
+anybody actually walks: by the time a person has read the banner and typed a
+question, a tree this size is done.")
+
+(defun start-vector-build (repository &key (embedder (current-embedder)))
+  "Build or update REPOSITORY's store on another thread. Returns the thread.
+
+Update when there is a store and build when there is not, which is
+UPDATE-VECTOR-STORE's own distinction: it returns NIL rather than inventing one,
+so the fallback here is a full build and the incremental path costs nothing to
+try.
+
+A build already in flight is left alone rather than joined by a second one.
+Two threads embedding the same repository would race on one file and the loser
+would write a store whose header and data came from different passes."
+  (with-repository-lock (repository)
+    (let ((running (repository-vector-build repository)))
+      (if (and running (bordeaux-threads:thread-alive-p running))
+          running
+          (setf (repository-vector-build repository)
+                (bordeaux-threads:make-thread
+                 (lambda ()
+                   (handler-case
+                       (let ((store (or (update-vector-store repository embedder)
+                                        (build-vector-store repository embedder))))
+                         (setf (repository-cached-vectors repository) store))
+                     ;; REQ-0048 R6: an embedder that cannot answer is an
+                     ;; embedder that is not there. The thread ends, the store
+                     ;; stays whatever it was, and no query is told about it.
+                     (loom-embed:embedder-unavailable (condition)
+                       (note-error repository "vector build" condition))
+                     (serious-condition (condition)
+                       (note-error repository "vector build" condition))))
+                 :name (format nil "loom-vectors-~a" (repository-name repository))))))))
+
+(defun await-vector-build (repository &optional (seconds *vector-build-wait*))
+  "Wait for a build in flight, up to SECONDS. True when there is none left."
+  (let ((thread (repository-vector-build repository)))
+    (or (null thread)
+        (not (bordeaux-threads:thread-alive-p thread))
+        (loop repeat (* 10 seconds)
+              do (sleep 0.1)
+              until (not (bordeaux-threads:thread-alive-p thread))
+              finally (return (not (bordeaux-threads:thread-alive-p thread)))))))
+
 (defun repository-vectors (repository)
   "REPOSITORY\'s vector store, or NIL when there is not one worth using.
 
@@ -257,6 +314,7 @@ REQ-0048 R6 falls out of the order of operations here. Loading a store is file
 I/O and nothing else, so a machine with no store never reaches the network at
 all -- the embedder is constructed, asked for its id, and never called. Only a
 repository that has a store can cost a query anything."
+  (await-vector-build repository)
   (let ((cached (repository-cached-vectors repository)))
     (if (eq cached :unloaded)
         (setf (repository-cached-vectors repository)
@@ -267,3 +325,15 @@ repository that has a store can cost a query anything."
 (defun forget-repository-vectors (repository)
   "Drop the cached store so the next query reads from disk again."
   (setf (repository-cached-vectors repository) :unloaded))
+
+(defun vector-build-status (repository)
+  "What EMBED would say about REPOSITORY, as a plist. Reaches no embedder."
+  (let* ((store (let ((cached (repository-cached-vectors repository)))
+                  (if (eq cached :unloaded) nil cached)))
+         (thread (repository-vector-build repository)))
+    (list :building (and thread (bordeaux-threads:thread-alive-p thread) t)
+          :vectors (and store (loom-embed:vector-store-count store))
+          :dimensions (and store (loom-embed:vector-store-dimensions store))
+          :embedder (loom-embed:embedder-id (current-embedder))
+          :definitions (length (vector-candidates (repository-graph repository)))
+          :stale (vector-store-staleness repository (current-embedder)))))

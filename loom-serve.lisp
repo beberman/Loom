@@ -108,8 +108,16 @@ needs no dot-prefix or exclusion rule to keep the self-watch from indexing it."
               ;; cl-yaml's conditions are direct subtypes of CONDITION and an
               ;; ERROR clause would miss them.
               (handler-case
+                  ;; :BACKGROUND registers each repository and returns before
+                  ;; it holds anything, so START-SERVER below binds the port
+                  ;; while the trees are still being read. Nine repositories
+                  ;; index in about twenty seconds today and that grows with
+                  ;; every tree added; a launcher that waited for it would spend
+                  ;; that time on the one path everybody walks. REQUIRE-REPOSITORY
+                  ;; waits instead, so a request arriving early blocks and then
+                  ;; answers correctly.
                   (funcall (read-from-string "loom-workspace:watch-repository")
-                           path :quiet t)
+                           path :quiet t :background t)
                 (loom-serve:guarded-condition (condition)
                   (format *error-output* "~&[loom-serve] cannot watch ~a: ~a~%"
                           path condition))))

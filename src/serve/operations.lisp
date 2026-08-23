@@ -41,6 +41,21 @@ while holding it are the WATCH-REPOSITORY and UNWATCH-REPOSITORY calls it
 exists to serialize, and both take a repository lock beneath it, never above.
 Recursive for the same reason DES-0004's is: a re-entry must not self-deadlock.")
 
+(defun require-repository-now (designator)
+  "REQUIRE-REPOSITORY without waiting for an index still being built.
+
+For `status\' alone. Every other operation reads the graph and must not see an
+empty one, but status is the operation whose job is to say what state things
+are in -- and an introspection call that blocked until the thing it was
+introspecting finished would be unable to report the state it exists to
+report."
+  (cond ((null designator)
+         (error 'malformed-request
+                :message "This operation needs the name of a repository. Ask status for the list."))
+        ((find-repository designator))
+        (t (error 'malformed-request
+                  :message (format nil "No repository named ~a is watched." designator)))))
+
 (defun require-repository (designator)
   "The repository DESIGNATOR names, or a malformed request naming it.
 
@@ -50,7 +65,18 @@ malformed request rather than an ambiguous one to be resolved by guessing."
   (cond ((null designator)
          (error 'malformed-request
                 :message "This operation needs the name of a repository. Ask status for the list."))
-        ((find-repository designator))
+        ;; The one place every operation passes through, which is why the wait
+        ;; is here and not in each of them. loom-serve.lisp registers a
+        ;; repository and indexes it on another thread so the listener can bind
+        ;; its port at once; a request arriving in that window waits for the
+        ;; graph rather than being answered from an empty one. An empty graph is
+        ;; not a slow answer, it is a confident wrong one -- `find' would report
+        ;; that nothing matches, indistinguishable from the truthful version of
+        ;; itself.
+        ((let ((repository (find-repository designator)))
+           (when repository
+             (await-repository-index repository)
+             repository)))
         (t (error 'malformed-request
                   :message (format nil "No repository named ~a. Ask status for the list."
                                    designator)))))
@@ -318,7 +344,7 @@ Pass source=true for the definition's text."
   ;; its own status plist, and no name answers with the list under
   ;; :REPOSITORIES, which is what tells an empty answer from a single one.
   (if repository
-      (repository-status (require-repository repository))
+      (repository-status (require-repository-now repository))
       (list :repositories (mapcar #'repository-status (all-repositories)))))
 
 ;;;; ------------------------------------------------------------------
@@ -505,6 +531,23 @@ its entries is worse than a call that failed."
                         :mode (if (and mode (string-equal "all" (princ-to-string mode)))
                                   :all
                                   :tooling))))
+
+(define-operation :embed :write (repository)
+    "Build or update the vector store semantic seeding reads. Returns at once."
+  ;; :WRITE because it writes a sidecar, and it returns before the writing is
+  ;; done -- which is the point rather than a compromise. tools/loom-serve.sh
+  ;; calls this once per repository after the listener answers, and a build is
+  ;; 66 seconds for game-server and 183 for front-end. A launcher that waited
+  ;; would turn "start Loom" into three minutes of silence for a dependency
+  ;; that is optional.
+  ;;
+  ;; A query that wants the store waits for the build instead
+  ;; (*VECTOR-BUILD-WAIT*), so the cost falls on whoever asks first. On the
+  ;; normal path -- start Loom, read the banner, type a question -- it has
+  ;; already been paid by then.
+  (let ((watched (require-repository repository)))
+    (start-vector-build watched)
+    (vector-build-status watched)))
 
 (define-operation :reindex :write (repository)
     "Discard and rebuild the index from disk. Always safe."

@@ -37,6 +37,9 @@
 
    ;; lifecycle
    #:watch-repository
+   #:await-repository-index
+   #:repository-index-build
+   #:*index-build-wait*
    #:pause-repository
    #:unwatch-repository
    #:index-repository
@@ -61,6 +64,10 @@
    ;; the vector sidecar, DEC-0006 and DES-0040 D2
    #:build-vector-store
    #:repository-vectors
+   #:start-vector-build
+   #:await-vector-build
+   #:vector-build-status
+   #:*vector-build-wait*
    #:forget-repository-vectors
    #:current-embedder
    #:*embedder*

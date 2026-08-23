@@ -195,18 +195,51 @@ cmd_start() {
     nohup sbcl --script loom-serve.lisp --headless "$root" \
           ${extra[@]+"${extra[@]}"} >>"$logfile" 2>&1 &
     disown
-    # ~20s, a generous multiple of the seconds-scale startup PLAN-0005 measured.
+    # ~150s. It was 20, described as "a generous multiple of the seconds-scale
+    # startup PLAN-0005 measured", and that stopped being true: a start whose
+    # fasl cache is cold recompiles every system first, which on this machine is
+    # 40 to 90 seconds. The symptom was a `start' that printed a failure and
+    # returned 1 while the service came up fine ten seconds later -- survivable
+    # when nothing depended on the success path, and not survivable now that
+    # START_VECTOR_BUILDS hangs off it.
     local i
-    for i in $(seq 1 40); do
+    for i in $(seq 1 300); do
         sleep 0.5
         probe
         if [ "$state" != down ]; then
             echo "started (pid $(live_pid_or_clean))"
+            start_vector_builds
             return 0
         fi
     done
     echo "start: nothing answering on $base after ~20s; see $logfile" >&2
     return 1
+}
+
+# Ask the service to build every repository's vector store, and do not wait for
+# any of them. DEC-0006's dependency is optional, and a launcher that blocked on
+# it would make "start Loom" cost three minutes -- 66 seconds for game-server's
+# 1811 definitions and 183 for front-end's 3457 -- for something a tree without
+# ollama does not use at all.
+#
+# The wait belongs to whoever queries first, not to whoever starts the service:
+# REPOSITORY-VECTORS blocks on a build in flight, so a bundle is never answered
+# from half a store, and on the normal path the build has finished before anyone
+# has typed a question.
+#
+# Failure is silence on purpose. No ollama, no model, a refused connection --
+# all of them leave the lexical seeder answering exactly as it did before any of
+# this existed (REQ-0048 R6), and a launcher that complained about an absent
+# optional dependency would be reporting the normal state of most trees.
+start_vector_builds() {
+    local names name
+    names=$(curl -sf --max-time 10 "$base/status" 2>/dev/null |
+                grep -o '"name":"[^"]*"' | sed 's/.*:"//;s/"//') || return 0
+    for name in $names; do
+        curl -sf --max-time 10 -X POST "$base/embed?repository=$name" \
+             >/dev/null 2>&1 &
+    done
+    disown -a 2>/dev/null || true
 }
 
 cmd_stop() {

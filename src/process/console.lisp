@@ -327,6 +327,8 @@ command."
   ;; because enrichment is optional and on demand: a reader who sees zeroes
   ;; cannot tell a tree the image agreed with completely from one nobody has
   ;; asked about, and only one of those is worth doing something about.
+  (when (getf status :indexing)
+    (format t "  indexing   : still reading the tree; a query waits for it~%"))
   (if (plusp (getf status :enrichment-runs))
       (format t "  enrichment : ~d unit~:p loaded, ~d gap~:p, ~d run~:p~%"
               (getf status :enriched-units) (getf status :enrichment-gaps)
@@ -404,6 +406,35 @@ command."
     (log-event "enrich" "~a" (repository-root repository))
     (print-enrichment report)
     (print-status (repository-status repository))))
+
+(define-command embed (&optional designator)
+    "embed [<name>]"
+    "Build or update the vector store that semantic seeding reads. On demand."
+  ;; On demand and in the background, which is two decisions rather than one.
+  ;;
+  ;; On demand for ENRICH's reason (DES-0011 R9): a build is seconds to minutes
+  ;; -- 66 for game-server's 1811 definitions, 183 for front-end's 3457 -- and
+  ;; nothing on a poll cycle designed to cost milliseconds may reach it.
+  ;;
+  ;; In the background because the launcher runs this and must return. A query
+  ;; that wants the store waits for the build instead (*VECTOR-BUILD-WAIT*), so
+  ;; the cost lands on whoever asks first rather than on everybody who starts
+  ;; the service, and on the normal path -- start Loom, read the banner, type a
+  ;; question -- it has already been paid.
+  (let* ((repository (current-repository designator))
+         (before (vector-build-status repository)))
+    (start-vector-build repository)
+    (log-event "embed" "~a" (repository-root repository))
+    (format t "  embedder   : ~a~%" (getf before :embedder))
+    (format t "  definitions: ~d~%" (getf before :definitions))
+    (if (getf before :vectors)
+        (format t "  store      : ~d vector~:p of ~d, ~@[~d to re-embed~]~@[~*up to date~]~%"
+                (getf before :vectors) (getf before :dimensions)
+                (and (plusp (or (getf before :stale) 0)) (getf before :stale))
+                (and (zerop (or (getf before :stale) 0)) t))
+        (format t "  store      : none yet, building all ~d~%"
+                (getf before :definitions)))
+    (format t "  building   : started in the background; a query waits for it~%")))
 
 (defun print-enrichment (report)
   "What one enrichment run did, zeros included.
