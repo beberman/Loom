@@ -1,5 +1,5 @@
 id: DES-0042
-title: "REQ-0040 by making the budget cover the whole bundle: one number from the caller, two allowances inside it, and a count of what was dropped"
+title: "REQ-0040 by making the budget cover the whole bundle: one number from the caller, two allowances inside it, and a cutoff signal saying what a larger number would buy"
 status: draft
 date: 2026-08-23
 refines: [REQ-0040, DES-0026]
@@ -10,6 +10,11 @@ summary: |
   covers the index tier and the source tier is outside it by construction
   (DES-0026 D2), so the number a caller reads is the smaller of the two things
   they were sent.
+
+  The caller names the budget, and the bundle answers with what fraction of
+  what it found that budget bought and what number would buy the rest. A
+  budget nobody can set is REQ-0040 R1's defect; a budget set without seeing
+  what a larger one would return is the same defect one step along.
 
   Measured on Loom, 2026-08-23, at the default budget of 4000:
 
@@ -67,21 +72,48 @@ body: |
   caller asking for five bodies inside 4000 tokens gets as many of the five as
   fit and is told how many they did not get, which is D3.
 
-  D3  WHAT WAS DROPPED, IN THE UNIT THE BUDGET WAS NAMED IN
+  D3  THE BUNDLE SAYS WHAT FRACTION IT SENT AND WHAT BUDGET SENDS THE REST
 
-  `truncated` is a boolean. It says that a bundle was cut and never what or how
+  `truncated' is a boolean. It says that a bundle was cut and never what or how
   much, so a caller cannot tell a bundle that lost its 148th neighbour from one
-  that lost forty entities and three bodies.
+  that lost forty entities and three bodies -- and, more to the point, cannot
+  tell whether asking again would be worth anything.
 
-  It becomes counts: items dropped, tokens they would have cost, and bodies
-  withheld. Reported per tier, because the two are rationed differently and a
-  caller's response differs -- more index budget buys more names, more source
-  budget buys more bodies, and one number cannot say which to raise.
+  It becomes a cutoff signal the caller can act on:
 
-  This is the fourth surface with one rule. BUG-0002 established it for
-  `find`'s cap, REQ-0005 asks it of `impact`, and BUG-0044 gave `survey` its
-  "40 of 486 shown" line. A capped list read as the whole truth is the failure,
-  and the count is what tells a caller to narrow.
+      # 148 entities, ~2477/4000 tokens
+      #   sent 32% of what this walk found; 7756 tokens sends all of it
+      #   index   148 of 148 items,   2477 tokens, nothing withheld
+      #   source    1 of 5 bodies,    1056 tokens, 4 withheld at 4223 tokens
+
+  Three facts, and each answers a different question. The percentage says
+  whether the answer in hand is most of the answer. The suggested budget says
+  what to ask for, which is the number a caller cannot compute from anything
+  they were sent today. The per-tier lines say *which* budget to raise, because
+  more index budget buys names and more source budget buys bodies and one
+  number cannot distinguish them.
+
+  This is what makes D4 usable rather than a guess. A caller who can name a
+  budget and cannot see what a larger one would buy is choosing blind, and will
+  either under-ask permanently or pad the number until something overflows --
+  which is the behaviour REQ-0040's two overflow records already describe.
+
+  It also removes the reason to tune the default hard. A default that is wrong
+  for one repository costs one extra call rather than a wrong answer, and a
+  caller who wanted more can see that they wanted more.
+
+  WHAT THE SIGNAL MAY NOT CLAIM
+
+  "All of it" is all of what the walk found, and the wording says so in those
+  words. *CONTEXT-EXPANSION-HORIZON* is 4 and bounds the walk by accumulated
+  cost before any budget is consulted, so a larger budget prints more of what
+  was reached and never more of what was searched. A signal reading "8000 sends
+  everything" would be a completeness claim about the graph, which is CON-0001's
+  fabricated fact wearing a percentage.
+
+  The cost is a running total rather than a pass. ADMIT-ITEM already computes
+  every rejected item's cost and throws it away to set a flag; keeping the sum
+  is one INCF in the branch that currently discards it.
 
   D4  THE CALLER NAMES IT
 
@@ -104,16 +136,15 @@ body: |
   caller converting one to the other is a caller guessing at the ratio this
   design just measured. Reporting both costs one LENGTH.
 
-  D6  WHAT THE SPLIT BETWEEN THE TWO ALLOWANCES IS, AND WHY IT IS NOT DECIDED
-      HERE
+  D6  THE SPLIT BETWEEN THE ALLOWANCES, AND WHY D3 MAKES IT A SMALLER QUESTION
 
-  REQ-0040 R2 says breadth yields to depth: "Given a choice between naming
-  forty more entities and carrying the source of five, the bundle is more
-  useful carrying the source -- 194 unused items of 203 is what breadth-first
-  spending buys."
+  REQ-0040 R2 says breadth yields to depth: "Given a choice between naming forty
+  more entities and carrying the source of five, the bundle is more useful
+  carrying the source -- 194 unused items of 203 is what breadth-first spending
+  buys."
 
-  There is measured evidence on both sides and this design refuses to settle it
-  by assertion.
+  There is measured evidence on both sides and this design settles neither by
+  assertion.
 
     For depth. The judged corpus: 203 items returned and 9 used, 128 and 3.
     Three scored calls, which is thin, and REQ-0036 exists because thin is what
@@ -125,17 +156,19 @@ body: |
     failing on room rather than on reach". Starving breadth is a failure this
     tree has already had and already fixed once.
 
-  So the mechanism is what this design specifies and the ratio is a parameter
-  with a default chosen by measurement against tools/acceptance.py, not by the
-  argument in R2. Four ranking mechanisms were measured on this tree in August
-  2026 and all four came in at baseline or below; a fifth change justified by
-  reasoning rather than by a number would be the same mistake in the budget
-  instead of in the ranking.
+  D3 is what makes it possible not to settle it. A split is a default, and with
+  a cutoff signal a wrong default costs a caller one more call with a bigger
+  number -- where without one it silently returns a third of the answer and
+  says 2477/4000. The ratio still gets a measured default against
+  tools/acceptance.py rather than R2's argument, because four ranking
+  mechanisms were measured on this tree in August 2026 and all four came in at
+  baseline or below; but it is now a default rather than a decision the caller
+  cannot see or override.
 
-  The instrument exists and the floor is known: 43 of 45 on the judged
-  instrument, and no known-item family below its own number. A split that
-  cannot hold those has bought readability with recall, which is DEC-0005's
-  trade run backwards.
+  The floor is unchanged and is what a measured default has to hold: 43 of 45
+  on the judged instrument, and no known-item family below its own number. A
+  split that cannot hold those has bought readability with recall, which is
+  DEC-0005's trade run backwards.
 
   WHAT THIS IS NOT
 
@@ -161,4 +194,12 @@ body: |
   - Whether the default budget should stay 4000 once it covers both tiers. At
     4000 total, the worst task above would lose most of its source tier, which
     is a different bundle from the one measured at 43 of 45. The measurement
-    D6 asks for decides this and the two cannot be separated.
+    D6 asks for decides this and the two cannot be separated. D3 lowers what
+    getting it wrong costs, and does not make it right.
+
+  - Whether the walk's own horizon should be reported beside the budget's
+    cutoff. D3 is careful to claim only what the walk found, which leaves a
+    caller unable to tell a bundle that reached everything from one the horizon
+    also cut. EXPAND-FROM-SEEDS knows whether its frontier was still non-empty
+    at *CONTEXT-EXPANSION-HORIZON* and does not report it. That is a second
+    cutoff signal of the same shape and it is not designed here.
