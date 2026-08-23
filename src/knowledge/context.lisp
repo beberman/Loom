@@ -954,7 +954,7 @@ seed set gets an expansion too, and whether the ten cases equal weight appears
 to lose return as items is a question only a measurement with the band running
 can answer. PLAN-0043 S6 is that measurement and is what sets this number.")
 
-(defun fuse-rankings (lexical semantic)
+(defun fuse-rankings (lexical semantic &key protected)
   "One ranked list from two, by reciprocal rank. DES-0040 D4.
 
     score(c) = sum over the lists holding c of  w / (*RRF-K* + rank(c))
@@ -967,6 +967,27 @@ calibrate two.
 A candidate on both lists carries both kinds of match: its lexical terms and
 its similarity. That is what makes it not dense-only, so ADMIT-SEEDS charges it
 to the slice its terms make, exactly as it would have without an embedder.
+
+PROTECTED is the entities the task named, and they sort ahead of everything
+else. A named candidate is one whose name *is* one of the words the caller
+wrote -- NAMED-BY-TASK-P, rank 0 on a term from TASK-TERMS -- and REQ-0016 R1
+has required since it was written that such a query seed from such an entity.
+
+Without it, dense displaces them, and PLAN-0043 S6 measured that costing three
+of REQ-0048 R2\'s eleven cases. The reason is a property of the embedder rather
+than a tuning failure: a document is a name and a docstring, so the barest
+member of a family has the document least dominated by its own name, and a
+query that *is* a name resembles its longer relatives more than itself.
+`mapper to native\' returns MAPMAPPER.TONATIVE at 0.982 and MAPPER.TONATIVE at
+0.635. No threshold separates those, because the wrong answers score higher.
+
+The plainest statement of why this band exists: grep would find MAPPER.TONATIVE
+for `mapper to native\'. A retrieval mechanism that does worse than grep on a
+query naming a thing has not earned the right to rank it.
+
+The bonus is 1.0 against a reciprocal-rank sum that cannot exceed about 0.04,
+so it is a band and not a weight -- protected candidates keep their order among
+themselves and nothing unprotected can climb past one.
 
 LEXICAL is returned unchanged when SEMANTIC is empty. Fusing one list would
 reproduce its order -- the weights are positive and the ranks distinct -- but
@@ -991,13 +1012,16 @@ no embedder."
           (loop for (entity . found) in semantic
                 for rank from 1
                 do (note entity rank (float *semantic-weight* 1.0d0) found)))
+        (dolist (entity protected)
+          (when (nth-value 1 (gethash entity scores))
+            (incf (gethash entity scores) 1.0d0)))
         (let ((fused (loop for entity in (nreverse order)
                            collect (cons entity (gethash entity matches)))))
           ;; STABLE-SORT so that a tie keeps the order the lists gave it, which
           ;; on a tie between two lexical candidates is SEED-SCORE\'s order.
           (stable-sort fused #'> :key (lambda (pair) (gethash (car pair) scores)))))))
 
-(defun admit-seeds (ranked limit)
+(defun admit-seeds (ranked limit &key protected)
   "The first LIMIT entities of RANKED, holding back a slice past its share and
 a name past its own.
 
@@ -1059,7 +1083,28 @@ exactly as it did before either cap existed."
                 (t (push (car pair) held))))))
     (setf chosen (nreverse chosen)
           held   (nreverse held))
-    (append chosen (subseq held 0 (min (- limit taken) (length held))))))
+    (let ((admitted (append chosen
+                            (subseq held 0 (min (- limit taken) (length held))))))
+      ;; PROTECTED is guaranteed a slot, not a place. A candidate the task named
+      ;; by its own word must appear -- grep would find it -- and *PROTECT-NAMED*
+      ;; measured that promoting such candidates to the front instead costs more
+      ;; than it recovers: acceptance 43 to 41, because NAMED-BY-TASK-P fires on
+      ;; every entity whose whole name is a common word the caller happened to
+      ;; type. Inclusion is the requirement; rank one was never the requirement.
+      (let ((missing (remove-if (lambda (entity) (member entity admitted :test #'eq))
+                                protected)))
+        (if (null missing)
+            admitted
+            ;; Each missing one displaces the lowest-ranked admitted candidate
+            ;; that is not itself protected, so the order of everything that
+            ;; stays is the order the fusion gave it.
+            (let ((result (copy-list admitted)))
+              (dolist (entity missing result)
+                (let ((victim (find-if-not (lambda (e) (member e protected :test #'eq))
+                                           (reverse result))))
+                  (when victim
+                    (setf result (substitute entity victim result :test #'eq
+                                                                  :count 1)))))))))))
 
 (defun reported-terms (task)
   "The task's words that the seeder actually looked for, in the caller's spelling.
@@ -1148,12 +1193,60 @@ Passed in rather than loaded here, because loom-knowledge is handed a VIEW and
 never learns which repository it belongs to. The caller knows, and the caller
 is where the store is loaded.")
 
-(defparameter *semantic-limit* 6
+(defparameter *semantic-limit* 8
   "How many entities the scan proposes.
 
 The same eight ADMIT-SEEDS may admit, and deliberately not more. DES-0040 D4
 fuses two ranked lists by reciprocal rank, and a dense list twice as long as
 the lexical one would win slots by being longer rather than by being better.")
+
+(defparameter *protect-named* nil
+  "Whether an entity the task named sorts ahead of everything else in the fusion.
+
+Off, because it was measured and it was worse. At weight 1.5 and list length 6
+it took acceptance from 43 of 45 to 41 and known-item from 443 to 441, losing
+POLYGONSTOPARTITION and ARCH-0001 -- two cases that were being found -- while
+recovering none of the three it was written for.
+
+The mechanism is too blunt for what it was aimed at. NAMED-BY-TASK-P fires on
+any entity whose whole name is one of the caller\'s words, which on a real tree
+is a great many short common ones, so promoting all of them ahead of everything
+floods the slots rather than protecting a specific answer.
+
+It gates two mechanisms and both measured worse, at weight 1.5, list length 8
+and a relative cut of 0.90 -- the best setting otherwise found, 443 of 450 on
+known-item, 39 of 120 on mismatch and 43 of 45 judged:
+
+    promoting named candidates to the front   441 / 39 / 41
+    guaranteeing them a slot without a place  433 / 38 / 42
+
+The second was the more careful idea and did worse. Both fail the same way and
+for the same reason: NAMED-BY-TASK-P fires on every entity whose whole name is a
+word the caller happened to type, and on a real query -- \"segment terrain into
+region polygons\" -- SEGMENT is such an entity. Protecting a set that large
+displaces candidates that were being found, wherever in the pipeline the
+protection is applied.
+
+Kept, gated and measured rather than deleted: the *idea* -- that a query naming
+a thing must reach that thing, because grep would -- is REQ-0016 R1 and is not
+in doubt. What is refused is protecting everything NAMED-BY-TASK-P calls named.
+A predicate that picked out the three cases REQ-0048 R2 names, and not SEGMENT,
+would be a different matter and does not exist yet.")
+
+(defparameter *semantic-relative-floor* 0.90
+  "How close to the best cosine a semantic candidate must be, as a fraction.
+
+0.0 admits the whole list. 0.9 admits only what scores within ten per cent of
+the best match this query found.
+
+Relative rather than absolute, which is what *SEMANTIC-FLOOR* is and why that
+one is 0.0 and staying there: an absolute threshold asks \"is this similar\",
+and the measurement showed the wrong answers scoring higher than the right one,
+so no absolute number separates them. This asks a different question -- \"did
+anything stand out\" -- and the answer differs per query rather than per
+repository. A query with one clear match contributes one candidate; a query
+whose top six are all equally mediocre contributes six, or none if the caller
+would rather it did not.")
 
 (defparameter *semantic-floor* 0.0
   "The cosine below which a semantic candidate is not proposed at all.
@@ -1221,10 +1314,13 @@ else."
                (query (and (plusp (length vectors)) (aref vectors 0)))
                (hits (and query (loom-embed:nearest *context-vector-store*
                                                     query *semantic-limit*))))
-          (loop for (id . cosine) in hits
-                for entity = (and (>= cosine *semantic-floor*) (get-entity view id))
-                when entity
-                  collect (cons entity (list (cons :similarity cosine)))))
+          (let ((best (if hits (cdr (first hits)) 0.0)))
+            (loop for (id . cosine) in hits
+                  for entity = (and (>= cosine *semantic-floor*)
+                                    (>= cosine (* *semantic-relative-floor* best))
+                                    (get-entity view id))
+                  when entity
+                    collect (cons entity (list (cons :similarity cosine))))))
       ;; REQ-0048 R6: an embedder that cannot answer is an embedder that is not
       ;; there, and neither is reported. The memo is what stops the next query
       ;; paying for the discovery again.
@@ -1287,8 +1383,18 @@ waiting (ADMIT-SEEDS)."
          ;; DES-0040 D4. With no embedder this is LEXICAL itself, so nothing
          ;; below this line can behave differently than it did before dense
          ;; retrieval existed.
-         (ranked     (fuse-rankings lexical semantic))
-         (chosen     (admit-seeds ranked limit)))
+         ;; REQ-0016 R1 through the fusion: an entity the task named by its own
+         ;; word is not displaced by one that merely resembles it.
+         ;; The entities the task named by a word the caller wrote. Used two
+         ;; ways and they are not the same thing: *PROTECT-NAMED* sorts them
+         ;; first, which measured worse, and ADMIT-SEEDS guarantees them a slot,
+         ;; which is what REQ-0016 R1 actually asks for.
+         (named      (loop for (entity . found) in candidates
+                           when (named-by-task-p entity found terms)
+                             collect entity))
+         (protected  (when *protect-named* named))
+         (ranked     (fuse-rankings lexical semantic :protected protected))
+         (chosen     (admit-seeds ranked limit :protected protected)))
     ;; Second value: the chosen seeds with the score and the terms each
     ;; answered to. DES-0030 D3 -- a record holding the seeds without their
     ;; scores cannot show why the eighth slot went where it did, and the score

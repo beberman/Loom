@@ -1063,3 +1063,53 @@ not enough -- they have to be countable"))
     (is (equal (list e) chosen))
     (is (equal '(:unmatched :unmatched)
                (mapcar #'cdr (loom-knowledge::classify-terms coverage chosen))))))
+
+(test a-named-candidate-is-not-displaced-by-one-that-merely-resembles-it
+  ;; REQ-0016 R1 through the fusion, and REQ-0048 R2. Measured on game-server,
+  ;; `mapper to native' put MAPMAPPER.TONATIVE at cosine 0.982 and
+  ;; MAPPER.TONATIVE at 0.635 -- the elaborated siblings all beat the plain
+  ;; name, because a document is a name plus a docstring and the barest member
+  ;; of a family is the one whose document is least dominated by its own name.
+  ;; No threshold separates that: the wrong answers score higher.
+  ;; The named candidate sits low in the lexical list and not on the semantic
+  ;; one at all, which is the shape the real failure has: RRF already rewards
+  ;; agreement, so a candidate on both lists needs no protecting.
+  (let* ((named    (k-function "mapper" 10))
+         (resembles (k-function "map-mapper-to-native" 30))
+         (lexical  (append (loop for i from 0 below 4
+                                 collect (ranked-pair
+                                          (k-function (format nil "other-~d" i) (* 10 i))
+                                          '("other" . 2)))
+                           (list (ranked-pair named '("mapper" . 0)))))
+         (semantic (list (ranked-pair resembles '(:similarity . 0.98)))))
+    (is (string= "map-mapper-to-native"
+                 (first (fused-names lexical semantic)))
+        "unprotected, the resemblance wins")
+    (is (string= "mapper"
+                 (name (car (first (loom-knowledge::fuse-rankings
+                                    lexical semantic :protected (list named))))))
+        "protected, the name the caller wrote wins")))
+
+(test protection-is-a-band-and-not-a-weight
+  ;; Protected candidates keep their order among themselves, and nothing
+  ;; unprotected climbs past one however high its cosine.
+  (let* ((a (k-function "alpha" 10))
+         (b (k-function "beta" 30))
+         (loud (k-function "loud" 50))
+         (lexical (list (ranked-pair a '("alpha" . 0)) (ranked-pair b '("beta" . 0))))
+         (semantic (list (ranked-pair loud '(:similarity . 0.99)))))
+    (is (equal '("alpha" "beta" "loud")
+               (mapcar (lambda (p) (name (car p)))
+                       (loom-knowledge::fuse-rankings lexical semantic
+                                                      :protected (list a b)))))))
+
+(test protecting-nothing-leaves-the-fusion-as-it-was
+  (let* ((a (k-function "alpha" 10))
+         (b (k-function "beta" 30))
+         (lexical (list (ranked-pair a '("x" . 1))))
+         (semantic (list (ranked-pair b '(:similarity . 0.9)))))
+    (is (equal (mapcar (lambda (p) (name (car p)))
+                       (loom-knowledge::fuse-rankings lexical semantic))
+               (mapcar (lambda (p) (name (car p)))
+                       (loom-knowledge::fuse-rankings lexical semantic
+                                                      :protected '()))))))
