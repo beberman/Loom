@@ -75,7 +75,19 @@ malformed request rather than an ambiguous one to be resolved by guessing."
         ;; itself.
         ((let ((repository (find-repository designator)))
            (when repository
-             (await-repository-index repository)
+             ;; Report rather than wait. A caller that waits is a caller with
+             ;; nothing to say for as long as the wait lasts, and over MCP that
+             ;; is an agent sitting on a tool call with no way to know whether
+             ;; anything is happening. Saying so costs one round trip and tells
+             ;; it what to do.
+             ;;
+             ;; *INDEX-BUILD-WAIT* is a grace period rather than the wait it
+             ;; used to be, and is 0: a caller who would rather block sets it.
+             (unless (await-repository-index repository *index-build-wait*)
+               (error 'repository-indexing
+                      :message (format nil "~a is still being indexed. ~
+Ask again in a few seconds; `status' says when it is ready."
+                                       (repository-name repository))))
              repository)))
         (t (error 'malformed-request
                   :message (format nil "No repository named ~a. Ask status for the list."

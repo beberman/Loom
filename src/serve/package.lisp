@@ -49,6 +49,7 @@
    #:guarded-condition
    #:request-error
    #:malformed-request
+   #:repository-indexing
    #:unknown-entity
    #:unknown-operation
    #:request-message

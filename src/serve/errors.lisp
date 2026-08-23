@@ -65,6 +65,26 @@ the whole family alike still gets the first."))
 Distinct from MALFORMED-REQUEST because the answer differs: a route asking for
 an operation nobody registered is a 404, not a badly formed 400."))
 
+(define-condition repository-indexing (request-error)
+  ((message :initarg :message
+            :initform "the repository is still being indexed"
+            :reader request-message))
+  (:report (lambda (condition stream)
+             (write-string (request-message condition) stream)))
+  (:documentation "A request for a repository whose index is still being built.
+
+Not an error about the request, which is well formed, and not an answer either.
+The alternative to saying so is to answer from a half-built graph, and an empty
+graph is not a slow answer but a confident wrong one -- `find\' would report
+that nothing matches, indistinguishable from the truthful version of itself.
+CON-0001 refuses that trade, and this is the shape of the refusal.
+
+It reads as a message rather than as a status code because both surfaces make
+the message the useful part. Over REST it is R8\'s (:name :message) pair like
+any other request error. Over MCP it becomes a tool result with :error true and
+the text intact, which is what an agent reads and acts on -- so the message
+says what to do, not merely what went wrong."))
+
 (defun operation-error->plist (condition)
   "CONDITION as the (:name :message) pair R8 commits to.
 

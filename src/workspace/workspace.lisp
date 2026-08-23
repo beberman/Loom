@@ -902,18 +902,24 @@ the truth and a later stop can try again."
 ;;;; Lifecycle
 ;;;; ==================================================================
 
-(defparameter *index-build-wait* 600
-  "Seconds a reader waits for an index still being built.
+(defparameter *index-build-wait* 0
+  "Seconds a reader waits for an index still being built before reporting it.
 
-Ten minutes, against nine repositories that take about twenty seconds between
-them today. The number is not a prediction about how long indexing should take;
-it is the point past which waiting is worse than saying so, and a tree that
-reaches it has a problem no timeout is going to fix.
+Zero: a request for a repository that is still indexing is answered at once
+with REPOSITORY-INDEXING rather than held. A caller that would rather block
+binds this.
 
-Waiting rather than answering is the whole of it. An empty graph is not a slow
-answer, it is a confident wrong one -- `find' would report that nothing matches
-and `context' would return an empty bundle, both indistinguishable from the
-truthful versions of themselves. CON-0001 refuses exactly that trade.")
+Refusing rather than answering is the part that is not negotiable, and the
+choice between refusing and waiting is a separate one. An empty graph is not a
+slow answer, it is a confident wrong one -- `find\' would report that nothing
+matches and `context\' would return an empty bundle, both indistinguishable
+from the truthful versions of themselves. CON-0001 refuses that trade whichever
+way this number goes.
+
+What settles it at zero is the caller. Over MCP a wait is an agent holding a
+tool call with no way to tell whether anything is happening; a message it can
+read costs one round trip and says what to do next. Over REST the same, with a
+client that can poll `status\'.")
 
 (defun await-repository-index (repository &optional (seconds *index-build-wait*))
   "Wait for REPOSITORY's index if one is being built. True when none is left."
@@ -1017,8 +1023,7 @@ the last error per thread.\""
           ;; index makes "still reading the tree" a state a caller can be in and
           ;; needs told about: every other operation waits for it, and status is
           ;; the one that says why the waiting would happen.
-          :indexing (let ((thread (repository-index-build repository)))
-                      (and thread (bordeaux-threads:thread-alive-p thread) t))
+          :state (repository-state repository)
           :indexed-at (repository-indexed-at repository)
           :files (repository-file-count repository)
           :entities (length (all-entities graph))

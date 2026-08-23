@@ -38,6 +38,7 @@
    ;; lifecycle
    #:watch-repository
    #:await-repository-index
+   #:repository-state
    #:repository-index-build
    #:*index-build-wait*
    #:pause-repository

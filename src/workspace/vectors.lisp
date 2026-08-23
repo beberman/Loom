@@ -246,21 +246,28 @@ for one."
       (setf *embedder*
             (loom-embed:make-memoing-embedder (loom-embed:make-ollama-embedder)))))
 
-(defparameter *vector-build-wait* 300
-  "Seconds a query waits for a build in flight before answering without it.
+(defparameter *vector-build-wait* 0
+  "Seconds a query waits for a vector build before answering without it.
 
-A bound rather than a promise. Building front-end's 3457 definitions took 183
-seconds and game-server's 1811 took 66, so 300 covers both with room; a tree
-larger than anything measured here would exhaust it and get the lexical answer,
-which REQ-0048 R6 guarantees is correct rather than merely available.
+Zero, and the reason is that the two builds are not the same kind of absence.
 
-Waiting at all is the decision worth defending. A query answered while the
-store is half-built is not wrong -- it is the answer Loom gave before any of
-this existed -- but it is quietly worse, and quietly worse is the failure this
-whole requirement was written against. Waiting makes the cost visible. The
-launcher starting the build and returning is what keeps that cost off the path
-anybody actually walks: by the time a person has read the banner and typed a
-question, a tree this size is done.")
+An index still building cannot be answered from at all: an empty graph makes
+`find\' report that nothing matches, which is indistinguishable from the
+truthful version of itself, so REQUIRE-REPOSITORY refuses and says so. A vector
+store still building is different. The answer without it is the answer Loom
+gave for its whole existence before DEC-0006 -- correct, complete, and merely
+without the semantic candidates it would have had a minute later. REQ-0048 R6
+is precisely the promise that this answer is a good one.
+
+So a query during an index build is refused and a query during a vector build
+is answered. `status\' reports :EMBEDDING for the second, which is how a caller
+who cares can tell that asking again shortly would do better.
+
+This was 300 and did wait. What changed is a decision about the caller rather
+than about the store: waiting a minute for a better answer is a trade a person
+might make and cannot be asked to make by a tool that has not told them it is
+happening, and an agent holding a tool call for that long has no way to know
+anything is happening at all. A caller who would rather block binds this.")
 
 (defun start-vector-build (repository &key (embedder (current-embedder)))
   "Build or update REPOSITORY's store on another thread. Returns the thread.
@@ -314,7 +321,9 @@ REQ-0048 R6 falls out of the order of operations here. Loading a store is file
 I/O and nothing else, so a machine with no store never reaches the network at
 all -- the embedder is constructed, asked for its id, and never called. Only a
 repository that has a store can cost a query anything."
-  (await-vector-build repository)
+  ;; A build in flight means no store yet, not a wait. See *VECTOR-BUILD-WAIT*.
+  (unless (await-vector-build repository *vector-build-wait*)
+    (return-from repository-vectors nil))
   (let ((cached (repository-cached-vectors repository)))
     (if (eq cached :unloaded)
         (setf (repository-cached-vectors repository)
@@ -337,3 +346,21 @@ repository that has a store can cost a query anything."
           :embedder (loom-embed:embedder-id (current-embedder))
           :definitions (length (vector-candidates (repository-graph repository)))
           :stale (vector-store-staleness repository (current-embedder)))))
+
+(defun repository-state (repository)
+  "Where REPOSITORY is in its boot sequence, as one keyword.
+
+    :indexing   the tree is being read; nothing can be answered yet
+    :embedding  the graph is built and answerable, the vector store is not
+    :ready      both
+
+A state rather than two booleans because the two builds are sequential and a
+caller wants to know which one it is waiting behind. They mean different things
+to a reader too: :INDEXING is a query that cannot be answered at all, and
+:EMBEDDING is one that will be answered lexically, correctly, and without the
+semantic candidates it would have had a minute later."
+  (let ((index (repository-index-build repository))
+        (vectors (repository-vector-build repository)))
+    (cond ((and index (bordeaux-threads:thread-alive-p index)) :indexing)
+          ((and vectors (bordeaux-threads:thread-alive-p vectors)) :embedding)
+          (t :ready))))

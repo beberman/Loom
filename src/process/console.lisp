@@ -327,8 +327,10 @@ command."
   ;; because enrichment is optional and on demand: a reader who sees zeroes
   ;; cannot tell a tree the image agreed with completely from one nobody has
   ;; asked about, and only one of those is worth doing something about.
-  (when (getf status :indexing)
-    (format t "  indexing   : still reading the tree; a query waits for it~%"))
+  (case (getf status :state)
+    (:indexing (format t "  state      : indexing -- still reading the tree, nothing answerable yet~%"))
+    (:embedding (format t "  state      : embedding -- answerable now, semantic seeding not yet~%"))
+    (t nil))
   (if (plusp (getf status :enrichment-runs))
       (format t "  enrichment : ~d unit~:p loaded, ~d gap~:p, ~d run~:p~%"
               (getf status :enriched-units) (getf status :enrichment-gaps)

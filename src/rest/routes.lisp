@@ -76,6 +76,11 @@ a 400, which is the distinction the subtype exists to carry."
     (capability-error hunchentoot:+http-forbidden+)
     (unknown-entity hunchentoot:+http-not-found+)
     (unknown-operation hunchentoot:+http-not-found+)
+    ;; 503 and not 400: the request is well formed and will succeed unchanged
+    ;; in a few seconds. A client that saw 400 would stop, and one that saw the
+    ;; 500 this fell through to before would log a server fault for the ordinary
+    ;; state of a service that has just started.
+    (repository-indexing hunchentoot:+http-service-unavailable+)
     (malformed-request hunchentoot:+http-bad-request+)
     (t hunchentoot:+http-internal-server-error+)))
 
