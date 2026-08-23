@@ -269,8 +269,14 @@ might make and cannot be asked to make by a tool that has not told them it is
 happening, and an agent holding a tool call for that long has no way to know
 anything is happening at all. A caller who would rather block binds this.")
 
-(defun start-vector-build (repository &key (embedder (current-embedder)))
+(defun start-vector-build (repository &key (embedder (current-embedder))
+                                          existing-only)
   "Build or update REPOSITORY's store on another thread. Returns the thread.
+
+EXISTING-ONLY returns NIL without starting anything when there is no store yet.
+That is what the watcher passes: a tree nobody has embedded must not acquire a
+store because somebody saved a file in it, and building one is minutes of CPU
+that nothing asked for. Building is `embed'; this is refreshing.
 
 Update when there is a store and build when there is not, which is
 UPDATE-VECTOR-STORE's own distinction: it returns NIL rather than inventing one,
@@ -282,8 +288,11 @@ Two threads embedding the same repository would race on one file and the loser
 would write a store whose header and data came from different passes."
   (with-repository-lock (repository)
     (let ((running (repository-vector-build repository)))
-      (if (and running (bordeaux-threads:thread-alive-p running))
-          running
+      (if (or (and running (bordeaux-threads:thread-alive-p running))
+              (and existing-only
+                   (not (loom-embed:vector-store-present-p
+                         (repository-name repository)))))
+          (and running (bordeaux-threads:thread-alive-p running) running)
           (setf (repository-vector-build repository)
                 (bordeaux-threads:make-thread
                  (lambda ()

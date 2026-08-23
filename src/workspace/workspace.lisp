@@ -568,11 +568,17 @@ own analysis into the graph this function is rebuilding. This is also the
 function whose first act discards the graph object, which is why the graph's
 own lock could not have closed this half -- the object a graph-scoped lock
 would belong to does not exist yet at the instant protection has to begin."
-  (with-repository-lock (repository)
-    (setf (repository-graph repository) (make-graph))
-    (clrhash (repository-stamps repository))
-    (setf (repository-errors repository) '())
-    (index-repository repository :quiet quiet)))
+  (prog1
+      (with-repository-lock (repository)
+        (setf (repository-graph repository) (make-graph))
+        (clrhash (repository-stamps repository))
+        (setf (repository-errors repository) '())
+        (index-repository repository :quiet quiet))
+    ;; The graph was discarded and rebuilt, so every entity id in the store is
+    ;; one this index has never seen unless the analyzer minted it again. Same
+    ;; refresh POLL-ONCE does and for the same reason, outside the lock and only
+    ;; for a repository that already has a store.
+    (start-vector-build repository :existing-only t)))
 
 ;;;; ==================================================================
 ;;;; Enrichment (DES-0011)
@@ -785,7 +791,9 @@ and computed outside the lock it could read a table REINDEX-REPOSITORY is
 midway through clearing -- which is BUG-0004's CAUSE reproduced one level
 down. Locking only the writing half would move the window rather than close
 it."
-  (with-repository-lock (repository)
+  (let ((moved nil))
+   (prog1
+    (with-repository-lock (repository)
     (let ((changed '())
           (now (get-universal-time)))
       (dolist (path (repository-files repository))
@@ -795,6 +803,7 @@ it."
       (dolist (path changed) (index-file repository path :quiet quiet))
       (let ((removed (detect-deletions repository)))
         (when (or changed removed)
+          (setf moved t)
           (resolve-and-check repository :quiet quiet)
           ;; DES-0007: until this line, INDEX-REPOSITORY (line 241) was the
           ;; only writer of this slot, so REPOSITORY-STATUS reported "last
@@ -807,7 +816,25 @@ it."
           ;; alone. `now' rather than a fresh GET-UNIVERSAL-TIME, because it is
           ;; the instant the change was observed at.
           (setf (repository-indexed-at repository) now)))
-      (length changed))))
+      (length changed)))
+    ;; Outside the lock, and only when something actually moved. A store the
+    ;; index has outgrown answers queries with vectors for definitions that no
+    ;; longer exist and none for the ones that do -- stale in the one way that
+    ;; does not announce itself, because a cosine against an old vector is a
+    ;; perfectly ordinary number.
+    ;;
+    ;; EXISTING-ONLY, so a tree nobody has embedded does not acquire a store
+    ;; because somebody saved a file in it. Refreshing is what a poll may do;
+    ;; building is what `embed' is for.
+    ;;
+    ;; Outside the lock because the build reads the graph for minutes and the
+    ;; monitor must not be parked behind it. Cheap when nothing of substance
+    ;; changed: UPDATE-VECTOR-STORE re-embeds a document rather than an entity,
+    ;; and a function body rewritten line by line has the same name and the same
+    ;; docstring, so the commonest edit in a working tree reaches the embedder
+    ;; not at all.
+    (when moved
+      (start-vector-build repository :existing-only t)))))
 
 (defun detect-deletions (repository)
   "Retract files the index knows about that are no longer on disk."

@@ -51,6 +51,7 @@
    #:write-vector-store
    #:load-vector-store
    #:delete-vector-store
+   #:vector-store-present-p
    #:document-digest
    #:*vector-store-magic*
 

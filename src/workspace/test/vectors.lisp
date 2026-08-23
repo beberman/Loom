@@ -330,3 +330,56 @@ full rebuild that happened to produce the same vectors."))
           (with-open-file (out header-path :direction :output :if-exists :supersede)
             (json:encode-json (remove :digests header :key #'car) out))))
       (is (null (loom-embed:load-vector-store *test-repository-name* embedder))))))
+
+;;; ------------------------------------------------------------------
+;;; The watcher keeps the store from going stale
+;;; ------------------------------------------------------------------
+
+(test refreshing-a-repository-with-no-store-starts-nothing
+  ;; A tree nobody has embedded must not acquire a store because somebody saved
+  ;; a file in it. Building one is minutes of CPU that nothing asked for, and
+  ;; the watcher runs on every poll of every watched repository.
+  (with-clean-store ()
+    (let* ((embedder (counting-embedder))
+           (loom-workspace::*embedder* embedder)
+           (repository (vec-repository *test-repository-name*
+                                       (vec-entity "alpha" "The first thing."))))
+      (is (null (start-vector-build repository :existing-only t))
+          "no store means no build")
+      (is (= 0 (counting-embedder-texts embedder))
+          "and the embedder is never reached to find that out"))))
+
+(test refreshing-a-repository-that-has-a-store-updates-it
+  (with-clean-store ()
+    (let* ((embedder (counting-embedder))
+           (loom-workspace::*embedder* embedder)
+           (repository (vec-repository *test-repository-name*
+                                       (vec-entity "alpha" "The first thing.")
+                                       (vec-entity "beta" "The second thing."))))
+      (build-vector-store repository embedder)
+      (let ((baseline (counting-embedder-texts embedder))
+            (changed (vec-repository *test-repository-name*
+                                     (vec-entity "alpha" "The first thing.")
+                                     (vec-entity "beta" "Rewritten entirely."))))
+        (setf (loom-workspace::repository-cached-vectors changed) :unloaded)
+        (let ((thread (start-vector-build changed :existing-only t)))
+          (is (not (null thread)) "a store present means a build starts")
+          (bordeaux-threads:join-thread thread)
+          (is (= (1+ baseline) (counting-embedder-texts embedder))
+              "and it re-embeds only the document that changed"))))))
+
+(test a-build-already-running-is-not-started-twice
+  ;; The watcher polls on an interval and a build takes minutes, so a second
+  ;; poll arrives mid-build as a matter of course. Two threads embedding one
+  ;; repository would race on one file and the loser would write a store whose
+  ;; header and data came from different passes.
+  (with-clean-store ()
+    (let* ((embedder (counting-embedder))
+           (loom-workspace::*embedder* embedder)
+           (repository (vec-repository *test-repository-name*
+                                       (vec-entity "alpha" "The first thing."))))
+      (build-vector-store repository embedder)
+      (let ((first (start-vector-build repository)))
+        (is (eq first (start-vector-build repository))
+            "the second call returns the thread already running")
+        (bordeaux-threads:join-thread first)))))

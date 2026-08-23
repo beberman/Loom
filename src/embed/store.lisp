@@ -213,3 +213,12 @@ that many after its magic word."
       (ignore-errors (delete-file header-path))
       (ignore-errors (delete-file data-path))
       (and existed t))))
+
+(defun vector-store-present-p (repository-name)
+  "True when a store exists on disk for REPOSITORY-NAME.
+
+PROBE-FILE and not LOAD-VECTOR-STORE. The watcher asks this on every pass that
+changed something, and loading front-end's store to answer it would read ten
+megabytes to decide whether to read ten megabytes."
+  (multiple-value-bind (header-path data-path) (vector-store-paths repository-name)
+    (and (probe-file header-path) (probe-file data-path) t)))
