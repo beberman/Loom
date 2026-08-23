@@ -50,10 +50,23 @@ body: |
   of 450, acceptance 42 of 45, mismatch 9 of 120. Those are today's numbers and
   this step must not move them by one case.
 
+  A memo, because failing fast is not the same as costing nothing. S1 measured
+  it: a request to a port nothing listens on took 30007 ms with one conflated
+  timeout and 2001 ms once the connect was separated from the read. Two seconds
+  against today's 0.01-0.09 s is twenty times the query, paid on every call for
+  as long as ollama is not installed, and R6 asks for today's behaviour rather
+  than for a bounded departure from it.
+
+  So the first EMBEDDER-UNAVAILABLE is remembered and no further call is made.
+  What resets it is a decision this step has to take rather than inherit: a
+  process lifetime is the simplest, a timed retry is friendlier to someone who
+  starts ollama after Loom, and neither is measured yet.
+
   RISK: this is the step whose failure is invisible. A timeout that blocks, an
   error that escapes, a log line per query -- none of them fail a test that
   only checks recall. The suite gets a test that SEED-ENTITIES returns without
-  touching the network when no embedder is configured.
+  touching the network when no embedder is configured, and one that a second
+  query after a failure makes no second attempt.
 
   S4  THE DENSE RANKING
 

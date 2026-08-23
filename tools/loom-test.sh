@@ -17,7 +17,7 @@ cat > "$driver" <<'LISP'
 (require :asdf)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 (let ((here #p"/home/beberman/lisp/Loom/"))
-  (dolist (system '("ontology/" "graph/" "analyzer/" "knowledge/"
+  (dolist (system '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "workspace/" "process/" "serve/" "rest/" "mcp/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
              asdf:*central-registry* :test #'equal)))

@@ -27,7 +27,7 @@
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 
 (let ((here #p"/home/beberman/lisp/Loom/"))
-  (dolist (system '("ontology/" "graph/" "analyzer/" "knowledge/"
+  (dolist (system '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "workspace/" "serve/" "rest/" "mcp/"))
     (let ((directory (merge-pathnames (concatenate 'string "src/" system) here)))
       ;; The directory for a system a later step has not created yet is simply

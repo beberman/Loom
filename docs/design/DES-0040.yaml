@@ -68,6 +68,31 @@ body: |
   single-floats is about 16 MB per tree, derived from files that are the truth
   (DEC-0001), and 261 seconds to rebuild at the rate measured on 2026-08-22.
 
+  D2a  TWO TIMEOUTS, AND WHY ONE WAS WRONG
+
+  The client separates the connect from the read because they fail for
+  different reasons and want opposite numbers.
+
+    *OLLAMA-CONNECT-TIMEOUT*  2 seconds. A loopback connect completes in a
+                              millisecond or never, and this number is paid in
+                              full on every query when ollama is absent.
+
+    *OLLAMA-DEADLINE*         60 seconds, over the whole call, through
+                              SB-SYS:WITH-DEADLINE. drakma on this build bounds
+                              the connect and nothing bounds the read, so an
+                              ollama that accepts a socket and then says nothing
+                              would otherwise hang the caller indefinitely.
+
+  Written first as one parameter of thirty seconds, reasoned about a wedged
+  embedder, and measured against an absent one: a request to a port nothing
+  listens on took 30007 ms. Every `context' call on a machine without ollama
+  would have cost thirty seconds. Separated, the same request costs 2001 ms.
+
+  2001 ms is still twenty times a query, which is why REQ-0048 R6 is not
+  satisfied by a timeout at all and PLAN-0043 S3 carries a memo: the first
+  failure is remembered and no second call is made. A bounded departure from
+  today's behaviour is still a departure.
+
   D3  WHAT IS EMBEDDED
 
   Per definition, the name split into words, then its documentation:
