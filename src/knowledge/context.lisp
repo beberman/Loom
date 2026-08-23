@@ -1155,6 +1155,45 @@ The same eight ADMIT-SEEDS may admit, and deliberately not more. DES-0040 D4
 fuses two ranked lists by reciprocal rank, and a dense list twice as long as
 the lexical one would win slots by being longer rather than by being better.")
 
+(defparameter *semantic-floor* 0.0
+  "The cosine below which a semantic candidate is not proposed at all.
+
+0.0 admits everything the scan returns, which is what PLAN-0043 S6 measured
+first and where REQ-0048 R2 failed: three of the eleven cases only the lexical
+seeder finds were displaced by candidates that were merely the nearest
+available rather than near.
+
+MEASURED AND LEFT AT 0.0. A floor cannot fix what it was proposed for. The
+three displaced cases, with the cosine of every candidate that displaced them
+and of the answer itself:
+
+    slot defn            -> slot-defn         0.927 0.911 0.911 0.876 0.807
+                            the answer:       0.792
+    mapper to native     -> Mapper.toNative   0.982 0.942 0.929 0.924 0.916
+                            the answer:       0.635
+    capability whose
+      referenced ...     -> piece-type-speed  0.769 0.769 0.738 0.720 0.715
+                            the answer:       0.592
+
+In every case the displacing candidates score *higher* than the answer, so a
+floor that removed them would remove the answer first. The parameter stays at
+0.0 and the measurement stays here, because a floor is the obvious idea and
+this is what it is worth.
+
+What the numbers show instead is a property of the embedder rather than of the
+threshold. `mapper to native\' is the name MAPPER.TONATIVE written as words,
+and what comes back is every elaborated sibling -- MAPMAPPER.TONATIVE,
+STYLEMAPPER.TONATIVE, MARKMAPPER.TONATIVE -- ahead of the plain one. Same for
+`slot defn\': DEFN-SLOT, FIND-SLOT-DEFN and SLOT-DEFN-ERROR all beat SLOT-DEFN.
+A document is a name and a docstring, so the barest member of a family is the
+one whose document is least dominated by the words of its own name, and a query
+that *is* a name resembles its longer relatives more than itself.
+
+That is REQ-0045 R4's territory -- lexical stays authoritative for a query that
+names a thing -- and the fix it points at is a rule rather than a number: a
+candidate the task named must not be displaced by one that merely resembles it.
+NAMED-BY-TASK-P is that predicate and already exists.")
+
 (defun semantic-candidates (view task)
   "Candidates the embedder proposes for TASK, as an alist of entity to matches.
 
@@ -1183,7 +1222,7 @@ else."
                (hits (and query (loom-embed:nearest *context-vector-store*
                                                     query *semantic-limit*))))
           (loop for (id . cosine) in hits
-                for entity = (get-entity view id)
+                for entity = (and (>= cosine *semantic-floor*) (get-entity view id))
                 when entity
                   collect (cons entity (list (cons :similarity cosine)))))
       ;; REQ-0048 R6: an embedder that cannot answer is an embedder that is not

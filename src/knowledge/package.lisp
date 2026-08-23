@@ -68,6 +68,7 @@
    #:*rrf-k*
    #:*semantic-weight*
    #:*semantic-limit*
+   #:*semantic-floor*
 
    ;; the structural report (REQ-0021 R5, DES-0022 S1) -- what the index can
    ;; say about a tree's shape, as data, so a generated architecture document
