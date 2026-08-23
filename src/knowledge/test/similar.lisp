@@ -189,10 +189,38 @@
 
 (test a-zero-argument-function-has-arity-zero-rather-than-no-arity
   ;; :ARGUMENTS NIL is what a zero-argument DEFUN writes, and 354 of Loom's
-  ;; 1287 functions are in that state. Reading it as "unrecorded" would report
+  ;; 1303 functions are in that state. Reading it as "unrecorded" would report
   ;; a gap where the index holds a fact.
   (is (eql 0 (entity-arity (sim-function "pidfile-path" 10))))
   (is (eql 2 (entity-arity (sim-function "dot-at" 20 :arguments '("flat" "query"))))))
+
+(test arity-stops-at-the-first-lambda-list-marker
+  ;; BUG-0044. :ARGUMENTS is documented as a parsed parameter list and holds the
+  ;; whole lambda list flattened to strings, markers included. FIND-ENTITIES
+  ;; stores six tokens and takes one argument, and reading LENGTH as the arity
+  ;; -- which is what this function did when it was first written -- reports it
+  ;; as six.
+  (is (eql 1 (entity-arity
+              (sim-function "find-entities" 10
+                            :arguments '("view" "&key" "entity-type" "name-like"
+                                         "property-filters" "include-stale")))))
+  (is (eql 4 (entity-arity
+              (sim-function "resembling" 20
+                            :arguments '("subject" "source-store" "target-view"
+                                         "target-store" "&key" "limit" "cut")))))
+  (is (eql 1 (entity-arity
+              (sim-function "summarize" 30 :arguments '("x" "&optional" "y"))))))
+
+(test a-type-with-no-parameter-list-reports-no-arity
+  ;; A :CLASS and a zero-argument DEFUN both read as NIL in the property table,
+  ;; so the type decides. 0 for a class would claim it takes no arguments, which
+  ;; is a statement about something a class does not have.
+  (is (null (entity-arity
+             (make-instance 'class-entity :name "protected-table"
+                            :origin-file "src/graph/protected-table.lisp"
+                            :properties (properties-table
+                                         '(:file "src/graph/protected-table.lisp"
+                                           :start-line 1 :end-line 9)))))))
 
 
 ;;; ------------------------------------------------------------------

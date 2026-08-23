@@ -179,11 +179,10 @@ body: |
 
   Same arity is already indexed, and the first draft of this design said it was
   not. :FUNCTION and :METHOD both declare an :ARGUMENTS property holding the
-  parsed parameter list, LAMBDA-LIST-PARAMETERS fills it, and measured on Loom
-  2026-08-23 every one of the 1287 :FUNCTION entities carries it -- 933 with a
-  non-empty list and 354 with an empty one, which is what a zero-arity DEFUN
-  writes. So all three of R1's reasons are computable today and none of them
-  waits on anything.
+  lambda list, and measured on Loom 2026-08-23 every one of the 1304 :FUNCTION
+  entities carries it -- 918 taking at least one argument and 386 taking none.
+  So all three of R1's reasons are computable today and none of them waits on
+  anything.
 
   REQ-0041 is not what would have supplied it. Its five clauses are about a
   *call site* -- how many arguments A passes B, which of DICT-VALUE's 454 call
@@ -192,12 +191,22 @@ body: |
   design was written.
 
   Arity is the weakest of the three and is reported rather than ranked on.
-  Measured over the 933: 415 are arity 1, 227 arity 2, 146 arity 3. A signal
-  that fires on 44% of one-argument functions cannot separate PLIST-SHAPED-P ~
+  Measured over the 918 that take an argument: 518 are arity 1, 262 arity 2, 94
+  arity 3. A signal that fires on 56% of them cannot separate PLIST-SHAPED-P ~
   PLISTP from JSON-FALSE ~ JSON-DECODE, both of which are pairs of
   single-argument functions and only one of which is a duplicate. It earns its
   place as a line in the answer a human reads, not as a term in the ranking,
   and D7 is why.
+
+  CORRECTED 2026-08-23, AFTER THIS DESIGN WAS IMPLEMENTED. The paragraph above
+  first read "415 of 933 are arity 1, 227 arity 2, 146 arity 3", and those were
+  lengths of :ARGUMENTS rather than arities. The property is documented as a
+  parsed parameter list and holds the whole lambda list flattened to strings,
+  markers included: FIND-ENTITIES stores six tokens and takes one argument. 210
+  of Loom's 1304 functions carry a marker, so the two counts disagree on 16% of
+  the tree. ENTITY-ARITY now stops at the first marker and BUG-0044 carries the
+  rest. The conclusion is unchanged and the corrected numbers make it stronger:
+  56% at arity 1 rather than 44%.
 
   All three reasons are computed after the ranking, over the pairs that
   survived it, so none costs a pass over the store.

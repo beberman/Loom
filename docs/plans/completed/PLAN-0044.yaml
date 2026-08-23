@@ -98,11 +98,17 @@ body: |
     shared name words   NAME-AS-WORDS on both sides, intersected. S1 is why
                         this can be written here at all.
     shared prose words  the same over :DOCUMENTATION, which REQ-0035 indexes.
-    arity               the length of :ARGUMENTS on both sides, reported and
-                        never filtered on. 415 of Loom's 933 functions that
-                        take arguments are arity 1, so it separates almost
-                        nothing and is a line in the answer rather than a term
-                        in the ranking.
+    arity               :ARGUMENTS on both sides up to the first lambda-list
+                        marker, reported and never filtered on. 518 of Loom's
+                        918 functions that take an argument are arity 1, so it
+                        separates almost nothing and is a line in the answer
+                        rather than a term in the ranking.
+
+                        Written as "the length of :ARGUMENTS" and shipped that
+                        way, which is wrong on the 210 functions of 1304 that
+                        carry a marker: FIND-ENTITIES stores six tokens and
+                        takes one argument. Corrected after the fact, with a
+                        regression test naming FIND-ENTITIES. BUG-0044.
 
   Tests: a pair sharing a docstring sentence reports the shared words; a pair
   sharing nothing reports no reason and is still returned, because D7 has the
@@ -242,8 +248,11 @@ body: |
   PLAN-0043, so the instrument the ceiling test tells you to re-run was broken
   before this plan touched anything.
 
-  :SIGNATURE is declared on :FUNCTION and :METHOD and written 0 times in 1287.
-  Nothing here needs it -- :ARGUMENTS is the fact and a rendering is a display
-  concern -- but a declared property no analyzer fills is BUG-0019 and
-  BUG-0023's shape and wants a bug of its own.
+  :SIGNATURE is declared on :FUNCTION and :METHOD and written 0 times in 5146
+  entities across three repositories and both analyzers. Written up as BUG-0044
+  after this plan closed, together with the neighbouring defect the same reading
+  produced: :ARGUMENTS is documented as a parsed parameter list and holds the
+  whole lambda list, so S4 shipped an ENTITY-ARITY that reported FIND-ENTITIES
+  as arity 6. Both are corrected in the source; the decision about :SIGNATURE
+  itself is BUG-0044's and is not taken.
 

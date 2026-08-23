@@ -105,17 +105,34 @@ makes NAME-EQUAL-P below an identity rather than an approximation of one."
 ;;; whether the embedder could have told two names apart and the embedder saw
 ;;; every word. RESEMBLANCE-REASONS filters, because it is showing a human why.
 
-(defun entity-arity (entity)
-  "How many parameters ENTITY declares, or NIL if it declares no parameter list.
+(defun lambda-marker-p (token)
+  "True for a lambda-list keyword: &optional, &key, &rest and the rest."
+  (let ((text (princ-to-string token)))
+    (and (plusp (length text)) (char= #\& (char text 0)))))
 
-:ARGUMENTS is the parsed lambda list the analyzer wrote and every :FUNCTION in
-Loom's own index carries one -- 933 with a non-empty list and 354 empty, which
-is what a zero-argument DEFUN writes. So NIL here means an entity type that has
-no parameters at all rather than a function whose list went unrecorded, and a
-:CLASS reporting no arity is the truth about a class."
-  (let ((arguments (getp entity :arguments)))
-    (cond ((listp arguments) (length arguments))
-          (t nil))))
+(defun entity-arity (entity)
+  "How many arguments ENTITY must be called with, or NIL for a type with no
+parameter list at all.
+
+The *required* count, stopping at the first lambda-list marker, and the
+stopping is the whole of this function. :ARGUMENTS is documented as a parsed
+parameter list and is in fact the entire lambda list flattened to strings --
+FIND-ENTITIES stores (\"view\" \"&key\" \"entity-type\" \"name-like\"
+\"property-filters\" \"include-stale\"), so its LENGTH is 6 and it takes one
+argument. Reading the length as the arity, which is the obvious thing to do and
+what this function did when it was written, reports a one-argument function as
+a six-argument one. BUG-0044.
+
+NIL for an entity type that has no parameter list, decided on the type rather
+than on the property. An absent :ARGUMENTS and an empty one are both NIL in the
+property table, so a :CLASS and a zero-argument DEFUN are indistinguishable
+there -- 354 of Loom's 1303 :FUNCTION entities are the second kind. The type
+tells them apart where the value cannot."
+  (when (member (entity-type entity) '(:function :method))
+    (let ((arguments (getp entity :arguments)))
+      (loop for token in arguments
+            until (lambda-marker-p token)
+            count t))))
 
 (defun resemblance-reasons (subject candidate)
   "Why SUBJECT and CANDIDATE might be the same thing, as a plist.
@@ -125,8 +142,8 @@ ten pairs REQ-0042 was written from were read on both sides and were not
 duplicates, so an answer that asserted equivalence would have invited a
 mechanical rewrite half the time.
 
-Arity is reported and never ranked on. 415 of Loom's 933 functions that take
-arguments are arity 1, so agreeing on it separates almost nothing -- it tells a
+Arity is reported and never ranked on. 518 of Loom's 918 functions that take an
+argument are arity 1, so agreeing on it separates almost nothing -- it tells a
 reader whether a swap is even shaped like a swap, which is a different job from
 saying the two do the same work.
 
