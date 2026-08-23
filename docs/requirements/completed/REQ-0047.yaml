@@ -1,0 +1,181 @@
+id: REQ-0047
+title: A vocabulary-mismatch case family, disjoint from the index by a check rather than by intent, and frozen before any mechanism is built against it
+status: implemented
+date: 2026-08-22
+refines: [REQ-0036, REQ-0039]
+affects: ['tools/entity-dump.lisp']
+importance: Major
+tags: [retrieval, measurement, instrument, paraphrase, req-0036, req-0039]
+summary: |
+  Loom has 450 known-item cases and 45 judged ones, and not one of them asks a
+  question in words the author did not use. All three generated families are
+  built from the entity's own name or its own docstring, so they are lexically
+  answerable by construction -- which is what makes them a fair test of
+  matching and no test at all of meaning.
+
+  The query nobody can measure is "the bit that merges edits" for COMPOSE-VIEW:
+  the asker's words and the author's words do not overlap. Every mechanism
+  proposed for that -- semantic seeding, embeddings, the Qdrant dependency
+  SEED-ENTITIES' own docstring names -- would be judged against an instrument
+  that cannot see the thing it is for.
+
+  This asks for the instrument, and for nothing that reads it. Write the bar
+  first, because a mechanism measured against a bar written afterwards is a
+  mechanism measured against itself.
+body: |
+  WHY THE EXISTING FAMILIES CANNOT BE STRETCHED TO COVER IT
+
+  tools/make-cases.py names the construction of each family and, with it, the
+  reason none of them is this one.
+
+    name       the query is the entity's name as words
+    inflected  the same, with one word replaced by an inflection of it
+    prose      the query is the entity's docstring with the name's own words
+               removed
+
+  `prose' is the near miss and is worth being precise about. It removes the
+  words of the *name*, so the query cannot win on a literal name match -- but it
+  is still the author's own sentence, indexed verbatim as the entity's
+  :DOCUMENTATION, and DES-0028's prose matching finds it there. The family
+  measures whether a definition is findable from its own description. It cannot
+  measure whether one is findable from somebody else's.
+
+  Measured, that shows up as the score: with BUG-0041 and BUG-0042 closed the
+  three families run 90.0%, 94.7% and 88.7%. A set built from the entities' own
+  vocabulary scoring 91.1% overall is evidence about matching, and the residue
+  is not the semantic gap -- it is the cases where the matching still fails on
+  words that were there all along.
+
+  WHAT MAKES A CASE A MISMATCH, AND WHY INTENT IS NOT ENOUGH
+
+  A generator told to "paraphrase without reusing the author's words" will reuse
+  them. It will write "merge the edits" for MERGE-EDITS, or "encoding fallback"
+  for a docstring containing "encoding"; and worse, it will write "merging" for
+  "merge" and believe it has avoided the word.
+
+  It has not. TASK-TOKEN-ORIGINS stems and splits before anything is matched:
+  "merging" reaches the index as "merge", and "compose-view" splits to "compose"
+  and "view". Disjointness has to be asserted over the tokens Loom actually
+  searches on, not over the strings a human eye compares -- and asserted by a
+  program, at build time, on every case.
+
+  This is DES-0035's shape: a generator proposes and a checker disposes. It is
+  also CON-0001's -- a case that claims to be a mismatch and is not is a
+  fabricated fact about the instrument, and the instrument is what every later
+  argument rests on.
+
+  WHERE THE INSTRUMENT LIVES, AND WHY affects: NAMES ONE FILE OF IT
+
+  The instrument is four files. tools/entity-dump.lisp enumerates a
+  repository's definitions, tools/make-cases.py turns them into cases,
+  tools/cases/ holds the frozen result and tools/recall.py runs it.
+
+  Only the first is in the index: no analyzer claims .py, so the three Python
+  files are not entities and cannot be named in affects: without becoming an
+  unresolved reference that `check' reports forever. They are named here in
+  prose instead, which is the whole of what a :MENTIONS edge would have carried
+  anyway.
+
+  REQUIREMENTS
+
+  R1  A fourth family, whose query shares no searchable token with the entity it
+      names.
+
+      Disjointness is over TASK-TOKENS of the query against TASK-TOKENS of the
+      entity's name and of its indexed documentation -- Loom's own tokenizer on
+      both sides, so compound splitting and stemming are applied before the
+      comparison rather than after it.
+
+  R2  The check runs at build time and rejects. A case that fails it is dropped
+      and counted, not kept with a note. The count is reported, because a
+      generator that produces 200 candidates for 100 cases is a fact about how
+      hard the task is.
+
+  R3  The family is a separate case file, not a fourth family inside
+      tools/cases/known-item.json.
+
+      That file is frozen and its ALL line -- 410 of 450 on 2026-08-22 -- is the
+      number every change this month is compared against. Adding a family to it
+      would move that number for a reason that is not a change in behaviour.
+
+  R4  The file is the same four-tuple tools/recall.py already reads:
+      (repository, query, expected-name, family). No second harness.
+
+  R5  At least 100 cases, over game-server and front-end.
+
+      Loom is excluded for REQ-0016 R6's reason: it is the tree this work
+      commits to, and a case on it changes meaning when a session commits.
+
+      100 is the floor at which one case is under a point, so a family that
+      moves is a mechanism that moved rather than a case that was rewritten.
+
+  R6  The family is frozen and committed before any mechanism is built against
+      it, and the run that freezes it reports the score of the mechanism that
+      exists today.
+
+      That number is the bar. It is expected to be low -- a case disjoint from
+      the name and the prose cannot be reached by name matching or by prose
+      matching, so what it scores is whatever the neighbour band reaches -- and
+      low is not the same as zero-by-construction, which is why it is measured
+      rather than asserted.
+
+  R7  A sample is checked by hand and the fraction recorded.
+
+      The failure this guards is the one no disjointness check can see: a query
+      that identifies nothing. "the thing that handles the stuff" shares no
+      token with anything and is not a case, it is noise, and a family of noise
+      scores zero against every mechanism forever while looking like a hard
+      problem.
+
+      At least 20 cases, read against the tree, answering one question: could a
+      person who knew this repository name the entity from this query alone? The
+      fraction is reported with the family and is what a later reader argues
+      with.
+
+  R8  How the family was generated is recorded with it: by what, on what date,
+      from what input, under what instruction.
+
+      The other three families are reproducible from tools/make-cases.py and a
+      seed. This one is not reproducible in that sense and the record is what
+      replaces it -- a reader who distrusts the family has to be able to see
+      what made it.
+
+  R9  Each family keeps being reported separately and is never summed with the
+      others.
+
+      make-cases.py already says why for the existing three: they are biased in
+      different directions and a total hides which one moved. This family's bias
+      is the sharpest of the four -- it is written in the vocabulary a model
+      reaches for when told to avoid an author's, which is not the same
+      distribution as the vocabulary a working engineer reaches for.
+
+  WHAT THIS IS NOT
+
+  Not an argument for embeddings, and it must not be built as one. REQ-0039's
+  WHAT THIS IS NOT rejects a vector index on the grounds that it brings a model
+  dependency and an answer nobody can explain; that clause stands or falls on
+  its own evidence, and this requirement is neutral about it.
+
+  The point of writing the bar first is precisely that it can refuse the
+  mechanism it was written in anticipation of. Four ranking mechanisms have been
+  measured on this tree this month -- coverage-by-word, provenance rank, the
+  name analyzer, idf -- and all four came in at baseline or worse and were
+  withdrawn. A fifth that happens to be fashionable gets the same instrument and
+  the same treatment.
+
+  Not a replacement for tools/acceptance.py. REQ-0036 R11 makes the 45 judged
+  expectations the held-out set because nothing about them was shaped by what
+  the seeder returned. A generated family, however carefully checked, is not
+  that and does not become that by being harder.
+
+  OPEN QUESTIONS
+
+  - Whether a query disjoint from the name and the prose can be answered at all
+    by a lexical mechanism, or whether R6's bar is 0 by construction. If it is
+    0, the family still measures -- but it measures only improvements, and can
+    never report a regression. Worth knowing before it is used as a guard.
+
+  - Front-end carries no docstring on most of its definitions. A mismatch case
+    for an entity with no prose is disjoint from almost nothing, which makes it
+    cheap to generate and possibly too easy to answer. The per-repository split
+    should be reported, not just the total.

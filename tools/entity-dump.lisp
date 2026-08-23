@@ -2,10 +2,19 @@
 ;;;;
 ;;;;   sbcl --script tools/entity-dump.lisp /path/to/repo > cases/repo.json
 ;;;;
-;;;; One object per definition entity: name, type, file, and the first line of
-;;;; its documentation where it has any. tools/make-cases.py turns these into
-;;;; known-item retrieval cases, whose ground truth is the entity the query was
-;;;; built from.
+;;;; One object per definition entity: name, type, file, the first line of its
+;;;; documentation where it has any, and the whole of it. tools/make-cases.py
+;;;; turns these into known-item retrieval cases, whose ground truth is the
+;;;; entity the query was built from.
+;;;;
+;;;; Two documentation fields and not one, because two instruments want
+;;;; different halves. `doc' is the first line and is what make-cases.py builds
+;;;; the prose family from -- the 450 cases in tools/cases/known-item.json came
+;;;; from it, so what it holds cannot change without changing a frozen case
+;;;; file the next time anyone rebuilds it. `documentation' is everything the
+;;;; analyzer recorded, and tools/mismatch-check.lisp needs all of it: a query
+;;;; disjoint from a docstring's first line can share a word with its third,
+;;;; and DES-0039 D2 is the case where that happened.
 ;;;;
 ;;;; Exists because the service has no operation that enumerates entities --
 ;;;; `find' takes a term -- and the acceptance harness needed an order of
@@ -56,7 +65,8 @@ mechanism rather than about what the thing is."
             (push (list (cons :name name)
                         (cons :type (string-downcase (symbol-name type)))
                         (cons :file (or (getp entity :file) ""))
-                        (cons :doc (or (first-sentence (getp entity :documentation)) "")))
+                        (cons :doc (or (first-sentence (getp entity :documentation)) ""))
+                        (cons :documentation (or (getp entity :documentation) "")))
                   rows)))))
     (json:encode-json (nreverse rows) *standard-output*)
     (terpri)))

@@ -1,0 +1,84 @@
+id: PLAN-0042
+title: "DES-0039 in five steps: the full docstring, the checker, the candidates, the freeze, the hand-read sample"
+status: final
+date: 2026-08-22
+refines: [DES-0039, REQ-0047]
+affects: ['tools/entity-dump.lisp']
+tags: [retrieval, measurement, instrument, paraphrase, req-0047]
+summary: |
+  The checker is built before a single case is written. A generator that can see
+  which of its candidates are being rejected, and why, writes different
+  candidates -- and that is the point rather than a hazard, because what it
+  learns is which words the author already used.
+body: |
+  S1  THE DUMP CARRIES THE WHOLE DOCSTRING
+
+  tools/entity-dump.lisp keeps FIRST-SENTENCE. Add the full :DOCUMENTATION as a
+  second field and leave the first alone: tools/make-cases.py reads `doc' to
+  build the prose family, and the 450 cases in tools/cases/known-item.json were
+  built from it. Changing what that field holds would change a frozen case file
+  the moment anyone rebuilt it.
+
+  RISK: the two fields drifting apart in meaning. The new one is named for what
+  it is -- everything the analyzer recorded -- rather than for what it is used
+  for.
+
+  S2  THE CHECKER
+
+  tools/mismatch-check.lisp, loading loom-knowledge for TASK-TOKENS the way
+  entity-dump.lisp loads loom-workspace.
+
+  Input: a candidate file in the four-tuple shape, and the dumps. For each case
+  it collects every entity in that repository carrying the expected name, takes
+  TASK-TOKENS of each name and of each full docstring, takes TASK-TOKENS of the
+  query, and rejects on a non-empty intersection.
+
+  Output: the surviving cases as JSON, and a report -- kept, rejected, and for
+  each reject the token that killed it and which entity carried it.
+
+  RISK: an expected name that matches no entity. That is a case naming
+  something that does not exist, and it must be rejected loudly rather than
+  passed through as trivially disjoint. The probe would have produced one:
+  recall.py scores a name, so a typo in the expected field is a case that can
+  never hit and never explains why.
+
+  S3  THE CANDIDATES
+
+  Sample definitions from both dumps, weighted towards ones a description can
+  identify -- a docstring of several words, or a name of two or more parts. For
+  each, write a query describing what it does in words the author did not use.
+
+  Run S2. Read the rejects, rewrite them, run again. Repeat until at least 100
+  survive, REQ-0047 R5's floor.
+
+  RISK: the loop tuning the family towards the checker rather than towards
+  being a good question. The checker only ever removes lexical overlap, so what
+  the loop can teach is which words are the author's -- it cannot make an
+  unanswerable query pass, and it cannot make an answerable one fail. S5 is the
+  guard on the other axis.
+
+  S4  FREEZE AND MEASURE
+
+  Write tools/cases/mismatch.json with the provenance header REQ-0047 R8 asks
+  for, then:
+
+      tools/recall.py tools/cases/mismatch.json
+
+  Record the score, the per-repository split REQ-0047's second open question
+  asks for, and the rejection count from S2. That number is the bar and it is
+  recorded before anything is built to move it.
+
+  RISK: none to behaviour -- nothing in src changes in this plan. The whole of
+  it is instrument.
+
+  S5  READ TWENTY BY HAND
+
+  Twenty cases, sampled deterministically, read against the tree: could a
+  person who knew this repository name the entity from this query alone?
+
+  Record the fraction with the family. Do not drop the failures -- REQ-0047 R7
+  and DES-0039 D6 both say why: removing the cases a reader found unanswerable
+  makes the family easier by exactly the amount the reader was unsure, and the
+  fraction is the thing a later argument needs.
+
+  Then `complete PLAN-0042'.

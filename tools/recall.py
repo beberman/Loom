@@ -103,7 +103,14 @@ def main():
 
     print()
     total = {"n": 0, "strict": 0, "lenient": 0}
-    for family in ("name", "inflected", "prose"):
+    # The three generated families first, in the order tools/make-cases.py
+    # builds them, then anything else the case file happens to hold. Hardcoding
+    # the triple printed nothing at all for tools/cases/mismatch.json, whose
+    # family is `mismatch' and which no amount of reading the ALL line would
+    # have revealed as absent rather than as zero.
+    known = ("name", "inflected", "prose")
+    families = list(known) + sorted(f for f in tally if f not in known)
+    for family in families:
         row = tally[family]
         if not row["n"]:
             continue
