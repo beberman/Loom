@@ -1675,7 +1675,14 @@ Every call is logged to *CONTEXT-LOG*."
          (items     '())
          (used      0)
          (sourced-tokens 0)
-         (truncated nil))
+         (truncated nil)
+         ;; PLAN-0045 S1, DES-0042 D3. What the budget refused, kept rather
+         ;; than discarded: ADMIT-ITEM already computes the cost of every item
+         ;; it rejects and threw it away to set the boolean above. The sum is
+         ;; what lets a bundle say what a larger budget would buy, which is the
+         ;; number a caller cannot compute from anything they are sent.
+         (withheld-items 0)
+         (withheld-tokens 0))
     (multiple-value-bind (decisions documents mentions)
         (documents-touching view (append seeds expanded))
       ;; A document one hop from a seed is in EXPANDED as well as in its band,
@@ -1741,7 +1748,10 @@ Every call is logged to *CONTEXT-LOG*."
                           (incf used cost)
                           (push item items)
                           t)
-                         (t (setf truncated t) nil))))
+                         (t (setf truncated t)
+                            (incf withheld-items)
+                            (incf withheld-tokens cost)
+                            nil))))
                (item-for (entity relations band)
                  (context-item view entity :relations relations :band band)))
           ;; DES-0026 D2's source tier, admitted first and outside the index
@@ -1779,7 +1789,9 @@ Every call is logged to *CONTEXT-LOG*."
             (admit-item (context-item view (reach-entity r)
                                       :relations nil :band :neighbour :reach r)
                         budget))))
-      (let ((bundle (list :task task
+      (let* ((sourced (count-if (lambda (i) (getf i :source)) items))
+             (wanted (if source-fn (min source-definitions (length seeds)) 0))
+             (bundle (list :task task
                           :seeds (summarize-entities seeds)
                           ;; DES-0032 D3. What the task's words reached, so a
                           ;; caller can tell a bundle whose subject is here
@@ -1806,13 +1818,39 @@ Every call is logged to *CONTEXT-LOG*."
                           :budget budget
                           :tokens used
                           :truncated truncated
+                          ;; DES-0042 D3. :FOUND-TOKENS is used plus withheld:
+                          ;; what this walk found, and therefore the budget that
+                          ;; would send all of it. All of what the *walk* found
+                          ;; -- *CONTEXT-EXPANSION-HORIZON* bounds the search
+                          ;; before any budget is consulted, so a larger budget
+                          ;; prints more of what was reached and never more of
+                          ;; what was searched. Anything here that read as a
+                          ;; claim about the graph would be CON-0001's
+                          ;; fabricated fact wearing a percentage.
+                          :withheld-items withheld-items
+                          :withheld-tokens withheld-tokens
+                          :found-tokens (+ used withheld-tokens)
                           ;; What the source tier actually spent, reported rather
                           ;; than inferred: a caller comparing two bundles wants
                           ;; to know whether it got bodies without scanning for
                           ;; them.
                           :source-tokens sourced-tokens
                           :source-definitions (if source-fn source-definitions 0)
-                          :sourced (count-if (lambda (i) (getf i :source)) items))))
+                          :sourced sourced
+                          ;; Bodies asked for and not carried. Not a counter in
+                          ;; ADMIT-ITEM: the source tier is admitted with :FREE
+                          ;; and never reaches the rejecting branch, so a
+                          ;; counter written there would report the index tier
+                          ;; and read as correct until the tiers share a budget.
+                          ;;
+                          ;; WANTED is bounded by the seeds as well as by the
+                          ;; count, because a bundle with three seeds and five
+                          ;; slots withheld nothing -- there were two fewer
+                          ;; bodies to carry, which is a fact about the query
+                          ;; rather than about the budget. Reporting those two
+                          ;; as withheld would send a caller to raise a number
+                          ;; that would buy them nothing.
+                          :withheld-bodies (max 0 (- wanted sourced)))))
         (push (make-context-log-entry :task task
                                       :seeds (length seeds)
                                       :entities (length items)

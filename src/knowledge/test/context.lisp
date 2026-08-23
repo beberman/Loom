@@ -1113,3 +1113,71 @@ not enough -- they have to be countable"))
                (mapcar (lambda (p) (name (car p)))
                        (loom-knowledge::fuse-rankings lexical semantic
                                                       :protected '()))))))
+
+
+;;; ------------------------------------------------------------------
+;;; What the budget refused (PLAN-0045 S1, DES-0042 D3)
+;;; ------------------------------------------------------------------
+
+(test a-truncated-bundle-counts-what-it-withheld
+  ;; :TRUNCATED said that a bundle was cut and never how much, so a caller
+  ;; could not tell one that lost its last neighbour from one that lost forty
+  ;; entities -- nor whether asking again with a bigger number was worth
+  ;; anything.
+  (let* ((f (make-k-fixture))
+         (bundle (build-context (k-graph f) "change resolve-overlay" :budget 150)))
+    (is-true (getf bundle :truncated) "the budget has to actually bite")
+    (is (plusp (getf bundle :withheld-items)))
+    (is (plusp (getf bundle :withheld-tokens)))
+    (is (> (getf bundle :found-tokens) (getf bundle :tokens))
+        "what the walk found exceeds what this budget sent")))
+
+(test what-was-sent-plus-what-was-withheld-is-what-an-unbounded-budget-sends
+  ;; The identity the whole signal rests on, and the one an off-by-one breaks
+  ;; without any reading finding it. Stated without naming a number, so the
+  ;; fixture can change and the claim cannot.
+  (let* ((f (make-k-fixture))
+         (tight (build-context (k-graph f) "change resolve-overlay" :budget 150))
+         (loose (build-context (k-graph f) "change resolve-overlay" :budget 100000)))
+    (is (zerop (getf loose :withheld-items)) "nothing is withheld at this budget")
+    (is (= (getf loose :tokens) (getf tight :found-tokens))
+        "a tight bundle's :FOUND-TOKENS is what the same walk costs unbounded")
+    (is (= (getf tight :found-tokens)
+           (+ (getf tight :tokens) (getf tight :withheld-tokens)))
+        "found is sent plus withheld, by construction")))
+
+(test a-bundle-that-fits-withholds-nothing-and-says-so
+  ;; The inert half, and it is what S1 could be checked against before the
+  ;; tiers shared a budget: with room to spare the counts are zero rather than
+  ;; absent, so a consumer reads them unconditionally.
+  (let* ((f (make-k-fixture))
+         (bundle (build-context (k-graph f) "change resolve-overlay" :budget 100000)))
+    (is (null (getf bundle :truncated)))
+    (is (eql 0 (getf bundle :withheld-items)))
+    (is (eql 0 (getf bundle :withheld-tokens)))
+    (is (= (getf bundle :tokens) (getf bundle :found-tokens)))))
+
+(test a-body-that-was-never-available-is-not-reported-as-withheld
+  ;; WANTED is bounded by the seeds as well as by the count. A bundle with
+  ;; fewer seeds than source slots withheld nothing -- there were fewer bodies
+  ;; to carry -- and reporting the difference would send a caller to raise a
+  ;; number that would buy them nothing.
+  (let* ((f (make-k-fixture))
+         (bundle (build-context (k-graph f) "change resolve-overlay"
+                                ;; A source plist, which is DEFINITION-SOURCE's
+                                ;; shape: :status, :text, :range, :file.
+                                :source-fn (lambda (id)
+                                             (declare (ignore id))
+                                             (list :status :current
+                                                   :text "(defun x ())"
+                                                   :range "1-1"
+                                                   :file "src/lib.lisp"))
+                                :source-definitions 50)))
+    (is (eql 0 (getf bundle :withheld-bodies))
+        "50 slots against a handful of seeds withholds nothing")
+    (is (< (getf bundle :sourced) (getf bundle :source-definitions))
+        "fewer bodies were carried than slots were offered")
+    (is (eql 50 (getf bundle :source-definitions))
+        "and the count asked for is still reported as asked for, so the
+difference is visible without being called a withholding")))
+
