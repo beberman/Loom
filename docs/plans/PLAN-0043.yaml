@@ -1,5 +1,5 @@
 id: PLAN-0043
-title: "DES-0040 in seven steps: the leaf system, the sidecar, the absent-embedder path first, then fusion, then the weight the simulation could not set"
+title: "DES-0040 in eight steps: the leaf system, the sidecar, the absent-embedder path first, then fusion, then the weight the simulation could not set, then what a reader has to install"
 status: draft
 date: 2026-08-22
 refines: [DES-0040, REQ-0048]
@@ -131,5 +131,45 @@ body: |
   at rank 6, config-search at rank 5 and dot-prefixed-p at rank 5, so a fusion
   that returns one of them has lost the others between the ranking and the
   bundle.
+
+  S8  THE README SAYS WHAT TO INSTALL
+
+  README.md is two lines, a title and a sentence about tapestries, and says
+  nothing about running anything. That was survivable while every prerequisite
+  came from Quicklisp; this plan adds one that does not, and a dependency
+  nobody documents is a dependency the next person discovers by failure.
+
+  What it has to state, and each of these is a fact about this machine checked
+  on 2026-08-23 rather than a recollection:
+
+    SBCL, and that /usr/bin/sbcl is the one the tools use. tools/loom-test.sh
+    already says it is not the SBCL behind SLIME, and the README is where a
+    reader who has never opened that script should learn it.
+
+    Quicklisp, and the ten libraries it supplies: bordeaux-threads, cl-json,
+    cl-yaml, drakma, eclector, fiveam, hunchentoot, random-uuid, stem, uiop.
+
+    The utils library, which Quicklisp does not supply. It is a sibling
+    repository reached through ~/quicklisp/local-projects, and it is the one
+    prerequisite a reader cannot guess or install by name: loom-serve depends
+    on #:utils for IMPROPER-LIST-P, and PLAN-0036 S1 deleted Loom's own
+    SLURP-FILE and SPLIT-LINES in favour of it.
+
+    Ollama and nomic-embed-text, under a heading that says optional and means
+    it. REQ-0048 R6: no ollama listening, no sidecar, or a sidecar whose
+    embedder identity does not match are three states and all three mean the
+    lexical seeder answers alone with nothing reported as an error. The README
+    has to say what is lost rather than what breaks, and the answer measured in
+    this plan is what to put there.
+
+  The distinction between required and optional is the whole point of the step.
+  A README that lists ollama beside SBCL turns an optional dependency into a
+  required one by documentation, which is the opposite of what DEC-0006 decided
+  when it put the embedder behind a protocol.
+
+  RISK: a README that is right on this machine and wrong on a clean one.
+  Nothing here verifies itself. The version numbers and paths are what this
+  machine reports today, and the honest form is to say so rather than to
+  present them as requirements nobody has tested elsewhere.
 
   Then DES-0040 gets the numbers, and `complete PLAN-0043'.
