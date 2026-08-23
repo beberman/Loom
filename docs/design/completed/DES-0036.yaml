@@ -1,6 +1,6 @@
 id: DES-0036
 title: "REQ-0046 by weighting the coverage band: a term is worth what its rarity in this repository says, and the count already being taken is the measurement"
-status: partial
+status: superseded
 date: 2026-08-22
 refines: [REQ-0046, CON-0007]
 affects: [seed-matches, seed-score, seed-entities, find-entities]
@@ -162,3 +162,12 @@ body: |
   dot-prefixed-p missing. A weighting that returns those numbers unchanged has
   not been shown to do anything, and three mechanisms have already done exactly
   that from three directions.
+
+  SUPERSEDED, 2026-08-23
+
+  Status moves from partial to superseded, so that `context' and `impact' stop
+  offering this as work in progress. MEASURED, AND NOT ADOPTED above is the
+  outcome and WHAT IS KEPT is the residue. REQ-0046 is repriced to Minor on
+  these numbers, and DEC-0006 counts this as the fourth of four ranking
+  mechanisms measured on this tree in August 2026 that came in at baseline or
+  below.

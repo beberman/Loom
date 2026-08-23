@@ -1,10 +1,10 @@
 id: REQ-0046
 title: A term must be weighted by how common it is, because every hand-written rule about common words is a missing idf
-status: draft
+status: partial
 date: 2026-08-22
 refines: [REQ-0016]
 affects: [seed-score, seed-matches, admit-seeds, build-context]
-importance: Critical
+importance: Minor
 tags: [retrieval, context, ranking, idf, con-0007]
 summary: |
   Nothing in SEED-SCORE weights a term by how rare it is. The coverage band
@@ -139,3 +139,45 @@ body: |
   - Does prose share the term statistics of names? A word common in docstrings
     and rare in identifiers is the case REQ-0045 R2 separates, and it may need
     two frequencies rather than one.
+
+  OUTSTANDING, 2026-08-23
+
+  Nothing further is to be built here. DES-0036 implemented R1 and R2 and
+  measured them against the acceptance above: 42 of 45 on the judged
+  instrument and 390 of 450 on the generated one, with the `name' family at
+  82.7% against 83.3%. The acceptance says what that means -- "a weighting that
+  returns 42 and 392 has not been shown to do anything" -- and this returned 42
+  and 390. Weighting in tenths of a term rather than whole terms returned 40
+  and 389, so the coarseness was not what limited it.
+
+  R1's four named misses are diagnosed, and the diagnosis is not a tuning
+  problem. Game.addDefinition, wrappedLogger.setLevel and PinSet came back with
+  byte-identical item counts. idf discriminates between the terms within a
+  query and those queries hold no rare term: "game add definition" against
+  front-end weighs game at df 252, add at 38 and definition at 17. What seats a
+  name carrying all three terms above one carrying the commonest of them is a
+  proximity signal.
+
+  R2 asked that dot-prefixed-p be seated, and it is refused on both mechanisms.
+  Lexically it ranks outside the eight; densely it is rank 5 at cosine 0.5627
+  against a relative cut that keeps 0.5629, and REQ-0039 records that lowering
+  the cut was measured on all three instruments and rejected.
+
+  R3 is met by a different mechanism. REQ-0048 R4 forbids a semantic seed from
+  marking a term ANSWERED, and the three ABSENCE_CASES are its check rather
+  than this document's.
+
+  R4 does not become work. *SEED-TERM-SHARE* and REQ-0016 R7's reasoning stay
+  as they are, because the quantity they approximate was measured and does not
+  move a case.
+
+  What landed is D1's by-product, and it is why this is partial rather than
+  draft. SEED-MATCHES returns each token's document frequency as a second
+  value, TERM-WEIGHT and WEIGHTED-COVERAGE are in the source unused by
+  SEED-SCORE, and a later mechanism wanting rarity has it for one LENGTH per
+  token.
+
+  Importance drops from Critical to Minor. Rarity was Critical while three
+  hand-written rules approximated a quantity nobody had measured. DES-0036
+  measured it. A mechanism that wants it again should be a new requirement with
+  a new hypothesis, because this one's numbers are spent.

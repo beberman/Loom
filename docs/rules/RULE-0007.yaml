@@ -17,10 +17,34 @@ statement: |
 
   Under docs/requirements, docs/design, docs/plans, docs/bugs and
   docs/reviews, a document whose status is terminal -- implemented for a REQ or
-  a DES, final for a PLAN, closed for a BUG or REV -- lives in that directory's
-  completed/ subdirectory, and a document whose status is not terminal lives
-  flat. The two must agree. A partial document stays flat: it has an
-  OUTSTANDING section, which is work.
+  a DES, superseded for a DES, final for a PLAN, closed for a BUG or REV --
+  lives in that directory's completed/ subdirectory, and a document whose
+  status is not terminal lives flat. The two must agree. A partial document
+  stays flat: it has an OUTSTANDING section, which is work.
+
+  AMENDED 2026-08-23. Superseded was not on that list, and the omission was
+  this document's rather than a property of the workflow: a superseded design
+  has no work left in it and belongs where the finished ones are. DES-0034 and
+  DES-0036 are the instances. Both were built, measured against the numbers
+  they named, and withdrawn -- DES-0034 at 38 of 45 against a baseline of 45,
+  DES-0036 at 42 of 45 and 390 of 450 against a baseline of exactly those two
+  numbers -- and both then sat flat in docs/design/ where `ls' and `context'
+  read them as work in progress. *WORKFLOW-STATUS-VOCABULARY* and this
+  paragraph were changed in the same commit, which is the discipline the rest
+  of this rule is about.
+
+  Superseded is terminal for a design and for nothing else, and that is settled
+  rather than waiting on an instance. A design is produced by one piece of work
+  and is finished when that work lands, which is what gives it a terminal state
+  to reach. An architecture document, a decision and a rule are not process
+  artifacts. They stand across the pieces of work that consult them, and each
+  reaches superseded or retired only on a redesign -- which is a new piece of
+  work rather than the end of the old one. A superseded ARCH is the record of
+  what the structure was, read beside the one that replaced it, and a
+  superseded DEC is why the tree chose what it no longer chooses; filing either
+  under a name meaning "done with these" takes it away from the reader who
+  needs it most. The standing half of the tree keeps both and has no completed/
+  to put them in.
 
   Under docs/decisions, docs/arch, docs/rules and docs/concepts there is no
   completed/ at all. An accepted decision, an active rule, a named concept and
@@ -135,13 +159,16 @@ body: |
   foreign tree prepared by REQ-0021 -- which may keep its documents anywhere --
   gets the same answer this one does.
 
-  The vocabulary above is where the command reads its terminal set from, and
-  the reading is literal: implemented for a REQ or a DES, final for a PLAN,
+  The vocabulary above is where the command reads its terminal set from:
+  implemented for a REQ or a DES, superseded for a DES, final for a PLAN,
   closed for a BUG or REV, and nothing terminal at all under docs/decisions,
-  docs/arch, docs/rules and docs/concepts. A partial document stays flat. A
-  superseded design stays flat too, because this text names one word and
-  departing from it in code would put the rule and the tool into exactly the
-  disagreement the rule exists to prevent.
+  docs/arch, docs/rules and docs/concepts. A partial document stays flat.
+
+  A superseded design stayed flat until 2026-08-23 for a reason that was about
+  this text rather than about the design: the paragraph above named one word,
+  and departing from it in code alone would have put the rule and the tool into
+  exactly the disagreement the rule exists to prevent. The fix was to move both,
+  which the AMENDED note in the statement records.
 
   RETIRED AND NOT SUPERSEDED, for RULE-0005's reason: a developer moving a file
   by hand is not doing anything wrong, and a rule claiming the command is the

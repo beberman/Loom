@@ -4,7 +4,7 @@ status: partial
 date: 2026-08-21
 refines: [REQ-0016]
 affects: [build-context, seed-entities, admit-seeds, render-context, seed-score]
-importance: Critical
+importance: Minor
 tags: [retrieval, context, absence, con-0001, req-0036]
 summary: |
   `context` always answers. Asked for something the repository does not contain,
@@ -161,3 +161,20 @@ body: |
 
   R5, reporting the indexing exclusions, is not implemented. DES-0032 records
   why it is a different kind of absence from the one this work reports.
+
+  REPRICED, 2026-08-23
+
+  Importance drops from Critical to Minor. R2 and R3 are implemented and are
+  what made this Critical: a bundle names the words of the task that no
+  admitted seed answered by name, and the three absence cases in
+  tools/acceptance.py assert it. R1 and R4 are refused by DEC-0005 and will not
+  be built. R5 is the only clause left, and it is one report of the indexing
+  exclusions a query could not look at.
+
+  Dense retrieval changes how hard R2 and R3 are to hold, not what they ask.
+  Cosine returns nearest neighbours for every query ever asked, so a semantic
+  seed would mark every term ANSWERED if it were allowed to answer one.
+  REQ-0048 R4 forbids it, the same three absence cases are the check, and
+  DEC-0006's consequences record the coupling. The term report classifies on
+  written terms only and a semantic seed carries none, which is why it survived
+  the change unaltered.

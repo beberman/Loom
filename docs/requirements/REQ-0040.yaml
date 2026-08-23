@@ -4,7 +4,7 @@ status: draft
 date: 2026-08-21
 refines: [REQ-0016]
 affects: [build-context, render-context, estimate-tokens, admit-seeds]
-importance: Major
+importance: Critical
 tags: [retrieval, context, budget, readability, req-0036]
 summary: |
   Three judged calls returned 203, 128 and 113 items. The caller used nine of
@@ -78,3 +78,21 @@ body: |
   - Does a caller who asked for depth want source for the top five or the top
     one? Unmeasured, and the log is where the answer comes from once REQ-0038
     records what a caller did next.
+
+  REPRICED, 2026-08-23
+
+  Importance rises from Major to Critical. Dense retrieval moved the known-item
+  instrument from 410 to 443 of 450 and the judged set from 42 to 43 of 45, so
+  on those instruments the answer is in the bundle. Every number in this
+  document is unchanged: 194 unused of 203 returned, and 2 of the 30 records in
+  .loom/context are bundles that exceeded the caller's output limit and were
+  never read.
+
+  The harness already classifies the failure. tools/acceptance.py's MARKERS
+  table carries `(overflow)' beside `(nothing)' and `(probe)', so a bundle that
+  was right and could not be read is a counted outcome rather than a sentence
+  in a judgement.
+
+  DES-0040 left the seed limit at eight and the neighbour band untouched, so
+  fusion changed which candidates fill the slots and not how much text a bundle
+  carries. R7's item count of 170 is the same 170 it was.

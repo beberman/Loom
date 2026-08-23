@@ -52,7 +52,7 @@
 
 (defparameter *workflow-status-vocabulary*
   '(("requirements" (:draft :accepted :implemented :partial)             (:implemented))
-    ("design"       (:draft :accepted :implemented :partial :superseded) (:implemented))
+    ("design"       (:draft :accepted :implemented :partial :superseded) (:implemented :superseded))
     ("plans"        (:draft :final)                                      (:final))
     ("bugs"         (:open :closed)                                      (:closed))
     ("reviews"      (:open :closed)                                      (:closed))
@@ -68,13 +68,19 @@ entity type, whose declared :ONE-OF is the union of their four vocabularies.
 Validating against that union alone would let a plan be set to `closed' and a
 bug to `final', which is not a status the workflow has.
 
-The terminal column is RULE-0007's, read literally: \"implemented for a REQ or
-a DES, final for a PLAN, closed for a BUG or REV\". A partial document stays
-flat, because it has an OUTSTANDING section, which is work. `superseded' is
-deliberately not terminal for a design even though a superseded design is
-finished -- the rule names one word and departing from it silently would put
-this table and the document a human reads into disagreement, which is the drift
-the rule was written to stop.
+The terminal column means finished, and a document is finished when there is no
+work left in it: implemented for a REQ or a DES, final for a PLAN, closed for a
+BUG or REV, and `superseded' for a DES. A partial document stays flat, because
+it has an OUTSTANDING section, which is work.
+
+`superseded' was not terminal until 2026-08-23, and the reason it was not is
+worth keeping: RULE-0007's text named one word, and departing from it in code
+would have put this table and the document a human reads into disagreement.
+That was a reason to change both together rather than a reason to leave a
+finished design filed as though it were open. DES-0034 and DES-0036 are what
+forced it -- both were built, measured, and withdrawn, and both sat flat in
+docs/design/ offering themselves to `context' as work in progress. The rule
+text now says superseded too.
 
 The last three categories have no terminal status at all and therefore no
 completed/ subdirectory. An accepted decision, an active rule and a current

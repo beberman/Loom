@@ -4,7 +4,7 @@ status: draft
 date: 2026-08-22
 refines: [REQ-0016]
 affects: [seed-matches, match-rank, search-entities, find-entities, task-tokens]
-importance: Major
+importance: Minor
 tags: [retrieval, context, find, stemming, con-0007]
 summary: |
   `find` answers "where is JS-TRIM". `context` answers "where is the code that
@@ -70,3 +70,33 @@ body: |
   - REQ-0042 asks for finding a definition by resemblance to another
     definition, which is a third question again. Whether it shares a policy
     with `context` or wants its own is not answered here.
+
+  RETIRED IN PART, AND REPRICED, 2026-08-23
+
+  R4 is met, and it is a measurement now rather than a preference. DEC-0006 put
+  eight dense names against the lexical seeder over 450 known-item cases and
+  found 11 that only the lexical seeder reaches; six are named there --
+  slot-defn, Mapper.toNative, ListMapper.toNative, ArcUse.constructor,
+  IRenderer.unproject, BaseTypeMapper -- and they are exact-name queries.
+  Replacing the lexical path would lose those eleven to gain thirty-eight.
+  DEC-0006's consequences carry the rule: dense may not replace lexical in
+  `find'.
+
+  R1 is delivered by a mechanism this document did not propose. It asked that
+  the token set be a property of the operation, so that `context' could match
+  stems and parts where `find' matches what the caller typed. DES-0040 instead
+  gives `context' a second ranked list from the vector store and fuses the two
+  by reciprocal rank, which reaches candidates sharing no token with the query
+  at all while `find''s token set is untouched. The mismatch family moved from
+  9 to 39 of 120 that way. The outcome R1 asked for is in the tree; the
+  mechanism it named is not, and is not needed for it.
+
+  R2 and R3 stand and are unmeasured. Both are ranking changes to the lexical
+  path -- an analyzer per field, and the same analyzer over index and query --
+  and DES-0034 is the nearest thing built for either: it analysed the name on
+  both sides and fell to 38 of 45. Four ranking mechanisms were measured on
+  this tree in August 2026 and all four came in at baseline or below.
+
+  Importance drops from Major to Minor: R4 is met, R1's outcome is in the tree,
+  and what is left is two clauses whose nearest measured relative lost seven
+  cases.

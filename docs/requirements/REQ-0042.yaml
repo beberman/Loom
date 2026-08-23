@@ -4,7 +4,7 @@ status: draft
 date: 2026-08-21
 refines: [REQ-0027]
 affects: [search-entities, find-entities, describe-entity, structure-report]
-importance: Major
+importance: Critical
 tags: [retrieval, similarity, multi-repo, duplication, req-0027, req-0035]
 summary: |
   Two tasks in this log had the same shape -- does this codebase already have its
@@ -78,3 +78,51 @@ body: |
     the fallback and are much weaker.
   - Cost. R3 is a cross product of two repositories' definitions, which is fine
     at Loom's scale and needs a bound stated before it is not.
+
+  REPRICED 2026-08-23, AND THE MECHANISM MEASURED
+
+  Importance rises from Major to Critical. The cheap signal named above is
+  built, and R1, R2 and R3 reduce to a query verb over machinery that is
+  already running.
+
+  DES-0040 gives every registered repository a vector sidecar keyed by entity
+  id. Nine exist on this machine and all nine were written by the same
+  embedder:
+
+      Loom 1720   front-end 3457   game-server 1811   datascience 739
+      linear-algebra 504   numerical-utilities 414   cl-dbi 213
+      cl-mysql 152   utils 113
+        all ollama:nomic-embed-text, 768 dimensions
+
+  Matching embedder ids on both sides is the condition DEC-0006's invariant
+  demands, so a cosine between two of these stores is a number that means
+  something. R2 asks that the query cross repository boundaries and says it
+  needs no edge to do it; a shared embedder id is what makes that true.
+
+  LOOM-EMBED:NEAREST takes a query vector and a store. An entity's own vector
+  sits in its repository's store under its id, so R1 costs no embedding call --
+  the vector is read rather than computed.
+
+  Measured 2026-08-23 against the files on disk, Loom's definitions against
+  utils, cosine over the flat arrays with no new indexing:
+
+      FNV-1A          -> content-fingerprint   0.8700   next %fnv-1a-octet 0.7309
+      PLIST-SHAPED-P  -> plistp                0.8600   alistp 0.7804 third
+      TEXT-LINES      -> string-lines          0.7640   string-split 0.7149
+
+  Three of the ten pairs PLAN-0036's survey assembled by hand, each at rank 1.
+  %READ-CONFIG against game-server returns READ-CONFIG at 0.8067. Loom's
+  CONTENT-FINGERPRINT against game-server returns nothing above 0.6728, which
+  is right: its counterpart is in Loom and not there.
+
+  R4 is unchanged and is the hard clause now. Five of the ten pairs were not
+  duplicates on reading -- FNV-1A truncates a character to its low octet where
+  CONTENT-FINGERPRINT does not -- and 0.8700 does not know that.
+
+  Two limits belong in the design rather than in this measurement. The three
+  pairs above carry docstrings, and 3861 of the 5268 definitions DEC-0006
+  counted carry none; for those the embedded document is the name as words,
+  which is the signal the open question above already calls too weak. And
+  REQ-0048 R2's failure mode reads on a resemblance query directly: a query
+  that is a bare name resembles its longer relatives more than itself, which is
+  how Mapper.toNative lost to MapMapper.toNative.

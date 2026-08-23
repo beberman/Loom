@@ -145,6 +145,39 @@ body: |~%  status: implemented is written here too.~%")))
         (is-true (probe-file (merge-pathnames "docs/bugs/BUG-0002.yaml" root)))
         (is (null (probe-file (merge-pathnames "docs/bugs/completed/BUG-0002.yaml" root))))))))
 
+(test a-superseded-design-is-filed-with-the-finished-ones
+  ;; A superseded design has no work left in it. It stayed flat until
+  ;; 2026-08-23 because RULE-0007's text named `implemented' and nothing else,
+  ;; which left DES-0034 and DES-0036 -- both built, measured and withdrawn --
+  ;; sitting in docs/design/ where `ls' and `context' read them as work in
+  ;; progress.
+  (with-document-tree (root)
+    (write-document root "docs/design/DES-0001.yaml"
+                    (design-document "DES-0001" '("REQ-0001")))
+    (with-indexed-tree (repository root)
+      (let ((report (set-document-status repository "DES-0001" "superseded")))
+        (is (null (getf report :problems)) "~a" (getf report :problems))
+        (is (null (probe-file (merge-pathnames "docs/design/DES-0001.yaml" root)))
+            "the flat file is gone")
+        (is-true (probe-file (merge-pathnames "docs/design/completed/DES-0001.yaml" root))
+                 "the file is in completed/")
+        (is (search (format nil "~%status: superseded~%")
+                    (document-text root "docs/design/completed/DES-0001.yaml")))))))
+
+(test a-partial-design-stays-flat-because-outstanding-is-work
+  ;; The line the terminal set is drawn on. `partial' and `superseded' are both
+  ;; end states of a design in the sense that no plan is running against them,
+  ;; and only one of them means there is nothing left to do.
+  (with-document-tree (root)
+    (write-document root "docs/design/DES-0002.yaml"
+                    (design-document "DES-0002" '("REQ-0001")))
+    (with-indexed-tree (repository root)
+      (let ((report (set-document-status repository "DES-0002" "partial")))
+        (is (null (getf report :problems)) "~a" (getf report :problems))
+        (is-true (probe-file (merge-pathnames "docs/design/DES-0002.yaml" root))
+                 "the file is still flat")
+        (is (null (probe-file (merge-pathnames "docs/design/completed/DES-0002.yaml" root))))))))
+
 (test a-status-outside-the-categorys-vocabulary-is-refused
   ;; The union of the four workflow vocabularies is what the :DOCUMENT entity
   ;; type declares, so validating against the ontology alone would let a

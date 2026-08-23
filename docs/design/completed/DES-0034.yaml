@@ -1,6 +1,6 @@
 id: DES-0034
 title: "REQ-0045 by analysing the name: one analyzer over both sides for context, and none of it for find"
-status: partial
+status: superseded
 date: 2026-08-22
 refines: [REQ-0045, CON-0007]
 affects: [seed-matches, match-rank, significant-name, task-tokens, stem-variants]
@@ -146,3 +146,13 @@ body: |
   Term weighting. REQ-0046. An analyzer that promotes an exact part match makes
   the missing idf more visible, not less: a name whose part exactly equals a
   common word now ranks 0.
+
+  SUPERSEDED, 2026-08-23
+
+  Status moves from partial to superseded, so that `context' and `impact' stop
+  offering this as work in progress. The design was built, measured at 38 of 45
+  against a baseline of 45, and withdrawn; WHAT IS KEPT above lists the part
+  that stayed in the source. DEC-0006 counts it as one of four ranking
+  mechanisms measured on this tree in August 2026 that came in at baseline or
+  below, and adopts dense candidate generation in place of a fifth. The clause
+  this design served, REQ-0045 R1, is met by DES-0040's second ranked list.

@@ -4,7 +4,7 @@ status: partial
 date: 2026-08-21
 refines: [REQ-0016, CON-0007]
 affects: [seed-score, seed-entities, admit-seeds, build-context, plain-words]
-importance: Critical
+importance: Major
 tags: [retrieval, context, ranking, docstring, stemming, req-0016, req-0035, con-0007]
 summary: |
   REQ-0035 landed: the prose a definition carries is indexed. The seeder still
@@ -214,3 +214,24 @@ body: |
   :SIMILARITY where a term would be, so a caller can see it arrived on
   similarity and the absence report still says which of their words reached
   nothing. The rest of this requirement stands.
+
+  CLOSED AND REPRICED, 2026-08-23
+
+  r39-3 is closed as unreachable rather than left outstanding. `test whether a
+  string starts with a prefix' does not return DOT-PREFIXED-P, and the
+  OUTSTANDING section above records why on both mechanisms: outside the eight
+  lexically, and rank 5 at cosine 0.5627 densely against a relative cut that
+  keeps 0.5629. Lowering the cut was measured on all three instruments and
+  rejected -- 0.90 was chosen over 0.95 and 0, and it is what recovered
+  POLYGONSTOPARTITION. A case no mechanism reaches, whose only proposed fix
+  loses more than it gains, is a recorded gap.
+
+  Importance drops from Critical to Major. This requirement was written because
+  a task worded in the asker's vocabulary did not reach a definition worded in
+  the author's, and REQ-0047's mismatch family is where that is now measured:
+  9 of 120 before DES-0040 and 39 of 120 after. Two of the four opening misses
+  already passed for a reason this requirement did not claim, r39-3 is closed,
+  and what remains is R2, R4 and R5 -- the two kinds of evidence are
+  incomparable, a path term is not an entity term, and a package is seedable.
+  Those are three clauses about the seeder's inputs, not about the gap that
+  made this Critical.
