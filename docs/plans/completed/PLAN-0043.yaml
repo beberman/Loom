@@ -1,6 +1,6 @@
 id: PLAN-0043
 title: "DES-0040 in nine steps: the leaf system, the sidecar, the absent-embedder path first, then fusion, then the weight the simulation could not set, then what a reader has to install"
-status: draft
+status: final
 date: 2026-08-22
 refines: [DES-0040, REQ-0048]
 affects: [seed-entities, seed-matches, admit-seeds, build-context]

@@ -1,6 +1,6 @@
 id: DES-0040
 title: "REQ-0048 in four parts: a leaf system for the embedder, a sidecar keyed by which model wrote it, RRF over two ranked lists, and a seed that answers no term"
-status: draft
+status: implemented
 date: 2026-08-22
 refines: [REQ-0048, DEC-0006]
 affects: [seed-entities, seed-matches, admit-seeds, build-context]
@@ -248,6 +248,36 @@ body: |
   Three cases of 120 is worth that, and it is not worth doing in the middle of
   a step measuring something else. PLAN-0043 S6 sweeps the fusion weight and is
   where a second measured constant belongs.
+
+  D4a  WHAT THE SWEEP SETTLED
+
+  Weight, list length and a relative cut, measured with the neighbour band
+  running, which the simulation could not see:
+
+      weight/limit/cut   known-item   mismatch   judged   R6      R7
+      baseline              410/450      9/120    42/45   10/10   6/6
+      1.0/8/0               440/450     38/120    42/45   10/10   6/6
+      1.5/8/0               441/450     43/120    42/45   10/10   6/6
+      2.0/8/0               441/450     43/120    42/45   10/10   6/6
+      1.5/3/0               442/450     32/120    40/45   10/10   6/6
+      1.5/4/0               443/450     34/120    42/45   10/10   6/6
+      1.5/6/0               443/450     39/120    43/45   10/10   6/6
+      1.5/6/0.90            443/450     37/120    43/45   10/10   6/6
+      1.5/6/0.95            443/450     35/120    41/45   10/10   6/6
+      1.5/8/0.90            443/450     39/120    43/45   10/10   6/6
+
+  Adopted: 1.5, 8, 0.90.
+
+  The simulation predicted equal weight would win and dense-weighting would
+  cost known-item. With the band running it is the other way round, which is
+  the whole reason D4 refused to set the number from a seed-level comparison.
+
+  1.5/3 is refused outright rather than merely scoring badly: it breaks
+  REQ-0016 R8, the acceptance case BUG-0041's design is pinned to.
+
+  The relative cut is what makes list length 8 as safe as 6. Without it a
+  longer list always spends its full budget; with it a query that found one
+  clear answer contributes one candidate.
 
   D6  WHAT ADMIT-SEEDS DOES WITH A CANDIDATE THAT HAS NO SLICE
 
