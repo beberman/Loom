@@ -73,15 +73,22 @@ body: |
   The client separates the connect from the read because they fail for
   different reasons and want opposite numbers.
 
-    *OLLAMA-CONNECT-TIMEOUT*  2 seconds. A loopback connect completes in a
-                              millisecond or never, and this number is paid in
-                              full on every query when ollama is absent.
+    *OLLAMA-CONNECT-TIMEOUT*  2 seconds, spent on a preflight TCP connect that
+                              is opened and closed. A loopback connect completes
+                              in under a millisecond or never, and this number
+                              is paid in full on every query when ollama is
+                              absent.
 
-    *OLLAMA-DEADLINE*         60 seconds, over the whole call, through
-                              SB-SYS:WITH-DEADLINE. drakma on this build bounds
-                              the connect and nothing bounds the read, so an
-                              ollama that accepts a socket and then says nothing
-                              would otherwise hang the caller indefinitely.
+    *OLLAMA-DEADLINE*         60 seconds, over the whole request, through
+                              SB-SYS:WITH-DEADLINE and as drakma's
+                              CONNECTION-TIMEOUT.
+
+  The preflight exists because drakma hands CONNECTION-TIMEOUT to usocket,
+  which applies it to reads as well. Passing the short number there bounded the
+  read at two seconds, which three texts survive at 250 ms and sixty-four do
+  not: the first batch build died with an I/O timeout against a healthy ollama.
+  Separated, the connect probe answers "is anything listening" and the request
+  is free to take as long as embedding a batch actually takes.
 
   Written first as one parameter of thirty seconds, reasoned about a wedged
   embedder, and measured against an absent one: a request to a port nothing

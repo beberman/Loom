@@ -26,7 +26,7 @@ behaviour and not a hazard to work around.")
   (pushnew '("application" . "json") drakma:*text-content-types* :test #'equal))
 
 (defparameter *ollama-connect-timeout* 2
-  "Seconds to wait for the socket to open.
+  "Seconds to wait for a preflight TCP connect, and for that only.
 
 Two, not the thirty this was written as first. A loopback connection either
 completes in a millisecond or is never going to, and the number here is paid in
@@ -37,9 +37,17 @@ would have taken thirty seconds a call rather than the 0.09 s it takes now.
 
 The reasoning that produced thirty was about a different failure. An embedder
 that is installed, listening and slow is a read problem; an embedder that is
-absent is a connect problem; and drakma on this build has one parameter for
-both, so the short number is the one that has to win. What a slow read needs
-instead is DEADLINE.")
+absent is a connect problem.
+
+Passing this to drakma is what the first attempt did, and it is wrong for a
+reason the batch build found: drakma hands CONNECTION-TIMEOUT to usocket, which
+applies it to reads as well, so a two-second connect bound is also a two-second
+read bound. Three texts embed in 250 ms and pass; sixty-four take longer than
+that and the request died with an I/O timeout on a perfectly healthy ollama.
+
+So the short number is spent on REACHABLE-P below, against a socket that is
+opened and closed, and the request itself is given the deadline. Each number
+now bounds one thing.")
 
 (defparameter *ollama-deadline* 60
   "Seconds for the whole call, connect and read together.
@@ -83,6 +91,28 @@ here from the documentation would be a claim about a file nobody checked."))
 (defun ollama-url (embedder)
   (concatenate 'string "http://" (ollama-host embedder) "/api/embed"))
 
+(defun reachable-p (host-and-port timeout)
+  "True when a TCP connect to HOST-AND-PORT completes within TIMEOUT seconds.
+
+The whole of the absent-embedder check, and separate from the request because
+the two failures want opposite numbers. A loopback connect completes in under a
+millisecond or is never going to, so this is cheap when ollama is up and fast
+when it is not -- and it leaves the request free to take as long as embedding
+sixty-four texts actually takes.
+
+The socket is closed immediately. What is being asked is whether anything is
+listening, not anything about what it would say."
+  (let* ((colon (position #\: host-and-port :from-end t))
+         (host (if colon (subseq host-and-port 0 colon) host-and-port))
+         (port (if colon (parse-integer (subseq host-and-port (1+ colon))
+                                        :junk-allowed t)
+                   80)))
+    (handler-case
+        (let ((socket (usocket:socket-connect host port :timeout timeout)))
+          (usocket:socket-close socket)
+          t)
+      (serious-condition () nil))))
+
 (defun post-json (url payload deadline)
   "POST PAYLOAD as JSON to URL and return the decoded reply.
 
@@ -97,7 +127,11 @@ R6 says what it is."
                                  :method :post
                                  :content-type "application/json"
                                  :content payload
-                                 :connection-timeout *ollama-connect-timeout*
+                                 ;; The deadline, not the connect bound: usocket
+                                 ;; applies this to reads too, and a batch of
+                                 ;; sixty-four takes longer than a connect ever
+                                 ;; should. REACHABLE-P is what fails fast.
+                                 :connection-timeout deadline
                                  :want-stream nil))
         (let ((text (if (stringp body)
                         body
@@ -139,7 +173,11 @@ empty sidecar and report success."
         ;; nothing is a round trip for a result already known, and the sidecar
         ;; builder's last batch is empty whenever the count divides evenly.
         (make-array 0)
-        (let* ((url (ollama-url embedder))
+        (progn
+          (unless (reachable-p (ollama-host embedder) *ollama-connect-timeout*)
+            (error 'embedder-unavailable
+                   :detail (format nil "nothing listening on ~a" (ollama-host embedder))))
+          (let* ((url (ollama-url embedder))
                (payload (json:encode-json-to-string
                          `(("model" . ,(ollama-model embedder))
                            ("input" . ,texts))))
@@ -155,4 +193,4 @@ empty sidecar and report success."
             (when (and (plusp (length vectors))
                        (null (ollama-dimensions embedder)))
               (setf (ollama-dimensions embedder) (length (aref vectors 0))))
-            vectors)))))
+            vectors))))))

@@ -57,6 +57,28 @@
    #:default-context-log-directory
    #:configure-context-log-from-environment
    #:loom-root
+
+   ;; the vector sidecar, DEC-0006 and DES-0040 D2
+   #:vector-store-directory
+   #:vector-store-paths
+   #:vector-store
+   #:vector-store-p
+   #:make-vector-store
+   #:vector-store-embedder-id
+   #:vector-store-dimensions
+   #:vector-store-count
+   #:vector-store-built-at
+   #:vector-store-ids
+   #:vector-store-vectors
+   #:vector-store-entity-id
+   #:build-vector-store
+   #:write-vector-store
+   #:load-vector-store
+   #:delete-vector-store
+   #:entity-document
+   #:name-as-words
+   #:*vector-definition-types*
+   #:*vector-batch*
    #:record-context-call
    #:record-query
    #:drain-context-log

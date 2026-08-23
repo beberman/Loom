@@ -24,7 +24,11 @@
   ;; PLAN-0002 TENSIONS item 4 set for :loom-ontology and BORDEAUX-THREADS: a
   ;; system that names a library's symbols should depend on it, whatever it
   ;; would inherit. OLLAMA.LISP decodes a reply body that arrives as octets.
-  :depends-on (#:drakma #:cl-json #:babel)
+  ;;
+  ;; USOCKET for the preflight connect in REACHABLE-P, which is what separates
+  ;; "nothing is listening" from "this batch is taking a while". Transitive
+  ;; through drakma and named on the same precedent as BABEL.
+  :depends-on (#:drakma #:cl-json #:babel #:usocket)
   :serial t
   :components
   (
