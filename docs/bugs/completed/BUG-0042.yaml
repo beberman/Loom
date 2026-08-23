@@ -76,7 +76,8 @@ body: |
 
   HOW IT WAS FOUND
 
-  docs/SeekAndSeeds.md, reviewing why an 86.7% score on a set built from the
+  docs/SeekAndSeeds.md (deleted 2026-08-23, its content now in ARCH-0102),
+  reviewing why an 86.7% score on a set built from the
   entities' own names is evidence of mechanical defects rather than of a
   lexical ceiling. This is the second of the two it named; BUG-0041 was the
   first.
