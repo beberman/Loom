@@ -65,27 +65,16 @@ consumer that never calls it gets the default of writing nothing."
 (defun context-record-path (id &optional (directory *context-log-directory*))
   (merge-pathnames (format nil "~a.json" id) directory))
 
-(defun proper-list-p (value)
-  "True when VALUE is a list that ends in NIL."
-  (and (listp value) (null (cdr (last value)))))
-
-(defun alist-object-p (value)
-  "True when VALUE is an alist, which is the only shape that becomes a JSON
-object here.
-
-One shape for an object and one for an array, which is what removes the guess.
-An alist entry is a cons whose cdr is the value, so `(:name . \"x\")' is
-structurally unlike the list `(\"x\")' and no test has to decide between them.
-
-The first attempt used plists and had to guess: `((:name \"x\" :how \"y\"))' is
-a list holding one plist, and it is also an alist whose single entry is
-(:name . (\"x\" :how \"y\")). Nothing in the data says which, so a used set of
-plists encoded as an object and every reader of it broke. game-server's
-utils/serialize.lisp solved this before Loom met it -- its JSON-ENCODE-HELPER
-has an ALISTP branch and no plist branch at all -- and this is that answer."
-  (and (consp value)
-       (proper-list-p value)
-       (every (lambda (entry) (and (consp entry) (keywordp (car entry)))) value)))
+;;; PROPER-LIST-P and ALIST-OBJECT-P are the library's now: UTILS:PROPER-LIST-P
+;;; and (UTILS:ALISTP value :KEY-TEST #'KEYWORDP). The alist rule they encoded
+;;; is unchanged and is the reason the encoder below needs no guess -- one shape
+;;; for an object, one for an array, an entry being a cons whose cdr is the
+;;; value. That rule came from game-server's serialize.lisp, which had an ALISTP
+;;; branch and no plist branch at all, and the library is where it lives now.
+;;;
+;;; The library's PROPER-LIST-P is also the stronger of the two: it records the
+;;; tails it has visited, so a circular list returns NIL where the LAST-based
+;;; version here would not have returned at all.
 
 (defun encode-record-value (value stream)
   "Write VALUE to STREAM as JSON, recursively.
@@ -104,7 +93,7 @@ alist as an array, which is the opposite of what a record needs."
         ;; says a value is absent, and a boolean field writes :FALSE so a reader
         ;; sees a boolean rather than a null it has to interpret.
         ((eq value :false) (write-string "false" stream))
-        ((alist-object-p value)
+        ((alistp value :key-test #'keywordp)
          (write-char #\{ stream)
          (loop for (key . sub) in value
                for first = t then nil
@@ -234,6 +223,10 @@ how a test or a harness says it needs the file now."
            (root (repository-root repository))
            (head (list (cons :id id)
                        (cons :at (format-timestamp (get-universal-time)))
+                       ;; REQ-0038 R2: one schema with an operation field, so a
+                       ;; reader of this directory can tell what it is looking at
+                       ;; without inferring it from which keys are present.
+                       (cons :operation "context")
                        (cons :task (getf bundle :task))
                        (cons :tokens (getf instrumentation :tokens))
                        (cons :latency-seconds (or seconds 0))))
@@ -247,30 +240,143 @@ how a test or a harness says it needs the file now."
                                (cons :tokens-used (getf bundle :tokens))
                                (cons :truncated (if (getf bundle :truncated)
                                                     t :false)))))))
-      (let ((thread
-              (bt:make-thread
-               (lambda ()
-                 (unwind-protect
-                      (handler-case
-                          (write-json-record
-                           (context-record-path id directory)
-                           (append head
-                                   (list (cons :repository
-                                               (cons (cons :name name)
-                                                     (git-fingerprint root)))
-                                         (cons :loom (git-fingerprint (loom-root))))
-                                   returned))
-                        ;; A log that cannot be written must not take the answer
-                        ;; down with it -- and on another thread it could not
-                        ;; anyway, which is why the reason is recorded where an
-                        ;; operator can read it.
-                        (error (condition) (note-log-failure condition)))
-                   (bt:with-lock-held (*context-log-thread-lock*)
-                     (setf *context-log-threads*
-                           (remove (bt:current-thread) *context-log-threads*)))))
-               :name "loom-context-record")))
-        (bt:with-lock-held (*context-log-thread-lock*)
-          (push thread *context-log-threads*)))
+      (write-record-async
+       id directory
+       (lambda ()
+         (append head
+                 (list (cons :repository
+                             (cons (cons :name name) (git-fingerprint root)))
+                       (cons :loom (git-fingerprint (loom-root))))
+                 returned)))
+      id)))
+
+(defun write-record-async (id directory build)
+  "Write the record BUILD returns to DIRECTORY, on another thread, as ID.
+
+Factored out of RECORD-CONTEXT-CALL when REQ-0038 added a second kind of record:
+the thread bookkeeping, the failure handling and the reason for both are one
+decision and were about to be two copies of it. BUILD is a thunk rather than the
+record because the fingerprints are six `git' invocations at about 13ms each,
+and DES-0030's measurement is that they belong off the caller's path -- a bundle
+is not worth delaying for Loom's own bookkeeping. Facts that could change under
+the caller are read before this is called; what is deferred is only the cost."
+  (let ((thread
+          (bt:make-thread
+           (lambda ()
+             (unwind-protect
+                  (handler-case
+                      (write-json-record (context-record-path id directory)
+                                         (funcall build))
+                    ;; A log that cannot be written must not take the answer down
+                    ;; with it -- and on another thread it could not anyway,
+                    ;; which is why the reason is recorded where an operator can
+                    ;; read it.
+                    (error (condition) (note-log-failure condition)))
+               (bt:with-lock-held (*context-log-thread-lock*)
+                 (setf *context-log-threads*
+                       (remove (bt:current-thread) *context-log-threads*)))))
+           :name "loom-query-record")))
+    (bt:with-lock-held (*context-log-thread-lock*)
+      (push thread *context-log-threads*))
+    id))
+
+(defparameter *record-argument-limit* 200
+  "Longest argument value a record keeps, in characters.
+
+A record says what was asked, not what was sent. CHECK-DOCUMENT takes a whole
+document in its `contents' argument, and a log holding those is a second copy of
+docs/ that nobody asked for and that ages badly. Longer values are recorded as
+their length instead, which is what a judgement about retrieval needs to know
+about them.")
+
+(defun query-argument-alist (arguments)
+  "ARGUMENTS, a decoded request plist, as the alist a record holds.
+
+Keys as they arrived, values only where a value is small enough to be a fact
+about the question rather than a copy of its payload."
+  (loop for (key value) on arguments by #'cddr
+        collect (cons key
+                      (cond ((null value) :false)
+                            ((stringp value)
+                             (if (<= (length value) *record-argument-limit*)
+                                 value
+                                 (format nil "(~d characters)" (length value))))
+                            ((or (numberp value) (keywordp value)) value)
+                            ((eq value t) t)
+                            (t (format nil "~a" (type-of value)))))))
+
+(defun answer-shape (result)
+  "What RESULT amounts to, as the alist a record holds: how many, and whether
+none.
+
+REQ-0038 R3. An empty answer is the single most informative event in the log --
+`find' returning nothing is the cheapest true answer the service gives -- and it
+is the one that leaves no trace today. So the count is recorded for every read,
+and NONE is recorded separately rather than inferred from a zero, because an
+operation whose answer has no countable collection returns a zero that means
+`not applicable'.
+
+The keys are tried in the order the operations return them and the first one
+present wins. A result shape nothing here recognises records its type and no
+count, which is honest and is what makes a new operation visible as unmodelled
+rather than silently counted as empty."
+  (let* ((countable '(:entities :impacted :items :seeds :documents :unresolved
+                      :violations :repositories :systems :changed :problems))
+         ;; Presence, not truth. GETF cannot tell a key that is absent from one
+         ;; whose value is NIL, and the second is the whole subject: an empty
+         ;; :ENTITIES list is `find' answering nothing, which R3 calls the most
+         ;; informative event in the log. Selecting on GETF skipped exactly it
+         ;; and recorded the empty answer as unremarkable.
+         (key (and (listp result)
+                   (find-if (lambda (k) (nth-value 0 (get-properties result (list k))))
+                            countable)))
+         (count (cond (key (length (getf result key)))
+                      ((and (listp result) (not (keywordp (first result))))
+                       (length result))
+                      (t nil))))
+    (append (list (cons :kind (cond (key (string-downcase (symbol-name key)))
+                                    ((null result) "empty")
+                                    ((listp result) "plist")
+                                    (t (string-downcase (princ-to-string
+                                                         (type-of result)))))))
+            (when count (list (cons :count count)))
+            (list (cons :none (if (or (null result) (eql count 0)) t :false))))))
+
+(defun record-query (operation arguments result
+                     &key repository seconds (directory *context-log-directory*))
+  "Write one record for an answered read query, and return its id.
+
+REQ-0038 R1. NIL and no write when DIRECTORY is NIL, which is the default and
+keeps this off unless somebody turned it on -- the same tier argument DES-0030 D1
+makes for the context record.
+
+Every read operation, not only `context', because the judgements REQ-0036
+collected say the answers that decided the work came from `describe',
+`structure' and `find', and none of those is recorded: the operation under
+measurement is the one that performed worst and the three that performed best
+appear in the corpus only as its failures.
+
+REPOSITORY is the one the query named, when it named one. STATUS names none and
+that is a fact about the query rather than a gap."
+  (when directory
+    (let* ((id (context-record-id))
+           (name (and repository (repository-name repository)))
+           (root (and repository (repository-root repository)))
+           (head (list (cons :id id)
+                       (cons :at (format-timestamp (get-universal-time)))
+                       (cons :operation (string-downcase (symbol-name operation)))
+                       (cons :arguments (query-argument-alist arguments))
+                       (cons :latency-seconds (or seconds 0))
+                       (cons :answer (answer-shape result)))))
+      (write-record-async
+       id directory
+       (lambda ()
+         (append head
+                 (list (cons :repository
+                             (if repository
+                                 (cons (cons :name name) (git-fingerprint root))
+                                 :false))
+                       (cons :loom (git-fingerprint (loom-root)))))))
       id)))
 
 (defun seed-alist (seed)

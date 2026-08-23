@@ -4,6 +4,7 @@ status: implemented
 date: 2026-08-05
 affects: [entity-system, edges-between-systems, in-system-p, entities-in-system,
           analyze-file]
+importance: Major
 tags: [rules, layering, analyzer, ontology, generality]
 summary: |
   BUG-0006 fixed ENTITY-SYSTEM to stop reading the leading path segment (every

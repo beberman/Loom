@@ -117,7 +117,41 @@ the argument for what it names."
   (check-capability grants (operation-tier operation)
                     :operation (operation-name operation))
   (validate-arguments operation arguments)
-  (handler-case (values (funcall (operation-function operation) arguments) nil)
-    (request-error (condition) (error condition))
-    (guarded-condition (condition)
-      (values nil (operation-error->plist condition)))))
+  (let ((started (get-internal-real-time)))
+    (handler-case
+        (let ((result (funcall (operation-function operation) arguments)))
+          (record-read-query operation arguments result
+                             (/ (float (- (get-internal-real-time) started))
+                                internal-time-units-per-second))
+          (values result nil))
+      (request-error (condition) (error condition))
+      (guarded-condition (condition)
+        (values nil (operation-error->plist condition))))))
+
+(defun record-read-query (operation arguments result seconds)
+  "Log an answered read, per REQ-0038 R1. Silent unless the log is on.
+
+Here rather than in each operation because this is the one function both skins
+call, so a new operation is logged by existing -- which is R1's whole argument,
+and the reason the alternative (a call at the bottom of twelve operation bodies)
+is one refactor away from an operation nobody remembered to instrument.
+
+:CONTEXT is skipped and writes its own record. It is not the same record: a
+judgement about ranking needs the seeds with their scores and the band each item
+landed in, and that lives where the bundle is built. Both carry :OPERATION so a
+reader of the directory can tell them apart, which is R2.
+
+Writes are the excluded tier and not an oversight -- set-status, complete, watch
+and init change the tree, and an audit trail has different retention and a
+different permission question than a retrieval corpus.
+
+Failure to record must never reach the caller: the answer is computed, correct,
+and about to be returned, and losing it to Loom's own bookkeeping would be the
+worst trade in the file."
+  (when (and (eq :read (operation-tier operation))
+             (not (eq :context (operation-name operation))))
+    (ignore-errors
+     (record-query (operation-name operation) arguments result
+                   :repository (let ((designator (getf arguments :repository)))
+                                 (and designator (find-repository designator)))
+                   :seconds seconds))))

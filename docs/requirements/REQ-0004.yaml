@@ -3,6 +3,7 @@ title: Analyzer extensions for third-party packages load without rebuilding Loom
 status: draft
 date: 2026-07-29
 refines: [REQ-0003]
+importance: Minor
 tags: [analyzer, extensibility, macros]
 summary: |
   REQ-0003 ships a registry of definer macros with the common frameworks

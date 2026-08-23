@@ -4,6 +4,7 @@ status: implemented
 date: 2026-08-15
 refines: [CON-0004]
 affects: [all-tools, find-tool, tool-permitted-p, resolve-caller-grants, check-capability]
+importance: Major
 tags: [mcp, capability, agents, serve, req-0008]
 summary: |
   *TOOLS* is a static list of fourteen and tools/list returns all fourteen to

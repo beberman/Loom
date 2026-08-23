@@ -9,7 +9,17 @@
   ;; first system that knows both how to analyze and where the result goes,
   ;; which is what lets everything below it stay ignorant of the other half.
   :depends-on (#:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge
+               ;; DEC-0006. loom-workspace owns the write path, so it is what
+               ;; builds the vector sidecar; loom-embed is a leaf below both it
+               ;; and loom-knowledge, which reads the store at query time.
+               #:loom-embed
                #:bordeaux-threads
+               ;; The standalone library's kernel: READ-FILE, STRING-LINES,
+               ;; PROPER-LIST-P and ALISTP. The last two were defined in
+               ;; context-log.lisp, the first two were loom-analyzer's -- named
+               ;; here on the same principle the UIOP comment below states, that
+               ;; a system using a library says so rather than inheriting it.
+               #:utils
                ;; UIOP runs `git check-ignore' for DES-0018. Already in the
                ;; image through loom-analyzer, and named here anyway: a
                ;; system that uses a library should say so rather than rely
@@ -53,6 +63,9 @@
    ;; After "workspace": the record writer takes GIT-COMMIT, GIT-DIFF-HASH and
    ;; GIT-BRANCH, and REPOSITORY-NAME and REPOSITORY-ROOT off the struct.
    (:file "context-log")
+   ;; After "context-log": the sidecar takes LOOM-ROOT, and lives beside the
+   ;; log under the same dot-directory for the same two reasons.
+   (:file "vectors")
    )
   :in-order-to ((test-op (test-op :loom-workspace/test)))
   )
@@ -63,9 +76,11 @@
   :author "Brian Eberman"
   :license "MIT"
   :depends-on (#:loom-workspace
+	       #:loom-embed
 	       #:loom-knowledge
 	       #:loom-graph
 	       #:loom-ontology
+	       #:utils
 	       #:fiveam)
   :serial t
   :pathname "test/"
@@ -90,6 +105,7 @@
    ;; After "workspace": the record writer takes GIT-COMMIT, GIT-DIFF-HASH and
    ;; GIT-BRANCH, and REPOSITORY-NAME and REPOSITORY-ROOT off the struct.
    (:file "context-log")
+   (:file "vectors")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-workspace-test :test-runner)

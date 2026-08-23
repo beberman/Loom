@@ -1735,7 +1735,7 @@ transaction."
     ;; --- supersession: what the file defines once loaded (DES-0012 R1) ---
     ;; REQ-0035 S3: the prose written above a definition, filled in once the
     ;; definitions exist rather than threaded through every handler.
-    (attach-comment-documentation analyzer definitions (split-lines contents))
+    (attach-comment-documentation analyzer definitions (string-lines contents))
 
     ;; Here rather than after pass 2, because the point is that a shadowed
     ;; definition's body is never walked at all: no :CALL-NAMES, no local

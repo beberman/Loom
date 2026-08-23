@@ -4,6 +4,7 @@ status: draft
 date: 2026-07-29
 refines: [REV-0001]
 affects: [resolve-document-links, impact-set, impact-report]
+importance: Critical
 tags: [knowledge, console, documents, confidence]
 summary: |
   Every :documents edge in the graph is inferred from prose at 0.5 confidence --

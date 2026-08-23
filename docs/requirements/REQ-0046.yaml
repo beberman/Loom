@@ -1,0 +1,183 @@
+id: REQ-0046
+title: A term must be weighted by how common it is, because every hand-written rule about common words is a missing idf
+status: partial
+date: 2026-08-22
+refines: [REQ-0016]
+affects: [seed-score, seed-matches, admit-seeds, build-context]
+importance: Minor
+tags: [retrieval, context, ranking, idf, con-0007]
+summary: |
+  Nothing in SEED-SCORE weights a term by how rare it is. The coverage band
+  counts every matched token identically, so "check" and "connectivity" are
+  worth the same to a candidate that answers one of them.
+
+  Every workaround this tree has for that is a hand-written rule. REQ-0016 R7
+  reasons in prose about words that "name something in almost any codebase".
+  ADMIT-SEEDS caps a slice at *SEED-TERM-SHARE* because one common word could
+  otherwise fill the set. DES-0032 measured a per-term frequency spread of 0 to
+  150 across six queries and then declined to rank on it, because a constant
+  fitted to six queries on one tree is not a model.
+
+  These are three approximations of one quantity the index can compute exactly.
+body: |
+  WHAT THE LITERATURE SAYS THIS COSTS
+
+  CON-0007 records Hill's qualification: how stemming affects retrieval is
+  mediated by other factors, among them the use of tf-idf to filter commonly
+  occurring terms. Loom takes stemming's recall and skips that weighting, which
+  is why BUG-0040's "stre" could reach STRESS-PUSHER at rank 1 and cost two of
+  eight slots -- a rare-looking token drawing a strong rank with nothing to say
+  it is meaningless.
+
+  WHAT IS ALREADY MEASURED
+
+  Per-term index frequency over six queries on Loom, 2026-08-22, from DES-0032:
+
+    present   rank/15  seeds/8  context/48  bundle/10  starts/4
+              resolve/59  document/135  reference/23  entity/150
+              watch/19  repository/148  changes/7
+    absent    join/2  list/41  strings/1  separator/0
+              parse/26  number/2  string/15
+              reading/14  encoding/2  fallback/1  utf-8/0
+
+  The spread is three orders of magnitude and it is derivable from the index
+  Loom already holds. DES-0032 refused to place a threshold in it and was right
+  to: the gap between `starts' at 4 and `join' at 2 is two entities. A
+  continuous weight is not a threshold and does not have that problem.
+
+  REQUIREMENTS
+
+  R1  A term's contribution to a seed's score falls as the number of entities
+      it matches rises. Continuous, not a cutoff.
+
+  R2  The weight is derived from the index being searched, per repository. A
+      constant fitted to Loom is not a fact about game-server, and REQ-0023 put
+      several repositories behind one service precisely so they could differ.
+
+  R3  Computing it costs no query latency the clauses can see. Context latency
+      is 0.01-0.20s across the acceptance run; a per-term document frequency is
+      one count against an index that already answers FIND-ENTITIES.
+
+  R4  The hand-written approximations are reconsidered against it rather than
+      left beside it. *SEED-TERM-SHARE*, REQ-0016 R7's reasoning and DES-0032's
+      refusal are all about the same quantity, and three rules plus a weight is
+      worse than either alone.
+
+  ACCEPTANCE, AND THE NUMBERS TO BEAT
+
+  Measured 2026-08-22 on both instruments, with the stemmer that DES-0035
+  settled on. These are the target: a term weighting has to clear them, not
+  merely leave them alone.
+
+    instrument                          hybrid      Porter alone
+    acceptance.py, 24 judged cases      42 of 45    40 of 45
+    known-item, 450 generated cases     390 (86.7%) 391 (86.9%)
+      name       150                    125 (83.3%) 124 (82.7%)
+      inflected  150                    134 (89.3%) 134 (89.3%)
+      prose      150                    131 (87.3%) 133 (88.7%)
+
+  Porter alone is listed because it is the only other stemmer measured on both,
+  and because the pair shows what a change of this size looks like when it is
+  not an improvement: two cases apart on the judged instrument and one case
+  apart on the generated one, which at 450 is 0.2% and is churn.
+
+  So the bar is 42 of 45 and 390 of 450, and a weighting that returns 42 and
+  392 has not been shown to do anything. What would show it:
+
+    R1  The `name' family rises. It is the floor of the generated instrument
+        and its weakest at 83.3%, below `inflected' at 89.3% and `prose' at
+        87.3% -- a query that is literally a definition's name in words fails
+        one time in six. The misses are dotted and compound names on the larger
+        tree whose words are the commonest in their repository:
+        Game.addDefinition, wrappedLogger.setLevel, getDefinitionList,
+        PieceRepresentation.fromPoJo. 37 of 60 misses are front-end, which
+        holds 3457 definitions to game-server's 1811. Nothing but a term
+        weighting separates "definition" naming this thing from "definition"
+        naming four hundred others.
+
+    R2  dot-prefixed-p (r39-3) is seated. DES-0034 promoted it to an exact
+        rank-0 match on "prefix" and it still did not reach the eighth slot,
+        because rank is worth 1 against coverage's 100. A weighting is the only
+        mechanism tried that reaches it.
+
+    R3  The three ABSENCE_CASES still report their subject terms as weak or
+        unmatched. A weight that improves ranking and destroys the absence
+        report has moved the defect rather than fixed it -- which DES-0034 did,
+        answering "join" and "encoding" while losing two cases.
+
+  DEC-0005 governs the trade: this may reorder and must not withhold.
+
+  WHY THIS IS THE LEVER, MEASURED THREE WAYS
+
+  Three mechanisms have now failed against the same missing quantity, each
+  from a different direction:
+
+    DES-0033 D2 corrected the coverage band to count distinct words rather
+    than matches, and lost WorkingSet and SaveDesign -- because the count
+    cannot tell a true positive it deflates from a false one.
+
+    DES-0033 D1 ranked a token Loom derived below a word the caller wrote,
+    and moved no case outside Loom at all.
+
+    DES-0034 analysed names so an exact part match scored 0, and fell to 38 of
+    45 -- because promoting most candidates to 0 flattens the band that was
+    breaking the ties, and nothing replaces it.
+
+  Each is a proxy for rarity built without measuring rarity.
+
+  WHAT THIS IS NOT
+
+  Not a relevance model. tf-idf here is one number per term used to weight a
+  band that already exists, not a scoring framework replacing SEED-SCORE's
+  bands. The bands encode decisions -- type preference, the naming band, the
+  test demotion -- that no term weight expresses.
+
+  OPEN QUESTIONS
+
+  - What is a "document" for idf over a code index? An entity is the obvious
+    unit; a file and a system are both defensible and give different numbers.
+  - Does prose share the term statistics of names? A word common in docstrings
+    and rare in identifiers is the case REQ-0045 R2 separates, and it may need
+    two frequencies rather than one.
+
+  OUTSTANDING, 2026-08-23
+
+  Nothing further is to be built here. DES-0036 implemented R1 and R2 and
+  measured them against the acceptance above: 42 of 45 on the judged
+  instrument and 390 of 450 on the generated one, with the `name' family at
+  82.7% against 83.3%. The acceptance says what that means -- "a weighting that
+  returns 42 and 392 has not been shown to do anything" -- and this returned 42
+  and 390. Weighting in tenths of a term rather than whole terms returned 40
+  and 389, so the coarseness was not what limited it.
+
+  R1's four named misses are diagnosed, and the diagnosis is not a tuning
+  problem. Game.addDefinition, wrappedLogger.setLevel and PinSet came back with
+  byte-identical item counts. idf discriminates between the terms within a
+  query and those queries hold no rare term: "game add definition" against
+  front-end weighs game at df 252, add at 38 and definition at 17. What seats a
+  name carrying all three terms above one carrying the commonest of them is a
+  proximity signal.
+
+  R2 asked that dot-prefixed-p be seated, and it is refused on both mechanisms.
+  Lexically it ranks outside the eight; densely it is rank 5 at cosine 0.5627
+  against a relative cut that keeps 0.5629, and REQ-0039 records that lowering
+  the cut was measured on all three instruments and rejected.
+
+  R3 is met by a different mechanism. REQ-0048 R4 forbids a semantic seed from
+  marking a term ANSWERED, and the three ABSENCE_CASES are its check rather
+  than this document's.
+
+  R4 does not become work. *SEED-TERM-SHARE* and REQ-0016 R7's reasoning stay
+  as they are, because the quantity they approximate was measured and does not
+  move a case.
+
+  What landed is D1's by-product, and it is why this is partial rather than
+  draft. SEED-MATCHES returns each token's document frequency as a second
+  value, TERM-WEIGHT and WEIGHTED-COVERAGE are in the source unused by
+  SEED-SCORE, and a later mechanism wanting rarity has it for one LENGTH per
+  token.
+
+  Importance drops from Critical to Minor. Rarity was Critical while three
+  hand-written rules approximated a quantity nobody had measured. DES-0036
+  measured it. A mechanism that wants it again should be a new requirement with
+  a new hypothesis, because this one's numbers are spent.

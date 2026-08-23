@@ -165,19 +165,6 @@ heuristic is sound."
        (evenp (length list))
        (loop for rest on list by #'cddr always (keywordp (car rest)))))
 
-(defun improper-list-p (x)
-  "True when X is a cons whose last cdr is not NIL -- a dotted pair, or a list
-ending in one. CL has no such predicate and loom-serve depends on no library
-that supplies one, so it is three lines here rather than a dependency."
-  (and (consp x)
-       ;; The CONSP guard is the whole predicate for every value that is not a
-       ;; list: without it the loop falls straight to its FINALLY and reports
-       ;; any non-NIL atom as improper -- a vector, a number, a string -- and
-       ;; JSON-VALUE would render the MCP tools list as one PRINC-TO-STRING.
-       (loop for tail = x then (cdr tail)
-             while (consp tail)
-             finally (return (not (null tail))))))
-
 (defun json-array (sequence)
   "SEQUENCE as a vector of encoded elements.
 

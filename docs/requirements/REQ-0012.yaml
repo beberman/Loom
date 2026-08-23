@@ -4,6 +4,7 @@ status: partial
 date: 2026-08-06
 affects: [generic-definition-entities, method-definition-entity, analyze-file,
           make-method-entity, make-interface-entity, definition-p]
+importance: Major
 tags: [analyzer, lisp, clos, generality, blind-spot]
 summary: |
   Common Lisp lets a method body be written two ways: a standalone DEFMETHOD,

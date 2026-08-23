@@ -7,6 +7,7 @@ affects: [build-context, context-item, render-context, seed-entities, search-ent
           task-tokens, task-terms, stem-variants, slot-accessor-p, test-code-p,
           named-by-task-p, production-names, demoted-test-p,
           expand-from-seeds, edge-cost, container-p, effective-cost]
+importance: Critical
 tags: [knowledge, console, context, ranking, retrieval, con-0006, req-0031, req-0035]
 summary: |
   Asked `context data-handler` against ~/lisp/game-server on 2026-08-06, Loom

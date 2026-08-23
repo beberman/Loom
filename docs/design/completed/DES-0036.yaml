@@ -1,0 +1,173 @@
+id: DES-0036
+title: "REQ-0046 by weighting the coverage band: a term is worth what its rarity in this repository says, and the count already being taken is the measurement"
+status: superseded
+date: 2026-08-22
+refines: [REQ-0046, CON-0007]
+affects: [seed-matches, seed-score, seed-entities, find-entities]
+tags: [retrieval, context, ranking, idf, con-0007, req-0016]
+summary: |
+  SEED-SCORE's coverage band counts matches. A candidate answering three common
+  words scores exactly as one answering three rare ones, and REQ-0016 R7's
+  reasoning about words that "name something in almost any codebase",
+  ADMIT-SEEDS' slice cap and DES-0032's refusal to place a rarity threshold are
+  three hand-written approximations of the quantity that would tell them apart.
+
+  The measurement is already being taken. SEED-MATCHES calls FIND-ENTITIES per
+  token and throws away the length of what comes back, which is that token's
+  document frequency in this repository. Weighting the band by it costs one
+  number per token and no extra walk of the index.
+body: |
+  D1  THE FREQUENCY IS A BY-PRODUCT, NOT A NEW PASS
+
+  SEED-MATCHES already walks the tokens and calls
+  (FIND-ENTITIES VIEW :NAME-LIKE TOKEN) for each. The length of that list is
+  how many entities in this repository carry the token in a name -- the
+  document frequency, taken and discarded on every query since REQ-0016.
+
+  It returns it as a second value: an alist of token to count. REQ-0046 R3 asks
+  that the weighting cost no latency the clauses can see, and this is stronger
+  than that: it costs one LENGTH per token.
+
+  R2 asks that the weight be derived per repository, which this is by
+  construction -- the count is over the view being searched, and REQ-0023 put
+  several repositories behind one service so that "check" could be common in
+  one and absent from another.
+
+  D2  THE WEIGHT
+
+  Inverse document frequency, normalised so a term matching one entity is worth
+  1 and a term matching everything is worth nearly 0:
+
+      w(t) = log(N / df(t)) / log(N)
+
+  N is the entity count of the view. The division by log(N) is what makes the
+  weight comparable between repositories of different sizes -- front-end holds
+  3457 definitions to game-server's 1811, and an unnormalised idf would make
+  every front-end term look rarer.
+
+  Measured on Loom, where N is about 3000, against DES-0032's per-term counts:
+
+      separator   df 0  -> 1.00     watch      df 19  -> 0.64
+      strings     df 1  -> 1.00     reference  df 23  -> 0.61
+      join        df 2  -> 0.91     parse      df 26  -> 0.59
+      starts      df 4  -> 0.83     list       df 41  -> 0.54
+      changes     df 7  -> 0.76     context    df 48  -> 0.53
+      seeds       df 8  -> 0.74     resolve    df 59  -> 0.51
+      bundle      df 10 -> 0.71     document   df 135 -> 0.39
+      encoding    df 2  -> 0.91     repository df 148 -> 0.38
+      fallback    df 1  -> 1.00     entity     df 150 -> 0.38
+
+  A rare term is worth about two and a half times a common one. That is the
+  whole spread and it is deliberately not larger: REQ-0046 asks for a
+  continuous weight and not a cutoff, and DES-0032 refused a threshold because
+  the gap between `starts' at 4 and `join' at 2 is two entities.
+
+  D3  THE BAND KEEPS ITS SHAPE
+
+  Coverage stays an integer from 0 to 8 and the band stays worth 100, so no
+  other band moves and no constant is restructured. What changes is what is
+  counted:
+
+      before   (length matches)
+      after    (round (reduce #'+ matches :key weight-of-its-term))
+
+  A candidate answering three rare terms still counts 3. One answering three
+  common terms counts 1. One answering a single exact rare name counts 1, as
+  it does today.
+
+  Rounding rather than a rational or a float, and the coarseness is the point.
+  The alternative is a score whose lower digits carry a continuous quantity,
+  which collides with the prose band at 10 and the rank band at 0-3 and would
+  need every constant in SEED-SCORE multiplied by 100. That is a larger change
+  than the hypothesis being tested, and it can follow if the rounding is what
+  limits the result.
+
+  D4  WHAT IS DELIBERATELY LEFT ALONE
+
+  ADMIT-SEEDS' slice cap. REQ-0046 R4 asks that the hand-written
+  approximations be reconsidered against the weight rather than left beside it,
+  and that is right -- but three of them cannot all be pulled at once and still
+  leave a measurement anybody can read. The cap goes second, measured on its
+  own.
+
+  The prose pass. A term's frequency in docstrings is not its frequency in
+  names, and REQ-0045 R2 is where the two get separate treatment. Prose matches
+  are weighted by the name-side frequency here, which is an approximation and is
+  recorded as one.
+
+  The absence report. DES-0032's ANSWERED, WEAK and UNMATCHED are computed from
+  which seeds were admitted, so they follow the ranking without reading the
+  weight. REQ-0046 R3 requires the three ABSENCE_CASES still pass, and that is
+  a measurement rather than a property of this design.
+
+  MEASURED, AND NOT ADOPTED
+
+  Built and measured on 2026-08-22 against REQ-0046's stated bar.
+
+    band                       acceptance    known-item   name family
+    (length matches)           42 of 45      390 of 450   83.3%
+    weighted, whole term       42 of 45      390 of 450   82.7%
+    weighted, tenths of a term 40 of 45      389 of 450   82.7%
+
+  The first two rows are the same two numbers. REQ-0046's acceptance says what
+  that means: "a weighting that returns 42 and 392 has not been shown to do
+  anything", and this returned 42 and 390. The third row is worse, losing
+  ColorEditor (fe-4) and EditorModeToggle (fe-9), so the coarseness this design
+  called deliberate was not what limited the result.
+
+  It is not inert. Bundles change substantially -- R7's item count went 170 to
+  66 -- and the per-case diff against the unweighted band is two gained and two
+  lost, which at 450 cases is churn. The weighting is doing something; it is not
+  doing this.
+
+  WHY IT CANNOT REACH REQ-0046 R1
+
+  Three of the four misses R1 named came back with byte-identical item counts:
+  Game.addDefinition at 74, wrappedLogger.setLevel at 8, PinSet at 158.
+
+  idf discriminates between the terms *within* a query, and these queries have
+  no rare term to find. "game add definition" against front-end weighs game at
+  df 252, add at 38 and definition at 17 -- all common, all weighted alike, so
+  every candidate moves together and none moves past another. What the case
+  needs is for a name carrying all three terms to beat one carrying the
+  commonest of them, and that is a proximity signal rather than a per-term
+  weight.
+
+  The diagnosis of those queries found two defects neither this design nor
+  REQ-0046 anticipated, and they are the real subject:
+
+    "game add definition" reports two terms, not three. "add" is a stopword, so
+    the query competes on game and definition alone.
+
+    "wrapped logger set level" returns eight seeds all named `logger'. Measured
+    across the 450: 35 cases return eight seeds carrying three or fewer distinct
+    names, and 8 of those carry one name eight times. ADMIT-SEEDS charges a
+    slice per *name* rather than per entity -- deliberately, so REQ-0016 R8's
+    three CONNECTION-CONNECT-DATABASE definitions all reach the bundle -- and a
+    name with eight definitions therefore spends eight slots on one charge.
+    BUG-0041.
+
+  WHAT IS KEPT
+
+  TERM-WEIGHT and WEIGHTED-COVERAGE stay in the source, unused by SEED-SCORE,
+  which counts matches as before and whose constants are back where they were.
+  SEED-MATCHES keeps returning the frequencies, because D1 is the part that was
+  right: the count was already being taken and thrown away, it costs one LENGTH
+  per token, and any later mechanism that wants rarity now has it.
+
+  WHAT WOULD REFUTE IT
+
+  REQ-0046's acceptance names the numbers: 42 of 45 on the judged instrument
+  and 390 of 450 on the generated one, with the `name' family at 83.3% and
+  dot-prefixed-p missing. A weighting that returns those numbers unchanged has
+  not been shown to do anything, and three mechanisms have already done exactly
+  that from three directions.
+
+  SUPERSEDED, 2026-08-23
+
+  Status moves from partial to superseded, so that `context' and `impact' stop
+  offering this as work in progress. MEASURED, AND NOT ADOPTED above is the
+  outcome and WHAT IS KEPT is the residue. REQ-0046 is repriced to Minor on
+  these numbers, and DEC-0006 counts this as the fourth of four ranking
+  mechanisms measured on this tree in August 2026 that came in at baseline or
+  below.

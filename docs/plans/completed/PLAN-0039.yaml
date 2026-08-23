@@ -1,0 +1,71 @@
+id: PLAN-0039
+title: "DES-0033 in four steps: the origins map, the ranked scale, the coverage band, the measurement"
+status: final
+date: 2026-08-22
+refines: [DES-0033]
+affects: [task-tokens, seed-score, best-name-rank, seed-matches]
+tags: [retrieval, context, ranking, stemming, req-0039]
+summary: |
+  Four steps. S1 records where each token came from and changes no ranking; S2
+  and S3 are the two bands that read it; S4 is the acceptance run that decides
+  whether r39-3 moves.
+
+  S1 is separable and worth landing on its own: TASK-TOKENS keeps its contract
+  and its callers, and the suite must be green before either band reads the new
+  value.
+body: |
+  S1  TASK-TOKEN-ORIGINS
+
+  A sibling of TASK-TOKENS returning (token . origin) in the order TASK-TOKENS
+  returns tokens, with TASK-TOKENS redefined as its keys. A written word maps
+  to itself; a compound part and a stem variant map to the word they came from.
+
+  Recorded at construction rather than reconstructed, per DES-0033 D3: "str" is
+  derivable from both "string" and "strings" and a reconstruction has to guess.
+
+  The guard is that TASK-TOKENS is unchanged. Every existing test over it must
+  pass untouched, including TASK-TOKENS-KEEPS-A-COMPOUND-WHOLE-AND-SPLIT and
+  A-STEM-IS-ADDED-AND-NEVER-SUBSTITUTED.
+
+  S2  THE RANK SCALE
+
+  SEED-MATCHES records (token . rank) where rank is MATCH-RANK's 0/1/2 or
+  :PROSE. Add 3 to the rank of a match whose token is not a written word, and
+  move BEST-NAME-RANK's prose-only fallback from 3 to 6.
+
+  The scale is DES-0033 D1. Its test is the measured inversion: a candidate
+  reached by a prefix match on a stem must rank below one reached by a substring
+  match on the word the stem came from -- STRESS-PUSHER at stre(1) against
+  FIRST-STRING-LITERAL at string(2), which today score 100601 and 100602.
+
+  S3  COVERAGE OVER ORIGINS
+
+  SEED-SCORE's coverage band counts distinct origins rather than matches.
+  FIRST-STRING-LITERAL, matching "string" and "str", goes from 2 to 1.
+
+  Two bands change in one direction each, so run the suite between S2 and S3.
+  A single run afterwards cannot say which band moved a case.
+
+  S4  THE MEASUREMENT
+
+  tools/acceptance.py, whose baseline is 42 of 45 strict with config-get,
+  MapElementTypeEditor and dot-prefixed-p missing. r39-3 is dot-prefixed-p and
+  is what this plan is for. The other two are not predicted to move.
+
+  A fall anywhere else is a stop: DEC-0005 buys recall with precision and this
+  plan spends precision, so a case lost is the plan failing rather than a trade.
+
+  The three ABSENCE_CASES must also still pass. They read the DES-0032 term
+  report, which classifies on written terms only and is unaffected by the rank
+  scale -- worth confirming rather than assuming, since S3 changes the band that
+  decides which candidates are admitted at all.
+
+  RISKS
+
+  Prose-only candidates fall by 3 and stem-only candidates by 3, and both are
+  currently seeding real bundles. On a tree with no docstrings the prose change
+  is inert -- front-end is 60 of the 106 recorded queries and carries almost no
+  prose -- so the risk concentrates on Loom and game-server.
+
+  The coverage band is the widest under type and naming, so S3 moves more than
+  S2 does. If the acceptance run falls, S3 is the first suspect.

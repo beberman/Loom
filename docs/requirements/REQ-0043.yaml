@@ -1,0 +1,81 @@
+id: REQ-0043
+title: A definition nothing can reach must be reported, whether because no build file loads its file or because the name is exported and defined nowhere
+status: draft
+date: 2026-08-21
+refines: [REQ-0013]
+affects: [analyze-file, repository-files, repository-status, check-document-references]
+importance: Major
+tags: [check, dead-code, build-file, exports, asdf, con-0001]
+summary: |
+  Loom indexes a source file whether or not any build file loads it. So a file
+  missing from its .asd looks healthy: its definitions are in the graph, they
+  have no callers, and "no callers" is reported as a fact about the code rather
+  than about the build. It is true for the wrong reason -- there is nothing to
+  call, because nothing loads it -- and the only way to see the difference is to
+  read the build file by hand.
+
+  Three instances found across three repositories in one sitting, plus the
+  neighbouring case: a package exporting a name that nothing defines.
+body: |
+  THE INSTANCES
+
+  - game-server/utils/token.lisp: five exported names, absent from the .asd,
+    never loaded, reported by nothing. It was deleted for having no callers --
+    the right outcome reached by an argument that happened not to apply.
+  - datascience/pursuit/utils/range-tree.lisp: 12K, same condition.
+  - matrix-utils exports INNER-PRODUCT, FLETCHER-REEVES, POLACK-RIBIERE and
+    CONJUGATE-DIR. None exists anywhere under ~/lisp, and its own test suite
+    calls all four. *"`find` returning nothing was the signal, but nothing
+    reports it unasked."*
+
+  And from the utils migration, the confirmation that this is a standing gap
+  rather than an anecdote: *"ASDF component lists and :import-from forms --
+  Known gap, confirmed... both were enumerated with the shell as the skill says
+  to. Also confirmed two files import `encode-symbol`, which package.lisp does
+  not export -- visible only by reading the forms."*
+
+  WHY THE ANALYZER IS ALREADY CLOSE
+
+  It reads .asd files as Lisp -- they are in the index, they are how
+  DEFAULT-SYSTEM-FOR-PATH answers -- so the component lists are in reach. What is
+  missing is the comparison between the files a system lists and the files the
+  tree holds, and the report that names the difference.
+
+  REQUIREMENTS
+
+  R1  `check` reports a source file the analyzer indexed that no build file in
+      the repository loads. It is the same report as an unresolved reference: a
+      fact the index derived and cannot act on.
+
+  R2  `check` reports a name a package exports and nothing defines.
+
+  R3  Neither is an error and neither blocks. A tree mid-refactor has both,
+      legitimately and briefly, and a check that fails the build for it will be
+      turned off. CON-0001's posture: record the gap, name the instance.
+
+  R4  A "no callers" answer distinguishes the two cases. `describe` on a
+      definition in an unloaded file should say that its file is not loaded,
+      because that changes what the zero means and it is the difference between
+      dead code and unreachable code.
+
+  R5  A caller can ask the question directly: what in this repository has no
+      inbound edges. From the judged log: *"If context could seed on 'what here
+      has no inbound edges', that would be worth more than the neighbourhood
+      expansion."* 33 definitions were deleted from gs-utils on `describe`
+      answers gathered one at a time.
+
+  ACCEPTANCE
+
+  Against a fixture repository holding one file absent from its .asd and one
+  package exporting an undefined name, `check` reports both, names them, and
+  reports nothing else new. Against Loom itself, `check`'s existing 8 unresolved
+  references and 0 violations do not change.
+
+  OPEN QUESTIONS
+
+  - "Loads" is per build system. ASDF's component list is one shape; package.json
+    and an import graph are another, and R1 should be stated per analyzer rather
+    than assuming a components list exists.
+  - A file deliberately outside the build -- Loom's own src/full-test.lisp is one,
+    and says so in a comment -- must be markable, or R1 produces a permanent
+    false positive on the tree that introduced it.

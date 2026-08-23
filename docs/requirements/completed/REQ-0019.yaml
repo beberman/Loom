@@ -3,6 +3,7 @@ title: The Lisp analyzer should read through a conforming, customizable, recover
 status: implemented
 date: 2026-08-09
 refines: [REQ-0012, REQ-0015]
+importance: Critical
 tags: [analyzer, lisp, reader, spans, provenance, blind-spot]
 summary: |
   Four functions in src/analyzer/lisp-analyzer.lisp -- 169 lines whose

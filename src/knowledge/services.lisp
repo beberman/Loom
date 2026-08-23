@@ -15,6 +15,46 @@
 (in-package :loom-knowledge)
 
 ;;;; ==================================================================
+;;;; A name as English -- what an embedder is given, and what two names are
+;;;; compared on (DES-0040 D3, DES-0041 D4)
+;;;; ==================================================================
+
+(defun name-as-words (name)
+  "NAME split on separators and at a lower-to-upper boundary, space-joined.
+
+DES-0040 D3. An embedder tokenizes English and GETTYPEFROMOBJ is not English;
+split, it is three words the model has seen a great many times. The same
+reasoning TASK-TOKENS applies to a compound before matching it, for the same
+reason, against a different consumer.
+
+In loom-knowledge rather than beside ENTITY-DOCUMENT, which is the only thing
+that called it until PLAN-0044 S1. DES-0041 D4 has the survey call two entities
+name-equal when this function agrees on them, and that is the same statement as
+`their vectors cannot tell them apart' only while one function answers both
+questions. loom-workspace depends on this system (DES-0022 S3), so the builder
+still reaches it; a second copy down here would drift, and the drift would
+surface as a survey reporting a pair it had already filtered."
+  (let ((words '())
+        (current (make-string-output-stream)))
+    (flet ((finish ()
+             (let ((word (get-output-stream-string current)))
+               (when (plusp (length word)) (push (string-downcase word) words)))))
+      (loop for i from 0 below (length name)
+            for char = (char name i)
+            do (cond ((not (alphanumericp char)) (finish))
+                     ;; A lower-to-upper boundary starts a word, so "getType"
+                     ;; splits and "URL" does not fragment into three.
+                     ((and (upper-case-p char)
+                           (plusp i)
+                           (lower-case-p (char name (1- i))))
+                      (finish)
+                      (write-char char current))
+                     (t (write-char char current)))
+            finally (finish)))
+    (format nil "~{~a~^ ~}" (nreverse words))))
+
+
+;;;; ==================================================================
 ;;;; Summaries -- the shared vocabulary of every answer
 ;;;; ==================================================================
 

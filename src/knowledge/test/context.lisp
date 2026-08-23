@@ -60,6 +60,123 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
 (defun seed-names (graph task &key (limit 8))
   (mapcar #'name (loom-knowledge::seed-entities graph task :limit limit)))
 
+(test every-recorded-seed-carries-the-terms-it-was-admitted-on
+  ;; BUG-0037, and the same destructive-sort defect THE-COUNTS-AGREE-WITH-THE-
+  ;; LIST-THEY-COUNT guards in prose.lisp. STABLE-SORT rearranges the conses it
+  ;; is given, so a variable read again after the sort names the sorted list
+  ;; from its old head onwards -- and the ASSOC building this second value then
+  ;; found nothing for any seed that sorted ahead of that head. Those rows were
+  ;; recorded with `terms' NIL and a score of 100813, which is SEED-SCORE of no
+  ;; matches at all.
+  ;;
+  ;; The fixture puts the loss on the seed that answers the task. SEED-MATCHES
+  ;; walks the tokens in order, so "check" makes CHECK-SLOT the head of the
+  ;; alist; DATABASE-HANDLER-HEALTH covers three terms to CHECK-SLOT's one and
+  ;; sorts first. Without COPY-LIST, MATCHES names the four-element suffix from
+  ;; CHECK-SLOT on, and the rank-1 seed is the one recorded with nothing.
+  (multiple-value-bind (seeds detail)
+      (loom-knowledge::seed-entities
+       (seed-graph "check-slot" "check-obj" "database-handler-health"
+                   "database-alert" "connection-connect-database")
+       "check the database handler health")
+    (is (= (length seeds) (length detail))
+        "one recorded row per admitted seed")
+    ;; The sentinel is computed rather than written down. It was the literal
+    ;; 100813 until DES-0036 multiplied SEED-SCORE's bands by ten, at which
+    ;; point a test asserting a number from the old scale failed for a reason
+    ;; that had nothing to do with what it covers. SEED-SCORE of no matches is
+    ;; the thing being guarded against, so ask for it.
+    (let ((matched-nothing
+            (loom-knowledge::seed-score (first seeds) '()
+                                        :demote-tests t
+                                        :terms '()
+                                        :production (make-hash-table :test #'equalp))))
+      (dolist (row detail)
+        (is (getf row :terms)
+            (format nil "~a was recorded with no terms" (getf row :name)))
+        (is (< (getf row :score) matched-nothing)
+            (format nil "~a scored ~a, as if it had matched nothing"
+                    (getf row :name) (getf row :score)))))))
+
+(test a-noun-ending-in-ing-is-not-stemmed-as-a-verb
+  ;; BUG-0040, DES-0033 D4, CON-0007. The four hand-written suffix rules that
+  ;; stood in STEM-VARIANTS fired the -ing rule on any word of six characters
+  ;; or more. "string" is exactly six, so it emitted "str" and "stre" -- and
+  ;; "stre" prefix-matched STRESS-PUSHER and STRESS-WRITER at rank 1, taking
+  ;; two of eight seed slots on a query about string prefixes.
+  ;;
+  ;; The assertions are a pair on purpose. Dropping the rule would pass the
+  ;; first and fail the second: "saving" -> "save" is what reaches SAVEDESIGN
+  ;; on front-end, is acceptance case fe-10, and is the one measured gain the
+  ;; hand-written rules were ever kept for.
+  (let ((tokens (loom-knowledge::task-tokens "trim whitespace from a string")))
+    (is (not (member "str" tokens :test #'string=))
+        "\"string\" is not the -ing form of \"str\"")
+    (is (not (member "stre" tokens :test #'string=))
+        "and \"stre\" is not a word anybody typed")
+    (is (member "string" tokens :test #'string=)
+        "the word the caller wrote survives"))
+  (let ((tokens (loom-knowledge::task-tokens "saving a piece design")))
+    (is (member "save" tokens :test #'string=)
+        "a real inflection still stems, which is what reaches SAVEDESIGN")
+    (is (member "saving" tokens :test #'string=)
+        "added beside the word rather than replacing it")))
+
+(test the-reported-terms-are-the-caller-s-words-the-seeder-searched-on
+  ;; DES-0032, PLAN-0038 S1. Neither list alone is the right one to report.
+  ;; TASK-TERMS keeps stopwords; TASK-TOKENS holds the fragments Loom split
+  ;; compounds into. The intersection is what the caller wrote and the seeder
+  ;; looked for, and it is what keeps one absent word from being reported as
+  ;; three.
+  (let ((reported (loom-knowledge::reported-terms
+                   "reading a file with an encoding fallback when it is not UTF-8")))
+    (is (member "utf-8" reported :test #'string=)
+        "the caller wrote utf-8 and the seeder searched it")
+    (is (not (member "utf" reported :test #'string=))
+        "utf is Loom's fragment of the caller's word, not a word of the task")
+    (is (not (member "encod" reported :test #'string=)))
+    (dolist (stopword '("a" "with" "when" "it" "is" "not"))
+      (is (not (member stopword reported :test #'string=))
+          (format nil "~a is a stopword and would report as an absence" stopword)))))
+
+(test a-term-nothing-matched-still-gets-a-row
+  ;; The row the whole report exists for. A table built by walking the matches
+  ;; holds a row per term that matched something, which is every term except
+  ;; the one worth naming.
+  (let* ((a (k-function "parse-document" 10))
+         (matches (list (cons a (list (cons "parse" 1)))))
+         (coverage (loom-knowledge::term-coverage matches '("parse" "number"))))
+    (is (= 2 (length coverage)) "one row per reported term, matched or not")
+    (let ((row (assoc "number" coverage :test #'string=)))
+      (is (not (null row)) "the unmatched term has a row")
+      (is (null (getf (cdr row) :name)))
+      (is (null (getf (cdr row) :prose))))))
+
+(test a-term-is-answered-only-when-an-admitted-seed-carries-it-in-its-name
+  ;; DES-0032 D2's three states, and the two boundaries that matter. A term
+  ;; matched only in prose is WEAK, not ANSWERED -- that is the join case,
+  ;; where two candidates use the word in a docstring and no name has it. A
+  ;; term whose name matches were all held back by the cap is WEAK too: the
+  ;; caller cannot see an answer, and calling it answered would describe the
+  ;; ranking rather than the bundle.
+  (let* ((named    (k-function "parse-document" 10))
+         (prosed   (k-function "comment-extent" 30))
+         (unchosen (k-function "parse-verdicts" 50))
+         (matches (list (cons named    (list (cons "parse" 1)))
+                        (cons prosed   (list (cons "number" :prose)))
+                        (cons unchosen (list (cons "verdict" 1)))))
+         (coverage (loom-knowledge::term-coverage
+                    matches '("parse" "number" "verdict" "separator")))
+         (states (loom-knowledge::classify-terms coverage (list named prosed))))
+    (is (eq :answered  (cdr (assoc "parse" states :test #'string=)))
+        "an admitted seed has parse in its name")
+    (is (eq :weak      (cdr (assoc "number" states :test #'string=)))
+        "matched in prose only, by an admitted seed -- still not a name")
+    (is (eq :weak      (cdr (assoc "verdict" states :test #'string=)))
+        "a name match on a candidate no slot went to is not an answer")
+    (is (eq :unmatched (cdr (assoc "separator" states :test #'string=)))
+        "nothing in the index matched it at all")))
+
 (test a-name-answering-more-of-the-task-outranks-one-answering-a-common-word
   ;; Match quality alone cannot tell these apart: every candidate here matches
   ;; some token as a prefix, so before REQ-0016 R7 they all scored identically
@@ -92,6 +209,141 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
         "one English word must not take the bundle")
     (is (member "database-alert" names :test #'string=)
         "and what it was crowding out has to arrive")))
+
+(test a-word-a-code-tree-names-things-with-is-searched-rather-than-dropped
+  ;; DES-0038. Every one of these was a stopword, and each was measured losing
+  ;; a case whose answer is named after it: `game add definition' for
+  ;; GAME.ADDDEFINITION, `get feature layer' for GETFEATURELAYER, `pin set' for
+  ;; PINSET, `make table handler' for MAKE-TABLE-HANDLER.
+  ;;
+  ;; "pin set" is the one to read. Dropping `set' left that query one token
+  ;; long, so the word carrying the whole distinction between PIN and PINSET
+  ;; never reached the index at all.
+  (let ((tokens (loom-knowledge::task-tokens "get type from obj")))
+    (is (member "get" tokens :test #'string=)
+        "the commonest verb in a code tree is a word the caller meant")
+    (is (member "from" tokens :test #'string=)
+        "and FROMPOJO and FROMLL are named after this one"))
+  (dolist (word '("set" "add" "make" "test" "file" "class" "new" "update"))
+    (is (member word (loom-knowledge::task-tokens (format nil "pin ~a" word))
+                :test #'string=)
+        (format nil "~a reaches the index" word))))
+
+(test and-stays-a-stopword-because-a-judged-case-says-so
+  ;; The one word DES-0038 measured and did not free. Freeing it scored 3 of
+  ;; the 450 generated cases better and cost REQ-0016 R8, whose query is
+  ;; `data-api handler database connection acquire and test connectivity' and
+  ;; which stopped returning CONNECTION-CONNECT-DATABASE at all. REQ-0036 R11
+  ;; makes the judged set the held-out one; a generated case does not outvote
+  ;; it.
+  (is (not (member "and" (loom-knowledge::task-tokens "namespace add and find")
+                   :test #'string=))
+      "and is English here, whatever TEST-NAMESPACE-ADD-AND-FIND is called")
+  (is (member "add" (loom-knowledge::task-tokens "namespace add and find")
+              :test #'string=)
+      "which is not an argument about the word beside it"))
+
+(test a-candidate-answering-only-a-weak-word-is-not-a-seed
+  ;; The half of DES-0038 that makes the other half safe. `get' names something
+  ;; in almost any code tree, so searching it without this admits every GETX in
+  ;; the repository as a seed in its own right -- measured on game-server, `get
+  ;; database config' returned GET-GAME-DB-ID and GET-TYPEID and lost
+  ;; GET-DATABASE-CONFIG, which it had found while `get' was a stopword.
+  (let ((names (seed-names (seed-graph "get-database-config" "get-typeid"
+                                       "get-game-db-id" "database-alert")
+                           "get database config")))
+    (is (string= "get-database-config" (first names))
+        "three terms answered beats one, and only this candidate answers three")
+    (is (not (member "get-typeid" names :test #'string=))
+        "a candidate whose only answer is `get' is not a candidate")
+    (is (member "database-alert" names :test #'string=)
+        "while a candidate answering a term that is not weak stays one")))
+
+(test a-task-written-entirely-out-of-weak-words-still-seeds
+  ;; The relaxation, the same shape ADMIT-SEEDS uses and for the same reason.
+  ;; The filter drops a candidate that answered nothing but weak terms, which
+  ;; for this task is every candidate there is -- and a bundle of nothing is a
+  ;; worse answer than a bundle of what the words actually reached.
+  (let ((names (seed-names (seed-graph "get-set" "settings" "getter")
+                           "get set")))
+    (is (plusp (length names))
+        "an empty pool is returned whole rather than as no seeds at all")
+    (is (member "get-set" names :test #'string=)
+        "and the candidate answering both of the task's words is among them")))
+
+(defun same-name-graph (name count &rest others)
+  "COUNT definitions of NAME, one per file, plus one definition of each of OTHERS.
+
+One file each because the graph keys an entity by its natural key, and a name
+asserted twice against one file is one entity -- which is the wrong fixture
+entirely for a bound that counts entities per name."
+  (let ((g (make-graph)))
+    (dotimes (i count)
+      (add-entity g (k-def 'function-entity name (format nil "src/one/f~d.lisp" i))))
+    (loop for other in others
+          for i from 0
+          do (add-entity g (k-def 'function-entity other
+                                  (format nil "src/other/g~d.lisp" i))))
+    g))
+
+(test one-name-may-not-take-every-seed-slot
+  ;; BUG-0041. Eight definitions of DELETE-OBJ answer the same two terms, so
+  ;; they are one name and one charge against their slice -- and until DES-0037
+  ;; nothing counted the eight. Measured on game-server, `mp deleting obj'
+  ;; returned eight methods named DELETE-OBJ and nothing else; 9 of the 450
+  ;; known-item cases returned a single name eight times.
+  ;;
+  ;; Five other candidates and not fewer, spread over three slices, because
+  ;; that is what fills the five slots the bound frees: the slice cap lets
+  ;; {delete, obj} contribute two names, {delete} two and {obj} two. With fewer
+  ;; the relaxation hands slots back to DELETE-OBJ and the count measures the
+  ;; fixture rather than the bound.
+  (let* ((names (seed-names (same-name-graph "delete-obj" 8
+                                             "delete-obj-cascade"
+                                             "delete-game" "delete-media"
+                                             "obj-encode" "obj-decode")
+                            "delete obj"))
+         (copies (count "delete-obj" names :test #'string-equal)))
+    (is (= 8 (length names))
+        "the bound holds candidates back, it does not shorten the bundle")
+    (is (= copies loom-knowledge::*seed-name-share*)
+        "some definitions of a name are evidence; eight of them are a listing")
+    (is (member "delete-obj-cascade" names :test #'string-equal)
+        "and the slots the bound freed carry something else the task matched")))
+
+(test three-definitions-of-one-name-are-all-seeds
+  ;; REQ-0016 R8, in a unit test rather than only over the network. The clause
+  ;; is an acceptance case whose finding is the triplication itself -- `data-api
+  ;; handler database connection acquire and test connectivity' must return all
+  ;; three CONNECTION-CONNECT-DATABASE definitions -- and it is the reason the
+  ;; slice cap counts names rather than entities. It is also what pins
+  ;; *SEED-NAME-SHARE* at three: a bound of two fails this.
+  ;;
+  ;; tools/acceptance.py cannot see it. It scores a set of names, so one
+  ;; definition and three read alike there.
+  (let ((names (seed-names (same-name-graph "connection-connect-database" 3
+                                            "check-database" "database-alert"
+                                            "db-handler" "table-handler"
+                                            "connection-pool" "connection-close")
+                           "data-api handler database connection acquire and test connectivity")))
+    (is (= 3 (count "connection-connect-database" names :test #'string-equal))
+        "three files defining one name is the finding the query exists to produce")))
+
+(test a-name-with-nothing-to-crowd-out-still-fills-the-set
+  ;; The relaxation, which the bound must not take away. ADMIT-SEEDS holds a
+  ;; candidate back rather than refusing it, and returns the held ones in score
+  ;; order when nothing else is waiting -- so a tree that offers eight
+  ;; definitions of one name and nothing else seeds on all eight, exactly as it
+  ;; did before either count existed.
+  ;;
+  ;; Not a test of the bound: it passes without DES-0037. It is what a bound
+  ;; written as a refusal rather than as a charge would break, and 5 of the 449
+  ;; measured bundles reach their eighth seed this way.
+  (let ((names (seed-names (same-name-graph "to-alist" 8) "to-alist")))
+    (is (= 8 (length names))
+        "a full set, from the only candidates there are")
+    (is (every (lambda (n) (string-equal "to-alist" n)) names)
+        "all of them, because there is nothing the bound could admit instead")))
 
 ;;; ------------------------------------------------------------------
 ;;; Which candidate a match is worth having -- REQ-0016 R1 and R4.
@@ -243,6 +495,37 @@ and in what order, and an edge would only add a neighbourhood nobody reads."
     (is (null (getf bundle :seeds)))
     (is (null (getf bundle :items)))
     (is (search "No indexed entity matched" (render-context bundle)))))
+
+(test a-bundle-says-which-of-the-task-s-words-reached-nothing
+  ;; REQ-0037 R2 and R5, DES-0032 D4. The defect this covers is not that the
+  ;; bundle was empty -- it never was. It is that a task naming a capability
+  ;; the tree does not have returned eight lexical matches typeset exactly like
+  ;; a bundle whose answer was present, and four judged records in .loom/context
+  ;; say in the agent's own words that the caller could not tell the two apart.
+  ;;
+  ;; The fixture's graph holds RESOLVE-OVERLAY and its neighbours and nothing
+  ;; about separators, so "overlay" is answered and "separator" reached nothing.
+  (let* ((bundle (build-context (k-graph (make-k-fixture))
+                                "resolve the overlay with a separator"))
+         (text (render-context bundle)))
+    (is (search "No indexed entity matches: separator" text)
+        "the word that reached nothing is named, which is what `find' says and
+what the bundle could not")
+    (is (find :answered (getf bundle :terms) :key (lambda (r) (getf r :state)))
+        "and a word that did reach something is not reported as an absence")
+    (is (not (search "No word of this task is answered" text))
+        "the whole-task finding is for a task where nothing is answered")))
+
+(test a-task-answered-by-nothing-says-so-as-a-finding
+  ;; R2 proper: the stated finding, not an empty list the caller has to
+  ;; interpret. The seeds are still printed -- REQ-0037's acceptance requires
+  ;; the negative without buying it with the positives, so nothing is withheld.
+  (let ((text (render-context
+               (build-context (k-graph (make-k-fixture))
+                              "rewrite the leaflet cartography"))))
+    (is (search "No word of this task is answered by any name" text))
+    (is (search "No indexed entity matches:" text)
+        "and the words themselves are named")))
 
 ;;; ------------------------------------------------------------------
 ;;; Bands (REQ-0026, DES-0020)
@@ -540,10 +823,19 @@ not enough -- they have to be countable"))
 (test a-stem-is-added-and-never-substituted
   ;; A wrong guess then costs nothing: a stem matching no name never matches,
   ;; where a substitution would have lost the word the caller wrote.
+  ;;
+  ;; This asserted a third token, "sav", until DES-0033 D4 -- and described it
+  ;; in its own failure message as "dropping -ing, which matches nothing". It
+  ;; was an artefact of the hand-written rule, which dropped the suffix and
+  ;; then restored an -e as two separate guesses and emitted both. Porter makes
+  ;; one guess and emits "save". Asserting the useless half of a discarded
+  ;; mechanism is not a property of stemming, and its absence is the point of
+  ;; the change rather than a casualty of it.
   (let ((tokens (loom-knowledge::task-tokens "saving")))
-    (is (member "saving" tokens :test #'string=))
-    (is (member "sav" tokens :test #'string=) "dropping -ing, which matches nothing")
-    (is (member "save" tokens :test #'string=) "and the -e restoration, which does")))
+    (is (member "saving" tokens :test #'string=)
+        "the word the caller wrote is never replaced")
+    (is (member "save" tokens :test #'string=)
+        "and its stem is added beside it, which is what reaches SAVEDESIGN")))
 
 (test stemming-keeps-short-identifiers-whole
   (is (not (member "clas" (loom-knowledge::task-tokens "class") :test #'string=))
@@ -551,3 +843,273 @@ not enough -- they have to be countable"))
   (is (not (member "addres" (loom-knowledge::task-tokens "address") :test #'string=)))
   (is (member "type" (loom-knowledge::task-tokens "types") :test #'string=)
       "and an ordinary plural still folds"))
+
+;;; ------------------------------------------------------------------
+;;; The absent embedder -- REQ-0048 R6, PLAN-0043 S3
+;;; ------------------------------------------------------------------
+
+(test with-no-embedder-configured-nothing-is-asked
+  ;; The step whose failure has no symptom. A bundle comes back either way,
+  ;; still correct, and the damage is latency or a stray condition that no
+  ;; recall count would show. So the assertion is about what was *not* done.
+  (let ((loom-knowledge::*context-embedder* nil)
+        (loom-knowledge::*context-vector-store* nil))
+    (is (null (loom-knowledge::semantic-candidates
+               (seed-graph "alpha" "beta") "alpha"))
+        "no embedder means no candidates and no call")))
+
+(test an-embedder-with-no-store-asks-nothing-either
+  ;; Three ways to get nothing -- no embedder, no store, a store that refuses --
+  ;; and REQ-0048 R6 gives them one meaning. A caller that had to tell them
+  ;; apart would have three paths where the requirement asks for one.
+  (let ((loom-knowledge::*context-embedder*
+          (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3))
+        (loom-knowledge::*context-vector-store* nil))
+    (is (null (loom-knowledge::semantic-candidates
+               (seed-graph "alpha" "beta") "alpha")))))
+
+(test the-bundle-is-unchanged-by-the-seam
+  ;; The seam appends SEMANTIC-CANDIDATES to the candidate pool. With no
+  ;; embedder that is APPEND to NIL, and this asserts the identity rather than
+  ;; assuming it: a seam that reordered or copied would move ties, and a tie
+  ;; moved is a seed lost at the eighth slot.
+  (let ((expected '("database-handler-health" "check-slot")))
+    (let ((loom-knowledge::*context-embedder* nil))
+      (is (equal expected
+                 (subseq (seed-names (seed-graph "database-handler-health"
+                                                 "check-slot" "check-obj")
+                                     "database handler health check")
+                         0 2))))))
+
+(test only-an-integer-is-a-name-rank
+  ;; DES-0040 D5 claimed BEST-NAME-RANK already handled a non-integer rank
+  ;; because :PROSE is one. It did not: the code removed :PROSE by name and
+  ;; took the minimum of what was left, so a cosine survived and won. A
+  ;; semantic candidate that matched no word the caller wrote would have ranked
+  ;; ahead of a prefix match on a word they did.
+  (is (= 3 (loom-knowledge::best-name-rank '(("x" . :prose))))
+      "prose-only still has no rank to give")
+  (is (= 3 (loom-knowledge::best-name-rank '((:similarity . 0.83))))
+      "and neither does similarity, whatever the number looks like")
+  (is (= 1 (loom-knowledge::best-name-rank '(("x" . 1) (:similarity . 0.83))))
+      "a real name match is not displaced by a cosine that sorts lower")
+  (is (= 0 (loom-knowledge::best-name-rank '(("x" . 2) ("y" . 0)))))
+  (is (= 3 (loom-knowledge::best-name-rank '()))))
+
+(test a-semantic-candidate-carries-similarity-and-answers-no-term
+  ;; DES-0040 D5. The shape is what makes REQ-0048 R4 hold by construction:
+  ;; CLASSIFY-TERMS marks a term ANSWERED when an admitted seed carries it in
+  ;; its name, it walks the matched terms, and :SIMILARITY is not one of the
+  ;; caller's words. Cosine returns nearest neighbours for every query ever
+  ;; asked, so a mechanism that let similarity answer a word would make the
+  ;; absence report unable to report an absence.
+  (let* ((graph (seed-graph "compose-view" "unrelated-thing"))
+         (target (first (find-entities graph :name-like "compose-view")))
+         (store (loom-embed:make-vector-store
+                 :embedder-id "fixed:test" :dimensions 3 :count 1
+                 :ids (vector (id target))
+                 :digests (vector 0)
+                 :vectors (make-array 3 :element-type 'single-float
+                                        :initial-contents '(1.0 0.0 0.0))))
+         (loom-knowledge::*context-vector-store* store)
+         (loom-knowledge::*context-embedder*
+           (loom-embed:make-fixed-embedder
+            :id "fixed:test" :dimensions 3
+            :vectors '(("the bit that merges edits" . #(1.0 0.0 0.0)))))
+         (candidates (loom-knowledge::semantic-candidates
+                      graph "the bit that merges edits")))
+    (is (= 1 (length candidates)) "the scan proposes the entity it is nearest")
+    (is (eq target (car (first candidates))))
+    (let ((matches (cdr (first candidates))))
+      (is (= 1 (length matches)))
+      (is (eq :similarity (car (first matches))))
+      (is (< 0.99 (cdr (first matches))) "and carries the cosine it scored"))
+    ;; The consequence, asserted rather than assumed.
+    (let ((coverage (loom-knowledge::term-coverage candidates '("merges" "edits"))))
+      (is (every (lambda (row) (null (getf (cdr row) :name))) coverage)
+          "a semantic candidate answers no term by name")
+      (is (equal '(:unmatched :unmatched)
+                 (mapcar #'cdr (loom-knowledge::classify-terms
+                                coverage (list target))))
+          "so the report still says the query's words reached nothing"))))
+
+(test an-embedder-that-cannot-answer-is-an-embedder-that-is-not-there
+  ;; REQ-0048 R6 again, on the path that only exists once there is a scan: the
+  ;; store and the embedder are both configured and the call fails.
+  (let* ((graph (seed-graph "alpha"))
+         (loom-knowledge::*context-vector-store*
+           (loom-embed:make-vector-store :embedder-id "fixed:test" :dimensions 3
+                                         :count 0))
+         (loom-knowledge::*context-embedder*
+           (loom-embed:make-memoing-embedder
+            (make-instance 'loom-embed-test::failing-embedder))))
+    (is (null (loom-knowledge::semantic-candidates graph "alpha"))
+        "a failure is nothing, not a condition reaching the caller")))
+
+(test a-stale-id-in-the-store-is-dropped-rather-than-fabricated
+  ;; The store is derived from an index that has since moved. PLAN-0043 S2b
+  ;; makes that rare and not impossible, and an id nothing in the view holds is
+  ;; CON-0001's fabricated fact if it is returned anyway.
+  (let* ((graph (seed-graph "alpha"))
+         (loom-knowledge::*context-vector-store*
+           (loom-embed:make-vector-store
+            :embedder-id "fixed:test" :dimensions 3 :count 1
+            :ids (vector "function:src/gone.lisp:deleted-thing")
+            :digests (vector 0)
+            :vectors (make-array 3 :element-type 'single-float
+                                   :initial-contents '(1.0 0.0 0.0))))
+         (loom-knowledge::*context-embedder*
+           (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
+    (is (null (loom-knowledge::semantic-candidates graph "alpha")))))
+
+;;; ------------------------------------------------------------------
+;;; Fusion -- PLAN-0043 S5, DES-0040 D4 and D6
+;;; ------------------------------------------------------------------
+
+(defun fused-names (lexical semantic)
+  (mapcar (lambda (pair) (name (car pair)))
+          (loom-knowledge::fuse-rankings lexical semantic)))
+
+(defun ranked-pair (entity &rest matches)
+  (cons entity matches))
+
+(test with-no-semantic-list-the-lexical-order-is-returned-unchanged
+  ;; REQ-0048 R6 as an identity rather than an arithmetic coincidence. Fusing
+  ;; one list would reproduce its order, and returning it outright is what
+  ;; makes that true by construction on every query on a machine with no
+  ;; embedder -- which is every query today.
+  (let* ((a (k-function "alpha" 10))
+         (b (k-function "beta" 30))
+         (lexical (list (ranked-pair a '("x" . 0)) (ranked-pair b '("y" . 1)))))
+    (is (eq lexical (loom-knowledge::fuse-rankings lexical nil))
+        "the very list, not a copy of it")))
+
+(test a-candidate-on-both-lists-outranks-one-on-either-alone
+  ;; The property RRF is chosen for: agreement between two mechanisms that
+  ;; share no scale is worth more than a good place on one of them.
+  (let* ((both (k-function "on-both" 10))
+         (lex  (k-function "lexical-only" 30))
+         (sem  (k-function "semantic-only" 50))
+         (lexical (list (ranked-pair lex '("x" . 0))
+                        (ranked-pair both '("y" . 1))))
+         (semantic (list (ranked-pair sem '(:similarity . 0.9))
+                         (ranked-pair both '(:similarity . 0.8)))))
+    (is (string= "on-both" (first (fused-names lexical semantic)))
+        "second on each list beats first on one")))
+
+(test a-fused-candidate-carries-both-kinds-of-match
+  ;; DES-0040 D6: a candidate on both lists is not dense-only, so ADMIT-SEEDS
+  ;; charges it to the slice its terms make, exactly as it would have without
+  ;; an embedder.
+  (let* ((e (k-function "both" 10))
+         (fused (loom-knowledge::fuse-rankings
+                 (list (ranked-pair e '("term" . 0)))
+                 (list (ranked-pair e '(:similarity . 0.8))))))
+    (is (= 1 (length fused)) "one entity, not two")
+    (let ((matches (cdr (first fused))))
+      (is (= 2 (length matches)))
+      (is (not (loom-knowledge::dense-only-p matches)))
+      (is (string= "term" (loom-knowledge::seed-slice matches))
+          "and similarity is not part of the slice"))))
+
+(test similarity-is-not-part-of-a-slice
+  ;; Left in, every dense candidate would share one slice and
+  ;; *SEED-TERM-SHARE* would hold the whole bundle to two of them.
+  (is (string= "" (loom-knowledge::seed-slice '((:similarity . 0.9)))))
+  (is (loom-knowledge::dense-only-p '((:similarity . 0.9))))
+  (is (not (loom-knowledge::dense-only-p '(("word" . 1) (:similarity . 0.9))))))
+
+(test dense-only-candidates-are-exempt-from-the-slice-cap
+  ;; They all share the empty slice, so the cap would admit two and hold back
+  ;; the rest -- a cap written to stop one English word filling the set,
+  ;; applied to candidates that answered no word at all.
+  (let ((ranked (loop for i from 0 below 6
+                      collect (ranked-pair (k-function (format nil "dense-~d" i) (* 10 i))
+                                           (cons :similarity (- 0.9 (* 0.01 i)))))))
+    (is (= 6 (length (loom-knowledge::admit-seeds ranked 8)))
+        "six dense-only candidates all reach the bundle")))
+
+(test dense-only-candidates-still-pay-the-name-cap
+  ;; BUG-0041 bounds definitions of one name however the candidate arrived.
+  ;; Five other names as well, because ADMIT-SEEDS relaxes rather than
+  ;; enforces: with nothing else waiting the held-back copies come back and the
+  ;; count would measure the fixture instead of the cap. BUG-0041's own test
+  ;; needed the same fixture for the same reason.
+  (let* ((ranked (append
+                  (loop for i from 0 below 8
+                        collect (ranked-pair
+                                 (k-def 'function-entity "delete-obj"
+                                        (format nil "src/f~d.lisp" i))
+                                 (cons :similarity (- 0.9 (* 0.01 i)))))
+                  (loop for i from 0 below 5
+                        collect (ranked-pair
+                                 (k-function (format nil "other-~d" i) (* 10 i))
+                                 (cons :similarity (- 0.5 (* 0.01 i)))))))
+         (chosen (loom-knowledge::admit-seeds ranked 8)))
+    (is (= 8 (length chosen)) "the bundle still fills")
+    (is (= loom-knowledge::*seed-name-share*
+           (count "delete-obj" chosen :key #'name :test #'string=))
+        "but eight vectors for one name are still three seeds")))
+
+(test a-dense-only-seed-does-not-answer-a-term
+  ;; REQ-0048 R4 through the whole path rather than at SEMANTIC-CANDIDATES.
+  ;; Cosine returns nearest neighbours for every query ever asked, so a
+  ;; mechanism that let similarity answer a word would make the absence report
+  ;; unable to report an absence.
+  (let* ((e (k-function "compose-view" 10))
+         (ranked (list (ranked-pair e '(:similarity . 0.87))))
+         (chosen (loom-knowledge::admit-seeds ranked 8))
+         (coverage (loom-knowledge::term-coverage ranked '("merges" "edits"))))
+    (is (equal (list e) chosen))
+    (is (equal '(:unmatched :unmatched)
+               (mapcar #'cdr (loom-knowledge::classify-terms coverage chosen))))))
+
+(test a-named-candidate-is-not-displaced-by-one-that-merely-resembles-it
+  ;; REQ-0016 R1 through the fusion, and REQ-0048 R2. Measured on game-server,
+  ;; `mapper to native' put MAPMAPPER.TONATIVE at cosine 0.982 and
+  ;; MAPPER.TONATIVE at 0.635 -- the elaborated siblings all beat the plain
+  ;; name, because a document is a name plus a docstring and the barest member
+  ;; of a family is the one whose document is least dominated by its own name.
+  ;; No threshold separates that: the wrong answers score higher.
+  ;; The named candidate sits low in the lexical list and not on the semantic
+  ;; one at all, which is the shape the real failure has: RRF already rewards
+  ;; agreement, so a candidate on both lists needs no protecting.
+  (let* ((named    (k-function "mapper" 10))
+         (resembles (k-function "map-mapper-to-native" 30))
+         (lexical  (append (loop for i from 0 below 4
+                                 collect (ranked-pair
+                                          (k-function (format nil "other-~d" i) (* 10 i))
+                                          '("other" . 2)))
+                           (list (ranked-pair named '("mapper" . 0)))))
+         (semantic (list (ranked-pair resembles '(:similarity . 0.98)))))
+    (is (string= "map-mapper-to-native"
+                 (first (fused-names lexical semantic)))
+        "unprotected, the resemblance wins")
+    (is (string= "mapper"
+                 (name (car (first (loom-knowledge::fuse-rankings
+                                    lexical semantic :protected (list named))))))
+        "protected, the name the caller wrote wins")))
+
+(test protection-is-a-band-and-not-a-weight
+  ;; Protected candidates keep their order among themselves, and nothing
+  ;; unprotected climbs past one however high its cosine.
+  (let* ((a (k-function "alpha" 10))
+         (b (k-function "beta" 30))
+         (loud (k-function "loud" 50))
+         (lexical (list (ranked-pair a '("alpha" . 0)) (ranked-pair b '("beta" . 0))))
+         (semantic (list (ranked-pair loud '(:similarity . 0.99)))))
+    (is (equal '("alpha" "beta" "loud")
+               (mapcar (lambda (p) (name (car p)))
+                       (loom-knowledge::fuse-rankings lexical semantic
+                                                      :protected (list a b)))))))
+
+(test protecting-nothing-leaves-the-fusion-as-it-was
+  (let* ((a (k-function "alpha" 10))
+         (b (k-function "beta" 30))
+         (lexical (list (ranked-pair a '("x" . 1))))
+         (semantic (list (ranked-pair b '(:similarity . 0.9)))))
+    (is (equal (mapcar (lambda (p) (name (car p)))
+                       (loom-knowledge::fuse-rankings lexical semantic))
+               (mapcar (lambda (p) (name (car p)))
+                       (loom-knowledge::fuse-rankings lexical semantic
+                                                      :protected '()))))))

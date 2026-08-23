@@ -33,7 +33,7 @@
 
 (defun target-text (root relative)
   (let ((path (target-file root relative)))
-    (and (probe-file path) (loom-analyzer:slurp-file path))))
+    (and (probe-file path) (utils:read-file path))))
 
 (defun write-target-file (root relative contents)
   (let ((path (target-file root relative)))

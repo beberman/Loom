@@ -1,0 +1,81 @@
+id: DEC-0005
+title: The seeder spends precision to buy recall, so a gate that withholds a seed is refused and the seed count stays at eight
+status: accepted
+date: 2026-08-22
+supersedes: []
+refines: [REQ-0016, REQ-0037]
+affects: [admit-seeds, seed-entities, seed-score, build-context]
+tags: [retrieval, context, ranking, recall, req-0037, req-0039]
+rationale: |
+  A context bundle is read by an agent that can discard what it does not need
+  and cannot recover what it was never given. A seed wrongly included costs
+  tokens; a seed wrongly withheld costs the work built without it. The two are
+  not symmetric, so the seeder trades precision for recall and not the other
+  way round.
+
+  This settles a question REQ-0037 R1 answered the other way. R1 asks that "a
+  seed is admitted on evidence, not on rank", with the observable that "a query
+  for a capability the tree does not have admits no seeds", and DES-0032 D5
+  designed the gate for it. A gate that holds a candidate back has no mechanism
+  by which recall rises; it can only lower it. Under this decision it is
+  refused outright rather than deferred to a later measurement, because no
+  measurement could argue for it.
+
+  WHAT WAS MEASURED, AND WHAT IT COST
+
+  The seed limit was swept at 8, 16 and 32 against tools/acceptance.py on
+  2026-08-22. Recall was 42 of 45 at every setting, missing the same three
+  names each time: config-get (R7), MapElementTypeEditor (fe-5) and
+  dot-prefixed-p (r39-3). Not one was recovered by a larger seed set.
+
+  The per-run attribution in that sweep is not reliable and the conclusion does
+  not rest on it. `tools/loom-serve.sh update' returns before the rebuilt image
+  is serving, so a run can measure the previous build -- one row reported 32
+  seeds under a nominal limit of 16. What is claimed here is only what held in
+  all five runs regardless of which build answered, and 42 of 45 held in all
+  five.
+
+  Raising the limit also costs REQ-0037's report. In both runs where 32 seeds
+  were actually served, the absence case r37-3 failed: `encoding' came back
+  ANSWERED rather than WEAK. The mechanism is direct -- DES-0032 D2 makes a
+  term ANSWERED when an admitted seed carries it in its name, so every extra
+  slot is another chance to answer a word nothing really answers. Seed count
+  and the absence signal are coupled, and the coupling is one-directional:
+  more seeds can only weaken the report, never strengthen it.
+
+  So the limit stays at eight. Not because eight is optimal -- nothing here
+  measures it as optimal -- but because raising it recovered no recall in the
+  measurement that exists and degraded a signal that had just been built.
+  Lowering it is refused by the first paragraph.
+consequences: |
+  DES-0032 D5 is retired. The admission gate is not to be built, and a future
+  design proposing one has to overturn this decision rather than merely cite
+  REQ-0037 R1.
+
+  REQ-0037 R1 and R4 are superseded as goals. R1's observable -- a query for an
+  absent capability admits no seeds -- is refused. R4 asks that the seed count
+  respond to the evidence; under this decision it may respond upward, and the
+  case it was written from ("a task that has three real answers spends five
+  slots on noise") is no longer a defect. R2, R3 and R5 stand: they are claims
+  the bundle makes about itself and cost no recall.
+
+  The reporting half of REQ-0037 is the part that survives, and it survives
+  because it is recall-neutral by construction. The term report adds a line of
+  text and withholds nothing, which is why it was implementable ahead of R1 and
+  why it is unaffected by this decision.
+
+  Recall is to be bought where a candidate is missing from the set rather than
+  ranked low in it. The three standing misses are not seed-count-limited, so
+  the lever is what a candidate is matched on. REQ-0039 is that work -- it
+  seeds on what a definition's prose says it does rather than on what it is
+  named, and dot-prefixed-p is one of its own cases.
+
+  A precision mechanism is still allowed where it costs no recall. Ordering,
+  banding and what a bundle says about itself are all free in that sense;
+  only withholding is refused.
+
+  This decision does not license an unbounded bundle. REQ-0040 measures the
+  other end -- 308 items across three judged calls were never read, and two
+  calls exceeded the caller's tool output limit at 93KB and 86KB and were
+  written to a file instead. Recall is counted against what a caller reads, so
+  the budget remains a real constraint and REQ-0040 is where it is argued.

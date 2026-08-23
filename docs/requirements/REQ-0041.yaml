@@ -1,0 +1,83 @@
+id: REQ-0041
+title: The shape of a call site must be recorded, because a signature change is the unit of migration work and every count of one so far came from a hand-written script
+status: draft
+date: 2026-08-21
+refines: [REQ-0013]
+affects: [call-site-label, resolve-calls, analyze-file, describe-entity, impact-set]
+importance: Major
+tags: [graph, analyzer, call-site, migration, arity, req-0015]
+summary: |
+  Loom records that A calls B. Migration work is decided by *how* A calls B: the
+  arity, which optional arguments are passed, whether an argument is a list where
+  the new signature wants a key. Four separate facts of that kind decided
+  PLAN-0002's stages, and all four were produced by an s-expression walker the
+  agent wrote, against an index that was already holding every one of those call
+  sites.
+body: |
+  THE EVIDENCE, from the utils-migration judgement
+
+  - *"what the work needed was call-site SHAPE, not existence: how many of the
+    454 call forms pass the third positional STRICT argument (5) and how many
+    pass a list as a path key (9), because those are the only ones the library
+    cannot take. Not modelled, found with an s-expression walker over the tree."*
+  - *"config-get -- 105 call forms all of arity 2, which is what made the
+    mechanical swap to CONFIG-SEARCH safe. Same caveat: the arity histogram came
+    from a script, not the index."*
+  - *"make-dict -- the decisive fact, that all 24 single-argument call forms live
+    in one test file and production has none, came from the script."*
+  - *"read-config -- the decisive fact was again a call shape: 19 of 27 call
+    sites pass a package argument the library's version does not have."*
+
+  Four times in one task, the same missing fact. And the index was not far from
+  it: DES-0014 already mints a :CALL-SITE entity with :CALL-NAMES, and
+  CALL-SITE-LABEL already knows the file and line. What it does not record is the
+  form.
+
+  WHY THIS IS NOT A NICE-TO-HAVE
+
+  "Who calls this" answers whether a change is safe to make. "How do they call
+  it" answers how much work the change is, and it is the question every rename
+  with a changed signature asks. PLAN-0002 turned four such histograms into four
+  stage boundaries; the equivalent answers for PLAN-0036 came from reading five
+  functions by hand. A codebase that migrates onto a library does this
+  repeatedly, and the index watches every time without recording it.
+
+  REQUIREMENTS
+
+  R1  A call site records its argument count.
+
+  R2  A call site records enough about each argument to answer the questions
+      above: for a literal, the literal; for a keyword, the keyword; for anything
+      else, its shape -- a list, a symbol, a call. Not the source text, which the
+      analyzer already declines to store, and not the resolved value, which it
+      cannot know.
+
+  R3  `describe` reports the distribution, not the raw sites. The useful answer
+      to "how is CONFIG-GET called" is "105 sites, all arity 2", which is one line
+      where 105 rows would be unreadable -- and unreadable is REQ-0040's whole
+      subject.
+
+  R4  A caller can ask for the sites that differ. "Which of DICT-VALUE's 454 call
+      sites pass a third argument" is the query the script was written to answer,
+      and the answer was 5.
+
+  R5  The cost is bounded and measured. This adds per-call-site data to every
+      indexed file, and Loom indexes 289 files in seconds today. A pass that
+      makes that materially slower is not worth the fact -- the watcher's
+      responsiveness is what makes the index trustworthy mid-refactor.
+
+  ACCEPTANCE
+
+  Against game-server at the commit PLAN-0002 started from, `describe dict-value`
+  reports 454 call sites with 5 of arity 3, and `describe read-config` reports 27
+  with 19 passing a second argument. Both numbers are already known from the
+  scripts, which is what makes this checkable rather than plausible.
+
+  OPEN QUESTIONS
+
+  - Lisp answers R2 from the reader. JavaScript has the same question and a
+    different answer, and REQ-0024's analyzer should not be designed around a
+    shape only the Lisp side can fill.
+  - A macro call's arguments are not its expansion's. DES-0001's blind spot again,
+    and the honest answer is to record what the source says and mark it as
+    pre-expansion.

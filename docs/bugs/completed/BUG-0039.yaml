@@ -1,0 +1,87 @@
+id: BUG-0039
+title: next-doc-id.sh maps DEC to docs/design, so it answers DEC-0001 for a category whose fourth document already exists and refuses DES entirely
+status: closed
+date: 2026-08-22
+tags: [documents, tooling, con-0004, duplicate-id]
+severity: medium
+summary: |
+  The category table in tools/next-doc-id.sh reads
+
+      types="REQ:requirements ARCH:arch DEC:design PLAN:plans REV:reviews BUG:bugs CON:concepts RULE:rules"
+
+  and `DEC:design' is wrong on both halves. DEC documents live in
+  docs/decisions/, which holds DEC-0001 through DEC-0004; docs/design/ holds
+  DES-nnnn, currently up to DES-0031.
+
+  Two failures follow from the one entry. `tools/next-doc-id.sh DEC' globs
+  docs/design/DEC-[0-9][0-9][0-9][0-9].yaml, matches nothing, and answers
+  DEC-0001 -- an id taken since the tree's first decision. And there is no DES
+  row at all, so `tools/next-doc-id.sh DES' exits 1 with "Unknown document
+  type: DES", leaving the design category, the one CON-0004's chain passes
+  through between a requirement and a plan, with no way to ask.
+
+  The script's own header names this failure: "two documents with one id are
+  ambiguous to every reference that names them, and CON-0004 records that this
+  has already cost a document its place in the index." It then describes
+  BUG-0026, where looking in the wrong place produced a duplicate that had to
+  be renumbered -- "which is exactly the failure the header above says this
+  script exists to prevent, produced by the script itself." That sentence is
+  true a second time, of a different line in the same file.
+body: |
+  HOW IT PRESENTS
+
+      $ tools/next-doc-id.sh DES
+      Unknown document type: DES
+      One of: REQ ARCH DEC PLAN REV BUG CON RULE
+      $ tools/next-doc-id.sh DEC
+      DEC-0001
+
+  The no-argument form prints DEC-0001 in its list of every category, beside
+  correct answers for the other seven, which is the shape most likely to be
+  believed: seven right answers and one wrong one, none of them marked.
+
+  WHY IT HID
+
+  Nothing tests it. tools/ has test-acceptance.py and test-allow-loom.py and
+  no test for this script.
+
+  The wrong answer is only wrong for a category nobody has added to in a long
+  time. DEC-0004 is the newest decision in the tree; every document written
+  since has been a REQ, DES, PLAN, BUG or REV, and the rows for those are
+  right apart from DES having no row to be wrong. A stale row in a lookup
+  table is invisible until someone uses the entry.
+
+  The DES gap fails loudly and so was worked around rather than reported.
+  Exiting 1 with "Unknown document type" reads as the script being asked for
+  something outside its job, not as a missing row, and the workaround --
+  listing docs/design/ and reading the highest number off it -- is precisely
+  what the header calls "how a duplicate gets allocated".
+
+  THE FIX
+
+  Two rows rather than one:
+
+      DEC:decisions DES:design
+
+  and the usage line gains DES. The `completed/' half of NEXT_FOR already
+  handles both directories, so nothing else changed. `tools/next-doc-id.sh'
+  now answers DEC-0005 and DES-0032, against DEC-0004 and DES-0031 on disk.
+
+  tools/test-next-doc-id.py is the guard, and it is the first test this script
+  has had. It asserts two things, and the second exists because the first
+  cannot see this bug's other half:
+
+    Every category the usage line offers resolves to a directory holding
+    documents of that prefix, and answers exactly one past the highest id on
+    disk. Run against the unfixed table this reports `DEC: answered DEC-0001,
+    but DEC-0004 exists in docs/decisions'.
+
+    Every prefix with documents on disk is a category the script offers. The
+    first assertion can only check rows that exist, so with DES missing from
+    the table nothing offered DES and nothing tested it -- a test blind to the
+    absence of the thing it tests. This one asks the tree what categories
+    exist rather than asking the script, and against the unfixed table it
+    reports `DES-nnnn.yaml exists in docs/design but DES is not a category the
+    script offers'.
+
+  Both were run against the unfixed script and both fail there, separately.

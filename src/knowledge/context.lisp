@@ -70,28 +70,65 @@ honoured to the token."
 ;;;; ==================================================================
 
 (defparameter *context-stopwords*
-  '("the" "and" "for" "with" "that" "this" "from" "into" "when" "what" "which"
-    "add" "new" "use" "using" "make" "get" "set" "fix" "change" "update" "code"
-    "function" "class" "file" "test" "tests" "should" "would" "need" "needs"
-    "want" "please" "can" "does" "how" "why" "where" "are" "was" "will" "not"
-    "its" "have" "has" "had" "them" "they" "then" "than")
-  "Words too common to be worth matching an entity name against.
+  '("the" "and" "for" "with" "that" "this" "into" "when" "what" "which"
+    "using" "should" "would" "need" "needs" "want" "please" "can" "does"
+    "how" "why" "where" "are" "was" "will" "not" "its" "have" "has"
+    "had" "them" "they" "then" "than")
+  "Words dropped before matching begins: English a code tree names nothing after.
+
 Not a language model -- just enough that \"how does the drawing tool work\"
-seeds on \"drawing\" and \"tool\" rather than on \"does\" and \"work\".")
+seeds on \"drawing\" and \"tool\" rather than on \"does\" and \"work\".
 
-(defun stem-variants (word)
-  "WORD's plausible uninflected forms, or NIL.
+One list until DES-0038, which is where sixteen of these went. \"Too common to
+match a name against\" was two claims wearing one coat: a word can be common in
+English and name nothing, or common *because* a code tree names things with it.
+GET, SET, ADD, MAKE, TEST and FILE are the second, and dropping them cost the
+queries that meant them -- \"wrapped logger set level\" competed on three words
+of four, and `set' is the one that separates SETLEVEL from eight bare LOGGERs.
+They are in *CONTEXT-WEAK-TERMS* now, searched but unable to seed alone.
 
-Not a stemmer in the Porter sense and deliberately not one. Four suffixes cover
-the inflections that appear in task descriptions -- saving a piece design,
-changing the type, edited layers, reporting rejections -- and a full stemmer
-would also fold identifiers this index depends on keeping apart.
+What is left is the first claim only. Every word here is English function
+vocabulary, and no measured case wants one of them matched against a name.")
 
-Variants are *added* to the token set rather than replacing the word, so nothing
-can be lost by a wrong guess: a stem corresponding to no real term simply never
-matches. That is why SAVING emits both SAV and SAVE instead of picking one --
-dropping -ing gives SAV, which matches nothing, and the -e restoration is what
-reaches SAVEDESIGN.
+(defparameter *context-weak-terms*
+  '("add" "new" "use" "make" "get" "set" "fix" "change" "update" "code"
+    "function" "class" "file" "test" "tests" "from")
+  "Words searched for, but never enough on their own to make a candidate a seed.
+
+The second population. A stopword is dropped before matching begins; these are
+matched and count toward coverage like any other term, and only a candidate
+that answered *nothing else* is dropped. So `get type from obj' reaches
+GETTYPEFROMOBJ on three terms, while GETTYPEID -- which answered to `get' and
+to nothing else -- is not a candidate at all.
+
+Every one of these was a stopword until this list existed, and each is among
+the commonest words a code tree names things with. Measured over the 450
+known-item cases, 21 of the 57 remaining misses lost a word from this list
+before matching began, and the word was in the expected name every time:
+GAME.ADDDEFINITION, WRAPPEDLOGGER.SETLEVEL, GETDEFINITIONLIST, PINSET,
+MAKE-TABLE-HANDLER, TEST-FNS.
+
+\"and\" is not here and stays a stopword. Freeing it measured 3 known-item
+cases better and cost REQ-0016 R8, which is a judged acceptance case: `data-api
+handler database connection acquire and test connectivity' stopped returning
+CONNECTION-CONNECT-DATABASE at all. REQ-0036 R11 makes the judged set the
+held-out one, and a generated case does not outvote it.")
+
+(defun surface-variants (word)
+  "WORD's plausible uninflected surface forms, by four suffix rules.
+
+The generator half of the hybrid. These rules stood alone until DES-0033 D4 and
+their outputs are *surface forms* -- \"saving\" gives \"sav\" and \"save\",
+words as they would be written -- which matters because Loom matches a query
+token against a raw name. Porter's output is a stem class, not a surface form:
+it is correct only when both sides are stemmed, which is REQ-0045 and is not
+built. \"key\" to \"kei\" is the case: neither a prefix of nor a word in
+anything, and it cost acceptance case r39-4 when Porter emitted it alone.
+
+The -e restoration is why both halves of a pair are emitted. Dropping -ing from
+\"saving\" gives \"sav\", which matches nothing; restoring the -e gives
+\"save\", which reaches SAVEDESIGN. Neither rule knows which is right, so both
+are offered and the index decides.
 
 The minimum lengths stop the rules eating short identifiers: -ing needs six
 characters so RING survives, and -s needs four and refuses a double so CLASS and
@@ -113,47 +150,129 @@ ADDRESS survive."
         (push (concatenate 'string (subseq word 0 (- n 2)) "e") out)))
     out))
 
+(defun inflected-p (word)
+  "True when Porter's algorithm finds an inflection to remove from WORD.
+
+The gate half of the hybrid, and the only thing Porter is asked here. A suffix
+rule asks what the last three characters are; Porter asks whether a measurable
+stem remains once a suffix is removed, and that is the question the four rules
+above cannot answer. \"string\" is six characters and ends in -ing and is not a
+gerund, which is BUG-0040 -- the -ing rule fired and emitted \"str\" and
+\"stre\", and \"stre\" reached STRESS-PUSHER at rank 1.
+
+Used as a predicate rather than as a source of tokens. CON-0007 records why:
+Porter's stems are meant to be compared against stemmed text, and Loom stems
+only the query, so an emitted stem works only where it happens to be a prefix
+of the surface form. \"encod\" is; \"kei\" is not."
+  (let ((stemmed (stem:stem word)))
+    (not (string= stemmed word))))
+
+(defun stem-variants (word)
+  "WORD's uninflected forms, or NIL when Porter says it is not inflected.
+
+DES-0035: the four suffix rules generate, Porter decides whether to believe
+them. Both halves earn their place and each fails alone.
+
+  string      Porter: not inflected           -> nothing
+              The rules alone gave \"str\" and \"stre\" (BUG-0040).
+  saving      Porter: inflected, rules fire   -> \"sav\", \"save\"
+              Porter alone gave \"save\" only, and the coverage band -- which
+              counts matches rather than words -- then scored SaveDesign one
+              lower and dropped it (acceptance case fe-10).
+  key, value  Porter: inflected, no rule fires -> nothing
+              Porter alone gave \"kei\" and \"valu\", which reach nothing by
+              prefix and cost acceptance case r39-4.
+
+Added rather than substituted, as always: a variant is an extra token beside
+the word, never a replacement, so nothing that matches today stops matching.
+DEC-0005 spends precision to buy recall and this spends none of either."
+  (when (inflected-p word)
+    (surface-variants word)))
+
+(defun task-token-origins (task)
+  "The tokens of TASK paired with the word each came from, in TASK-TOKENS order.
+
+A word the caller wrote maps to itself. A compound part and a stem variant map
+to the word that produced them, so \"str\" and \"stre\" both map to \"string\"
+and the ranking can tell what a match cost the caller to write (DES-0033 D1).
+
+Recorded here rather than reconstructed later, which is DES-0033 D3 and is not
+a preference: \"str\" is derivable from \"string\" and from \"strings\" alike,
+so a pass that asks afterwards which written word could have produced a
+fragment has to guess between them, and a guess about provenance is the thing
+CON-0001 refuses.
+
+A token reachable two ways keeps the first origin recorded for it, because
+PUSHNEW keeps the first and the alist has to agree with the token list it is
+built beside."
+  (let ((origins '())
+        (current (make-string-output-stream)))
+    (flet ((remember (token origin)
+             (unless (assoc token origins :test #'string=)
+               (push (cons token origin) origins))))
+      (flet ((finish ()
+               (let ((word (string-downcase (get-output-stream-string current))))
+                 (when (and (>= (length word) 3)
+                            (not (member word *context-stopwords* :test #'string=)))
+                   (remember word word)
+                   ;; a compound also seeds on its parts
+                   (let ((start 0))
+                     (dotimes (i (1+ (length word)))
+                       (when (or (= i (length word))
+                                 (member (char word i) '(#\- #\_)))
+                         (let ((part (subseq word start i)))
+                           (when (and (>= (length part) 3)
+                                      (not (member part *context-stopwords* :test #'string=)))
+                             (remember part word)))
+                         (setf start (1+ i)))))))))
+        (loop for char across task
+              do (if (or (alphanumericp char) (member char '(#\- #\_ #\* #\%)))
+                     (write-char char current)
+                     (finish))
+              finally (finish)))
+      ;; Inflections last. "saving a piece design" reaches SAVEDESIGN, which it
+      ;; could not while SAVING and SAVE were unrelated strings -- that entity
+      ;; was the one measured gain of two reverted attempts to replace this
+      ;; function with a postings index, and it was never the index that gained
+      ;; it.
+      ;;
+      ;; Added rather than substituted, so a wrong guess costs nothing: a stem
+      ;; matching no name simply never matches. The stopword filter is not
+      ;; re-applied to a variant, because a variant of a word that passed the
+      ;; filter is a word the caller wrote.
+      ;;
+      ;; BUG-0040 measured that claim as false and this pass is half of what
+      ;; makes it true: "string" is six characters and ends in -ing, so it
+      ;; stems to "str" and "stre", and "stre" reached STRESS-PUSHER at the
+      ;; strongest rank the scale has. A variant carries its origin from here
+      ;; so that SEED-SCORE can rank it below the word it came from rather
+      ;; than beside it.
+      ;; ORIGINS is in reverse insertion order here, exactly as the token list
+      ;; it replaced was when the loop that used to stand here read
+      ;; (COPY-LIST TOKENS). Iterating it forwards rather than reversing it
+      ;; first is not a detail: the variants are emitted in the order this walk
+      ;; reaches their base words, that order survives the NREVERSE below, and
+      ;; SEED-MATCHES reaches candidates in token order -- which is the tie
+      ;; break for every candidate scoring the same. Reversing it here reordered
+      ;; "start stre str" to "stre str start" for "test whether a string
+      ;; starts with a prefix", and cost acceptance case log-1 its JS-TRIM.
+      (dolist (pair origins)
+        (dolist (variant (stem-variants (car pair)))
+          (remember variant (cdr pair)))))
+    (nreverse origins)))
+
 (defun task-tokens (task)
   "The candidate identifiers in TASK: words and hyphenated or underscored
 compounds, lowercased, three characters or more, stopwords dropped.
 
 Compounds are kept whole *and* split, so \"impact-set\" seeds on the exact
-name and, failing that, on \"impact\"."
-  (let ((tokens '())
-        (current (make-string-output-stream)))
-    (flet ((finish ()
-             (let ((word (string-downcase (get-output-stream-string current))))
-               (when (and (>= (length word) 3)
-                          (not (member word *context-stopwords* :test #'string=)))
-                 (pushnew word tokens :test #'string=)
-                 ;; a compound also seeds on its parts
-                 (let ((start 0))
-                   (dotimes (i (1+ (length word)))
-                     (when (or (= i (length word))
-                               (member (char word i) '(#\- #\_)))
-                       (let ((part (subseq word start i)))
-                         (when (and (>= (length part) 3)
-                                    (not (member part *context-stopwords* :test #'string=)))
-                           (pushnew part tokens :test #'string=)))
-                       (setf start (1+ i)))))))))
-      (loop for char across task
-            do (if (or (alphanumericp char) (member char '(#\- #\_ #\* #\%)))
-                   (write-char char current)
-                   (finish))
-            finally (finish)))
-    ;; Inflections last. "saving a piece design" reaches SAVEDESIGN, which it
-    ;; could not while SAVING and SAVE were unrelated strings -- that entity was
-    ;; the one measured gain of two reverted attempts to replace this function
-    ;; with a postings index, and it was never the index that gained it.
-    ;;
-    ;; Added rather than substituted, so a wrong guess costs nothing: a stem
-    ;; matching no name simply never matches. The stopword filter is not
-    ;; re-applied to a variant, because a variant of a word that passed the
-    ;; filter is a word the caller wrote.
-    (dolist (token (copy-list tokens))
-      (dolist (variant (stem-variants token))
-        (pushnew variant tokens :test #'string=)))
-    (nreverse tokens)))
+name and, failing that, on \"impact\".
+
+The keys of TASK-TOKEN-ORIGINS, which is where the list is actually built.
+Splitting the two keeps this function's contract -- every caller wants the
+tokens and only the ranking wants their provenance -- without two functions
+walking the same string and drifting apart."
+  (mapcar #'car (task-token-origins task)))
 
 (defun task-terms (task)
   "The task's words as written: compounds intact, stopwords kept.
@@ -229,7 +348,132 @@ share is the form that does not need a tuned constant per tree.
 Advisory: ADMIT-SEEDS relaxes it rather than return fewer seeds than there are
 candidates.")
 
-(defun seed-matches (view tokens types)
+(defparameter *seed-name-share* 3
+  "How many definitions of one name may be seeds of one bundle.
+
+The second of ADMIT-SEEDS' two counts, and the one BUG-0041 found missing.
+*SEED-TERM-SHARE* bounds how many distinct names a slice of the task may
+contribute; one name is one charge against that however many definitions carry
+it, and nothing bounded how many of them were admitted. `wrapped logger set
+level' returned eight variables named LOGGER and `mp deleting obj' eight
+methods named DELETE-OBJ.
+
+Three because REQ-0016 R8 pins it there. That clause is an acceptance case --
+`data-api handler database connection acquire and test connectivity' must
+return all three CONNECTION-CONNECT-DATABASE definitions, because three files
+defining one name is the finding the query exists to produce -- so two fails
+it, and a larger number bounds less than the evidence allows.
+
+Advisory in the same way and for the same reason as *SEED-TERM-SHARE*: a task
+whose candidates are all one name still fills its set from them.")
+
+(defun derived-token-p (token origins)
+  "True when TOKEN is something Loom made from the task rather than a word of it.
+
+A compound part or a stem variant. The distinction is TASK-TERMS' -- \"those
+are Loom's own manufacture rather than anything the caller typed\" -- which
+NAMED-BY-TASK-P has applied to the 100000 band since REQ-0016 R1 and which the
+two bands below it do not apply at all.
+
+Nothing reads this today. DES-0033 D1 ranked a derived match three worse than a
+written one and the acceptance run refused it, at 41 of 45 against a baseline
+of 42. Kept because REQ-0045 and REQ-0046 both need the distinction and the
+predicate is not what was wrong: what was wrong was spending precision for it,
+which DEC-0005 does not permit."
+  (let ((origin (cdr (assoc token origins :test #'string=))))
+    (and origin (not (string= token origin)))))
+
+(defun split-name-parts (name)
+  "NAME split on - and _ and on a lower-to-upper case change, lowercased.
+
+The half of CON-0007's first mechanism Loom has never had. TASK-TOKENS splits a
+compound in the *query* on - and _; nothing has ever split an entity's name,
+and nothing split either on case, so MapElementTypeEditor was one token to this
+index and SaveDesign was another.
+
+Case change is a boundary and a run of capitals is not: HTTPServer yields http
+and server rather than h, t, t, p and server. The rule is a lowercase or a
+digit followed by an uppercase, which is what leaves an acronym whole."
+  (let ((parts '())
+        (current (make-string-output-stream)))
+    (flet ((finish ()
+             (let ((part (string-downcase (get-output-stream-string current))))
+               (when (plusp (length part)) (push part parts)))))
+      (loop for i below (length name)
+            for char = (char name i)
+            do (cond ((or (char= char #\-) (char= char #\_) (char= char #\/))
+                      (finish))
+                     ((and (upper-case-p char)
+                           (plusp i)
+                           (let ((previous (char name (1- i))))
+                             (or (lower-case-p previous) (digit-char-p previous))))
+                      (finish)
+                      (write-char char current))
+                     (t (write-char char current))))
+      (finish))
+    (nreverse parts)))
+
+(defun name-tokens (entity)
+  "ENTITY's name as the seeder matches it: parts, their stems, and the whole.
+
+DES-0034 D1, and the side of CON-0007's rule Loom did not have. A query was
+analysed -- split, stemmed -- and the result was compared against a raw name,
+where every text search analyses index and query alike. So \"prefix\" reached
+DOT-PREFIXED-P as a substring and never as the word it is, because nothing
+split that name into dot/prefixed/p or stemmed \"prefixed\" to \"prefix\".
+
+The whole is kept beside the parts, which is Lucene's preserve_original and
+what TASK-TOKENS already does on the query side.
+
+Computed per candidate at match time rather than stored on the entity: the
+candidates are the few hundred FIND-ENTITIES already returned, and a stored
+form would make the graph carry a retrieval decision when DEC-0001 has it
+derivable from files instead."
+  (let ((name (significant-name entity)))
+    (when name
+      (let* ((whole (string-downcase name))
+             (parts (split-name-parts name))
+             (tokens (list whole)))
+        (dolist (part parts)
+          (pushnew part tokens :test #'string=)
+          (let ((stemmed (stem:stem part)))
+            (unless (string= stemmed part)
+              (pushnew stemmed tokens :test #'string=))))
+        tokens))))
+
+(defun analyzed-rank (entity token)
+  "How well TOKEN matches ENTITY's analyzed name: 0 exact, 1 prefix, 2 substring.
+
+DES-0034 D2. The same three ranks MATCH-RANK returns, over NAME-TOKENS rather
+than over the raw name, and with the token's own stem tried as well.
+
+MATCH-RANK's answer is the floor: this never returns worse than the rank the
+raw name would have earned, so a candidate that matches today cannot rank lower
+tomorrow. That is what keeps an analyzer inside DEC-0005 -- it promotes and
+never demotes.
+
+`find' does not call this. REQ-0045 R1 makes the token set a property of the
+operation, and this is that at its smallest: one function the seeder uses and
+the navigational commands do not."
+  (let ((raw (match-rank entity token)))
+    ;; 3 is not a rank, it is MATCH-RANK saying the name does not contain this
+    ;; token at all -- SEED-MATCHES drops it so that a token which reached an
+    ;; entity only through its path is not recorded as evidence. Promoting from
+    ;; 3 would turn every such non-match into a match, which is a wider change
+    ;; than analysing the ones that already matched.
+    (if (or (zerop raw) (= raw 3))
+        raw
+        (let ((analyzed (name-tokens entity))
+              (stemmed  (stem:stem token))
+              (best raw))
+          (dolist (candidate analyzed best)
+            (dolist (probe (if (string= stemmed token) (list token) (list token stemmed)))
+              (cond ((string= candidate probe) (setf best (min best 0)))
+                    ((and (<= (length probe) (length candidate))
+                          (string= probe candidate :end2 (length probe)))
+                     (setf best (min best 1))))))))))
+
+(defun seed-matches (view origins types)
   "How TOKENS meet the index: an alist of (entity . ((token . rank) ...)).
 
 In the order the entities were first reached, so a bundle does not reorder
@@ -245,19 +489,40 @@ A rank of :PROSE is a match in the entity's :DOCUMENTATION rather than in its
 name (REQ-0035 R4, DES-0028). It is a keyword and not a fourth integer because
 the two are not points on one scale -- a name match is evidence an author chose
 that word *for this thing*, and a prose match is evidence they used it while
-explaining it. SEED-SCORE bands them separately for that reason."
+explaining it. SEED-SCORE bands them separately for that reason.
+
+ORIGINS is TASK-TOKEN-ORIGINS' alist rather than a bare token list, and a
+match on a token the caller did not write is recorded three ranks worse than
+the same match on one they did (DES-0033 D1). BUG-0040 is why: \"string\" stems
+to \"str\" and \"stre\", and a prefix match on \"stre\" scored 1 while a
+substring match on \"string\" scored 2, so STRESS-PUSHER and STRESS-WRITER
+took two of eight slots on a query about string prefixes."
   (let ((hits  (make-hash-table :test #'eq))
-        (order '()))
+        (order '())
+        (frequencies '())
+        (tokens (mapcar #'car origins)))
     (flet ((record (entity token rank)
              (unless (gethash entity hits)
                (push entity order))
              (push (cons token rank) (gethash entity hits))))
       (dolist (token tokens)
-        (dolist (entity (find-entities view :name-like token))
+        ;; The length of this list is TOKEN's document frequency in this
+        ;; repository -- taken on every query since REQ-0016 and discarded
+        ;; until DES-0036 D1. Recorded before the type filter, because how
+        ;; common a word is in a tree is a fact about the tree and not about
+        ;; which types a caller asked for.
+        (let ((reached (find-entities view :name-like token)))
+          (push (cons token (length reached)) frequencies)
+        (dolist (entity reached)
           (when (or (null types) (member (entity-type entity) types))
+            ;; MATCH-RANK, not ANALYZED-RANK. DES-0034 measured the analyzer
+            ;; at 38 of 45 against 40, and its own closing line predicted why:
+            ;; promoting an exact part match to 0 flattens the band that was
+            ;; breaking ties between equal-coverage candidates, and nothing
+            ;; else discriminates them. REQ-0046 first.
             (let ((rank (match-rank entity token)))
               (unless (= rank 3)
-                (record entity token rank))))))
+                (record entity token rank)))))))
       ;; The prose pass, second so that a name match wins the de-duplication
       ;; below: one entry per (entity, token) is what keeps SEED-SCORE's
       ;; coverage band a count of *distinct terms* rather than of matches.
@@ -281,8 +546,43 @@ explaining it. SEED-SCORE bands them separately for that reason."
                 (when (and (gethash token words)
                            (not (assoc token (gethash entity hits) :test #'string=)))
                   (record entity token :prose))))))))
-    (loop for entity in (nreverse order)
-          collect (cons entity (nreverse (gethash entity hits))))))
+    (values (loop for entity in (nreverse order)
+                  collect (cons entity (nreverse (gethash entity hits))))
+            (nreverse frequencies))))
+
+(defun weak-term-p (token origins)
+  "True when TOKEN is one of *CONTEXT-WEAK-TERMS*, or came from one.
+
+Both, because a weak word reaches SEED-MATCHES two ways. It is written -- `get
+definition list' -- or it is the part a compound was split into, and
+\"get-definition-list\" splits to a `get' whose origin is the compound rather
+than itself. Asking only the origin misses the second; asking only the token
+misses \"tests\" reaching the index as its own stem."
+  (let ((origin (cdr (assoc token origins :test #'string=))))
+    (and (or (member token *context-weak-terms* :test #'string=)
+             (and origin (member origin *context-weak-terms* :test #'string=)))
+         t)))
+
+(defun strong-candidates (matches origins)
+  "MATCHES, less every candidate whose terms are all weak ones.
+
+Relaxed rather than enforced, in ADMIT-SEEDS' sense and for its reason: a task
+written entirely out of weak words -- `get set' -- would otherwise have no
+candidates at all, so when the filter empties the pool the pool is returned
+whole.
+
+The filter and not the stopword list is what makes a weak term safe to search
+on. A word like `get' names something in almost any code tree, so dropping it
+costs the queries that meant it; searching it without this admits every GETX in
+the repository as a seed in its own right. Measured on game-server, `get
+database config' with `get' searched and unfiltered returned GET-GAME-DB-ID,
+GET-TYPEID and GAME-GET-DEFAULT-CONFIG and lost GET-DATABASE-CONFIG, which it
+had found when `get' was a stopword."
+  (let ((kept (remove-if (lambda (pair)
+                           (every (lambda (m) (weak-term-p (car m) origins))
+                                  (cdr pair)))
+                         matches)))
+    (or kept matches)))
 
 (defun prose-only-p (matches)
   "True when every one of MATCHES came from prose rather than from a name.
@@ -297,8 +597,21 @@ with corroboration, and demoting it would punish the documentation."
 
 3 rather than an error, because the band this feeds is about how well a *name*
 matched and a prose-only candidate has no answer to give -- it is already
-separated by PROSE-ONLY-P one band above."
-  (let ((ranks (remove :prose (mapcar #'cdr matches))))
+separated by PROSE-ONLY-P one band above.
+
+DES-0033 D1 moved this to 6 as part of ranking a derived token below a written
+one, and the acceptance run took that back: 41 of 45, losing JS-TRIM on \"trim
+whitespace from a string\". The design records the measurement.
+
+INTEGERP rather than removing :PROSE by name, and the difference is not
+cosmetic. A MATCH-RANK is an integer; every other value in that position marks
+a match that did not come from a name and has no rank to contribute. Written as
+(REMOVE :PROSE ...) it happened to be right while :PROSE was the only such
+value, and stopped being right the moment DES-0040 D5 added (:SIMILARITY .
+<cosine>): a cosine of 0.83 is not :PROSE, so it survived the remove and became
+the minimum -- ranking a semantic candidate that matched no word at all as
+better than a prefix match on a word the caller wrote."
+  (let ((ranks (remove-if-not #'integerp (mapcar #'cdr matches))))
     (if ranks (reduce #'min ranks) 3)))
 
 (defun plain-words (string)
@@ -351,9 +664,14 @@ part of what the seed is telling you about that name."
   "True when TASK asks about tests, so R4's demotion must not fire.
 
 Whole words, because \"the latest handler\" is not a question about tests.
-Read off the raw task rather than off TASK-TOKENS, which drops \"test\" as a
-stopword -- it is too common to *match a name* against and is perfectly good
-evidence of what the caller wants."
+
+Read off the raw task rather than off TASK-TOKENS, and still, though the reason
+has changed. TASK-TOKENS dropped \"test\" as a stopword until DES-0038; it now
+returns it as a weak term, so the two lists would agree today. The raw task
+stays the source because this asks what the caller *wants*, which the words
+they wrote answer directly, while TASK-TOKENS also holds compound parts and
+stem variants Loom manufactured -- \"latest\" is not one, but nothing here
+should depend on that."
   (intersection (plain-words task) '("test" "tests" "testing" "fixture" "fixtures")
                 :test #'string=))
 
@@ -381,7 +699,113 @@ why."
        (test-code-p entity)
        (not (gethash (significant-name entity) production))))
 
-(defun seed-score (entity matches &key demote-tests terms production)
+(defun match-coverage (matches origins)
+  "How many distinct words of the task MATCHES answers to.
+
+Distinct *words*, not distinct matches: a candidate reached by \"string\" and
+by \"str\" answered one word of the task twice. SEED-SCORE's coverage band has
+always been described as \"how many of the task's distinct terms this name
+answers to\", and this computes that.
+
+It is nonetheless NOT what the coverage band uses, and the measurement is why.
+DES-0033 D2 proposed it and PLAN-0039 S3 built it; the acceptance run went from
+42 of 45 to 40, losing WorkingSet (fe-1) and SaveDesign (fe-10) on front-end --
+a tree that work did not commit to, so neither loss is corpus drift.
+
+SaveDesign is the case. \"saving a piece design\" reaches it through the stem
+\"save\", and folding \"save\" and \"sav\" back into \"saving\" drops its
+coverage from 3 to 2 while a rival answering \"design\" and \"piece\" keeps 2.
+Correcting the count cost the stemmer its one recorded gain, and DEC-0005 does
+not buy a more defensible band with two entities that stop being recalled.
+
+Kept rather than deleted so the next attempt starts from the measurement. The
+inflated count is a real defect; what is wrong with this correction is that it
+deflates a true positive and a false one by the same amount."
+  (let ((seen (make-hash-table :test #'equal)))
+    (dolist (m matches (hash-table-count seen))
+      (let* ((token (car m))
+             (origin (or (cdr (assoc token origins :test #'string=)) token)))
+        (setf (gethash origin seen) t)))))
+
+(defun term-weight (token frequencies corpus-size)
+  "How much a match on TOKEN is worth, from 1 for a term naming one entity down
+towards 0 for one naming everything.
+
+Inverse document frequency, normalised by log of the corpus size:
+
+    w(t) = log(N / df(t)) / log(N)
+
+The normalisation is what makes a weight comparable between repositories.
+front-end holds 3457 definitions to game-server's 1811, and an unnormalised idf
+would make every front-end term look rarer than every game-server one; REQ-0023
+put several repositories behind one service precisely so that \"check\" could be
+common in one and absent from another.
+
+Measured on Loom, where N is about 3000: separator at df 0 and fallback at df 1
+weigh 1.00, join at df 2 weighs 0.91, starts at df 4 weighs 0.83, parse at df 26
+weighs 0.59, and entity at df 150 weighs 0.38. A rare term is worth about two
+and a half times a common one, which is the whole spread -- REQ-0046 asks for a
+continuous weight rather than a cutoff, and DES-0032 refused a threshold because
+the gap between `starts' at 4 entities and `join' at 2 is two entities.
+
+1 when the frequency is unknown or the corpus is too small to say anything. A
+token with no recorded frequency is one the prose pass reached and the name pass
+did not, and treating it as rare is the reading that does not silently demote a
+docstring match."
+  (let ((df (cdr (assoc token frequencies :test #'string=))))
+    (cond ((or (null df) (<= corpus-size 1)) 1)
+          ((<= df 1) 1)
+          ((>= df corpus-size) 0)
+          (t (/ (log (/ corpus-size df)) (log corpus-size))))))
+
+(defparameter *coverage-resolution* 1
+  "Steps per whole term in the coverage band.
+
+1 until the weighting was measured. With weights running from 0.38 for the
+commonest term on this tree to 1.00 for a term naming one entity, a whole-number
+count puts almost every candidate on 1, 2 or 3 and throws the weighting away in
+the rounding: three common terms and one rare one both count 1.
+
+10 gives the band a tenth of a term, which is finer than the spread between any
+two terms this tree has. SEED-SCORE's other constants are multiplied to match --
+the deficit now runs 0 to 80 rather than 0 to 8, so it is worth 100 a step
+rather than 100 a term, and the bands above it move up a decade each.")
+
+(defun weighted-coverage (matches frequencies corpus-size)
+  "How many of the task's terms MATCHES answers to, counting each by its rarity.
+
+DES-0036 D3. The band this feeds stays an integer from 0 to 8 and stays worth
+100, so no other band moves: what changes is that a candidate answering three
+words nearly every file uses now counts about 1 where it counted 3, and one
+answering three words peculiar to this repository still counts 3.
+
+Rounded rather than kept continuous. A fractional coverage puts a continuous
+quantity in the digits SEED-SCORE gives to the prose band at 10 and the rank
+band at 0-3, and needs every constant in that function multiplied.
+
+NOT CALLED BY SEED-SCORE. DES-0036 records the measurement. At a whole term the
+weighting returned 42 of 45 and 390 of 450 -- exactly the numbers REQ-0046 set
+as the bar, unchanged. At tenths of a term, with every band above multiplied to
+make room, it returned 40 of 45 and 389 of 450, losing ColorEditor and
+EditorModeToggle.
+
+The diagnosis is that idf discriminates between the terms *within* a query, and
+the queries REQ-0046 R1 was written for have no rare term to find. "game add
+definition" against front-end weighs game at df 252, add at 38 and definition
+at 17; every candidate matching them is weighted alike, and three of the four
+named misses came back with byte-identical item counts.
+
+Kept because the frequency it rests on is recorded by SEED-MATCHES at no cost,
+and because what those queries need -- a candidate whose name carries all of the
+terms beating one that carries the commonest of them -- is a proximity signal
+that no per-term weight expresses."
+  (round (* *coverage-resolution*
+            (reduce #'+ matches
+                    :key (lambda (m) (term-weight (car m) frequencies corpus-size))
+                    :initial-value 0))))
+
+(defun seed-score (entity matches &key demote-tests terms production origins
+                                        frequencies (corpus-size 0))
   "Sort key for one candidate seed, lower first: type, then coverage, then match.
 
 Coverage -- how many of the task's distinct terms this name answers to -- is
@@ -467,48 +891,179 @@ The bands are separated rather than blended, widest first:
   match      quality of the best match, which is what keeps a single-term task
              ranked exactly as it was: every candidate then has coverage 1 and
              that band cancels."
+  (declare (ignore frequencies corpus-size))
   (+ (* 1000000 (seed-type-rank entity))
      (*  100000 (if (named-by-task-p entity matches terms) 0 1))
      (*   10000 (if (slot-accessor-p entity) 1 0))
      (*    1000 (if (demoted-test-p entity demote-tests production) 1 0))
+     ;; (LENGTH MATCHES), not WEIGHTED-COVERAGE, and the constants are back
+     ;; where they were. DES-0036 built the weighting and measured it at exactly
+     ;; the two numbers it set out to beat, both unchanged; that design records
+     ;; why, and WEIGHTED-COVERAGE keeps the mechanism.
      (*     100 (max 0 (- 8 (length matches))))
      (*      10 (if (prose-only-p matches) 1 0))
      (best-name-rank matches)))
 
+(defun lexical-terms (matches)
+  "The terms of MATCHES that are words of the task.
+
+A term is a string. DES-0040 D5 puts (:SIMILARITY . <cosine>) in the same
+position, and a keyword there is the marker that this match came from a vector
+rather than from a word -- so everything reasoning about *what the task asked*
+filters on STRINGP and everything reasoning about *how a candidate arrived*
+does not."
+  (remove-if-not #'stringp matches :key #'car))
+
+(defun dense-only-p (matches)
+  "True when MATCHES holds similarity and nothing else.
+
+Such a candidate answered no word the caller wrote. It is exempt from
+ADMIT-SEEDS' slice cap, which counts how much of the *task* a group of seeds
+answers -- a question a similarity match does not participate in."
+  (and matches (null (lexical-terms matches))))
+
 (defun seed-slice (matches)
   "The slice of the task a seed answers to: its matched terms, sorted.
-The key the share in ADMIT-SEEDS is counted against."
-  (format nil "~{~a~^ ~}" (sort (mapcar #'car matches) #'string<)))
+The key the share in ADMIT-SEEDS is counted against.
 
-(defun admit-seeds (ranked limit)
-  "The first LIMIT entities of RANKED, holding back a slice past its share.
+Similarity is not part of a slice. Left in, every dense candidate in a bundle
+would share one slice and *SEED-TERM-SHARE* would hold them to two -- which is
+the wrong reading of a cap written to stop one English word filling the set."
+  (format nil "~{~a~^ ~}" (sort (mapcar #'car (lexical-terms matches)) #'string<)))
+
+(defparameter *rrf-k* 60
+  "Reciprocal rank fusion's constant. DES-0040 D4.
+
+60 is what the RRF literature settles on and is not tuned here. What it buys is
+that the difference between rank 1 and rank 2 is small next to the difference
+between appearing on a list and not appearing on it, which is the property that
+makes fusion robust to two scores that share no scale.")
+
+(defparameter *semantic-weight* 1.5
+  "How much a place on the semantic list is worth against a place on the
+lexical one.
+
+Simulated at the seed level before the fusion existed: equal weight reached 448
+of 450 on known-item -- the union ceiling exactly, losing none of the eleven
+exact-name cases REQ-0048 R2 protects -- and 24 of 120 on the mismatch family
+against dense-alone's 34. At 1.5 and above those invert to 443 and 34.
+
+Equal, because the simulation could not see the neighbour band and the band is
+where every one of the mismatch family's nine lexical hits comes from. A fused
+seed set gets an expansion too, and whether the ten cases equal weight appears
+to lose return as items is a question only a measurement with the band running
+can answer. PLAN-0043 S6 is that measurement and is what sets this number.")
+
+(defun fuse-rankings (lexical semantic &key protected)
+  "One ranked list from two, by reciprocal rank. DES-0040 D4.
+
+    score(c) = sum over the lists holding c of  w / (*RRF-K* + rank(c))
+
+Rank rather than score, because a cosine and a SEED-SCORE band are not on one
+scale and nothing here should pretend they are. DES-0032 refused to place a
+threshold in a quantity it had measured across six queries; this refuses to
+calibrate two.
+
+A candidate on both lists carries both kinds of match: its lexical terms and
+its similarity. That is what makes it not dense-only, so ADMIT-SEEDS charges it
+to the slice its terms make, exactly as it would have without an embedder.
+
+PROTECTED is the entities the task named, and they sort ahead of everything
+else. A named candidate is one whose name *is* one of the words the caller
+wrote -- NAMED-BY-TASK-P, rank 0 on a term from TASK-TERMS -- and REQ-0016 R1
+has required since it was written that such a query seed from such an entity.
+
+Without it, dense displaces them, and PLAN-0043 S6 measured that costing three
+of REQ-0048 R2\'s eleven cases. The reason is a property of the embedder rather
+than a tuning failure: a document is a name and a docstring, so the barest
+member of a family has the document least dominated by its own name, and a
+query that *is* a name resembles its longer relatives more than itself.
+`mapper to native\' returns MAPMAPPER.TONATIVE at 0.982 and MAPPER.TONATIVE at
+0.635. No threshold separates those, because the wrong answers score higher.
+
+The plainest statement of why this band exists: grep would find MAPPER.TONATIVE
+for `mapper to native\'. A retrieval mechanism that does worse than grep on a
+query naming a thing has not earned the right to rank it.
+
+The bonus is 1.0 against a reciprocal-rank sum that cannot exceed about 0.04,
+so it is a band and not a weight -- protected candidates keep their order among
+themselves and nothing unprotected can climb past one.
+
+LEXICAL is returned unchanged when SEMANTIC is empty. Fusing one list would
+reproduce its order -- the weights are positive and the ranks distinct -- but
+returning it outright is what makes REQ-0048 R6 an identity rather than an
+arithmetic coincidence, and it is the path every query takes on a machine with
+no embedder."
+  (if (null semantic)
+      lexical
+      (let ((scores (make-hash-table :test #'eq))
+            (matches (make-hash-table :test #'eq))
+            (order '()))
+        (flet ((note (entity rank weight found)
+                 (unless (nth-value 1 (gethash entity scores))
+                   (push entity order))
+                 (incf (gethash entity scores 0.0d0)
+                       (/ weight (+ *rrf-k* rank)))
+                 (setf (gethash entity matches)
+                       (append (gethash entity matches) found))))
+          (loop for (entity . found) in lexical
+                for rank from 1
+                do (note entity rank 1.0d0 found))
+          (loop for (entity . found) in semantic
+                for rank from 1
+                do (note entity rank (float *semantic-weight* 1.0d0) found)))
+        (dolist (entity protected)
+          (when (nth-value 1 (gethash entity scores))
+            (incf (gethash entity scores) 1.0d0)))
+        (let ((fused (loop for entity in (nreverse order)
+                           collect (cons entity (gethash entity matches)))))
+          ;; STABLE-SORT so that a tie keeps the order the lists gave it, which
+          ;; on a tie between two lexical candidates is SEED-SCORE\'s order.
+          (stable-sort fused #'> :key (lambda (pair) (gethash (car pair) scores)))))))
+
+(defun admit-seeds (ranked limit &key protected)
+  "The first LIMIT entities of RANKED, holding back a slice past its share and
+a name past its own.
 
 The cap is a filter on the way in rather than another term in the score,
 because it is a property of the set being built and not of any candidate in
 it: whether a seventh \"check\" is worth admitting depends entirely on whether
 anything else is still waiting.
 
-What it counts against is the *set* of terms a seed answers to, and what it
-counts is names rather than entities. Both halves were measured rather than
-reasoned to, and each fixes what the simpler rule got wrong:
+Two counts against two keys, because a candidate crowds a bundle two ways.
 
-  Charging each seed to one term -- its narrowest -- cost REQ-0016 R8's query
-  one of the three CONNECTION-CONNECT-DATABASE definitions, the one in
-  server/server.lisp. Three files defining one name is the finding that query
-  exists to produce, and a cap counting entities destroys it. Counting names
-  does not: they are one name, so they are one charge.
+  A slice -- the *set* of terms a seed answers to -- may contribute
+  *SEED-TERM-SHARE* distinct names, and what it counts is names rather than
+  entities. Both halves were measured rather than reasoned to, and each fixes
+  what the simpler rule got wrong:
 
-  Exempting anything that answered to more than one term let five members of
-  the CHECK-DATABASE-* family take five of eight slots, because they all match
-  {check, database} and nothing capped a pair of words the way a single word
-  was capped. A family sharing a slice is the same crowding as a family
-  sharing a word.
+    Charging each seed to one term -- its narrowest -- cost REQ-0016 R8's query
+    one of the three CONNECTION-CONNECT-DATABASE definitions, the one in
+    server/server.lisp. Three files defining one name is the finding that query
+    exists to produce, and a cap counting entities destroys it. Counting names
+    does not: they are one name, so they are one charge.
 
-Relaxed rather than enforced. When the held-back candidates are all there is
-they are admitted in score order, so a task naming one thing still seeds on
-that thing as many times as the tree offers and a small tree behaves exactly
-as it did before the cap existed."
+    Exempting anything that answered to more than one term let five members of
+    the CHECK-DATABASE-* family take five of eight slots, because they all
+    match {check, database} and nothing capped a pair of words the way a single
+    word was capped. A family sharing a slice is the same crowding as a family
+    sharing a word.
+
+  A name may be *SEED-NAME-SHARE* entities. One charge is right; the slots that
+  charge could take were unbounded until BUG-0041, because the branch admitting
+  a name already charged to its slice asked nothing further. Measured over the
+  450 known-item cases on 2026-08-22, 34 returned eight seeds carrying three or
+  fewer distinct names and 9 returned a single name eight times.
+
+Relaxed rather than enforced, both of them. When the held-back candidates are
+all there is they are admitted in score order, so a task naming one thing still
+seeds on that thing as many times as the tree offers and a small tree behaves
+exactly as it did before either cap existed."
   (let ((spent  (make-hash-table :test #'equal))
+        ;; EQUALP hashes a string the way STRING-EQUAL compares one -- by
+        ;; character, ignoring case -- so this table and the MEMBER below agree
+        ;; on what counts as the same name.
+        (copies (make-hash-table :test #'equalp))
         (chosen '())
         (held   '())
         (taken  0))
@@ -517,15 +1072,259 @@ as it did before the cap existed."
         (let* ((slice (seed-slice (cdr pair)))
                (names (gethash slice spent))
                (name  (significant-name (car pair))))
-          (cond ((or (< (length names) *seed-term-share*)
-                     (member name names :test #'string-equal))
+          (cond ((and (or (dense-only-p (cdr pair))
+                          (< (length names) *seed-term-share*)
+                          (member name names :test #'string-equal))
+                      (< (gethash name copies 0) *seed-name-share*))
                  (pushnew name (gethash slice spent) :test #'string-equal)
+                 (incf (gethash name copies 0))
                  (incf taken)
                  (push (car pair) chosen))
                 (t (push (car pair) held))))))
     (setf chosen (nreverse chosen)
           held   (nreverse held))
-    (append chosen (subseq held 0 (min (- limit taken) (length held))))))
+    (let ((admitted (append chosen
+                            (subseq held 0 (min (- limit taken) (length held))))))
+      ;; PROTECTED is guaranteed a slot, not a place. A candidate the task named
+      ;; by its own word must appear -- grep would find it -- and *PROTECT-NAMED*
+      ;; measured that promoting such candidates to the front instead costs more
+      ;; than it recovers: acceptance 43 to 41, because NAMED-BY-TASK-P fires on
+      ;; every entity whose whole name is a common word the caller happened to
+      ;; type. Inclusion is the requirement; rank one was never the requirement.
+      (let ((missing (remove-if (lambda (entity) (member entity admitted :test #'eq))
+                                protected)))
+        (if (null missing)
+            admitted
+            ;; Each missing one displaces the lowest-ranked admitted candidate
+            ;; that is not itself protected, so the order of everything that
+            ;; stays is the order the fusion gave it.
+            (let ((result (copy-list admitted)))
+              (dolist (entity missing result)
+                (let ((victim (find-if-not (lambda (e) (member e protected :test #'eq))
+                                           (reverse result))))
+                  (when victim
+                    (setf result (substitute entity victim result :test #'eq
+                                                                  :count 1)))))))))))
+
+(defun reported-terms (task)
+  "The task's words that the seeder actually looked for, in the caller's spelling.
+
+The intersection of TASK-TERMS and TASK-TOKENS, which is what makes the term
+report a statement about the query rather than about Loom's handling of it.
+Each list alone is the wrong one. TASK-TERMS keeps stopwords, so a report built
+from it says `a' and `to' matched nothing, which is true and is noise.
+TASK-TOKENS holds the fragments compounds were split into, so a report built
+from it says `utf-8', `utf' and `encod' each matched nothing, which is one
+absence counted three times and two words the caller never wrote.
+
+Their intersection is the words the caller typed that the seeder searched on:
+for \"reading a file with an encoding fallback when it is not UTF-8\", the four
+terms reading, encoding, fallback and utf-8 out of nine tokens and twelve
+terms."
+  (let ((tokens (task-tokens task)))
+    (remove-if-not (lambda (term) (member term tokens :test #'string=))
+                   (task-terms task))))
+
+(defun term-coverage (matches terms)
+  "Per term of TERMS, the candidates in MATCHES that answered it, split by how.
+
+An alist of (term :name (entity ...) :prose (entity ...)), in the order TERMS
+gives. MATCHES is SEED-MATCHES' alist, keyed by entity; this is the same data
+keyed by term, which is the direction nothing has needed until now -- the
+seeder reads a candidate's terms to score it, and never asks a term which
+candidates it reached.
+
+Every term of TERMS gets a row, including one no candidate matched at all. A
+table built from the matches alone would hold no row for it, and the term with
+nothing under it is the one the whole report exists to name."
+  (let ((rows (mapcar (lambda (term) (list term :name '() :prose '())) terms)))
+    (dolist (pair matches)
+      (loop for (term . rank) in (cdr pair)
+            for row = (assoc term rows :test #'string=)
+            when row
+              do (if (eq rank :prose)
+                     (push (car pair) (getf (cdr row) :prose))
+                     (push (car pair) (getf (cdr row) :name)))))
+    rows))
+
+(defun classify-terms (coverage chosen)
+  "Each term of COVERAGE as :ANSWERED, :WEAK or :UNMATCHED. DES-0032 D2.
+
+  :ANSWERED   an admitted seed carries this term in its name
+  :WEAK       candidates matched it, but no admitted seed matched it by name --
+              which is where a prose-only term lands, and where a term whose
+              name matches all ranked below the eighth slot lands too
+  :UNMATCHED  nothing in the index matched it, by name or in prose
+
+Three states and not a number. REQ-0037's WHAT THIS IS NOT rules out a
+confidence score per seed, and :UNMATCHED needs no judgement to be true of an
+index: it is what `find' returning nothing says, which is what all four of the
+judged records behind REQ-0037 ran by hand once the bundle had failed to say
+it.
+
+CHOSEN is what separates the first two, so this runs after ADMIT-SEEDS. A term
+answered only by a candidate the cap held back is a term the caller cannot see
+an answer to, and calling it answered would describe the ranking rather than
+the bundle."
+  (loop for (term . how) in coverage
+        collect (cons term
+                      (cond ((intersection (getf how :name) chosen :test #'eq)
+                             :answered)
+                            ((or (getf how :name) (getf how :prose))
+                             :weak)
+                            (t :unmatched)))))
+
+(defparameter *context-embedder* nil
+  "The embedder semantic seeding uses, or NIL for none. REQ-0048 R6.
+
+NIL is the default and is not a degraded mode. Loom answers from the lexical
+seeder alone, returns what it returns today, and reports nothing -- an optional
+dependency that announced its absence would not be optional.
+
+Set by whoever knows the deployment rather than read from the environment here:
+loom-serve configures it at startup, a test binds it, and a library consumer
+that never sets it never reaches an embedder. The same argument DES-0030 D1
+makes for the context log.")
+
+(defparameter *context-vector-store* nil
+  "The vector store for the repository being searched, or NIL for none.
+
+Passed in rather than loaded here, because loom-knowledge is handed a VIEW and
+never learns which repository it belongs to. The caller knows, and the caller
+is where the store is loaded.")
+
+(defparameter *semantic-limit* 8
+  "How many entities the scan proposes.
+
+The same eight ADMIT-SEEDS may admit, and deliberately not more. DES-0040 D4
+fuses two ranked lists by reciprocal rank, and a dense list twice as long as
+the lexical one would win slots by being longer rather than by being better.")
+
+(defparameter *protect-named* nil
+  "Whether an entity the task named sorts ahead of everything else in the fusion.
+
+Off, because it was measured and it was worse. At weight 1.5 and list length 6
+it took acceptance from 43 of 45 to 41 and known-item from 443 to 441, losing
+POLYGONSTOPARTITION and ARCH-0001 -- two cases that were being found -- while
+recovering none of the three it was written for.
+
+The mechanism is too blunt for what it was aimed at. NAMED-BY-TASK-P fires on
+any entity whose whole name is one of the caller\'s words, which on a real tree
+is a great many short common ones, so promoting all of them ahead of everything
+floods the slots rather than protecting a specific answer.
+
+It gates two mechanisms and both measured worse, at weight 1.5, list length 8
+and a relative cut of 0.90 -- the best setting otherwise found, 443 of 450 on
+known-item, 39 of 120 on mismatch and 43 of 45 judged:
+
+    promoting named candidates to the front   441 / 39 / 41
+    guaranteeing them a slot without a place  433 / 38 / 42
+
+The second was the more careful idea and did worse. Both fail the same way and
+for the same reason: NAMED-BY-TASK-P fires on every entity whose whole name is a
+word the caller happened to type, and on a real query -- \"segment terrain into
+region polygons\" -- SEGMENT is such an entity. Protecting a set that large
+displaces candidates that were being found, wherever in the pipeline the
+protection is applied.
+
+Kept, gated and measured rather than deleted: the *idea* -- that a query naming
+a thing must reach that thing, because grep would -- is REQ-0016 R1 and is not
+in doubt. What is refused is protecting everything NAMED-BY-TASK-P calls named.
+A predicate that picked out the three cases REQ-0048 R2 names, and not SEGMENT,
+would be a different matter and does not exist yet.")
+
+(defparameter *semantic-relative-floor* 0.90
+  "How close to the best cosine a semantic candidate must be, as a fraction.
+
+0.0 admits the whole list. 0.9 admits only what scores within ten per cent of
+the best match this query found.
+
+Relative rather than absolute, which is what *SEMANTIC-FLOOR* is and why that
+one is 0.0 and staying there: an absolute threshold asks \"is this similar\",
+and the measurement showed the wrong answers scoring higher than the right one,
+so no absolute number separates them. This asks a different question -- \"did
+anything stand out\" -- and the answer differs per query rather than per
+repository. A query with one clear match contributes one candidate; a query
+whose top six are all equally mediocre contributes six, or none if the caller
+would rather it did not.")
+
+(defparameter *semantic-floor* 0.0
+  "The cosine below which a semantic candidate is not proposed at all.
+
+0.0 admits everything the scan returns, which is what PLAN-0043 S6 measured
+first and where REQ-0048 R2 failed: three of the eleven cases only the lexical
+seeder finds were displaced by candidates that were merely the nearest
+available rather than near.
+
+MEASURED AND LEFT AT 0.0. A floor cannot fix what it was proposed for. The
+three displaced cases, with the cosine of every candidate that displaced them
+and of the answer itself:
+
+    slot defn            -> slot-defn         0.927 0.911 0.911 0.876 0.807
+                            the answer:       0.792
+    mapper to native     -> Mapper.toNative   0.982 0.942 0.929 0.924 0.916
+                            the answer:       0.635
+    capability whose
+      referenced ...     -> piece-type-speed  0.769 0.769 0.738 0.720 0.715
+                            the answer:       0.592
+
+In every case the displacing candidates score *higher* than the answer, so a
+floor that removed them would remove the answer first. The parameter stays at
+0.0 and the measurement stays here, because a floor is the obvious idea and
+this is what it is worth.
+
+What the numbers show instead is a property of the embedder rather than of the
+threshold. `mapper to native\' is the name MAPPER.TONATIVE written as words,
+and what comes back is every elaborated sibling -- MAPMAPPER.TONATIVE,
+STYLEMAPPER.TONATIVE, MARKMAPPER.TONATIVE -- ahead of the plain one. Same for
+`slot defn\': DEFN-SLOT, FIND-SLOT-DEFN and SLOT-DEFN-ERROR all beat SLOT-DEFN.
+A document is a name and a docstring, so the barest member of a family is the
+one whose document is least dominated by the words of its own name, and a query
+that *is* a name resembles its longer relatives more than itself.
+
+That is REQ-0045 R4's territory -- lexical stays authoritative for a query that
+names a thing -- and the fix it points at is a rule rather than a number: a
+candidate the task named must not be displaced by one that merely resembles it.
+NAMED-BY-TASK-P is that predicate and already exists.")
+
+(defun semantic-candidates (view task)
+  "Candidates the embedder proposes for TASK, as an alist of entity to matches.
+
+Each carries one match, (:SIMILARITY . <cosine>), which is DES-0040 D5 and does
+three things no extra code is needed for. CLASSIFY-TERMS walks matched terms
+and :SIMILARITY is not one of the task\'s words, so a semantic seed can never
+mark a term ANSWERED -- REQ-0048 R4 holds by construction rather than by a
+guard. BEST-NAME-RANK keeps only integers, so a cosine contributes no name
+rank. And the record shows the caller that this seed arrived on similarity
+rather than on a word they wrote.
+
+NIL for every reason there is: no embedder configured, no store, a store whose
+identity does not match, an embedder that cannot be reached, an id in the store
+that is no longer in the view. REQ-0048 R6 gives them one meaning, so they get
+one return value and the caller needs no branch.
+
+An id the view does not hold is dropped rather than reported. The store is
+derived from an index that has since moved -- PLAN-0043 S2b makes that rare and
+does not make it impossible -- and a stale id is exactly the fabricated fact
+CON-0001 refuses, not an error to raise at a caller who asked about something
+else."
+  (when (and *context-embedder* *context-vector-store*)
+    (handler-case
+        (let* ((vectors (loom-embed:embed-texts *context-embedder* (list task)))
+               (query (and (plusp (length vectors)) (aref vectors 0)))
+               (hits (and query (loom-embed:nearest *context-vector-store*
+                                                    query *semantic-limit*))))
+          (let ((best (if hits (cdr (first hits)) 0.0)))
+            (loop for (id . cosine) in hits
+                  for entity = (and (>= cosine *semantic-floor*)
+                                    (>= cosine (* *semantic-relative-floor* best))
+                                    (get-entity view id))
+                  when entity
+                    collect (cons entity (list (cons :similarity cosine))))))
+      ;; REQ-0048 R6: an embedder that cannot answer is an embedder that is not
+      ;; there, and neither is reported. The memo is what stops the next query
+      ;; paying for the discovery again.
+      (loom-embed:embedder-unavailable () nil))))
 
 (defun seed-entities (view task &key (limit 8) types)
   "Entities whose names the words of TASK point at, best match first.
@@ -550,17 +1349,52 @@ waiting (ADMIT-SEEDS)."
   ;; matched loosely is worth more than a file matched exactly: the file's
   ;; neighbourhood is a directory listing, the function's is the code that
   ;; will break.
-  (let* ((demote-tests (not (task-wants-tests-p task)))
+  (multiple-value-bind (matches frequencies)
+      (seed-matches view (task-token-origins task) types)
+   (let* ((demote-tests (not (task-wants-tests-p task)))
          (terms      (task-terms task))
-         (matches    (seed-matches view (task-tokens task) types))
-         (production (production-names matches))
-         (ranked     (stable-sort matches #'<
+         (origins    (task-token-origins task))
+         (corpus-size (length (all-entities view)))
+         ;; MATCHES stays whole for the term report below: a term answered only
+         ;; by candidates this drops is WEAK, and calling it UNMATCHED would say
+         ;; the index holds nothing of the kind. CANDIDATES is what the ranking
+         ;; and the admission see.
+         (candidates (strong-candidates matches origins))
+         (semantic   (semantic-candidates view task))
+         (production (production-names candidates))
+         ;; COPY-LIST because STABLE-SORT is destructive on a list and MATCHES
+         ;; is read again below -- and CANDIDATES is MATCHES itself whenever
+         ;; STRONG-CANDIDATES removed nothing, so sorting it in place is sorting
+         ;; MATCHES. Without the copy MATCHES names whatever cons cell was
+         ;; first before the sort, which after the sort is a *suffix* of the
+         ;; sorted list -- so the ASSOC building the record detail searched part
+         ;; of the alist and missed the rest. BUG-0037: 207 of 246 recorded
+         ;; bundles carried a null `terms' and a score recomputed from no matches
+         ;; at all, which is the corpus REQ-0036 measures the ranking against.
+         (lexical    (stable-sort (copy-list candidates) #'<
                                   :key (lambda (pair)
                                          (seed-score (car pair) (cdr pair)
                                                      :demote-tests demote-tests
                                                      :terms terms
-                                                     :production production))))
-         (chosen     (admit-seeds ranked limit)))
+                                                     :production production
+                                                     :origins origins
+                                                     :frequencies frequencies
+                                                     :corpus-size corpus-size))))
+         ;; DES-0040 D4. With no embedder this is LEXICAL itself, so nothing
+         ;; below this line can behave differently than it did before dense
+         ;; retrieval existed.
+         ;; REQ-0016 R1 through the fusion: an entity the task named by its own
+         ;; word is not displaced by one that merely resembles it.
+         ;; The entities the task named by a word the caller wrote. Used two
+         ;; ways and they are not the same thing: *PROTECT-NAMED* sorts them
+         ;; first, which measured worse, and ADMIT-SEEDS guarantees them a slot,
+         ;; which is what REQ-0016 R1 actually asks for.
+         (named      (loop for (entity . found) in candidates
+                           when (named-by-task-p entity found terms)
+                             collect entity))
+         (protected  (when *protect-named* named))
+         (ranked     (fuse-rankings lexical semantic :protected protected))
+         (chosen     (admit-seeds ranked limit :protected protected)))
     ;; Second value: the chosen seeds with the score and the terms each
     ;; answered to. DES-0030 D3 -- a record holding the seeds without their
     ;; scores cannot show why the eighth slot went where it did, and the score
@@ -570,24 +1404,38 @@ waiting (ADMIT-SEEDS)."
     ;; which reads (entity . terms) pairs and would have to read something else.
     ;; Eight SEED-SCORE calls against a bundle that has already walked the graph
     ;; is not a cost the latency clauses can see.
+    ;; Third value, not second: the record detail BUG-0037 fixed is the second
+    ;; and tools/acceptance.py reads it positionally. DES-0032 D2's report goes
+    ;; after it.
     (values chosen
             (loop for entity in chosen
                   for rank from 1
-                  for pair = (assoc entity matches :test #'eq)
+                  ;; RANKED and not MATCHES: a dense-only candidate is not in
+                  ;; SEED-MATCHES at all, and ASSOC would return NIL -- which
+                  ;; SEED-SCORE reads as "matched nothing" and the record
+                  ;; writer writes as a null `terms\'. That is precisely the
+                  ;; shape BUG-0037 left behind when a destructive sort lost
+                  ;; the matches, and 207 of 246 recorded bundles carried it.
+                  for pair = (assoc entity ranked :test #'eq)
                   collect (list :id (id entity)
                                 :name (name entity)
                                 :rank rank
                                 :score (seed-score entity (cdr pair)
                                                    :demote-tests demote-tests
                                                    :terms terms
-                                                   :production production)
+                                                   :production production
+                                                   :origins origins
+                                                   :frequencies frequencies
+                                                   :corpus-size corpus-size)
                                 ;; The terms as objects rather than the
                                 ;; (term . weight) conses SEED-MATCHES builds.
                                 ;; A dotted pair is not a shape JSON has, and a
                                 ;; record is read by tools/acceptance.py.
                                 :terms (loop for (term . weight) in (cdr pair)
                                              collect (list :term term
-                                                           :weight weight)))))))
+                                                           :weight weight))))
+            (classify-terms (term-coverage matches (reported-terms task))
+                            chosen)))))
 
 ;;;; ==================================================================
 ;;;; Instrumentation (SS11)
@@ -814,7 +1662,7 @@ now loses its fortieth structural neighbour rather than the document explaining
 the design.
 
 Every call is logged to *CONTEXT-LOG*."
-  (multiple-value-bind (seeds seed-detail)
+  (multiple-value-bind (seeds seed-detail term-states)
       (seed-entities view task :limit seed-limit :types types)
    (let* (;; DES-0026 D6/D8, PLAN-0032 S1. Was: NEIGHBORS on each seed, PUSHNEW,
          ;; every edge the same price and nothing ordering the result. A one-hop
@@ -933,6 +1781,17 @@ Every call is logged to *CONTEXT-LOG*."
                         budget))))
       (let ((bundle (list :task task
                           :seeds (summarize-entities seeds)
+                          ;; DES-0032 D3. What the task's words reached, so a
+                          ;; caller can tell a bundle whose subject is here
+                          ;; from one whose seeds all rode a common word. The
+                          ;; seeder's evidence reached the record writer and
+                          ;; nothing else before this: :SEEDS is
+                          ;; SUMMARIZE-ENTITIES output, so the REST response
+                          ;; carried "score": null and "terms": [] on every
+                          ;; seed and no caller could see it.
+                          :terms (loop for (term . state) in term-states
+                                       collect (list :term term
+                                                     :state state))
                           :items (reverse items)
                           :decisions (summarize-entities decisions)
                           ;; Beside :DECISIONS rather than folded into it. A
@@ -1030,6 +1889,12 @@ made true rather than merely asserted."
             (loop for line = (read-line in nil nil)
                   while line do (format out "      ~a~%" line))))))))
 
+(defun terms-in-state (bundle state)
+  "The reported terms of BUNDLE in STATE, in the order the caller wrote them."
+  (loop for row in (getf bundle :terms)
+        when (eq state (getf row :state))
+          collect (getf row :term)))
+
 (defun render-context (bundle)
   "BUNDLE as the text block an agent receives.
 
@@ -1044,6 +1909,33 @@ whose text is not has not saved anybody anything."
             (getf bundle :budget) (getf bundle :truncated))
     (when (null (getf bundle :items))
       (format out "No indexed entity matched this task.~%"))
+    ;; DES-0032 D4, above the seeds rather than below them: the caller reads
+    ;; this to decide whether to read the rest. REQ-0037's evidence is four
+    ;; judged records in which the answer was that nothing exists and the
+    ;; bundle returned eight lexical matches typeset exactly like a bundle
+    ;; whose answer was present.
+    (let ((unmatched (terms-in-state bundle :unmatched))
+          (weak      (terms-in-state bundle :weak))
+          (said nil))
+      (when unmatched
+        (format out "No indexed entity matches: ~{~a~^, ~}~%" unmatched)
+        (setf said t))
+      (when weak
+        (format out "Matched only in prose, or below the last seed: ~{~a~^, ~}~%"
+                weak)
+        (setf said t))
+      ;; R2's stated finding. Not an empty list for the caller to interpret,
+      ;; and not an error -- the seeds are still printed below, because the
+      ;; acceptance clause requires the negatives without buying them with the
+      ;; positives.
+      (when (and (getf bundle :terms)
+                 (null (terms-in-state bundle :answered)))
+        (format out "No word of this task is answered by any name in this ~
+repository.~%")
+        (setf said t))
+      ;; Only when something was said. A bundle whose every term is answered
+      ;; renders exactly as it did before this design, blank lines included.
+      (when said (terpri out)))
     (dolist (item (getf bundle :items))
       ;; The heading changes when the band does, so an agent can tell the code
       ;; it asked about from the reasoning about it and from a neighbour two

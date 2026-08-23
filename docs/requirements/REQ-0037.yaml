@@ -1,0 +1,180 @@
+id: REQ-0037
+title: A bundle must be able to answer that nothing here does that, because absence is the answer a caller cannot get any other way
+status: partial
+date: 2026-08-21
+refines: [REQ-0016]
+affects: [build-context, seed-entities, admit-seeds, render-context, seed-score]
+importance: Minor
+tags: [retrieval, context, absence, con-0001, req-0036]
+summary: |
+  `context` always answers. Asked for something the repository does not contain,
+  it returns eight seeds anyway -- the eight entities whose names share the most
+  tokens with the task -- and a caller reading them cannot tell that from a
+  bundle where the answer is present. Four of the fifteen judged records in
+  .loom/context say so in the agent's own words, and in three of them the
+  correct answer was that nothing exists.
+
+  This is CON-0001's rule applied one level up. The resolution pass already
+  refuses to fabricate an edge and records a miss instead, because "a fabricated
+  edge is worse than a recorded miss, and the record is what makes documentation
+  rot detectable". A bundle that seeds eight lexical matches for a capability the
+  tree does not have is the fabricated edge, in the retrieval layer, and nothing
+  records it.
+body: |
+  THE EVIDENCE, from .loom/context, quoted
+
+  - "join a list of strings" (Loom): *"Correct negative -- Loom has no
+    string-join -- but I could not tell that from the bundle, whose seeds were
+    as-list-of-strings, first-string-literal and body-docstring. Confirmed with
+    find term=join returning nothing. The bundle cannot say 'no such thing
+    exists' and that is the answer I needed."*
+
+  - "parse a number out of a string" (Loom): *"Nothing relevant exists in Loom
+    and nothing relevant was returned. Seeds were parse-route-caller,
+    parse-frameworks, parse-javascript, parse-document -- lexical matches on
+    'parse' with no relation to parsing a number."*
+
+  - "reading a file's contents with an encoding fallback" (Loom): *"the task
+    named an encoding fallback that does not exist in this tree -- a bundle that
+    could say 'nothing here does that' would have been worth more than the 86KB
+    it returned."*
+
+  - the utils migration (game-server), on `utils:encode`: *"The correct answer
+    was that nothing exists. It is exported by utils/package.lisp and defined
+    nowhere in the tree; `find` returning empty was right and is how the dead
+    export was caught. Recording it because a bundle cannot say 'no such thing
+    is here' and seeding one would be a defect."*
+
+  In every one of these the caller recovered by running `find`, which does return
+  nothing when there is nothing. So the capability exists in the service and is
+  absent from the surface built for the question.
+
+  WHY THIS IS THE EXPENSIVE ONE
+
+  A wrong answer that looks wrong costs a second query. A wrong answer that looks
+  right costs the work built on it. Eight plausible seeds for a function that does
+  not exist is the second kind: the caller's next move is to read four of them
+  before concluding what an empty answer would have said immediately. Two of the
+  four records above end with the agent grepping, which is the outcome the whole
+  index exists to prevent.
+
+  REQUIREMENTS
+
+  R1  SUPERSEDED by DEC-0005 on 2026-08-22. As written: a seed is admitted on
+      evidence, not on rank; ADMIT-SEEDS takes the top eight by score whatever
+      the scores are, a score reflecting only a shared token with nothing behind
+      it must not qualify, and the observable is that a query for a capability
+      the tree does not have admits no seeds.
+
+      That observable is refused. It is bought by withholding a seed, and
+      DEC-0005 decides that the seeder spends precision to buy recall rather
+      than the reverse: a bundle's reader can discard what it does not need and
+      cannot recover what it was never given. DES-0032 D5 designed the gate and
+      is retired with this clause.
+
+  R2  A bundle with no admitted seeds says so, in the answer, as a stated
+      finding: nothing in this repository matches this task. Not an empty list
+      that a caller has to interpret, and not an error.
+
+  R3  A bundle whose seeds were admitted weakly says that too. The middle case is
+      the common one and the one a caller most needs marked -- three strong seeds
+      and five lexical ones is a different answer from eight strong ones, and
+      today they are typeset identically.
+
+  R4  SUPERSEDED by DEC-0005 in the downward direction. As written: the seed
+      count responds to the evidence rather than being a constant, because a
+      fixed eight is why a task with three real answers spends five slots on
+      noise -- measured in the "migrate game/ and server/" record, where five of
+      eight seeds matched directory names in the task string.
+
+      Spending five slots on noise is no longer a defect: the slots are cheap
+      and the recall is not. The count may still respond upward, and that was
+      measured on 2026-08-22 rather than assumed -- swept at 8, 16 and 32
+      against tools/acceptance.py, recall held at 42 of 45 with the same three
+      misses at every setting, so a larger set recovered nothing. It also cost
+      this requirement's own report: with 32 seeds actually served, r37-3 failed
+      because `encoding' came back ANSWERED rather than WEAK. Every extra slot
+      is another chance to answer a word nothing really answers. The limit stays
+      at eight.
+
+  R5  What the bundle could not look at is reported alongside what it found. The
+      "CLAUDE.md text loom init writes" record is the case: the file holding the
+      answer is under templates/, a deliberate indexing exclusion, so the bundle
+      could not have contained it and did not say so. An exclusion the caller
+      cannot see is indistinguishable from an absence.
+
+  ACCEPTANCE
+
+  Against Loom's own tree, `context "join a list of strings"` reports no match
+  rather than returning as-list-of-strings, and `context "parse a number out of a
+  string"` does the same. Against game-server, `context "read a whole file into a
+  string"` still returns SLURP-FILE's successor -- the negative must not be
+  bought by refusing to answer the positives, and the hand-written cases in
+  tools/acceptance.py are the guard on that. The "32 cases, currently 30 of 32"
+  written here on 2026-08-21 was already stale when DES-0032 measured it: the
+  harness holds 45 expectations across 24 cases and stands at 42 of 45, missing
+  config-get (R7), MapElementTypeEditor (fe-5) and dot-prefixed-p (r39-3).
+
+  WHAT THIS IS NOT
+
+  Not a confidence score on each seed. A number per row invites a threshold
+  nobody agreed and reads as precision the ranking does not have. The claim being
+  asked for is about the answer as a whole.
+
+  OPEN QUESTIONS, ANSWERED BY DES-0032
+
+  - What is evidence, concretely? Measured on 2026-08-22 over six queries,
+    three present and three absent. A score floor cannot work: the eight
+    admitted seeds of an absent query score 100502-100613 and of a present one
+    100301-100502, so a floor anywhere between them cuts both. A ratio against
+    the best seed cannot work either: SEED-SCORE is banded in units of 100000,
+    so every seed of every query sits within 0.2% of every other, the worst
+    ratio in the six being 1.0011. The third candidate is the answer, and it
+    needs no threshold at all -- report per term whether any admitted seed
+    answered it by name, and let the caller read the absence off the list.
+
+  - Does R5 need the exclusion list per query? Still open. R5 is not
+    implemented; see OUTSTANDING.
+
+  OUTSTANDING
+
+  R3 is implemented. A bundle names the words of the task that no admitted seed
+  answered by name, and the three absence cases in tools/acceptance.py assert
+  it: join and separator, number, encoding and fallback all come back weak,
+  while recall over the 45 hand-written expectations holds at 42.
+
+  R2 is implemented as a stated finding -- "No word of this task is answered by
+  any name in this repository." -- but not as an empty seed list, because that
+  half depends on R1.
+
+  R1 is not implemented and will not be: DEC-0005 refuses its observable, and
+  DES-0032 D5, which designed the gate, is retired. The bundle says what its
+  words reached and deliberately withholds nothing.
+
+  R4 is superseded downward and measured upward, and neither leaves work here.
+  The limit stays at eight; DEC-0005 carries the numbers.
+
+  Recall is to be bought where a candidate is missing from the candidate set
+  rather than ranked low in it, which is REQ-0039's subject. The three standing
+  acceptance misses are not seed-count-limited, and dot-prefixed-p is one of
+  REQ-0039's own cases.
+
+  R5, reporting the indexing exclusions, is not implemented. DES-0032 records
+  why it is a different kind of absence from the one this work reports.
+
+  REPRICED, 2026-08-23
+
+  Importance drops from Critical to Minor. R2 and R3 are implemented and are
+  what made this Critical: a bundle names the words of the task that no
+  admitted seed answered by name, and the three absence cases in
+  tools/acceptance.py assert it. R1 and R4 are refused by DEC-0005 and will not
+  be built. R5 is the only clause left, and it is one report of the indexing
+  exclusions a query could not look at.
+
+  Dense retrieval changes how hard R2 and R3 are to hold, not what they ask.
+  Cosine returns nearest neighbours for every query ever asked, so a semantic
+  seed would mark every term ANSWERED if it were allowed to answer one.
+  REQ-0048 R4 forbids it, the same three absence cases are the check, and
+  DEC-0006's consequences record the coupling. The term report classifies on
+  written terms only and a semantic seed carries none, which is why it survived
+  the change unaltered.

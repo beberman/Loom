@@ -3,6 +3,7 @@ title: A language with its own toolchain should enrich the index through a secon
 status: partial
 date: 2026-08-06
 refines: [REQ-0012, REQ-0015]
+importance: Major
 tags: [analyzer, knowledge, multi-language, introspection, isolation]
 summary: |
   Loom's analyzer reads source as text and infers structure from it. That is

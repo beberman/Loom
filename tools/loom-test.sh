@@ -17,13 +17,13 @@ cat > "$driver" <<'LISP'
 (require :asdf)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 (let ((here #p"/home/beberman/lisp/Loom/"))
-  (dolist (system '("ontology/" "graph/" "analyzer/" "knowledge/"
+  (dolist (system '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "workspace/" "process/" "serve/" "rest/" "mcp/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
              asdf:*central-registry* :test #'equal)))
 (handler-bind ((warning #'muffle-warning))
   (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector")
+           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem")
            :silent t))
 (load "/home/beberman/lisp/Loom/src/full-test.lisp")
 (funcall (read-from-string "loom-test:full-test"))

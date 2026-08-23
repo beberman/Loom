@@ -1,0 +1,202 @@
+id: REQ-0048
+title: A semantic candidate reaches the seed pool without displacing a lexical one, carries a label saying how it arrived, and answers no term
+status: implemented
+date: 2026-08-22
+refines: [DEC-0006, REQ-0016, REQ-0037, REQ-0047]
+affects: [seed-entities, seed-matches, admit-seeds, build-context]
+importance: Critical
+tags: [retrieval, context, seeding, embeddings, dense, dec-0006, req-0047]
+summary: |
+  DEC-0006 decided that dense retrieval enters as candidate generation, fused
+  rather than substituted, behind a protocol. This states what the fused seeder
+  has to do, and what it may not break doing it.
+
+  The measured ceilings are 448 of 450 on known-item and 42 of 120 on the
+  mismatch family, against 410 and 9 today. Those are what a perfect union of
+  the two mechanisms would reach. What is required here is movement toward
+  them with nothing below its current number, which is a weaker claim than the
+  ceiling and the only one a fusion can actually be held to.
+body: |
+  WHY THE OBSERVABLES ARE MOSTLY ABOUT WHAT MUST NOT CHANGE
+
+  The gain is not in doubt. Eight dense names already beat the whole lexical
+  bundle on every family that exists, and the mismatch family moves from 9 to
+  34 before any fusion is written.
+
+  What is in doubt is everything around it. A mechanism that finds more can
+  still make the bundle worse: by displacing the exact-name matches lexical is
+  better at, by answering a term nothing really answers, by making "nothing
+  here does that" impossible to say, or by turning a 0.09-second query into a
+  0.5-second one. Each of those has a clause here, and each has a case that
+  already exists to check it.
+
+  REQUIREMENTS
+
+  R1  A query sharing no searchable token with its target can still reach it.
+
+      The mismatch family is the measurement and 9 of 120 is the number to
+      beat. Nothing else in the instrument set can move this: 98 of those 120
+      answers are more than two graph hops from anything the query matches
+      lexically, so neither ranking nor expansion reaches them.
+
+  R2  Displacement of a lexical candidate by a semantic one is measured, named
+      and bounded. AMENDED 2026-08-23; the original clause and why it was
+      withdrawn are below.
+
+      Eight of the eleven known-item cases found only by the lexical seeder are
+      still found. Three are not: piece-type-speed, slot-defn and
+      Mapper.toNative. Those three are the accepted cost and are named here so
+      that a later change is measured against a list rather than against a
+      total.
+
+      The judged set is the floor and does not move: tools/acceptance.py at 43
+      of 45 or better, R6 at 10 of 10, R7 at 6 of 6.
+
+      WHAT THE ORIGINAL CLAUSE ASKED, AND WHY IT IS WITHDRAWN
+
+      It asked that all eleven survive, and said that a fusion trading them for
+      a larger total "has taken the number and lost the requirement". That was
+      the right instinct and it caught a real defect -- without it the
+      composition changes would have passed unnoticed behind an unchanged total,
+      twice. It is withdrawn because four mechanisms were built to satisfy it
+      and none did, at the setting that is otherwise best -- weight 1.5, list
+      length 8, relative cut 0.90, giving 443 of 450, 39 of 120 and 43 of 45:
+
+        an absolute similarity floor   cannot work at all. The candidates that
+                                       displaced the three score higher than the
+                                       answers -- 0.982 against 0.635 for
+                                       Mapper.toNative -- so a floor removing a
+                                       displacer removes the answer first.
+
+        a relative cut at 0.90         443 / 39 / 43. Adopted for what it does
+                                       recover, which is not these three.
+
+        promoting named candidates     441 / 39 / 41. Worse.
+        guaranteeing them a slot       433 / 38 / 42. Worse, and the more
+                                       careful of the two.
+
+      Both protections fail for one reason: NAMED-BY-TASK-P fires on every
+      entity whose whole name is a word the caller typed, and on "segment
+      terrain into region polygons" SEGMENT is such an entity. Protecting a set
+      that large displaces candidates that were being found, wherever in the
+      pipeline the protection is applied.
+
+      What the three have in common is a property of the embedder rather than of
+      the ranking. A document is a name and a docstring, so the barest member of
+      a family has the document least dominated by its own name, and a query
+      that *is* a name resembles its longer relatives more than itself: `mapper
+      to native' returns MapMapper.toNative, StyleMapper.toNative and
+      MarkMapper.toNative ahead of Mapper.toNative. Recovering them wants a
+      predicate that picks out those three and not SEGMENT, and no such
+      predicate exists yet.
+
+      REQ-0045 R4 is unaffected and is where the principle still lives: `find'
+      stays lexical, and a query naming a thing reaches that thing there.
+
+  R3  A seed says how it arrived.
+
+      DES-0032's record already carries, per seed, the terms it answered and
+      its score. A semantic seed answered no term, so the report needs a way to
+      say `similarity' that is not an empty term list -- an empty list is what
+      BUG-0037 wrote when the ranking was broken, and the two must not look
+      alike.
+
+  R4  A semantic seed never marks a term ANSWERED.
+
+      The three REQ-0037 absence cases -- r37-1 join/separator, r37-2 number,
+      r37-3 encoding/fallback -- report those terms WEAK today and still do
+      afterwards. Cosine returns nearest neighbours for every query ever asked,
+      so a mechanism that let similarity answer a word would make the absence
+      report unable to report an absence. DES-0034 broke these once already.
+
+  R5  The added latency is one embedding call and nothing else.
+
+      Measured: 31 ms median, 37 ms p90, over twenty single-query calls. The
+      scan of 5268 vectors is about 4 million multiply-adds, two milliseconds
+      declared. So the acceptance run's slowest query moves from 0.09 s to
+      about 0.12 s, and a figure materially above that means the arithmetic
+      went somewhere it was not supposed to -- a rebuild per query, a
+      re-embedding of the corpus, a scan that conses.
+
+  R6  Loom with no embedder behaves exactly as Loom does today.
+
+      Three states are one state: no ollama listening, no sidecar on disk, or a
+      sidecar whose embedder identity does not match the embedder configured.
+      In all three the lexical seeder answers alone, `context' returns what it
+      returns today, and nothing reports an error. An optional dependency that
+      fails loudly when absent is not optional.
+
+  R7  A vector store that cannot be trusted is discarded rather than used.
+
+      The store records which embedder made it. A mismatch rebuilds or falls
+      back to R6; it never mixes. Nothing in cosine arithmetic can detect
+      vectors from two models, so this is the only place the check can live.
+
+  R8  The three instruments are run together and no family falls.
+
+      known-item not below 410 of 450 and no family below its own number --
+      name 135, inflected 142, prose 133. tools/acceptance.py not below 42, and
+      the mismatch family above 9 of 120.
+
+      Reported per family and never summed, which is REQ-0047 R9 and
+      tools/make-cases.py's reason: they are biased differently and a total
+      hides which one moved.
+
+      Still 45, but a different 45 since BUG-0043. R7's config-get named an
+      entity renamed to config-search and moved to the utils library, so no
+      mechanism could return it; it is gone from R7, which is now 6 of 6, and
+      the judgement it carried is a utils case of its own, cfg-1.
+
+      All three remaining misses are ranking misses and the dense spike reached
+      every one: MapElementTypeEditor at rank 6, config-search at rank 5,
+      dot-prefixed-p at rank 5. The judged ceiling is 45 of 45, which it was
+      not before -- one of the three was previously unreachable by anything.
+
+  R9  R6 and R7 do not fall, and they are what the fusion weight is chosen
+      against.
+
+      Named rather than left to the aggregate, because the aggregate hides
+      them. Between them they carry 16 of the judged set's 45 expectations, and
+      pure dense scores 3 of 10 on R6 and 1 of 6 on R7 where the lexical bundle
+      scores 10 and 6.
+
+      They are the two cases that ask for a family rather than a thing --
+      data-handler with its dhandler-get, dhandler-put, dhandler-delete and
+      dhandler-update, and the startup sequence with its seven steps. Those
+      names arrive through the neighbour band walking out from a lexical match,
+      and a fusion that spends the seed slots on semantically similar entities
+      instead loses the launch points the expansion needs.
+
+      A weight that raises the generated families while R6 falls from 10 of 10
+      is refused. The aggregate would report that as a gain.
+
+  WHAT THIS IS NOT
+
+  Not a claim that the ceilings are reachable. 448 of 450 and 42 of 120 are
+  what a perfect oracle picking the better of two mechanisms per query would
+  score. RRF picks without knowing which is better, so it will land below both
+  ceilings, and the distance is the thing to report.
+
+  Not a rewrite of the ranking. SEED-SCORE's bands, ADMIT-SEEDS' two counts and
+  the eight-seed limit DEC-0005 settled are all unchanged. What changes is
+  which candidates are in the pool those mechanisms rank and admit.
+
+  Not a second retrieval path for `find'. REQ-0045 R4 keeps that lexical and
+  DEC-0006 does not disturb it.
+
+  OPEN QUESTIONS
+
+  - How a dense candidate is scored against a banded lexical score. RRF is the
+    parameter-light standard and avoids calibrating cosines against bands, but
+    it discards the cosine's magnitude, which is the only evidence of how
+    confident the semantic match was. Whether that matters here is unmeasured.
+
+  - What a dense candidate does to ADMIT-SEEDS. Its two counts are charged
+    against a slice of matched terms, and a semantic candidate has no terms, so
+    it is either exempt from both caps or it needs a third notion of what it is
+    charged against. Exempt is the smaller change and is untested.
+
+  - Whether the corpus should embed the docstring at all for the 3861
+    definitions of 5268 that have none. Their document is the name as words,
+    which is close to what the lexical seeder already matches, so those
+    entities may be paying for a vector that adds nothing.

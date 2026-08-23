@@ -12,14 +12,14 @@
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 
 (let ((here (make-pathname :name nil :type nil :defaults *load-truename*)))
-  (dolist (system '("ontology/" "graph/" "analyzer/" "knowledge/"
+  (dolist (system '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "workspace/" "process/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
              asdf:*central-registry* :test #'equal)))
 
 (handler-bind ((warning #'muffle-warning))
   (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector")
+           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem")
            :silent t)
   (asdf:load-system :loom-process))
 

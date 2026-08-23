@@ -504,10 +504,25 @@ nothing and would otherwise look like a silent failure."
         (dolist (r (all-relationships graph))
           (when (and (federated-edge-p r) (getp r :route))
             (pushnew (getp r :route) matched :test #'string=)))))
-    (list :published (sort published #'string<)
-          :consumed (sort consumed #'string<)
-          :matched (sort matched #'string<)
-          :unmatched-published (sort (set-difference published matched :test #'string=)
+    ;; Sorted into the variables before the plist is built, and each difference
+    ;; taken from a copy. BUG-0038: CL:SORT is destructive on a list and the
+    ;; arguments of one LIST form are evaluated left to right, so sorting
+    ;; PUBLISHED in the first slot left it naming the sorted list from its old
+    ;; head onwards -- and the SET-DIFFERENCE two slots later then took the
+    ;; difference of a suffix of the claims against a suffix of the matches,
+    ;; which is REQ-0027 R3's dropped claim produced by the function written to
+    ;; report it. The COPY-LIST is the same hazard one step on: SET-DIFFERENCE
+    ;; may share structure with its first argument, so sorting the difference in
+    ;; place can relink conses :PUBLISHED has already been handed.
+    (setf published (sort published #'string<)
+          consumed  (sort consumed  #'string<)
+          matched   (sort matched   #'string<))
+    (list :published published
+          :consumed consumed
+          :matched matched
+          :unmatched-published (sort (copy-list (set-difference published matched
+                                                                :test #'string=))
                                      #'string<)
-          :unmatched-consumed (sort (set-difference consumed matched :test #'string=)
+          :unmatched-consumed (sort (copy-list (set-difference consumed matched
+                                                              :test #'string=))
                                     #'string<))))

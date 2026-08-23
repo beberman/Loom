@@ -4,6 +4,7 @@ status: implemented
 date: 2026-07-29
 refines: [REV-0001]
 affects: [describe-entity, document-properties, print-summary-line]
+importance: Minor
 tags: [knowledge, console, documents, context]
 summary: |
   `describe REQ-0003` prints the entire requirement -- some 240 lines -- and puts

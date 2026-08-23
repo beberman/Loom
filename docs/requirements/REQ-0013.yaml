@@ -4,6 +4,7 @@ status: draft
 date: 2026-08-06
 affects: [resolve-calls, unresolved-references, impact-report, describe-entity,
           run-check, impact-set, build-context]
+importance: Critical
 tags: [knowledge, console, resolution, honesty, con-0001]
 summary: |
   CON-0001 and CLAUDE.md both state the principle as two halves: an ambiguous

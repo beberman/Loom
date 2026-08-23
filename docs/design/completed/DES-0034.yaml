@@ -1,0 +1,158 @@
+id: DES-0034
+title: "REQ-0045 by analysing the name: one analyzer over both sides for context, and none of it for find"
+status: superseded
+date: 2026-08-22
+refines: [REQ-0045, CON-0007]
+affects: [seed-matches, match-rank, significant-name, task-tokens, stem-variants]
+tags: [retrieval, context, find, stemming, con-0007]
+summary: |
+  Loom analyses the query and matches the result against raw names. CON-0007
+  records that every text search analyses index and query alike, and that Loom
+  does it on neither side: "prefix" reaches DOT-PREFIXED-P only as a substring
+  because nothing ever split that name into dot/prefixed/p or stemmed
+  "prefixed" to "prefix".
+
+  The change is a name analyzer used by `context' and by nothing else. A name
+  is split on separators and on case change, each part is Porter-stemmed, and
+  the whole is kept beside the parts. `find' keeps MATCH-RANK untouched, which
+  is REQ-0045 R4 and is not a courtesy: `find' is the command an agent falls
+  back to when a bundle fails, and four of REQ-0037's judged records are
+  recoveries through it.
+body: |
+  D1  NAME-TOKENS
+
+  The analyzed form of an entity's SIGNIFICANT-NAME: split on - and _ and on a
+  lower-to-upper case change, lowercased, each part Porter-stemmed, with the
+  unsplit name kept beside the parts.
+
+  Splitting on case change is CON-0007's first mechanism and Loom has never
+  done it. TASK-TOKENS splits a compound in the *query* on - and _; nothing
+  splits a name at all, and nothing splits either on case, so MapElementTypeEditor
+  is one token to this index and SaveDesign is another.
+
+  Keeping the whole beside the parts is the practice CON-0007 records from
+  Lucene's WordDelimiterGraphFilter -- preserve_original and catenate_words --
+  and Loom already does it on the query side.
+
+  D2  ANALYZED-RANK, USED ONLY BY THE SEEDER
+
+  SEED-MATCHES ranks a candidate with MATCH-RANK, which compares a token to a
+  raw name: 0 exact, 1 prefix, 2 substring. It gains an analyzed sibling that
+  compares the token, and the token's stem, against NAME-TOKENS:
+
+    0  the token equals an analyzed part, or the whole name
+    1  the token is a prefix of a part or of the whole
+    2  the token occurs inside the name
+
+  Rank 2 is MATCH-RANK's answer and is the floor, so nothing that matches today
+  ranks worse tomorrow. That is what keeps this inside DEC-0005: the analyzer
+  can only promote.
+
+  For r39-3 it promotes the case the requirement was written for. "prefixed"
+  stems to "prefix", so DOT-PREFIXED-P's analyzed parts are dot, prefix, p, and
+  the query's "prefix" is an exact part match at 0 where it was a substring at
+  2.
+
+  For fe-10 it restores what BUG-0040's fix cost, and on merit rather than on
+  the double count DES-0033 D4 diagnosed: SaveDesign splits to save and design,
+  both exact at 0, and the two are two distinct words of the task rather than
+  one word matched twice.
+
+  D3  FIND IS NOT TOUCHED
+
+  MATCH-RANK, SEARCH-RANK, RESOLUTION-RANK and SEARCH-ENTITIES are unchanged
+  and the analyzer is not reachable from them. REQ-0045 R1 says the token set
+  is a property of the operation; this is that, at its smallest -- one function
+  the seeder calls and `find' does not.
+
+  R4's guard is by inspection rather than by measurement, because `find' has no
+  harness. The check is that src/knowledge/services.lisp is unedited except for
+  what NAME-TOKENS needs to read SIGNIFICANT-NAME.
+
+  D4  THE PROSE PASS KEEPS ITS OWN TOKENS
+
+  REQ-0045 R2 asks that a name pass and a prose pass not share a token set.
+  They stop sharing here by the name pass gaining an analyzer the prose pass
+  does not use: prose stays whole-word matched through PLAIN-WORDS against
+  :DOCUMENTATION.
+
+  Stemming the prose side as well is the symmetric change and is deliberately
+  not made here. It would widen every docstring match at once, on the tree
+  where REQ-0039 measured prose already winning bundles it should not, and the
+  two changes could not then be told apart in the acceptance run.
+
+  MEASURED, AND NOT ADOPTED: 38 OF 45
+
+  Built on 2026-08-22 and withdrawn the same day. Acceptance fell from 40 of 45
+  to 38, losing EditorModeToggle (fe-9) and string-lines (r39-2) on top of the
+  three already missing, and two of REQ-0037's three absence cases broke --
+  r37-1 reported "join" as ANSWERED and r37-3 reported "encoding" and
+  "fallback" the same way.
+
+  r39-3 did not move. DOT-PREFIXED-P is promoted to an exact part match on
+  "prefix" exactly as designed, and still does not reach the eighth slot.
+
+  The last line of this document predicted the mechanism before the measurement
+  found it: "An analyzer that promotes an exact part match makes the missing
+  idf more visible, not less." Rank is SEED-SCORE's last band and is worth 1
+  per step against coverage's 100, so promotion cannot outrank a coverage
+  difference -- what it does is flatten the band. Among candidates with equal
+  coverage, the match rank was the only thing left discriminating them, and
+  analysing names moves most of them to 0. The bundle then falls back to
+  whatever order SEED-MATCHES reached the candidates in.
+
+  The absence cases break by the same flattening seen from REQ-0037's side. A
+  term is ANSWERED when an admitted seed carries it in its name, and an
+  analyzed name carries a stemmed part -- so a name whose part stems to "join"
+  answers "join", and a bundle that had correctly reported the tree has no
+  string-join now says it does.
+
+  An implementation error was found and fixed during the measurement and was
+  not the cause. ANALYZED-RANK first promoted from rank 3, which is not a rank
+  but MATCH-RANK's way of saying the name does not contain the token, and which
+  SEED-MATCHES drops so a path-only hit is not recorded as evidence. Restricting
+  the analyzer to candidates that already matched gave the identical 38 of 45.
+
+  WHAT IS KEPT
+
+  SPLIT-NAME-PARTS, NAME-TOKENS and ANALYZED-RANK stay in the source, unused by
+  SEED-MATCHES, which calls MATCH-RANK as before. They are correct and they are
+  what REQ-0045 needs; what they lack is something for the freed band to be
+  replaced by.
+
+  THE SEQUENCING THIS ESTABLISHES
+
+  REQ-0046 precedes REQ-0045. Both of this design's failures are the same
+  missing quantity: a flattened match band leaves nothing to rank equal-coverage
+  candidates by, and an exact part match on a common word is indistinguishable
+  from one on a rare word. A term weighting supplies both -- it discriminates
+  where rank no longer can, and it is what makes an exact match on "join" worth
+  less than an exact match on "prefixed".
+
+  DES-0033 D4 said Porter's two-case cost was worth paying only if REQ-0045
+  followed. That is still true and the order is now known: REQ-0046, then
+  REQ-0045, then the cost is recovered or Porter is reverted.
+
+  WHAT IS NOT DESIGNED HERE
+
+  An index-time property. NAME-TOKENS is computed at match time over the
+  candidates FIND-ENTITIES already returned, which is a few hundred per query.
+  Storing it on the entity would make the graph carry a retrieval decision, and
+  DEC-0001 has the graph derivable from files rather than authoritative.
+
+  Abbreviation expansion. "str" for "string" is CON-0007's third mechanism and
+  needs a dictionary mined from the corpus. Nothing here produces it.
+
+  Term weighting. REQ-0046. An analyzer that promotes an exact part match makes
+  the missing idf more visible, not less: a name whose part exactly equals a
+  common word now ranks 0.
+
+  SUPERSEDED, 2026-08-23
+
+  Status moves from partial to superseded, so that `context' and `impact' stop
+  offering this as work in progress. The design was built, measured at 38 of 45
+  against a baseline of 45, and withdrawn; WHAT IS KEPT above lists the part
+  that stayed in the source. DEC-0006 counts it as one of four ranking
+  mechanisms measured on this tree in August 2026 that came in at baseline or
+  below, and adopts dense candidate generation in place of a fifth. The clause
+  this design served, REQ-0045 R1, is met by DES-0040's second ranked list.

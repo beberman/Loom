@@ -5,6 +5,7 @@ date: 2026-08-14
 refines: [CON-0004]
 affects: [documentation-relative-p, repository-files, prose-report,
           structure-report, markdown-analyzer, analyzer-handles-p]
+importance: Major
 tags: [markdown, analyzer, generality, req-0014, des-0016, front-end]
 summary: |
   The markdown analyzer claims a file only when some directory segment of its

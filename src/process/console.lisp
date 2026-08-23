@@ -327,6 +327,10 @@ command."
   ;; because enrichment is optional and on demand: a reader who sees zeroes
   ;; cannot tell a tree the image agreed with completely from one nobody has
   ;; asked about, and only one of those is worth doing something about.
+  (case (getf status :state)
+    (:indexing (format t "  state      : indexing -- still reading the tree, nothing answerable yet~%"))
+    (:embedding (format t "  state      : embedding -- answerable now, semantic seeding not yet~%"))
+    (t nil))
   (if (plusp (getf status :enrichment-runs))
       (format t "  enrichment : ~d unit~:p loaded, ~d gap~:p, ~d run~:p~%"
               (getf status :enriched-units) (getf status :enrichment-gaps)
@@ -404,6 +408,35 @@ command."
     (log-event "enrich" "~a" (repository-root repository))
     (print-enrichment report)
     (print-status (repository-status repository))))
+
+(define-command embed (&optional designator)
+    "embed [<name>]"
+    "Build or update the vector store that semantic seeding reads. On demand."
+  ;; On demand and in the background, which is two decisions rather than one.
+  ;;
+  ;; On demand for ENRICH's reason (DES-0011 R9): a build is seconds to minutes
+  ;; -- 66 for game-server's 1811 definitions, 183 for front-end's 3457 -- and
+  ;; nothing on a poll cycle designed to cost milliseconds may reach it.
+  ;;
+  ;; In the background because the launcher runs this and must return. A query
+  ;; that wants the store waits for the build instead (*VECTOR-BUILD-WAIT*), so
+  ;; the cost lands on whoever asks first rather than on everybody who starts
+  ;; the service, and on the normal path -- start Loom, read the banner, type a
+  ;; question -- it has already been paid.
+  (let* ((repository (current-repository designator))
+         (before (vector-build-status repository)))
+    (start-vector-build repository)
+    (log-event "embed" "~a" (repository-root repository))
+    (format t "  embedder   : ~a~%" (getf before :embedder))
+    (format t "  definitions: ~d~%" (getf before :definitions))
+    (if (getf before :vectors)
+        (format t "  store      : ~d vector~:p of ~d, ~@[~d to re-embed~]~@[~*up to date~]~%"
+                (getf before :vectors) (getf before :dimensions)
+                (and (plusp (or (getf before :stale) 0)) (getf before :stale))
+                (and (zerop (or (getf before :stale) 0)) t))
+        (format t "  store      : none yet, building all ~d~%"
+                (getf before :definitions)))
+    (format t "  building   : started in the background; a query waits for it~%")))
 
 (defun print-enrichment (report)
   "What one enrichment run did, zeros included.
@@ -683,6 +716,113 @@ which is CON-0006's expensive error at the scale of one answer."
       (t
        (format t "~&~%source: unavailable (~(~a~)).~%" status)))))
 
+(defun print-resemblance-row (row &optional (indent 2))
+  "One candidate: what it is, where, how close, and why it might be the same.
+
+The cosine leads because it is what ordered the list, and the reasons follow on
+their own line because DES-0041 D7 has them point rather than conclude -- five
+of the ten pairs REQ-0042 was written from were read on both sides and were not
+duplicates."
+  (let ((pad (make-string indent :initial-element #\Space))
+        (shared-name (getf row :shared-name-words))
+        (shared-prose (getf row :shared-prose-words))
+        (arity (getf row :arity))
+        (subject-arity (getf row :subject-arity)))
+    (format t "~&~a~,4f  ~(~a~) ~a~@[  [~a]~]~%"
+            pad (getf row :similarity) (getf row :type) (getf row :name)
+            (getf row :location))
+    (when (or shared-name shared-prose arity subject-arity)
+      (format t "~a        ~@[name: ~{~a~^ ~}  ~]~@[prose: ~{~a~^ ~}  ~]~
+~@[arity ~a~]~@[ against ~a~]~%"
+              pad shared-name shared-prose arity
+              (and arity subject-arity (/= arity subject-arity) subject-arity)))))
+
+(defun repository-for-similar (&optional designator)
+  "A repository and its vector store, or a refusal naming what is missing.
+
+DES-0041 D10. `context' without a store answers lexically and says nothing,
+because it still has an answer. This has no lexical fallback -- REQ-0045 R4 is
+why it should not get one -- so an empty result would mean both `nothing
+resembles this' and `nothing could have', and the two need telling apart. No
+ollama, no store, and a store whose embedder identity does not match are still
+one state with one meaning (REQ-0048 R6); the meaning is reported rather than
+returned as an empty list."
+  (let* ((repository (current-repository designator))
+         (store (repository-vectors repository)))
+    (unless store
+      (error "~a has no vector store. Run `embed ~:*~a' first."
+             (repository-name repository)))
+    (values repository store)))
+
+(define-command similar (term &optional against)
+    "similar <name> [<repository>]"
+    "Definitions that resemble one, by meaning rather than by name."
+  ;; REQ-0042 R1 and R2. The question `find' cannot ask: a duplicate is
+  ;; precisely the case where the two names differ, so every one of the ten
+  ;; pairs PLAN-0036 found by hand was invisible to a name search.
+  (multiple-value-bind (source source-store) (repository-for-similar)
+    (let* ((subject (resolve-entity (repository-graph source) term)))
+      (multiple-value-bind (target target-store)
+          (if against
+              (repository-for-similar against)
+              (values source source-store))
+        (let ((rows (resembling subject source-store
+                                (repository-graph target) target-store)))
+          (print-summary-line (entity-summary subject))
+          (format t "~&  resembling, in ~a:~%" (repository-name target))
+          (if rows
+              (dolist (row rows) (print-resemblance-row row))
+              ;; Not an empty list: the store exists, so this is the answer
+              ;; rather than the absence of one.
+              (format t "~&    Nothing in ~a is close to it.~%"
+                      (repository-name target))))))))
+
+(define-command survey (first-repository second-repository &optional cut)
+    "survey <repository> <repository> [<cut>]"
+    "Definitions in the first that resemble something in the second."
+  ;; REQ-0042 R3, the migration survey PLAN-0036 assembled by hand. One row per
+  ;; entity carrying its single best match, because every pair above a flat
+  ;; threshold reports one fact several ways -- DEFAULT-JSON-KEY-NAME came back
+  ;; four times against four different utils entities.
+  (multiple-value-bind (source source-store) (repository-for-similar first-repository)
+    (multiple-value-bind (target target-store) (repository-for-similar second-repository)
+      (let ((floor (if cut
+                       (let ((parsed (ignore-errors (read-from-string cut))))
+                         (unless (realp parsed)
+                           (error "~s is not a number. The cut is a cosine, ~
+between 0 and 1." cut))
+                         (float parsed 1.0))
+                       *survey-cut*)))
+        (multiple-value-bind (rows name-equal reached)
+            (resemblance-survey (repository-graph source) source-store
+                                (repository-graph target) target-store
+                                :cut floor)
+          (format t "~&~a against ~a, at ~,2f:~%"
+                  (repository-name source) (repository-name target) floor)
+          (if rows
+              (dolist (row rows)
+                ;; The subject's location, because two entities in one tree can
+                ;; carry one name -- front-end has two makePolygonShape, and
+                ;; without the file the two rows read as one row printed twice.
+                (format t "~&  ~,4f  ~28a ~~ ~a~%           ~a~%"
+                        (getf row :similarity)
+                        (getf row :subject-name)
+                        (getf row :name)
+                        (getf row :subject-location)))
+              (format t "~&  No pair reaches ~,2f.~%" floor))
+          ;; BUG-0002 in a second place. Forty rows read as the whole truth,
+          ;; and the number that says otherwise is what tells a caller to raise
+          ;; the cut rather than to believe the table.
+          (when (> reached (length rows))
+            (format t "~&  ~d of ~d shown. Raise the cut.~%"
+                    (length rows) reached))
+          ;; DES-0041 D4. Counted rather than listed: these are what `find'
+          ;; already answers, and every one of them scores 1.0000, so listing
+          ;; them would spend the readable rows on the question that was not
+          ;; asked.
+          (format t "~&  ~d pair~:p share a name and are not listed; ~
+`find' answers those.~%" name-equal))))))
+
 (define-command impact (term &optional depth)
     "impact <name> [<depth>]"
     ;; Built from the variable rather than written out, because the number in a
@@ -755,8 +895,16 @@ which is CON-0006's expensive error at the scale of one answer."
     (let* ((repo (current-repository))
            (started (get-internal-real-time)))
       (multiple-value-bind (bundle instrumentation)
-          (build-context (repository-graph repo) task
-                         :source-fn (lambda (id) (definition-source repo id)))
+          ;; DEC-0006. Bound here rather than read inside BUILD-CONTEXT for the
+          ;; reason the SOURCE-FN comment above gives: loom-knowledge is handed
+          ;; a graph and never learns which repository it belongs to, and this
+          ;; entry has the repository. REPOSITORY-VECTORS is NIL until somebody
+          ;; builds a store, so on an ordinary tree both bindings are NIL and
+          ;; SEED-ENTITIES takes the path it has taken since S3.
+          (let ((loom-knowledge:*context-vector-store* (repository-vectors repo))
+                (loom-knowledge:*context-embedder* (current-embedder)))
+            (build-context (repository-graph repo) task
+                           :source-fn (lambda (id) (definition-source repo id))))
         (write-string (render-context bundle))
         ;; REQ-0036 R1 is every context call rather than every call over the
         ;; service, so the console records too. Nothing is written and nothing

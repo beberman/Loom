@@ -1,0 +1,258 @@
+id: PLAN-0044
+title: "DES-0041 in seven steps: the splitter moves down before anything reads it twice, the primitive before either verb, and the survey last because it is the one with a cost"
+status: final
+date: 2026-08-23
+refines: [DES-0041, REQ-0042]
+affects: [nearest, load-vector-store, repository-vectors, name-as-words, describe-entity, search-entities]
+tags: [retrieval, similarity, multi-repo, duplication, embeddings, req-0042, des-0041]
+summary: |
+  NAME-AS-WORDS moves first and moves alone. DES-0041 D4 rests on the survey's
+  name comparison being the same function that built the embedded document --
+  two entities compare equal exactly when their vectors could not tell them
+  apart -- and today that function lives in loom-workspace, one system above
+  the one that has to read it.
+
+  Everything after that is additive. No step changes seeding, `find', or the
+  fusion PLAN-0043 landed, so tools/acceptance.py holding at 43 of 45 is a
+  guard on all seven rather than an outcome of any.
+body: |
+  S1  THE SPLITTER MOVES DOWN
+
+  NAME-AS-WORDS moves from src/workspace/vectors.lisp to loom-knowledge.
+  ENTITY-DOCUMENT keeps calling it across a dependency that already exists --
+  loom-workspace has depended on loom-knowledge since DES-0022 S3.
+
+  It is pure string code: ALPHANUMERICP, UPPER-CASE-P, a string output stream,
+  and nothing of loom-workspace's. The move is a cut and a paste plus an
+  export.
+
+  First and alone because D4's claim is an identity, not a resemblance. The
+  survey calls two entities name-equal when NAME-AS-WORDS agrees on them, and
+  that is only the same statement as "their vectors cannot tell them apart"
+  while one function answers both. Two copies would drift and the drift would
+  show up as a survey quietly reporting a pair it had already filtered.
+
+  Tests: the existing NAME-AS-WORDS tests move with it and pass unchanged. Not
+  rewritten -- a rewritten test cannot witness that a move changed nothing.
+
+  RISK, and it is the expensive one. VECTOR-STORE holds a digest per entity of
+  the text that was embedded, and the text is what NAME-AS-WORDS returns. A
+  move that alters its output by one character invalidates every digest in
+  every store on the machine, and the symptom is not an error: the next
+  incremental update re-embeds all 5268 definitions, 622 seconds, and reports
+  success. The guard is that the tests moved rather than rewritten, plus
+  `status' on a repository whose store is current still reading zero stale
+  after the change.
+
+  RISK: the `:system' property is the file's own package name (DES-0009), so
+  moving the definition moves which layering rules see it. No rule names
+  loom-knowledge's helpers, so a violation would be silent. Run `check'.
+
+  S2  THE VECTOR ACCESSOR
+
+  loom-embed gains VECTOR-FOR (store, entity-id) returning a FLOAT-VECTOR, or
+  NIL when the store does not hold that id.
+
+  A fresh copy, never a displaced array into VECTOR-STORE-VECTORS. NEAREST
+  reads the flat array in place at safety 0 while it scans, so handing a caller
+  an alias into it makes a caller's mutation corrupt every later query with no
+  error and no symptom -- the same shape as the two-embedder cosine DEC-0006
+  exists to refuse, in a place no check could see it.
+
+  Tests: an id in the store round-trips to the vector the store holds; an id
+  the store does not hold returns NIL; writing to the returned vector leaves
+  the store's own bytes unchanged. The third fails if the copy is dropped, and
+  is the only one that would.
+
+  S3  THE PRIMITIVE
+
+  RESEMBLING, in loom-knowledge:
+
+      (resembling source-store source-id target-view target-store
+                  &key (limit 10) (cut 0.0))
+
+  VECTOR-FOR, then NEAREST, then GET-ENTITY against TARGET-VIEW for each hit.
+  Returns a list of plists carrying the entity summary and the cosine. An id
+  the target view no longer holds is dropped in silence, which is what
+  SEMANTIC-CANDIDATES already does and for the same reason -- a store derived
+  from an index that has since moved is CON-0001's stale fact, not an error to
+  raise at a caller who asked about something else.
+
+  Self-exclusion when the two stores are the same store. An entity's cosine
+  with itself is 1.0 and would take the first row of every same-repository
+  answer.
+
+  Tests use LOOM-EMBED:MAKE-FIXED-EMBEDDER and a store written by hand, so
+  nothing in the suite reaches ollama. CON-0003 on each: the self-exclusion
+  test is the one that passes without the code if the fixture is careless, so
+  its fixture puts the subject's own vector nearest by construction.
+
+  No repository concept in this function. loom-knowledge is handed a graph and
+  never learns which repository it belongs to, which is the rule the SOURCE-FN
+  argument to BUILD-CONTEXT already follows.
+
+  S4  THE REASONS
+
+  DES-0041 D6, computed over the survivors of S3 rather than during the scan.
+
+    shared name words   NAME-AS-WORDS on both sides, intersected. S1 is why
+                        this can be written here at all.
+    shared prose words  the same over :DOCUMENTATION, which REQ-0035 indexes.
+    arity               :ARGUMENTS on both sides up to the first lambda-list
+                        marker, reported and never filtered on. 518 of Loom's
+                        918 functions that take an argument are arity 1, so it
+                        separates almost nothing and is a line in the answer
+                        rather than a term in the ranking.
+
+                        Written as "the length of :ARGUMENTS" and shipped that
+                        way, which is wrong on the 210 functions of 1304 that
+                        carry a marker: FIND-ENTITIES stores six tokens and
+                        takes one argument. Corrected after the fact, with a
+                        regression test naming FIND-ENTITIES. BUG-0044.
+
+  Tests: a pair sharing a docstring sentence reports the shared words; a pair
+  sharing nothing reports no reason and is still returned, because D7 has the
+  query point at a pair rather than justify it; two arity-1 functions that
+  share no word report arity and nothing else.
+
+  S5  `similar', THE R1 AND R2 VERB
+
+      similar <name> [in <repository>]
+
+  Console command, operation, and the REST and MCP surfaces the registry gives
+  for free. BEST-NAME-MATCH resolves the name to one entity -- it exists for
+  exactly this and BUG-0032 is why.
+
+  The operation resolves one or two repository designators to their graphs and
+  stores and binds nothing: unlike `context', which reads specials because
+  BUILD-CONTEXT is deep in a call chain, RESEMBLING takes its stores as
+  arguments.
+
+  D10 is a step of its own inside this one. A repository with no store answers
+  "this repository has no vectors; run embed", not an empty list. `context'
+  degrades to lexical and says nothing because it still has an answer;
+  `similar' has no lexical fallback and REQ-0045 R4 is why it should not get
+  one, so an empty result would mean both "nothing resembles this" and "nothing
+  could have". Its test asserts the sentence, not the emptiness.
+
+  Acceptance: `similar fnv-1a in utils' returns CONTENT-FINGERPRINT first at
+  0.8700, and `similar plist-shaped-p in utils' returns PLISTP first at 0.8600.
+  Both measured 2026-08-23 against the stores on disk, so the numbers are known
+  before the code exists.
+
+  REQ-0042's own acceptance names UTILS:READ-FILE returning SLURP-FILE, and
+  that pair cannot be asserted: PLAN-0036 S1 moved SLURP-FILE out of Loom. The
+  two above are the same claim against definitions that still exist, and saying
+  so here is cheaper than discovering it in a red test.
+
+  S6  `survey', THE R3 VERB
+
+      survey <repository> <repository> [<cut>]
+
+  One row per entity of the first repository carrying its single best match in
+  the second, cut defaulting to 0.80, name-equal pairs counted under their own
+  heading and kept out of the ranking.
+
+  Last because it is the only step with a cost. Measured with DOT-AT on the
+  stores as they stand: Loom by utils, 1720 by 113, is 0.08 s; front-end by
+  game-server, 3457 by 1811 and the largest pair this tree holds, is 2.55 s.
+
+  Acceptance: `survey Loom utils' returns the nine differing-name rows DES-0041
+  D5 lists, FNV-1A ~ CONTENT-FINGERPRINT and PLIST-SHAPED-P ~ PLISTP among
+  them, and reports 27 name-equal pairs separately.
+
+  RISK: consing in the inner loop. The scan is |A| x |B| x 768 multiply-adds
+  and DOT-AT allocates nothing; a per-entity row that allocates inside the j
+  loop rather than after it turns 2.55 s into minutes. A survey materially
+  above the measured figures is that mistake and not a tuning question.
+
+  RISK: a caller lowering the cut. At 0.70 the same survey returns 139
+  differing-name rows, which is not a table anybody reads. The default is the
+  answer and the parameter is the escape hatch, not the reverse.
+
+  S7  MEASURE, RECORD, CLOSE
+
+  The full suite, `check', and both verbs against the acceptance numbers S5 and
+  S6 name.
+
+  tools/acceptance.py holds at 43 of 45. Nothing in S2 through S6 touches
+  seeding, `find', or PLAN-0043's fusion, so a change there is S1 having moved
+  something it should not have -- the digest risk above, reaching the seeder
+  through a store nobody meant to rebuild.
+
+  `check' reports 0 violations and 8 unresolved document references, which is
+  where it stood before S1.
+
+  Then DES-0041 and REQ-0042 take their verdicts through `complete PLAN-0044',
+  which is a command rather than a chore. R1, R2 and R3 land; R4 is a property
+  of what the answer says and is met by S4 and D7 rather than measured. Whether
+  that is `implemented' or `partial' is a judgement about REQ-0042's open
+  questions -- three or more repositories, and where the cut belongs -- and is
+  taken when the numbers are in, not here.
+
+  OUTCOME, 2026-08-23
+
+  All seven steps landed. Both acceptance numbers were named before the code
+  existed and both came back:
+
+    similar fnv-1a utils          content-fingerprint first, 0.8700
+    similar plist-shaped-p utils  plistp first, 0.8600
+    survey Loom utils             the nine differing-name rows D5 lists, in
+                                  D5's order, with 11 name-equal counted apart
+
+  The floors held. tools/acceptance.py is 43 of 45 with the three absence cases
+  still reporting their terms weak, `check' is 0 violations and 8 unresolved
+  document references, and the suite is 9 of 10 systems -- the tenth being one
+  assertion in loom-analyzer that fails identically with this whole change
+  stashed.
+
+  WHAT THE PLAN DID NOT PREDICT
+
+  Two things, and both were found by measuring rather than by review.
+
+  The cut does not travel. At 0.80, `survey front-end game-server' returns 486
+  rows where Loom against utils returns nine -- two large repositories built
+  from one product in two languages resemble each other everywhere, and that
+  list starts at 0.9864 and stays above 0.80 for hundreds of entries. S6's risk
+  named a caller lowering the cut and missed the default being wrong for a pair
+  nobody had run it on. DES-0041 D5a is the answer: 40 rows, and a count of
+  what was left, which is BUG-0002's rule for `find''s cap applied here.
+
+  The new test file's fixture helper was named R-FUNCTION, which already exists
+  in src/graph/test/resolve.lisp. Different packages, so nothing collided and
+  the suite was green -- but Loom cannot place a package for a test file and
+  falls back to the spelling (DES-0015), so all 50 calls became ambiguous call
+  sites in Loom's own index and the ambiguous population went 16 to 70.
+  *CALL-SITE-CEILING* failed and tools/call-site-census.lisp named R-FUNCTION
+  in one line. It is the sharpest argument this tree has produced for indexing
+  itself: no assertion anywhere was written to catch that, and the tree caught
+  it in one run.
+
+  S1'S RISK, DISCHARGED BY MEASUREMENT
+
+  A NAME-AS-WORDS whose output moved by one character would invalidate the
+  digest of every vector store on the machine and re-embed 5268 definitions
+  reporting success. VECTOR-STORE-STALENESS reads 0 for Loom after the move, so
+  the move changed nothing that gets embedded.
+
+  THE CEILING, RE-MEASURED
+
+  319 with this change stashed, 331 with it applied, and the twelve are
+  `similar' and `survey'. define-operation, js-test and the ambiguous
+  population are all unmoved. The ceiling goes to 364.
+
+  TWO THINGS FIXED ON THE WAY THAT ARE NOT THIS PLAN'S
+
+  tools/call-site-census.lisp could not load: its registry and its quickload
+  list predate loom-embed, which loom-knowledge has depended on since
+  PLAN-0043, so the instrument the ceiling test tells you to re-run was broken
+  before this plan touched anything.
+
+  :SIGNATURE is declared on :FUNCTION and :METHOD and written 0 times in 5146
+  entities across three repositories and both analyzers. Written up as BUG-0044
+  after this plan closed, together with the neighbouring defect the same reading
+  produced: :ARGUMENTS is documented as a parsed parameter list and holds the
+  whole lambda list, so S4 shipped an ENTITY-ARITY that reported FIND-ENTITIES
+  as arity 6. Both are corrected in the source; the decision about :SIGNATURE
+  itself is BUG-0044's and is not taken.
+

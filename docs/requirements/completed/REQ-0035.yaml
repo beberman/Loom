@@ -4,6 +4,7 @@ status: implemented
 date: 2026-08-16
 affects: [analyze-file, seed-entities, seed-matches, search-entities, find-entities,
           significant-name, match-rank, build-context]
+importance: Critical
 tags: [analyzer, retrieval, ranking, context, con-0006, req-0016, req-0031, game-server]
 summary: |
   No code entity in this index carries the prose its own definition declares.

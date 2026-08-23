@@ -105,6 +105,75 @@ consumer, which is REQ-0027 R6's traversal")
         "the client no longer claims the route, so the edge is gone")
     (is (null (repository-errors server)))))
 
+(defun fed-claims (repository role &rest routes)
+  "Add one route-claiming function to REPOSITORY per route in ROUTES."
+  (loop for route in routes
+        for n from 0
+        do (add-entity (repository-graph repository)
+                       (fed-endpoint (format nil "~a-~d" role n)
+                                     (format nil "api/~(~a~)-~d.lisp" role n)
+                                     route role))))
+
+(test the-unmatched-sets-agree-with-the-lists-the-report-returns
+  ;; BUG-0038, and the same destructive-sort defect BUG-0037 fixed in
+  ;; SEED-ENTITIES. FEDERATION-REPORT built its plist in one LIST form, whose
+  ;; arguments are evaluated left to right: CL:SORT consumed PUBLISHED and
+  ;; MATCHED in the first three slots, leaving each naming the sorted list from
+  ;; its old head onwards, and the SET-DIFFERENCE in the last two then worked
+  ;; over a suffix of the claims against a suffix of the matches. REQ-0027 R3's
+  ;; dropped claim, produced by the function whose docstring says it exists to
+  ;; prevent one.
+  ;;
+  ;; Six published routes because the loss needs a list whose head sorts away
+  ;; from the front, and WITH-FEDERATION's one route each cannot show it: SORT
+  ;; returns a one-element list unchanged and the variable still names all of
+  ;; it. MAPHASH over the server's claims yields "/api/deck" last, so PUSHNEW
+  ;; makes it the head and the sort moves it to second; without the fix
+  ;; PUBLISHED then names five of the six and "/api/board" -- which no client
+  ;; consumes -- goes missing from `unmatched-published'. The route matched at
+  ;; both ends is deliberately not the one that sorts first, because a lost
+  ;; route that is in MATCHED anyway is subtracted either way and the report
+  ;; comes out right by accident.
+  ;;
+  ;; The assertions compare the report against itself rather than against a
+  ;; literal, so a change to the fixture cannot make them vacuous -- the same
+  ;; reason THE-COUNTS-AGREE-WITH-THE-LIST-THEY-COUNT does in loom-knowledge.
+  (let* ((server (fed-repository "fed-many-server"
+                                 (fed-endpoint "get-game" "server/api.lisp"
+                                               "/api/game" :publishes)))
+         (client (fed-repository "fed-many-client"
+                                 (fed-endpoint "fetchGame" "src/api.js"
+                                               "/api/game" :consumes)))
+         (*repositories* (list server client)))
+    (fed-claims server :publishes "/api/zone" "/api/board" "/api/player"
+                       "/api/match" "/api/deck")
+    (fed-claims client :consumes "/api/ghost")
+    (federate-repositories :quiet t)
+    (let* ((report (federation-report))
+           (published (getf report :published))
+           (consumed (getf report :consumed))
+           (matched (getf report :matched)))
+      (is (= 6 (length published))
+          "every published claim survives into the report, not a suffix of them")
+      (is (= 2 (length consumed)))
+      (is (= 1 (length matched))
+          "/api/game is the one route claimed at both ends")
+      ;; COPY-LIST for the same reason the fix has one: SET-DIFFERENCE may
+      ;; share structure with PUBLISHED, and sorting the difference in place
+      ;; would damage the list the assertion below reads.
+      (let ((expected-published
+              (sort (copy-list (set-difference published matched :test #'string=))
+                    #'string<))
+            (expected-consumed
+              (sort (copy-list (set-difference consumed matched :test #'string=))
+                    #'string<)))
+        (is (equal expected-published (getf report :unmatched-published))
+            "unmatched-published ~a against ~a"
+            (getf report :unmatched-published) expected-published)
+        (is (equal expected-consumed (getf report :unmatched-consumed))
+            "unmatched-consumed ~a against ~a"
+            (getf report :unmatched-consumed) expected-consumed)))))
+
 (test a-repository-does-not-federate-with-itself
   ;; One repository claiming both ends is an ordinary edge's business, not this
   ;; pass's, and the guard is worth a test because the loop that skips it also

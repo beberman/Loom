@@ -5,6 +5,7 @@ date: 2026-08-11
 refines: [CON-0004]
 affects: [apply-transaction, plan-op, apply-op, resolve-document-links,
           repository-status, document-category, unresolved-references]
+importance: Major
 tags: [workflow, documents, transitions, rules, write-path, con-0004]
 summary: |
   RULE-0005 says a plan reaching final must move every document it refines out

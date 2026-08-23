@@ -38,6 +38,22 @@
   ;; next restart. NIL is the normal case: every repository Loom indexed before
   ;; this existed has no such file and needs none.
   (frameworks nil)
+  ;; The vector sidecar for this repository, DEC-0006. :UNLOADED until first
+  ;; asked for, then the store or NIL. Cached because LOAD-VECTOR-STORE reads
+  ;; 5 MB off disk and a context query must not do that per call, and marked
+  ;; rather than left NIL so that "there is no store" is looked up once too.
+  (cached-vectors :unloaded)
+  ;; The thread building this repository's vector store, or NIL. A query that
+  ;; wants the store waits on it rather than answering without one, which is
+  ;; the whole reason the build is a thread and not a blocking call: the
+  ;; launcher starts it and returns, and the wait -- if there is one at all --
+  ;; is paid by whoever asks first.
+  (vector-build nil)
+  ;; The thread building this repository's graph, or NIL. Same shape and same
+  ;; reason as VECTOR-BUILD one slot up: the listener binds its port before any
+  ;; tree has been read, and a reader waits for the index rather than being
+  ;; answered from an empty one.
+  (index-build nil)
   ;; DES-0018 D5. Why git could not be asked what this tree ignores, or NIL
   ;; when it answered. Set on every pass, so it clears itself as soon as the
   ;; cause goes away. Reported by `status' rather than logged as an error: a
@@ -371,7 +387,7 @@ cannot answer the question -- is the file read and hashed."
           ((not (eql write-date (file-stamp-write-date known))) t)
           ((> (- now write-date) *mtime-settle-seconds*) nil)
           (t (not (eql (file-stamp-content-hash known)
-                       (sxhash (handler-case (slurp-file path)
+                       (sxhash (handler-case (read-file path)
                                  (error () ""))))))))) ; unreadable => reanalyze
 
 (defun index-file (repository path &key quiet)
@@ -385,7 +401,7 @@ counted and reported; the pass continues."
         ;; ANALYZE-PATH takes :CONTENTS for exactly this, and the stamp has to
         ;; describe the bytes that were analyzed rather than whatever is on
         ;; disk by the time it is taken.
-        (let* ((contents (slurp-file path))
+        (let* ((contents (read-file path))
                (ops (analyze-path path
                                   :contents contents
                                   :workspace-id (repository-name repository)
@@ -552,11 +568,17 @@ own analysis into the graph this function is rebuilding. This is also the
 function whose first act discards the graph object, which is why the graph's
 own lock could not have closed this half -- the object a graph-scoped lock
 would belong to does not exist yet at the instant protection has to begin."
-  (with-repository-lock (repository)
-    (setf (repository-graph repository) (make-graph))
-    (clrhash (repository-stamps repository))
-    (setf (repository-errors repository) '())
-    (index-repository repository :quiet quiet)))
+  (prog1
+      (with-repository-lock (repository)
+        (setf (repository-graph repository) (make-graph))
+        (clrhash (repository-stamps repository))
+        (setf (repository-errors repository) '())
+        (index-repository repository :quiet quiet))
+    ;; The graph was discarded and rebuilt, so every entity id in the store is
+    ;; one this index has never seen unless the analyzer minted it again. Same
+    ;; refresh POLL-ONCE does and for the same reason, outside the lock and only
+    ;; for a repository that already has a store.
+    (start-vector-build repository :existing-only t)))
 
 ;;;; ==================================================================
 ;;;; Enrichment (DES-0011)
@@ -769,7 +791,9 @@ and computed outside the lock it could read a table REINDEX-REPOSITORY is
 midway through clearing -- which is BUG-0004's CAUSE reproduced one level
 down. Locking only the writing half would move the window rather than close
 it."
-  (with-repository-lock (repository)
+  (let ((moved nil))
+   (prog1
+    (with-repository-lock (repository)
     (let ((changed '())
           (now (get-universal-time)))
       (dolist (path (repository-files repository))
@@ -779,6 +803,7 @@ it."
       (dolist (path changed) (index-file repository path :quiet quiet))
       (let ((removed (detect-deletions repository)))
         (when (or changed removed)
+          (setf moved t)
           (resolve-and-check repository :quiet quiet)
           ;; DES-0007: until this line, INDEX-REPOSITORY (line 241) was the
           ;; only writer of this slot, so REPOSITORY-STATUS reported "last
@@ -791,7 +816,25 @@ it."
           ;; alone. `now' rather than a fresh GET-UNIVERSAL-TIME, because it is
           ;; the instant the change was observed at.
           (setf (repository-indexed-at repository) now)))
-      (length changed))))
+      (length changed)))
+    ;; Outside the lock, and only when something actually moved. A store the
+    ;; index has outgrown answers queries with vectors for definitions that no
+    ;; longer exist and none for the ones that do -- stale in the one way that
+    ;; does not announce itself, because a cosine against an old vector is a
+    ;; perfectly ordinary number.
+    ;;
+    ;; EXISTING-ONLY, so a tree nobody has embedded does not acquire a store
+    ;; because somebody saved a file in it. Refreshing is what a poll may do;
+    ;; building is what `embed' is for.
+    ;;
+    ;; Outside the lock because the build reads the graph for minutes and the
+    ;; monitor must not be parked behind it. Cheap when nothing of substance
+    ;; changed: UPDATE-VECTOR-STORE re-embeds a document rather than an entity,
+    ;; and a function body rewritten line by line has the same name and the same
+    ;; docstring, so the commonest edit in a working tree reaches the embedder
+    ;; not at all.
+    (when moved
+      (start-vector-build repository :existing-only t)))))
 
 (defun detect-deletions (repository)
   "Retract files the index knows about that are no longer on disk."
@@ -886,7 +929,36 @@ the truth and a later stop can try again."
 ;;;; Lifecycle
 ;;;; ==================================================================
 
-(defun watch-repository (path &key (monitor t) quiet)
+(defparameter *index-build-wait* 0
+  "Seconds a reader waits for an index still being built before reporting it.
+
+Zero: a request for a repository that is still indexing is answered at once
+with REPOSITORY-INDEXING rather than held. A caller that would rather block
+binds this.
+
+Refusing rather than answering is the part that is not negotiable, and the
+choice between refusing and waiting is a separate one. An empty graph is not a
+slow answer, it is a confident wrong one -- `find\' would report that nothing
+matches and `context\' would return an empty bundle, both indistinguishable
+from the truthful versions of themselves. CON-0001 refuses that trade whichever
+way this number goes.
+
+What settles it at zero is the caller. Over MCP a wait is an agent holding a
+tool call with no way to tell whether anything is happening; a message it can
+read costs one round trip and says what to do next. Over REST the same, with a
+client that can poll `status\'.")
+
+(defun await-repository-index (repository &optional (seconds *index-build-wait*))
+  "Wait for REPOSITORY's index if one is being built. True when none is left."
+  (let ((thread (repository-index-build repository)))
+    (or (null thread)
+        (not (bordeaux-threads:thread-alive-p thread))
+        (loop repeat (* 10 seconds)
+              do (sleep 0.1)
+              until (not (bordeaux-threads:thread-alive-p thread))
+              finally (return (not (bordeaux-threads:thread-alive-p thread)))))))
+
+(defun watch-repository (path &key (monitor t) quiet background)
   "Register the repository at PATH, index it, and begin watching.
 SS3.2's watch command. Re-watching an already-registered repository reindexes
 it rather than registering a second copy.
@@ -911,8 +983,29 @@ registration. START-MONITOR is idempotent, so saying it twice costs nothing."
                            :root root
                            :name (or (car (last (pathname-directory root))) "repository"))))
           (push repository *repositories*)
-          (index-repository repository :quiet quiet)
-          (when monitor (start-monitor repository))
+          ;; BACKGROUND registers the repository and returns before it holds
+          ;; anything. loom-serve.lisp uses it so the listener binds its port
+          ;; while the trees are still being read: nine repositories index in
+          ;; about twenty seconds today and that number only grows, and a
+          ;; launcher that waits for it turns "start Loom" into dead time on
+          ;; the one path everybody walks.
+          ;;
+          ;; What makes it safe is that nobody reads a half-built graph.
+          ;; REQUIRE-REPOSITORY waits, so a query arriving during the build
+          ;; blocks and then answers correctly rather than answering at once
+          ;; and wrongly.
+          (if background
+              (setf (repository-index-build repository)
+                    (bordeaux-threads:make-thread
+                     (lambda ()
+                       (handler-case
+                           (progn (index-repository repository :quiet quiet)
+                                  (when monitor (start-monitor repository)))
+                         (serious-condition (condition)
+                           (note-error repository (namestring root) condition))))
+                     :name (format nil "loom-index-~a" (repository-name repository))))
+              (progn (index-repository repository :quiet quiet)
+                     (when monitor (start-monitor repository))))
           repository))))
 
 (defun pause-repository (designator)
@@ -952,6 +1045,12 @@ the last error per thread.\""
   (let ((graph (repository-graph repository)))
     (list :name (repository-name repository)
           :root (namestring (repository-root repository))
+          ;; The docstring above promises "indexing progress" and until now the
+          ;; only progress there was to report was finished or not. A background
+          ;; index makes "still reading the tree" a state a caller can be in and
+          ;; needs told about: every other operation waits for it, and status is
+          ;; the one that says why the waiting would happen.
+          :state (repository-state repository)
           :indexed-at (repository-indexed-at repository)
           :files (repository-file-count repository)
           :entities (length (all-entities graph))
@@ -1101,7 +1200,7 @@ carry and thrown away, so the graph after the call is the graph before it."
          (root (repository-root repository))
          (full (merge-pathnames path root))
          (source (or contents
-                     (and (probe-file full) (slurp-file full)))))
+                     (and (probe-file full) (read-file full)))))
     (cond
       ((null (find-analyzer full))
        (list :path path :error "no analyzer claims this path"))

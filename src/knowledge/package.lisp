@@ -23,6 +23,9 @@
    #:significant-name
    #:match-rank
    #:summarize-entities
+   ;; DES-0040 D3 built it for the embedder; DES-0041 D4 compares two names on
+   ;; it. One function or the identity in D4 is not one.
+   #:name-as-words
 
    ;; services (SS11's read-only tools)
    #:search-entities
@@ -62,6 +65,28 @@
    ;; budget rather than a fact, and someone tuning it should not have to
    ;; reach into the package.
    #:*context-mention-limit*
+   #:*context-embedder*
+   #:*context-vector-store*
+   #:semantic-candidates
+   #:*rrf-k*
+   #:*semantic-weight*
+   #:*semantic-limit*
+   #:*semantic-floor*
+   #:*semantic-relative-floor*
+   #:*protect-named*
+
+   ;; resemblance -- REQ-0042, DES-0041. `find' answers "where is this name";
+   ;; this answers "what else is this thing", which is the question a shared
+   ;; library creates and the one a name cannot ask.
+   #:resembling
+   #:resemblance-survey
+   #:survey-candidates
+   #:resemblance-reasons
+   #:name-equal-p
+   #:entity-arity
+   #:*resemblance-limit*
+   #:*survey-cut*
+   #:*survey-limit*
 
    ;; the structural report (REQ-0021 R5, DES-0022 S1) -- what the index can
    ;; say about a tree's shape, as data, so a generated architecture document

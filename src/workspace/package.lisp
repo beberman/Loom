@@ -11,6 +11,13 @@
 
 (defpackage #:loom-workspace
   (:use #:cl #:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge)
+
+  ;; From the standalone library. PROPER-LIST-P and ALISTP replace two
+  ;; predicates context-log.lisp defined for itself -- ALISTP with
+  ;; :KEY-TEST #'KEYWORDP is ALIST-OBJECT-P clause for clause -- and READ-FILE
+  ;; and STRING-LINES replace loom-analyzer's SLURP-FILE and SPLIT-LINES.
+  (:import-from #:utils #:read-file #:string-lines #:proper-list-p #:alistp)
+
   (:export
    ;; the registry
    #:repository
@@ -30,6 +37,10 @@
 
    ;; lifecycle
    #:watch-repository
+   #:await-repository-index
+   #:repository-state
+   #:repository-index-build
+   #:*index-build-wait*
    #:pause-repository
    #:unwatch-repository
    #:index-repository
@@ -50,7 +61,24 @@
    #:default-context-log-directory
    #:configure-context-log-from-environment
    #:loom-root
+
+   ;; the vector sidecar, DEC-0006 and DES-0040 D2
+   #:build-vector-store
+   #:repository-vectors
+   #:start-vector-build
+   #:await-vector-build
+   #:vector-build-status
+   #:*vector-build-wait*
+   #:forget-repository-vectors
+   #:current-embedder
+   #:*embedder*
+   #:update-vector-store
+   #:vector-store-staleness
+   #:entity-document
+   #:*vector-definition-types*
+   #:*vector-batch*
    #:record-context-call
+   #:record-query
    #:drain-context-log
    #:record-context-use
    #:context-record-path

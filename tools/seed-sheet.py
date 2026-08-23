@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""One row per case: the query, every seed with its score, and the expected name.
+
+    LOOM_CONTEXT_LOG=1 tools/loom-serve.sh restart
+    tools/seed-sheet.py tools/cases/known-item.json > seeds.csv
+
+Needs the context log ON, which tools/loom-serve.sh no longer defaults to. The
+REST bundle's `seeds' are SUMMARIZE-ENTITIES output and carry no score --
+"score": null on every one -- because the seeder's evidence goes to the record
+writer and not to the caller (DES-0032 D3 records this). The score lives only in
+.loom/context, so this runs each case, then reads the record it just wrote back
+by matching on the task string.
+
+Columns: repository, family, expected, hit_strict, hit_lenient, seeds, query,
+then seed_1..seed_N and score_1..score_N, and terms_1..terms_N when --terms is
+given. N is the widest seed set seen, so the header is stable across a file.
+
+Purge the probe records afterwards -- they are one session's queries, which is
+the contamination REQ-0038's rule and docs/TODO.md both describe.
+"""
+
+import csv
+import glob
+import json
+import os
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+B = "http://127.0.0.1:4780/v1"
+LOG = os.environ.get("LOOM_CONTEXT_LOG_DIR", ".loom/context")
+
+
+def names_in(bundle):
+    strict = {s["name"] for s in bundle.get("seeds") or []}
+    for i in bundle.get("items") or []:
+        strict.add(i["entity"]["name"])
+    lenient = set(strict)
+    for i in bundle.get("items") or []:
+        for r in i.get("relations") or []:
+            if r.get("name"):
+                lenient.add(r["name"])
+    return strict, lenient
+
+
+def records_by_task(since):
+    """Task string -> the newest record written for it since SINCE."""
+    out = {}
+    for f in glob.glob(os.path.join(LOG, "*.json")):
+        try:
+            if os.path.getmtime(f) < since:
+                continue
+            r = json.load(open(f))
+        except Exception:
+            continue
+        task = r.get("task")
+        seeds = (r.get("returned") or {}).get("seeds")
+        if isinstance(task, str) and seeds is not None:
+            prev = out.get(task)
+            if prev is None or os.path.getmtime(f) >= prev[0]:
+                out[task] = (os.path.getmtime(f), r)
+    return {k: v[1] for k, v in out.items()}
+
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        sys.exit("Usage: seed-sheet.py <cases.json> [--terms] > out.csv")
+    want_terms = "--terms" in args
+    cases = json.load(open(args[0]))
+
+    started = time.time() - 1
+    rows = []
+    for repo, query, expected, family in cases:
+        try:
+            b = json.load(urllib.request.urlopen(
+                B + "/context?" + urllib.parse.urlencode(
+                    {"repository": repo, "task": query}), timeout=240))
+        except Exception as exc:
+            print("ERROR %s %r: %s" % (repo, query[:40], exc), file=sys.stderr)
+            continue
+        strict, lenient = names_in(b)
+        rows.append({"repository": repo, "family": family, "query": query,
+                     "expected": expected,
+                     "hit_strict": expected in strict,
+                     "hit_lenient": expected in lenient,
+                     "bundle": b})
+
+    time.sleep(2)                      # the record is written on another thread
+    records = records_by_task(started)
+    missing = 0
+    width = 0
+    for row in rows:
+        r = records.get(row["query"])
+        seeds = (r.get("returned") or {}).get("seeds") if r else None
+        if seeds is None:
+            missing += 1
+            seeds = [{"name": s["name"], "score": None, "terms": None}
+                     for s in row["bundle"].get("seeds") or []]
+        row["seedrows"] = seeds
+        width = max(width, len(seeds))
+    if missing:
+        print("%d of %d cases had no record; their scores are blank. Is the "
+              "context log on?" % (missing, len(rows)), file=sys.stderr)
+
+    header = ["repository", "family", "expected", "hit_strict", "hit_lenient",
+              "seeds", "query"]
+    for i in range(1, width + 1):
+        header.append("seed_%d" % i)
+    for i in range(1, width + 1):
+        header.append("score_%d" % i)
+    if want_terms:
+        for i in range(1, width + 1):
+            header.append("terms_%d" % i)
+
+    out = csv.writer(sys.stdout)
+    out.writerow(header)
+    for row in rows:
+        seeds = row["seedrows"]
+        line = [row["repository"], row["family"], row["expected"],
+                row["hit_strict"], row["hit_lenient"], len(seeds), row["query"]]
+        line += [(seeds[i]["name"] if i < len(seeds) else "") for i in range(width)]
+        line += [(seeds[i].get("score") if i < len(seeds) else "") for i in range(width)]
+        if want_terms:
+            for i in range(width):
+                t = seeds[i].get("terms") if i < len(seeds) else None
+                line.append(" ".join("%s/%s" % (x.get("term"), x.get("weight"))
+                                     for x in (t or [])))
+        out.writerow(line)
+
+    print("%d rows, widest seed set %d, %d without scores"
+          % (len(rows), width, missing), file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

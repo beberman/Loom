@@ -41,6 +41,21 @@ while holding it are the WATCH-REPOSITORY and UNWATCH-REPOSITORY calls it
 exists to serialize, and both take a repository lock beneath it, never above.
 Recursive for the same reason DES-0004's is: a re-entry must not self-deadlock.")
 
+(defun require-repository-now (designator)
+  "REQUIRE-REPOSITORY without waiting for an index still being built.
+
+For `status\' alone. Every other operation reads the graph and must not see an
+empty one, but status is the operation whose job is to say what state things
+are in -- and an introspection call that blocked until the thing it was
+introspecting finished would be unable to report the state it exists to
+report."
+  (cond ((null designator)
+         (error 'malformed-request
+                :message "This operation needs the name of a repository. Ask status for the list."))
+        ((find-repository designator))
+        (t (error 'malformed-request
+                  :message (format nil "No repository named ~a is watched." designator)))))
+
 (defun require-repository (designator)
   "The repository DESIGNATOR names, or a malformed request naming it.
 
@@ -50,7 +65,30 @@ malformed request rather than an ambiguous one to be resolved by guessing."
   (cond ((null designator)
          (error 'malformed-request
                 :message "This operation needs the name of a repository. Ask status for the list."))
-        ((find-repository designator))
+        ;; The one place every operation passes through, which is why the wait
+        ;; is here and not in each of them. loom-serve.lisp registers a
+        ;; repository and indexes it on another thread so the listener can bind
+        ;; its port at once; a request arriving in that window waits for the
+        ;; graph rather than being answered from an empty one. An empty graph is
+        ;; not a slow answer, it is a confident wrong one -- `find' would report
+        ;; that nothing matches, indistinguishable from the truthful version of
+        ;; itself.
+        ((let ((repository (find-repository designator)))
+           (when repository
+             ;; Report rather than wait. A caller that waits is a caller with
+             ;; nothing to say for as long as the wait lasts, and over MCP that
+             ;; is an agent sitting on a tool call with no way to know whether
+             ;; anything is happening. Saying so costs one round trip and tells
+             ;; it what to do.
+             ;;
+             ;; *INDEX-BUILD-WAIT* is a grace period rather than the wait it
+             ;; used to be, and is 0: a caller who would rather block sets it.
+             (unless (await-repository-index repository *index-build-wait*)
+               (error 'repository-indexing
+                      :message (format nil "~a is still being indexed. ~
+Ask again in a few seconds; `status' says when it is ready."
+                                       (repository-name repository))))
+             repository)))
         (t (error 'malformed-request
                   :message (format nil "No repository named ~a. Ask status for the list."
                                    designator)))))
@@ -268,8 +306,16 @@ Pass source=true for the definition's text."
   (let ((repo (require-repository repository)))
     (let ((started (get-internal-real-time)))
       (multiple-value-bind (bundle instrumentation)
-          (build-context (repository-graph repo) task
-                         :source-fn (lambda (id) (definition-source repo id)))
+          ;; DEC-0006. Bound here rather than read inside BUILD-CONTEXT for the
+          ;; reason the SOURCE-FN comment above gives: loom-knowledge is handed
+          ;; a graph and never learns which repository it belongs to, and this
+          ;; entry has the repository. REPOSITORY-VECTORS is NIL until somebody
+          ;; builds a store, so on an ordinary tree both bindings are NIL and
+          ;; SEED-ENTITIES takes the path it has taken since S3.
+          (let ((loom-knowledge:*context-vector-store* (repository-vectors repo))
+                (loom-knowledge:*context-embedder* (current-embedder)))
+            (build-context (repository-graph repo) task
+                           :source-fn (lambda (id) (definition-source repo id))))
         ;; REQ-0036 R1 and R8. The record is additive: the identifier is one
         ;; more key on a bundle a caller already reads, and with
         ;; *CONTEXT-LOG-DIRECTORY* NIL -- the default -- RECORD-CONTEXT-CALL
@@ -310,7 +356,7 @@ Pass source=true for the definition's text."
   ;; its own status plist, and no name answers with the list under
   ;; :REPOSITORIES, which is what tells an empty answer from a single one.
   (if repository
-      (repository-status (require-repository repository))
+      (repository-status (require-repository-now repository))
       (list :repositories (mapcar #'repository-status (all-repositories)))))
 
 ;;;; ------------------------------------------------------------------
@@ -497,6 +543,23 @@ its entries is worse than a call that failed."
                         :mode (if (and mode (string-equal "all" (princ-to-string mode)))
                                   :all
                                   :tooling))))
+
+(define-operation :embed :write (repository)
+    "Build or update the vector store semantic seeding reads. Returns at once."
+  ;; :WRITE because it writes a sidecar, and it returns before the writing is
+  ;; done -- which is the point rather than a compromise. tools/loom-serve.sh
+  ;; calls this once per repository after the listener answers, and a build is
+  ;; 66 seconds for game-server and 183 for front-end. A launcher that waited
+  ;; would turn "start Loom" into three minutes of silence for a dependency
+  ;; that is optional.
+  ;;
+  ;; A query that wants the store waits for the build instead
+  ;; (*VECTOR-BUILD-WAIT*), so the cost falls on whoever asks first. On the
+  ;; normal path -- start Loom, read the banner, type a question -- it has
+  ;; already been paid by then.
+  (let ((watched (require-repository repository)))
+    (start-vector-build watched)
+    (vector-build-status watched)))
 
 (define-operation :reindex :write (repository)
     "Discard and rebuild the index from disk. Always safe."

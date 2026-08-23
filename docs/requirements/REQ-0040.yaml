@@ -1,0 +1,98 @@
+id: REQ-0040
+title: A bundle must fit what its caller can read, because 308 of the items returned across three judged calls were never looked at
+status: draft
+date: 2026-08-21
+refines: [REQ-0016]
+affects: [build-context, render-context, estimate-tokens, admit-seeds]
+importance: Critical
+tags: [retrieval, context, budget, readability, req-0036]
+summary: |
+  Three judged calls returned 203, 128 and 113 items. The caller used nine of
+  them. Two other calls were not read at all -- they exceeded the caller's tool
+  output limit at 93KB and 86KB and were written to a file instead, and one of
+  those was truncated at a 4000-token budget with only 5 of its 203 items
+  carrying any source text.
+
+  The agent's own summary is the requirement: *"A right answer that cannot be
+  read is a different failure from a wrong one."*
+body: |
+  THE NUMBERS, from .loom/context and tools/acceptance.py --log
+
+      call                      items returned    used    unused
+      utils migration                      203       9       194
+      game/server migration                128       3       125
+      (aggregate, 3 scored calls)                          308
+
+  and from the two overflow records:
+
+  - *"Bundle exceeded the caller's output limit and was written to a file instead
+    of being read. Nothing from it was used directly."*
+  - *"Bundle exceeded the caller's output limit for the second time in this
+    session. Nothing used."*
+  - *"93KB, truncated at a 4000-token budget with only 5 of 203 items carrying
+    source text. Through MCP this would have hit the tool output limit... I
+    fetched it over REST and summarised it with a script instead."*
+
+  Note the last one carefully: the bundle was *both* too large to read *and*
+  truncated. The budget was spent on breadth -- 203 named items -- rather than on
+  the five that carried enough text to be useful, so the caller paid the full
+  size for a fraction of the value and still lost the tail.
+
+  The same repository later returned 2135 tokens, untruncated, and the record
+  says *"Readable this time."* So the behaviour is not fixed; it varies with the
+  tree, which means no caller can predict it.
+
+  REQUIREMENTS
+
+  R1  The caller names a budget and the bundle honours it. There is a budget
+      today and it is the service's, not the caller's; an MCP caller has a hard
+      output limit and no way to say so.
+
+  R2  Breadth yields to depth inside the budget. Given a choice between naming
+      forty more entities and carrying the source of five, the bundle is more
+      useful carrying the source -- 194 unused items of 203 is what breadth-first
+      spending buys.
+
+  R3  A truncated bundle says what it dropped and how much, in the units the
+      budget was named in. BUG-0002 established this for `find`'s cap and
+      REQ-0005 asks it of `impact`; a bundle is the third surface with the same
+      defect.
+
+  R4  Precision is reported by the harness, not inferred. tools/acceptance.py
+      --log already prints "unused 194 of 203 returned". That line is the
+      measurement this requirement moves, and it belongs in the summary rather
+      than per case.
+
+  ACCEPTANCE
+
+  A `context` call against game-server on the utils-migration task, at a caller
+  budget of 4000 tokens, returns a bundle under that budget and says how many
+  items it did not name. The nine items the judgement recorded as used are still
+  in it. The 32 hand-written cases stay at 30/32.
+
+  OPEN QUESTIONS
+
+  - Is the right unit tokens or bytes? ESTIMATE-TOKENS exists and is an estimate;
+    an MCP limit is in bytes. Reporting both is cheap and saying which one the
+    budget means is not optional.
+  - Does a caller who asked for depth want source for the top five or the top
+    one? Unmeasured, and the log is where the answer comes from once REQ-0038
+    records what a caller did next.
+
+  REPRICED, 2026-08-23
+
+  Importance rises from Major to Critical. Dense retrieval moved the known-item
+  instrument from 410 to 443 of 450 and the judged set from 42 to 43 of 45, so
+  on those instruments the answer is in the bundle. Every number in this
+  document is unchanged: 194 unused of 203 returned, and 2 of the 30 records in
+  .loom/context are bundles that exceeded the caller's output limit and were
+  never read.
+
+  The harness already classifies the failure. tools/acceptance.py's MARKERS
+  table carries `(overflow)' beside `(nothing)' and `(probe)', so a bundle that
+  was right and could not be read is a counted outcome rather than a sentence
+  in a judgement.
+
+  DES-0040 left the seed limit at eight and the neighbour band untouched, so
+  fusion changed which candidates fill the slots and not how much text a bundle
+  carries. R7's item count of 170 is the same 170 it was.

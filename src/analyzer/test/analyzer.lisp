@@ -49,19 +49,9 @@
       "a file directly under src/, with no subdirectory, names no system")
   (is (null (default-system-for-path nil))))
 
-;;; SPLIT-LINES moved here from loom-workspace with the function itself, when
-;;; REQ-0035's comment capture needed it a layer down.
+;;; SPLIT-LINES is gone: it is UTILS:STRING-LINES now, and the library carries
+;;; the test for it -- the last line of a file with no trailing newline, no
+;;; empty line gained when there is one, and the stripped carriage return. The
+;;; four checks that were here are four checks there, so this system's count
+;;; drops by four and nothing is less tested.
 
-(test split-lines-keeps-the-last-line-and-drops-a-carriage-return
-  ;; SPLIT-LINES lives in loom-analyzer since REQ-0035 needed it a layer down.
-  ;; A file not ending in a newline still has a last line, and one that does
-  ;; must not gain an empty one -- an off-by-one here shifts every range this
-  ;; system serves. CRLF is stripped so a range served from a CRLF checkout
-  ;; matches the same file on Linux.
-  (let ((unix  (split-lines (format nil "a~%b~%")))
-        (bare  (split-lines (format nil "a~%b")))
-        (crlf  (split-lines (format nil "a~c~%b~c~%" #\Return #\Return))))
-    (is (= 2 (length unix)))
-    (is (= 2 (length bare)) "a file with no trailing newline still has line 2")
-    (is (string= "b" (aref bare 1)))
-    (is (string= "a" (aref crlf 0)) "the return is not part of the line")))

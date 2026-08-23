@@ -1,0 +1,121 @@
+id: PLAN-0037
+title: "DES-0031 in four steps: the writer, the seam, the scorer, the session"
+status: final
+date: 2026-08-21
+refines: [DES-0031]
+affects: [invoke-operation, record-query, write-record-async, answer-shape,
+          query-argument-alist, record-context-call]
+tags: [retrieval, evaluation, logging, req-0038]
+summary: |
+  Four steps, all landed. S1 and S2 are the service: the generic writer exists and
+  INVOKE-OPERATION calls it, so every read but :context is recorded. S3 is the
+  change that makes the corpus mean what it says, and it corrected this plan twice
+  -- a record predating :OPERATION is attributed by the schema rather than
+  discarded, and a used entry that is not a name is classified before the
+  freshness gate rather than resolved by it, which is what had been dropping 12
+  judgements of 15. S4 is sessions, built as the directory's time order; the
+  caller identity R6 once asked for was dropped, not deferred.
+body: |
+  BASELINE, before S1, on commit c93465e
+
+      LOOM-ONTOLOGY 367   LOOM-WORKSPACE 405   LOOM-SERVE 175   LOOM-MCP  49
+      LOOM-ANALYZER 749   LOOM-KNOWLEDGE 231   LOOM-REST   97
+      LOOM-GRAPH    503   LOOM-PROCESS   135
+                                              2711 checks, 9 of 9  (2720 after S2)
+
+  S1  THE GENERIC WRITER  -- DONE
+
+  RECORD-QUERY in context-log.lisp, beside RECORD-CONTEXT-CALL and sharing its
+  machinery: same directory, same id scheme, same two git fingerprints. NIL
+  directory writes nothing, which is the default.
+
+  WRITE-RECORD-ASYNC factored out of RECORD-CONTEXT-CALL at the same time, since
+  the thread bookkeeping and the argument for it were about to exist twice. It
+  takes a thunk rather than a record so the fingerprints stay off the caller's
+  path, and the facts that could change under the caller -- the repository's name
+  and root -- are read before it is called.
+
+  ANSWER-SHAPE and QUERY-ARGUMENT-ALIST are D3 and D4. The context record gains
+  :OPERATION "context" so both writers share the discriminator.
+
+  S2  THE SEAM  -- DONE
+
+  INVOKE-OPERATION measures the call and hands it to RECORD-READ-QUERY, which
+  records when the tier is :read and the operation is not :context, and swallows
+  its own failures. Five tests in src/serve/test/operations.lisp over the real
+  fixture repository: the record names its operation and its arguments, an empty
+  answer records none, a write records nothing, a large argument records its
+  length, and the log off writes nothing and answers normally.
+
+  RESULT: 9 of 9, LOOM-SERVE 175 -> 184 (nine checks in five tests).
+
+  One defect found by its own test and worth keeping in the record, because it is
+  the requirement's subject: the first ANSWER-SHAPE selected its countable key
+  with GETF, which cannot tell an absent key from one whose value is NIL. `find'
+  returning nothing has :ENTITIES present and empty, so the one event R3 calls
+  the most informative in the log was the one event the implementation skipped.
+  GET-PROPERTIES' indicator is the fix.
+
+  S3  THE SCORER READS THE OPERATION  -- DONE
+
+  R4, and it grew in the doing. The sketch here was "score a judgement against the
+  record's :OPERATION", which is one of the three things the corpus turned out to
+  need. DES-0031 D7-D10 is the design as built; what follows is what changed and
+  why, because both changes are corrections to this plan rather than elaborations
+  of it.
+
+  FIRST CORRECTION. This plan said records predating :OPERATION are reported as
+  unattributed rather than assumed to be context. Every judged record predates it
+  -- all 15 -- so the rule as written scores nothing at all. What it should have
+  said is that the context schema was the discriminator before the field existed
+  and is unambiguous: `task' with `returned.seeds' and `returned.items' is a
+  context record and nothing else in the directory has that shape. Attribution is
+  now `declared', `inferred' or `unknown' and reports which, so an inference is
+  checkable rather than silent. D8.
+
+  SECOND CORRECTION, and the larger one. The plan assumed the scoring was wrong
+  and the population was right. The population was wrong. FRESHNESS resolves every
+  used name against the live index and drops the whole record when one fails, and
+  18 of the 41 used entries are not names -- three markers the agent invented,
+  five slash-joined lists, ten sentences. So 12 of 15 records were discarded as
+  `unverifiable' for reasons that had nothing to do with a moved definition, and
+  the better the judgement the more certainly it was thrown away. That is why the
+  before-run reads 3 scored of 15. CLASSIFY-USED now runs before the gate, and
+  only a bare name is asked to resolve. D7.
+
+  What R4's acceptance clause asked for falls out of the two: a credit to another
+  operation is recognised by its first token, reported as a credit to `describe'
+  or `structure', and no longer counted as a `context' miss. It adds nothing to
+  describe's recall -- a record holding a count and no names cannot support a
+  recall claim, and D10 says why that is correct rather than pending.
+
+  RESULT: 15 judgements, 13 scored (2 probes excluded by their own marker), and
+  the four judgements REQ-0038 quotes now print as credits.
+
+  S4  SESSIONS  -- DONE, AS THE TIME ORDER AND NOT AS AN IDENTITY
+
+  R6. Deferred here on the grounds that two agents against one service need an
+  identity MCP has no concept for. The premise held and the conclusion did not:
+  what was wrong was treating the identity as the whole of R6. The requirement's
+  own open question asks whether a time-ordered read of one directory is enough
+  and answers yes for a single agent, which is the corpus that exists.
+
+  So --sessions cuts the directory on the gap between consecutive records and
+  prints each run of them in order. The recovery R6 describes -- context returns
+  lexical matches, the caller runs `find', the caller runs `describe' on what find
+  returned -- is visible without a field, a declaration or a new concept. The gap
+  threshold is a heuristic and both its failures show up in the printed sequence,
+  which is the argument for printing the sequence rather than a statistic over it.
+  D11.
+
+  The caller identity was then dropped from R6 outright rather than left pending.
+  MCP has nothing to identify a caller by, a field every caller must remember to
+  declare is empty in the sessions worth reading, and a directory of files --
+  purged when it grows past what is useful -- is the whole mechanism. R6 is met.
+
+  WHAT THIS PLAN DOES NOT DO
+
+  Retention. 106 context records in three days is a rate a directory of files
+  carries easily; ten operations at `find''s frequency may not be, and the answer
+  -- sampling, rotation, a different store -- should be chosen against a measured
+  rate rather than a guessed one. The rate is now measurable, which is the point.

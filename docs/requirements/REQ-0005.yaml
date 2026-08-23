@@ -4,6 +4,7 @@ status: draft
 date: 2026-07-29
 refines: [REV-0001]
 affects: [impact-set, impact-report]
+importance: Major
 tags: [knowledge, console, impact]
 summary: |
   `impact` accepts a depth, clamps it, and then reports results that contradict

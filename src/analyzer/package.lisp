@@ -9,6 +9,14 @@
 
 (defpackage #:loom-analyzer
   (:use #:cl #:loom-ontology)
+
+  ;; From the standalone library rather than defined here. SLURP-FILE and
+  ;; SPLIT-LINES were this system's own until the library carried the same two
+  ;; functions; they are imported rather than re-exported, so a caller that
+  ;; wants to read a file says so against the library and not against the
+  ;; analyzer, which never had any business being the place a file is read.
+  (:import-from #:utils #:read-file #:string-lines)
+
   (:export
    ;; protocol (SS8.1)
    #:analyzer
@@ -21,7 +29,6 @@
    #:comment-line-text
    #:attach-comment-documentation
    #:blank-line-p
-   #:split-lines
    #:analyzer-handles-p
 
    ;; registry
@@ -56,7 +63,6 @@
    ;; driving an analyzer over files on disk
    #:analyze-path
    #:analyze-tree
-   #:slurp-file
    #:workspace-relative-path
 
    ;; the system a path belongs to (DES-0009 R2) -- exported because every

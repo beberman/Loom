@@ -1,0 +1,296 @@
+id: DES-0040
+title: "REQ-0048 in four parts: a leaf system for the embedder, a sidecar keyed by which model wrote it, RRF over two ranked lists, and a seed that answers no term"
+status: implemented
+date: 2026-08-22
+refines: [REQ-0048, DEC-0006]
+affects: [seed-entities, seed-matches, admit-seeds, build-context]
+tags: [retrieval, context, seeding, embeddings, dense, rrf, req-0048, dec-0006]
+summary: |
+  loom-embed holds the protocol and one implementation. loom-workspace builds a
+  vector sidecar and stamps it with EMBEDDER-ID. SEED-ENTITIES fuses the
+  lexical ranking with a cosine ranking by reciprocal rank, and the fused list
+  is what ADMIT-SEEDS already consumes -- its two counts, SEED-SCORE's bands
+  and DEC-0005's limit of eight are all unchanged.
+
+  A dense candidate carries :SIMILARITY where a lexical one carries its matched
+  terms. That single difference is what keeps REQ-0048 R3 and R4: the record
+  can say how a seed arrived, and CLASSIFY-TERMS cannot mark a term ANSWERED on
+  the strength of a candidate that answered no term.
+
+  Simulated over both instruments before writing this. Equal-weight RRF reaches
+  448 of 450 on known-item, which is the union ceiling exactly, losing none of
+  the eleven exact-name cases REQ-0048 R2 protects. On the mismatch family it
+  reaches 24 of 120 against dense-alone's 34, and weighting dense 1.5 or above
+  inverts that to 443 and 34. The default is deferred to the implementation for
+  a reason D4 gives.
+body: |
+  D1  A LEAF SYSTEM, AND WHY NOT IN LOOM-KNOWLEDGE
+
+  loom-embed depends on nothing above loom-ontology:
+
+      (defgeneric embed-texts         (embedder texts))
+      (defgeneric embedder-id         (embedder))
+      (defgeneric embedder-dimensions (embedder))
+
+      (defclass ollama-embedder ()
+        ((host  :initform "127.0.0.1:11434")
+         (model :initform "nomic-embed-text")))
+
+  It is not in loom-knowledge because loom-knowledge is read-only services over
+  the graph and this talks to a process over HTTP; and not in loom-workspace
+  because loom-knowledge needs it at query time and must not depend upward.
+  A leaf both can use is the arrangement that keeps DES-0006 R5's peer property
+  intact -- loom-serve, loom-rest, loom-mcp and loom-process are untouched.
+
+  No new library. drakma is already a dependency of loom-rest/test, cl-json of
+  four systems, and both ollama and a hosted embedder are a JSON POST. Adding a
+  hosted implementation later is a second subclass and a bearer token.
+
+  D2  THE SIDECAR IS KEYED BY WHAT WROTE IT
+
+  Under .loom/, beside the context log, where REPOSITORY-FILES already skips it
+  so the sidecar cannot enter the index it serves:
+
+      .loom/vectors/<repository>.dat     the vectors
+      .loom/vectors/<repository>.json    embedder-id, dimensions, count, built-at
+
+  Load refuses on any disagreement: a different EMBEDDER-ID, a different
+  dimension, a count that does not match the file length. Refusing means
+  returning no vectors, which is REQ-0048 R6's third state and behaves as R6
+  requires -- the lexical seeder answers alone and nothing reports an error.
+
+  A mismatch cannot be detected any other way. Cosine over vectors from two
+  models returns numbers in the same range with no property that marks them
+  wrong, so the check has to be an identity recorded at write time and compared
+  at read time. DEC-0006 states the rule; this is where it lives.
+
+  Not committed, and rebuilt rather than migrated. 5268 vectors of 768
+  single-floats is about 16 MB per tree, derived from files that are the truth
+  (DEC-0001), and 261 seconds to rebuild at the rate measured on 2026-08-22.
+
+  D2a  TWO TIMEOUTS, AND WHY ONE WAS WRONG
+
+  The client separates the connect from the read because they fail for
+  different reasons and want opposite numbers.
+
+    *OLLAMA-CONNECT-TIMEOUT*  2 seconds, spent on a preflight TCP connect that
+                              is opened and closed. A loopback connect completes
+                              in under a millisecond or never, and this number
+                              is paid in full on every query when ollama is
+                              absent.
+
+    *OLLAMA-DEADLINE*         60 seconds, over the whole request, through
+                              SB-SYS:WITH-DEADLINE and as drakma's
+                              CONNECTION-TIMEOUT.
+
+  The preflight exists because drakma hands CONNECTION-TIMEOUT to usocket,
+  which applies it to reads as well. Passing the short number there bounded the
+  read at two seconds, which three texts survive at 250 ms and sixty-four do
+  not: the first batch build died with an I/O timeout against a healthy ollama.
+  Separated, the connect probe answers "is anything listening" and the request
+  is free to take as long as embedding a batch actually takes.
+
+  Written first as one parameter of thirty seconds, reasoned about a wedged
+  embedder, and measured against an absent one: a request to a port nothing
+  listens on took 30007 ms. Every `context' call on a machine without ollama
+  would have cost thirty seconds. Separated, the same request costs 2001 ms.
+
+  2001 ms is still twenty times a query, which is why REQ-0048 R6 is not
+  satisfied by a timeout at all and PLAN-0043 S3 carries a memo: the first
+  failure is remembered and no second call is made. A bounded departure from
+  today's behaviour is still a departure.
+
+  D3  WHAT IS EMBEDDED
+
+  Per definition, the name split into words, then its documentation:
+
+      "get type from obj. Return the typename of a game object..."
+
+  Split, because an embedder tokenizes English and GETTYPEFROMOBJ is not
+  English -- the same reason TASK-TOKENS splits a compound before matching it.
+  The query is embedded as the caller wrote it, with no splitting and no
+  stopwords removed: it is already English, and the tokenizer's job here
+  belongs to the model.
+
+  REQ-0048's third open question -- whether the 3861 definitions of 5268 with
+  no docstring should be embedded at all -- is answered by embedding them. Their
+  document is the name as words, which is a weaker signal than a documented
+  entity's and not an absent one; and omitting them would make the store's
+  count disagree with the index, which D2's check reads as corruption.
+
+  D4  RRF, AND WHY THE WEIGHT IS NOT SET HERE
+
+  Two ranked lists per query. The lexical one is what STABLE-SORT over
+  SEED-SCORE already produces. The dense one is cosine against the sidecar,
+  taken to the same depth. Fused:
+
+      score(c) = sum over the lists holding c of  w / (60 + rank(c))
+
+  60 is the constant the RRF literature settles on and is not tuned. The fused
+  order replaces RANKED as ADMIT-SEEDS' input, and nothing downstream changes.
+
+  RRF rather than a calibrated blend because a cosine and a SEED-SCORE band are
+  not on one scale, and DES-0032 already refused to place a threshold in a
+  quantity it had measured across six queries. Rank is the only thing the two
+  lists share.
+
+  Simulated at the seed level -- eight lexical names against eight dense ones,
+  which is the only like-for-like comparison available before the fusion exists:
+
+      weight        known-item      mismatch
+      lexical 1, dense 1     448          24
+      lexical 1, dense 1.5   443          34
+      lexical 1, dense 2+    443          34
+      lexical 1.5+, dense 1  424          11
+
+      for reference: lexical seeds alone 397 and 0, dense alone 437 and 34,
+      union ceiling 448 and 34.
+
+  Equal weight reaches the known-item ceiling exactly and loses none of the
+  eleven exact-name cases. It also costs ten of the thirty-four mismatch cases,
+  because the lexical list contributes eight candidates whatever their quality
+  and on that family contributes nothing correct -- disjointness guarantees no
+  lexical seed can be the answer.
+
+  The default is not set here because the simulation cannot see the neighbour
+  band, and the band is where every one of the mismatch family's nine current
+  lexical hits comes from. A fused seed set gets an expansion too; whether the
+  ten cases equal weight loses return as items is a question only the
+  implementation can answer. PLAN-0043 S6 sets the default on that measurement.
+
+  One rule that looked principled and was measured false: give dense the slots
+  when no lexical seed carries a query term. On the mismatch family 110 of 120
+  cases have a lexical seed carrying a query token, because disjointness is
+  against the target and not against the repository. The rule recovered 25 of
+  34 rather than the 34 it was reasoned to.
+
+  D5  A DENSE CANDIDATE CARRIES :SIMILARITY, NOT AN EMPTY TERM LIST
+
+  SEED-MATCHES returns an alist of entity to ((token . rank) ...). A dense
+  candidate has no such pair, and the obvious encoding -- an empty list -- is
+  exactly what BUG-0037 wrote when a destructive sort lost the matches, so the
+  two would be indistinguishable in a record nobody could then trust.
+
+  It carries one pair instead, (:similarity . <cosine>), which is a keyword
+  where a term would be and a float where a rank would be. Three consequences
+  fall out without further code:
+
+    CLASSIFY-TERMS walks matched terms and cannot mark ANSWERED from a keyword
+    that is not one of the task's words, so REQ-0048 R4 holds by construction
+    rather than by a guard someone has to remember.
+
+    PROSE-ONLY-P handles a non-integer rank already: it asks (EQ :PROSE ...)
+    and a cosine is not :PROSE, so a semantic candidate is not prose-only.
+
+    BEST-NAME-RANK did not, and this design said it did. It read
+    (REMOVE :PROSE (MAPCAR #'CDR MATCHES)) and took the minimum of what was
+    left, which was right only while :PROSE was the one non-integer value in
+    that position. A cosine of 0.83 is not :PROSE, so it survived the remove
+    and became the minimum -- ranking a candidate that matched no word the
+    caller wrote ahead of a prefix match on a word they did, in the band that
+    breaks every tie. It now keeps integers by INTEGERP, which is what a
+    MATCH-RANK is; the change is invisible to every existing measurement
+    because no other non-integer rank exists.
+
+    DES-0032's record shows :similarity in the seed's terms line, which is
+    REQ-0048 R3: the caller sees that the seed arrived on similarity and not on
+    a word they wrote.
+
+  D5a  THE MODEL'S TASK PREFIXES, MEASURED AND NOT ADOPTED
+
+  nomic-embed-text-v1.5 is trained with instruction prefixes -- search_document:
+  on what is indexed, search_query: on what is asked -- and its own
+  documentation says retrieval degrades without them. D3 uses neither.
+
+  Tested on 303 of Loom's own definitions with five hand-written oblique
+  queries, embedded both ways, comparing the rank of the intended answer:
+
+      query                                  no prefix   prefixed
+      the first line of a block of...             1          1
+      refuse a stored file another model made     5         16
+      turn a sentence into words to search for   28         27
+      how far apart two directions point         85        142
+      stop asking a service that is not...      115        103
+
+  Two better by a little, two much worse, one unchanged. The absolute cosines
+  rise with the prefixes -- 0.577 to 0.622 at the top -- and the ordering does
+  not improve, which is the distinction that matters: a similarity scale that
+  shifts uniformly ranks nothing differently.
+
+  Five queries over 303 documents is not enough to conclude from, and the
+  paragraph above concluded from it. Run against the instrument instead -- 120
+  mismatch cases with known answers over game-server and front-end, top-8 --
+  the answer comes out the other way:
+
+      no prefix    34 of 120    28.3%
+      prefixed     37 of 120    30.8%
+
+  Three cases, and in the direction the model's documentation predicts. The
+  small sample was not merely weak evidence, it pointed the wrong way, which is
+  what a sample of five does. The five-query table is left above as the record
+  of that rather than deleted.
+
+  One explanation ruled out rather than left standing: ollama does not add a
+  prefix of its own, so the prefixed run was not double-prefixed.
+  `ollama show nomic-embed-text --modelfile' gives TEMPLATE {{ .Prompt }},
+  which passes the text through verbatim.
+
+  NOT ADOPTED IN S5, AND WHAT ADOPTING IT COSTS
+
+  Two changes rather than two string concatenations. EMBED-TEXTS would need to
+  know whether it is embedding a document or a query, because the whole point
+  of the prefixes is that the two sides are treated differently -- so the
+  protocol grows a role argument. And EMBEDDER-ID would have to name the
+  prefix scheme: this design's own rule is that the id names everything that
+  changes the vectors, prefixed vectors are not comparable with unprefixed
+  ones, and a store built before the change must be refused rather than mixed.
+
+  Three cases of 120 is worth that, and it is not worth doing in the middle of
+  a step measuring something else. PLAN-0043 S6 sweeps the fusion weight and is
+  where a second measured constant belongs.
+
+  D4a  WHAT THE SWEEP SETTLED
+
+  Weight, list length and a relative cut, measured with the neighbour band
+  running, which the simulation could not see:
+
+      weight/limit/cut   known-item   mismatch   judged   R6      R7
+      baseline              410/450      9/120    42/45   10/10   6/6
+      1.0/8/0               440/450     38/120    42/45   10/10   6/6
+      1.5/8/0               441/450     43/120    42/45   10/10   6/6
+      2.0/8/0               441/450     43/120    42/45   10/10   6/6
+      1.5/3/0               442/450     32/120    40/45   10/10   6/6
+      1.5/4/0               443/450     34/120    42/45   10/10   6/6
+      1.5/6/0               443/450     39/120    43/45   10/10   6/6
+      1.5/6/0.90            443/450     37/120    43/45   10/10   6/6
+      1.5/6/0.95            443/450     35/120    41/45   10/10   6/6
+      1.5/8/0.90            443/450     39/120    43/45   10/10   6/6
+
+  Adopted: 1.5, 8, 0.90.
+
+  The simulation predicted equal weight would win and dense-weighting would
+  cost known-item. With the band running it is the other way round, which is
+  the whole reason D4 refused to set the number from a seed-level comparison.
+
+  1.5/3 is refused outright rather than merely scoring badly: it breaks
+  REQ-0016 R8, the acceptance case BUG-0041's design is pinned to.
+
+  The relative cut is what makes list length 8 as safe as 6. Without it a
+  longer list always spends its full budget; with it a query that found one
+  clear answer contributes one candidate.
+
+  D6  WHAT ADMIT-SEEDS DOES WITH A CANDIDATE THAT HAS NO SLICE
+
+  SEED-SLICE of a dense-only candidate is the string "similarity", so every one
+  of them shares a slice and *SEED-TERM-SHARE* would hold the bundle to two.
+  That is the wrong reading of a cap written to stop one English word filling
+  the set.
+
+  Dense-only candidates are exempt from the slice cap and subject to the name
+  cap. The slice cap counts how much of the *task* a group of seeds answers,
+  which is a question a similarity match does not participate in; the name cap
+  counts definitions of one name, which BUG-0041 showed is worth bounding
+  however the candidate arrived.
+
+  A candidate on both lists is not dense-only and is charged normally: it has
+  real terms, and its slice is what those terms make.

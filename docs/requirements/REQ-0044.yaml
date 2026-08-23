@@ -1,0 +1,64 @@
+id: REQ-0044
+title: A record issued as a probe must be excluded from measurement by a field, because prose in a judgement is not something a scorer can read
+status: draft
+date: 2026-08-21
+refines: [REQ-0036]
+affects: [record-context-call, record-context-use, drain-context-log]
+importance: Minor
+tags: [evaluation, measurement, hygiene, req-0036]
+summary: |
+  Two of the fifteen judgements in .loom/context say, in the free-text `how`
+  field, "Exclude from any recall measurement." They were issued to check that
+  the log writes a record at all. Nothing reads that sentence: tools/acceptance.py
+  counts both as judged records, and the corpus that REQ-0036 exists to build
+  starts life with two entries that are not questions anybody asked.
+body: |
+  THE INSTANCES
+
+      task "alist dictionary lookup"  [game-server]
+        "(probe) -- Not a real question. Issued to verify the context log
+         writes a record. Exclude from any recall measurement."
+
+      task "alist predicate"  [utils]
+        "(probe) -- Not a real question. Issued to verify the record id is
+         returned to the caller. Exclude from any recall measurement."
+
+  The second is also the log's only zero-seed call, so it is simultaneously the
+  most interesting-looking record in the set and the one record that means
+  nothing. A scorer reading recall off this directory gets both wrong.
+
+  WHY IT MATTERS AT FIFTEEN AND NOT AT FIFTEEN HUNDRED
+
+  The corpus is small and will stay small for a while -- it grows only when
+  somebody judges a call. Two probes in fifteen is thirteen percent, and REQ-0036
+  R8's argument is that the hand-authored cases must never be trained on because
+  the corpus is the thing being trusted. A corpus that cannot say which of its
+  entries are real is trusted for the wrong rows first.
+
+  REQUIREMENTS
+
+  R1  A record carries a field marking it excluded from measurement, set by the
+      caller at judgement time.
+
+  R2  The scorer honours it: excluded records are reported as excluded, with the
+      count, and are not scored. Reported and not silently dropped -- a corpus
+      that quietly shrinks is the failure REQ-0036 R4 already refuses for stale
+      records.
+
+  R3  The reason stays free text. Why a call was a probe is a sentence, and the
+      field is a flag beside it rather than a taxonomy nobody will maintain.
+
+  R4  The two existing probes are marked rather than deleted. They are evidence
+      that the mechanism was verified, and REQ-0036's whole posture is that a
+      record is kept and qualified rather than removed.
+
+  ACCEPTANCE
+
+  tools/acceptance.py --log reports "15 judgements, 2 excluded, 3 scored" against
+  the current directory, and its recall figures are computed over the 13.
+
+  OPEN QUESTIONS
+
+  - Should a probe be markable at call time as well as at judgement time? The
+    caller usually knows in advance, and a record that was never going to be a
+    question is cheaper not to score than to score and discard.

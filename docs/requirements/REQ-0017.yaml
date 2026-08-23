@@ -4,6 +4,7 @@ status: draft
 date: 2026-08-06
 affects: [document-properties, document-type-for, resolve-document-references,
           unresolved-references, run-check, describe-entity, impact-set]
+importance: Major
 tags: [documents, markdown, generation, con-0001, dec-0001, risk]
 summary: |
   A repository that documents itself in markdown holds real requirements and

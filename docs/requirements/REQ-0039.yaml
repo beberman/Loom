@@ -1,0 +1,237 @@
+id: REQ-0039
+title: A seed must be chosen for what a definition says it does, because the prose that answers the task is already indexed and the ranking does not read it
+status: partial
+date: 2026-08-21
+refines: [REQ-0016, CON-0007]
+affects: [seed-score, seed-entities, admit-seeds, build-context, plain-words]
+importance: Major
+tags: [retrieval, context, ranking, docstring, stemming, req-0016, req-0035, con-0007]
+summary: |
+  REQ-0035 landed: the prose a definition carries is indexed. The seeder still
+  scores on tokens shared with the entity's *name*, and the judged records show
+  exactly what that costs -- the task "read a whole file into a string" did not
+  return SLURP-FILE, whose docstring reads "The full contents of the file at PATH
+  as a string." Nine words, seven of them the task's.
+
+  Four recorded misses have this shape, and in each the answer was recovered with
+  `find` on a substring of the name. The seeder is doing worse than a substring
+  match while sitting on the one field that would have answered.
+body: |
+  THE MISSES, and what would have matched
+
+  - "read a whole file into a string" → SLURP-FILE missed. *"it is the exact
+    answer to the task as worded. Found by grepping with-open-file. The bundle
+    returned definition-source and read-source, which read source for other
+    purposes."* Its docstring is the task, restated.
+
+  - "split a string on a delimiter character" → SPLIT-LINES missed. *"A splitter
+    question that misses the splitter named split-lines is the sharpest kind of
+    miss."* Here the *name* would have matched too, on the token "split", and
+    did not -- SPLIT-COMMAND-LINE was seeded instead. So this one is not only a
+    prose failure; it is the ranking preferring one of three splitters for
+    reasons the record cannot see.
+
+  - "test whether a string starts with a prefix" → DOT-PREFIXED-P and its two
+    siblings missed; seeds were COMMENT-EXTENT, READING, STRESS-PUSHER,
+    STRESS-WRITER. *"none related."*
+
+  - "parse a number out of a string" → four PARSE-* functions seeded, none about
+    numbers. *"Ranking on the shared token rather than on the subject."*
+
+  The last is the general statement and the first is the proof: a task is a
+  sentence about a capability, and a docstring is a sentence about a capability,
+  and the seeder compares the task to an identifier.
+
+  REQUIREMENTS
+
+  R1  RESTATED 2026-08-22, having been measured. As written: "A definition's
+      indexed prose participates in its seed score. REQ-0035 put it in the
+      index; nothing reads it here."
+
+      Prose is read, and has been since REQ-0035 and DES-0028. SEED-SCORE's
+      coverage band counts a prose match, and PROSE-ONLY-P bands prose-only
+      candidates one step below. Measured on this requirement's own target
+      query, `context test whether a string starts with a prefix', the winning
+      seed is COMMENT-EXTENT at 100413 answering four terms *entirely* in
+      prose, and the second is READING at 100513 answering three the same way.
+
+      What is wrong is the opposite of what was written. Prose participates as
+      though it were a name: the coverage band cannot tell a docstring hit from
+      a name hit, and coverage is the widest band under type and naming, so
+      four incidental words in a docstring outrank a name that is the subject
+      of the query.
+
+      CON-0007 gives the practice this violates. A search over code uses an
+      analyzer per field -- stemming and English morphology on comments and
+      docstrings, identifiers left alone -- where SEED-MATCHES walks one token
+      list twice, once against names and once against :DOCUMENTATION.
+
+  R2  A name match and a prose match are not the same evidence and are not
+      summed blind. A task token appearing in a docstring sentence about what
+      the function does is stronger evidence than the same token appearing
+      inside a compound identifier, and PARSE-JAVASCRIPT scoring on "parse" for
+      a task about parsing numbers is that weakness in one row.
+
+      This survives R1's restatement and is the requirement. Note that its
+      example runs the other way from R1's measurement -- a docstring sentence
+      beating a fragment of a compound -- and both are true: the two kinds of
+      evidence are incomparable today, and which one wins is an accident of
+      how many tokens happened to land.
+
+  R3  MET, and the reason it looked unmet is BUG-0037. The seed record carries
+      a weight per term and that weight is :PROSE for a docstring hit and an
+      integer for a name hit, so the two are distinguishable in the log and
+      always were. What was not readable was the record: 207 of 246 bundles
+      carried `"terms": null' because STABLE-SORT was destructive and MATCHES
+      was read after it. The field was right and four fifths of the corpus was
+      empty.
+
+      Since DES-0032 the bundle carries the same distinction to the caller, as
+      a per-term state of answered, weak or unmatched.
+
+  R4  A term from the task that names a *path* is not a term about an entity.
+      The "migrate game/ and server/" record: *"five of eight seeds... are
+      keyword matches on the words 'game' and 'server' in the task string, which
+      named directories rather than entities. A task saying 'migrate game/ and
+      server/' means the trees, not the function GAME."*
+
+  R5  A package or module entity is seedable. From the utils migration:
+      *"`describe` on the package name returned all 103 exported symbols in one
+      answer, which is what the entire old-versus-new overlap map was built from.
+      A task that says 'split the utils system' and 'rename the package' seeding
+      only four functions and no package entity looks like a real ranking gap."*
+
+  ACCEPTANCE
+
+  Measured with the harness that exists. The 32 hand-written cases in
+  tools/acceptance.py were at 30/32 strict and must not fall; the four misses
+  above were added as cases r39-1..r39-4, and the run is now 33/36.
+
+  Read that number carefully, because measuring it moved the argument. Two of
+  the four PASS, and they pass for a reason that is not this requirement being
+  met: PLAN-0036 moved the answers to the utils library, and the library's names
+  -- READ-FILE, STRING-LINES -- contain the task's own words where Loom's
+  SLURP-FILE and SPLIT-LINES did not. The same question against the same
+  capability succeeds or fails on whether somebody happened to name the function
+  after the words the asker used.
+
+  That is the clearest statement of the defect available, and it is sharper than
+  the one this document was drafted with. r39-1 and r39-2 are regression guards
+  on a name match. r39-4 passes and always did.
+
+  r39-3 is the target, and its rationale as first written is wrong. It said
+  DOT-PREFIXED-P "shares no token with 'test whether a string starts with a
+  prefix' except through its docstring". It has no docstring: Loom holds no
+  :DOCUMENTATION property for it at all, so no amount of prose seeding can
+  reach it and the case as written argued for a mechanism that could never
+  satisfy it.
+
+  What it does share is a name. "prefix" is a substring of "dot-prefixed-p",
+  and `find prefix' returns it among 13. So the case is reachable, ranks
+  ninth or worse, and is a *name-match ranking* case rather than a prose case.
+
+  CON-0007 says what would seat it, and it is not a change to the scoring at
+  all. Porter takes "prefixed" to "prefix". Stemming the index with the same
+  analyzer as the query turns a substring match at rank 2 into an exact match
+  at rank 0. Loom stems only the query and then matches the result against raw
+  names, which is the one rule every text search obeys and this tree obeys on
+  neither side.
+
+  "parse a number out of a string" is not a case here: its right answer is that
+  nothing exists, which is REQ-0037's, and the harness has no way to assert it.
+  The three such queries are written down in ABSENCE_CASES against the day it
+  does.
+
+  The log-derived set is the second measure and the honest one: 15 judgements, 3
+  currently scorable, 5 hit and 1 missed. It is small because it is real, and it
+  grows by being used rather than by being written.
+
+  WHAT THIS IS NOT
+
+  Not embeddings. A vector index is the obvious answer and brings a model
+  dependency, a build step and an answer nobody can explain to the caller who got
+  it; DEC-0001's posture is that a recorded gap beats a confident guess, and an
+  unexplainable ranking is the confident guess. Term overlap against indexed
+  prose is one more field in a scorer that already exists.
+
+  OPEN QUESTIONS
+
+  - Docstrings are absent from most of front-end, which is 60 of the 106 recorded
+    queries. What R1 does for a tree with no prose is unanswered, and the
+    fallback cannot be worse than today's behaviour.
+  - How is "the subject" of a task identified without parsing English? "parse a
+    number" and "parse a document" share a verb and differ in the noun. The
+    cheap approximation named here -- weight the rarer term higher -- is now
+    REQ-0046, which is idf and is the quantity three hand-written rules in this
+    tree are already approximating.
+
+  SEPARATED OUT, 2026-08-22
+
+  Two questions were folded into this requirement and are answered better on
+  their own. REQ-0045 is that `find` and `context` should not share a matching
+  policy, because one is navigational and wants exactness and the other is
+  concept location and wants recall. REQ-0046 is the term weighting above.
+  CON-0007 carries the literature both rest on.
+
+  What is left here is R2, R4 and R5: the two kinds of evidence are
+  incomparable, a path term is not an entity term, and a package is seedable.
+
+  OUTSTANDING, 2026-08-23
+
+  r39-3 still misses. `test whether a string starts with a prefix' does not
+  return DOT-PREFIXED-P, which is the case this requirement was written from and
+  the one PLAN-0039 existed to move.
+
+  What is now known is why, on both mechanisms, and neither is a defect to fix:
+
+    Lexically it is a candidate and ranks outside the eight. `prefix' is a
+    substring of "dot-prefixed-p" so NAME-MATCHES-P reaches it, and the term
+    report says so -- `prefix' and `starts' both come back WEAK, which is
+    DES-0032 D2's way of saying something matched them and no admitted seed did.
+    Five terms, and "test" and "string" pull in most of the tree.
+
+    Densely it is rank 5 at cosine 0.5627 against a top of 0.6255, and
+    DES-0040's relative cut of 0.90 keeps 0.5629 and above. It is dropped by
+    0.0002. The cut is behaving as designed rather than misfiring: the whole
+    distribution is flat, which is the shape of a query the embedder has no
+    confident answer for, and the three candidates it does keep -- AS-STRING,
+    RUN-TEST, TEST-CODE-P -- are not better answers.
+
+  So the case is reachable by neither mechanism as they stand, and lowering the
+  cut to rescue it is refused by measurement: 0.90 was chosen over 0.95 and 0
+  against all three instruments, and the cut is what recovered POLYGONSTOPARTITION.
+
+  What this requirement did deliver is DES-0028's prose seeding, which is in
+  the tree and which the prose family measures at 147 of 150. r39-1 and r39-2
+  pass. The judged set stands at 43 of 45 with r39-3 and fe-5 the only misses.
+
+  SUPERSEDED, 2026-08-22
+
+  The WHAT THIS IS NOT clause above rejected embeddings on three grounds: a
+  model dependency, a build step, and an answer nobody can explain. DEC-0006
+  reverses it, accepting the first two and answering the third -- DES-0032's
+  term report did not exist when this was written, and a dense seed carries
+  :SIMILARITY where a term would be, so a caller can see it arrived on
+  similarity and the absence report still says which of their words reached
+  nothing. The rest of this requirement stands.
+
+  CLOSED AND REPRICED, 2026-08-23
+
+  r39-3 is closed as unreachable rather than left outstanding. `test whether a
+  string starts with a prefix' does not return DOT-PREFIXED-P, and the
+  OUTSTANDING section above records why on both mechanisms: outside the eight
+  lexically, and rank 5 at cosine 0.5627 densely against a relative cut that
+  keeps 0.5629. Lowering the cut was measured on all three instruments and
+  rejected -- 0.90 was chosen over 0.95 and 0, and it is what recovered
+  POLYGONSTOPARTITION. A case no mechanism reaches, whose only proposed fix
+  loses more than it gains, is a recorded gap.
+
+  Importance drops from Critical to Major. This requirement was written because
+  a task worded in the asker's vocabulary did not reach a definition worded in
+  the author's, and REQ-0047's mismatch family is where that is now measured:
+  9 of 120 before DES-0040 and 39 of 120 after. Two of the four opening misses
+  already passed for a reason this requirement did not claim, r39-3 is closed,
+  and what remains is R2, R4 and R5 -- the two kinds of evidence are
+  incomparable, a path term is not an entity term, and a package is seedable.
+  Those are three clauses about the seeder's inputs, not about the gap that
+  made this Critical.

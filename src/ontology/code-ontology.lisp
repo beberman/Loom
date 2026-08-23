@@ -894,6 +894,18 @@ is closed.  :IMPLEMENTED and :PARTIAL complete CON-0004's per-type vocabulary --
 what RULE-0005 requires a plan reaching final to move the documents it refines
 to -- and without them AS-KEYWORD dropped the status of every document that had
 actually landed.")
+               (:importance keyword
+                :one-of (:critical :major :minor)
+                :documentation "How much the document matters, as its author
+judged it.  Declared here because a property this type does not declare is a
+field the author writes and nothing ever reads -- which is precisely what
+:AFFECTS was until it was declared, 67 documents carrying 610 names that
+resolved to nothing and were not reported unresolved either.
+
+Three values and no more.  A scale with five points invites the middle one, and
+the question this answers -- would the product be wrong without it, or only
+poorer -- has three honest answers.  Requirements carry it; nothing stops
+another category doing the same, and nothing requires it.")
                (:category string
                 :documentation "The docs/ subdirectory the file was found in.")
                (:format keyword :one-of (:markdown :docx :org :text :yaml))

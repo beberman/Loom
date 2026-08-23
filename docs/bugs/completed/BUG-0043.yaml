@@ -1,0 +1,135 @@
+id: BUG-0043
+title: "Acceptance case R7 expects CONFIG-GET, which was renamed to CONFIG-SEARCH and moved to the utils library, so one of the three standing misses is unreachable by any retriever"
+status: closed
+date: 2026-08-22
+refines: [REQ-0016, REQ-0036]
+affects: [seed-entities]
+tags: [measurement, instrument, acceptance, req-0036, req-0016]
+severity: medium
+summary: |
+  tools/acceptance.py's R7 case asks game-server for seven names and one of
+  them, config-get, is not in game-server's index:
+
+      loom> find @game-server config-get
+      Nothing matches "config-get".
+
+  It is not there because it is not there to be found. game-server's
+  utils/package.lisp records the rename in its export list --
+
+      #:config-search        ; was config-get -- NOTE: arguments reversed
+      #:config-keys          ; was config-get-keys
+
+  -- and the definition now lives in the standalone library, at
+  utils/src/dict/config.lisp:337. Neither the old name nor the new one is a
+  game-server entity.
+
+  So R7 has been scored 6 of 7 for as long as the case has existed, and the
+  seventh could not have been returned by any ranking, any expansion or any
+  embedding. Loom's headline judged figure is 42 of 45; it is really 42 of 44
+  with one impossible expectation attached.
+body: |
+  WHY IT MATTERS MORE THAN ONE CASE
+
+  The judged set is small and load-bearing. REQ-0036 R11 makes tools/acceptance.py
+  the held-out evidence -- the only judgements in the system not shaped by what
+  the seeder returned -- and every ranking decision this month has been checked
+  against 42 of 45. Three misses, one of them impossible, is a different picture
+  from three misses: it means the judged headroom is two cases and not three,
+  and two of those two are now known to be recoverable.
+
+  Measured 2026-08-22 against the dense spike, which is what exposed this:
+
+      MapElementTypeEditor   fe-5     found at rank 6
+      dot-prefixed-p         r39-3    found at rank 5
+      config-get             R7       absent at top-20, and absent from the index
+
+  The first two are ranking misses and a mechanism reached them. The third
+  behaved differently from the other two at every depth, which is what prompted
+  `find' rather than another ranking idea.
+
+  THE SAME DEFECT WAS FOUND ONCE BEFORE AND FIXED ONLY WHERE IT WAS LOOKED FOR
+
+  acceptance.py already carries this note against r39-1 and r39-2:
+
+      "The first two moved: PLAN-0036 S1 deleted Loom's SLURP-FILE and
+      SPLIT-LINES for the library's, so the tree that now holds the answer is
+      `utils' and a case naming `loom' would fail for a reason that is not the
+      ranking's."
+
+  Those two were retargeted to the utils repository. R7 is the same defect --
+  an expectation naming an entity that moved to the library -- and was not
+  looked at because R7 was failing on one name out of seven rather than on its
+  only one. A case that fails completely gets diagnosed; a case that fails
+  partially gets counted.
+
+  THE FIX, IN TWO PARTS
+
+  Drop config-get from R7's expected list. The case keeps its other six names,
+  all of which are game-server entities and all of which it already finds, and
+  it becomes 6 of 6 rather than 6 of 7. Retargeting R7 whole is not available:
+  r39-1 and r39-2 were single-name cases and could move, while R7 is one query
+  expecting seven names, six of them game-server's, and a query answered out of
+  two repositories is a different measurement from the one that was judged.
+
+  Renaming the expectation in place is not available either. config-search is
+  not a game-server entity: the definition is in the library and game-server
+  re-exports the symbol, so the case would fail for the same reason under a
+  newer spelling.
+
+  Add a utils case for config-search. The judgement behind the expectation --
+  that a query about configuration should reach the key lookup -- is still a
+  judgement worth holding, and it is now a judgement about a different
+  repository. utils is already watched by the service and already carries two
+  acceptance cases, r39-1 and r39-2, so this costs a line rather than an
+  indexing decision:
+
+      loom> find @utils config-search
+      function config-search  [src/dict/config.lisp:337-349]
+
+  The new case is a fresh judgement about a query nobody has written yet, not a
+  retargeting of R7's, and it is worth being explicit that it starts life
+  unjudged rather than inheriting R7's standing.
+
+  Every figure quoted as "42 of 45" in work from 2026-08 is quoting a
+  denominator with an impossible expectation in it. REQ-0048 R8 and PLAN-0043
+  S6 are written against that number and now say so.
+
+  WHY NOT FIXED IN THE SAME CHANGE THAT FOUND IT
+
+  REQ-0036 R11: "Nothing here trains on them and nothing here rewrites them."
+  Editing the held-out set during a session that is measuring a mechanism
+  against it is the exact move that clause forbids, whatever the justification.
+  The finding is recorded here and the edit is a separate decision taken when
+  nothing is being measured.
+
+  FIXED, AND WHAT THE REPAIR REVEALED
+
+  Both parts landed in tools/acceptance.py on 2026-08-22. R7 lost config-get
+  and reads 6 of 6. A utils case, cfg-1, judges the successor where it lives:
+
+      ("utils", "look up a configuration value by its key",
+       ["config-search"], "cfg-1")
+
+  The query was written once, before it was run, so whatever it scored is what
+  it scores. It misses. `configuration' does not reach CONFIG-SEARCH because
+  NAME-MATCHES-P asks whether the token occurs in the name and "configuration"
+  does not occur in "config-search" -- the containment runs the other way, and
+  nothing checks that direction. Worth its own bug; it is not this one.
+
+  So the total is 42 of 45 before the repair and 42 of 45 after it, and the
+  number means something different. One impossible expectation left the set and
+  one real miss entered it, and the arithmetic coincided.
+
+  What that buys is a judged ceiling of 45. Before the repair one of the three
+  misses was unreachable by any mechanism, so the set could not have gone above
+  44 however good the retrieval got. All three of the misses that remain are
+  ranking misses, and the dense spike reached every one of them --
+  MapElementTypeEditor at rank 6, config-search at rank 5, dot-prefixed-p at
+  rank 5.
+
+  HOW IT WAS FOUND
+
+  Scoring the 45 judged expectations by pure dense retrieval, to answer whether
+  the three standing misses were ranking failures. Two were found by the
+  embedder. The third was absent at every depth on a mechanism that shares no
+  machinery with the lexical seeder, which is not how a ranking miss behaves.

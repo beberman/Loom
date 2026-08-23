@@ -1,0 +1,190 @@
+id: DES-0032
+title: "REQ-0037 answered by term coverage: which of the task's words the index answered, and which it answered with nothing"
+status: partial
+date: 2026-08-22
+refines: [REQ-0037]
+affects: [seed-entities, admit-seeds, build-context, render-context, seed-score, seed-matches]
+tags: [retrieval, context, absence, con-0001, req-0016, req-0036]
+summary: |
+  REQ-0037 asks a bundle to be able to say that nothing in the repository does
+  what the task described, and leaves open what "evidence" means concretely. It
+  named three candidates: a score floor, a ratio against the best seed, and a
+  token-coverage test. The first two are refuted by measurement below. The third
+  is the answer, in a form that needs no threshold: report which of the task's
+  own words the index answered and which it did not, and let the caller read the
+  absence off the list rather than off a number.
+
+  The mechanism is one new value carried out of the seeder and rendered above
+  the seeds. A term the whole index matched nothing for is reported as such;
+  a term matched only in prose, or only by candidates no seed slot went to, is
+  reported as weakly covered. Neither claim needs a constant nobody agreed.
+body: |
+  WHAT WAS MEASURED
+
+  Six queries against Loom's own index on 2026-08-22, three whose answer exists
+  and three of REQ-0037's absence cases, read out of the .loom/context records
+  they wrote. The three absence cases were re-checked first, because
+  docs/TODO.md flagged that the tree had moved under them: `find join' now
+  returns 2 and `find encoding' returns 2, where the judged record said join
+  returned nothing. Both hits in each case are unrelated -- "disjoint
+  extensions" and "joins a test package" for join, two tests about JSON integer
+  encodings for encoding -- so all three remain true negatives. The counts
+  drifted; the verdicts did not.
+
+  Every one of the six returned exactly eight seeds.
+
+  A SCORE FLOOR CANNOT WORK
+
+  The scores of the eight admitted seeds, best to worst:
+
+    present  rank the seeds a context bundle starts from   100301 .. 100501
+    present  resolve a document reference to an entity        700 .. 100502
+    present  watch a repository for file changes               700 .. 100602
+    absent   join a list of strings with a separator       100502 .. 100613
+    absent   parse a number out of a string                100513 .. 100602
+    absent   reading a file with an encoding fallback         600 .. 100602
+
+  The ranges overlap almost completely. 100502 is the best seed of an absent
+  query and the fourth seed of a present one. A floor placed anywhere between
+  100301 and 100613 cuts present bundles and absent bundles alike.
+
+  A RATIO AGAINST THE BEST SEED CANNOT WORK EITHER
+
+  SEED-SCORE is banded: type contributes 1000000, `not named' 100000, coverage
+  100 per missing term. Every seed of every query above therefore sits within
+  0.2% of every other seed of that query, present and absent alike. The worst
+  ratio in the six is 100613/100502 = 1.0011. A ratio test is a test on the
+  band a query happens to land in, not on its evidence.
+
+  WHAT DOES SEPARATE
+
+  Per-term, how many entities the index matches, and whether any admitted seed
+  answered that term through its *name* rather than only through its prose:
+
+    present  rank/15 seeds/8 context/48 bundle/10 starts/4
+             every term but `starts' answered by a name
+    present  resolve/59 document/135 reference/23 entity/150
+             all four answered by a name
+    present  watch/19 repository/148 changes/7
+             all three answered by a name
+
+    absent   join/2 list/41 strings/1 separator/0
+             `join' and `separator' answered by no name; `separator' matched
+             nothing in the index at all
+    absent   parse/26 number/2 string/15
+             `number' answered by no name
+    absent   reading/14 encoding/2 fallback/1 utf-8/0
+             `encoding', `fallback' and `utf-8' answered by no name; `utf-8'
+             matched nothing at all
+
+  The three present queries have zero or one unanswered term. The three absent
+  queries have two of four, one of three, and three of four -- and in each case
+  the unanswered terms are the ones carrying the subject: join, separator,
+  number, encoding, fallback. The generic words are answered in both sets,
+  which is why coverage counted as a bare number does not separate them and
+  coverage read per term does.
+
+  THE DESIGN
+
+  D1  SEED-MATCHES already knows, per task term, every candidate it reached and
+      whether the match was a name or a prose match. That is thrown away today:
+      the alist is keyed by entity, and the term is only ever read back per
+      seed. Return a second value keyed the other way -- term -> (name-matches,
+      prose-matches, admitted) -- computed from the same walk, so no query costs
+      an extra pass.
+
+  D2  A term is ANSWERED when some admitted seed matched it by name. It is
+      WEAK when candidates matched it but no admitted seed matched it by name,
+      which includes the prose-only case. It is UNMATCHED when no entity in the
+      index matched it at all, by name or prose.
+
+      Three states rather than a number, because REQ-0037's WHAT THIS IS NOT
+      rules out a per-seed confidence score, and because UNMATCHED is a fact
+      about the index that needs no judgement: it is what `find' returning
+      nothing says, which is what all four judged records ran by hand to
+      recover from the bundle they were given.
+
+  D3  BUILD-CONTEXT carries the three sets into the bundle beside :SEEDS.
+      Today the seeder's evidence reaches the record writer and nothing else --
+      :SEEDS is SUMMARIZE-ENTITIES output with no scores and no terms, so the
+      REST response carries `"score": null, "terms": []' for every seed and a
+      caller cannot see the evidence even if it wants to.
+
+  D4  RENDER-CONTEXT prints the verdict above the seeds, not below them:
+
+        No indexed entity matches: separator, utf-8
+        Matched only in prose, not in any name: join
+
+      and, when no term is answered at all, the sentence REQ-0037 R2 asks for
+      in place of the seed list rather than beside it. The existing
+      "No indexed entity matched this task." fires only when :ITEMS is empty,
+      which happens only when the whole index matched nothing -- the empty
+      repository, not the absent capability.
+
+  D5  RETIRED by DEC-0005 on 2026-08-22, before it was built. It designed
+      REQ-0037 R1's admission gate: a seed bringing no evidence another
+      admitted seed did not already bring is held back rather than admitted.
+
+      It is retired because it can only lower recall. A gate that withholds a
+      candidate has no mechanism by which recall rises, and DEC-0005 decides
+      that the seeder spends precision to buy recall rather than the reverse.
+      That is a refusal rather than a deferral: no measurement could argue for
+      a mechanism whose only effect is in the direction being traded away.
+
+      It was also underspecified as written above, which is how the retirement
+      came about -- working it against the measured data needed three
+      qualifications the text does not carry. Only a *name* match may open the
+      gate, or the prose-only candidates that are the sole thing touching
+      `join' and `separator' re-admit themselves and the noise returns. The
+      unit has to be the significant name and not the entity, or REQ-0016 R8's
+      three CONNECTION-CONNECT-DATABASE definitions become one admission and
+      two holds, destroying the three-files-one-name finding that query exists
+      to produce. And the gate must not relax the way the share cap does, or
+      it is vacuous exactly when it matters: in the join case seven of eight
+      candidates are held and the limit is eight, so relaxation re-admits all
+      seven.
+
+      Even fully specified it does not deliver R2's empty seed list. Walked
+      against the join case it admits AS-LIST-OF-STRINGS on its name matches
+      for `list' and `strings' and holds the other seven -- one seed rather
+      than eight, not zero. Calling that admission unjustified needs `list'
+      and `strings' known to be common words, which is the rarity model this
+      design refused two sections above.
+
+  WHAT THIS DESIGN DOES NOT DO
+
+  It does not rank on rarity. The frequencies above are evidence that the
+  subject-bearing terms are the rare ones, not a proposal to score by them: the
+  gap between `starts' at 4 and `join' at 2 is two entities, and a constant
+  placed in it would be a constant fitted to six queries on one tree.
+
+  It does not refuse to answer. Every seed the ranking chooses is still
+  returned; what changes is that the bundle says what its words did and did not
+  reach. REQ-0037's acceptance requires the negatives without buying them with
+  the positives, and a bundle that still returns its seeds cannot lose one.
+
+  OPEN, AND SEQUENCED AFTER THIS
+
+  REQ-0039 would make a docstring match evidence of the first class, which
+  moves D2's boundary between ANSWERED and WEAK: `join' is matched in prose by
+  two candidates today and would become answered under it. The three states
+  survive that change but the wording of D4's second line does not, so D4's
+  text is worth writing after REQ-0039 lands rather than before.
+
+  R5 -- reporting what the bundle could not look at, the templates/ exclusion
+  case -- is not addressed here. It is a fact about the indexer's exclusions
+  rather than about this query's terms, and folding it into the term report
+  would put two different kinds of absence under one heading.
+
+  OUTSTANDING
+
+  Nothing. D1 through D4 are implemented by PLAN-0038 and D5 is retired by
+  DEC-0005, so this design has no unbuilt part left -- the status is `partial'
+  rather than `implemented' because a retired section is not a delivered one.
+
+  What landed is the reporting half, and it satisfies REQ-0037's acceptance on
+  its own: a caller reading "Matched only in prose, or below the last seed:
+  separator, join" has the answer the four judged records asked for. It is
+  also recall-neutral by construction -- it adds a line of text and withholds
+  nothing -- which is why it was implementable ahead of D5 and why DEC-0005
+  leaves it untouched.

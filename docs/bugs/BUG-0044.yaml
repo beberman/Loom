@@ -1,0 +1,129 @@
+id: BUG-0044
+title: ":SIGNATURE is declared on two entity types and written 0 times in 5146 of them, and :ARGUMENTS is documented as a parsed parameter list while holding the whole lambda list"
+status: open
+severity: minor
+date: 2026-08-23
+affects: [entity-arity, lambda-list-parameters, analyze-file, describe-entity]
+tags: [ontology, analyzer, arity, silent-drop, bug-0019, bug-0023, con-0001]
+summary: |
+  Two neighbouring defects in how a definition's parameter list reaches the
+  index, found while building DES-0041's resemblance query, which needed the
+  arity and got a number that was not it.
+
+  `:SIGNATURE` is declared on `:FUNCTION` and `:METHOD` with the documentation
+  "Rendered for display". No analyzer writes it. Measured 2026-08-23 across
+  three repositories and both analyzers: 5146 entities of those two types, 0
+  with a signature.
+
+  `:ARGUMENTS` is declared as "Parsed parameter list" and holds the whole
+  lambda list flattened to strings, lambda-list markers included.
+  FIND-ENTITIES stores six tokens and takes one argument. Any consumer reading
+  its length as the arity is wrong on the 210 of Loom's 1304 functions that
+  carry a marker, and reads plausibly on the other 1094.
+body: |
+  THE MEASUREMENT
+
+  Every `:FUNCTION` and `:METHOD` in three watched repositories, 2026-08-23:
+
+      repository     type       entities   :signature   :arguments
+      Loom           function       1303            0          949
+      Loom           method           78            0           78
+      game-server    function        693            0          514
+      game-server    method          608            0          603
+      front-end      function       1012            0          894
+      front-end      method         1452            0          948
+
+  5146 entities, zero signatures. front-end is JavaScript, so this is not one
+  analyzer forgetting: neither the Lisp analyzer nor the JavaScript one has ever
+  written the property, on any tree.
+
+  WHY IT SURVIVED THIS LONG
+
+  A test was written to catch exactly this and asserts its opposite. The Lisp
+  analyzer's key fixture walks the whole property table rather than a chosen
+  few, and says why:
+
+      "A spot check of :qualifier and :specializers would not catch a dropped
+       :signature or a :system that stopped defaulting."
+
+  It renders `(:signature nil)` on all eight of its sources and passes. The
+  guard against `:SIGNATURE` being dropped has been recording that it is never
+  written, in its own expected output, since it was written.
+
+  That is BUG-0019 and BUG-0023's shape from the other side. Both of those were
+  a field an author filled in and the graph discarded. This is a field the
+  ontology declares and no author fills, and neither shape signals: a property
+  that is always NIL is indistinguishable from a property whose value happens to
+  be absent, and `GETP` answers NIL to both.
+
+  THE SECOND HALF, WHICH IS THE ONE WITH A VICTIM
+
+  `:ARGUMENTS` reads as a parsed parameter list and is the lambda list with its
+  markers left in:
+
+      nearest         ("store" "query" "limit")
+      find-entities   ("view" "&key" "entity-type" "name-like"
+                       "property-filters" "include-stale")
+      build-context   ("view" "task" "&key" "budget" "seed-limit" "types"
+                       "source-fn" "source-definitions")
+
+  So `(length (getp entity :arguments))` is 6 for a function taking one
+  argument. DES-0041 D6 was written on that reading and shipped with it: its
+  arity histogram counted lambda-list tokens, its `ENTITY-ARITY` reported
+  FIND-ENTITIES as arity 6, and the error was invisible because the two counts
+  agree on the 1094 functions of 1304 that carry no marker. The corrected
+  distribution differs on 16% of the tree:
+
+      arity   as required   as (length :arguments)
+        0             386                     354
+        1             518                     422
+        2             262                     232
+        3              94                     148
+        4              29                      73
+       5+              15                      75
+
+  `LAMBDA-LIST-PARAMETERS` in the Lisp analyzer does stop at the first marker
+  and is documented as doing so -- "The required parameters of LAMBDA-LIST,
+  stopping at the first & marker" -- but it feeds the method specializer path,
+  not `:ARGUMENTS`. So the tree contains both readings, one correct and one
+  documented as though it were.
+
+  WHAT IS NOT WRONG
+
+  Nothing is blocked and nothing computed a wrong answer to a user. DES-0041's
+  arity is now correct (`ENTITY-ARITY` stops at the first marker, with a
+  regression test naming FIND-ENTITIES), and arity was never ranked on -- D6
+  reports it and D7 refuses to conclude from it, so even the wrong number only
+  ever appeared as a line in a report.
+
+  `:ARGUMENTS` carries strictly more information than a required count. The
+  defect is the description, not the value.
+
+  THE DECISION THIS NEEDS, AND IT IS NOT TAKEN HERE
+
+  For `:SIGNATURE`, two answers and no evidence between them:
+
+    Remove it. A rendering is a display concern, `ENTITY-SUMMARY` carries no
+    signature, and DEC-0001 has the graph hold what is derivable from files
+    rather than what is convenient to print. A declared property nothing fills
+    is a claim the ontology makes and cannot support.
+
+    Fill it. `describe` printing `(find-entities view &key entity-type
+    name-like ...)` is what a caller reading a definition wants, and assembling
+    it from `:ARGUMENTS` requires the caller to know CL lambda-list syntax --
+    and to know it differs per language, which is the reason a rendered form was
+    declared in the first place.
+
+  For `:ARGUMENTS`, the fix is a documentation change and possibly a name: the
+  property is a lambda list, and calling it a parsed parameter list is what
+  produced the defect above. Whether a separate `:ARITY` should be stored rather
+  than derived per query is a second question, and REQ-0041 is where call-site
+  shape is being decided, so the two belong together.
+
+  HOW TO REPRODUCE
+
+      (loom-graph:find-entities graph :entity-type :function)
+
+  and count `(loom-ontology:getp e :signature)`. Zero on every tree. For the
+  second half, read `:ARGUMENTS` on FIND-ENTITIES and compare its length with
+  the number of arguments the function takes.

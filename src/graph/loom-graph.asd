@@ -46,6 +46,7 @@
 	       #:loom-ontology
 	       #:loom-analyzer
 	       #:bordeaux-threads
+	       #:utils
 	       #:fiveam)
   :serial t
   :pathname "test/"

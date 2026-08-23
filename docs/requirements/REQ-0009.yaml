@@ -5,6 +5,7 @@ date: 2026-08-03
 affects: [register-document-type, document-properties, collect-body,
           resolve-document-links, apply-transaction, retract-file,
           facts-from-file, index-repository]
+importance: Minor
 tags: [documents, database, workflow, process, architecture]
 summary: |
   docs/*.yaml is the whole system of record for the workflow chain CON-0004

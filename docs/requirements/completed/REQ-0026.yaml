@@ -4,6 +4,7 @@ status: implemented
 date: 2026-08-12
 refines: [CON-0004]
 affects: [build-context, render-context, context-item, impact-report, seed-entities]
+importance: Major
 tags: [context, documents, knowledge, req-0014, bug-0023]
 summary: |
   BUILD-CONTEXT collects the documents bearing on a task by walking four edge

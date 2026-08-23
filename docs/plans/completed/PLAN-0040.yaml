@@ -1,0 +1,92 @@
+id: PLAN-0040
+title: "DES-0037 in five steps: the instrument that can see the defect, the baseline, the second count, the tests, the remeasurement"
+status: final
+date: 2026-08-22
+refines: [DES-0037, BUG-0041]
+affects: [admit-seeds, seed-entities]
+tags: [retrieval, context, ranking, bug-0041]
+summary: |
+  One constant and one conjunct in ADMIT-SEEDS. The sequence is about the
+  measurement rather than the code: the defect is invisible to recall, so the
+  instrument has to be able to see it before the change goes in, and the
+  baseline has to be taken with that instrument against the index the after run
+  will use.
+body: |
+  S1  RECORD SEED NAMES IN recall.py's --json
+
+  tools/recall.py wrote the number of seeds per case and not their names, so a
+  bundle of eight LOGGERs and a bundle of eight distinct names were the same
+  row. Add "seed_names".
+
+  Done first because a baseline taken without it cannot be compared. Recall
+  itself does not move here -- the defect scores a hit whenever the target is
+  one of the duplicates -- so the number this plan exists to move is only in
+  the names.
+
+  RISK: none to the seeder. The file is an instrument and nothing in src reads
+  it.
+
+  S2  TAKE THE BASELINE
+
+      tools/loom-serve.sh restart
+      tools/recall.py tools/cases/known-item.json --json before.json
+      tools/acceptance.py
+
+  On the tree as HEAD has it, with S1 applied. Both instruments, because they
+  measure different things: acceptance.py is REQ-0036 R11's held-out set and
+  known-item.json is the 450 generated cases.
+
+  RISK: the corpus moving under the comparison. The known-item cases are on
+  game-server and front-end only and this work writes to neither, so editing
+  Loom's own source between the two runs does not move them. acceptance.py
+  excludes Loom for the same reason, which is REQ-0016 R6's finding.
+
+  S3  THE SECOND COUNT
+
+  In src/knowledge/context.lisp:
+
+    - *SEED-NAME-SHARE*, 3, beside *SEED-TERM-SHARE*.
+    - ADMIT-SEEDS: a COPIES hash table keyed by SIGNIFICANT-NAME under EQUALP,
+      the existing OR wrapped in an AND with (< (gethash name copies 0)
+      *SEED-NAME-SHARE*), and an INCF beside the existing PUSHNEW.
+
+  The relaxation at the bottom is untouched: held candidates still return in
+  score order when the set is short, which is what keeps a one-name tree
+  behaving as it did.
+
+  RISK: REQ-0016 R8. It is an acceptance case and the reason the existing cap
+  counts names rather than entities, and a bound of two would fail it. S5 reads
+  its seed list rather than its recall count -- acceptance.py scores a set of
+  names, so it cannot tell one CONNECTION-CONNECT-DATABASE from three.
+
+  S4  TESTS
+
+  In src/knowledge/test/context.lisp, two FiveAM tests over SEED-GRAPH-shaped
+  fixtures, each failing without S3:
+
+    - eight definitions of one name and three of something else: at most three
+      of the name are admitted, and the other name arrives.
+    - eight definitions of one name and nothing else: all eight are admitted,
+      which is the relaxation and is the half a bound alone would break.
+
+  A third guards R8's shape in a unit test rather than only over the network:
+  three definitions of one name plus other candidates, all three admitted.
+
+  RISK: CON-0003. Run each against HEAD's ADMIT-SEEDS and confirm it fails
+  there.
+
+  S5  REMEASURE
+
+      tools/loom-serve.sh restart
+      tools/recall.py tools/cases/known-item.json --json after.json
+      tools/acceptance.py
+      tools/loom-test.sh
+      tools/loom.sh 'check'
+
+  The bar, from DES-0037 D5: recall not below 390 of 450 and no family down;
+  acceptance not below 42 of 45; R8's bundle still carrying three
+  CONNECTION-CONNECT-DATABASE definitions; and the diversity numbers moving,
+  which is the point of the change.
+
+  Then DES-0037's D5 gets the numbers and BUG-0041 is closed by
+  `complete PLAN-0040'.

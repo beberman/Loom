@@ -1,0 +1,218 @@
+id: PLAN-0043
+title: "DES-0040 in nine steps: the leaf system, the sidecar, the absent-embedder path first, then fusion, then the weight the simulation could not set, then what a reader has to install"
+status: final
+date: 2026-08-22
+refines: [DES-0040, REQ-0048]
+affects: [seed-entities, seed-matches, admit-seeds, build-context]
+tags: [retrieval, context, seeding, embeddings, dense, req-0048]
+summary: |
+  The absent-embedder path is built and tested third, before any fusion exists,
+  because it is the behaviour every other step can silently break and the only
+  one with no visible symptom when it does. Everything after it is measured
+  against three instruments at once.
+body: |
+  S1  THE LEAF SYSTEM
+
+  src/embed/, a new ASDF system loom-embed depending on drakma and cl-json and
+  on nothing of Loom's above loom-ontology. The three generic functions of
+  DES-0040 D1, one OLLAMA-EMBEDDER class, and a batch POST to /api/embed.
+
+  Tests: a fake embedder subclass returning fixed vectors, so nothing in the
+  suite needs a running ollama. One test that EMBEDDER-ID differs when the
+  model name does, because D2's whole check rests on that string.
+
+  RISK: the layering rules. RULE-0001 to RULE-0003 key on the file's own
+  package name (DES-0009), so a new package needs no rule change, but `check'
+  must be run: no rule names loom-embed and a violation would be silent.
+
+  S2  THE SIDECAR
+
+  In loom-workspace, which owns the write path. Build over a repository's
+  definitions, write .loom/vectors/<repo>.dat and .json, and a loader that
+  refuses on any disagreement in embedder-id, dimensions or count.
+
+  Tests: a store written and read back; a store whose recorded id differs from
+  the embedder in hand returns nothing rather than vectors; a truncated file
+  returns nothing. Each of the three failing without the check.
+
+  RISK: .loom/ must stay outside the index. REPOSITORY-FILES already skips
+  dot-directories and the context log relies on it, so this needs confirming
+  rather than building -- `status' reporting a rise in file count after a build
+  is the symptom.
+
+  S2b  UPDATING A STORE WITHOUT REBUILDING IT
+
+  A full build is 319 seconds for Loom's 1655 definitions and 622 for
+  game-server and front-end together, and the cost is the model's forward pass
+  rather than anything a caller can arrange around. Measured: throughput is
+  3.2-4.1 documents a second and flat across every batch size from 8 to 128 and
+  across two, four and eight concurrent requests. Batching is already done and
+  is not a lever.
+
+  So a store that rebuilt on reindex would put five minutes of CPU behind every
+  file save, and the watcher would be unusable. UPDATE-VECTOR-STORE re-embeds
+  only what changed, and what counts as changed is the *document* -- the name
+  as words and the docstring -- rather than the entity. A function rewritten
+  line by line embeds to the same text, so the commonest edit in a working tree
+  costs no embedding at all.
+
+  The store carries a digest per id for this. A store written without them is
+  refused on load: it would query correctly and could never be updated, so it
+  would be answered against an index that had moved on, forever.
+
+  RISK: silent staleness. An update that fails leaves a store that still loads
+  and still answers, against a tree it no longer describes. VECTOR-STORE-
+  STALENESS counts what an update would embed without reaching the embedder,
+  which is what `status' would report and what a test can assert.
+
+  RISK: wiring it to the watcher is a separate decision and is not taken here.
+  UPDATE-VECTOR-STORE returns NIL when no store exists, so it is opt-in by
+  having built one; making a reindex call it puts an embedder round trip in the
+  indexing path, and that belongs with S3's memo rather than ahead of it.
+
+  S3  THE ABSENT-EMBEDDER PATH, BEFORE ANY FUSION
+
+  SEED-ENTITIES asks for vectors, gets none, and behaves exactly as it does
+  today. Three ways to get none -- nothing listening, no sidecar, a sidecar that
+  refuses -- and one behaviour for all three.
+
+  Measured here, not asserted: with no ollama reachable, known-item reads 410
+  of 450, acceptance 42 of 45, mismatch 9 of 120. Those are today's numbers and
+  this step must not move them by one case.
+
+  A memo, because failing fast is not the same as costing nothing. S1 measured
+  it: a request to a port nothing listens on took 30007 ms with one conflated
+  timeout and 2001 ms once the connect was separated from the read. Two seconds
+  against today's 0.01-0.09 s is twenty times the query, paid on every call for
+  as long as ollama is not installed, and R6 asks for today's behaviour rather
+  than for a bounded departure from it.
+
+  So the first EMBEDDER-UNAVAILABLE is remembered and no further call is made.
+  What resets it is a decision this step has to take rather than inherit: a
+  process lifetime is the simplest, a timed retry is friendlier to someone who
+  starts ollama after Loom, and neither is measured yet.
+
+  RISK: this is the step whose failure is invisible. A timeout that blocks, an
+  error that escapes, a log line per query -- none of them fail a test that
+  only checks recall. The suite gets a test that SEED-ENTITIES returns without
+  touching the network when no embedder is configured, and one that a second
+  query after a failure makes no second attempt.
+
+  S4  THE DENSE RANKING
+
+  Cosine of the query vector against the store, top-N. A declared loop over
+  (simple-array single-float (*)) -- 5268 by 768 is about 4 million
+  multiply-adds and DEC-0006 costs it at two milliseconds against a 31 ms
+  embedding call.
+
+  Not linear-algebra's INNER-PRODUCT-VECTOR: it is a LOOP ... ACROSS with no
+  type declarations, so it cannot specialise on element type and would be
+  slower than ten declared lines, for a dependency.
+
+  RISK: consing per query. The store is loaded once and the scan allocates
+  nothing but the top-N heap; a scan that conses shows up as latency and is
+  what R5's 0.12 s bound is there to catch.
+
+  S5  FUSION
+
+  RRF over the two ranked lists into ADMIT-SEEDS' input, per DES-0040 D4.
+  A dense-only candidate carries (:similarity . cosine) per D5 and is exempt
+  from the slice cap and subject to the name cap per D6.
+
+  Tests, each failing without the change: a dense-only candidate reaches the
+  bundle; a candidate on both lists outranks one on either alone; a dense-only
+  candidate does not make its term ANSWERED; eight dense-only candidates of one
+  name are held to *SEED-NAME-SHARE*.
+
+  RISK: REQ-0048 R2. The eleven exact-name cases are named in DEC-0006 and are
+  the check -- slot-defn, Mapper.toNative, ListMapper.toNative,
+  ArcUse.constructor, IRenderer.unproject among them. A total that rises while
+  those fall is a failure.
+
+  S6  THE WEIGHT
+
+  Sweep the dense weight at 1.0, 1.5 and 2.0 against all three instruments with
+  the neighbour band running, and set the default on that.
+
+  The simulation could not set it: at the seed level equal weight scores 448
+  and 24 and dense-weighted scores 443 and 34, and the ten cases that separate
+  them may return as items once a fused seed set gets an expansion. Every one
+  of the mismatch family's nine current lexical hits arrives that way.
+
+  The weight is judged on R6 and R7 by name, not on the acceptance total.
+  REQ-0048 R9: those two carry 17 of the 44 judged expectations between them,
+  they are the two that ask for a family rather than a thing, and pure dense
+  scores 3 of 10 and 1 of 6 on them where the lexical bundle scores 10 and 6.
+  Their names arrive through the neighbour band walking out from a lexical
+  match, so they are precisely what a fusion that spends seed slots on
+  similarity would break -- and a total of 42 would report that as no change.
+
+  RISK: tuning to the generated families. tools/acceptance.py is the held-out
+  set (REQ-0036 R11) and its floor is not a tiebreak -- a weight that gains
+  generated cases and loses a judged one is refused.
+
+  The judged set was repaired before this plan was implemented, which is why
+  its numbers can be trusted at all. BUG-0043 removed R7's config-get -- an
+  expectation naming an entity that had moved to the utils library and could
+  not be returned by anything -- and judged the successor where it lives, as
+  cfg-1. R7 is 6 of 6 and the total is 45 again, composed differently.
+
+  S7  MEASURE, RECORD, CLOSE
+
+      tools/loom-test.sh
+      tools/loom.sh 'check'
+      tools/recall.py tools/cases/known-item.json
+      tools/recall.py tools/cases/mismatch.json
+      tools/acceptance.py
+
+  The bar is REQ-0048 R8 and R9: known-item not below 410 and no family below
+  its own number, acceptance not below 42 of 45 with R6 at 10 of 10 and R7 at
+  6 of 6, mismatch above 9 of 120. Latency reported against R5's 0.12 s.
+
+  All three judged misses are expected to fall, and any that does not is a
+  finding rather than a neutral outcome. The spike reached MapElementTypeEditor
+  at rank 6, config-search at rank 5 and dot-prefixed-p at rank 5, so a fusion
+  that returns one of them has lost the others between the ranking and the
+  bundle.
+
+  S8  THE README SAYS WHAT TO INSTALL
+
+  README.md is two lines, a title and a sentence about tapestries, and says
+  nothing about running anything. That was survivable while every prerequisite
+  came from Quicklisp; this plan adds one that does not, and a dependency
+  nobody documents is a dependency the next person discovers by failure.
+
+  What it has to state, and each of these is a fact about this machine checked
+  on 2026-08-23 rather than a recollection:
+
+    SBCL, and that /usr/bin/sbcl is the one the tools use. tools/loom-test.sh
+    already says it is not the SBCL behind SLIME, and the README is where a
+    reader who has never opened that script should learn it.
+
+    Quicklisp, and the ten libraries it supplies: bordeaux-threads, cl-json,
+    cl-yaml, drakma, eclector, fiveam, hunchentoot, random-uuid, stem, uiop.
+
+    The utils library, which Quicklisp does not supply. It is a sibling
+    repository reached through ~/quicklisp/local-projects, and it is the one
+    prerequisite a reader cannot guess or install by name: loom-serve depends
+    on #:utils for IMPROPER-LIST-P, and PLAN-0036 S1 deleted Loom's own
+    SLURP-FILE and SPLIT-LINES in favour of it.
+
+    Ollama and nomic-embed-text, under a heading that says optional and means
+    it. REQ-0048 R6: no ollama listening, no sidecar, or a sidecar whose
+    embedder identity does not match are three states and all three mean the
+    lexical seeder answers alone with nothing reported as an error. The README
+    has to say what is lost rather than what breaks, and the answer measured in
+    this plan is what to put there.
+
+  The distinction between required and optional is the whole point of the step.
+  A README that lists ollama beside SBCL turns an optional dependency into a
+  required one by documentation, which is the opposite of what DEC-0006 decided
+  when it put the embedder behind a protocol.
+
+  RISK: a README that is right on this machine and wrong on a clean one.
+  Nothing here verifies itself. The version numbers and paths are what this
+  machine reports today, and the honest form is to say so rather than to
+  present them as requirements nobody has tested elsewhere.
+
+  Then DES-0040 gets the numbers, and `complete PLAN-0043'.
