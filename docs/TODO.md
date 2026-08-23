@@ -438,6 +438,29 @@ the corpus went 30 records to 34.
   `render-context`'s own header prints `~2477/4000` while handing over 7777
   tokens. Loom cannot currently be asked the question REQ-0040 is about.
 
+### What the implementation session added, 2026-08-23
+
+- **The context log is the instrument and it was measuring a ghost.**
+  `tools/acceptance.py` drives the service over REST on 127.0.0.1:4780, and a
+  headless service had been running since before any of the day's work. Three
+  reported verifications measured that image rather than the tree. It was
+  proved rather than guessed: the running service returned only `tokens`, none
+  of the new fields, and ignored a budget sent to it. `tools/loom-serve.sh
+  update` exists for exactly this and was not called.
+
+  The general shape is the same as the broken census below: an instrument that
+  runs against a *service* measures whatever was last deployed, and nothing in
+  its output says which. Both of Loom's harnesses have now failed this way in
+  one week. A version or commit line in `acceptance.py`'s summary, compared
+  against `git rev-parse HEAD`, would have caught both -- and `structure`
+  already carries a commit field for this reason, which one judged record
+  praises as *"USED, and it should be advertised"*.
+
+- **The corpus went 30 records to 44 across the session**, with
+  `LOOM_CONTEXT_LOG=1` set per call. Every design decision in DES-0042 came
+  from bundles read during it, which is the first time this requirement's own
+  subject has been measured while being worked on.
+
 ### Items no document carries
 
 - **`tools/call-site-census.lisp` was broken and nobody knew.** Its registry

@@ -1,6 +1,6 @@
 id: REQ-0040
 title: A bundle must fit what its caller can read, because 308 of the items returned across three judged calls were never looked at
-status: draft
+status: partial
 date: 2026-08-21
 refines: [REQ-0016]
 affects: [build-context, render-context, estimate-tokens, admit-seeds]
@@ -96,3 +96,48 @@ body: |
   DES-0040 left the seed limit at eight and the neighbour band untouched, so
   fusion changed which candidates fill the slots and not how much text a bundle
   carries. R7's item count of 170 is the same 170 it was.
+
+  OUTSTANDING, 2026-08-23
+
+  R1 and R3 are implemented and R4 is met by the harness. DES-0042 and
+  PLAN-0045 carry the work.
+
+  R1. `:context' takes a budget, the console takes --budget, and REST and MCP
+  inherit both. The budget covers what the caller receives rather than one of
+  its two tiers: measured before, a bundle reported 2477 of 4000 tokens and
+  handed over 7777, and three of four tasks exceeded their stated budget. After,
+  every measured task is inside it and the worst is 1.02.
+
+  R3 is answered more usefully than it was asked. It wanted a truncated bundle
+  to say what it dropped; it now says what a larger budget would buy -- the
+  percentage sent, the budget that sends the rest, and which tier is short,
+  because index budget buys names and source budget buys bodies. The claim is
+  scoped to what the walk found, since *CONTEXT-EXPANSION-HORIZON* bounds the
+  search before any budget is consulted.
+
+  R4 is met: `ranking: ... returned and not used' is in the summary rather than
+  per case. The 194 of 203 this document opens with is read from the stored
+  record rather than re-run, so no change to the builder moves it -- correctly,
+  because REQ-0036 R4 keeps a record and qualifies it rather than rewriting it.
+  What moved is the bundles made afterwards.
+
+  R2 IS WHAT REMAINS, AND IT IS A VERDICT RATHER THAN A MECHANISM
+
+  "Breadth yields to depth inside the budget" now has a mechanism:
+  *CONTEXT-SOURCE-SHARE* is the fraction of the total the source tier may
+  spend, so the trade R2 describes is a number rather than an argument.
+
+  What it does not have is evidence. PLAN-0045 S5 measured 1/3, 1/2 and 2/3 on
+  a service restarted for each, and all three score 43 of 45 with the same two
+  misses. 2/3 is the setting R2's argument picks and no instrument prefers it;
+  a half was adopted because it leans on nothing.
+
+  So R2 is not refused and not met. It is a preference this tree cannot yet
+  measure, and the thing that would settle it is REQ-0040's own open question --
+  whether a caller who asked for depth wants five bodies or one -- which the
+  judged corpus can now answer for the first time, because a bundle reports how
+  many bodies it withheld.
+
+  DES-0042 leaves one further signal open: the walk's horizon does not report
+  whether it was still finding things at cost 4, so a caller cannot tell a
+  bundle that reached everything from one the horizon also cut.
