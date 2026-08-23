@@ -1,5 +1,20 @@
-Requirements should have an importance field
+WHAT WAS REMOVED FROM THIS FILE, 2026-08-23
 
+Same review as the 2026-08-21 pass below, run again after the week's work.
+
+| Removed | Now carried by |
+|---|---|
+| "Requirements should have an importance field", the file's opening line | Implemented. `importance:` is on every REQ, in the ontology's `:one-of` vocabulary, with IMPORTANCE-IS-READ-AS-A-KEYWORD-FROM-THE-VOCABULARY over it |
+| A check for source files absent from every ASDF component list, and for a name a package exports and nothing defines | REQ-0043 R1 and R2, which cite the same instances -- game-server/utils/token.lisp, datascience's range-tree.lisp, matrix-utils' four undefined exports |
+| "a size-aware `context` that trims to a budget the caller names would be the fix, and nothing asks for one" | REQ-0040 asks for it and PLAN-0045 built it: `--budget`, one budget covering both tiers, and a cutoff signal saying what a larger one would buy |
+| "a query that takes a definition and returns definitions like it... A near-duplicate docstring detector would have found four of the ten pairs in one call" | REQ-0042, implemented as `similar`. `survey Loom utils` returns nine differing-name pairs including three of the ten found by hand |
+| "There is no call that takes two [repositories] and reports what they have in common... the shape it wants here is a *diff*" | REQ-0042 R3, implemented as `survey` |
+| `tools/loom-serve.sh`'s 20-second start timeout | Fixed. It is ~150s now, sized against a cold fasl cache. Its failure message still says "after ~20s" and that string is corrected here |
+
+What stayed was checked the same way. Two items were rewritten rather than
+removed because half of each is now answered; both say so in place.
+
+---
 
 WHAT WAS REMOVED FROM THIS FILE, 2026-08-21
 
@@ -62,24 +77,7 @@ themselves. It produced REQ-0001 and ARCH-0002 in the utils tree.
 
 Three items came out of it.
 
-1. **A check for source files absent from every ASDF component list.** The
-   sharpest blind spot found. Loom indexes a file whether or not any system
-   loads it, so `game-server/utils/token.lisp` and
-   `datascience/pursuit/utils/range-tree.lisp` — 12K of the latter — both index
-   normally, both export names, and neither is in its `.asd`. Loom reported
-   their functions as having zero callers, which was true for the wrong reason:
-   there is nothing to call, because nothing loads them. Between them they
-   account for four of the dead exports the measurement found, and the only way
-   to see it was to read the `.asd` by hand. This is mechanically detectable —
-   the analyzer already reads `.asd` files as Lisp, so the component lists are
-   in reach — and it belongs next to the existing unresolved-reference report.
-   The neighbouring case is the same class and also worth catching: a name
-   exported by a package and defined nowhere. `matrix-utils` exports
-   INNER-PRODUCT, FLETCHER-REEVES, POLACK-RIBIERE and CONJUGATE-DIR, none of
-   which exists anywhere under ~/lisp, and its own test suite calls all four.
-   `find` returning nothing was the signal, but nothing reports it unasked.
-
-2. **`init` cannot refresh a marked region it wrote.** The guidance rewrite
+1. **`init` cannot refresh a marked region it wrote.** The guidance rewrite
    itself is done — `templates/claude-md-pointer.md` and `templates/loom-skill.md`
    both carry the question-shape table and what the index cannot see, and
    templates are read from disk so it lands on the next `init` without a
@@ -89,14 +87,6 @@ Three items came out of it.
    until each is edited by hand. Deliberate, because both files may hold an
    author's edits — but the marked region exists precisely to make replacing
    Loom's own bytes safe, and nothing uses it for that. Worth designing.
-
-3. **`context` overflows the caller's output limit on a question.** Twice in
-   one session, at 58KB and 76KB, on tasks phrased as questions rather than as
-   edits. It is built for "I am about to change this, what bears on it" and is
-   the wrong shape for "does an equivalent of this exist" — for which `find` is
-   one line against sixty. The skill now steers the yes/no question to `find`,
-   which is guidance rather than a fix: a size-aware `context` that trims to a
-   budget the caller names would be the fix, and nothing asks for one.
 
 ---
 
@@ -195,18 +185,6 @@ Three items.
    separate the noise from the two entries that are saying something, which is
    the better outcome.
 
-Also, and smaller, now measured: **`tools/loom-serve.sh update`'s start timeout
-is too short, and it is off by about ten seconds.** It failed twice in one day
-with *"nothing answering on http://127.0.0.1:4780/v1 after ~20s"*. The second
-time the service was polled immediately afterwards and answered within a further
-ten -- so the real cold start with 9 repositories is roughly 25-30s against a
-20s wait, and the script reports a healthy service as a dead one. The first
-thing the CLAUDE.md section tells an agent to do is therefore the thing that
-fails, and the fallback it trains is the grep habit the rest of that section
-exists to prevent. A longer wait, a wait that scales with the number of watched
-repositories, or a message that says "still starting, retry" rather than reading
-as "Loom is unavailable".
-
 ---
 
 ## From migrating Loom onto the utils library, 2026-08-21
@@ -238,27 +216,14 @@ WHERE THE INDEX WAS DECISIVE
 
 WHERE IT COULD NOT HELP, AND THIS IS THE FINDING
 
-1. **The task's central question -- does this codebase already have its own X --
-   is a similarity question, and `find` matches names.** All ten duplicates are
-   named differently: slurp-file/read-file, split-lines/string-lines,
-   alist-object-p/alistp, fnv-1a/content-fingerprint, text-lines/string-lines.
-   Asking `find` for each of the library's 44 exported names against Loom
-   returned two hits, one of them a test helper. Every real duplicate was found
-   by grepping Loom's own definition names for utility-shaped words
-   (`string|split|join|trim|slurp|file|json|alist|hash|...`) and reading the
-   bodies. That is the method the index was supposed to replace.
-
-   What would have answered it: a query that takes a definition and returns
-   definitions like it -- by signature, by body shape, or by docstring. The
-   cheapest useful version is the last one, because a function extracted from
-   another codebase carries its ancestor's prose. UTILS:CONTENT-FINGERPRINT and
-   Loom's FNV-1A share whole sentences ("Deterministic across images, which
-   SXHASH is not"), as do ALIST-OBJECT-P and ALISTP. A near-duplicate docstring
-   detector would have found four of the ten pairs in one call. REQ-0035 already
-   indexes the prose; nothing asks it this question.
-
-2. **Two functions being the same function is not something the index can say,
-   and half of the pairs that looked identical were not.** FNV-1A hashes the low
+1. **Two functions being the same function is not something the index can say,
+   and half of the pairs that looked identical were not.** HALF ANSWERED
+   2026-08-23. `survey` now reports *why* a pair is suspicious -- shared name
+   words, shared docstring words, and both arities -- so the reading is
+   directed rather than blind. What has not changed, and deliberately, is the
+   conclusion: REQ-0042 R4 forbids the answer from asserting equivalence,
+   because these three pairs are the evidence that it would be wrong half the
+   time. The judgement stays manual and that is the design, not a gap. FNV-1A hashes the low
    octet of each character and CONTENT-FINGERPRINT hashes all of them, so they
    agree on ASCII and diverge on the em dashes this repository's own diffs are
    full of -- and that value gets written into context records. TEXT-LINES
@@ -268,14 +233,7 @@ WHERE IT COULD NOT HELP, AND THIS IS THE FINDING
    that reading one call instead of two file opens, which is real but small: the
    judgement is entirely manual and the index offers nothing toward it.
 
-3. **Cross-repository, again, and this time expensively.** The whole task is
-   "compare repository A against repository B", both registered, and every query
-   names one of them. There is no call that takes two and reports what they have
-   in common. The 2026-08-21 entry above asks for `find` to answer across
-   repositories; this is the same gap met from the other side, and the shape it
-   wants here is a *diff* rather than a lookup.
-
-4. **`commit` in a `structure` answer is not the state of what was indexed.**
+2. **`commit` in a `structure` answer is not the state of what was indexed.**
    The field named the last commit while the index reflected a working tree with
    twenty-four modified files. It is not wrong, and CLAUDE.md's advice to compare
    it against `git rev-parse HEAD` reads as "the index is current" in exactly the
