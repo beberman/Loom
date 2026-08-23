@@ -135,7 +135,8 @@ body: |
   relaxation working as designed: their queries have almost no other candidate.
   `get type from obj' on front-end still misses getTypeFromObj -- its bundle is
   now six distinct names rather than eight OBJTYPEs, so the miss moved from the
-  admission to what reaches the pool at all. docs/SeekAndSeeds.md names the
+  admission to what reaches the pool at all. docs/SeekAndSeeds.md (deleted
+  2026-08-23, its content now in ARCH-0102) names the
   next two causes: *CONTEXT-STOPWORDS* discards get, set, add, new and make,
   which are among the commonest identifier words in a code tree, and candidate
   generation is lexical. Neither is this bug.

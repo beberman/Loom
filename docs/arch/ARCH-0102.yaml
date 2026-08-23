@@ -1,0 +1,238 @@
+id: ARCH-0102
+title: Retrieval is two candidate generators fused by rank, one cost-ordered walk, and a budget covering both tiers of what it returns
+status: accepted
+date: 2026-08-23
+describes: [seed-entities, seed-matches, seed-score, admit-seeds, semantic-candidates,
+            task-tokens, name-as-words, expand-from-seeds, build-context,
+            render-context, resembling, resemblance-survey, nearest, vector-for,
+            load-vector-store, search-entities]
+tags: [architecture, retrieval, context, seeding, embeddings, budget]
+summary: |
+  A `context` call runs four stages: seed, fuse, expand, budget. Two
+  independent generators propose candidates -- a lexical matcher over names and
+  docstrings, and a cosine scan over a vector sidecar -- and reciprocal rank
+  fusion merges their two ranked lists into one pool of at most eight seeds. A
+  best-first walk over cost-weighted edges expands from those seeds. A budget
+  then decides how much of what was found is printed, and says what it withheld.
+
+  This document describes what is there. It replaces docs/SeekAndSeeds.md,
+  which proposed the dense half in five steps and is deleted with this commit
+  because all five landed: BUG-0041 capped same-name admissions, BUG-0042 split
+  the stopword list, REQ-0047 built the instrument that could score the
+  mechanism, DEC-0006 reversed REQ-0039's refusal of embeddings, and PLAN-0043
+  built the fusion.
+
+  Design records live in docs/design and docs/decisions. What follows is the
+  shape and the numbers it currently holds.
+invariants: |
+  I1  DENSE MAY NOT REPLACE LEXICAL. The two generators are fused, never
+      substituted. Measured over 450 known-item cases: eight dense names beat
+      the whole lexical bundle on every family, and eleven cases are reachable
+      only lexically -- slot-defn, Mapper.toNative, ArcUse.constructor and the
+      rest, all exact-name queries. Replacement would lose those eleven to gain
+      thirty-eight. `find` stays lexical entirely. DEC-0006, REQ-0045 R4.
+
+  I2  A SEMANTIC SEED ANSWERS NO TERM. CLASSIFY-TERMS walks the terms a seed
+      matched, and a dense candidate carries (:SIMILARITY . cosine) where a
+      term would be. So it can never mark a word of the task ANSWERED. This is
+      structural rather than guarded: cosine returns nearest neighbours for
+      every query ever asked, so a mechanism allowed to answer a word would
+      make "nothing here does that" impossible to say. REQ-0048 R4, and the
+      three ABSENCE_CASES are its check.
+
+  I3  VECTORS FROM TWO EMBEDDERS ARE NEVER COMPARED. A store records the
+      EMBEDDER-ID that wrote it, and LOAD-VECTOR-STORE refuses one that does
+      not match the embedder in hand. A cosine between vectors from two models
+      is a number in the ordinary range with nothing marking it wrong, and no
+      count would reveal it -- the store would return plausible neighbours
+      forever. DEC-0006, CON-0001.
+
+  I4  AN ABSENT EMBEDDER IS NOT AN ERROR. No ollama, no sidecar, or a sidecar
+      whose identity does not match are three states with one meaning: the
+      lexical seeder answers alone and nothing is reported. An optional
+      dependency that fails loudly when absent is not optional. REQ-0048 R6.
+
+      `similar` and `survey` are the exception and say so: they have no lexical
+      fallback, so an empty answer would mean both "nothing resembles this" and
+      "nothing could have". They report which. DES-0041 D10.
+
+  I5  THE BUDGET COVERS WHAT THE CALLER RECEIVES. Both tiers are charged
+      against one number the caller may name. Before DES-0042 the source tier
+      was exempt and a bundle reported 2477 of 4000 tokens while handing over
+      7777. A tier outside the budget is a budget that measures the wrong
+      thing. REQ-0040 R1.
+
+  I6  A TRUNCATED ANSWER SAYS WHAT A LARGER BUDGET WOULD BUY. Not that it was
+      truncated -- the percentage sent, the budget that sends the rest, and
+      which tier is short. The claim is scoped to what the *walk* found, because
+      *CONTEXT-EXPANSION-HORIZON* bounds the search before any budget is
+      consulted. A signal reading "sends everything" would be a completeness
+      claim about the graph. DES-0042 D3.
+
+  I7  RANKING CANNOT ADD INFORMATION. Four ranking mechanisms were measured on
+      this tree in August 2026 -- coverage by distinct word, provenance rank,
+      the name analyzer, and idf -- and all four came in at baseline or below
+      and were withdrawn. What moved outcomes was candidate generation and slot
+      allocation. This is an observation about the measurements rather than a
+      law, and it is written down because it has been rediscovered four times.
+body: |
+  STAGE 1  THE LEXICAL GENERATOR
+
+  TASK-TOKENS splits the task on non-alphanumerics and at lower-to-upper
+  boundaries, lowercases, drops stopwords, and keeps compounds whole *and*
+  split. Stems are added rather than substituted, so a wrong stem matches
+  nothing instead of losing a word.
+
+  Stemming is Porter (the `stem` system), which replaced four hand-written
+  suffix rules after BUG-0040: those mis-parsed "string" as a gerund and
+  emitted "str" and "stre", and "stre" reached STRESS-PUSHER at the strongest
+  rank the scale has. DES-0035 settled the hybrid that scores best on the
+  judged cases and ties on the generated ones.
+
+  The stopword list is two populations, which is BUG-0042. English chatter --
+  "how does the drawing tool work" -- and the sixteen words a code tree names
+  things with: add, get, set, new, make, use, update, change, fix and their
+  relatives. The second population is searched and may not seed a candidate
+  alone, because dropping them cost the name family its load-bearing word:
+  `wrappedLogger.setLevel' competed on three words instead of four, and `set'
+  is the one that separates it from eight bare loggers.
+
+  SEED-MATCHES walks the tokens against names and against the :DOCUMENTATION
+  every code entity carries (REQ-0035), returning per-token document
+  frequencies as a second value. SEED-SCORE bands the result: type preference
+  outranks match quality, coverage of distinct terms outranks rank, and a
+  prose-only candidate sits one band below a name match.
+
+  ADMIT-SEEDS takes eight (DEC-0005) with two caps. No single term fills the
+  set while another has a candidate waiting, and no single *name* spends more
+  than three slots -- BUG-0041, where 35 of 450 cases returned eight seeds
+  carrying three or fewer distinct names and eight returned one name eight
+  times.
+
+  STAGE 2  THE DENSE GENERATOR
+
+  A vector sidecar per repository under .loom/vectors/, built on demand by
+  `embed' and refreshed by the watcher. One flat array of COUNT * DIMENSIONS
+  single-floats, ids and per-document digests beside it, keyed by the
+  embedder that wrote it (I3). Nine stores exist on this machine, all
+  ollama:nomic-embed-text at 768 dimensions.
+
+  What is embedded is the name as words plus the docstring. NAME-AS-WORDS is
+  why: an embedder tokenizes English and GETTYPEFROMOBJ is not English, but
+  split it is three words the model has seen many times. 3861 of 5268
+  definitions carry no docstring, and those embed on the name alone -- a weaker
+  signal, not an absent one.
+
+  SEMANTIC-CANDIDATES embeds the task, scans the store, and keeps hits above a
+  relative cut of 0.90 against the best. The scan is a dot product because
+  EMBED-TEXTS normalises: about 1.27 million multiply-adds for Loom's store,
+  0.87 ms declared, against a 31 ms median for the one embedding call that
+  precedes it. The call is the cost; the arithmetic is not.
+
+  STAGE 3  FUSION
+
+  Reciprocal rank over the two ranked lists, weight 1.5 on the dense side, at
+  *RRF-K* 60. RRF is parameter-light and avoids calibrating cosines against
+  SEED-SCORE's bands, which are integers in the hundred-thousands.
+
+  What it bought, measured 2026-08-22 before and after:
+
+      instrument          before   after   ceiling if fusion were perfect
+      known-item 450       410      443            448
+      mismatch   120         9       39             42
+      judged      45        42       43             45
+
+  The mismatch family is REQ-0047's: 120 queries whose tokens are disjoint from
+  their target's, asserted disjoint by a program rather than by intent. It
+  exists because the other three families are built from an entity's own name
+  or docstring and are lexically answerable by construction, so none of them
+  can measure whether meaning was found.
+
+  Three known-item cases were lost to fusion and are named rather than totalled:
+  piece-type-speed, slot-defn and Mapper.toNative. All three are bare names
+  whose longer relatives dominate them -- `mapper to native' returns
+  MapMapper.toNative and StyleMapper.toNative ahead of Mapper.toNative, because
+  a document is a name and a docstring and the barest member of a family has
+  the document least dominated by its own name.
+
+  STAGE 4  EXPANSION
+
+  A multi-source best-first walk over edges that cost different amounts:
+  :INHERITS 1, :USES 2, :CALLS 3 outward and 4 inward. Bounded by accumulated
+  cost at *CONTEXT-EXPANSION-HORIZON* 4 rather than by hops, so one number
+  serves two shapes of query -- a hierarchy runs four deep inside the horizon
+  where a call fan reaches one, and the query does not choose, the edges
+  available from its seeds do.
+
+  A container may be reached and never expanded from. Without that, one seed
+  reaching its own file would put every definition in that file two hops out,
+  and two seeds sharing a file would be mutually reachable through it for no
+  reason but co-location.
+
+  An entity reached by several seeds is discounted one cost unit per additional
+  seed, floored at the cheapest edge. Convergence is the only centrality here
+  and it is relative to the query rather than to the tree -- every tree-wide
+  centrality on this ontology ranks containers first.
+
+  STAGE 5  THE BUDGET
+
+  Two allowances inside one total the caller may name (I5). The source tier --
+  full definition text, padded upward to the attached comment block -- is
+  capped at *CONTEXT-SOURCE-SHARE*, half by default, and by a count of
+  definitions. The index tier gets what the bodies did not use, so an unspent
+  source allowance becomes lines rather than being wasted.
+
+  Bodies are planned before any line is charged. A seed carries its line and
+  its body as one item, so costing them in one pass would mean the index
+  allowance was known only after it had been spent. A body that does not fit
+  costs its body and not its seed: the item is admitted without its source,
+  because a seed the task named is what the bundle is for.
+
+  The proportions are worth stating because they are not obvious. On a typical
+  bundle of 133 items, three carry a body and those three cost 43% of the
+  total; the other 130 share the rest at about 17 tokens each. A body on this
+  tree is 348 to 1208 tokens and is roughly 62% prose -- Loom is 23% comments
+  and 39% string literals by character, against game-server's 12% and 13%.
+
+  The share was measured at 1/3, 1/2 and 2/3 and all three hold 43 of 45 with
+  the same two misses, so recall does not choose between them. A half is the
+  setting that leans on neither argument.
+
+  WHAT THE ANSWER CARRIES BACK
+
+  Per seed, the terms it answered and how -- an integer rank for a name match,
+  :PROSE for a docstring hit, :SIMILARITY for a dense candidate. Per term of
+  the task, a state of ANSWERED, WEAK or UNMATCHED, so a caller can tell a
+  bundle whose subject is present from one whose seeds all rode a common word.
+  Per bundle, the budget, what was spent in each tier, and what a larger budget
+  would buy (I6).
+
+  RESEMBLANCE, WHICH IS THE SAME MACHINERY ASKED A DIFFERENT QUESTION
+
+  `similar' takes a definition and returns definitions like it; `survey' takes
+  two repositories and reports one row per entity carrying its best match in
+  the other. Both read the sidecar and neither embeds anything: the subject is
+  already indexed, so VECTOR-FOR reads its vector rather than computing one.
+
+  This is the question `find' structurally cannot ask, because a duplicate is
+  precisely the case where the two names differ. `survey Loom utils' returns
+  nine differing-name pairs at the default cut including FNV-1A ~
+  CONTENT-FINGERPRINT at 0.8700 and PLIST-SHAPED-P ~ PLISTP at 0.8600, and
+  counts the name-equal pairs separately because those are what `find' already
+  answers -- and because, every entity without a docstring embedding its name
+  as words, two entities with one name score 1.0000 and would otherwise take
+  the whole top of the list.
+
+  Cost is |A| x |B| x 768 multiply-adds: 0.13 s for Loom against utils, 3.69 s
+  for front-end against game-server, the largest pair this tree holds.
+
+  WHAT WAS TRIED AND DOES NOT WORK
+
+  On branch `search-index': a postings index with BM25 over six weighted
+  fields, 29 of 32 against the substring scan's 31, and eight times slower.
+
+  Withdrawn after measurement, each with a design recording why: coverage by
+  distinct word (DES-0033 D2), provenance rank (DES-0033 D1), the name analyzer
+  (DES-0034, 38 of 45), and inverse document frequency (DES-0036, which
+  returned its own acceptance numbers unchanged). I7 is what those four have in
+  common.
