@@ -1,7 +1,7 @@
 ;;;; What DES-0014's three :CALL-SITE generators would mint, counted against
 ;;;; the current index without writing anything.
 ;;;;
-;;;;   sbcl --script tools/call-site-census.lisp [/path/to/repo]
+;;;;   sbcl --script tools/test/call-site-census.lisp [/path/to/repo]
 ;;;;
 ;;;; PLAN-0014 step 1. It lives under tools/ rather than /tmp because R2's
 ;;;; ceiling is a number that has to be re-measured after every generator step,
@@ -32,7 +32,7 @@
 ;; "embed/" since PLAN-0043: loom-knowledge depends on loom-embed, so a
 ;; registry without it cannot load the system this census measures. drakma and
 ;; cl-json are loom-embed's, reached through loom-knowledge.
-(loom-harness:load-systems "tools/call-site-census.lisp"
+(loom-harness:load-systems "tools/test/call-site-census.lisp"
                            :systems '("ontology/" "graph/" "analyzer/"
                                       "knowledge/" "workspace/" "embed/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid"

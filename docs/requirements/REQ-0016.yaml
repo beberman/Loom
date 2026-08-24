@@ -152,7 +152,7 @@ body: |
 
   R9  Recall is the measure.
 
-      MET, and it is tools/acceptance.py: fifteen queries over game-server and
+      MET, and it is tools/test/acceptance.py: fifteen queries over game-server and
       front-end, 31 of 32 expected entities present, slowest query 0.07s.
 
       Loom is deliberately absent for the reason R6 gives. The script reports a

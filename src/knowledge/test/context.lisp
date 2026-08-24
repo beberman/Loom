@@ -319,7 +319,7 @@ entirely for a bound that counts entities per name."
   ;; slice cap counts names rather than entities. It is also what pins
   ;; *SEED-NAME-SHARE* at three: a bound of two fails this.
   ;;
-  ;; tools/acceptance.py cannot see it. It scores a set of names, so one
+  ;; tools/test/acceptance.py cannot see it. It scores a set of names, so one
   ;; definition and three read alike there.
   (let ((names (seed-names (same-name-graph "connection-connect-database" 3
                                             "check-database" "database-alert"

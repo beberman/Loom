@@ -1,0 +1,89 @@
+id: BUG-0050
+title: impact's console rows print a bare name, so eight methods of one generic read as the same entity eight times
+status: open
+severity: minor
+date: 2026-08-24
+affects: [impact-report, impact-set, impact-entry-summary]
+tags: [impact, console, legibility, des-0015]
+summary: |
+  `impact` prints `d<depth> <type> <name>  <via>` and nothing else. A generic
+  function's methods all carry the same name and the same type, so they print
+  as identical rows differing only in a path. Measured on game-server,
+  2026-08-24: `impact data-handler 5` returns 822 rows, and 45 names occupy
+  more than one row apiece -- 95 rows in total, worst case `dhandler-copy` at
+  eight.
+
+  Those eight rows are eight real methods and the set is not duplicated. The
+  entity ids are distinct and so are the files:
+
+      method:data-api/handler.lisp:dhandler-copy::data-handler
+      method:data-api/null-handler.lisp:dhandler-copy::null-handler
+      method:data-api/operator-handler.lisp:dhandler-copy::model-defn-handler
+      method:data-api/operator-handler.lisp:dhandler-copy::model-handler
+      method:data-api/operator-handler.lisp:dhandler-copy::model-base-handler
+      method:data-api/model-handler.lisp:dhandler-copy::model-defn-handler
+      method:data-api/model-handler.lisp:dhandler-copy::model-handler
+      method:data-api/model-handler.lisp:dhandler-copy::model-base-handler
+
+  The REST answer carries `id` and `location` on every row. The console prints
+  neither, so the one field that separates these eight is the one field not
+  shown.
+body: |
+  WHAT THIS CORRECTS
+
+  docs/TODO.md carried an entry from 2026-08-06 reading "`impact` repeats
+  entities in its output -- `impact data-handler 5` returned 253 rows covering
+  208 distinct entities, 18% of the answer is the same entity again, eating a
+  budget that then cannot reach model-handler and operator-handler". Re-measured
+  2026-08-24 against the same tree and the same command:
+
+      rows                    822
+      distinct ids            822        zero repeats
+      distinct names          727        45 names on more than one row
+      extra rows by name       95        11.6% of the answer
+
+  IMPACT-SET is deduplicated by id -- a `seen` hash keyed on entity id, and the
+  seed is marked seen so it never re-enters as its own impact. So the set is
+  correct and the 18% was measured by name. Counting by name is counting two
+  definitions as one, which DES-0015 says is the wrong count: a callable is
+  identified by the symbol it names, and a method specialized on a different
+  class is a different definition in a different file.
+
+  What the 2026-08-06 reader saw was nevertheless real. Eight console rows say
+  `dhandler-copy` and nothing on them says which. That is a defect in the
+  printer, not in the walk.
+
+  THE OTHER HALF OF THE OLD ENTRY, ALSO NOT A DEFECT
+
+  The same entry recorded that "the same run labelled rows `d6` at depth 5".
+  That reproduces -- 7 of the 822 rows carry depth 6 on a max-depth-5 walk --
+  and it is by design. IMPACT-SET runs the transitive types breadth-first to
+  the cap, then runs the one-step types as "a single hop from everything
+  already impacted", noting each at `(1+ (impact-entry-depth base))`. A base
+  found at the cap therefore yields a one-step neighbour one past it. All seven
+  are `:file` entities reached by a final `contains>` hop:
+
+      d6 game/gen-map.lisp
+         uses>dhandler-get calls>get-obj calls>get-obj-from-handle
+         calls>mp-typename calls>game-get-map-grid contains>game/gen-map.lisp
+
+  The number is the true path length and reporting it honestly is right. What
+  is missing is any statement that the one-step band lies outside the depth the
+  caller asked for, so a reader compares `d6` against the 5 they typed and
+  reads a bug.
+
+  THE FIX
+
+  F1  An impact row names the definition, not only the symbol. The location is
+      what separates the eight, `find` and `describe` both print it, and
+      `impact` is the only one of the three that does not. A method's
+      specializer would do as well and is shorter.
+
+  F2  The one-step band says it is one hop past the cap, once, rather than
+      leaving each row to be read against the requested depth.
+
+  NOT IN SCOPE
+
+  How truncation is reported is REQ-0005's subject; this run is truncated at
+  822 rows and that is unchanged by either fix. Whether 822 rows is the right
+  answer to print at all is REQ-0040's subject, on a different command.

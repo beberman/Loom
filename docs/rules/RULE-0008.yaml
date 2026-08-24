@@ -51,11 +51,11 @@ rationale: |
   computed, presented in the shape of one that was.
 
   This is REQ-0050 R5 applied to the other half of tools/. That clause fixed the
-  same failure on the Lisp side, where tools/call-site-census.lisp had not
+  same failure on the Lisp side, where tools/test/call-site-census.lisp had not
   loaded for days -- its ASDF registry predated loom-embed -- and reported the
   fact as a backtrace, so the instrument that *CALL-SITE-CEILING*'s own failure
   message tells a developer to re-run was broken and nothing said so.
-  tools/harness.lisp is that fix; tools/service.py is this one, and its refusal
+  tools/test/harness.lisp is that fix; tools/test/service.py is this one, and its refusal
   is worded to match because the two are read by the same person on the same
   afternoon.
 
@@ -82,7 +82,7 @@ rationale: |
   a language it does not read.
 
   What enforces it instead is that the discipline lives in one importable place
-  rather than in each instrument's memory of it. tools/service.py's `ensure` is
+  rather than in each instrument's memory of it. tools/test/service.py's `ensure` is
   the whole of it -- launch, wait, describe, or refuse -- and the three
   harnesses call it in one line each. An instrument added later that forgets is
   a review finding, which is what an advisory rule was always going to be.

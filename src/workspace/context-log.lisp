@@ -41,7 +41,7 @@ answering for other trees need not have."
 
 In Loom's own tree rather than the searched one, because writing a record into
 game-server or front-end would end their corpora holding still -- and that
-property is what tools/acceptance.py depends on. Under a dot-directory, where
+property is what tools/test/acceptance.py depends on. Under a dot-directory, where
 REPOSITORY-FILES already skips it before any analyzer is consulted, so the log
 cannot enter the index it judges."
   (merge-pathnames ".loom/context/" (loom-root)))
@@ -467,7 +467,7 @@ went wrong.")
 (defun format-timestamp (universal-time)
   "UNIVERSAL-TIME as an ISO-8601 UTC string, which is what a record carries.
 
-Not a Lisp universal time: the record is read by tools/acceptance.py, and a
+Not a Lisp universal time: the record is read by tools/test/acceptance.py, and a
 number counting seconds from 1900 is a fact about Common Lisp rather than about
 when the query was asked."
   (multiple-value-bind (second minute hour day month year)

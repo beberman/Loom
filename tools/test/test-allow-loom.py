@@ -6,7 +6,7 @@ command carrying a pipe, a redirect, a substitution or a second command must
 fall through to the normal permission flow no matter how much of it looks like
 a command the hook knows.  Run it directly:
 
-    tools/test-allow-loom.py
+    tools/test/test-allow-loom.py
 
 Exit status is 0 when every case holds.  This is not part of the FiveAM suite --
 it tests a Python hook, not Loom -- so tools/loom-test.sh does not run it.
@@ -17,7 +17,8 @@ import os
 import subprocess
 import sys
 
-HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "allow-loom.py")
+TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HOOK = os.path.join(TOOLS, "allow-loom.py")
 
 ALLOW = [
     # driver scripts: a whole console session in one quoted argument

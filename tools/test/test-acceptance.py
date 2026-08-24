@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check how tools/acceptance.py reads a judgement, on cases rather than on the corpus.
+"""Check how tools/test/acceptance.py reads a judgement, on cases rather than on the corpus.
 
 REQ-0038 R4 and R6, DES-0031 D7-D11. The scorer's job is to say what a judgement
 claims, and every defect it has had was a claim it read as a different one: a
@@ -12,7 +12,7 @@ corpus asks the index whether a name still resolves, and every one of those asks
 is itself a logged read -- so the corpus grows when it is measured, and a test
 that ran the real thing would be a test that changed its own subject.
 
-    tools/test-acceptance.py
+    tools/test/test-acceptance.py
 
 Exit status is 0 when every case holds. Not part of the FiveAM suite: it tests a
 Python harness, not Loom, so tools/loom-test.sh does not run it.
@@ -172,5 +172,5 @@ if failures:
     for failure in failures:
         print(" ", failure)
     sys.exit(1)
-print("tools/acceptance.py: every case holds")
+print("tools/test/acceptance.py: every case holds")
 sys.exit(0)

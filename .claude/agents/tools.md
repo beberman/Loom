@@ -147,7 +147,7 @@ write. Read a RULE-0001 line from `check` as real; read a RULE-0002 or
 RULE-0003 line as BUG-0009 until it closes. None of the three ever verifies
 the peer property above — no rule names loom-serve, loom-rest, loom-mcp or
 loom-process — so verify that one by reading the relevant `.asd`'s
-`:depends-on`, or for a new system, with `tools/load-test.lisp`, which loads
+`:depends-on`, or for a new system, with `tools/test/load-test.lisp`, which loads
 it into a fresh image and checks who is and is not present — not with `check`.
 
 ## Loom is also a standing service

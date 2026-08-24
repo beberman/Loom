@@ -1,6 +1,6 @@
 ;;;; The structural check `check` cannot make.
 ;;;;
-;;;;   sbcl --script tools/load-test.lisp loom-serve
+;;;;   sbcl --script tools/test/load-test.lisp loom-serve
 ;;;;
 ;;;; Loads one system into a fresh image and asserts that LOOM-PROCESS is not
 ;;;; in it. Prints T and exits 0 when the system is a peer of loom-process;
@@ -28,7 +28,7 @@
 
 ;;;; Conspicuously not "process/": a registry entry for it would let the system
 ;;;; under test load it without saying so, which is the whole question.
-(loom-harness:load-systems "tools/load-test.lisp"
+(loom-harness:load-systems "tools/test/load-test.lisp"
                            :systems '("embed/" "ontology/" "graph/" "analyzer/"
                                       "knowledge/" "workspace/" "serve/" "rest/" "mcp/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "stem"))

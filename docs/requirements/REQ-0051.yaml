@@ -1,0 +1,113 @@
+id: REQ-0051
+title: find must answer across every watched repository, because a name absent from one tree and present in another is where a migration went
+status: draft
+date: 2026-08-24
+refines: [REQ-0027]
+affects: [search-entities, require-repository, all-repositories, federated-summaries]
+importance: Major
+tags: [find, federation, migration, cross-repository, req-0027]
+summary: |
+  `find` takes a repository designator and refuses without one. That is right
+  for a call whose answer is a location, and wrong for the question the service
+  now generates constantly: half of game-server's `gs-utils` moved to the
+  standalone `utils` library, both trees are registered, and *which of the two
+  owns this name* is the first question every session asks. The answer is two
+  `find` calls, and four `grep` calls were made instead -- because nothing in
+  the prepared guidance says a second repository is there, and `repository`
+  reads as a required scope rather than as a choice among several.
+
+  The zero-hit case is the half worth building. A name absent from this
+  repository and present in another is a migration telling you where it went. A
+  name absent from every watched tree is dead, and that is how
+  `get-package-file` was caught: one `find` overturned a plan that lists it
+  under "KEPT IN gs-utils" and a CLAUDE.md that cited it in a worked example.
+body: |
+  WHAT ALREADY EXISTS, AND WHY IT DOES NOT ANSWER THIS
+
+  REQ-0027 built federation and `impact` and `describe` both carry a
+  `federated` band. FEDERATED-SUMMARIES reads it off the edges: a federated
+  relationship stores the far end's repository, name, file, line and the commit
+  that tree was at when the edge was derived, so the band is answered without a
+  second graph and without a lock on a repository that may be mid-reindex.
+
+  That answers *what does this entity reach in another tree*. It cannot answer
+  *does this name exist in another tree*, because a name nothing in this
+  repository refers to has no edge to read. The two questions are opposites:
+  federation follows a reference outward, and this requirement is about a name
+  with no reference at all. `get-package-file` has no federated edge anywhere,
+  which is exactly the finding.
+
+  So this needs the other mechanism -- SEARCH-ENTITIES run against each watched
+  repository's view -- and ALL-REPOSITORIES already exists for it. `status`
+  with no designator is the precedent: it is the one operation that answers
+  without naming a repository, because it is the discovery call a caller makes
+  once before naming one to everything else.
+
+  THE MEASUREMENT THIS COMES FROM
+
+  Three instances, and the third is what made it Major rather than Minor.
+
+      2026-08-21  Four grep calls to locate json-decode-from-string, which is
+                  one find against `utils'. The `gs-utils:' prefix proves
+                  nothing: #:gs-utils USEs #:utils and re-exports its symbols,
+                  so gs-utils:dict-value and utils-dict:dict-value are one
+                  symbol object and the definition is in the other tree.
+      2026-08-21  get-package-file, found dead only because both trees were
+                  asked by hand.
+      2026-08-23  A judged context record was discarded whole because one of
+                  its five names lived in another repository.
+                  ctx-20260824T002130 had four hits at ranks 1, 2, 4 and 6 and
+                  scored nothing. REQ-0036 R2 makes that inevitable -- a
+                  judgement is "deliberately not restricted to what the bundle
+                  returned", so its names come from wherever the agent looked,
+                  and since `similar' and `survey' that is routinely a second
+                  repository.
+
+  The harness half of the third is already fixed: `resolves()` in
+  tools/test/acceptance.py asks every watched repository and falls back from a
+  package-qualified spelling to the bare name, which took scored records from 5
+  to 7 and the ranking signal from 5 hits to 12. That fix lives in Python and
+  proves the shape works. The command itself is unchanged, so every caller that
+  is not the harness still gets the single-tree answer.
+
+  REQUIREMENTS
+
+  R1  `find` answers without a repository designator, searching every watched
+      repository. Naming one keeps today's behaviour exactly, because a caller
+      who knows which tree they mean must not pay for the others.
+
+  R2  Every row says which repository it came from. A federated answer is about
+      several working trees at several commits, and a row that does not name
+      its tree reads as a claim about one system. This is REQ-0027 R5's rule
+      applied to a band it did not cover.
+
+  R3  A search that names a repository and finds nothing there says what the
+      other trees hold: `0 here; 1 in utils`. This is the clause the whole
+      requirement is for. It must not require a second call, because the first
+      call is where the reader decides to reach for grep instead.
+
+  R4  A name found in no watched repository is reported as found nowhere, and
+      distinguished from a name that was not looked for. CON-0001: an answer of
+      "absent from every tree" is a strong claim and must not be produced by a
+      search that only ran against one.
+
+  R5  The cost is paid per repository searched and is reported when it is not
+      one. Nine trees are watched on this machine, and `find` is the cheapest
+      command Loom has -- 4.7ms over REST for the single-tree form. A federated
+      form that silently costs nine times that would make the cheap command
+      expensive without saying so.
+
+  R6  The prepared guidance says a second repository may hold the name. Every
+      example in the generated CLAUDE.md region and in the skill names one
+      repository today, which is why `repository` reads as required scope. The
+      guidance is where this defect was actually caused.
+
+  WHAT THIS IS NOT
+
+  Not a merged index. Each repository keeps its own graph, its own commit and
+  its own drift, and this requirement adds a query that visits several of them
+  rather than a store that holds them together. DEC-0001 is why: files are
+  truth, and a tree's index is derived from that tree.
+
+  Not a change to `impact` or `describe`. Their federated bands answer the
+  outward question and are correct as they stand.

@@ -23,7 +23,7 @@ rationale: |
 
   WHAT WAS MEASURED, AND WHAT IT COST
 
-  The seed limit was swept at 8, 16 and 32 against tools/acceptance.py on
+  The seed limit was swept at 8, 16 and 32 against tools/test/acceptance.py on
   2026-08-22. Recall was 42 of 45 at every setting, missing the same three
   names each time: config-get (R7), MapElementTypeEditor (fe-5) and
   dot-prefixed-p (r39-3). Not one was recovered by a larger seed set.

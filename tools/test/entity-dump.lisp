@@ -1,18 +1,18 @@
 ;;;; Dump one repository's definitions as JSON, for building retrieval cases.
 ;;;;
-;;;;   sbcl --script tools/entity-dump.lisp /path/to/repo > cases/repo.json
+;;;;   sbcl --script tools/test/entity-dump.lisp /path/to/repo > cases/repo.json
 ;;;;
 ;;;; One object per definition entity: name, type, file, the first line of its
-;;;; documentation where it has any, and the whole of it. tools/make-cases.py
+;;;; documentation where it has any, and the whole of it. tools/test/make-cases.py
 ;;;; turns these into known-item retrieval cases, whose ground truth is the
 ;;;; entity the query was built from.
 ;;;;
 ;;;; Two documentation fields and not one, because two instruments want
 ;;;; different halves. `doc' is the first line and is what make-cases.py builds
-;;;; the prose family from -- the 450 cases in tools/cases/known-item.json came
+;;;; the prose family from -- the 450 cases in tools/test/cases/known-item.json came
 ;;;; from it, so what it holds cannot change without changing a frozen case
 ;;;; file the next time anyone rebuilds it. `documentation' is everything the
-;;;; analyzer recorded, and tools/mismatch-check.lisp needs all of it: a query
+;;;; analyzer recorded, and tools/test/mismatch-check.lisp needs all of it: a query
 ;;;; disjoint from a docstring's first line can share a word with its third,
 ;;;; and DES-0039 D2 is the case where that happened.
 ;;;;
@@ -23,7 +23,7 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/entity-dump.lisp"
+(loom-harness:load-systems "tools/test/entity-dump.lisp"
                            :systems '("ontology/" "graph/" "analyzer/" "knowledge/" "workspace/" "embed/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
                            :load :loom-workspace)
@@ -65,4 +65,4 @@ mechanism rather than about what the thing is."
     (terpri)))
 
 (dump (or (second sb-ext:*posix-argv*)
-          (error "Usage: sbcl --script tools/entity-dump.lisp <repository-root>")))
+          (error "Usage: sbcl --script tools/test/entity-dump.lisp <repository-root>")))

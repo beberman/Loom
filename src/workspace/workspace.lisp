@@ -1120,7 +1120,7 @@ a file with nothing to report contributes nothing rather than an empty list."
 REQ-0050 R2 and R3, done from Loom's own record rather than from git. The first
 attempt fingerprinted `git diff HEAD', which answers a question nobody asked:
 it moves when any file in the tree moves, including the ones no analyzer
-claims. Within an hour of landing, editing tools/acceptance.py -- Python, which
+claims. Within an hour of landing, editing tools/test/acceptance.py -- Python, which
 Loom does not index -- made the harness report a stale service whose index was
 perfectly current. A staleness signal that fires on every document, tool and
 fixture edit is a signal that gets ignored, which restores the defect it was

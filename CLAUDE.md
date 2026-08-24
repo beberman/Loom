@@ -50,6 +50,17 @@ tools/loom.sh 'impact repository 3'
 tools/loom-test.sh
 ```
 
+**`tools/` operates Loom; `tools/test/` measures it.** Six things run Loom --
+`loom.sh`, `loom-serve.sh`, `loom-init.sh`, `loom-test.sh`, `next-doc-id.sh`
+and `allow-loom.py`, the permission hook -- beside `js/`, which is not a tool
+at all: the analyzer loads `js/extract.js` at runtime. Everything that verifies
+or measures is under `tools/test/`: the three `test-*.py` suites,
+`load-test.lisp` for the peer property, the four census scripts, the case
+builders with `cases/` beside them, the `acceptance.py` and `recall.py`
+harnesses, and the two shared libraries they load -- `harness.lisp` and
+`service.py`. Nothing in `tools/test/` is run by `tools/loom-test.sh`, which is
+the FiveAM suite and nothing else.
+
 Several commands go in one quoted argument separated by `|`, or one per
 argument; the two forms mix. The `|` is inside the quotes, so the shell never
 sees it — it is a separator the script splits on, not a pipeline. Nothing
@@ -142,7 +153,7 @@ LOOM-GRAPH:ENTITY-SYSTEM, which reads the `:system` property the analyzer
 wrote, and that property holds the file's own package name (DES-0009). It is
 not a path guess: it was one until BUG-0006, when every file in the tree read
 as system "src" and every layering rule matched nothing, and the segment after
-`src/` for a while after that. `sbcl --script tools/load-test.lisp loom-serve`
+`src/` for a while after that. `sbcl --script tools/test/load-test.lisp loom-serve`
 is still the instrument for the peer property specifically; no rule names
 loom-serve, loom-rest, loom-mcp or loom-process, so `check` has nothing to say
 about them either way.
@@ -281,9 +292,9 @@ worse than no sentence.
 - **Guard with the condition type the library actually signals.** `error` does
   not catch a condition defined as a direct subtype of `condition`. RULE-0004.
 - **A test must fail without the change it covers.** CON-0003.
-- **An instrument brings the service up itself.** `tools/acceptance.py`,
-  `tools/recall.py` and `tools/seed-sheet.py` score answers read over REST, and
-  each opens by calling `tools/service.py`'s `ensure`: it runs
+- **An instrument brings the service up itself.** `tools/test/acceptance.py`,
+  `tools/test/recall.py` and `tools/test/seed-sheet.py` score answers read over REST, and
+  each opens by calling `tools/test/service.py`'s `ensure`: it runs
   `tools/loom-serve.sh update`, waits for every tree it names to reach `ready`
   — a repository still `embedding` answers lexically, so its recall measures
   half the seeder — and exits with a sentence rather than print a figure against

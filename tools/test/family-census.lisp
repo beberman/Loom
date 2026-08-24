@@ -1,6 +1,6 @@
 ;;;; Family census for REQ-0029 R8 / PLAN-0028 S7.
 ;;;;
-;;;;   sbcl --script tools/family-census.lisp /path/to/repo FAMILY
+;;;;   sbcl --script tools/test/family-census.lisp /path/to/repo FAMILY
 ;;;;
 ;;;; The acceptance measurement DES-0024 cannot get from the suite. Loom's own
 ;;;; packages are dash-flat, so no rule in docs/rules/ writes from-family: and
@@ -10,14 +10,14 @@
 ;;;; runs a real rule through CHECK-RULES so the number reported is the rule
 ;;;; engine's answer and not a re-implementation of it agreeing with itself.
 ;;;;
-;;;; Every function is prefixed FC-, for the reason tools/package-census.lisp
+;;;; Every function is prefixed FC-, for the reason tools/test/package-census.lisp
 ;;;; states at length: Loom indexes its own tree, and a measuring script that
 ;;;; defines REPORT or TALLY changes the numbers it is about to report.
 
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/family-census.lisp"
+(loom-harness:load-systems "tools/test/family-census.lisp"
                            :systems '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/" "workspace/")
                            :libraries '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem" "cl-json" "drakma")
                            :load :loom-workspace)
@@ -115,6 +115,6 @@ would run against a rule document in docs/rules/."
 
 (let ((args (cdr sb-ext:*posix-argv*)))
   (if (< (length args) 2)
-      (format t "~&usage: sbcl --script tools/family-census.lisp /path/to/repo FAMILY~%")
+      (format t "~&usage: sbcl --script tools/test/family-census.lisp /path/to/repo FAMILY~%")
       (fc-main (first args)
                (intern (string-upcase (second args)) :keyword))))

@@ -104,7 +104,7 @@ body: |
   ACCEPTANCE
 
   Measured with the harness that exists. The 32 hand-written cases in
-  tools/acceptance.py were at 30/32 strict and must not fall; the four misses
+  tools/test/acceptance.py were at 30/32 strict and must not fall; the four misses
   above were added as cases r39-1..r39-4, and the run is now 33/36.
 
   Read that number carefully, because measuring it moved the argument. Two of

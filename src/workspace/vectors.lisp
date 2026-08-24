@@ -19,7 +19,7 @@
   '(:function :method :class :interface :variable)
   "The entity types worth a vector.
 
-The same five tools/entity-dump.lisp dumps, and for its reason: a :FILE's name
+The same five tools/test/entity-dump.lisp dumps, and for its reason: a :FILE's name
 is a path and a :TEST is not what a task asks for, so both would put a vector
 in the store whose nearest neighbour nobody wants returned.")
 

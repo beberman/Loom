@@ -1,6 +1,6 @@
 ;;;; What the description band costs, at each cut. REQ-0049 R3.
 ;;;;
-;;;;   sbcl --script tools/summary-band.lisp
+;;;;   sbcl --script tools/test/summary-band.lisp
 ;;;;
 ;;;; R3 says the band cannot be uniform -- 130 items at 24 tokens is the whole
 ;;;; budget -- and leaves open whether the cut is a count or a cost. This
@@ -15,7 +15,7 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/summary-band.lisp"
+(loom-harness:load-systems "tools/test/summary-band.lisp"
                            :systems '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/" "workspace/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
                            :load :loom-workspace)

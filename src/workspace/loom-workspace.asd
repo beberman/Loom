@@ -29,7 +29,7 @@
                ;; on a dependency of a dependency continuing to want it.
                #:uiop
                ;; DES-0030 D3. A context record is JSON because
-               ;; tools/acceptance.py reads it and Python does not read plists,
+               ;; tools/test/acceptance.py reads it and Python does not read plists,
                ;; and it is cl-json rather than a hand-rolled emitter because a
                ;; task string is arbitrary text with quotes and newlines in it.
                ;; An escaping bug there produces a record that parses as

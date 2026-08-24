@@ -7,9 +7,9 @@ no seeder change, because a session's own commits grew the index from 140 items
 to 144 and pushed MAKE-MACRO-ENTITY out of eighth place. game-server and
 front-end are not written to by this work, so their corpora hold still.
 
-Usage:  python3 tools/acceptance.py             the hand-written cases
-        python3 tools/acceptance.py --log      the judgements the log recorded
-        python3 tools/acceptance.py --sessions the log as the sequences it holds
+Usage:  python3 tools/test/acceptance.py             the hand-written cases
+        python3 tools/test/acceptance.py --log      the judgements the log recorded
+        python3 tools/test/acceptance.py --sessions the log as the sequences it holds
 
 REQ-0036 R10 and R11. The --log mode reads .loom/context/, joins each record
 with the used set an agent filed against it, and reports the three populations

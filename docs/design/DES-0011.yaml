@@ -114,7 +114,7 @@ body: |
   diffed per R6.
 
   The Lisp inspector's child: a generated driver script (the
-  tools/load-test.lisp precedent) run as
+  tools/test/load-test.lisp precedent) run as
 
       timeout <bound> sbcl --dynamic-space-size <cap> --script driver.lisp \
           <root> <result-file> <unit>...
@@ -285,7 +285,7 @@ body: |
   exists. RULE-0001's check stays meaningful (no new loom-ontology
   dependency); RULE-0002/0003 lines remain BUG-0009 noise either way, so
   acceptance argues from the .asd graph and `sbcl --script
-  tools/load-test.lisp`, not from `check`.
+  tools/test/load-test.lisp`, not from `check`.
 
   ALTERNATIVES CONSIDERED
 

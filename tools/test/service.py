@@ -12,7 +12,7 @@ caught the exception per case, continued, and printed `ALL strict 0/450 0.0%',
 and seed-sheet.py wrote a CSV of empty rows. Only the first of those is
 survivable, and none of them says what actually happened.
 
-The shape of the fix is tools/harness.lisp's, applied to the Python side: a
+The shape of the fix is tools/test/harness.lisp's, applied to the Python side: a
 measurement that did not happen must not read like one that returned nothing to
 say. So this exits 1 with a sentence naming the instrument, what could not be
 reached, and what is therefore unmeasured -- CON-0001's rule about the graph,
@@ -47,7 +47,8 @@ import urllib.request
 
 BASE = "http://127.0.0.1:4780/v1"
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
 LAUNCHER = os.path.join(ROOT, "tools", "loom-serve.sh")
 
 # ~90s of fasl compilation on a cold cache, then nine trees read, then the

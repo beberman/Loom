@@ -139,7 +139,7 @@ body: |
       Loom has few generic functions and will barely move; game-server is
       built on them and already mints 1726 call sites against 4121 entities
       under PLAN-0014, +42% against Loom's +10%.
-      tools/call-site-census.lisp takes a repository path.
+      tools/test/call-site-census.lisp takes a repository path.
 
   WHY IT HID
 

@@ -61,7 +61,7 @@ clean -- the two fields answer about different instants and that is the point"))
 (test an-edit-to-a-file-no-analyzer-claims-is-not-drift
   ;; The false positive that sent the first attempt at this back. A diff hash
   ;; moves when any file in the tree moves, and most of a tree is not indexed:
-  ;; editing tools/acceptance.py -- Python, which Loom does not index -- made
+  ;; editing tools/test/acceptance.py -- Python, which Loom does not index -- made
   ;; the harness report a stale service whose index was perfectly current.
   ;; A staleness signal that fires on every document and tool edit is one that
   ;; gets ignored.

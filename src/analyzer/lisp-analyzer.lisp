@@ -1480,7 +1480,7 @@ the designator itself is already gone before this sees it."
   "Every clause of a DEFPACKAGE-shaped FORM whose head is HEAD.
 
 Every, not the first: a package may carry several :IMPORT-FROM clauses, one
-per source package, and reading only the first is how tools/package-census.lisp
+per source package, and reading only the first is how tools/test/package-census.lisp
 reported 0 imported names on a tree that has 227."
   (remove-if-not (lambda (clause)
                    (and (consp clause)

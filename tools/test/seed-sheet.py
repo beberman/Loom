@@ -2,7 +2,7 @@
 """One row per case: the query, every seed with its score, and the expected name.
 
     LOOM_CONTEXT_LOG=1 tools/loom-serve.sh restart
-    tools/seed-sheet.py tools/cases/known-item.json > seeds.csv
+    tools/test/seed-sheet.py tools/test/cases/known-item.json > seeds.csv
 
 Needs the context log ON, which tools/loom-serve.sh no longer defaults to. The
 REST bundle's `seeds' are SUMMARIZE-ENTITIES output and carry no score --

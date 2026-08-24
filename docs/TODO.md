@@ -1,302 +1,199 @@
-WHAT WAS REMOVED FROM THIS FILE, 2026-08-23
+# Open dogfooding issues
 
-Same review as the 2026-08-21 pass below, run again after the week's work.
+What using Loom on real trees has turned up and nothing has yet fixed. One
+entry per issue, each carrying the tree and the date it was found on, so a
+reader can check whether it is still true.
 
-| Removed | Now carried by |
-|---|---|
-| "Requirements should have an importance field", the file's opening line | Implemented. `importance:` is on every REQ, in the ontology's `:one-of` vocabulary, with IMPORTANCE-IS-READ-AS-A-KEYWORD-FROM-THE-VOCABULARY over it |
-| A check for source files absent from every ASDF component list, and for a name a package exports and nothing defines | REQ-0043 R1 and R2, which cite the same instances -- game-server/utils/token.lisp, datascience's range-tree.lisp, matrix-utils' four undefined exports |
-| "a size-aware `context` that trims to a budget the caller names would be the fix, and nothing asks for one" | REQ-0040 asks for it and PLAN-0045 built it: `--budget`, one budget covering both tiers, and a cutoff signal saying what a larger one would buy |
-| "a query that takes a definition and returns definitions like it... A near-duplicate docstring detector would have found four of the ten pairs in one call" | REQ-0042, implemented as `similar`. `survey Loom utils` returns nine differing-name pairs including three of the ten found by hand |
-| "There is no call that takes two [repositories] and reports what they have in common... the shape it wants here is a *diff*" | REQ-0042 R3, implemented as `survey` |
-| "`commit` in a `structure` answer is not the state of what was indexed" | REQ-0050, which generalises it: the commit measures the tree and is read as measuring the index, and the same defect made four acceptance runs report a stale service's score |
-| `tools/loom-serve.sh`'s 20-second start timeout | Fixed. It is ~150s now, sized against a cold fasl cache. Its failure message still says "after ~20s" and that string is corrected here |
+**An entry leaves this file when a document carries it.** A requirement, design
+or bug reaching a terminal status makes the entry redundant, and an entry that
+duplicates a completed document is worse than no entry: it reads as open work.
+Removals go in the table at the bottom, naming what carries each one now, so
+nobody re-derives it from scratch.
 
-What stayed was checked the same way. Two items were rewritten rather than
-removed because half of each is now answered; both say so in place.
+Where Loom has proven useful is the other half of this record and lives in
+`docs/VALUE.md`. Neither file is complete without the other.
 
----
-
-WHAT WAS REMOVED FROM THIS FILE, 2026-08-21
-
-Reviewed every item against the document that was supposed to carry it, and
-deleted the ones a requirement already says. The deletions, and where each one
-lives now, so nobody re-derives it:
-
-| Removed | Now carried by |
-|---|---|
-| REQ-0012's remaining half — `describe` resolving a name through SEARCH-ENTITIES' first hit, so an :INTERFACE/:METHOD tie falls to index order | REQ-0012 OUTSTANDING item 1, in the same words, and it names the open question as loom-knowledge's |
-| REQ-0013's measurement — 3,037 unresolved calls at 48.2%, `:unresolved-calls` written at resolve.lisp:570 and read by nothing, a global counter being the useless fix | REQ-0013 body, including the counter argument |
-| REQ-0015's R6 failure and its cause | REQ-0020, which was written to carry exactly that trace |
-| REQ-0016's measurement — `context data-handler` returning 22 substring matches and none of the 21 `dhandler-*` generics | REQ-0016 summary, verbatim, with R-level acceptance |
-| REQ-0017's risk argument — a generated requirement asserting structure its source never committed to | REQ-0017 body |
-| `impact`'s `(truncated)` printed as a boolean | REQ-0005, which proposes `14 impacted, 31 more at depth 4` in its place |
-| The 2026-08-09 rejections — Cleavir, a shared cross-language CST, reviving a CL parser for TS or Python | REQ-0019's WHAT THIS IS NOT and DES-0013's alternatives |
-| A batched, out-of-process analyzer | REQ-0024's open question 1, which measures it against 455 files and answers that acorn does not batch |
-| `describe` on a generic reading as unused because the inbound count sits on the methods | REQ-0012 OUTSTANDING item 1 — the same defect from the other side |
-| The index's value being the prose a human wrote rather than the graph | REQ-0035, implemented: the prose a definition carries is indexed now |
-
-What stayed was checked the same way and is in no document: the duplicate rows
-in `impact` output, and the items under 2026-08-18 and 2026-08-21 below.
+The trees are Loom itself, `game-server`, `front-end` and `utils`.
 
 ---
 
-## From the ~/lisp/game-server evaluation, 2026-08-06
+## Queries and their answers
 
-One finding from that session is in no document. The rest is in REQ-0012,
-REQ-0013, REQ-0016, REQ-0017, REQ-0018 and REQ-0020.
+- **`impact` prints a bare name, so a generic's methods read as one entity
+  repeated.** BUG-0050, and it is not the entry that stood here. That entry
+  said `impact` repeats entities -- 253 rows covering 208 distinct entities,
+  18% of the answer the same entity again. Re-measured 2026-08-24 on the same
+  tree and command: 822 rows, 822 distinct ids, zero repeats. IMPACT-SET is
+  deduplicated by a `seen` hash keyed on entity id. The 18% was counted by
+  name, and counting by name counts two definitions as one, which DES-0015
+  says is the wrong count.
 
-- **`impact` repeats entities in its output.** `impact data-handler 5` returned
-  253 rows covering 208 distinct entities — 18% of the answer is the same
-  entity again, eating a budget that then cannot reach model-handler and
-  operator-handler. REQ-0005 is about how truncation is *reported*; this is
-  about the rows being spent twice before truncation is reached, and neither it
-  nor any other document says it. The same run labelled rows `d6` at depth 5,
-  which was recorded then and has not been re-checked since.
+  What the reader saw was still real. 45 names occupy more than one row, 95
+  rows in all, worst case `dhandler-copy` at eight -- eight genuine methods in
+  four files, printed as eight rows saying `d2 method dhandler-copy` with
+  nothing on them saying which. The REST answer carries `id` and `location`;
+  the console prints neither, so the one field that separates them is the one
+  field not shown. `find` and `describe` both print a location.
 
----
+  The same entry's second half -- rows labelled `d6` on a depth-5 walk -- also
+  reproduces, 7 of 822, and is by design: the one-step band is a single hop
+  from everything already impacted, so a base at the cap yields a neighbour one
+  past it. All seven are `:file` entities reached by a final `contains>` hop.
+  The number is the true path length. What is missing is any statement that the
+  band lies outside the depth the caller asked for.
+  -- the ~/lisp/game-server evaluation, 2026-08-06; re-measured 2026-08-24
 
-## Reader and call-site work, 2026-08-09
+- **`find` should answer across registered repositories, or say that it
+  didn't.** THIRD INSTANCE FOUND 2026-08-23, and the harness half is fixed.
+  A judged record naming an entity in another repository was marked
+  unverifiable and discarded whole: ctx-20260824T002130 had four hits at ranks
+  1, 2, 4 and 6 and was thrown away because its fifth name was
+  `utils:json-decode`. REQ-0036 R2 makes that inevitable -- a judgement is
+  "deliberately not restricted to what the bundle returned", so its names come
+  from wherever the agent looked, and since `similar` and `survey` that is
+  routinely a second repository. `resolves()` in tools/test/acceptance.py now asks
+  every watched repository and falls back from a package-qualified spelling to
+  the bare name; scored records went 5 to 7 and the ranking signal from 5 hits
+  to 12. The `find` command itself is unchanged and this item stands for it.
 
-REQ-0019, DES-0013 and DES-0014 are in. One item from that work is still
-unwritten and still true of the tree:
+  It is the sharpest of these and it generalizes past game-server.
+  PLAN-0002's whole content was that half of `gs-utils` moved to a second
+  repository, and the question the tree now generates constantly is *which of
+  the two owns this name*. Both are registered — `game-server` and `utils` —
+  so the answer is two `find` calls. I made four grep calls instead, because
+  nothing in the prepared guidance says a second repository is there: every
+  example in the generated CLAUDE.md block and in the skill names one
+  repository, and `repository` reads as a required scope rather than as a
+  choice among several. A `find` with no repository that searches all of them,
+  or a zero-hit answer that adds "0 here; 1 in `utils`", turns the miss into
+  the answer. The zero-hit case is the valuable half: a name absent from one
+  repository and present in another is a migration telling you where it went,
+  and a name absent from both is dead — which is exactly how
+  `get-package-file` was caught.
+
+  Note also that the prefix lies, which is why the shell cannot substitute
+  here. `#:gs-utils` USEs `#:utils` and re-exports its symbols, so
+  `gs-utils:dict-value` and `utils-dict:dict-value` are one symbol object and
+  the definition is in the other tree. Grep on the prefix finds call sites in
+  the wrong repository forever.
+  -- completing game-server's PLAN-0002, 2026-08-21
+  -- REQ-0051 asks for it, 2026-08-24
+
+## The graph and what it stores
 
 - **Drop `:unresolved-calls` as a stored property, and take a generated
   entity's `:system` from the call site rather than the file.** Still stored as
   of 2026-08-21: four declarations in `src/ontology/code-ontology.lisp` and the
   write at `src/graph/resolve.lisp:1295`. DES-0014 explains what the property
   buys RESOLVE-CALLS but does not defer removing it, so this is the only record.
+  -- reader and call-site work, 2026-08-09
 
----
+## Documents and the workflow around them
 
-## From the ~/lisp/utils extraction, 2026-08-18
+- **`complete` cannot finalize a plan that refines nothing.** A hard blocker,
+  hit head-on. `complete-plan` is dry-run when `(null parsed)`, and `parsed`
+  comes from `verdicts`; a plan with no `refines:` edges reaches no document
+  but itself, so there is no verdict to give, and any verdict offered is
+  refused with *"PLAN-0002 is not in this cascade"*. The command therefore
+  returns `would-set` forever and writes nothing. `set-status PLAN-0002 final`
+  is the way through and worked first time, but both the skill and the
+  generated CLAUDE.md say "run the transition command" and mean `complete`,
+  and `set-status` is mentioned once at the bottom as the escape hatch for a
+  *blocked* document. Either `complete` should write when the cascade is the
+  plan alone — there is nothing to decide, which is precisely why the
+  all-or-nothing safety argument does not apply — or its dry-run report should
+  name `set-status` when the frontier comes back empty.
+  -- completing game-server's PLAN-0002, 2026-08-21
 
-Registered the five unregistered repositories under ~/lisp and used the index
-to decide what a shared utility library should contain, measuring game-server's
-utils package against what Loom and datascience/pursuit had each built for
-themselves. It produced REQ-0001 and ARCH-0002 in the utils tree.
+- **A completed migration plan's `affects:` can never resolve, and `check`
+  will report it as rot forever.** 8 of game-server's 16 unresolved references
+  are PLAN-0002's own: `config-get`, `dict-value`, `alistp`, `string-split`,
+  `json-encode`, `json-decode`, `get-package-file`, `make-dict`. They fail to
+  resolve *because the plan succeeded* and moved them out of the repository. I
+  left the field alone and said why in the commit, because trimming it to
+  whatever still resolves would make the record less true — the plan's subject
+  is exactly those names. But the state is unsatisfying in both directions: an
+  accurate document is permanently reported as rotten, and 8 items of standing
+  noise is how a check gets ignored. Worth designing. Candidates: exempt
+  documents under `completed/` from unresolved-affects, resolve `affects:`
+  across registered repositories, or let a document say a name has left the
+  tree.
 
-Three items came out of it.
+  The middle option is item 1's mechanism again, and measuring it is
+  instructive: 5 of the 8 — `dict-value`, `alistp`, `string-split`,
+  `json-encode`, `json-decode` — resolve in `utils` today and would go quiet
+  immediately. The other 3 are each true in a different way. `config-get`
+  resolves nowhere because the plan *renamed* it to `config-search`, which the
+  plan's own text records. `get-package-file` is gone from both trees, which is
+  the finding in item 1 and the one entry here that genuinely wants reporting.
+  And the eighth is written as the path-qualified id
+  `function:utils/dict.lisp:make-dict`, naming a file the plan deleted — a bare
+  `make-dict` resolves in `utils`, that id cannot resolve anywhere ever again.
+  So a cross-repository `affects:` would not silence the category; it would
+  separate the noise from the two entries that are saying something, which is
+  the better outcome.
+  -- completing game-server's PLAN-0002, 2026-08-21
 
-1. **`init` cannot refresh a marked region it wrote.** The guidance rewrite
-   itself is done — `templates/claude-md-pointer.md` and `templates/loom-skill.md`
-   both carry the question-shape table and what the index cannot see, and
-   templates are read from disk so it lands on the next `init` without a
-   rebuild. What it does not reach is any repository already prepared. `init`
-   skips a CLAUDE.md that already carries a marked region and refuses to
-   overwrite an existing skill, so the eight registered here keep the old text
-   until each is edited by hand. Deliberate, because both files may hold an
-   author's edits — but the marked region exists precisely to make replacing
-   Loom's own bytes safe, and nothing uses it for that. Worth designing.
+- **A test that reads a live document pins a judgement.**
+  `IMPORTANCE-IS-READ-AS-A-KEYWORD-FROM-THE-VOCABULARY` asserted REQ-0037 was
+  `:CRITICAL`; repricing REQ-0037 to Minor broke it, and the failure was
+  reported twice as a standing loom-analyzer defect before being read properly.
+  Split into fixtures for the vocabulary and one live assertion that does not
+  name a level (BUG-0044). Worth checking whether any other test reads
+  `docs/` and asserts a value that is a judgement rather than a format.
+  -- implementing REQ-0040, 2026-08-23
 
----
+## Preparing somebody else's tree
 
-## From completing game-server's PLAN-0002, 2026-08-21
+- **`init` cannot refresh a marked region it wrote.** The guidance rewrite
+  itself is done — `templates/claude-md-pointer.md` and `templates/loom-skill.md`
+  both carry the question-shape table and what the index cannot see, and
+  templates are read from disk so it lands on the next `init` without a
+  rebuild. What it does not reach is any repository already prepared. `init`
+  skips a CLAUDE.md that already carries a marked region and refuses to
+  overwrite an existing skill, so the eight registered here keep the old text
+  until each is edited by hand. Deliberate, because both files may hold an
+  author's edits — but the marked region exists precisely to make replacing
+  Loom's own bytes safe, and nothing uses it for that. Worth designing.
 
-The migration whose plan came out of the extraction session above is finished:
-the integration suite was the plan's single final gate, it was failing, and the
-session was three bugs, a plan transition and a push. Worth recording because
-it is the first time Loom was used on the *aftermath* of a migration it helped
-design, and the aftermath asks a different question than the design did.
+  SECOND INSTANCE 2026-08-24, with the cost measured. Both templates gained a
+  section saying which surfaces carry `drift` and which carry nothing, and
+  neither prepared tree received it. game-server's CLAUDE.md region and
+  `SKILL.md` were brought current by hand, and the hand-editing is what the
+  design has to beat: its region is a *superset* of the template — the
+  `gs-utils`/`utils` split, the session startup steps, three ways a grep lied
+  before a deletion — so a refresh that replaced the marked region wholesale
+  would have destroyed about a hundred lines that no template can regenerate.
+  Whatever replaces Loom's bytes has to leave the author's beside them.
+  -- the ~/lisp/utils extraction, 2026-08-18; second instance 2026-08-24
+  -- REQ-0052 asks for it, 2026-08-24
 
-**The honest verdict first: none of the three bugs was found with the index,
-and mostly that is correct.** They were found with `grep`, `git log -S`, and
-one commit message. The questions a broken test asks are "why does this decode
-return NIL" — semantics, you have to read the function — and "when did this
-default change, and did the author mean it". The second is the one worth
-dwelling on. `de355d0`'s message says *"Debugging found that the
-game-description/image url was wrong"*, and that sentence is the entire
-evidence that a stale fixture was stale rather than the server being wrong. The
-index holds the tree's present. A migration's debris is a question about its
-past, and `git log -S` is the tool. Loom should not try to be; it should be
-said out loud that it is not, because an agent told "ask Loom before reading
-the tree" will otherwise ask it the wrong question first.
+- **Loom is the wrong tool for a question about a tree's past, and nothing says
+  so.** Completing game-server's PLAN-0002 was three bugs, and none of them was
+  found with the index -- they were found with `grep`, `git log -S`, and one
+  commit message. `de355d0`'s message says *"Debugging found that the
+  game-description/image url was wrong"*, and that sentence is the entire
+  evidence that a stale fixture was stale rather than the server being wrong.
+  The index holds the tree's present. A migration's debris is a question about
+  its past, and `git log -S` is the tool for it. Loom should not try to be --
+  but an agent told "ask Loom before reading the tree" will ask it the wrong
+  question first, and neither the prepared CLAUDE.md region nor the skill says
+  where the boundary is.
+  -- completing game-server's PLAN-0002, 2026-08-21
 
-What the index did earn, all of it at the end and none of it in the debugging:
-`find` proved `get-package-file` resolves in **neither** repository, against a
-plan that lists it under "KEPT IN gs-utils" and a CLAUDE.md that cited it in a
-worked example — one call overturning two documents. `check` handed over the
-unresolved list as a single fact, which is what made the `affects:` decision
-below explicit rather than accidental. `structure`'s commit stamp confirmed the
-answers were about the tree I had just changed.
+## Measuring Loom
 
-Three items.
-
-1. **`find` should answer across registered repositories, or say that it
-   didn't.** THIRD INSTANCE FOUND 2026-08-23, and the harness half is fixed.
-   A judged record naming an entity in another repository was marked
-   unverifiable and discarded whole: ctx-20260824T002130 had four hits at ranks
-   1, 2, 4 and 6 and was thrown away because its fifth name was
-   `utils:json-decode`. REQ-0036 R2 makes that inevitable -- a judgement is
-   "deliberately not restricted to what the bundle returned", so its names come
-   from wherever the agent looked, and since `similar` and `survey` that is
-   routinely a second repository. `resolves()` in tools/acceptance.py now asks
-   every watched repository and falls back from a package-qualified spelling to
-   the bare name; scored records went 5 to 7 and the ranking signal from 5 hits
-   to 12. The `find` command itself is unchanged and this item stands for it.
- This is the sharpest one and it generalizes past game-server.
-   PLAN-0002's whole content was that half of `gs-utils` moved to a second
-   repository, and the question the tree now generates constantly is *which of
-   the two owns this name*. Both are registered — `game-server` and `utils` —
-   so the answer is two `find` calls. I made four grep calls instead, because
-   nothing in the prepared guidance says a second repository is there: every
-   example in the generated CLAUDE.md block and in the skill names one
-   repository, and `repository` reads as a required scope rather than as a
-   choice among several. A `find` with no repository that searches all of them,
-   or a zero-hit answer that adds "0 here; 1 in `utils`", turns the miss into
-   the answer. The zero-hit case is the valuable half: a name absent from one
-   repository and present in another is a migration telling you where it went,
-   and a name absent from both is dead — which is exactly how
-   `get-package-file` was caught.
-
-   Note also that the prefix lies, which is why the shell cannot substitute
-   here. `#:gs-utils` USEs `#:utils` and re-exports its symbols, so
-   `gs-utils:dict-value` and `utils-dict:dict-value` are one symbol object and
-   the definition is in the other tree. Grep on the prefix finds call sites in
-   the wrong repository forever.
-
-2. **`complete` cannot finalize a plan that refines nothing.** A hard blocker,
-   hit head-on. `complete-plan` is dry-run when `(null parsed)`, and `parsed`
-   comes from `verdicts`; a plan with no `refines:` edges reaches no document
-   but itself, so there is no verdict to give, and any verdict offered is
-   refused with *"PLAN-0002 is not in this cascade"*. The command therefore
-   returns `would-set` forever and writes nothing. `set-status PLAN-0002 final`
-   is the way through and worked first time, but both the skill and the
-   generated CLAUDE.md say "run the transition command" and mean `complete`,
-   and `set-status` is mentioned once at the bottom as the escape hatch for a
-   *blocked* document. Either `complete` should write when the cascade is the
-   plan alone — there is nothing to decide, which is precisely why the
-   all-or-nothing safety argument does not apply — or its dry-run report should
-   name `set-status` when the frontier comes back empty.
-
-3. **A completed migration plan's `affects:` can never resolve, and `check`
-   will report it as rot forever.** 8 of game-server's 16 unresolved references
-   are PLAN-0002's own: `config-get`, `dict-value`, `alistp`, `string-split`,
-   `json-encode`, `json-decode`, `get-package-file`, `make-dict`. They fail to
-   resolve *because the plan succeeded* and moved them out of the repository. I
-   left the field alone and said why in the commit, because trimming it to
-   whatever still resolves would make the record less true — the plan's subject
-   is exactly those names. But the state is unsatisfying in both directions: an
-   accurate document is permanently reported as rotten, and 8 items of standing
-   noise is how a check gets ignored. Worth designing. Candidates: exempt
-   documents under `completed/` from unresolved-affects, resolve `affects:`
-   across registered repositories, or let a document say a name has left the
-   tree.
-
-   The middle option is item 1's mechanism again, and measuring it is
-   instructive: 5 of the 8 — `dict-value`, `alistp`, `string-split`,
-   `json-encode`, `json-decode` — resolve in `utils` today and would go quiet
-   immediately. The other 3 are each true in a different way. `config-get`
-   resolves nowhere because the plan *renamed* it to `config-search`, which the
-   plan's own text records. `get-package-file` is gone from both trees, which is
-   the finding in item 1 and the one entry here that genuinely wants reporting.
-   And the eighth is written as the path-qualified id
-   `function:utils/dict.lisp:make-dict`, naming a file the plan deleted — a bare
-   `make-dict` resolves in `utils`, that id cannot resolve anywhere ever again.
-   So a cross-repository `affects:` would not silence the category; it would
-   separate the noise from the two entries that are saying something, which is
-   the better outcome.
-
----
-
-## From migrating Loom onto the utils library, 2026-08-21
-
-The task: find what ~/lisp/utils already does, delete Loom's own version, depend
-on the library. It produced PLAN-0036 and landed that plan's S1. It was also the
-first task deliberately run as a measurement of Loom, so what the index did and
-did not do is recorded here at the same grain as the work.
-
-WHERE THE INDEX WAS DECISIVE
-
-- **`describe slurp-file` returned 16 source callers and 2 tests, by location,
-  across three systems.** `grep -rn slurp-file src/` returns 27 lines, of which
-  four are a docstring, an export, a comment about where files get read, and the
-  definition. Deciding "is this safe to delete and how much moves" from the grep
-  means reading all 27; the index answered it once. This is the case
-  "before deleting anything, ask Loom" was written for, and it held.
-- **Eight candidates described in one pass gave the ordering of the plan.**
-  Caller counts are what separates a five-minute swap (improper-list-p, one
-  caller) from a stage (slurp-file, eighteen). The plan's stage boundaries are
-  those counts.
-- **`structure` showed Loom has no utility system.** The duplicates are scattered
-  through loom-analyzer, loom-serve and loom-workspace, which is why the plan
-  edits three .asd files rather than one, and why there was nothing to delete
-  wholesale.
-- **The watcher stayed current through the edits.** After the deletions,
-  `find slurp-file` returned nothing while the tree was still uncommitted and no
-  restart had happened. Worth knowing that the index tracks the working tree.
-
-WHERE IT COULD NOT HELP, AND THIS IS THE FINDING
-
-1. **Two functions being the same function is not something the index can say,
-   and half of the pairs that looked identical were not.** HALF ANSWERED
-   2026-08-23. `survey` now reports *why* a pair is suspicious -- shared name
-   words, shared docstring words, and both arities -- so the reading is
-   directed rather than blind. What has not changed, and deliberately, is the
-   conclusion: REQ-0042 R4 forbids the answer from asserting equivalence,
-   because these three pairs are the evidence that it would be wrong half the
-   time. The judgement stays manual and that is the design, not a gap. FNV-1A hashes the low
-   octet of each character and CONTENT-FINGERPRINT hashes all of them, so they
-   agree on ASCII and diverge on the em dashes this repository's own diffs are
-   full of -- and that value gets written into context records. TEXT-LINES
-   returns a list where STRING-LINES returns a vector. PLIST-SHAPED-P and PLISTP
-   disagree about the empty list, at exactly the decision the caller uses them
-   for. Each was caught by reading both bodies. `describe source=true` makes
-   that reading one call instead of two file opens, which is real but small: the
-   judgement is entirely manual and the index offers nothing toward it.
-
----
-
-## Using Loom to implement REQ-0038, 2026-08-21
-
-A record of what the index answered while S3 and S4 were written, kept because
-REQ-0038 is the requirement about measuring Loom and a session spent inside it
-is evidence of the same kind. Three items below are in no document; the rest is
-the usage log.
-
-### Where the index answered and the shell would have been worse
-
-- **Locating the six entities in DES-0031's `affects:`.** `find` on
-  `record-query`, `answer-shape`, `record-read-query`, `invoke-operation`,
-  `record-context-call`, `record-context-use` and `drain-context-log` returned
-  `file:line-range` for each, one line apiece. Two of the seven were not where
-  the design implied — `record-read-query` is in `src/serve/registry.lisp`, not
-  in `context-log.lisp` beside the writer it calls, and `find` said so without
-  a file being opened.
-- **`record-context-call` had two call sites and `find` listed both** —
-  `src/serve/operations.lisp:260` and `src/process/console.lisp:751`. The
-  console one was not in view from the design and is the second skin D1 argues
-  about.
-- **`structure`'s commit field, before trusting anything.** `cf51f6f` against
-  `git rev-parse HEAD`, equal, so every answer above was about the tree on
-  disk. This is the discipline the corpus itself recommends, in the judgement
-  reading *"loom_structure commit field — USED, and it should be advertised"*,
-  and it cost one call.
-- **`check-document` after each of the two documents was edited.** Both parsed,
-  both `refines:` resolved, every `affects:` name still resolved. A block scalar
-  spliced by a script is exactly the malformed-document case it exists for.
-
-### Where the shell was required
-
-- **`tools/acceptance.py` is invisible.** `find acceptance` and
-  `find score_judgement` both return nothing: Python is not analyzed, so the
-  entire subject of S3 and S4 — 400 lines of harness — has no entity, no
-  callers and no documents attached to it. Every question about it was `sed`,
-  `grep` and reading the file. This is a known absence rather than a defect
-  (REQ-0019 and DES-0013 record the rejected approaches), but it is worth
-  stating in one place that the tree's own measurement harness is the part of
-  the tree Loom cannot answer questions about.
-- **The corpus itself.** `.loom/context/` is a dot-directory and deliberately
-  unindexed, so every fact that drove the design — 193 records, 10 carrying an
-  `:operation` field, 15 judged, 18 of 41 used entries not being names — came
-  from `python3` over the raw JSON. Correct that it is excluded; worth knowing
-  that reasoning about the log is always shell work.
-- **Document statuses.** `sed`/`grep` over `docs/*/`, because the `loom_*` MCP
-  tools were not in this session's tool list and the REST skin has no "show me
-  this document's status" call short of `check-document`, which reports
-  references rather than status.
-
-### Items no document carries
+- **`tools/` is indexed by language rather than by role, so the measurement
+  harness is invisible.** `find acceptance`, `find score_judgement` and
+  `find ensure` all return nothing: Python is not analyzed, so
+  `tools/test/acceptance.py`, `tools/test/recall.py` and `tools/test/service.py` have no
+  entity, no callers and no documents attached to them. `tools/test/harness.lisp` is
+  indexed -- `find load-systems` returns `tools/test/harness.lisp:57-79` -- so one
+  directory splits down the middle. The absence itself is known and settled
+  (REQ-0019 and DES-0013 record the rejected approaches); what is worth stating
+  in one place is that the part of the tree Loom cannot answer questions about
+  is the part that measures Loom.
+  -- implementing REQ-0038, 2026-08-21; re-measured 2026-08-24
 
 - **Context logging is off by default during work on Loom, and the corpus was
   purged to what scores.** On 2026-08-22 `.loom/context` held 2032 records and
@@ -311,14 +208,14 @@ the usage log.
   workaround for REQ-0044, which asks for a field marking a record as a probe;
   with one, probe traffic could be written and then excluded rather than not
   written at all.
-
+  -- working on Loom itself, 2026-08-22
 
 - **Loom-side acceptance cases cannot measure Loom-side commits, and prose is
   the vector.** On 2026-08-22 `log-1` ("trim whitespace from a string") went
   from a hit to a miss with no semantic change to the seeder: `js-trim` was
   displaced by `task-token-origins`, `seed-matches` and `best-name-rank`, three
   functions whose docstrings had just been written to explain BUG-0040 and so
-  are dense in "string", "str", "stre" and "trim". `tools/acceptance.py`'s
+  are dense in "string", "str", "stre" and "trim". `tools/test/acceptance.py`'s
   header already warns that "every commit to it changes the corpus a Loom-side
   clause measures", and that warning was written about code; the measured
   vector was documentation. `log-1`, `r39-3` and the three `ABSENCE_CASES` are
@@ -326,124 +223,58 @@ the usage log.
   attempts it took to establish, including one experiment that moved two
   variables at once by stashing the source file and thereby removing the new
   docstrings with it.
+  -- working on Loom itself, 2026-08-22
 
+---
 
-- ~~The harness contaminates the corpus it measures.~~ Written here on
-  2026-08-21 and moved the same day: REQ-0038's DECIDED section carries it, along
-  with the purge that answers it — keep records carrying a judgement, drop
-  unjudged `find` records older than the current commit.
+## What has been removed, and what carries it now
 
-- **`tools/loom-serve.sh update` reports failure while the service is starting.**
-  It printed `nothing answering on http://127.0.0.1:4780/v1 after ~20s` and the
-  service was answering normally moments later; the cold start is longer than
-  the script's timeout. The failure text names a log file and reads as broken,
-  which is what CLAUDE.md tells every session to run first.
+A removed entry is one a document now states. The tables are kept so nobody
+re-derives an item that was answered, and each row names where to look instead.
 
-- **`find term=join` against Loom now returns 2.** The judgement recorded on
-  2026-08-18 says *"Confirmed with find term=join returning nothing"* and it was
-  the corpus's cleanest correct-negative. The tree has changed under it. Nothing
-  is wrong — the record is right about what it saw — but it is a worked example
-  of REQ-0036 R4's decay, and the absence cases in `ABSENCE_CASES` should be
-  re-checked before REQ-0037 is measured against them.
+### 2026-08-24
 
-## Using Loom to design REQ-0040, 2026-08-23
+Run after RULE-0008, REQ-0050 R3 and the prepared-guidance change, and again
+when this file was narrowed to open issues only. Each removal was checked
+against the running service rather than against the document claiming to carry
+it.
 
-Kept for the reason the REQ-0038 section above was: REQ-0040 is the requirement
-about what a bundle costs its reader, and a session spent reading bundles is
-evidence of the same kind. Context logging was switched on for the session with
-`LOOM_CONTEXT_LOG=1`, against the default recorded in the previous section, and
-the corpus went 30 records to 34.
+| Removed | Now carried by |
+|---|---|
+| "`tools/loom-serve.sh update` reports failure while the service is starting", printing `after ~20s` against a cold start that takes longer | Fixed. The loop is 300 half-second polls and the message reads `after ~150s` |
+| "The context log is the instrument and it was measuring a ghost" -- acceptance.py scoring a service started before the day's work, and its proposed fix of a commit line compared against `git rev-parse HEAD` | REQ-0050 R4 prints what answered, and RULE-0008 removes the comparison: `tools/test/service.py` calls `tools/loom-serve.sh update` before the first case, so the build that answers is the one on disk. The `git rev-parse` half is not merely done but withdrawn -- the commit moves on `git commit` and the analyzer reads the working tree, so `drift` is the field that answers it |
+| "`tools/test/call-site-census.lisp` was broken and nobody knew ... the general shape is worth a rule" | The rule was written twice. REQ-0050 R5 and `tools/test/harness.lisp` for the instruments that load a system; RULE-0008 and `tools/test/service.py` for the three that drive the service. Both refuse with a sentence rather than report a zero |
+| "No console command reports `:source-tokens`, `:sourced` or the rendered byte count ... Loom cannot currently be asked the question REQ-0040 is about" | PLAN-0045 brought the source tier inside the budget and RENDER-CONTEXT-SUMMARY reports it: `# N entities, ~T/B tokens (truncated)`, then the percentage sent, then `index` and `source` lines naming items and bodies withheld with their token cost |
+| "`find term=join` against Loom now returns 2 ... the absence cases should be re-checked before REQ-0037 is measured against them" | acceptance.py runs all three absence cases on every invocation, and RULE-0008 makes each run happen against a current service. All three passed on 2026-08-24. The decay the item illustrates is REQ-0038 R4's subject, and `freshness()` classifies a record by it |
+| "Document statuses" -- the REST skin having no way to show one, short of `check-document` | `describe` carries it. `describe term=PLAN-0045` returns `document: {title, status, field, text}` with `status: "final"`, and the same holds for every kind |
+| "`structure`'s commit field, before trusting anything" -- comparing a reported commit against `git rev-parse HEAD`, in two places | REQ-0050 R1 put `drift` on the answer, and the prepared guidance now names the comparison as the thing not to do |
+| "Two functions being the same function is not something the index can say" | REQ-0042, implemented as `similar` and `survey`, which report *why* a pair is suspicious. The remaining half is a decision rather than a gap: REQ-0042 R4 forbids the answer from asserting equivalence |
+| The session logs of what the index answered on 2026-08-06, 08-18, 08-21 and 08-23 | `docs/VALUE.md`, which is where evidence that Loom worked belongs. This file is issues |
 
-### Where the index answered and the shell would have been worse
+### 2026-08-23
 
-- **`find estimate-tokens`, `find render-context`, `find context-token-budget`
-  in one call** returned `file:line-range` for each, and returned the two
-  `call-site` entities beside them — `estimate-tokens@src/process/console.lisp:599`
-  and `render-context@src/process/console.lisp:897`. The second is the console's
-  own use of the renderer, which is a surface D4 has to change and which no
-  reading of `context.lisp` would have shown.
-- **`describe` gave the signature this session added.** Reading `build-context`
-  meant knowing its keyword arguments, and BUG-0044's line answers that without
-  opening the file: `(build-context view task &key budget seed-limit types
-  source-fn source-definitions)`. That is the first time in this tree's history
-  that `describe` answered "what does this take", and it was used within a day
-  of existing.
-- **`check-document` on DES-0042 before believing it.** Five `affects:` names
-  and two `refines:` all resolved.
+| Removed | Now carried by |
+|---|---|
+| "Requirements should have an importance field" | Implemented. `importance:` is on every REQ, in the ontology's `:one-of` vocabulary, with IMPORTANCE-IS-READ-AS-A-KEYWORD-FROM-THE-VOCABULARY over it |
+| A check for source files absent from every ASDF component list, and for a name a package exports and nothing defines | REQ-0043 R1 and R2, which cite the same instances -- game-server/utils/token.lisp, datascience's range-tree.lisp, matrix-utils' four undefined exports |
+| "a size-aware `context` that trims to a budget the caller names would be the fix, and nothing asks for one" | REQ-0040 asks for it and PLAN-0045 built it: `--budget`, one budget covering both tiers, and a cutoff signal saying what a larger one would buy |
+| "a query that takes a definition and returns definitions like it" | REQ-0042, implemented as `similar` |
+| "There is no call that takes two [repositories] and reports what they have in common" | REQ-0042 R3, implemented as `survey` |
+| "`commit` in a `structure` answer is not the state of what was indexed" | REQ-0050, which generalises it |
+| `tools/loom-serve.sh`'s 20-second start timeout | Fixed; it is ~150s now, sized against a cold fasl cache |
 
-### A finding that was not one, and the mistake that produced it
+### 2026-08-21
 
-- **CORRECTED 2026-08-23, same day.** This section claimed that
-  `context bundle token budget truncation` did not return the budget, and that
-  its seeds were three DEFSTRUCT accessors -- `context-log-entry-p`,
-  `context-log-task`, `copy-context-log-entry` -- none of them about budgeting.
-  It was written up as a ranking miss on words that are present, and as a query
-  to build a case from.
-
-  It is false. The stored record for that call has `*context-token-budget*` at
-  rank 1, followed by `estimate-tokens`, `seed-matches`, `context-log-summary`
-  and `build-context`. The second phrasing returns the same seed first. Loom
-  answered the query well.
-
-  What produced the claim is worth more than the claim was. The console output
-  was read through `tail -6`, so what was inspected was the last six lines of a
-  146-item bundle -- the cheapest, furthest neighbours, which is exactly where
-  three same-prefixed struct accessors would sit. The seeds were at the top,
-  off screen.
-
-  That is REQ-0040's subject arriving from an unexpected direction. A bundle
-  large enough that its author reads only the tail is a bundle whose answer is
-  not being read, and the failure mode is not that the reader misses the answer
-  -- it is that they confidently report the opposite of it. This session's own
-  design document was nearly written from it.
-
-  The fix that would have caught it is the one this requirement shipped: a
-  bundle that says how much of itself was sent, and a caller who therefore
-  knows whether they are looking at the answer or at its remainder.
-
-- **The measurement that drove the whole design came from a script.** The table
-  in DES-0042 — index tier, source tier, per-body cost, rendered total — is
-  `build-context` and `render-context` called directly from SBCL. No console
-  command reports `:source-tokens`, `:sourced` or the rendered byte count, and
-  `render-context`'s own header prints `~2477/4000` while handing over 7777
-  tokens. Loom cannot currently be asked the question REQ-0040 is about.
-
-### What the implementation session added, 2026-08-23
-
-- **The context log is the instrument and it was measuring a ghost.**
-  `tools/acceptance.py` drives the service over REST on 127.0.0.1:4780, and a
-  headless service had been running since before any of the day's work. Three
-  reported verifications measured that image rather than the tree. It was
-  proved rather than guessed: the running service returned only `tokens`, none
-  of the new fields, and ignored a budget sent to it. `tools/loom-serve.sh
-  update` exists for exactly this and was not called.
-
-  The general shape is the same as the broken census below: an instrument that
-  runs against a *service* measures whatever was last deployed, and nothing in
-  its output says which. Both of Loom's harnesses have now failed this way in
-  one week. A version or commit line in `acceptance.py`'s summary, compared
-  against `git rev-parse HEAD`, would have caught both -- and `structure`
-  already carries a commit field for this reason, which one judged record
-  praises as *"USED, and it should be advertised"*.
-
-- **The corpus went 30 records to 44 across the session**, with
-  `LOOM_CONTEXT_LOG=1` set per call. Every design decision in DES-0042 came
-  from bundles read during it, which is the first time this requirement's own
-  subject has been measured while being worked on.
-
-### Items no document carries
-
-- **`tools/call-site-census.lisp` was broken and nobody knew.** Its registry
-  and quickload list predate loom-embed, which loom-knowledge has depended on
-  since PLAN-0043, so the instrument `*CALL-SITE-CEILING*`'s failure message
-  tells you to re-run could not load at all. Fixed in passing during PLAN-0044.
-  The general shape is worth a rule: a tool under `tools/` that loads a system
-  has a dependency list that drifts, and nothing runs it until something fails.
-
-- **A test that reads a live document pins a judgement.**
-  `IMPORTANCE-IS-READ-AS-A-KEYWORD-FROM-THE-VOCABULARY` asserted REQ-0037 was
-  `:CRITICAL`; repricing REQ-0037 to Minor broke it, and the failure was
-  reported twice as a standing loom-analyzer defect before being read properly.
-  Split into fixtures for the vocabulary and one live assertion that does not
-  name a level (BUG-0044). Worth checking whether any other test reads
-  `docs/` and asserts a value that is a judgement rather than a format.
+| Removed | Now carried by |
+|---|---|
+| REQ-0012's remaining half -- `describe` resolving a name through SEARCH-ENTITIES' first hit, so an :INTERFACE/:METHOD tie falls to index order | REQ-0012 OUTSTANDING item 1 |
+| REQ-0013's measurement -- 3,037 unresolved calls at 48.2%, `:unresolved-calls` written at resolve.lisp:570 and read by nothing | REQ-0013 body, including the counter argument |
+| REQ-0015's R6 failure and its cause | REQ-0020, written to carry exactly that trace |
+| REQ-0016's measurement -- `context data-handler` returning 22 substring matches and none of the 21 `dhandler-*` generics | REQ-0016 summary, verbatim, with R-level acceptance |
+| REQ-0017's risk argument -- a generated requirement asserting structure its source never committed to | REQ-0017 body |
+| `impact`'s `(truncated)` printed as a boolean | REQ-0005, which proposes `14 impacted, 31 more at depth 4` in its place |
+| The 2026-08-09 rejections -- Cleavir, a shared cross-language CST, reviving a CL parser for TS or Python | REQ-0019's WHAT THIS IS NOT and DES-0013's alternatives |
+| A batched, out-of-process analyzer | REQ-0024's open question 1, which measures it against 455 files and answers that acorn does not batch |
+| `describe` on a generic reading as unused because the inbound count sits on the methods | REQ-0012 OUTSTANDING item 1 -- the same defect from the other side |
+| The index's value being the prose a human wrote rather than the graph | REQ-0035, implemented: the prose a definition carries is indexed now |
+| "The harness contaminates the corpus it measures" | REQ-0038's DECIDED section, along with the purge that answers it |
