@@ -1053,6 +1053,39 @@ a file with nothing to report contributes nothing rather than an empty list."
   (loop for file in (entities-of-type graph :file)
         sum (length (getp file property))))
 
+(defun index-drift (repository)
+  "How many claimed files have changed since the index last read them.
+
+REQ-0050 R2 and R3, done from Loom's own record rather than from git. The first
+attempt fingerprinted `git diff HEAD', which answers a question nobody asked:
+it moves when any file in the tree moves, including the ones no analyzer
+claims. Within an hour of landing, editing tools/acceptance.py -- Python, which
+Loom does not index -- made the harness report a stale service whose index was
+perfectly current. A staleness signal that fires on every document, tool and
+fixture edit is a signal that gets ignored, which restores the defect it was
+built to remove.
+
+REPOSITORY-STAMPS is the precise answer and costs nothing to keep: the watcher
+already stores, per claimed file, the write date and a content hash of the
+bytes the analyzer read. A file whose stamp disagrees with the file on disk is
+a file the index is behind on, and nothing else is.
+
+One stat per claimed file, which is what FILE-CHANGED-P costs on every poll
+already. A file the index has never seen counts, and a file that has vanished
+counts, because both mean the index and the tree disagree."
+  (let ((stamps (repository-stamps repository))
+        (now (get-universal-time))
+        (seen 0)
+        (drift 0))
+    (dolist (path (repository-files repository))
+      (let ((relative (workspace-relative-path path (repository-root repository))))
+        (incf seen)
+        (when (file-changed-p repository relative path now) (incf drift))))
+    ;; A file that was indexed and is no longer claimed -- deleted, renamed, or
+    ;; excluded since -- is drift the loop above cannot see, because it walks
+    ;; what is there now rather than what was.
+    (+ drift (max 0 (- (hash-table-count stamps) seen)))))
+
 (defun index-fingerprint (root)
   "ROOT's commit and diff hash as a plist, for recording at index time.
 
@@ -1091,8 +1124,16 @@ the last error per thread.\""
           ;; From the stored fingerprint, not from git: what is wanted is the
           ;; tree the index was built from, and asking git now answers about
           ;; the tree now.
+          ;;
+          ;; The commit is the coarse half and is kept because it is cheap and
+          ;; names a shared reference point. DRIFT is the half that answers the
+          ;; question -- how many claimed files the index is behind on, from
+          ;; REPOSITORY-STAMPS rather than from `git diff HEAD', which moves
+          ;; when a document or a tool moves and reported a perfectly current
+          ;; index as stale within an hour of being introduced.
           :commit (getf (repository-indexed-fingerprint repository) :commit)
           :diff (getf (repository-indexed-fingerprint repository) :diff)
+          :drift (index-drift repository)
           :files (repository-file-count repository)
           :entities (length (all-entities graph))
           :relationships (length (all-relationships graph))

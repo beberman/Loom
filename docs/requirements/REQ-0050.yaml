@@ -165,15 +165,6 @@ body: |
     repository" should read as current or as unknown is not obvious, and
     guessing wrong makes every answer on such a tree look suspect.
 
-  - The diff hash covers files the index never reads, so it cries wolf.
-    Observed 2026-08-23 within an hour of R4 landing: editing
-    tools/acceptance.py -- Python, which no analyzer claims -- moved the tree's
-    diff hash while the service's stored one stayed correct, and the harness
-    printed STALE SERVICE. Conservative rather than dangerous, and it will fire
-    on every edit to a document, a tool or a test fixture. The honest fix is a
-    fingerprint over the files the analyzers actually claim, which is a
-    different and more expensive question than `git diff HEAD'.
-
   - Whether the diff hash should cover untracked files. `git diff HEAD` does
     not, and an untracked new source file is indexed by the analyzer and
     invisible to the fingerprint. That is a real gap in the mechanism REQ-0036
@@ -184,3 +175,37 @@ body: |
     On the context log that is once per recorded call; on `find` it would be
     once per query, which is a subprocess in the latency path of the cheapest
     command Loom has.
+
+  R3 AS BUILT, AND THE WRONG ANSWER THAT PRECEDED IT
+
+  R3 asks that a disagreement be reported rather than left for the caller to
+  compute. It is reported as DRIFT: how many claimed files the index is behind
+  on, from REPOSITORY-STAMPS.
+
+  The first attempt used `git diff HEAD' and was wrong in a way worth keeping
+  on the record, because it looked right and passed its own test. A diff hash
+  moves when *any* file in the tree moves, and most of a tree is not indexed --
+  documents, tools, fixtures, this file. Within an hour of landing, editing
+  tools/acceptance.py made the harness report a stale service whose index was
+  perfectly current.
+
+  That is not a cosmetic false positive. A staleness signal that fires on every
+  document edit is one that gets ignored, and an ignored signal restores the
+  defect it was built to remove. The failure mode of the fix is the failure
+  mode of the bug.
+
+  REPOSITORY-STAMPS was the right source all along and cost nothing to use: the
+  watcher already stores, per claimed file, the write date and a content hash
+  of the bytes the analyzer read. A file whose stamp disagrees with disk is a
+  file the index is behind on, and nothing else is. One stat per claimed file,
+  which FILE-CHANGED-P already pays on every poll.
+
+  Verified in both directions, which the diff hash never was: pause the
+  watcher, append a line to an indexed source file, and drift reads 1 and the
+  harness says STALE INDEX; edit an unindexed file and it reads 0 and says the
+  index is current.
+
+  The commit is kept beside it. It is cheap, it names a shared reference point,
+  and it is the half a human recognises; drift is the half that answers the
+  question.
+
