@@ -1,0 +1,124 @@
+id: REQ-0052
+title: init must refresh a tree it already prepared, replacing Loom's own bytes and leaving the author's beside them
+status: draft
+date: 2026-08-24
+refines: [REQ-0021]
+affects: [plan-preparation, apply-preparation, remove-preparation, cut-marked-region, marked-region-p, render-template]
+importance: Major
+tags: [init, templates, foreign-tree, staleness, req-0021]
+summary: |
+  `init` creates and refuses to overwrite. It skips a CLAUDE.md that already
+  carries a marked region, refuses an existing `.claude/skills/loom/SKILL.md`,
+  and refuses an existing `.mcp.json`. So a template improvement reaches every
+  tree prepared after it and no tree prepared before it, and the trees prepared
+  before it are the ones with users.
+
+  Twice now the guidance has been improved and hand-copied. The hand-copying is
+  what the design has to beat, and doing it revealed the constraint: a prepared
+  tree's marked region is not Loom's text any more. game-server's is a superset
+  of the template -- the `gs-utils`/`utils` split, the session startup steps,
+  three ways a grep lied before a deletion -- so a refresh that replaced the
+  region wholesale would have destroyed about a hundred lines that no template
+  can regenerate.
+body: |
+  WHAT HAPPENS TODAY
+
+  PLAN-PREPARATION records a skip and writes nothing:
+
+      CLAUDE.md                      "already carries a Loom section"
+      .claude/skills/loom/SKILL.md   "already exists"
+      .mcp.json                      "already exists; JSON cannot carry our
+                                      markers, so add the loom server by hand"
+
+  Deliberate, and REQ-0021 R3 is the reason: everything here writes into
+  somebody else's tree, a name already taken is refused rather than overwritten,
+  and CLAUDE.md is the single bounded exception -- appended to, between markers,
+  only with consent. The exception exists because CLAUDE.md is the only channel
+  a session receives unprompted.
+
+  The markers are the part that was built and never used. `<!-- loom:begin -->`
+  and `<!-- loom:end -->` exist precisely so Loom's own bytes can be found and
+  replaced without touching anything around them, and the only code that reads
+  them is CUT-MARKED-REGION in the removal path. Removal uses the mechanism a
+  refresh needs and no refresh exists.
+
+  THE MEASUREMENT
+
+      2026-08-21  Both templates gained a question-shape table and a section on
+                  what the index cannot see. Eight prepared trees kept the old
+                  text.
+      2026-08-24  Both templates gained a section naming which surfaces carry
+                  `drift` and which carry nothing. Neither prepared tree
+                  received it. game-server was brought current by hand:
+                  SKILL.md re-rendered whole (+19 lines, one section, nothing
+                  else changed) and the CLAUDE.md region edited in two places.
+                  front-end had never been prepared at all and `init` handled
+                  it correctly, which is the contrast -- the create path works
+                  and the refresh path does not exist.
+
+  WHAT THE HAND-EDITING PROVED
+
+  A wholesale region replace is wrong, and the evidence is game-server's own
+  file. Its marked region is 192 lines against the template's 94, and the
+  difference is not drift: it is tree-specific knowledge nobody can regenerate
+  from a template -- which of two repositories owns a name, the two commands
+  that turn the service on for this tree, and three worked examples of a grep
+  lying about this repository in particular.
+
+  So "refresh" cannot mean "re-render the template over the region". It means
+  replacing the bytes Loom wrote while keeping the bytes an author added, and
+  the file gives no way to tell them apart today: there is one pair of markers
+  around the whole region and the author's additions are inside it.
+
+  REQUIREMENTS
+
+  R1  `init` takes a flag that refreshes an already-prepared repository:
+      `--update`, or a verb of its own. Without it the behaviour is exactly
+      today's, because refusing to overwrite is right for a first run.
+
+  R2  A refresh is planned before it is applied and reports what it would
+      change, writing nothing until told to. The same plan-then-apply split
+      PLAN-PREPARATION uses, and for a stronger reason -- this run's writes are
+      over text that already exists.
+
+  R3  A refresh replaces `SKILL.md` and `.mcp.json` when they are byte-identical
+      to what Loom last rendered, and refuses when they are not. Byte-identical
+      is checkable: game-server's SKILL.md was, so a refresh would have been
+      safe there and would have said so.
+
+  R4  A refresh that cannot separate Loom's bytes from an author's says so and
+      changes nothing, naming the file and the region. A partial refresh that
+      keeps half an author's section is worse than no refresh: the author's text
+      is the half that cannot be recovered from anywhere.
+
+  R5  The marked region gains enough structure to make R4 rare rather than
+      normal. The available shapes are a nested marker around each generated
+      section, a manifest recording the digest of what was written, or an
+      author's region declared separately from Loom's. The manifest already
+      exists and already records what was written, which makes it the cheapest
+      place to put a digest.
+
+  R6  The manifest records what template version a tree was prepared from, so a
+      refresh can say what changed rather than diffing to find out. Today the
+      manifest records the paths written and the choices made, and nothing about
+      the text.
+
+  R7  A refresh never touches a document under the tree's document directory.
+      Those are the team's, not Loom's -- the same line `remove ... tooling`
+      already draws, and for the same reason.
+
+  OPEN QUESTIONS
+
+  1. Whether `--update` belongs on `init` or is its own command. `init` reads
+     as first-contact and a caller typing it at a prepared tree today gets a
+     list of skips; a separate verb would be discoverable where that list is
+     printed. Against: two commands that write the same four files can disagree.
+
+  2. Whether R3's byte-identical test is too strict for `.mcp.json`. It carries
+     the endpoint, so a team that moved the service to a shared host has an
+     edited file that is correct and would be refused. A digest of the rendered
+     template with the endpoint substituted back out would accept it.
+
+  3. What a refresh does about a section the template *removed*. Replacing
+     Loom's bytes with fewer bytes is the case where an author's addition sits
+     inside a section that no longer exists, and R4 would refuse every time.
