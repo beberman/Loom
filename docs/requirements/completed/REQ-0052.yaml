@@ -1,6 +1,6 @@
 id: REQ-0052
 title: init must refresh a tree it already prepared, replacing Loom's own bytes and leaving the author's beside them
-status: draft
+status: implemented
 date: 2026-08-24
 refines: [REQ-0021]
 affects: [plan-preparation, apply-preparation, remove-preparation, cut-marked-region, marked-region-p, render-template]

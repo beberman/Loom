@@ -1,0 +1,268 @@
+id: DES-0044
+title: "init --update: an author's half of the region declared with its own marker, and a digest in the manifest saying whether Loom's half is still Loom's"
+status: implemented
+date: 2026-08-24
+refines: [REQ-0052]
+affects:
+  - plan-preparation
+  - apply-preparation
+  - remove-preparation
+  - cut-marked-region
+  - marked-region-p
+  - render-template
+  - read-manifest
+  - render-manifest
+  - fnv-1a
+importance: Major
+tags: [init, templates, foreign-tree, staleness, req-0052, req-0021]
+summary: |
+  `init` gains an `update` mode rather than a second verb, because two commands
+  writing the same four files can disagree and one planner with a mode cannot.
+
+  The region gains a third marker. `<!-- loom:yours -->` splits it into Loom's
+  half, replaced wholesale on every refresh, and the author's half, never read
+  and never written. A region without that marker is the state every tree
+  prepared before this is in, and a refresh refuses that file by name rather
+  than guessing where the author's text starts -- game-server's region is 192
+  lines against a 106-line template, and the 86-line difference is knowledge no
+  template can regenerate.
+
+  The manifest gains a digest per rendered file and per template, computed with
+  FNV-1A, which this tree already uses for the diff fingerprint. That makes
+  "byte-identical to what Loom last rendered" checkable rather than assumed. A
+  tree prepared before the digest existed has none, so the plan marks that file
+  unproven, prints the diff, and writes only on the consent REQ-0021 R16 asks
+  for at a terminal.
+body: |
+  WHAT IS THERE NOW
+
+  PLAN-PREPARATION resolves every path, reads every file it will touch, and
+  collects every problem before APPLY-PREPARATION writes a byte. At an
+  already-prepared tree PREPARE-REPOSITORY does not even reach the planner: it
+  sees a manifest, returns `:already-prepared t`, and writes nothing.
+
+  Three files are skipped when they exist:
+
+      .claude/skills/loom/SKILL.md   "already exists"
+      .mcp.json                      "already exists; JSON cannot carry our
+                                      markers, so add the loom server by hand"
+      CLAUDE.md                      "already carries a Loom section"
+
+  The markers were built for exactly this and are read by one function.
+  CUT-MARKED-REGION, in the removal path, finds `<!-- loom:begin -->` and
+  `<!-- loom:end -->` and excises what lies between them. Removal already uses
+  the mechanism a refresh needs.
+
+  The manifest records the choices and the paths written. It records nothing
+  about the text, so there is no way to ask whether a file on disk is still the
+  file Loom wrote.
+
+  D1  ONE OPERATION, A MODE, NOT A SECOND VERB
+
+  `init` takes `update`. Without it PREPARE-REPOSITORY behaves exactly as it
+  does today, because refusing to overwrite is right for a first run (R1).
+
+      tools/loom-init.sh /path/to/repo --update
+      (define-operation :init :write (path (document-directory) (endpoint)
+                                            (append-claude-md) (update)
+                                            (replace-unproven)))
+
+  A second verb was rejected on the requirement's own objection: two commands
+  that write the same four files can disagree, and the disagreement would show
+  up in somebody else's tree. The discoverability a separate verb would have
+  bought is bought instead by the skip list `init` already prints at a prepared
+  tree, which names the flag:
+
+      3 files are stale; run with --update to refresh them
+
+  R2 needs no new machinery. The refresh is planned by PLAN-PREPARATION in
+  update mode and applied by APPLY-PREPARATION, the same split, for the reason
+  R2 gives: this run's writes are over text that already exists.
+
+  D2  THE AUTHOR'S HALF IS DECLARED, NOT INFERRED
+
+  A third marker inside the region:
+
+      <!-- loom:begin -->
+      ...Loom's text. Replaced wholesale on every refresh...
+      <!-- loom:yours -->
+      ...the author's text. Never read, never written...
+      <!-- loom:end -->
+
+  Loom's half is everything from `loom:begin` to the line before `loom:yours`.
+  The author's half is everything after it to `loom:end`. A refresh renders the
+  template, replaces the first, and copies the second byte for byte.
+
+  Declared rather than inferred, and that is the whole decision. The rejected
+  alternative was to locate each of Loom's section headings inside the existing
+  region and wrap them in markers automatically. It recovers a prepared tree
+  sooner and it can be wrong in the one way that cannot be undone: a heading
+  match landing inside an author's paragraph puts a marker in the wrong place,
+  and the *next* refresh then replaces text Loom did not write. R4 says a
+  partial refresh that keeps half an author's section is worse than no refresh,
+  because the author's text is the half that cannot be recovered from anywhere.
+  A heuristic that is right nine times in ten fails that test on the tenth.
+
+  A fresh `init` writes the `loom:yours` marker with nothing after it, so a tree
+  prepared from now on needs no hand step ever. The template carries it, which
+  is where the other two markers already live.
+
+  D3  A REGION WITH NO AUTHOR MARKER IS REFUSED BY NAME
+
+  R4. Every tree prepared before this has one pair of markers and an author's
+  additions inside them, and nothing in the file says where one ends. The
+  refresh reports that file and changes nothing in it:
+
+      CLAUDE.md   not refreshed
+        The region has no <!-- loom:yours --> marker, so Loom cannot tell its
+        own text from yours. Add the marker where your text begins and run
+        --update again. 192 lines in the region; Loom last wrote about 106.
+
+  A skip and not a problem: the other files still refresh. A problem aborts the
+  whole run, which is right for a plan that cannot be written and wrong for one
+  file the author has to touch first.
+
+  This is a one-time hand edit per already-prepared tree, and the requirement is
+  right that hand-copying is what the design has to beat -- it beats it from the
+  second refresh onward, and the alternative that beats it from the first is the
+  heuristic D2 rejects. Two prepared trees pay it once.
+
+  MEASURED, AND THE HAND STEP IS BIGGER THAN "ADD A MARKER"
+
+  Run against a copy of game-server, the tree REQ-0052 measured. Its 191-line
+  region holds seven `###` sections, and the author's are not a contiguous tail:
+
+      ### Engineering knowledge: ask Loom...      Loom
+      ### The utils library is a second repo...   author
+      ### Turn Loom on at the start of every...   author
+      ### Prefer the MCP tools                    author
+      ### Reach for the index, not for the shell  Loom
+      ### What the index cannot see               Loom
+      ### Before deleting anything, ask Loom      author
+      ### Two things to check before trusting...  Loom
+
+  So the migration is not "add the marker where your text begins" -- there is no
+  single such place. It is "move your sections below the marker", which on this
+  tree is four sections and 97 lines. The refusal message says the first and
+  should say the second.
+
+  Done that way it works and keeps working: 95 lines of Loom's half were
+  replaced with the current template, all four author sections survived, and the
+  next two refreshes reported the file current and wrote nothing.
+
+  That the author's text interleaves is itself the argument against D2's
+  rejected alternative getting a second hearing. Automatic marker placement on
+  this file would have to find four boundaries, not one, and be right about all
+  four.
+
+  D4  THE MANIFEST RECORDS WHAT WAS WRITTEN, AS A DIGEST
+
+  R5 names three shapes and observes the manifest is the cheapest place for a
+  digest. It gains two lists:
+
+      rendered:
+        - ".claude/skills/loom/SKILL.md 3f2a1c9e00b41d55"
+        - ".mcp.json 9d10c4b7712e0a38"
+      templates:
+        - "loom-skill.md 41ab77e0c2d95f16"
+        - "mcp.json 08f3d5620b1ce9a4"
+
+  `rendered:` is the digest of the bytes Loom wrote to that path. `templates:`
+  is the digest of the unrendered template file, which is R6: what template
+  version this tree was prepared from, recorded rather than reconstructed.
+
+  FNV-1A rather than a new hash. It is already in this system, already produces
+  the sixteen hex digits the diff fingerprint prints, and is what REPOSITORY-
+  STAMPS and GIT-DIFF-HASH are built on. A second hash would be a second thing
+  to keep in agreement with the first.
+
+  One line per entry, path and digest separated by a space inside one quoted
+  string, because MANIFEST-CREATED-PATHS' scanner already reads a `key:` header
+  followed by `  - "value"` lines and generalising it to any named list is
+  smaller than teaching the manifest reader nested maps. RENDER-MANIFEST and the
+  scanner both move to that general form; `created:` keeps its shape exactly.
+
+  What a digest answers is whether a file changed, not what changed in it. The
+  template digests say which templates moved since this tree was prepared, and
+  the file digests say whether the file on disk is still Loom's -- and R6's
+  "say what changed rather than diffing to find out" is honoured only that far,
+  because naming the change needs the old rendered text and nothing keeps it.
+  The plan prints a diff against what is on disk instead, which is a different
+  and weaker answer, and says so.
+
+  D5  A FILE WITH NO RECORDED DIGEST IS UNPROVEN, NOT ASSUMED
+
+  R3 says refresh a file only when it is byte-identical to what Loom last
+  rendered. For every tree prepared before D4 there is no recorded digest, so
+  the test cannot run -- and those are exactly the trees with users.
+
+  Refusing them outright is safe and useless: a tree with no digest can never
+  acquire one, because nothing would ever write it. So the plan classifies each
+  generated file into one of four states and the last of them asks:
+
+      current    the file's digest equals today's rendering -- nothing to do
+      replace    the file's digest equals what Loom recorded writing, and the
+                 template has moved -- safe, replace it
+      unproven   no digest recorded; the file may or may not be Loom's
+      refused    the file differs from what Loom recorded writing (R3), or the
+                 CLAUDE.md region has no author marker (D3)
+
+  `unproven` prints the diff and writes nothing unless the caller passes
+  `replace-unproven`. REQ-0021 R16 already puts the asking in
+  `tools/loom-init.sh`, where a terminal is, and the two consents it asks for
+  become three. After one refresh the digest exists and the question is never
+  asked of that tree again.
+
+  D6  REMOVAL MUST NOT TAKE THE AUTHOR'S HALF WITH IT
+
+  CUT-MARKED-REGION excises `loom:begin` through `loom:end`. With D2's marker
+  inside that span, removal would delete the author's text -- the failure this
+  whole design exists to prevent, arriving through the one path that already
+  read the markers.
+
+  So it cuts `loom:begin` through `loom:yours` inclusive, keeps what follows,
+  and drops the `loom:end` line. A region with no `loom:yours` is cut exactly as
+  it is cut today, which is what every tree prepared before this needs.
+
+  REQ-0052's `affects:` names CUT-MARKED-REGION, so the requirement saw this
+  coming; stating it as a decision is what makes it get tested rather than
+  found.
+
+  D7  A REFRESH NEVER TOUCHES A DOCUMENT
+
+  R7. The refresh considers three generated files and the manifest, and nothing
+  else. The workflow concept document `init` wrote lives under the tree's
+  document directory and is not refreshed even though Loom rendered it from a
+  template, because it is a document the team owns and may have edited -- the
+  same line `remove ... tooling` draws, and DES-0022 S4's argument for drawing
+  it.
+
+  That is a real limit and not an oversight: an improvement to
+  `workflow-concept.yaml` reaches new trees only. Recording it here rather than
+  discovering it later.
+
+  WHAT THIS IS NOT
+
+  Not a merge. Loom's half is replaced wholesale and the author's half is
+  copied; nothing is reconciled line by line, and no refresh ever produces text
+  that is partly one and partly the other.
+
+  Not a change to what `init` writes on a first run, beyond the `loom:yours`
+  marker the template gains. R1 keeps today's behaviour without the flag.
+
+  Not a way to refresh a document. D7.
+
+  ALTERNATIVES REJECTED
+
+  Nested markers around each generated section, placed automatically on an
+  existing region by matching headings. D2 carries the argument: it can put a
+  marker inside author text, and the failure surfaces one refresh later as
+  silently replaced prose.
+
+  A separate `update` command. D1: two commands writing the same four files can
+  disagree.
+
+  Comparing against the current template rendered with the manifest's recorded
+  substitutions, as a substitute for a stored digest. It answers "different"
+  whenever the template has moved, which is the only case a refresh is run in,
+  so it refuses precisely when it is needed.

@@ -323,6 +323,296 @@ Do not touch this.
       (is (string= original (target-text root "CLAUDE.md"))
           "and removing it restored the file byte for byte, blank line included"))))
 
+;;; ------------------------------------------------------------------
+;;; Refreshing a tree already prepared (REQ-0052, DES-0044)
+;;; ------------------------------------------------------------------
+
+(defmacro with-moved-template ((name) &body body)
+  "Run BODY with template NAME's text changed, then put it back.
+
+A refresh only does anything when a template has moved, so every test below
+needs one to have. Rebinding is not available -- RENDER-TEMPLATE reads the file
+-- so the file is edited and restored under UNWIND-PROTECT.
+
+The new text goes above the author marker where there is one, not at the end of
+the file. claude-md-pointer.md ends with the *end* marker, so an appended
+section lands outside the region entirely, Loom's half is unchanged, and the
+refresh correctly reports the file current -- a test that appended would prove
+nothing while looking like it had."
+  (let ((path (gensym)) (original (gensym)) (text (gensym)) (at (gensym)))
+    `(let* ((,path (loom-workspace::template-path ,name))
+            (,original (utils:read-file ,path)))
+       (unwind-protect
+            (let* ((,at (search loom-workspace::*marker-yours* ,original))
+                   (,text (format nil "~%## A section the template grew~%~%Something useful.~%")))
+              (with-open-file (out ,path :direction :output :if-exists :supersede)
+                (write-string (if ,at
+                                  (concatenate 'string (subseq ,original 0 ,at)
+                                               ,text (subseq ,original ,at))
+                                  (concatenate 'string ,original ,text))
+                              out))
+              ,@body)
+         (with-open-file (out ,path :direction :output :if-exists :supersede)
+           (write-string ,original out))))))
+
+(test the-manifest-records-a-digest-per-rendered-file-and-per-template
+  ;; REQ-0052 R5 and R6, and the thing that makes R3's byte-identical test
+  ;; runnable at all: without a recorded digest there is nothing to compare a
+  ;; file with. Fails without S2.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (let ((sections (loom-workspace::manifest-sections root)))
+      (is-true (assoc "rendered" sections :test #'string=) "there is a rendered list")
+      (is-true (assoc "templates" sections :test #'string=) "and a templates list")
+      (is-true (assoc "created" sections :test #'string=)
+               "and created survived being generalised")
+      (let ((digest (loom-workspace::manifest-digest root "rendered" ".mcp.json")))
+        (is-true digest "the mcp registration has a digest")
+        (is (= 16 (length digest)) "sixteen hex digits, as FNV-1A renders one"))
+      (is-true (loom-workspace::manifest-digest root "templates" "loom-skill.md")
+               "and each template's own text is recorded (R6)"))))
+
+(test a-refresh-rewrites-only-what-the-moved-template-touched
+  ;; REQ-0052 R1 and R2. One template moves; one file is rewritten and the
+  ;; others say they are current rather than being rewritten with identical
+  ;; bytes. Fails without S5's :CURRENT test running first.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (with-moved-template ("loom-skill.md")
+      (let ((report (prepare-repository root :update t :apply-changes t)))
+        (is (equal '(".claude/skills/loom/SKILL.md") (getf report :replaced))
+            "exactly the file whose template moved: ~a" (getf report :replaced))
+        (is-true (search "A section the template grew"
+                         (target-text root ".claude/skills/loom/SKILL.md"))
+                 "and it actually carries the new text")
+        (is-true (find ".mcp.json" (getf report :skipped) :key #'car :test #'string=)
+                 "the others are reported rather than silently untouched")))))
+
+(test a-second-refresh-changes-nothing
+  ;; The digest earning itself. A refresh that could not tell current from
+  ;; stale would rewrite all three files on every run, and a tree under git
+  ;; would show three modified files after a no-op.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (with-moved-template ("loom-skill.md")
+      (prepare-repository root :update t :apply-changes t)
+      (let ((report (prepare-repository root :update t :apply-changes t)))
+        (is (null (getf report :replaced))
+            "nothing was rewritten the second time: ~a" (getf report :replaced))))))
+
+(test a-refresh-replaces-looms-half-and-copies-the-authors
+  ;; REQ-0052's whole point, and the assertion is on the author's bytes rather
+  ;; than on Loom's: what the requirement is protecting is the half no template
+  ;; can regenerate.
+  (with-target-tree (root)
+    (write-target-file root "CLAUDE.md" "# My project
+
+Do not touch this.
+")
+    (prepare-repository root :append-claude-md t)
+    (let* ((text (target-text root "CLAUDE.md"))
+           (yours (search loom-workspace::*marker-yours* text))
+           (line (position #\Newline text :start yours)))
+      (write-target-file root "CLAUDE.md"
+                         (concatenate 'string (subseq text 0 (1+ line))
+                                      "
+## This repository
+
+Start the service with tools/serve.sh.
+"
+                                      (subseq text (1+ line)))))
+    (with-moved-template ("claude-md-pointer.md")
+      (let ((report (prepare-repository root :update t :apply-changes t))
+            (after (target-text root "CLAUDE.md")))
+        (is (equal '("CLAUDE.md") (getf report :replaced))
+            "the region was refreshed: ~a" (getf report :replaced))
+        (is-true (search "Start the service with tools/serve.sh." after)
+                 "the author's half is still there, which is the requirement")
+        (is-true (search "Do not touch this" after)
+                 "and their own file above the region")
+        (is-true (search "A section the template grew" after)
+                 "while Loom's half took the template's new text")))))
+
+(test a-region-with-no-author-marker-is-refused-by-name
+  ;; REQ-0052 R4 and DES-0044 D3. The state every tree prepared before this is
+  ;; in, and the one case where a refusal is the correct answer rather than a
+  ;; failure: a partial refresh that keeps half an author's section is worse
+  ;; than no refresh.
+  (with-target-tree (root)
+    (write-target-file root "CLAUDE.md" "# My project
+")
+    (prepare-repository root :append-claude-md t)
+    ;; Strip the author marker, leaving an older preparation's two-marker region.
+    (let* ((text (target-text root "CLAUDE.md"))
+           (yours (search loom-workspace::*marker-yours* text))
+           (line (position #\Newline text :start yours))
+           (older (concatenate 'string (subseq text 0 yours) (subseq text (1+ line)))))
+      (write-target-file root "CLAUDE.md" older)
+      (with-moved-template ("claude-md-pointer.md")
+        (let ((report (prepare-repository root :update t :apply-changes t)))
+          (is (null (find "CLAUDE.md" (getf report :replaced) :test #'string=))
+              "nothing was written to it")
+          (let ((skip (find "CLAUDE.md" (getf report :skipped) :key #'car :test #'string=)))
+            (is-true skip "and it is named rather than passed over in silence")
+            (is-true (search "loom:yours" (cdr skip))
+                     "with the marker to add: ~a" (cdr skip)))))
+      (is (string= older (target-text root "CLAUDE.md"))
+          "and the file is byte for byte what it was"))))
+
+(test a-file-edited-since-loom-wrote-it-is-refused
+  ;; REQ-0052 R3. The digest's other job: a file that is no longer what Loom
+  ;; wrote belongs to whoever changed it.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (write-target-file root ".mcp.json" "{\"mcpServers\": {\"mine\": {}}}")
+    (with-moved-template ("mcp.json")
+      (let ((report (prepare-repository root :update t :apply-changes t)))
+        (is (null (find ".mcp.json" (getf report :replaced) :test #'string=))
+            "the edit was not discarded")
+        (is-true (search "differs from what Loom last wrote"
+                         (cdr (find ".mcp.json" (getf report :skipped)
+                                    :key #'car :test #'string=))))
+        (is (string= "{\"mcpServers\": {\"mine\": {}}}" (target-text root ".mcp.json"))
+            "byte for byte as they left it")))))
+
+(test a-file-with-no-recorded-digest-waits-for-consent
+  ;; DES-0044 D5. Every tree prepared before the digest existed is in this
+  ;; state, and refusing them outright would mean no prepared tree could ever
+  ;; be refreshed. So it is reported, and written only when asked.
+  (with-target-tree (root)
+    (prepare-repository root)
+    ;; A manifest as it was written before DES-0044: no `rendered:' section.
+    (let ((manifest (read-manifest root)))
+      (loom-workspace::write-manifest
+       root (loom-workspace::manifest-scalars manifest)
+       (list (cons "created" (loom-workspace::manifest-created-paths root)))))
+    (with-moved-template ("loom-skill.md")
+      (let ((report (prepare-repository root :update t :apply-changes t)))
+        (is (null (getf report :replaced)) "nothing written without consent")
+        (is-true (search "no digest recorded"
+                         (cdr (find ".claude/skills/loom/SKILL.md" (getf report :skipped)
+                                    :key #'car :test #'string=)))))
+      (let ((report (prepare-repository root :update t :replace-unproven t
+                                             :apply-changes t)))
+        (is-true (find ".claude/skills/loom/SKILL.md" (getf report :replaced)
+                       :test #'string=)
+                 "and written when it is given: ~a" (getf report :replaced))))))
+
+(test a-refresh-writes-nothing-until-it-is-told-to
+  ;; REQ-0052 R2. Dry run is the default, which is `complete''s convention in
+  ;; this tree and is right here for a stronger reason: this run's writes are
+  ;; over text that already exists.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (with-moved-template ("loom-skill.md")
+      (let* ((before (target-text root ".claude/skills/loom/SKILL.md"))
+             (report (prepare-repository root :update t)))
+        (is-true (getf report :dry-run) "the report says it was a dry run")
+        (is (null (getf report :replaced)) "nothing is claimed as written")
+        (is (equal '(".claude/skills/loom/SKILL.md") (getf report :would-replace))
+            "and what it would do is named: ~a" (getf report :would-replace))
+        (is (string= before (target-text root ".claude/skills/loom/SKILL.md"))
+            "the file on disk is byte for byte what it was")))))
+
+(test a-refresh-touches-no-document-and-makes-no-directory
+  ;; REQ-0052 R7. Those are the team's, not Loom's -- the same line
+  ;; `remove ... tooling' draws.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (let ((concept (target-file root "docs/concepts/CON-0001.yaml")))
+      (write-target-file root "docs/concepts/CON-0001.yaml" "id: CON-0001
+edited: by the team
+")
+      (write-target-file root "docs/requirements/REQ-0001.yaml" "id: REQ-0001
+")
+      (with-moved-template ("workflow-concept.yaml")
+        (let ((report (prepare-repository root :update t :apply-changes t)))
+          (is (null (find-if (lambda (path) (search "docs/" path))
+                             (getf report :replaced)))
+              "no document was rewritten: ~a" (getf report :replaced))
+          (is (string= "id: CON-0001
+edited: by the team
+" (utils:read-file concept))
+              "the team's edit to Loom's own concept document stands")
+          (is-true (probe-file (target-file root "docs/requirements/REQ-0001.yaml"))
+                   "and their requirement is still there"))))))
+
+(test refreshing-a-tree-that-was-never-prepared-says-so
+  ;; The complement of REMOVAL-REFUSES-A-TREE-IT-NEVER-PREPARED, and the same
+  ;; argument: the manifest is the authority, and there is nothing to refresh
+  ;; without one.
+  (with-target-tree (root)
+    (let ((report (prepare-repository root :update t :apply-changes t)))
+      (is-true (getf report :problems))
+      (is-true (search "no Loom manifest" (first (getf report :problems))))
+      (is (null (probe-file (target-file root ".claude/skills/loom/SKILL.md")))
+          "and nothing was prepared as a side effect"))))
+
+(test removal-keeps-what-was-written-below-the-author-marker
+  ;; DES-0044 D6, and the test that stops this change destroying somebody's
+  ;; file. The marker D2 introduced sits *inside* the begin/end span, so a
+  ;; removal that still cut begin-to-end would take the author's half with it --
+  ;; the exact failure the whole design exists to prevent, arriving through the
+  ;; one path that already read the markers.
+  ;;
+  ;; The appended case, not the created one: a CLAUDE.md Loom wrote whole is
+  ;; deleted whole on removal and correctly so, which would hide this entirely.
+  (with-target-tree (root)
+    (write-target-file root "CLAUDE.md" "# My project
+
+Do not touch this.
+")
+    (prepare-repository root :append-claude-md t)
+    (let* ((text (target-text root "CLAUDE.md"))
+           (yours (search loom-workspace::*marker-yours* text))
+           (line  (position #\Newline text :start yours))
+           (mine "
+Which of two repositories owns dict-value: utils, not gs-utils.
+"))
+      (is-true yours "init wrote the author marker")
+      ;; Author text, inserted below the marker the way a reader would add it.
+      (write-target-file root "CLAUDE.md"
+                         (concatenate 'string (subseq text 0 (1+ line)) mine
+                                      (subseq text (1+ line))))
+      (remove-preparation root :mode :tooling)
+      (let ((after (target-text root "CLAUDE.md")))
+        (is-true after "the file survives")
+        (is-true (search "Do not touch this" after)
+                 "the author's own file is still there")
+        (is-true (search "owns dict-value: utils" after)
+                 "and the line they added inside the region: ~s" after)
+        (is (null (search loom-workspace::*marker-begin* after))
+            "and Loom's begin marker is gone")
+        (is (null (search loom-workspace::*marker-yours* after))
+            "and the author marker with it")
+        (is (null (search loom-workspace::*marker-end* after))
+            "and the end marker")
+        (is (null (search "ask Loom before reading the tree" after))
+            "Loom's own half went, which is what removal is for")))))
+
+(test removal-of-a-region-with-no-author-marker-is-unchanged
+  ;; The complement, and the guard against generalising too far. Every tree
+  ;; prepared before DES-0044 has a region with two markers, and removal there
+  ;; must behave exactly as it did -- byte for byte outside the region.
+  (with-target-tree (root)
+    (let ((original "# My project
+
+Do not touch this.
+"))
+      (write-target-file root "CLAUDE.md" original)
+      (prepare-repository root :append-claude-md t)
+      ;; Strip the author marker, leaving the two-marker region of an older
+      ;; preparation.
+      (let* ((text (target-text root "CLAUDE.md"))
+             (yours (search loom-workspace::*marker-yours* text))
+             (line (position #\Newline text :start yours)))
+        (write-target-file root "CLAUDE.md"
+                           (concatenate 'string (subseq text 0 yours)
+                                        (subseq text (1+ line)))))
+      (remove-preparation root :mode :tooling)
+      (is (string= original (target-text root "CLAUDE.md"))
+          "restored byte for byte, blank line included"))))
+
 (test a-claude-md-loom-created-is-deleted-whole
   ;; The three-valued disposition earning itself. A boolean could not tell this
   ;; from the case above, and getting it wrong deletes somebody's document.

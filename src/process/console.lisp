@@ -1098,30 +1098,81 @@ of tokens." value))
                                internal-time-units-per-second))))
           (when id (format t "~&record ~a~%" id))))))))
 
-(define-command init (path &optional document-directory claude-md endpoint)
-    "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>]"
+(define-command init (path &rest arguments)
+    "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>] [--update] \
+[--apply] [--replace-unproven]"
     "Prepare a repository for the Loom workflow. Writes; never commits."
-  ;; REQ-0021 R16's two consents arrive as arguments rather than as prompts,
-  ;; here as much as in the service: this command has to be callable from a
-  ;; script, and a prompt in a run with no terminal is a stall nobody sees.
-  ;; Running the command at all is the first consent; the literal token
-  ;; `claude-md' is the second, and its absence means an existing CLAUDE.md is
-  ;; left exactly as it was.
-  (let ((report (prepare-repository path
-                                    :document-directory (or document-directory "docs")
-                                    :endpoint (or endpoint *default-endpoint*)
-                                    :append-claude-md
-                                    (and claude-md (string-equal "claude-md" claude-md)))))
+  ;; REQ-0021 R16's consents arrive as arguments rather than as prompts, here as
+  ;; much as in the service: this command has to be callable from a script, and
+  ;; a prompt in a run with no terminal is a stall nobody sees. Running the
+  ;; command at all is the first consent; the literal token `claude-md' is the
+  ;; second, and its absence means an existing CLAUDE.md is left exactly as it
+  ;; was.
+  ;;
+  ;; --update and --replace-unproven are flags rather than a fifth and sixth
+  ;; positional, for the reason `describe --source' is one: this command's
+  ;; positionals are a directory, a directory name and a host:port, and a bare
+  ;; `update' in that run reads as one of those. An unrecognised token is
+  ;; refused rather than ignored -- a typo that silently prepares a tree instead
+  ;; of refreshing it writes eighteen directories into somebody's repository.
+  (let ((positional '()) (update nil) (replace-unproven nil) (apply-changes nil))
+    (dolist (argument arguments)
+      (cond ((string-equal argument "--update") (setf update t))
+            ((string-equal argument "--apply") (setf apply-changes t))
+            ((string-equal argument "--replace-unproven") (setf replace-unproven t))
+            ((and (> (length argument) 1) (string= "--" argument :end2 2))
+             (error "Unknown option ~s. Try: --update, --apply, --replace-unproven"
+                    argument))
+            (t (push argument positional))))
+    (setf positional (nreverse positional))
+    (destructuring-bind (&optional document-directory claude-md endpoint) positional
+      (let ((report (prepare-repository path
+                                        :document-directory (or document-directory "docs")
+                                        :endpoint (or endpoint *default-endpoint*)
+                                        :append-claude-md
+                                        (and claude-md (string-equal "claude-md" claude-md))
+                                        :update update
+                                        :replace-unproven replace-unproven
+                                        :apply-changes apply-changes)))
     (cond
       ((getf report :problems)
        (format t "~&Nothing was written. ~d problem~:p:~%"
                (length (getf report :problems)))
        (dolist (problem (getf report :problems)) (format t "  - ~a~%" problem)))
+      ((getf report :update)
+       ;; REQ-0052 R2's report: what a refresh changed, and every file it did
+       ;; not, with the reason on the same line. A skip here is not a failure --
+       ;; `already current' is the ordinary answer on a tree nobody has let go
+       ;; stale -- so the counts lead and the reasons follow.
+       (let ((dry (getf report :dry-run))
+             (changed (or (getf report :replaced) (getf report :would-replace))))
+         (unless dry (log-event "init" "update ~a" (getf report :root)))
+         (format t "~&~:[Refreshed~;Refreshing~] ~a~%" dry (getf report :root))
+         (cond ((and changed dry)
+                (format t "  would rewrite ~d file~:p:~{~%    ~a~}~%"
+                        (length changed) changed))
+               (changed
+                (format t "  rewrote ~d file~:p:~{~%    ~a~}~%"
+                        (length changed) changed))
+               (t (format t "  nothing needs rewriting.~%")))
+         (dolist (skip (getf report :skipped))
+           (format t "  ~a -- ~a~%" (car skip) (cdr skip)))
+         ;; REQ-0052 R2. Dry run is the default and the line that says so is the
+         ;; one `complete' prints for the same reason: a command that writes into
+         ;; somebody else's tree should take two decisions from the caller, not
+         ;; one.
+         (if dry
+             (format t "~&Dry run: nothing written. Add --apply to write it.~%")
+             (format t "~&Nothing was committed. `git status' shows exactly what ~
+changed.~%"))))
       ((getf report :already-prepared)
        (format t "~&~a is already prepared. Nothing to do.~%" (getf report :root))
        (format t "  documents in ~a/, workflow concept ~a~%"
                (getf (getf report :manifest) :document-directory)
-               (getf (getf report :manifest) :workflow-concept)))
+               (getf (getf report :manifest) :workflow-concept))
+       ;; DES-0044 D1's discoverability argument, and the reason a second verb
+       ;; was not needed: the flag is named where the refusal is printed.
+       (format t "  Templates move; run with --update to refresh what Loom wrote.~%"))
       (t
        (log-event "init" "~a" (getf report :root))
        (format t "~&Prepared ~a~%" (getf report :root))
@@ -1139,7 +1190,7 @@ of tokens." value))
            (when skip
              (format t "~&Nothing points at the skill yet. Re-run with ~
 `claude-md' to append a pointer, or add one by hand.~%"))))
-       (format t "~&Nothing was committed. `git status' shows exactly what was added.~%")))))
+       (format t "~&Nothing was committed. `git status' shows exactly what was added.~%")))))))
 
 (define-command drift (&optional designator)
     "drift [<name>]"
