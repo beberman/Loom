@@ -243,39 +243,34 @@ def watched_repositories():
 
 
 def measured_against(repository="Loom"):
-    """One line naming what produced the score. REQ-0050 R4.
+    """One line naming what produced the score, and whether it is current.
 
-    This harness drives a running service, so the service's build is what
-    answered and nothing here said which. On 2026-08-23 it reported 43 of 45
-    four times against a headless service started before any of that day's
-    work -- proved by the service returning none of the fields added that
-    morning -- and three of those runs were quoted as verification of changes
-    they could not have seen. The number happened not to move, which is why
-    nobody looked.
+    REQ-0050 R4. This harness drives a running service, so the service's build
+    is what answered and nothing here said which. On 2026-08-23 it reported 43
+    of 45 four times against a service started before any of that day's work,
+    and three of those runs were quoted as verification of changes they could
+    not have seen.
 
-    The commit alone would not have caught it: the tree was dirty all day and
-    the commit was stable for hours. The diff hash is the half that
-    distinguishes saves, which is REQ-0036 R4's own argument for carrying both,
-    and LIVE_FINGERPRINT already computes the pair with the same FNV-1a the
-    service uses.
+    `drift' rather than a diff hash. The first version compared the service's
+    `git diff HEAD' against this tree's, which moves when any file moves --
+    including the ones no analyzer claims. Editing this very file made it
+    report a stale service whose index was current, within an hour. The service
+    now answers from REPOSITORY-STAMPS, its own record of the bytes each
+    claimed file had when it read them, so drift counts exactly the files the
+    index is behind on and nothing else.
     """
     row = watched_repositories().get(repository, {})
-    served, served_diff = row.get("commit"), row.get("diff")
-    if not served:
+    commit, drift = row.get("commit"), row.get("drift")
+    if not commit:
         return ("measured against: the service reports no commit, so which "
                 "build answered is unknown")
-    here = live_fingerprint(row.get("root") or ".")
-    line = f"measured against: service at {str(served)[:12]}"
-    if served_diff not in (None, "", "nil"):
-        line += f" diff {str(served_diff)[:8]}"
-    if here is None:
-        return line + "  (no git here to compare against)"
-    if not here["commit"].startswith(str(served)[:12]):
-        return line + f"  != tree at {here['commit'][:12]}  <-- STALE SERVICE"
-    if str(served_diff)[:8] != str(here["diffHash"])[:8]:
-        return line + (f"  != tree diff {str(here['diffHash'])[:8]}"
-                       "  <-- STALE SERVICE, same commit and different bytes")
-    return line + "  (matches this tree)"
+    line = f"measured against: service at {str(commit)[:12]}"
+    if drift is None:
+        return line + "  (the service reports no drift; staleness unknown)"
+    if drift:
+        return line + (f"  <-- STALE INDEX: {drift} claimed file"
+                       f"{'' if drift == 1 else 's'} changed since it was read")
+    return line + "  (index current with the tree)"
 
 
 def records(directory):
