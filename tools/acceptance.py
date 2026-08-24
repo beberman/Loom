@@ -25,7 +25,10 @@ context, then find, then describe on what find returned -- is read back.
 """
 import urllib.request, urllib.parse, json, time, sys, os, glob
 
-B = "http://127.0.0.1:4780/v1"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import service
+
+B = service.BASE
 
 CASES = [
     # game-server -- REQ-0016's own acceptance clauses
@@ -235,11 +238,7 @@ LOG_DIRECTORY = os.environ.get(
 
 def watched_repositories():
     """The repositories the service currently holds, by name."""
-    try:
-        status = json.load(urllib.request.urlopen(B + "/status", timeout=60))
-    except Exception:
-        return {}
-    return {r["name"]: r for r in status.get("repositories", [])}
+    return service.watched_repositories()
 
 
 def measured_against(repository="Loom"):
@@ -598,7 +597,12 @@ def log_main():
         print("A record is written by a context call and completed by "
               "loom_context_used; both halves are needed before anything scores.")
         return 0
-    watched = watched_repositories()
+    # RULE-0008, and here it decides an answer rather than a traceback. RESOLVES
+    # asks the service whether a judged name still exists, and against a service
+    # that is down every ask fails, every name reads as gone, and every record
+    # is reported `unverifiable' -- a verdict about the corpus produced by an
+    # absent instrument.
+    watched = service.ensure(__file__)
     hits = misses = unused = 0
     per_operation = {}
     populations = {"absent": 0, "unread": 0, "note": 0, "credit": 0}
@@ -694,6 +698,14 @@ def log_main():
 
 
 def main():
+    # RULE-0008. The cases below name four trees, and every one of them is a
+    # question this harness cannot ask of a service that is down, and cannot
+    # score against one still embedding: a repository in :embedding answers
+    # lexically, so its recall is a real number measuring half the seeder.
+    service.ensure(__file__,
+                   repositories=sorted({c[0] for c in CASES}
+                                       | {c[0] for c in ABSENCE_CASES},
+                                       key=str.lower))
     total = 0
     missing_strict = missing_lenient = 0
     slowest = 0.0

@@ -162,3 +162,31 @@ a statement about the repository, which this never asked"))))
         "alpha has not moved")
     (is-true (getf (file-provenance repository "src/beta.lisp") :file-stale)
              "and beta has")))
+
+;;; ------------------------------------------------------------------
+;;; The count that must not cost a tree walk (REQ-0050 R3, BUG-0048)
+;;; ------------------------------------------------------------------
+
+(test the-unindexed-count-is-recorded-by-the-walk-that-was-happening-anyway
+  ;; It was computed per query, and REPOSITORY-FILES is a recursive directory
+  ;; scan plus a `git check-ignore' subprocess: `status' over nine repositories
+  ;; took 8.9 seconds, front-end 7.1 of them. The index build and every poll
+  ;; already walk, so the count rides along.
+  (with-committed-repository (repository root)
+    (is (eql 0 (loom-workspace::repository-unindexed repository))
+        "the index build filled it in, and it read every file it found")
+    root))
+
+(test a-file-nobody-has-indexed-is-counted-by-the-next-poll
+  (with-committed-repository (repository root)
+    (write-scratch-file root "src/beta.lisp" (format nil "(defun beta () 2)~%"))
+    (is (eql 1 (unindexed-files repository))
+        "the on-demand answer sees it at once")
+    (loom-workspace::poll-once repository :quiet t)
+    (is (eql 0 (loom-workspace::repository-unindexed repository))
+        "and the poll that read it leaves nothing unindexed behind")))
+
+(test the-count-is-unknown-rather-than-nought-before-anything-has-walked
+  ;; CON-0001. Nought means the walk found none; a repository nobody has
+  ;; indexed has not been looked at, and the two must not read alike.
+  (is (null (loom-workspace::repository-unindexed (loom-workspace::make-repository :name "never-indexed")))))

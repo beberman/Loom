@@ -1,0 +1,95 @@
+id: RULE-0008
+title: An instrument that scores an answer starts the service with loom-serve.sh, and reports no number without one
+status: active
+severity: error
+date: 2026-08-24
+refines: [CON-0001, REQ-0050]
+statement: |
+  Loom has two ways to be driven from a shell and they cost three orders of
+  magnitude apart. tools/loom.sh is the console: it watches the tree, runs the
+  commands, stops, and builds no vector store, so every invocation pays a full
+  reindex of every tree it named. That is the right cost for one question typed
+  at a terminal. tools/loom-serve.sh owns the service's lifecycle (DES-0007 R4),
+  and its `update` verb starts a service that is down, restarts one whose code
+  is stale, and does nothing at all to one that is already current.
+
+  Any instrument that asks Loom a question more than once brings the service up
+  with tools/loom-serve.sh and asks over REST. It does not shell out to
+  tools/loom.sh, and it does not assume somebody else started the service first.
+
+  Bringing it up is not the whole of it. `update` returns as soon as the port
+  answers, and the trees are still being read behind it. An instrument waits for
+  every repository it names to reach `ready`, because the two earlier states are
+  not degraded versions of the same answer:
+
+    indexing    the query cannot be answered at all
+    embedding   the query is answered lexically, correctly, and without the
+                semantic candidates it would have had a minute later
+
+  A recall figure scored while a tree is in `embedding` is a real number
+  measuring half the seeder, and nothing in its formatting says so.
+
+  And an instrument that could not reach the service prints no score. It exits
+  non-zero with a sentence naming itself, what it could not reach, and what is
+  therefore unmeasured. This is the rule's operative half: everything above is
+  about speed, and this is about not publishing a figure nobody measured.
+
+rationale: |
+  Three harnesses read answers over REST from a service somebody else was
+  expected to have started, and each had a different failure mode when nobody
+  had. Only one of the three was survivable:
+
+    acceptance.py   urlopen raised out of main(); a traceback, and no score
+    recall.py       caught the exception per case, continued, and printed
+                    `ALL strict 0/450 0.0%`
+    seed-sheet.py   wrote a CSV with a header and no rows
+
+  The second is the one worth the rule. A recall of 0.0% across 450 cases is
+  correctly formatted, arrives where a number was expected, and is indistinguish-
+  able from a seeder that regressed to nothing. It is CON-0001's fabricated fact
+  with the graph swapped out for the measurement: an answer that was never
+  computed, presented in the shape of one that was.
+
+  This is REQ-0050 R5 applied to the other half of tools/. That clause fixed the
+  same failure on the Lisp side, where tools/call-site-census.lisp had not
+  loaded for days -- its ASDF registry predated loom-embed -- and reported the
+  fact as a backtrace, so the instrument that *CALL-SITE-CEILING*'s own failure
+  message tells a developer to re-run was broken and nothing said so.
+  tools/harness.lisp is that fix; tools/service.py is this one, and its refusal
+  is worded to match because the two are read by the same person on the same
+  afternoon.
+
+  The staleness half has its own history. On 2026-08-23 acceptance.py reported
+  43 of 45 four times against a service started before any of that day's work,
+  which is what REQ-0050 R4 added the provenance line for. That line says after
+  the fact which build answered. Calling `update` first means the build that
+  answers is the one on disk, so the line becomes a confirmation rather than a
+  discovery.
+
+  WHY THIS RULE HAS NO CHECK CLAUSE
+
+  Nothing in the index can see it. The rule constrains Python and shell files,
+  and Loom's analyzers claim Lisp, TypeScript, YAML and Markdown -- tools/*.py
+  are not entities, so there is no `from-system` for a check kind to name and
+  nothing for one to match. This is a different reason from RULE-0004's, which
+  is expressible in principle and has no kind for it, and from RULE-0005's,
+  which asks about an event the graph does not record.
+
+  So it is counted among the unenforced rules `status` reports, taking that
+  count from one to two. RULE-0005 set five as the threshold at which the
+  narrowness of the check engine should be re-argued; this is the second, and
+  it is not evidence for that case, because widening the engine would not reach
+  a language it does not read.
+
+  What enforces it instead is that the discipline lives in one importable place
+  rather than in each instrument's memory of it. tools/service.py's `ensure` is
+  the whole of it -- launch, wait, describe, or refuse -- and the three
+  harnesses call it in one line each. An instrument added later that forgets is
+  a review finding, which is what an advisory rule was always going to be.
+
+lessons:
+  - A measurement that did not happen must not read like one that returned
+    nothing to say. The formatting is identical and only the instrument knows
+    the difference, so the instrument has to say it.
+  - Recall scored against a tree still embedding is not a low number, it is a
+    number about a different mechanism.

@@ -1,0 +1,67 @@
+id: BUG-0049
+title: status walked every repository's tree to count unindexed files, and nine repositories took 8.9 seconds
+status: closed
+severity: major
+date: 2026-08-24
+refines: [REQ-0050]
+affects: [repository-status, unindexed-files, count-unstamped, poll-once]
+tags: [latency, status, req-0050, regression]
+summary: |
+  REQ-0050 R3 put an `unindexed' count on `status', computed by
+  UNINDEXED-FILES. That calls REPOSITORY-FILES, which is a recursive directory
+  walk plus a `git check-ignore' subprocess. `/v1/status' with no repository
+  named calls REPOSITORY-STATUS for every watched tree, so nine trees meant
+  nine walks and nine subprocesses.
+
+  Measured 2026-08-24:
+
+      status?repository=utils         0.07s
+      status?repository=Loom          1.60s
+      status?repository=front-end     7.11s
+      status (all nine)               8.90s
+
+  Against 0.21s for one repository before the field existed.
+body: |
+  HOW IT WAS FOUND
+
+  A poll loop written to time the boot sequence reported `no-answer' on every
+  probe and read as a wedged service. It was not wedged: every probe had a five
+  second timeout and `status' was taking nine seconds.
+
+  So the instrument built to measure a slow boot was blinded by a defect in the
+  thing it was measuring, which had been introduced the day before by the
+  requirement that asked for the measurement.
+
+  THE COST WAS IN THE WALK, NOT THE COUNTING
+
+  REPOSITORY-FILES walks `**/*.*' under the root and then asks git which of the
+  candidates are ignored. On front-end that is a large tree with a vendored
+  dependency directory in it, and the walk is 7 seconds. Counting the files
+  that have no stamp, once the list exists, is a hash lookup apiece.
+
+  THE FIX
+
+  The count rides on a walk somebody was doing anyway. INDEX-REPOSITORY has the
+  file list in hand, and so does every POLL-ONCE; both now record
+  COUNT-UNSTAMPED on the repository, and `status' reads the slot.
+
+  NIL until something has walked, which is a recorded gap and not a zero: 0
+  means the walk found none, and nobody may read it as "nobody has looked"
+  (CON-0001).
+
+  UNINDEXED-FILES stays and still costs the walk. It is the exact answer for a
+  caller who asks for it, which is what it was written to be; what it must not
+  be is on the path of every status call.
+
+      status?repository=front-end     7.11s -> 0.00s
+      status (all nine)               8.90s -> 1.24s
+
+  WHAT THIS SAYS ABOUT THE REQUIREMENT IT CAME FROM
+
+  REQ-0050's outcome records `status 210.9ms -> 412.2ms' and calls the doubling
+  affordable on the surface whose whole question is whether the index is in
+  order. That measurement was taken with one repository named. The form nobody
+  measured is the one every caller actually uses -- `status' with no argument,
+  which is how a client discovers what is watched -- and it was nine times
+  worse. A latency figure taken on the narrow path is not a figure for the
+  wide one.
