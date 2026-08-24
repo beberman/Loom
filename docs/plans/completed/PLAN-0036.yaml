@@ -1,6 +1,6 @@
 id: PLAN-0036
 title: "Loom onto the utils library: five stages, one of them landed and measured"
-status: draft
+status: final
 date: 2026-08-21
 tags: [refactor, dependency, utils, json, analyzer, workspace, serve]
 summary: |
@@ -286,3 +286,55 @@ body: |
   anywhere -- Loom has no alist-configuration layer for CONFIG-SEARCH to serve --
   and does not put ~/lisp/utils in the repository's own registry setup, which is
   the one piece of S1 that lives outside the tree.
+
+  CLOSED, 2026-08-23
+
+      S1  the five that are identical      DONE  2026-08-21
+      S2  the fingerprint                  HELD  -- see below
+      S3  text-lines                       DONE  2026-08-23
+      S4  the two predicates               DONE  2026-08-23
+      S5  the context log's JSON           read half DONE, write half REFUSED
+
+  Two stages landed, one is half done and half measured-and-refused, and one is
+  held deliberately. The plan is final because nothing further is scheduled,
+  not because everything in it happened.
+
+  WHAT THE STAGES WERE WRONG ABOUT, WHICH IS THE USEFUL PART
+
+  Each of the three worked stages was wrong about itself, and in the same
+  direction: the change was smaller and sat somewhere else.
+
+  S3 named three callers and warned the compiler would not catch the type
+  change. The work was in none of them -- UNFENCED-LINES was the only function
+  that moved, and because it still returns a list the vector stops at one
+  boundary.
+
+  S4 prescribed a guard and said "never the bare call". The guard cannot fire:
+  JSON-VALUE's own (NULL X) clause returns first. Established by removing it
+  and running the suite, not by reading.
+
+  S5 predicted its own obstacle exactly -- :FALSE has no library
+  representation -- and offered a remedy that does not exist, because
+  JSON-ENCODE recurses and a wrapper never sees a nested value.
+
+  S2 IS HELD, AND ITS OWN ARGUMENT IS NOW VISIBLE IN THE CORPUS
+
+  Swapping FNV-1A for CONTENT-FINGERPRINT changes a value that gets written
+  down: every record written before compares unequal to every record after, and
+  the corpus is the scarce thing this work exists to grow.
+
+  What the stage predicted has since become measurable. It argued that FRESHNESS
+  compares a live diff hash against a recorded one, so "a record whose
+  repository has any non-ASCII in `git diff HEAD' can never be classified
+  `current'", and that in a tree whose documents are full of em dashes R4's
+  strongest classification is unreachable.
+
+  Measured 2026-08-23 over the whole corpus: 8 records classify `checkable' and
+  0 classify `current'. Not one, ever. So every record takes the expensive
+  entity-resolution path, which is why the cross-repository defect found the
+  same day discarded so much -- with `current' unreachable, one unresolvable
+  name is enough to throw a record away.
+
+  That sharpens the stage rather than settling it. The discontinuity is still
+  real and the corpus is still the reason to wait; what has changed is that the
+  cost of not doing it is now a number.
