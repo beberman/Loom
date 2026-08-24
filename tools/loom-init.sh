@@ -4,6 +4,7 @@
 #   tools/loom-init.sh /path/to/repo
 #   tools/loom-init.sh /path/to/repo --docs knowledge --yes
 #   tools/loom-init.sh /path/to/repo --no-claude-md
+#   tools/loom-init.sh /path/to/repo --update
 #
 # What only a script can do, which is the whole of why this exists alongside
 # the `init' command rather than instead of it (DES-0022 D3). The commands do
@@ -21,6 +22,11 @@
 #   --no-claude-md   do not append it, and do not ask
 #   --docs <dir>     the document directory (default: docs)
 #   --endpoint <h:p> where the service is (default: 127.0.0.1:4780)
+#   --update         refresh a repository already prepared, replacing what Loom
+#                    wrote and leaving what an author added below the
+#                    <!-- loom:yours --> marker (REQ-0052)
+#   --replace-unproven  on --update, rewrite a file whose digest the manifest
+#                    never recorded. Asked for at a terminal when omitted
 
 set -u
 LOOM_ROOT=/home/beberman/lisp/Loom
@@ -31,12 +37,17 @@ DOCS="docs"
 ENDPOINT="127.0.0.1:4780"
 ASSUME_YES=0
 CLAUDE_MD="ask"
+UPDATE=0
+REPLACE_UNPROVEN="ask"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --yes)          ASSUME_YES=1 ;;
         --claude-md)    CLAUDE_MD="yes" ;;
         --no-claude-md) CLAUDE_MD="no" ;;
+        --update)       UPDATE=1 ;;
+        --replace-unproven) REPLACE_UNPROVEN="yes" ;;
+        --no-replace-unproven) REPLACE_UNPROVEN="no" ;;
         --docs)         shift; DOCS="${1:-docs}" ;;
         --endpoint)     shift; ENDPOINT="${1:-127.0.0.1:4780}" ;;
         -*)             echo "unknown flag: $1" >&2; exit 2 ;;
@@ -48,6 +59,7 @@ done
 if [ -z "$TARGET" ]; then
     echo "usage: tools/loom-init.sh <directory> [--docs <dir>] [--endpoint <host:port>]" >&2
     echo "                          [--yes] [--claude-md | --no-claude-md]" >&2
+    echo "                          [--update] [--replace-unproven]" >&2
     exit 2
 fi
 
@@ -73,6 +85,79 @@ ask() {
     read -r -p "$1 " answer
     printf '%s\n' "${answer:-$2}"
 }
+
+# REQ-0052 R1. A refresh is a different run from a preparation: it makes no
+# directory, writes no document and asks neither of the two consents a first
+# contact asks, because the tree already answered both. It does ask the third
+# -- whether to rewrite a file whose digest the manifest never recorded -- and
+# that question is asked here for R16's reason, that this is where a terminal
+# is.
+if [ "$UPDATE" -eq 1 ]; then
+    if [ ! -f "$TARGET/.loom/manifest.yaml" ]; then
+        echo "$TARGET carries no Loom manifest, so there is nothing to refresh." >&2
+        echo "Run without --update to prepare it." >&2
+        exit 1
+    fi
+
+    echo "About to refresh: $TARGET"
+    echo
+    echo "This replaces what Loom wrote and leaves what you added below the"
+    echo "<!-- loom:yours --> marker. It commits nothing."
+    echo
+
+    # REQ-0052 R2. The dry run first, always: this run's writes are over text
+    # that already exists, so the caller sees the list before anything moves.
+    echo "== what a refresh would change =="
+    ./tools/loom.sh "init \"$TARGET\" --update" || exit 1
+
+    # R16's third consent, asked only when the report above could have named an
+    # unproven file. A tree prepared since digests existed never reaches it.
+    if [ "$REPLACE_UNPROVEN" = "ask" ]; then
+        # A manifest with a `rendered:' section records a digest per file, so
+        # nothing in this tree can be unproven and the question is not worth
+        # asking. Only a tree prepared before REQ-0052 reaches the prompt.
+        if grep -q "^rendered:" "$TARGET/.loom/manifest.yaml" 2>/dev/null; then
+            REPLACE_UNPROVEN="no"
+        elif interactive; then
+            echo
+            echo "If a file above says it has no recorded digest, it was written"
+            echo "before Loom kept one and cannot be shown to be unmodified."
+            echo "Replacing it discards any edit made to it since; leaving it keeps"
+            echo "that edit and the file stays stale."
+            reply=$(ask "Also replace files with no recorded digest? [y/N]" "n")
+            case "$reply" in
+                y|Y|yes|Yes) REPLACE_UNPROVEN="yes" ;;
+                *)           REPLACE_UNPROVEN="no" ;;
+            esac
+        else
+            REPLACE_UNPROVEN="no"
+        fi
+    fi
+
+    if [ "$ASSUME_YES" -ne 1 ]; then
+        if ! interactive; then
+            echo
+            echo "Not a terminal and --yes was not given; the dry run above is all" >&2
+            echo "that ran. Nothing was written." >&2
+            exit 0
+        fi
+        reply=$(ask "Apply this refresh? [y/N]" "n")
+        case "$reply" in
+            y|Y|yes|Yes) ;;
+            *) echo "Nothing was written."; exit 0 ;;
+        esac
+    fi
+
+    EXTRA=""
+    [ "$REPLACE_UNPROVEN" = "yes" ] && EXTRA=" --replace-unproven"
+    echo
+    echo "== refreshing =="
+    ./tools/loom.sh "init \"$TARGET\" --update --apply$EXTRA" || exit 1
+
+    echo
+    echo "Review with 'git diff' in $TARGET. Loom committed nothing."
+    exit 0
+fi
 
 echo "About to prepare: $TARGET"
 echo "  documents      : $DOCS/"

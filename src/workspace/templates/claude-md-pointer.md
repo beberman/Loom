@@ -103,4 +103,11 @@ After writing any document, run `check-document` on its path — it reports the
 id it parsed and whether each `refines:` resolved — then `check`, and confirm
 `unresolved` did not rise.
 
+Everything below the next line is yours. Loom replaces the text above it
+whenever `init --update` runs, and never reads or writes anything below it —
+so that is where knowledge about *this* repository belongs: which of two
+repositories owns a name, the commands that start the service here, a query
+that answered badly and what answered it instead.
+
+<!-- loom:yours -->
 <!-- loom:end -->

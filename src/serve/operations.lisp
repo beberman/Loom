@@ -561,19 +561,28 @@ its entries is worse than a call that failed."
     (let ((watched (require-repository repository)))
       (repository-status (unwatch-repository (repository-name watched))))))
 
-(define-operation :init :write (path (document-directory) (endpoint) (append-claude-md))
-    "Prepare a repository for the Loom workflow. Writes files; never commits."
+(defun init-flag (value)
+  "A wire value read as a consent. Absent or \"false\" is no."
+  (and value (not (string-equal "false" (princ-to-string value))) t))
+
+(define-operation :init :write (path (document-directory) (endpoint) (append-claude-md)
+                                     (update) (replace-unproven) (apply-changes))
+    "Prepare a repository for the Loom workflow. Writes files; never commits. \
+update=true reports what refreshing an already-prepared repository would \
+change; add apply-changes=true to write it."
   ;; The consent is an argument here for the reason it is one at the console:
   ;; REQ-0021 R16 puts the asking where a terminal is, and a service has none.
   ;; A caller that omits APPEND-CLAUDE-MD gets the conservative answer, which
-  ;; is that an existing CLAUDE.md is not touched.
+  ;; is that an existing CLAUDE.md is not touched. REPLACE-UNPROVEN is the
+  ;; third consent DES-0044 D5 adds and defaults the same way: a file whose
+  ;; digest was never recorded is reported, not rewritten.
   (prepare-repository path
                       :document-directory (or document-directory "docs")
                       :endpoint (or endpoint *default-endpoint*)
-                      :append-claude-md
-                      (and append-claude-md
-                           (not (string-equal "false" (princ-to-string append-claude-md)))
-                           t)))
+                      :append-claude-md (init-flag append-claude-md)
+                      :update (init-flag update)
+                      :replace-unproven (init-flag replace-unproven)
+                      :apply-changes (init-flag apply-changes)))
 
 (define-operation :architecture :write (repository)
     "Write an ARCH document from the index. Says only what was measured."

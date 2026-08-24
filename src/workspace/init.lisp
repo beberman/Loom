@@ -47,6 +47,14 @@ Two files could disagree, and removal would have to decide which to believe.")
 (defparameter *marker-begin* "<!-- loom:begin -->")
 (defparameter *marker-end* "<!-- loom:end -->")
 
+(defparameter *marker-yours* "<!-- loom:yours -->"
+  "Where Loom's half of the region ends and the reader's begins. DES-0044 D2.
+
+Loom replaces what is above this line on every refresh and never reads what is
+below it. A region without this marker is one Loom cannot take apart, and a
+refresh says so rather than guessing -- REQ-0052 R4, whose argument is that the
+author's text is the half no template can regenerate.")
+
 (defparameter *default-endpoint* "127.0.0.1:4780"
   "Where a prepared tree is told the service is.
 
@@ -119,30 +127,63 @@ cannot account for and refuses on it.
 Found by exactly that: removal refused to complete because ARCH-0001.yaml was
 not in the manifest, which is R13a protecting the tree from Loom's own output."
   (let ((manifest (read-manifest root))
-        (created (manifest-created-paths root)))
-    (when (and manifest (not (member relative created :test #'string=)))
-      (with-open-file (out (manifest-path root) :direction :output
-                                                :if-exists :supersede
-                                                :if-does-not-exist :create)
-        (write-string (render-manifest
-                       ;; :CREATED is the list header the line scan reads as a
-                       ;; valueless key; it is re-emitted by RENDER-MANIFEST and
-                       ;; must not also appear as a scalar.
-                       (loop for (key value) on manifest by #'cddr
-                             unless (eq key :created)
-                               append (list key value))
-                       (append created (list relative)))
-                      out))
+        (sections (manifest-sections root)))
+    (when (and manifest (not (member relative (cdr (assoc "created" sections :test #'string=))
+                                     :test #'string=)))
+      (write-manifest root (manifest-scalars manifest)
+                      (loop for (header . entries) in sections
+                            collect (if (string= "created" header)
+                                        (cons header (append entries (list relative)))
+                                        (cons header entries))))
       t)))
 
-(defun render-manifest (plist created)
+(defparameter *manifest-sections* '("created" "rendered" "templates")
+  "The manifest's list-valued keys, in the order RENDER-MANIFEST emits them.
+
+Three since DES-0044 D4, and the order is fixed so that a manifest rewritten by
+RECORD-CREATED-PATH does not reorder its own sections and show up as a diff
+nobody made.
+
+`created' is REQ-0021 R13b's record of what to remove. `rendered' and
+`templates' are the digests a refresh reads: what Loom wrote, and what it
+rendered from.")
+
+(defun manifest-scalars (plist)
+  "PLIST without the list headers, which the line scan reads as valueless keys.
+
+By membership in *MANIFEST-SECTIONS* rather than by an EQ test per header. The
+filter used to name :CREATED alone, and adding a second list without widening
+it writes `rendered: \"\"' into somebody else's manifest as a scalar beside the
+real one."
+  (loop for (key value) on plist by #'cddr
+        unless (member (string-downcase (symbol-name key)) *manifest-sections*
+                       :test #'string=)
+          append (list key value)))
+
+(defun render-manifest (plist sections)
+  "The manifest text: scalars, then each list in *MANIFEST-SECTIONS* order.
+
+SECTIONS is an alist of header string to entries. A section with no entries is
+emitted with its header and nothing under it, so a reader can tell `Loom
+recorded none' from `this manifest predates the section'."
   (with-output-to-string (out)
     (format out "# Written by `loom init'. Records what Loom chose and what it~%")
     (format out "# wrote, so that removing Loom does not have to guess.~%")
     (loop for (key value) on plist by #'cddr
           do (format out "~(~a~): ~s~%" key (princ-to-string value)))
-    (format out "created:~%")
-    (dolist (path created) (format out "  - ~s~%" path))))
+    (dolist (header *manifest-sections*)
+      (let ((entry (assoc header sections :test #'string=)))
+        (when entry
+          (format out "~a:~%" header)
+          (dolist (line (cdr entry)) (format out "  - ~s~%" line)))))))
+
+(defun write-manifest (root plist sections)
+  "Replace ROOT's manifest with PLIST and SECTIONS."
+  (let ((path (manifest-path root)))
+    (ensure-directories-exist path)
+    (with-open-file (out path :direction :output :if-exists :supersede
+                              :if-does-not-exist :create)
+      (write-string (render-manifest plist sections) out))))
 
 ;;;; ==================================================================
 ;;;; Templates
@@ -170,6 +211,99 @@ should be reviewable as text."
                                            value
                                            (subseq contents (+ at (length token))))))))
     contents))
+
+(defparameter *templates*
+  '("claude-md-pointer.md" "loom-skill.md" "mcp.json" "workflow-concept.yaml")
+  "Every template this file renders, for the digests R6 asks be recorded.
+
+Named rather than globbed. A directory listing would record whatever happens to
+be in templates/, and the manifest's claim is about what this code rendered
+from, which is a different set the moment somebody leaves a file there.")
+
+(defun template-digests ()
+  "Each template's name and the digest of its unrendered text.
+
+REQ-0052 R6: what template version a tree was prepared from, recorded rather
+than reconstructed. A refresh compares these with today's to say which
+templates moved -- which is a weaker answer than naming what changed inside
+them, and the honest one, since nothing keeps the old text."
+  (loop for name in *templates*
+        collect (manifest-entry
+                 name (fnv-1a (handler-case (read-file (template-path name))
+                                (error () ""))))))
+
+(defun prep-digests (prep)
+  "Each file this preparation writes, and the digest of the bytes it writes.
+
+DES-0044 D4. An appended CLAUDE.md is recorded under `CLAUDE.md (region)' --
+the spelling REMOVE-PREPARATION already prints -- and the digest is of Loom's
+*half* of the region rather than of the whole of it, because that is what
+UPDATE-STATE compares against later.
+
+The two used to disagree, and the failure is the one this design is least able
+to make visible: init recorded the whole region, a refresh compared Loom's half,
+they never matched, and every CLAUDE.md refresh was refused with `differs from
+what Loom last wrote' on a file nobody had touched. A refusal that looks exactly
+like the protection working."
+  (let ((root (prep-root prep)))
+    (flet ((entry (path contents)
+             (let ((relative (workspace-relative-path path root)))
+               ;; CLAUDE.md is recorded as a region whether Loom appended it to
+               ;; somebody's file or wrote the whole file, because a refresh
+               ;; asks the same question of both: is Loom's half still Loom's.
+               ;; A whole-file digest here would make a CLAUDE.md Loom created
+               ;; unproven on its own first refresh.
+               (if (string= "CLAUDE.md" relative)
+                   (manifest-entry (format nil "~a (region)" relative)
+                                   (fnv-1a (or (loom-half contents) contents)))
+                   (manifest-entry relative (fnv-1a contents))))))
+      (append (loop for (path . contents) in (prep-files prep)
+                    collect (entry path contents))
+              (loop for (path . contents) in (prep-appends prep)
+                    collect (entry path contents))))))
+
+;;;; ------------------------------------------------------------------
+;;;; The author's half of the region (DES-0044 D2)
+;;;; ------------------------------------------------------------------
+;;;;
+;;;; One pair of markers said "Loom wrote everything in here", and on a tree
+;;;; anybody has worked in that stopped being true: game-server's region is 192
+;;;; lines against a 106-line template. A third marker makes the split declared
+;;;; rather than inferred, and inference is what this design refuses -- a
+;;;; heading match landing inside somebody's paragraph puts a marker in the
+;;;; wrong place, and the *next* refresh replaces prose Loom never wrote.
+
+(defun split-marked-region (contents)
+  "Four values: the text before the region, Loom's half, the author's half, and
+whether an author marker was found.
+
+Loom's half runs from the begin marker to the line before `loom:yours'. The
+author's half runs from after that line to the end marker. Without the marker
+the third value is NIL and the fourth is false, which is every tree prepared
+before DES-0044 and is what a refresh reports rather than guesses at."
+  (let ((begin (search *marker-begin* contents)))
+    (if (null begin)
+        (values contents nil nil nil)
+        (let ((end (search *marker-end* contents :start2 begin)))
+          (if (null end)
+              ;; A begin with no end is damage somebody else caused. Refused by
+              ;; reporting no region, exactly as CUT-MARKED-REGION refuses it.
+              (values contents nil nil nil)
+              (let ((yours (search *marker-yours* contents :start2 begin :end2 end)))
+                (if (null yours)
+                    (values (subseq contents 0 begin)
+                            (subseq contents begin end)
+                            nil nil)
+                    (let ((after-yours (line-after contents yours)))
+                      (values (subseq contents 0 begin)
+                              (subseq contents begin yours)
+                              (subseq contents after-yours end)
+                              t)))))))))
+
+(defun line-after (contents at)
+  "The index just past the line AT falls on."
+  (let ((newline (position #\Newline contents :start at)))
+    (if newline (1+ newline) (length contents))))
 
 ;;;; ==================================================================
 ;;;; Ids, allocated the one way this tree allocates them
@@ -222,11 +356,172 @@ not tell the first two apart, and getting that wrong deletes somebody's file."
   (directories '())     ; absolute pathnames to create
   (files '())           ; (absolute-path . contents), create-only
   (appends '())         ; (absolute-path . contents), between markers
+  ;; DES-0044 D1. What an update mode rewrites: (absolute-path . contents),
+  ;; written with :SUPERSEDE where FILES is written with :ERROR. A third list
+  ;; rather than a flag on FILES, because the two carry opposite guarantees --
+  ;; FILES may not exist and REPLACES must.
+  (replaces '())
+  (update nil)          ; this run refreshes rather than creates
   (skipped '())         ; (relative-path . why) -- declined or already there
   (problems '()))
 
+(defun update-state (root relative rendered-now &key region)
+  "What a refresh may do to RELATIVE, and why. DES-0044 D5.
+
+Four states, tested in this order:
+
+    :current   the file on disk is what today's template renders -- nothing
+               to do, and tested first so an up-to-date tree says so rather
+               than rewriting identical bytes
+    :replace   the file on disk is what Loom recorded writing, and the render
+               has moved. R3's byte-identical test, passing
+    :unproven  the manifest records no digest for this path, so the test
+               cannot run. Every tree prepared before DES-0044
+    :refused   the file differs from what Loom recorded writing (R3), or a
+               CLAUDE.md region has no author marker (R4)
+
+REGION is Loom's half of a marked region, for CLAUDE.md: the digest compared is
+of that half rather than of the file, because the author's half is expected to
+differ and must not make the file look modified."
+  (let* ((path (merge-pathnames relative (pathname-as-directory root)))
+         (contents (and (probe-file path)
+                        (handler-case (read-file path) (error () nil))))
+         (subject (or region contents))
+         (recorded (manifest-digest root "rendered"
+                                    (if region (format nil "~a (region)" relative) relative))))
+    (cond ((null contents) (values :unproven "the file is not there"))
+          ((string= (fnv-1a subject) (fnv-1a rendered-now))
+           (values :current "already current"))
+          ((null recorded)
+           (values :unproven
+                   "no digest recorded -- this tree was prepared before Loom kept one, \
+so it cannot be shown to be unmodified"))
+          ((string= (fnv-1a subject) recorded)
+           (values :replace "matches what Loom last wrote"))
+          (t (values :refused
+                     "differs from what Loom last wrote, so replacing it would \
+discard somebody's edit")))))
+
 (defun marked-region-p (contents)
   (and contents (search *marker-begin* contents) t))
+
+(defun loom-half (contents)
+  "The part of CONTENTS' region Loom owns, or NIL when it cannot be told.
+
+Two values, the half and whether an author marker was found, so that a caller
+can distinguish `there is no region' from `there is one and it has no author
+marker' -- the second is REQ-0052 R4's refusal and the first is not a refresh's
+business at all."
+  (multiple-value-bind (before mine yours found) (split-marked-region contents)
+    (declare (ignore before yours))
+    (values mine found)))
+
+(defun replace-loom-half (contents new-half)
+  "CONTENTS with Loom's half of the region replaced by NEW-HALF.
+
+Byte for byte everywhere else, which is the whole promise: the author's half is
+copied rather than rewritten, and the text outside the region is not read."
+  (let* ((begin (search *marker-begin* contents))
+         (yours (search *marker-yours* contents :start2 begin)))
+    (concatenate 'string
+                 (subseq contents 0 begin)
+                 new-half
+                 *marker-yours* (string #\Newline)
+                 (subseq contents (line-after contents yours)))))
+
+(defun plan-refresh (root &key replace-unproven name)
+  "What refreshing an already-prepared ROOT would do. REQ-0052 R2, DES-0044 D1.
+
+A planner of its own rather than a mode inside PLAN-PREPARATION, because the
+two share almost nothing: a refresh makes no directory, allocates no id, writes
+no document, and rewrites three files that must already exist where the other
+writes files that must not. R7 is then structural -- there is no code path here
+that names the document directory -- rather than a conditional somebody could
+delete.
+
+The substitutions come from the manifest, not from arguments. A refresh must
+render what this tree was prepared with, and a caller passing a different
+endpoint would silently rewrite the tree to point somewhere else."
+  (let* ((root (pathname-as-directory (or (probe-file root) root)))
+         (manifest (read-manifest root))
+         (name (or name (getf manifest :repository)
+                   (car (last (pathname-directory root))) "repository"))
+         (document-directory (or (getf manifest :document-directory) "docs"))
+         (endpoint (or (getf manifest :endpoint) *default-endpoint*))
+         (concept-id (or (getf manifest :workflow-concept) "CON-0001"))
+         (substitutions (list "DOCUMENT-DIRECTORY" document-directory
+                              "ENDPOINT" endpoint
+                              "ENDPOINT_URL" (format nil "http://~a" endpoint)
+                              "REPOSITORY-NAME" name
+                              "CONCEPT-ID" concept-id))
+         (prep (make-preparation :root root :name name :update t
+                                 :document-directory document-directory
+                                 :endpoint endpoint :concept-id concept-id)))
+    (flet ((skip (path why) (push (cons path why) (prep-skipped prep)))
+           (replace-file (path contents) (push (cons path contents) (prep-replaces prep))))
+      ;; --- the two whole files ------------------------------------
+      (dolist (entry '((".claude/skills/loom/SKILL.md" . "loom-skill.md")
+                       (".mcp.json" . "mcp.json")))
+        (let* ((relative (car entry))
+               (path (merge-pathnames relative root))
+               (rendered (render-template (cdr entry) substitutions)))
+          (multiple-value-bind (state why) (update-state root relative rendered)
+            (case state
+              (:current (skip relative "already current"))
+              (:replace (replace-file path rendered))
+              (:unproven (if replace-unproven
+                             (replace-file path rendered)
+                             (skip relative why)))
+              (t (skip relative why))))))
+      ;; --- the CLAUDE.md region -----------------------------------
+      ;; The only one of the three that is shared with an author, and the only
+      ;; one where a refresh can be refused for a reason other than an edit.
+      (let* ((relative "CLAUDE.md")
+             (path (merge-pathnames relative root))
+             (existing (and (probe-file path)
+                            (handler-case (read-file path) (error () nil))))
+             (rendered (render-template "claude-md-pointer.md" substitutions)))
+        ;; MULTIPLE-VALUE-BIND over an AND would drop the second value -- AND
+        ;; returns only its last form's primary -- so the absent-file case is
+        ;; tested before the split rather than folded into it.
+        (multiple-value-bind (mine found)
+            (if existing (loom-half existing) (values nil nil))
+          (cond
+            ((null existing) (skip relative "there is no CLAUDE.md to refresh"))
+            ((null mine)
+             (skip relative "carries no complete Loom region"))
+            ((not found)
+             ;; REQ-0052 R4. The state every tree prepared before DES-0044 is
+             ;; in. Naming the line counts rather than saying "cannot" alone:
+             ;; the reader has to find where their own text starts, and the
+             ;; size of the difference is the useful half of that.
+             ;; "Move your sections below it", not "add it where your text
+             ;; begins". Measured on game-server: the author's four sections are
+             ;; interleaved with Loom's, so there is no single place the marker
+             ;; goes. The line counts are the useful half -- they say how much of
+             ;; the region is not accounted for by today's template.
+             (skip relative
+                   (format nil "the region has no ~a marker, so Loom cannot tell its ~
+own text from yours. Add it and move anything you wrote below it, then run ~
+--update again (~d lines in the region; today's template renders ~d)"
+                           *marker-yours*
+                           (count #\Newline mine)
+                           (count #\Newline (or (loom-half rendered) "")))))
+            (t
+             (multiple-value-bind (state why)
+                 (update-state root relative (loom-half rendered) :region mine)
+               (case state
+                 (:current (skip relative "already current"))
+                 (:replace (replace-file
+                            path (replace-loom-half existing (loom-half rendered))))
+                 (:unproven (if replace-unproven
+                                (replace-file
+                                 path (replace-loom-half existing (loom-half rendered)))
+                                (skip relative why)))
+                 (t (skip relative why))))))))
+      (setf (prep-replaces prep) (nreverse (prep-replaces prep))
+            (prep-skipped prep) (nreverse (prep-skipped prep)))
+      prep)))
 
 (defun plan-preparation (root &key (document-directory "docs")
                                    (endpoint *default-endpoint*)
@@ -350,6 +645,60 @@ and leaves the tree exactly as it was."
             (prep-problems prep) (nreverse (prep-problems prep)))
       prep)))
 
+(defun apply-refresh (prep)
+  "Write what PLAN-REFRESH planned. Returns the relative paths it rewrote.
+
+The manifest is written LAST here, and first on the create path, and the
+inversion is deliberate rather than an oversight -- this file's header says the
+manifest goes first so a run that dies halfway leaves removal something to work
+from, and that argument is about paths, which a refresh does not change. What a
+refresh writes into the manifest is digests, and a digest recorded before the
+bytes it describes is a claim that the file on disk is current when it is not.
+UPDATE-STATE would then read it, answer :CURRENT, and never fix the file. So the
+create path records intent before acting and the refresh path records fact after
+it. Do not \"correct\" this back."
+  (let ((root (prep-root prep)))
+    (dolist (pair (prep-replaces prep))
+      (with-open-file (out (car pair) :direction :output :if-exists :supersede
+                                      :if-does-not-exist :create)
+        (write-string (cdr pair) out)))
+    (when (prep-replaces prep)
+      (let ((manifest (read-manifest root))
+            (sections (manifest-sections root)))
+        (write-manifest
+         root (manifest-scalars manifest)
+         (list (cons "created" (cdr (assoc "created" sections :test #'string=)))
+               (cons "rendered" (refreshed-digests prep sections))
+               (cons "templates" (template-digests))))))
+    (mapcar (lambda (pair) (workspace-relative-path (car pair) root))
+            (prep-replaces prep))))
+
+(defun refreshed-digests (prep sections)
+  "The `rendered:' list with this refresh's entries replacing their old ones.
+
+Entries for paths this run did not touch are carried forward unchanged. A
+refresh that rewrote two of three files must not drop the third's digest, or
+the next run reads it as unproven and asks a question it already has the answer
+to."
+  (let* ((root (prep-root prep))
+         (new (loop for (path . contents) in (prep-replaces prep)
+                    collect (let ((relative (workspace-relative-path path root)))
+                              (if (string= "CLAUDE.md" relative)
+                                  ;; The region's digest, not the file's: the
+                                  ;; author's half is expected to differ.
+                                  (manifest-entry (format nil "~a (region)" relative)
+                                                  (fnv-1a (loom-half contents)))
+                                  (manifest-entry relative (fnv-1a contents))))))
+         (names (mapcar (lambda (entry)
+                          (subseq entry 0 (position #\Space entry :from-end t)))
+                        new)))
+    (append (remove-if (lambda (entry)
+                         (let ((space (position #\Space entry :from-end t)))
+                           (and space (member (subseq entry 0 space) names
+                                              :test #'string=))))
+                       (cdr (assoc "rendered" sections :test #'string=)))
+            new)))
+
 (defun apply-preparation (prep)
   "Write what PREP planned. Returns the relative paths it created or changed.
 
@@ -388,18 +737,19 @@ wanted."
                                               (string-right-trim
                                                "/" (workspace-relative-path dir root))))
                                     made))))
-    (let ((manifest (manifest-path root)))
-      (ensure-directories-exist manifest)
-      (with-open-file (out manifest :direction :output :if-exists :supersede
-                                    :if-does-not-exist :create)
-        (write-string (render-manifest
-                       (list :repository (prep-name prep)
-                             :document-directory (prep-document-directory prep)
-                             :endpoint (prep-endpoint prep)
-                             :workflow-concept (prep-concept-id prep)
-                             :claude-md (claude-md-disposition prep))
-                       planned)
-                      out)))
+    (write-manifest root
+                    (list :repository (prep-name prep)
+                          :document-directory (prep-document-directory prep)
+                          :endpoint (prep-endpoint prep)
+                          :workflow-concept (prep-concept-id prep)
+                          :claude-md (claude-md-disposition prep))
+                    (list (cons "created" planned)
+                          ;; DES-0044 D4 and R6. What was written, and what it
+                          ;; was rendered from, so a later refresh can ask
+                          ;; whether the file on disk is still Loom's rather
+                          ;; than assume it.
+                          (cons "rendered" (prep-digests prep))
+                          (cons "templates" (template-digests))))
     (dolist (pair (prep-files prep))
       (ensure-directories-exist (car pair))
       (with-open-file (out (car pair) :direction :output :if-exists :error
@@ -411,9 +761,42 @@ wanted."
         (format out "~%~a" (cdr pair))))
     planned))
 
+(defun refresh-repository (root &key replace-unproven apply-changes name)
+  "Refresh an already-prepared ROOT. REQ-0052 R1, DES-0044 D1. Returns a report.
+
+Dry run unless APPLY, which is REQ-0052 R2 read literally: a refresh reports
+what it would change and writes nothing until told to. The default is the safe
+one for the reason R2 gives -- this run's writes are over text that already
+exists -- and it is the convention `complete' already set in this tree, where a
+transition with no verdicts has done nothing.
+
+:WOULD-REPLACE is what a dry run answers with and :REPLACED is what an applied
+run answers with. Two keys rather than one plus a flag, so a caller cannot read
+a plan as an outcome."
+  (let ((root (pathname-as-directory (or (probe-file root) root))))
+    (if (not (prepared-p root))
+        (list :repository (or name (car (last (pathname-directory root))))
+              :root (namestring root) :update t
+              :problems (list (format nil "~a carries no Loom manifest, so there is ~
+nothing to refresh. Run init without --update to prepare it." root))
+              :replaced '() :would-replace '() :skipped '())
+        (let* ((prep (plan-refresh root :replace-unproven replace-unproven :name name))
+               (planned (mapcar (lambda (pair)
+                                  (workspace-relative-path (car pair) (prep-root prep)))
+                                (prep-replaces prep))))
+          (list :repository (prep-name prep)
+                :root (namestring (prep-root prep))
+                :update t
+                :problems '()
+                :dry-run (not apply-changes)
+                :replaced (if apply-changes (apply-refresh prep) '())
+                :would-replace (if apply-changes '() planned)
+                :skipped (prep-skipped prep))))))
+
 (defun prepare-repository (root &key (document-directory "docs")
                                      (endpoint *default-endpoint*)
                                      (append-claude-md nil)
+                                     update replace-unproven apply-changes
                                      name)
   "Prepare ROOT for the Loom workflow. Returns a report plist.
 
@@ -422,14 +805,30 @@ already-prepared tree changes nothing and says so, which is REQ-0021 R11 and
 R17 -- and is decided by the manifest rather than by inspecting the tree, so a
 half-removed preparation is still recognised as one.
 
+UPDATE is REQ-0052 R1: refresh a tree already prepared, rather than report that
+it is. One operation with a mode rather than a second verb, because two commands
+writing the same four files can disagree (DES-0044 D1). Without it the behaviour
+is exactly what it was, because refusing to overwrite is right for a first run.
+
 APPEND-CLAUDE-MD is R16's second consent and arrives as an argument because
-this function must be callable from a script, a test and the service. The
-asking belongs where a terminal is."
-  (if (prepared-p root)
-      (list :repository (or name (car (last (pathname-directory (pathname-as-directory root)))))
-            :root (namestring (pathname-as-directory root))
-            :already-prepared t :problems '() :created '()
-            :manifest (read-manifest root))
+this function must be callable from a script, a test and the service.
+REPLACE-UNPROVEN is R16's third, for a file whose digest the manifest never
+recorded (DES-0044 D5). The asking belongs where a terminal is.
+
+APPLY-CHANGES turns an update from a dry run into a write. REQ-0052 R2, and the
+same default `complete' uses: a refresh with nothing said about applying has
+done nothing. Named in full rather than APPLY, which is an external symbol of
+COMMON-LISP and cannot be bound as a variable under SBCL's package lock -- the
+compile-time failure ENTITY-TYPE carries the same note about one file over."
+  (cond
+    (update (refresh-repository root :replace-unproven replace-unproven
+                                     :apply-changes apply-changes :name name))
+    ((prepared-p root)
+     (list :repository (or name (car (last (pathname-directory (pathname-as-directory root)))))
+           :root (namestring (pathname-as-directory root))
+           :already-prepared t :problems '() :created '()
+           :manifest (read-manifest root)))
+    (t
       (let ((prep (plan-preparation root
                                     :document-directory document-directory
                                     :endpoint endpoint
@@ -449,7 +848,7 @@ asking belongs where a terminal is."
                   :workflow-concept (prep-concept-id prep)
                   :endpoint (prep-endpoint prep)
                   :created (apply-preparation prep)
-                  :skipped (prep-skipped prep))))))
+                  :skipped (prep-skipped prep)))))))
 
 ;;;; ==================================================================
 ;;;; Taking Loom back out (REQ-0021 R13, DES-0022 S4)
@@ -472,34 +871,74 @@ asking belongs where a terminal is."
 :ALL additionally removes the documents init itself wrote -- the workflow
 concept and the generated architecture documents -- and nothing else.")
 
-(defun manifest-created-paths (root)
-  "The relative paths the manifest records init as having created.
-Read from the `created:' list, which APPLY-PREPARATION writes before it writes
-the files, so a run that died halfway still has something to work from."
+(defun manifest-sections (root)
+  "Every list-valued section of ROOT's manifest, as (header . entries).
+
+One scan for all of them rather than one scan per header, because a rewrite has
+to carry forward the sections it is not changing and re-reading the file per
+section would let two of them disagree about what it said.
+
+A header absent from the file is absent from this alist, which is how a
+manifest written before DES-0044 is told from one whose `rendered:' list is
+genuinely empty. The refresh reads that difference: no section at all means no
+digest was ever recorded, and that is `unproven' rather than `modified'."
   (let ((path (manifest-path root)))
     (when (probe-file path)
       (let ((contents (handler-case (read-file path) (error () nil)))
-            (paths '())
-            (in-list nil))
+            (sections '())
+            (current nil))
         (when contents
           (loop with start = 0
                 with length = (length contents)
                 while (< start length)
                 do (multiple-value-bind (end next) (line-end contents start)
-                     (let ((line (subseq contents start end)))
-                       (cond ((and (>= (length line) 8)
-                                   (string= "created:" line :end2 8))
-                              (setf in-list t))
-                             ((and in-list (>= (length line) 4)
+                     (let* ((line (subseq contents start end))
+                            (header (and (plusp (length line))
+                                         (not (whitespace-char-p (char line 0)))
+                                         (let ((colon (position #\: line)))
+                                           (and colon
+                                                (= colon (1- (length (string-right-trim
+                                                                      '(#\Return) line))))
+                                                (subseq line 0 colon))))))
+                       (cond (header
+                              ;; A key with a colon and nothing after it is a
+                              ;; list header. A scalar line has a value, so the
+                              ;; colon is not last, which is what tells the two
+                              ;; apart without a list of known names.
+                              (setf current (cons header '()))
+                              (push current sections))
+                             ((and current (>= (length line) 4)
                                    (string= "  - " line :end2 4))
                               (push (string-trim '(#\" #\Space #\Return)
                                                  (subseq line 4))
-                                    paths))
-                             ((and in-list (plusp (length line))
+                                    (cdr current)))
+                             ((and (plusp (length line))
                                    (not (whitespace-char-p (char line 0))))
-                              (setf in-list nil))))
+                              (setf current nil))))
                      (setf start next)))
-          (nreverse paths))))))
+          (loop for (header . entries) in (nreverse sections)
+                collect (cons header (nreverse entries))))))))
+
+(defun manifest-created-paths (root)
+  "The relative paths the manifest records init as having created.
+Read from the `created:' list, which APPLY-PREPARATION writes before it writes
+the files, so a run that died halfway still has something to work from."
+  (cdr (assoc "created" (manifest-sections root) :test #'string=)))
+
+(defun manifest-digest (root header name)
+  "The digest the manifest records for NAME under HEADER, or NIL.
+
+Each entry is one string: the name, a space, and sixteen hex digits. One string
+rather than a nested map because MANIFEST-SECTIONS reads a list of strings and
+teaching the manifest reader nested YAML is more machinery than a digest is
+worth (DES-0044 D4)."
+  (loop for entry in (cdr (assoc header (manifest-sections root) :test #'string=))
+        for space = (position #\Space entry :from-end t)
+        when (and space (string= name (subseq entry 0 space)))
+          return (subseq entry (1+ space))))
+
+(defun manifest-entry (name digest)
+  (format nil "~a ~a" name digest))
 
 (defun cut-marked-region (contents)
   "Two values: CONTENTS with the Loom region removed, and whether one was found.
@@ -509,7 +948,14 @@ command applies to a status line and for the same reason: this is somebody
 else's file and the diff should show exactly what Loom put there leaving.
 
 The blank line the append introduced goes with it, so removing a pointer from a
-file that never had one is a no-op on the bytes rather than a stray newline."
+file that never had one is a no-op on the bytes rather than a stray newline.
+
+DES-0044 D6. Since the region gained a `loom:yours' marker, what lies between
+that marker and the end marker is the author's and outlives removal. The cut
+takes the begin marker through the end of the `loom:yours' line and the end
+marker's line, and keeps everything in between. A region with no `loom:yours'
+-- every tree prepared before DES-0044 -- is cut exactly as it was cut before,
+which is what makes this safe to ship at those trees."
   (let ((begin (search *marker-begin* contents)))
     (if (null begin)
         (values contents nil)
@@ -528,8 +974,16 @@ file that never had one is a no-op on the bytes rather than a stray newline."
                      (before (if (and (plusp begin)
                                       (char= #\Newline (char contents (1- begin))))
                                  (1- begin)
-                                 begin)))
+                                 begin))
+                     (yours (search *marker-yours* contents :start2 begin :end2 end))
+                     ;; The author's half, or "" where there is no marker to have
+                     ;; written it below. Taken before the cut so the two cases
+                     ;; differ in this value alone.
+                     (kept (if yours
+                               (subseq contents (line-after contents yours) end)
+                               "")))
                 (values (concatenate 'string (subseq contents 0 before)
+                                     kept
                                      (subseq contents after))
                         t)))))))
 

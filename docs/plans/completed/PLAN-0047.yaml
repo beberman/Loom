@@ -1,0 +1,252 @@
+id: PLAN-0047
+title: "Eight steps for DES-0044: the manifest learns to hold a list, the region gains a third marker, removal stops eating the author's half, and init gains a mode"
+status: final
+date: 2026-08-24
+refines: [DES-0044, REQ-0052]
+affects:
+  - plan-preparation
+  - apply-preparation
+  - remove-preparation
+  - cut-marked-region
+  - read-manifest
+  - render-manifest
+tags: [init, templates, foreign-tree, req-0052, des-0044]
+summary: |
+  S1 generalises the manifest's list scanner so `rendered:` and `templates:`
+  can join `created:`. S2 writes the digests. S3 puts the `loom:yours` marker
+  in the template. S4 fixes removal, which would otherwise delete the author's
+  half the moment S3 lands. S5 classifies each generated file. S6 is the update
+  mode through the planner and the applier. S7 carries it to the three
+  surfaces. S8 is the tests, and S9 runs it against a copy of game-server --
+  the tree the requirement was measured on, copied rather than edited.
+
+  S4 before S5 is not cosmetic: S3 introduces a marker that makes today's
+  removal destructive, so the fix ships in the same tree state as the cause.
+body: |
+  BEFORE ANY STEP
+
+  Branch `req-0052`, cut from main at 2d22896. `tools/loom-test.sh` once first,
+  so a later failure is attributable.
+
+  Read `src/workspace/init.lisp` whole before editing it. It is 693 lines and
+  its header states three rules -- plan before applying, create rather than
+  edit, record before doing -- that this change bends the second of and must
+  keep the first and third of exactly.
+
+  S1  THE MANIFEST HOLDS ANY NAMED LIST  (src/workspace/init.lisp)
+
+  MANIFEST-CREATED-PATHS scans for a `created:` header followed by `  - "x"`
+  lines. Generalise it, keeping the behaviour identical for `created:`:
+
+      (defun manifest-list-section (root key))   ; key is a string: "created"
+      (defun manifest-created-paths (root))      ; = MANIFEST-LIST-SECTION "created"
+
+  RENDER-MANIFEST takes the lists as an alist of (header . entries) rather than
+  one CREATED argument, and emits them in a fixed order so a manifest rewritten
+  by RECORD-CREATED-PATH does not reorder its own sections.
+
+  RISK: RECORD-CREATED-PATH rebuilds the manifest from READ-MANIFEST's plist
+  and re-emits `created:` separately, filtering `:created` out of the scalars
+  because the line scan reads a valueless key as a scalar. Two more valueless
+  keys means two more to filter, and missing one writes `rendered: ""` into
+  somebody's manifest. Filter by membership in the section list, not by three
+  named EQ tests.
+
+  VERIFY: `tools/loom-test.sh`. S1 changes no observable behaviour; a green
+  suite plus an unchanged manifest on a scratch init is the whole check.
+
+  S2  DIGESTS, WRITTEN  (src/workspace/init.lisp)
+
+  APPLY-PREPARATION computes FNV-1A of the bytes it writes for each entry in
+  PREP-FILES, and of each template file it rendered from, and records them:
+
+      rendered:   relative path, space, digest of what was written
+      templates:  template name, space, digest of the unrendered file
+
+  FNV-1A is in workspace.lisp and is not exported from loom-workspace; it does
+  not need to be, since init.lisp is in the same package. Do not define a
+  second hash.
+
+  CLAUDE.md is in `rendered:` only when Loom created the whole file. An
+  appended CLAUDE.md has no whole-file digest that means anything, and its
+  region is handled by S3's marker rather than by a digest -- record the digest
+  of the region text Loom appended, under the path `CLAUDE.md (region)`, which
+  is the spelling REMOVE-PREPARATION already prints.
+
+  VERIFY: init a scratch tree, read `.loom/manifest.yaml`, confirm both lists
+  are present and that each digest is sixteen hex digits. Then re-run the same
+  render and confirm the digest reproduces.
+
+  S3  THE THIRD MARKER  (src/workspace/init.lisp, templates/claude-md-pointer.md)
+
+      (defparameter *marker-yours* "<!-- loom:yours -->")
+
+  The template gains, immediately above `<!-- loom:end -->`, the marker and one
+  line saying what it is for -- that text below it is the reader's and Loom will
+  not touch it.
+
+  Two readers of the region, both new:
+
+      (defun split-marked-region (contents))
+        => four values: before, loom's half, the author's half, found-p
+
+  A region with no `loom:yours` returns the author's half as NIL and that is
+  what S5 classifies as `refused`.
+
+  RISK: the template already contains `loom:begin` and `loom:end`, so
+  RENDER-TEMPLATE's `{{KEY}}` substitution runs over text containing markers.
+  It always has. Confirm no substitution key can produce a marker -- none can,
+  they are all names and paths -- and leave it.
+
+  VERIFY: a scratch init writes a CLAUDE.md whose region has all three markers
+  in order, with nothing between `loom:yours` and `loom:end` but the one
+  explanatory line.
+
+  S4  REMOVAL STOPS AT THE AUTHOR'S HALF  (src/workspace/init.lisp)
+
+  DES-0044 D6. CUT-MARKED-REGION today excises `loom:begin` through
+  `loom:end`. After S3 that span contains the author's text, so removal becomes
+  destructive the moment S3 ships.
+
+  New behaviour, in one function:
+
+    - `loom:yours` present: cut `loom:begin` through the `loom:yours` line
+      inclusive, drop the `loom:end` line, keep everything between them.
+    - `loom:yours` absent: today's behaviour exactly, byte for byte.
+
+  The blank-line handling stays as it is: removing a pointer from a file that
+  never had one is a no-op on the bytes.
+
+  RISK: this is the step that can delete somebody's prose, and it is the step
+  with the least natural test coverage -- removal is tested on files Loom
+  created, where the author's half is empty. Write S8's removal tests against a
+  region with text after the marker before writing this code, not after.
+
+  VERIFY: `tools/loom-test.sh`, plus a scratch tree where text is added after
+  `loom:yours` by hand, `remove ... tooling` is run, and the text is still
+  there with the three marker lines gone.
+
+  S5  CLASSIFY EACH GENERATED FILE  (src/workspace/init.lisp)
+
+      (defun classify-generated-file (root relative rendered-now manifest))
+        => :current | :replace | :unproven | :refused, and a reason string
+
+  DES-0044 D5's four states:
+
+      current    digest of the file on disk = digest of RENDERED-NOW
+      replace    digest of the file on disk = the manifest's recorded digest
+      unproven   the manifest records no digest for this path
+      refused    the file differs from the recorded digest (R3), or -- for
+                 CLAUDE.md -- the region has no `loom:yours` (D3)
+
+  Order matters: `current` is tested first, so a tree already up to date says
+  so rather than saying `replace` and rewriting identical bytes.
+
+  For CLAUDE.md the digest compared is of Loom's half of the region, not of the
+  file, because the author's half is expected to differ and must not make the
+  file look modified.
+
+  VERIFY: a REPL exercise over a scratch tree hitting all four states, before
+  any of it is wired to a command.
+
+  S6  THE UPDATE MODE  (src/workspace/init.lisp)
+
+  PLAN-PREPARATION takes `update`. In update mode:
+
+    - Directories and the workflow concept are not planned at all. R7 and
+      DES-0044 D7: a refresh touches three generated files and the manifest.
+    - Each of SKILL.md, .mcp.json and CLAUDE.md is classified by S5 and lands
+      on a new PREP-REPLACES list, or on PREP-SKIPPED with its reason.
+    - An `unproven` file lands on PREP-REPLACES only when `replace-unproven` is
+      passed; otherwise it is skipped with the reason and its diff.
+
+  APPLY-PREPARATION writes PREP-REPLACES with `:if-exists :supersede`, and for
+  CLAUDE.md writes the reassembled file: before + new Loom half + marker +
+  author's half + end. It rewrites the manifest with the new digests.
+
+  PREPARE-REPOSITORY stops returning `:already-prepared t` when `update` is
+  passed, and returns a report carrying `:replaced`, `:skipped` and
+  `:already-current`.
+
+  RISK: the manifest is written before the files, which is the header's third
+  rule and is right for a create. For a refresh a manifest written first
+  records digests of bytes not yet on disk, and a run that dies between them
+  leaves a manifest claiming a file is current when it is not -- which S5 would
+  then classify `current` and never fix. So on the update path the manifest is
+  written *last*. State this in the code as the deliberate inversion it is,
+  with the reason, or the next reader will "fix" it back.
+
+  VERIFY: a scratch tree, prepared, template edited, `--update` run twice. The
+  first refreshes, the second reports everything current and writes nothing.
+
+  S7  THE THREE SURFACES  (operations.lisp, console.lisp, tools/loom-init.sh)
+
+      (define-operation :init :write (path (document-directory) (endpoint)
+                                            (append-claude-md) (update)
+                                            (replace-unproven)))
+
+      init "<dir>" [<docs>] [claude-md] [<host:port>] [update]
+
+  `tools/loom-init.sh` gains `--update`, and asks REQ-0021 R16's third question
+  at the terminal when the plan reports an unproven file, printing the diff
+  first. A non-interactive caller passes `--replace-unproven` or gets the skip.
+
+  The skip list printed at an already-prepared tree names the flag, which is
+  DES-0044 D1's discoverability argument and the reason a second verb was not
+  needed.
+
+  RISK: the console's `init` takes positional arguments and a fifth positional
+  reads badly. Use a flag token the way `describe --source` does, and refuse an
+  unrecognised token rather than ignoring it -- BUG-0046's shape.
+
+  VERIFY: `--update` over REST and through the console against a scratch tree,
+  and `loom_init` absent from MCP still (it is deliberately not an MCP tool).
+
+  S8  TESTS  (src/workspace/test/init.lisp)
+
+  CON-0003: each must fail without the step it covers.
+
+    - MANIFEST-LIST-SECTION reads `created:` identically to before, and reads a
+      second list beside it. Fails without S1.
+    - A prepared tree's manifest carries a digest per rendered file and per
+      template, and the digest reproduces from the same render. Fails without S2.
+    - A fresh init's CLAUDE.md region carries all three markers in order.
+      Fails without S3.
+    - **Removal keeps text written after `loom:yours`** and removes all three
+      marker lines. Fails without S4, and this is the test that stops the
+      change destroying somebody's file.
+    - Removal of a region with no `loom:yours` is byte-identical to today.
+      Fails if S4 generalised too far.
+    - The four classifications, one test each, over a scratch tree.
+    - A refresh replaces Loom's half and leaves the author's half byte for
+      byte. The assertion is on the author's bytes, not on Loom's.
+    - A refresh of a region with no `loom:yours` changes nothing and names the
+      file. R4.
+    - A refresh touches no file under the document directory. R7.
+    - A second refresh reports current and writes nothing.
+
+  VERIFY: `tools/loom-test.sh`, ten systems.
+
+  S9  AGAINST THE TREE IT WAS MEASURED ON
+
+  REQ-0052's evidence is game-server: a 192-line region against a 106-line
+  template, and a SKILL.md that was byte-identical to its rendering.
+
+  Copy game-server to the scratchpad. Do not run this against the working tree
+  -- the requirement is about not destroying an author's text and the first run
+  of the code that promises it is not where to prove it.
+
+  On the copy: run `--update`, confirm CLAUDE.md is refused by name with the
+  region line counts, confirm SKILL.md is classified `unproven` (no digest,
+  prepared before S2), confirm `--replace-unproven` replaces it, and diff the
+  result against a hand-render of the template to confirm they agree.
+
+  Then the standing floors: `tools/loom-test.sh` green, `tools/loom.sh 'check'`
+  reporting no violations, `tools/test/acceptance.py` at or above 42/44.
+
+  WHAT THIS PLAN DOES NOT DO
+
+  No automatic placement of markers in an existing region -- DES-0044 D2
+  rejected the heuristic. No refresh of the workflow concept document -- D7. No
+  merge of Loom's text with an author's -- the halves are replaced and copied,
+  never reconciled.
