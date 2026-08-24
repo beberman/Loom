@@ -103,15 +103,6 @@ not walked at all, and the allowlist has been redundant insurance since."
 ;;;; Reading the text: fences, headings, spans, links (DES-0016 D5)
 ;;;; ==================================================================
 
-(defun text-lines (string)
-  "STRING split on newlines, with any carriage returns stripped."
-  (let ((lines '()) (start 0))
-    (loop for pos = (position #\Newline string :start start)
-          do (push (string-right-trim '(#\Return) (subseq string start (or pos (length string))))
-                   lines)
-             (if pos (setf start (1+ pos)) (return)))
-    (nreverse lines)))
-
 (defun fence-delimiter-p (line)
   "The fence marker LINE opens or closes with, or NIL.
 Three or more backticks or tildes, per CommonMark. The marker is returned so a
@@ -133,11 +124,19 @@ around: the author wrote an opening fence and no closing one, and everything
 after it is inside a code block."
   (let ((open nil)
         (kept '()))
-    (dolist (line lines (nreverse kept))
-      (let ((delimiter (fence-delimiter-p line)))
-        (cond (open (when (eql delimiter open) (setf open nil)))
-              (delimiter (setf open delimiter))
-              (t (push line kept)))))))
+    ;; MAP NIL rather than DOLIST since PLAN-0036 S3: LINES arrives from
+    ;; UTILS:STRING-LINES as a vector where Loom's own TEXT-LINES returned a
+    ;; list. The return stays a list, which is what keeps the change to one
+    ;; boundary -- FIRST-HEADING walks it with LOOP ... ON, LINE-LINK-TARGETS
+    ;; with LOOP ... IN, and two call sites join it with ~{~}, none of which
+    ;; accepts a vector.
+    (map nil (lambda (line)
+               (let ((delimiter (fence-delimiter-p line)))
+                 (cond (open (when (eql delimiter open) (setf open nil)))
+                       (delimiter (setf open delimiter))
+                       (t (push line kept)))))
+         lines)
+    (nreverse kept)))
 
 (defun first-heading (lines)
   "The first level-1 heading in LINES, or NIL.
@@ -366,7 +365,7 @@ file. REQ-0014 R3 asks for backticks and links, which is what this reads."
              when (identifier-shaped-token-p token)
                collect (string-downcase token))
        :test #'string=)))
-  (let* ((lines (unfenced-lines (text-lines contents)))
+  (let* ((lines (unfenced-lines (string-lines contents)))
          (text (format nil "~{~a~^~%~}" lines))
          (found '()))
     (dolist (span (code-span-contents text))
@@ -387,7 +386,7 @@ there, which is checkable and is a defect.
 
 Fences are excluded here as they are for spans: a link inside a code fence is a
 specimen of a link, not one."
-  (let* ((lines (unfenced-lines (text-lines contents)))
+  (let* ((lines (unfenced-lines (string-lines contents)))
          (text (format nil "~{~a~^~%~}" lines))
          (found '()))
     (dolist (target (append (link-targets text) (line-link-targets lines)))
@@ -446,7 +445,7 @@ supersedes:, refines:. A markdown file declares none of them, and that absence
 is what keeps `unresolved' at zero: RESOLVE-DOCUMENT-LINKS only reports a name
 that a *declared* field promised would resolve."
   (declare (ignore analyzer))
-  (let* ((lines (text-lines contents))
+  (let* ((lines (string-lines contents))
          (title (or (first-heading (unfenced-lines lines))
                     (title-from-path path)))
          (entity (make-instance 'document-entity

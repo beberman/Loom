@@ -161,7 +161,7 @@ body: |
   CONTENT-FINGERPRINT in this stage, and the Python one gets a test against a
   known non-ASCII vector rather than a comment claiming it agrees.
 
-  S3  TEXT-LINES, WHICH RETURNS THE OTHER SHAPE
+  S3  TEXT-LINES, WHICH RETURNS THE OTHER SHAPE  -- DONE, 2026-08-23
 
   markdown-analyzer.lisp's TEXT-LINES returns a list; STRING-LINES returns a
   vector. Three callers -- markdown-mentions, markdown-link-targets, analyze-file
@@ -171,7 +171,18 @@ body: |
 
   Test: the markdown analyzer's existing suite, unchanged, is the whole check.
 
-  S4  THE TWO PREDICATES THAT DISAGREE AT THE EDGE
+  DONE. The change is narrower than the stage predicted. UNFENCED-LINES is the
+  only function that had to move: it walked its argument with DOLIST and now
+  walks it with MAP NIL, and it still *returns* a list, which is what confines
+  the vector to one boundary. FIRST-HEADING reads its output with LOOP ... ON,
+  LINE-LINK-TARGETS with LOOP ... IN, and two call sites join it with ~{~} --
+  none of the three accepts a vector, and none of the three had to change.
+
+  So the three callers the stage named were not where the work was. The
+  compiler would not have caught it either way, which is the stage's own
+  argument; what caught it was reading the two contracts side by side.
+
+  S4  THE TWO PREDICATES THAT DISAGREE AT THE EDGE  -- DONE, 2026-08-23
 
   PLIST-SHAPED-P requires a non-empty list; UTILS:PLISTP answers T for NIL, and
   says in its docstring that this asymmetry with ALISTP is deliberate. JSON-VALUE
@@ -186,7 +197,24 @@ body: |
   not happen: an inspectable guess that has lost its record of being a guess is
   worse than the duplicate.
 
-  S5  THE CONTEXT LOG'S JSON
+  DONE, and the prescribed swap was wrong in one detail. `(and x (plistp ...))'
+  cannot fire: JSON-VALUE's own (NULL X) clause returns before the plist clause
+  is reached, and has since BUG-0028 gave NIL three meanings to separate. The
+  empty-list asymmetry this stage was written around is handled one clause
+  higher, so the guard would have been untested code carrying a false claim
+  about why it existed.
+
+  Established by removing it and running the suite rather than by reading:
+  LOOM-SERVE stays green either way, and the test that would catch it --
+  `an-empty-impact-set-is-an-empty-array', asserting (:stale nil) encodes as
+  null -- passes with and without. The bare call landed, with the reason
+  recorded at the call site beside the moved docstring.
+
+  The comment did move, in full: the guess, the data it was measured against,
+  the two-element-keyword hole, *ARRAY-VALUED-KEYS* as the escape hatch, and
+  the test that asserts the misencoding on purpose.
+
+  S5  THE CONTEXT LOG'S JSON  -- BLOCKED, 2026-08-23
 
   ENCODE-RECORD-VALUE is the library's model already: alist is an object, any
   other proper list is an array, NIL is null. Two differences and both are
@@ -203,6 +231,19 @@ body: |
   That is the acceptance criterion for the whole stage, and tools/acceptance.py
   reads these files, so a key-spelling regression here is a Python-side break
   that no Lisp test sees.
+
+  BLOCKED, 2026-08-23, by that criterion failing on the current code. Building
+  the round-trip check first -- against the existing encoder, so the instrument
+  could be trusted before it judged a change -- found that 47 of 88 files in
+  .loom/context do not survive a decode and re-encode. Every difference is the
+  same one: `"truncated":false' comes back `"truncated":null', because
+  ENCODE-RECORD-VALUE writes :FALSE as `false' and JSON:DECODE-JSON maps both
+  `false' and `null' onto NIL.
+
+  BUG-0045 carries it. The stage is a substitution whose only acceptance is a
+  round trip that does not hold, so making the swap now would either attribute
+  a standing defect to it or hide one. S5 waits on the decision BUG-0045
+  states, which is a schema question rather than an encoder patch.
 
   WHAT THIS PLAN DOES NOT DO
 

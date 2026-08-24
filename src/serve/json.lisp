@@ -144,27 +144,6 @@ encoder honours.")
   "The singleton JSON-FALSE. A producer that means the literal `false' writes
 this where it would otherwise write NIL.")
 
-(defun plist-shaped-p (list)
-  "True when LIST should be read as a plist rather than as a sequence.
-
-A Lisp list is either a plist or a sequence and nothing in the value says
-which, so this is a guess and is written to be an inspectable one: non-empty,
-even length, every even-indexed element a keyword. Measured against the real
-data it holds -- a rule's :check property is (:kind :no-edge :from-system
-:loom-ontology :to-system :outside :rel-types (:calls :imports :depends-on)),
-whose outer form is an object and whose :rel-types is a three-element array.
-
-It has one known hole, recorded here rather than discovered later: a two-element
-list of keywords, such as a future rule with rel-types [calls, contains],
-satisfies this and encodes as {\"calls\":\"contains\"}. No such value exists in
-the tree today. *ARRAY-VALUED-KEYS* is the escape hatch when one does, and
-test/json.lisp asserts the misencoding on purpose -- CON-0001's posture, which
-is to record the ambiguity and name the instance rather than pretend the
-heuristic is sound."
-  (and (consp list)
-       (evenp (length list))
-       (loop for rest on list by #'cddr always (keywordp (car rest)))))
-
 (defun json-array (sequence)
   "SEQUENCE as a vector of encoded elements.
 
@@ -212,7 +191,40 @@ the parent's name down would make a NIL element of :impacted encode as []."
         ;; stops the next one from taking the service down with it.
         ((improper-list-p x) (princ-to-string x))
         ((and (listp x) (member key *array-valued-keys*)) (json-array x))
-        ((plist-shaped-p x) (json-object-from-plist x))
+        ;; PLAN-0036 S4. Was PLIST-SHAPED-P, whose docstring carried the
+        ;; reasoning below; UTILS:PLISTP is the same predicate with two
+        ;; differences that both have to be answered here rather than assumed.
+        ;;
+        ;; PLAN-0036 S4 prescribed `(and x (plistp x ...))' and never the bare
+        ;; call, because PLISTP answers T for the empty list where
+        ;; PLIST-SHAPED-P required a CONSP -- and NIL must encode as null
+        ;; rather than as {}. The guard is not here because it cannot fire: the
+        ;; (NULL X) clause above returns before this one is reached, and it has
+        ;; done since BUG-0028 gave NIL three meanings to separate.
+        ;;
+        ;; Verified rather than reasoned. Removing the guard and running the
+        ;; suite leaves LOOM-SERVE green, and the test that would catch it --
+        ;; `an-empty-impact-set-is-an-empty-array', asserting (:stale nil)
+        ;; encodes as null -- passes either way. A guard no test can fail
+        ;; without is untested code carrying a false claim about why it exists.
+        ;;
+        ;; :KEY-TEST #'KEYWORDP because PLISTP defaults to SYMBOLP, and a list
+        ;; of ordinary symbols is not what this encoder means by an object.
+        ;;
+        ;; The guess and its known hole, moved here from the deleted docstring
+        ;; because an inspectable guess that has lost its record of being a
+        ;; guess is worse than the duplicate it replaced. A Lisp list is either
+        ;; a plist or a sequence and nothing in the value says which. Measured
+        ;; against the real data it holds -- a rule's :check property, whose
+        ;; outer form is an object and whose :rel-types is a three-element
+        ;; array. The hole: a two-element list of keywords, such as a future
+        ;; rule with rel-types [calls, contains], satisfies this and encodes as
+        ;; {"calls":"contains"}. No such value exists in the tree today,
+        ;; *ARRAY-VALUED-KEYS* is the escape hatch when one does, and
+        ;; test/json.lisp asserts that misencoding on purpose -- CON-0001's
+        ;; posture, which is to record the ambiguity and name the instance
+        ;; rather than pretend the heuristic is sound.
+        ((plistp x :key-test #'keywordp) (json-object-from-plist x))
         ((listp x) (json-array x))
         ((vectorp x) (json-array x))
         ;; Anything else -- a pathname, a struct, a closure. A value reaching
