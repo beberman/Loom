@@ -102,6 +102,25 @@ A free-text `how` rather than a score, on purpose: "found three files from
 something the bundle returned" and "found by grepping the identifier" are
 different failures implying different repairs, and neither is a number.
 
+## Whether an answer is current
+
+An index is built by a watcher polling after a save, so an answer describes the
+tree as the last poll read it and not necessarily as it stands. Four surfaces
+say which tree that was — the commit the analyzer read, the branch, and a hash
+of the uncommitted diff. The commit distinguishes weeks; the diff hash
+distinguishes saves.
+
+    status, structure, context    drift: how many claimed files have changed
+                                  since the index read them. 0 is current.
+    describe                      file and file-stale: the same question about
+                                  the one file this entity is defined in.
+    find, impact, check, rules    nothing. Ask status when it matters.
+
+Do not compare a reported commit against `git rev-parse HEAD` instead. That
+answers a different question: the commit moves on `git commit` and the analyzer
+reads the working tree, so a commit agreeing with HEAD is consistent with an
+index built from entirely different bytes.
+
 ## What Loom cannot see
 
 It reports what it derived and says where it is blind, and both matter.
