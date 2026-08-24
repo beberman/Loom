@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Build known-item retrieval cases from a repository's own definitions.
 
-    sbcl --script tools/entity-dump.lisp /path/to/repo > repo.json
-    tools/make-cases.py repo.json ... > cases.json
+    sbcl --script tools/test/entity-dump.lisp /path/to/repo > repo.json
+    tools/test/make-cases.py repo.json ... > cases.json
 
-The 24 hand-written cases in tools/acceptance.py are the held-out set REQ-0036
+The 24 hand-written cases in tools/test/acceptance.py are the held-out set REQ-0036
 R11 protects, and nothing here touches them. These are a second instrument, an
 order of magnitude larger, whose ground truth is constructed rather than judged:
 a case is built *from* an entity, so the entity is by construction an answer to
@@ -32,7 +32,7 @@ each is biased in a direction worth naming.
 
 A case is (repository, query, expected-name, family). Recall is scored on the
 name, so a name several entities share is satisfied by any of them -- which is
-the same reading tools/acceptance.py's names_in uses.
+the same reading tools/test/acceptance.py's names_in uses.
 """
 
 import json

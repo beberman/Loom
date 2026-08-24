@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Run the generated known-item cases and report recall per family.
 
-    tools/recall.py cases.json               every case
-    tools/recall.py cases.json --limit 60     the first 60 of each family
-    tools/recall.py cases.json --json out.json   also write per-case results
+    tools/test/recall.py cases.json               every case
+    tools/test/recall.py cases.json --limit 60     the first 60 of each family
+    tools/test/recall.py cases.json --json out.json   also write per-case results
 
-A second instrument beside tools/acceptance.py, an order of magnitude larger.
+A second instrument beside tools/test/acceptance.py, an order of magnitude larger.
 The two measure different things and neither replaces the other. acceptance.py
 holds 24 hand-written cases whose answers a human judged, which REQ-0036 R11
 makes the held-out set; this holds cases built from the index itself, whose
-ground truth is constructed -- see tools/make-cases.py for the three families
+ground truth is constructed -- see tools/test/make-cases.py for the three families
 and the bias each carries.
 
 Recall is scored on the name, strict and lenient, exactly as acceptance.py's
@@ -53,7 +53,7 @@ def measured_against(seen):
 
     REQ-0050 R4. This harness drives a running service and reported 450 case
     results with nothing saying which build answered them. Its sibling
-    tools/acceptance.py asks the service for its status; this reads the
+    tools/test/acceptance.py asks the service for its status; this reads the
     provenance the bundles themselves now carry (REQ-0050 R1), which is the
     same fact from the answer rather than from a second call -- and it is
     per repository, because the cases span four trees and each has its own
@@ -169,9 +169,9 @@ def main():
         print(line)
     print()
     total = {"n": 0, "strict": 0, "lenient": 0}
-    # The three generated families first, in the order tools/make-cases.py
+    # The three generated families first, in the order tools/test/make-cases.py
     # builds them, then anything else the case file happens to hold. Hardcoding
-    # the triple printed nothing at all for tools/cases/mismatch.json, whose
+    # the triple printed nothing at all for tools/test/cases/mismatch.json, whose
     # family is `mismatch' and which no amount of reading the ALL line would
     # have revealed as absent rather than as zero.
     known = ("name", "inflected", "prose")

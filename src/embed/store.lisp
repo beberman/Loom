@@ -34,7 +34,7 @@ journey unchanged.")
 
 In Loom's own tree rather than the searched one: writing into game-server or
 front-end would put Loom's bookkeeping in somebody else's repository, and
-tools/acceptance.py depends on those corpora holding still. Under a
+tools/test/acceptance.py depends on those corpora holding still. Under a
 dot-directory, where REPOSITORY-FILES skips it before any analyzer is
 consulted, so the store cannot enter the index it serves."
   (merge-pathnames ".loom/vectors/"

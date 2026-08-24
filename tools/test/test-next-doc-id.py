@@ -14,7 +14,7 @@ one does.
 
 Run it directly:
 
-    tools/test-next-doc-id.py
+    tools/test/test-next-doc-id.py
 
 Exit status is 0 when every case holds. This is not part of the FiveAM suite --
 it tests a shell script, not Loom -- so tools/loom-test.sh does not run it.
@@ -25,8 +25,9 @@ import re
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(ROOT, "tools", "next-doc-id.sh")
+TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(TOOLS)
+SCRIPT = os.path.join(TOOLS, "next-doc-id.sh")
 DOCS = os.path.join(ROOT, "docs")
 
 failures = []

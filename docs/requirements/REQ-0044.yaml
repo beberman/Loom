@@ -9,7 +9,7 @@ tags: [evaluation, measurement, hygiene, req-0036]
 summary: |
   Two of the fifteen judgements in .loom/context say, in the free-text `how`
   field, "Exclude from any recall measurement." They were issued to check that
-  the log writes a record at all. Nothing reads that sentence: tools/acceptance.py
+  the log writes a record at all. Nothing reads that sentence: tools/test/acceptance.py
   counts both as judged records, and the corpus that REQ-0036 exists to build
   starts life with two entries that are not questions anybody asked.
 body: |
@@ -54,7 +54,7 @@ body: |
 
   ACCEPTANCE
 
-  tools/acceptance.py --log reports "15 judgements, 2 excluded, 3 scored" against
+  tools/test/acceptance.py --log reports "15 judgements, 2 excluded, 3 scored" against
   the current directory, and its recall figures are computed over the 13.
 
   EVIDENCE FROM USE, 2026-08-23
@@ -62,7 +62,7 @@ body: |
   The convention was misused twice in one session, by the same author, hours
   apart, having corrected it the first time.
 
-  `(nothing)' is one of three literal strings tools/acceptance.py reads out of
+  `(nothing)' is one of three literal strings tools/test/acceptance.py reads out of
   the `used' slot, and it means the correct answer was that nothing exists.
   Both misuses meant something else -- once "the rest of the bundle went
   unused", once "the answer was to make no change" -- and both silently

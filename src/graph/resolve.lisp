@@ -347,7 +347,7 @@ persist\' and one arrow in a mock."
 
 INDEX may be a bare hash table, which is what CALLABLE-INDEX returns and what
 every caller passed before DES-0015. That path is the old behaviour exactly,
-which is why tools/call-site-census.lisp keeps working unchanged and why a
+which is why tools/test/call-site-census.lisp keeps working unchanged and why a
 CALLER of NIL -- RESOLVE-GENERATED-DEFINITIONS asking whether a name reaches
 anything at all -- still gets the unrestricted answer.
 
@@ -1133,7 +1133,7 @@ orphaned definer name is worth a call site at all."
           ;; REQ-0015. The clauses above have already excluded every case with
           ;; a method or with exactly one interface, so two or more plain
           ;; functions is all that is left to test -- which is also exactly
-          ;; CLASSIFY-CALL's :AMBIGUOUS clause in tools/call-site-census.lisp,
+          ;; CLASSIFY-CALL's :AMBIGUOUS clause in tools/test/call-site-census.lisp,
           ;; and the two have to keep agreeing for the census to measure this
           ;; pass rather than something adjacent to it.
           ;;

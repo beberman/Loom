@@ -4,7 +4,7 @@
 ;;;; indexes its own tree, so a measuring script that defines REPORT or CLAUSE
 ;;;; puts those names into the callable index and changes the numbers it is
 ;;;; about to report -- which is exactly what happened to
-;;;; tools/call-site-census.lisp, whose REPORT and TALLY moved the resolving
+;;;; tools/test/call-site-census.lisp, whose REPORT and TALLY moved the resolving
 ;;;; count by 2 and the covered-unit count by 1 before they were renamed.
 ;;;; Verified here: promoting this file from the scratchpad into tools/ raised
 ;;;; the callable-name count from 789 to 808 and left "defined more than once"
@@ -23,7 +23,7 @@
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/package-census.lisp"
+(loom-harness:load-systems "tools/test/package-census.lisp"
                            :systems '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/" "workspace/" "process/")
                            :libraries '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem" "cl-json" "drakma")
                            :load :loom-workspace)

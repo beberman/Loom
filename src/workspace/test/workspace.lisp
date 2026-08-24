@@ -398,7 +398,7 @@ site is a graph that quietly quadruples, with nothing failing. This number is
 the guard, and it is meant to fail loudly rather than warn.
 
 162 measured plus 10% headroom. The three generators' populations on this tree,
-counted by tools/call-site-census.lisp after BUG-0020's keyword fix: 20 initform
+counted by tools/test/call-site-census.lisp after BUG-0020's keyword fix: 20 initform
 pairs, 124 resolving orphaned definer names, 18 ambiguous sites. PLAN-0014 step
 5 says to use step 1's sum, which was 170 -- but step 1 predates step 2, and 8
 of those 170 were the keyword-head orphans BUG-0020 removed. Using the stale
@@ -496,7 +496,7 @@ moves when something has gone wrong.
 
 RE-MEASURED 2026-08-18 AT 296, CEILING 326. Two causes, and only the second is
 this session's. Composition against the 2026-08-14 census, both from
-tools/call-site-census.lisp:
+tools/test/call-site-census.lisp:
 
     define-command      85 -> 110
     define-operation    72 ->  81

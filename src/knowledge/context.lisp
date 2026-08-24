@@ -52,7 +52,7 @@ bodies eat the bundle, measured there as 31 items for 3979 tokens naming 14 of
 is to exempt bodies rather than to ration them. Two allowances inside one total
 keeps the ordering and gives the caller a number that means something.
 
-A half, and PLAN-0045 S5 measured 1/3, 1/2 and 2/3 against tools/acceptance.py
+A half, and PLAN-0045 S5 measured 1/3, 1/2 and 2/3 against tools/test/acceptance.py
 on a service restarted for each. All three score 43 of 45 with the same two
 misses, fe-5 and r39-3, so recall does not choose between them:
 
@@ -1442,7 +1442,7 @@ waiting (ADMIT-SEEDS)."
     ;; Eight SEED-SCORE calls against a bundle that has already walked the graph
     ;; is not a cost the latency clauses can see.
     ;; Third value, not second: the record detail BUG-0037 fixed is the second
-    ;; and tools/acceptance.py reads it positionally. DES-0032 D2's report goes
+    ;; and tools/test/acceptance.py reads it positionally. DES-0032 D2's report goes
     ;; after it.
     (values chosen
             (loop for entity in chosen
@@ -1467,7 +1467,7 @@ waiting (ADMIT-SEEDS)."
                                 ;; The terms as objects rather than the
                                 ;; (term . weight) conses SEED-MATCHES builds.
                                 ;; A dotted pair is not a shape JSON has, and a
-                                ;; record is read by tools/acceptance.py.
+                                ;; record is read by tools/test/acceptance.py.
                                 :terms (loop for (term . weight) in (cdr pair)
                                              collect (list :term term
                                                            :weight weight))))
@@ -2021,7 +2021,7 @@ outgoing call is the entity's implementation, an incoming one is its client
 set, and a client's docstring describes the client rather than the thing the
 task asked about.
 
-Measured by tools/summary-band.lisp over five tasks on three trees, 2026-08-23.
+Measured by tools/test/summary-band.lisp over five tasks on three trees, 2026-08-23.
 Raising 3 to 4 added 5 descriptions across all five and cost no item on any of
 them; the cut that costs something is 3, which on game-server's `data-handler'
 trades 18 index lines for 32 descriptions at 354 tokens. Every task at every

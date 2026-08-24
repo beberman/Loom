@@ -57,7 +57,7 @@ body: |
 
   ACCEPTANCE
 
-  tools/acceptance.py measures `context` and holds at 42 of 45. `find` has no
+  tools/test/acceptance.py measures `context` and holds at 42 of 45. `find` has no
   harness; R4's guard is that no `find`-side code changes, which is checkable
   by inspection rather than by measurement, and is the honest statement of what
   is protected.

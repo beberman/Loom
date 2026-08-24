@@ -1,10 +1,10 @@
 # The vocabulary-mismatch case family
 
 REQ-0047, DES-0039, PLAN-0042. 120 cases in `mismatch.json`, in the four-tuple
-`tools/recall.py` reads: `[repository, query, expected-name, family]`.
+`tools/test/recall.py` reads: `[repository, query, expected-name, family]`.
 
 Every query describes what an entity does in words its author did not use. That
-is checked rather than intended: `tools/mismatch-check.lisp` loads
+is checked rather than intended: `tools/test/mismatch-check.lisp` loads
 `loom-knowledge`, runs the query through `TASK-TOKENS`, and rejects the case if
 any token reaches the entity the way `SEED-MATCHES` would — as a
 case-insensitive substring of any name the expected entity carries in that
@@ -35,7 +35,7 @@ and the expansion less to travel on.
 ## How it was generated
 
 - **By** Claude Opus 5 (`claude-opus-5`), in a Claude Code session, on 2026-08-22.
-- **From** `tools/entity-dump.lisp` over `game-server` and `front-end`,
+- **From** `tools/test/entity-dump.lisp` over `game-server` and `front-end`,
   filtered to definitions with a name of two or more parts, a docstring of 45
   characters or more, and a path with no test segment in it.
 - **Instruction**: describe what this definition does, in words that appear

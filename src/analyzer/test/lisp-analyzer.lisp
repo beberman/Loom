@@ -305,7 +305,7 @@ the first miscounted span")
       (is (equal '("CL") (getp p :uses)))
       (is (equal '("MAKE-FILTER") (getp p :exports)))
       ;; Every :import-from clause, not the first. Reading one is how
-      ;; tools/package-census.lisp reported 0 imported names against a true
+      ;; tools/test/package-census.lisp reported 0 imported names against a true
       ;; 227, so this is the assertion that guards the defect rather than the
       ;; feature.
       (is (equal '(("NAME" . "MPACKAGE/OBJECT")

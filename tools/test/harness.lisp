@@ -3,15 +3,19 @@
 ;;;;   (load (merge-pathnames "harness.lisp"
 ;;;;                          (make-pathname :name nil :type nil
 ;;;;                                         :defaults *load-truename*)))
-;;;;   (loom-harness:load-systems "tools/whatever.lisp"
+;;;;   (loom-harness:load-systems "tools/test/whatever.lisp"
 ;;;;                              :systems '("ontology/" "graph/")
 ;;;;                              :libraries '("cl-yaml")
 ;;;;                              :load :loom-workspace)
 ;;;;
+;;;; The `../' is because every caller lives in tools/test/ and this file stays
+;;;; in tools/: it is shared infrastructure rather than a test of anything, and
+;;;; TREE-ROOT resolves through the `..' so the root it reports is unchanged.
+;;;;
 ;;;; REQ-0050 R5. Every instrument under tools/ opens with the same twelve
 ;;;; lines -- require asdf, load quicklisp, push a registry, quickload some
 ;;;; libraries, load a system -- and every one of them reported a failure in
-;;;; those lines as a backtrace. tools/call-site-census.lisp could not load at
+;;;; those lines as a backtrace. tools/test/call-site-census.lisp could not load at
 ;;;; all for as long as PLAN-0043 had been landed: its registry predated
 ;;;; loom-embed, which loom-knowledge has depended on since, so the instrument
 ;;;; that *CALL-SITE-CEILING*'s own failure message tells a developer to re-run
@@ -33,9 +37,14 @@
 (in-package #:loom-harness)
 
 (defparameter *root*
-  (merge-pathnames "../" (make-pathname :name nil :type nil
-                                        :defaults (or *load-truename* *default-pathname-defaults*)))
-  "The tree this file was loaded from, up one: <loom>/.
+  (merge-pathnames "../../" (make-pathname :name nil :type nil
+                                           :defaults (or *load-truename* *default-pathname-defaults*)))
+  "The tree this file was loaded from, up two: <loom>/.
+
+Two rather than one because this file lives in tools/test/. When it moved there
+the registry pushed <loom>/tools/src/graph/ and every system stopped resolving
+-- and what a reader saw was REFUSED's sentence naming the system that would
+not load, which is the failure this file exists to produce.
 
 Captured at load time because *LOAD-TRUENAME* is this file only while this file
 is loading, and every caller wants the same answer.")

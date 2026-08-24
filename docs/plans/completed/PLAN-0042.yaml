@@ -3,7 +3,7 @@ title: "DES-0039 in five steps: the full docstring, the checker, the candidates,
 status: final
 date: 2026-08-22
 refines: [DES-0039, REQ-0047]
-affects: ['tools/entity-dump.lisp']
+affects: ['tools/test/entity-dump.lisp']
 tags: [retrieval, measurement, instrument, paraphrase, req-0047]
 summary: |
   The checker is built before a single case is written. A generator that can see

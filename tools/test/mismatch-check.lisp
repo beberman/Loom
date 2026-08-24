@@ -1,6 +1,6 @@
 ;;;; Reject any candidate case whose query can reach its answer lexically.
 ;;;;
-;;;;   sbcl --script tools/mismatch-check.lisp candidates.json kept.json \
+;;;;   sbcl --script tools/test/mismatch-check.lisp candidates.json kept.json \
 ;;;;        game-server=game-server.json front-end=front-end.json
 ;;;;
 ;;;; REQ-0047 R1 and R2, DES-0039 D1 and D2. A vocabulary-mismatch case is one
@@ -18,14 +18,14 @@
 ;;;; does not answer "test". Checking both by token equality was this tool's
 ;;;; first draft and certified PIECETYPEEDITORSTATE as disjoint from "editor".
 ;;;;
-;;;; Candidates and output are both tools/recall.py's four-tuple:
+;;;; Candidates and output are both tools/test/recall.py's four-tuple:
 ;;;; [repository, query, expected-name, family]. Nothing here writes a second
 ;;;; harness or a second format.
 
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(loom-harness:load-systems "tools/mismatch-check.lisp"
+(loom-harness:load-systems "tools/test/mismatch-check.lisp"
                            :systems '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
                            :load :loom-knowledge)

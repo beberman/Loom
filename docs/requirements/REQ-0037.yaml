@@ -90,7 +90,7 @@ body: |
       Spending five slots on noise is no longer a defect: the slots are cheap
       and the recall is not. The count may still respond upward, and that was
       measured on 2026-08-22 rather than assumed -- swept at 8, 16 and 32
-      against tools/acceptance.py, recall held at 42 of 45 with the same three
+      against tools/test/acceptance.py, recall held at 42 of 45 with the same three
       misses at every setting, so a larger set recovered nothing. It also cost
       this requirement's own report: with 32 seeds actually served, r37-3 failed
       because `encoding' came back ANSWERED rather than WEAK. Every extra slot
@@ -110,7 +110,7 @@ body: |
   string"` does the same. Against game-server, `context "read a whole file into a
   string"` still returns SLURP-FILE's successor -- the negative must not be
   bought by refusing to answer the positives, and the hand-written cases in
-  tools/acceptance.py are the guard on that. The "32 cases, currently 30 of 32"
+  tools/test/acceptance.py are the guard on that. The "32 cases, currently 30 of 32"
   written here on 2026-08-21 was already stale when DES-0032 measured it: the
   harness holds 45 expectations across 24 cases and stands at 42 of 45, missing
   config-get (R7), MapElementTypeEditor (fe-5) and dot-prefixed-p (r39-3).
@@ -139,7 +139,7 @@ body: |
   OUTSTANDING
 
   R3 is implemented. A bundle names the words of the task that no admitted seed
-  answered by name, and the three absence cases in tools/acceptance.py assert
+  answered by name, and the three absence cases in tools/test/acceptance.py assert
   it: join and separator, number, encoding and fallback all come back weak,
   while recall over the 45 hand-written expectations holds at 42.
 
@@ -167,7 +167,7 @@ body: |
   Importance drops from Critical to Minor. R2 and R3 are implemented and are
   what made this Critical: a bundle names the words of the task that no
   admitted seed answered by name, and the three absence cases in
-  tools/acceptance.py assert it. R1 and R4 are refused by DEC-0005 and will not
+  tools/test/acceptance.py assert it. R1 and R4 are refused by DEC-0005 and will not
   be built. R5 is the only clause left, and it is one report of the indexing
   exclusions a query could not look at.
 
