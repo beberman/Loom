@@ -1,6 +1,6 @@
 id: REQ-0049
 title: An index line must say what a definition does, because relevance is decided on prose and the only tier carrying prose costs a thousand tokens
-status: draft
+status: implemented
 date: 2026-08-23
 refines: [REQ-0040, REQ-0035]
 affects: [render-item, describe-entity, entity-summary, build-context, render-context]
@@ -183,3 +183,62 @@ body: |
     docstrings at all, so the band that pays for itself on Loom may be empty
     elsewhere. The dogfooding rule applies and this requirement was written
     from Loom's numbers.
+
+  OUTCOME, 2026-08-23
+
+  R1, R2, R3 and R4 are implemented; R5 is met by not being touched -- the
+  source tier is unchanged and *CONTEXT-SOURCE-DEFINITIONS* still rations it.
+
+  R3's cut is a cost, and it is two cuts rather than one.
+
+  An item printing its body does not also print its description, which R1 did
+  not anticipate and the measurement made obvious. Of the descriptions the
+  seed-only rule printed, half sat directly above the body they summarise: 3 of
+  6, 3 of 4, 2 of 7 and 3 of 5 on the four tasks below. On `data-handler' the
+  band delivered one description a reader could not already see.
+
+  Then cost, at 3. That is where an outgoing :CALLS and a :CONTAINS land, so a
+  definition says what it is made of and which file holds it. 4 is an incoming
+  :CALLS, and *EDGE-COSTS* already records the asymmetry that argues for
+  stopping before it: an outgoing call is the entity's implementation, an
+  incoming one its client set, and a client's docstring describes the client.
+  Measured by tools/summary-band.lisp, raising 3 to 4 added 5 descriptions
+  across five tasks on three trees and cost no item on any of them.
+
+  WHAT THE BUNDLES DID, measured over REST on the four DES-0042 tasks
+
+      task                             items       described    xbudget
+      context bundle token budget ...  162 -> 159   6 -> 14   0.98 -> 1.00
+      data-handler                      73 ->  73   4 ->  4   0.65 -> 0.65
+      how a context bundle is rendered 127 -> 116   7 -> 16   1.00 -> 1.00
+      the startup sequence              88 ->  88   5 ->  9   0.60 -> 0.62
+
+  The trade is descriptions against index lines, and on two of four tasks there
+  was no trade -- the budget had room. Where it bit it cost 3 and 11 lines. The
+  source tier was not touched, so REQ-0040 R2's question is not the one this
+  answered and R2 stays open: nothing here measured breadth against depth.
+
+  The band is not empty on a tree that is 74% code, which was the third open
+  question. Descriptions delivered, one task per tree: front-end 8, 42 and 11;
+  game-server 32 and 4; utils 9.
+
+  THE FLOORS HELD, and the baseline was re-measured on this tree rather than
+  read from REQ-0040
+
+      tools/acceptance.py   42 of 44, the same two misses as the baseline --
+                            fe-5 and r39-3. 44 rather than 45 since PLAN-0036
+                            S4 trimmed r39-4's expectation.
+      known-item            443 of 450: name 148, inflected 148, prose 147,
+                            each identical to the baseline
+      suite                 10 of 10 systems
+      check                 0 violations, 8 unresolved document references
+
+  BUG-0046 came out of the same measurement: the first sentence was taken at
+  the first period, and 24 of Loom's 890 non-test docstrings cut inside a path,
+  a decimal, a quoted token or an ellipsis. `describe vector-store-directory'
+  printed `<loom>/.'
+
+  The second open question is answered by that bug rather than by the design.
+  The first line was not the right sentence and neither was the first period:
+  what a sentence ends with needs a rule, and the rule is that the period is
+  followed by whitespace and not preceded by it.

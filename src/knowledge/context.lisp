@@ -2000,19 +2000,52 @@ Every band is named, seeds included, so no line in the block is unlabelled."
     (:neighbour "one hop away")
     (t          (string-downcase (princ-to-string band)))))
 
+(defparameter *context-summary-cost* 3
+  "The highest walk cost at which an item still carries a description.
+
+REQ-0049 R3, which asked whether the cut is a count or a cost and left it
+unmeasured. A cost, because the walk already orders the bundle by one and a
+count would cut across bands: twenty items by count takes the first twenty
+neighbours of whichever seed was expanded first.
+
+3 is where an outgoing :CALLS and a :CONTAINS land, so a definition says what
+it is made of and what file holds it. 4 is an *incoming* :CALLS, and the
+asymmetry *EDGE-COSTS* already records is the reason to stop before it: an
+outgoing call is the entity's implementation, an incoming one is its client
+set, and a client's docstring describes the client rather than the thing the
+task asked about.
+
+Measured by tools/summary-band.lisp over five tasks on three trees, 2026-08-23.
+Raising 3 to 4 added 5 descriptions across all five and cost no item on any of
+them; the cut that costs something is 3, which on game-server's `data-handler'
+trades 18 index lines for 32 descriptions at 354 tokens. Every task at every
+cut stays inside its budget, worst 1.00 -- the budget makes the trade rather
+than admitting an overflow, and the thing traded is index lines.
+
+NIL on a seed and on the three document bands, which are therefore never cut by
+this -- a seed is the subject and a document line has no docstring to print.")
+
 (defun item-summary-line (item)
-  "A seed's own description, indented, or NIL. REQ-0049 R1.
+  "ITEM's own description, indented, or NIL when it does not carry one.
 
-Seeds only, which is narrower than R1 asks and is deliberate: R3 wants the band
-measured and the corpus does not yet hold the usage to measure it. Eight seeds
-at *DEFINITION-SUMMARY-BUDGET* is about 190 tokens against a 4000 budget, where
-the same treatment over a 130-item bundle would be 3900 and is the whole thing.
+REQ-0049 R1 and R3. Two cuts, and the first is not the one R1 anticipated.
 
-The seed band is where it pays. A neighbour arrived because a seed reached it
-and its relevance is already implied by the edge; a seed is what the task's own
-words or the embedder proposed, and whether it is the right one is exactly the
-open question."
-  (when (eq :seed (getf item :band))
+An item printing its body does not also print its description. The description
+is the first sentence of the docstring and the body holds the whole docstring
+three lines below it. Measured on `context refactor Loom to use utils where
+needed\': 5 of the 8 seeds printed a body, so the band as first built spent
+three quarters of its tokens restating what the reader was about to read. The
+three seeds that gained anything were the ones with no body -- which is the
+case the description exists for, and which the seed-only rule reached by
+accident rather than by aim.
+
+The second cut is cost. A seed and a near neighbour are where relevance is
+still undecided; the tail of a cost-ordered walk is a list to skim on names,
+and 130 items at *DEFINITION-SUMMARY-BUDGET* would be 3120 tokens against a
+4000 budget."
+  (when (and (null (getf item :source))
+             (let ((cost (getf item :cost)))
+               (or (null cost) (<= cost *context-summary-cost*))))
     (getf item :summary)))
 
 (defun render-item (item)

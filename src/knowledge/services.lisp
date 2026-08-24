@@ -113,6 +113,34 @@ Twenty-four tokens is about one line of prose. What it is not is measured:
 REQ-0049 R3 asks which band carries a description at all, and that needs usage
 the corpus does not yet hold.")
 
+(defun whitespace-char-p (char)
+  "True when CHAR separates words."
+  (member char '(#\Space #\Tab #\Newline #\Return #\Page)))
+
+(defun sentence-end (text)
+  "The index in TEXT of the period ending its first sentence, or NIL.
+
+BUG-0046. The period must be followed by whitespace or the end of the string,
+and must not itself be preceded by whitespace. POSITION of #\. alone answered
+`<loom>/.' for a docstring opening `<loom>/.loom/vectors/, beside the context
+log ...' -- a summary that costs tokens and carries no claim. Measured over
+Loom's non-test source, 24 of 890 docstrings cut inside a path, a decimal, a
+quoted token or an ellipsis.
+
+The preceding-character half is for Lisp's dotted pair: `Alist of (from . to)'
+puts whitespace on both sides of a period that ends no sentence, and the
+following-character test alone accepts it.
+
+No floor on how short the result may be. `Mirrors REMHASH.' is two words and is
+the whole claim; a rule that reached past it for something longer would return a
+second sentence as the first."
+  (loop for i from 1 below (length text)
+        when (and (char= #\. (char text i))
+                  (not (whitespace-char-p (char text (1- i))))
+                  (or (= (1+ i) (length text))
+                      (whitespace-char-p (char text (1+ i)))))
+          return i))
+
 (defun definition-summary (entity)
   "The first sentence of ENTITY's documentation, bounded, or NIL if it has none.
 
@@ -131,7 +159,7 @@ definitions across the indexed trees carry none, so absence is the common case
 and must not read as a claim about the entity (CON-0001)."
   (let ((documentation (getp entity :documentation)))
     (when (and (stringp documentation) (plusp (length documentation)))
-      (let* ((stop (position #\. documentation))
+      (let* ((stop (sentence-end documentation))
              (sentence (if stop (subseq documentation 0 (1+ stop)) documentation))
              (flat (substitute #\Space #\Newline sentence)))
         (bounded-text (string-trim " " flat) *definition-summary-budget*)))))

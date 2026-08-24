@@ -1,0 +1,82 @@
+id: BUG-0046
+title: A description cut at the first period reads "<loom>/." when the docstring opens with a path
+status: closed
+severity: minor
+date: 2026-08-23
+refines: [REQ-0049]
+affects: [definition-summary, sentence-end]
+tags: [context, describe, prose, req-0049, con-0001]
+summary: |
+  DEFINITION-SUMMARY took its first sentence with (POSITION #\. DOCUMENTATION).
+  A period inside a path, a decimal, a quoted token or an ellipsis ends no
+  sentence, so the summary printed for VECTOR-STORE-DIRECTORY was:
+
+      variable vector-store-directory  [src/embed/store.lisp:32-45]
+          <loom>/.
+
+  from a docstring reading "<loom>/.loom/vectors/, beside the context log and
+  for the same two reasons."
+
+  Measured over Loom's non-test source, 24 of 890 docstrings cut at a period
+  that is not a sentence end. The results are `SS9: ".', `SEGMENTS with `.',
+  `The package FORM, an (IN-PACKAGE .' and twenty more of that shape.
+body: |
+  HOW IT WAS FOUND
+
+  Running `context refactor Loom to use utils where needed' while measuring
+  REQ-0049 R3, which is the task REQ-0049 was written from. Three of the eight
+  seeds carried a description that was not also in a printed body, and one of
+  the three was this.
+
+  WHY IT IS A DEFECT AND NOT A COSMETIC ONE
+
+  Not CON-0001's fabricated fact: nothing here claims something untrue about
+  the entity. It is the cheaper failure one tier down. REQ-0049 R4 says an
+  entity with no documentation must say nothing rather than something
+  invented, and the reason is that a line costs tokens and a caller reads it
+  to decide whether to spend a body. `<loom>/.' spends the tokens and settles
+  nothing, so the band pays its price and returns none of its value -- on the
+  entities whose docstrings open with a path, which in this tree are the ones
+  that say where something is written.
+
+  THE RULE
+
+  A period ends a sentence when it is followed by whitespace or the end of the
+  string, and is not itself preceded by whitespace.
+
+  The first half is the path, the decimal and the ellipsis: `.loom', `SS5.3',
+  `...' all put a non-space after the period. The second half is Lisp's dotted
+  pair, which this tree writes in prose -- "Alist of (from . to) pairs" has
+  whitespace on both sides of a period that ends nothing, and the first half
+  alone accepts it.
+
+  There is no floor on how short the result may be. "Mirrors REMHASH." is the
+  whole claim of PROTECTED-REMHASH, and 68 of Loom's 890 docstrings open with
+  a sentence under five words. A rule that reached past a short sentence for a
+  longer one would return the second sentence as the first.
+
+  WHAT IT DOES NOT FIX
+
+  A docstring with no sentence break at all still falls back to the whole
+  bounded text, which is what `help [command]' and the console's other usage
+  lines are. That is unchanged and correct: the fallback prints a line the
+  author wrote, cut at *DEFINITION-SUMMARY-BUDGET* on a word boundary.
+
+  HOW TO REPRODUCE
+
+  Before the fix:
+
+      loom> describe vector-store-directory
+      variable vector-store-directory  [src/embed/store.lisp:32-45]
+          <loom>/.
+
+  After:
+
+      loom> describe vector-store-directory
+      variable vector-store-directory  [src/embed/store.lisp:32-45]
+          <loom>/.loom/vectors/, beside the context log and for the same two
+          reasons.
+
+  DEFINITION-SUMMARY-DOES-NOT-CUT-INSIDE-A-PATH and
+  DEFINITION-SUMMARY-DOES-NOT-CUT-AT-A-DOTTED-PAIR in src/knowledge/test/
+  services.lisp are the two cases, and both fail against POSITION.

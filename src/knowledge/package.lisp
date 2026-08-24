@@ -72,6 +72,9 @@
    ;; budget rather than a fact, and someone tuning it should not have to
    ;; reach into the package.
    #:*context-mention-limit*
+   ;; REQ-0049 R3: the walk cost past which an item is skimmed on its name.
+   ;; Exported for the same reason -- a tuning number, not a fact.
+   #:*context-summary-cost*
    #:*context-embedder*
    #:*context-vector-store*
    #:semantic-candidates

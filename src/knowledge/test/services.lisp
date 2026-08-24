@@ -322,6 +322,71 @@ assertion that fails if someone later \"fixes\" describe by truncating there")))
     (is (<= (estimate-tokens (getf s :text)) *summary-token-budget*))))
 
 ;;; ------------------------------------------------------------------
+;;; definition-summary -- REQ-0049's middle tier, and BUG-0046's cut
+;;;
+;;; Built locally for the reason the DOCUMENT-SUMMARY tests are: the function
+;;; takes an entity rather than a view, and the shared fixture asserts exact
+;;; hit counts three tests above.
+;;; ------------------------------------------------------------------
+
+(defun k-documented (documentation)
+  "A function entity carrying DOCUMENTATION and nothing else of interest."
+  (make-instance 'function-entity :name "vector-store-directory"
+                 :origin-file "src/embed/store.lisp"
+                 :properties (properties-table
+                              (list :file "src/embed/store.lisp"
+                                    :start-line 32 :end-line 45
+                                    :documentation documentation))))
+
+(test definition-summary-takes-the-first-sentence
+  (is (string= "A 64-bit FNV-1a hash of TEXT, as sixteen hex digits."
+               (definition-summary
+                (k-documented "A 64-bit FNV-1a hash of TEXT, as sixteen hex digits.
+Deterministic across images, which SXHASH is not.")))))
+
+(test definition-summary-does-not-cut-inside-a-path
+  ;; BUG-0046, from the tree: `context refactor Loom to use utils where needed'
+  ;; printed `<loom>/.' for this docstring, which is a line that costs tokens
+  ;; and carries no claim. The period inside `.loom' ends no sentence.
+  (let ((summary (definition-summary
+                  (k-documented "<loom>/.loom/vectors/, beside the context log and for the same two reasons.
+In Loom's own tree rather than the searched one."))))
+    (is (string= "<loom>/.loom/vectors/, beside the context log and for the same two reasons."
+                 summary))))
+
+(test definition-summary-does-not-cut-at-a-dotted-pair
+  ;; The other half of the rule. A period with whitespace on both sides passes
+  ;; the following-character test and ends no sentence -- it is Lisp's dotted
+  ;; pair, and this tree writes it in prose.
+  (is (string= "Alist of (from . to) pairs, one per edge."
+               (definition-summary
+                (k-documented "Alist of (from . to) pairs, one per edge.
+The order is the walk's.")))))
+
+(test definition-summary-keeps-a-short-sentence-whole
+  ;; No floor on length: a rule that reached past this for something longer
+  ;; would return the second sentence as the first.
+  (is (string= "Mirrors REMHASH."
+               (definition-summary
+                (k-documented "Mirrors REMHASH.
+The lock is the table's own.")))))
+
+(test definition-summary-falls-back-to-the-whole-text-with-no-sentence-break
+  (is (string= "help [command]"
+               (definition-summary (k-documented "help [command]")))))
+
+(test definition-summary-says-nothing-when-there-is-nothing
+  ;; REQ-0049 R4, CON-0001: 3861 of 5268 definitions across the indexed trees
+  ;; carry no docstring, so absence is the common case and a placeholder here
+  ;; would be a claim about every one of them.
+  (is (null (definition-summary (k-function "resolve-overlay" 41))))
+  (is (null (definition-summary (k-documented "")))))
+
+(test definition-summary-is-bounded
+  (let ((summary (definition-summary (k-documented (k-long-text)))))
+    (is (<= (estimate-tokens summary) *definition-summary-budget*))))
+
+;;; ------------------------------------------------------------------
 ;;; impact-report (loom_impact)
 ;;; ------------------------------------------------------------------
 
