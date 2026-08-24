@@ -161,7 +161,7 @@ body: |
   CONTENT-FINGERPRINT in this stage, and the Python one gets a test against a
   known non-ASCII vector rather than a comment claiming it agrees.
 
-  S3  TEXT-LINES, WHICH RETURNS THE OTHER SHAPE
+  S3  TEXT-LINES, WHICH RETURNS THE OTHER SHAPE  -- DONE, 2026-08-23
 
   markdown-analyzer.lisp's TEXT-LINES returns a list; STRING-LINES returns a
   vector. Three callers -- markdown-mentions, markdown-link-targets, analyze-file
@@ -170,6 +170,17 @@ body: |
   compiler will not catch a sequence function that accepts both.
 
   Test: the markdown analyzer's existing suite, unchanged, is the whole check.
+
+  DONE. The change is narrower than the stage predicted. UNFENCED-LINES is the
+  only function that had to move: it walked its argument with DOLIST and now
+  walks it with MAP NIL, and it still *returns* a list, which is what confines
+  the vector to one boundary. FIRST-HEADING reads its output with LOOP ... ON,
+  LINE-LINK-TARGETS with LOOP ... IN, and two call sites join it with ~{~} --
+  none of the three accepts a vector, and none of the three had to change.
+
+  So the three callers the stage named were not where the work was. The
+  compiler would not have caught it either way, which is the stage's own
+  argument; what caught it was reading the two contracts side by side.
 
   S4  THE TWO PREDICATES THAT DISAGREE AT THE EDGE
 
