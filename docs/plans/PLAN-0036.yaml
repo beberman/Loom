@@ -214,7 +214,7 @@ body: |
   the two-element-keyword hole, *ARRAY-VALUED-KEYS* as the escape hatch, and
   the test that asserts the misencoding on purpose.
 
-  S5  THE CONTEXT LOG'S JSON  -- UNBLOCKED, HALF DONE, 2026-08-23
+  S5  THE CONTEXT LOG'S JSON  -- READ HALF DONE, WRITE HALF REFUSED, 2026-08-23
 
   ENCODE-RECORD-VALUE is the library's model already: alist is an object, any
   other proper list is an array, NIL is null. Two differences and both are
@@ -248,9 +248,37 @@ body: |
 
   So the read half of this stage is done and is the library's, which is what
   the stage asked for -- READ-JSON-RECORD's PROBE-FILE guard is the one detail
-  not taken, since the strict path still needs the file open. What remains is
-  ENCODE-RECORD-VALUE, still hand-written, and it can now be judged by the
-  acceptance this stage names because that acceptance finally holds.
+  not taken, since the strict path still needs the file open.
+
+  THE WRITE HALF IS MEASURED AND REFUSED
+
+  ENCODE-RECORD-VALUE stays. Encoding a real 9.5KB record both ways, with
+  UTILS:*JSON-KEY-NAME* bound so the key policy matches, the two outputs are
+  byte-identical but for one thing:
+
+      hand-written   "tokensUsed":1160,"truncated":false}}
+      library        "tokensUsed":1160,"truncated":"false"}}
+
+  Every key, every escape, every nesting, every array and every alist agrees.
+  The single difference is the one this stage predicted, and its remedy is the
+  one thing that does not work.
+
+  The stage offered "a two-line wrapper that handles it and calls JSON-ENCODE
+  for everything else". A wrapper cannot: JSON-ENCODE recurses internally, so a
+  :FALSE at depth three is dispatched by the library and never reaches it. And
+  the library is not wrong -- it writes a real `false' for ST-JSON's marker
+  inside a JSO, and round-trips {"a":false,"b":null} exactly. What it has no
+  representation for is a bare :FALSE in an alist, which is the shape a record
+  is held in.
+
+  Adopting it therefore means holding records as JSOs, which is a change to
+  every producer that builds a record rather than a substitution at one call.
+  That is a larger change than the duplicate it removes, against an encoder of
+  thirty-five lines that is correct and now provably round-trips.
+
+  The stage's other clause is met from the other direction: "drop :FALSE if
+  nothing writes one" -- four things write one, and BUG-0045 is the record of
+  what happens when that marker is lost.
 
   WHAT THIS PLAN DOES NOT DO
 
