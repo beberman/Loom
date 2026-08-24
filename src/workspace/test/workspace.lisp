@@ -532,7 +532,35 @@ file, falls back to matching on the spelling (DES-0015), and reported all 50
 calls as ambiguous. 16 became 70, this ceiling failed, and the census named
 R-FUNCTION in one line. Renaming the helper put it back to 20. A test suite
 that indexes its own tree caught a defect in itself that no assertion in it
-was written to catch.")
+was written to catch.
+
+RE-MEASURED 2026-08-24 AT 352, CEILING UNCHANGED AT 364. REQ-0051 and PLAN-0046,
+and the composition is again two macro bodies growing rather than a new cause:
+
+    define-command     132 -> 143
+    define-operation    92 -> 101
+    js-test             57 ->  57
+    ambiguous occurrences   20 ->  20
+
+The federated `find' is more calls inside the same two bodies -- the console
+command gained three printers and the registry entry gained a branch -- so the
+count moved and the population that matters did not.
+
+It moved once during this work too, and it is the R-FUNCTION trap a second
+time, which is the reason for writing it down again. A helper added to
+src/serve/operations.lisp was named FIND-ENTITY-TYPE, which already exists in
+loom-ontology. Different packages, nothing collided at runtime, the suite was
+green -- and Loom cannot place a package for a test file, so it fell back to
+matching on the spelling and reported all 15 calls in the ontology tests as
+ambiguous. 20 became 35, this ceiling failed at 367, and the census named
+FIND-ENTITY-TYPE at the top of its list. Renaming it to REQUESTED-ENTITY-TYPE
+put the ambiguous population back to 20 and the total to 352.
+
+Twice now the ceiling has caught a name collision rather than the entity growth
+it was written to catch, and both times the census named the colliding symbol
+directly. That is worth more than the bound: DES-0015 makes a same-named
+definition in a second package a real second callable, so the cost of choosing
+an existing name is paid by every call site of the original.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is

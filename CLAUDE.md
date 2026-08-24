@@ -15,7 +15,11 @@ change to Loom's own source. The script below is the fallback and always works:
 
 ```
 tools/loom.sh 'context <task words>'  # start here: what to read before editing
-tools/loom.sh 'find <name>'           # where something is defined
+tools/loom.sh 'find <name>'           # where something is defined -- in every
+                                      #   watched tree, unless you name one.
+                                      #   A zero-hit answer that named one says
+                                      #   what the others hold: `0 here; 1 in
+                                      #   utils'. REQ-0051.
 tools/loom.sh 'describe <name>'       # neighbours, grouped by edge type
 tools/loom.sh 'impact <name> 3'       # what a change reaches, plus decisions
                                       #   3 is a narrowing; the default is 5
@@ -34,7 +38,11 @@ tools/loom.sh 'enrich'                # ask the toolchain what the text pass
 tools/loom.sh 'impact @game-server foo 3'   # name the repository, when the
                                       #   service holds several. A leading
                                       #   @token works on every command and
-                                      #   lasts one command. REQ-0023.
+                                      #   lasts one command. REQ-0023. Every
+                                      #   command but `find' and `status'
+                                      #   refuses without one rather than
+                                      #   guessing; those two answer across all
+                                      #   of them, which is what they are for.
 tools/loom.sh 'status | find foo'     # several commands, run in order
 tools/loom.sh 'help'                  # the authoritative table; trust it first
 ```

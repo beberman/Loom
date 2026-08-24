@@ -609,25 +609,113 @@ that the command says when it cut the list: a cap is a reasonable answer to
 \"where is X\" and a false one to \"what is there\", and the count is what lets
 the reader tell which question they asked.")
 
+(defun print-find-line (hit)
+  "One `find\' row, naming the repository it came from.
+
+REQ-0051 R2, and a printer of its own rather than a column on
+PRINT-SUMMARY-LINE, which `describe\', `impact\' and `context\' share and none
+of which asked for one. On both forms of the command: a caller who typed
+`@game-server\' already knows the answer's tree, and the row still says it,
+because the line is what gets pasted into a document and REQ-0050 R1's rule is
+that an answer says which tree it came from wherever it is read."
+  (format t "~&@~a ~(~a~) ~a~@[  [~a]~]~@[  (stale)~]~%"
+          (getf hit :repository)
+          (getf hit :type) (getf hit :name)
+          (getf hit :location) (getf hit :stale)))
+
+(defun print-find-cost (report)
+  "What the search cost, when it was not one repository. REQ-0051 R5.
+
+`find\' over REST is 4.7ms against one tree and this walks nine, so a federated
+form that silently cost nine times as much would make the cheapest command Loom
+has expensive without saying so. Printed only when more than one tree was
+asked, because a line saying how long a single 4.7ms call took is noise on the
+command a session issues most.
+
+The skipped list prints whenever it is non-empty, whatever the count. A tree
+passed over is what separates `absent from every tree\' from `absent from every
+tree I looked at\', and CON-0001 refuses to let the second read as the first."
+  (let ((searched (getf report :searched))
+        (skipped (getf report :skipped)))
+    (when (rest searched)
+      (format t "~&searched ~d repositor~:@p in ~,2fs~%"
+              (length searched) (getf report :seconds)))
+    ;; Ungated by the count above, and deliberately: every tree being skipped
+    ;; leaves SEARCHED empty, which is the one case where the rows say
+    ;; "nothing matches" and no repository was asked at all.
+    (when skipped
+      (format t "~&~d not searched: ~{~a~^, ~}~%"
+              (length skipped)
+              (mapcar (lambda (row)
+                        (format nil "~a (~a)" (getf row :repository) (getf row :reason)))
+                      skipped)))))
+
+(defun print-find-elsewhere (term elsewhere here)
+  "The line REQ-0051 R3 is for: 0 here, and what the other trees hold.
+
+In the same answer rather than a second call, because the first answer is where
+the reader decides to reach for grep instead. A name absent from this
+repository and present in another is a migration telling you where it went; a
+name absent from every watched tree is dead."
+  (if elsewhere
+      (format t "~&Nothing matches ~s in ~a. 0 here;~{ ~a~^,~}.~%"
+              term here
+              (mapcar (lambda (row)
+                        (format nil "~d in ~a" (getf row :total) (getf row :repository)))
+                      elsewhere))
+      (format t "~&Nothing matches ~s in ~a, or in any other watched repository.~%"
+              term here)))
+
 (define-command find (term &optional type)
     "find <name> [<type>]"
-    "Where something is defined. The entry point for \"where is X\"."
-  (multiple-value-bind (hits total)
-      (search-entities (current-graph) :name term
-                       :type (and type (intern (string-upcase type) :keyword))
-                       :limit *console-find-limit*)
-    (cond
-      ((null hits) (format t "~&Nothing matches ~s.~%" term))
-      (t (dolist (hit hits) (print-summary-line hit))
-         ;; BUG-0002. Printed only when it happened, and printed as a count
-         ;; rather than a word: twenty rows read as the whole truth, and the
-         ;; number that says otherwise is the one the caller needs to decide
-         ;; whether to narrow the term. `impact' has carried its own
-         ;; "(truncated)" since it was written; this is the same fact in the
-         ;; same interface.
-         (when (> total (length hits))
-           (format t "~&~d of ~d shown. Narrow the term, or name a type.~%"
-                   (length hits) total))))))
+    "Where something is defined. Without a repository, every watched one."
+  ;; REQ-0051 R1. With no @token and several repositories watched this used to
+  ;; reach CURRENT-GRAPH and be refused with "Several repositories are watched.
+  ;; Name one" -- which is right for `describe' and `impact', whose answer is
+  ;; about one entity, and wrong for the question nine trees generate: which of
+  ;; them owns this name. Naming one keeps today's behaviour and today's cost.
+  ;;
+  ;; The nothing-watched case still goes through CURRENT-REPOSITORY, whose
+  ;; message says what to type. REQ-0051 R4's distinction at its most extreme: a
+  ;; `find' against an empty registry must not answer "found nowhere".
+  (let ((type (and type (intern (string-upcase type) :keyword)))
+        (named (or *command-repository*
+                   (and (null (rest (all-repositories))) t))))
+    (if (or named (null (all-repositories)))
+        (let ((repository (current-repository)))
+          (multiple-value-bind (hits total)
+              (search-entities (repository-graph repository) :name term
+                               :type type :limit *console-find-limit*)
+            (cond
+              ((null hits)
+               (print-find-elsewhere
+                term
+                (repositories-holding term :type type
+                                           :exclude (repository-name repository))
+                (repository-name repository)))
+              (t (dolist (hit hits)
+                   (print-find-line (list* :repository (repository-name repository) hit)))
+                 ;; BUG-0002. Printed only when it happened, and printed as a
+                 ;; count rather than a word: twenty rows read as the whole
+                 ;; truth, and the number that says otherwise is the one the
+                 ;; caller needs to decide whether to narrow the term. `impact'
+                 ;; has carried its own "(truncated)" since it was written; this
+                 ;; is the same fact in the same interface.
+                 (when (> total (length hits))
+                   (format t "~&~d of ~d shown. Narrow the term, or name a type.~%"
+                           (length hits) total))))))
+        (let* ((report (search-repositories term :type type
+                                                 :limit *console-find-limit*))
+               (hits (getf report :entities))
+               (total (getf report :total)))
+          (cond
+            ((null hits)
+             (format t "~&Nothing matches ~s in any watched repository.~%" term))
+            (t (dolist (hit hits) (print-find-line hit))
+               (when (> total (length hits))
+                 (format t "~&~d of ~d shown. Narrow the term, or name a type.~%"
+                         (length hits) total))))
+          (print-find-cost report)))))
 
 (define-command describe (term &optional flag)
     "describe <name> [--source]"

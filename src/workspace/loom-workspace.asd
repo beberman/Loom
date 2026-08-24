@@ -69,6 +69,9 @@
    ;; After "context-log": the sidecar takes LOOM-ROOT, and lives beside the
    ;; log under the same dot-directory for the same two reasons.
    (:file "vectors")
+   ;; After "vectors": DES-0043's federated `find' asks REPOSITORY-STATE which
+   ;; trees can answer a lexical query now, and that is defined there.
+   (:file "search")
    )
   :in-order-to ((test-op (test-op :loom-workspace/test)))
   )
@@ -113,6 +116,9 @@
    ;; GIT-BRANCH, and REPOSITORY-NAME and REPOSITORY-ROOT off the struct.
    (:file "context-log")
    (:file "vectors")
+   ;; After "workspace": SEARCH-REPOSITORIES is asked about a registry, so the
+   ;; tests build one with WITH-WORKSPACE-FIXTURE rather than a bare graph.
+   (:file "search")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-workspace-test :test-runner)

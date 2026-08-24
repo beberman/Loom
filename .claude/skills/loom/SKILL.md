@@ -26,7 +26,10 @@ your tool list already:
     loom_set_status  loom_complete  loom_repl_open/eval/close
 
 Each takes a `repository` argument — the service holds several and refuses to
-guess, because an answer about the wrong tree is worse than none. They run
+guess, because an answer about the wrong tree is worse than none. `loom_find`
+is the exception since REQ-0051: `repository` is optional there, and without it
+every watched tree is searched, because *which of them owns this name* is a
+question no single tree can answer. They run
 against a resident, file-watching index: an `impact` measured at 22ms where the
 script takes minutes, since the script reindexes the whole tree before it can
 answer.
@@ -98,7 +101,14 @@ reindex                   discard and rebuild from disk. Always safe.
 status                    counts, watcher state, unresolved references, and
                           the `unread` line: source the reader passed over or
                           had to repair. Both read zero on a healthy tree.
-find <name> [<type>]      where something is defined
+find <name> [<type>]      where something is defined, in every watched tree
+                          unless a leading @token names one. Each row is
+                          prefixed with the tree it came from. Naming a tree and
+                          finding nothing there prints what the others hold --
+                          `0 here; 1 in utils' -- and a name in no tree at all
+                          is dead. Any tree it could not search is named, so
+                          "absent everywhere" is never a partial search's
+                          claim. REQ-0051.
 describe <name>           neighbours grouped by edge type
 impact <name> [<depth>]   what a change reaches, plus governing decisions
 context <task words>      a budgeted bundle: what to know before editing

@@ -249,26 +249,57 @@ The console's own cap, so the two answer the same question the same way.")
 ;; match. TYPE is an external symbol of COMMON-LISP, and SBCL's package lock
 ;; refuses to bind one as a local variable -- a compile-time failure, not a
 ;; style question.
-(define-operation :find :read (repository term (entity-type) (limit))
-    "Where something is defined."
+(defun requested-entity-type (entity-type)
+  (and entity-type
+       (intern (string-upcase (string entity-type)) :keyword)))
+
+;; REQ-0051 R1, DES-0043 D8. REPOSITORY is optional here and required on every
+;; other read entry, which is the whole change on this surface: VALIDATE-ARGUMENTS
+;; reads the shape to decide what to refuse and TOOL-INPUT-SCHEMA reads it to
+;; build MCP's `required' vector, so neither skin is edited. `:status' is the
+;; precedent and has been the one operation with no designator requirement since
+;; it was written -- for the same reason, that it is the call a caller makes
+;; before it knows which repository to name.
+(define-operation :find :read ((repository) term (entity-type) (limit))
+    "Where something is defined. Without a repository, every watched one is \
+searched and each row says which it came from."
   ;; Wrapped under :ENTITIES rather than returned as a bare list, so that every
   ;; operation in this system answers with a plist and every JSON response is
   ;; therefore an object. A bare list would also make an empty result encode as
   ;; null instead of [], which is the ambiguity *ARRAY-VALUED-KEYS* exists to
   ;; prevent and which a top-level value has no key to be rescued by.
-  (multiple-value-bind (entities total)
-      (search-entities (repository-view repository)
-                       :name term
-                       :type (and entity-type
-                                  (intern (string-upcase (string entity-type)) :keyword))
-                       :limit (or (request-integer limit "limit") *find-limit*))
-    ;; BUG-0002. :TOTAL and :TRUNCATED alongside the rows, because a caller
-    ;; that received the limit and nothing else cannot tell a complete answer
-    ;; from a cut one -- and an agent asking how many of a type exist gets a
-    ;; number rather than a page of rows to count.
-    (list :entities entities
-          :total total
-          :truncated (> total (length entities)))))
+  (let ((type (requested-entity-type entity-type))
+        (limit (or (request-integer limit "limit") *find-limit*)))
+    (if (null repository)
+        ;; The federated form returns SEARCH-REPOSITORIES' plist whole: the same
+        ;; :ENTITIES, :TOTAL and :TRUNCATED a named search answers with, plus
+        ;; the three lists REQ-0051 R4 and R5 need -- what was searched, what
+        ;; was not, and what it cost.
+        (search-repositories term :type type :limit limit)
+        (let ((watched (require-repository repository)))
+          (multiple-value-bind (entities total)
+              (search-entities (repository-graph watched)
+                               :name term :type type :limit limit)
+            ;; BUG-0002. :TOTAL and :TRUNCATED alongside the rows, because a
+            ;; caller that received the limit and nothing else cannot tell a
+            ;; complete answer from a cut one -- and an agent asking how many of
+            ;; a type exist gets a number rather than a page of rows to count.
+            (append
+             ;; REQ-0051 R2. The row names its tree on this form too. A caller
+             ;; who named the repository already knows it, and the row is what
+             ;; gets pasted into a document.
+             (list :entities (mapcar (lambda (row)
+                                       (list* :repository (repository-name watched) row))
+                                     entities)
+                   :total total
+                   :truncated (> total (length entities)))
+             ;; REQ-0051 R3, and the clause the whole requirement is for. Paid
+             ;; only on the miss, which is where the reader decides to reach for
+             ;; grep instead.
+             (when (null entities)
+               (list :elsewhere
+                     (repositories-holding term :type type
+                                                :exclude (repository-name watched))))))))))
 
 (define-operation :describe :read (repository term (source))
     "Full detail for one entity, with its neighbours grouped by edge type. \

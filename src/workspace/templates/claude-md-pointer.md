@@ -7,8 +7,10 @@ questions about this code and the documents describing it: where something is
 defined, what a change reaches, which decisions govern an area.
 
 The service is at `{{ENDPOINT}}` (REST under `/v1/`, MCP at `/mcp`), and this
-repository is registered with it as `{{REPOSITORY-NAME}}`. Every query names
-the repository it means.
+repository is registered with it as `{{REPOSITORY-NAME}}`. Most queries name
+the repository they mean. `loom_find` is the exception: called without a
+`repository` it searches **every** watched tree, and this service may hold
+several.
 
 **Invoke the `loom` skill before starting work** — it is the authoritative copy
 of how to query the index and how to write a document. Two things worth knowing
@@ -32,12 +34,22 @@ does this reach*, or *what has been decided about this* — the first tool is
 | Question | Use | Not |
 |---|---|---|
 | where is X defined | `loom_find` | `grep -rn "defun X"` |
+| which tree owns this name | `loom_find` with no `repository` | one call per tree |
 | who calls X, how many, from where | `loom_describe` | `grep -rn "X"` |
 | does X exist at all | `loom_find` | `grep -rl` over a tree |
 | what breaks if X changes | `loom_impact` | reading callers by hand |
 | the shape of a system | `loom_structure` | `ls -R` and guessing |
 | what governs this area | `loom_impact`, `loom_context` | reading docs by hand |
 | X's source and docstring | `loom_describe` with `source=true` | `sed -n` on the file |
+
+**A name absent here may live in another tree.** `loom_find` with no
+`repository` searches every watched one and each row says which it came from.
+Named with a `repository` and finding nothing, it answers with an `elsewhere`
+list -- `0 here; 1 in utils` -- so the migration is in the first answer rather
+than a second call. A name in no tree at all is dead, and that is the finding
+worth having: it is how a function two documents still cited was caught. The
+answer also names any tree it could **not** search, because "absent everywhere"
+is a claim a partial search must not make.
 
 **Use `find` and `describe` for a yes/no; save `context` for an edit.**
 `context` answers "I am about to change this, what bears on it" and returns a
