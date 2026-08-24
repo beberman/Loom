@@ -67,6 +67,26 @@ gaps, and the shell is the right tool for each:
   code that exists, or `check` reports it as rot. Leave the field out until the
   code lands.
 
+### Whether an answer is current, and which surfaces say
+
+Four answers carry the commit the analyzer read, the branch, and a hash of the
+uncommitted diff. The commit distinguishes weeks; the diff hash distinguishes
+saves. Three of them carry the staleness itself, and that is the field to read
+before trusting an answer about code you have just changed:
+
+- `loom_status`, `loom_structure` and `loom_context` carry `drift` — how many
+  claimed files have changed since the index read them. `0` means the answer
+  describes the tree as it stands.
+- `loom_describe` carries `file` and `file-stale`: the same question about the
+  one file the entity is defined in.
+- `loom_find`, `loom_impact`, `loom_check` and `loom_rules` carry none of it.
+  Ask `loom_status` when it matters.
+
+Comparing a reported commit against `git rev-parse HEAD` yourself answers a
+different question. The commit moves on `git commit` and the analyzer reads the
+working tree, so a commit agreeing with HEAD is consistent with an index built
+from entirely different bytes.
+
 After writing any document, run `check-document` on its path — it reports the
 id it parsed and whether each `refines:` resolved — then `check`, and confirm
 `unresolved` did not rise.
