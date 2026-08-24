@@ -95,6 +95,20 @@
    #:unresolved-path-references
    #:federated-edge-p
    #:repository-commit
+   ;; REQ-0050 R1: what GIT-DIFF-HASH answers for a clean tree, so a surface
+   ;; can say "uncommitted edits" rather than print sixteen hex digits.
+   #:clean-diff-hash
+   ;; REQ-0050 R1: the tree an index was built from and how far behind it is,
+   ;; in one plist, so every surface reports provenance the same way.
+   #:index-provenance
+   ;; REQ-0050 R1 for an answer about one definition: the same fingerprint, and
+   ;; one stat rather than one per claimed file.
+   #:file-provenance
+   #:index-drift
+   ;; REQ-0050 R3: the half a stamp walk cannot see, and the half that costs a
+   ;; tree walk. `status' reports it and no query does.
+   #:unindexed-files
+   #:repository-indexed-fingerprint
    #:reindex-repository
    #:repository-status
 

@@ -22,20 +22,13 @@
 ;;;; [repository, query, expected-name, family]. Nothing here writes a second
 ;;;; harness or a second format.
 
-(require :asdf)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(load (merge-pathnames "harness.lisp"
+                       (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(let ((here (merge-pathnames
-             "../" (make-pathname :name nil :type nil :defaults *load-truename*))))
-  (dolist (system '("ontology/" "graph/" "analyzer/" "knowledge/"))
-    (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
-             asdf:*central-registry* :test #'equal)))
-
-(handler-bind ((warning #'muffle-warning))
-  (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json")
-           :silent t)
-  (asdf:load-system :loom-knowledge))
+(loom-harness:load-systems "tools/mismatch-check.lisp"
+                           :systems '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/")
+                           :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
+                           :load :loom-knowledge)
 
 (defpackage #:loom-mismatch-check
   (:use #:cl))

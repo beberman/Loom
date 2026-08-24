@@ -26,24 +26,18 @@
 ;;;; first. When step 8 lands, this function and CALL-TARGETS' cond must agree;
 ;;;; they are five lines apart in meaning and the comment is the only link.
 
-(require :asdf)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(load (merge-pathnames "harness.lisp"
+                       (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(let ((here (merge-pathnames
-             "../" (make-pathname :name nil :type nil :defaults *load-truename*))))
-  ;; "embed/" since PLAN-0043: loom-knowledge depends on loom-embed, so a
-  ;; registry without it cannot load the system this census measures.
-  (dolist (system '("ontology/" "graph/" "analyzer/" "knowledge/" "workspace/" "embed/"))
-    (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
-             asdf:*central-registry* :test #'equal)))
-
-(handler-bind ((warning #'muffle-warning))
-  (funcall (read-from-string "ql:quickload")
-           ;; drakma and cl-json are loom-embed's, reached through loom-knowledge.
-           '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem"
-             "cl-json" "drakma")
-           :silent t)
-  (asdf:load-system :loom-workspace))
+;; "embed/" since PLAN-0043: loom-knowledge depends on loom-embed, so a
+;; registry without it cannot load the system this census measures. drakma and
+;; cl-json are loom-embed's, reached through loom-knowledge.
+(loom-harness:load-systems "tools/call-site-census.lisp"
+                           :systems '("ontology/" "graph/" "analyzer/"
+                                      "knowledge/" "workspace/" "embed/")
+                           :libraries '("cl-yaml" "bordeaux-threads" "random-uuid"
+                                        "eclector" "stem" "cl-json" "drakma")
+                           :load :loom-workspace)
 
 (defpackage #:loom-census
   (:use #:cl #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace))

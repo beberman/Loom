@@ -92,6 +92,10 @@
    (:file "suite")
    (:file "workspace")
    (:file "gitignore")
+   ;; After "gitignore": REQ-0050's provenance takes WITH-SCRATCH-REPOSITORY
+   ;; and RUN-GIT, because telling a commit from a working tree needs a real
+   ;; git repository rather than a directory.
+   (:file "provenance")
    ;; BUG-0034. After "workspace" only for its fixtures' sake; the tests build
    ;; their repositories by hand, because FEDERATE-REPOSITORIES reads route
    ;; claims off entities and never touches a filesystem.

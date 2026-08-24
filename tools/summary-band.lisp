@@ -12,21 +12,13 @@
 ;;;; is PLAN-0045's -- every task inside its budget -- and the thing to buy is
 ;;;; descriptions on the band where relevance is still undecided.
 
-(require :asdf)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(load (merge-pathnames "harness.lisp"
+                       (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(let ((here (merge-pathnames
-             "../" (make-pathname :name nil :type nil :defaults *load-truename*))))
-  (dolist (system '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
-                    "workspace/"))
-    (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
-             asdf:*central-registry* :test #'equal)))
-
-(handler-bind ((warning #'muffle-warning))
-  (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json")
-           :silent t)
-  (asdf:load-system :loom-workspace))
+(loom-harness:load-systems "tools/summary-band.lisp"
+                           :systems '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/" "workspace/")
+                           :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
+                           :load :loom-workspace)
 
 (defpackage #:loom-summary-band
   (:use #:cl #:loom-ontology #:loom-graph #:loom-knowledge #:loom-workspace))

@@ -1183,6 +1183,51 @@ difference is visible without being called a withholding")))
 
 
 ;;; ------------------------------------------------------------------
+;;; Provenance on the answer (REQ-0050 R1)
+;;; ------------------------------------------------------------------
+
+(test a-bundle-says-which-tree-it-was-built-from
+  ;; REQ-0050 R1. A bundle is read into a session and worked from for an hour,
+  ;; and it was the surface carrying no revision at all -- the context *record*
+  ;; has carried the commit and diff hash since REQ-0036 R4, and a record is
+  ;; Loom's bookkeeping rather than the caller's answer.
+  (let ((text (render-context
+               (build-context (k-graph (make-k-fixture)) "change resolve-overlay"
+                              :provenance (list :commit "abc1234def567" :branch "main"
+                                                :dirty nil :drift 0)))))
+    (is (search "# index built from abc1234def56" text))
+    (is (search "(main)" text))
+    (is (search "current with the tree" text))))
+
+(test a-bundle-whose-index-is-behind-says-so-and-by-how-much
+  (let ((text (render-context
+               (build-context (k-graph (make-k-fixture)) "change resolve-overlay"
+                              :provenance (list :commit "abc1234def567" :branch "main"
+                                                :dirty t :drift 3)))))
+    (is (search "+ uncommitted edits" text))
+    (is (search "3 claimed files have changed since" text))))
+
+(test a-bundle-with-no-provenance-claims-none
+  ;; Nothing invented for a caller that passed nothing. A bundle built by a
+  ;; test or by a tool that never had a repository would otherwise claim a
+  ;; freshness nobody measured, in the place it would be least visible.
+  (let ((text (render-context
+               (build-context (k-graph (make-k-fixture)) "change resolve-overlay"))))
+    (is (not (search "index built from" text)))))
+
+(test an-unreadable-commit-is-a-recorded-gap-on-a-bundle-too
+  ;; CON-0001. Drift comes from REPOSITORY-STAMPS and answers on a tree with no
+  ;; git in it, so the two halves fail independently and the readable one is
+  ;; still reported.
+  (let ((text (render-context
+               (build-context (k-graph (make-k-fixture)) "change resolve-overlay"
+                              :provenance (list :commit nil
+                                                :commit-reason "not a git repository"
+                                                :drift 0)))))
+    (is (search "an unreadable commit -- not a git repository" text))
+    (is (search "current with the tree" text))))
+
+;;; ------------------------------------------------------------------
 ;;; The description band (REQ-0049 R1 and R3)
 ;;; ------------------------------------------------------------------
 

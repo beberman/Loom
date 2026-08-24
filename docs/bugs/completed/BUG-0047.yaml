@@ -1,0 +1,86 @@
+id: BUG-0047
+title: Two censuses under tools/ had not loaded since PLAN-0043, and said so with a backtrace
+status: closed
+severity: minor
+date: 2026-08-24
+refines: [REQ-0050]
+affects: [load-systems, family-census, pkg-census]
+tags: [harness, measurement, req-0050, con-0001, plan-0043]
+summary: |
+  tools/family-census.lisp and tools/package-census.lisp push a registry
+  naming ontology, graph, analyzer, knowledge and workspace, and load
+  loom-workspace. Since PLAN-0043, loom-knowledge depends on loom-embed, which
+  is not on either registry:
+
+      Component #:LOOM-EMBED not found, required by #<SYSTEM "loom-knowledge">
+
+  Both exit 1 with a backtrace. REQ-0050's body names tools/call-site-census.
+  lisp as the instrument this happened to; it happened to three, and the other
+  two were found by looking rather than by anyone needing them.
+body: |
+  WHAT WAS ACTUALLY BROKEN
+
+  Three things, and only the first was known:
+
+    tools/call-site-census.lisp   registry predated loom-embed. Fixed when
+                                  REQ-0050 was written, and its fix is what
+                                  named the shape.
+    tools/family-census.lisp      the same, still broken. Measured 2026-08-24.
+    tools/package-census.lisp     the same, still broken. Measured 2026-08-24.
+
+  Both also hardcoded #p"/home/beberman/lisp/Loom/" as the tree root, where the
+  other five instruments derive it from *LOAD-TRUENAME*. A census that only
+  runs on one machine is a second way for an instrument to be unavailable
+  without saying so.
+
+  WHY A BACKTRACE IS THE WRONG REPORT
+
+  REQ-0050 R5: a measurement that did not happen must not read like one that
+  returned nothing to say. A backtrace from ASDF is neither -- it is a wall of
+  frames whose first line is about a component, and the fact a reader needs is
+  that the number they came for does not exist. `*CALL-SITE-CEILING*''s failure
+  message tells a developer to re-run the census; a developer following that
+  instruction saw thirty lines of Lisp internals and no statement that the
+  ceiling was unmeasured.
+
+  THE FIX IS ONE FILE, NOT SEVEN PATCHES
+
+  tools/harness.lisp. Every instrument opened with the same twelve lines --
+  require asdf, load quicklisp, push a registry, quickload libraries, load a
+  system -- copied seven times and drifted three ways: two registries missing
+  loom-embed, two roots hardcoded, and one script (tools/load-test.lisp)
+  deliberately different in a way no reader could tell from an accident.
+
+  LOAD-SYSTEMS takes the instrument's own path, the directories to register and
+  the system to load, and on any error prints:
+
+      tools/family-census.lisp did not run.
+        LOOM-WORKSPACE failed to load: Component #:LOOM-EMBED not found...
+        Nothing was measured. This is not a result of zero -- it is the
+        instrument being broken, and whatever it measures is unknown
+        until it loads.
+
+  and exits 1.
+
+  WHAT THE SHARED FILE MUST NOT DO
+
+  tools/load-test.lisp keeps its own second phase. Its registry omits
+  "process/" on purpose -- the whole question it answers is whether a system
+  pulls loom-process in, and a registry entry would let it -- and its exit code
+  is the measurement: 0 for a peer, 1 for one that loaded the console, and now
+  2 for a system that did not load at all. Folding it into LOAD-SYSTEMS would
+  have made the deliberate omission look like the accidental ones this bug is
+  about.
+
+  HOW TO REPRODUCE
+
+  Before:
+
+      $ sbcl --script tools/family-census.lisp
+      Unhandled ASDF/FIND-COMPONENT:MISSING-DEPENDENCY ...
+        Component #:LOOM-EMBED not found, required by #<SYSTEM "loom-knowledge">
+      [backtrace]
+
+  After, both censuses run: family-census reports 48 systems and 15 in the
+  :GAME family on game-server; package-census reports 132 files scanned and 32
+  package declarations on Loom.

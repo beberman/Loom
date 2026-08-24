@@ -1680,7 +1680,7 @@ neighbour two hops out all read as the same kind of line."
                                       (and (slot-boundp e 'name) (name e))))))))
 
 (defun build-context (view task &key (budget *context-token-budget*)
-                                     (seed-limit 8) types source-fn
+                                     (seed-limit 8) types source-fn provenance
                                      (source-definitions *context-source-definitions*))
   "A budgeted context bundle for TASK: the entities its words point at, their
 immediate relationships, and the decisions bearing on them.
@@ -1703,6 +1703,11 @@ now loses its fortieth structural neighbour rather than the document explaining
 the design.
 
 Every call is logged to *CONTEXT-LOG*."
+  ;; PROVENANCE is REQ-0050 R1: which tree this answer came from and how far
+  ;; behind it the index is, supplied by the caller for the reason SOURCE-FN is
+  ;; -- loom-knowledge is handed a graph and never learns which repository it
+  ;; belongs to. Carried whole and rendered by RENDER-CONTEXT, so a bundle
+  ;; pasted into a session an hour later still says what it was built from.
   (multiple-value-bind (seeds seed-detail term-states)
       (seed-entities view task :limit seed-limit :types types)
    (let* (;; DES-0026 D6/D8, PLAN-0032 S1. Was: NEIGHBORS on each seed, PUSHNEW,
@@ -1878,6 +1883,7 @@ Every call is logged to *CONTEXT-LOG*."
       (let* ((sourced (count-if (lambda (i) (getf i :source)) items))
              (wanted (if source-fn (min source-definitions (length seeds)) 0))
              (bundle (list :task task
+                          :provenance provenance
                           :seeds (summarize-entities seeds)
                           ;; DES-0032 D3. What the task's words reached, so a
                           ;; caller can tell a bundle whose subject is here
@@ -2142,6 +2148,33 @@ answer would spend the budget this exists to report."
                 (or (getf bundle :withheld-source-tokens) 0))))
     (terpri out)))
 
+(defun render-provenance (bundle out)
+  "Which tree BUNDLE was built from, and whether the index had caught up.
+
+REQ-0050 R1. A bundle is the answer with the longest life in this system: it is
+read into a session and worked from for an hour, where a `status\' line is read
+and forgotten. It was also the one surface carrying no revision at all -- the
+context *record* has carried the commit and the diff hash since REQ-0036 R4,
+and the record is Loom\'s bookkeeping rather than the caller\'s answer.
+
+One line, and only when the caller supplied one. Nothing is invented for a
+caller that passed nothing: a bundle built by a test or by a tool that never
+had a repository would otherwise claim a freshness nobody measured, which is
+CON-0001 in the place it would be least visible."
+  (let ((provenance (getf bundle :provenance)))
+    (when provenance
+      (let ((commit (getf provenance :commit))
+            (drift (getf provenance :drift)))
+        (format out "~&# index built from ~a~@[ (~a)~]~@[ ~a~]; ~a~%"
+                (or (and commit (subseq commit 0 (min 12 (length commit))))
+                    (format nil "an unreadable commit -- ~a"
+                            (or (getf provenance :commit-reason) "no reason recorded")))
+                (getf provenance :branch)
+                (and (getf provenance :dirty) "+ uncommitted edits")
+                (cond ((null drift) "freshness unmeasured")
+                      ((zerop drift) "current with the tree")
+                      (t (format nil "~d claimed file~:p have changed since" drift))))))))
+
 (defun render-context (bundle)
   "BUNDLE as the text block an agent receives.
 
@@ -2151,6 +2184,7 @@ whose text is not has not saved anybody anything."
   (let ((band nil))
    (with-output-to-string (out)
     (format out "~&# Context for: ~a~%" (getf bundle :task))
+    (render-provenance bundle out)
     (render-cutoff bundle out)
     (when (null (getf bundle :items))
       (format out "No indexed entity matched this task.~%"))

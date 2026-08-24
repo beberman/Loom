@@ -274,6 +274,39 @@ command."
   (format t "~&~a  ~a~%" (getf status :name) (getf status :root))
   (format t "  index      : ~d files, ~d entities, ~d relationships~%"
           (getf status :files) (getf status :entities) (getf status :relationships))
+  ;; REQ-0050 R1 and R3, on the surface a developer actually reads. The plist
+  ;; has carried the fingerprint and the drift since R2 landed and this printer
+  ;; dropped both, so the console said how big the index was and never what
+  ;; tree it was built from.
+  ;;
+  ;; Drift is printed even when the commit cannot be read, and the asymmetry is
+  ;; the point: drift comes from REPOSITORY-STAMPS, which is Loom\'s own record
+  ;; of the bytes it analyzed, so it is the one half that answers on a tree with
+  ;; no git in it at all. A commit nobody could read is reported as unknown
+  ;; with the reason rather than left blank (CON-0001).
+  (let ((commit (getf status :commit))
+        (drift (getf status :drift)))
+    (format t "  built from : ~@[~a ~]~a~@[ ~a~]~%"
+            (getf status :branch)
+            (cond (commit (subseq commit 0 (min 12 (length commit))))
+                  (t (format nil "commit unknown -- ~a"
+                             (or (getf status :commit-reason) "no reason recorded"))))
+            ;; The diff hash as the one thing a reader can do with it. Sixteen
+            ;; hex digits are for comparing two answers; a reader of one answer
+            ;; wants to know whether the commit named above is the whole story.
+            (let ((diff (getf status :diff)))
+              (and diff (not (string= diff (clean-diff-hash)))
+                   "+ uncommitted edits")))
+    (format t "  freshness  : ~a~@[; ~d file~:p no analyzer has read yet~]~%"
+            (cond ((null drift) "unknown -- the index kept no file stamps")
+                  ((zerop drift) "index current with the tree")
+                  (t (format nil "STALE INDEX: ~d claimed file~:p changed since it was read"
+                             drift)))
+            ;; The half a stamp walk cannot see: a file created since the last
+            ;; poll has no stamp to disagree with. Printed only when there is
+            ;; one, because on a watched tree it is nought for all but the
+            ;; seconds between a save and the next poll.
+            (let ((n (getf status :unindexed))) (and n (plusp n) n))))
   (format t "  documents  : ~d~@[, ~d uncategorized~]~%"
           (getf status :documents)
           (let ((n (getf status :uncategorized-documents))) (and (plusp n) n)))
@@ -603,7 +636,9 @@ the reader tell which question they asked.")
   (let* ((repository (current-repository))
          (graph (repository-graph repository))
          (entity (resolve-entity graph term))
-         (detail (describe-entity graph (id entity)))
+         (detail (describe-entity graph (id entity)
+                                  :provenance (file-provenance
+                                               repository (getp entity :file))))
          ;; REQ-0031 R2: requested rather than assumed. A flag rather than a
          ;; second positional, because `describe <name> <something>' reads as a
          ;; type filter by analogy with `find'. An unrecognised token is
@@ -618,6 +653,18 @@ the reader tell which question they asked.")
                  ;; anonymous lambda with no block to return from.
                  (t (error "Unknown option ~s. Try: --source" flag)))))
     (print-summary-line (getf detail :entity))
+    ;; REQ-0050 R1, and printed only when this entity's own file has moved.
+    ;; `describe' is issued dozens of times in a session where `structure' is
+    ;; read once and pasted into a document, so the two answer the same
+    ;; question with different noise budgets: structure says which of the two
+    ;; states it is in every time, and this says nothing while there is nothing
+    ;; to say.
+    ;;
+    ;; The file rather than the repository, which is both the precise question
+    ;; for an answer about one definition and the cheap one -- a tree-wide
+    ;; drift here measured 4.7ms to 25.6ms over REST.
+    (when (getf (getf detail :provenance) :file-stale)
+      (format t "~&  (this file has changed since the index read it)~%"))
     ;; BUG-0044. `describe find-entities' answered every question about the
     ;; function except what it takes, while :ARGUMENTS held every token. Its own
     ;; line rather than the summary line, because the summary is shared with
@@ -947,6 +994,11 @@ of tokens." value))
                 (loom-knowledge:*context-embedder* (current-embedder)))
             (build-context (repository-graph repo) task
                            :budget (or budget *context-token-budget*)
+                           ;; REQ-0050 R1. The bundle is read for an hour after
+                           ;; it is printed, so it says which tree it came from
+                           ;; rather than leaving that to a `status' call the
+                           ;; reader would have to think to make.
+                           :provenance (index-provenance repo)
                            :source-fn (lambda (id) (definition-source repo id))))
         (write-string (render-context bundle))
         ;; REQ-0036 R1 is every context call rather than every call over the
@@ -1073,13 +1125,15 @@ of tokens." value))
   ;; hard to keep true. What it will not print is an invariant: code being
   ;; consistent with one is not evidence anybody intended it.
   (let ((repository (current-repository designator)))
-    (multiple-value-bind (commit reason) (repository-commit repository)
+    ;; REQ-0050 R1: the index's fingerprint, not `git rev-parse HEAD' asked
+    ;; when the report is built. The two agree on a tree nobody has edited
+    ;; since the last poll and on no other.
+    (let ((provenance (index-provenance repository)))
       (write-string
        (render-structure
-        (structure-report (repository-graph repository)
-                          :commit commit
-                          :commit-reason reason
-                          :repository (repository-name repository)))))))
+        (apply #'structure-report (repository-graph repository)
+               :repository (repository-name repository)
+               provenance))))))
 
 (define-command check-document (path &optional designator)
     "check-document <path> [<name>]"

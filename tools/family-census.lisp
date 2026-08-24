@@ -14,17 +14,13 @@
 ;;;; states at length: Loom indexes its own tree, and a measuring script that
 ;;;; defines REPORT or TALLY changes the numbers it is about to report.
 
-(require :asdf)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
-(let ((here #p"/home/beberman/lisp/Loom/"))
-  (dolist (system '("ontology/" "graph/" "analyzer/" "knowledge/" "workspace/"))
-    (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
-             asdf:*central-registry* :test #'equal)))
-(handler-bind ((warning #'muffle-warning))
-  (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid") :silent t))
-(handler-bind ((warning #'muffle-warning))
-  (asdf:load-system :loom-workspace))
+(load (merge-pathnames "harness.lisp"
+                       (make-pathname :name nil :type nil :defaults *load-truename*)))
+
+(loom-harness:load-systems "tools/family-census.lisp"
+                           :systems '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/" "workspace/")
+                           :libraries '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem" "cl-json" "drakma")
+                           :load :loom-workspace)
 
 (defpackage #:family-census
   (:use #:cl #:loom-ontology #:loom-graph #:loom-workspace))

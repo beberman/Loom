@@ -534,13 +534,25 @@ read as a claim about a deployed system."
                       :via        (getp r :route)
                       :confidence (confidence r))))
 
-(defun describe-entity (view id)
+(defun describe-entity (view id &key provenance)
   "Full detail for one entity: its own properties plus its neighbours grouped
 by edge type -- the \"tell me about this function\" call. NIL when ID is
-unknown."
+unknown.
+
+PROVENANCE is REQ-0050 R1: which tree the index was built from, and whether
+this entity's own file has moved since the index read it, from
+LOOM-WORKSPACE:FILE-PROVENANCE. One file rather than the repository, because
+this answer is about one definition -- and because a tree-wide drift on the
+second cheapest command Loom has took it from 4.7ms to 25.6ms over REST.
+
+Carried on the data for a REST or MCP consumer, which has no other way to ask.
+The console prints one line and only when the file has moved, because this
+command is issued dozens of times in a session and a freshness line on each of
+them is noise on the answers where nothing is wrong."
   (let ((entity (get-entity view id)))
     (when entity
       (list :entity     (entity-summary entity)
+            :provenance provenance
             ;; BUG-0044. Here rather than in ENTITY-SUMMARY, which is read in
             ;; bulk by `find' and `impact' and is deliberately what is true of
             ;; every entity. What a definition takes is type-specific detail,
