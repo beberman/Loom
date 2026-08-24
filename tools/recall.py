@@ -23,13 +23,17 @@ their repository and by matching a query in the case file.
 """
 
 import json
+import os
 import sys
 import time
 import urllib.parse
 import urllib.request
 from collections import defaultdict
 
-B = "http://127.0.0.1:4780/v1"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import service
+
+B = service.BASE
 
 
 def names_in(bundle):
@@ -105,6 +109,15 @@ def main():
                 kept.append(c)
                 seen[c[3]] += 1
         cases = kept
+
+    # RULE-0008, and this harness is why the rule is worth writing down. A case
+    # whose call raises is reported to stderr and skipped, so 450 cases against
+    # a service that is down print 450 ERROR lines and then `ALL strict 0/450
+    # 0.0%%' -- a recall figure, correctly formatted, measuring nothing. ENSURE
+    # brings the service up and waits for every tree the case file names to
+    # reach ready, and exits rather than let that line be printed.
+    service.ensure(__file__, repositories=sorted({c[0] for c in cases},
+                                                 key=str.lower))
 
     tally = defaultdict(lambda: {"n": 0, "strict": 0, "lenient": 0})
     # REQ-0050 R4, read off the first bundle each repository returns. Every

@@ -281,6 +281,15 @@ worse than no sentence.
 - **Guard with the condition type the library actually signals.** `error` does
   not catch a condition defined as a direct subtype of `condition`. RULE-0004.
 - **A test must fail without the change it covers.** CON-0003.
+- **An instrument brings the service up itself.** `tools/acceptance.py`,
+  `tools/recall.py` and `tools/seed-sheet.py` score answers read over REST, and
+  each opens by calling `tools/service.py`'s `ensure`: it runs
+  `tools/loom-serve.sh update`, waits for every tree it names to reach `ready`
+  — a repository still `embedding` answers lexically, so its recall measures
+  half the seeder — and exits with a sentence rather than print a figure against
+  a service it could not reach. `tools/loom.sh` is not the driver for this: it
+  reindexes every tree it names on every call and builds no vector store, which
+  a harness making 450 calls would pay 450 times. RULE-0008.
 - **An analyzer asserts each natural key at most once per file.** Two source
   definitions deriving one key are reconciled by the analyzer, in its own
   language's semantics — CL replaces, TypeScript merges — because the writer is

@@ -28,7 +28,10 @@ import time
 import urllib.parse
 import urllib.request
 
-B = "http://127.0.0.1:4780/v1"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import service
+
+B = service.BASE
 LOG = os.environ.get("LOOM_CONTEXT_LOG_DIR", ".loom/context")
 
 
@@ -69,6 +72,12 @@ def main():
         sys.exit("Usage: seed-sheet.py <cases.json> [--terms] > out.csv")
     want_terms = "--terms" in args
     cases = json.load(open(args[0]))
+
+    # RULE-0008. Same skip-and-continue as recall.py, and the same silent
+    # result: a service that is down writes a CSV with a header and no rows,
+    # which reads as a case file that produced nothing.
+    service.ensure(__file__, repositories=sorted({c[0] for c in cases},
+                                                 key=str.lower))
 
     started = time.time() - 1
     rows = []
