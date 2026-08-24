@@ -286,6 +286,19 @@ compared, and is not a security claim about anything."
                                 1099511628211))))
     (format nil "~(~16,'0x~)" hash)))
 
+(defun clean-diff-hash ()
+  "What GIT-DIFF-HASH answers for a tree with nothing uncommitted.
+
+REQ-0050 R1. GIT-DIFF-HASH hashes the output of `git diff HEAD\', and an empty
+diff hashes to the hash of the empty string -- its docstring states that as the
+convention rather than returning NIL for a clean tree. This is that convention
+made callable, so a surface can say `and the tree had uncommitted edits\'
+instead of printing sixteen hex digits nobody can compare by eye.
+
+A function rather than a constant so it reads as the one arithmetic
+GIT-DIFF-HASH does, rather than as a magic string beside it."
+  (fnv-1a ""))
+
 (defun git-diff-hash (root)
   "Two values: a hash of ROOT\'s uncommitted changes, and why it could not be
 read.
@@ -1054,7 +1067,7 @@ a file with nothing to report contributes nothing rather than an empty list."
         sum (length (getp file property))))
 
 (defun index-drift (repository)
-  "How many claimed files have changed since the index last read them.
+  "How many files the index read have changed since it read them.
 
 REQ-0050 R2 and R3, done from Loom's own record rather than from git. The first
 attempt fingerprinted `git diff HEAD', which answers a question nobody asked:
@@ -1065,45 +1078,141 @@ perfectly current. A staleness signal that fires on every document, tool and
 fixture edit is a signal that gets ignored, which restores the defect it was
 built to remove.
 
-REPOSITORY-STAMPS is the precise answer and costs nothing to keep: the watcher
-already stores, per claimed file, the write date and a content hash of the
-bytes the analyzer read. A file whose stamp disagrees with the file on disk is
-a file the index is behind on, and nothing else is.
+REPOSITORY-STAMPS is the precise answer and it is also the cheap one: the
+watcher already stores, per claimed file, the write date and a content hash of
+the bytes the analyzer read, so a file whose stamp disagrees with the file on
+disk is a file the index is behind on.
 
-One stat per claimed file, which is what FILE-CHANGED-P costs on every poll
-already. A file the index has never seen counts, and a file that has vanished
-counts, because both mean the index and the tree disagree."
-  (let ((stamps (repository-stamps repository))
+Over the stamps rather than over the tree, which is a correction and not a
+detail. Walking the tree instead costs a recursive directory walk and a `git
+check-ignore' subprocess -- measured on Loom, 179ms against 1.6ms for the stats
+-- and REQ-0050's own open question is that a fingerprint in the latency path
+of the cheapest command Loom has is not affordable. At 1.6ms it goes on every
+answer; at 179ms it could go on `status' alone, which is the surface that needs
+it least.
+
+What a stamp walk cannot see is a file the index has never read. That is
+UNINDEXED-FILES, which costs the walk and which `status' pays for."
+  (let ((root (repository-root repository))
         (now (get-universal-time))
-        (seen 0)
         (drift 0))
-    (dolist (path (repository-files repository))
-      (let ((relative (workspace-relative-path path (repository-root repository))))
-        (incf seen)
-        (when (file-changed-p repository relative path now) (incf drift))))
-    ;; A file that was indexed and is no longer claimed -- deleted, renamed, or
-    ;; excluded since -- is drift the loop above cannot see, because it walks
-    ;; what is there now rather than what was.
-    (+ drift (max 0 (- (hash-table-count stamps) seen)))))
+    (maphash (lambda (relative stamp)
+               (declare (ignore stamp))
+               (let ((path (merge-pathnames relative root)))
+                 ;; PROBE-FILE as well as FILE-CHANGED-P, because the two
+                 ;; disagree about a file that is gone and both are right for
+                 ;; their own question. FILE-CHANGED-P answers "reanalyze
+                 ;; this?" and says no -- there is nothing to read. Drift asks
+                 ;; "do the index and the tree agree?" and a deleted file is
+                 ;; the clearest case of no.
+                 (when (or (null (probe-file path))
+                           (file-changed-p repository relative path now))
+                   (incf drift))))
+             (repository-stamps repository))
+    drift))
+
+(defun unindexed-files (repository)
+  "How many files an analyzer claims that the index has no stamp for.
+
+The half INDEX-DRIFT cannot see. A stamp walk compares what the index read
+against what is on disk now, and a file created since the last poll is in
+neither -- it has no stamp to disagree with. `git diff HEAD' would not see it
+either, which is the untracked-file gap REQ-0050 records as open in the
+mechanism REQ-0036 R4 relies on.
+
+Costs what REPOSITORY-FILES costs: a recursive directory walk and one `git
+check-ignore' call, 179ms on Loom. Reported by `status', which is a deliberate
+question asked rarely, and by nothing in a query's latency path."
+  (let ((root (repository-root repository))
+        (stamps (repository-stamps repository)))
+    (loop for path in (repository-files repository)
+          count (null (gethash (workspace-relative-path path root) stamps)))))
 
 (defun index-fingerprint (root)
-  "ROOT's commit and diff hash as a plist, for recording at index time.
+  "ROOT's branch, commit and diff hash as a plist, for recording at index time.
 
-REQ-0050 R2. Both halves, because they answer different questions: a commit is
-stable across hours of editing so it distinguishes weeks, and the diff hash
-moves on every save so it distinguishes the states an index is actually built
-from. GIT-DIFF-HASH does not see untracked files, which is a real gap in the
-pairing REQ-0036 R4 already relies on and is recorded as open there."
+REQ-0050 R1 and R2. All three, because they answer different questions: a
+commit is stable across hours of editing so it distinguishes weeks, the diff
+hash moves on every save so it distinguishes the states an index is actually
+built from, and the branch is the one of the three a reader recognises without
+looking anything up. GIT-DIFF-HASH does not see untracked files, which is a
+real gap in the pairing REQ-0036 R4 already relies on and is recorded as open
+there.
+
+The same triple GIT-FINGERPRINT puts on a context record, read at index time
+rather than at record time. Two functions rather than one because the two are
+asked at different moments about different things -- this one is about the
+bytes the analyzer read, and a caller that shared it would be reporting the
+index\'s tree as the record\'s."
   (multiple-value-bind (commit commit-reason) (git-commit root)
     (multiple-value-bind (diff diff-reason) (git-diff-hash root)
-      (list :commit commit :commit-reason commit-reason
-            :diff diff :diff-reason diff-reason))))
+      (multiple-value-bind (branch branch-reason) (git-branch root)
+        (list :commit commit :commit-reason commit-reason
+              :diff diff :diff-reason diff-reason
+              :branch branch :branch-reason branch-reason)))))
+
+(defun file-provenance (repository relative)
+  "The index's fingerprint, and whether the one file RELATIVE has moved since
+the index read it.
+
+REQ-0050 R1 for an answer about a single definition. `describe' is about one
+entity in one file, so whether the answer is about code that is still there is
+a question about that file and not about the tree -- and asking it precisely
+costs one stat where INDEX-PROVENANCE's drift costs one per claimed file.
+Measured over REST on Loom: 4.7ms to 25.6ms with the tree-wide drift on it,
+against no measurable change with this.
+
+:DRIFT is deliberately absent rather than nought. A caller reading a plist with
+a :DRIFT of 0 would take it for a statement about the repository, which this
+never asked."
+  (let* ((fingerprint (repository-indexed-fingerprint repository))
+         (diff (getf fingerprint :diff))
+         (path (and relative (merge-pathnames relative (repository-root repository)))))
+    (list :commit (getf fingerprint :commit)
+          :commit-reason (getf fingerprint :commit-reason)
+          :branch (getf fingerprint :branch)
+          :diff diff
+          :dirty (and diff (not (string= diff (clean-diff-hash))) t)
+          :file relative
+          :file-stale (and path
+                           (or (null (probe-file path))
+                               (file-changed-p repository relative path
+                                               (get-universal-time)))
+                           t))))
+
+(defun index-provenance (repository)
+  "The tree REPOSITORY's index was built from, and how far behind it now is.
+
+REQ-0050 R1 and R3, in one plist so that every surface reports provenance the
+same way rather than each assembling its own half of it. :COMMIT, :BRANCH and
+:DIFF are read from the fingerprint captured when indexing finished; :DRIFT is
+computed now, because it is the comparison between then and the tree on disk.
+
+:DIRTY rather than the caller comparing :DIFF against CLEAN-DIFF-HASH. The
+comparison is one fact -- was the tree the analyzer read the commit it names --
+and loom-knowledge, which renders one of these surfaces, may not call up here
+to make it.
+
+The two halves fail independently and both are reported. Drift is computed from
+REPOSITORY-STAMPS and answers on a tree with no git in it at all; the commit
+needs git and says why it is missing when there is none."
+  (let* ((fingerprint (repository-indexed-fingerprint repository))
+         (diff (getf fingerprint :diff)))
+    (list :commit (getf fingerprint :commit)
+          :commit-reason (getf fingerprint :commit-reason)
+          :branch (getf fingerprint :branch)
+          :diff diff
+          :dirty (and diff (not (string= diff (clean-diff-hash))) t)
+          :drift (index-drift repository))))
 
 (defun repository-status (repository)
   "SS3.2's status, as plain data: \"indexing progress, entity and relationship
 counts, watcher health, unresolved document references, unenforced rules, and
 the last error per thread.\""
-  (let ((graph (repository-graph repository)))
+  (let ((graph (repository-graph repository))
+        ;; Once. DRIFT is one stat per claimed file, and reading it out of the
+        ;; plist six times would pay for the whole tree six times.
+        (provenance (index-provenance repository)))
     (list :name (repository-name repository)
           :root (namestring (repository-root repository))
           ;; The docstring above promises "indexing progress" and until now the
@@ -1131,9 +1240,16 @@ the last error per thread.\""
           ;; REPOSITORY-STAMPS rather than from `git diff HEAD', which moves
           ;; when a document or a tool moves and reported a perfectly current
           ;; index as stale within an hour of being introduced.
-          :commit (getf (repository-indexed-fingerprint repository) :commit)
-          :diff (getf (repository-indexed-fingerprint repository) :diff)
-          :drift (index-drift repository)
+          :commit (getf provenance :commit)
+          :commit-reason (getf provenance :commit-reason)
+          :branch (getf provenance :branch)
+          :diff (getf provenance :diff)
+          :dirty (getf provenance :dirty)
+          :drift (getf provenance :drift)
+          ;; REQ-0050 R3's other half, and on `status' alone: it costs the tree
+          ;; walk INDEX-DRIFT was moved off, and this is the one surface whose
+          ;; whole question is whether the index is in good order.
+          :unindexed (unindexed-files repository)
           :files (repository-file-count repository)
           :entities (length (all-entities graph))
           :relationships (length (all-relationships graph))

@@ -280,7 +280,12 @@ Pass source=true for the definition's text."
   (let* ((repository-struct (require-repository repository))
          (graph (repository-graph repository-struct))
          (entity (resolve-entity graph term))
-         (detail (describe-entity graph (id entity))))
+         ;; REQ-0050 R1. A REST or MCP consumer cannot see the console's
+         ;; drift line and has no other way to ask what tree this answer is
+         ;; about, so it travels on the data.
+         (detail (describe-entity graph (id entity)
+                                  :provenance (file-provenance
+                                               repository-struct (getp entity :file)))))
     (if (request-boolean source "source")
         ;; Appended under its own key rather than folded into :PROPERTIES: the
         ;; text is not a fact the analyzer asserted about the entity, it is a
@@ -322,6 +327,7 @@ Pass source=true for the definition's text."
             (build-context (repository-graph repo) task
                            :budget (or (request-integer budget "budget")
                                        *context-token-budget*)
+                           :provenance (index-provenance repo)
                            :source-fn (lambda (id) (definition-source repo id))))
         ;; REQ-0036 R1 and R8. The record is additive: the identifier is one
         ;; more key on a bundle a caller already reads, and with
@@ -344,11 +350,13 @@ Pass source=true for the definition's text."
   ;; a tree's structure over REST gets the data a human sees formatted, not a
   ;; second, prose-shaped answer it would have to parse.
   (let ((watched (require-repository repository)))
-    (multiple-value-bind (commit reason) (repository-commit watched)
-      (structure-report (repository-graph watched)
-                        :commit commit
-                        :commit-reason reason
-                        :repository (repository-name watched)))))
+    ;; REQ-0050 R1. INDEX-PROVENANCE rather than REPOSITORY-COMMIT: the commit
+    ;; this report is about is the one the analyzer read, and asking git now
+    ;; answers about the tree now. The plist carries the drift beside it, so a
+    ;; consumer reads whether the answer is behind rather than computing it.
+    (apply #'structure-report (repository-graph watched)
+           :repository (repository-name watched)
+           (index-provenance watched))))
 
 (define-operation :drift :read (repository)
     "Where the prose and the index disagree. Candidates for review, not findings."

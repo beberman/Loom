@@ -23,31 +23,39 @@
 ;;;; INSTALL-DEBUGGER-HOOK for headless mode, and CURRENT-REPOSITORY or
 ;;;; RESOLVE-ENTITY from console.lisp -- and all three are caught here.
 
-(require :asdf)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(load (merge-pathnames "harness.lisp"
+                       (make-pathname :name nil :type nil :defaults *load-truename*)))
 
-(let ((here #p"/home/beberman/lisp/Loom/"))
-  (dolist (system '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
-                    "workspace/" "serve/" "rest/" "mcp/"))
-    (let ((directory (merge-pathnames (concatenate 'string "src/" system) here)))
-      ;; The directory for a system a later step has not created yet is simply
-      ;; skipped: this script has to be runnable at the step that introduces
-      ;; the first of the three.
-      (when (probe-file directory)
-        (pushnew directory asdf:*central-registry* :test #'equal)))))
-
-;;;; Conspicuously not "process/": a registry entry for it would let the
-;;;; system under test load it without saying so, which is the whole question.
-
-(handler-bind ((warning #'muffle-warning))
-  (funcall (read-from-string "ql:quickload")
-           '("cl-yaml" "bordeaux-threads" "random-uuid" "stem") :silent t))
+;;;; Conspicuously not "process/": a registry entry for it would let the system
+;;;; under test load it without saying so, which is the whole question.
+(loom-harness:load-systems "tools/load-test.lisp"
+                           :systems '("embed/" "ontology/" "graph/" "analyzer/"
+                                      "knowledge/" "workspace/" "serve/" "rest/" "mcp/")
+                           :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "stem"))
 
 (let* ((name (or (second sb-ext:*posix-argv*)
                  (error "Usage: sbcl --script tools/load-test.lisp <system>")))
        (system (intern (string-upcase name) :keyword)))
-  (handler-bind ((warning #'muffle-warning))
-    (funcall (read-from-string "ql:quickload") system :silent t))
+  ;; REQ-0050 R5. A system that will not load is not a failed peer check -- it
+  ;; is no check at all, and the two must not read alike. `loom-process' itself
+  ;; is the case worth naming: it is absent from the registry above on purpose,
+  ;; so asking for it by name fails here rather than being answered.
+  (handler-case
+      (handler-bind ((warning #'muffle-warning))
+        (funcall (read-from-string "ql:quickload") system :silent t))
+    (error (condition)
+      (format *error-output*
+              "~&tools/load-test.lisp did not run.~%~
+                 ~2t~a failed to load: ~a~%~
+                 ~2tNothing was checked. ~a~%"
+              system condition
+              (if (string-equal name "loom-process")
+                  "loom-process is deliberately absent from this registry -- it is
+  the system every other one is being checked against, and an entry for it
+  would let the system under test load it without saying so."
+                  "The peer property is unmeasured until it loads."))
+      (finish-output *error-output*)
+      (sb-ext:exit :code 2)))
   (let ((clean (null (find-package "LOOM-PROCESS"))))
     (format t "~&~a loaded; (find-package \"LOOM-PROCESS\") => ~a~%" system clean)
     (finish-output)

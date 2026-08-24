@@ -130,12 +130,26 @@ It is worth exactly as much as that makes it. No name in it was invented -- each
 one resolved against real code when this was written -- and no sentence in it~%~
 says why the code is the way it is, because an index cannot know that. A human~%~
 editing this document should expect to add the second kind and keep the first.~%~%~
-~d entities and ~d relationships across ~d system~:p.~@[ ~a~]"
+~d entities and ~d relationships across ~d system~:p.~@[ ~a~]~@[~%~%~a~]"
               (getf report :commit)
               (getf report :entities) (getf report :relationships)
               (length (getf report :systems))
               (unless (getf report :indexed-p)
-                "No relationships were derived at all, so no analyzer claimed this tree's source -- what follows describes only what Loom could read."))
+                "No relationships were derived at all, so no analyzer claimed this tree's source -- what follows describes only what Loom could read.")
+              ;; REQ-0050 R1 and R3, and it matters more here than on a console
+              ;; line: this sentence is written into a file and read months
+              ;; later, when nothing else can say whether the index behind it
+              ;; had caught up with the tree. Said only when it had not, because
+              ;; a generated document that recites its own freshness on every
+              ;; line is noise, and a reader of a document with no such
+              ;; sentence can take the commit at its word.
+              (let ((drift (getf report :drift))
+                    (dirty (getf report :dirty)))
+                (cond ((and drift (plusp drift))
+                       (format nil "Derived from an index that was ~d claimed file~:p behind the tree when this was written, so the commit above names the reference point rather than the bytes described." drift))
+                      (dirty
+                       "The tree had uncommitted edits when this was derived, so the commit above names the reference point rather than the bytes described.")
+                      (t nil))))
       2)
      out)
     (format out "invariants: |~%")
@@ -248,9 +262,10 @@ write into the wrong place in exactly the trees that chose otherwise."
                         "docs"))
          (arch-dir (merge-pathnames (format nil "~a/arch/" docs-name) root)))
     (with-repository-lock (repository)
-      (multiple-value-bind (commit reason) (repository-commit repository)
-        (let* ((report (structure-report graph :commit commit :commit-reason reason
-                                               :repository (repository-name repository)))
+      (let ((provenance (index-provenance repository)))
+        (let* ((report (apply #'structure-report graph
+                              :repository (repository-name repository)
+                              provenance))
                (doc-id (next-document-id arch-dir "ARCH"))
                (path (merge-pathnames (format nil "~a.yaml" doc-id) arch-dir)))
           (multiple-value-bind (describes dropped) (architecture-describes graph report)
@@ -276,7 +291,7 @@ write into the wrong place in exactly the trees that chose otherwise."
                  (list :repository (repository-name repository)
                        :problems '()
                        :document doc-id
-                       :commit commit
+                       :commit (getf provenance :commit)
                        :describes (length describes)
                        :dropped dropped
                        :recorded (and (read-manifest root) t)

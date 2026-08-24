@@ -1,9 +1,9 @@
 id: REQ-0050
 title: An answer must say which tree it is about, because the commit it reports is the tree's and the answer came from an index that may be older
-status: draft
+status: implemented
 date: 2026-08-23
 refines: [REQ-0036]
-affects: [structure-report, repository-status, git-diff-hash, repository-commit, definition-source]
+affects: [structure-report, repository-status, index-provenance, file-provenance, index-drift, unindexed-files, build-context, describe-entity, load-systems]
 importance: Critical
 tags: [staleness, provenance, measurement, req-0036, con-0001, harness]
 summary: |
@@ -209,3 +209,136 @@ body: |
   and it is the half a human recognises; drift is the half that answers the
   question.
 
+  OUTCOME, 2026-08-24
+
+  R1 and R5 land here; R2, R3 and R4 were partly built already and are finished
+  by the same change. Every surface that answers about a tree now says which
+  tree, and every instrument that loads a system says so when it cannot.
+
+  WHERE THE TRIPLE TRAVELS
+
+      status      console prints `built from' and `freshness'; REST carries
+                  commit, commit-reason, branch, diff, dirty, drift and
+                  unindexed. The console printed none of it before: the plist
+                  has carried the fingerprint since R2 and PRINT-STATUS
+                  dropped it, so the surface a developer reads said how big the
+                  index was and never what it was built from.
+      structure   the header names the commit, the branch and whether the tree
+                  was dirty, and the next line says whether the index is
+                  current or how many files behind. It read `git rev-parse
+                  HEAD' when the report was built until now, which is the
+                  defect this requirement opens with.
+      context     one line above the bundle. This was the surface carrying no
+                  revision at all, and it is the answer with the longest life:
+                  a bundle is read into a session and worked from for an hour.
+      describe    the same fingerprint, plus whether this entity's own file has
+                  moved. Per file rather than per tree, which is both the
+                  precise question for an answer about one definition and the
+                  affordable one -- see the cost table.
+      generated
+      ARCH        a sentence, and only when the index was behind or the tree
+                  dirty. It is written into a file and read months later, when
+                  nothing else can say whether the index behind it had caught
+                  up.
+
+  R3 IS TWO COUNTS, BECAUSE ONE OF THEM CANNOT TRAVEL
+
+  INDEX-DRIFT walked the tree: REPOSITORY-FILES, which is a recursive directory
+  walk plus a `git check-ignore' subprocess. Measured on Loom, 179ms against
+  1.6ms for the stats it exists to do. This requirement's own open question is
+  that a fingerprint in the latency path of the cheapest command Loom has is
+  not affordable, and at 179ms it was affordable nowhere.
+
+  Drift now walks REPOSITORY-STAMPS -- what the index read, compared against
+  disk -- and costs 5.5ms on Loom. What a stamp walk cannot see is a file the
+  index has never read, which is now UNINDEXED-FILES, costs the walk, and is
+  reported by `status' alone. Two named counts rather than one number quietly
+  covering both, because they are three orders of magnitude apart in cost and
+  only one of them can travel on every answer.
+
+  WHAT IT COSTS, REST medians over ten calls on Loom, before and after
+
+      find         3.0ms ->  2.2ms    carries no provenance; the control
+      describe     4.7ms ->  4.2ms    one stat, per file
+      context    100.4ms -> 112.6ms   the stamp walk
+      structure   72.1ms -> 82.9ms    the stamp walk
+      status     210.9ms -> 412.2ms   the stamp walk and the tree walk
+
+  `describe' is where the design was decided by measurement. With tree-wide
+  drift on it, it went 4.7ms to 25.6ms -- a fivefold cost on a command an agent
+  issues dozens of times a session, to answer a question it was not asking.
+  FILE-PROVENANCE asks about the one file the answer is about and costs nothing
+  measurable.
+
+  THE ACCEPTANCE, RUN
+
+  `structure' on a tree with uncommitted edits reports that the index is
+  behind: paused the Loom watcher over REST, appended one line to
+  src/knowledge/structure.lisp, and the report came back drift 1 and dirty
+  true. Restored the file: drift 0, `index current with the tree'.
+
+  `tools/acceptance.py' against that same stale service printed
+
+      measured against: service at 225499ce40d8  <-- STALE INDEX: 1 claimed
+      file changed since it was read
+
+  tools/recall.py prints a line per repository its cases touch, read off the
+  provenance the bundles themselves now carry rather than from a second call --
+  which R1 is what made possible:
+
+      measured against:
+        front-end: 48b1970fb5fb (terrain-partion)  index current with the tree
+        game-server: 4113fb8da96e (pieces)  index current with the tree
+
+  `check' reports 0 violations and its 8 unresolved document references.
+
+  The retrieval floors are untouched, which is the claim worth checking rather
+  than assuming: nothing here changes seeding, ranking or what a bundle
+  contains, and a provenance line that cost a case would say otherwise.
+
+      tools/acceptance.py   42 of 44, the same two misses -- fe-5 and r39-3
+      known-item            443 of 450: name 148, inflected 148, prose 147
+      suite                 10 of 10 systems
+
+  R5, AND THE TWO INSTRUMENTS NOBODY HAD RUN
+
+  tools/harness.lisp is the shared loader. Every instrument opened with the same
+  twelve lines copied seven times, and they had drifted three ways: two
+  registries missing loom-embed, two roots hardcoded to one machine's absolute
+  path, and one script deliberately different in a way no reader could tell from
+  an accident.
+
+  This requirement names tools/call-site-census.lisp as the instrument that
+  could not load. BUG-0047 is that it was three: family-census and
+  package-census had been broken by PLAN-0043 in exactly the same way and were
+  found by looking rather than by anyone needing them. Both run now.
+
+  A failed load prints what did not happen and exits 1:
+
+      tools/family-census.lisp did not run.
+        LOOM-WORKSPACE failed to load: Component #:LOOM-EMBED not found...
+        Nothing was measured. This is not a result of zero -- it is the
+        instrument being broken, and whatever it measures is unknown
+        until it loads.
+
+  tools/load-test.lisp keeps its own second phase and exits 2 for a system that
+  did not load, distinct from its 1 for a system that loaded the console. Its
+  registry omits process/ on purpose, and folding that into the shared loader
+  would have made the deliberate omission look like the accidental ones.
+
+  THE OPEN QUESTIONS, ANSWERED
+
+  A non-git tree reports an unknown commit with the reason, and a known
+  freshness. The two halves fail independently: drift comes from Loom's own
+  stamps and needs no git at all. So `not a git repository' reads as `which
+  commit is unknown' rather than making the whole answer suspect.
+
+  The diff hash still does not see untracked files, and the freshness signal no
+  longer depends on it. A new source file the analyzer would claim is counted
+  by UNINDEXED-FILES, so the gap in REQ-0036 R4's mechanism remains a gap in
+  that mechanism and is no longer a gap in this one.
+
+  Cost is the table above. The answer is that a stamp walk is affordable on a
+  bundle and on a structural report, a tree walk is affordable on `status'
+  alone, and neither is affordable on `describe' -- which is why `describe'
+  asks about its own file instead.

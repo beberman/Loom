@@ -274,13 +274,22 @@ report's job is to hand a reader the number rather than the adjective."
 ;;;; The report
 ;;;; ==================================================================
 
-(defun structure-report (view &key commit commit-reason repository)
+(defun structure-report (view &key commit commit-reason branch diff dirty drift
+                                  repository)
   "What the index can say about this tree's shape, as data. REQ-0021 R5.
 
 COMMIT is what the report was derived from, so a document generated later can
 be checked against the tree it described; the caller supplies it because
 loom-knowledge does not run subprocesses and does not know what a repository
 is (RULE-0003, and DES-0022 D3).
+
+BRANCH, DIFF, DIRTY and DRIFT are REQ-0050 R1 and R3 and arrive the same way,
+from LOOM-WORKSPACE:INDEX-PROVENANCE. Until they did, this report named the
+commit `git rev-parse HEAD\' printed when the report was built, which measures
+the tree and is read as measuring the index -- and the two differ by every
+uncommitted edit and by however long since the watcher last polled. DRIFT is
+the half that answers the question and DIRTY says whether the commit named is
+the whole of what was read.
 
 :INDEXED-P is the field that keeps this honest on a repository Loom cannot
 read. front-end holds 455 .js files, produces 27 entities and no relationships
@@ -299,6 +308,10 @@ and only this flag tells them apart."
        :repository repository
        :commit commit
        :commit-reason commit-reason
+       :branch branch
+       :diff diff
+       :dirty dirty
+       :drift drift
        :entities (length entities)
        :relationships (length relationships)
        ;; Not "is this tree simple" but "did Loom read it". A tree with entities
@@ -347,10 +360,26 @@ D4 requires that the document generator and this printer walk the same data, so
 a judgement made here is one the generator cannot reproduce and would invent
 differently."
   (with-output-to-string (out)
-    (format out "~&# Structure of ~a~@[ at ~a~]~%"
-            (or (getf report :repository) "this repository") (getf report :commit))
+    (format out "~&# Structure of ~a~@[ at ~a~]~@[ (~a)~]~@[ ~a~]~%"
+            (or (getf report :repository) "this repository") (getf report :commit)
+            (getf report :branch)
+            (and (getf report :dirty) "+ uncommitted edits"))
     (when (getf report :commit-reason)
       (format out "~&# commit unknown: ~a~%" (getf report :commit-reason)))
+    ;; REQ-0050 R3. The comparison is made here rather than left to a reader
+    ;; holding two hashes: what a caller wants to know is whether this report
+    ;; describes the tree they are looking at, and the answer is a sentence.
+    ;;
+    ;; Printed on both outcomes, because a report that says nothing about
+    ;; freshness cannot be told from one whose index is current -- and this is
+    ;; the surface REQ-0050 was written from, where a commit field agreeing
+    ;; with HEAD was read as the index agreeing with the tree.
+    (let ((drift (getf report :drift)))
+      (format out "~&# ~a~%"
+              (cond ((null drift) "freshness unknown: no drift was measured")
+                    ((zerop drift) "index current with the tree")
+                    (t (format nil "STALE INDEX: ~d claimed file~:p changed since it was read"
+                               drift)))))
     (format out "~&# ~d entities, ~d relationships~@[, ~d with no system~]~%"
             (getf report :entities) (getf report :relationships)
             (let ((n (getf report :unplaced-entities))) (and (plusp n) n)))

@@ -208,6 +208,38 @@ intent REQ-0021 says no index holds."
       (is (search "commit unknown: not a repository" text)
           "a known gap rather than a blank where a commit should be"))))
 
+(test the-report-says-whether-the-index-had-caught-up-with-the-tree
+  ;; REQ-0050 R3, and it is the requirement's own acceptance clause. The commit
+  ;; field measures the tree and was read as measuring the index; the two
+  ;; differ by every uncommitted edit and by however long since the last poll,
+  ;; so the answer says which of the two it is.
+  (let ((g (s-graph (make-s-fixture))))
+    (is (search "STALE INDEX: 3 claimed files changed since it was read"
+                (render-structure (structure-report g :commit "abc1234" :drift 3))))
+    (is (search "index current with the tree"
+                (render-structure (structure-report g :commit "abc1234" :drift 0)))
+        "said on both outcomes: a report silent about freshness cannot be told
+from one whose index is current")))
+
+(test the-report-says-when-the-commit-is-not-the-whole-of-what-was-read
+  ;; The other half of REQ-0050 R1. An index built from a working tree with
+  ;; uncommitted edits is not the commit it names, and DRIFT will not say so --
+  ;; drift is the index against the tree on disk, and both can agree while
+  ;; neither is the commit.
+  (let ((g (s-graph (make-s-fixture))))
+    (is (search "+ uncommitted edits"
+                (render-structure (structure-report g :commit "abc1234"
+                                                     :dirty t :drift 0))))
+    (is (not (search "+ uncommitted edits"
+                     (render-structure (structure-report g :commit "abc1234"
+                                                          :dirty nil :drift 0)))))))
+
+(test the-branch-is-carried-because-it-is-the-half-a-reader-recognises
+  (let ((g (s-graph (make-s-fixture))))
+    (is (search "(req-0050-r1)"
+                (render-structure (structure-report g :commit "abc1234"
+                                                     :branch "req-0050-r1"))))))
+
 ;;; ------------------------------------------------------------------
 ;;; Prose attributed to the systems it describes
 ;;;

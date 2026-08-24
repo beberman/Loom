@@ -44,6 +44,46 @@ def names_in(bundle):
     return strict, lenient
 
 
+def measured_against(seen):
+    """One line per repository naming what produced the score.
+
+    REQ-0050 R4. This harness drives a running service and reported 450 case
+    results with nothing saying which build answered them. Its sibling
+    tools/acceptance.py asks the service for its status; this reads the
+    provenance the bundles themselves now carry (REQ-0050 R1), which is the
+    same fact from the answer rather than from a second call -- and it is
+    per repository, because the cases span four trees and each has its own
+    index.
+
+    A repository whose bundles carried no provenance is named as such. The
+    service that answered was older than the field, which is exactly the
+    situation this line exists to make visible."""
+    lines = []
+    for repo in sorted(seen):
+        p = seen[repo]
+        if not p:
+            lines.append(f"  {repo}: the service sent no provenance, so which "
+                         f"build answered is unknown")
+            continue
+        commit = p.get("commit")
+        head = (str(commit)[:12] if commit
+                else f"commit unknown -- {p.get('commit-reason') or 'no reason recorded'}")
+        if p.get("branch"):
+            head += f" ({p['branch']})"
+        if p.get("dirty"):
+            head += " + uncommitted edits"
+        drift = p.get("drift")
+        if drift is None:
+            tail = "staleness unknown"
+        elif drift:
+            tail = (f"<-- STALE INDEX: {drift} claimed file"
+                    f"{'' if drift == 1 else 's'} changed since it was read")
+        else:
+            tail = "index current with the tree"
+        lines.append(f"  {repo}: {head}  {tail}")
+    return lines
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -67,11 +107,18 @@ def main():
         cases = kept
 
     tally = defaultdict(lambda: {"n": 0, "strict": 0, "lenient": 0})
+    # REQ-0050 R4, read off the first bundle each repository returns. Every
+    # bundle carries it and they cannot disagree within a run unless the
+    # service reindexed mid-run, which is worth seeing rather than hiding: the
+    # last one wins and the line then names the tree most of the cases ran
+    # against.
+    provenance = {}
     results = []
     slowest = 0.0
     started = time.time()
 
     for repo, query, expected, family in cases:
+        provenance.setdefault(repo, None)
         t = time.time()
         try:
             b = json.load(urllib.request.urlopen(
@@ -82,6 +129,8 @@ def main():
             continue
         el = time.time() - t
         slowest = max(slowest, el)
+        if b.get("provenance"):
+            provenance[repo] = b["provenance"]
         strict, lenient = names_in(b)
         hit_s = expected in strict
         hit_l = expected in lenient
@@ -101,6 +150,10 @@ def main():
                         "seed_names": [s.get("name") for s in seeds],
                         "items": len(b.get("items") or [])})
 
+    print()
+    print("measured against:")
+    for line in measured_against(provenance):
+        print(line)
     print()
     total = {"n": 0, "strict": 0, "lenient": 0}
     # The three generated families first, in the order tools/make-cases.py
