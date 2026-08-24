@@ -57,6 +57,30 @@ body: |
   tools/acceptance.py --log reports "15 judgements, 2 excluded, 3 scored" against
   the current directory, and its recall figures are computed over the 13.
 
+  EVIDENCE FROM USE, 2026-08-23
+
+  The convention was misused twice in one session, by the same author, hours
+  apart, having corrected it the first time.
+
+  `(nothing)' is one of three literal strings tools/acceptance.py reads out of
+  the `used' slot, and it means the correct answer was that nothing exists.
+  Both misuses meant something else -- once "the rest of the bundle went
+  unused", once "the answer was to make no change" -- and both silently
+  registered as a correct negative on a record whose answer was present at seed
+  rank 1. Caught by reading the population counts afterwards, not by anything
+  the write path did.
+
+  That is this requirement's argument met from a direction it did not
+  anticipate. R1 asks for a field because prose in a judgement is not something
+  a scorer can read; the sharper case is that a *marker* in a free-text slot is
+  not something a writer reliably spells either. Three literal strings in a
+  slot that otherwise holds entity names will keep being reached for whenever
+  the record is about something that is not an entity.
+
+  The harness's own comment already says so -- the markers are "three literal
+  strings in a slot the scorer already reads, not a reading of the prose beside
+  them" -- and records them as an interim that a field would make unnecessary.
+
   OPEN QUESTIONS
 
   - Should a probe be markable at call time as well as at judgement time? The
