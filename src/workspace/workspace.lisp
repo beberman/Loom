@@ -35,6 +35,16 @@
   ;; a value recorded at index time speaks for the third.
   (indexed-fingerprint nil)
   (file-count 0)
+  ;; REQ-0050 R3. How many claimed files had no stamp the last time something
+  ;; walked the tree. Recorded there rather than computed on demand because the
+  ;; walk is REPOSITORY-FILES -- a recursive directory scan plus a `git
+  ;; check-ignore' subprocess -- and asking for it per query made `status' over
+  ;; nine repositories take 8.9 seconds, front-end alone 7.1 of them.
+  ;;
+  ;; NIL until something has walked, which is a recorded gap rather than a
+  ;; zero: nought means "the walk found none" and nobody may read it as
+  ;; "nobody has looked".
+  (unindexed nil)
   (errors '())                  ; (path . condition-text), most recent first
   (stamps (make-hash-table :test #'equal))   ; relative path -> FILE-STAMP
   (monitor nil)
@@ -360,6 +370,18 @@ report. That is a gap a reader can see rather than a silent clean."
                        (gethash (workspace-relative-path path root) ignored))
                      claimed)))))
 
+(defun count-unstamped (repository files)
+  "How many of FILES the index has no stamp for.
+
+The count REQ-0050 R3 wants, taken from a walk somebody was doing anyway. One
+hash lookup per file against REPOSITORY-STAMPS, where the walk that produced
+FILES is the part that costs anything."
+  (let ((stamps (repository-stamps repository))
+        (root (repository-root repository)))
+    (count-if (lambda (path)
+                (null (gethash (workspace-relative-path path root) stamps)))
+              files)))
+
 (defun note-error (repository path condition)
   "Record CONDITION against PATH on REPOSITORY, newest first.
 
@@ -553,6 +575,9 @@ thread exists."
           (when (index-file repository path :quiet quiet) (incf indexed))))
       (resolve-and-check repository :quiet quiet)
       (setf (repository-file-count repository) indexed
+            ;; Free here: FILES is the walk already paid for, and a file that
+            ;; failed to analyze is a file with no stamp.
+            (repository-unindexed repository) (count-unstamped repository files)
             (repository-indexed-at repository) (get-universal-time)
             (repository-indexed-fingerprint repository)
             (index-fingerprint (repository-root repository)))
@@ -820,13 +845,18 @@ it."
   (let ((moved nil))
    (prog1
     (with-repository-lock (repository)
-    (let ((changed '())
-          (now (get-universal-time)))
-      (dolist (path (repository-files repository))
+    (let* ((changed '())
+           (now (get-universal-time))
+           (files (repository-files repository)))
+      (dolist (path files)
         (let ((relative (workspace-relative-path path (repository-root repository))))
           (when (file-changed-p repository relative path now)
             (push path changed))))
       (dolist (path changed) (index-file repository path :quiet quiet))
+      ;; After the indexing pass, so what is left is what the analyzer could
+      ;; not stamp rather than what this poll was about to read. REQ-0050 R3,
+      ;; and free: FILES is the walk this poll already pays for.
+      (setf (repository-unindexed repository) (count-unstamped repository files))
       (let ((removed (detect-deletions repository)))
         (when (or changed removed)
           (setf moved t)
@@ -1028,7 +1058,25 @@ registration. START-MONITOR is idempotent, so saying it twice costs nothing."
                      (lambda ()
                        (handler-case
                            (progn (index-repository repository :quiet quiet)
-                                  (when monitor (start-monitor repository)))
+                                  (when monitor (start-monitor repository))
+                                  ;; BUG-0048. The vector build hangs off the
+                                  ;; end of the index build rather than off an
+                                  ;; HTTP call racing it. tools/loom-serve.sh
+                                  ;; POSTs /v1/embed for every repository as
+                                  ;; soon as the listener answers, which is
+                                  ;; about two seconds in; *INDEX-BUILD-WAIT*
+                                  ;; is 0, so REQUIRE-REPOSITORY refused eight
+                                  ;; of nine of those with "still being
+                                  ;; indexed" and nothing retried. Measured on
+                                  ;; a boot: one of nine stores was refreshed,
+                                  ;; and five had not been touched in an hour.
+                                  ;;
+                                  ;; EXISTING-ONLY, so this refreshes a store
+                                  ;; somebody built and never builds a first
+                                  ;; one. Building is minutes of embedder time
+                                  ;; and stays opt-in through `embed'.
+                                  (start-vector-build repository
+                                                      :existing-only t))
                          (serious-condition (condition)
                            (note-error repository (namestring root) condition))))
                      :name (format nil "loom-index-~a" (repository-name repository))))
@@ -1246,10 +1294,16 @@ the last error per thread.\""
           :diff (getf provenance :diff)
           :dirty (getf provenance :dirty)
           :drift (getf provenance :drift)
-          ;; REQ-0050 R3's other half, and on `status' alone: it costs the tree
-          ;; walk INDEX-DRIFT was moved off, and this is the one surface whose
-          ;; whole question is whether the index is in good order.
-          :unindexed (unindexed-files repository)
+          ;; REQ-0050 R3's other half: files no analyzer has read, which a
+          ;; stamp walk cannot see because they have no stamp to disagree with.
+          ;;
+          ;; From the slot, which the index build and every poll fill in from
+          ;; the walk they already do. Computed here instead, it made `status'
+          ;; over nine repositories take 8.9 seconds -- front-end 7.1 of them,
+          ;; whose tree is large enough that enumerating it dwarfs everything
+          ;; else this function does. UNINDEXED-FILES is still the exact answer
+          ;; and still costs the walk; it is for a caller who asks for it.
+          :unindexed (repository-unindexed repository)
           :files (repository-file-count repository)
           :entities (length (all-entities graph))
           :relationships (length (all-relationships graph))
