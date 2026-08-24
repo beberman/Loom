@@ -1,0 +1,85 @@
+id: BUG-0048
+title: Eight of nine vector stores were never refreshed at boot, because the launcher POSTs embed two seconds in and a repository still indexing refuses
+status: closed
+severity: major
+date: 2026-08-24
+affects: [watch-repository, start-vector-build, repository-status, count-unstamped]
+tags: [boot, vectors, staleness, req-0048, req-0050, con-0001]
+summary: |
+  tools/loom-serve.sh calls START_VECTOR_BUILDS as soon as the listener answers
+  -- about two seconds in -- POSTing /v1/embed once per repository. At that
+  moment eight of nine repositories are still being indexed, *INDEX-BUILD-WAIT*
+  is 0, and REQUIRE-REPOSITORY refuses with "still being indexed". `curl -sf`
+  swallows the refusal and nothing retries.
+
+  Measured on a boot at 09:56: one of nine stores was rewritten. Five had not
+  been touched since 08:35, through three restarts.
+
+  A store nobody refreshes still answers -- REPOSITORY-VECTORS loads it lazily
+  from disk -- so semantic seeding was reading vectors for a tree as it stood at
+  some earlier hour, and nothing said so.
+body: |
+  HOW IT PRESENTED
+
+  As "the service starts immediately but the vector index isn't up for a long
+  time". The service was not slow: it was not building at all, and the wait
+  being felt was REPOSITORY-VECTORS blocking the first query that wanted a
+  store on a build somebody had to start by hand.
+
+  THE RACE
+
+      t+0s    loom-serve.lisp binds the port, registers nine repositories,
+              indexes each on its own thread
+      t+2s    the listener answers; tools/loom-serve.sh POSTs /v1/embed nine
+              times
+      t+2s    Loom is indexed and its build starts; the other eight refuse
+      t+16s   the last tree finishes indexing, and nothing asks again
+
+  *INDEX-BUILD-WAIT* being 0 is deliberate and stays: a query for a repository
+  still indexing is refused at once rather than held, because a caller with
+  nothing to say for twenty seconds is worse than one told to ask again. The
+  defect is that the launcher's POST is a query like any other, and the one
+  caller that genuinely wants to wait was given the answer written for the ones
+  that do not.
+
+  THE FIX IS TO STOP RACING
+
+  The vector build hangs off the end of the index build, in the same thread
+  that did the indexing:
+
+      (index-repository repository)
+      (start-monitor repository)
+      (start-vector-build repository :existing-only t)
+
+  There is no window to lose the call in, because there is no second caller.
+  EXISTING-ONLY keeps the opt-in property REQ-0048 argues for: this refreshes a
+  store somebody built and never builds a first one, since building is minutes
+  of embedder time that nothing asked for. A first store is still `embed'.
+
+  The launcher's POSTs stay. They are what builds a first store for a tree that
+  has none, and they are now the only thing that path is for.
+
+  WHAT IT LOOKS LIKE FIXED
+
+  Every store rewritten within the boot, and :EMBEDDING appearing in the state
+  sequence at all -- it never did before, because the builds were never
+  starting:
+
+      t+2s   Loom:r game-serve:i front-end:i utils:i cl-dbi:i ...
+      t+5s   Loom:r game-serve:r front-end:i utils:i cl-dbi:e ... linear-alg:e
+      t+16s  all ready
+
+      10:00:10 Loom.dat        10:00:12 datascience.dat
+      10:00:11 game-server.dat 10:00:12 linear-algebra.dat
+      10:00:12 cl-dbi.dat      10:00:12 numerical-utilities.dat
+      10:00:12 cl-mysql.dat    10:00:20 front-end.dat
+      10:00:12 utils.dat
+
+  WHAT WAS RULED OUT ON THE WAY
+
+  The no-op store update was the first suspect and is not the cost: it loads
+  the store, walks every entity comparing digests, and rewrites the file even
+  when nothing changed. Measured, that is 0.11s for Loom, 0.06s for
+  game-server, 0.20s for front-end. It does rewrite 28MB across nine
+  repositories on every boot for no change, which is worth removing and is not
+  a defect anybody would notice.
