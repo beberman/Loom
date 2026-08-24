@@ -182,7 +182,7 @@ body: |
   compiler would not have caught it either way, which is the stage's own
   argument; what caught it was reading the two contracts side by side.
 
-  S4  THE TWO PREDICATES THAT DISAGREE AT THE EDGE
+  S4  THE TWO PREDICATES THAT DISAGREE AT THE EDGE  -- DONE, 2026-08-23
 
   PLIST-SHAPED-P requires a non-empty list; UTILS:PLISTP answers T for NIL, and
   says in its docstring that this asymmetry with ALISTP is deliberate. JSON-VALUE
@@ -196,6 +196,23 @@ body: |
   misencoding on purpose. The comment moves to the call site or the stage does
   not happen: an inspectable guess that has lost its record of being a guess is
   worse than the duplicate.
+
+  DONE, and the prescribed swap was wrong in one detail. `(and x (plistp ...))'
+  cannot fire: JSON-VALUE's own (NULL X) clause returns before the plist clause
+  is reached, and has since BUG-0028 gave NIL three meanings to separate. The
+  empty-list asymmetry this stage was written around is handled one clause
+  higher, so the guard would have been untested code carrying a false claim
+  about why it existed.
+
+  Established by removing it and running the suite rather than by reading:
+  LOOM-SERVE stays green either way, and the test that would catch it --
+  `an-empty-impact-set-is-an-empty-array', asserting (:stale nil) encodes as
+  null -- passes with and without. The bare call landed, with the reason
+  recorded at the call site beside the moved docstring.
+
+  The comment did move, in full: the guess, the data it was measured against,
+  the two-element-keyword hole, *ARRAY-VALUED-KEYS* as the escape hatch, and
+  the test that asserts the misencoding on purpose.
 
   S5  THE CONTEXT LOG'S JSON
 
