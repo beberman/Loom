@@ -22,6 +22,10 @@
    #:entity-location
    #:significant-name
    #:match-rank
+   ;; DES-0043 D3. The same ranking rule, written on a name and a type, for the
+   ;; caller that holds a summary rather than an entity: SEARCH-REPOSITORIES
+   ;; merges rows from several graphs and ranks them once.
+   #:name-search-rank
    #:summarize-entities
    ;; DES-0040 D3 built it for the embedder; DES-0041 D4 compares two names on
    ;; it. One function or the identity in D4 is not one.

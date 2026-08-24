@@ -9,8 +9,10 @@ Loom indexes this repository's source and its documents into one graph and
 answers questions about both. It runs as a service at `{{ENDPOINT}}` and this
 repository is registered with it as **`{{REPOSITORY-NAME}}`**.
 
-Every query names its repository, because the service holds several and an
-answer about the wrong one is worse than no answer.
+Most queries name their repository, because the service holds several and an
+answer about the wrong one is worse than no answer. `find` is the exception:
+without a `repository` it searches every watched tree, because *which of them
+owns this name* is a question no single tree can answer.
 
 ## Asking
 
@@ -19,6 +21,7 @@ Over REST, which needs nothing installed:
 ```bash
 curl -s '{{ENDPOINT_URL}}/v1/context?repository={{REPOSITORY-NAME}}&task=soft+delete+read+path'
 curl -s '{{ENDPOINT_URL}}/v1/find?repository={{REPOSITORY-NAME}}&term=dhandler-delete'
+curl -s '{{ENDPOINT_URL}}/v1/find?term=dhandler-delete'   # every watched tree
 curl -s '{{ENDPOINT_URL}}/v1/impact?repository={{REPOSITORY-NAME}}&term=dhandler-delete&depth=3'
 curl -s '{{ENDPOINT_URL}}/v1/structure?repository={{REPOSITORY-NAME}}'
 curl -s '{{ENDPOINT_URL}}/v1/check?repository={{REPOSITORY-NAME}}'
@@ -26,7 +29,8 @@ curl -s '{{ENDPOINT_URL}}/v1/check?repository={{REPOSITORY-NAME}}'
 
 Or as MCP tools, if `.mcp.json` registered the endpoint: `loom_context`,
 `loom_find`, `loom_impact`, `loom_describe`, `loom_check`, `loom_structure`,
-`loom_set_status`, `loom_complete`. Each takes `repository`.
+`loom_set_status`, `loom_complete`. Each takes `repository`, except
+`loom_find`, where it is optional.
 
 ### Picking the one to call
 
@@ -39,11 +43,20 @@ wrong answer — they see text, and this sees definitions, callers and decisions
 |---|---|
 | where is X defined | `find` |
 | who calls X, how many, from where | `describe` |
-| does X exist at all | `find`, once per repository |
+| does X exist at all | `find` with no `repository` |
+| which tree owns this name | `find` with no `repository` |
 | what breaks if X changes | `impact` |
 | the shape of a system | `structure` |
 | what governs this area | `impact`, then `context` |
 | X's source and docstring | `describe` with `source=true` |
+
+**A name absent here may live in another tree.** `find` with no `repository`
+searches every watched one, and each row says which it came from. Named with a
+`repository` and finding nothing, it answers with an `elsewhere` list -- `0
+here; 1 in utils` -- so a migration shows up in the first answer rather than a
+second call. A name in no tree at all is dead, which is the finding worth
+having. The answer also names any tree it could **not** search: "absent
+everywhere" is a claim a partial search must not make.
 
 **`context` is for an edit, not for a question.** Given a task in words it
 returns a budgeted bundle of what bears on it, banded so you can tell the code

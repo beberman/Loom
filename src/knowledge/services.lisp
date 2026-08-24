@@ -235,35 +235,49 @@ type-specific detail lives."
 ;;;; search-entities -- SS11 loom_find, "where is X defined"
 ;;;; ==================================================================
 
-(defun significant-name (entity)
-  "The part of ENTITY's name worth matching a task word against.
+;;;; The ranking rule is written once on a name and a type, and twice more as
+;;;; the entity-taking calls its nine callers already make. DES-0043 D3 is why:
+;;;; SEARCH-REPOSITORIES merges rows from several graphs and has only the
+;;;; summaries by then, and a second ranking written on summaries would be a
+;;;; second thing to keep in agreement with this one.
+
+(defun significant-name-of (name type)
+  "The part of NAME worth matching a task word against, for an entity of TYPE.
 
 For most entities that is the whole name. For a :FILE, whose name is a path,
 it is the basename without its extension -- \"graph/transaction.lisp\" matches
 on \"transaction\", not on \"graph\". Without this, every word that happens to
 name a directory prefix-matches every file beneath it, which outranks the
 definitions the word was actually about."
-  (let ((name (and (slot-boundp entity 'name) (name entity))))
-    (when name
-      (if (member (entity-type entity) '(:file :document))
-          (let* ((slash (position #\/ name :from-end t))
-                 (base  (if slash (subseq name (1+ slash)) name))
-                 (dot   (position #\. base :from-end t)))
-            (if (and dot (plusp dot)) (subseq base 0 dot) base))
-          name))))
+  (when name
+    (if (member type '(:file :document))
+        (let* ((slash (position #\/ name :from-end t))
+               (base  (if slash (subseq name (1+ slash)) name))
+               (dot   (position #\. base :from-end t)))
+          (if (and dot (plusp dot)) (subseq base 0 dot) base))
+        name)))
 
-(defun match-rank (entity pattern)
-  "How well ENTITY's name matches PATTERN: 0 exact, 1 prefix, 2 substring,
-3 no match.
+(defun significant-name (entity)
+  "SIGNIFICANT-NAME-OF, read off ENTITY."
+  (significant-name-of (and (slot-boundp entity 'name) (name entity))
+                       (entity-type entity)))
+
+(defun name-match-rank (name type pattern)
+  "How well NAME matches PATTERN: 0 exact, 1 prefix, 2 substring, 3 no match.
 Ranking rather than filtering, because an agent asking for \"impact-set\" wants
 IMPACT-SET first and IMPACT-SET-TRUNCATED-P second, not both in hash order."
-  (let ((name (significant-name entity)))
+  (let ((name (significant-name-of name type)))
     (cond ((null name) 3)
           ((string-equal name pattern) 0)
           ((and (<= (length pattern) (length name))
                 (string-equal pattern name :end2 (length pattern))) 1)
           ((search pattern name :test #'char-equal) 2)
           (t 3))))
+
+(defun match-rank (entity pattern)
+  "NAME-MATCH-RANK, read off ENTITY."
+  (name-match-rank (and (slot-boundp entity 'name) (name entity))
+                   (entity-type entity) pattern))
 
 (defparameter *seed-type-preference*
   '((:function :method :class :interface :variable :test)
@@ -308,8 +322,8 @@ caller mean -- so the answer belongs in one list.")
                    *seed-type-preference*)
       (length *seed-type-preference*)))
 
-(defun search-rank (entity pattern)
-  "MATCH-RANK, with a :CALL-SITE placed below every entity that is not one.
+(defun name-search-rank (name type pattern)
+  "NAME-MATCH-RANK, with a :CALL-SITE placed below every entity that is not one.
 
 PLAN-0014 step 10's recorded fallback, taken because the measurement it asked
 for showed it was needed. A call site's name is \"<call-name>@<file>:<line>\"
@@ -324,10 +338,19 @@ at the same match rank the call site was already losing, and interleaving would
 have left every one of those 7 terms displaced. Demoting rather than filtering
 is equally deliberate -- a filtered entity is invisible, and this design exists
 to stop calls being invisible, so a call site still appears whenever the cap
-leaves room, which on this tree is every term with 20 hits or fewer."
-  (let ((rank (match-rank entity pattern)))
-    ;; 4 is one past MATCH-RANK's worst, so the two bands cannot overlap.
-    (if (eq :call-site (entity-type entity)) (+ rank 4) rank)))
+leaves room, which on this tree is every term with 20 hits or fewer.
+
+Written on a name and a type so that a caller holding a summary rather than an
+entity ranks by the same rule (DES-0043 D3). SEARCH-REPOSITORIES is that
+caller: it merges rows from several graphs and has only summaries by then."
+  (let ((rank (name-match-rank name type pattern)))
+    ;; 4 is one past NAME-MATCH-RANK's worst, so the two bands cannot overlap.
+    (if (eq :call-site type) (+ rank 4) rank)))
+
+(defun search-rank (entity pattern)
+  "NAME-SEARCH-RANK, read off ENTITY."
+  (name-search-rank (and (slot-boundp entity 'name) (name entity))
+                    (entity-type entity) pattern))
 
 (defun search-entities (view &key name type limit property-filters)
   "Entities matching NAME (substring, case-insensitive) and TYPE, best match

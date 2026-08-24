@@ -75,7 +75,14 @@
     ;; BUG-0033. Empty on a healthy tree, like :DROPPED-EDGES beside it, and
     ;; for the same reason it must encode as [] rather than null: a client
     ;; branching on "did anything fail to parse" reads it directly.
-    :unparsed)
+    :unparsed
+    ;; REQ-0051, DES-0043 D2. The federated `find''s three lists. :SKIPPED is
+    ;; already above for the init report and carries the same meaning here.
+    ;; :SEARCHED empty is a `find' issued with nothing watched, and :ELSEWHERE
+    ;; empty is the ordinary answer -- a caller branching on "is this name in
+    ;; another tree" reads it directly, and null would make "no" and "the key is
+    ;; missing" the same JSON value.
+    :searched :elsewhere)
   "Keys whose value is a sequence even when it is empty.
 
 Two jobs. NIL under one of these encodes as [] rather than null, so an empty

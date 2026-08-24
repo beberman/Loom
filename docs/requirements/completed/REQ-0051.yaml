@@ -1,6 +1,6 @@
 id: REQ-0051
 title: find must answer across every watched repository, because a name absent from one tree and present in another is where a migration went
-status: draft
+status: implemented
 date: 2026-08-24
 refines: [REQ-0027]
 affects: [search-entities, require-repository, all-repositories, federated-summaries]

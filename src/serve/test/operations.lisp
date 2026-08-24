@@ -86,17 +86,30 @@ check:
   ;; is the only watched repository -- which is exactly how the convenience
   ;; that is right for a human becomes a wrong answer for a program.
   (with-operations-fixture (repository)
-    (dolist (name '(:find :describe :impact :context :check :rules
+    (dolist (name '(:describe :impact :context :check :rules
                     :watch :pause :unwatch :reindex))
       (signals malformed-request
         (call-operation name '(:read :write) :term "alpha" :task "alpha")))
-    ;; :status is the exception, and the reason it is: with no designator it
-    ;; is the discovery call, and it must answer rather than refuse.
+    ;; :status is the first exception, and the reason it is: with no designator
+    ;; it is the discovery call, and it must answer rather than refuse.
     (let ((all (call-operation :status '(:read))))
       (is (member (repository-name repository)
                   (mapcar (lambda (status) (getf status :name))
                           (getf all :repositories))
-                  :test #'string=)))))
+                  :test #'string=)))
+    ;; :find is the second, since REQ-0051 R1. The question it answers without
+    ;; a designator is not "tell me about this repository" but "which of the
+    ;; watched trees owns this name", and a refusal is what sent the caller to
+    ;; grep. The rest of this test is what stops that becoming a general
+    ;; licence: nine operations above still refuse.
+    (let ((found (call-operation :find '(:read) :term "alpha")))
+      (is (member (repository-name repository)
+                  (mapcar (lambda (row) (getf row :repository))
+                          (getf found :searched))
+                  :test #'string=)
+          "the federated find names the tree it searched")
+      (is (every (lambda (row) (getf row :repository)) (getf found :entities))
+          "and every row says which tree it came from"))))
 
 (test an-unknown-repository-says-so-and-names-it
   (let ((condition (handler-case (progn (call-operation :check '(:read)

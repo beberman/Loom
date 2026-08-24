@@ -1,0 +1,260 @@
+id: DES-0043
+title: "find across every watched repository: one function in loom-workspace, a per-repository count, and a zero-hit answer that names the other trees"
+status: implemented
+date: 2026-08-24
+refines: [REQ-0051]
+affects:
+  - search-repositories
+  - search-entities
+  - name-search-rank
+  - require-repository
+  - all-repositories
+  - repository-state
+importance: Major
+tags: [find, federation, cross-repository, req-0051, des-0006, con-0001]
+summary: |
+  REQ-0051 asks `find` to answer without a repository designator and to say,
+  on a zero-hit search that named one, what the other watched trees hold. The
+  search lives in loom-workspace as SEARCH-REPOSITORIES: it is the only system
+  that both holds `*repositories*` and may call loom-knowledge, and both
+  callers -- console.lisp:612 and operations.lisp:252 -- already depend on it.
+
+  Each repository is searched at the caller's own limit and keeps its own
+  total, so the merged list can be re-ranked and cut once while `0 here; 1 in
+  utils` stays answerable. A repository whose state is :INDEXING is named as
+  skipped rather than counted as a miss, because "absent from every tree" is
+  the strong claim CON-0001 forbids a partial search from making.
+body: |
+  WHAT IS THERE NOW
+
+  Two callers reach SEARCH-ENTITIES with a term, and both hold exactly one
+  graph when they do.
+
+      src/process/console.lisp:612   `find', through CURRENT-GRAPH
+      src/serve/operations.lisp:252  :find, through REPOSITORY-VIEW
+
+  CURRENT-GRAPH resolves through CURRENT-REPOSITORY, which with several
+  repositories watched and no @token signals *"Several repositories are
+  watched. Name one with @<name>"*. REPOSITORY-VIEW resolves through
+  REQUIRE-REPOSITORY, which with no designator signals *"This operation needs
+  the name of a repository."* Nine trees are watched on this machine and both
+  refusals are the friction REQ-0051 measured: the answer is one `find` per
+  tree and four `grep` calls were made instead.
+
+  SEARCH-ENTITIES itself needs no change of contract. It takes a view, ranks by
+  SEARCH-RANK, truncates, and returns the rows and the count before truncation
+  (BUG-0002). Nine calls to it answer this requirement; what is missing is a
+  caller that can make them and a shape for the answer.
+
+  D1  THE SEARCH LIVES IN LOOM-WORKSPACE
+
+  It cannot live in loom-knowledge: that system is handed a graph and never
+  learns which repository the graph belongs to, which is the same constraint
+  DES-0027 D1 recorded for DEFINITION-SOURCE and DEC-0006 for the vector
+  store. It cannot live in loom-serve: loom-process does not depend on
+  loom-serve and DES-0006 R5 forbids acquiring the dependency, so a search
+  written there would be unreachable from the console -- which is the surface
+  that has to work with no service running.
+
+  loom-workspace holds `*repositories*` and ALL-REPOSITORIES, and has depended
+  on loom-knowledge since DES-0022 S3. It is the one system that can iterate
+  the registry and call SEARCH-ENTITIES, and both callers already depend on it.
+
+      (search-repositories term &key type limit repositories)
+        => plist
+
+  D2  THE ANSWER CARRIES ROWS, WHAT WAS SEARCHED, AND WHAT WAS NOT
+
+      :entities   summaries, each with :REPOSITORY added   (R2)
+      :total      matches before the limit, summed over what was searched
+      :truncated  T when :TOTAL exceeds the rows returned
+      :searched   one entry per repository asked: :REPOSITORY, :TOTAL
+      :skipped    one entry per repository not asked: :REPOSITORY, :REASON
+      :seconds    wall time for the whole search                 (R5)
+
+  Three lists rather than one, because they answer three different questions
+  and collapsing them loses the one REQ-0051 R4 is about. A repository with
+  zero hits appears in `:searched` with `:total 0`; a repository that could not
+  be searched appears in `:skipped`. Without the second list a caller cannot
+  tell "this name is in no tree" from "this name is in no tree I looked at",
+  and the first is a claim strong enough that CON-0001 refuses to let a partial
+  search make it.
+
+  D3  EACH REPOSITORY IS SEARCHED AT THE CALLER'S OWN LIMIT
+
+  Not unlimited and then cut once. SEARCH-ENTITIES summarizes only the slice it
+  returns -- SUMMARIZE-ENTITIES runs over the truncated list, and the total is
+  `(length hits)` taken before -- so passing the caller's LIMIT to each
+  repository costs one summarize of at most LIMIT rows per tree and still
+  yields that tree's true total.
+
+  Merging is then correct rather than approximate: rows are ranked by a
+  function of the name and the type alone, so a row in the merged top-N is
+  necessarily in its own repository's top-N, and a row cut by its repository's
+  limit could not have survived the merged one. The merged list is re-ranked
+  and cut to LIMIT once.
+
+  Re-ranking needs the rank of a *summary*, and SEARCH-RANK takes an entity
+  object. SIGNIFICANT-NAME, MATCH-RANK and SEARCH-RANK each read exactly two
+  things from the entity -- its name and its entity-type -- and both are on the
+  summary. So each is restated on those two values, and each keeps its
+  entity-taking form as a one-line call onto the new one:
+
+      (significant-name-of name type)        the rule
+      (significant-name entity)              = SIGNIFICANT-NAME-OF of its two
+      (name-match-rank name type pattern)    the rule
+      (match-rank entity pattern)            = NAME-MATCH-RANK of its two
+      (name-search-rank name type pattern)   the rule
+      (search-rank entity pattern)           = NAME-SEARCH-RANK of its two
+
+  One rule, two entry points each, and no second ranking to keep in agreement
+  with the first. The entity forms are kept rather than replaced because nine
+  callers in context.lisp and expand.lisp hold entities and none of them is
+  about this change; only NAME-SEARCH-RANK is exported.
+
+  `find`'s existing ordering is unchanged for a single repository, which is what
+  the seven tests on SEARCH-ENTITIES already pin.
+
+  Ties across repositories break by the order ALL-REPOSITORIES returns, which
+  is registration order. STABLE-SORT makes that deterministic; nothing here
+  claims one tree's definition is better than another's at equal rank.
+
+  D4  NAMING A REPOSITORY COSTS ONE REPOSITORY, AND A MISS NAMES THE OTHERS
+
+  REQ-0051 R1's second sentence is a cost promise, so the named form does not
+  become the federated form with a filter. It searches the one repository, as
+  today.
+
+  On zero hits it then probes the others for a count and nothing else:
+
+      (nth-value 1 (search-entities view :name term :type type :limit 0))
+
+  LIMIT 0 makes SUBSEQ return the empty list, so SUMMARIZE-ENTITIES runs over
+  nothing and the second value is still the full count. The probe is a
+  FIND-ENTITIES walk per tree with no summarization, and it happens only when
+  the first search found nothing -- which is the case REQ-0051 R3 says the
+  reader reaches for grep in.
+
+  The named form's answer therefore carries one extra key:
+
+      :elsewhere  ((:repository "utils" :total 1) ...)   non-zero only
+
+  D5  A REPOSITORY THAT CANNOT ANSWER IS NAMED, NOT COUNTED ABSENT
+
+  REPOSITORY-STATE has three values. :INDEXING means the graph is being built
+  and nothing can be answered from it; :EMBEDDING and :READY both answer
+  lexically. `find` is a lexical query, so :EMBEDDING is searched like :READY
+  and only :INDEXING is skipped.
+
+  Skipping without saying so is the defect this clause exists to prevent, and
+  it is REQUIRE-REPOSITORY's argument one level up: an empty graph is not a
+  slow answer, it is a confident wrong one. The federated form does not wait --
+  a wait for one of nine trees would make the cheapest command in Loom block on
+  the slowest -- it reports.
+
+  D6  THE COST IS REPORTED WHEN MORE THAN ONE REPOSITORY WAS SEARCHED
+
+  R5. `:seconds` travels on the data for every form; the console prints it only
+  when more than one tree was searched, because a single-repository line saying
+  how long one 3ms call took is noise on the command a session issues most.
+
+  MEASURED over REST against the nine-repository service, median of five:
+
+      find term=json-decode-from-string                     2.7ms   9 trees
+      find term=json-decode-from-string repository=game-server
+                                                            2.9ms   1 tree
+      find term=get-package-file repository=game-server     4.3ms   1 tree
+      find term=get-package-file                            5.2ms   9 trees
+      find term=dict-value                                  6.5ms   9 trees
+
+  Nine trees cost between 0.9x and 1.2x one tree, not nine times it. The reason
+  is in D3: FIND-ENTITIES is a walk of one graph's name index and eight of the
+  nine trees match nothing, so the summarize the limit bounds never runs for
+  them. The report says what it cost either way -- a cost that turns out to be
+  small is a measurement, not a reason to stop reporting it, and the figure is
+  what makes the next reader's decision cheap.
+
+  The `repository=game-server` rows are the two paths at the same term: the
+  named form's 2.9ms is one tree, and its 4.3ms on the `get-package-file` miss
+  is one tree plus the eight-tree probe D4 pays only on a zero-hit answer.
+
+  D7  THE CONSOLE PRINTS @REPOSITORY ON EVERY ROW
+
+  R2, and on both forms. PRINT-SUMMARY-LINE is shared with `describe`,
+  `impact` and `context`, so `find` gets its own printer rather than a
+  repository column appearing on three commands that did not ask for one:
+
+      @utils     function json-decode-from-string  src/json.lisp:212
+      @game-server function dict-value             src/gs-utils.lisp:88
+
+  The named form prints it too. A caller who typed `@game-server` already knows
+  the answer's tree, and the row still says it -- because the line is what gets
+  pasted into a document, and REQ-0050 R1's rule is that an answer says which
+  tree it came from wherever it is read.
+
+  D8  OVER REST AND MCP, `repository` BECOMES OPTIONAL
+
+  One token in the DEFINE-OPERATION shape:
+
+      (define-operation :find :read ((repository) term (entity-type) (limit))
+
+  Nothing else on either skin is edited, which is DES-0006 R5's property
+  exercised again. VALIDATE-ARGUMENTS reads the shape to decide what to refuse;
+  TOOL-INPUT-SCHEMA reads it to build MCP's `required` vector; loom-rest reads
+  query parameters generically and derives the path from the operation name,
+  not from its arguments. `:status` is the precedent and has been the one
+  operation with no designator requirement since it was written.
+
+  The :FIND entry keeps returning `:entities`, `:total` and `:truncated` under
+  the same keys, so a caller that names a repository sees the shape it saw
+  before plus `:repository` on each row and `:elsewhere` when it found nothing.
+
+  D9  THE PREPARED GUIDANCE SAYS A SECOND REPOSITORY MAY HOLD THE NAME
+
+  R6, and REQ-0051 puts it plainly: the guidance is where this defect was
+  caused. Four files say `find` names a repository and none says it need not:
+
+      src/workspace/templates/claude-md-pointer.md   written into a foreign tree
+      src/workspace/templates/loom-skill.md          written into a foreign tree
+      CLAUDE.md                                      this tree
+      .claude/skills/loom/SKILL.md                   this tree
+
+  Each gains the same two facts: a `find` with no repository searches every
+  watched tree, and a zero-hit answer names the trees that do hold the name.
+  The templates are unindexed by construction (REQ-0028 excludes `templates/`),
+  so nothing checks them and the plan verifies them by running `init` against a
+  scratch tree.
+
+  WHAT THIS IS NOT
+
+  Not a merged index. Each repository keeps its own graph, its own commit and
+  its own drift. SEARCH-REPOSITORIES visits several views and tags each row;
+  it does not compose one view over several graphs -- entity ids are paths
+  relative to a root, so two trees with a `src/package.lisp` collide, and
+  DEC-0001 says the index is derived from the tree it indexes.
+
+  Not a change to `describe` or `impact`. Their federated bands answer the
+  outward question -- what this entity reaches in another tree, read off the
+  edges FEDERATED-SUMMARIES walks -- and a name nothing in this repository
+  refers to has no such edge. The two mechanisms answer opposite questions and
+  neither replaces the other.
+
+  Not a change to SEARCH-ENTITIES' contract. It gains no repository argument
+  and returns the same two values.
+
+  ALTERNATIVES REJECTED
+
+  The search in loom-serve, with the console calling over HTTP. Rejected
+  because `tools/loom.sh` answers with no service running, and REQ-0051's
+  measurement was taken through the console.
+
+  A view composed over every repository's graph, so one SEARCH-ENTITIES call
+  answers. Rejected on ids: an entity id is `type:path:name` with the path
+  relative to the repository root, so `file:src/package.lisp` names a different
+  file in each of nine trees and the composed view would silently pick one.
+
+  A `find --all` flag rather than the absence of a designator. Rejected
+  because the absence is already what a caller types when they do not know
+  which tree holds the name, and today it is answered with a refusal. A flag
+  would leave that refusal in place for everyone who did not learn the flag,
+  which is the population REQ-0051 R6 is about.

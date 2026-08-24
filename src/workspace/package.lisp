@@ -35,6 +35,13 @@
    #:find-repository
    #:all-repositories
 
+   ;; REQ-0051, DES-0043. `find' across every watched tree, and the count-only
+   ;; probe a zero-hit search of one tree makes of the others. Here rather than
+   ;; in loom-knowledge because that system is handed a graph and never learns
+   ;; which repository it belongs to.
+   #:search-repositories
+   #:repositories-holding
+
    ;; lifecycle
    #:watch-repository
    #:await-repository-index

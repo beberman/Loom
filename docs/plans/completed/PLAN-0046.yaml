@@ -1,0 +1,222 @@
+id: PLAN-0046
+title: "Seven steps for DES-0043: the rank splits, the search lands in loom-workspace, both callers switch, and the four guidance files stop saying find needs a repository"
+status: final
+date: 2026-08-24
+refines: [DES-0043, REQ-0051]
+affects:
+  - search-repositories
+  - search-entities
+  - name-search-rank
+  - all-repositories
+tags: [find, federation, req-0051, des-0043]
+summary: |
+  S1 splits the ranking rule so a summary can be ranked without its entity.
+  S2 adds SEARCH-REPOSITORIES to loom-workspace and exports it. S3 and S4
+  switch the two callers -- the :FIND operation and the console command. S5
+  is the tests. S6 rewrites the four guidance files R6 names. S7 measures the
+  cost R5 requires be reported and runs the acceptance floors.
+
+  The order is forced by the dependency: nothing can call SEARCH-REPOSITORIES
+  before S2, and S2 cannot rank a merged list before S1.
+body: |
+  BEFORE ANY STEP
+
+  Branch `req-0051`, cut from main at cf54477. Run `tools/loom-test.sh` once
+  first, so a failure later is attributable.
+
+  S1  SPLIT THE RANKING RULE  (src/knowledge/services.lisp)
+
+  SIGNIFICANT-NAME, MATCH-RANK and SEARCH-RANK each read only NAME and
+  ENTITY-TYPE off the entity. Restate each on those two values and keep the
+  entity-taking SEARCH-RANK as a one-line call onto the new one.
+
+      (defun significant-name (name type) ...)
+      (defun name-match-rank (name type pattern) ...)
+      (defun name-search-rank (name type pattern) ...)
+      (defun search-rank (entity pattern)
+        (name-search-rank (and (slot-boundp entity 'name) (name entity))
+                          (entity-type entity) pattern))
+
+  Export NAME-SEARCH-RANK from loom-knowledge; the other two stay internal.
+
+  RISK: SIGNIFICANT-NAME is called by SEED-TYPE-RANK's neighbours and by
+  RESOLUTION-RANK through SEARCH-RANK. Changing its lambda list changes every
+  caller. `describe search-rank` and `describe significant-name` before
+  editing, and check the callers the index names rather than assuming two.
+
+  VERIFY: `tools/loom-test.sh`. The seven tests on SEARCH-ENTITIES and the
+  BUG-0032 tests on BEST-NAME-MATCH pin the ordering this step must not move.
+  A green suite here is the whole check -- S1 changes no behaviour.
+
+  S2  SEARCH-REPOSITORIES  (src/workspace/, new file search.lisp)
+
+  A new file rather than an addition to workspace.lisp, which is 1400 lines and
+  is the registry and the monitor. Register it in loom-workspace.asd after
+  workspace.lisp and vectors.lisp, since it calls ALL-REPOSITORIES and
+  REPOSITORY-STATE.
+
+      (defun search-repositories (term &key type limit repositories)
+        "=> (:entities :total :truncated :searched :skipped :seconds)")
+
+  Per DES-0043 D2, D3 and D5:
+
+    - REPOSITORIES defaults to (ALL-REPOSITORIES).
+    - A repository whose REPOSITORY-STATE is :INDEXING goes on :SKIPPED with
+      :REASON "indexing" and is not searched. :EMBEDDING and :READY are both
+      searched.
+    - Each searched repository gets SEARCH-ENTITIES at the caller's LIMIT.
+      Tag each returned summary with :REPOSITORY, record the tree's own total
+      on :SEARCHED.
+    - Merge, STABLE-SORT by NAME-SEARCH-RANK of each summary's :NAME and
+      :TYPE, cut to LIMIT.
+    - :TOTAL is the sum of the searched totals. :SECONDS is measured around
+      the whole thing.
+
+  And the zero-hit probe D4 needs, exported beside it:
+
+      (defun repositories-holding (term &key type exclude)
+        "((:repository name :total n) ...) for trees with a non-zero count.")
+
+  It uses `(nth-value 1 (search-entities view :name term :type type :limit 0))`
+  so nothing is summarized, and skips a repository that is :INDEXING for the
+  same reason S2 does.
+
+  Export both from loom-workspace.
+
+  RISK: taking no lock. SEARCH-ENTITIES reads a graph another thread may be
+  rebuilding. That is what every read path in loom-serve already does through
+  REPOSITORY-VIEW, and DES-0043 D5's refusal to wait is deliberate -- but the
+  :INDEXING check is a read of a thread's liveness and not a guarantee, so a
+  reindex starting mid-search is possible. Acceptable: the failure is a stale
+  row, which is what `find` reports on any tree with drift, and the answer
+  carries no commit that would make it read as fresher than it is.
+
+  VERIFY: from `tools/loom.sh 'status'`, nine repositories are watched. A REPL
+  call to SEARCH-REPOSITORIES with "json-decode-from-string" must return rows
+  from `utils` and name nine trees on :SEARCHED. This is the measurement
+  REQ-0051 was written from and it must reproduce before S3.
+
+  S3  THE :FIND OPERATION  (src/serve/operations.lisp)
+
+      (define-operation :find :read ((repository) term (entity-type) (limit))
+
+  Two branches in the body:
+
+    - REPOSITORY named: today's SEARCH-ENTITIES call on REPOSITORY-VIEW,
+      unchanged, with :REPOSITORY added to each row. When it returns nothing,
+      append :ELSEWHERE from REPOSITORIES-HOLDING with the named tree
+      excluded, omitting the key when that list is empty.
+    - REPOSITORY absent: SEARCH-REPOSITORIES, its plist returned whole.
+
+  Both keep :ENTITIES, :TOTAL and :TRUNCATED under the names they have now.
+
+  RISK: `*array-valued-keys*` in src/serve/json.lisp decides which keys encode
+  as [] rather than null when empty. :SEARCHED, :SKIPPED and :ELSEWHERE are
+  new list-valued keys and must be added, or an empty :SKIPPED encodes as null
+  and an MCP client reads "the key is missing" where the answer is "nothing was
+  skipped". This is the ambiguity the :ENTITIES comment at operations.lisp:246
+  already records.
+
+  VERIFY: `tools/loom-serve.sh update`, then over REST -- no repository, then
+  `repository=game-server` for a name only `utils` holds, and confirm
+  `elsewhere` names utils. Then the MCP schema: loom_find's `required` must
+  list `term` and not `repository`.
+
+  S4  THE CONSOLE `find`  (src/process/console.lisp)
+
+  `find` stops calling CURRENT-GRAPH. Instead: if a designator was given --
+  the @token RUN-COMMAND stripped, read through *COMMAND-REPOSITORY*, or a
+  single watched repository -- take the named path; otherwise call
+  SEARCH-REPOSITORIES.
+
+  With one repository watched the two paths are the same answer, and that must
+  stay true: ALL-REPOSITORIES of length one is the named path's repository.
+
+  A `find`-local printer per D7, not a change to PRINT-SUMMARY-LINE, which
+  `describe`, `impact` and `context` share. Print `@<repository>` first on
+  every row. Print the cost line only when more than one repository was
+  searched:
+
+      searched 9 repositories in 0.14s; 1 skipped (utils: indexing)
+
+  And on zero hits with a repository named:
+
+      Nothing matches "get-package-file" in game-server. 0 here; 1 in utils.
+
+  RISK: CURRENT-REPOSITORY signals when nothing is watched at all. The
+  federated path must keep that message rather than answering "found nowhere"
+  against an empty registry -- REQ-0051 R4's distinction between absent and
+  not-looked-for, at its most extreme.
+
+  VERIFY: `tools/loom.sh 'find get-package-file'` and
+  `tools/loom.sh 'find @game-server get-package-file'`. The first must name
+  every tree searched; the second must print the `0 here` line.
+
+  S5  TESTS  (src/workspace/test/, src/knowledge/test/, src/serve/test/)
+
+  CON-0003: each must fail without the step it covers.
+
+    - NAME-SEARCH-RANK agrees with SEARCH-RANK on an entity, for an exact,
+      prefix, substring and call-site case. Fails if S1 split the rule wrong.
+    - SEARCH-REPOSITORIES over two fixture repositories returns rows from both,
+      each tagged, ranked exact-first across the two. Fails without S2.
+    - A repository whose state is :INDEXING lands on :SKIPPED and not on
+      :SEARCHED, and :TOTAL does not count it. Fails without D5, and this is
+      the CON-0001 test.
+    - The per-repository limit does not lose a row that belongs in the merged
+      top-N: two repositories, limit 1, and the better-ranked row wins.
+    - REPOSITORIES-HOLDING returns a count for a term absent from the named
+      tree, and excludes the named tree.
+    - :FIND with no repository validates rather than refusing. Fails without S3.
+
+  Fixtures: src/workspace/test/ has repository fixtures already -- read what
+  workspace.lisp:259's test uses rather than building a second kind.
+
+  VERIFY: `tools/loom-test.sh`, nine systems green.
+
+  S6  THE FOUR GUIDANCE FILES  (R6)
+
+      src/workspace/templates/claude-md-pointer.md
+      src/workspace/templates/loom-skill.md
+      CLAUDE.md
+      .claude/skills/loom/SKILL.md
+
+  Each says two things it does not say now: a `find` with no repository
+  searches every watched tree, and a zero-hit answer names the trees that hold
+  the name. In the pointer's table that is a row; in CLAUDE.md it is a line in
+  the command block.
+
+  The claude-md-pointer's line *"Every query names the repository it means"* is
+  now false for `find` and must be corrected rather than supplemented.
+
+  RISK: `templates/` is unindexed by construction (REQ-0028), so `check` will
+  not report a template that went stale. Verified by running init.
+
+  VERIFY: `tools/loom-init.sh` against a scratch tree under the scratchpad,
+  then read the CLAUDE.md it wrote. Do not run init against a real repository
+  for this.
+
+  S7  MEASURE, AND THE FLOORS
+
+  R5 requires the cost be reported, which means it must first be known.
+
+    - `find` over REST naming one repository, and with none, on the
+      nine-repository service. Record both in the completion note.
+    - The console form of each.
+
+  Then the standing floors: `tools/loom-test.sh` green, `tools/loom.sh 'check'`
+  reporting no violations on this tree, and `tools/test/acceptance.py` at or
+  above its recorded score. DES-0043's affects: names SEARCH-REPOSITORIES and
+  NAME-SEARCH-RANK, so `check` is the step that confirms both landed with the
+  spellings the document claims.
+
+  DOGFOOD: run the federated `find` against game-server and utils for
+  `dict-value` and `get-package-file`, which are the two names REQ-0051's
+  measurement came from. A change validated only on Loom is untested where it
+  matters.
+
+  WHAT THIS PLAN DOES NOT DO
+
+  No change to `describe`, `impact` or `context`. No change to
+  SEARCH-ENTITIES' contract. No merged view. DES-0043's WHAT THIS IS NOT
+  carries the reasoning for each.

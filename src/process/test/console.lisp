@@ -356,11 +356,34 @@ this repository, so an answer proves which graph was consulted."
   ;; CON-0001's fabricated fact -- but it has to name the mechanism. The old
   ;; message said "name one" and gave no way to, so a developer ran `status'
   ;; first and then the command they meant.
+  ;; `describe' rather than `find' since REQ-0051: `find' with no designator
+  ;; now searches every watched tree, because the question it answers is which
+  ;; of them owns a name. The refusal is still correct for every command whose
+  ;; answer is about one entity, and `describe' is the exemplar.
   (with-two-console-fixtures
-    (let ((output (run-to-string "find alpha")))
+    (let ((output (run-to-string "describe alpha")))
       (is (search "Several repositories are watched" output))
       (is (search "@" output)
           "the refusal names the mechanism, not just the problem: ~s" output))))
+
+(test find-with-no-token-searches-every-watched-repository
+  ;; REQ-0051 R1 and R2, on the surface the measurement was taken through. Both
+  ;; fixtures define ALPHA; before this the command refused and the answer was
+  ;; four grep calls.
+  (with-two-console-fixtures
+    (let ((first-name (loom-workspace:repository-name first-repository))
+          (second-name (loom-workspace:repository-name second-repository)))
+      (let ((output (run-to-string "find alpha")))
+        (is (not (search "Several repositories" output))
+            "the refusal is gone: ~s" output)
+        (is (search (format nil "@~a" first-name) output)
+            "the first tree's row names its tree")
+        (is (search "searched 2 repositories" output)
+            "and the cost is reported, because it was not one tree (R5)"))
+      ;; R5's other half: naming one tree must still cost one tree.
+      (let ((output (run-to-string (format nil "find @~a alpha" second-name))))
+        (is (not (search "searched 2 repositories" output))
+            "naming a repository searches only it: ~s" output)))))
 
 (test a-leading-token-names-the-repository-a-command-acts-on
   ;; DES-0021 D1. `find' has no designator argument and gets one anyway,
@@ -369,11 +392,15 @@ this repository, so an answer proves which graph was consulted."
     (let ((first-name (loom-workspace:repository-name first-repository))
           (second-name (loom-workspace:repository-name second-repository)))
       (let ((output (run-to-string (format nil "find alpha @~a" first-name))))
-        (is (search "Several repositories" output)
+        ;; Since REQ-0051 the witness is the cost line rather than a refusal: a
+        ;; trailing token is read as `find''s type argument and leaves the
+        ;; command with no designator, so it searches every tree. A stripped
+        ;; token would have scoped it to one.
+        (is (search "searched 2 repositories" output)
             "a trailing token is not a designator -- only a leading one is"))
       (let ((output (run-to-string (format nil "find @~a alpha" first-name))))
         (is (search "alpha" output))
-        (is (not (search "Several repositories" output))))
+        (is (not (search "searched 2 repositories" output))))
       (let ((output (run-to-string (format nil "find @~a beta" second-name))))
         (is (search "beta" output)
             "and the second repository answers for its own definition")))))
@@ -406,11 +433,14 @@ this repository, so an answer proves which graph was consulted."
   ;; REQ-0023 R1a, and the reason a `use <repository>' mode was rejected. A
   ;; selection that survives its command answers a later query about the wrong
   ;; tree with nothing in the question saying so.
+  ;; The witness moved with REQ-0051 and the property did not. A token that
+  ;; outlived its command would scope the next `find' to one tree; a `find' that
+  ;; starts with no repository selected searches every one and says so.
   (with-two-console-fixtures
     (let ((second-name (loom-workspace:repository-name second-repository)))
       (run-to-string (format nil "find @~a beta" second-name))
       (let ((output (run-to-string "find beta")))
-        (is (search "Several repositories" output)
+        (is (search "searched 2 repositories" output)
             "the next command starts with no repository selected: ~s" output)))))
 
 (test naming-a-repository-that-is-not-watched-says-what-is
