@@ -214,7 +214,7 @@ body: |
   the two-element-keyword hole, *ARRAY-VALUED-KEYS* as the escape hatch, and
   the test that asserts the misencoding on purpose.
 
-  S5  THE CONTEXT LOG'S JSON  -- BLOCKED, 2026-08-23
+  S5  THE CONTEXT LOG'S JSON  -- UNBLOCKED, HALF DONE, 2026-08-23
 
   ENCODE-RECORD-VALUE is the library's model already: alist is an object, any
   other proper list is an array, NIL is null. Two differences and both are
@@ -240,10 +240,17 @@ body: |
   ENCODE-RECORD-VALUE writes :FALSE as `false' and JSON:DECODE-JSON maps both
   `false' and `null' onto NIL.
 
-  BUG-0045 carries it. The stage is a substitution whose only acceptance is a
-  round trip that does not hold, so making the swap now would either attribute
-  a standing defect to it or hide one. S5 waits on the decision BUG-0045
-  states, which is a schema question rather than an encoder patch.
+  BUG-0045 carries it, and is closed. The fix was neither of the encoder
+  changes this stage anticipated: UTILS:JSON-DECODE with `:strict t' returns
+  :TRUE, :FALSE and :NULL as three values, so READ-JSON-RECORD reads strictly
+  and maps back onto the alist every caller already expects. 105 of 105 files
+  now round-trip.
+
+  So the read half of this stage is done and is the library's, which is what
+  the stage asked for -- READ-JSON-RECORD's PROBE-FILE guard is the one detail
+  not taken, since the strict path still needs the file open. What remains is
+  ENCODE-RECORD-VALUE, still hand-written, and it can now be judged by the
+  acceptance this stage names because that acceptance finally holds.
 
   WHAT THIS PLAN DOES NOT DO
 

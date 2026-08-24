@@ -123,11 +123,64 @@ alist as an array, which is the opposite of what a record needs."
     (terpri out))
   path)
 
+(defun strict-value-to-record (value)
+  "One strictly-decoded JSON value as the shape a record is held in.
+
+BUG-0045. A strict decode distinguishes what the default one collapses:
+:TRUE, :FALSE and :NULL arrive as three values where CL-JSON hands back NIL for
+two of them and T for the third. This maps them onto what ENCODE-RECORD-VALUE
+writes -- T, :FALSE and NIL respectively -- so the pair is a round trip.
+
+:FALSE stays :FALSE rather than becoming NIL, and that is the whole fix. The
+marker exists because NIL is also how a record says a value is absent, and a
+boolean field writes :FALSE so a reader sees a boolean rather than a null it
+has to interpret. Decoding it to NIL destroyed exactly the distinction it was
+introduced to preserve, silently, on 47 of 88 files.
+
+Keys come back as strings from ST-JSON and are interned through
+UTILS:*JSON-KEY-TO-LISP*, the decoding counterpart of the *JSON-KEY-NAME* the
+writer binds -- so `tokensUsed' reads back as :TOKENS-USED and re-encodes as
+`tokensUsed'. Set as a pair or neither direction round-trips."
+  (typecase value
+    (st-json:jso
+     (let ((pairs '()))
+       (st-json:mapjso (lambda (key sub)
+                         (push (cons (intern (funcall utils:*json-key-to-lisp* key)
+                                             :keyword)
+                                     (strict-value-to-record sub))
+                               pairs))
+                       value)
+       (nreverse pairs)))
+    (cons (mapcar #'strict-value-to-record value))
+    (t (case value
+         (:true t)
+         (:false :false)
+         (:null nil)
+         (t value)))))
+
 (defun read-json-record (path)
-  "The record at PATH as an alist, or NIL when there is no such file."
+  "The record at PATH as an alist, or NIL when there is no such file.
+
+Decoded strictly and mapped back rather than read with JSON:DECODE-JSON, which
+answers NIL to both `false' and `null' and so cannot round-trip a record
+(BUG-0045). The shape returned is unchanged: an alist with keyword keys, which
+is what every caller here already reads."
   (when (probe-file path)
     (with-open-file (in path :direction :input :external-format :utf-8)
-      (json:decode-json in))))
+      ;; The binding wraps the *conversion*, not the decode. A strict decode
+      ;; keeps keys as strings and never consults the policy; it is
+      ;; STRICT-VALUE-TO-RECORD that interns them, so a LET around
+      ;; UTILS:JSON-DECODE alone has no effect and the default policy applies.
+      ;; Scoped that way first, and the symptom was `latencySeconds' reading
+      ;; back and re-encoding as `latencyseconds' -- a key-spelling regression
+      ;; that no Lisp test sees, which is what PLAN-0036 S5 warned this file
+      ;; was exposed to.
+      ;;
+      ;; CAMEL-CASE-TO-LISP because the writer uses LISP-TO-CAMEL-CASE:
+      ;; :LATENCY-SECONDS writes `latencySeconds' and must read back as
+      ;; :LATENCY-SECONDS. The two are policy and belong set as a pair.
+      (let ((utils:*json-key-to-lisp* #'json:camel-case-to-lisp))
+        (strict-value-to-record (utils:json-decode in :strict t))))))
 
 (defun git-fingerprint (root)
   "ROOT's branch, commit and diff hash, as a plist, with the reason any of them

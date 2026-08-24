@@ -1,6 +1,6 @@
 id: BUG-0045
 title: A context record does not survive being read and written back, because :FALSE is write-only and returns as null
-status: open
+status: closed
 severity: minor
 date: 2026-08-23
 affects: [encode-record-value, read-json-record, record-context-call, drain-context-log]
@@ -89,3 +89,48 @@ body: |
   with ENCODE-RECORD-VALUE, then compare with the bytes on disk. 47 of 88
   diverge and every divergence is `false` becoming `null`. 41 are identical,
   and those are the records with no boolean field set.
+
+  RESOLVED 2026-08-23
+
+  None of the three candidates above. The library had already solved it and
+  says so in its own docstring: UTILS:JSON-DECODE's default is lossy in exactly
+  this direction -- "false, null, and an empty array all arrive as NIL and
+  cannot be told apart afterwards" -- and `:strict t' returns :TRUE, :FALSE and
+  :NULL as three distinct values, for the stated reason that "a caller reading
+  a document it must round-trip, or one that has to distinguish an absent field
+  from a false one, wants this and cannot get it from the default".
+
+  So READ-JSON-RECORD decodes strictly and STRICT-VALUE-TO-RECORD maps the
+  result back onto the shape every caller already reads: an alist with keyword
+  keys, :TRUE to T, :FALSE staying :FALSE, :NULL to NIL. No caller changed and
+  no schema was declared.
+
+      round-trip: 105 identical, 0 differ
+
+  against 41 identical and 47 differing before.
+
+  THE SECOND DEFECT, WHICH THE FIRST FIX INTRODUCED
+
+  Scoping. A strict decode keeps object keys as strings and never consults the
+  key policy; it is the conversion that interns them. The binding was written
+  around UTILS:JSON-DECODE, where it does nothing, so the default policy
+  applied and `latencySeconds' read back and re-encoded as `latencyseconds'.
+
+  That is precisely the failure PLAN-0036 S5 warns this file is exposed to: a
+  key-spelling regression that no Lisp test sees, because tools/acceptance.py
+  reads these files with Python. It was caught by the round-trip instrument and
+  by nothing else, three lines after the instrument had reported success on the
+  half it was built for.
+
+  UTILS:*JSON-KEY-TO-LISP* is bound to JSON:CAMEL-CASE-TO-LISP around the
+  conversion, because the writer uses LISP-TO-CAMEL-CASE. The library's own
+  docstring says the two are policy and belong set as a pair; setting one is
+  what produced the bug.
+
+  WHAT THIS UNBLOCKS AND WHAT IT DOES NOT
+
+  PLAN-0036 S5's acceptance now holds, so the stage is no longer blocked. The
+  stage itself is half done: the read side is the library's, and
+  ENCODE-RECORD-VALUE is still hand-written. Swapping it is now a change that
+  can be judged, which it could not be before.
+

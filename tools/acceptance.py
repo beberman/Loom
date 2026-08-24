@@ -88,8 +88,14 @@ CASES = [
     # it scores. It inherits no standing from the expectation it replaces.
     ("utils", "look up a configuration value by its key", ["config-search"], "cfg-1"),
     ("loom", "test whether a string starts with a prefix", ["dot-prefixed-p"], "r39-3"),
+    # PLAN-0036 S4 deleted PLIST-SHAPED-P: the encoder now calls UTILS:PLISTP,
+    # so no mechanism can return the old name however good retrieval gets. This
+    # is BUG-0043's shape for the second time -- an expectation naming an entity
+    # a migration moved -- and the fix is the same, trim the expectation to what
+    # the tree still holds rather than let a standing miss read as a ranking
+    # defect. ALIST-PLIST is untouched and is what the query was really about.
     ("loom", "look up a value in an alist or plist by key",
-     ["alist-plist", "plist-shaped-p"], "r39-4"),
+     ["alist-plist"], "r39-4"),
 
     # ---------------------------------------------------------------------
     # Loaded from the judged records in .loom/context, 2026-08-21. These are
