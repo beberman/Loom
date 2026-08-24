@@ -214,7 +214,7 @@ body: |
   the two-element-keyword hole, *ARRAY-VALUED-KEYS* as the escape hatch, and
   the test that asserts the misencoding on purpose.
 
-  S5  THE CONTEXT LOG'S JSON
+  S5  THE CONTEXT LOG'S JSON  -- BLOCKED, 2026-08-23
 
   ENCODE-RECORD-VALUE is the library's model already: alist is an object, any
   other proper list is an array, NIL is null. Two differences and both are
@@ -231,6 +231,19 @@ body: |
   That is the acceptance criterion for the whole stage, and tools/acceptance.py
   reads these files, so a key-spelling regression here is a Python-side break
   that no Lisp test sees.
+
+  BLOCKED, 2026-08-23, by that criterion failing on the current code. Building
+  the round-trip check first -- against the existing encoder, so the instrument
+  could be trusted before it judged a change -- found that 47 of 88 files in
+  .loom/context do not survive a decode and re-encode. Every difference is the
+  same one: `"truncated":false' comes back `"truncated":null', because
+  ENCODE-RECORD-VALUE writes :FALSE as `false' and JSON:DECODE-JSON maps both
+  `false' and `null' onto NIL.
+
+  BUG-0045 carries it. The stage is a substitution whose only acceptance is a
+  round trip that does not hold, so making the swap now would either attribute
+  a standing defect to it or hide one. S5 waits on the decision BUG-0045
+  states, which is a schema question rather than an encoder patch.
 
   WHAT THIS PLAN DOES NOT DO
 

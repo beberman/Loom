@@ -1,0 +1,91 @@
+id: BUG-0045
+title: A context record does not survive being read and written back, because :FALSE is write-only and returns as null
+status: open
+severity: minor
+date: 2026-08-23
+affects: [encode-record-value, read-json-record, record-context-call, drain-context-log]
+tags: [context-log, json, round-trip, req-0036, plan-0036, con-0001]
+summary: |
+  ENCODE-RECORD-VALUE writes `:FALSE` as JSON `false`. JSON:DECODE-JSON reads
+  `false` back as NIL. Re-encoding NIL writes `null`. So a record cannot be
+  read and written back unchanged, and the field that fails is `truncated`,
+  which every context record carries.
+
+  Measured 2026-08-23 over .loom/context: decode each file and re-encode it
+  through the same writer, and 47 of 88 differ. Every difference is the same
+  one:
+
+      on disk    "budget":4000,"tokensUsed":1160,"truncated":false}}
+      re-encoded "budget":4000,"tokensUsed":1160,"truncated":null}}
+body: |
+  HOW IT WAS FOUND
+
+  PLAN-0036 S5 replaces this hand-written encoder with UTILS:JSON-ENCODE, and
+  its acceptance is a single sentence: "a record written before the change
+  reads back identically after it". Building that check before making the
+  change -- against the *current* code, so the instrument could be trusted --
+  is what surfaced it. The stage cannot be judged by its own criterion, because
+  the criterion already fails.
+
+  WHY IT HAS NOT BITTEN
+
+  Nothing reads a record and writes it back. RECORD-CONTEXT-CALL writes a new
+  file; RECORD-CONTEXT-USE writes a sibling `<id>.used.json` rather than
+  editing the record; tools/acceptance.py reads with Python, where JSON `false`
+  decodes to False and is never re-encoded by Loom.
+
+  So this is latent rather than active, which is why it has survived since
+  DES-0030. It becomes live the moment anything rewrites a record -- a
+  migration, a compaction, a repair pass -- and at that point every `truncated:
+  false` in the corpus silently becomes `truncated: null`.
+
+  WHY NULL IS THE WRONG ANSWER RATHER THAN A COSMETIC ONE
+
+  The encoder's own docstring says why the marker exists: "NIL is also how a
+  record says a value is absent, and a boolean field writes :FALSE so a reader
+  sees a boolean rather than a null it has to interpret." The round trip
+  destroys exactly the distinction the marker was introduced to preserve. A
+  reader after the rewrite cannot tell "this bundle was not truncated" from
+  "nobody recorded whether it was", which is CON-0001's recorded gap turning
+  into a fabricated one.
+
+  WHERE THE ASYMMETRY IS
+
+  Three values and one of them is not a bijection:
+
+      :FALSE  -> false -> NIL      lost
+      NIL     -> null  -> NIL      fine
+      T       -> true  -> T        fine
+
+  CL-JSON has no distinguished false. JSON:DECODE-JSON maps both `false` and
+  `null` onto NIL, so the information is gone at the reader rather than at the
+  writer, and no change to ENCODE-RECORD-VALUE alone can fix it.
+
+  THE FIX IS A DECISION, NOT A PATCH
+
+  Three candidates and none is obviously right:
+
+    Read false back as :FALSE. A decoder option or a post-pass over the alist
+    restoring the marker. Correct and the most work, and it has to know which
+    fields are boolean or it will turn a legitimate JSON `false` in some future
+    payload into a keyword nothing expects.
+
+    Stop writing :FALSE and write null. Loses the distinction the marker exists
+    for, and DES-0030 argued for it deliberately.
+
+    Write booleans as true/false with no NIL case for those fields. The
+    honest version: a field that is a boolean always writes a boolean, so
+    `truncated` is never absent and null never means false. This is a schema
+    statement rather than an encoder change.
+
+  PLAN-0036 S5 should not be attempted before one is chosen, because the stage
+  is a substitution whose only acceptance test is a round trip that does not
+  currently hold. Swapping the encoder while the criterion is broken would
+  attribute a pre-existing defect to the swap, or hide it.
+
+  HOW TO REPRODUCE
+
+  For each file in .loom/context, READ-JSON-RECORD it and re-encode the result
+  with ENCODE-RECORD-VALUE, then compare with the bytes on disk. 47 of 88
+  diverge and every divergence is `false` becoming `null`. 41 are identical,
+  and those are the records with no boolean field set.
