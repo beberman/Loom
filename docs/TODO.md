@@ -123,7 +123,18 @@ answers were about the tree I had just changed.
 Three items.
 
 1. **`find` should answer across registered repositories, or say that it
-   didn't.** This is the sharpest one and it generalizes past game-server.
+   didn't.** THIRD INSTANCE FOUND 2026-08-23, and the harness half is fixed.
+   A judged record naming an entity in another repository was marked
+   unverifiable and discarded whole: ctx-20260824T002130 had four hits at ranks
+   1, 2, 4 and 6 and was thrown away because its fifth name was
+   `utils:json-decode`. REQ-0036 R2 makes that inevitable -- a judgement is
+   "deliberately not restricted to what the bundle returned", so its names come
+   from wherever the agent looked, and since `similar` and `survey` that is
+   routinely a second repository. `resolves()` in tools/acceptance.py now asks
+   every watched repository and falls back from a package-qualified spelling to
+   the bare name; scored records went 5 to 7 and the ranking signal from 5 hits
+   to 12. The `find` command itself is unchanged and this item stands for it.
+ This is the sharpest one and it generalizes past game-server.
    PLAN-0002's whole content was that half of `gs-utils` moved to a second
    repository, and the question the tree now generates constantly is *which of
    the two owns this name*. Both are registered — `game-server` and `utils` —

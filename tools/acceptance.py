@@ -425,22 +425,47 @@ _RESOLVED = {}
 
 
 def resolves(repository, name):
-    """True when NAME still names something in the live index.
+    """True when NAME still names something in a live index.
 
-    Memoised: the freshness pass asks the same name of the same repository once
-    per record and each miss is an HTTP round trip, which on this corpus was the
-    whole of the harness's runtime."""
+    Every watched repository, not only the one the query ran against, and a
+    package-qualified spelling falls back to the bare name.
+
+    Both are the same defect met once. A judgement records what an agent used,
+    and REQ-0036 R2 is explicit that this is "deliberately not restricted to
+    what the bundle returned" -- so the names in it come from wherever the
+    agent looked, which since `similar' and `survey' is routinely a second
+    repository. Asking only the record's own repository marks such a record
+    unverifiable and throws the whole thing away.
+
+    Measured on the record that found it, ctx-20260824T002130: four hits at
+    ranks 1, 2, 4 and 6, discarded because the fifth name was `utils:json-decode'
+    -- the answer, one repository away, written the way a person writes a
+    cross-package reference. docs/TODO.md carries the same gap twice already,
+    for `find' and for a completed plan's `affects:'.
+
+    Memoised: each miss is an HTTP round trip and on this corpus that was the
+    whole of the harness's runtime.
+    """
     key = (repository, name)
     if key in _RESOLVED:
         return _RESOLVED[key]
-    try:
-        found = json.load(urllib.request.urlopen(
-            B + "/find?" + urllib.parse.urlencode({"repository": repository,
-                                                   "term": name}),
-            timeout=60))
-        answer = any(e.get("name") == name for e in found.get("entities", []))
-    except Exception:
-        answer = False
+    bare = name.split(":")[-1] if ":" in name else name
+    candidates = [repository] + [r for r in watched_repositories() if r != repository]
+    answer = False
+    for where in candidates:
+        for spelling in ({name, bare} if bare != name else {name}):
+            try:
+                found = json.load(urllib.request.urlopen(
+                    B + "/find?" + urllib.parse.urlencode({"repository": where,
+                                                           "term": spelling}),
+                    timeout=60))
+                if any(e.get("name") == spelling for e in found.get("entities", [])):
+                    answer = True
+                    break
+            except Exception:
+                pass
+        if answer:
+            break
     _RESOLVED[key] = answer
     return answer
 
