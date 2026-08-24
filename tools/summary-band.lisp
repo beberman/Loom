@@ -1,0 +1,80 @@
+;;;; What the description band costs, at each cut. REQ-0049 R3.
+;;;;
+;;;;   sbcl --script tools/summary-band.lisp
+;;;;
+;;;; R3 says the band cannot be uniform -- 130 items at 24 tokens is the whole
+;;;; budget -- and leaves open whether the cut is a count or a cost. This
+;;;; measures the cost cut *CONTEXT-SUMMARY-COST* makes, over the four tasks
+;;;; PLAN-0045's outcome table reports, at every value the walk can produce.
+;;;;
+;;;; Per task and setting: the entities sent, how many carried a description,
+;;;; the tokens delivered, and the ratio against the budget. The floor to hold
+;;;; is PLAN-0045's -- every task inside its budget -- and the thing to buy is
+;;;; descriptions on the band where relevance is still undecided.
+
+(require :asdf)
+(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+
+(let ((here (merge-pathnames
+             "../" (make-pathname :name nil :type nil :defaults *load-truename*))))
+  (dolist (system '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
+                    "workspace/"))
+    (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
+             asdf:*central-registry* :test #'equal)))
+
+(handler-bind ((warning #'muffle-warning))
+  (funcall (read-from-string "ql:quickload")
+           '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json")
+           :silent t)
+  (asdf:load-system :loom-workspace))
+
+(defpackage #:loom-summary-band
+  (:use #:cl #:loom-ontology #:loom-graph #:loom-knowledge #:loom-workspace))
+(in-package #:loom-summary-band)
+
+(defparameter *tasks*
+  '(("/home/beberman/lisp/Loom" . "context bundle token budget and how it is spent")
+    ("/home/beberman/lisp/Loom" . "how a context bundle is rendered")
+    ("/home/beberman/lisp/utils" . "read a whole file into a string")
+    ("/home/beberman/lisp/game-server" . "data-handler")
+    ("/home/beberman/lisp/game-server" . "the startup sequence"))
+  "PLAN-0045's outcome table, plus one task per other indexed tree.
+
+The dogfooding rule: Loom is the most prose-heavy repository in the set at 62%
+of a body, and a band tuned on it alone is tuned on its best case. utils is
+comparable, game-server is 74% code and is where a description band can be
+empty and still be paid for.")
+
+(defparameter *cuts* '(-1 1 2 3 4)
+  "Every cut the walk can produce. *CONTEXT-EXPANSION-HORIZON* is 4, so a cut
+of 4 is every neighbour and -1 is none of them -- seeds carry a description at
+any setting, having no arriving edge and therefore no cost.")
+
+(defun described (bundle)
+  "How many of BUNDLE's items printed a description, and their tokens."
+  (let ((count 0) (tokens 0))
+    (dolist (item (getf bundle :items) (values count tokens))
+      (let ((summary (loom-knowledge::item-summary-line item)))
+        (when summary
+          (incf count)
+          (incf tokens (loom-knowledge::estimate-tokens summary)))))))
+
+(defun measure (root task)
+  (let* ((repository (watch-repository root :monitor nil :quiet t))
+         (view (repository-graph repository)))
+    (format t "~&~%~a  [~a]~%" task (pathname-name (string-right-trim "/" root)))
+    (format t "~&  cut   items  described  desc-tokens  tokens  xbudget~%")
+    (dolist (cut *cuts*)
+      (let* ((loom-knowledge::*context-summary-cost* cut)
+             (bundle (build-context view task
+                                    :source-fn (lambda (id)
+                                                 (definition-source repository id)))))
+        (multiple-value-bind (count tokens) (described bundle)
+          (format t "~&  ~3d ~7d ~10d ~12d ~7d ~8,2f~%"
+                  cut (length (getf bundle :items)) count tokens
+                  (getf bundle :tokens)
+                  (/ (float (getf bundle :tokens)) (getf bundle :budget))))))))
+
+(dolist (pair *tasks*)
+  (handler-case (measure (car pair) (cdr pair))
+    (error (c) (format t "~&~a: ~a~%" (car pair) c))))

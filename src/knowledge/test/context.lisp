@@ -1183,6 +1183,113 @@ difference is visible without being called a withholding")))
 
 
 ;;; ------------------------------------------------------------------
+;;; The description band (REQ-0049 R1 and R3)
+;;; ------------------------------------------------------------------
+
+(defun k-documented-fixture ()
+  "The shared fixture with a docstring on every function in it."
+  (let ((f (make-k-fixture)))
+    (setf (getp (k-resolve f) :documentation)
+          "Resolve OVERLAY against the base view.
+The second sentence, which is not the summary.")
+    (setf (getp (k-compose f) :documentation)
+          "Compose a view from the overlay and the base.")
+    (setf (getp (k-reset f) :documentation)
+          "Discard the overlay and start again.")
+    f))
+
+(defun k-documented-chain ()
+  "A documented seed and a documented chain of callers leading away from it.
+
+Built rather than borrowed from MAKE-K-FIXTURE, whose five entities are all
+named for the overlay and are therefore all seeds of any task about it -- a
+bundle with no neighbour band cannot show where the neighbour cut falls."
+  (let ((seed   (k-def 'function-entity "parse-manifest" "src/a.lisp"
+                       :documentation "Read the manifest at PATH.
+The second sentence, which is not the summary."))
+        (near   (k-def 'function-entity "checksum-blob" "src/a.lisp"
+                       :documentation "A checksum over BLOB's octets."))
+        (far    (k-def 'function-entity "hex-digits" "src/a.lisp"
+                       :documentation "N as lowercase hexadecimal."))
+        (g      (make-graph)))
+    (dolist (e (list seed near far)) (add-entity g e))
+    (k-edge g :calls seed near)
+    (k-edge g :calls near far)
+    g))
+
+(test a-seed-carrying-its-body-does-not-also-carry-its-description
+  ;; REQ-0049 R3. The description is the docstring's first sentence and the
+  ;; body holds the whole docstring a few lines below it, so on an item with
+  ;; both the band pays twice for one sentence. Measured on the tree:
+  ;; `context refactor Loom to use utils where needed' printed a body for 5 of
+  ;; its 8 seeds.
+  (let* ((f (k-documented-fixture))
+         (bundle (build-context (k-graph f) "change resolve-overlay"
+                                :budget 100000
+                                :source-fn (lambda (id)
+                                             (declare (ignore id))
+                                             (list :status :current
+                                                   :text "(defun resolve-overlay ())"
+                                                   :range "41-53"
+                                                   :file "src/workspace/overlay.lisp"))))
+         (sourced (find-if (lambda (i) (getf i :source)) (getf bundle :items))))
+    (is (not (null sourced)) "the source tier has to actually carry something")
+    (is (string= "Resolve OVERLAY against the base view." (getf sourced :summary))
+        "the item still carries it, for a REST or MCP consumer")
+    (is (null (search "Resolve OVERLAY against the base view."
+                      (loom-knowledge::render-item sourced)))
+        "and the rendered text does not, because the body says it already")))
+
+(test a-seed-with-no-body-carries-its-description
+  (let* ((f (k-documented-fixture))
+         (bundle (build-context (k-graph f) "change resolve-overlay" :budget 100000))
+         (seed (find :seed (getf bundle :items) :key (lambda (i) (getf i :band)))))
+    (is (search "Resolve OVERLAY against the base view." (loom-knowledge::render-item seed)))
+    (is (null (search "The second sentence" (loom-knowledge::render-item seed)))
+        "the first sentence, not the paragraph")))
+
+(test the-cut-on-a-neighbours-description-is-its-walk-cost
+  ;; REQ-0049 R3 asked whether the cut is a count or a cost and left it
+  ;; unmeasured. A cost: the walk already orders the bundle by one, where a
+  ;; count would take the first N neighbours of whichever seed was expanded
+  ;; first.
+  ;;
+  ;; One neighbour on both sides of the cut rather than two neighbours on one
+  ;; side each, so the assertion is about the cut and not about the fixture's
+  ;; shape. CHECKSUM-BLOB is one outgoing :CALLS from the seed, which
+  ;; *EDGE-COSTS* prices at 3.
+  (flet ((rendered (cut)
+           (let* ((*context-summary-cost* cut)
+                  (bundle (build-context (k-documented-chain) "change parse-manifest"
+                                         :budget 100000))
+                  (item (find "checksum-blob" (getf bundle :items)
+                              :key (lambda (i) (getf (getf i :entity) :name))
+                              :test #'equal)))
+             (is (not (null item)) "the neighbour has to be in the bundle at all")
+             (is (eql 3 (getf item :cost)) "and to be where the cut is being tested")
+             (loom-knowledge::render-item item))))
+    (is (search "A checksum over BLOB's octets." (rendered 3))
+        "a neighbour within the cut says what it is")
+    (is (null (search "A checksum over BLOB's octets." (rendered 2)))
+        "and one past it is skimmed on its name")))
+
+(test the-description-band-is-charged-to-the-budget
+  ;; The band is not free, and a bundle that printed it without paying for it
+  ;; would overflow the budget by exactly the amount REQ-0040 exists to bound.
+  ;; RENDER-ITEM is the costing function as well as the printing one, so this
+  ;; holds by construction -- and it held by construction before PLAN-0045 S2
+  ;; too, when the estimate was taken from the serialised plist and over-counted
+  ;; the rendered line fivefold.
+  (let ((with (let ((*context-summary-cost* 5))
+                (build-context (k-documented-chain) "change parse-manifest"
+                               :budget 100000)))
+        (without (let ((*context-summary-cost* -1))
+                   (build-context (k-documented-chain) "change parse-manifest"
+                                  :budget 100000))))
+    (is (> (getf with :tokens) (getf without :tokens))
+        "descriptions cost tokens and the total says so")))
+
+;;; ------------------------------------------------------------------
 ;;; The cutoff signal (PLAN-0045 S3/S4, DES-0042 D1 and D3)
 ;;; ------------------------------------------------------------------
 
