@@ -420,14 +420,21 @@ business at all."
   "CONTENTS with Loom's half of the region replaced by NEW-HALF.
 
 Byte for byte everywhere else, which is the whole promise: the author's half is
-copied rather than rewritten, and the text outside the region is not read."
+copied rather than rewritten, and the text outside the region is not read.
+
+A region with no author marker keeps everything from the end marker on and gains
+the marker, so a tree prepared before DES-0044 acquires it by being refreshed
+once rather than by hand (BUG-0051). Reaching this at all means the digest
+proved the region was Loom's, or the caller consented to replacing it whole."
   (let* ((begin (search *marker-begin* contents))
-         (yours (search *marker-yours* contents :start2 begin)))
+         (end (search *marker-end* contents :start2 begin))
+         (yours (search *marker-yours* contents :start2 begin :end2 end))
+         (tail (if yours (line-after contents yours) end)))
     (concatenate 'string
                  (subseq contents 0 begin)
                  new-half
                  *marker-yours* (string #\Newline)
-                 (subseq contents (line-after contents yours)))))
+                 (subseq contents tail))))
 
 (defun plan-refresh (root &key replace-unproven name)
   "What refreshing an already-prepared ROOT would do. REQ-0052 R2, DES-0044 D1.
@@ -490,34 +497,38 @@ endpoint would silently rewrite the tree to point somewhere else."
             ((null existing) (skip relative "there is no CLAUDE.md to refresh"))
             ((null mine)
              (skip relative "carries no complete Loom region"))
-            ((not found)
-             ;; REQ-0052 R4. The state every tree prepared before DES-0044 is
-             ;; in. Naming the line counts rather than saying "cannot" alone:
-             ;; the reader has to find where their own text starts, and the
-             ;; size of the difference is the useful half of that.
-             ;; "Move your sections below it", not "add it where your text
-             ;; begins". Measured on game-server: the author's four sections are
-             ;; interleaved with Loom's, so there is no single place the marker
-             ;; goes. The line counts are the useful half -- they say how much of
-             ;; the region is not accounted for by today's template.
-             (skip relative
-                   (format nil "the region has no ~a marker, so Loom cannot tell its ~
-own text from yours. Add it and move anything you wrote below it, then run ~
---update again (~d lines in the region; today's template renders ~d)"
-                           *marker-yours*
-                           (count #\Newline mine)
-                           (count #\Newline (or (loom-half rendered) "")))))
             (t
+             ;; BUG-0051. A missing author marker used to be a terminal refusal.
+             ;; It is not evidence of anything on its own: the region may hold
+             ;; the author's text, and it may equally hold nothing but Loom's --
+             ;; which is what game-server's does now that its five sections were
+             ;; moved below `loom:end' rather than below a marker inside it.
+             ;; Refusing both cases meant the tree REQ-0052 was measured on could
+             ;; never be refreshed by the code REQ-0052 produced.
+             ;;
+             ;; So the digest decides here as it does everywhere else, and the
+             ;; marker's absence becomes a warning carried on the :UNPROVEN
+             ;; message rather than a verdict of its own. The protection moves to
+             ;; the consent, which is where DES-0044 D5 already put it for a file
+             ;; Loom cannot verify.
              (multiple-value-bind (state why)
                  (update-state root relative (loom-half rendered) :region mine)
                (case state
                  (:current (skip relative "already current"))
+                 (:unproven
+                  (let ((why (if found
+                                 why
+                                 (format nil "~a, and the region has no ~a marker, ~
+so all ~d lines of it would be replaced -- move anything you wrote below ~a, or ~
+below a ~a marker inside the region, first"
+                                         why *marker-yours* (count #\Newline mine)
+                                         *marker-end* *marker-yours*))))
+                    (if replace-unproven
+                        (replace-file
+                         path (replace-loom-half existing (loom-half rendered)))
+                        (skip relative why))))
                  (:replace (replace-file
                             path (replace-loom-half existing (loom-half rendered))))
-                 (:unproven (if replace-unproven
-                                (replace-file
-                                 path (replace-loom-half existing (loom-half rendered)))
-                                (skip relative why)))
                  (t (skip relative why))))))))
       (setf (prep-replaces prep) (nreverse (prep-replaces prep))
             (prep-skipped prep) (nreverse (prep-skipped prep)))

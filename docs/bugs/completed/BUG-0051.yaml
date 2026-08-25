@@ -1,0 +1,103 @@
+id: BUG-0051
+title: A region with no author marker is refused even when it holds nothing of the author's, so the tree REQ-0052 was written for cannot be refreshed
+status: closed
+date: 2026-08-24
+refines: [PLAN-0047, DES-0044]
+affects: [plan-refresh, update-state]
+tags: [init, templates, req-0052, des-0044]
+summary: |
+  DES-0044 D3 refuses any CLAUDE.md region without a `<!-- loom:yours -->`
+  marker, on the argument that Loom cannot tell its own text from an author's.
+  That is right when the author's text is inside the region and wrong when it
+  is not, and the second is what actually happened: game-server's five author
+  sections were moved *below* `<!-- loom:end -->`, outside the region entirely,
+  leaving 65 lines of pure Loom that a refresh can safely replace.
+
+  The refusal fires anyway, and its message tells the reader to add a marker
+  and move their text below it -- which is a worse version of what they have
+  already done. game-server is the tree REQ-0052 was measured on and the only
+  prepared tree with an author's text in it, so the requirement's own subject
+  cannot be refreshed by the code the requirement produced.
+body: |
+  SYMPTOM
+
+  Against game-server as it now stands, with the author's sections moved out of
+  the region:
+
+      $ tools/loom.sh 'init "/home/beberman/lisp/game-server" --update'
+      Refreshing /home/beberman/lisp/game-server/
+        nothing needs rewriting.
+        CLAUDE.md -- the region has no <!-- loom:yours --> marker, so Loom
+        cannot tell its own text from yours. Add it and move anything you
+        wrote below it, then run --update again (64 lines in the region;
+        today's template renders 111)
+
+  Expected: the region holds three headings, all three of which appear in the
+  template's own git history, so there is nothing of the author's inside it to
+  protect. The refresh should offer to replace it.
+
+  The file is laid out like this, and every author section is outside the
+  markers:
+
+      line   5-192   the team's own CLAUDE.md
+      line 205       <!-- loom:begin -->
+      line 207-268   three sections, all from the template
+      line 269       <!-- loom:end -->
+      line 271-398   five author sections, below the region
+
+  CAUSE
+
+  PLAN-REFRESH tests for the marker before it tests the digest, and the
+  no-marker branch is a terminal skip:
+
+      ((not found) (skip relative "the region has no ~a marker ..."))
+      (t           (update-state ...))
+
+  So a region with no marker never reaches UPDATE-STATE and can never be
+  classified :CURRENT, :REPLACE or :UNPROVEN. The three cases collapse into one
+  refusal, and two of them did not deserve it:
+
+      no marker, digest matches what Loom recorded  -> safe, refused anyway
+      no marker, no digest recorded                 -> unknown, refused outright
+      no marker, digest differs                     -> genuinely unsafe
+
+  Only the third is a refusal. The first is provably Loom's own text. The second
+  is exactly what :UNPROVEN was built for -- DES-0044 D5 already decided that a
+  file Loom cannot verify is reported and then written on an explicit consent,
+  rather than refused forever, because refusing forever means a tree prepared
+  before digests existed can never acquire one.
+
+  WHY IT HID
+
+  The design was measured against a copy of game-server *before* the migration,
+  where the author's sections were inside the region and the refusal was
+  correct. The case that fails is the tree after a correct migration, and the
+  migration the design imagined was a different one: DES-0044 D3 assumed the
+  author would add a marker and move their text below it *inside* the region,
+  and never considered that moving it outside the region is simpler, needs no
+  marker, and leaves removal working unchanged.
+
+  The tests encode the same assumption. A-REGION-WITH-NO-AUTHOR-MARKER-IS-
+  REFUSED-BY-NAME builds a region with author text still in it and asserts the
+  refusal, which is a true property that does not generalise to the shape it was
+  written as a proxy for. No test covers a region that is pure Loom, because
+  every fixture with no marker also had author text.
+
+  FIX
+
+  Let the no-marker case fall through to UPDATE-STATE, and let the digest decide
+  as it does everywhere else:
+
+      matches the recorded digest  -> :REPLACE, no consent needed
+      no digest recorded           -> :UNPROVEN, written only on the consent
+                                      DES-0044 D5 already defined
+      differs from the recorded    -> :REFUSED, unchanged
+
+  The consent is where the protection now lives, and it is the right place for
+  it: `--replace-unproven` already means *Loom cannot verify this, and I am
+  telling it to go ahead*. The message it prints gains the warning the refusal
+  used to carry -- that a region with no marker will be replaced whole, so
+  anything written inside it should be moved out or below a marker first.
+
+  A region *with* a marker is unaffected: Loom's half is compared and the
+  author's half is copied, exactly as DES-0044 D2 has it.
