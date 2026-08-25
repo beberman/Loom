@@ -433,31 +433,93 @@ Start the service with tools/serve.sh.
         (is-true (search "A section the template grew" after)
                  "while Loom's half took the template's new text")))))
 
-(test a-region-with-no-author-marker-is-refused-by-name
-  ;; REQ-0052 R4 and DES-0044 D3. The state every tree prepared before this is
-  ;; in, and the one case where a refusal is the correct answer rather than a
-  ;; failure: a partial refresh that keeps half an author's section is worse
-  ;; than no refresh.
+(defun strip-author-marker (root)
+  "ROOT's CLAUDE.md with the author marker line removed.
+
+The shape of a region prepared before DES-0044: two markers and no third."
+  (let* ((text (target-text root "CLAUDE.md"))
+         (yours (search loom-workspace::*marker-yours* text))
+         (line (position #\Newline text :start yours))
+         (older (concatenate 'string (subseq text 0 yours) (subseq text (1+ line)))))
+    (write-target-file root "CLAUDE.md" older)
+    older))
+
+(test a-region-with-no-marker-that-is-still-looms-own-text-is-refreshed
+  ;; BUG-0051. The marker's absence is not evidence on its own. game-server's
+  ;; five author sections were moved below `loom:end' rather than below a marker
+  ;; inside the region, which leaves the region pure Loom and safely
+  ;; replaceable -- and the first version of this refused it, so the tree
+  ;; REQ-0052 was measured on could not be refreshed by REQ-0052's own code.
   (with-target-tree (root)
     (write-target-file root "CLAUDE.md" "# My project
 ")
     (prepare-repository root :append-claude-md t)
-    ;; Strip the author marker, leaving an older preparation's two-marker region.
-    (let* ((text (target-text root "CLAUDE.md"))
-           (yours (search loom-workspace::*marker-yours* text))
-           (line (position #\Newline text :start yours))
-           (older (concatenate 'string (subseq text 0 yours) (subseq text (1+ line)))))
-      (write-target-file root "CLAUDE.md" older)
+    (strip-author-marker root)
+    (with-moved-template ("claude-md-pointer.md")
+      (let ((report (prepare-repository root :update t :apply-changes t)))
+        (is-true (find "CLAUDE.md" (getf report :replaced) :test #'string=)
+                 "the digest proves the region is Loom's, so it is replaced: ~a"
+                 (getf report :skipped))
+        (is-true (search "A section the template grew" (target-text root "CLAUDE.md"))
+                 "and it carries the template's new text")
+        (is-true (search "# My project" (target-text root "CLAUDE.md"))
+                 "while the author's own file above the region is untouched")))))
+
+(test a-region-with-no-marker-that-was-edited-is-still-refused
+  ;; The half of the old refusal that was load-bearing, and the reason the
+  ;; digest is what decides. Text added inside a region with no marker cannot be
+  ;; told from Loom's, so replacing the region would discard it.
+  (with-target-tree (root)
+    (write-target-file root "CLAUDE.md" "# My project
+")
+    (prepare-repository root :append-claude-md t)
+    (let* ((older (strip-author-marker root))
+           (at (search loom-workspace::*marker-end* older))
+           (edited (concatenate 'string (subseq older 0 at)
+                                "### Mine, written inside the region
+
+Do not lose this.
+"
+                                (subseq older at))))
+      (write-target-file root "CLAUDE.md" edited)
       (with-moved-template ("claude-md-pointer.md")
         (let ((report (prepare-repository root :update t :apply-changes t)))
           (is (null (find "CLAUDE.md" (getf report :replaced) :test #'string=))
               "nothing was written to it")
-          (let ((skip (find "CLAUDE.md" (getf report :skipped) :key #'car :test #'string=)))
-            (is-true skip "and it is named rather than passed over in silence")
-            (is-true (search "loom:yours" (cdr skip))
-                     "with the marker to add: ~a" (cdr skip)))))
-      (is (string= older (target-text root "CLAUDE.md"))
-          "and the file is byte for byte what it was"))))
+          (is-true (search "differs from what Loom last wrote"
+                           (cdr (find "CLAUDE.md" (getf report :skipped)
+                                      :key #'car :test #'string=))))))
+      (is (string= edited (target-text root "CLAUDE.md"))
+          "and the file is byte for byte what it was, the added section included"))))
+
+(test a-region-with-no-marker-and-no-digest-warns-that-all-of-it-goes
+  ;; DES-0044 D5's consent doing the work the refusal used to. Loom cannot
+  ;; verify the region, so it says what replacing it would cost and writes
+  ;; nothing until told -- rather than refusing forever, which is what left a
+  ;; tree prepared before digests existed unable to acquire one.
+  (with-target-tree (root)
+    (write-target-file root "CLAUDE.md" "# My project
+")
+    (prepare-repository root :append-claude-md t)
+    (strip-author-marker root)
+    ;; A manifest as it was before DES-0044: no digests at all.
+    (let ((manifest (read-manifest root)))
+      (loom-workspace::write-manifest
+       root (loom-workspace::manifest-scalars manifest)
+       (list (cons "created" (loom-workspace::manifest-created-paths root)))))
+    (with-moved-template ("claude-md-pointer.md")
+      (let* ((before (target-text root "CLAUDE.md"))
+             (report (prepare-repository root :update t :apply-changes t))
+             (why (cdr (find "CLAUDE.md" (getf report :skipped)
+                             :key #'car :test #'string=))))
+        (is (null (getf report :replaced)) "nothing written without consent")
+        (is-true (search "no digest recorded" why))
+        (is-true (search "has no" why) "and the missing marker is named: ~a" why)
+        (is (string= before (target-text root "CLAUDE.md")) "the file is untouched"))
+      (let ((report (prepare-repository root :update t :apply-changes t
+                                             :replace-unproven t)))
+        (is-true (find "CLAUDE.md" (getf report :replaced) :test #'string=)
+                 "and written when the consent is given: ~a" (getf report :replaced))))))
 
 (test a-file-edited-since-loom-wrote-it-is-refused
   ;; REQ-0052 R3. The digest's other job: a file that is no longer what Loom
