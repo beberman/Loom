@@ -742,6 +742,26 @@ correct rather than a gap: fiveam is external to every indexed tree")))
     (apply-transaction g (resolve-calls g))
     (is (not (null (resolve-tests g))))))
 
+(test a-helper-in-the-test-file-is-not-a-tested-unit
+  ;; REQ-0053 R6. A test calls its own fixtures as often as it calls its
+  ;; subject -- 192 of front-end's 1,351 resolvable case calls reach a helper
+  ;; defined in the test file itself -- and counting those makes `tested-units'
+  ;; a count of the scaffolding. The :CALLS edge is still drawn: what the test
+  ;; reaches is a fact, and only the coverage claim is refused.
+  (let* ((g (make-graph))
+         (test (r-test g "alpha-works" "t.lisp" :call-names '("alpha" "with-server")))
+         (alpha (r-function g "alpha" "a.lisp"))
+         (helper (r-function g "with-server" "t.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (apply-transaction g (resolve-tests g))
+    (let ((covered (mapcar #'to-id (relationships-from g (id test) :rel-type :tests))))
+      (is (equal (list (id alpha)) covered)
+          "the subject is covered and the fixture beside the test is not"))
+    (is (member (id helper)
+                (mapcar #'to-id (relationships-from g (id test) :rel-type :calls))
+                :test #'equal)
+        "the call itself is still recorded")))
+
 (test coverage-reaches-impact-as-a-collected-field
   ;; :tests is :collect-as :tests, so it must land in the report's tests field
   ;; rather than inflating the impact set. Changing alpha should tell an agent

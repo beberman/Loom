@@ -122,6 +122,44 @@ screen. A design document was nearly written from the opposite of what Loom
 said.
 — designing REQ-0040, 2026-08-23
 
+## Searching for a term the language itself uses
+
+**`find term=import` against `front-end` returned eight entities, all of them
+about importing.** The tree is JavaScript, where `import` opens most of the
+533 files; `grep -rn import src/` is thousands of ES module statements with the
+answer somewhere inside. The eight were `importErrorMessage` and
+`SEGMENT_IMPORT_ZOOM` in the editor mock, the two files under
+`domain/partition/import/`, their tests, and a fixture generator — which is the
+whole of the feature, named. The bug being chased was in the mock's Import
+button, and the first call landed on it.
+
+The general point is not that the answer was short. It is that a term whose
+frequency in a language is unrelated to its meaning in a codebase is exactly
+where a text search degrades and a definition index does not.
+— chasing front-end's BUG-0014, 2026-08-27
+
+## The reasoning arrived with the code
+
+**A fix that moved a measurement from 200-odd problems to 253 was not a
+regression, and `context` is the only reason that was known.** Repairing the OSM
+tile stitcher changed which pixels the segmentation trial classifies, and the
+partition it then produced failed validation with 253 dangling-arc problems and
+110 crossing-arc failures. Nothing in the code says whether that number is new.
+
+The `documents` band of the context bundle carried `REV-0001`, which records the
+same failure measured a month earlier — 93 problems and 42 failures on a smaller
+bbox — with its cause already isolated by experiment: per-component
+simplification running before shared-arc extraction. The finding was known,
+open, and unrelated to the change in hand. Without it the honest options were to
+report a possible regression or to spend a session re-deriving somebody else's
+completed diagnosis.
+
+`impact` on the repaired function carried `PLAN-0003` and `DEC-0001` in the same
+way, which is where the constraint that the raster input may only ever be OSM
+tiles is written down. A caller who edits the image pipeline needs to know that
+and would not think to ask.
+— chasing front-end's BUG-0014, 2026-08-27
+
 ## The standing measurement
 
 `tools/test/acceptance.py` scores 42 of 44 hand-judged expectations present across

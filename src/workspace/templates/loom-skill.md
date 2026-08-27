@@ -49,6 +49,7 @@ wrong answer — they see text, and this sees definitions, callers and decisions
 | the shape of a system | `structure` |
 | what governs this area | `impact`, then `context` |
 | X's source and docstring | `describe` with `source=true` |
+| which tests cover X | `describe` or `impact`, `tests` band |
 
 **A name absent here may live in another tree.** `find` with no `repository`
 searches every watched one, and each row says which it came from. Named with a
@@ -73,6 +74,16 @@ keep every `method:` and `function:` entity, then `describe` each id —
 `describe` takes a full entity id, not only a name. Skipping this step reads a
 codebase's most-called function as unused, and the wrong answer looks like a
 right one.
+
+**An empty `tests` band is an answer.** `describe` and `impact` report the
+tests that reach an entity: fiveam tests in a Lisp tree, vitest and jest cases
+in a JavaScript one, each named the way the runner prints it -- `stitchOsmImage > crops to the bbox AFTER compositing`. A case is linked
+to a unit because its body, or a hook the runner runs for it, calls that unit.
+So no `tests` means no case in this index calls it, which is worth knowing
+before you change it. It does not mean the code is unexercised -- a case may
+reach it through a caller, which is what `impact` traces -- and a file the
+runner would run that Loom recognised no case in is counted in `status` as
+`test-files-without-cases` rather than passed over.
 
 `impact` attaches the decisions and rules bearing on an entity. Read them
 before writing something that contradicts one.

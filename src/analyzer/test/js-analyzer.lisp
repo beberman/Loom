@@ -554,3 +554,158 @@ export function first(p) { return p; }"))
       (is (not (null e)) "the definition is still indexed")
       (is (null (gethash :documentation (properties e)))
           "the banner describes the module, not this function")))
+
+;;; ------------------------------------------------------------------
+;;; The runner's forms (REQ-0053)
+;;; ------------------------------------------------------------------
+;;;
+;;; What produced front-end's 2,325 :TEST entities and 145 test files. The
+;;; numbers are REQ-0053's acceptance and are measured against the tree; what
+;;; is asserted here is the behaviour behind them.
+
+(defparameter +vitest-suite+
+  "import { describe, it, expect } from 'vitest';
+import { stitch, span } from '../make-image.mjs';
+
+describe('stitch', () => {
+  beforeEach(() => { reset(); });
+
+  it('crops after compositing', async () => {
+    expect(await stitch(span(1))).toBe(1);
+  });
+
+  describe('when the bbox is small', () => {
+    it('still returns a buffer', () => { expect(stitch(0)).toBeDefined(); });
+  });
+});
+"
+  "One suite, one nested suite, a hook and two cases.")
+
+(js-test a-vitest-case-becomes-a-test-entity-and-the-suite-becomes-none
+  ;; A suite mints nothing for the reason DEF-SUITE mints nothing: the ontology
+  ;; declares no :SUITE type, and a suite is not a test.
+  (let ((tests (js-entities "server/trials/test/makeImage.test.js" +vitest-suite+ :test)))
+    (is (= 2 (length tests)))
+    (is (equal '("stitch > crops after compositing"
+                 "stitch > when the bbox is small > still returns a buffer")
+               (sort (mapcar #'name tests) #'string<))
+        "the name is the path a reader would speak: every enclosing title, then its own")
+    (is (equal '("stitch" "stitch > when the bbox is small")
+               (sort (mapcar (lambda (e) (getp e :suite)) tests) #'string<))
+        "the suite half is also its own property")
+    (is (null (js-named "server/trials/test/makeImage.test.js" +vitest-suite+ "stitch"))
+        "the describe itself is not an entity")))
+
+(js-test a-case-carries-what-it-calls-and-what-the-hooks-around-it-call
+  ;; The coverage half. RESOLVE-TESTS reads the :CALLS edges these names
+  ;; become, so a name missing here is a :TESTS edge that never exists.
+  (let* ((tests (js-entities "server/trials/test/makeImage.test.js" +vitest-suite+ :test))
+         (outer (find "stitch > crops after compositing" tests :key #'name :test #'equal))
+         (inner (find "stitch > when the bbox is small > still returns a buffer" tests
+                      :key #'name :test #'equal)))
+    (is (member "stitch" (getp outer :call-names) :test #'equal)
+        "the subject the case calls")
+    (is (member "reset" (getp outer :call-names) :test #'equal)
+        "the beforeEach runs for this case, so what it calls is this case's too")
+    (is (member "reset" (getp inner :call-names) :test #'equal)
+        "and for a case in a nested suite, which the runner also runs it for")))
+
+(js-test a-hook-in-a-sibling-suite-is-not-attributed-to-this-suites-cases
+  ;; The other side of the rule above, and the one that makes it a rule rather
+  ;; than a fan-out: a beforeEach belongs to the cases the runner would run it
+  ;; for and to no others.
+  (let* ((source "import { describe, it } from 'vitest';
+describe('alpha', () => {
+  beforeEach(() => { setUpAlpha(); });
+  it('one', () => { alpha(); });
+});
+describe('beta', () => {
+  beforeEach(() => { setUpBeta(); });
+  it('two', () => { beta(); });
+});
+")
+         (tests (js-entities "src/x.test.js" source :test))
+         (one (find "alpha > one" tests :key #'name :test #'equal)))
+    (is (= 2 (length tests)))
+    (is (member "setUpAlpha" (getp one :call-names) :test #'equal))
+    (is (not (member "setUpBeta" (getp one :call-names) :test #'equal))
+        "beta's setup runs for beta's cases")))
+
+(js-test a-bare-top-level-test-call-is-a-case-with-no-suite
+  ;; 635 of front-end's 2,325 cases are written this way, with no describe at
+  ;; all -- so a recognition rule that required one would miss a quarter of the
+  ;; tree.
+  (let* ((source "import { test, expect } from 'vitest';
+test('reads a get-defn message', () => { expect(createDefn()).toBeDefined(); });
+")
+         (tests (js-entities "src/models/test/message.test.js" source :test)))
+    (is (= 1 (length tests)))
+    (is (equal "reads a get-defn message" (name (first tests))))
+    (is (null (getp (first tests) :suite)))
+    (is (member "createDefn" (getp (first tests) :call-names) :test #'equal))))
+
+(js-test the-import-alone-names-a-test-file-whatever-its-path-is-called
+  ;; The second of REQ-0053 R2's two signals, and the one that does not depend
+  ;; on a naming convention. `import { describe, it } from 'vitest'' is the
+  ;; author saying what the file is.
+  (let* ((source "import { describe, it } from 'vitest';
+describe('widget', () => { it('renders', () => { render(); }); });
+")
+         (tests (js-entities "src/widget-checks.js" source :test)))
+    (is (= 1 (length tests)))
+    (is (eq :vitest (getp (first tests) :framework))
+        "the module the runner was imported from names the framework")))
+
+(js-test a-file-that-is-neither-named-nor-imports-a-runner-indexes-as-it-did
+  ;; REQ-0053 A4, and the reason the child reports these forms rather than
+  ;; deciding about them: `test' and `describe' are ordinary function names,
+  ;; and a tree that defines its own must index exactly as it did before any of
+  ;; this existed.
+  (let* ((source "export function describe(x) { return String(x); }
+function run() { describe(1); test(2); }
+")
+         (entities (js-entities "src/util.js" source)))
+    (is (null (js-entities "src/util.js" source :test))
+        "no case is minted from a call to this tree's own function")
+    (is (equal '("describe" "run")
+               (sort (mapcar #'name (remove :file entities :key #'entity-type))
+                     #'string<))
+        "and the definitions that were there are still there")
+    (is (null (getp (js-file-entity "src/util.js" source) :test-file-p)))))
+
+(js-test a-case-titled-by-a-template-is-counted-and-not-named
+  ;; CON-0001 in the one place no total would reveal it. `it(`fails for
+  ;; ${name}`)' is one title at collection and N at run time; naming the entity
+  ;; after the literal parts would put a name in the index that appears nowhere
+  ;; in the run output.
+  (let* ((source "import { describe, it } from 'vitest';
+describe('shapes', () => {
+  it('names the first', () => { first(); });
+  it(`sends error on shape with ${kind}`, () => { second(); });
+});
+")
+         (tests (js-entities "src/s.test.js" source :test))
+         (file (js-file-entity "src/s.test.js" source)))
+    (is (= 1 (length tests)))
+    (is (equal "shapes > names the first" (name (first tests))))
+    (is (= 1 (getp file :unnamed-tests))
+        "the count is the whole record that the other case exists")
+    (is (eq t (getp file :test-file-p)))))
+
+(js-test the-modifier-chain-and-the-each-table-are-both-transparent
+  ;; `it.skip', `describe.only' and `it.each(table)(title, fn)' are all the
+  ;; runner's own vocabulary for the same form. A recognition rule keyed on a
+  ;; bare Identifier callee would see none of them.
+  (let* ((source "import { describe, it, test } from 'vitest';
+describe.only('chain', () => {
+  it.skip('skipped but declared', () => { alpha(); });
+  it.each([[1], [2]])('parameterised %i', (n) => { beta(n); });
+  it.todo('written down and not written');
+});
+")
+         (tests (js-entities "src/c.test.js" source :test))
+         (todo (find "chain > written down and not written" tests :key #'name :test #'equal)))
+    (is (= 3 (length tests)))
+    (is (not (null todo)) "a todo is a declared test and the index says so")
+    (is (null (getp todo :call-names))
+        "with no body it reaches nothing, so it claims no coverage")))

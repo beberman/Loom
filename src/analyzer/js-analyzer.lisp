@@ -346,7 +346,7 @@ itself."
       (and (jget definition :default)
            (pathname-name (pathname path)))))
 
-(defun make-js-file-entity (path contents reply reason)
+(defun make-js-file-entity (path contents reply reason &optional test-file-p)
   "The :FILE entity, which is asserted whether or not anything parsed.
 
 Damage lands in :SUPPRESSED-REGIONS rather than :RECOVERED-REGIONS, and the
@@ -377,6 +377,17 @@ are not in the index -- and :ANALYSIS-ERROR is what tells them apart."
                      ;; Recorded, not resolved -- see the property's own
                      ;; documentation and REQ-0024's WHAT THIS IS NOT.
                      (when sources (list :import-sources sources))
+                     ;; DES-0045 D7. Written on the file rather than derived
+                     ;; from the cases in it, because the two differ exactly
+                     ;; where it matters: a file the runner would run and this
+                     ;; analyzer recognised no case in is the report that a
+                     ;; convention was missed, and a file with no cases and no
+                     ;; flag is just a source file.
+                     (when test-file-p
+                       (list* :test-file-p t
+                              (let ((unnamed (jget reply :unnamed-tests)))
+                                (when (and (integerp unnamed) (plusp unnamed))
+                                  (list :unnamed-tests unnamed)))))
                      (when (or reason damage)
                        (list :analysis-failed-p t
                              :analysis-error (or reason
@@ -439,8 +450,85 @@ matters enough to be worth two copies and a test that compares them."
   (let ((trimmed (and (stringp route) (string-trim "/" route))))
     (when (and trimmed (plusp (length trimmed))) trimmed)))
 
-(defun make-js-definition-entity (definition path system)
-  "One entity for one definition, or NIL when it cannot be named."
+(defparameter *test-file-infixes* '(".test." ".spec.")
+  "What the vitest and jest default includes match on a file name.
+
+Both runners ship `**/*.{test,spec}.?(c|m)[jt]s?(x)', so a file whose name
+carries one of these is a file the runner would run without anybody
+configuring anything. It is a fact about two runners rather than about one
+repository, which is why it is here and not in .loom/frameworks.yaml -- the
+same judgement that ships fiveam's DEF-TEST and leaves DEFROUTE to be
+declared.")
+
+(defparameter *test-directory-names* '("__tests__")
+  "Directory names both runners' default includes treat as holding tests.
+
+`test/' is deliberately absent. front-end keeps 144 test files under
+directories called test/ and also keeps fixtures, mocks and helpers there, so
+the directory says where a file sits and the file name says what it is.")
+
+(defparameter *test-runner-names* '("describe" "it" "test")
+  "Local bindings whose presence names this file as a test file.
+
+The import is the author's own declaration -- `import { describe, it, expect }
+from 'vitest'' -- and it holds wherever the file sits, which is what makes it
+the second signal rather than a duplicate of the first.")
+
+(defparameter *test-runner-frameworks*
+  '(("vitest" . :vitest) ("jest" . :jest) ("@jest/globals" . :jest))
+  "Module specifier -> the framework keyword the ontology declares.
+
+Anything else leaves :FRAMEWORK unset. mocha and node:test would both be
+recognised as test files by their forms and neither is in the :TEST type's
+:ONE-OF, and a keyword invented here would fail validation on the entity
+rather than record anything.")
+
+(defun js-test-path-p (path)
+  "True when PATH is one the runner's default includes would match."
+  (let ((name (file-namestring (pathname path))))
+    (or (and (some (lambda (infix) (search infix name)) *test-file-infixes*) t)
+        (and (member-if (lambda (segment)
+                          (and (stringp segment)
+                               (member segment *test-directory-names* :test #'string=)))
+                        (rest (pathname-directory (pathname path))))
+             t))))
+
+(defun js-test-imports (reply)
+  "Whether an import binds a runner name, and the framework it came from.
+
+Two values. The second is NIL for a runner outside the ontology's vocabulary
+and for a re-export, which carries no specifiers to read."
+  (let ((bound nil) (framework nil))
+    (dolist (import (jlist reply :imports) (values bound framework))
+      (dolist (entry (jlist import :names))
+        (when (member (jget entry :local) *test-runner-names* :test #'equal)
+          (setf bound t)
+          (unless framework
+            (setf framework (cdr (assoc (jget import :source) *test-runner-frameworks*
+                                        :test #'equal)))))))))
+
+(defun js-test-file-p (path reply)
+  "Whether this is a file the runner would run, and which runner (DES-0045 D1).
+
+Either signal is sufficient. The path is what vitest and jest match on with no
+configuration; the import is what the file itself says. Both are checkable by
+a reader against the file in front of them, and neither needs package.json, a
+vitest config or a bundler alias table -- REQ-0024's WHAT THIS IS NOT rules out
+node resolution and this analyzer has not acquired it.
+
+What is refused by both is a `test' that is this tree's own function. Dropping
+its forms rather than minting them is REQ-0053 A4: a file that is not a test
+file indexes exactly as it did before this existed."
+  (multiple-value-bind (bound framework) (js-test-imports reply)
+    (values (or bound (js-test-path-p path)) framework)))
+
+(defun make-js-definition-entity (definition path system &optional framework)
+  "One entity for one definition, or NIL when it cannot be named.
+
+FRAMEWORK is the runner a `test\' definition came from, or NIL. It reaches
+here as an argument rather than off the definition because it is a fact about
+the file -- read from its imports -- and the extractor reports what each form
+says, not what the file as a whole is (DES-0045 D1)."
   (let* ((kind (jget definition :kind))
          (name (js-definition-name definition path))
          (calls (js-call-names definition))
@@ -472,13 +560,20 @@ matters enough to be worth two copies and a test that compares them."
                ;; with the next key along. A NIL here is a real answer -- not
                ;; exported, no superclass -- and the property declarations
                ;; default to exactly that.
-               (let ((callable (member kind '("function" "method") :test #'string=)))
+               ;; A `test' is a legal :CALLS source too -- the relationship
+               ;; has named :TEST since DES-0002 -- so it takes :CALL-NAMES on
+               ;; the same terms. It takes neither of the other two: a test
+               ;; claims no endpoint, and what it renders reaches :CALL-NAMES
+               ;; through JS-CALL-NAMES already, which is where the :TESTS
+               ;; derivation reads it (REQ-0053 R4).
+               (let* ((callable (member kind '("function" "method" "test") :test #'string=))
+                      (source-kind (member kind '("function" "method") :test #'string=)))
                  (properties-table
                   (append common
                           (when (and callable calls) (list :call-names calls))
-                          (when (and callable jsx)
+                          (when (and source-kind jsx)
                             (list :jsx-names (remove-duplicates jsx :test #'string=)))
-                          (when (and callable routes)
+                          (when (and source-kind routes)
                             (list :routes routes :route-role :consumes))
                           (when shadowed (list :shadowed-definitions shadowed))
                           extra)))))
@@ -502,6 +597,12 @@ matters enough to be worth two copies and a test that compares them."
                                        (let ((super (jget definition :superclass)))
                                          (when super (list super)))
                                        :exported-p (and (jget definition :exported) t))))
+          ((string= kind "test")
+           (make-instance 'test-entity
+                          :name name :origin-file path
+                          :properties (properties
+                                       :suite (jget definition :suite)
+                                       :framework framework)))
           ((string= kind "variable")
            (make-instance 'variable-entity
                           :name name :origin-file path
@@ -691,24 +792,38 @@ at all, are both indexed with the reason recorded on them. An unreadable file
 that vanished from the index entirely would be a silent gap, and CON-0001's
 whole argument is that a recorded gap beats both a fabrication and a silence."
   (multiple-value-bind (reply reason) (parse-javascript path contents)
-    (let* ((system (js-system-for-path path))
-           ;; The entities are collected before the ops are built, because
-           ;; REQ-0035's prose is a post-pass over entities that already exist
-           ;; and the ops wrap them. Nothing else about the shape changed: the
-           ;; NIL definitions this used to drop while mapping are dropped here
-           ;; instead, one step earlier.
-           (entities (remove nil
-                             (mapcar (lambda (definition)
-                                       (make-js-definition-entity definition path system))
-                                     (reconcile-definitions (jlist reply :definitions))))))
-      ;; PLAN-0031, JavaScript. The block above a definition is the only source
-      ;; this language has -- there is no in-form docstring position -- and
-      ;; front-end keeps 199 KB of prose in 979 JSDoc blocks.
-      (attach-comment-documentation analyzer entities (string-lines contents))
-      (list* (retract-file path workspace-id)
-             (assert-entity (make-js-file-entity path contents reply reason)
-                            workspace-id)
-             (mapcar (lambda (entity) (assert-entity entity workspace-id)) entities)))))
+    (multiple-value-bind (test-file-p framework) (js-test-file-p path reply)
+      (let* ((system (js-system-for-path path))
+             ;; The child reports every `describe'/`it'/`test' form it saw. In
+             ;; a file that is not a test file those are calls to something
+             ;; this tree defines itself, and dropping them here -- before
+             ;; reconciliation, so nothing downstream can tell they were sent
+             ;; -- is what makes REQ-0053 A4 true by construction.
+             (definitions (let ((all (jlist reply :definitions)))
+                            (if test-file-p
+                                all
+                                (remove "test" all
+                                        :key (lambda (d) (jget d :kind))
+                                        :test #'equal))))
+             ;; The entities are collected before the ops are built, because
+             ;; REQ-0035's prose is a post-pass over entities that already
+             ;; exist and the ops wrap them. Nothing else about the shape
+             ;; changed: the NIL definitions this used to drop while mapping
+             ;; are dropped here instead, one step earlier.
+             (entities (remove nil
+                               (mapcar (lambda (definition)
+                                         (make-js-definition-entity
+                                          definition path system framework))
+                                       (reconcile-definitions definitions)))))
+        ;; PLAN-0031, JavaScript. The block above a definition is the only
+        ;; source this language has -- there is no in-form docstring position
+        ;; -- and front-end keeps 199 KB of prose in 979 JSDoc blocks.
+        (attach-comment-documentation analyzer entities (string-lines contents))
+        (list* (retract-file path workspace-id)
+               (assert-entity (make-js-file-entity path contents reply reason test-file-p)
+                              workspace-id)
+               (mapcar (lambda (entity) (assert-entity entity workspace-id))
+                       entities))))))
 
 ;;;; The one registered instance. Stateless in the sense that matters: it holds
 ;;;; no repository, so one serves every tree. The child process it reaches is a

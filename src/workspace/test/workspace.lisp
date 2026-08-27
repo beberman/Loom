@@ -164,7 +164,14 @@ check:
       ;; membership check tells them apart. Zero is also what these read at
       ;; every step before the generated definitions land, which is what makes
       ;; them the acceptance instrument on Loom's own tree.
-      (dolist (key '(:test-entities :tested-units :unhandled-definer-macros))
+      (dolist (key '(:test-entities :tested-units :unhandled-definer-macros
+                     ;; REQ-0053 R7, read the same way. These three are nought
+                     ;; on a tree of Lisp for a different reason than the three
+                     ;; above -- no analyzer writes :TEST-FILE-P for a language
+                     ;; whose test files have no include glob to match -- and
+                     ;; the membership check is what separates that from a key
+                     ;; nobody computes.
+                     :test-files :test-files-without-cases :unnamed-tests))
         (is (member key status) "~s is missing from status" key)
         (is (eql 0 (getf status key))
             "~s must be nought for a fixture with no definer calls" key))
@@ -173,6 +180,41 @@ check:
       ;; absent reads through GETF exactly like a count that is nought.
       (is (member :dropped-edges status))
       (is (eql 0 (getf status :dropped-edges))))))
+
+(defun ws-file (graph path &rest properties)
+  (add-entity graph (make-instance 'file-entity
+                                   :name path :origin-file path
+                                   :properties (properties-table
+                                                (list* :path path properties)))))
+
+(defun ws-case (graph name path)
+  (add-entity graph (make-instance 'test-entity
+                                   :name name :origin-file path
+                                   :properties (properties-table
+                                                (list :file path :start-line 1 :end-line 3
+                                                      :language :javascript
+                                                      :framework :vitest)))))
+
+(test a-test-file-with-no-case-in-it-is-counted-and-a-covered-one-is-not
+  ;; REQ-0053 R7. The report that keeps the recognition rule honest: a file the
+  ;; runner would run and the analyzer recognised nothing in is a convention it
+  ;; does not know about. front-end's one is src/models/test/fixture.js, which
+  ;; imports `test' from vitest to write shared assertions and declares no case.
+  ;;
+  ;; Nought first, and it is not ceremony: a count only ever read when it is
+  ;; non-zero cannot be told from a count nobody computes.
+  (let ((graph (make-graph)))
+    (is (zerop (length (loom-workspace::test-files graph))))
+    (ws-file graph "src/a.test.js" :test-file-p t :unnamed-tests 2)
+    (ws-file graph "src/fixture.test.js" :test-file-p t)
+    (ws-file graph "src/a.js")
+    (ws-case graph "alpha > works" "src/a.test.js")
+    (is (equal '("src/a.test.js" "src/fixture.test.js")
+               (sort (mapcar (lambda (f) (getp f :path)) (loom-workspace::test-files graph)) #'string<))
+        "a source file with no flag is not a test file")
+    (is (equal '("src/fixture.test.js")
+               (mapcar (lambda (f) (getp f :path)) (loom-workspace::test-files-without-cases graph)))
+        "and the one the analyzer found nothing in is the one worth reporting")))
 
 (test a-document-that-will-not-parse-is-counted-and-named
   ;; BUG-0033, and the shape is the one that caused it twice: a colon and a
@@ -387,7 +429,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 364
+(defparameter *call-site-ceiling* 418
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -560,7 +602,22 @@ Twice now the ceiling has caught a name collision rather than the entity growth
 it was written to catch, and both times the census named the colliding symbol
 directly. That is worth more than the bound: DES-0015 makes a same-named
 definition in a second package a real second callable, so the cost of choosing
-an existing name is paid by every call site of the original.")
+an existing name is paid by every call site of the original.
+
+RE-MEASURED 2026-08-27 AT 380, CEILING RAISED TO 418. REQ-0053 and PLAN-0048,
+and the composition is one macro body again:
+
+    define-command     143 -> 143
+    define-operation   101 -> 102
+    js-test             57 ->  84
+    ambiguous occurrences   20 ->  20
+
+Eight new JS-TESTs for the runner's forms are 27 of the 28. JS-TEST swallows
+its body, so every call inside one is a site by construction -- which is what
+this population is and not what it guards against. The ambiguous population did
+not move, which is the number that does when a name has collided.
+
+418 is 380 plus 10% headroom, the rule the first measurement used.")
 
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is

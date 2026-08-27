@@ -79,6 +79,70 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   -- completing game-server's PLAN-0002, 2026-08-21
   -- REQ-0051 asks for it, 2026-08-24
 
+- **`context` mints a record id only when a log directory is set, and the
+  directory is off by default, so `context-used` is unreachable on an ordinary
+  deployment.** The prepared guidance is emphatic about this channel -- "This is
+  not bookkeeping", "report the misses, and report them by name" -- and instructs
+  the agent to quote the `record` id the answer carried. No answer carried one.
+  `loom_context` over MCP returned a bundle whose keys are `task provenance seeds
+  terms items decisions documents mentions budget tokens index-tokens truncated
+  withheld-*`, with no `record`; `GET /v1/context` likewise. The only recourse a
+  caller has, POSTing `context-used` without one, is
+  `{"name":"MALFORMED-REQUEST"}` and HTTP 400.
+
+  It is not a skin dropping a field. `record-context-call` returns NIL and writes
+  nothing when `*context-log-directory*` is NIL, "which is the default", and
+  `src/serve/operations.lisp:334` appends `:record` only `(if id ...)`. So the
+  mechanism is whole and the tier is simply off, which is a defensible default
+  for a service that writes to somebody's tree -- but the guidance shipped to
+  every agent describes the on state as though it were the only one. An agent
+  following it correctly ends the session having recorded nothing, and the
+  ranking learns nothing from a session that used the bundle heavily and could
+  say precisely which parts earned their place.
+
+  Cheapest repair is a sentence in the skill: if the answer has no `record`,
+  feedback is off for this deployment, do not try. Better is for the bundle to
+  say so in a field, because an agent reasoning about an absent key cannot tell
+  "off" from "broken". Best is for `loom init` to turn it on for the repository
+  it is preparing, since a tree that has just been given a skill telling agents
+  to send feedback is a tree whose owner wants the feedback.
+  -- chasing front-end's BUG-0014, 2026-08-27
+
+- **`budget` counts the content and not the JSON around it, so a caller who
+  sets a small budget still overflows.** `loom_context` with `budget=6000`
+  returned `tokens: 3692` -- under the budget, nothing withheld for size -- in
+  62,363 characters of JSON, which the MCP client refused and spilled to a file.
+  Roughly 17 characters per counted token against the usual four: the envelope,
+  not the content, is three quarters of the payload. Each of the 114 `items`
+  carries eleven keys (`entity band summary cost via direction convergence
+  effective-cost source relation-count relations`) and the nested `entity`
+  carries nine more, most of them NIL or repeated -- `language` on every row of a
+  single-language tree, `confidence: 1` throughout, `referrer-kind` and `stale`
+  null everywhere.
+
+  The knob exists precisely because "an MCP caller has a hard output limit and
+  until now no way to say so" (REQ-0040 R1, quoted at the call site). It does not
+  yet do that, because the limit is on the bytes and the budget is on the
+  content. Either count the rendered answer, or let a caller ask for the lean
+  shape -- a `verbose=false` that drops null fields and the per-item scoring
+  metadata would have fit this bundle inside any limit without losing a single
+  entity.
+  -- chasing front-end's BUG-0014, 2026-08-27
+
+- **`find` answers a term that matches no definition with silence, when it
+  could say the term is prose.** `find term=osm-import` against `front-end`
+  returned `{"entities":[],"total":0}`. The string is a route -- `router.post
+  ('/osm-import', ...)` -- and it appears in the mock, in the router's header
+  comment, and in PLAN-0003, so the question "where is the osm-import endpoint"
+  has an answer and the index holds the material for it. Route strings are not
+  definitions and should not become entities; that is not the ask. The ask is
+  that a zero-hit answer distinguish *no such name anywhere* from *no definition,
+  N textual occurrences, here they are*, because those imply opposite next
+  moves and only the first is worth the caller's confidence. `context` finds
+  these through its `mentions` band, so the material is already indexed -- it
+  is `find` that has no path to it.
+  -- chasing front-end's BUG-0014, 2026-08-27
+
 ## The graph and what it stores
 
 - **Drop `:unresolved-calls` as a stored property, and take a generated
@@ -87,6 +151,27 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   write at `src/graph/resolve.lisp:1295`. DES-0014 explains what the property
   buys RESOLVE-CALLS but does not defer removing it, so this is the only record.
   -- reader and call-site work, 2026-08-09
+
+- **JavaScript call edges attributed by bare method name are wrong often
+  enough to mislead, measured.** Known in front-end's own CLAUDE.md and worth a
+  number here. `describe ingestModel` -- a 34-line function whose body calls
+  `sets.*.reset()`, `byName.get()`, `unknownTypeNames.push()`, `model.types.map()`
+  and `ingestPartition()` -- returns four outbound `calls` neighbours:
+  `remoteServer.get`, `msgHandler.get`, `BiMap.get` and `ingestPartition`. Three
+  of four are wrong, all three from one `.get()` on a plain `Map`, and each names
+  a real definition in a real file, so nothing about the answer looks uncertain.
+  The fourth is right and is the only one that mattered.
+
+  `unresolved-calls` on the same entity lists the honest ones (`LatLng`,
+  `unknownTypeNames.push`, `map`, `reset`) -- so the analyzer already knows the
+  difference between a call it resolved and a call it guessed, and then presents
+  a guess in the same band as a resolution. Separating them in the answer costs
+  nothing and would let a caller trust the band: an `inferred` marker on a
+  name-only attribution, or keeping such edges out of `calls` and putting them
+  under the `unresolved` heading they belong to. The inheritance edges have no
+  such problem and are trustworthy today, which is the contrast that makes the
+  call band's silence about its own confidence the defect.
+  -- chasing front-end's BUG-0014, 2026-08-27
 
 ## Documents and the workflow around them
 
@@ -231,6 +316,12 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
 
 A removed entry is one a document now states. The tables are kept so nobody
 re-derives an item that was answered, and each row names where to look instead.
+
+### 2026-08-27
+
+| Removed | Now carried by |
+|---|---|
+| "A JavaScript tree has no test entities at all, so 'is this covered?' is a question Loom cannot be asked where it matters most" | REQ-0053, implemented. front-end reads `test-entities: 2325, tested-units: 947, test-files: 145`, and `describe stitchOsmImage` names the three cases of makeImage.test.js while `impact runSegmentationTrial` names segment.test.js's two and not those. The item's proposed second half -- joining `makeImage.test.js` to `make-image.mjs` on the filename -- is refused rather than deferred: DES-0045 D8 gives the reason, and the import plus the call answer it without a guess |
 
 ### 2026-08-24
 

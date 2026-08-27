@@ -1,0 +1,155 @@
+id: PLAN-0048
+title: "Seven steps for DES-0045: the extractor recognises, the analyzer mints, RESOLVE-TESTS excludes, and status reports what was missed"
+status: final
+date: 2026-08-27
+refines: [DES-0045, REQ-0053]
+affects:
+  - make-js-definition-entity
+  - resolve-tests
+  - tools/js/extract.js
+tags: [javascript, tests, coverage, req-0053]
+summary: |
+  S1 teaches tools/js/extract.js the runner's forms. S2 mints the entity in
+  js-analyzer.lisp. S3 declares the two file properties the ontology needs for
+  S5. S4 excludes a test file's own helpers from tested-units. S5 reports the
+  three status fields. S6 is the tests. S7 measures both trees and files the
+  numbers REQ-0053's acceptance names.
+
+  S1 before S2 because the Lisp side has nothing to mint until the child sends
+  it. S3 before S5 because a status field derived from an undeclared property
+  is a field nothing ever reads. S4 is independent of all of them and changes
+  Loom's own numbers, so it lands alone and is measured alone.
+body: |
+  BEFORE ANY STEP
+
+  Branch `req-0053`, cut from main at ef48acc. Run `tools/loom-test.sh` once
+  first, so a failure later is attributable. Record the four numbers this work
+  moves, from `status` on 2026-08-27:
+
+    Loom        test-entities 979    tested-units 566   entities 3549
+    front-end   test-entities 0      tested-units 0     entities 4029
+
+  S1  THE RUNNER'S FORMS  (tools/js/extract.js)
+
+  Two additions beside the existing walk, which is left alone.
+
+  TEST-CALL(node) -> {role, title, callback} or null, where role is 'case' or
+  'suite'. Unwraps the modifier chain and the `it.each(table)(...)` double
+  call; reads the title from a Literal or a single-quasi TemplateLiteral and
+  returns null for anything else, which is what makes an unnamed case
+  countable rather than invisible.
+
+  WALK-SUITE(body, prefix, contextCalls) in two passes: gather the calls of
+  every statement that is not a case or a suite -- hooks included -- then walk
+  the cases and the nested suites with those calls appended. A case records a
+  definition of kind 'test' carrying `suite` (the prefix), `name` (prefix and
+  title joined with " > ") and its calls.
+
+  At module level the same two-pass rule applies to hook calls only. Every
+  other top-level statement keeps today's path into `fileCalls`, and every
+  statement keeps it as well -- the test walk reports in addition to the
+  ordinary walk rather than in place of it, so a file that turns out not to be
+  a test file has lost nothing.
+
+  A case whose title is not a literal is not reported as a definition; the
+  reply carries `unnamedTests`, the count of them.
+
+  RISK: `children()` drives the generic call walk and would descend into a
+  nested `it` from an enclosing suite's context pass, attributing a case's
+  calls to its siblings. The context pass must skip a statement TEST-CALL
+  recognises, which is the same test that decides whether to recurse.
+
+  S2  THE DECISION AND THE ENTITY  (src/analyzer/js-analyzer.lisp)
+
+  JS-TEST-FILE-P(path, reply) implements D1's two signals. ANALYZE-FILE drops
+  every `test` definition when it is false, before RECONCILE-DEFINITIONS, and
+  the file entity records nothing.
+
+  MAKE-JS-DEFINITION-ENTITY gains a `test` branch making a TEST-ENTITY with
+  :SUITE and :FRAMEWORK beyond the common properties, and `test` joins
+  `function` and `method` in the `callable` guard so :CALL-NAMES is written.
+  :JSX-NAMES and :ROUTES stay off a test: neither question is asked of one.
+
+  MAKE-JS-FILE-ENTITY records :TEST-FILE-P and :UNNAMED-TESTS from the reply,
+  the latter only when non-zero.
+
+  RISK: JS-DEFINITION-NAME falls back to the module base name for an anonymous
+  default export. A test always has a name by S1 or it is not emitted, so the
+  fallback must not reach it -- check that `default` is never set on a test
+  definition rather than relying on the ordering of the OR.
+
+  S3  TWO PROPERTIES AND ONE CORRECTED DOCSTRING  (src/ontology/code-ontology.lisp)
+
+  Declare on :FILE:
+
+    (:test-file-p boolean :default nil)   the runner would run this file
+    (:unnamed-tests integer)              cases skipped for want of a literal
+                                          title
+
+  :FRAMEWORK on :TEST already admits :vitest and :jest; nothing to add.
+
+  Amend :SHADOWED-DEFINITIONS' documentation to state D3's difference: a
+  shadowed function is dead code, a shadowed test case still runs, and the
+  line range is how a reader finds the case the natural key could not hold.
+
+  S4  A TEST FILE'S OWN HELPERS ARE NOT TESTED UNITS  (src/graph/resolve.lisp)
+
+  RESOLVE-TESTS builds a table of the paths that hold a :TEST entity from the
+  same `(entities-of-type view :test)` it already walks, and skips a target
+  whose :FILE is in it.
+
+  RISK: this changes Loom, game-server, utils and datascience, none of which
+  this requirement is about. Measure each before and after and put the four
+  pairs in REQ-0053's OUTSTANDING. A drop is the intended direction; a drop to
+  near zero means the exclusion is matching something it should not.
+
+  RISK: src/knowledge/test/structure.lisp asserts `tested-units` is 1 over a
+  synthetic graph whose test and target may share a file. If it fails, the
+  fixture is asserting the old rule and the fix is to give the target its own
+  file -- not to weaken the assertion.
+
+  S5  WHAT status REPORTS  (src/workspace/workspace.lisp, src/process/console.lisp)
+
+  Three fields beside :TEST-ENTITIES and :TESTED-UNITS -- :TEST-FILES,
+  :TEST-FILES-WITHOUT-CASES, :UNNAMED-TESTS -- derived from the :FILE
+  properties S3 declares and the :TEST entities' own :FILE. The console line
+  that prints test-entities and tested-units carries them, and prints the last
+  two only when they are non-zero: a Lisp tree has none of the three and a line
+  of zeroes teaches nobody anything.
+
+  S6  TESTS  (src/analyzer/test/js-analyzer.lisp, src/graph/test/resolve.lisp,
+      src/workspace/test/workspace.lisp)
+
+  Each of these fails without its step, which is CON-0003 and is the reason
+  they are listed one per behaviour rather than as "tests for S1".
+
+    a  a `describe`/`it` fixture yields one :TEST per case, named
+       "suite > case", with :SUITE set and the suite itself not an entity
+    b  a bare top-level `test(...)` in a *.test.js path yields a case with no
+       suite prefix
+    c  a file that imports describe/it from 'vitest' yields cases and
+       :FRAMEWORK :vitest whatever its path
+    d  a file matching neither signal yields exactly today's entities -- the
+       A4 regression guard
+    e  `beforeEach` calls appear in every case of its describe and not in a
+       sibling describe's cases
+    f  `it(`a ${x}`)` mints nothing and increments the file's :UNNAMED-TESTS
+    g  `it.each` and `it.skip` are recognised; `it.todo` mints a case with no
+       calls
+    h  RESOLVE-TESTS draws no :TESTS edge to a function defined in the test
+       file itself, and still draws one to a function outside it
+    i  status reports the three fields, with test-files-without-cases counting
+       a fixture file that matches the path signal and holds no case
+
+  S7  MEASURE, AND FILE THE NUMBERS
+
+  `tools/loom-serve.sh update`, then on front-end: `status`, `describe
+  stitchOsmImage`, and `describe` on a `server/trials/segment.mjs` function.
+  A2 wants the first to name makeImage.test.js's cases and the second not to.
+
+  Then `tools/test/acceptance.py` on the whole set, because DES-0045's RISKS
+  names the population change as a measurement rather than a prediction. The
+  floor is REQ-0046's: 42 of 45 judged cases.
+
+  Write the results into REQ-0053's OUTSTANDING, remove the TODO.md entry this
+  work answers, and `complete PLAN-0048` with a verdict for each document.

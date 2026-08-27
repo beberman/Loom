@@ -80,6 +80,18 @@ of their own, and a prompt inside a subagent is a stall nobody sees.
 `impact` attaches the decisions and rules bearing on an entity. Read them before
 contradicting them.
 
+`describe` and `impact` report the tests that reach an entity, and an empty
+`tests` band is an answer rather than a shrug: no case in the index calls it.
+Both languages now feed it — fiveam tests here, and in a JavaScript tree the
+vitest and jest cases, one entity per `it`/`test` named the way the runner
+prints it (`stitchOsmImage > crops to the bbox AFTER compositing`). A case is
+linked to a unit because its body, or a hook the runner runs for it, calls that
+unit, so a test file that imports a module no case exercises draws no edge to
+it. A definition in a test file is not a tested unit, which is why `status`'
+`tested-units` fell on every Lisp tree when REQ-0053 landed. `status` also
+reports `test-files` and `test-files-without-cases` — the second is a file the
+runner would run that the analyzer recognised nothing in.
+
 Loom has known blind spots — calls inside macro bodies are unattributed, so
 anything driven by a `test` form under-reports. A call inside a body-swallowing
 macro is the exception since DES-0014: a `define-operation` or `define-command`

@@ -1,0 +1,219 @@
+id: REQ-0053
+title: A JavaScript test case is an entity, and a tested unit is one a case calls
+status: implemented
+date: 2026-08-27
+refines: [REQ-0024]
+affects: [make-js-definition-entity, js-call-names, resolve-tests, tested-units-by-system, tools/js/extract.js]
+importance: Critical
+tags: [javascript, tests, coverage, analyzer, con-0001]
+summary: |
+  `status` on 2026-08-27: Loom reports `test-entities: 979, tested-units: 566`;
+  front-end reports `0` and `0` against 533 files and a vitest suite of 2,365
+  passing tests. The Lisp analyzer recognises a test definer and the JavaScript
+  analyzer recognises nothing, so `describe` on a JavaScript function comes back
+  with no `tests` band and `impact` with an empty `tests` list.
+
+  Empty and absent read the same. A caller cannot tell "this function has no
+  test" from "this index does not look for tests", and the two imply opposite
+  next moves.
+body: |
+  WHAT IT COST, ONCE, MEASURABLY
+
+  front-end's BUG-0014 lived in `server/trials/make-image.mjs`:
+  `stitchOsmImage` cropped the canvas before compositing the tiles onto it,
+  which threw for any bbox smaller than one tile and mis-registered the imagery
+  for every larger one. The module had no test of any kind. Beside it sat
+  `server/trials/test/segment.test.js`, which drives the endpoint above it
+  through an injected fixture image and never reaches the defective function.
+
+  `describe stitchOsmImage` today returns three outbound `calls`, two inbound
+  `documents` and no `tests` field. What it should have returned is `tests: []`
+  and meant it -- the code path with no test is where the bug is, and that one
+  fact was worth more than the six queries that eventually found it.
+
+  WHAT IS MEASURED, 2026-08-27
+
+  Every figure below is from front-end at commit 28eaf98, read with acorn --
+  the same parser `tools/js/extract.js` already runs -- over the 144 files
+  matching the vitest and jest default include globs:
+
+    test files                              144
+    cases (`it` / `test` calls)           2,325
+    suites (`describe` calls)               646
+    cases whose title is not a literal        0
+    duplicate qualified case names            0
+    deepest `describe` nesting                3
+    files importing from 'vitest'           138
+
+  vitest reports 2,365 passing; the 40 above the static count are two `.each`
+  calls expanding at run time, which a static index does not and should not
+  claim to enumerate. The six files that import no name from 'vitest' rely on
+  its `globals: true`, which vite.config.ts sets -- so the path is the only
+  signal that reaches them, and the import is the only signal that reaches a
+  case written outside the include globs. Neither alone is enough.
+
+  On the coverage half, counting the names each case body and its enclosing
+  hooks call:
+
+    files with at least one call to a name the file imports    143 of 144
+    distinct (file, name) calls to an imported name          1,159
+    distinct (file, name) calls to a helper defined in the
+      test file itself                                         192
+    call names resolving to neither                          1,423
+
+  The last row is `expect`, `toBe` and the other runner vocabulary, and it
+  resolves to nothing today for the same reason it will resolve to nothing
+  afterwards.
+
+  REQUIREMENTS
+
+  R1  Each test case in a JavaScript tree is a `:test` entity: an `it` or
+      `test` call, at module top level or nested in a `describe`, in a file the
+      runner would run. A `describe` mints nothing, for the reason `def-suite`
+      mints nothing -- a suite is not a test and the ontology declares no
+      `:suite` type.
+
+  R2  Recognition rests on evidence in the tree, not on a policy about
+      JavaScript. Two signals, either sufficient: the path matches the vitest
+      and jest default include globs, or the file imports `describe`, `it` or
+      `test` from a module. Both are checkable by a reader against the file in
+      front of them.
+
+  R3  A case's name identifies it to a reader who has the file open: the
+      enclosing `describe` titles and its own, joined. A case whose title is
+      not a literal string is not named, is not minted, and is counted -- an
+      invented name is CON-0001's fabricated fact in the one place no total
+      would reveal it.
+
+  R4  A `:tests` edge is derived from what the case's body calls, resolved
+      through the module scope the index already builds from imports. A case
+      that never calls its file's subject produces no edge. `segment.test.js`
+      must produce no edge to `stitchOsmImage`, which is the whole point.
+
+  R5  A hook body -- `beforeEach`, `beforeAll`, `afterEach`, `afterAll` -- is
+      attributed to the cases the runner would run it for. Setting the subject
+      up in `beforeEach` and asserting on it in `it` is one test written across
+      two forms.
+
+  R6  A unit defined in a test file is not a tested unit. 192 of front-end's
+      1,351 resolvable case calls reach a fixture in the test file itself --
+      `withServer`, `solidTile`, `coloredTileLoader` -- and counting those
+      inflates `tested-units` with the tests' own scaffolding. This governs
+      Lisp equally; the count it changes is Loom's own.
+
+  R7  A file the runner would run in which no case was recognised is counted
+      and nameable. That is the report that keeps R2's two signals honest: a
+      convention this analyzer does not know about shows up as a number rather
+      than as an index that looks complete.
+
+  ACCEPTANCE
+
+  A1  `status` on front-end reports `test-entities` within 5% of 2,325 and
+      `tested-units` greater than zero. Loom's own two figures move only by
+      R6's exclusion, and that movement is stated as a number rather than
+      absorbed.
+
+  A2  `describe stitchOsmImage` on front-end reports a `tests` band naming the
+      cases in `server/trials/test/makeImage.test.js`, and `describe` on a
+      function of `server/trials/segment.mjs` does not name them.
+
+  A3  `impact` on a front-end function reports its tests in the `tests` field,
+      which is where the ontology already collects them.
+
+  A4  A JavaScript tree with no tests, and every Lisp tree, indexes exactly as
+      it does today apart from R6.
+
+  WHAT THIS IS NOT
+
+  Not a filename heuristic. `makeImage.test.js` sits beside `make-image.mjs`
+  and the temptation is to join them on the name; the mapping across camelCase,
+  kebab-case and three extensions is a guess, and a guess here asserts coverage
+  that may not exist. The import the test file writes is a declaration by the
+  author, and the call in the case body is evidence the subject was reached.
+  R4 takes both and neither is inferred from a filename.
+
+  Not a coverage measurement. `tests: []` on a function means no case in this
+  index calls it. It does not mean the function is unexercised: a case may
+  reach it through a caller, through an HTTP request, or through a mock, and
+  the first of those is what `impact` is for. A line-coverage report answers a
+  different question and is produced by running the suite.
+
+  Not TypeScript. REQ-0024's boundary stands: `.ts` and `.tsx` are not claimed
+  by this analyzer, so a TypeScript test file is out of reach here for the same
+  reason its source is.
+
+  Not a new relationship type. `:tests` exists, `:from (:test)` and
+  `:to (:function :method :class :module :file :interface)`, and the type's own
+  documentation already anticipates this: "A JS/TS test typically imports its
+  subject rather than calling it locally, so an import-driven derivation is the
+  right one for that analyzer family."
+
+  OPEN QUESTIONS, AS THEY STAND
+
+  - Should `.loom/frameworks.yaml` grow a key for test-file patterns? DES-0025
+    says a repository declares what Loom cannot derive, and R2's two signals
+    cover 144 of front-end's 144 files, so the key would ship with no user.
+    The tree that needs it is the one that writes its cases somewhere else.
+
+  - `src/ui/edit/graphics/rendering/test/graphicTestFixture.js` builds a
+    reusable suite: its `describe` calls sit inside an exported function that
+    real test files invoke, and its `it` titles are template literals carrying
+    an expression. R1 and R3 both decline it. One file, and the honest answer
+    is that its cases are not in the index rather than that they are named
+    something invented.
+
+  THE ACCEPTANCE, RUN 2026-08-27
+
+  Implemented by DES-0045 and PLAN-0048. Every clause is met, and the number
+  each was measured at is below, read from the running service after
+  `tools/loom-serve.sh update`.
+
+  A1. front-end reports `test-entities: 2325` against the 2,325 cases a
+  standalone acorn walk finds in its 144 files -- not within 5% but exact,
+  because both counts come from the same parser reading the same forms. vitest
+  reports 2,365 passing; the 40 above are two `.each` calls expanding at run
+  time. `tested-units` is 947, and `test-files: 145, test-files-without-cases:
+  1, unnamed-tests: 0`.
+
+  R6's exclusion moved four trees, and this is the statement A1 asks for:
+
+    tree           tested-units before   after
+    Loom                           566     361
+    game-server                    440     365
+    datascience                    275     263
+    utils                           68      65
+    front-end                        0     947
+
+  Loom's is the largest fall because Loom's test files carry the most
+  scaffolding: r-function, k-edge, js-graph and their kind were 205 of the 566.
+  `test-entities` is unchanged everywhere except Loom, where it reads 981
+  against 979 for the two fiveam tests this work added to the tree.
+
+  A2. `describe stitchOsmImage` on front-end returns a `tests` band naming the
+  three cases of server/trials/test/makeImage.test.js. `impact
+  runSegmentationTrial` returns the two cases of segment.test.js and does not
+  reach makeImage.test.js's, which is the discrimination R4 was written for.
+
+  A3. Met by the same two answers: `:tests` is `:collect-as :tests`, so the
+  cases land in `impact`'s tests field rather than in the impact set.
+
+  A4. The suite is green on all ten systems, and the case that asserts it
+  directly is A-FILE-THAT-IS-NEITHER-NAMED-NOR-IMPORTS-A-RUNNER-INDEXES-AS-IT-DID:
+  a file defining its own `describe` mints no case and keeps every definition
+  it had.
+
+  WHAT THE RANKING COST, MEASURED RATHER THAN PREDICTED
+
+  DES-0045's RISKS named the population change as a measurement to make.
+  front-end went from 4,029 entities to 7,404, and `tools/test/acceptance.py`
+  returns 42 of 44 present, strict and lenient, with the two misses being
+  MapElementTypeEditor (fe-5) and dot-prefixed-p (r39-3) -- the same two
+  standing misses REQ-0037 and REQ-0046 record, neither of them new. All three
+  ABSENCE_CASES still report their subject terms as weak. `context` on a
+  front-end task returns tests in the neighbour band and production functions
+  in every seed slot.
+
+  The `test-files-without-cases: 1` is src/models/test/fixture.js, which imports
+  `test` from vitest to write shared assertion helpers and declares no case.
+  The field reported a real fact about a real file on its first run, which is
+  what R7 asked of it.

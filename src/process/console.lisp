@@ -313,8 +313,16 @@ command."
   ;; Printed unconditionally, zero included. A count that vanishes when it is
   ;; nought cannot be told from a count nobody computes, and these three exist
   ;; precisely to be read as zero-or-not (DES-0002 R10).
-  (format t "  tests      : ~d test~:p covering ~d unit~:p~%"
-          (getf status :test-entities) (getf status :tested-units))
+  ;; The three REQ-0053 adds are printed only when there is something to
+  ;; print, which is the opposite rule and has the opposite reason. Zero tests
+  ;; covering zero units is a fact about the tree; zero test files is a fact
+  ;; about the language, and a Lisp tree carrying three permanent noughts would
+  ;; be reporting that its analyzer does not write a property.
+  (format t "  tests      : ~d test~:p covering ~d unit~:p~@[ in ~d test file~:p~]~@[, ~d with no case recognised~]~@[, ~d case~:p unnamed~]~%"
+          (getf status :test-entities) (getf status :tested-units)
+          (let ((n (getf status :test-files))) (and n (plusp n) n))
+          (let ((n (getf status :test-files-without-cases))) (and n (plusp n) n))
+          (let ((n (getf status :unnamed-tests))) (and n (plusp n) n)))
   (format t "  watcher    : ~(~a~)~%" (getf status :monitor))
   (format t "  rules      : ~d violation~:p, ~d unenforced~%"
           (getf status :violations) (getf status :unenforced-rules))

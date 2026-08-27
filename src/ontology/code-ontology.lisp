@@ -227,6 +227,28 @@ once and never rewrites it, and resolution re-derives from it on every pass, so
 an edge a retract destroyed comes back. Until such a pass exists this property
 is a recorded fact with no edge drawn from it -- a gap a reader can see rather
 than one they cannot.")
+               (:test-file-p boolean :default nil
+                :documentation "Set when this is a file the test runner would
+run -- REQ-0053 R2.  Two signals, either sufficient: the path matches the
+vitest and jest default includes, or an import in the file binds a local named
+describe, it or test.
+
+Written by the analyzer rather than derived from the cases in the file,
+because the two differ exactly where it matters.  A file with this flag and no
+:TEST entity is a file the runner runs and this analyzer recognised nothing
+in, which is a recognition rule missing a convention; a file with neither is
+an ordinary source file.  `status' reports the first as
+TEST-FILES-WITHOUT-CASES, which is CON-0001 turned on the analyzer's own
+coverage.")
+               (:unnamed-tests integer
+                :documentation "How many cases in this file were passed over
+for want of a literal title -- `it(`fails for ${name}`)', which is one case at
+collection time and N at run time.  Absent when there were none.
+
+The count is the whole record that they exist.  Naming such a case after the
+template's literal parts would put a name in the index that appears nowhere in
+the run output, which is CON-0001's fabricated fact in the one place no total
+would reveal it.")
                (:definer-call-sites list
                 :documentation "Every top-level form in this file whose
 operator is neither a definition nor a declaration -- DES-0002 R2. One plist
@@ -815,10 +837,18 @@ tests in prose, so
 RESOLVE-LINKS-A-CALL-TO-A-DEFINITION-IN-ANOTHER-FILE names no function
 literally and a naming heuristic would resolve almost nothing, while a looser
 one would fabricate; and the Lisp analyzer emits no :IMPORTS edges for an
-import graph to be built from.  A JS/TS test typically imports its subject
-rather than calling it locally, so an import-driven derivation is the right
-one for that analyzer family and the wrong one here.  One edge type, fed by
-whichever signal the language actually offers."
+import graph to be built from.
+
+JavaScript arrives at the same edge from both directions at once (REQ-0053).
+A vitest case is minted from the `it' form, its :CALL-NAMES are what the case
+body and the hooks around it reach, and RESOLVE-CALLS narrows each name to the
+modules the file imports before RESOLVE-TESTS reads the result -- so the import
+graph decides which definition a name means, and the call decides whether the
+case touched it at all.  A test file that imports a module no case exercises
+draws no edge to it, which is the case that matters: front-end's
+segment.test.js imports its router and never reaches the defective function two
+modules over.  One edge type, fed by whichever signal the language actually
+offers."
   :natural-key (:file :name)
   :properties ((:file       string  :required t)
                (:start-line integer :required t)
@@ -836,13 +866,18 @@ ranking that put undocumented code below documented code would be a recall
 defect on the tree the requirement is measured against (REQ-0035 R7,
 CON-0006).")
                (:shadowed-definitions list
-                :documentation "Line ranges, each \"start-end\", of the
-definitions this one superseded by sharing its natural key in the same file --
-one string per superseded definition, in source order.  Absent and empty are
-not the same thing: absent means nothing collided, which is the ordinary case.
-The shadowed source has no entity of its own anywhere in the graph, and that is
-deliberate -- it is not what the file defines once loaded (DES-0012 R1) -- so
-a reader who wants its text opens the file at these lines.")
+                :documentation "Line ranges, each \"start-end\", of the cases
+that shared this one's natural key in the same file -- one string per case, in
+source order.  Absent and empty are not the same thing: absent means nothing
+collided, which is the ordinary case, and it was the case for all 2,325 of
+front-end's on 2026-08-27.
+
+It means something different here than on the other definition types, and the
+difference is worth the sentence.  A shadowed function is dead code -- not what
+the file defines once loaded -- while a shadowed case still runs, and the
+runner prints its title beside this one's.  What collapsed is the index's
+ability to name them apart, since the natural key is (:file :name) and two
+cases wrote one name.  The line range is how a reader finds the other.")
                (:system     keyword
                 :documentation "The system this belongs to, decided by the
 analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
@@ -861,10 +896,18 @@ into existence.  Set by RESOLVE-GENERATED-DEFINITIONS, and the marker its
 retract half keys on: an entity naming a registered macro that the current
 computation no longer produces is one the pass has to take back.")
                (:call-names list
-                :documentation "Every callee name found in the call site's
-argument list.  Carried over verbatim from the file's :DEFINER-CALL-SITES
-entry, so the same derive-never-consume discipline holds one level up: the
-analyzer owns the record and resolution re-reads it every pass.")
+                :documentation "Every callee name this test reaches.
+
+In Lisp, carried over verbatim from the file's :DEFINER-CALL-SITES entry, so
+the same derive-never-consume discipline holds one level up: the analyzer owns
+the record and resolution re-reads it every pass.
+
+In JavaScript, what the case's own callback calls plus the setup that runs
+around it -- the hooks and the bare statements of the enclosing describe, which
+the runner executes for every case in it (DES-0045 D4).  A name appearing here
+is not yet a claim that the case reached that definition: RESOLVE-CALLS decides
+which definition the name means, and a name it cannot place stays in
+:UNRESOLVED-CALLS.")
                (:unresolved-calls list
                 :documentation "Callee names that did not resolve inside the
 workspace.  Expected to be populous for a test: a framework's assertion
