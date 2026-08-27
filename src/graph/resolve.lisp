@@ -1320,22 +1320,43 @@ no function literally, so a naming heuristic would resolve almost nothing and
 a looser one would fabricate. The import half describes a mechanism that does
 not exist either -- the Lisp analyzer produces no :IMPORTS edges. What a test
 calls is available now and safe by construction: a call that does not resolve
-simply stays unresolved, exactly as anywhere else. A JS/TS test typically
-imports its subject rather than calling it locally, so the import-graph
-derivation is the right one there and the wrong one here; the edge type
-commits to neither.
+simply stays unresolved, exactly as anywhere else.
+
+The same pass answers JavaScript, and the import half turns out to be a
+narrowing rather than a derivation of its own (REQ-0053 R4). A vitest case
+carries the calls its body and its hooks make, RESOLVE-CALLS has already
+reduced each name to the definitions the file's imports make visible, and what
+is left is the same question this asks of a fiveam test: did the body reach it.
+143 of front-end's 144 test files have a case calling a name the file imports.
 
 Reads the :CALLS edges rather than the :CALL-NAMES property, which is why this
 has to run after RESOLVE-CALLS and not merely near it. That is a derivation
 from a derivation, and still a derivation -- nothing here is consumed, so a
-re-run after a retract rebuilds what the retract destroyed (DEC-0003)."
-  (let ((ops '()))
-    (dolist (test (entities-of-type view :test))
-      (dolist (edge (relationships-from view (id test) :rel-type :calls))
-        (let ((target (get-entity view (to-id edge))))
-          (when (and target (member (entity-type target) *tested-types*))
-            (push (assert-edge :tests test target :workspace-id workspace-id)
-                  ops)))))
+re-run after a retract rebuilds what the retract destroyed (DEC-0003).
+
+A definition in a file that holds a test is not a tested unit (REQ-0053 R6).
+The set of such files is read off the tests themselves, which is what makes it
+work for both languages without either analyzer declaring anything: a file
+holding a fiveam test is a test file, and so is one holding a vitest case.
+Without it `tested-units\' counts the tests\' own scaffolding -- 192 of
+front-end's 1,351 resolvable case calls reach a fixture defined in the test
+file itself, `withServer\' and `coloredTileLoader\' among them. What it costs is
+a tree that writes its cases in the same file as its code: vitest\'s
+`import.meta.vitest\' block reports no tested unit for its own module."
+  (let ((ops '())
+        (tests (entities-of-type view :test)))
+    (let ((test-files (make-hash-table :test #'equal)))
+      (dolist (test tests)
+        (let ((path (getp test :file)))
+          (when path (setf (gethash path test-files) t))))
+      (dolist (test tests)
+        (dolist (edge (relationships-from view (id test) :rel-type :calls))
+          (let ((target (get-entity view (to-id edge))))
+            (when (and target
+                       (member (entity-type target) *tested-types*)
+                       (not (gethash (getp target :file) test-files)))
+              (push (assert-edge :tests test target :workspace-id workspace-id)
+                    ops))))))
     (nreverse ops)))
 
 ;;;; ==================================================================

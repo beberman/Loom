@@ -1,0 +1,209 @@
+id: DES-0045
+title: Where a JavaScript test is recognised, what it is named, and which calls become coverage
+status: implemented
+date: 2026-08-27
+refines: [REQ-0053]
+affects: [make-js-definition-entity, js-call-names, reconcile-definitions, resolve-tests, tools/js/extract.js]
+tags: [javascript, tests, analyzer, coverage]
+summary: |
+  Eight decisions. The extractor reports the runner's forms as definitions of
+  a fifth kind; the analyzer decides the file is a test file and mints them; RESOLVE-TESTS derives the
+  coverage edge from the calls the case makes, as it already does for fiveam.
+  No new relationship type, no new resolution pass, and one new entity kind
+  flowing down a channel that already carries four.
+body: |
+  D1  THE EXTRACTOR REPORTS THE FORMS, THE ANALYZER DECIDES THEY ARE TESTS
+
+  extract.js opens with a rule: "This file extracts; it does not decide. Every
+  judgement about what a construct means to the graph belongs in
+  js-analyzer.lisp." That rule places both halves of this.
+
+  The extractor walks the shape. A call whose callee root is `describe`, `it`
+  or `test`, at module level or nested in a `describe` callback, is reported as
+  a definition of kind `test` carrying its title, its suite path, its line
+  range and the calls its callback makes. It rides the channel the other four
+  kinds ride, so RECONCILE-DEFINITIONS and the entity loop need no second path.
+  Nesting is a walk decision -- which definition a call is attributed to -- and
+  cannot be deferred to a later pass. The ordinary walk still runs beside it,
+  and its output is what it is today.
+
+  The analyzer decides. TEST-FILE-P(path, reply) is true when either signal
+  fires:
+
+    path       matches the vitest and jest default includes --
+               `*.test.js|jsx|mjs|cjs`, `*.spec.*`, or any file under a
+               `__tests__/` directory
+    import     one of the reply's own import specifiers binds a local named
+               `describe`, `it` or `test`; the module it came from names the
+               framework ('vitest' -> :vitest, 'jest' or '@jest/globals' ->
+               :jest, anything else -> unset)
+
+  Either is sufficient and both are checkable against the file. Neither reads
+  package.json, a vitest config or a bundler alias table: REQ-0024's WHAT THIS
+  IS NOT rules out node resolution and this analyzer has not acquired it.
+
+  A `test` definition in a file TEST-FILE-P refuses is dropped before
+  reconciliation, so such a file indexes byte-for-byte as it does today, which
+  is REQ-0053 A4. What the recognition costs on an ordinary file is one name
+  comparison per top-level statement, since nothing but a call to one of three
+  names starts the walk that follows.
+
+  D2  WHAT IS A CASE AND WHAT IS A SUITE
+
+  A case is a call whose callee root is `it` or `test`. A suite is a call whose
+  callee root is `describe`. A modifier chain is transparent -- `.only`,
+  `.skip`, `.todo`, `.each`, `.failing`, `.concurrent`, `.sequential` -- and so
+  is `it.each(table)(title, fn)`, whose callee is itself a call.
+
+  A suite mints nothing, for the reason DEF-SUITE mints nothing: a suite is not
+  a test and the ontology declares no `:suite` type. What the suite contributes
+  is the name prefix and the setup calls of D4.
+
+  `it.todo('...')` has no callback and mints a case with no calls. A declared
+  and unwritten test is a fact about the tree worth holding; a case with no
+  calls derives no `:tests` edge and so claims no coverage.
+
+  D3  THE NAME IS THE PATH A READER WOULD SPEAK
+
+  The enclosing suite titles and the case title, joined with " > ":
+
+    stitchOsmImage > crops to the bbox AFTER compositing, so the pixels are
+    the bbox's own
+
+  This is what vitest prints for a failure, so a name found in the index is a
+  name greppable in the run output. The suite half is also written to the
+  `:suite` property, which the `:test` entity has declared since DES-0002 and
+  fiveam has never populated.
+
+  A title that is not a literal string names nothing. `it(\`sends error on
+  shape with ${name}\`)` is one title at collection time and N at run time, and
+  the index cannot say which. The case is skipped and counted in the file's
+  `:unnamed-tests`; naming it after the template's literal parts would put a
+  name in the index that appears nowhere in the run.
+
+  The natural key of `:test` is (:file :name), so two cases with one qualified
+  name in one file collapse. RECONCILE-DEFINITIONS already resolves a same-key
+  collision by keeping the last and recording the earlier line ranges in
+  `:SHADOWED-DEFINITIONS`, and that is reused rather than special-cased -- with
+  one difference in meaning, which the property's documentation now carries: a
+  shadowed function is dead code and a shadowed case still runs. The line range
+  is how a reader finds the case the index could not name apart. Measured
+  across front-end's 144 test files: 0 collisions.
+
+  D4  WHICH CALLS BELONG TO A CASE
+
+  A case's `:CALL-NAMES` is what its callback calls, plus the setup that runs
+  around it:
+
+    inside a describe   every statement of the describe callback that is not
+                        itself a case or a nested describe -- the hooks
+                        (`beforeEach`, `beforeAll`, `afterEach`, `afterAll`)
+                        and the bare statements -- is attributed to every case
+                        that describe encloses, nested ones included
+    at module level     unchanged: attributed to the file, as today. Except a
+                        hook, which names the runner explicitly and is
+                        attributed to every case in the file
+
+  The asymmetry has a reason. A describe callback exists only to declare that
+  suite, so everything in it runs for that suite's cases. A module body also
+  holds imports, helper definitions and constants, which are the file's and not
+  any case's.
+
+  Two passes over a describe body, because a `beforeEach` may be written after
+  the cases it sets up and a walk in source order would miss it for exactly the
+  cases it belongs to.
+
+  Measured on front-end: 143 of 144 test files have at least one case calling a
+  name the file imports; the exception is src/data-api/test/handler.test.js.
+
+  D5  THE ENTITY, AND WHERE IT IS BUILT
+
+  MAKE-JS-DEFINITION-ENTITY grows a fifth branch. A `test` definition becomes a
+  TEST-ENTITY carrying :FILE, :START-LINE, :END-LINE, :LANGUAGE, :SYSTEM,
+  :SUITE, :FRAMEWORK and :CALL-NAMES. The `callable` guard in that function --
+  which today writes :CALL-NAMES only for a function or a method, because
+  `:calls` is `:from (:function :method :test :call-site)` and a :VARIABLE
+  source would ask RESOLVE-CALLS for an edge the ontology forbids -- admits
+  `test`, which that same declaration has always permitted.
+
+  Nothing else moves. The definition rides the channel the other four kinds
+  ride, RECONCILE-DEFINITIONS sees it as one more key, and the file's
+  `:contains` edge is asserted by the same loop.
+
+  D6  A UNIT IN A TEST FILE IS NOT A TESTED UNIT
+
+  RESOLVE-TESTS builds the set of paths that hold a `:test` entity and skips a
+  target whose `:file` is in it. One pass over `(entities-of-type view :test)`,
+  which the function already makes.
+
+  Derived rather than declared, and that is what makes it work for both
+  languages at once: the Lisp analyzer writes no flag saying a file is a test
+  file, and it does not need to, because a file holding a fiveam test is one.
+
+  What it costs: a tree that writes its cases in the same file as its code --
+  vitest's `import.meta.vitest` blocks -- reports no tested unit for that file.
+  The trade is measured on the other side. 192 of front-end's 1,351 resolvable
+  case calls reach a fixture defined in the test file itself, `withServer` and
+  `coloredTileLoader` among them, and counting those makes `tested-units` a
+  count of the scaffolding as much as of the subject.
+
+  Loom's own numbers move, and REQ-0053 A1 requires that movement be stated
+  rather than absorbed.
+
+  D7  WHAT `status` REPORTS, SO THE RECOGNITION CAN BE AUDITED
+
+  Two new `:file` properties -- `:TEST-FILE-P`, set when TEST-EVIDENCE fired,
+  and `:UNNAMED-TESTS`, the count of case calls skipped for want of a literal
+  title -- and three new status fields derived from them:
+
+    test-files                  files the runner would run
+    test-files-without-cases    of those, the ones no case was recognised in
+    unnamed-tests               cases skipped by D3
+
+  The middle field is the one that matters. A recognition rule that misses a
+  convention shows up there as a number rather than as an index that looks
+  complete, which is CON-0001 applied to the analyzer's own coverage.
+
+  front-end reads 145 test files and 1 without cases, and the 1 is
+  src/models/test/fixture.js: it imports `test` from vitest to write shared
+  assertion helpers and declares no case of its own. So the field's first real
+  answer is not a missed convention but the import signal reaching a file that
+  is not a test -- which is what the field is for, since the alternative was
+  not knowing.
+
+  One file this walk does miss is not in that count and would not be:
+  src/ui/edit/graphics/rendering/test/graphicTestFixture.js builds a reusable
+  suite inside an exported function, and neither signal fires on it -- its name
+  carries no `.test.`, and it imports `vi` alone. A file no signal reaches is
+  invisible to the report as well, which is the limit of a report derived from
+  the same rule it audits.
+
+  D8  ALTERNATIVES REJECTED
+
+  A `:tests` edge from the test file to the module it imports. Legal -- the
+  relationship's `:to` includes `:file` and `:module` -- and wrong: the import
+  says the file was loaded, not that any case exercised it. segment.test.js
+  imports `router.mjs` and `segment.mjs`; the defective `stitchOsmImage` sits
+  in a third module neither the import nor any call reaches, and an edge drawn
+  from the import would have reported the covered area BUG-0014 lived in.
+
+  A filename join -- `makeImage.test.js` to `make-image.mjs`. The mapping
+  crosses camelCase, kebab-case and three extensions, and its output is a
+  coverage claim: the one kind of guess whose failure mode is a reader trusting
+  a test that does not exist.
+
+  An entity per suite. It would double the test population to say what the
+  cases already say, and the ontology has no type for it.
+
+  Reading vitest.config.ts for the include globs. It is TypeScript, which this
+  analyzer does not claim, and its `test.include` is absent from front-end's --
+  the defaults are what front-end runs on.
+
+  RISKS
+
+  A JavaScript tree of any size gains roughly one entity per test case:
+  front-end goes from 4,029 entities to about 6,350. The vector store and the
+  context ranking both see a population they have not seen before, and a case
+  name is prose, which is the shape `context`'s mention band ranks. SEED-SCORE
+  already demotes tests; whether that demotion is enough at this population is
+  a measurement to make against `tools/test/acceptance.py`, not a prediction.

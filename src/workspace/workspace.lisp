@@ -1114,6 +1114,31 @@ a file with nothing to report contributes nothing rather than an empty list."
   (loop for file in (entities-of-type graph :file)
         sum (length (getp file property))))
 
+(defun test-files (graph)
+  "The :FILE entities an analyzer marked as files the test runner would run.
+
+REQ-0053 R7. Only the JavaScript analyzer writes :TEST-FILE-P, so this is
+empty on a tree of Lisp -- which is the honest answer rather than a missing
+one: a fiveam test file is recognised by its forms wherever it sits, and there
+is no include glob to have missed."
+  (remove-if-not (lambda (file) (getp file :test-file-p))
+                 (entities-of-type graph :file)))
+
+(defun test-files-without-cases (graph)
+  "The test files no :TEST entity was minted from.
+
+The report that keeps the recognition rule honest. A file the runner would run
+and the analyzer found nothing in is a convention the analyzer does not know
+about -- a suite built inside an exported function, a case titled by a
+template -- and counting it turns that into a number a reader can chase
+instead of an index that looks complete (CON-0001)."
+  (let ((covered (make-hash-table :test #'equal)))
+    (dolist (test (entities-of-type graph :test))
+      (let ((path (getp test :file)))
+        (when path (setf (gethash path covered) t))))
+    (remove-if (lambda (file) (gethash (getp file :path) covered))
+               (test-files graph))))
+
 (defun index-drift (repository)
   "How many files the index read have changed since it read them.
 
@@ -1331,6 +1356,16 @@ the last error per thread.\""
                                        when (eq :tests (rel-type r))
                                          collect (to-id r))
                                  :test #'equal))
+          ;; REQ-0053 R7 and DES-0045 D7. The middle one is the report that
+          ;; keeps the recognition honest: a file the runner would run and the
+          ;; analyzer recognised no case in is a convention it does not know
+          ;; about, and it shows up as a number rather than as an index that
+          ;; looks complete. All three are nought on a Lisp tree, where no
+          ;; analyzer writes :TEST-FILE-P.
+          :test-files (length (test-files graph))
+          :test-files-without-cases (length (test-files-without-cases graph))
+          :unnamed-tests (loop for file in (test-files graph)
+                               sum (or (getp file :unnamed-tests) 0))
           ;; Two counts summed because a reader wants one number: a definer
           ;; Loom could not characterise, and a call site it had to refuse, are
           ;; the same thing from where they stand -- a definition the index

@@ -251,6 +251,69 @@ function paramNames(params) {
 }
 
 // ---------------------------------------------------------------------------
+// The runner's forms (REQ-0053)
+// ---------------------------------------------------------------------------
+//
+// `describe', `it' and `test' are what vitest, jest, mocha and node:test are
+// all called from. What is reported here is the shape: which calls are cases,
+// which are suites, what each is titled and what its callback reaches.
+// Whether a file holding them is a file the runner would run is a judgement
+// about the repository, and js-analyzer.lisp makes it (DES-0045 D1).
+
+const CASE_CALLS = new Set(['it', 'test']);
+const SUITE_CALLS = new Set(['describe']);
+const HOOK_CALLS = new Set(['beforeEach', 'beforeAll', 'afterEach', 'afterAll']);
+
+// The identifier a callee is rooted at, looking through the two shapes the
+// runners hang off one: the modifier chain (`it.skip', `describe.only') and
+// the call that returns a case function (`it.each(table)(title, fn)').
+function calleeRoot(node) {
+  let cursor = node;
+  for (;;) {
+    if (!cursor) return null;
+    if (cursor.type === 'MemberExpression' && !cursor.computed) { cursor = cursor.object; continue; }
+    if (cursor.type === 'CallExpression') { cursor = cursor.callee; continue; }
+    break;
+  }
+  return cursor.type === 'Identifier' ? cursor.name : null;
+}
+
+// A title the index can carry: a string literal, or a template with nothing
+// interpolated into it. `it(`fails for ${name}`)' is one title at collection
+// time and N at run time, and which of the N this entity would be is not
+// something the source says -- so it has no title here and the analyzer counts
+// it rather than inventing one.
+function literalTitle(node) {
+  if (!node) return null;
+  if (node.type === 'Literal') return typeof node.value === 'string' ? node.value : null;
+  if (node.type === 'TemplateLiteral' && node.expressions.length === 0 && node.quasis.length === 1) {
+    return node.quasis[0].value.cooked;
+  }
+  return null;
+}
+
+// STATEMENT as a test form, or null. The callback is the last function
+// argument: `it(title, fn)', `it(title, fn, timeout)' and `it.todo(title)'
+// with none at all are all written in the wild.
+function testForm(statement) {
+  let node = statement;
+  if (node.type === 'ExpressionStatement') node = node.expression;
+  while (node.type === 'AwaitExpression') node = node.argument;
+  if (node.type !== 'CallExpression') return null;
+  const root = calleeRoot(node.callee);
+  if (!root) return null;
+  const role = SUITE_CALLS.has(root) ? 'suite'
+    : CASE_CALLS.has(root) ? 'case'
+      : HOOK_CALLS.has(root) ? 'hook' : null;
+  if (!role) return null;
+  let callback = null;
+  for (const argument of node.arguments) {
+    if (FUNCTION_TYPES.has(argument.type)) callback = argument;
+  }
+  return { role, callback, node, title: role === 'hook' ? null : literalTitle(node.arguments[0]) };
+}
+
+// ---------------------------------------------------------------------------
 // Extraction
 // ---------------------------------------------------------------------------
 
@@ -464,7 +527,82 @@ function extract(source, ast) {
     }
   }
 
-  return { definitions, imports, exports, fileCalls, fileJsx, fileLiteralArgs };
+  // -------------------------------------------------------------------------
+  // The runner's forms, walked in addition to the ordinary walk above
+  // -------------------------------------------------------------------------
+  //
+  // In addition rather than instead: a file whose `test' is its own function
+  // and not the runner's must index exactly as it does today, and that is
+  // decided on the Lisp side, after this has already run (DES-0045 D1).
+
+  let unnamedTests = 0;
+
+  // What a call reaches, into a bucket of the shape WALK-BODY writes to, so
+  // the two walks cannot drift apart on what counts as a call.
+  function reaches(node) {
+    const bucket = { calls: [], jsx: [], literalArgs: [] };
+    walkBody(node, bucket);
+    return bucket;
+  }
+
+  // The calls that run around every case in BODY. Inside a describe callback
+  // that is every statement which is not itself a case or a suite -- the hooks
+  // and the bare setup both. At module level it is the hooks alone: a module
+  // body also holds imports, helpers and constants, which are the file's and
+  // not any case's.
+  function setupCalls(body, hooksOnly) {
+    const calls = [];
+    const jsx = [];
+    for (const statement of body) {
+      const form = testForm(statement);
+      if (form && (form.role === 'case' || form.role === 'suite')) continue;
+      const source = form ? form.callback : (hooksOnly ? null : statement);
+      if (!source) continue;
+      const bucket = reaches(source);
+      calls.push(...bucket.calls);
+      jsx.push(...bucket.jsx);
+    }
+    return { calls, jsx };
+  }
+
+  // Two passes over BODY, because a `beforeEach' may be written after the
+  // cases it sets up and a source-order walk would miss it for exactly those.
+  //
+  // NAMED is false once an enclosing suite's own title could not be read. Its
+  // cases are then countable and not nameable: a qualified name missing a
+  // segment would collide with a sibling suite's.
+  function walkTestBody(body, prefix, inherited, hooksOnly, named) {
+    const setup = named ? setupCalls(body, hooksOnly) : { calls: [], jsx: [] };
+    const context = {
+      calls: inherited.calls.concat(setup.calls),
+      jsx: inherited.jsx.concat(setup.jsx),
+    };
+    for (const statement of body) {
+      const form = testForm(statement);
+      if (!form) continue;
+      if (form.role === 'suite') {
+        const inner = form.callback && form.callback.body;
+        if (!inner || inner.type !== 'BlockStatement') continue;
+        const titled = named && form.title !== null;
+        walkTestBody(inner.body,
+                     titled ? (prefix ? prefix + ' > ' + form.title : form.title) : prefix,
+                     context, false, titled);
+      } else if (form.role === 'case') {
+        if (!named || form.title === null) { unnamedTests += 1; continue; }
+        const bucket = form.callback ? reaches(form.callback) : { calls: [], jsx: [] };
+        record('test', prefix ? prefix + ' > ' + form.title : form.title, form.node, {
+          suite: prefix || null,
+          calls: context.calls.concat(bucket.calls),
+          jsx: context.jsx.concat(bucket.jsx),
+        });
+      }
+    }
+  }
+
+  walkTestBody(ast.body, '', { calls: [], jsx: [] }, true, true);
+
+  return { definitions, imports, exports, fileCalls, fileJsx, fileLiteralArgs,
+           unnamedTests };
 }
 
 // ---------------------------------------------------------------------------
@@ -512,7 +650,7 @@ function analyze(filePath, source) {
     const line = (failure && failure.loc && failure.loc.line) || 1;
     return Object.assign(base, {
       definitions: [], imports: [], exports: [], fileCalls: [], fileJsx: [],
-                fileLiteralArgs: [],
+                fileLiteralArgs: [], unnamedTests: 0,
       damage: {
         message: String(failure && failure.message || 'parse failed'),
         startLine: line,
