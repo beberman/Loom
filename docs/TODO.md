@@ -68,34 +68,6 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   -- reader and call-site work, 2026-08-09
   -- REQ-0055 asks for it, and states why it must not land before BUG-0055, 2026-08-27
 
-- **`export default { name }` sometimes mints a second entity for `name`, which
-  makes the bare name ambiguous in `affects:` for a reason the author cannot
-  see.** Writing a new module, `check-document` refused
-  `affects: [simplifyArcs]` as ambiguous between
-  `function:src/domain/partition/import/simplifyArcs.js:simplifyArcs` and
-  `variable:` at the same path. The qualified id is the documented fix and it
-  works; the problem is that nothing in the file looks ambiguous.
-
-  Reproduced deliberately, with a control. Appending `export default {
-  simplifyArcs };` to the module makes `find` return both a function and a
-  variable; removing it leaves only the function. The sibling module in the same
-  directory, `sharedArcs.js`, ends in the byte-identical construct `export
-  default { extractSharedArcs };` and `find extractSharedArcs` returns ONLY a
-  function. Same language, same directory, same shape, different answer.
-
-  Not isolated further, and one lead measured rather than guessed: the file that
-  produces the variable has four `const name = (...) => ...` arrow definitions
-  and the one that does not has zero. Ruled out: a prose mention of the bare name
-  in the module header -- removing it changes nothing.
-
-  Why it is worth fixing rather than documenting around. The prepared guidance
-  already says to write qualified ids in `affects:`, so an author who follows it
-  never sees this. An author who writes the bare name -- which works for most
-  functions, including the sibling's -- gets a refusal whose stated cause is a
-  variable that does not appear anywhere in their source.
-  -- writing front-end's DES-0009, 2026-08-27
-  -- BUG-0056 records it, 2026-08-27
-
 ## Documents and the workflow around them
 
 - **A completed migration plan's `affects:` can never resolve, and `check`
@@ -220,6 +192,7 @@ re-derives an item that was answered, and each row names where to look instead.
 | "`budget` counts the content and not the JSON around it, so a caller who sets a small budget still overflows" | BUG-0054, closed. ADMIT-ITEM charged the *console* rendering; the skin now passes its own pricing in through `*context-item-cost*`, and the same function prices and emits the item so the two cannot disagree. front-end at `budget=6000`: 81,793 bytes to 34,206, and 4.2 characters per token on the charged part against ESTIMATE-TOKENS' own 4. What remains is REQ-0061: four candidate lists, 26% of the answer, that nothing charges for |
 | "`context` mints a record id only when a log directory is set ... so `context-used` is unreachable on an ordinary deployment" | BUG-0053, closed. Every context answer carries `feedback: "on"` or `"off"`, and RECORD-CONTEXT-USE no longer answers "No context record <id>" when the truth is that no log exists. The item's third proposal -- `init` turning the log on for the tree it prepares -- is withdrawn rather than deferred: DES-0030 D1 makes the directory an operator's and not a caller's, and it deliberately lives in Loom's tree so a prepared repository's corpus holds still. Whether `tools/loom-serve.sh` should default it on is REQ-0044's question |
 | "`complete` cannot finalize a plan that refines nothing" -- `would-set` forever, with `set-status` as the way through | BUG-0057, closed, and the item named one of three shapes: a plan refining nothing, a plan whose refined documents are all already terminal, and one whose documents are all blocked. Each ends with no verdict a caller could offer, so each previewed forever. A dry run that finds nothing awaiting a verdict now re-enters once and writes, so the walk decides what it found in one place. Dry run is unchanged wherever a verdict can be withheld |
+| "`export default { name }` sometimes mints a second entity for `name`" -- ambiguous in `affects:` for a cause absent from the author's source | BUG-0056, closed. The item's arrow-function lead was wrong: `export default { name }` always minted a nameless variable, and JS-DEFINITION-NAME names it after the module's base name -- so it collides exactly when a module is named after its principal export, which is why the byte-identical sibling differed. A re-export object now mints nothing; an anonymous function, a class, an object with inline values and an empty object all keep the entity they had |
 | "`find` should answer across registered repositories, or say that it didn't" -- three instances, the sharpest entry in this file | REQ-0051, implemented. `find` with no `repository` searches every watched tree and each row names its own; named with one and finding nothing, it answers `0 here; 1 in utils`. The answer also names any tree it could not search, so "absent everywhere" is never claimed by a partial search |
 | "`init` cannot refresh a marked region it wrote" -- eight prepared trees keeping stale guidance, and a hand-edited region that is a superset of the template | REQ-0052, implemented as `init --update`. The author's half of the region is declared rather than guessed at, so a refresh replaces Loom's bytes and leaves the hundred lines beside them that no template can regenerate |
 

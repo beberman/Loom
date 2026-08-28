@@ -511,14 +511,35 @@ function extract(source, ast) {
           if (last) last.default = true;
         } else if (declaration) {
           exports.push({ name: 'default', local: null, line: node.loc.start.line, anonymous: true });
-          const definition = record(
-            FUNCTION_TYPES.has(declaration.type) ? 'function' : 'variable',
-            null,
-            node,
-            { exported: true, default: true, anonymous: true,
-              params: declaration.params ? paramNames(declaration.params) : [] }
-          );
-          walkBody(declaration, definition);
+          // `export default { simplifyArcs }' re-exports what the module has
+          // already defined; it introduces nothing. Minting a definition for it
+          // gave the module a second entity that the Lisp side names after the
+          // module's own base name, so a file named after the function it
+          // exports -- which is this tree's convention -- ended up with two
+          // entities called `simplifyArcs' and a bare name in `affects:' that
+          // `check-document' refused as ambiguous, naming a `variable:' the
+          // author could not find in their source. BUG-0056.
+          //
+          // Shorthand and plain identifier values only. `export default { render:
+          // () => ... }' does introduce something, has no other entity anywhere,
+          // and keeps the behaviour it had.
+          const reExportOnly = declaration.type === 'ObjectExpression'
+            && declaration.properties.length > 0
+            && declaration.properties.every((property) => (
+              property.type === 'Property'
+                && !property.computed
+                && property.value
+                && property.value.type === 'Identifier'));
+          if (!reExportOnly) {
+            const definition = record(
+              FUNCTION_TYPES.has(declaration.type) ? 'function' : 'variable',
+              null,
+              node,
+              { exported: true, default: true, anonymous: true,
+                params: declaration.params ? paramNames(declaration.params) : [] }
+            );
+            walkBody(declaration, definition);
+          }
         }
         break;
       }
