@@ -121,6 +121,10 @@
    ;; REQ-0059. What the tree tracks that no analyzer claims, as a plist --
    ;; :COUNT, :BY-EXTENSION, :REASON. Read by `find' on a miss.
    #:repository-unclaimed
+   ;; REQ-0054. The lines a term occurs on when no definition carries it --
+   ;; a second band on a zero-hit `find', never an entity.
+   #:textual-occurrences
+   #:*occurrence-limit*
 
    ;; the second pass (DES-0011). On explicit demand only -- nothing in
    ;; POLL-ONCE, the monitor, watch or reindex reaches it.

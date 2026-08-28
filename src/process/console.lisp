@@ -704,6 +704,32 @@ name absent from every watched tree is dead."
       (format t "~&Nothing matches ~s in ~a, or in any other watched repository.~%"
               term here)))
 
+(defun print-find-occurrences (occurrences)
+  "REQ-0054's second band: what the term is, when it is not a definition.
+
+Printed after the elsewhere line and only on a miss, because that is the
+sentence a reader is about to act on. `no definition, N occurrences, here they
+are' and `no such name anywhere' imply opposite next moves, and until this the
+two were one answer.
+
+The count follows the list rather than replacing it. A short list read as the
+whole truth is BUG-0002's failure, and a caller deciding whether to grep
+properly needs to know the list was cut."
+  (let ((rows (getf occurrences :lines))
+        (total (getf occurrences :total))
+        (reason (getf occurrences :reason)))
+    (cond (reason
+           (format t "  occurrences: not looked for -- ~a~%" reason))
+          ((null rows)
+           (format t "  and the text does not contain it either, so the name is dead.~%"))
+          (t
+           (format t "  It occurs in the text ~d time~:p:~%" total)
+           (dolist (row rows)
+             (format t "    ~a:~d  ~a~%"
+                     (getf row :file) (getf row :line) (getf row :text)))
+           (when (getf occurrences :truncated)
+             (format t "    ~d of ~d shown.~%" (length rows) total))))))
+
 (define-command find (term &optional type)
     "find <name> [<type>]"
     "Where something is defined. Without a repository, every watched one."
@@ -730,7 +756,9 @@ name absent from every watched tree is dead."
                 term
                 (repositories-holding term :type type
                                            :exclude (repository-name repository))
-                (repository-name repository)))
+                (repository-name repository))
+               (print-find-occurrences
+                (textual-occurrences (repository-root repository) term)))
               (t (dolist (hit hits)
                    (print-find-line (list* :repository (repository-name repository) hit)))
                  ;; BUG-0002. Printed only when it happened, and printed as a

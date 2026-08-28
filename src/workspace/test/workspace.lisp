@@ -1345,3 +1345,68 @@ echo hi
           "no count, because none could be taken")
       (is-true (getf status :unclaimed-reason)
                "and the reason is on the answer rather than left to be guessed"))))
+
+
+;;; ------------------------------------------------------------------
+;;; The text a term occurs in, when no definition carries it (REQ-0054)
+;;; ------------------------------------------------------------------
+;;;
+;;; `find term=osm-import' against front-end answered `{"entities":[],
+;;; "total":0}' -- the same answer as for a name that exists nowhere, though
+;;; the string is a route the router declares and the mock posts to. Two
+;;; absences with opposite next moves, told apart by nothing.
+
+(test occurrences-name-the-lines-a-term-is-written-on
+  (with-workspace-fixture (repository)
+    (write-file "src/router.lisp" "(defun serve (app)
+  ;; POST /osm-import is answered here
+  (route app \"/osm-import\" #'handler))
+")
+    (git-init-fixture)
+    (let ((found (textual-occurrences (repository-root repository) "osm-import")))
+      (is (null (getf found :reason)) "~a" (getf found :reason))
+      (is (= 2 (getf found :total))
+          "a comment and a string literal, neither of them a definition: ~a"
+          (getf found :lines))
+      (is (null (getf found :truncated)))
+      (let ((first (first (getf found :lines))))
+        (is (equal "src/router.lisp" (getf first :file)))
+        (is (= 2 (getf first :line)) "the line is the line, not the file's first")
+        (is (search "POST /osm-import" (getf first :text))
+            "and the text is carried so a reader can tell a route from a word")))))
+
+(test a-term-in-no-text-at-all-is-an-answer-and-not-a-shrug
+  ;; The control that makes the band trustworthy. Without it "no occurrences"
+  ;; and "the scan did not run" are one empty list.
+  (with-workspace-fixture (repository)
+    (git-init-fixture)
+    (let ((found (textual-occurrences (repository-root repository) "no-such-token-anywhere")))
+      (is (null (getf found :reason)) "git answers exit 1 for no matches, ~
+which is not a failure and must not read as one")
+      (is (= 0 (getf found :total)))
+      (is (null (getf found :lines))))))
+
+(test the-occurrence-band-is-capped-and-says-so
+  ;; R3. A common word occurs everywhere, and a list of four hundred lines is a
+  ;; different way of answering nothing.
+  (with-workspace-fixture (repository)
+    (write-file "src/many.lisp"
+                (with-output-to-string (out)
+                  (dotimes (i 20) (format out ";; widget line ~d~%" i))))
+    (git-init-fixture)
+    (let ((found (textual-occurrences (repository-root repository) "widget" :limit 5)))
+      (is (= 20 (getf found :total)) "the total is what was found")
+      (is (= 5 (length (getf found :lines))) "the list is what was shown")
+      (is-true (getf found :truncated)
+               "and the answer says it was cut, which is what makes the five honest"))))
+
+(test a-line-with-colons-in-it-keeps-its-text
+  ;; git grep writes `path:line:text' and source lines are full of colons, so a
+  ;; split on every colon truncates exactly the lines worth reading.
+  (let ((parsed (loom-workspace::parse-grep-line
+                 "src/a.lisp:12:  (format t \"~a: ~a\" key value) ; note: here")))
+    (is (equal "src/a.lisp" (getf parsed :file)))
+    (is (= 12 (getf parsed :line)))
+    (is (search "note: here" (getf parsed :text))
+        "the tail survives: ~s" (getf parsed :text)))
+  (is (null (loom-workspace::parse-grep-line "not a grep line"))))

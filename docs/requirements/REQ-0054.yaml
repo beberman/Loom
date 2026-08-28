@@ -1,9 +1,9 @@
 id: REQ-0054
 title: a zero-hit find must distinguish no such name anywhere from no definition and N textual occurrences, because the two imply opposite next moves
-status: draft
+status: implemented
 date: 2026-08-27
 refines: [REQ-0037, REQ-0051]
-affects: [search-entities, search-repositories, repositories-holding]
+affects: [textual-occurrences, parse-grep-line, search-entities]
 importance: Major
 tags: [find, absence, mentions, req-0037, req-0051, front-end]
 summary: |
@@ -58,11 +58,61 @@ body: |
   term=no-such-token-anywhere` against the same tree says there are none, and
   that answer is what makes the first one trustworthy.
 
+  IMPLEMENTED 2026-08-28
+
+  R1 and R2. A zero-hit `find` carries an `occurrences` band: the lines the term
+  is written on, with file, line and text. Nothing enters the graph -- the scan
+  runs at answer time and asserts nothing -- so a route string stays a route
+  string.
+
+  R3. Capped at twelve, with the total beside it. `1 of 400 shown` is what makes
+  a short list honest, which is BUG-0002's rule on a third band.
+
+  R4. Paid on the miss only. A `find` that matched a definition does exactly
+  what it did before.
+
+  THE OPEN QUESTION, ANSWERED BY THE ACCEPTANCE
+
+  Files, not `:mentions` edges. The edges carry a markdown file's backticks and
+  a document's prose; two of this case's occurrences are a string literal and a
+  source comment, which no analyzer asserts anything about. `git grep -n -F -I`
+  answers all of them in one subprocess -- fixed-string because a term is a
+  name and not a pattern, and bounded on IGNORED-PATHS' terms, where exit 1 is
+  git's ordinary "no matches" and must not read as a failure.
+
+  MEASURED
+
+      find osm-import      front-end   0 definitions, 8 occurrences:
+                                       .env.example:40, router.mjs:12, :93,
+                                       :94, :181, PartitionEditorMock.jsx:919,
+                                       :1564, fixtureGame.js:144
+      find no-such-token-anywhere      0 definitions, 0 occurrences, no reason
+                                       -- the answer that makes the first
+                                       trustworthy
+
+  THIS DOCUMENT WAS WRONG ABOUT PLAN-0003
+
+  The acceptance named "the router, the mock and PLAN-0003". The router and the
+  mock are there. PLAN-0003.yaml does not contain the string and `git log -S
+  osm-import -- docs/plans/PLAN-0003.yaml` finds no commit that ever put it
+  there, so the claim was mistaken when it was written rather than overtaken by
+  an edit. Corrected here rather than by quietly rewriting the acceptance.
+
+  A SHAPE THAT HAD TO CHANGE BEFORE IT SHIPPED, AGAIN
+
+  The band was `occurrences` holding a plist whose own list key was also
+  `occurrences`. *ARRAY-VALUED-KEYS* decides an empty list from an empty object
+  by key, so naming the outer one made the encoder emit the whole plist as a
+  flattened array. The inner key is `lines` now. That is the second such defect
+  in two requirements -- REQ-0059 shipped an alist that encoded as the string
+  "(.py . 9)" -- and both were found by reading the REST answer rather than by
+  a test, which is worth noticing about how these are being checked.
+
   OPEN QUESTIONS
 
-  - Whether the scan reads files or reads `:mentions` edges. The edges are
-    already there and cost nothing; they cover markdown and document prose and
-    not source comments or string literals, which is where two of this case's
-    three occurrences live. Reading files answers all three and costs a walk.
-  - Whether this belongs on `find` or on a verb of its own. It is `find`'s
-    answer that is misleading, which argues for `find`.
+  Both are answered above. One remains, and it is new: the band is on the
+  named-repository form and not on the federated one. A `find` with no
+  repository that matches nothing is the strongest absence claim Loom makes,
+  and giving it occurrences would cost one subprocess per watched tree -- nine
+  here. Whether that is worth paying on a miss is a measurement nobody has
+  taken.
