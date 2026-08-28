@@ -688,6 +688,16 @@ NIL when ID is unknown."
     (when result
       (list :seed      (entity-summary (impact-result-seed result))
             :count     (length (impact-result-impacted result))
+            ;; BUG-0050 F2. The depth the walk was asked for, so a reader can
+            ;; tell it from the depths the rows carry. A one-step relationship
+            ;; is followed as a single hop from everything already impacted, so
+            ;; a base found at the cap yields a neighbour at cap+1 and the row
+            ;; honestly says so -- 7 of 822 on game-server's `impact
+            ;; data-handler 5'. The number is the true path length; what was
+            ;; missing is anything saying the band lies outside what was asked
+            ;; for, which left a reader comparing `d6' against the 5 they typed
+            ;; and reading a defect.
+            :depth     max-depth
             :truncated (and (impact-result-truncated-p result) t)
             :impacted  (loop for entry in (impact-result-impacted result)
                              collect (impact-entry-summary view entry))
