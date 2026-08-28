@@ -99,6 +99,9 @@
    ;; more than one graph, and the only place in the system that may.
    #:federate-repositories
    #:federation-report
+   ;; REQ-0056. The three states an unresolved reference can be in, told apart
+   ;; by the federated edges the pass already drew.
+   #:classified-unresolved-references
    #:unresolved-path-references
    #:federated-edge-p
    #:repository-commit

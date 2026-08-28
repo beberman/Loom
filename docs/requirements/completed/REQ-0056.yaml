@@ -1,9 +1,9 @@
 id: REQ-0056
 title: "a completed migration plan's affects: names what left the tree, so check reports an accurate document as rot forever and eight of game-server's sixteen unresolved references are one plan's"
-status: draft
+status: implemented
 date: 2026-08-27
 refines: [REQ-0027]
-affects: [check-document-references, unresolved-references]
+affects: [classified-unresolved-references, federated-declared-names, unresolved-references]
 importance: Major
 tags: [documents, check, multi-repo, migration, req-0027, game-server]
 summary: |
@@ -68,6 +68,64 @@ body: |
   document records what happened rather than being silently forgiven. The most
   truthful and the most work, and the only one that handles `config-get`, whose
   name changed rather than moved.
+
+  IMPLEMENTED 2026-08-28, AND THE MECHANISM WAS ALREADY THERE
+
+  C1 did not have to be built. FEDERATED-AFFECTS-OPS has resolved a declared
+  `affects:` across repositories since REQ-0027 R4, and FEDERATE-AFTER-INDEX
+  runs it whenever any tree finishes indexing. game-server's PLAN-0002 carries
+  federated `documents` edges to utils' json-encode and json-decode right now.
+
+  `check` was not reading them. UNRESOLVED-REFERENCES reports the stored
+  :UNRESOLVED-REFERENCES property, which is a true statement about *local*
+  resolution and is re-derived every pass rather than consumed (DEC-0003) -- so
+  the edges said one thing and the report said another, on the same run.
+
+  The partition therefore lives in loom-workspace, where the registry is, and
+  reads what the federation pass already concluded. Three states:
+
+      elsewhere   a name another watched tree has. Either a federated edge
+                  placed it, and the entry carries the file and line, or the
+                  tree holds several definitions and federation refused to
+                  choose -- which is CON-0001 working and must not come back as
+                  rot. REPOSITORIES-HOLDING answers the second case.
+      qualified   a path-qualified id naming a file no tree has, with the bare
+                  name offered when it still resolves. R3.
+      unresolved  a name no watched tree holds. R2's finding, untouched.
+
+  MEASURED, game-server with utils watched
+
+      before          16 unresolved, 8 of them PLAN-0002's
+      after            5 unresolved, 2 of them PLAN-0002's -- config-get, which
+                       the plan renamed to config-search, and get-package-file,
+                       which is gone from both trees
+                       8 answered elsewhere, 6 of them PLAN-0002's
+                       3 qualified, one of them PLAN-0002's make-dict id
+
+  BUG-0001 fell from 6 to 3 by the same mechanism, which was not the case this
+  was written from and is the same defect.
+
+  WHERE THE ACCEPTANCE WAS SLIGHTLY WRONG
+
+  It asked for "two unresolved references from PLAN-0002 ... one name gone
+  everywhere, one id naming a deleted file". Two is right and the description
+  is not: both of the two are names gone everywhere, and the id is in its own
+  band, which is R3 working rather than a miscount.
+
+  A PREDICATE THAT DOES NOT MEAN WHAT IT IS CALLED
+
+  FEDERATED-EDGE-P answers "an edge FEDERATE-REPOSITORIES owns the lifecycle
+  of", and tests for :SERVES. Every federated `documents` and `decides` edge --
+  all of them here -- fails it. Reading the edges through it found nothing and
+  looked exactly like federation not having run. FEDERATED-RELATIONSHIPS is the
+  accessor that means what this needed.
+
+  C2 AND C3 WERE NOT NEEDED
+
+  C2, exempting `completed/`, is the cheap one and hides `get-package-file`
+  along with the noise -- the entry the category exists for. C3, a field saying
+  a name has left the tree, would be written by hand for something the index can
+  now derive. Neither is required once the edges are read.
 
   REQUIREMENTS
 

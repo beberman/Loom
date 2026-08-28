@@ -1429,7 +1429,11 @@ changed.~%"))))
 (define-command check (&optional designator)
     "check [<name>]"
     "Run the rule checks from docs/rules and print violations."
-  (let* ((graph (current-graph designator))
+  ;; The repository rather than the graph alone, since REQ-0056: telling an
+  ;; unresolved reference another tree answers from one nobody does is a
+  ;; question about the registry, and CURRENT-GRAPH throws the handle away.
+  (let* ((repository (current-repository designator))
+         (graph (repository-graph repository))
          (violations (entities-of-type graph :rule-violation))
          (unenforced (unenforced-rules graph)))
     ;; BUG-0033, and printed before the rule verdict rather than after it. A
@@ -1454,11 +1458,39 @@ changed.~%"))))
     (when unenforced
       (format t "~&~d active rule~:p not enforceable as a check: ~{~a~^, ~}~%"
               (length unenforced) (mapcar (lambda (r) (getp r :doc-id)) unenforced)))
-    (let ((unresolved (unresolved-references graph)))
-      (when unresolved
-        (format t "~&~d unresolved document reference~:p:~%" (length unresolved))
-        (dolist (pair unresolved)
-          (format t "  ~a -> ~a~%" (car pair) (cdr pair)))))
+    ;; REQ-0056. Three headings rather than one list, because the eight
+    ;; game-server reported for PLAN-0002 were three different states and only
+    ;; the last is a defect in a document. A plan whose subject is the names it
+    ;; moved out of the tree was being told, forever, that its subject is rot.
+    (let ((classified (classified-unresolved-references repository)))
+      (let ((rot (getf classified :rot)))
+        (when rot
+          (format t "~&~d unresolved document reference~:p:~%" (length rot))
+          (dolist (entry rot)
+            (format t "  ~a -> ~a~%" (getf entry :document) (getf entry :reference)))))
+      ;; Its own heading and not silence. Which trees the service holds decides
+      ;; what lands here, so a reader has to be able to see that the answer was
+      ;; federated rather than find a name quietly missing from both lists.
+      (let ((elsewhere (getf classified :elsewhere)))
+        (when elsewhere
+          (format t "~&~d reference~:p another watched repository answers:~%"
+                  (length elsewhere))
+          (dolist (entry elsewhere)
+            (format t "  ~a -> ~a  [~a~@[ ~a~@[:~d~]~]]~%"
+                    (getf entry :document) (getf entry :reference)
+                    (getf entry :repository) (getf entry :file) (getf entry :line)))))
+      ;; R3. A different state with a different repair: the file is gone and no
+      ;; tree can ever answer this id again, where the bare name often still
+      ;; resolves and is what the author should write instead.
+      (let ((qualified (getf classified :qualified)))
+        (when qualified
+          (format t "~&~d qualified reference~:p naming a file no watched ~
+repository has:~%" (length qualified))
+          (dolist (entry qualified)
+            (format t "  ~a -> ~a~@[  (~a still resolves)~]~%"
+                    (getf entry :document) (getf entry :reference)
+                    (let ((bare (getf entry :bare)))
+                      (when (and bare (repositories-holding bare)) bare)))))))
     ;; DES-0029 D4, and a section of its own rather than entries in the list
     ;; above. A document naming db-handler when a class and an interface both
     ;; answer to it has made no mistake; asking an author to fix it is what
