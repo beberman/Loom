@@ -69,6 +69,12 @@
     ;; that is the answer rather than the absence of one -- `[]' says the count
     ;; was taken and found nothing, where `null' would read as not taken.
     :by-extension
+    ;; REQ-0054. An empty list is the answer that makes the band trustworthy --
+    ;; "the text does not contain it either" -- so it must encode as [] rather
+    ;; than as the null a caller would read as "not looked for". :LINES and not
+    ;; :OCCURRENCES, which is the object holding it: a key named here forces an
+    ;; array, and naming the outer one flattened the whole plist.
+    :lines
     ;; The structural report (DES-0022 S1). Every one of these is a list that is
     ;; legitimately empty -- a tree with no protocols, or one no analyzer
     ;; claimed -- and [] against null is exactly the distinction an init script

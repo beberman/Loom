@@ -349,7 +349,17 @@ searched and each row says which it came from."
                   (when (and unclaimed (plusp (or (getf unclaimed :count) 0)))
                     (list :unanalyzed
                           (list :files (getf unclaimed :count)
-                                :by-extension (getf unclaimed :by-extension)))))))))))))
+                                :by-extension (getf unclaimed :by-extension)))))
+                ;; REQ-0054, the third band and the one that tells the two
+                ;; absences apart. A term no definition carries may still be a
+                ;; route, a config key or a word in a comment, and those imply
+                ;; the opposite next move from a name that is simply dead.
+                ;;
+                ;; Paid on the miss and only there, which is R4: a `find' that
+                ;; matched does what it did before, and this scan runs where the
+                ;; caller is already deciding whether to reach for grep.
+                (list :occurrences
+                      (textual-occurrences (repository-root watched) term))))))))))
 
 (define-operation :describe :read (repository term (source))
     "Full detail for one entity, with its neighbours grouped by edge type. \

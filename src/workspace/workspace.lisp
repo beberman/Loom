@@ -403,6 +403,89 @@ reason rather than a zero that reads like a clean answer."
     (error (condition)
       (values nil (format nil "git could not be run: ~a" condition)))))
 
+(defparameter *occurrence-limit* 12
+  "How many textual occurrences a zero-hit `find' lists before it says it cut.
+
+Twelve rather than the twenty `find' itself uses for entities. These are lines
+rather than definitions, a caller reads them to decide whether the term is
+worth grepping for properly, and the count that follows is what makes a short
+list honest -- REQ-0054 R3.")
+
+(defun textual-occurrences (root term &key (limit *occurrence-limit*))
+  "Lines under ROOT whose text contains TERM, as a plist, or a reason for none.
+
+REQ-0054. `find term=osm-import' against front-end answered
+`{\"entities\":[],\"total\":0}' -- the same answer it gives for a name that
+exists nowhere, though the string is a route the router declares, the mock
+posts to and a comment explains. Two absences with opposite next moves, told
+apart by nothing.
+
+`git grep' rather than the `:mentions' edges, and the acceptance is what
+settles it: those edges carry a markdown file's backticks and a document's
+prose, and two of this case's three occurrences are a string literal and a
+source comment, which no analyzer asserts anything about. Reading files answers
+all three.
+
+-F because a term is a name and not a pattern -- `a.b' must not match `axb' --
+and -I because a match inside a binary is not something a reader can act on.
+The `--' guards a term that begins with a dash.
+
+The lines are under :LINES rather than a second :OCCURRENCES, and the name is
+load-bearing: the encoder decides an empty list from an empty object by key
+(*ARRAY-VALUED-KEYS*), so a plist whose own key repeats its caller's is emitted
+as a flattened array. Measured before this was renamed -- the REST answer came
+back as a flattened array beginning with the key name.
+
+Bounded and status-tolerant on IGNORED-PATHS' terms: exit 1 is git's ordinary
+`no matches', which must not read as a failure, and a tree git cannot answer
+for gets a reason rather than an empty list that looks like an answer."
+  (handler-case
+      (multiple-value-bind (out err status)
+          (uiop:run-program (list "timeout"
+                                  (princ-to-string *ignore-query-timeout-seconds*)
+                                  "git" "-C" (namestring root)
+                                  "grep" "-n" "-F" "-I" "--" term)
+                            :output :string :error-output :string
+                            :ignore-error-status t)
+        (declare (ignore err))
+        (cond
+          ((= status 124)
+           (list :lines '() :total nil :truncated nil
+                 :reason "git grep timed out"))
+          ((> status 1)
+           (list :lines '() :total nil :truncated nil
+                 :reason "not a git repository"))
+          (t
+           (let* ((lines (remove "" (uiop:split-string out :separator '(#\Newline))
+                                 :test #'string=))
+                  (total (length lines))
+                  (shown (subseq lines 0 (min limit total))))
+             (list :lines (remove nil (mapcar #'parse-grep-line shown))
+                   :total total
+                   :truncated (> total limit)
+                   :reason nil)))))
+    (error (condition)
+      (list :lines '() :total nil :truncated nil
+            :reason (format nil "git could not be run: ~a" condition)))))
+
+(defun parse-grep-line (line)
+  "One `path:line:text' from git grep, as a plist, or NIL if it is not one.
+
+The text half is taken from the second colon onward rather than by splitting,
+because source lines contain colons and a split would truncate exactly the
+lines worth reading. Trimmed, because leading indentation is most of a nested
+line and carries nothing here."
+  (let* ((first-colon (position #\: line))
+         (second-colon (and first-colon (position #\: line :start (1+ first-colon)))))
+    (when second-colon
+      (let ((number (ignore-errors
+                     (parse-integer line :start (1+ first-colon) :end second-colon))))
+        (when number
+          (list :file (subseq line 0 first-colon)
+                :line number
+                :text (string-trim '(#\Space #\Tab)
+                                   (subseq line (1+ second-colon)))))))))
+
 (defun unclaimed-summary (repository files)
   "What REPOSITORY tracks that no analyzer claims, as a plist.
 
