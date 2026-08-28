@@ -1,0 +1,95 @@
+id: REQ-0056
+title: "a completed migration plan's affects: names what left the tree, so check reports an accurate document as rot forever and eight of game-server's sixteen unresolved references are one plan's"
+status: draft
+date: 2026-08-27
+refines: [REQ-0027]
+affects: [check-document-references, unresolved-references]
+importance: Major
+tags: [documents, check, multi-repo, migration, req-0027, game-server]
+summary: |
+  8 of game-server's 16 unresolved references are PLAN-0002's own: `config-get`,
+  `dict-value`, `alistp`, `string-split`, `json-encode`, `json-decode`,
+  `get-package-file`, and the path-qualified `function:utils/dict.lisp:make-dict`.
+  They fail to resolve *because the plan succeeded* and moved them out of the
+  repository.
+
+  Trimming the field to whatever still resolves would make the record less true:
+  the plan's subject is exactly those names. So the state is unsatisfying in both
+  directions -- an accurate document is permanently reported as rotten, and eight
+  items of standing noise is how a check gets ignored.
+body: |
+  THE EIGHT ARE NOT ONE THING, AND THAT IS THE FINDING
+
+  Measured 2026-08-21:
+
+      dict-value, alistp, string-split, json-encode, json-decode
+          resolve in `utils` today. Five of eight, and they would go quiet the
+          moment a reference could cross a repository boundary.
+
+      config-get
+          resolves nowhere because the plan RENAMED it to `config-search`,
+          which the plan's own text records.
+
+      get-package-file
+          gone from both trees. This is the one entry that genuinely wants
+          reporting, and it is the finding REQ-0051 was written from.
+
+      function:utils/dict.lisp:make-dict
+          a path-qualified id naming a file the plan deleted. A bare
+          `make-dict` resolves in `utils`; that id cannot resolve anywhere
+          again.
+
+  So a cross-repository `affects:` does not silence the category. It separates
+  six items of noise from the two that are saying something, which is the better
+  outcome and the reason this is worth designing rather than suppressing.
+
+  THREE CANDIDATE MECHANISMS
+
+  C1  RESOLVE `affects:` ACROSS REGISTERED REPOSITORIES
+
+  REQ-0027 built cross-repository edges and REQ-0051 made `find` federate.
+  Document references are the third surface with the same need. Answers five of
+  the eight and generalises past game-server: any tree that has extracted a
+  library has this.
+
+  Costs a decision about what a reference means when the other repository is not
+  registered. It must not resolve when the tree is present and fail silently
+  when it is absent -- that would make `check` depend on which repositories the
+  service happens to hold, which is a worse failure than the one it fixes.
+
+  C2  EXEMPT DOCUMENTS UNDER completed/ FROM UNRESOLVED-AFFECTS
+
+  Cheapest, and wrong in the case that matters. `get-package-file` is a real
+  finding and this hides it along with the noise.
+
+  C3  LET A DOCUMENT SAY A NAME HAS LEFT THE TREE
+
+  A field beside `affects:` -- `departed:`, or a per-name annotation -- so the
+  document records what happened rather than being silently forgiven. The most
+  truthful and the most work, and the only one that handles `config-get`, whose
+  name changed rather than moved.
+
+  REQUIREMENTS
+
+  R1  A document that names something a completed plan moved is not reported as
+      rot, and the mechanism says where the thing went rather than that it does
+      not matter.
+
+  R2  A name that is gone from every registered tree is still reported. This is
+      the entry the category exists to surface and no mechanism may cost it.
+
+  R3  A path-qualified id naming a deleted file is distinguishable from a bare
+      name that no longer resolves. They are different states with different
+      repairs, and one of the eight is each.
+
+  ACCEPTANCE
+
+  `check` against game-server reports two unresolved references from PLAN-0002
+  rather than eight, and both of the two are readable as findings: one name gone
+  everywhere, one id naming a deleted file.
+
+  OPEN QUESTIONS
+
+  - C1 and C3 are not exclusive and the pair covers all eight. Whether the extra
+    field is worth writing once the cross-repository resolution exists is a
+    judgement to make after C1 is measured.

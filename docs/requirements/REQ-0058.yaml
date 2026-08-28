@@ -1,0 +1,69 @@
+id: REQ-0058
+title: the prepared guidance must say where Loom's boundary is, because an agent told to ask Loom first will ask it about the tree's past and get a confident answer about the tree's present
+status: draft
+date: 2026-08-27
+refines: [REQ-0021]
+affects: [render-template, claude-md-disposition]
+importance: Major
+tags: [guidance, init, req-0021, boundary, game-server]
+summary: |
+  Completing game-server's PLAN-0002 was three bugs and none of them was found
+  with the index. They were found with `grep`, with `git log -S`, and with one
+  commit message: `de355d0` says "Debugging found that the game-description/image
+  url was wrong", and that sentence is the entire evidence that a stale fixture
+  was stale rather than the server being wrong.
+
+  The index holds the tree's present. A migration's debris is a question about
+  its past. Neither the prepared CLAUDE.md region nor the skill says so, and both
+  open by telling the agent to ask Loom before reading the tree.
+body: |
+  WHY AN OMISSION IS WORTH A REQUIREMENT
+
+  The guidance is emphatic and correct about what Loom answers well -- the
+  question-shape table in `templates/loom-skill.md` names nine questions and the
+  call for each. Every row is a question about the tree as it stands. An agent
+  that has internalised "the first tool is one of these, not the shell" will put
+  a question about what changed, when, and why to the index, and get an answer
+  about what is there now. The answer is true and is not the answer.
+
+  This is the same class as REQ-0037's absence problem, one level up: a tool
+  that answers confidently outside its domain costs more than one that refuses.
+
+  WHAT THE BOUNDARY ACTUALLY IS
+
+      Loom answers          where something is, what it reaches, what governs
+                            it, what tests it, what resembles it -- all about
+                            the tree as the last poll read it.
+
+      git answers           when a thing changed, what it replaced, why, and
+                            what a deletion took with it. `git log -S` is the
+                            verb, and a commit message is evidence no index
+                            holds.
+
+      the shell answers     a literal string in a file the analyzer does not
+                            claim, which is REQ-0059's subject, and a question
+                            about bytes rather than definitions.
+
+  REQUIREMENTS
+
+  R1  The prepared skill names the boundary, with `git log -S` as the verb for
+      the tree's past, and does so where an agent reads it before choosing a
+      tool -- beside the question-shape table, not in a footnote.
+
+  R2  It says what evidence lives only in commit messages, because that is the
+      case that surprises: a sentence written by a human once, never indexed,
+      and sometimes the whole of what is known.
+
+  R3  Loom's own CLAUDE.md carries the same sentence. It has the same problem
+      and the same first instruction.
+
+  ACCEPTANCE
+
+  A reader of the prepared guidance can say, without running anything, which of
+  these goes to Loom and which to git: "where is dhandler-copy", "when did
+  dhandler-copy stop taking three arguments", "what did PLAN-0002 delete".
+
+  NOT IN SCOPE
+
+  Indexing git history. Loom should not try to be the tool for the tree's past --
+  the point is to say so, not to become it.

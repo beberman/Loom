@@ -1,0 +1,80 @@
+id: BUG-0053
+title: context mints a record id only when the log directory is set, so the feedback channel the prepared guidance instructs every agent to use is unreachable on a default deployment
+status: open
+severity: major
+date: 2026-08-27
+refines: [REQ-0036]
+affects: [record-context-call, record-context-use, build-context]
+tags: [req-0036, req-0038, evaluation, guidance, defaults, front-end]
+summary: |
+  `loom_context` against front-end returns a bundle whose keys are `task
+  provenance seeds terms items decisions documents mentions budget tokens
+  index-tokens found-tokens source-tokens sourced source-definitions truncated
+  withheld-*`. There is no `record`. `GET /v1/context` returns the same 21 keys
+  and no `record`. Re-checked 2026-08-27 against the running service.
+
+  The prepared guidance installed into that tree devotes a section to the
+  channel -- "This is not bookkeeping", "Report the misses, and report them by
+  name" -- and tells the agent to quote the `record` id the answer carried. No
+  answer carries one. The only recourse, POSTing `context-used` without an id,
+  is HTTP 400 and MALFORMED-REQUEST.
+body: |
+  WHY THIS IS A DEFECT AND NOT A CONFIGURATION
+
+  Nothing is broken in the mechanism. `*context-log-directory*` is NIL by
+  default (src/workspace/context-log.lisp:20), RECORD-CONTEXT-CALL returns NIL
+  and writes nothing when it is, and the `:context` operation appends `:record`
+  only `(if id ...)`. Every piece behaves as designed.
+
+  The defect is that the guidance shipped into a prepared tree describes the on
+  state as though it were the only state. An agent that follows it exactly ends
+  the session having recorded nothing, and does so without ever learning that it
+  could not have. REQ-0036 exists so that the ranking is judged by the agents
+  using it; a deployment where that is silently impossible is the requirement
+  not holding, in the deployment REQ-0021 built.
+
+  An absent key is also the wrong shape for the news. A caller reasoning about a
+  missing `record` cannot tell "feedback is off here" from "this build is older
+  than REQ-0036" from "the write failed" -- CON-0006's expensive error at the
+  scale of one answer, and the same distinction DES-0041 D10 refuses to collapse
+  for `similar`.
+
+  F1  THE BUNDLE SAYS WHICH STATE IT IS IN
+
+  A field on every bundle, present whether or not logging is on, saying that
+  feedback is off for this deployment. An agent then reads a fact rather than
+  inferring one from an absence, and the guidance can name the field.
+
+  F2  THE GUIDANCE MATCHES BOTH STATES
+
+  src/workspace/templates/loom-skill.md's feedback section is written for the on
+  state only. One sentence: if the answer says feedback is off, do not try.
+
+  F3  init TURNS IT ON FOR THE TREE IT PREPARES
+
+  A tree that has just been given a skill instructing agents to send feedback is
+  a tree whose owner asked for the feedback. `init` already writes into the
+  repository with the consent REQ-0021 R16 requires, and the log lives under
+  `.loom/`, which init already creates. This is the fix that makes F1 and F2
+  describe a state that is rare rather than usual.
+
+  F3 is the one that needs a decision rather than an implementation: writing to
+  somebody's tree by default is exactly the posture REQ-0021 is careful about,
+  and "off unless asked" is defensible. F1 and F2 are correct either way, which
+  is why they are separable.
+
+  MEASURED, 2026-08-27
+
+  `GET /v1/context?repository=front-end&task=osm-import+endpoint&budget=1500`
+  returns 21 keys, none of them `record`. Loom's own service is started by
+  `tools/loom-serve.sh`, which since 2026-08-22 no longer defaults
+  LOOM_CONTEXT_LOG to 1 -- so the tree Loom is developed on is in the same state
+  as every tree it prepares.
+
+  NOT IN SCOPE
+
+  Whether a probe should be excluded from measurement, which is REQ-0044. That
+  requirement assumes a record exists to mark.
+
+  What the log retains and for how long. REQ-0038 R4 owns that, and this is
+  about whether anything is written at all.

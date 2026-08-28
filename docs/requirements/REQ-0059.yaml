@@ -1,0 +1,65 @@
+id: REQ-0059
+title: the index must report the files no analyzer claimed, because 48 of Loom's 424 tracked files are invisible and nine of them are the harness that measures Loom
+status: draft
+date: 2026-08-27
+refines: [REQ-0050]
+affects: [repository-status, repository-files]
+importance: Major
+tags: [status, coverage, absence, req-0037, measurement]
+summary: |
+  `status` on Loom reports `files: 376`, `unindexed: 0` and `unparsed: 0`. The
+  tree holds 424 tracked files. The 48 in the gap are claimed by no analyzer and
+  counted nowhere: `unindexed` counts files an analyzer *does* claim that have no
+  stamp yet, and `unparsed` counts files it claimed and could not read.
+
+  Nine of the 48 are `.py`. `find acceptance`, `find score_judgement` and `find
+  ensure` all return nothing, so `tools/test/acceptance.py`, `tools/test/recall.py`
+  and `tools/test/service.py` have no entity, no callers and no documents
+  attached. `tools/test/harness.lisp` is indexed -- `find load-systems` returns
+  `tools/test/harness.lisp:57-79` -- so one directory splits down the middle, and
+  the part Loom cannot answer questions about is the part that measures Loom.
+body: |
+  THE ABSENCE IS SETTLED; ITS INVISIBILITY IS NOT
+
+  Whether Loom should analyze Python is a separate question and this document
+  does not ask for it. What it asks is that the tree say what it does not hold.
+
+  Today a zero-hit `find` on a Python function is byte-identical to a zero-hit
+  `find` on a name that exists nowhere. REQ-0037's rule is that an absence must
+  be distinguishable from an answer; REQ-0051 applied it across repositories and
+  REQ-0054 applies it to prose. This is the third face of the same rule and the
+  one that covers whole languages.
+
+  REQUIREMENTS
+
+  R1  `status` reports how many files in the tree no analyzer claimed, beside
+      `files`, `unindexed` and `unparsed` -- which are three counts about
+      claimed files and none about the rest.
+
+  R2  The report says which extensions those files carry, with counts. "48
+      unclaimed: 9 .py, 5 .sh, 34 other" is actionable; a bare 48 is not.
+
+  R3  A zero-hit `find` in a tree with unclaimed files says so. This is
+      REQ-0054's second band met from the other side: the caller learns that the
+      index cannot have the answer, rather than that the answer does not exist.
+
+  ACCEPTANCE
+
+  `status` on Loom reports 48 unclaimed files with the .py and .sh counts named.
+  `find acceptance` says the term matched no definition and that 9 Python files
+  in this tree are not analyzed.
+
+  NOT IN SCOPE
+
+  A Python analyzer. REQ-0018 is where a language's own toolchain gets asked, and
+  a text analyzer for a fourth language is a decision this does not make.
+
+  Files git ignores. The count is over what the repository tracks; a build
+  directory is not a gap in coverage.
+
+  OPEN QUESTIONS
+
+  - Does the count belong to the repository or to the file walk? REPOSITORY-FILES
+    already walks the tree and calls `git check-ignore`, and that walk is where
+    the unclaimed set is cheapest to compute -- 179ms on Loom, and `status` is
+    already paying it.
