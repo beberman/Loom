@@ -709,3 +709,64 @@ describe.only('chain', () => {
     (is (not (null todo)) "a todo is a declared test and the index says so")
     (is (null (getp todo :call-names))
         "with no body it reaches nothing, so it claims no coverage")))
+
+
+;;; ------------------------------------------------------------------
+;;; A default export that only re-exports defines nothing (BUG-0056)
+;;; ------------------------------------------------------------------
+
+(js-test a-default-export-of-existing-names-mints-no-second-entity
+  ;; The reported symptom was `check-document' refusing `affects: [simplifyArcs]'
+  ;; as ambiguous between the function and a `variable:' at the same path, with
+  ;; nothing in the file that looked ambiguous. `export default { simplifyArcs }'
+  ;; re-exports what the module already defined, and the entity minted for it is
+  ;; named after the module's base name (JS-DEFINITION-NAME) -- so a file named
+  ;; after the function it exports, which is the convention, collided with
+  ;; itself.
+  (let* ((source "export function simplifyArcs(arcs) { return arcs; }
+
+export default { simplifyArcs };
+")
+         (entities (js-entities "src/import/simplifyArcs.js" source)))
+    (is (= 1 (count :function entities :key #'entity-type))
+        "the function is indexed exactly once")
+    (is (zerop (count :variable entities :key #'entity-type))
+        "and the re-export adds nothing: ~a"
+        (mapcar (lambda (e) (list (entity-type e) (name e))) entities))
+    (is (= 1 (count "simplifyArcs" entities
+                    :key (lambda (e) (and (slot-boundp e 'name) (name e)))
+                    :test #'equal))
+        "so the bare name resolves to one definition")))
+
+(js-test the-collision-needed-the-module-to-be-named-after-its-export
+  ;; The control that shows what was actually going on, and why the sibling
+  ;; module behaved differently for what looked like identical source. Under the
+  ;; old rule sharedArcs.js got a `variable' named SHAREDARCS -- no collision --
+  ;; while simplifyArcs.js got one named SIMPLIFYARCS. Neither has one now.
+  (let ((entities (js-entities "src/import/sharedArcs.js"
+                               "export function extractSharedArcs(a) { return a; }
+
+export default { extractSharedArcs };
+")))
+    (is (zerop (count :variable entities :key #'entity-type)))
+    (is (= 1 (count :function entities :key #'entity-type)))))
+
+(js-test an-anonymous-default-export-still-becomes-an-entity-named-for-its-module
+  ;; REQ-0024's fourth open question, unchanged. These three introduce a value
+  ;; that exists nowhere else in the module, so dropping them would lose the
+  ;; only record of the module's default export.
+  (dolist (case '(("src/m/anon.js" "export default function (x) { return x + 1; }
+" :function)
+                  ("src/m/inline.js" "export default { render: (x) => x, label: 'thing' };
+" :variable)
+                  ("src/m/klass.js" "export default class { go() { return 1; } }
+" :variable)
+                  ("src/m/empty.js" "export default {};
+" :variable)))
+    (destructuring-bind (path source type) case
+      (let ((entities (js-entities path source type)))
+        (is (= 1 (length entities))
+            "~a should yield one ~(~a~), got ~a" path type (length entities))
+        (when entities
+          (is (equal (pathname-name (pathname path)) (name (first entities)))
+              "and it is named after its module"))))))

@@ -1,10 +1,10 @@
 id: BUG-0056
 title: "`export default { name }` mints a variable entity beside the function in one module and not in its byte-identical sibling, so a bare name in affects: is refused as ambiguous for a cause absent from the author's source"
-status: open
+status: closed
 severity: minor
 date: 2026-08-27
 refines: [REQ-0024]
-affects: [check-document-references, resolve-and-check]
+affects: [js-definition-name, make-js-definition-entity]
 tags: [javascript, analyzer, ambiguity, check-document, documents, front-end]
 summary: |
   Writing a new module in front-end, `check-document` refused `affects:
@@ -20,15 +20,57 @@ summary: |
   `find extractSharedArcs` returns only a function. Same language, same
   directory, same construct, different answer.
 body: |
-  WHAT WAS AND WAS NOT ISOLATED
+  THE ARROW LEAD WAS WRONG, AND THE CAUSE IS THE MODULE'S NAME
 
-  One lead, measured rather than guessed: the file that produces the variable
-  holds four `const name = (...) => ...` arrow definitions and the file that
-  does not holds none. Whether the arrow form is what turns the default-export
-  member into a variable assertion is untested.
+  This document recorded one lead: the file that produced the variable held
+  four `const name = (...) => ...` arrow definitions and the file that did not
+  held none. Tested 2026-08-28 by running tools/js/extract.js over both shapes
+  directly. Arrow functions have nothing to do with it -- `export default {
+  name }` mints a `{kind: variable, name: null}` in both files, and always did.
 
-  Ruled out: a prose mention of the bare name in the module header. Removing it
-  changes nothing.
+  What differs is the naming. JS-DEFINITION-NAME gives an unnamed default
+  export the module's own base name, which is REQ-0024's fourth open question
+  answered: "src/components/Card.jsx becomes CARD ... that is both stable and
+  what importers overwhelmingly do call it by convention".
+
+      simplifyArcs.js   the module is named after the function it exports, so
+                        the re-export entity is also called simplifyArcs and
+                        the two collide
+      sharedArcs.js     exports extractSharedArcs, so the re-export entity is
+                        called sharedArcs and collides with nothing
+
+  So the "byte-identical sibling behaving differently" was not a
+  non-determinism. It was the file name, and the collision happens exactly when
+  a module is named after its principal export -- which is this tree's
+  convention, so the surprising case is the common one.
+
+  WHAT WAS DONE
+
+  F1. `export default { a, b }` mints nothing. It re-exports bindings the
+  module has already defined and introduces no value, so the entity was a
+  second name for something already indexed -- CON-0005's rule, which asks that
+  two source constructs deriving one key be reconciled by the analyzer in its
+  own language's semantics.
+
+  The guard is narrow on purpose: an ObjectExpression with at least one
+  property, every property un-computed with an Identifier value. Everything
+  else keeps the entity it had, because everything else introduces a value that
+  exists nowhere else in the module --
+
+      export default function (x) {...}        a function, named for the module
+      export default { render: (x) => x }      a value with an inline function
+      export default class { go() {...} }      an anonymous class
+      export default {}                        an empty object is still what
+                                               the module's importers receive
+
+  All four are asserted in the test beside the two that assert the change.
+
+  F2 was not done and is no longer needed for this instance: there is no
+  ambiguity left to report. It remains right for any future genuine ambiguity,
+  and is not what this defect was.
+
+  Ruled out earlier and still ruled out: a prose mention of the bare name in
+  the module header.
 
   WHY IT IS WORTH FIXING RATHER THAN DOCUMENTING AROUND
 
