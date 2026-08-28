@@ -488,3 +488,117 @@ The lock is the table's own.")))))
     (is (null (getp f :signature))
         "nothing writes it, and nothing declares it either")))
 
+
+
+;;; ------------------------------------------------------------------
+;;; An inferred edge says so (BUG-0055)
+;;; ------------------------------------------------------------------
+;;;
+;;; The data was always there. RESOLVE-CALLS asserts a fanned-out call edge
+;;; with :SOURCE :INFERRED and a 1/N :CONFIDENCE, and every answer surface
+;;; dropped both -- so front-end's `describe ingestModel' printed three guesses
+;;; from one `.get()' on a plain Map beside the one real callee, all four
+;;; reading `structural, 1.0' because that is the *entity's* provenance.
+
+(defun k-inferred-edge (graph from to &key (confidence 1/3))
+  "A :CALLS edge a resolution pass guessed at, as RESOLVE-CALLS asserts one."
+  (add-relationship graph (make-instance 'relationship
+                                         :rel-type :calls
+                                         :from-id (id from) :to-id (id to)
+                                         :origin-file (origin-file from)
+                                         :source :inferred
+                                         :confidence (float confidence 1.0))))
+
+(test a-neighbour-row-carries-the-edges-provenance-and-not-only-the-entitys
+  ;; The two are different questions and the row has to answer both. RESET is a
+  ;; perfectly certain definition -- :STRUCTURAL, confidence 1.0 -- reached
+  ;; here across an edge the resolver guessed at, and before this the row said
+  ;; only the first half.
+  (let* ((f (make-k-fixture)))
+    (k-inferred-edge (k-graph f) (k-resolve f) (k-reset f))
+    (let* ((detail (describe-entity (k-graph f) (id (k-resolve f))))
+           (out (find-if (lambda (g) (and (eq :out (getf g :direction))
+                                          (eq :calls (getf g :rel-type))))
+                         (getf detail :neighbors)))
+           (row (first (getf out :entities))))
+      (is (string= "reset-overlay" (getf row :name)))
+      (is (eq :structural (getf row :source))
+          "the definition is a fact the analyzer read")
+      (is (= 1.0 (getf row :confidence)))
+      (is (eq :inferred (getf row :edge-source))
+          "and the edge reaching it is a guess, which is the half that was missing")
+      (is (< (abs (- 1/3 (getf row :edge-confidence))) 0.001)))))
+
+(test a-resolved-edge-says-that-too-rather-than-saying-nothing
+  ;; The key is on every row, not only the uncertain ones. A field that appears
+  ;; only when something is wrong makes its absence carry meaning, and a reader
+  ;; cannot tell "this edge is certain" from "this build predates the marker".
+  (let* ((f (make-k-fixture))
+         (detail (describe-entity (k-graph f) (id (k-resolve f))))
+         (in (find-if (lambda (g) (and (eq :in (getf g :direction))
+                                       (eq :calls (getf g :rel-type))))
+                      (getf detail :neighbors)))
+         (row (first (getf in :entities))))
+    (is (string= "compose-view" (getf row :name)))
+    (is (eq :structural (getf row :edge-source :absent)))
+    (is (= 1.0 (getf row :edge-confidence -1)))))
+
+(test an-impact-row-reached-through-a-guess-says-so
+  ;; The control first, in the same test, because CON-0003's requirement is
+  ;; that the assertion fail without the change and a boolean that is NIL for
+  ;; every row would pass either way. The fixture's own edges are all
+  ;; structural, so no row of the untouched report may be marked.
+  (let* ((clean (make-k-fixture))
+         (before (impact-report (k-graph clean) (id (k-resolve clean)))))
+    (is-true (getf before :impacted) "compose-view is impacted by resolve-overlay")
+    (is (notany (lambda (row) (getf row :inferred)) (getf before :impacted))
+        "nothing in a wholly structural walk is marked")
+    (is (every (lambda (row) (= 1.0 (getf row :confidence-of-path)))
+               (getf before :impacted))))
+  ;; RESOLVE-OVERLAY --calls?--> RESET-OVERLAY, the shape RESOLVE-CALLS asserts
+  ;; for a member call whose receiver names no class. Impact runs against a
+  ;; call edge, so a change to RESET now reaches RESOLVE across the guess, and
+  ;; COMPOSE-VIEW behind it.
+  (let* ((f (make-k-fixture)))
+    (k-inferred-edge (k-graph f) (k-resolve f) (k-reset f))
+    (let* ((report (impact-report (k-graph f) (id (k-reset f))))
+           (row (find "resolve-overlay" (getf report :impacted)
+                      :key (lambda (r) (getf r :name)) :test #'equal)))
+      (is-true row "resolve-overlay calls reset-overlay, however uncertainly")
+      (when row
+        (is-true (getf row :inferred))
+        (is (< (abs (- 1/3 (getf row :confidence-of-path))) 0.001))
+        (is (search "?>" (getf row :via))
+            "the path marks which hop was the guess: ~a" (getf row :via))))))
+
+(test a-guess-early-in-a-path-marks-everything-behind-it
+  ;; The transitive half. COMPOSE-VIEW is two hops from RESET-OVERLAY and the
+  ;; second hop is structural, so a per-hop marker alone would leave this row
+  ;; looking certain -- and it is in the set only because of the guess.
+  (let* ((f (make-k-fixture)))
+    (k-inferred-edge (k-graph f) (k-resolve f) (k-reset f))
+    (let* ((report (impact-report (k-graph f) (id (k-reset f))))
+           (row (find "compose-view" (getf report :impacted)
+                      :key (lambda (r) (getf r :name)) :test #'equal)))
+      (is-true row)
+      (when row
+        (is (= 2 (getf row :depth)))
+        (is-true (getf row :inferred))
+        (is (< (abs (- 1/3 (getf row :confidence-of-path))) 0.001)
+            "the weakest hop, carried the whole way")))))
+
+(test the-paths-confidence-is-its-weakest-hop-and-not-the-product
+  ;; A product decays with length: four certain hops and one 0.33 would report
+  ;; less confidence at depth 5 than the same guess reports at depth 1, which
+  ;; is an artefact of depth rather than a fact about the claim.
+  (let ((path (list (loom-graph::make-hop :rel-type :calls :entity-id "a")
+                    (loom-graph::make-hop :rel-type :calls :entity-id "b"
+                              :edge-source :inferred :edge-confidence 0.5)
+                    (loom-graph::make-hop :rel-type :calls :entity-id "c"
+                              :edge-source :inferred :edge-confidence 0.25))))
+    (is (= 0.25 (loom-knowledge::path-confidence path)))
+    (is-true (loom-knowledge::path-inferred-p path))
+    (is (= 1.0 (loom-knowledge::path-confidence '()))
+        "a seed's own empty path is certain, not zero")
+    (is (not (loom-knowledge::path-inferred-p
+              (list (loom-graph::make-hop :rel-type :calls :entity-id "a")))))))

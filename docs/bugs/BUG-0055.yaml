@@ -1,10 +1,10 @@
 id: BUG-0055
 title: a JavaScript call attributed by bare method name lands in the calls band beside a resolved one, and on two measured functions three of four and nine of twelve were wrong
-status: open
+status: closed
 severity: critical
 date: 2026-08-27
 refines: [REQ-0024]
-affects: [resolve-calls, describe-entity, impact-report]
+affects: [group-neighbors, impact-entry-summary, render-path]
 tags: [javascript, analyzer, resolution, confidence, con-0001, front-end]
 summary: |
   `describe ingestModel` against front-end returns four outbound `calls`
@@ -69,6 +69,103 @@ body: |
   `set` method, at depth 1, and reports them at the same confidence as the real
   callees. On a tree the size of front-end that is the difference between an
   answer and a page.
+
+  WHAT WAS DONE, 2026-08-27
+
+  F1, and it turned out to be a reporting fix rather than a resolution one.
+  RESOLVE-CALLS already asserts a fanned-out call edge with `:source :inferred`
+  and a 1/N `:confidence` (src/graph/resolve.lisp:1281), and the relationship
+  has carried both since the ontology was written. Every answer surface dropped
+  them:
+
+      ENTITY-SUMMARY   reports :SOURCE and :CONFIDENCE for the *entity* -- what
+                       kind of fact the definition is. All four of
+                       ingestModel's callees are ordinary definitions read from
+                       source, so all four rows read `structural, 1.0`.
+      GROUP-NEIGHBORS  had the relationship in hand and used it for the
+                       rel-type and the direction only.
+      HOP              carried a rel-type and an entity id, so an impact path
+                       could not say which of its steps was a guess.
+
+  So the graph knew, and no caller could ask. That is the shape CON-0001 warns
+  about arriving through a reporting layer rather than through an analyzer.
+
+  R1  A neighbour row carries :EDGE-SOURCE and :EDGE-CONFIDENCE beside the
+      entity's own :SOURCE and :CONFIDENCE. Two provenances, because a row
+      names an entity and an edge and they are different claims -- a certain
+      definition reached by a guess is exactly this defect, and collapsing the
+      pair would hide it again. Both are emitted on every row, including the
+      ordinary `:structural 1.0`: a field appearing only on the bad rows makes
+      absence carry meaning, and a reader could not tell a resolved edge from a
+      build predating the marker.
+
+  R2  A hop carries the edge's source and confidence, so an impact row reports
+      :INFERRED and :CONFIDENCE-OF-PATH. The path confidence is the weakest
+      hop, not the product: a product decays with length and would report a
+      chain of certainties as progressively less certain, which is an artefact
+      of depth rather than a fact about the claim.
+
+  R3  RENDER-PATH writes an inferred hop `calls?>name`, and the console prints
+      `d2?` on the row. The path is the last column and a reader scanning a
+      page should not have to read to the end of each line.
+
+  R4  The console prints `BiMap.get (inferred 0.33)`. A number rather than a
+      word, because 0.33 is a three-way fan-out and 0.05 is a twenty-way one,
+      and DISPATCH-CONFIDENCE's own docstring already says the number is what a
+      consumer filters on -- which no consumer could do while nothing carried it.
+
+  MEASURED AFTER THE FIX, 2026-08-27
+
+  `describe ingestModel` on front-end prints one callee and three candidates:
+
+      -> calls: remoteServer.get (inferred 0.33), msgHandler.get (inferred
+         0.33), BiMap.get (inferred 0.33), ingestPartition
+
+  `describe extractSharedArcs` splits 3 and 9, and the three resolved ones are
+  exactly the module-local helpers this document named: renodeRings, keyOf and
+  lexLess. The nine carry 0.50, 0.33 and one 1.00.
+
+  That 1.00 is BiMap.set, and it is not a contradiction. DISPATCH-CONFIDENCE
+  returns 1.0 for a one-candidate fan-out, so the pair reads "this is a guess,
+  and only one definition in the tree could satisfy it" -- two facts a reader
+  needs separately. The source says how the edge was arrived at; the number
+  says how much choosing there was.
+
+  The impact half is where the size of it shows. `impact BiMap.get 2` on
+  front-end returns 297 rows and all 297 are now marked `d1?` at 0.33, because
+  every one of them is there on the strength of somebody writing `.get()`.
+  Before this change all 297 read exactly like a resolved call.
+
+  F2 WAS CONSIDERED AND NOT TAKEN
+
+  Keeping such edges out of the `calls` band entirely is the stronger reading
+  of CON-0001, and CON-0006 is what decides against it: demote, never drop. An
+  LLM discards a wrong row for a few tokens, and a missing row sends it back to
+  grep, which is the cost Loom exists to remove. The measurement agrees --
+  three of extractSharedArcs' twelve resolved edges are module-local helpers
+  found by the same tier that gets `.get()` wrong, so F2 would have cost
+  renodeRings, keyOf and lexLess to silence nine guesses that now say they are
+  guesses. DES-0014's ambiguous call site is the precedent followed instead:
+  one reportable thing carrying its own uncertainty.
+
+  WHAT THIS DOES NOT FIX
+
+  The volume. `impact` still walks these edges, and a function whose body uses
+  `Map` and `Set` still reaches every class in the tree with a `get`, `add`,
+  `has` or `set` method at depth 1. Every one of those rows now says it arrived
+  through a guess and carries the number, so a reader can discount them and a
+  consumer could filter on them -- but nothing filters yet, and a caller that
+  wants `impact` to take a minimum confidence has to ask for it. That is a new
+  capability rather than this defect.
+
+  The tiers are also still indistinguishable from each other.
+  MEMBER-CALL-CANDIDATES tier 2 fans out because it borrowed DES-0001's
+  argument that dispatch is a union of genuine possibilities, and the borrowing
+  is only sometimes right: `set.persist()` reaching one of eight `persist`
+  methods is a union, and `byName.get()` on a plain `Map` is not -- the other
+  classes are unrelated. Both are marked `:inferred` and a reader cannot tell
+  which is which. Narrowing that needs the receiver's type, which is REQ-0018's
+  enrichment pass.
 
   NOT IN SCOPE
 

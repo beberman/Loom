@@ -120,37 +120,6 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   -- reader and call-site work, 2026-08-09
   -- REQ-0055 asks for it, and states why it must not land before BUG-0055, 2026-08-27
 
-- **JavaScript call edges attributed by bare method name are wrong often
-  enough to mislead, measured.** Known in front-end's own CLAUDE.md and worth a
-  number here. `describe ingestModel` -- a 34-line function whose body calls
-  `sets.*.reset()`, `byName.get()`, `unknownTypeNames.push()`, `model.types.map()`
-  and `ingestPartition()` -- returns four outbound `calls` neighbours:
-  `remoteServer.get`, `msgHandler.get`, `BiMap.get` and `ingestPartition`. Three
-  of four are wrong, all three from one `.get()` on a plain `Map`, and each names
-  a real definition in a real file, so nothing about the answer looks uncertain.
-  The fourth is right and is the only one that mattered.
-
-  A second measurement, worse, the same day. `describe extractSharedArcs` -- the
-  arc-pairing algorithm, whose body calls `Map`/`Set` methods throughout --
-  returns twelve outbound `calls` neighbours, of which NINE are wrong:
-  `remoteServer.get`, `msgHandler.get` and `BiMap.get` for `.get()` on a plain
-  Map; `WorkingSet.add` and `LayerGroup.add` for `.add()` on a Set;
-  `GenericTypeSet.has`, `LayerGroup.has` and `BiMap.has` for `.has()`;
-  `BiMap.set` for `.set()`. The three right ones are the two module-local helpers
-  and nothing else. 75% wrong, and the answer looks the same as a correct one.
-
-  `unresolved-calls` on the same entity lists the honest ones (`LatLng`,
-  `unknownTypeNames.push`, `map`, `reset`) -- so the analyzer already knows the
-  difference between a call it resolved and a call it guessed, and then presents
-  a guess in the same band as a resolution. Separating them in the answer costs
-  nothing and would let a caller trust the band: an `inferred` marker on a
-  name-only attribution, or keeping such edges out of `calls` and putting them
-  under the `unresolved` heading they belong to. The inheritance edges have no
-  such problem and are trustworthy today, which is the contrast that makes the
-  call band's silence about its own confidence the defect.
-  -- chasing front-end's BUG-0014, 2026-08-27
-  -- BUG-0055 records it, 2026-08-27
-
 - **`export default { name }` sometimes mints a second entity for `name`, which
   makes the bare name ambiguous in `affects:` for a reason the author cannot
   see.** Writing a new module, `check-document` refused
@@ -315,6 +284,7 @@ re-derives an item that was answered, and each row names where to look instead.
 | "A JavaScript tree has no test entities at all, so 'is this covered?' is a question Loom cannot be asked where it matters most" | REQ-0053, implemented. front-end reads `test-entities: 2325, tested-units: 947, test-files: 145`, and `describe stitchOsmImage` names the three cases of makeImage.test.js while `impact runSegmentationTrial` names segment.test.js's two and not those. The item's proposed second half -- joining `makeImage.test.js` to `make-image.mjs` on the filename -- is refused rather than deferred: DES-0045 D8 gives the reason, and the import plus the call answer it without a guess |
 | "`similar` and `survey` are unreachable from a registered repository" -- `GET /v1/similar` answering `UNKNOWN-OPERATION`, and neither verb among the MCP tools | BUG-0052. Both are registered read-tier operations: `/v1/similar`, `/v1/survey`, `loom_similar` and `loom_survey` answer, and a repository with no vector store is refused with a sentence naming it and `embed` rather than an empty array, per DES-0041 D10. The three REQ-0042 rows in the tables below were true of the console and false of every other caller |
 | "Whether it is missing, renamed, or gated is not something a caller can tell from `UNKNOWN-OPERATION`" | BUG-0052 F4. The refusal names the registered operations, so a typo and an absent verb read differently. A tier the caller may not reach was already distinguishable: FIND-OPERATION is unfiltered and CHECK-CAPABILITY answers 403 |
+| "JavaScript call edges attributed by bare method name are wrong often enough to mislead" -- 3 of 4 on `ingestModel`, 9 of 12 on `extractSharedArcs`, every wrong row naming a real definition | BUG-0055, closed. The edges were always asserted `:inferred` at 1/N and every answer surface dropped it: a neighbour row now carries `edge-source` and `edge-confidence` beside the entity's own, an impact row carries `inferred` and `confidence-of-path`, and a path writes the guessed hop `calls?>name`. The console prints `BiMap.get (inferred 0.33)`. The volume is unchanged and the bug says so -- `impact` still walks these edges, and filtering on the number nothing carried until now is a capability rather than this defect |
 | "`find` should answer across registered repositories, or say that it didn't" -- three instances, the sharpest entry in this file | REQ-0051, implemented. `find` with no `repository` searches every watched tree and each row names its own; named with one and finding nothing, it answers `0 here; 1 in utils`. The answer also names any tree it could not search, so "absent everywhere" is never claimed by a partial search |
 | "`init` cannot refresh a marked region it wrote" -- eight prepared trees keeping stale guidance, and a hand-edited region that is a superset of the template | REQ-0052, implemented as `init --update`. The author's half of the region is declared rather than guessed at, so a refresh replaces Loom's bytes and leaves the hundred lines beside them that no template can regenerate |
 

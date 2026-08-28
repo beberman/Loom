@@ -38,14 +38,31 @@ body: |
   removal is clean. If it does not, this removal destroys the one piece of
   evidence that says which quarter of a JavaScript call band can be trusted.
 
+  UPDATED 2026-08-27, WHEN BUG-0055 CLOSED
+
+  R2's blocking condition is met, and the reason is worth stating exactly
+  because the two fields were being conflated. BUG-0055 was about names that
+  resolved to *several* candidates and were reported as though they had
+  resolved to one; the marker now lives on the edge, as :EDGE-SOURCE and
+  :EDGE-CONFIDENCE on a neighbour row and :INFERRED on an impact row. That is
+  the confidence distinction, and it no longer needs :UNRESOLVED-CALLS.
+
+  What :UNRESOLVED-CALLS still holds on its own is different: names that
+  resolved to *nothing*. On front-end's ingestModel those are `LatLng`,
+  `unknownTypeNames.push`, `unknownTypeNames.includes`, `map` and `reset` --
+  genuine external dependencies and a standing record of them. R1 must account
+  for that separately, and a removal that drops it silently trades one recorded
+  gap for no record at all.
+
   REQUIREMENTS
 
   R1  `:unresolved-calls` is not stored on an entity. Whatever RESOLVE-CALLS
       needs across passes lives in the pass, not in the graph.
 
   R2  R1 does not land before the confidence distinction BUG-0055 asks for has
-      another home. A removal that silently costs an answer its only marker of
-      uncertainty is CON-0001's failure arriving through a cleanup.
+      another home. Met on 2026-08-27: the marker is on the edge. What is not
+      met is the second job the field does, which R1 now has to answer for --
+      a name that reached nothing has no other record.
 
   R3  A generated entity's `:system` is derived from the call site that
       generated it rather than from the file it was written into. DES-0009 makes

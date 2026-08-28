@@ -266,6 +266,33 @@ misused conditional directive hid, printing the flag itself as the text")
       (is (search "function alpha" output)
           "the first line is PRINT-SUMMARY-LINE's form, as it is today"))))
 
+(test a-neighbour-line-marks-an-edge-the-resolver-guessed-at
+  ;; BUG-0055. NEIGHBOR-LINE is unit-tested rather than driven through a
+  ;; console fixture because the fixture is a Lisp tree with no member calls in
+  ;; it: producing a real inferred edge would mean writing a JavaScript file
+  ;; and a live node, and what is being tested is the printing.
+  (is (string= "ingestPartition"
+               (loom-process::neighbor-line
+                (list :name "ingestPartition" :edge-source :structural
+                      :edge-confidence 1.0)))
+      "a resolved edge prints the name and nothing else")
+  (is (string= "BiMap.get (inferred 0.33)"
+               (loom-process::neighbor-line
+                (list :name "BiMap.get" :edge-source :inferred
+                      :edge-confidence 0.3333)))
+      "and a guess says how much of one it is")
+  ;; Both annotations, which is the case DES-0014's call sites make reachable:
+  ;; an ambiguous site fanned out is a call site AND an inferred edge.
+  (is (string= "alpha@src/x.lisp:9 (ambiguous, inferred 0.50)"
+               (loom-process::neighbor-line
+                (list :name "alpha@src/x.lisp:9" :referrer-kind :ambiguous
+                      :edge-source :inferred :edge-confidence 0.5))))
+  (is (string= "alpha (definer-call)"
+               (loom-process::neighbor-line
+                (list :name "alpha" :referrer-kind :definer-call
+                      :edge-source :structural :edge-confidence 1.0)))
+      "DES-0014 R7's kind still prints on its own"))
+
 ;;; ------------------------------------------------------------------
 ;;; enrich (DES-0011)
 ;;; ------------------------------------------------------------------
