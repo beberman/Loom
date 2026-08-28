@@ -564,3 +564,91 @@ status: draft~%affects: [~a]~%body: |~%  D1~%" candidate))))
         (is (eq :resolved (reference-status second-pass candidate))
             "the id the first report printed resolves in the second")
         (is (equal candidate (getf (reference-entry second-pass candidate) :target)))))))
+
+
+;;; ------------------------------------------------------------------
+;;; A cascade with nothing to decide writes (BUG-0057)
+;;; ------------------------------------------------------------------
+;;;
+;;; Dry run is the default because the command's failure mode is editing files,
+;;; and all-or-nothing exists so a cascade cannot be left half applied. Neither
+;;; argument reaches a cascade that has no verdict to give: there is nothing to
+;;; withhold and nothing that could be left behind, and the behaviour chosen was
+;;; the one that never finishes.
+
+(test a-plan-that-refines-nothing-is-finished-rather-than-previewed-forever
+  ;; game-server's PLAN-0002, 2026-08-21. `complete' returned `would-set' on
+  ;; every run; a verdict offered for the plan itself was refused as not in the
+  ;; cascade; `set-status' was the way through, and both the skill and the
+  ;; generated CLAUDE.md say "run the transition command" and mean `complete'.
+  (with-document-tree (root)
+    (write-document root "docs/plans/PLAN-0001.yaml"
+                    (format nil "id: PLAN-0001~%title: a plan~%status: draft~%~
+body: |~%  STEPS~%~%  1. do the thing.~%"))
+    (with-indexed-tree (repository root)
+      (let ((report (complete-plan repository "PLAN-0001")))
+        (is (null (getf report :dry-run))
+            "there is no verdict to preview, so this is not a preview")
+        (is (null (getf report :problems)) "and nothing to refuse")
+        (is-true (getf report :changed) "the plan is finished")
+        ;; Read from completed/: a terminal status moves the file, which is the
+        ;; same write path SET-DOCUMENT-STATUS uses and the thing a caller was
+        ;; reaching for it to do.
+        (is (search "status: final"
+                    (document-text root "docs/plans/completed/PLAN-0001.yaml"))
+            "and the file says so, where a finished plan belongs")))))
+
+(test a-cascade-whose-documents-are-all-finished-already-writes-too
+  ;; The commoner shape, and the one a narrow fix for "refines nothing" would
+  ;; have missed: the frontier is not empty, every document on it is already
+  ;; terminal, and so no verdict is possible here either.
+  (with-document-tree (root)
+    (write-document root "docs/requirements/REQ-0001.yaml"
+                    (requirement-document "REQ-0001" :status "implemented"))
+    (write-document root "docs/design/DES-0001.yaml"
+                    (design-document "DES-0001" '("REQ-0001") :status "implemented"))
+    (write-document root "docs/plans/PLAN-0001.yaml"
+                    (plan-document "PLAN-0001" '("DES-0001")))
+    (with-indexed-tree (repository root)
+      (let ((report (complete-plan repository "PLAN-0001")))
+        (is (null (getf report :dry-run)))
+        (is-true (getf report :changed))
+        (is (search "status: final"
+                    (document-text root "docs/plans/completed/PLAN-0001.yaml")))
+        (let ((row (find "DES-0001" (getf report :documents)
+                         :key (lambda (r) (getf r :doc-id)) :test #'string=)))
+          (is (eq :already-finished (getf row :action))
+              "the finished document is reported and left alone"))))))
+
+(test a-cascade-with-something-to-decide-is-still-a-dry-run
+  ;; The control, and the property the change must not cost. DES-0019 D5's
+  ;; default is right wherever there is a verdict to withhold, and an agent that
+  ;; runs `complete' and walks away must still have done nothing.
+  (with-document-tree (root)
+    (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
+    (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
+    (with-indexed-tree (repository root)
+      (let ((report (complete-plan repository "PLAN-0001")))
+        (is-true (getf report :dry-run))
+        (is (null (getf report :changed)) "nothing written")
+        (is (search "status: draft" (document-text root "docs/plans/PLAN-0001.yaml"))))))
+  ;; A blocked cascade is the third shape with no verdict to give, and it
+  ;; finishes the plan rather than previewing it. DES-0001 cannot be decided
+  ;; while PLAN-0002 still refines it, and a verdict naming it is refused --
+  ;; so the old behaviour left PLAN-0001, which really is finished, unable to
+  ;; say so through this command. The blocked document is reported and left
+  ;; alone, which is what `blocked' has always meant.
+  (with-document-tree (root)
+    (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
+    (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
+    (write-document root "docs/plans/PLAN-0002.yaml" (plan-document "PLAN-0002" '("DES-0001")))
+    (with-indexed-tree (repository root)
+      (let* ((report (complete-plan repository "PLAN-0001"))
+             (row (find "DES-0001" (getf report :documents)
+                        :key (lambda (r) (getf r :doc-id)) :test #'string=)))
+        (is (eq :blocked (getf row :action)) "DES-0001 is still refined by PLAN-0002")
+        (is (search "status: final"
+                    (document-text root "docs/plans/completed/PLAN-0001.yaml"))
+            "the plan is finished")
+        (is (search "status: draft" (document-text root "docs/design/DES-0001.yaml"))
+            "and the blocked design is untouched")))))

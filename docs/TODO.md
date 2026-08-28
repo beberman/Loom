@@ -98,22 +98,6 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
 
 ## Documents and the workflow around them
 
-- **`complete` cannot finalize a plan that refines nothing.** A hard blocker,
-  hit head-on. `complete-plan` is dry-run when `(null parsed)`, and `parsed`
-  comes from `verdicts`; a plan with no `refines:` edges reaches no document
-  but itself, so there is no verdict to give, and any verdict offered is
-  refused with *"PLAN-0002 is not in this cascade"*. The command therefore
-  returns `would-set` forever and writes nothing. `set-status PLAN-0002 final`
-  is the way through and worked first time, but both the skill and the
-  generated CLAUDE.md say "run the transition command" and mean `complete`,
-  and `set-status` is mentioned once at the bottom as the escape hatch for a
-  *blocked* document. Either `complete` should write when the cascade is the
-  plan alone — there is nothing to decide, which is precisely why the
-  all-or-nothing safety argument does not apply — or its dry-run report should
-  name `set-status` when the frontier comes back empty.
-  -- completing game-server's PLAN-0002, 2026-08-21
-  -- BUG-0057 records it, 2026-08-27
-
 - **A completed migration plan's `affects:` can never resolve, and `check`
   will report it as rot forever.** 8 of game-server's 16 unresolved references
   are PLAN-0002's own: `config-get`, `dict-value`, `alistp`, `string-split`,
@@ -235,6 +219,7 @@ re-derives an item that was answered, and each row names where to look instead.
 | "JavaScript call edges attributed by bare method name are wrong often enough to mislead" -- 3 of 4 on `ingestModel`, 9 of 12 on `extractSharedArcs`, every wrong row naming a real definition | BUG-0055, closed. The edges were always asserted `:inferred` at 1/N and every answer surface dropped it: a neighbour row now carries `edge-source` and `edge-confidence` beside the entity's own, an impact row carries `inferred` and `confidence-of-path`, and a path writes the guessed hop `calls?>name`. The console prints `BiMap.get (inferred 0.33)`. The volume is unchanged and the bug says so -- `impact` still walks these edges, and filtering on the number nothing carried until now is a capability rather than this defect |
 | "`budget` counts the content and not the JSON around it, so a caller who sets a small budget still overflows" | BUG-0054, closed. ADMIT-ITEM charged the *console* rendering; the skin now passes its own pricing in through `*context-item-cost*`, and the same function prices and emits the item so the two cannot disagree. front-end at `budget=6000`: 81,793 bytes to 34,206, and 4.2 characters per token on the charged part against ESTIMATE-TOKENS' own 4. What remains is REQ-0061: four candidate lists, 26% of the answer, that nothing charges for |
 | "`context` mints a record id only when a log directory is set ... so `context-used` is unreachable on an ordinary deployment" | BUG-0053, closed. Every context answer carries `feedback: "on"` or `"off"`, and RECORD-CONTEXT-USE no longer answers "No context record <id>" when the truth is that no log exists. The item's third proposal -- `init` turning the log on for the tree it prepares -- is withdrawn rather than deferred: DES-0030 D1 makes the directory an operator's and not a caller's, and it deliberately lives in Loom's tree so a prepared repository's corpus holds still. Whether `tools/loom-serve.sh` should default it on is REQ-0044's question |
+| "`complete` cannot finalize a plan that refines nothing" -- `would-set` forever, with `set-status` as the way through | BUG-0057, closed, and the item named one of three shapes: a plan refining nothing, a plan whose refined documents are all already terminal, and one whose documents are all blocked. Each ends with no verdict a caller could offer, so each previewed forever. A dry run that finds nothing awaiting a verdict now re-enters once and writes, so the walk decides what it found in one place. Dry run is unchanged wherever a verdict can be withheld |
 | "`find` should answer across registered repositories, or say that it didn't" -- three instances, the sharpest entry in this file | REQ-0051, implemented. `find` with no `repository` searches every watched tree and each row names its own; named with one and finding nothing, it answers `0 here; 1 in utils`. The answer also names any tree it could not search, so "absent everywhere" is never claimed by a partial search |
 | "`init` cannot refresh a marked region it wrote" -- eight prepared trees keeping stale guidance, and a hand-edited region that is a superset of the template | REQ-0052, implemented as `init --update`. The author's half of the region is declared rather than guessed at, so a refresh replaces Loom's bytes and leaves the hundred lines beside them that no template can regenerate |
 

@@ -611,7 +611,7 @@ tokens is accepted too, which is what the console has after splitting its line."
                        verdicts)))))
     (values (nreverse verdicts) (nreverse problems))))
 
-(defun complete-plan (repository designator &key verdicts (reindex t))
+(defun complete-plan (repository designator &key verdicts (reindex t) force-write)
   "Set a plan final and restate every document it implements. Returns a report.
 
 REQ-0022 R1, and the one command that replaces RULE-0005. With no VERDICTS it
@@ -629,7 +629,11 @@ was written to prevent, one command later.
 
 A blocked document is reported and left alone, and a verdict naming one is
 refused rather than obeyed. SET-DOCUMENT-STATUS is the way past that, and the
-refusal exists so the caller sees the blocking plan before deciding to."
+refusal exists so the caller sees the blocking plan before deciding to.
+
+FORCE-WRITE is not for callers. It is how this function re-enters itself once
+when the dry run it just performed had nothing to preview -- BUG-0057, and the
+reasoning is at the re-entry below."
   (let ((repository (if (repository-p repository)
                         repository
                         (or (find-repository repository)
@@ -651,7 +655,7 @@ from a plan. Use set-status for one document."
                 (return-from complete-plan
                   (list :repository (repository-name repository) :plan designator
                         :problems problems :documents '() :changed '())))
-              (let ((dry-run (null parsed))
+              (let ((dry-run (and (null parsed) (not force-write)))
                     (edits '())
                     (rows '())
                     ;; What this cascade is in the act of finishing. The plan
@@ -815,6 +819,35 @@ whose verdict is not terminal, and goes no further than what the plan refines --
                           problems)))
                 (let ((rows (nreverse rows))
                       (edits (remove-if-not #'edit-writes-p (nreverse edits))))
+                  ;; BUG-0057. A dry run is a preview of the verdicts the
+                  ;; caller has to supply. When no document in the cascade can
+                  ;; take one, there is nothing to preview and no second call
+                  ;; that would write: `complete PLAN-0002' answered `would-set'
+                  ;; on every run and a verdict offered for the plan itself was
+                  ;; refused as not in the cascade, so the command could not
+                  ;; finish the plan at all and `set-status' became the way
+                  ;; through -- which both the skill and the generated CLAUDE.md
+                  ;; describe as the escape hatch for a *blocked* document.
+                  ;;
+                  ;; Two shapes reach this and the second is the commoner: a
+                  ;; plan with no `refines:' edges, and a plan whose refined
+                  ;; documents are all already finished or carry no status
+                  ;; field. Neither is deciding anything, so the all-or-nothing
+                  ;; safety argument has nothing to protect -- and a
+                  ;; one-document transition writing at once is what
+                  ;; SET-DOCUMENT-STATUS already does for the same act.
+                  ;;
+                  ;; Re-entry rather than a second code path, so the decision of
+                  ;; what a walk finds is made once. It cannot recur twice:
+                  ;; FORCE-WRITE clears DRY-RUN, and this branch tests it.
+                  (when (and dry-run (null problems)
+                             (notany (lambda (row)
+                                       (eq :awaiting-verdict (getf row :action)))
+                                     rows))
+                    (return-from complete-plan
+                      (complete-plan repository designator
+                                     :verdicts verdicts :reindex reindex
+                                     :force-write t)))
                   (list :repository (repository-name repository)
                         :plan (or (getp plan :doc-id) designator)
                         :dry-run dry-run

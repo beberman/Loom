@@ -1,6 +1,6 @@
 id: BUG-0057
 title: complete returns would-set forever for a plan that refines nothing, because dry-run is decided by the absence of verdicts and such a plan can have none
-status: open
+status: closed
 severity: major
 date: 2026-08-27
 refines: [REQ-0022]
@@ -54,6 +54,50 @@ body: |
   game-server's PLAN-0002, 2026-08-21. `complete PLAN-0002` returned `would-set`
   with an empty frontier; `complete PLAN-0002 PLAN-0002=implemented` was refused
   as not in the cascade; `set-status PLAN-0002 final` succeeded.
+
+  WHAT WAS DONE, 2026-08-28
+
+  F1, and wider than F1 as written. "A cascade that is the plan alone" is one
+  of three shapes with no verdict to give, and it is not the commonest:
+
+      the plan refines nothing         game-server's PLAN-0002
+      every refined document is
+        already terminal               a plan finished after its design was
+      every refined document is
+        blocked                        another unfinished plan still refines it
+
+  All three end with `parsed` NIL, no row awaiting a verdict, and no verdict a
+  caller could offer that would be accepted -- so all three returned `would-set`
+  forever, and only the first was noticed.
+
+  The fix is a re-entry rather than a second code path. When a dry run finishes
+  with no problems and no row whose action is :AWAITING-VERDICT, there was
+  nothing to preview and no second call that could write, so COMPLETE-PLAN
+  calls itself once with FORCE-WRITE. It cannot recur twice: FORCE-WRITE clears
+  DRY-RUN and the branch tests DRY-RUN. Deciding what a walk found is therefore
+  still done in exactly one place, which a pre-pass over `refines:` would not
+  have been.
+
+  WHAT THE BLOCKED CASE DOES, AND WHY IT IS RIGHT
+
+  `complete PLAN-0001` where DES-0001 is still refined by PLAN-0002 now sets
+  PLAN-0001 final and leaves DES-0001 in draft. That is what `blocked` has
+  always meant -- the document is reported and left alone -- and PLAN-0001
+  really is finished. Before this it could not say so through this command
+  either: a verdict naming DES-0001 was refused as blocked, and no other verdict
+  was accepted.
+
+  WHAT DID NOT CHANGE
+
+  Dry run is still the default wherever there is a verdict to withhold, which
+  is DES-0019 D5's whole argument, and an agent that runs `complete` on such a
+  cascade and walks away has still done nothing. The all-or-nothing rule is
+  untouched. The test that asserts both is the control beside the two that
+  assert the change.
+
+  F2 is unnecessary and was not done. It asked that the dry-run report name
+  `set-status` when the frontier comes back empty; there is no such report any
+  more, because that run now finishes the plan.
 
   NOT IN SCOPE
 
