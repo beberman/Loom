@@ -889,6 +889,22 @@ properly needs to know the list was cut."
               ;; leaking it into the next one, which is the trap the document
               ;; summary above this records.
               (mapcar #'neighbor-line (getf group :entities))))
+    ;; REQ-0055, and the opposite of what that requirement asked for. The
+    ;; :UNRESOLVED-CALLS property is written by one line of RESOLVE-CALLS, read
+    ;; by no pass, and printed by nothing -- which is why it read as leftover
+    ;; bookkeeping. It is not: it is the only record that a definition calls a
+    ;; name no definition in this tree answers, and BUG-0055 used exactly that
+    ;; record as its evidence.
+    ;;
+    ;; Beside the neighbour bands because it is their complement. The bands say
+    ;; what this reaches, with BUG-0055's marker on the guesses; this says what
+    ;; it reaches outside the tree, and a reader judging whether a `calls` band
+    ;; is thin needs both. CON-0001's recorded gap, finally shown to somebody.
+    (let ((external (getp entity :unresolved-calls)))
+      (when external
+        (format t "~&  external: ~{~a~^, ~}~%    ~d name~:p no definition in ~
+this tree answers.~%"
+                external (length external))))
     ;; REQ-0031 R1, last because it is the longest thing printed and the
     ;; neighbours are the survey a reader uses to decide whether they wanted
     ;; this entity at all.
