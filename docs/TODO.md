@@ -94,20 +94,6 @@ saying where Loom's boundary is -- are in the tables below.
   only record that there is something to catch.
   -- working on Loom itself, 2026-08-28
 
-- **`tools/` is indexed by language rather than by role, so the measurement
-  harness is invisible.** `find acceptance`, `find score_judgement` and
-  `find ensure` all return nothing: Python is not analyzed, so
-  `tools/test/acceptance.py`, `tools/test/recall.py` and `tools/test/service.py` have no
-  entity, no callers and no documents attached to them. `tools/test/harness.lisp` is
-  indexed -- `find load-systems` returns `tools/test/harness.lisp:57-79` -- so one
-  directory splits down the middle. The absence itself is known and settled
-  (REQ-0019 and DES-0013 record the rejected approaches); what is worth stating
-  in one place is that the part of the tree Loom cannot answer questions about
-  is the part that measures Loom.
-  -- implementing REQ-0038, 2026-08-21; re-measured 2026-08-24
-  -- REQ-0059 asks that the gap be reported; whether Python is analyzed is a
-     separate question REQ-0059 does not ask, 2026-08-27
-
 - **Context logging is off by default during work on Loom, and the corpus was
   purged to what scores.** On 2026-08-22 `.loom/context` held 2032 records and
   27MB, of which 15 carried a judgement. Two runs of the 450-case known-item
@@ -161,6 +147,7 @@ re-derives an item that was answered, and each row names where to look instead.
 | "`export default { name }` sometimes mints a second entity for `name`" -- ambiguous in `affects:` for a cause absent from the author's source | BUG-0056, closed. The item's arrow-function lead was wrong: `export default { name }` always minted a nameless variable, and JS-DEFINITION-NAME names it after the module's base name -- so it collides exactly when a module is named after its principal export, which is why the byte-identical sibling differed. A re-export object now mints nothing; an anonymous function, a class, an object with inline values and an empty object all keep the entity they had |
 | "`impact` prints a bare name, so a generic's methods read as one entity repeated" -- eight rows of `d2 method dhandler-copy` | BUG-0050, closed. An impact row prints its location in PRINT-SUMMARY-LINE's bracket form, so `find`, `describe` and `impact` agree; the bracket is dropped where it would repeat a file's own path. The entry's second half -- rows labelled `d6` on a depth-5 walk -- was never a defect, and IMPACT-REPORT now carries the depth it was asked for so the console can say once that the one-step band lies one hop past it. All 7 of those rows also print `d6?`, BUG-0055's marker: the band is low-confidence reaches, not a miscount |
 | "Loom is the wrong tool for a question about a tree's past, and nothing says so" | REQ-0058, implemented. Both prepared surfaces name the boundary immediately after their question-shape table, with `git log -S <name>` as the verb and what it does said plainly, and both cite the instance rather than the principle: game-server's `de355d0` -- "Debugging found that the game-description/image url was wrong" -- was the whole of what anybody knew about a stale fixture. Loom's own CLAUDE.md carries the same. A tree prepared before today gets it on `init --update`, which is REQ-0052's mechanism rather than a gap |
+| "`tools/` is indexed by language rather than by role, so the measurement harness is invisible" | REQ-0059, implemented. `status` reports `unclaimed` -- the tracked files no analyzer claims -- with the extensions named, and a zero-hit `find` carries `unanalyzed` beside REQ-0051's `elsewhere`. Loom reads `48 tracked files no analyzer claims -- 10 .json, 10 .md, 9 .py, 5 (none), 5 .sh, 3 .js, 6 other`, and `find acceptance` now says 0 here, 1 in front-end, and 9 Python files this index cannot have read. Whether Python should be analyzed is still not asked; REQ-0018 is where a language's toolchain gets consulted |
 | "`find` should answer across registered repositories, or say that it didn't" -- three instances, the sharpest entry in this file | REQ-0051, implemented. `find` with no `repository` searches every watched tree and each row names its own; named with one and finding nothing, it answers `0 here; 1 in utils`. The answer also names any tree it could not search, so "absent everywhere" is never claimed by a partial search |
 | "`init` cannot refresh a marked region it wrote" -- eight prepared trees keeping stale guidance, and a hand-edited region that is a superset of the template | REQ-0052, implemented as `init --update`. The author's half of the region is declared rather than guessed at, so a refresh replaces Loom's bytes and leaves the hundred lines beside them that no template can regenerate |
 

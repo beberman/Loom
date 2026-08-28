@@ -1,9 +1,9 @@
 id: REQ-0059
 title: the index must report the files no analyzer claimed, because 48 of Loom's 424 tracked files are invisible and nine of them are the harness that measures Loom
-status: draft
+status: implemented
 date: 2026-08-27
 refines: [REQ-0050]
-affects: [repository-status, repository-files]
+affects: [repository-status, unclaimed-summary, tracked-paths]
 importance: Major
 tags: [status, coverage, absence, req-0037, measurement]
 summary: |
@@ -48,6 +48,54 @@ body: |
   `status` on Loom reports 48 unclaimed files with the .py and .sh counts named.
   `find acceptance` says the term matched no definition and that 9 Python files
   in this tree are not analyzed.
+
+  IMPLEMENTED 2026-08-28
+
+  R1 and R2. `status` reports `unclaimed`, the tracked files no analyzer
+  claims, with the extensions named. On Loom:
+
+      unclaimed  : 48 tracked files no analyzer claims -- 10 .json, 10 .md,
+                   9 .py, 5 (none), 5 .sh, 3 .js, 6 other
+
+  Six named rather than three, because .sh is fourth on this tree behind
+  .json, .md and .py, and a tighter cap would drop a whole language; front-end
+  carries 29 extensions in all, so no cap would put the tail on the line.
+
+  R3. A zero-hit `find` carries `unanalyzed` beside REQ-0051's `elsewhere`.
+  `find acceptance` against Loom now answers 0 hits, one hit in front-end, and
+  48 unclaimed files of which 9 are Python.
+
+  TRACKED, NOT WALKED
+
+  The count is over `git ls-files` rather than the directory walk, and that is
+  the whole of what makes it meaningful. REPOSITORY-FILES filters by analyzer
+  *before* asking git, because its own docstring records why -- "most of a
+  node_modules tree is JavaScript no analyzer currently claims, so filtering by
+  analyzer first cuts what git is asked about from thousands to hundreds". The
+  unclaimed set is exactly the population that order was arranged to avoid
+  sending to git, so counting it by walk-then-filter would ask git about a
+  vendored dependency tree. `git ls-files` answers directly and excludes
+  ignored files by construction, which is also the answer this requirement
+  wanted: a build directory is not a gap in coverage.
+
+  A tree git cannot answer for gets a reason rather than a nought, on
+  IGNORED-PATHS' terms and for its reasons.
+
+  COST
+
+  One subprocess on top of a walk the caller already paid for, taken at index
+  time and stored on the repository beside `unindexed`. `status` and the
+  zero-hit `find` both read it off the struct, so a miss costs nothing -- which
+  matters because `status` is asked over nine repositories at once and took 8.9
+  seconds when it walked per query.
+
+  A SHAPE THAT HAD TO CHANGE BEFORE IT SHIPPED
+
+  The extension counts were an alist first. A dotted pair reaches the JSON
+  encoder through its IMPROPER-LIST-P clause and comes out as the string
+  "(.py . 9)" -- BUG-0030's shape, unusable by the REST and MCP callers this
+  requirement is for. They are plists now, and `by-extension` is in
+  *ARRAY-VALUED-KEYS* so a tree with no gap answers `[]` rather than `null`.
 
   NOT IN SCOPE
 

@@ -1276,3 +1276,72 @@ comparing against nothing and its silence would mean nothing")
           "a .sql file no analyzer claims is on disk and is not broken: ~a" unresolved)
       (is (not (member "CLAUDE.md" unresolved :test #'string=))
           "and neither is the file REQ-0028 excludes by name"))))
+
+
+;;; ------------------------------------------------------------------
+;;; What the tree holds that no analyzer claims (REQ-0059)
+;;; ------------------------------------------------------------------
+;;;
+;;; `files', `unindexed' and `unparsed' are three counts about the claimed
+;;; set, so a language nobody analyzes appears in none of them. Loom itself
+;;; tracks 424 files, claims 376, and nine of the 48 in the gap are the Python
+;;; harness that measures Loom -- `find acceptance' returns nothing, and did so
+;;; indistinguishably from a name that exists nowhere.
+
+(defun git-init-fixture ()
+  "Make the fixture a git repository with everything added.
+
+TRACKED-PATHS asks `git ls-files', so a fixture that is not a repository
+answers the reason case rather than the counting one -- which the test below
+this asserts deliberately."
+  (dolist (arguments '(("init" "-q") ("add" "-A")))
+    (uiop:run-program (append (list "git" "-C" (namestring *fixture-root*))
+                              arguments)
+                      :ignore-error-status t
+                      :output nil :error-output nil)))
+
+(test unclaimed-counts-tracked-files-no-analyzer-claims-and-names-the-extensions
+  (with-workspace-fixture (repository)
+    (write-file "tools/harness.py" "def helper():
+    return 1
+")
+    (write-file "tools/other.py" "def second():
+    return 2
+")
+    (write-file "tools/run.sh" "#!/bin/sh
+echo hi
+")
+    (git-init-fixture)
+    (reindex-repository repository :quiet t)
+    (let* ((status (repository-status repository))
+           (by-extension (getf status :unclaimed-by-extension)))
+      (is (null (getf status :unclaimed-reason))
+          "a git repository can be counted: ~a" (getf status :unclaimed-reason))
+      (is (= 3 (getf status :unclaimed))
+          "two .py and one .sh are tracked and claimed by nobody; got ~a with ~a"
+          (getf status :unclaimed) by-extension)
+      (flet ((files-of (type)
+               (getf (find type by-extension :key (lambda (e) (getf e :type))
+                                             :test #'string=)
+                     :files)))
+        (is (eql 2 (files-of ".py"))
+            "the extensions are named with counts, which is what a reader acts on")
+        (is (eql 1 (files-of ".sh")))
+        (is (null (files-of ".lisp"))
+            "and a claimed language is not in the gap")
+        ;; Plists, not dotted pairs: an alist reaches the JSON encoder as
+        ;; "(.py . 2)" and a REST caller cannot read it (BUG-0030's shape).
+        (is (every (lambda (e) (and (getf e :type) (getf e :files))) by-extension)
+            "every entry is a plist a caller can read: ~a" by-extension)))))
+
+(test a-tree-git-cannot-answer-for-reports-a-reason-rather-than-nought
+  ;; IGNORED-PATHS' rule, applied to the same question one field along: a known
+  ;; unknown beats a zero that reads like a clean answer. A directory that is
+  ;; not a git repository is the ordinary case here -- the fixture is one until
+  ;; the test above makes it otherwise.
+  (with-workspace-fixture (repository)
+    (let ((status (repository-status repository)))
+      (is (null (getf status :unclaimed))
+          "no count, because none could be taken")
+      (is-true (getf status :unclaimed-reason)
+               "and the reason is on the answer rather than left to be guessed"))))

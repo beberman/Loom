@@ -118,6 +118,9 @@
    #:repository-indexed-fingerprint
    #:reindex-repository
    #:repository-status
+   ;; REQ-0059. What the tree tracks that no analyzer claims, as a plist --
+   ;; :COUNT, :BY-EXTENSION, :REASON. Read by `find' on a miss.
+   #:repository-unclaimed
 
    ;; the second pass (DES-0011). On explicit demand only -- nothing in
    ;; POLL-ONCE, the monitor, watch or reindex reaches it.

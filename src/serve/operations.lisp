@@ -332,9 +332,24 @@ searched and each row says which it came from."
              ;; only on the miss, which is where the reader decides to reach for
              ;; grep instead.
              (when (null entities)
-               (list :elsewhere
-                     (repositories-holding term :type type
-                                                :exclude (repository-name watched))))))))))
+               (append
+                (list :elsewhere
+                      (repositories-holding term :type type
+                                            :exclude (repository-name watched)))
+                ;; REQ-0059 R3, the same rule on a third surface. REQ-0051 made
+                ;; a zero hit say what the other trees hold and REQ-0054 asks
+                ;; that it say what this tree holds in prose; this says what the
+                ;; index could not have read at all. `find acceptance' against
+                ;; Loom is a miss because Python is analyzed by nobody, and it
+                ;; was byte-identical to a miss on a name that exists nowhere.
+                ;;
+                ;; Read off the struct, so the miss costs nothing: the walk and
+                ;; the `git ls-files' behind it were paid at index time.
+                (let ((unclaimed (repository-unclaimed watched)))
+                  (when (and unclaimed (plusp (or (getf unclaimed :count) 0)))
+                    (list :unanalyzed
+                          (list :files (getf unclaimed :count)
+                                :by-extension (getf unclaimed :by-extension)))))))))))))
 
 (define-operation :describe :read (repository term (source))
     "Full detail for one entity, with its neighbours grouped by edge type. \

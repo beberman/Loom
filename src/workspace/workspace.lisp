@@ -45,6 +45,11 @@
   ;; zero: nought means "the walk found none" and nobody may read it as
   ;; "nobody has looked".
   (unindexed nil)
+  ;; REQ-0059. What the tree holds that no analyzer claims, as a plist --
+  ;; :COUNT, :BY-EXTENSION, and :REASON when git could not be asked. NIL until
+  ;; something has walked, for the same reason UNINDEXED is: nought means the
+  ;; walk found none, and nobody may read it as nobody having looked.
+  (unclaimed nil)
   (errors '())                  ; (path . condition-text), most recent first
   (stamps (make-hash-table :test #'equal))   ; relative path -> FILE-STAMP
   (monitor nil)
@@ -370,6 +375,85 @@ report. That is a gap a reader can see rather than a silent clean."
                        (gethash (workspace-relative-path path root) ignored))
                      claimed)))))
 
+(defun tracked-paths (root)
+  "Every path git tracks under ROOT, relative, or NIL and a reason.
+
+`git ls-files\' rather than a walk plus `check-ignore\'. Tracked is the
+question REQ-0059 asks -- a build directory is not a gap in coverage -- and it
+is one subprocess answering directly instead of the walk-then-filter order
+REPOSITORY-FILES has to use, which its own docstring says exists to keep git
+from being asked about thousands of paths.
+
+Bounded and status-tolerant on IGNORED-PATHS\' terms, and for its reasons: a
+tree git cannot answer for is a known unknown, and the caller reports the
+reason rather than a zero that reads like a clean answer."
+  (handler-case
+      (multiple-value-bind (out err status)
+          (uiop:run-program (list "timeout"
+                                  (princ-to-string *ignore-query-timeout-seconds*)
+                                  "git" "-C" (namestring root) "ls-files")
+                            :output :string :error-output :string
+                            :ignore-error-status t)
+        (declare (ignore err))
+        (cond ((= status 124) (values nil "git ls-files timed out"))
+              ((/= status 0) (values nil "not a git repository"))
+              (t (values (remove "" (uiop:split-string out :separator '(#\Newline))
+                                 :test #'string=)
+                         nil))))
+    (error (condition)
+      (values nil (format nil "git could not be run: ~a" condition)))))
+
+(defun unclaimed-summary (repository files)
+  "What REPOSITORY tracks that no analyzer claims, as a plist.
+
+REQ-0059 R1 and R2. `status\' reports FILES, UNINDEXED and UNPARSED, and all
+three are counts about *claimed* files: a language nobody analyzes is in none
+of them, so a tree can be 88% covered and say nothing about the rest. Measured
+on Loom 2026-08-28: 424 tracked files, 376 claimed, and the 48 in the gap
+include the nine Python files of tools/test/ -- the harness that measures Loom
+is the part of the tree Loom cannot answer questions about.
+
+The extensions are counted rather than the paths listed, because the answer a
+reader acts on is which languages are missing, and a list of 48 paths on every
+`status\' is a page. R2\'s own example is the shape: `48 unclaimed: 9 .py,
+5 .sh, 34 other\'.
+
+FILES is REPOSITORY-FILES\' output, which is the claimed set after the ignore
+filter, so this costs one subprocess on top of a walk the caller already paid
+for."
+  (multiple-value-bind (tracked reason) (tracked-paths (repository-root repository))
+    (if reason
+        (list :count nil :by-extension '() :reason reason)
+        (let* ((root (repository-root repository))
+               (claimed (let ((table (make-hash-table :test #'equal)))
+                          (dolist (path files table)
+                            (setf (gethash (workspace-relative-path path root) table) t))))
+               (counts (make-hash-table :test #'equal))
+               (total 0))
+          (dolist (path tracked)
+            (unless (gethash path claimed)
+              (incf total)
+              (let* ((dot (position #\. (file-namestring path) :from-end t))
+                     (type (if (and dot (plusp dot))
+                               (string-downcase (subseq (file-namestring path) dot))
+                               "(none)")))
+                (incf (gethash type counts 0)))))
+          ;; Plists rather than an alist, largest first. A dotted pair reaches
+          ;; the JSON encoder through its IMPROPER-LIST-P clause and comes out
+          ;; as the string "(.py . 9)", which is BUG-0030's shape and unusable
+          ;; by a REST or MCP caller -- measured before this was changed.
+          (list :count total
+                :by-extension (sort (loop for type being the hash-keys of counts
+                                            using (hash-value n)
+                                          collect (list :type type :files n))
+                                    (lambda (a b)
+                                      (let ((na (getf a :files)) (nb (getf b :files)))
+                                        (or (> na nb)
+                                            (and (= na nb)
+                                                 (string< (getf a :type)
+                                                          (getf b :type)))))))
+                :reason nil)))))
+
 (defun count-unstamped (repository files)
   "How many of FILES the index has no stamp for.
 
@@ -578,6 +662,9 @@ thread exists."
             ;; Free here: FILES is the walk already paid for, and a file that
             ;; failed to analyze is a file with no stamp.
             (repository-unindexed repository) (count-unstamped repository files)
+            ;; REQ-0059, on the same walk and for the same reason: FILES is the
+            ;; claimed set, and what git tracks beyond it is the coverage gap.
+            (repository-unclaimed repository) (unclaimed-summary repository files)
             (repository-indexed-at repository) (get-universal-time)
             (repository-indexed-fingerprint repository)
             (index-fingerprint (repository-root repository)))
@@ -856,7 +943,8 @@ it."
       ;; After the indexing pass, so what is left is what the analyzer could
       ;; not stamp rather than what this poll was about to read. REQ-0050 R3,
       ;; and free: FILES is the walk this poll already pays for.
-      (setf (repository-unindexed repository) (count-unstamped repository files))
+      (setf (repository-unindexed repository) (count-unstamped repository files)
+            (repository-unclaimed repository) (unclaimed-summary repository files))
       (let ((removed (detect-deletions repository)))
         (when (or changed removed)
           (setf moved t)
@@ -1329,6 +1417,12 @@ the last error per thread.\""
           ;; else this function does. UNINDEXED-FILES is still the exact answer
           ;; and still costs the walk; it is for a caller who asks for it.
           :unindexed (repository-unindexed repository)
+          ;; REQ-0059. Read off the struct rather than recomputed: the walk and
+          ;; the `git ls-files' behind it were paid at index time, and `status'
+          ;; is asked over nine repositories at once.
+          :unclaimed (getf (repository-unclaimed repository) :count)
+          :unclaimed-by-extension (getf (repository-unclaimed repository) :by-extension)
+          :unclaimed-reason (getf (repository-unclaimed repository) :reason)
           :files (repository-file-count repository)
           :entities (length (all-entities graph))
           :relationships (length (all-relationships graph))
