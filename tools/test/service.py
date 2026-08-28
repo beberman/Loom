@@ -90,6 +90,22 @@ def get(path, timeout=60):
         return None
 
 
+def seed_names(bundle):
+    """Every seed a live context bundle's seeder produced, sent or not.
+
+    DES-0046 deduplicated the top-level `seeds` list against `items`: it now
+    holds only the seeds the budget refused, and the seeds it sent are `items`
+    entries with `band == "seed"`. The union of the two is the pre-budget seed
+    set `bundle["seeds"]` used to hold, which is what strict recall is scored
+    on -- a claim about the ranking, not about the budget. A stored record
+    still carries the full `seeds` with scores; this is for a live bundle.
+    """
+    names = [i["entity"]["name"] for i in (bundle.get("items") or [])
+             if i.get("band") == "seed"]
+    names += [s["name"] for s in (bundle.get("seeds") or [])]
+    return names
+
+
 def watched_repositories():
     """Repository name -> its status plist, for the trees the service holds.
 

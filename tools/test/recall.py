@@ -37,7 +37,7 @@ B = service.BASE
 
 
 def names_in(bundle):
-    strict = {s["name"] for s in bundle.get("seeds") or []}
+    strict = set(service.seed_names(bundle))
     for i in bundle.get("items") or []:
         strict.add(i["entity"]["name"])
     lenient = set(strict)
@@ -151,7 +151,7 @@ def main():
         row["n"] += 1
         row["strict"] += 1 if hit_s else 0
         row["lenient"] += 1 if hit_l else 0
-        seeds = b.get("seeds") or []
+        seeds = service.seed_names(b)
         results.append({"repository": repo, "query": query, "expected": expected,
                         "family": family, "strict": hit_s, "lenient": hit_l,
                         "seeds": len(seeds),
@@ -160,7 +160,7 @@ def main():
                         # still score a hit when the target is one of them --
                         # so the count of *distinct* names in a seed set is the
                         # number that moves, and it is only in the names.
-                        "seed_names": [s.get("name") for s in seeds],
+                        "seed_names": seeds,
                         "items": len(b.get("items") or [])})
 
     print()

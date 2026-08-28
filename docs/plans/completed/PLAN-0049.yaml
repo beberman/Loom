@@ -1,0 +1,148 @@
+id: PLAN-0049
+title: Deduplicate a context bundle's four candidate lists against its items and add a per-band count
+status: final
+date: 2026-08-28
+refines: [DES-0046]
+affects: [build-context, render-cutoff]
+tags: [context, budget, shape, req-0061, des-0046]
+summary: |
+  DES-0046's shape C2 with a count. BUILD-CONTEXT keeps `:seeds`, `:decisions`,
+  `:documents` and `:mentions` but each carries only the candidates its band
+  did not admit into `items`; it also emits `:bands`, five `(:found N :sent N)`
+  pairs. RENDER-CUTOFF gains a per-band line when a band truncated. The three
+  Python instruments read the union of a band's `items` and its list. Four
+  steps, tests with each.
+body: |
+  CONTEXT
+
+  BUILD-CONTEXT is src/knowledge/context.lisp:1713-2028. The four lists are
+  built in the `bundle` plist near line 1918, each `(summarize-entities <set>)`.
+  `seeds` is the seeder's output; `decisions`, `documents`, `mentions` are the
+  three values of DOCUMENTS-TOUCHING; `reaches` is the neighbour candidate list
+  after the band-duplicate REMOVE-IF near line 1780. At bundle-build time
+  `items` is the admitted list, each entry carrying `:band` (CONTEXT-ITEM) and
+  an `:entity` plist with `:id`.
+
+  RENDER-CUTOFF is near line 2155; it reads the bundle plist and prints the
+  cutoff block only when something was withheld.
+
+  STEP 1  BAND-REMAINDER, AND :bands
+
+  Files: src/knowledge/context.lisp
+
+  Add BAND-REMAINDER near *CONTEXT-RELATION-LIMIT*:
+
+      (defun band-remainder (band candidates items)
+        "Summaries of CANDIDATES of BAND that ITEMS did not admit."
+        (let ((admitted (loop for item in items
+                              when (eq band (getf item :band))
+                                collect (getf (getf item :entity) :id))))
+          (summarize-entities
+           (remove-if (lambda (e) (member (id e) admitted :test #'equal))
+                      candidates))))
+
+  In the `bundle` plist:
+    - `:seeds     (band-remainder :seed     seeds     items)` and the same for
+      `:decisions`/`decisions`, `:documents`/`documents`, `:mentions`/`mentions`.
+      `items` is the local still in reverse-admission order; membership is
+      order-independent.
+    - Add `:bands`:
+
+        (flet ((sent (band) (count band items :key (lambda (i) (getf i :band)))))
+          (list :seed      (list :found (length seeds)     :sent (sent :seed))
+                :decision  (list :found (length decisions)  :sent (sent :decision))
+                :document  (list :found (length documents)  :sent (sent :document))
+                :mention   (list :found (length mentions)   :sent (sent :mention))
+                :neighbour (list :found (length reaches)    :sent (sent :neighbour))))
+
+      `:neighbour` has no remainder list -- it is the cost-ordered tail,
+      recoverable by `describe` on a seed, and its refusals are the existing
+      `withheld-items` count.
+    - `:terms` is unchanged.
+
+  Test: src/knowledge/test/context.lisp.
+    - For each of the four banded lists, `(- found sent)` equals the list's
+      length -- the invariant that keeps `:bands` and the lists in step.
+    - The `sent` counts sum to `(length items)`.
+    - An unbounded budget: every list NIL, `found` equals `sent` everywhere.
+    - A budget below the document reserve (banded-fixture, budget 30): at
+      least one list non-empty, and no entry in any list is among the sent
+      item names. CON-0003: fails if STEP 1 keeps the whole lists.
+
+  STEP 2  RENDER-CUTOFF PRINTS THE CLIPPED BANDS
+
+  Files: src/knowledge/context.lisp
+
+  Inside the existing `(when (or (plusp withheld-items) (plusp withheld-bodies))
+  ...)` block, after the `index` line:
+
+      (loop for (band label) in '((:seed "seeds") (:decision "decisions")
+                                  (:document "documents") (:mention "mentions")
+                                  (:neighbour "neighbours"))
+            for pair = (getf (getf bundle :bands) band)
+            when (and pair (> (getf pair :found) (getf pair :sent)))
+              do (format out "~&#   ~10a ~d of ~d sent~%"
+                         label (getf pair :sent) (getf pair :found)))
+
+  A bundle that fit does not enter the block; its output is unchanged.
+
+  Test: RENDER-CUTOFF over a truncated bundle contains `neighbours` and
+  ` sent`; over one that fit, no `of what this walk found` line.
+
+  STEP 3  THE OPERATION TEST AND ANY LISP READER
+
+  Files: src/serve/test/operations.lisp
+
+  Line 627's fixture asserts LEANED-BUNDLE passes a non-`:items` key through.
+  Replace the synthetic `:decisions` with
+  `:bands (list :neighbour (list :found 5 :sent 2))` and assert it survives.
+  LEANED-BUNDLE is generic and needs no change.
+
+  Grep src/ for bundle-list readers other than RECORD-CONTEXT-CALL (reads the
+  instrumentation value) and ANSWER-SHAPE (keys on `:items` first). Known
+  clear; confirm.
+
+  STEP 4  THE THREE PYTHON INSTRUMENTS
+
+  Files: tools/test/service.py, tools/test/acceptance.py, tools/test/recall.py,
+  tools/test/seed-sheet.py
+
+  Add `seed_names(bundle)` to service.py returning the union: the seed-band
+  `items` names plus the `:seeds` list names -- the pre-budget seed set the
+  strict recall metric is about.
+
+    - acceptance.py NAMES_IN: `strict = set(service.seed_names(bundle))` then
+      the existing union over item names. RUN_ABSENCE_CASES:
+      `len(service.seed_names(b))`.
+    - recall.py NAMES_IN: same. Line 154: `seeds = service.seed_names(b)`;
+      `"seeds": len(seeds)`, `"seed_names": seeds`.
+    - seed-sheet.py NAMES_IN: same. Live-bundle fallback at line 108:
+      `[{"name": n, "score": None, "terms": None} for n in
+      service.seed_names(row["bundle"])]`. Stored-record reads (lines 61, 105)
+      unchanged -- a record keeps its full `seeds`.
+
+  Test: `tools/test/acceptance.py` against a warm service prints the same
+  case scores it did before, because NAMES_IN's strict set is the same union.
+  `tools/test/recall.py`'s strict number is within noise of its prior value.
+  Both need the service up (RULE-0008); run after STEP 1-3 are built.
+
+  RISKS
+
+  R1  A band count disagreeing with its list. STEP 1's `(- found sent)` equals
+      list length by construction -- `found` counts the candidates, `sent`
+      counts the admitted `items`, the list is the rest. STEP 1's test asserts
+      it per band.
+
+  R2  A stored record that now also lacks the top-level `seeds`. It does not:
+      RECORD-CONTEXT-CALL writes `(getf instrumentation :seeds)`, the
+      pre-budget list with scores, and DES-0046 does not touch the
+      instrumentation value.
+
+  R3  An external client reading a full list as "every candidate". It now
+      reads "every refused candidate"; the union with the band's `items` is
+      the old value. None known outside the harness.
+
+  STEP ORDER
+
+  1, 2, 3 in one image with tests. 4 after, against the rebuilt service.
+  `complete PLAN-0049 DES-0046=implemented REQ-0061=implemented` last.

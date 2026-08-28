@@ -204,7 +204,7 @@ def run_absence_cases():
         failures += 1 if bad else 0
         shown = ", ".join("%s=%s" % (w, states.get(w, "-")) for w in subjects)
         print("[%-7s] %s  seeds %d  %.2fs  %s"
-              % (label, "absent " if not bad else "FAIL   ", len(b.get("seeds") or []),
+              % (label, "absent " if not bad else "FAIL   ", len(service.seed_names(b)),
                  el, shown if not bad else "; ".join(bad)))
     return failures
 
@@ -220,7 +220,7 @@ def names_in(bundle):
     and it appears beneath them. Under CON-0006 a named entity is one `describe`
     away and so is reached; it is still not the same as being returned, and a
     ranking claim should be judged on the strict number."""
-    strict = {s['name'] for s in bundle['seeds']}
+    strict = set(service.seed_names(bundle))
     for i in bundle['items']:
         strict.add(i['entity']['name'])
     lenient = set(strict)

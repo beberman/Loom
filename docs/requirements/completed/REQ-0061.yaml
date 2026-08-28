@@ -1,6 +1,6 @@
 id: REQ-0061
 title: a context bundle's four candidate lists are 26% of the answer, are uncharged by the budget, and on a measured query duplicate what items already carries
-status: draft
+status: implemented
 date: 2026-08-28
 refines: [REQ-0040]
 affects: [build-context, summarize-entities]

@@ -465,11 +465,17 @@ entirely for a bound that counts entities per name."
 ;;; Bundles
 ;;; ------------------------------------------------------------------
 
+(defun band-names (bundle band)
+  "The names of BUNDLE's admitted items in BAND. DES-0020 D6: the band on each
+item is what groups the bundle now that DES-0046 removed the four lists."
+  (loop for item in (getf bundle :items)
+        when (eq band (getf item :band))
+          collect (getf (getf item :entity) :name)))
+
 (test a-bundle-contains-the-seeds-and-their-neighbourhood
   (let* ((f (make-k-fixture))
          (bundle (build-context (k-graph f) "change resolve-overlay")))
-    (is (member "resolve-overlay" (getf bundle :seeds)
-                :key (lambda (s) (getf s :name)) :test #'string=))
+    (is (member "resolve-overlay" (band-names bundle :seed) :test #'string=))
     (let ((names (mapcar (lambda (i) (getf (getf i :entity) :name))
                          (getf bundle :items))))
       (is (member "resolve-overlay" names :test #'string=))
@@ -479,20 +485,22 @@ entirely for a bound that counts entities per name."
 (test a-bundle-carries-the-decisions-bearing-on-what-it-found
   (let* ((f (make-k-fixture))
          (bundle (build-context (k-graph f) "change resolve-overlay")))
-    (is (member "ADR-7" (getf bundle :decisions)
-                :key (lambda (d) (getf d :name)) :test #'string=)
+    (is (member "ADR-7" (band-names bundle :decision) :test #'string=)
         "why the code is the way it is, which no amount of re-reading recovers")))
 
 (test a-bundle-excludes-stale-knowledge
   (let* ((f (make-k-fixture)))
     (setf (stale-p (k-adr f)) t)
     (let ((bundle (build-context (k-graph f) "change resolve-overlay")))
-      (is (null (getf bundle :decisions))
-          "SS-provenance: stale facts stay out of agent context until re-verified"))))
+      (is (null (band-names bundle :decision))
+          "SS-provenance: stale facts stay out of agent context until re-verified")
+      (is (zerop (getf (getf (getf bundle :bands) :decision) :found))
+          "DES-0046: the band count agrees -- nothing found, nothing sent"))))
 
 (test a-bundle-that-matches-nothing-says-so-rather-than-inventing
   (let ((bundle (build-context (k-graph (make-k-fixture)) "rewrite the leaflet map")))
     (is (null (getf bundle :seeds)))
+    (is (zerop (getf (getf (getf bundle :bands) :seed) :found)))
     (is (null (getf bundle :items)))
     (is (search "No indexed entity matched" (render-context bundle)))))
 
@@ -574,10 +582,6 @@ what the bundle could not")
     (k-edge g :mentions (k-adr f) (k-resolve f))
     (values f req near far des)))
 
-(defun band-names (bundle band)
-  (loop for item in (getf bundle :items)
-        when (eq band (getf item :band))
-          collect (getf (getf item :entity) :name)))
 
 (test a-document-that-declares-it-bears-on-the-code-reaches-the-bundle
   ;; REQ-0026's whole complaint. REQ-9001 is a :DOCUMENT, which is what
@@ -587,10 +591,8 @@ what the bundle could not")
   ;; this fails.
   (let* ((f (banded-fixture))
          (bundle (build-context (k-graph f) "change resolve-overlay")))
-    (is (member "REQ-9001" (getf bundle :documents)
-                :key (lambda (d) (getf d :name)) :test #'string=)
+    (is (member "REQ-9001" (band-names bundle :document) :test #'string=)
         "a declared claim on this code belongs in the bundle whatever its type")
-    (is (member "REQ-9001" (band-names bundle :document) :test #'string=))
     (is (not (member "REQ-9001" (band-names bundle :decision) :test #'string=))
         "and it is not a decision: a requirement asks for code, it does not govern it")))
 
@@ -1131,6 +1133,72 @@ not enough -- they have to be countable"))
     (is (plusp (getf bundle :withheld-tokens)))
     (is (> (getf bundle :found-tokens) (getf bundle :tokens))
         "what the walk found exceeds what this budget sent")))
+
+(test the-per-band-count-and-the-remainder-list-are-two-halves-of-one-fact
+  ;; DES-0046. Each candidate list now carries only what its band did not
+  ;; admit; :BANDS carries the count. For every band, FOUND minus SENT is the
+  ;; length of the remainder list -- so the two cannot disagree -- and the
+  ;; SENT counts sum to the item count. On an unbounded budget every list is
+  ;; empty and FOUND equals SENT. Without the change there is no :BANDS and
+  ;; every GETF into it is NIL.
+  (let* ((f (make-k-fixture))
+         (tight (build-context (k-graph f) "change resolve-overlay" :budget 150))
+         (loose (build-context (k-graph f) "change resolve-overlay" :budget 100000))
+         (walk-bands '(:seed :decision :document :mention :neighbour))
+         (list-bands '((:seed . :seeds) (:decision . :decisions)
+                       (:document . :documents) (:mention . :mentions))))
+    (flet ((found (b band) (getf (getf (getf b :bands) band) :found))
+           (sent  (b band) (getf (getf (getf b :bands) band) :sent)))
+      (is (= (length (getf tight :items))
+             (reduce #'+ (mapcar (lambda (band) (sent tight band)) walk-bands)))
+          "every admitted item is counted under exactly one band")
+      (is (> (found tight :neighbour) (sent tight :neighbour))
+          "the neighbour band is what a tight budget clips")
+      (dolist (pair list-bands)
+        (is (= (- (found tight (car pair)) (sent tight (car pair)))
+               (length (getf tight (cdr pair))))
+            "~(~a~): FOUND minus SENT is the remainder list's length" (car pair)))
+      (dolist (band walk-bands)
+        (is (= (found loose band) (sent loose band))
+            "~(~a~): an unbounded budget sends every candidate it found" band))
+      (dolist (pair list-bands)
+        (is (null (getf loose (cdr pair)))
+            "~(~a~): nothing was refused, so the remainder list is empty" (cdr pair))))))
+
+(test a-truncated-bundle-names-the-candidates-the-budget-refused
+  ;; DES-0046 D4, REQ-0061 R2. C3 was rejected because after truncation nothing
+  ;; would name what the walk found and did not send. The remainder list does.
+  ;; :NEIGHBOUR keeps a count only -- it is the cost-ordered tail, recoverable
+  ;; by `describe' on a seed -- so the named refusals are the four banded
+  ;; lists, and a budget below the document reserve forces at least one.
+  (multiple-value-bind (f) (banded-fixture)
+    (let* ((tight (build-context (k-graph f) "change resolve-overlay" :budget 30))
+           (sent-names (mapcar (lambda (i) (getf (getf i :entity) :name))
+                               (getf tight :items)))
+           (refused (append (getf tight :seeds) (getf tight :decisions)
+                            (getf tight :documents) (getf tight :mentions))))
+      (is-true (getf tight :truncated))
+      (is (plusp (length refused))
+          "a budget below the document reserve refuses a named candidate")
+      (dolist (r refused)
+        (is (not (member (getf r :name) sent-names :test #'string=))
+            "a remainder entry is a candidate NOT among the sent items: ~a"
+            (getf r :name))))))
+
+(test the-cutoff-block-names-the-bands-a-tight-budget-clipped
+  ;; DES-0046 D5. RENDER-CUTOFF reads the same :BANDS plist a REST caller does,
+  ;; and prints a per-band line only when the bundle truncated. A bundle that
+  ;; fit prints nothing after its first line.
+  (let* ((f (make-k-fixture))
+         (tight (render-context
+                 (build-context (k-graph f) "change resolve-overlay" :budget 150)))
+         (loose (render-context
+                 (build-context (k-graph f) "change resolve-overlay" :budget 100000))))
+    (is (search "neighbours" tight)
+        "the clipped band is named in the cutoff block: ~a" tight)
+    (is (search " sent" tight))
+    (is (not (search "of what this walk found" loose))
+        "a bundle that fit has nothing after its first cutoff line")))
 
 (test what-was-sent-plus-what-was-withheld-is-what-an-unbounded-budget-sends
   ;; The identity the whole signal rests on, and the one an off-by-one breaks
