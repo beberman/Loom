@@ -1,6 +1,6 @@
 id: REQ-0058
 title: the prepared guidance must say where Loom's boundary is, because an agent told to ask Loom first will ask it about the tree's past and get a confident answer about the tree's present
-status: draft
+status: implemented
 date: 2026-08-27
 refines: [REQ-0021]
 affects: [render-template, claude-md-disposition]
@@ -62,6 +62,43 @@ body: |
   A reader of the prepared guidance can say, without running anything, which of
   these goes to Loom and which to git: "where is dhandler-copy", "when did
   dhandler-copy stop taking three arguments", "what did PLAN-0002 delete".
+
+  IMPLEMENTED 2026-08-28
+
+  R1. Both prepared surfaces carry the boundary immediately after their
+  question-shape table, where a reader meets it before choosing a tool rather
+  than after having chosen one. `templates/loom-skill.md` and
+  `templates/claude-md-pointer.md` each gained a table of the three questions
+  that are git's, with `git log -S <name>` named as the verb and what it does
+  said plainly -- it finds the commits where the count of a string changed,
+  which is how a rename, a move or a deletion is found.
+
+  R2. Both say a commit message is evidence no index holds, and cite the
+  instance rather than asserting the principle: game-server's `de355d0` says
+  "Debugging found that the game-description/image url was wrong", and that
+  sentence was the whole of what anybody knew about a stale fixture. Verified
+  against the tree on 2026-08-28 -- the commit and the wording are as quoted.
+
+  R3. Loom's own CLAUDE.md carries the same two paragraphs, after its command
+  table and before the paragraph on driving Loom through `tools/`.
+
+  THE ACCEPTANCE, ANSWERED FROM THE TEXT
+
+      where is dhandler-copy                     find        (the first table)
+      when did it stop taking three arguments    git log -S  (the second)
+      what did PLAN-0002 delete                  git log -S  (the second)
+
+  THE-PREPARED-GUIDANCE-SAYS-WHICH-QUESTIONS-ARE-GITS-AND-NOT-LOOM-S asserts
+  both surfaces of a freshly prepared tree, and fails on both without the
+  template change.
+
+  WHAT A PREPARED TREE HAS TO DO TO GET THIS
+
+  Nothing automatic. The templates moved, so their digests moved, and every
+  tree prepared before today reports as out of date until somebody runs `init
+  --update` on it. That is REQ-0052's mechanism working as designed rather than
+  a gap: the eight registered here keep the old guidance until each is
+  refreshed.
 
   NOT IN SCOPE
 

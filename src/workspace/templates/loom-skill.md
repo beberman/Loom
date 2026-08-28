@@ -54,6 +54,30 @@ wrong answer — they see text, and this sees definitions, callers and decisions
 | where else this shape of code lives | `similar` |
 | what two trees have in common | `survey` |
 
+**The index holds the tree's present. Its past is git's.** Every row above asks
+about the code as it stands. What changed, when, and why are different
+questions, and asking them here gets a confident answer to the question you did
+not ask.
+
+| Question | Call |
+|---|---|
+| when did X change, and to what | `git log -S X` |
+| what did a migration delete, and where did it go | `git log -S X` |
+| why is it this way | the commit message |
+
+`git log -S <name>` is the verb worth knowing: it finds the commits where the
+number of occurrences of a string changed, which is how a rename, a move or a
+deletion is found. `git log -p --follow <file>` is the same question about one
+file.
+
+**A commit message is evidence no index holds.** Completing game-server's
+PLAN-0002 was three bugs and none of them was found with the index. One turned
+on a single sentence in `de355d0` — *"Debugging found that the
+game-description/image url was wrong"* — which was the whole of what anybody
+knew about a stale fixture. Nothing derives that from the code, because it is
+not in the code.
+
+
 **A name absent here may live in another tree.** `find` with no `repository`
 searches every watched one, and each row says which it came from. Named with a
 `repository` and finding nothing, it answers with an `elsewhere` list -- `0

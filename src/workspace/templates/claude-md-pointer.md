@@ -42,6 +42,25 @@ does this reach*, or *what has been decided about this* — the first tool is
 | what governs this area | `loom_impact`, `loom_context` | reading docs by hand |
 | X's source and docstring | `loom_describe` with `source=true` | `sed -n` on the file |
 
+**The index holds this tree's present. Its past is git's.** Every row above asks
+about the code as it stands. What changed, when, and why are different
+questions, and asking them here gets a confident answer to the question you did
+not ask.
+
+| Question | Use | Not |
+|---|---|---|
+| when did X change, and to what | `git log -S X` | `loom_describe` |
+| what a migration deleted, and where it went | `git log -S X` | `loom_find` alone |
+| why it is this way | the commit message | any query |
+
+`git log -S <name>` finds the commits where the number of occurrences of a
+string changed, which is how a rename, a move or a deletion is found. And a
+commit message is evidence no index holds: one sentence in a commit was the
+whole of what anybody knew about a stale fixture on the tree this guidance was
+written from, and nothing derives that from the code because it is not in the
+code.
+
+
 **A name absent here may live in another tree.** `loom_find` with no
 `repository` searches every watched one and each row says which it came from.
 Named with a `repository` and finding nothing, it answers with an `elsewhere`
