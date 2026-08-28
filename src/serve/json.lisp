@@ -75,6 +75,10 @@
     ;; :OCCURRENCES, which is the object holding it: a key named here forces an
     ;; array, and naming the outer one flattened the whole plist.
     :lines
+    ;; REQ-0056. Both are ordinarily empty -- a tree with no federated answer
+    ;; and no dangling qualified id -- and that emptiness is the answer, so
+    ;; they must encode as [] rather than as a null a caller reads as absent.
+    :unresolved-elsewhere :unresolved-qualified
     ;; The structural report (DES-0022 S1). Every one of these is a list that is
     ;; legitimately empty -- a tree with no protocols, or one no analyzer
     ;; claimed -- and [] against null is exactly the distinction an init script

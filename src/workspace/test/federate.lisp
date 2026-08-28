@@ -188,3 +188,114 @@ consumer, which is REQ-0027 R6's traversal")
     (federate-repositories :quiet t)
     (is (null (federated-edges repository)))
     (is (null (repository-errors repository)))))
+
+
+;;; ------------------------------------------------------------------
+;;; What an unresolved reference actually means (REQ-0056)
+;;; ------------------------------------------------------------------
+;;;
+;;; game-server reported sixteen unresolved document references and eight were
+;;; one plan's -- and they failed to resolve *because the plan succeeded* and
+;;; moved them out of the repository. An accurate document was being reported as
+;;; rot forever, and eight items of standing noise is how a check gets ignored.
+
+(defun ref-document (name references)
+  "A :DOCUMENT entity whose declared references did not resolve locally."
+  (make-instance 'document-entity :name name
+                 :origin-file (format nil "docs/plans/~a.yaml" name)
+                 :properties (properties-table
+                              (list :path (format nil "docs/plans/~a.yaml" name)
+                                    :doc-id name
+                                    :file (format nil "docs/plans/~a.yaml" name)
+                                    :unresolved-references references))))
+
+(defun ref-function (name file)
+  (make-instance 'function-entity :name name :origin-file file
+                 :properties (properties-table
+                              (list :file file :start-line 7 :end-line 9
+                                    :language :lisp))))
+
+(defmacro with-two-trees ((home away) &body body)
+  "A tree whose plan names four things, and a tree holding some of them."
+  `(let* ((,home (loom-workspace::make-repository
+                  :root (user-homedir-pathname) :name "ref-home"))
+          (,away (loom-workspace::make-repository
+                  :root (user-homedir-pathname) :name "ref-away"))
+          (*repositories* (list ,home ,away)))
+     (add-entity (repository-graph ,home)
+                 (ref-document "PLAN-0002"
+                               (list "string-split" "dict-value" "gone-everywhere"
+                                     "function:utils/dict.lisp:make-dict")))
+     ;; One definition: federation places it and the entry carries a line.
+     (add-entity (repository-graph ,away) (ref-function "string-split" "src/strings.lisp"))
+     ;; Two definitions of one name: FEDERATED-AFFECTS-OPS refuses to choose,
+     ;; which is CON-0001 working and must not come back as rot.
+     (add-entity (repository-graph ,away) (ref-function "dict-value" "src/dict.lisp"))
+     (add-entity (repository-graph ,away) (ref-function "dict-value" "src/alist.lisp"))
+     (add-entity (repository-graph ,away) (ref-function "make-dict" "src/dict.lisp"))
+     (federate-repositories :quiet t)
+     ,@body))
+
+(test a-name-another-tree-defines-is-answered-and-not-reported-as-rot
+  (with-two-trees (home away)
+    (is-true away "the second tree is watched, which is what makes this a test")
+    (let* ((classified (classified-unresolved-references home))
+           (elsewhere (getf classified :elsewhere))
+           (entry (find "string-split" elsewhere
+                        :key (lambda (e) (getf e :reference)) :test #'equal)))
+      (is-true entry "string-split is defined in ref-away: ~a" elsewhere)
+      (when entry
+        (is (equal "ref-away" (getf entry :repository))
+            "and the entry names the tree, so a reader can see the answer was federated")
+        (is (equal "src/strings.lisp" (getf entry :file))
+            "with the file, because a federated edge carries it"))
+      (is (null (find "string-split" (getf classified :rot)
+                      :key (lambda (e) (getf e :reference)) :test #'equal))
+          "and it is not in the rot list"))))
+
+(test a-name-another-tree-holds-ambiguously-is-answered-too
+  ;; FEDERATED-AFFECTS-OPS takes one match or none, because an affects: that
+  ;; reaches two definitions elsewhere is a claim nobody can act on. That
+  ;; refusal is right and its consequence -- the name coming back as rot -- was
+  ;; not: utils answers `dict-value' with an interface, two methods, a function
+  ;; and four tests, so the name is emphatically present.
+  (with-two-trees (home away)
+    (is-true away "the second tree is watched, which is what makes this a test")
+    (let* ((classified (classified-unresolved-references home))
+           (entry (find "dict-value" (getf classified :elsewhere)
+                        :key (lambda (e) (getf e :reference)) :test #'equal)))
+      (is-true entry "dict-value is held by ref-away, twice over: ~a"
+               (getf classified :elsewhere))
+      (when entry
+        (is (null (getf entry :file))
+            "no file, because nothing placed it -- which is the honest answer")
+        (is (>= (or (getf entry :candidates) 0) 2)
+            "and the count says why it was not placed")))))
+
+(test a-name-no-watched-tree-holds-is-still-reported
+  ;; R2, and the property no mechanism here may cost. This is the entry the
+  ;; whole category exists to surface: on game-server it is `get-package-file',
+  ;; gone from both trees, and it is how a function two documents still cited
+  ;; was caught.
+  (with-two-trees (home away)
+    (is-true away "the second tree is watched, which is what makes this a test")
+    (let ((rot (getf (classified-unresolved-references home) :rot)))
+      (is (= 1 (length rot)) "exactly one thing is gone everywhere: ~a" rot)
+      (is (equal "gone-everywhere" (getf (first rot) :reference))))))
+
+(test a-qualified-id-naming-a-deleted-file-is-its-own-state
+  ;; R3. The bare name resolves and the id never will again, so the repair is
+  ;; to rewrite the reference rather than to restore anything -- a different
+  ;; act from the one a rot entry asks for.
+  (with-two-trees (home away)
+    (is-true away "the second tree is watched, which is what makes this a test")
+    (let* ((classified (classified-unresolved-references home))
+           (entry (first (getf classified :qualified))))
+      (is-true entry "the path-qualified id is its own band: ~a" classified)
+      (when entry
+        (is (equal "function:utils/dict.lisp:make-dict" (getf entry :reference)))
+        (is (equal "make-dict" (getf entry :bare))
+            "and the bare name is offered, because it is what the author should write"))
+      (is (null (find "function:utils/dict.lisp:make-dict" (getf classified :rot)
+                      :key (lambda (e) (getf e :reference)) :test #'equal))
+          "it is not rot: nothing is missing, the reference is written wrong"))))

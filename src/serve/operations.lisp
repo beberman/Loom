@@ -674,7 +674,13 @@ sentence about it."
 (define-operation :check :read (repository)
     "Files that would not parse, rule violations, unresolved document
 references, unread definers, and dropped edges."
-  (let ((graph (repository-view repository)))
+  ;; The repository as well as the view: REQ-0056's partition asks which other
+  ;; watched tree answered a reference, and REPOSITORY-VIEW returns the graph
+  ;; alone. REQUIRE-REPOSITORY is what REPOSITORY-VIEW already goes through, so
+  ;; this refuses an unwatched designator exactly as it did.
+  (let* ((watched (require-repository repository))
+         (graph (repository-view repository))
+         (classified (classified-unresolved-references watched)))
     (list ;; BUG-0033, first for the reason console.lisp gives: every other key
           ;; here describes something the index knows and got wrong, and this
           ;; one describes a file it does not know at all.
@@ -682,7 +688,22 @@ references, unread definers, and dropped edges."
           :violations (mapcar #'violation-summary
                               (entities-of-type graph :rule-violation))
           :unenforced (mapcar #'rule-summary (unenforced-rules graph))
-          :unresolved (mapcar #'pair-summary (unresolved-references graph))
+          ;; REQ-0056. :UNRESOLVED is the population that is rot and nothing
+          ;; else: a name another watched tree defines moves to :ELSEWHERE and a
+          ;; path-qualified id naming a deleted file to :QUALIFIED. The three
+          ;; are different states with different repairs, and reporting them as
+          ;; one list is how eight entries from one plan taught a reader that
+          ;; the whole list was noise.
+          ;;
+          ;; Split here rather than filtered, and each of the other two names
+          ;; where it was answered, because which trees the service holds
+          ;; decides what lands where -- a caller has to be able to see that.
+          :unresolved (mapcar #'pair-summary
+                              (loop for entry in (getf classified :rot)
+                                    collect (cons (getf entry :document)
+                                                  (getf entry :reference))))
+          :unresolved-elsewhere (getf classified :elsewhere)
+          :unresolved-qualified (getf classified :qualified)
           ;; DES-0029 D3. Additive: a caller reading :UNRESOLVED sees the
           ;; population that is rot, and one reading :AMBIGUOUS sees the
           ;; population that is not, with the candidate ids it needs to act.

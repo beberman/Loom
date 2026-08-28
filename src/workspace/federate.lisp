@@ -385,6 +385,117 @@ requirement, plan, bug or review merely bears on it and earns :DOCUMENTS."
         :decides
         :documents)))
 
+(defun federated-declared-names (repository)
+  "Every declared name in REPOSITORY that a federated edge already answered.
+
+A hash of document name -> set of declared names. FEDERATED-AFFECTS-OPS records
+the name it matched on as :ROUTE, so this reads what that pass concluded rather
+than asking the other trees a second question.
+
+REQ-0056. The edges were being drawn and the report was not reading them:
+game-server\'s PLAN-0002 carries federated `documents\' edges to utils\'
+json-encode and json-decode, and `check\' listed both as unresolved on the same
+run. :UNRESOLVED-REFERENCES is a true statement about local resolution -- DEC-0003
+has it re-derived every pass and never consumed -- so the partition belongs
+here, where the registry is, rather than in a rewrite of the property."
+  (let ((table (make-hash-table :test #'equal))
+        (graph (repository-graph repository)))
+    (dolist (document (entities-of-type graph :document) table)
+      ;; FEDERATED-RELATIONSHIPS and not FEDERATED-EDGE-P, which is narrower
+      ;; than its name: that predicate answers "an edge this pass owns the
+      ;; lifecycle of" and tests for :SERVES, so it rejects every federated
+      ;; :DOCUMENTS and :DECIDES edge -- which is all of them here.
+      (dolist (relationship (federated-relationships graph (id document)))
+        (when (getp relationship :route)
+          (push (list :name (getp relationship :route)
+                      :repository (getp relationship :foreign-repository)
+                      :file (getp relationship :foreign-file)
+                      :line (getp relationship :foreign-line))
+                (gethash (name document) table)))))))
+
+(defun classified-unresolved-references (repository)
+  "REPOSITORY\'s unresolved document references, partitioned by what they mean.
+
+Three lists, because the eight game-server reports for one plan are three
+different states and only one of them is rot:
+
+  :ELSEWHERE   a name another watched tree has. Either a federated edge already
+               placed it, in which case the entry carries the file and line, or
+               the tree holds it under several definitions and federation
+               refused to choose -- which is CON-0001 working and must not come
+               back as rot. PLAN-0002 moved these out of game-server and naming
+               them is what the plan is about, so reporting them as rot makes an
+               accurate document permanently wrong.
+
+  :QUALIFIED   a path-qualified id naming a file no tree has --
+               `function:utils/dict.lisp:make-dict\', whose file the plan
+               deleted. The bare name resolves in utils; that id cannot resolve
+               anywhere again, and the repair is to rewrite the reference
+               rather than to restore anything. REQ-0056 R3.
+
+  :ROT         a name no watched tree holds. The entry the category exists to
+               surface, and R2 forbids any mechanism costing it: `get-package-file\'
+               is gone from both trees, which is a finding, and `config-get\' was
+               renamed by the plan whose text records the new name.
+
+The elsewhere list depends on which repositories the service happens to hold,
+and that is why each entry names the tree it was found in rather than
+disappearing: a reader can see that the answer was federated, and a reader whose
+service holds fewer trees sees the name under :ROT with nothing hidden."
+  (let ((federated (federated-declared-names repository))
+        (elsewhere '()) (qualified '()) (rot '()))
+    (loop for (document . reference) in (unresolved-references
+                                         (repository-graph repository))
+          for found = (find reference (gethash document federated)
+                            :key (lambda (entry) (getf entry :name))
+                            :test #'string-equal)
+          do (cond
+               (found
+                (push (list :document document :reference reference
+                            :repository (getf found :repository)
+                            :file (getf found :file)
+                            :line (getf found :line))
+                      elsewhere))
+               ((path-shaped-token-p reference)
+                (push (list :document document :reference reference
+                            :bare (qualified-bare-name reference))
+                      qualified))
+               ;; A name another tree has but federation would not place. The
+               ;; edge is refused deliberately -- FEDERATED-AFFECTS-OPS takes
+               ;; one match or none, because an `affects:' reaching two
+               ;; definitions elsewhere is a claim nobody can act on -- and the
+               ;; refusal must not come back as rot. utils answers `dict-value'
+               ;; with an interface, two methods, a function and four tests, so
+               ;; the name is emphatically present and emphatically not one
+               ;; definition.
+               ;;
+               ;; REPOSITORIES-HOLDING rather than the edge is also R2's exact
+               ;; test: what makes a reference a finding is that *no* watched
+               ;; tree holds the name, and that is the question this asks.
+               ((let ((held (repositories-holding reference
+                                                  :exclude (repository-name repository))))
+                  (when held
+                    (push (list :document document :reference reference
+                                :repository (getf (first held) :repository)
+                                :candidates (reduce #'+ held
+                                                    :key (lambda (row) (getf row :total))))
+                          elsewhere)
+                    t)))
+               (t (push (list :document document :reference reference) rot))))
+    (list :elsewhere (nreverse elsewhere)
+          :qualified (nreverse qualified)
+          :rot (nreverse rot))))
+
+(defun qualified-bare-name (reference)
+  "The name inside a path-qualified reference, or NIL.
+
+`function:utils/dict.lisp:make-dict\' is MAKE-DICT. What a reader needs to know
+about such an entry is whether the thing still exists under a name they could
+write instead, and the last colon-separated segment is that name."
+  (let ((last-colon (position #\: reference :from-end t)))
+    (when (and last-colon (< (1+ last-colon) (length reference)))
+      (subseq reference (1+ last-colon)))))
+
 (defun unresolved-path-references (&key (repositories *repositories*))
   "Path-shaped prose tokens no watched repository holds a file for.
 

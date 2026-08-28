@@ -36,36 +36,6 @@ the heading was dropped.
 
 ## Documents and the workflow around them
 
-- **A completed migration plan's `affects:` can never resolve, and `check`
-  will report it as rot forever.** 8 of game-server's 16 unresolved references
-  are PLAN-0002's own: `config-get`, `dict-value`, `alistp`, `string-split`,
-  `json-encode`, `json-decode`, `get-package-file`, `make-dict`. They fail to
-  resolve *because the plan succeeded* and moved them out of the repository. I
-  left the field alone and said why in the commit, because trimming it to
-  whatever still resolves would make the record less true — the plan's subject
-  is exactly those names. But the state is unsatisfying in both directions: an
-  accurate document is permanently reported as rotten, and 8 items of standing
-  noise is how a check gets ignored. Worth designing. Candidates: exempt
-  documents under `completed/` from unresolved-affects, resolve `affects:`
-  across registered repositories, or let a document say a name has left the
-  tree.
-
-  The middle option is item 1's mechanism again, and measuring it is
-  instructive: 5 of the 8 — `dict-value`, `alistp`, `string-split`,
-  `json-encode`, `json-decode` — resolve in `utils` today and would go quiet
-  immediately. The other 3 are each true in a different way. `config-get`
-  resolves nowhere because the plan *renamed* it to `config-search`, which the
-  plan's own text records. `get-package-file` is gone from both trees, which is
-  the finding in item 1 and the one entry here that genuinely wants reporting.
-  And the eighth is written as the path-qualified id
-  `function:utils/dict.lisp:make-dict`, naming a file the plan deleted — a bare
-  `make-dict` resolves in `utils`, that id cannot resolve anywhere ever again.
-  So a cross-repository `affects:` would not silence the category; it would
-  separate the noise from the two entries that are saying something, which is
-  the better outcome.
-  -- completing game-server's PLAN-0002, 2026-08-21
-  -- REQ-0056 asks for it, 2026-08-27
-
 - **A test that reads a live document pins a judgement.**
   `IMPORTANCE-IS-READ-AS-A-KEYWORD-FROM-THE-VOCABULARY` asserted REQ-0037 was
   `:CRITICAL`; repricing REQ-0037 to Minor broke it, and the failure was
@@ -149,6 +119,7 @@ re-derives an item that was answered, and each row names where to look instead.
 | "Loom is the wrong tool for a question about a tree's past, and nothing says so" | REQ-0058, implemented. Both prepared surfaces name the boundary immediately after their question-shape table, with `git log -S <name>` as the verb and what it does said plainly, and both cite the instance rather than the principle: game-server's `de355d0` -- "Debugging found that the game-description/image url was wrong" -- was the whole of what anybody knew about a stale fixture. Loom's own CLAUDE.md carries the same. A tree prepared before today gets it on `init --update`, which is REQ-0052's mechanism rather than a gap |
 | "`tools/` is indexed by language rather than by role, so the measurement harness is invisible" | REQ-0059, implemented. `status` reports `unclaimed` -- the tracked files no analyzer claims -- with the extensions named, and a zero-hit `find` carries `unanalyzed` beside REQ-0051's `elsewhere`. Loom reads `48 tracked files no analyzer claims -- 10 .json, 10 .md, 9 .py, 5 (none), 5 .sh, 3 .js, 6 other`, and `find acceptance` now says 0 here, 1 in front-end, and 9 Python files this index cannot have read. Whether Python should be analyzed is still not asked; REQ-0018 is where a language's toolchain gets consulted |
 | "`find` answers a term that matches no definition with silence, when it could say the term is prose" | REQ-0054, implemented. A zero-hit `find` carries an `occurrences` band -- the lines the term is written on, with file, line and text, capped at twelve with the total beside it. `find osm-import` against front-end answers 0 definitions and 8 occurrences naming the router and the mock; `find no-such-token-anywhere` answers 0 and 0, which is what makes the first trustworthy. Files rather than `:mentions` edges, because two of the three occurrences are a string literal and a comment no analyzer asserts anything about. The document's own acceptance was wrong about PLAN-0003, and says so |
+| "A completed migration plan's `affects:` can never resolve, and `check` will report it as rot forever" -- 8 of game-server's 16 | REQ-0056, implemented, and C1 did not have to be built: FEDERATED-AFFECTS-OPS has resolved `affects:` across repositories since REQ-0027 R4 and `check` was not reading the edges. Three states now -- answered by another watched tree, a qualified id naming a deleted file, and a name no tree holds. game-server went 16 to 5 unresolved and PLAN-0002 8 to 2, both of which are findings. BUG-0001 fell 6 to 3 by the same mechanism |
 | "`find` should answer across registered repositories, or say that it didn't" -- three instances, the sharpest entry in this file | REQ-0051, implemented. `find` with no `repository` searches every watched tree and each row names its own; named with one and finding nothing, it answers `0 here; 1 in utils`. The answer also names any tree it could not search, so "absent everywhere" is never claimed by a partial search |
 | "`init` cannot refresh a marked region it wrote" -- eight prepared trees keeping stale guidance, and a hand-edited region that is a superset of the template | REQ-0052, implemented as `init --update`. The author's half of the region is declared rather than guessed at, so a refresh replaces Loom's bytes and leaves the hundred lines beside them that no template can regenerate |
 
