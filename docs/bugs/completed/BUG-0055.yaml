@@ -1,0 +1,180 @@
+id: BUG-0055
+title: a JavaScript call attributed by bare method name lands in the calls band beside a resolved one, and on two measured functions three of four and nine of twelve were wrong
+status: closed
+severity: critical
+date: 2026-08-27
+refines: [REQ-0024]
+affects: [group-neighbors, impact-entry-summary, render-path]
+tags: [javascript, analyzer, resolution, confidence, con-0001, front-end]
+summary: |
+  `describe ingestModel` against front-end returns four outbound `calls`
+  neighbours: `remoteServer.get`, `msgHandler.get`, `BiMap.get` and
+  `ingestPartition`. Three are wrong and all three come from one `.get()` on a
+  plain `Map`. The fourth is right and is the only one that mattered.
+  Re-checked 2026-08-27 against the running service.
+
+  `describe extractSharedArcs`, the arc-pairing algorithm, returns twelve of
+  which nine are wrong: `remoteServer.get`, `msgHandler.get` and `BiMap.get` for
+  `.get()`; `WorkingSet.add` and `LayerGroup.add` for `.add()`;
+  `GenericTypeSet.has`, `LayerGroup.has` and `BiMap.has` for `.has()`;
+  `BiMap.set` for `.set()`. The three right ones are two module-local helpers.
+  75% wrong, and every wrong row names a real definition in a real file, so
+  nothing about the answer looks uncertain.
+body: |
+  THE ANALYZER ALREADY KNOWS
+
+  `unresolved-calls` on ingestModel holds `LatLng`, `unknownTypeNames.push`,
+  `unknownTypeNames.includes`, `map` and `reset` -- the calls it declined to
+  attribute. So the distinction between a call it resolved and a call it guessed
+  from a method name exists inside the analyzer, is recorded on the entity, and
+  is then discarded at the point where a caller reads the answer: both kinds
+  arrive in one `calls` band with nothing separating them.
+
+  That is CON-0001's rule inverted. A fabricated fact is worse than a recorded
+  gap, and this fabricates one *while holding the gap in the next field over*.
+
+  THE CONTRAST THAT MAKES IT A DEFECT
+
+  The inheritance edges on the same entities are trustworthy. So is every Lisp
+  call edge, because DES-0015 identifies a callable by the symbol it names and
+  refuses to place a name whose package it cannot work out -- falling back to
+  spelling only when it must, and saying so. The JavaScript path has no
+  equivalent refusal: a bare `.get()` matches every `get` method in the tree and
+  emits an edge to each candidate as though it had resolved one.
+
+  F1  A NAME-ONLY ATTRIBUTION IS MARKED AS ONE
+
+  The edge carries a marker -- `inferred`, beside the `referrer-kind` a
+  call-site edge already carries -- and `describe` and `impact` print it. A
+  caller can then trust the band, which today it cannot.
+
+  F2  OR SUCH EDGES LEAVE THE calls BAND ENTIRELY
+
+  They go under the `unresolved` heading they belong to. This is the stronger
+  reading of CON-0001 and it costs the three right rows out of twelve: a
+  module-local helper called by bare name is resolved correctly by the same
+  mechanism that gets `.get()` wrong.
+
+  F1 and F2 differ in what they do to a caller that reads only the first band.
+  F1 keeps the useful rows and makes the reader responsible for the marker; F2
+  keeps the band clean and makes the reader ask a second question. DES-0014's
+  ambiguous call site is the precedent for F1 -- one reportable site with an
+  edge to each candidate rather than a silent drop -- and it is the shape this
+  should probably take.
+
+  WHAT IT COSTS TODAY
+
+  `impact` walks these edges. An impact set seeded on a function whose body uses
+  `Map` and `Set` reaches every class in the tree with a `get`, `add`, `has` or
+  `set` method, at depth 1, and reports them at the same confidence as the real
+  callees. On a tree the size of front-end that is the difference between an
+  answer and a page.
+
+  WHAT WAS DONE, 2026-08-27
+
+  F1, and it turned out to be a reporting fix rather than a resolution one.
+  RESOLVE-CALLS already asserts a fanned-out call edge with `:source :inferred`
+  and a 1/N `:confidence` (src/graph/resolve.lisp:1281), and the relationship
+  has carried both since the ontology was written. Every answer surface dropped
+  them:
+
+      ENTITY-SUMMARY   reports :SOURCE and :CONFIDENCE for the *entity* -- what
+                       kind of fact the definition is. All four of
+                       ingestModel's callees are ordinary definitions read from
+                       source, so all four rows read `structural, 1.0`.
+      GROUP-NEIGHBORS  had the relationship in hand and used it for the
+                       rel-type and the direction only.
+      HOP              carried a rel-type and an entity id, so an impact path
+                       could not say which of its steps was a guess.
+
+  So the graph knew, and no caller could ask. That is the shape CON-0001 warns
+  about arriving through a reporting layer rather than through an analyzer.
+
+  R1  A neighbour row carries :EDGE-SOURCE and :EDGE-CONFIDENCE beside the
+      entity's own :SOURCE and :CONFIDENCE. Two provenances, because a row
+      names an entity and an edge and they are different claims -- a certain
+      definition reached by a guess is exactly this defect, and collapsing the
+      pair would hide it again. Both are emitted on every row, including the
+      ordinary `:structural 1.0`: a field appearing only on the bad rows makes
+      absence carry meaning, and a reader could not tell a resolved edge from a
+      build predating the marker.
+
+  R2  A hop carries the edge's source and confidence, so an impact row reports
+      :INFERRED and :CONFIDENCE-OF-PATH. The path confidence is the weakest
+      hop, not the product: a product decays with length and would report a
+      chain of certainties as progressively less certain, which is an artefact
+      of depth rather than a fact about the claim.
+
+  R3  RENDER-PATH writes an inferred hop `calls?>name`, and the console prints
+      `d2?` on the row. The path is the last column and a reader scanning a
+      page should not have to read to the end of each line.
+
+  R4  The console prints `BiMap.get (inferred 0.33)`. A number rather than a
+      word, because 0.33 is a three-way fan-out and 0.05 is a twenty-way one,
+      and DISPATCH-CONFIDENCE's own docstring already says the number is what a
+      consumer filters on -- which no consumer could do while nothing carried it.
+
+  MEASURED AFTER THE FIX, 2026-08-27
+
+  `describe ingestModel` on front-end prints one callee and three candidates:
+
+      -> calls: remoteServer.get (inferred 0.33), msgHandler.get (inferred
+         0.33), BiMap.get (inferred 0.33), ingestPartition
+
+  `describe extractSharedArcs` splits 3 and 9, and the three resolved ones are
+  exactly the module-local helpers this document named: renodeRings, keyOf and
+  lexLess. The nine carry 0.50, 0.33 and one 1.00.
+
+  That 1.00 is BiMap.set, and it is not a contradiction. DISPATCH-CONFIDENCE
+  returns 1.0 for a one-candidate fan-out, so the pair reads "this is a guess,
+  and only one definition in the tree could satisfy it" -- two facts a reader
+  needs separately. The source says how the edge was arrived at; the number
+  says how much choosing there was.
+
+  The impact half is where the size of it shows. `impact BiMap.get 2` on
+  front-end returns 297 rows and all 297 are now marked `d1?` at 0.33, because
+  every one of them is there on the strength of somebody writing `.get()`.
+  Before this change all 297 read exactly like a resolved call.
+
+  F2 WAS CONSIDERED AND NOT TAKEN
+
+  Keeping such edges out of the `calls` band entirely is the stronger reading
+  of CON-0001, and CON-0006 is what decides against it: demote, never drop. An
+  LLM discards a wrong row for a few tokens, and a missing row sends it back to
+  grep, which is the cost Loom exists to remove. The measurement agrees --
+  three of extractSharedArcs' twelve resolved edges are module-local helpers
+  found by the same tier that gets `.get()` wrong, so F2 would have cost
+  renodeRings, keyOf and lexLess to silence nine guesses that now say they are
+  guesses. DES-0014's ambiguous call site is the precedent followed instead:
+  one reportable thing carrying its own uncertainty.
+
+  WHAT THIS DOES NOT FIX
+
+  The volume. `impact` still walks these edges, and a function whose body uses
+  `Map` and `Set` still reaches every class in the tree with a `get`, `add`,
+  `has` or `set` method at depth 1. Every one of those rows now says it arrived
+  through a guess and carries the number, so a reader can discount them and a
+  consumer could filter on them -- but nothing filters yet, and a caller that
+  wants `impact` to take a minimum confidence has to ask for it. That is a new
+  capability rather than this defect.
+
+  The tiers are also still indistinguishable from each other.
+  MEMBER-CALL-CANDIDATES tier 2 fans out because it borrowed DES-0001's
+  argument that dispatch is a union of genuine possibilities, and the borrowing
+  is only sometimes right: `set.persist()` reaching one of eight `persist`
+  methods is a union, and `byName.get()` on a plain `Map` is not -- the other
+  classes are unrelated. Both are marked `:inferred` and a reader cannot tell
+  which is which. Narrowing that needs the receiver's type, which is REQ-0018's
+  enrichment pass.
+
+  NOT IN SCOPE
+
+  Type inference for JavaScript. Knowing that `byName` is a `Map` is what would
+  make the attribution correct rather than marked, and it is a much larger
+  piece of work that REQ-0018's enrichment pass is the place for. This asks only
+  that a guess be labelled as one.
+
+  Whether `:unresolved-calls` should remain a stored property. REQ-0055 asks for
+  its removal, and the two documents disagree about it on purpose: what the
+  property holds is exactly what this defect needs, so the removal must not
+  land before the marker does.

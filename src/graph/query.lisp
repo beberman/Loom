@@ -260,9 +260,19 @@ refused: the bound exists to keep a traversal from running away, and failing
 an agent's query over an out-of-range tuning parameter helps nobody.")
 
 (defstruct (hop (:conc-name hop-))
-  "One edge of the path by which impact arrived somewhere."
+  "One edge of the path by which impact arrived somewhere.
+
+EDGE-SOURCE and EDGE-CONFIDENCE are the *relationship's* provenance, not the
+entity's, and they are here because a path is only as certain as its least
+certain hop. BUG-0055: a JavaScript member call whose receiver names no class
+in the tree fans out to every method of that property, and those edges are
+already asserted `:inferred' at 1/N -- the number was simply not carried
+anywhere a reader could see it, so an entity reached only through a guess was
+reported exactly like one reached through a resolved call."
   (rel-type nil)
-  (entity-id nil))
+  (entity-id nil)
+  (edge-source :structural)
+  (edge-confidence 1.0))
 
 (defstruct (impact-entry (:conc-name impact-entry-))
   "One impacted entity, with the evidence for why it is in the set.
@@ -370,7 +380,10 @@ omission."
                                              (append path
                                                      (list (make-hop
                                                             :rel-type (rel-type (car step))
-                                                            :entity-id (cdr step))))))
+                                                            :entity-id (cdr step)
+                                                            :edge-source (source (car step))
+                                                            :edge-confidence
+                                                            (confidence (car step)))))))
                                        (note entity depth extended)
                                        (push (cons (cdr step) extended) next))))))))
                          (setf frontier next)))
@@ -387,7 +400,10 @@ omission."
                             (1+ (impact-entry-depth base))
                             (append (impact-entry-path base)
                                     (list (make-hop :rel-type (rel-type (car step))
-                                                    :entity-id (cdr step))))))))))
+                                                    :entity-id (cdr step)
+                                                    :edge-source (source (car step))
+                                                    :edge-confidence
+                                                    (confidence (car step)))))))))))
 
             ;; --- terminal types, gathered into their own fields -----------
             (let ((impacted  (reverse order))

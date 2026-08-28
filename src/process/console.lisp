@@ -830,15 +830,31 @@ name absent from every watched tree is dead."
               ;; a directive, so it consumes the argument it tested rather than
               ;; leaking it into the next one, which is the trap the document
               ;; summary above this records.
-              (mapcar (lambda (e)
-                        (format nil "~a~@[ (~(~a~))~]"
-                                (getf e :name) (getf e :referrer-kind)))
-                      (getf group :entities))))
+              (mapcar #'neighbor-line (getf group :entities))))
     ;; REQ-0031 R1, last because it is the longest thing printed and the
     ;; neighbours are the survey a reader uses to decide whether they wanted
     ;; this entity at all.
     (when source-wanted
       (print-source (definition-source repository (id entity))))))
+
+(defun neighbor-line (entry)
+  "One neighbour: its name, and what is uncertain about reaching it.
+
+Two annotations, either or both, and neither printed when there is nothing to
+say. The referrer kind is DES-0014 R7's, and NIL for every type but a call
+site. The confidence is BUG-0055's: an edge a resolution pass guessed at is
+written `name (inferred 0.33)', so `ingestModel's four outbound calls read as
+one callee and three candidates rather than as four callees.
+
+Printed as a number and not as a word. 0.33 says a three-way fan-out and 0.05
+says a twenty-way one, and those are different enough that a reader who sees
+the second stops reading the row."
+  (let ((parts (append (when (getf entry :referrer-kind)
+                         (list (format nil "~(~a~)" (getf entry :referrer-kind))))
+                       (when (eq :inferred (getf entry :edge-source))
+                         (list (format nil "inferred ~,2f"
+                                       (getf entry :edge-confidence)))))))
+    (format nil "~a~@[ (~{~a~^, ~})~]" (getf entry :name) parts)))
 
 (defun print-source (result)
   "REQ-0031's source block, or why there is none.
@@ -996,9 +1012,13 @@ between 0 and 1." cut))
             (getf (getf report :seed) :name) (getf (getf report :seed) :location))
     (format t "~&~d impacted~@[ (truncated)~]:~%"
             (getf report :count) (getf report :truncated))
+    ;; BUG-0055. The `?' is on the row as well as inside the path, because the
+    ;; path is the last column and a reader scanning a page of rows for what to
+    ;; trust should not have to read to the end of each one.
     (dolist (e (getf report :impacted))
-      (format t "  d~a ~(~a~) ~a~30t~a~%"
-              (getf e :depth) (getf e :type) (getf e :name) (getf e :via)))
+      (format t "  d~a~a ~(~a~) ~a~30t~a~%"
+              (getf e :depth) (if (getf e :inferred) "?" " ")
+              (getf e :type) (getf e :name) (getf e :via)))
     (dolist (field '(:tests :documents :decisions :mentions))
       (let ((entries (getf report field)))
         (when entries

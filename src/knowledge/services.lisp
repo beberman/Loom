@@ -427,13 +427,33 @@ which is every entity on both Lisp trees."
 
 (defun group-neighbors (neighbors)
   "Neighbours grouped by relationship type and direction, so an answer reads
-as \"calls: these; called-by: those\" rather than as a flat edge dump."
+as \"calls: these; called-by: those\" rather than as a flat edge dump.
+
+Each row carries the *edge's* provenance beside the entity's, which is
+BUG-0055. ENTITY-SUMMARY reports `:source' and `:confidence' for the
+definition -- what kind of fact the entity itself is -- and every row therefore
+read `structural, 1.0' whether the edge reaching it was resolved or guessed.
+Three of `ingestModel's four outbound calls were one `.get()' on a plain Map
+fanned out across every class in front-end with a `get' method, asserted at
+0.33 apiece, and printed indistinguishably from the one real callee.
+
+:EDGE-SOURCE and :EDGE-CONFIDENCE rather than reusing the two names: a row
+naming an entity and an edge needs both provenances, and collapsing them would
+make a caller unable to tell a guessed edge to a certain definition from a
+certain edge to an inferred one. Always emitted, including the ordinary
+`:structural 1.0', because a field that appears only on the bad rows makes its
+own absence carry meaning, and a reader then cannot tell a resolved edge from a
+build older than the marker."
   (let ((groups '()))
     (dolist (n neighbors)
-      (let* ((key  (list (neighbor-direction n) (rel-type (neighbor-relationship n))))
+      (let* ((relationship (neighbor-relationship n))
+             (key  (list (neighbor-direction n) (rel-type relationship)))
              (cell (or (assoc key groups :test #'equal)
                        (car (push (cons key '()) groups)))))
-        (push (entity-summary (neighbor-entity n)) (cdr cell))))
+        (push (append (entity-summary (neighbor-entity n))
+                      (list :edge-source (source relationship)
+                            :edge-confidence (confidence relationship)))
+              (cdr cell))))
     (loop for (key . entities) in (reverse groups)
           collect (list :direction (first key)
                         :rel-type  (second key)
@@ -611,18 +631,51 @@ them is noise on the answers where nothing is wrong."
   "An impact path as the names it ran through: \"calls>apply-op calls>plan-op\".
 SS9 requires the path be carried; a chain of entity names is what makes it
 usable, because an agent can see *why* something is impacted and judge whether
-that reason matters."
+that reason matters.
+
+An inferred hop is written `calls?>name' rather than `calls>name', which is
+BUG-0055. The path is the evidence a reader judges the row by, and a hop the
+resolver guessed at is different evidence from one it resolved: on front-end a
+single `.get()' on a plain Map puts every class with a `get' method one hop
+from its caller, and everything behind those is in the set on the strength of a
+0.33 edge. One character, because the path is already the longest field in the
+row."
   (format nil "~{~a~^ ~}"
           (loop for hop in path
                 for entity = (get-entity view (hop-entity-id hop))
-                collect (format nil "~(~a~)>~a" (hop-rel-type hop)
+                collect (format nil "~(~a~)~a>~a" (hop-rel-type hop)
+                                (if (eq :inferred (hop-edge-source hop)) "?" "")
                                 (if (and entity (slot-boundp entity 'name))
                                     (name entity)
                                     (hop-entity-id hop))))))
 
+(defun path-inferred-p (path)
+  "True when any hop of PATH crossed an edge a resolution pass guessed at.
+
+Any rather than all. A path is a chain of claims and one guess in it makes the
+conclusion a guess."
+  (some (lambda (hop) (eq :inferred (hop-edge-source hop))) path))
+
+(defun path-confidence (path)
+  "The confidence of PATH's least certain hop. 1.0 for a path of resolved edges.
+
+The minimum rather than the product. Multiplying four structural 1.0s by one
+0.33 gives 0.33 either way, but on a longer path a product decays with length
+and would report a chain of certainties as progressively less certain -- a
+number that reads like a measurement of something and is an artefact of depth.
+The weakest link is the claim actually being made."
+  (reduce #'min path :key #'hop-edge-confidence :initial-value 1.0))
+
 (defun impact-entry-summary (view entry)
+  ;; :INFERRED and :CONFIDENCE-OF-PATH are BUG-0055. The row already carried
+  ;; its depth and its path; what it did not carry was whether the path is a
+  ;; fact. `impact ingestModel' on front-end reaches every class in the tree
+  ;; with a `get', `add', `has' or `set' method at depth 1, and those rows
+  ;; were the same shape as the ones reached by a resolved call.
   (append (entity-summary (impact-entry-entity entry))
           (list :depth (impact-entry-depth entry)
+                :inferred (and (path-inferred-p (impact-entry-path entry)) t)
+                :confidence-of-path (path-confidence (impact-entry-path entry))
                 :via   (render-path view (impact-entry-path entry)))))
 
 (defun impact-report (view id &key (max-depth *default-impact-depth*)

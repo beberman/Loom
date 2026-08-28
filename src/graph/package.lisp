@@ -138,6 +138,10 @@
    #:hop
    #:hop-rel-type
    #:hop-entity-id
+   ;; The edge's provenance, not the entity's. BUG-0055: a path is only as
+   ;; certain as its least certain hop, and an inferred hop was invisible.
+   #:hop-edge-source
+   #:hop-edge-confidence
    #:impact-entry
    #:impact-entry-entity
    #:impact-entry-depth
