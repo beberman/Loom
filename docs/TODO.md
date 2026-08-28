@@ -94,6 +94,17 @@ the heading was dropped.
 
 ## Measuring Loom
 
+- **A full run that fails once cannot say which test, because the failure was
+  intermittent and the run that caught it is gone.** BUG-0058 fixed the
+  instrument -- `tools/loom-test.sh` discarded FiveAM's whole failure block, so
+  a run reporting `Fail: 1` named nothing. The failure itself has no name. On
+  2026-08-28 loom-serve reported 251 of 252 in a full run; the serve suite
+  alone passed 252 five times in one image, once on its own, and once more in a
+  full verbose run -- seven clean runs against one failure. The next occurrence
+  will name itself, which is what the fix bought; until then this entry is the
+  only record that there is something to catch.
+  -- working on Loom itself, 2026-08-28
+
 - **`tools/` is indexed by language rather than by role, so the measurement
   harness is invisible.** `find acceptance`, `find score_judgement` and
   `find ensure` all return nothing: Python is not analyzed, so
