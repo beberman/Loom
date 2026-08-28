@@ -32,7 +32,14 @@ the heading was dropped.
   write at `src/graph/resolve.lisp:1295`. DES-0014 explains what the property
   buys RESOLVE-CALLS but does not defer removing it, so this is the only record.
   -- reader and call-site work, 2026-08-09
-  -- REQ-0055 asks for it, and states why it must not land before BUG-0055, 2026-08-27
+  -- REQ-0055 asked for it and is `partial`: both halves are withdrawn on
+     evidence, 2026-08-28. Nothing reads `:unresolved-calls`, so it is not the
+     resolution intermediate this entry calls it -- it is the only record that a
+     definition calls a name no definition in the tree answers, which is what
+     BUG-0055 reasoned from. And a generated entity already takes its system
+     from the calling file, which since DES-0009 is the call site's package.
+     `describe` now prints the names as an `external` band rather than holding
+     them where nobody could see them.
 
 ## Documents and the workflow around them
 

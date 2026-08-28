@@ -1,9 +1,9 @@
 id: REQ-0055
 title: unresolved-calls should stop being a stored property and a generated entity's system should come from the call site rather than the file
-status: draft
+status: partial
 date: 2026-08-27
 refines: [REQ-0015]
-affects: [resolve-calls, entity-system]
+affects: [resolve-calls, generated-entity, entity-system]
 importance: Minor
 tags: [graph, ontology, resolution, des-0014, cleanup]
 summary: |
@@ -80,3 +80,65 @@ body: |
 
   - Is R3 measurable on this tree? No rule names a generated entity today, so
     the change may be invisible to `check` and visible only in `structure`.
+
+outstanding: |
+  OUTSTANDING 2026-08-28: R1 AND R3 ARE WITHDRAWN, ON EVIDENCE
+
+  Both rest on a misreading of the code, and the misreading is this document's.
+
+  R1 SAID THE PROPERTY IS A RESOLUTION INTERMEDIATE. IT IS NOT.
+
+  "RESOLVE-CALLS uses it to treat a call site as still open across passes."
+  Nothing reads :UNRESOLVED-CALLS. It is written at src/graph/resolve.lisp:1295
+  and declared on four entity types in the ontology, and there is no other
+  mention of it in loom-graph, loom-analyzer, loom-knowledge or loom-workspace.
+  RESOLVE-CALLS derives it from :CALL-NAMES every pass and never consults it --
+  which its own docstring says, and which is DEC-0003 working rather than the
+  bookkeeping this document took it for.
+
+  What the field actually does is the job the 2026-08-27 amendment identified:
+  it is the only record that a definition calls a name no definition in the
+  tree answers. On front-end's ingestModel those are LatLng,
+  unknownTypeNames.push, unknownTypeNames.includes, map and reset -- genuine
+  external dependencies, and the evidence BUG-0055 reasoned from. Removing it
+  trades a recorded gap for no record at all, which is CON-0001 inverted.
+
+  R3 ASKED FOR A CHANGE THAT WOULD HAVE NO EFFECT.
+
+  "A generated entity's :system is derived from the call site that generated it
+  rather than from the file it was written into ... an entity minted on behalf
+  of a call somewhere else."
+
+  There is no somewhere else. GENERATED-ENTITY's docstring: ":ORIGIN-FILE is the
+  *calling* file, never the macro's." The file whose :SYSTEM is taken is the
+  file holding the call site, and since DES-0009 :SYSTEM is that file's package
+  name -- so file-derived and call-site-derived are the same value by
+  construction. Checked on this tree: the call site define-operation mints at
+  src/serve/repl.lisp:195 carries system loom-serve, and so does
+  src/serve/repl.lisp. The document's own open question suspected this and
+  asked whether R3 was measurable; it is not, because there is nothing to
+  measure.
+
+  WHAT WAS DONE INSTEAD, AND IT IS THE OPPOSITE
+
+  The one true observation underneath R1 is that the field is written by one
+  line, read by no pass, and printed by nothing. That is why it looked like
+  leftover state -- and the repair is to show it, not to delete it. `describe`
+  now prints an `external' band beside the neighbour bands:
+
+      -> calls: remoteServer.get (inferred 0.33), msgHandler.get (inferred
+         0.33), BiMap.get (inferred 0.33), ingestPartition
+      external: LatLng, unknownTypeNames.push, unknownTypeNames.includes, map,
+         reset
+         5 names no definition in this tree answers.
+
+  The two bands are complements and a reader judging whether a thin `calls`
+  band is thin needs both: BUG-0055 made the guesses say so, and this makes the
+  gaps say so.
+
+  R2 IS MET AND IS NOW MOOT
+
+  BUG-0055 put the confidence distinction on the edge, which satisfied R2's
+  condition. The second job the amendment worried about -- a name that reached
+  nothing having no other record -- is not a problem to solve but the reason R1
+  is withdrawn.

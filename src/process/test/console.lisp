@@ -176,7 +176,12 @@ must NOT print, so the negative assertions below cannot pass by accident."
   ;; Not src/alpha.lisp: SIGNIFICANT-NAME strips a file's directory and
   ;; extension, so a file of that name would answer to `describe alpha' too and
   ;; the code-entity test would be describing the file it meant to exclude.
-  (write-console-fixture-file "src/code.lisp" "(defun alpha (x) (+ x 1))
+  ;; FROBNICATE is defined nowhere and is deliberate: it is the only way this
+  ;; fixture exercises :UNRESOLVED-CALLS, which is the record that a definition
+  ;; calls a name no definition in the tree answers (REQ-0055). The arithmetic
+  ;; is unchanged, and the Lisp analyzer does not record `+' as a call name, so
+  ;; without a foreign callee the property is always empty here.
+  (write-console-fixture-file "src/code.lisp" "(defun alpha (x) (frobnicate (+ x 1)))
 ")
   (write-console-fixture-file "docs/decisions/DEC-0001.yaml"
                               "id: DEC-0001
@@ -292,6 +297,25 @@ misused conditional directive hid, printing the flag itself as the text")
                 (list :name "alpha" :referrer-kind :definer-call
                       :edge-source :structural :edge-confidence 1.0)))
       "DES-0014 R7's kind still prints on its own"))
+
+(test describe-shows-the-names-that-reached-nothing
+  ;; REQ-0055, and the opposite of what it asked for. :UNRESOLVED-CALLS is
+  ;; written by one line of RESOLVE-CALLS, read by no pass and printed by
+  ;; nothing, which is why it read as leftover bookkeeping -- and it is the only
+  ;; record that a definition calls a name no definition in the tree answers.
+  ;; BUG-0055 used exactly that record as its evidence for the defect it fixed.
+  (with-console-fixture
+    (let ((output (with-output-to-string (*standard-output*)
+                    (run-command "describe alpha"))))
+      (is (search "external:" output)
+          "alpha calls +, which this tree does not define: ~a" output)))
+  ;; The control: a definition every one of whose calls resolved prints no such
+  ;; band, so the line means something when it is there.
+  (with-console-fixture
+    (let ((output (with-output-to-string (*standard-output*)
+                    (run-command "describe DEC-0001"))))
+      (is-false (search "external:" output)
+                "a document calls nothing and must not carry an empty band"))))
 
 (test an-impact-row-prints-the-location-that-tells-two-of-one-name-apart
   ;; BUG-0050 F1. The REST answer has carried `location' throughout and the
