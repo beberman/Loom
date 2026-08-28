@@ -65,6 +65,10 @@
     ;; that shares no name word and no prose word is the ordinary case -- the
     ;; whole point of the query is that a duplicate is where the names differ.
     :resembling :rows :shared-name-words :shared-prose-words
+    ;; REQ-0059. A tree whose analyzers claim everything has an empty gap, and
+    ;; that is the answer rather than the absence of one -- `[]' says the count
+    ;; was taken and found nothing, where `null' would read as not taken.
+    :by-extension
     ;; The structural report (DES-0022 S1). Every one of these is a list that is
     ;; legitimately empty -- a tree with no protocols, or one no analyzer
     ;; claimed -- and [] against null is exactly the distinction an init script

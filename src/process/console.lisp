@@ -353,6 +353,36 @@ command."
   ;; own message; this is the number.
   (format t "  unparsed   : ~d file~:p the analyzer could not read~%"
           (getf status :unparsed))
+  ;; REQ-0059, beside `unparsed' because the two are the halves a reader
+  ;; confuses: `unparsed' is a file an analyzer claimed and could not read, and
+  ;; this is a file no analyzer claimed at all. `files', `unindexed' and
+  ;; `unparsed' are three counts about the claimed set, so a language nobody
+  ;; analyzes appears in none of them and the tree can be most of the way
+  ;; covered while saying nothing about the rest.
+  ;;
+  ;; The extensions rather than the paths: what a reader acts on is which
+  ;; languages are missing, and 48 paths on every `status' is a page. Six
+  ;; named, largest first, and the rest summed as `other' -- Loom's unclaimed
+  ;; set has .sh fourth behind .json, .md and .py, so a tighter cap would drop
+  ;; a whole language, and front-end carries 29 extensions in all, so no cap at
+  ;; all would put the tail on the line instead.
+  (let* ((unclaimed (getf status :unclaimed))
+         (reason (getf status :unclaimed-reason))
+         (by-extension (getf status :unclaimed-by-extension))
+         (named (subseq by-extension 0 (min 6 (length by-extension))))
+         (rest (- (or unclaimed 0)
+                  (reduce #'+ named :key (lambda (e) (getf e :files)) :initial-value 0))))
+    (cond (reason
+           (format t "  unclaimed  : not counted -- ~a~%" reason))
+          ((null unclaimed))
+          (t
+           (format t "  unclaimed  : ~d tracked file~:p no analyzer claims~
+~@[ -- ~{~a~^, ~}~]~@[, ~d other~]~%"
+                   unclaimed
+                   (loop for entry in named
+                         collect (format nil "~d ~a" (getf entry :files)
+                                         (getf entry :type)))
+                   (and (plusp rest) rest)))))
   (format t "  unread     : ~d suppressed region~:p, ~d recovered region~:p~%"
           (getf status :suppressed-regions)
           (getf status :recovered-regions))
