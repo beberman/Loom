@@ -25,12 +25,13 @@ curl -s '{{ENDPOINT_URL}}/v1/find?term=dhandler-delete'   # every watched tree
 curl -s '{{ENDPOINT_URL}}/v1/impact?repository={{REPOSITORY-NAME}}&term=dhandler-delete&depth=3'
 curl -s '{{ENDPOINT_URL}}/v1/structure?repository={{REPOSITORY-NAME}}'
 curl -s '{{ENDPOINT_URL}}/v1/check?repository={{REPOSITORY-NAME}}'
+curl -s '{{ENDPOINT_URL}}/v1/similar?repository={{REPOSITORY-NAME}}&term=ringIsCCW'
 ```
 
 Or as MCP tools, if `.mcp.json` registered the endpoint: `loom_context`,
 `loom_find`, `loom_impact`, `loom_describe`, `loom_check`, `loom_structure`,
-`loom_set_status`, `loom_complete`. Each takes `repository`, except
-`loom_find`, where it is optional.
+`loom_similar`, `loom_survey`, `loom_set_status`, `loom_complete`. Each takes
+`repository`, except `loom_find`, where it is optional.
 
 ### Picking the one to call
 
@@ -50,6 +51,8 @@ wrong answer — they see text, and this sees definitions, callers and decisions
 | what governs this area | `impact`, then `context` |
 | X's source and docstring | `describe` with `source=true` |
 | which tests cover X | `describe` or `impact`, `tests` band |
+| where else this shape of code lives | `similar` |
+| what two trees have in common | `survey` |
 
 **A name absent here may live in another tree.** `find` with no `repository`
 searches every watched one, and each row says which it came from. Named with a
@@ -66,6 +69,23 @@ governing it, documents bearing on it, prose that names it, and one hop away.
 That is what you want before changing something, and it is large — large enough
 to overflow a caller's output limit. To find out whether something exists, or
 where it lives, `find` is one line of answer instead of sixty.
+
+**`similar` asks the question `find` cannot.** A duplicate is precisely the
+case where the two names differ, so a name search is structurally unable to
+find one. `similar` takes a definition and returns the definitions that
+resemble it by meaning, each row carrying the cosine and what the two share --
+name words, docstring words, arity. Add `against=<other repository>` to look in
+a different tree; `survey` does the same for two whole trees at once and
+reports one best match per definition above a `cut`.
+
+The answer points and does not conclude. Half the pairs the query was built
+from were read on both sides and were not duplicates, so a row is a reason to
+read two definitions, never grounds for rewriting one into the other.
+
+Both need a vector store. Without one they refuse by name -- "X has no vector
+store. Run embed on it first." -- rather than answering with an empty list,
+because an empty list would mean *nothing resembles this* and *nothing could
+have* at once.
 
 **Counting callers of a generic function: describe the methods, not the name.**
 `describe` on a generic's name returns the interface, and its inbound `calls`

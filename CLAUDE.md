@@ -27,6 +27,15 @@ tools/loom.sh 'structure'             # systems, protocols, entry points, hubs,
                                       #   derived from the index. Reports edges
                                       #   between systems both ways and calls
                                       #   neither wrong. REQ-0021 R5.
+tools/loom.sh 'similar <name>'         # definitions that resemble one, by
+                                      #   meaning rather than by name -- the
+                                      #   question `find' cannot ask, since a
+                                      #   duplicate is where the names differ.
+                                      #   `survey <repo> <repo> [<cut>]' does it
+                                      #   for two whole trees. Both need a
+                                      #   vector store and say so when there is
+                                      #   none. REQ-0042; on REST and MCP since
+                                      #   BUG-0052.
 tools/loom.sh 'rules'                 # constraints, and which are machine-checked
 tools/loom.sh 'check'                 # violations and unresolved doc references
 tools/loom.sh 'enrich'                # ask the toolchain what the text pass

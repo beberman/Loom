@@ -60,10 +60,38 @@ the whole family alike still gets the first."))
 (define-condition unknown-operation (request-error)
   ((name :initarg :name :initform nil :reader unknown-operation-name))
   (:report (lambda (condition stream)
-             (format stream "No operation named ~a." (unknown-operation-name condition))))
+             (format stream "No operation named ~a.~@[ This build carries: ~{~(~a~)~^, ~}.~]"
+                     (unknown-operation-name condition)
+                     (registered-operation-names))))
   (:documentation "A request naming a registry entry that does not exist.
 Distinct from MALFORMED-REQUEST because the answer differs: a route asking for
-an operation nobody registered is a 404, not a badly formed 400."))
+an operation nobody registered is a 404, not a badly formed 400.
+
+The message names what is registered, which is BUG-0052 F4. \"No operation
+named similar.\" is true of a typo, of a verb this build does not carry, and of
+one that was renamed, and a caller cannot act until it knows which -- BUG-0052
+was found by an agent that read the sentence and could not tell whether Loom
+had the query at all. The list is unfiltered by tier for the reason FIND-TOOL
+is: a tier the caller may not reach answers 403 through CHECK-CAPABILITY, so an
+operation missing from a 404 message would be the one case where the two
+refusals are confused rather than told apart."))
+
+(defun registered-operation-names ()
+  "Every registered operation name, sorted, or NIL when the table is empty.
+
+NIL rather than an empty list, so the ~@[ above prints one sentence instead of
+one sentence and an empty clause. An empty table is the state a test that binds
+*OPERATIONS* can produce, and DES-0006 is explicit that a skin loaded without
+loom-serve's entries answers 404 -- so it is a state this report has to survive.
+
+Forward reference: ALL-OPERATIONS is in registry.lisp, which this file is
+compiled before because REGISTRY.LISP names the REQUEST-ERROR class and a type
+must exist when the file naming it is compiled. A function is the other way
+round -- a STYLE-WARNING deferred to the end of ASDF's compilation unit, and
+resolved within it."
+  (sort (mapcar (lambda (operation) (string-downcase (symbol-name (operation-name operation))))
+                (all-operations))
+        #'string<))
 
 (define-condition repository-indexing (request-error)
   ((message :initarg :message

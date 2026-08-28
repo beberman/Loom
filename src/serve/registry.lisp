@@ -90,8 +90,16 @@ would produce two messages for one caller mistake."
   (loop for (name required) in (operation-arg-shape operation)
         when (and required (null (getf arguments name)))
           do (error 'malformed-request
-                    :message (format nil "~(~a~) needs a ~(~a~) argument."
-                                     (operation-name operation) name)))
+                    ;; ~:[a~;an~] rather than a bare "a". Every required
+                    ;; argument was consonant-initial until :SURVEY took
+                    ;; `against', and "survey needs a against argument" is the
+                    ;; kind of sentence a reader stops on to work out whether
+                    ;; the message is about their request or about Loom.
+                    :message (format nil "~(~a~) needs ~:[a~;an~] ~(~a~) argument."
+                                     (operation-name operation)
+                                     (find (char (string-downcase (string name)) 0)
+                                           "aeiou")
+                                     name)))
   t)
 
 (defun invoke-operation (operation grants arguments)

@@ -71,6 +71,10 @@
    #:to-boolean
    #:request-integer
    #:request-boolean
+   ;; The third type, and it has no predicate: TO-COSINE returns NIL for what
+   ;; it cannot read, which is unambiguous where TO-BOOLEAN's NIL is not.
+   #:to-cosine
+   #:request-cosine
    #:*true-tokens*
    #:*false-tokens*
 

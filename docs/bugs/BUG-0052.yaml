@@ -1,0 +1,110 @@
+id: BUG-0052
+title: similar and survey are console commands and not registered operations, so REST and MCP answer UNKNOWN-OPERATION for both
+status: closed
+severity: major
+date: 2026-08-27
+affects: [resembling, resemblance-survey, register-operation, unknown-operation]
+tags: [req-0042, des-0041, serve, mcp, rest, similarity, reachability]
+summary: |
+  REQ-0042 is `implemented` and DES-0041 is `implemented`, and both verbs exist:
+  `resembling` at src/knowledge/similar.lisp:149 and `resemblance-survey` at
+  :203, reached by `define-command similar` and `define-command survey` at
+  src/process/console.lisp:911 and :934. Neither is in `*operations*`.
+  src/serve/operations.lisp registers 22 entries and `similar` and `survey` are
+  not among them, so `GET /v1/similar?repository=front-end&term=ringIsCCW`
+  answers `{"name":"UNKNOWN-OPERATION","message":"No operation named similar."}`
+  and `tools/list` advertises 13 tools that do not include them.
+
+  An agent working in a prepared worktree reaches Loom over the service and has
+  no console. REQ-0021 R8 states that as the reason document transitions were
+  put on MCP; the same sentence reads on these two.
+
+  The question had a subject the day this was found. `ringIsCCW` is defined
+  twice in front-end and its own docstring names two more copies of the same
+  formula -- `MapBoundary.#ccw` and `topology.loopIsCCW` -- as deliberate, and
+  BUG-0015 was a semantic decision (`>= 0`, so a zero-area ring is
+  counter-clockwise) that all four share. `find` reaches the two that share a
+  name. The query built for the other two is the one not on this surface.
+body: |
+  WHAT IS AND IS NOT BUILT
+
+  DES-0041 D9 places the query in loom-knowledge and says the caller binds the
+  stores, "the arrangement console.lisp and operations.lisp already use for
+  *CONTEXT-VECTOR-STORE* and *CONTEXT-EMBEDDER*". console.lisp was given that
+  arrangement; operations.lisp was not. No clause of REQ-0042 or DES-0041 names
+  a surface, so nothing was violated when the entries were left out -- and
+  nothing recorded that they were left out either, which is why two documents
+  read `implemented` over a query two of three surfaces cannot reach.
+
+  docs/TODO.md's removal table credits REQ-0042 with `similar` and REQ-0042 R3
+  with `survey` as answers to two standing gaps. Both rows are true of the
+  console and false of every caller that is not one.
+
+  F1  `similar` AND `survey` ARE REGISTERED OPERATIONS
+
+  Read tier, both of them. They read the index and a sidecar and write nothing.
+
+  `similar` takes `repository`, `term`, and an optional `against` naming the
+  repository to search; without it the subject's own repository is searched, as
+  on the console. `survey` takes `repository`, `against` and an optional `cut`.
+  The console's `similar <name> [<repository>]` implies its source repository
+  from CURRENT-REPOSITORY; the operations do not, for the reason
+  REQUIRE-REPOSITORY exists -- DES-0006 refuses to guess a designator for a
+  program.
+
+  F2  A REPOSITORY WITH NO VECTOR STORE IS REFUSED BY NAME
+
+  DES-0041 D10: `similar` and `survey` have no lexical fallback, so an empty
+  list would mean both "nothing resembles this" and "nothing could have". The
+  console signals an error naming the repository and the command that fixes it
+  (`repository-for-similar`, console.lisp:894). The operations do the same, as
+  a MALFORMED-REQUEST -- 400 with that sentence -- rather than a 200 carrying an
+  empty array. No ollama, no store, and a store whose embedder identity does not
+  match stay one state with one meaning, per REQ-0048 R6.
+
+  F3  BOTH ARE MCP TOOLS
+
+  `loom_similar` and `loom_survey`. src/mcp/tools.lisp's standing argument for a
+  narrow surface is about lifecycle commands a service operator runs -- watch,
+  pause, unwatch, reindex, init, architecture, remove. These two are read-tier
+  queries an agent asks mid-task, which is the class every other tool on that
+  list belongs to.
+
+  F4  UNKNOWN-OPERATION NAMES WHAT EXISTS
+
+  "No operation named similar." leaves a caller unable to tell a typo from a
+  verb this build does not carry. The condition reports the registered names
+  beside the refusal, which answers both. A tier a caller may not reach is
+  already distinguishable and stays so: FIND-OPERATION is unfiltered and
+  CHECK-CAPABILITY answers 403, so a gated operation is not a 404.
+
+  MEASURED AFTER THE FIX, 2026-08-27
+
+  `GET /v1/similar?repository=front-end&term=ringIsCCW` returns the subject at
+  polygonsToPartition.js:132 and, in order, the three copies its docstring names
+  as deliberate:
+
+      0.8852  ringIsCCW        src/domain/partition/interchange.js:46-53
+      0.8327  loopIsCCW        src/domain/partition/ops/topology.js:432-439
+      0.7199  MapBoundary.ccw  src/domain/partition/MapBoundary.js:49-56
+
+  `find` reaches the first of those three, because it is the one that shares a
+  name. BUG-0015 was in a decision all four share.
+
+  `GET /v1/survey?repository=Loom&against=utils` returns 10 rows at the default
+  cut and counts 11 dropped for sharing a name, with `fnv-1a ~
+  content-fingerprint` at 0.8700 -- the figure REQ-0042 recorded when it was
+  repriced, now read off the service rather than off a script.
+
+  `tools/list` advertises 15 tools to a read-and-write caller, including
+  loom_similar and loom_survey. An unknown route answers 404 naming all 27
+  registered operations.
+
+  NOT IN SCOPE
+
+  Whether `similar` should have a lexical fallback. REQ-0045 R4 says no and
+  DES-0041 D10 turns that into the refusal F2 implements.
+
+  The four `ringIsCCW` copies in front-end. Reporting them is what this makes
+  askable; deciding they are one function is a judgement REQ-0042 R4 keeps with
+  the reader.

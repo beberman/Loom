@@ -160,6 +160,66 @@ tiles is written down. A caller who edits the image pipeline needs to know that
 and would not think to ask.
 — chasing front-end's BUG-0014, 2026-08-27
 
+## The tests band, the day it arrived
+
+**`impact polygonsToPartition` named the one test I was not allowed to break, before
+I had written a line.** The change was to add an optional simplification stage to a
+shared import core with two consumers. The band listed twenty-two impacted entities
+and among them `OSM import pipeline — real Golden Gate fixture > is in fact clean for
+this fixture (the real data imports cleanly)` — a pin asserting that the OTHER consumer
+imports with zero defects. That is what settled the design decision: the new stage
+defaults to off, so the path that pin guards is untouched. Reading it out of the answer
+took one call; finding it by hand means knowing that a server-side trial test exercises
+a domain-layer function through two intermediate modules.
+
+Worth recording for a second reason. The same tree reported `test-entities: 0` earlier
+the same day, and the gap was filed in `docs/TODO.md` as a thing Loom could not answer
+where it mattered most — the bug being chased was in the one module with no test. The
+capability landed as REQ-0053 within the session, and the very next task used it to make
+a decision. The loop from dogfooding note to shipped answer to a design choice that
+depended on it closed inside a day.
+— implementing front-end's DES-0009, 2026-08-27
+
+## The docstring was the fix
+
+**`describe extractSharedArcs source=true` returned the algorithm and its contract in
+one call, and the contract was the answer.** The symptom was 363 findings of the form
+`arc N borders 1 ring(s), expected 2` from a raster-segmentation import. The
+documentation the call returned says the function takes *grid-canonical* rings and pairs
+chains by exact grid-point equality — from which the cause follows immediately, without
+reading the body: anything that decimates the two sides of a shared border
+independently, before this runs, makes them stop being equal, and exact equality then
+pairs nothing. That is a fact about a contract, not about a call graph, and it is
+sitting in a docstring three modules away from the code that reported the symptom.
+
+The fix followed from the same sentence: decimate one stage LATER, where the border is
+one object instead of two.
+— chasing front-end's segmentation defect, 2026-08-27
+
+## When two definitions of one name AGREEING was the answer
+
+**`find ringIsCCW` against `front-end` returned two definitions, and the useful content was
+that they were identical.** A raster import was emitting documents its own consumer rejected
+with `element 59 hole 0 is not clockwise`, and the obvious hypothesis was that producer and
+consumer disagreed about winding — the orientation is decided in
+`import/polygonsToPartition.js` and checked in `interchange.js`. `find` named both in one
+line. `describe` on each showed the same shoelace, the same `area >= 0`.
+
+That killed the hypothesis and produced the real one. If the two agree, the fault is not a
+disagreement but the convention itself: `>= 0` makes a ZERO-area ring counter-clockwise by
+definition, so a degenerate hole can never be clockwise and reversing it changes nothing. The
+upstream stage was collapsing small faces to zero area.
+
+The standing guidance says two definitions sharing a name is a thing to know before editing
+either. This is the inverse case and worth recording next to it: the answer that mattered was
+that neither needed editing.
+
+Honest about the rest of that session: the index found the pair and the decisions bearing on
+the area, and running the pipeline with one parameter varied found everything else. Nine
+collapsed loops at one tolerance, zero at another, is not a question an index can answer and
+should not be asked to.
+— chasing front-end's BUG-0015, 2026-08-27
+
 ## The standing measurement
 
 `tools/test/acceptance.py` scores 42 of 44 hand-judged expectations present across
