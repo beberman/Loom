@@ -81,6 +81,11 @@
    #:*context-summary-cost*
    #:*context-embedder*
    #:*context-vector-store*
+   ;; BUG-0054. How an item is priced against the budget: NIL for the
+   ;; console's own rendering, a function for a skin that delivers something
+   ;; else. A budget spent in one currency and charged in another is a budget
+   ;; honoured exactly and uselessly.
+   #:*context-item-cost*
    #:semantic-candidates
    #:*rrf-k*
    #:*semantic-weight*

@@ -589,3 +589,83 @@ so a survey given one returns none."
   (let ((*operations* '()))
     (is (equal "No operation named nothing."
                (princ-to-string (make-condition 'unknown-operation :name "nothing"))))))
+
+
+;;; ------------------------------------------------------------------
+;;; What the budget buys, and in whose currency (BUG-0054)
+;;; ------------------------------------------------------------------
+
+(test the-lean-item-drops-the-scoring-fields-and-keeps-everything-else
+  ;; The six exist for judging the ranking. The console reads them off the
+  ;; plist and RECORD-CONTEXT-CALL is handed the bundle before anything is
+  ;; encoded, so neither loses anything by their absence from the wire.
+  (let* ((item (list :entity (list :id "function:src/x.lisp:alpha" :name "alpha")
+                     :band :seed :summary "Adds one."
+                     :cost 3 :via :calls :direction :out :convergence 2
+                     :effective-cost 2 :relation-count 7
+                     :relations (list (list :name "beta"))))
+         (lean (loom-serve::lean-context-item item)))
+    (dolist (dropped '(:cost :via :direction :convergence :effective-cost :relation-count))
+      (is (eq :absent (getf lean dropped :absent))
+          "~(~a~) is scoring metadata and should not be on the wire" dropped))
+    (dolist (kept '(:entity :band :summary :relations))
+      (is-true (getf lean kept) "~(~a~) is what the caller asked for" kept))
+    (is (equal "alpha" (getf (getf lean :entity) :name))
+        "the entity travels whole; only the item's own scoring keys go")))
+
+(test a-bundle-is-thinned-in-its-items-and-nowhere-else
+  ;; The totals are the caller's own arithmetic about what it asked for and
+  ;; what it got. Thinning them would answer the budget question by deleting it.
+  (let* ((bundle (list :task "t" :budget 400 :tokens 120 :truncated t
+                       :items (list (list :entity (list :name "alpha") :cost 3)
+                                    (list :entity (list :name "beta") :cost 9))
+                       :decisions (list (list :name "DEC-0001"))))
+         (leaned (loom-serve::leaned-bundle bundle)))
+    (is (= 400 (getf leaned :budget)))
+    (is (= 120 (getf leaned :tokens)))
+    (is-true (getf leaned :truncated))
+    (is (equal '((:name "DEC-0001")) (getf leaned :decisions)))
+    (is (= 2 (length (getf leaned :items))))
+    (is (every (lambda (i) (eq :absent (getf i :cost :absent))) (getf leaned :items))
+        "and the items are the part that was thinned")))
+
+(test an-item-is-priced-as-the-json-the-caller-receives
+  ;; BUG-0054's whole content. The console price and the JSON price of one item
+  ;; are different numbers, and the budget was charged the first while the
+  ;; caller was sent the second.
+  (let* ((item (list :entity (list :id "method:src/domain/partition/PartitionArc.js:PartitionArc.otherNode::"
+                                   :type :method :name "PartitionArc.otherNode"
+                                   :location "src/domain/partition/PartitionArc.js:92-96"
+                                   :language :javascript :source :structural
+                                   :confidence 1.0 :referrer-kind nil :stale nil)
+                     :band :seed :summary "The node at the far end."
+                     :cost nil :via nil :direction nil :convergence nil
+                     :effective-cost nil :relation-count 4
+                     :relations nil))
+         (json-price (loom-serve::context-item-tokens item))
+         (console-price (loom-knowledge::estimate-tokens
+                         (loom-knowledge::render-item item))))
+    (is (> json-price console-price)
+        "the JSON of this item is ~d tokens against the console's ~d; charging \
+the second for the first is the defect" json-price console-price)
+    ;; And the price is of the shape actually sent, not of the fat one.
+    (is (= json-price
+           (loom-knowledge::estimate-tokens (encode-result (loom-serve::lean-context-item item))))
+        "priced and emitted by the same function, so they cannot disagree")))
+
+(test the-context-operation-answers-within-the-budget-it-was-given
+  ;; End to end over the fixture. The assertion is on the ratio rather than on
+  ;; a byte count: before this change the encoded items ran to several times
+  ;; the tokens reported, and no fixture-sized number would have caught that.
+  (with-operations-fixture (repository)
+    (let* ((answer (call-operation :context '(:read)
+                                   :repository (repository-name repository)
+                                   :task "alpha arithmetic" :budget "400"))
+           (items (getf answer :items))
+           (charged (getf answer :tokens))
+           (actual (loom-knowledge::estimate-tokens (encode-result items))))
+      (is-true items "the fixture yields a bundle")
+      (is (<= actual (max 8 (round (* 1.1 charged))))
+          "the items encode to ~d tokens against ~d charged" actual charged)
+      (is (every (lambda (i) (eq :absent (getf i :effective-cost :absent))) items)
+          "and they arrive in the shape they were priced in"))))

@@ -366,6 +366,58 @@ Pass source=true for the definition's text."
                    :max-depth (or (request-integer depth "depth")
                                   *default-impact-depth*))))
 
+(defparameter *context-scoring-keys*
+  '(:cost :via :direction :convergence :effective-cost :relation-count)
+  "The per-item fields a bundle carries for judging its own ranking.
+
+REQ-0036 reads these; a reading agent does not. They are what the console
+prints as `->calls 3 x2' beside an item and what a judgement of the ranking is
+made from, and both of those happen where the bundle is built -- the console
+has the plist in hand, and RECORD-CONTEXT-CALL is given the whole bundle before
+anything is encoded. So dropping them from the wire costs neither.
+
+Measured on front-end 2026-08-27: 12,063 bytes of a 81,793-byte bundle, 16%,
+spread over 124 items that carry all six keys whether or not any is set.")
+
+(defun lean-context-item (item)
+  "ITEM without the fields that exist for scoring rather than for reading.
+
+BUG-0054 F2. The entities were never the expensive part: a caller that hits its
+output limit today loses the whole bundle, and 16% of what pushed it over is
+instrumentation the caller has no use for.
+
+Applied to the items and not to the bundle's totals, which are the caller's
+own budget arithmetic and belong on every answer."
+  (loop for (key value) on item by #'cddr
+        unless (member key *context-scoring-keys*)
+          append (list key value)))
+
+(defun leaned-bundle (bundle)
+  "BUNDLE with every item thinned by LEAN-CONTEXT-ITEM.
+
+The items and nothing else. :TOKENS, :BUDGET, :TRUNCATED and the withheld
+counts are the caller's own arithmetic about what it asked for and what it got,
+and they are now in the same currency as the bytes -- which is the other half
+of BUG-0054 and the reason they must survive."
+  (loop for (key value) on bundle by #'cddr
+        append (list key (if (eq key :items)
+                             (mapcar #'lean-context-item value)
+                             value))))
+
+(defun context-item-tokens (item)
+  "ITEM's cost in the currency a REST or MCP caller actually spends.
+
+BUG-0054 F1, and the reason it is one function rather than two: this prices the
+*same* shape LEAN-CONTEXT-ITEM emits, so the budget cannot be charged for
+something the caller does not receive. Charging RENDER-ITEM -- the console text
+-- is what left `budget=6000' delivering 81,793 characters.
+
+ENCODE-RESULT rather than a length estimate over the plist. The plist is not
+what goes on the wire: JSON-VALUE renames keys, drops nothing, and writes
+`null' for every unset field, and those nulls are 11,806 of the bytes measured.
+An estimate that ignored them would be the same class of error one layer down."
+  (estimate-tokens (encode-result (lean-context-item item))))
+
 (define-operation :context :read (repository task (budget))
     "A budgeted context bundle for a task: what to know before editing."
   ;; BUILD-CONTEXT and no RENDER-CONTEXT. The rendering step is what turns the
@@ -384,7 +436,14 @@ Pass source=true for the definition's text."
           ;; builds a store, so on an ordinary tree both bindings are NIL and
           ;; SEED-ENTITIES takes the path it has taken since S3.
           (let ((loom-knowledge:*context-vector-store* (repository-vectors repo))
-                (loom-knowledge:*context-embedder* (current-embedder)))
+                (loom-knowledge:*context-embedder* (current-embedder))
+                ;; BUG-0054. The budget is charged in the currency this skin
+                ;; delivers, which is the whole of REQ-0040 R1: "an MCP caller
+                ;; has a hard output limit and until now no way to say so".
+                ;; Bound here rather than defaulted in loom-knowledge because
+                ;; the encoder is this system's and the console's price is
+                ;; correctly the console's.
+                (loom-knowledge:*context-item-cost* #'context-item-tokens))
             ;; PLAN-0045 S2. REQ-0040 R1: an MCP caller has a hard output
             ;; limit and until now no way to say so. REQUEST-INTEGER refuses
             ;; junk rather than truncating it -- a budget silently read as 3
@@ -406,7 +465,12 @@ Pass source=true for the definition's text."
                    repo bundle instrumentation
                    :seconds (/ (float (- (get-internal-real-time) started))
                                internal-time-units-per-second))))
-          (if id (append bundle (list :record id)) bundle))))))
+          ;; The strip is after the record and before the return, and the order
+          ;; is the whole of why REQ-0036 loses nothing: RECORD-CONTEXT-CALL is
+          ;; handed the bundle with its scoring fields intact, and only the
+          ;; copy going to the caller is thinned.
+          (let ((answer (leaned-bundle bundle)))
+            (if id (append answer (list :record id)) answer)))))))
 
 (define-operation :structure :read (repository)
     "Systems, protocols, entry points and hubs, derived from the index."

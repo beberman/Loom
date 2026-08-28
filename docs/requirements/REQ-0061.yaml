@@ -1,0 +1,88 @@
+id: REQ-0061
+title: a context bundle's four candidate lists are 26% of the answer, are uncharged by the budget, and on a measured query duplicate what items already carries
+status: draft
+date: 2026-08-28
+refines: [REQ-0040]
+affects: [build-context, summarize-entities]
+importance: Major
+tags: [context, budget, shape, des-0020, req-0040, front-end]
+summary: |
+  BUG-0054 made the budget price what a caller receives, and the items now cost
+  4.2 characters per counted token against ESTIMATE-TOKENS' own 4. The whole
+  answer is still about 1.4x the budget, and the difference is four top-level
+  lists nothing charges for.
+
+  Measured on front-end 2026-08-28, `budget=6000`: of 34,206 bytes, `seeds` is
+  2,308, `documents` 3,903, `decisions` 2,857 and `mentions` 1,284 -- 9,038
+  bytes, 26%. All 44 of their entries also appear in `items`, each under a
+  `band` naming which list it belongs to.
+body: |
+  WHY THIS IS NOT SIMPLY A DUPLICATE TO DELETE
+
+  The lists are SUMMARIZE-ENTITIES over the candidate sets and `items` holds
+  what the budget admitted, so the two coincide only when everything fit. On a
+  tighter budget the lists would name entities `items` does not -- which is a
+  real thing to report, and the reason deleting them outright would remove an
+  answer rather than a repetition.
+
+  It is also not free to keep. A bundle that ran out of room still ships the
+  full candidate list at full width, so the tighter the budget the larger the
+  uncharged fraction. That is the wrong way round: the caller who most needs
+  the answer to be small pays the most for something the budget did not sell
+  them.
+
+  THREE SHAPES, AND THE MEASUREMENT SEPARATES THEM
+
+  C1  CHARGE THEM
+
+  The budget covers the whole answer. Honest arithmetic, and it spends index
+  allowance on entries that repeat what `items` already says whenever the
+  bundle is not truncated -- which is the common case.
+
+  C2  DEDUPLICATE AGAINST `items`
+
+  A list carries only the entries `items` does not. Nothing is lost, since the
+  band on an item says which list it belongs to, and the lists become exactly
+  what they are useful for: what the walk found and the budget could not fit.
+  The cost is a shape that means something different depending on whether the
+  bundle was truncated, which a client has to be told about rather than infer.
+
+  C3  DROP THEM AND LET THE BAND ANSWER
+
+  DES-0020 already made the band the mechanism -- "context bands the same three
+  ways impact does and says which band each entry is in". Under C3 a client
+  groups `items` by band and gets the four lists exactly, for one line of code.
+  What is lost is the candidate set: after truncation, nothing says what was
+  considered and refused.
+
+  C3 plus a count -- `documents-found: 16, documents-sent: 11` -- keeps both
+  facts and costs a number rather than a list. That is the shape this leans
+  toward and does not settle.
+
+  REQUIREMENTS
+
+  R1  Every part of a context answer is either charged against the budget or
+      reported as not charged. A caller that sets a budget and receives 1.4x it
+      has been told something false, and which part overran is the fact that
+      makes it actionable.
+
+  R2  A truncated bundle still says what the walk found and could not send.
+      That is REQ-0005's rule and the one thing none of the three shapes may
+      cost.
+
+  R3  Whatever shape is chosen, the console and the REST answer read the same
+      structure. DES-0022 D4's rule for the structural report: two renderings
+      of one plist, never two plists.
+
+  ACCEPTANCE
+
+  `context repository=front-end task=... budget=6000` returns an answer whose
+  encoded size is within a stated fraction of 6000 tokens, and a client can
+  still name every document the walk reached.
+
+  OPEN QUESTIONS
+
+  - Does any client read the four lists today? Nothing in this tree does:
+    RENDER-CONTEXT walks `items`, and RECORD-CONTEXT-CALL takes the
+    instrumentation rather than the bundle's lists. So the cost of C3 is borne
+    entirely by callers outside this repository, and none is known.

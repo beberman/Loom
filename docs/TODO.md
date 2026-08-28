@@ -73,28 +73,6 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   -- chasing front-end's BUG-0014, 2026-08-27
   -- BUG-0053 records it, 2026-08-27
 
-- **`budget` counts the content and not the JSON around it, so a caller who
-  sets a small budget still overflows.** `loom_context` with `budget=6000`
-  returned `tokens: 3692` -- under the budget, nothing withheld for size -- in
-  62,363 characters of JSON, which the MCP client refused and spilled to a file.
-  Roughly 17 characters per counted token against the usual four: the envelope,
-  not the content, is three quarters of the payload. Each of the 114 `items`
-  carries eleven keys (`entity band summary cost via direction convergence
-  effective-cost source relation-count relations`) and the nested `entity`
-  carries nine more, most of them NIL or repeated -- `language` on every row of a
-  single-language tree, `confidence: 1` throughout, `referrer-kind` and `stale`
-  null everywhere.
-
-  The knob exists precisely because "an MCP caller has a hard output limit and
-  until now no way to say so" (REQ-0040 R1, quoted at the call site). It does not
-  yet do that, because the limit is on the bytes and the budget is on the
-  content. Either count the rendered answer, or let a caller ask for the lean
-  shape -- a `verbose=false` that drops null fields and the per-item scoring
-  metadata would have fit this bundle inside any limit without losing a single
-  entity.
-  -- chasing front-end's BUG-0014, 2026-08-27
-  -- BUG-0054 records it, 2026-08-27
-
 - **`find` answers a term that matches no definition with silence, when it
   could say the term is prose.** `find term=osm-import` against `front-end`
   returned `{"entities":[],"total":0}`. The string is a route -- `router.post
@@ -285,6 +263,7 @@ re-derives an item that was answered, and each row names where to look instead.
 | "`similar` and `survey` are unreachable from a registered repository" -- `GET /v1/similar` answering `UNKNOWN-OPERATION`, and neither verb among the MCP tools | BUG-0052. Both are registered read-tier operations: `/v1/similar`, `/v1/survey`, `loom_similar` and `loom_survey` answer, and a repository with no vector store is refused with a sentence naming it and `embed` rather than an empty array, per DES-0041 D10. The three REQ-0042 rows in the tables below were true of the console and false of every other caller |
 | "Whether it is missing, renamed, or gated is not something a caller can tell from `UNKNOWN-OPERATION`" | BUG-0052 F4. The refusal names the registered operations, so a typo and an absent verb read differently. A tier the caller may not reach was already distinguishable: FIND-OPERATION is unfiltered and CHECK-CAPABILITY answers 403 |
 | "JavaScript call edges attributed by bare method name are wrong often enough to mislead" -- 3 of 4 on `ingestModel`, 9 of 12 on `extractSharedArcs`, every wrong row naming a real definition | BUG-0055, closed. The edges were always asserted `:inferred` at 1/N and every answer surface dropped it: a neighbour row now carries `edge-source` and `edge-confidence` beside the entity's own, an impact row carries `inferred` and `confidence-of-path`, and a path writes the guessed hop `calls?>name`. The console prints `BiMap.get (inferred 0.33)`. The volume is unchanged and the bug says so -- `impact` still walks these edges, and filtering on the number nothing carried until now is a capability rather than this defect |
+| "`budget` counts the content and not the JSON around it, so a caller who sets a small budget still overflows" | BUG-0054, closed. ADMIT-ITEM charged the *console* rendering; the skin now passes its own pricing in through `*context-item-cost*`, and the same function prices and emits the item so the two cannot disagree. front-end at `budget=6000`: 81,793 bytes to 34,206, and 4.2 characters per token on the charged part against ESTIMATE-TOKENS' own 4. What remains is REQ-0061: four candidate lists, 26% of the answer, that nothing charges for |
 | "`find` should answer across registered repositories, or say that it didn't" -- three instances, the sharpest entry in this file | REQ-0051, implemented. `find` with no `repository` searches every watched tree and each row names its own; named with one and finding nothing, it answers `0 here; 1 in utils`. The answer also names any tree it could not search, so "absent everywhere" is never claimed by a partial search |
 | "`init` cannot refresh a marked region it wrote" -- eight prepared trees keeping stale guidance, and a hand-edited region that is a superset of the template | REQ-0052, implemented as `init --update`. The author's half of the region is declared rather than guessed at, so a refresh replaces Loom's bytes and leaves the hundred lines beside them that no template can regenerate |
 

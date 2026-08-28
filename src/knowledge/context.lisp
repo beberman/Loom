@@ -102,6 +102,37 @@ to fill it exactly. Swap this for a real count when a caller needs the budget
 honoured to the token."
   (ceiling (length string) 4))
 
+(defparameter *context-item-cost* nil
+  "How to price one bundle item against the budget, or NIL for the console's.
+
+A function of one item returning a token count. NIL means ITEM-COST prices
+RENDER-ITEM, which is the text a console reader receives -- right for a console
+and wrong for every other skin, which is BUG-0054.
+
+The defect the variable exists for, measured on front-end 2026-08-27:
+`loom_context budget=6000` reported `tokens: 5988` and delivered 81,793
+characters of JSON, 13.7 per counted token against the four a token spells.
+The budget was honoured exactly, in a currency the caller does not spend. An
+MCP client refused the message and spilled it to a file -- which is REQ-0040
+R1's own failure case, arriving through the knob written to prevent it.
+
+A special variable rather than a keyword argument because three sites charge --
+the document reserve, ADMIT-ITEM, and the source plan -- and because the two
+callers that need to set it already bind *CONTEXT-VECTOR-STORE* and
+*CONTEXT-EMBEDDER* around this call for the same layering reason: loom-knowledge
+cannot name loom-serve's encoder, so the skin passes its own pricing in.")
+
+(defun item-cost (item)
+  "ITEM's cost against the budget, in the currency of whoever is paying.
+
+ESTIMATE-TOKENS over RENDER-ITEM by default. RENDER-ITEM's own docstring
+records why it is not PRINC-TO-STRING of the plist -- that over-counted the
+console line fivefold -- and the correction was right for the console and left
+every other skin paying a console price for a JSON answer."
+  (if *context-item-cost*
+      (funcall *context-item-cost* item)
+      (estimate-tokens (render-item item))))
+
 ;;;; ==================================================================
 ;;;; Seeding from task text
 ;;;; ==================================================================
@@ -1775,7 +1806,7 @@ Every call is logged to *CONTEXT-LOG*."
                                mentions)))
              (reserve (min (floor budget 2)
                            (reduce #'+ document-items :initial-value 0
-                                   :key (lambda (i) (estimate-tokens (render-item i)))))))
+                                   :key (lambda (i) (item-cost i))))))
         (flet ((admit-item (item cap &key free)
                  ;; FREE is the source tier, and it is what makes "two budgets"
                  ;; true rather than merely stated. Charging a 400-token body to
@@ -1786,7 +1817,7 @@ Every call is logged to *CONTEXT-LOG*."
                  ;; walk had reached. A body is rationed by *CONTEXT-SOURCE-
                  ;; DEFINITIONS*, a line by tokens, and neither may spend the
                  ;; other's allowance.
-                 (let ((cost (estimate-tokens (render-item item))))
+                 (let ((cost (item-cost item)))
                    (cond (free
                           (incf sourced-tokens cost)
                           (push item items)
@@ -1846,7 +1877,7 @@ Every call is logged to *CONTEXT-LOG*."
                            for source = (funcall source-fn (id entity))
                            for item = (context-item view entity :relations t
                                                               :band :seed :source source)
-                           for cost = (estimate-tokens (render-item item))
+                           for cost = (item-cost item)
                            if (<= (+ spent cost) source-cap)
                              collect (cons (id entity) item)
                              and do (incf spent cost) (incf sourced-tokens cost)
