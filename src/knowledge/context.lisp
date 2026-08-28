@@ -1658,6 +1658,25 @@ stops reaching one."
                     (subseq ranked 0 *context-mention-limit*)
                     ranked))))))
 
+(defun band-remainder (band candidates items)
+  "The summaries of CANDIDATES whose band was BAND and that ITEMS did not admit.
+
+DES-0046. The four candidate lists a bundle carries -- :SEEDS, :DECISIONS,
+:DOCUMENTS, :MENTIONS -- were SUMMARIZE-ENTITIES over the whole set the walk
+found, and a bundle that fit carried every one of them again in :ITEMS under
+its :BAND. Deduplicated against :ITEMS the list is empty on a bundle that fit
+and names exactly the candidates the budget refused on one that truncated,
+which is REQ-0061 R2's what-the-walk-could-not-send in the units the caller
+can act on -- names, not a count. The count is :BANDS.
+
+An admitted candidate is one an ITEMS entry of the same BAND carries by id."
+  (let ((admitted (loop for item in items
+                        when (eq band (getf item :band))
+                          collect (getf (getf item :entity) :id))))
+    (summarize-entities
+     (remove-if (lambda (e) (member (id e) admitted :test #'equal))
+                candidates))))
+
 (defparameter *context-relation-limit* 12
   "Most relationships to list for one entity in a bundle.
 
@@ -1915,29 +1934,51 @@ Every call is logged to *CONTEXT-LOG*."
              (wanted (if source-fn (min source-definitions (length seeds)) 0))
              (bundle (list :task task
                           :provenance provenance
-                          :seeds (summarize-entities seeds)
                           ;; DES-0032 D3. What the task's words reached, so a
                           ;; caller can tell a bundle whose subject is here
-                          ;; from one whose seeds all rode a common word. The
-                          ;; seeder's evidence reached the record writer and
-                          ;; nothing else before this: :SEEDS is
-                          ;; SUMMARIZE-ENTITIES output, so the REST response
-                          ;; carried "score": null and "terms": [] on every
-                          ;; seed and no caller could see it.
+                          ;; from one whose seeds all rode a common word.
                           :terms (loop for (term . state) in term-states
                                        collect (list :term term
                                                      :state state))
                           :items (reverse items)
-                          :decisions (summarize-entities decisions)
-                          ;; Beside :DECISIONS rather than folded into it. A
-                          ;; requirement does not govern the code it names, and
-                          ;; filing it under "decisions" would be the small lie
-                          ;; `impact' already declines to tell -- it reports
-                          ;; these as three headings, and two services answering
-                          ;; one question with two vocabularies is worse than
-                          ;; either vocabulary.
-                          :documents (summarize-entities documents)
-                          :mentions (summarize-entities mentions)
+                          ;; DES-0046. The four candidate lists were 26% of a
+                          ;; measured bundle, and every entry a bundle that fit
+                          ;; also carried in :ITEMS under a :BAND (DES-0020 D6).
+                          ;; Each now carries only what its band did NOT admit:
+                          ;; empty on a bundle that fit, the refused candidates
+                          ;; by name on one that truncated. A client
+                          ;; reconstructs the whole set as a band's :ITEMS
+                          ;; unioned with its list -- which is what
+                          ;; `tools/test/recall.py' scores strict recall on,
+                          ;; and the reason C3 (drop the lists) was rejected:
+                          ;; the seed band truncates, and a target the seeder
+                          ;; ranked but the budget dropped must still count.
+                          :seeds     (band-remainder :seed     seeds     items)
+                          :decisions (band-remainder :decision decisions items)
+                          :documents (band-remainder :document documents items)
+                          :mentions  (band-remainder :mention  mentions  items)
+                          ;; The count beside the lists: :FOUND is what the
+                          ;; walk produced for a band before the budget, :SENT
+                          ;; is the :ITEMS of that band, and :FOUND minus :SENT
+                          ;; is the length of the list above -- so :BANDS and
+                          ;; the lists cannot disagree. :NEIGHBOUR's :FOUND is
+                          ;; REACHES after the band-duplicate removal, so a
+                          ;; document one hop from a seed is counted once, in
+                          ;; its own band. RENDER-CUTOFF prints this; a REST
+                          ;; caller reads it without unioning anything.
+                          :bands (flet ((sent (band)
+                                          (count band items
+                                                 :key (lambda (i) (getf i :band)))))
+                                   (list :seed      (list :found (length seeds)
+                                                          :sent (sent :seed))
+                                         :decision  (list :found (length decisions)
+                                                          :sent (sent :decision))
+                                         :document  (list :found (length documents)
+                                                          :sent (sent :document))
+                                         :mention   (list :found (length mentions)
+                                                          :sent (sent :mention))
+                                         :neighbour (list :found (length reaches)
+                                                          :sent (sent :neighbour))))
                           :budget budget
                           ;; Both tiers, because since PLAN-0045 S3 the budget
                           ;; is both tiers. Reporting the index alone here is
@@ -2172,7 +2213,19 @@ answer would spend the budget this exists to report."
       (when (plusp withheld-items)
         (format out "~&#   index    ~d items sent, ~d withheld at ~d tokens~%"
                 (length (getf bundle :items)) withheld-items
-                (or (getf bundle :withheld-index-tokens) 0)))
+                (or (getf bundle :withheld-index-tokens) 0))
+        ;; DES-0046 D5. Which bands the index budget clipped, from the same
+        ;; :BANDS plist the REST caller reads. Only a band whose walk found
+        ;; more than the budget sent, and only inside this block -- an
+        ;; untruncated bundle has FOUND equal to SENT everywhere and prints
+        ;; nothing here.
+        (loop for (band label) in '((:seed "seeds") (:decision "decisions")
+                                    (:document "documents") (:mention "mentions")
+                                    (:neighbour "neighbours"))
+              for pair = (getf (getf bundle :bands) band)
+              when (and pair (> (getf pair :found) (getf pair :sent)))
+                do (format out "~&#   ~10a ~d of ~d sent~%"
+                           label (getf pair :sent) (getf pair :found))))
       (when (plusp withheld-bodies)
         (format out "~&#   source   ~d of ~d bodies sent, ~d withheld at ~d tokens~%"
                 sourced wanted withheld-bodies

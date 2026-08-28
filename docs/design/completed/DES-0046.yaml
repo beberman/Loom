@@ -1,0 +1,212 @@
+id: DES-0046
+title: A context bundle's four candidate lists carry only what the budget refused, and a per-band count says how much that was
+status: implemented
+date: 2026-08-28
+refines: [REQ-0061]
+affects: [build-context, render-cutoff, render-context]
+tags: [context, budget, shape, req-0061, des-0020, req-0040]
+summary: |
+  REQ-0061 measured four top-level lists -- `seeds`, `decisions`, `documents`,
+  `mentions` -- at 9,038 of a 34,206-byte bundle on front-end at budget=6000,
+  26%, uncharged by the budget, and every one of their 44 entries also present
+  in `items` under a band naming the list it belongs to. That measurement was
+  taken on a bundle whose seed band did not truncate. It does: on the same
+  tree at budget=6000, `seed` is `found 8, sent 3` and `neighbour` is
+  `found 241, sent 0`.
+
+  This is REQ-0061's shape C2 with a count. BUILD-CONTEXT keeps the four lists
+  but each carries only the entities its band did not admit into `items` --
+  empty on a bundle that fit, the refused candidates by name on one that did
+  not. The bundle also gains `:bands`, a plist of five `(:found N :sent N)`
+  pairs. A client reconstructs the full candidate set for a band as the
+  `items` of that band unioned with the list; it reads `:bands` for the count
+  without the union.
+
+  C3 -- drop the lists, keep only the count -- was rejected on the seed-band
+  measurement. `tools/test/recall.py` scores strict recall by whether the
+  target is among the seeds the seeder produced, which is a claim about the
+  ranking and not about the budget. Under C3 a target the seeder ranked and
+  the budget then dropped scores a miss, moving the recall number without a
+  ranking change. C2's list keeps those names, so the metric is unchanged.
+body: |
+  D1  THE LISTS ARE DEDUPLICATED AGAINST `items`
+
+  BUILD-CONTEXT's returned plist keeps `:seeds`, `:decisions`, `:documents`
+  and `:mentions`. Each was `(summarize-entities <candidate-set>)` -- the whole
+  set the walk produced for that band, before the budget. Each becomes
+  `(summarize-entities <the members that band did not admit into items>)`.
+
+  The admitted set for a band is read from `items`: an entry carries `:band`
+  (DES-0020 D6) and its `:entity` carries `:id`. So a candidate is dropped from
+  its list when an `items` entry of the same band carries the same id.
+
+  On a bundle that did not truncate, every candidate was admitted and all four
+  lists are empty -- `[]` on the wire, which is what `*array-valued-keys*`
+  already makes them encode as. On a bundle that truncated, a list names
+  exactly the candidates of that band the budget refused.
+
+  `:terms` is unchanged. It is a separate top-level key since DES-0032 D3,
+  carrying the seeder's per-term evidence that `:seeds` never held.
+
+  D2  THE PER-BAND COUNT
+
+  A bundle carries `:bands`, a plist keyed by the five band keywords
+  CONTEXT-ITEM writes:
+
+      :bands (:seed      (:found 8   :sent 3)
+              :decision  (:found 15  :sent 15)
+              :document  (:found 50  :sent 22)
+              :mention   (:found 5   :sent 0)
+              :neighbour (:found 102 :sent 0))
+
+  `:found` is the candidate count BUILD-CONTEXT computes before admission:
+  `(length seeds)` for `:seed`, the three values of DOCUMENTS-TOUCHING for
+  `:decision`, `:document` and `:mention`, and `(length reaches)` after the
+  band-duplicate removal for `:neighbour`. `:sent` is the number of `items`
+  entries of that band. `:found` minus `:sent` is `(length <that band's
+  list>)`, so `:bands` and the lists cannot disagree.
+
+  Every entry is present every time, zero counts included, so a reader indexes
+  `:bands` without a missing-key check -- ENTITY-SUMMARY's own rule for
+  `:referrer-kind` (BUG-0054 F2), at the scale of a band.
+
+  D3  WHY C2 AND NOT C1 OR C3
+
+  C1 charges the lists against the budget. On a bundle that did not truncate
+  this spends index allowance on ENTITY-SUMMARY the bundle already carries
+  under `items`. Rejected: it makes the budget buy a repetition.
+
+  C3 drops the lists and keeps only `:bands`. It is smaller by the refused
+  candidates' names on a truncated bundle and identical to C2 on one that fit.
+  Rejected on two measurements:
+
+    The seed and document bands truncate. REQ-0061's 26% figure was read on a
+    bundle whose bands all fit; on front-end at budget=6000 the seed band
+    sends 3 of 8 and the neighbour band 0 of 241. "After truncation nothing
+    says what was considered and refused" is REQ-0061's own statement of C3's
+    cost, and the bands it applies to are not rare.
+
+    `tools/test/recall.py` and `tools/test/acceptance.py` build their strict
+    recall set from the seeds the bundle reports. Before this change that set
+    was every seed the seeder produced, because `:seeds` was the pre-budget
+    list. The metric is a claim about the ranking: did the seeder rank the
+    target in the top *seed-limit*. Under C3 `service.seed_names` can return
+    only the seeds the budget sent, so a target the seeder ranked and the
+    budget dropped becomes a strict miss -- a recall regression with no
+    ranking change behind it. Under C2 the union of the seed-band `items` and
+    the `:seeds` list is the pre-budget set again, and `names_in` already
+    unions the two.
+
+  REQ-0061 names C2's cost as "a shape that means something different
+  depending on whether the bundle was truncated". The meaning is one meaning:
+  the candidates of this band that `items` does not carry. It is empty when
+  nothing was dropped, which is a degenerate case of that meaning and not a
+  second one.
+
+  D4  R2 IS MET BY THE NAMES
+
+  REQ-0061 R2 requires a truncated bundle to say what the walk found and could
+  not send. The list names each refused candidate; `:bands` states the count.
+  A caller reconstructs "every decision bearing on this code" as the
+  decision-band `items` plus `:decisions`, and "every document the walk
+  reached" -- REQ-0061's ACCEPTANCE clause -- the same way. Neither is
+  available under C3 once the band truncates.
+
+  D5  THE CONSOLE AND THE REST ANSWER READ ONE PLIST
+
+  REQ-0061 R3 and DES-0022 D4: two renderings of one plist, never two plists.
+  RENDER-CUTOFF prints the cutoff accounting today:
+
+      # N entities, ~T/B tokens (truncated)
+      #   sent X% of what this walk found; F tokens sends all of it
+      #   index    N items sent, W withheld at T tokens
+      #   source   S of D bodies sent, W withheld at T tokens
+
+  It gains one line per band whose `:found` exceeds its `:sent`, under the
+  `index` line and only inside the existing `(when (or withheld-items
+  withheld-bodies) ...)` block:
+
+      #   seeds      4 of 8 sent
+      #   documents  22 of 50 sent
+      #   neighbours 0 of 102 sent
+
+  The figures come from the `:bands` plist the REST caller receives. A bundle
+  that did not truncate does not enter the block and its output is
+  byte-for-byte what it is now.
+
+  D6  THE INSTRUMENTATION PATH IS UNTOUCHED
+
+  RECORD-CONTEXT-CALL reads the second value BUILD-CONTEXT returns, not the
+  bundle: `(getf instrumentation :seeds)` and `(getf instrumentation :items)`.
+  That value is the full pre-budget seed list with scores and ranks, and it
+  does not change. `.loom/context` records keep their `seeds`. ANSWER-SHAPE in
+  `record-query` keys on `:items` before `:seeds`, so a context result's
+  recorded shape is read from `:items` and does not move.
+
+  D7  THE HARNESS
+
+  Three instruments read `bundle["seeds"]`:
+
+    tools/test/acceptance.py   NAMES_IN unions `bundle['seeds']` with every
+                               `bundle['items']` name -- which is the
+                               pre-budget set under C2, so NAMES_IN needs no
+                               change. RUN_ABSENCE_CASES prints
+                               `len(b.get("seeds"))`; it becomes the count of
+                               refused seeds, so it moves to the union.
+    tools/test/recall.py       NAMES_IN, same union, no change. Line 154
+                               records `len(seeds)` and `seed_names`; both
+                               move to the union so the recorded seed set is
+                               the pre-budget one the metric is about.
+    tools/test/seed-sheet.py   NAMES_IN, same. The live-bundle fallback at
+                               line 108 reads `row["bundle"]["seeds"]`; it
+                               moves to the union. The stored-record reads
+                               (lines 61, 105) are unchanged -- a record keeps
+                               its full `seeds`.
+
+  A shared `service.seed_names(bundle)` returns the union: the seed-band
+  `items` names plus the `:seeds` list names.
+
+  D8  WHAT DOES NOT CHANGE
+
+  LEAN-CONTEXT-ITEM and *CONTEXT-SCORING-KEYS* are untouched: they thin
+  per-item scoring fields, and neither the lists nor `:bands` is one.
+  LEANED-BUNDLE passes every non-`:items` key through. CONTEXT-ITEM-TOKENS
+  prices a `lean-context-item` and neither the lists nor `:bands` is priced:
+  they are bundle-wide accounting in the class of `:withheld-items` and
+  `:budget`, and on a bundle that fit the lists are empty.
+
+  `*array-valued-keys*` keeps `:seeds`, `:documents`, `:mentions`,
+  `:decisions` -- the reason those four entries exist. `:bands` is a plist of
+  plists, JSON-VALUE renders it as a nested object, and no value in it is a
+  list, so it needs nothing added.
+
+  ALTERNATIVES CONSIDERED
+
+  Keep the lists whole and charge nothing (C1 without the charge -- the
+  current behaviour). Rejected: it is what REQ-0061 measured as 26% of a
+  bundle duplicating `items`.
+
+  `:bands` alone, no lists (C3). Rejected under D3.
+
+  Report `:found` per band and let the client count `:sent` from `items`.
+  Smaller by five integers. Rejected: RENDER-CUTOFF would group `items` by
+  band to print D5's lines, and the `:found` minus `:sent` equals list length
+  check in D2 would have nothing to check against.
+
+  A separate `context-candidates` operation returning the full lists. Rejected
+  on DES-0020's reasoning: a second call an agent has to know to make is a
+  call it will not make.
+
+  CONSEQUENCES
+
+  A context bundle that fit loses the four lists' bytes: 9,038 of 34,206 on
+  REQ-0061's front-end measurement, replaced by `:bands` at roughly 200 bytes
+  and four `[]`. A bundle that truncated keeps the refused candidates' names,
+  which is the smaller half of the 9,038 and the half that is not in `items`.
+  The whole-answer ratio REQ-0061 opens with -- 1.4x the budget where `items`
+  alone is 1.0x -- moves toward 1.0x on a bundle that fit.
+
+  A client that read a full list as "every candidate" now reads "every refused
+  candidate" from the same key. The union with the band's `items` is the old
+  value. None such is known outside the three harness instruments, which D7
+  moves to the union.

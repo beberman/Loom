@@ -4,12 +4,14 @@
     LOOM_CONTEXT_LOG=1 tools/loom-serve.sh restart
     tools/test/seed-sheet.py tools/test/cases/known-item.json > seeds.csv
 
-Needs the context log ON, which tools/loom-serve.sh no longer defaults to. The
-REST bundle's `seeds' are SUMMARIZE-ENTITIES output and carry no score --
-"score": null on every one -- because the seeder's evidence goes to the record
-writer and not to the caller (DES-0032 D3 records this). The score lives only in
+Needs the context log ON, which tools/loom-serve.sh no longer defaults to. A
+REST bundle carries no seed scores -- the seeder's evidence goes to the record
+writer and not to the caller (DES-0032 D3) -- and since DES-0046 its `seeds`
+list holds only the seeds the budget refused, the rest being `items` with
+`band == "seed"`. `service.seed_names` unions the two. The score lives only in
 .loom/context, so this runs each case, then reads the record it just wrote back
-by matching on the task string.
+by matching on the task string; the live-bundle fallback is names without
+scores.
 
 Columns: repository, family, expected, hit_strict, hit_lenient, seeds, query,
 then seed_1..seed_N and score_1..score_N, and terms_1..terms_N when --terms is
@@ -36,7 +38,7 @@ LOG = os.environ.get("LOOM_CONTEXT_LOG_DIR", ".loom/context")
 
 
 def names_in(bundle):
-    strict = {s["name"] for s in bundle.get("seeds") or []}
+    strict = set(service.seed_names(bundle))
     for i in bundle.get("items") or []:
         strict.add(i["entity"]["name"])
     lenient = set(strict)
@@ -105,8 +107,8 @@ def main():
         seeds = (r.get("returned") or {}).get("seeds") if r else None
         if seeds is None:
             missing += 1
-            seeds = [{"name": s["name"], "score": None, "terms": None}
-                     for s in row["bundle"].get("seeds") or []]
+            seeds = [{"name": n, "score": None, "terms": None}
+                     for n in service.seed_names(row["bundle"])]
         row["seedrows"] = seeds
         width = max(width, len(seeds))
     if missing:
