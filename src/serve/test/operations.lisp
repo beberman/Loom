@@ -297,6 +297,25 @@ check:
     (is (null result))
     (is (not readable) "and junk is distinguishable from it")))
 
+(test a-cosine-is-parsed-without-a-reader-and-refused-outside-its-range
+  ;; TO-COSINE reaches no reader, which is the difference between this and
+  ;; console.lisp's READ-FROM-STRING: a query parameter is not typed by a human
+  ;; at a terminal, and the reader interns whatever it is handed.
+  (is (= 0.8 (to-cosine "0.8")))
+  (is (= 1.0 (to-cosine "1")))
+  (is (= 0.0 (to-cosine "0.0")))
+  (is (null (to-cosine "0.8x")) "a partial parse is not a number")
+  (is (null (to-cosine "1.2.3")) "and neither is a second point")
+  (is (null (to-cosine "-0.5")) "a sign is not in the character set")
+  (is (null (to-cosine "#.(list 1)")) "nor is anything the reader would act on")
+  (is (null (request-cosine nil "cut")) "absent is absent, as for the other two")
+  (is (= 0.7 (request-cosine "0.7" "cut")))
+  ;; The range, which the console does not check. A survey answering an
+  ;; out-of-range cut returns an empty rows array, which is the one thing
+  ;; DES-0041 D10 forbids these two operations to be ambiguous about.
+  (signals malformed-request (request-cosine "5" "cut"))
+  (signals malformed-request (request-cosine "high" "cut")))
+
 (test the-two-coercers-agree-about-junk
   ;; The defect this shape exists to prevent: game-server's CONFIG-GET signals
   ;; on an unreadable integer and returns false for an unreadable boolean,
@@ -434,3 +453,139 @@ file now."
                                :repository (repository-name repository)
                                :term "alpha")
                "a read with the log off answers normally"))))
+
+
+;;; ------------------------------------------------------------------
+;;; Resemblance (BUG-0052)
+;;; ------------------------------------------------------------------
+;;;
+;;; Nothing here reaches ollama. The store is built by hand over the fixture's
+;;; own entity ids, the way src/knowledge/test/similar.lisp builds one, so the
+;;; ordering is decided by the fixture rather than by nomic-embed-text and the
+;;; assertions are about the two entries rather than about the model.
+
+(defun fixture-vector-store (repository vectors)
+  "Install a store over VECTORS -- an alist of entity id to unit vector.
+
+REPOSITORY-CACHED-VECTORS rather than a sidecar on disk: LOAD-VECTOR-STORE is
+what checks an embedder identity, and the cache is read straight through when
+it holds anything but :UNLOADED. The internal accessor is the point of contact,
+because installing a store is not something a caller of loom-workspace does."
+  (let* ((dimensions (length (cdr (first vectors))))
+         (count (length vectors))
+         (flat (make-array (* count dimensions) :element-type 'single-float
+                                                :initial-element 0.0)))
+    (loop for (nil . v) in vectors
+          for i from 0
+          do (replace flat v :start1 (* i dimensions)))
+    (setf (loom-workspace::repository-cached-vectors repository)
+          (loom-embed:make-vector-store
+           :embedder-id "fixed:test" :dimensions dimensions :count count
+           :ids (map 'simple-vector #'car vectors)
+           :digests (make-array count :initial-element 0)
+           :vectors flat))))
+
+(defun fixture-function-id (repository name)
+  (getf (first (loom-knowledge:search-entities (repository-graph repository)
+                                               :name name :type :function))
+        :id))
+
+(defmacro with-embedded-fixture ((repository) &body body)
+  "The operations fixture with a two-dimensional store over its two functions.
+
+ALPHA and ALPHA-TWICE at cosine 0.96, which is one number doing two jobs: above
+*SURVEY-CUT* so a survey with no cut returns both rows, and below a cut of 0.99
+so a survey given one returns none."
+  `(with-operations-fixture (,repository)
+     (fixture-vector-store
+      ,repository
+      (list (cons (fixture-function-id ,repository "alpha")
+                  (make-array 2 :element-type 'single-float
+                                :initial-contents '(1.0 0.0)))
+            (cons (fixture-function-id ,repository "alpha-twice")
+                  (make-array 2 :element-type 'single-float
+                                :initial-contents '(0.96 0.28)))))
+     ,@body))
+
+(test similar-and-survey-are-registered-read-operations
+  ;; BUG-0052's first half, and the assertion that fails without the entries:
+  ;; REQ-0042 and DES-0041 both read `implemented' while FIND-OPERATION
+  ;; answered NIL for each of these, so every REST and MCP caller got
+  ;; UNKNOWN-OPERATION for a query the console has had since 2026-08-23.
+  (dolist (name '(:similar :survey))
+    (let ((operation (find-operation name)))
+      (is-true operation "~(~a~) is not registered" name)
+      (when operation
+        (is (eq :read (operation-tier operation))
+            "~(~a~) reads an index and a sidecar and writes neither" name))))
+  ;; The shape, because both skins read it: VALIDATE-ARGUMENTS refuses on it and
+  ;; TOOL-INPUT-SCHEMA builds MCP's `required' vector from it.
+  (is (equal '((:repository t) (:term t) (:against nil) (:limit nil))
+             (operation-arg-shape (find-operation :similar))))
+  (is (equal '((:repository t) (:against t) (:cut nil))
+             (operation-arg-shape (find-operation :survey)))
+      "a survey names two repositories; that is the question it is"))
+
+(test similar-returns-the-resembling-definition-with-the-subject-it-resolved
+  (with-embedded-fixture (repository)
+    (let ((answer (call-operation :similar '(:read)
+                                  :repository (repository-name repository)
+                                  :term "alpha")))
+      (is (equal (repository-name repository) (getf answer :repository)))
+      (is (equal (repository-name repository) (getf answer :against))
+          "no `against' searches the subject's own repository, as on the console")
+      (is (equal "alpha" (getf (getf answer :subject) :name))
+          "the subject travels with the answer; TERM is what the caller typed")
+      (let ((rows (getf answer :resembling)))
+        (is (= 1 (length rows)) "the subject is not its own nearest neighbour")
+        (is (equal "alpha-twice" (getf (first rows) :name)))
+        (is (> (getf (first rows) :similarity) 0.9))))))
+
+(test survey-reports-the-cut-it-used-and-honours-one-it-was-given
+  (with-embedded-fixture (repository)
+    (let* ((name (repository-name repository))
+           (default (call-operation :survey '(:read) :repository name :against name)))
+      (is (= *survey-cut* (getf default :cut)) "the cut used is on the answer")
+      (is (= 2 (length (getf default :rows)))
+          "each function's best match is the other one")
+      (is (= 2 (getf default :total)))
+      (is (null (getf default :truncated)))
+      ;; The cut is read rather than ignored, which is what a survey answering
+      ;; the same table at every cut would look like.
+      (let ((strict (call-operation :survey '(:read) :repository name
+                                                     :against name :cut "0.99")))
+        (is (= 0.99 (getf strict :cut)))
+        (is (null (getf strict :rows)) "no pair reaches it")))))
+
+(test a-repository-with-no-vectors-is-refused-by-name-rather-than-answered-empty
+  ;; DES-0041 D10. There is no lexical resemblance query to fall back to, so an
+  ;; empty list would mean `nothing resembles this' and `nothing could have' at
+  ;; once. The fixture has no store until WITH-EMBEDDED-FIXTURE installs one.
+  (with-operations-fixture (repository)
+    (let ((name (repository-name repository)))
+      (dolist (call (list (list :similar :repository name :term "alpha")
+                          (list :survey :repository name :against name)))
+        (handler-case
+            (progn (apply #'call-operation (first call) '(:read) (rest call))
+                   (is-true nil "~(~a~) answered without a store" (first call)))
+          (malformed-request (condition)
+            (let ((message (request-message condition)))
+              (is-true (search name message)
+                       "the refusal names the repository: ~a" message)
+              (is-true (search "embed" message)
+                       "and the command that fixes it: ~a" message))))))))
+
+(test an-unknown-operation-names-the-ones-that-exist
+  ;; BUG-0052 F4. "No operation named similar." is true of a typo, of a verb
+  ;; this build does not carry, and of one that was renamed, and a caller
+  ;; cannot act until it knows which.
+  (let ((message (princ-to-string (make-condition 'unknown-operation :name "similer"))))
+    (is-true (search "similer" message) "the refusal repeats what was asked for")
+    (is-true (search "similar" message)
+             "and names what exists, which is what tells a typo from a gap: ~a"
+             message))
+  ;; The empty table is a state DES-0006 describes -- a skin loaded without
+  ;; loom-serve's entries answers 404 -- so the report has to survive it.
+  (let ((*operations* '()))
+    (is (equal "No operation named nothing."
+               (princ-to-string (make-condition 'unknown-operation :name "nothing"))))))

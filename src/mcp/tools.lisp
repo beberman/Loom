@@ -1,10 +1,13 @@
 ;;;; The tool set, and the schema tools/list answers with.
 ;;;;
-;;;; Exactly ten tools, each a thin call to the same registry entry loom-rest's
-;;;; equivalent route calls. R2's seven read tools are enumerated by REQ-0008
-;;;; itself; the three repl tools are added per R9's explicit instruction that
-;;;; the REPL "is reachable through the same REST and MCP surfaces R2 and R4
-;;;; expose."
+;;;; Each tool is a thin call to the same registry entry loom-rest's equivalent
+;;;; route calls. R2's seven read tools are enumerated by REQ-0008 itself; the
+;;;; three repl tools are added per R9's explicit instruction that the REPL "is
+;;;; reachable through the same REST and MCP surfaces R2 and R4 expose." The
+;;;; set has grown by requirement since -- REQ-0034, REQ-0036 R2, REQ-0022 R6
+;;;; and BUG-0052. No count is written in this file any more: the one that was
+;;;; here read ten while the list held sixteen, and the assertion that fails
+;;;; when the set changes lives in src/mcp/test/tools.lisp.
 ;;;;
 ;;;; The four lifecycle write tools -- loom_watch, loom_pause, loom_unwatch,
 ;;;; loom_reindex -- are deliberately absent, and this comment is the record of
@@ -65,12 +68,24 @@
         ;; running any of them, and REST carries them for the script that does.
         (make-tool :name "loom_structure" :operation :structure)
         (make-tool :name "loom_drift" :operation :drift)
+        ;; BUG-0052. REQ-0042's two verbs, on the same side of that line and for
+        ;; the same reason: both are read-tier queries over the index and a
+        ;; vector sidecar, and neither prepares, describes or dismantles a
+        ;; repository. The narrowness argued above is about lifecycle commands a
+        ;; service operator runs.
+        ;;
+        ;; `similar' is the question `find' structurally cannot answer -- a
+        ;; duplicate is precisely the case where the two names differ -- so an
+        ;; agent that has only `find' has no way to ask it at all. front-end
+        ;; holds four copies of ringIsCCW, two of which share a name.
+        (make-tool :name "loom_similar" :operation :similar)
+        (make-tool :name "loom_survey" :operation :survey)
         (make-tool :name "loom_set_status" :operation :set-status)
         (make-tool :name "loom_complete" :operation :complete)
         (make-tool :name "loom_repl_open" :operation :repl-open)
         (make-tool :name "loom_repl_eval" :operation :repl-eval)
         (make-tool :name "loom_repl_close" :operation :repl-close))
-  "The sixteen tools, in the order tools/list returns them.")
+  "Every tool, in the order tools/list returns them.")
 
 (defun tool-permitted-p (tool grants)
   "True when GRANTS reach the tier TOOL's operation declares.

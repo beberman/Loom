@@ -57,6 +57,14 @@
     ;; now carry for a bundle, which is the point of the two services sharing
     ;; one vocabulary.
     :problems :changed :blocked-by
+    ;; The resemblance answers (REQ-0042, registered by BUG-0052). DES-0041 D10
+    ;; is why :RESEMBLING and :ROWS cannot encode as null: a repository with no
+    ;; store is already refused with a sentence, so an empty list here means
+    ;; "nothing resembles this" and must not arrive looking like "this question
+    ;; was not answered". The two word lists are a row's reasons, and a pair
+    ;; that shares no name word and no prose word is the ordinary case -- the
+    ;; whole point of the query is that a duplicate is where the names differ.
+    :resembling :rows :shared-name-words :shared-prose-words
     ;; The structural report (DES-0022 S1). Every one of these is a list that is
     ;; legitimately empty -- a tree with no protocols, or one no analyzer
     ;; claimed -- and [] against null is exactly the distinction an init script

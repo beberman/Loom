@@ -65,15 +65,15 @@ testing nothing."
   ;; invisible -- the count would simply be the count and every other test would
   ;; still pass.
   ;;
-  ;; Twelve rather than fifteen since REQ-0032: RESOLVE-CALLER-GRANTS answers
-  ;; :read and :write and deliberately not :repl, so the three repl tools were
-  ;; advertised to every caller and callable by none. An agent on game-server
-  ;; planned around them, spent five `sbcl --load' launches doing by shell what
-  ;; a session does in one, and was refused at the end of the task.
+  ;; Three fewer than *TOOLS* holds, since REQ-0032: RESOLVE-CALLER-GRANTS
+  ;; answers :read and :write and deliberately not :repl, so the three repl
+  ;; tools were advertised to every caller and callable by none. An agent on
+  ;; game-server planned around them, spent five `sbcl --load' launches doing by
+  ;; shell what a session does in one, and was refused at the end of the task.
   (with-test-server ()
     (let* ((tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
            (names (mapcar (lambda (tool) (cdr (assoc :name tool))) tools)))
-      (is (= 13 (length tools)) "the tool set is ~a" names)
+      (is (= 15 (length tools)) "the tool set is ~a" names)
       (dolist (repl '("loom_repl_open" "loom_repl_eval" "loom_repl_close"))
         (is-false (member repl names :test #'string=)
                   "~a is advertised to a caller that cannot call it" repl))
@@ -81,7 +81,12 @@ testing nothing."
                          "loom_structure" "loom_drift"
                          ;; REQ-0034. The workflow tool an agent asks before
                          ;; the file exists.
-                         "loom_check_document"))
+                         "loom_check_document"
+                         ;; BUG-0052. Read-tier queries, advertised for the
+                         ;; reason loom_structure and loom_drift are: an agent
+                         ;; in a prepared worktree has no console, and
+                         ;; `similar' is the one question `find' cannot answer.
+                         "loom_similar" "loom_survey"))
         (is-true (member present names :test #'string=)
                  "~a is missing; REQ-0022 R6 puts the transition on MCP as well
 as REST, and an agent in a prepared worktree has no other way to reach it"
@@ -114,7 +119,7 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
       (with-grants ('(:read :write :repl))
         (let* ((with (cdr (assoc :tools (result-of (rpc "tools/list")))))
                (names (mapcar (lambda (tool) (cdr (assoc :name tool))) with)))
-          (is (= 16 (length with)))
+          (is (= 18 (length with)))
           (is (= 3 (- (length with) (length without))))
           (dolist (repl '("loom_repl_open" "loom_repl_eval" "loom_repl_close"))
             (is-true (member repl names :test #'string=)

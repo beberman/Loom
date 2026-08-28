@@ -215,6 +215,41 @@ report is simply smaller than the caller asked for."
                   :message (format nil "~a must be a non-negative integer, not ~s."
                                    what value)))))
 
+(defun to-cosine (value)
+  "VALUE as a single float, or NIL when it does not spell a decimal number.
+
+Digits and at most one point, parsed by hand. console.lisp reads its cut with
+READ-FROM-STRING, which is safe at a console a human types at and not at a
+query parameter: the reader interns whatever symbol it is handed, and with
+*READ-EVAL* left alone a #. is evaluated. Restricting the character set first
+and doing the arithmetic afterwards costs six lines and reaches no reader."
+  (typecase value
+    (real (float value 1.0))
+    (string
+     (let ((dot (position #\. value)))
+       (when (and (some #'digit-char-p value)
+                  (every (lambda (c) (or (digit-char-p c) (char= c #\.))) value)
+                  (or (null dot) (null (position #\. value :start (1+ dot)))))
+         (/ (float (parse-integer (remove #\. value)) 1.0)
+            (expt 10 (if dot (- (length value) dot 1) 0))))))
+    (t nil)))
+
+(defun request-cosine (value what)
+  "VALUE as a cosine in [0,1], NIL when absent, or a malformed request.
+
+The range is checked and the console's is not, because the two failures differ.
+A console reader who types 5 sees an empty table under a heading saying 5.00
+and knows what they did. A survey answering an out-of-range cut over HTTP
+returns an empty rows array, which is the one thing DES-0041 D10 forbids this
+pair of operations to be ambiguous about: no pair reaches the cut, and no pair
+could have."
+  (cond ((null value) nil)
+        ((let ((cosine (to-cosine value)))
+           (and cosine (<= 0.0 cosine 1.0) cosine)))
+        (t (error 'malformed-request
+                  :message (format nil "~a must be a cosine between 0 and 1, not ~s."
+                                   what value)))))
+
 (defun request-boolean (value what)
   "VALUE as a flag, NIL when absent, or a malformed request.
 
@@ -393,6 +428,94 @@ Pass source=true for the definition's text."
     "Where the prose and the index disagree. Candidates for review, not findings."
   (let ((watched (require-repository repository)))
     (prose-report (repository-graph watched) :repository (repository-name watched))))
+
+;;;; ------------------------------------------------------------------
+;;;; Resemblance (REQ-0042, DES-0041; registered by BUG-0052)
+;;;;
+;;;; DES-0041 D9 puts the query in loom-knowledge and leaves the stores to the
+;;;; caller, "the arrangement console.lisp and operations.lisp already use for
+;;;; *CONTEXT-VECTOR-STORE* and *CONTEXT-EMBEDDER*". console.lisp got that
+;;;; arrangement and this file did not, so for six days the one query `find'
+;;;; structurally cannot answer was reachable only by a human at a console --
+;;;; and an agent in a prepared worktree, which is who REQ-0021 R8 says reaches
+;;;; Loom through the service, got UNKNOWN-OPERATION.
+;;;;
+;;;; Neither entry binds a special variable. `similar' and `survey' take their
+;;;; stores as arguments, unlike `context', so there is nothing here for a
+;;;; concurrent request on another thread to see.
+;;;; ------------------------------------------------------------------
+
+(defun require-vectors (designator)
+  "The repository DESIGNATOR names and its vector store, or a refusal naming both.
+
+Two values. REQUIRE-REPOSITORY decides the first and DES-0041 D10 decides the
+second: there is no lexical resemblance query to fall back to, so an empty
+answer would mean `nothing resembles this' and `nothing could have' at once.
+No ollama, no store, and a store whose embedder identity does not match are one
+state with one meaning (REQ-0048 R6), and the meaning is this sentence.
+
+MALFORMED-REQUEST rather than REPOSITORY-INDEXING, which is the other refusal a
+caller can be handed about a repository that will answer later. That one is 503
+because the request succeeds unchanged in a few seconds; this one does not
+succeed until somebody runs `embed', so 400 and the command that fixes it."
+  (let* ((watched (require-repository designator))
+         (store (repository-vectors watched)))
+    (unless store
+      (error 'malformed-request
+             :message (format nil "~a has no vector store. Run embed on it first."
+                              (repository-name watched))))
+    (values watched store)))
+
+(define-operation :similar :read (repository term (against) (limit))
+    "Definitions that resemble one, by meaning rather than by name. \
+Pass against to search a different repository than the subject's."
+  ;; REQ-0042 R1 and R2. AGAINST is the second repository and not a second
+  ;; term: a resemblance query names two trees at most and one subject, and the
+  ;; cross-repository form is the case the requirement was written for.
+  (multiple-value-bind (source source-store) (require-vectors repository)
+    (let ((subject (resolve-entity (repository-graph source) term)))
+      (multiple-value-bind (target target-store)
+          (if against (require-vectors against) (values source source-store))
+        (list :repository (repository-name source)
+              :against (repository-name target)
+              ;; The subject travels with the answer for the reason a survey
+              ;; row carries :SUBJECT-LOCATION: TERM is what the caller typed,
+              ;; and BEST-NAME-MATCH may have resolved it to one of several
+              ;; definitions spelling that name.
+              :subject (entity-summary subject)
+              ;; NIL here is the store's answer and not its absence --
+              ;; REQUIRE-VECTORS has already refused that case -- so [] is the
+              ;; honest encoding. *ARRAY-VALUED-KEYS* carries :RESEMBLING.
+              :resembling (resembling subject source-store
+                                      (repository-graph target) target-store
+                                      :limit (or (request-integer limit "limit")
+                                                 *resemblance-limit*)))))))
+
+(define-operation :survey :read (repository against (cut))
+    "Definitions in one repository that resemble something in another, best first."
+  ;; REQ-0042 R3. AGAINST is required here and optional on :SIMILAR, which is
+  ;; the shape of the two questions: a survey with one repository is a survey
+  ;; of a tree against itself, and every definition resembles itself.
+  (multiple-value-bind (source source-store) (require-vectors repository)
+    (multiple-value-bind (target target-store) (require-vectors against)
+      (let ((floor (or (request-cosine cut "cut") *survey-cut*)))
+        (multiple-value-bind (rows same-name reached)
+            (resemblance-survey (repository-graph source) source-store
+                                (repository-graph target) target-store
+                                :cut floor)
+          (list :repository (repository-name source)
+                :against (repository-name target)
+                :cut floor
+                :rows rows
+                ;; BUG-0002's pair of keys, for BUG-0002's reason: forty rows
+                ;; read as the whole truth is worse than a long table, and the
+                ;; console prints "40 of 486 shown" from exactly these two.
+                :total reached
+                :truncated (> reached (length rows))
+                ;; DES-0041 D4. Counted rather than listed: `find' answers
+                ;; these, and all of them score 1.0000, so listing them would
+                ;; spend the table on the question that was not asked.
+                :same-name same-name))))))
 
 (define-operation :status :read ((repository))
     "Index size, watcher health, unresolved references, rule violations."
