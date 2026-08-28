@@ -1,0 +1,92 @@
+id: BUG-0058
+title: tools/loom-test.sh reports a failure count and filters away every line naming the test, so a run that fails once says only that something did
+status: closed
+severity: major
+date: 2026-08-28
+affects: [full-test]
+tags: [testing, instruments, absence, req-0050, rule-0008]
+summary: |
+  The default output of `tools/loom-test.sh` is `sbcl --script "$driver" |
+  grep -E 'ok  |FAIL|fail|passed|Pass:|Fail:|====|Did not|error'`. FiveAM
+  prints a failing test as a block:
+
+       Failure Details:
+       --------------------------------
+       SOME-TEST in OPERATIONS []:
+            the assertion message
+       --------------------------------
+
+  Not one of those five lines matches the pattern. `Failure Details:` is not
+  `Fail:` and grep -E is case-sensitive, so `fail` does not match `Failure`
+  either. The run prints `Fail: 1` and `FAIL LOOM-SERVE/TEST` and nothing that
+  says which test or why.
+body: |
+  HOW IT WAS FOUND
+
+  A full run on 2026-08-28 reported `Pass: 251, Fail: 1` for loom-serve. Seven
+  subsequent runs -- the serve suite alone five times in one image, the serve
+  suite once on its own, and a full verbose run -- all passed 252 of 252. The
+  failure is intermittent, and the one run that saw it recorded nothing that
+  could name it, so there is no way back to it.
+
+  The only line the filter passed from that region was
+
+       Running test A-FORM-THAT-SIGNALS-IS-AN-ANSWER-NOT-A-FAILURE ....
+
+  which matched on `FAIL` inside `NOT-A-FAILURE` and is not the failing test.
+  An instrument whose output invites that reading is worse than one that prints
+  nothing, because the reader acts on it.
+
+  WHY IT MATTERS MORE THAN A FORMATTING PREFERENCE
+
+  RULE-0008 and REQ-0050 R5 both say an instrument must refuse with a sentence
+  rather than report a figure it cannot stand behind. This is the same rule one
+  level down: the figure is right and the evidence for it is discarded, so a
+  reader who wants to act on `Fail: 1` has to re-run and hope.
+
+  It is worst for exactly the failures that matter most. A deterministic
+  failure survives -- re-run the system alone and it fails again with detail. An
+  intermittent one does not, and the run that caught it is the only run that
+  will.
+
+  THE FIX
+
+  F1  The failure block reaches the reader. A stateful filter rather than a
+      wider pattern: FiveAM's detail lines have no stable marker of their own
+      -- the message is arbitrary text and the separators are dashes -- so
+      matching them line by line means matching almost anything. Turning the
+      filter on at `Failure Details` and off at the next `=====` header passes
+      the block whole and nothing else.
+
+  F2  `-v` stays. It is the right answer for reading a whole run and the wrong
+      one for a summary that has to name what broke.
+
+  WHAT WAS DONE, 2026-08-28
+
+  F1. The filter is an awk with one flag: on at `Failure Details`, off at the
+  next `^=====` system header, everything in between printed whole. The summary
+  patterns are otherwise unchanged, so a passing run prints exactly what it
+  printed before.
+
+  Checked against a synthetic block before running anything, because the whole
+  point is behaviour on a failure and a passing suite exercises none of it:
+
+      ===== LOOM-SERVE/TEST =====
+       Running test A-FORM-THAT-SIGNALS-IS-AN-ANSWER-NOT-A-FAILURE ....
+          Pass: 251 (99%)
+          Fail: 1 ( 0%)
+       Failure Details:
+       --------------------------------
+       SOME-TEST in OPERATIONS []:
+            the assertion message
+       --------------------------------
+      ===== LOOM-REST/TEST =====
+
+  Before the change the last five of those lines were discarded.
+
+  F2. `-v` is untouched.
+
+  NOT IN SCOPE
+
+  The intermittent failure itself. It has no name yet, which is what this
+  document is about; naming it is what the fix makes possible.
