@@ -1,0 +1,63 @@
+id: BUG-0057
+title: complete returns would-set forever for a plan that refines nothing, because dry-run is decided by the absence of verdicts and such a plan can have none
+status: open
+severity: major
+date: 2026-08-27
+refines: [REQ-0022]
+affects: [complete-plan, set-document-status]
+tags: [req-0022, des-0019, workflow, transition, game-server]
+summary: |
+  COMPLETE-PLAN is dry-run when `(null parsed)` and `parsed` comes from
+  `verdicts` (src/workspace/transition.lisp:655). A plan with no `refines:`
+  edges reaches no document but itself, so there is no verdict to give, and any
+  verdict offered is refused with "PLAN-0002 is not in this cascade". The
+  command therefore reports `would-set` on every run and writes nothing.
+
+  `set-status PLAN-0002 final` is the way through and worked first time. Both
+  the prepared skill and the generated CLAUDE.md block say "run the transition
+  command" and mean `complete`; `set-status` appears once, at the bottom, as the
+  escape hatch for a *blocked* document.
+body: |
+  WHY THE SAFETY ARGUMENT DOES NOT REACH THIS CASE
+
+  Dry-run by default is right, and REQ-0022's reasoning for it is that an agent
+  which runs `complete PLAN-0019` and walks away must not have edited files. The
+  all-or-nothing rule beside it is also right: a cascade that applied two
+  verdicts and left a third document in draft is the half-updated state RULE-0005
+  exists to prevent.
+
+  Neither argument is about a cascade of one. When the frontier is empty there is
+  nothing to decide, no verdict to withhold, and no document that could be left
+  behind. The safety property is vacuously satisfied by any behaviour, and the
+  behaviour chosen is the one that never finishes.
+
+  F1  A CASCADE THAT IS THE PLAN ALONE WRITES
+
+  `complete PLAN-0002` sets the plan final and says it did. The command's
+  contract -- it will not guess a verdict -- is untouched, because there is no
+  verdict to guess.
+
+  F2  FAILING F1, THE DRY RUN NAMES THE WAY THROUGH
+
+  When the frontier comes back empty, the report says so and names `set-status`.
+  Today the report is indistinguishable from a cascade waiting for verdicts the
+  caller has not supplied, which is why the first reading of it was to look for
+  the verdict syntax.
+
+  F1 is preferable. A workflow whose documented command cannot finish a whole
+  category of plan teaches its users to reach past it, and the escape hatch then
+  becomes the habit -- which is how a half-updated state arrives by a different
+  route.
+
+  MEASURED
+
+  game-server's PLAN-0002, 2026-08-21. `complete PLAN-0002` returned `would-set`
+  with an empty frontier; `complete PLAN-0002 PLAN-0002=implemented` was refused
+  as not in the cascade; `set-status PLAN-0002 final` succeeded.
+
+  NOT IN SCOPE
+
+  Whether a plan ought to refine something. Most do, and a plan that refines
+  nothing is usually a plan whose document was written after the fact -- but
+  that is a judgement about the tree, and refusing to finish such a plan is not
+  how to make it.

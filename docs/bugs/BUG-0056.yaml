@@ -1,0 +1,73 @@
+id: BUG-0056
+title: "`export default { name }` mints a variable entity beside the function in one module and not in its byte-identical sibling, so a bare name in affects: is refused as ambiguous for a cause absent from the author's source"
+status: open
+severity: minor
+date: 2026-08-27
+refines: [REQ-0024]
+affects: [check-document-references, resolve-and-check]
+tags: [javascript, analyzer, ambiguity, check-document, documents, front-end]
+summary: |
+  Writing a new module in front-end, `check-document` refused `affects:
+  [simplifyArcs]` as ambiguous between
+  `function:src/domain/partition/import/simplifyArcs.js:simplifyArcs` and a
+  `variable:` entity at the same path. The qualified id is the documented fix
+  and works. Nothing in the file looks ambiguous.
+
+  Reproduced with a control. Appending `export default { simplifyArcs };` makes
+  `find` return both a function and a variable; removing it leaves only the
+  function. The sibling module in the same directory, `sharedArcs.js`, ends in
+  the byte-identical construct `export default { extractSharedArcs };`, and
+  `find extractSharedArcs` returns only a function. Same language, same
+  directory, same construct, different answer.
+body: |
+  WHAT WAS AND WAS NOT ISOLATED
+
+  One lead, measured rather than guessed: the file that produces the variable
+  holds four `const name = (...) => ...` arrow definitions and the file that
+  does not holds none. Whether the arrow form is what turns the default-export
+  member into a variable assertion is untested.
+
+  Ruled out: a prose mention of the bare name in the module header. Removing it
+  changes nothing.
+
+  WHY IT IS WORTH FIXING RATHER THAN DOCUMENTING AROUND
+
+  The prepared guidance already tells an author to write qualified ids in
+  `affects:`, so an author who follows it never meets this. An author who writes
+  the bare name -- which works for most functions, including the sibling's --
+  gets a refusal naming a `variable:` entity that appears nowhere in their
+  source. The refusal is correct about the index and useless as a report,
+  because it describes a state the author cannot see and did not create.
+
+  CON-0005 is the rule this sits against: an analyzer asserts each natural key
+  at most once per file, and two source constructs deriving one key are
+  reconciled by the analyzer in its own language's semantics. Nothing checks it,
+  and this is what an unreconciled pair looks like from the outside.
+
+  F1  ONE DEFINITION, ONE ENTITY
+
+  A name that a module both defines and re-exports through `export default {
+  name }` is one thing. The default-export member is a reference to the
+  definition, not a second definition, and the analyzer reconciles the two
+  before the writer sees them -- which is the arrangement CON-0005 requires and
+  the sibling file already gets.
+
+  F2  FAILING F1, THE REFUSAL NAMES SOMETHING THE AUTHOR CAN ACT ON
+
+  If two entities are genuinely right, `check-document`'s message should say
+  which construct produced each, not only their ids. "Ambiguous between the
+  function at line 41 and the default-export member at line 88" is a sentence an
+  author can check against their file.
+
+  F1 is the fix. F2 is what makes every future instance of this class legible,
+  and is worth having whether or not F1 lands.
+
+  NOT IN SCOPE
+
+  Whether `affects:` should accept a bare name at all. It should -- the
+  qualified id is a fallback for genuine ambiguity, and requiring it everywhere
+  would make every document harder to write to guard against a case that is
+  usually a defect.
+
+  The arrow-function lead. Isolating it is the first step of the fix, not a
+  separate finding.

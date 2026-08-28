@@ -43,42 +43,6 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   band lies outside the depth the caller asked for.
   -- the ~/lisp/game-server evaluation, 2026-08-06; re-measured 2026-08-24
 
-- **`find` should answer across registered repositories, or say that it
-  didn't.** THIRD INSTANCE FOUND 2026-08-23, and the harness half is fixed.
-  A judged record naming an entity in another repository was marked
-  unverifiable and discarded whole: ctx-20260824T002130 had four hits at ranks
-  1, 2, 4 and 6 and was thrown away because its fifth name was
-  `utils:json-decode`. REQ-0036 R2 makes that inevitable -- a judgement is
-  "deliberately not restricted to what the bundle returned", so its names come
-  from wherever the agent looked, and since `similar` and `survey` that is
-  routinely a second repository. `resolves()` in tools/test/acceptance.py now asks
-  every watched repository and falls back from a package-qualified spelling to
-  the bare name; scored records went 5 to 7 and the ranking signal from 5 hits
-  to 12. The `find` command itself is unchanged and this item stands for it.
-
-  It is the sharpest of these and it generalizes past game-server.
-  PLAN-0002's whole content was that half of `gs-utils` moved to a second
-  repository, and the question the tree now generates constantly is *which of
-  the two owns this name*. Both are registered — `game-server` and `utils` —
-  so the answer is two `find` calls. I made four grep calls instead, because
-  nothing in the prepared guidance says a second repository is there: every
-  example in the generated CLAUDE.md block and in the skill names one
-  repository, and `repository` reads as a required scope rather than as a
-  choice among several. A `find` with no repository that searches all of them,
-  or a zero-hit answer that adds "0 here; 1 in `utils`", turns the miss into
-  the answer. The zero-hit case is the valuable half: a name absent from one
-  repository and present in another is a migration telling you where it went,
-  and a name absent from both is dead — which is exactly how
-  `get-package-file` was caught.
-
-  Note also that the prefix lies, which is why the shell cannot substitute
-  here. `#:gs-utils` USEs `#:utils` and re-exports its symbols, so
-  `gs-utils:dict-value` and `utils-dict:dict-value` are one symbol object and
-  the definition is in the other tree. Grep on the prefix finds call sites in
-  the wrong repository forever.
-  -- completing game-server's PLAN-0002, 2026-08-21
-  -- REQ-0051 asks for it, 2026-08-24
-
 - **`context` mints a record id only when a log directory is set, and the
   directory is off by default, so `context-used` is unreachable on an ordinary
   deployment.** The prepared guidance is emphatic about this channel -- "This is
@@ -107,6 +71,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   it is preparing, since a tree that has just been given a skill telling agents
   to send feedback is a tree whose owner wants the feedback.
   -- chasing front-end's BUG-0014, 2026-08-27
+  -- BUG-0053 records it, 2026-08-27
 
 - **`budget` counts the content and not the JSON around it, so a caller who
   sets a small budget still overflows.** `loom_context` with `budget=6000`
@@ -128,6 +93,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   metadata would have fit this bundle inside any limit without losing a single
   entity.
   -- chasing front-end's BUG-0014, 2026-08-27
+  -- BUG-0054 records it, 2026-08-27
 
 - **`find` answers a term that matches no definition with silence, when it
   could say the term is prose.** `find term=osm-import` against `front-end`
@@ -142,6 +108,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   these through its `mentions` band, so the material is already indexed -- it
   is `find` that has no path to it.
   -- chasing front-end's BUG-0014, 2026-08-27
+  -- REQ-0054 asks for it, 2026-08-27
 
 ## The graph and what it stores
 
@@ -151,6 +118,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   write at `src/graph/resolve.lisp:1295`. DES-0014 explains what the property
   buys RESOLVE-CALLS but does not defer removing it, so this is the only record.
   -- reader and call-site work, 2026-08-09
+  -- REQ-0055 asks for it, and states why it must not land before BUG-0055, 2026-08-27
 
 - **JavaScript call edges attributed by bare method name are wrong often
   enough to mislead, measured.** Known in front-end's own CLAUDE.md and worth a
@@ -181,6 +149,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   such problem and are trustworthy today, which is the contrast that makes the
   call band's silence about its own confidence the defect.
   -- chasing front-end's BUG-0014, 2026-08-27
+  -- BUG-0055 records it, 2026-08-27
 
 - **`export default { name }` sometimes mints a second entity for `name`, which
   makes the bare name ambiguous in `affects:` for a reason the author cannot
@@ -208,6 +177,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   functions, including the sibling's -- gets a refusal whose stated cause is a
   variable that does not appear anywhere in their source.
   -- writing front-end's DES-0009, 2026-08-27
+  -- BUG-0056 records it, 2026-08-27
 
 ## Documents and the workflow around them
 
@@ -225,6 +195,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   all-or-nothing safety argument does not apply — or its dry-run report should
   name `set-status` when the frontier comes back empty.
   -- completing game-server's PLAN-0002, 2026-08-21
+  -- BUG-0057 records it, 2026-08-27
 
 - **A completed migration plan's `affects:` can never resolve, and `check`
   will report it as rot forever.** 8 of game-server's 16 unresolved references
@@ -254,6 +225,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   separate the noise from the two entries that are saying something, which is
   the better outcome.
   -- completing game-server's PLAN-0002, 2026-08-21
+  -- REQ-0056 asks for it, 2026-08-27
 
 - **A test that reads a live document pins a judgement.**
   `IMPORTANCE-IS-READ-AS-A-KEYWORD-FROM-THE-VOCABULARY` asserted REQ-0037 was
@@ -263,31 +235,9 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   name a level (BUG-0044). Worth checking whether any other test reads
   `docs/` and asserts a value that is a judgement rather than a format.
   -- implementing REQ-0040, 2026-08-23
+  -- REQ-0057 asks for the audit, 2026-08-27
 
 ## Preparing somebody else's tree
-
-- **`init` cannot refresh a marked region it wrote.** The guidance rewrite
-  itself is done — `templates/claude-md-pointer.md` and `templates/loom-skill.md`
-  both carry the question-shape table and what the index cannot see, and
-  templates are read from disk so it lands on the next `init` without a
-  rebuild. What it does not reach is any repository already prepared. `init`
-  skips a CLAUDE.md that already carries a marked region and refuses to
-  overwrite an existing skill, so the eight registered here keep the old text
-  until each is edited by hand. Deliberate, because both files may hold an
-  author's edits — but the marked region exists precisely to make replacing
-  Loom's own bytes safe, and nothing uses it for that. Worth designing.
-
-  SECOND INSTANCE 2026-08-24, with the cost measured. Both templates gained a
-  section saying which surfaces carry `drift` and which carry nothing, and
-  neither prepared tree received it. game-server's CLAUDE.md region and
-  `SKILL.md` were brought current by hand, and the hand-editing is what the
-  design has to beat: its region is a *superset* of the template — the
-  `gs-utils`/`utils` split, the session startup steps, three ways a grep lied
-  before a deletion — so a refresh that replaced the marked region wholesale
-  would have destroyed about a hundred lines that no template can regenerate.
-  Whatever replaces Loom's bytes has to leave the author's beside them.
-  -- the ~/lisp/utils extraction, 2026-08-18; second instance 2026-08-24
-  -- REQ-0052 asks for it, 2026-08-24
 
 - **Loom is the wrong tool for a question about a tree's past, and nothing says
   so.** Completing game-server's PLAN-0002 was three bugs, and none of them was
@@ -301,6 +251,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   question first, and neither the prepared CLAUDE.md region nor the skill says
   where the boundary is.
   -- completing game-server's PLAN-0002, 2026-08-21
+  -- REQ-0058 asks for it, 2026-08-27
 
 ## Measuring Loom
 
@@ -315,6 +266,8 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   in one place is that the part of the tree Loom cannot answer questions about
   is the part that measures Loom.
   -- implementing REQ-0038, 2026-08-21; re-measured 2026-08-24
+  -- REQ-0059 asks that the gap be reported; whether Python is analyzed is a
+     separate question REQ-0059 does not ask, 2026-08-27
 
 - **Context logging is off by default during work on Loom, and the corpus was
   purged to what scores.** On 2026-08-22 `.loom/context` held 2032 records and
@@ -330,6 +283,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   with one, probe traffic could be written and then excluded rather than not
   written at all.
   -- working on Loom itself, 2026-08-22
+  -- REQ-0044 carries the probe field this works around, 2026-08-21
 
 - **Loom-side acceptance cases cannot measure Loom-side commits, and prose is
   the vector.** On 2026-08-22 `log-1` ("trim whitespace from a string") went
@@ -345,6 +299,7 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   variables at once by stashing the source file and thereby removing the new
   docstrings with it.
   -- working on Loom itself, 2026-08-22
+  -- REQ-0060 asks for it, 2026-08-27
 
 ---
 
@@ -360,6 +315,8 @@ re-derives an item that was answered, and each row names where to look instead.
 | "A JavaScript tree has no test entities at all, so 'is this covered?' is a question Loom cannot be asked where it matters most" | REQ-0053, implemented. front-end reads `test-entities: 2325, tested-units: 947, test-files: 145`, and `describe stitchOsmImage` names the three cases of makeImage.test.js while `impact runSegmentationTrial` names segment.test.js's two and not those. The item's proposed second half -- joining `makeImage.test.js` to `make-image.mjs` on the filename -- is refused rather than deferred: DES-0045 D8 gives the reason, and the import plus the call answer it without a guess |
 | "`similar` and `survey` are unreachable from a registered repository" -- `GET /v1/similar` answering `UNKNOWN-OPERATION`, and neither verb among the MCP tools | BUG-0052. Both are registered read-tier operations: `/v1/similar`, `/v1/survey`, `loom_similar` and `loom_survey` answer, and a repository with no vector store is refused with a sentence naming it and `embed` rather than an empty array, per DES-0041 D10. The three REQ-0042 rows in the tables below were true of the console and false of every other caller |
 | "Whether it is missing, renamed, or gated is not something a caller can tell from `UNKNOWN-OPERATION`" | BUG-0052 F4. The refusal names the registered operations, so a typo and an absent verb read differently. A tier the caller may not reach was already distinguishable: FIND-OPERATION is unfiltered and CHECK-CAPABILITY answers 403 |
+| "`find` should answer across registered repositories, or say that it didn't" -- three instances, the sharpest entry in this file | REQ-0051, implemented. `find` with no `repository` searches every watched tree and each row names its own; named with one and finding nothing, it answers `0 here; 1 in utils`. The answer also names any tree it could not search, so "absent everywhere" is never claimed by a partial search |
+| "`init` cannot refresh a marked region it wrote" -- eight prepared trees keeping stale guidance, and a hand-edited region that is a superset of the template | REQ-0052, implemented as `init --update`. The author's half of the region is declared rather than guessed at, so a refresh replaces Loom's bytes and leaves the hundred lines beside them that no template can regenerate |
 
 ### 2026-08-24
 

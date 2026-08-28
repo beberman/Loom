@@ -1,0 +1,68 @@
+id: REQ-0054
+title: a zero-hit find must distinguish no such name anywhere from no definition and N textual occurrences, because the two imply opposite next moves
+status: draft
+date: 2026-08-27
+refines: [REQ-0037, REQ-0051]
+affects: [search-entities, search-repositories, repositories-holding]
+importance: Major
+tags: [find, absence, mentions, req-0037, req-0051, front-end]
+summary: |
+  `find term=osm-import` against front-end returns
+  `{"entities":[],"total":0,"truncated":null,"elsewhere":[]}`. The string is a
+  route -- `router.post('/osm-import', ...)` -- and it appears in the mock, in
+  the router's header comment and in PLAN-0003. So "where is the osm-import
+  endpoint" has an answer, the index holds the material for it, and `find`
+  reports the same empty object it reports for a name that exists nowhere.
+
+  REQ-0051 built the other half of this: a zero-hit answer now says what the
+  *other* repositories hold. What it does not say is what *this* repository
+  holds in prose.
+body: |
+  THE TWO ABSENCES
+
+      no definition, no occurrence      the name is dead; stop looking
+      no definition, N occurrences      the name is a string, a route, a
+                                        config key or a comment; read those N
+
+  Only the first is worth a caller's confidence, and today they are the same
+  answer. An agent that trusts it stops, which is the failure REQ-0037 is about:
+  a confident absence is more expensive than a slow one.
+
+  THE MATERIAL IS ALREADY INDEXED
+
+  `context` reaches these through its `mentions` band -- a markdown file's
+  backticked identifiers and a document's prose both resolve into `:mentions`
+  edges, and REQ-0028 claims a `.md` wherever the repository keeps it. What is
+  missing is a path from `find` to the same material.
+
+  REQUIREMENTS
+
+  R1  A `find` that matches no definition reports the textual occurrences of the
+      term, with file and line, or reports that there are none.
+
+  R2  An occurrence is never an entity. Route strings, config keys and comment
+      words are not definitions and must not become ones -- this is a second
+      band in the answer, not a change to what the analyzer asserts.
+
+  R3  The band is capped and says it was. A common word occurs everywhere, and a
+      list of four hundred lines is a different way of answering nothing.
+
+  R4  It costs the miss and not the hit. A `find` that matched a definition does
+      the work it does today; only the zero-hit path pays for the scan, which is
+      where the caller is deciding whether to reach for grep.
+
+  ACCEPTANCE
+
+  `find term=osm-import` against front-end names the router, the mock and
+  PLAN-0003, and says how many occurrences it did not list. `find
+  term=no-such-token-anywhere` against the same tree says there are none, and
+  that answer is what makes the first one trustworthy.
+
+  OPEN QUESTIONS
+
+  - Whether the scan reads files or reads `:mentions` edges. The edges are
+    already there and cost nothing; they cover markdown and document prose and
+    not source comments or string literals, which is where two of this case's
+    three occurrences live. Reading files answers all three and costs a walk.
+  - Whether this belongs on `find` or on a verb of its own. It is `find`'s
+    answer that is misleading, which argues for `find`.

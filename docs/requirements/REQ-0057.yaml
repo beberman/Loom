@@ -1,0 +1,59 @@
+id: REQ-0057
+title: no test may assert a value from docs/ that is a judgement rather than a format, because repricing a requirement then breaks a suite for a reason the failure does not name
+status: draft
+date: 2026-08-27
+refines: [REQ-0043]
+affects: [check-document-references]
+importance: Minor
+tags: [testing, documents, con-0003, bug-0044, hygiene]
+summary: |
+  IMPORTANCE-IS-READ-AS-A-KEYWORD-FROM-THE-VOCABULARY asserted that REQ-0037 was
+  `:CRITICAL`. Repricing REQ-0037 to Minor broke it, and the failure was reported
+  twice as a standing loom-analyzer defect before anybody read it properly.
+  BUG-0044 split it into fixtures for the vocabulary and one live assertion that
+  names no level.
+
+  One test was found and fixed. Nothing has established that it was the only one.
+body: |
+  THE CLASS
+
+  A test over `docs/` is testing one of two things and the difference is not
+  visible in the assertion:
+
+      a format      importance is read as a keyword from the vocabulary;
+                    a status is one of the words CON-0004 lists; a refines:
+                    edge resolves. True regardless of what any document says.
+
+      a judgement   REQ-0037 is Critical. True until somebody decides
+                    otherwise, and deciding otherwise is a normal thing to do.
+
+  The second kind turns an ordinary editorial act into a red suite, and the
+  failure names the test rather than the edit, so the reader looks in the
+  analyzer. That happened twice for one test.
+
+  REQUIREMENTS
+
+  R1  Every test that reads a file under `docs/` is audited, and each is
+      classified as asserting a format or a judgement.
+
+  R2  A test asserting a judgement is rewritten to assert the format, with a
+      fixture carrying the value it used to read live. BUG-0044 is the worked
+      example.
+
+  R3  The result is a check rather than a one-time sweep, if one can be written.
+      A test that names a document id and a value is the detectable shape; a
+      test that reads `docs/` and asserts a count is the harder case and may not
+      be worth automating.
+
+  ACCEPTANCE
+
+  A list of every test in the suite that reads `docs/`, with its classification.
+  Repricing any requirement in the tree, or moving any document to a new status,
+  leaves the suite green.
+
+  OPEN QUESTIONS
+
+  - R3's check has no obvious home. It is not a graph rule -- RULE-nnnn keys on
+    entities and edges, and this is a property of test source. It may belong in
+    the suite itself, as a test over the test files.
+  - How large the population is. Unmeasured, which is the first step.

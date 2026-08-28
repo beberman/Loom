@@ -1,0 +1,65 @@
+id: REQ-0055
+title: unresolved-calls should stop being a stored property and a generated entity's system should come from the call site rather than the file
+status: draft
+date: 2026-08-27
+refines: [REQ-0015]
+affects: [resolve-calls, entity-system]
+importance: Minor
+tags: [graph, ontology, resolution, des-0014, cleanup]
+summary: |
+  `:unresolved-calls` is still declared on four entity types in
+  src/ontology/code-ontology.lisp -- lines 507, 629, 729 and 911 -- and written
+  at src/graph/resolve.lisp:1295. DES-0014 explains what the property buys
+  RESOLVE-CALLS and does not defer removing it, so this document is the only
+  record that the removal was intended.
+
+  The second half is separate and smaller: a generated entity's `:system` is
+  taken from the file it was minted into, and the call site is what it actually
+  belongs to.
+body: |
+  WHY IT IS STILL HERE
+
+  The property is a resolution intermediate stored as if it were a fact about
+  the entity. RESOLVE-CALLS uses it to treat a call site as still open across
+  passes, which is real work, but a caller reading `describe` sees it beside
+  properties the analyzer asserted from source, and the graph is DEC-0001's
+  index over files rather than a place to keep a pass's own bookkeeping.
+
+  THE CONFLICT WITH BUG-0055, STATED RATHER THAN RESOLVED
+
+  BUG-0055 needs exactly what this property holds: it is the analyzer's own
+  record of which calls it declined to attribute, and the fix for a `calls` band
+  that presents a guess as a resolution is to carry that distinction through to
+  the answer. So the two documents disagree about the same field on purpose.
+
+  The order matters and is not negotiable: nothing may remove `:unresolved-calls`
+  until the distinction it carries has somewhere else to live. If BUG-0055 lands
+  an `inferred` marker on the edge, the property becomes redundant and this
+  removal is clean. If it does not, this removal destroys the one piece of
+  evidence that says which quarter of a JavaScript call band can be trusted.
+
+  REQUIREMENTS
+
+  R1  `:unresolved-calls` is not stored on an entity. Whatever RESOLVE-CALLS
+      needs across passes lives in the pass, not in the graph.
+
+  R2  R1 does not land before the confidence distinction BUG-0055 asks for has
+      another home. A removal that silently costs an answer its only marker of
+      uncertainty is CON-0001's failure arriving through a cleanup.
+
+  R3  A generated entity's `:system` is derived from the call site that
+      generated it rather than from the file it was written into. DES-0009 makes
+      `:system` the file's own package name, which is right for a definition and
+      wrong for an entity minted on behalf of a call somewhere else.
+
+  ACCEPTANCE
+
+  `describe` on a JavaScript function returns no `unresolved-calls` property and
+  a `calls` band a caller can trust, in that order. `check` reports the same
+  zero violations before and after, and the rules that key on ENTITY-SYSTEM see
+  a generated entity in its caller's system.
+
+  OPEN QUESTIONS
+
+  - Is R3 measurable on this tree? No rule names a generated entity today, so
+    the change may be invisible to `check` and visible only in `structure`.
