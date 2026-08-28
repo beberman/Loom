@@ -669,3 +669,61 @@ the second for the first is the defect" json-price console-price)
           "the items encode to ~d tokens against ~d charged" actual charged)
       (is (every (lambda (i) (eq :absent (getf i :effective-cost :absent))) items)
           "and they arrive in the shape they were priced in"))))
+
+
+;;; ------------------------------------------------------------------
+;;; Whether the feedback channel is open (BUG-0053)
+;;; ------------------------------------------------------------------
+;;;
+;;; The prepared guidance devotes a section to this channel and tells the agent
+;;; to quote the `record' id the answer carried. *CONTEXT-LOG-DIRECTORY* is NIL
+;;; by default, so on an ordinary deployment no answer carried one and an agent
+;;; following the guidance exactly recorded nothing, having no way to learn
+;;; that it could not have.
+
+(test a-bundle-says-feedback-is-off-rather-than-omitting-the-record
+  (with-operations-fixture (repository)
+    (let ((loom-workspace:*context-log-directory* nil))
+      (let ((answer (call-operation :context '(:read)
+                                    :repository (repository-name repository)
+                                    :task "alpha arithmetic")))
+        (is (eq :off (getf answer :feedback))
+            "the state is on the answer, not inferred from a missing key")
+        (is (null (getf answer :record))
+            "and there is no record, which is what :OFF means")))))
+
+(test a-bundle-with-logging-on-says-so-and-carries-the-id
+  (with-operations-fixture (repository)
+    (with-recorded-log (ignored-directory)
+      (let ((answer (call-operation :context '(:read)
+                                    :repository (repository-name repository)
+                                    :task "alpha arithmetic")))
+        (is (eq :on (getf answer :feedback)))
+        (is-true (getf answer :record)
+                 "and :ON is the state in which quoting the id can work")))))
+
+(test feedback-being-off-is-refused-as-itself-and-not-as-a-bad-id
+  ;; The two refusals were one sentence -- "No context record <id>" -- which is
+  ;; true of a wrong id and false of a deployment that keeps no log. An agent
+  ;; told its id was bad retries with a different id forever.
+  (let ((loom-workspace:*context-log-directory* nil))
+    (handler-case
+        (progn (record-context-use "ctx-20260828T000000" '((:name "alpha" :how "read it")))
+               (is-true nil "a call with no log directory must be refused"))
+      (context-record-error (condition)
+        (let ((message (princ-to-string condition)))
+          (is (eq :feedback-off (loom-workspace::context-record-error-reason condition)))
+          (is-true (search "off for this deployment" message)
+                   "the refusal names the cause: ~a" message)
+          (is-false (search "No context record" message)
+                    "and does not blame the id: ~a" message)))))
+  ;; The control: with a log directory, an id naming no record is still the
+  ;; other refusal, unchanged.
+  (with-operations-fixture (repository)
+    (with-recorded-log (ignored-directory)
+      (handler-case
+          (progn (record-context-use "ctx-nothing-wrote-this" '((:name "a" :how "b")))
+                 (is-true nil "an unknown id must still be refused"))
+        (context-record-error (condition)
+          (is (eq :unknown-id (loom-workspace::context-record-error-reason condition)))
+          (is-true (search "No context record" (princ-to-string condition))))))))

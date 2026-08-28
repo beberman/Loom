@@ -43,36 +43,6 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
   band lies outside the depth the caller asked for.
   -- the ~/lisp/game-server evaluation, 2026-08-06; re-measured 2026-08-24
 
-- **`context` mints a record id only when a log directory is set, and the
-  directory is off by default, so `context-used` is unreachable on an ordinary
-  deployment.** The prepared guidance is emphatic about this channel -- "This is
-  not bookkeeping", "report the misses, and report them by name" -- and instructs
-  the agent to quote the `record` id the answer carried. No answer carried one.
-  `loom_context` over MCP returned a bundle whose keys are `task provenance seeds
-  terms items decisions documents mentions budget tokens index-tokens truncated
-  withheld-*`, with no `record`; `GET /v1/context` likewise. The only recourse a
-  caller has, POSTing `context-used` without one, is
-  `{"name":"MALFORMED-REQUEST"}` and HTTP 400.
-
-  It is not a skin dropping a field. `record-context-call` returns NIL and writes
-  nothing when `*context-log-directory*` is NIL, "which is the default", and
-  `src/serve/operations.lisp:334` appends `:record` only `(if id ...)`. So the
-  mechanism is whole and the tier is simply off, which is a defensible default
-  for a service that writes to somebody's tree -- but the guidance shipped to
-  every agent describes the on state as though it were the only one. An agent
-  following it correctly ends the session having recorded nothing, and the
-  ranking learns nothing from a session that used the bundle heavily and could
-  say precisely which parts earned their place.
-
-  Cheapest repair is a sentence in the skill: if the answer has no `record`,
-  feedback is off for this deployment, do not try. Better is for the bundle to
-  say so in a field, because an agent reasoning about an absent key cannot tell
-  "off" from "broken". Best is for `loom init` to turn it on for the repository
-  it is preparing, since a tree that has just been given a skill telling agents
-  to send feedback is a tree whose owner wants the feedback.
-  -- chasing front-end's BUG-0014, 2026-08-27
-  -- BUG-0053 records it, 2026-08-27
-
 - **`find` answers a term that matches no definition with silence, when it
   could say the term is prose.** `find term=osm-import` against `front-end`
   returned `{"entities":[],"total":0}`. The string is a route -- `router.post
@@ -264,6 +234,7 @@ re-derives an item that was answered, and each row names where to look instead.
 | "Whether it is missing, renamed, or gated is not something a caller can tell from `UNKNOWN-OPERATION`" | BUG-0052 F4. The refusal names the registered operations, so a typo and an absent verb read differently. A tier the caller may not reach was already distinguishable: FIND-OPERATION is unfiltered and CHECK-CAPABILITY answers 403 |
 | "JavaScript call edges attributed by bare method name are wrong often enough to mislead" -- 3 of 4 on `ingestModel`, 9 of 12 on `extractSharedArcs`, every wrong row naming a real definition | BUG-0055, closed. The edges were always asserted `:inferred` at 1/N and every answer surface dropped it: a neighbour row now carries `edge-source` and `edge-confidence` beside the entity's own, an impact row carries `inferred` and `confidence-of-path`, and a path writes the guessed hop `calls?>name`. The console prints `BiMap.get (inferred 0.33)`. The volume is unchanged and the bug says so -- `impact` still walks these edges, and filtering on the number nothing carried until now is a capability rather than this defect |
 | "`budget` counts the content and not the JSON around it, so a caller who sets a small budget still overflows" | BUG-0054, closed. ADMIT-ITEM charged the *console* rendering; the skin now passes its own pricing in through `*context-item-cost*`, and the same function prices and emits the item so the two cannot disagree. front-end at `budget=6000`: 81,793 bytes to 34,206, and 4.2 characters per token on the charged part against ESTIMATE-TOKENS' own 4. What remains is REQ-0061: four candidate lists, 26% of the answer, that nothing charges for |
+| "`context` mints a record id only when a log directory is set ... so `context-used` is unreachable on an ordinary deployment" | BUG-0053, closed. Every context answer carries `feedback: "on"` or `"off"`, and RECORD-CONTEXT-USE no longer answers "No context record <id>" when the truth is that no log exists. The item's third proposal -- `init` turning the log on for the tree it prepares -- is withdrawn rather than deferred: DES-0030 D1 makes the directory an operator's and not a caller's, and it deliberately lives in Loom's tree so a prepared repository's corpus holds still. Whether `tools/loom-serve.sh` should default it on is REQ-0044's question |
 | "`find` should answer across registered repositories, or say that it didn't" -- three instances, the sharpest entry in this file | REQ-0051, implemented. `find` with no `repository` searches every watched tree and each row names its own; named with one and finding nothing, it answers `0 here; 1 in utils`. The answer also names any tree it could not search, so "absent everywhere" is never claimed by a partial search |
 | "`init` cannot refresh a marked region it wrote" -- eight prepared trees keeping stale guidance, and a hand-edited region that is a superset of the template | REQ-0052, implemented as `init --update`. The author's half of the region is declared rather than guessed at, so a refresh replaces Loom's bytes and leaves the hundred lines beside them that no template can regenerate |
 

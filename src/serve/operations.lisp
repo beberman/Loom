@@ -469,7 +469,20 @@ An estimate that ignored them would be the same class of error one layer down."
           ;; is the whole of why REQ-0036 loses nothing: RECORD-CONTEXT-CALL is
           ;; handed the bundle with its scoring fields intact, and only the
           ;; copy going to the caller is thinned.
-          (let ((answer (leaned-bundle bundle)))
+          ;;
+          ;; BUG-0053. :FEEDBACK is on every answer, in both states, and it is
+          ;; the field that makes :RECORD readable. The prepared guidance tells
+          ;; an agent to quote the record id when it has finished the work a
+          ;; bundle was for; *CONTEXT-LOG-DIRECTORY* is NIL by default, so on an
+          ;; ordinary deployment no answer carried one and the agent had an
+          ;; absent key to reason about. An absent key cannot say which of
+          ;; "feedback is off here", "this build predates REQ-0036" and "the
+          ;; write failed" it means, and the first is the only one an agent
+          ;; should act on. CON-0001's rule, at the scale of one field.
+          (let ((answer (append (leaned-bundle bundle)
+                                (list :feedback
+                                      (if loom-workspace:*context-log-directory*
+                                          :on :off)))))
             (if id (append answer (list :record id)) answer)))))))
 
 (define-operation :structure :read (repository)

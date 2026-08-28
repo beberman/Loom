@@ -1,10 +1,10 @@
 id: BUG-0053
 title: context mints a record id only when the log directory is set, so the feedback channel the prepared guidance instructs every agent to use is unreachable on a default deployment
-status: open
+status: closed
 severity: major
 date: 2026-08-27
 refines: [REQ-0036]
-affects: [record-context-call, record-context-use, build-context]
+affects: [record-context-call, record-context-use, context-record-error]
 tags: [req-0036, req-0038, evaluation, guidance, defaults, front-end]
 summary: |
   `loom_context` against front-end returns a bundle whose keys are `task
@@ -50,18 +50,46 @@ body: |
   src/workspace/templates/loom-skill.md's feedback section is written for the on
   state only. One sentence: if the answer says feedback is off, do not try.
 
-  F3  init TURNS IT ON FOR THE TREE IT PREPARES
+  F3  init TURNS IT ON FOR THE TREE IT PREPARES -- WITHDRAWN
 
-  A tree that has just been given a skill instructing agents to send feedback is
-  a tree whose owner asked for the feedback. `init` already writes into the
-  repository with the consent REQ-0021 R16 requires, and the log lives under
-  `.loom/`, which init already creates. This is the fix that makes F1 and F2
-  describe a state that is rare rather than usual.
+  Written as the fix that would make F1 and F2 describe a rare state rather
+  than the usual one. Reading DES-0030 refutes it on two counts, and the
+  document was wrong rather than merely undecided.
 
-  F3 is the one that needs a decision rather than an implementation: writing to
-  somebody's tree by default is exactly the posture REQ-0021 is careful about,
-  and "off unless asked" is defensible. F1 and F2 are correct either way, which
-  is why they are separable.
+  There is no per-repository log to turn on. *CONTEXT-LOG-DIRECTORY* is one
+  directory for the whole service, and DES-0030 D1 makes that deliberate:
+  "settable only by an operator -- no operation takes it as an argument,
+  because a caller that could switch on a write would be a caller that had been
+  granted one". `init` is an operation. Under F3 a caller preparing a tree
+  would be switching on a write for every other tree the service holds.
+
+  And the log deliberately does not live in the prepared tree.
+  DEFAULT-CONTEXT-LOG-DIRECTORY is `<loom>/.loom/context/`, "in Loom's own tree
+  rather than the searched one, because writing a record into game-server or
+  front-end would end their corpora holding still -- and that property is what
+  tools/test/acceptance.py depends on". F3 would have broken the measurement
+  this bug exists to protect.
+
+  The real question F3 was reaching for is whether `tools/loom-serve.sh` should
+  default LOOM_CONTEXT_LOG on. It did until 2026-08-22 and was turned off
+  because the corpus filled with records nobody judged -- 2032 records, 15
+  judgements -- and REQ-0044 is the recorded remedy: a field marking a record as
+  a probe, so traffic can be written and then excluded rather than not written
+  at all. That is where this belongs, and it is open.
+
+  WHAT WAS DONE, 2026-08-28
+
+  F1, in two places rather than one. The bundle carries `feedback: "on"` or
+  `"off"` on every answer, in both states, so a missing `record` is never
+  something to infer from. And the refusal one layer down was the same defect:
+  RECORD-CONTEXT-USE signalled "No context record <id>" when the directory was
+  NIL, which is true of a wrong id and false of a deployment that keeps no log
+  -- the id was never wrong, nothing was ever written, and nothing the caller
+  does will change that. CONTEXT-RECORD-ERROR now carries a reason and the two
+  print differently.
+
+  F2. The prepared skill's feedback section names the field and says what each
+  state means, before the instruction to send feedback rather than after it.
 
   MEASURED, 2026-08-27
 

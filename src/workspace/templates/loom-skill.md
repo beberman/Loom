@@ -123,6 +123,13 @@ or `loom_context_used` with `record` and `used`. This is not bookkeeping. The
 bundle is ranked by a heuristic, and the only way anyone learns whether the
 ranking works is that the agent using it says so.
 
+**Check `feedback` first.** Every context answer carries it. `"feedback": "on"`
+means the answer also carries a `record` id and the channel below is open;
+`"feedback": "off"` means this deployment keeps no context log, no `record` was
+minted, and `context-used` will refuse — so do not spend a call on it. The
+field is on the answer in both states precisely so that a missing `record` is
+never something you have to guess about.
+
 **Report the misses, and report them by name.** `used` is deliberately not
 restricted to what the bundle returned: name the thing you actually needed even
 when the bundle never mentioned it, and say in `how` where you found it instead

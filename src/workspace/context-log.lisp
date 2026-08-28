@@ -476,15 +476,30 @@ when the query was asked."
             year month day hour minute second)))
 
 (define-condition context-record-error (error)
-  ((id :initarg :id :reader context-record-error-id))
+  ((id :initarg :id :reader context-record-error-id)
+   (reason :initarg :reason :initform :unknown-id
+           :reader context-record-error-reason))
   (:report (lambda (condition stream)
-             (format stream "No context record ~a."
-                     (context-record-error-id condition))))
-  (:documentation "A feedback call quoted an id no record has.
+             (ecase (context-record-error-reason condition)
+               (:unknown-id
+                (format stream "No context record ~a."
+                        (context-record-error-id condition)))
+               (:feedback-off
+                (format stream "Feedback is off for this deployment: no ~
+context log directory is set, so no record was written and none can be. Every ~
+context answer says which state it is in, on its `feedback\' field.")))))
+  (:documentation "A feedback call that cannot be honoured, and which of two reasons.
 
 A refusal rather than a new file. A record minted because somebody quoted a
 wrong id is a judgement about a query nobody asked, which is CON-0001's
-fabricated fact wearing the shape of evidence."))
+fabricated fact wearing the shape of evidence.
+
+:FEEDBACK-OFF is BUG-0053. Both reasons printed \"No context record <id>\"
+until 2026-08-28, and that sentence is true of a wrong id and false of a
+deployment with no log directory -- where the id was never wrong, nothing was
+ever written, and nothing the caller does will change that. An agent following
+the prepared guidance, which instructs it to send feedback, was told its id was
+bad."))
 
 (defun context-use-path (id &optional (directory *context-log-directory*))
   (merge-pathnames (format nil "~a.used.json" id) directory))
@@ -517,7 +532,7 @@ An id naming no record is refused rather than given a file of its own. A
 judgement about a query nobody asked is CON-0001's fabricated fact wearing the
 shape of evidence."
   (unless directory
-    (error 'context-record-error :id id))
+    (error 'context-record-error :id id :reason :feedback-off))
   ;; The record is written off the caller's path, so a caller quoting the id it
   ;; was just handed can arrive before the file does. Waited for here because
   ;; the feedback call is not what R8's latency ceiling is about, and because
