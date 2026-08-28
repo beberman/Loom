@@ -56,6 +56,19 @@ tools/loom.sh 'status | find foo'     # several commands, run in order
 tools/loom.sh 'help'                  # the authoritative table; trust it first
 ```
 
+**The index holds this tree's present. Its past is git's.** Every command above
+asks about the code as it stands. When something changed, what a migration took
+with it, and why it is the way it is are questions the index cannot answer and
+will answer anyway, about the present. `git log -S <name>` finds the commits
+where the count of a string changed, which is how a rename, a move or a
+deletion is found.
+
+A commit message is evidence no index holds. Completing game-server's PLAN-0002
+was three bugs and none was found with the index; one turned on a single
+sentence in `de355d0` — *"Debugging found that the game-description/image url
+was wrong"* — which was the whole of what was known about a stale fixture.
+REQ-0058.
+
 **Drive Loom through `tools/`, not through a shell pipeline.** `tools/loom.sh`
 takes console commands as separate arguments, watches the tree before the first
 and stops after the last, and filters compile chatter. `tools/loom-test.sh` runs

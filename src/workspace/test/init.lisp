@@ -80,6 +80,26 @@ would bury exactly what impact exists to surface")
       (is (search "knowledge/requirements/" concept))
       (is (not (search "{{" concept))))))
 
+(test the-prepared-guidance-says-which-questions-are-gits-and-not-loom-s
+  ;; REQ-0058. The guidance is emphatic that the first tool is the index, and
+  ;; every question it lists is about the tree as it stands -- so an agent that
+  ;; has internalised it puts a question about what changed to the index and
+  ;; gets a confident answer about the present. Completing game-server's
+  ;; PLAN-0002 was three bugs and none was found with the index.
+  ;;
+  ;; Both surfaces, because an agent reads whichever one it meets first: the
+  ;; skill is the authoritative copy and the CLAUDE.md region is what a reader
+  ;; sees without invoking anything.
+  (with-target-tree (root)
+    (prepare-repository root :append-claude-md nil)
+    (dolist (file '(".claude/skills/loom/SKILL.md" "CLAUDE.md"))
+      (let ((text (target-text root file)))
+        (is-true (search "git log -S" text)
+                 "~a does not name the verb for a question about the past" file)
+        (is-true (search "commit message" text)
+                 "~a does not say that a commit message is evidence no index ~
+holds, which is the case that surprises" file)))))
+
 (test a-tree-with-no-claude-md-gets-one-without-being-asked
   ;; Writing a file that does not exist is not editing one, so R3 does not bear
   ;; on it and R16's second consent is not needed. Consent is about touching

@@ -78,19 +78,8 @@ the heading was dropped.
 
 ## Preparing somebody else's tree
 
-- **Loom is the wrong tool for a question about a tree's past, and nothing says
-  so.** Completing game-server's PLAN-0002 was three bugs, and none of them was
-  found with the index -- they were found with `grep`, `git log -S`, and one
-  commit message. `de355d0`'s message says *"Debugging found that the
-  game-description/image url was wrong"*, and that sentence is the entire
-  evidence that a stale fixture was stale rather than the server being wrong.
-  The index holds the tree's present. A migration's debris is a question about
-  its past, and `git log -S` is the tool for it. Loom should not try to be --
-  but an agent told "ask Loom before reading the tree" will ask it the wrong
-  question first, and neither the prepared CLAUDE.md region nor the skill says
-  where the boundary is.
-  -- completing game-server's PLAN-0002, 2026-08-21
-  -- REQ-0058 asks for it, 2026-08-27
+None open. Both entries that stood here -- refreshing a marked region, and
+saying where Loom's boundary is -- are in the tables below.
 
 ## Measuring Loom
 
@@ -171,6 +160,7 @@ re-derives an item that was answered, and each row names where to look instead.
 | "`complete` cannot finalize a plan that refines nothing" -- `would-set` forever, with `set-status` as the way through | BUG-0057, closed, and the item named one of three shapes: a plan refining nothing, a plan whose refined documents are all already terminal, and one whose documents are all blocked. Each ends with no verdict a caller could offer, so each previewed forever. A dry run that finds nothing awaiting a verdict now re-enters once and writes, so the walk decides what it found in one place. Dry run is unchanged wherever a verdict can be withheld |
 | "`export default { name }` sometimes mints a second entity for `name`" -- ambiguous in `affects:` for a cause absent from the author's source | BUG-0056, closed. The item's arrow-function lead was wrong: `export default { name }` always minted a nameless variable, and JS-DEFINITION-NAME names it after the module's base name -- so it collides exactly when a module is named after its principal export, which is why the byte-identical sibling differed. A re-export object now mints nothing; an anonymous function, a class, an object with inline values and an empty object all keep the entity they had |
 | "`impact` prints a bare name, so a generic's methods read as one entity repeated" -- eight rows of `d2 method dhandler-copy` | BUG-0050, closed. An impact row prints its location in PRINT-SUMMARY-LINE's bracket form, so `find`, `describe` and `impact` agree; the bracket is dropped where it would repeat a file's own path. The entry's second half -- rows labelled `d6` on a depth-5 walk -- was never a defect, and IMPACT-REPORT now carries the depth it was asked for so the console can say once that the one-step band lies one hop past it. All 7 of those rows also print `d6?`, BUG-0055's marker: the band is low-confidence reaches, not a miscount |
+| "Loom is the wrong tool for a question about a tree's past, and nothing says so" | REQ-0058, implemented. Both prepared surfaces name the boundary immediately after their question-shape table, with `git log -S <name>` as the verb and what it does said plainly, and both cite the instance rather than the principle: game-server's `de355d0` -- "Debugging found that the game-description/image url was wrong" -- was the whole of what anybody knew about a stale fixture. Loom's own CLAUDE.md carries the same. A tree prepared before today gets it on `init --update`, which is REQ-0052's mechanism rather than a gap |
 | "`find` should answer across registered repositories, or say that it didn't" -- three instances, the sharpest entry in this file | REQ-0051, implemented. `find` with no `repository` searches every watched tree and each row names its own; named with one and finding nothing, it answers `0 here; 1 in utils`. The answer also names any tree it could not search, so "absent everywhere" is never claimed by a partial search |
 | "`init` cannot refresh a marked region it wrote" -- eight prepared trees keeping stale guidance, and a hand-edited region that is a superset of the template | REQ-0052, implemented as `init --update`. The author's half of the region is declared rather than guessed at, so a refresh replaces Loom's bytes and leaves the hundred lines beside them that no template can regenerate |
 
