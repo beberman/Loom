@@ -1417,3 +1417,55 @@ a suggestion computed from the walk's cost alone gets wrong")))
     (is (null (search "of what this walk found" text)))
     (is (null (search "withheld" text)))))
 
+
+
+;;; ------------------------------------------------------------------
+;;; Who pays, and in what currency (BUG-0054)
+;;; ------------------------------------------------------------------
+;;;
+;;; The budget was charged against RENDER-ITEM -- the text a console reader
+;;; receives -- and honoured exactly for every caller, including the ones that
+;;; receive something else. Measured on front-end 2026-08-27: `budget=6000'
+;;; reported `tokens: 5988' and delivered 81,793 characters of JSON, which an
+;;; MCP client refused.
+
+(test item-cost-prices-the-console-rendering-unless-told-otherwise
+  (let* ((f (make-k-fixture))
+         (bundle (build-context (k-graph f) "change resolve-overlay"))
+         (item (first (getf bundle :items))))
+    (is-true item)
+    (is (= (loom-knowledge::estimate-tokens (loom-knowledge::render-item item))
+           (loom-knowledge::item-cost item))
+        "the default is what it always was, so the console is unchanged")
+    (let ((loom-knowledge::*context-item-cost* (lambda (i) (declare (ignore i)) 77)))
+      (is (= 77 (loom-knowledge::item-cost item))
+          "and a skin that delivers something else prices its own answer"))))
+
+(test a-dearer-currency-buys-fewer-items-for-the-same-budget
+  ;; The seam has to reach the truncation decision, not merely be readable.
+  ;; A pricer charging ten times the console's must fill the same budget with
+  ;; fewer items -- which is exactly what a JSON caller was not getting.
+  (let* ((f (banded-fixture))
+         (cheap (build-context (k-graph f) "change resolve-overlay" :budget 400))
+         (dear (let ((loom-knowledge::*context-item-cost*
+                       (lambda (item)
+                         (* 10 (loom-knowledge::estimate-tokens
+                                (loom-knowledge::render-item item))))))
+                 (build-context (k-graph f) "change resolve-overlay" :budget 400))))
+    (is (> (length (getf cheap :items)) (length (getf dear :items)))
+        "cheap ~d items, dear ~d"
+        (length (getf cheap :items)) (length (getf dear :items)))
+    (is-true (getf dear :truncated)
+             "and the dear bundle says it was cut rather than looking complete")))
+
+(test the-reported-total-is-in-the-currency-that-was-charged
+  ;; :TOKENS is what a caller compares against the budget it set. Reporting a
+  ;; console total for a bundle priced in JSON would leave the number wrong in
+  ;; the one place a caller reads it.
+  (let* ((f (banded-fixture))
+         (bundle (let ((loom-knowledge::*context-item-cost*
+                         (lambda (item) (declare (ignore item)) 5)))
+                   (build-context (k-graph f) "change resolve-overlay" :budget 400))))
+    (is (= (* 5 (length (getf bundle :items))) (getf bundle :tokens))
+        "~d items at 5 apiece against a reported ~d"
+        (length (getf bundle :items)) (getf bundle :tokens))))

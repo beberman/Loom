@@ -1,0 +1,130 @@
+id: BUG-0054
+title: budget counts the bundle's content and not the JSON around it, so a caller that asked for 6000 tokens received 62363 characters and the client refused them
+status: closed
+severity: major
+date: 2026-08-27
+refines: [REQ-0040]
+affects: [build-context, item-cost, encode-result]
+tags: [req-0040, context, budget, mcp, envelope, front-end]
+summary: |
+  `loom_context` with `budget=6000` against front-end returned `tokens: 3692` --
+  inside the budget, nothing withheld for size -- in 62,363 characters of JSON.
+  The MCP client refused the message and spilled it to a file.
+
+  17 characters per counted token, against the four characters a token usually
+  spells. The envelope is three quarters of the payload: each of the 114 `items`
+  carries eleven keys and its nested `entity` nine more, most of them NIL or
+  constant -- `language` on every row of a single-language tree, `confidence: 1`
+  throughout, `referrer-kind` and `stale` null everywhere.
+body: |
+  WHAT REQ-0040 R1 ASKED FOR
+
+  The call site quotes it: "an MCP caller has a hard output limit and until now
+  no way to say so". The knob exists for one purpose, and the purpose is not met
+  -- the limit is on the bytes that arrive and the budget is on the content
+  inside them, so a caller can be inside its budget and over its limit at the
+  same time, which is the state that was measured.
+
+  REQ-0040's own OUTSTANDING section does not cover this. What remains open
+  there is R2, the source share, which is a verdict about *how* the budget is
+  divided. This is about what the budget counts.
+
+  THE TWO REPAIRS, AND THEY ARE NOT EXCLUSIVE
+
+  F1  COUNT THE RENDERED ANSWER
+
+  The budget is charged against the bytes the caller receives rather than the
+  summaries inside them. This is the honest reading of R1 and it makes the knob
+  do what its docstring says. The cost is that the count now depends on the
+  skin: a console bundle and a JSON bundle of the same content are different
+  sizes, and the budget would have to be charged after rendering rather than
+  during the walk, which is where the truncation decision is currently made.
+
+  F2  A LEAN SHAPE THE CALLER CAN ASK FOR
+
+  `verbose=false`, dropping null fields and the per-item scoring metadata --
+  `cost`, `via`, `direction`, `convergence`, `effective-cost`,
+  `relation-count`. Those exist for judging the ranking, which is REQ-0036's
+  purpose and not the reading agent's. On the measured bundle that would have
+  fit inside any limit without losing a single entity, which is the outcome
+  worth having: a caller that hits a limit today loses the whole answer, and the
+  entities were never the expensive part.
+
+  F2 is cheaper and lands first. F1 is what makes the budget mean what it says.
+
+  WHAT WAS DONE, 2026-08-28
+
+  The cause is one line narrower than this document guessed. ADMIT-ITEM charged
+  `(estimate-tokens (render-item item))`, and RENDER-ITEM is the *console*
+  text. Its own docstring records the previous correction -- the budget had
+  been estimated from PRINC-TO-STRING of the plist, which "over-counts the
+  rendered line about fivefold" -- and that fix was right for the console and
+  left every other skin paying a console price for an answer it does not
+  receive. The budget was never ignored. It was honoured exactly, in a currency
+  the caller does not spend.
+
+  F1  THE COST IS CHARGED IN THE SKIN'S OWN CURRENCY
+
+  *CONTEXT-ITEM-COST* is a function of one item returning a token count, NIL
+  meaning the console's. ITEM-COST reads it, and the three sites that charge --
+  the document reserve, ADMIT-ITEM and the source plan -- all go through it. A
+  special variable rather than an argument because the caller that must set it
+  already binds *CONTEXT-VECTOR-STORE* and *CONTEXT-EMBEDDER* around this call,
+  for the same layering reason: loom-knowledge cannot name loom-serve's encoder,
+  so the skin passes its pricing in. DES-0027 D1's SOURCE-FN, again.
+
+  F2  THE SHAPE PRICED IS THE SHAPE SENT
+
+  LEAN-CONTEXT-ITEM drops the six scoring fields and CONTEXT-ITEM-TOKENS prices
+  what it returns, so the two cannot disagree. The strip runs after
+  RECORD-CONTEXT-CALL and before the return, which is why REQ-0036 loses
+  nothing: the recorder is handed the bundle whole and only the copy going to
+  the caller is thinned.
+
+  Null fields are deliberately NOT dropped, though they are 11,806 bytes.
+  ENTITY-SUMMARY carries `:referrer-kind` NIL on every non-call-site "so a
+  consumer can print it unconditionally", and BUG-0055 argued the same for
+  `:edge-source`. A key that appears only when set makes its own absence carry
+  meaning, which is a worse trade than the bytes.
+
+  MEASURED, front-end, `task=ingest a partition from interchange&budget=6000`
+
+                        before      after
+      bytes             81,793      34,206
+      tokens reported    5,988       5,960
+      chars per token     13.7         5.7
+      items                124          47
+
+  On the charged part alone -- the items -- the ratio is 4.2 characters per
+  token against ESTIMATE-TOKENS' own 4, so the budget now prices what it
+  delivers. 47 items rather than 124 is the honest trade and not a loss: the
+  caller asked for 6000 tokens and previously received 20,448.
+
+  WHAT REMAINS, AND IT IS NOT THE CURRENCY
+
+  9,038 bytes of the 34,206 -- 26% -- are four top-level lists the budget never
+  charges for: `seeds` (2,308), `documents` (3,903), `decisions` (2,857) and
+  `mentions` (1,284). They are SUMMARIZE-ENTITIES over the candidate sets, so
+  they name what the walk found rather than what was admitted, and on this
+  query all 44 of their entries also appear in `items` under a band that says
+  which list each belongs to.
+
+  That is why the whole answer is still about 1.4x the budget in real tokens
+  where the items are 1.0x. Whether those lists should be charged, deduplicated
+  against `items`, or dropped in favour of the band is a question about what
+  the bundle's shape means, not about what a token costs -- REQ-0061 asks it.
+
+  A THIRD OPTION, REJECTED HERE
+
+  Lowering the default budget does not help. The ratio is the defect: at 17
+  characters per counted token any budget a caller picks is wrong by a factor
+  they cannot see, and a smaller default trades an overflow for a bundle that
+  withholds entities it did not need to.
+
+  NOT IN SCOPE
+
+  How the budget is split between the index and source tiers. REQ-0040 R2 owns
+  it and is open.
+
+  Whether the scoring metadata should exist. It should -- REQ-0036 reads it.
+  This is about who is charged for carrying it.
