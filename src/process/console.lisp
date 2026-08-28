@@ -1015,10 +1015,43 @@ between 0 and 1." cut))
     ;; BUG-0055. The `?' is on the row as well as inside the path, because the
     ;; path is the last column and a reader scanning a page of rows for what to
     ;; trust should not have to read to the end of each one.
+    ;;
+    ;; BUG-0050 F1. The location, in `find' and `describe's own bracket form.
+    ;; Without it a generic's methods print as one row repeated: measured on
+    ;; game-server 2026-08-24, `impact data-handler 5' returned 822 rows of
+    ;; which 45 names occupied more than one, worst case `dhandler-copy' at
+    ;; eight -- eight real methods in four files, printing as eight lines
+    ;; reading `d2 method dhandler-copy' with nothing on them saying which. The
+    ;; REST answer has carried `id' and `location' throughout; the console
+    ;; printed neither, so the one field that separates them was the one field
+    ;; not shown.
+    ;;
+    ;; Two spaces rather than a tab column. Locations run from
+    ;; `bimap.js:18-20' to `data-api/operator-handler.lisp:137-144', so no
+    ;; column aligns for long, and a tab that aligns some rows and not others
+    ;; reads worse than one that never does.
+    ;;
+    ;; The bracket is dropped when it would repeat the name, which is every
+    ;; :FILE row: a file entity is named by its path and locates to the same
+    ;; path, and printing it twice spends the width that made this legible.
     (dolist (e (getf report :impacted))
-      (format t "  d~a~a ~(~a~) ~a~30t~a~%"
-              (getf e :depth) (if (getf e :inferred) "?" " ")
-              (getf e :type) (getf e :name) (getf e :via)))
+      (let ((location (getf e :location)))
+        (format t "  d~a~a ~(~a~) ~a~@[  [~a]~]  ~a~%"
+                (getf e :depth) (if (getf e :inferred) "?" " ")
+                (getf e :type) (getf e :name)
+                (unless (equal location (getf e :name)) location)
+                (getf e :via))))
+    ;; BUG-0050 F2, said once rather than left on every row to be read against
+    ;; the depth the caller typed.
+    (let ((asked (getf report :depth))
+          (deepest (reduce #'max (getf report :impacted)
+                           :key (lambda (e) (or (getf e :depth) 0))
+                           :initial-value 0)))
+      (when (and asked (> deepest asked))
+        (format t "~&  d~d is one hop past the ~d asked for, and is the true path ~
+length: a one-step edge is followed once from everything already impacted, so a ~
+base found at the cap yields a neighbour beyond it.~%"
+                deepest asked)))
     (dolist (field '(:tests :documents :decisions :mentions))
       (let ((entries (getf report field)))
         (when entries

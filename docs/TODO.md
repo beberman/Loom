@@ -19,44 +19,10 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
 
 ## Queries and their answers
 
-- **`impact` prints a bare name, so a generic's methods read as one entity
-  repeated.** BUG-0050, and it is not the entry that stood here. That entry
-  said `impact` repeats entities -- 253 rows covering 208 distinct entities,
-  18% of the answer the same entity again. Re-measured 2026-08-24 on the same
-  tree and command: 822 rows, 822 distinct ids, zero repeats. IMPACT-SET is
-  deduplicated by a `seen` hash keyed on entity id. The 18% was counted by
-  name, and counting by name counts two definitions as one, which DES-0015
-  says is the wrong count.
-
-  What the reader saw was still real. 45 names occupy more than one row, 95
-  rows in all, worst case `dhandler-copy` at eight -- eight genuine methods in
-  four files, printed as eight rows saying `d2 method dhandler-copy` with
-  nothing on them saying which. The REST answer carries `id` and `location`;
-  the console prints neither, so the one field that separates them is the one
-  field not shown. `find` and `describe` both print a location.
-
-  The same entry's second half -- rows labelled `d6` on a depth-5 walk -- also
-  reproduces, 7 of 822, and is by design: the one-step band is a single hop
-  from everything already impacted, so a base at the cap yields a neighbour one
-  past it. All seven are `:file` entities reached by a final `contains>` hop.
-  The number is the true path length. What is missing is any statement that the
-  band lies outside the depth the caller asked for.
-  -- the ~/lisp/game-server evaluation, 2026-08-06; re-measured 2026-08-24
-
-- **`find` answers a term that matches no definition with silence, when it
-  could say the term is prose.** `find term=osm-import` against `front-end`
-  returned `{"entities":[],"total":0}`. The string is a route -- `router.post
-  ('/osm-import', ...)` -- and it appears in the mock, in the router's header
-  comment, and in PLAN-0003, so the question "where is the osm-import endpoint"
-  has an answer and the index holds the material for it. Route strings are not
-  definitions and should not become entities; that is not the ask. The ask is
-  that a zero-hit answer distinguish *no such name anywhere* from *no definition,
-  N textual occurrences, here they are*, because those imply opposite next
-  moves and only the first is worth the caller's confidence. `context` finds
-  these through its `mentions` band, so the material is already indexed -- it
-  is `find` that has no path to it.
-  -- chasing front-end's BUG-0014, 2026-08-27
-  -- REQ-0054 asks for it, 2026-08-27
+None open. Every entry that stood here is in the 2026-08-27 and 2026-08-28
+tables below, which name the document carrying each. The section is kept so
+that a reader looking for query issues learns there are none rather than that
+the heading was dropped.
 
 ## The graph and what it stores
 
@@ -193,6 +159,7 @@ re-derives an item that was answered, and each row names where to look instead.
 | "`context` mints a record id only when a log directory is set ... so `context-used` is unreachable on an ordinary deployment" | BUG-0053, closed. Every context answer carries `feedback: "on"` or `"off"`, and RECORD-CONTEXT-USE no longer answers "No context record <id>" when the truth is that no log exists. The item's third proposal -- `init` turning the log on for the tree it prepares -- is withdrawn rather than deferred: DES-0030 D1 makes the directory an operator's and not a caller's, and it deliberately lives in Loom's tree so a prepared repository's corpus holds still. Whether `tools/loom-serve.sh` should default it on is REQ-0044's question |
 | "`complete` cannot finalize a plan that refines nothing" -- `would-set` forever, with `set-status` as the way through | BUG-0057, closed, and the item named one of three shapes: a plan refining nothing, a plan whose refined documents are all already terminal, and one whose documents are all blocked. Each ends with no verdict a caller could offer, so each previewed forever. A dry run that finds nothing awaiting a verdict now re-enters once and writes, so the walk decides what it found in one place. Dry run is unchanged wherever a verdict can be withheld |
 | "`export default { name }` sometimes mints a second entity for `name`" -- ambiguous in `affects:` for a cause absent from the author's source | BUG-0056, closed. The item's arrow-function lead was wrong: `export default { name }` always minted a nameless variable, and JS-DEFINITION-NAME names it after the module's base name -- so it collides exactly when a module is named after its principal export, which is why the byte-identical sibling differed. A re-export object now mints nothing; an anonymous function, a class, an object with inline values and an empty object all keep the entity they had |
+| "`impact` prints a bare name, so a generic's methods read as one entity repeated" -- eight rows of `d2 method dhandler-copy` | BUG-0050, closed. An impact row prints its location in PRINT-SUMMARY-LINE's bracket form, so `find`, `describe` and `impact` agree; the bracket is dropped where it would repeat a file's own path. The entry's second half -- rows labelled `d6` on a depth-5 walk -- was never a defect, and IMPACT-REPORT now carries the depth it was asked for so the console can say once that the one-step band lies one hop past it. All 7 of those rows also print `d6?`, BUG-0055's marker: the band is low-confidence reaches, not a miscount |
 | "`find` should answer across registered repositories, or say that it didn't" -- three instances, the sharpest entry in this file | REQ-0051, implemented. `find` with no `repository` searches every watched tree and each row names its own; named with one and finding nothing, it answers `0 here; 1 in utils`. The answer also names any tree it could not search, so "absent everywhere" is never claimed by a partial search |
 | "`init` cannot refresh a marked region it wrote" -- eight prepared trees keeping stale guidance, and a hand-edited region that is a superset of the template | REQ-0052, implemented as `init --update`. The author's half of the region is declared rather than guessed at, so a refresh replaces Loom's bytes and leaves the hundred lines beside them that no template can regenerate |
 

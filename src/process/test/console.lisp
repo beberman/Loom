@@ -293,6 +293,34 @@ misused conditional directive hid, printing the flag itself as the text")
                       :edge-source :structural :edge-confidence 1.0)))
       "DES-0014 R7's kind still prints on its own"))
 
+(test an-impact-row-prints-the-location-that-tells-two-of-one-name-apart
+  ;; BUG-0050 F1. The REST answer has carried `location' throughout and the
+  ;; console printed neither it nor the id, so eight methods of one generic
+  ;; printed as `d2 method dhandler-copy' eight times with nothing on them
+  ;; saying which. `find' and `describe' both print it, in the bracket form
+  ;; asserted here.
+  (with-console-fixture
+    (let ((output (with-output-to-string (*standard-output*)
+                    (run-command "impact alpha"))))
+      (is (search "src/code.lisp" output)
+          "the row locates its definition: ~a" output)
+      (is (search "[src/code.lisp" output)
+          "in PRINT-SUMMARY-LINE's bracket form, so the three commands agree"))))
+
+(test a-file-row-does-not-print-its-own-path-twice
+  ;; A :FILE entity is named by its path and locates to the same path. The
+  ;; bracket is what made a method row legible; on a file row it repeats the
+  ;; name and spends the width that bought the legibility.
+  (with-console-fixture
+    (let* ((output (with-output-to-string (*standard-output*)
+                     (run-command "impact alpha")))
+           (file-line (find-if (lambda (line) (search " file " line))
+                               (uiop:split-string output :separator '(#\Newline)))))
+      (is-true file-line "the file containing alpha is impacted by it")
+      (when file-line
+        (is-false (search "[src/code.lisp]" file-line)
+                  "and does not repeat itself: ~a" file-line)))))
+
 ;;; ------------------------------------------------------------------
 ;;; enrich (DES-0011)
 ;;; ------------------------------------------------------------------

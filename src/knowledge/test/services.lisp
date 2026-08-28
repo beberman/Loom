@@ -602,3 +602,38 @@ The lock is the table's own.")))))
         "a seed's own empty path is certain, not zero")
     (is (not (loom-knowledge::path-inferred-p
               (list (loom-graph::make-hop :rel-type :calls :entity-id "a")))))))
+
+
+;;; ------------------------------------------------------------------
+;;; An impact answer says what depth it was asked for (BUG-0050 F2)
+;;; ------------------------------------------------------------------
+
+(test an-impact-report-carries-the-depth-it-was-asked-for
+  ;; Without it a reader compares a row's depth against the number they typed
+  ;; and has no way to learn that the one-step band lies outside it. On
+  ;; game-server, `impact data-handler 5' returns 7 rows at d6 of 822 -- the
+  ;; true path length, and indistinguishable from a defect.
+  (let* ((f (make-k-fixture))
+         (report (impact-report (k-graph f) (id (k-resolve f)) :max-depth 3)))
+    (is (= 3 (getf report :depth)))
+    (is (<= (reduce #'max (getf report :impacted)
+                    :key (lambda (e) (getf e :depth)) :initial-value 0)
+            4)
+        "a one-step edge may land one past the cap and no further"))
+  (let* ((f (make-k-fixture))
+         (report (impact-report (k-graph f) (id (k-resolve f)))))
+    (is (= *default-impact-depth* (getf report :depth))
+        "and the default is reported rather than left for the caller to assume")))
+
+(test an-impact-row-carries-the-location-that-separates-two-of-one-name
+  ;; The console prints what this row carries. On game-server 45 names occupy
+  ;; more than one row of `impact data-handler 5' and `dhandler-copy' occupies
+  ;; eight -- eight real methods in four files, distinguishable only here.
+  (let* ((f (make-k-fixture))
+         (report (impact-report (k-graph f) (id (k-resolve f))))
+         (row (first (getf report :impacted))))
+    (is-true row)
+    (is-true (getf row :location) "every impact row locates its definition")
+    (is (search ":" (getf row :location))
+        "file and line range, as `find' and `describe' print it: ~a"
+        (getf row :location))))

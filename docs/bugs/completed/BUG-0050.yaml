@@ -1,6 +1,6 @@
 id: BUG-0050
 title: impact's console rows print a bare name, so eight methods of one generic read as the same entity eight times
-status: open
+status: closed
 severity: minor
 date: 2026-08-24
 affects: [impact-report, impact-set, impact-entry-summary]
@@ -81,6 +81,37 @@ body: |
 
   F2  The one-step band says it is one hop past the cap, once, rather than
       leaving each row to be read against the requested depth.
+
+  WHAT WAS DONE, 2026-08-28
+
+  F1. An impact row prints its location in PRINT-SUMMARY-LINE's bracket form,
+  so `find`, `describe` and `impact` now say the same thing the same way. The
+  eight are legible:
+
+      d1  method dhandler-copy  [data-api/operator-handler.lisp:137-144]
+      d1  method dhandler-copy  [data-api/null-handler.lisp:31-35]
+      d1  method dhandler-copy  [data-api/model-handler.lisp:205-212]
+      ...
+
+  Two spaces rather than a tab column, because locations run from
+  `bimap.js:18-20` to `data-api/operator-handler.lisp:137-144` and a tab that
+  aligns some rows and not others reads worse than one that never does. The
+  bracket is dropped where it would repeat the name, which is every :FILE row.
+
+  F2. IMPACT-REPORT carries `:depth`, the depth the walk was asked for, and the
+  console says once at the end of the rows that a deeper number is one hop past
+  it and is the true path length. Verified against this document's own
+  measurement: `impact data-handler 5` on game-server still returns 822 rows of
+  which exactly 7 carry d6, and the sentence now follows them.
+
+  A THING THE FIX MADE VISIBLE
+
+  All 7 of those d6 rows print as `d6?`. That is BUG-0055's marker, landing on
+  the same rows: each is reached through a Lisp call edge the resolver guessed
+  at, which on game-server is the population CLAUDE.md describes -- 54 of 95
+  same-named callables whose package cannot be worked out. The band that looked
+  like a depth defect is a band of low-confidence reaches, and the two answers
+  now say so together.
 
   NOT IN SCOPE
 
