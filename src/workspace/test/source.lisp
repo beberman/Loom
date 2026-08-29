@@ -41,13 +41,33 @@ ALPHA-TWICE and a test that silently probed the wrong entity would still pass."
       (is (= 0 (getf r :withheld)))
       (is (getf r :indexed-at) "R4: the generation the text was read against"))))
 
-(test definition-source-declines-an-entity-with-no-line-range
-  ;; REQ-0031 R3 leaves documents to REQ-0007, and a document carries a :PATH
-  ;; rather than a range. Reported as :UNLOCATED rather than by testing the
-  ;; entity's type against a list -- BUG-0030 is what enumerating document
-  ;; types costs, and the absence of a range is the fact that actually matters.
+(test definition-source-serves-a-document-whole-from-its-path
+  ;; BUG-0059. A document carries a :PATH and no line range. REQ-0007 bounds
+  ;; what `describe' prints of one to a summary, so --source is the way to read
+  ;; the argument itself -- and before this it had no answer but ":UNLOCATED".
+  ;; Served whole, from line 1, under the same contract as a ranged entity.
   (with-workspace-fixture (repository)
     (let ((r (source-of repository "DEC-0001" :decision)))
+      (is (eq :current (getf r :status)))
+      (is (string= "1-7" (getf r :range))
+          "the whole file, first line to last")
+      (is (null (getf r :definition-range))
+          "a whole-file answer reports no entity range")
+      (is (search "id: DEC-0001" (getf r :text)))
+      (is (search "makes it testable" (getf r :text))
+          "the rationale, which the bounded summary would truncate")
+      (is (= 0 (getf r :withheld))))))
+
+(test definition-source-declines-an-entity-that-names-no-file
+  ;; :UNLOCATED is now the narrow case: not "a document" but an entity with
+  ;; neither a :FILE nor a :PATH. Reported rather than guessed at from a type
+  ;; list -- BUG-0030 is what enumerating types costs.
+  (with-workspace-fixture (repository)
+    (add-entity (repository-graph repository)
+                (make-instance 'concept-entity :name "floating"
+                               :properties (properties-table (list :doc-id "floating"))))
+    (let* ((e (named-entity repository "floating" :concept))
+           (r (definition-source repository (id e))))
       (is (eq :unlocated (getf r :status)))
       (is (null (getf r :text))))))
 

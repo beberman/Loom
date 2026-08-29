@@ -340,6 +340,21 @@ title: A design with a system
                            :design)))
     (is (eq :docs (getp e :system)))))
 
+(test every-genre-carries-its-path-not-just-the-workflow-ones
+  ;; BUG-0059. :PATH is where ENTITY-LOCATION and DEFINITION-SOURCE read a
+  ;; document's whereabouts. It was set by the :DOCUMENT method alone, so a
+  ;; design, decision, concept or rule resolved with a null location. Moved to
+  ;; BASE-PROPERTIES, so no genre can omit it -- the four that used to are the
+  ;; ones asserted here.
+  (dolist (case '(("docs/design/DES-9001.yaml"    "id: DES-9001" :design)
+                  ("docs/decisions/DEC-9001.yaml" "id: DEC-9001" :decision)
+                  ("docs/concepts/CON-9001.yaml"  "id: CON-9001" :concept)
+                  ("docs/rules/RULE-9001.yaml"    "id: RULE-9001" :rule)))
+    (destructuring-bind (path body type) case
+      (let ((e (literal-entity path body type)))
+        (is (string= path (getp e :path))
+            "~a must carry its own path" type)))))
+
 (test a-rule-document-carries-no-system-at-all
   ;; R1 gives :RULE no :SYSTEM property, so writing one here would be dropped
   ;; by DECLARED-PROPERTIES-ONLY's equivalent and read by nothing. ENTITY-SYSTEM

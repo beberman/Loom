@@ -951,7 +951,7 @@ which is CON-0006's expensive error at the scale of one answer."
                  "the file has changed since it was indexed"))
        (write-string (getf result :text)))
       (:unlocated
-       (format t "~&~%source: this entity records no line range.~%"))
+       (format t "~&~%source: this entity names no file.~%"))
       (:missing
        (format t "~&~%source: ~a is gone.~%" (getf result :file)))
       (:short
