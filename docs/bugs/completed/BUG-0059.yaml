@@ -1,0 +1,124 @@
+id: BUG-0059
+title: a design or architecture document has no path and no readable body through Loom, because :PATH is set in the :DOCUMENT branch of document-properties and nowhere else
+status: closed
+severity: major
+date: 2026-08-29
+refines: [REQ-0007]
+affects: [base-properties, type-specific-properties, document-properties, entity-location, definition-source]
+tags: [documents, yaml-analyzer, find, describe, req-0007, bug-0030]
+summary: |
+  `find DES-0011`, `find DES-0004` and `find ARCH-0003` each return one entity
+  whose location is null. `find PLAN-0019` and `find REQ-0006` return the file
+  path. `describe DES-0011 --source` answers "this entity records no line
+  range", and `describe` without `--source` shows at most
+  `*summary-token-budget*` -- 120 tokens -- of the summary field, truncating
+  DES-0011 at 119 of 395. So a design or architecture document can be neither
+  located nor read through Loom. The fallback is a shell `find` over `docs/`,
+  which also means guessing the directory: it is `docs/design/`, singular.
+
+  This was found implementing front-end's PLAN-0006 Task 1 on 2026-08-29 and
+  reproduces on Loom's own tree.
+
+  The developer's phrasing: "Whatever indexes PLAN and REQ with a path and a
+  full body should treat DES and ARCH the same way."
+body: |
+  ROOT CAUSE OF THE MISSING PATH
+
+  src/analyzer/yaml-analyzer.lisp maps a `docs/` subdirectory to an entity
+  type: `design` -> `:design`, `arch` -> `:architecture`, and the workflow
+  directories -- requirements, plans, reviews, bugs -- all to `:document`.
+  `document-properties` is a generic function with one method per type key.
+
+  The `:document` method (yaml-analyzer.lisp:322-363) puts `:path path` in its
+  plist. `base-properties` (yaml-analyzer.lisp:230-246), which every method
+  calls, does not. Neither do the `:design`, `:architecture`, `:decision`,
+  `:concept` or `:rule` methods. So `:path` is present on exactly the types
+  that land on `:document` and absent on the other five.
+
+  `entity-location` (src/knowledge/services.lisp:195) reads `(or (getp entity
+  :file) (getp entity :path))`. With neither, it returns NIL, and `find` prints
+  no location. `definition-source` (src/workspace/source.lisp:110) returns
+  `:status :unlocated` for the same reason.
+
+  The entity does carry `:origin-file` -- `analyze-file` sets it on every
+  document entity it makes, `:design` and `:architecture` included -- so the
+  path is known at index time and simply not written where the readers look.
+
+  ROOT CAUSE OF THE UNREADABLE BODY
+
+  `definition-source`'s docstring says `:unlocated` is "the ordinary case" for
+  a `:DOCUMENT` and that "REQ-0007 governs what `describe' returns for one".
+  REQ-0007's answer is the bounded summary, not the body: `document-summary`
+  (src/knowledge/services.lisp) shows `*summary-token-budget*` tokens of the
+  `summary:` field and reports `full-tokens` for the rest. A design argues in
+  its body, not in a `summary:` line, so 120 tokens of summary is not the
+  document. There is no `describe` path that serves a document's `:body`
+  property, which `base-properties` fills for every type from `collect-body`.
+
+  WHAT A FIX MUST DO
+
+  F1  A `:design` and `:architecture` entity carries its path where
+      `entity-location` and `definition-source` read it. Moving `:path path`
+      into `base-properties` fixes all five under-served types at once and is
+      the smaller change; a per-method addition is the alternative. `find
+      DES-0011` then prints `[docs/design/DES-0011.yaml]`.
+
+  F2  `describe` can return a document's full body. Either `--source` on a
+      document entity serves the file contents rather than answering "no line
+      range" -- `definition-source` has the `:origin-file` and could read it
+      whole for a type with no range -- or `describe` gains a way to page the
+      `:body` property. REQ-0007 R3 left `describe` of a document "untouched";
+      this asks whether that still holds now that DES and ARCH are a genre
+      whose content is prose.
+
+  F3  Whatever F1 does for `:design` and `:architecture`, check `:decision`,
+      `:concept` and `:rule`. `find DEC-0001`, `find CON-0004` and `find
+      RULE-0001` all return a null location today. A decision's rationale is as
+      worth reading as a design's argument.
+
+  WHAT WAS DONE, 2026-08-29
+
+  The immediate cause was an abstraction that leaked. `base-properties` existed
+  to hold the fields common to every document, but each `document-properties`
+  method built its own whole plist with `(append (base-properties ...) (list
+  ...))` and was free to add a "common" field itself. `:doc-id` was written that
+  way in all six methods, identically; `:path` was written that way in one. So
+  five genres had no `:path` and nothing structural stopped a sixth from
+  repeating the mistake.
+
+  The fix is a refactor that removes the choice. `document-properties` is now an
+  ordinary function that appends `base-properties` and
+  `type-specific-properties`; the generic function carries only the
+  genre-specific extras and cannot reach a base field. `:path` and `:doc-id`
+  moved into `base-properties`, computed once. A category added later inherits
+  both without its author knowing they exist.
+
+  F1/F3. `find DES-0011`, `find DEC-0001`, `find CON-0004` and `find RULE-0001`
+  now print `[docs/design/DES-0011.yaml]` and the like, on Loom and on
+  game-server (`find @game-server ARCH-0001`). `entity-location` and
+  `definition-source` were already reading `(or (getp entity :file) (getp
+  entity :path))`; they needed the property, not a change.
+
+  F2. `definition-source` serves a document whole. An entity with a file --
+  `:file` with a range, or a document's `:path` without one -- and no line
+  range is served from line 1 under the same REQ-0031 contract as a ranged
+  entity: `:current`/`:stale` beside the text, the `*source-line-limit*` cap,
+  `:truncated` and `:withheld`. `:definition-range` is absent for a whole-file
+  answer. `describe DES-0011 --source` now prints the file (400 of 570 lines,
+  170 withheld) where it used to print only "this entity records no line
+  range". `:unlocated` is now the narrow case of an entity that names no file
+  at all.
+
+  Tests: `every-genre-carries-its-path-not-just-the-workflow-ones` in
+  analyzer/test, `definition-source-serves-a-document-whole-from-its-path` and
+  `definition-source-declines-an-entity-that-names-no-file` in workspace/test.
+  Full suite green, `check` reports no violations.
+
+  NOT IN SCOPE
+
+  Enumerating entity types inside `definition-source` to guess a range. Its
+  docstring cites BUG-0030 as what that costs; F1 gives the readers a real
+  path instead of a guessed range.
+
+  The `*summary-token-budget*` value. 120 tokens is right for a bulk summary;
+  the defect is that a summary is all a caller can get, not that it is short.

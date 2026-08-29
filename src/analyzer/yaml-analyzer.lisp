@@ -228,139 +228,152 @@ against entity names would bury the real hits."
 ;;;; ==================================================================
 
 (defun base-properties (table path category body)
-  ;; :REFINES is read for every kind of document, not just decisions, because
-  ;; the workflow chain runs through all of them: a requirement is answered by
-  ;; a design, sequenced by a plan, and reported on by a review. Any document
-  ;; may name the one it answers.
-  ;; :SUMMARY is read from TABLE, the raw parse -- not from BODY and not from
-  ;; any property computed above. COLLECT-BODY reads the same table and folds
-  ;; summary: into :BODY as it always did; this is a second independent read of
-  ;; unchanged source, which is what DEC-0003 permits and distinguishes from a
-  ;; pass that rewrites its own input.
+  "The properties every document carries, whatever its genre.
+
+Computed in one place so no genre can omit one or disagree about how it is
+derived. BUG-0059 was that failure: :PATH was set by the :DOCUMENT method and
+by no other, so a design, decision, concept or rule entity resolved with a null
+location -- `find DES-0011' printed no path and `describe DEC-0001 --source'
+answered \"no line range\". A field belongs here when it is true of every
+document; TYPE-SPECIFIC-PROPERTIES carries the rest, and it structurally cannot
+reach these -- DOCUMENT-PROPERTIES appends the two, it does not let a method
+supply a base field.
+
+:REFINES is read for every kind of document, not just decisions, because the
+workflow chain runs through all of them: a requirement is answered by a design,
+sequenced by a plan, and reported on by a review. Any document may name the one
+it answers.
+
+:SUMMARY is read from TABLE, the raw parse -- not from BODY and not from any
+property computed above. COLLECT-BODY reads the same table and folds summary:
+into :BODY as it always did; this is a second independent read of unchanged
+source, which is what DEC-0003 permits and distinguishes from a pass that
+rewrites its own input.
+
+:DOC-ID is how one document names another in refines:/affects:/supersedes:. It
+falls back to PATH when a document omits its own id: line, so the entity stays
+reachable.
+
+:PATH is where ENTITY-LOCATION and DEFINITION-SOURCE look for a document's
+whereabouts -- `(or (getp entity :file) (getp entity :path))'. ANALYZE-FILE
+records the same value as :ORIGIN-FILE."
   (list :title    (as-string (yaml-value table :title))
         :summary  (as-string (yaml-value table :summary))
         :category category
+        :doc-id   (or (as-string (yaml-value table :id)) path)
+        :path     path
         :body     body
         :refines  (as-list-of-strings (yaml-value table :refines))
         :mentions (prose-mentions body)
         :unresolved-references '()))
 
-(defgeneric document-properties (type-key table path category body)
-  (:documentation "The property plist for a document of TYPE-KEY.
+(defgeneric type-specific-properties (type-key table path)
+  (:documentation "The fields a document of TYPE-KEY adds to BASE-PROPERTIES.
+
+A method contributes only what its genre needs -- a decision's rationale, a
+rule's check clause, a design's wider status vocabulary. Everything common to
+every document is BASE-PROPERTIES' job, and DOCUMENT-PROPERTIES appends the two
+rather than letting a method build the whole plist. That is the structural half
+of BUG-0059's fix: no genre is responsible for :PATH or :DOC-ID, so no genre
+can forget them, and a sixth category added later inherits both without its
+author knowing they exist.
+
 A generic function so SS10.1's \"adding a category means creating a directory
 and registering a type\" stays true of the fields as well as the directory."))
 
-(defmethod document-properties ((type-key (eql :decision)) table path category body)
+(defun document-properties (type-key table path category body)
+  "The whole property plist for a document: the common fields, then its genre's."
   (append (base-properties table path category body)
-          (list :doc-id       (or (as-string (yaml-value table :id)) path)
-                :status       (or (as-keyword (yaml-value table :status)
-                                              '(:proposed :accepted :superseded :rejected))
-                                  :proposed)
-                :date         (as-string (yaml-value table :date))
-                :rationale    (as-string (yaml-value table :rationale))
-                :consequences (as-string (yaml-value table :consequences))
-                :decision     (as-string (yaml-value table :decision))
-                :tags         (as-list-of-strings (yaml-value table :tags))
-                :lessons      (as-list-of-strings (yaml-value table :lessons))
-                :affects      (as-list-of-strings (yaml-value table :affects))
-                :supersedes   (as-list-of-strings (yaml-value table :supersedes)))))
+          (type-specific-properties type-key table path)))
 
-(defmethod document-properties ((type-key (eql :rule)) table path category body)
-  (append (base-properties table path category body)
-          (list :doc-id     (or (as-string (yaml-value table :id)) path)
-                :status     (or (as-keyword (yaml-value table :status) '(:active :retired))
-                                :active)
-                :severity   (or (as-keyword (yaml-value table :severity)
-                                            '(:error :warning :advisory))
-                                :error)
-                :statement  (as-string (yaml-value table :statement))
-                :applies-to (as-list-of-strings (yaml-value table :|applies-to|))
-                :check      (parse-check (yaml-value table :check)))))
+(defmethod type-specific-properties ((type-key (eql :decision)) table path)
+  (declare (ignore path))
+  (list :status       (or (as-keyword (yaml-value table :status)
+                                      '(:proposed :accepted :superseded :rejected))
+                          :proposed)
+        :date         (as-string (yaml-value table :date))
+        :rationale    (as-string (yaml-value table :rationale))
+        :consequences (as-string (yaml-value table :consequences))
+        :decision     (as-string (yaml-value table :decision))
+        :tags         (as-list-of-strings (yaml-value table :tags))
+        :lessons      (as-list-of-strings (yaml-value table :lessons))
+        :affects      (as-list-of-strings (yaml-value table :affects))
+        :supersedes   (as-list-of-strings (yaml-value table :supersedes))))
 
-(defmethod document-properties ((type-key (eql :design)) table path category body)
-  ;; The nine fields the sixteen renamed documents actually use, counted rather
-  ;; than assumed: id, title, tags, summary, status, date, body, refines,
-  ;; affects. No decision:/rationale:/consequences: -- a design argues in its
-  ;; body rather than in named slots, which is what distinguishes the genre
-  ;; from an ADR and why this is not simply :DECISION with a wider status list.
-  (append (base-properties table path category body)
-          (list :doc-id     (or (as-string (yaml-value table :id)) path)
-                :status     (or (as-keyword (yaml-value table :status)
-                                            '(:draft :proposed :accepted :final
-                                              :superseded :rejected
-                                              :implemented :partial))
-                                :draft)
-                :date       (as-string (yaml-value table :date))
-                :tags       (as-list-of-strings (yaml-value table :tags))
-                :affects    (as-list-of-strings (yaml-value table :affects))
-                :supersedes (as-list-of-strings (yaml-value table :supersedes))
-                :system     (default-system-for-path path))))
+(defmethod type-specific-properties ((type-key (eql :rule)) table path)
+  (declare (ignore path))
+  (list :status     (or (as-keyword (yaml-value table :status) '(:active :retired))
+                        :active)
+        :severity   (or (as-keyword (yaml-value table :severity)
+                                    '(:error :warning :advisory))
+                        :error)
+        :statement  (as-string (yaml-value table :statement))
+        :applies-to (as-list-of-strings (yaml-value table :|applies-to|))
+        :check      (parse-check (yaml-value table :check))))
 
-(defmethod document-properties ((type-key (eql :architecture)) table path category body)
+(defmethod type-specific-properties ((type-key (eql :design)) table path)
+  ;; No decision:/rationale:/consequences: -- a design argues in its body rather
+  ;; than in named slots, which is what distinguishes the genre from an ADR and
+  ;; why this is not simply :DECISION with a wider status list.
+  (list :status     (or (as-keyword (yaml-value table :status)
+                                    '(:draft :proposed :accepted :final
+                                      :superseded :rejected
+                                      :implemented :partial))
+                        :draft)
+        :date       (as-string (yaml-value table :date))
+        :tags       (as-list-of-strings (yaml-value table :tags))
+        :affects    (as-list-of-strings (yaml-value table :affects))
+        :supersedes (as-list-of-strings (yaml-value table :supersedes))
+        :system     (default-system-for-path path)))
+
+(defmethod type-specific-properties ((type-key (eql :architecture)) table path)
   ;; DESCRIBES:, not AFFECTS:, and the analyzer is where that becomes true
   ;; rather than a convention: an architecture document that wrote affects:
   ;; would have it read by nothing, which is exactly the silent drop BUG-0023
   ;; closed, so the genre distinction is enforced by which key is looked up.
-  (append (base-properties table path category body)
-          (list :doc-id     (or (as-string (yaml-value table :id)) path)
-                :status     (or (as-keyword (yaml-value table :status)
-                                            '(:draft :accepted :superseded))
-                                :draft)
-                :date       (as-string (yaml-value table :date))
-                :tags       (as-list-of-strings (yaml-value table :tags))
-                :invariants (as-string (yaml-value table :invariants))
-                :describes  (as-list-of-strings (yaml-value table :describes))
-                :supersedes (as-list-of-strings (yaml-value table :supersedes))
-                :system     (default-system-for-path path))))
+  (list :status     (or (as-keyword (yaml-value table :status)
+                                    '(:draft :accepted :superseded))
+                        :draft)
+        :date       (as-string (yaml-value table :date))
+        :tags       (as-list-of-strings (yaml-value table :tags))
+        :invariants (as-string (yaml-value table :invariants))
+        :describes  (as-list-of-strings (yaml-value table :describes))
+        :supersedes (as-list-of-strings (yaml-value table :supersedes))
+        :system     (default-system-for-path path)))
 
-(defmethod document-properties ((type-key (eql :concept)) table path category body)
-  (append (base-properties table path category body)
-          ;; No :SUMMARY line here: BASE-PROPERTIES now supplies the same value
-          ;; from the same YAML key for every document type.
-          (list :doc-id  (or (as-string (yaml-value table :id)) path))))
+(defmethod type-specific-properties ((type-key (eql :concept)) table path)
+  ;; A concept carries only the common fields. BASE-PROPERTIES supplies :SUMMARY
+  ;; and :DOC-ID from the same YAML keys every other genre uses.
+  (declare (ignore table path))
+  nil)
 
-(defmethod document-properties ((type-key (eql :document)) table path category body)
-  ;; :DOC-ID is read here for the same reason a decision reads it: it is how
-  ;; one document names another. Every workflow category -- arch, requirements,
-  ;; plans, reviews, bugs -- lands on :DOCUMENT, so without this the entire
-  ;; chain is unreachable by id: `describe REQ-0002' finds nothing and a
-  ;; refines: naming it resolves to nothing.
-  (append (base-properties table path category body)
-          (list :doc-id (or (as-string (yaml-value table :id)) path)
-                ;; AS-KEYWORD with an allowed list, so a value outside the three
-                ;; lands as NIL rather than as a fourth level nobody defined.
-                ;; Silent, and deliberately: a typo'd importance is a document
-                ;; whose author said something the vocabulary does not have, and
-                ;; the report for that belongs to `check' over the whole tree
-                ;; rather than to an analyzer reading one file.
-                :importance (as-keyword (yaml-value table :importance)
-                                        '(:critical :major :minor))
-                ;; Read here for the same reason :DOC-ID is: every workflow
-                ;; category lands on :DOCUMENT, so a field only the :DECISION
-                ;; method reads is a field fifteen architecture notes, fourteen
-                ;; requirements, fifteen plans and twenty-two bug reports write
-                ;; and nothing ever sees. It resolved to nothing and was not
-                ;; even reported unresolved, because a field that is never read
-                ;; produces no name to fail.
-                :affects (as-list-of-strings (yaml-value table :affects))
-                :status (as-keyword (yaml-value table :status)
-                                    ;; :IMPLEMENTED and :PARTIAL complete
-                                    ;; CON-0004's vocabulary. Without them
-                                    ;; AS-KEYWORD returned NIL for every
-                                    ;; document that had actually landed, so
-                                    ;; the status of the work that was done was
-                                    ;; the one status the index never held.
-                                    '(:draft :proposed :accepted :final
-                                      :superseded :rejected :open :closed
-                                      :implemented :partial))
-                :path path
-                ;; DES-0009 R3. A document has no grouping construct of its
-                ;; own to read, so it gets the shared default and nothing
-                ;; stronger. Only here: :RULE, :DECISION and :CONCEPT declare
-                ;; no :SYSTEM property, so a value written on one of those
-                ;; would be dropped by nothing and read by nothing.
-                :system (default-system-for-path path)
-                :format :yaml)))
+(defmethod type-specific-properties ((type-key (eql :document)) table path)
+  ;; Every workflow category -- arch, requirements, plans, reviews, bugs --
+  ;; lands here, so a field only one genre's method reads is a field fifteen
+  ;; architecture notes, fourteen requirements, fifteen plans and twenty-two bug
+  ;; reports write and nothing sees. :AFFECTS was exactly that until BUG-0023.
+  (list ;; AS-KEYWORD with an allowed list, so a value outside the three lands
+        ;; as NIL rather than as a fourth level nobody defined. Silent, and
+        ;; deliberately: the report for a typo'd importance belongs to `check'
+        ;; over the whole tree rather than to an analyzer reading one file.
+        :importance (as-keyword (yaml-value table :importance)
+                                '(:critical :major :minor))
+        :affects (as-list-of-strings (yaml-value table :affects))
+        :status (as-keyword (yaml-value table :status)
+                            ;; :IMPLEMENTED and :PARTIAL complete CON-0004's
+                            ;; vocabulary. Without them AS-KEYWORD returned NIL
+                            ;; for every document that had actually landed, so
+                            ;; the status of the work that was done was the one
+                            ;; status the index never held.
+                            '(:draft :proposed :accepted :final
+                              :superseded :rejected :open :closed
+                              :implemented :partial))
+        ;; DES-0009 R3. A document has no grouping construct of its own to read,
+        ;; so it gets the shared default and nothing stronger. :RULE, :DECISION
+        ;; and :CONCEPT declare no :SYSTEM property, so a value written on one of
+        ;; those would be dropped by nothing and read by nothing.
+        :system (default-system-for-path path)
+        :format :yaml))
 
 ;;;; ==================================================================
 ;;;; Rules: compiling the check clause (SS10.4)

@@ -123,13 +123,19 @@ longer there be reported plainly rather than answered with a shorter region or
 an empty string:
 
   :unknown     no such entity.
-  :unlocated   the entity carries no line range. A :DOCUMENT is the ordinary
-               case -- REQ-0007 governs what `describe' returns for one and
-               R3 leaves that untouched -- and the caller reports the absence
-               rather than this function guessing at a type list. BUG-0030 is
-               what enumerating types costs.
+  :unlocated   the entity names no file at all -- neither a :FILE with a line
+               range nor a document's :PATH. Reported rather than guessed at
+               from a type list; BUG-0030 is what enumerating types costs.
   :missing     the file is gone.
   :short       the file no longer reaches :START-LINE.
+
+A document carries a :PATH and no line range. It is served whole, from line 1,
+under the same contract as a ranged entity -- :CURRENT/:STALE beside the text,
+the LIMIT cap, :TRUNCATED and :WITHHELD. BUG-0059: REQ-0007 bounds what
+`describe' prints of a document to a summary, and before this `describe
+DES-0011 --source' had no answer but \"no line range\", so a design's argument
+was unreadable through Loom. Padding is a source-analyzer notion and does not
+apply, so :DEFINITION-RANGE is absent for a whole-file answer.
 
 :STALE still returns the text, and that is deliberate. Refusing would leave the
 caller holding a line range and no way to read it, which is the handoff this
@@ -143,17 +149,21 @@ surprise in the :READ tier, and the monitor already owns that job."
     (cond
       ((null entity) (list :status :unknown))
       (t
-       (let ((relative (getp entity :file))
-             (start    (getp entity :start-line))
-             (end      (getp entity :end-line)))
+       (let* ((relative (or (getp entity :file) (getp entity :path)))
+              (start     (getp entity :start-line))
+              (end       (getp entity :end-line))
+              ;; A document has a :PATH and no range (BUG-0059). Serve it whole
+              ;; rather than refuse; padding does not apply to a whole file.
+              (whole     (and relative (not (and start end)))))
          (cond
-           ((not (and relative start end)) (list :status :unlocated))
+           ((null relative) (list :status :unlocated))
            (t
             (let ((path (merge-pathnames relative (repository-root repository))))
               (handler-case
                   (let* ((contents (read-file path))
                          (lines    (string-lines contents))
                          (total    (length lines)))
+                    (when whole (setf start 1 end total pad nil))
                     (if (> start total)
                         (list :status :short :file relative
                               :range (format nil "~d-~d" start end)
@@ -178,8 +188,11 @@ surprise in the :READ tier, and the monitor already owns that job."
                                 ;; The entity's own range, unchanged and beside
                                 ;; it. Padding is a property of the answer and
                                 ;; never of the entity -- nothing that reads
-                                ;; :START-LINE sees a different number.
-                                :definition-range (format nil "~d-~d" start end)
+                                ;; :START-LINE sees a different number. Absent
+                                ;; for a whole-file document answer, which has
+                                ;; no entity range to report.
+                                :definition-range (unless whole
+                                                    (format nil "~d-~d" start end))
                                 :text (with-output-to-string (out)
                                         (loop for i from (1- from) below served
                                               do (write-line (aref lines i) out)))
