@@ -127,6 +127,54 @@
     (is (string= "error" (second (first *log*))))))
 
 ;;; ------------------------------------------------------------------
+;;; The context log switch
+;;; ------------------------------------------------------------------
+
+(test context-log-reports-what-it-is-not-doing
+  ;; The log is off unless an operator turns it on (DES-0030 D1), and an
+  ;; operator who sees no records needs the command to say which of the two
+  ;; reasons applies. Silence is the state this reports on.
+  (let ((loom-workspace:*context-log-directory* nil)
+        (loom-workspace:*context-log-failure* nil))
+    (let ((output (with-output-to-string (*standard-output*)
+                    (run-command "context-log"))))
+      (is (search "off" output)))))
+
+(test context-log-on-and-off-move-the-directory
+  (let ((loom-workspace:*context-log-directory* nil)
+        (loom-workspace:*context-log-failure* nil)
+        (*log* '()))
+    (let ((output (with-output-to-string (*standard-output*)
+                    (run-command "context-log on /tmp/loom-console-test-log"))))
+      (is (equal (uiop:ensure-directory-pathname "/tmp/loom-console-test-log")
+                 loom-workspace:*context-log-directory*))
+      (is (search "/tmp/loom-console-test-log" output)))
+    (let ((output (with-output-to-string (*standard-output*)
+                    (run-command "context-log off"))))
+      (is (null loom-workspace:*context-log-directory*))
+      (is (search "off" output)))))
+
+(test context-log-on-with-no-directory-takes-the-default
+  (let ((loom-workspace:*context-log-directory* nil)
+        (loom-workspace:*context-log-failure* nil)
+        (*log* '()))
+    (with-output-to-string (*standard-output*) (run-command "context-log on"))
+    (is (equal (loom-workspace:default-context-log-directory)
+               loom-workspace:*context-log-directory*))))
+
+(test an-unrecognised-context-log-argument-changes-nothing
+  ;; A typo that turned the log off would lose the records the operator
+  ;; believes they are collecting, which is the failure no later count reveals.
+  (let ((loom-workspace:*context-log-directory*
+          (uiop:ensure-directory-pathname "/tmp/loom-console-test-log"))
+        (loom-workspace:*context-log-failure* nil))
+    (let ((output (with-output-to-string (*standard-output*)
+                    (run-command "context-log maybe"))))
+      (is (search "Usage" output))
+      (is (equal (uiop:ensure-directory-pathname "/tmp/loom-console-test-log")
+                 loom-workspace:*context-log-directory*)))))
+
+;;; ------------------------------------------------------------------
 ;;; Logging
 ;;; ------------------------------------------------------------------
 

@@ -1590,6 +1590,60 @@ repository has:~%" (length qualified))
         (multiple-value-bind (second minute hour) (decode-universal-time at)
           (format t "~&~2,'0d:~2,'0d:~2,'0d ~a ~a~%" hour minute second label text))))))
 
+(defun context-log-record-count ()
+  "How many records the log directory holds, or NIL when there is no directory."
+  (let ((directory *context-log-directory*))
+    (when (and directory (probe-file directory))
+      (length (directory (merge-pathnames "*.json" directory))))))
+
+(defun print-context-log-state ()
+  "Where context records are being written, or that they are not."
+  ;; A record is written on another thread, so a count taken without draining
+  ;; misses the call the operator just made -- and on the first one it misses
+  ;; the directory too, which had not been created yet.
+  (drain-context-log)
+  (if *context-log-directory*
+      ;; PROBE-FILE for the name, because DEFAULT-CONTEXT-LOG-DIRECTORY builds
+      ;; its pathname with a `../../' in it and an operator reading the line
+      ;; wants the directory rather than the arithmetic. An unmade directory
+      ;; probes to NIL and prints as it was written.
+      (format t "~&context-log : on -> ~a~@[ (~d record~:p)~]~%"
+              (namestring (or (probe-file *context-log-directory*)
+                              *context-log-directory*))
+              (context-log-record-count))
+      (format t "~&context-log : off. No `context' call is recorded.~%"))
+  (when *context-log-failure*
+    (format t "  last write failure: ~a~%" *context-log-failure*)))
+
+(define-command context-log (&optional switch directory)
+    "context-log [on [<dir>] | off]"
+    "Whether `context' calls are recorded, and where. No argument reports."
+  ;; The operator's switch, at the console rather than in the environment.
+  ;; DES-0030 D1 kept it off the request path -- no operation takes the
+  ;; directory as an argument, so a caller cannot turn a :READ into a write --
+  ;; and the command table is stdin's, which is the same operator who set
+  ;; LOOM_CONTEXT_LOG before starting the process. MAIN reads that variable once
+  ;; at startup (REQ-0036 R9); this changes the same place afterwards, so a
+  ;; session that wants records for the next few questions does not restart.
+  (cond ((null switch)
+         (print-context-log-state))
+        ((string-equal switch "on")
+         (setf *context-log-directory*
+               (if (and directory (plusp (length directory)))
+                   (uiop:ensure-directory-pathname directory)
+                   (default-context-log-directory)))
+         (log-event "context-log" "on ~a" (namestring *context-log-directory*))
+         (print-context-log-state))
+        ((string-equal switch "off")
+         ;; Drained before the switch, not after: a record already in flight is
+         ;; one the agent asked for, and its writer thread reads
+         ;; *CONTEXT-LOG-DIRECTORY* to place the file.
+         (drain-context-log)
+         (setf *context-log-directory* nil)
+         (log-event "context-log" "off")
+         (print-context-log-state))
+        (t (format t "~&Usage: context-log [on [<dir>] | off]~%"))))
+
 (define-command repl ()
     "repl"
     "Drop into the Lisp REPL in this image. (loom-process:console) returns."
