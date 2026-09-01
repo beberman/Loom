@@ -1,0 +1,92 @@
+id: REQ-0062
+title: find must be able to return only code or only documentation, because a noun like `repository` names 20 definitions and 3053 prose lines and the caller cannot say which kind they want
+status: draft
+date: 2026-08-29
+refines: [REQ-0054]
+affects: [search-entities, print-find-occurrences, textual-occurrences]
+importance: Minor
+tags: [find, filtering, cli, rest, mcp, developer-usage, req-0054]
+summary: |
+  `find <name>` matches every entity type at once. On a common noun that mixes
+  code and documents this makes the answer unusable in one direction or the
+  other. `find @Loom repository` returns 20 code definitions (`repository`,
+  `repository-token-p`, `repository-graph`, ...). An agent that wanted the
+  documents describing repositories has no switch to ask for them, and an agent
+  that wanted only code still reads 20 of 202 with no way to drop the rest.
+
+  The existing second positional is a single exact type (`find repository
+  class`), which narrows to one kind and matches on name and type together --
+  `find repository document` returns nothing because no entity *named*
+  "repository" is a document. There is no category selector: "any code type" or
+  "any document type".
+
+  A developer hit this on 2026-08-29 and read `find @Loom repository index` --
+  intending "repository" plus "index" as two search words -- as a working
+  query. It is not: `index` is parsed as the type, no entity named "repository"
+  has type `index`, so the command misses and prints its textual-occurrences
+  band. That band is 3053 lines, mostly in `.md` files, and it reads as a
+  result set rather than as the "no such definition, here is where the string
+  occurs" fallback REQ-0054 built it to be.
+body: |
+  WHAT EXISTS
+
+  `find <name> [<type>]` (src/process/console.lisp, `search-entities` at
+  src/knowledge/services.lisp:355). `type` is interned to a keyword and passed
+  to `search-entities`, which filters hits to that one entity type. On a miss,
+  `print-find-occurrences` prints `textual-occurrences` -- the string's
+  locations in the tree, capped and counted.
+
+  Entity types split cleanly into two families already named elsewhere in the
+  codebase: the code types the source analyzers mint (`function`, `class`,
+  `method`, `macro`, `call-site`, ...) and the document types the YAML and
+  markdown analyzers mint (`document`, `design`, `architecture`, `decision`,
+  `concept`, `rule`). `*document-types*` at src/graph/resolve.lisp:1384 is one
+  such list.
+
+  WHAT IS WANTED
+
+  R1  `find` takes a category selector that filters results to code entities or
+      to document entities. `--code` and `--documentation` (or `--doc`) on the
+      console; a `kind` parameter over REST and MCP. It composes with the
+      existing exact-type positional or replaces it -- an exact type already
+      implies its family -- but a caller must be able to give the family
+      without naming a member of it.
+
+  R2  The selector filters the definition hits and the truncation count
+      together. `20 of 202 shown` must become `20 of 20 shown` when the other
+      182 were documents the caller excluded, or the count still tells the
+      caller to narrow a term that is already as narrow as it goes.
+
+  R3  The textual-occurrences band is labelled as what it is on every miss, not
+      only when a category was given. The developer's misread was of an
+      unfiltered miss. `no definition named X; the string occurs x times, in
+      these files` and `x definitions named X` must not look like the same kind
+      of list -- BUG-0002 is the standing rule that a cut list says it was cut,
+      and this is its sibling: a fallback list says it is a fallback.
+
+  R4  The prepared guidance shows the selector. The CLAUDE.md `find` line and
+      the loom skill both describe `find <name> [<type>]`; whatever R1 adds is
+      added there, because a switch nobody is told about is a switch nobody
+      types.
+
+  ACCEPTANCE
+
+  `find @Loom repository --code` returns only the code definitions and a
+  truncation count computed over code alone. `find @Loom repository
+  --documentation` returns the documents that Loom holds about repositories --
+  or, if `find` still matches on name, says plainly that it matched no document
+  *named* "repository" and points at `context` for the by-subject question.
+  `find @Loom repository index` -- two words, no leading dash -- either answers
+  as a two-term search or refuses with a sentence naming the type positional,
+  and does not present 3053 occurrence lines as a result.
+
+  OPEN QUESTIONS
+
+  - Whether "documents about X" is a `find` question at all. `find` matches
+    names; the documents describing repositories are not named "repository".
+    R1's `--documentation` may only ever be useful together with a name that is
+    a document id or title, in which case the honest scope is "filter the hits
+    by family" and the by-subject search stays with `context`.
+  - Whether the code/document split should be a first-class `family` on the
+    entity type rather than two hardcoded lists at the call site. `structure`
+    and `resolve` both already carry their own copies.

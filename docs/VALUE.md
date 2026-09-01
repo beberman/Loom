@@ -86,6 +86,17 @@ time `describe` answered that question in this tree's history, and it was used
 within a day of existing.
 — designing REQ-0040, 2026-08-23
 
+**`context` seeds carried the method bodies, so three accessors were read
+without opening the file.** Planning front-end's PLAN-0006 Task 1 needed to know
+how `LayerEditorState` resolves the active map and gates on a layer. The bundle
+returned `selectMap`, `activeMap` and `hasLayer` as seeds with their source
+inline — the fallback-to-primary chain in `activeMap`, the `_selectedMapName`
+persistence in `selectMap` — enough to design the new `activePartition` getter
+against them without reading `useLayerEditorState.js` first. (The same bundle
+missed the render files the task named — TODO.md — but the accessor seeds were
+right.)
+— implementing front-end's PLAN-0006 Task 1, 2026-08-29
+
 ## Catching a document that has rotted, before believing it
 
 **`check` handed over the unresolved list as a single fact**, which is what made

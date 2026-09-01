@@ -1,0 +1,92 @@
+id: BUG-0060
+title: context for a terrain-editor task led with a play-mode class and an archived doc, and returned none of the three files the change edited
+status: open
+severity: major
+date: 2026-08-29
+refines: [REQ-0026]
+affects: [seed-entities, build-context]
+tags: [context, recall, seeding, javascript, front-end, req-0026, req-0036]
+summary: |
+  The task string was "load and hold the map TerrainPartition in
+  useLayerEditorState when the active layer is a terrain layer and render faces
+  and arcs in RenderEngineLeaflet" (front-end, PLAN-0006 Task 1, 2026-08-29).
+
+  The seed band led with `TerrainLayer` -- a PIXI mesh class in
+  `src/ui/play/board/`, the play-mode renderer, unrelated to the terrain
+  *editor* -- and with `docs/archive/plan-working-set.md`. The three files the
+  change actually edited -- `useLayerEditorDrawing.js`, `RenderEngineLeaflet.js`
+  and `partitionModeStyle.js` -- were absent from the bundle. `TerrainPartition.js`
+  was a weak mention.
+
+  Every load-bearing noun in the task string -- `renderengineleaflet`,
+  `terrainpartition`, `uselayereditorstate`, `faces`, `arcs`, `render` -- came
+  back `state: weak`, i.e. matched only in prose, no definition.
+
+  The `LayerEditorState` accessors the bundle did return (`selectMap`,
+  `activeMap`, `hasLayer`, source inline) were on target -- VALUE.md records
+  them -- but they were a minority of the answer. The rest was found by grep
+  and by reading the plan.
+body: |
+  THREE DISTINCT FAILURES
+
+  1. A NAME COLLISION PROMOTED THE WRONG SUBSYSTEM. "terrain" and "layer" in
+     the task string matched `TerrainLayer`, a play-mode PIXI class, and it
+     led the seed band. The task is about the terrain editor. Nothing in the
+     bundle's ranking separated `src/ui/play/board/` from the editor modules,
+     though the task names editor identifiers (`useLayerEditorState`,
+     `RenderEngineLeaflet`) that share no directory with the play board.
+
+  2. AN ARCHIVED DOCUMENT LED THE BAND. `docs/archive/plan-working-set.md` is
+     superseded working notes. It is indexed by the markdown analyzer with the
+     same weight as a live document -- the claim rules in CLAUDE.md exclude
+     dot-directories, `templates/` and `CLAUDE.md`/`AGENTS.md` by name, and say
+     nothing about `archive/`. A `completed/` document is filed but still
+     indexed; an `archive/` document should rank below a live one at least, and
+     arguably should not seed a task bundle at all.
+
+  3. THE EDITED FILES WERE NOT IN THE BUNDLE. `useLayerEditorDrawing.js`,
+     `RenderEngineLeaflet.js` and `partitionModeStyle.js` -- the diff of the
+     change -- did not appear in any band. `RenderEngineLeaflet` is named
+     verbatim in the task string. That it resolved `state: weak` says the JS
+     analyzer indexed no definition by that name in that file: either the file
+     exports a default with no bound name, or the class/function it defines is
+     spelled differently from the file, or the analyzer did not claim it. A
+     `context` seeded from `find`-strength matches cannot recover a file whose
+     defining name `find` does not see.
+
+  WHERE TO LOOK
+
+  `seed-entities` (src/knowledge/context.lisp:1397) builds the seed set from
+  term matches; `build-context` (src/knowledge/context.lisp:1732) bands and
+  budgets them. The weak-term handling is `weak-term-p` and the coverage band
+  is `seed-score` -- but the primary question here is upstream of ranking: the
+  load-bearing nouns produced no strong match to rank. That points at JS
+  analyzer coverage in front-end (are `RenderEngineLeaflet.js` and
+  `useLayerEditorDrawing.js` yielding definitions?) more than at the context
+  scorer.
+
+  REPRODUCTION
+
+  Against a current front-end index:
+
+      context load and hold the map TerrainPartition in useLayerEditorState
+      when the active layer is a terrain layer and render faces and arcs in
+      RenderEngineLeaflet
+
+  Expected: the bundle names `useLayerEditorState.js` /
+  `useLayerEditorDrawing.js`, `RenderEngineLeaflet.js` and the partition-style
+  module. Actual: `TerrainLayer` and `docs/archive/plan-working-set.md` lead;
+  the three files are absent.
+
+  RELATION TO OTHER WORK
+
+  REQ-0036 measures seeding against a scored corpus; this is a case that corpus
+  would catch if front-end tasks were in it. REQ-0060 is the same concern for
+  Loom's own prose. This bug is the front-end instance and its first cause
+  (analyzer coverage) is not something a ranking change fixes.
+
+  NOT IN SCOPE
+
+  Whether `context` should read the plan text directly. The task string came
+  from a plan; the plan named the files; `context` seeded from the string and
+  missed them. Feeding it the plan is a different requirement, not this fix.

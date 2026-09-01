@@ -19,10 +19,76 @@ The trees are Loom itself, `game-server`, `front-end` and `utils`.
 
 ## Queries and their answers
 
-None open. Every entry that stood here is in the 2026-08-27 and 2026-08-28
-tables below, which name the document carrying each. The section is kept so
-that a reader looking for query issues learns there are none rather than that
-the heading was dropped.
+Usage by developer on 8/29/26
+- The find function needs a way to set the types of objects that are returned. find @Loom repository index searches
+and returns a large number of md files, whereas find @Loom repository returns code. So if the agent only wants code
+or only wants documentation there is no way to force the system to only return that type.  We should add a flag
+so it would be find @Loom --code repository index which would return the code that repository references, or
+find @Loom --documentation repository index would return the results filters to the documentation.
+
+loom> find @Loom repository index
+Nothing matches "repository" in Loom, or in any other watched repository.
+  It occurs in the text 3053 times:
+    .claude/agents/architect.md:103  - **Measure before designing.** A count from the real repository beats an
+    .claude/agents/tools.md:21  Every one takes a `repository` argument and refuses to guess.
+    .claude/agents/tools.md:99  An agent working in a repository *prepared* by Loom rather than in this one
+    .claude/agents/tools.md:101  `loom_complete` MCP tool — and names its repository in the call. There is no
+    .claude/skills/loom/SKILL.md:28  Each takes a `repository` argument — the service holds several and refuses to
+    .claude/skills/loom/SKILL.md:30  is the exception since REQ-0051: `repository` is optional there, and without it
+    .claude/skills/loom/SKILL.md:45  MCP tools. They prepare, describe or dismantle a repository and are driven by
+    .claude/skills/loom/SKILL.md:55  tools/loom.sh 'status | impact repository 3'
+    .claude/skills/loom/SKILL.md:61  (`tools/loom.sh 'status' 'impact repository 3'`), still works and the two mix;
+    .claude/skills/loom/SKILL.md:88  @<name> <command> ...     name the repository a command acts on. A leading
+    .claude/skills/loom/SKILL.md:93  one command -- there is no selected-repository mode
+    .claude/skills/loom/SKILL.md:94  to forget. With one repository watched, nothing has
+    12 of 3053 shown.
+loom> find @Loom repository 
+@Loom class repository  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-token-p  [src/process/console.lisp:139-143]
+@Loom function repository-for-similar  [src/process/console.lisp:984-999]
+@Loom function repository-label  [src/rest/test/concurrency.lisp:211-212]
+@Loom class repository-indexing  [src/serve/errors.lisp:96-114]
+@Loom function repository-view  [src/serve/operations.lisp:117-119]
+@Loom function repository-hits  [src/workspace/search.lisp:35-48]
+@Loom function repository-vectors  [src/workspace/vectors.lisp:296-315]
+@Loom function repository-state  [src/workspace/vectors.lisp:333-349]
+@Loom function repository-p  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-root  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-name  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-graph  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-indexed-at  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-indexed-fingerprint  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-file-count  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-unindexed  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-unclaimed  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-errors  [src/workspace/workspace.lisp:20-97]
+@Loom function repository-stamps  [src/workspace/workspace.lisp:20-97]
+20 of 202 shown. Narrow the term, or name a type.
+  -- REQ-0062 asks for a `--code` / `--documentation` category filter and for
+     the occurrences band to read as a fallback rather than a result set,
+     2026-08-29
+
+- **`context` for a front-end editor task led with a play-mode class and an
+  archived doc, and none of the files the edit touched.** The task string was
+  "load and hold the map TerrainPartition in useLayerEditorState when the active
+  layer is a terrain layer and render faces and arcs in RenderEngineLeaflet"
+  (front-end, PLAN-0006 Task 1, 2026-08-29). The seed band led with
+  `TerrainLayer` -- a PIXI mesh class in `src/ui/play/board/`, the play-mode
+  renderer, nothing to do with the terrain *editor* -- and with
+  `docs/archive/plan-working-set.md`. `useLayerEditorDrawing.js`,
+  `RenderEngineLeaflet.js` and `partitionModeStyle.js`, the three files the
+  change actually edited, were absent from the bundle; `TerrainPartition.js`
+  was a weak mention. Every load-bearing noun in the task string --
+  `renderengineleaflet`, `terrainpartition`, `uselayereditorstate`, `faces`,
+  `arcs`, `render` -- came back `state: weak`. The `LayerEditorState` accessor
+  seeds it did return (`selectMap`, `activeMap`, `hasLayer`, source inline) were
+  on target and are in VALUE.md, but they were a minority of the answer. Found
+  the rest by grep and by reading the plan.
+  -- implementing front-end's PLAN-0006 Task 1, 2026-08-29
+  -- BUG-0060 carries it: three failures (a name collision promoting play-mode
+     code, an archived doc leading the band, and the edited files resolving
+     weak because the JS analyzer indexed no definition by their name),
+     2026-08-29
 
 ## The graph and what it stores
 
