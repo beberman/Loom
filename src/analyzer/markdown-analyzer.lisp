@@ -90,14 +90,11 @@ not walked at all, and the allowlist has been redundant insurance since."
          (directories (butlast segments))
          (file (car (last segments))))
     (and (notany (lambda (segment)
-                   (or (dot-prefixed-segment-p segment)
+                   (or (dot-prefixed-p segment)
                        (member segment *excluded-directories* :test #'string-equal)))
                  directories)
          (not (member file *assistant-instruction-files* :test #'string-equal))
          t)))
-
-(defun dot-prefixed-segment-p (segment)
-  (and (stringp segment) (plusp (length segment)) (char= #\. (char segment 0))))
 
 ;;;; ==================================================================
 ;;;; Reading the text: fences, headings, spans, links (DES-0016 D5)

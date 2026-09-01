@@ -90,12 +90,6 @@ convention stays obvious to a human reading the tree.")
               (remove directory *document-type-directories*
                       :key #'car :test #'string=))))
 
-(defun path-segments (path)
-  (loop with start = 0
-        for slash = (position #\/ path :start start)
-        collect (subseq path start (or slash (length path)))
-        while slash do (setf start (1+ slash))))
-
 (defun docs-relative-p (path)
   "The segments of PATH below docs/, or NIL when it is not under docs/."
   (let* ((segments (path-segments (substitute #\/ #\\ (namestring path))))

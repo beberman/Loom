@@ -171,9 +171,6 @@ all, and NORMALIZE-ROOT signals on those."
 ;;;; Indexing (SS3.4)
 ;;;; ==================================================================
 
-(defun dot-prefixed-p (name)
-  (and (stringp name) (plusp (length name)) (char= #\. (char name 0))))
-
 ;;;; ------------------------------------------------------------------
 ;;;; What the repository says is not part of it (DES-0018)
 ;;;;
@@ -1115,13 +1112,8 @@ the one path the loop was written to survive."
            (monitor-sleep repository *poll-interval*)))
 
 (defun monitor-sleep (repository seconds)
-  "SLEEP, in slices, abandoned as soon as a stop is requested.
-One SLEEP of *POLL-INTERVAL* would make every stop wait out the full interval
-for no reason."
-  (loop with slice = 0.1
-        for remaining = seconds then (- remaining slice)
-        while (and (plusp remaining) (not (repository-stopping repository)))
-        do (sleep (min slice remaining))))
+  "SLEEP, in slices, abandoned as soon as REPOSITORY is asked to stop."
+  (sleep-until seconds (lambda () (repository-stopping repository))))
 
 (defparameter *monitor-stop-timeout* 10
   "Seconds to wait for a monitor to return before destroying it.
@@ -1179,13 +1171,7 @@ client that can poll `status\'.")
 
 (defun await-repository-index (repository &optional (seconds *index-build-wait*))
   "Wait for REPOSITORY's index if one is being built. True when none is left."
-  (let ((thread (repository-index-build repository)))
-    (or (null thread)
-        (not (bordeaux-threads:thread-alive-p thread))
-        (loop repeat (* 10 seconds)
-              do (sleep 0.1)
-              until (not (bordeaux-threads:thread-alive-p thread))
-              finally (return (not (bordeaux-threads:thread-alive-p thread)))))))
+  (await-thread (repository-index-build repository) seconds))
 
 (defun watch-repository (path &key (monitor t) quiet background)
   "Register the repository at PATH, index it, and begin watching.

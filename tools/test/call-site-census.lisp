@@ -33,7 +33,7 @@
 ;; registry without it cannot load the system this census measures. drakma and
 ;; cl-json are loom-embed's, reached through loom-knowledge.
 (loom-harness:load-systems "tools/test/call-site-census.lisp"
-                           :systems '("ontology/" "graph/" "analyzer/"
+                           :systems '("utils/" "ontology/" "graph/" "analyzer/"
                                       "knowledge/" "workspace/" "embed/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid"
                                         "eclector" "stem" "cl-json" "drakma")

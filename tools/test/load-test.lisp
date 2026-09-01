@@ -22,6 +22,11 @@
 ;;;; edits reach for it -- LOG-EVENT for the service's own log,
 ;;;; INSTALL-DEBUGGER-HOOK for headless mode, and CURRENT-REPOSITORY or
 ;;;; RESOLVE-ENTITY from console.lisp -- and all three are caught here.
+;;;;
+;;;; Two of those three stopped being temptations in REV-0002: LOG-EVENT and
+;;;; INSTALL-DEBUGGER-HOOK are LOOM-UTILS' now, which both peers reach downward
+;;;; rather than sideways. This check is what says the move went down and not
+;;;; across, so `utils/' is in the registry below and `process/' still is not.
 
 (load (merge-pathnames "harness.lisp"
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
@@ -29,7 +34,7 @@
 ;;;; Conspicuously not "process/": a registry entry for it would let the system
 ;;;; under test load it without saying so, which is the whole question.
 (loom-harness:load-systems "tools/test/load-test.lisp"
-                           :systems '("embed/" "ontology/" "graph/" "analyzer/"
+                           :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/"
                                       "knowledge/" "workspace/" "serve/" "rest/" "mcp/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "stem"))
 

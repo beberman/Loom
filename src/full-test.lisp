@@ -16,7 +16,8 @@
 (in-package :loom-test)
 
 (defparameter *test-systems*
-  '((:loom-embed/test     . "LOOM-EMBED-TEST")
+  '((:loom-utils/test     . "LOOM-UTILS-TEST")
+    (:loom-embed/test     . "LOOM-EMBED-TEST")
     (:loom-ontology/test  . "ROOT-ONTOLOGY-TEST")
     (:loom-analyzer/test  . "LOOM-ANALYZER-TEST")
     (:loom-graph/test     . "LOOM-GRAPH-TEST")

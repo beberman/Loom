@@ -26,7 +26,7 @@
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
 (loom-harness:load-systems "tools/test/mismatch-check.lisp"
-                           :systems '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/")
+                           :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
                            :load :loom-knowledge)
 

@@ -8,7 +8,8 @@
   ;; SS4: loom-process depends on all of the above. It is the only system that
   ;; may, because it is the only one that has to know how the parts fit
   ;; together into a running process.
-  :depends-on (#:loom-ontology
+  :depends-on (#:loom-utils
+	 #:loom-ontology
 	       #:loom-graph
 	       #:loom-analyzer
 	       #:loom-workspace

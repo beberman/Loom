@@ -14,7 +14,7 @@
 ;;;; business logic; both contain protocol translation over this.
 
 (defpackage #:loom-serve
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace
+  (:use #:cl #:loom-utils #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace
         #:loom-knowledge)
     ;; IMPROPER-LIST-P from the library rather than defined here; JSON-VALUE is
   ;; its only caller and the question it asks -- is this a dotted pair -- has

@@ -160,7 +160,7 @@ Full suite, in a live image:
 
 ```lisp
 (load "src/full-test.lisp")
-(loom-test:full-test)      ; nine systems, per-system summary
+(loom-test:full-test)      ; eleven systems, per-system summary
 ```
 
 or `tools/loom-test.sh` from outside one — note that is `/usr/bin/sbcl`, not the
@@ -168,6 +168,13 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
 
 ## Layering
 
+    loom-utils      leaf utilities two systems that may not depend on each
+                    other both need: the refusal condition, the event log and
+                    its debugger hook, the scalar readers, path segments, plist
+                    filtering, the two waits. Depends on nothing, and RULE-0009
+                    checks it. loom-ontology does not use it -- RULE-0001 would
+                    report the edge -- so what the ontology shares lives in the
+                    ontology. REV-0002.
     loom-ontology   entity and relationship declarations. Depends on nothing.
     loom-graph      the only writer. Transactions, queries, resolution, rules.
     loom-analyzer   path + contents -> operations. Never touches the graph.
@@ -186,7 +193,16 @@ The last four are peers, not a stack: loom-serve, loom-rest and loom-mcp depend
 on the same five systems loom-process does and on nothing above loom-knowledge,
 and nothing below any of them depends on any of them. DES-0006 R5 makes that
 structural rather than a habit — console.lisp, loom.lisp, loom-process.asd and
-src/process/package.lisp are unedited by all of it.
+src/process/package.lisp were unedited by all of it. REV-0002 edited all four,
+and the direction is the whole difference: `log-event` and the debugger hook
+moved *down* into loom-utils, which both peers reach, rather than one peer
+reaching across to the other. `sbcl --script tools/test/load-test.lisp loom-serve`
+is what says which of the two happened, and it still prints T.
+
+A function belongs in loom-utils only when two systems that cannot depend on
+each other both need it. When one caller's system already depends on the other's,
+the shared home is that lower system -- twelve of REV-0002's twenty-two
+duplications are that case and none of them moved here.
 
 RULE-0001 to RULE-0003 enforce parts of this and are machine-checked. They do
 not fail a FiveAM assertion, so run `check` as well as the suite — and note

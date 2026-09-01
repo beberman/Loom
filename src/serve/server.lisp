@@ -145,26 +145,14 @@ Internal rather than exported, matching WITH-REPOSITORY-LOCK's own precedent:
 nothing outside this file has a reason to name it, and a test that wants a
 shorter bound can bind it anyway.")
 
-(defun await-thread (thread timeout)
-  "True when THREAD has finished within TIMEOUT seconds, NIL when it has not.
-
-Two implementations because BORDEAUX-THREADS' portable JOIN-THREAD takes no
-timeout while SB-THREAD:JOIN-THREAD does. This image takes the first branch:
-BT:MAKE-THREAD on SBCL is SB-THREAD:MAKE-THREAD (bordeaux-threads
-apiv1/impl-sbcl.lisp:19-20), so the thread it returns is one SB-THREAD can join.
-:DEFAULT covers an aborted thread as well as an elapsed timeout, and both mean
-the same thing to the one caller: finish the stop yourself."
-  #+sbcl
-  (not (eq :timed-out (sb-thread:join-thread thread :timeout timeout
-                                                    :default :timed-out)))
-  #-sbcl
-  (loop with deadline = (+ (get-internal-real-time)
-                           (* timeout internal-time-units-per-second))
-        while (bt:thread-alive-p thread)
-        do (if (> (get-internal-real-time) deadline)
-               (return nil)
-               (sleep 0.05))
-        finally (return t)))
+;;;; AWAIT-THREAD was defined here until REV-0002 A7. It is LOOM-UTILS\' now,
+;;;; with this implementation rather than loom-workspace\'s polling one: the
+;;;; #+SBCL branch below was this file\'s, and joining with a timeout is the
+;;;; same answer as spinning on THREAD-ALIVE-P without the wakeups.
+;;;;
+;;;; BT:MAKE-THREAD on SBCL is SB-THREAD:MAKE-THREAD (bordeaux-threads
+;;;; apiv1/impl-sbcl.lisp:19-20), so the thread it returns is one SB-THREAD can
+;;;; join, which is what made the merge possible at all.
 
 (defun drain-and-stop (acceptor &optional (timeout *stop-drain-timeout*))
   "Stop ACCEPTOR, giving an in-flight request up to TIMEOUT seconds to finish.
@@ -227,21 +215,19 @@ to the port already says it."
 ;;;; Headless mode (R7's second lifecycle)
 ;;;; ==================================================================
 
-(defvar *log* '()
-  "Recent service events, most recent first: (timestamp label text).
-
-Its own, three lines of it, rather than loom-process's LOG-EVENT. That function
-lives in the system this one may not depend on, and reaching for it is the
-first of the three ways PLAN-0005 records that dependency arriving while
-looking reasonable.")
-
-(defparameter *log-limit* 200)
-
-(defun log-event (label format &rest arguments)
-  (push (list (get-universal-time) label (apply #'format nil format arguments)) *log*)
-  (when (> (length *log*) *log-limit*)
-    (setf *log* (subseq *log* 0 *log-limit*)))
-  (values))
+;;;; The service log is LOOM-UTILS' *LOG*, since REV-0002 A1. It used to be its
+;;;; own three lines here, and the docstring gave the reason: "That function
+;;;; lives in the system this one may not depend on, and reaching for it is the
+;;;; first of the three ways PLAN-0005 records that dependency arriving while
+;;;; looking reasonable." The dependency the copy was avoiding still may not
+;;;; exist -- what changed is that there is now a system below both peers to
+;;;; hold it, so neither reaches for the other.
+;;;;
+;;;; One consequence is worth being plain about, because it is a behaviour
+;;;; change rather than a move: the console and the service now share one log.
+;;;; In the combined console-plus-listener process, `log' at the console prints
+;;;; service events too, where before a request that errored inside Hunchentoot
+;;;; was logged where nobody at that console could read it.
 
 (defvar *stopping* nil
   "Set by the signal handler; read by SERVE-FOREVER's loop.")
@@ -249,21 +235,17 @@ looking reasonable.")
 (defun install-service-debugger-hook ()
   "Make sure no thread can block on a debugger prompt nobody can see.
 
-Same shape as loom-process's own hook -- log, write to *ERROR-OUTPUT*, do not
-block -- with one difference worth stating. That hook ends with (ABORT), which
-assumes an ABORT restart exists. In a Hunchentoot worker thread it may not, and
-a hook that assumed one would turn an unhandled condition into a second,
-different error inside the handler for the first. So the restart is looked for
-and used when it is there, and otherwise the hook simply returns."
-  (setf *debugger-hook*
-        (lambda (condition hook)
-          (declare (ignore hook))
-          (log-event "error" "~a: ~a" (type-of condition) condition)
-          (format *error-output* "~&[loom-serve] unhandled ~a: ~a~%"
-                  (type-of condition) condition)
-          (finish-output *error-output*)
-          (let ((restart (find-restart 'abort condition)))
-            (when restart (invoke-restart restart))))))
+LOOM-UTILS:INSTALL-DEBUGGER-HOOK with this system's prefix and this system's
+unwind, which is the one respect the two callers differ in. loom-process passes
+#\'ABORT, which assumes an ABORT restart exists. In a Hunchentoot worker thread
+it may not, and a hook that assumed one would turn an unhandled condition into a
+second, different error inside the handler for the first -- so the restart is
+looked for and used when it is there, and otherwise the hook simply returns."
+  (install-debugger-hook
+   :prefix "loom-serve"
+   :on-unwind (lambda (condition)
+                (let ((restart (find-restart 'abort condition)))
+                  (when restart (invoke-restart restart))))))
 
 (defun install-signal-handlers ()
   "Ask SIGTERM and SIGINT to stop the service rather than kill the process.
@@ -279,16 +261,14 @@ as little as possible."
                                (setf *stopping* t)))))
 
 (defun serve-sleep (seconds)
-  "SLEEP, in slices, abandoned as soon as a stop is requested.
+  "SLEEP for SECONDS, abandoned as soon as a stop is requested.
 
-MONITOR-SLEEP's shape (src/workspace/workspace.lisp:356-363) and its reason: a
-single long SLEEP would make every stop request wait out the interval for no
-reason, which for a service under a supervisor is the difference between a
-clean stop and a kill."
-  (loop with slice = 0.1
-        for remaining = seconds then (- remaining slice)
-        while (and (plusp remaining) (not *stopping*))
-        do (sleep (min slice remaining))))
+LOOM-UTILS:SLEEP-UNTIL with this system\'s stop flag. REV-0002 A7: this and
+MONITOR-SLEEP were the same slice loop written twice, differing only in the
+predicate. A single long SLEEP would make every stop request wait out the
+interval for no reason, which for a service under a supervisor is the difference
+between a clean stop and a kill."
+  (sleep-until seconds (lambda () *stopping*)))
 
 (defun serve-forever (paths &key (port *default-port*) (address *default-address*)
                                  already-started)

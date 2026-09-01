@@ -8,7 +8,7 @@
   ;; SS4: loom-workspace depends on loom-graph and the analyzers. It is the
   ;; first system that knows both how to analyze and where the result goes,
   ;; which is what lets everything below it stay ignorant of the other half.
-  :depends-on (#:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge
+  :depends-on (#:loom-utils #:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge
                ;; DEC-0006. loom-workspace owns the write path, so it is what
                ;; builds the vector sidecar; loom-embed is a leaf below both it
                ;; and loom-knowledge, which reads the store at query time.

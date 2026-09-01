@@ -37,7 +37,7 @@
   ;; length-prefixed precisely so no JSON *writer* has to exist here -- and
   ;; locks the exchange because the file monitor's thread and a console command
   ;; can both reach ANALYZE-FILE.
-  :depends-on (#:loom-ontology #:cl-yaml #:uiop #:eclector
+  :depends-on (#:loom-utils #:loom-ontology #:cl-yaml #:uiop #:eclector
                ;; The kernel of the standalone library at ~/lisp/utils. READ-FILE
                ;; and STRING-LINES were defined here as SLURP-FILE and
                ;; SPLIT-LINES until the library carried them; the library's
@@ -59,9 +59,11 @@
    (:file "lisp-analyzer")
    (:file "js-analyzer")
    (:file "yaml-analyzer")
-   ;; After yaml-analyzer, whose PATH-SEGMENTS and *MENTION-MINIMUM-LENGTH* it
-   ;; reuses rather than reimplements. The two claim disjoint extensions, so
-   ;; registration order does not decide anything between them.
+   ;; After yaml-analyzer, whose *MENTION-MINIMUM-LENGTH* it reuses rather than
+   ;; restates. The two claim disjoint extensions, so registration order does
+   ;; not decide anything between them. PATH-SEGMENTS was the other thing it
+   ;; reused here; REV-0002 A3 moved that to loom-utils, because loom-graph
+   ;; held a verbatim second copy that RULE-0002 gave it no way to share.
    (:file "markdown-analyzer")
    ;; Last: it reads YAML through yaml-analyzer's helpers and defaults its
    ;; base registry to lisp-analyzer's *MACRO-GENERATORS*, so both must be

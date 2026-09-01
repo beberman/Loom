@@ -10,7 +10,7 @@
 ;;;; Nothing below it has to know about that ordering.
 
 (defpackage #:loom-workspace
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge)
+  (:use #:cl #:loom-utils #:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge)
 
   ;; From the standalone library. PROPER-LIST-P and ALISTP replace two
   ;; predicates context-log.lisp defined for itself -- ALISTP with
@@ -76,6 +76,7 @@
    #:await-vector-build
    #:vector-build-status
    #:*vector-build-wait*
+   #:require-repository-vectors
    #:forget-repository-vectors
    #:current-embedder
    #:*embedder*

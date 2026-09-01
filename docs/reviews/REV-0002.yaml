@@ -1,0 +1,555 @@
+id: REV-0002
+title: Twenty-two duplicated capabilities in Loom, and the four homes they can move to
+status: open
+date: 2026-09-01
+refines: [REQ-0042, DES-0041]
+affects:
+  - log-event
+  - require-vectors
+  - repository-for-similar
+  - entity-natural-key
+  - inspected-natural-key
+  - generated-natural-key
+  - await-vector-build
+  - await-repository-index
+  - strip-plist
+  - lean-context-item
+  - register-analyzer
+  - register-inspector
+  - is-integer-p
+  - to-integer
+  - to-cosine
+  - identifier-shaped-p
+  - normalize-segments
+  - run-check
+  - serve-sleep
+  - monitor-sleep
+  - dot-prefixed-p
+  - find-entity-by-key
+  - find-relationship-by-key
+  - await-thread
+  - sleep-until
+  - filter-plist
+  - refuse
+  - require-repository-vectors
+tags: [duplication, layering, loom-utils, dogfood]
+outcome: |
+  Group A and the loom-utils system are implemented, on this branch, on
+  2026-09-01. The suite is 11 of 11 from a cold fasl cache, `check' reports no
+  violations, and `load-test.lisp' prints T for loom-serve, loom-rest and
+  loom-mcp -- the peer property survived moving LOG-EVENT and
+  INSTALL-DEBUGGER-HOOK, which is the one thing that move could have broken.
+
+  Landed: A1 log and debugger hook, A2 the refusal condition and the guard,
+  A3 path-segments, A4 dot-prefixed-p, A6 plist filtering, A7 both waits and
+  both sleeps, C2's is-/to- pair moved rather than replaced. RULE-0009 is
+  active and enforceable. src/utils/test/suite.lisp is 38 checks.
+
+  Not landed, and each is recorded below with its reason rather than left to be
+  rediscovered: A5 (the two segment collapsers, which disagree and need a
+  decision before they can be one function), B1 through B9 (the twelve whose
+  home is a system that already exists), C1 (the six predicates the external
+  utils library would subsume), and D1 (identifier-shaped-p, diverged).
+
+  What the implementation found that the survey did not, and it is the most
+  useful thing in this document: a THIRD implementation of AWAIT-THREAD, in
+  src/serve/server.lisp. See FOUND WHILE IMPLEMENTING below.
+summary: |
+  Loom surveyed against itself with REQ-0042's own resemblance engine, with the
+  row cap lifted from 40 to unbounded: 294 rows at cosine 0.85, 122 distinct
+  pairs once pairs sharing a source range were dropped, 85 with neither side in
+  a test file. Twenty-two survived reading both sides. Three of the twenty-two
+  have already diverged while their docstrings still claim to be copies, and one
+  of those three is the upsert identity CON-0001 exists to protect, computed
+  three ways.
+
+  The findings sort by where a shared home can go without adding a dependency
+  edge that points upward. Twelve have a home in a system both callers already
+  depend on. Six have no such home -- the two callers are in systems that may
+  not depend on each other -- and those are what a new leaf system, loom-utils,
+  is for. Four are already carried by the external utils library this tree
+  depends on. Loom-ontology is excluded from loom-utils by RULE-0001, which
+  decides where finding 1 goes.
+body: |
+  HOW THIS WAS PRODUCED
+
+  LOOM-KNOWLEDGE:RESEMBLANCE-SURVEY, with Loom as both source and target, its
+  store read from .loom/vectors/Loom.dat, cut 0.85, and *SURVEY-LIMIT* bound to
+  100000 rather than its default 40. RESEMBLING drops a subject from its own
+  results when the two stores are the same one, so a self-survey answers "what
+  else does each definition resemble".
+
+  294 rows. 94 pairs were counted as same-name and dropped by DES-0041 D4. Of
+  the 294, 122 remained after dropping pairs whose two entities share a source
+  range -- a defstruct's generated constructor against its own accessor, which
+  is most of the raw table's top. 85 of the 122 have neither side in a test
+  file. Every finding below was then read on both sides; the survey ranks and
+  does not conclude, which is DES-0041 D6's own statement.
+
+  Two limits on the instrument, stated because they bound what this review can
+  claim. The default 40-row form of `survey' cannot produce this table: its top
+  is `%make-protected-table' against `protected-table-table' and eleven more of
+  that shape, and a reader who ran it plainly would conclude the tree's worst
+  duplication is a defstruct. And resemblance is scored on names and
+  docstrings, so a duplicated body under two unrelated names with unrelated
+  prose is invisible to it -- findings 9, 10 and 11 came from reading, not from
+  the survey, and the survey scored two of those three pairs below the cut.
+
+  THE CONSTRAINT
+
+  A shared home may only be a system that both callers already depend on, or a
+  new system below both. The dependency declarations as they stand:
+
+    loom-ontology   random-uuid, bordeaux-threads
+    loom-embed      drakma, cl-json, babel, usocket
+    loom-analyzer   loom-ontology, utils, cl-yaml, uiop, eclector, cl-json, bt
+    loom-graph      loom-ontology, bordeaux-threads
+    loom-knowledge  loom-ontology, loom-graph, loom-embed, stem
+    loom-workspace  loom-ontology, loom-graph, loom-analyzer, loom-knowledge,
+                    loom-embed
+    loom-process    loom-ontology, loom-graph, loom-analyzer, loom-workspace,
+                    loom-knowledge
+    loom-serve      the same five as loom-process
+    loom-rest       loom-serve
+    loom-mcp        loom-serve
+
+  loom-embed is the precedent for what is proposed below: DEC-0006 added it as
+  a leaf depending on no Loom system, and loom-knowledge and loom-workspace
+  both reach down to it. A second leaf is the same move.
+
+  RULE-0001 decides one thing before any finding is read. Its check is
+  :no-edge from-system loom-ontology to-system outside over calls, imports and
+  depends-on, so a call from loom-ontology into loom-utils would be reported by
+  `check' as a violation. Loom-ontology therefore does not use loom-utils, and
+  anything loom-ontology needs to share has to live in loom-ontology itself.
+  That is not a workaround: the ontology declares the knowledge model and
+  loading it must not drag in anything, which is the sentence RULE-0001 states
+  and finding 1 obeys.
+
+  THE PROPOSAL
+
+  A new system :loom-utils at src/utils/, package LOOM-UTILS, depending on no
+  Loom system. Every system except loom-ontology may depend on it.
+
+    src/utils/loom-utils.asd
+    src/utils/package.lisp
+    src/utils/errors.lisp     the refusal condition and its message
+    src/utils/logging.lisp    *log*, *log-limit*, log-event, debugger hook
+    src/utils/paths.lisp      path-segments, dot-prefixed-p, segment collapse
+    src/utils/plists.lisp     filter-plist
+    src/utils/threads.lisp    await-thread, sleep-until
+
+  Named loom-utils and not utils. The name `utils' is taken: loom-analyzer
+  already depends on the standalone library at ~/lisp/utils, whose system and
+  package are both spelled UTILS, and a second system by that name would be
+  ambiguous to ASDF and to every reader. DES-0009 makes the package name the
+  :SYSTEM property every rule keys on, so the package has to be LOOM-UTILS for
+  a rule to name it. `-' is deliberately not a family delimiter in this tree
+  (BUG-0009), so loom-utils and loom-utils-test stay two systems.
+
+  What may go in. A function belongs in loom-utils only when two systems that
+  cannot depend on each other both need it. When one caller's system already
+  depends on the other's, the shared home is that lower system and not this
+  one -- twelve of the twenty-two findings below are that case. Without that
+  entry condition a utility system becomes the place unrelated code
+  accumulates, and the layering table stops describing anything.
+
+  A new rule, RULE-0009, mirroring RULE-0001: loom-utils depends on nothing,
+  checked as :no-edge from-system loom-utils to-system outside over calls,
+  imports and depends-on. With the same caveat loom-ontology.asd already
+  records about its own rule -- the check reads edges between indexed entities,
+  so an external library added to the asd is invisible to it, and the prose is
+  what governs.
+
+  GROUP A -- no shared home exists today; these are what loom-utils is for
+
+  A1  log-event, and the two logs behind it
+      src/process/console.lisp:20-32  *log*, *log-limit*, log-event
+      src/serve/server.lisp:230-244   the same three, byte-identical bodies
+
+      Three definitions duplicated across the loom-process / loom-serve peer
+      boundary. Neither may depend on the other -- DES-0006 R5 makes the peer
+      property structural, and tools/test/load-test.lisp is its instrument --
+      so there is no home for this below both except a new one. To
+      src/utils/logging.lisp.
+
+      One decision this move forces, and it is a behaviour change rather than a
+      merge. The two *LOG*s are separate specials today, so in the combined
+      console-plus-listener process that `sbcl --script loom-serve.lisp'
+      without --headless starts, console.lisp:1588's `log' command prints
+      console events and no server events. One shared special makes it print
+      both. That is probably the better answer for an operator and it is not
+      the current answer, so it is recorded here rather than made silently. The
+      alternative -- loom-utils exporting a logger object each skin
+      instantiates -- keeps two logs and costs one more concept.
+
+      install-debugger-hook (console.lisp:34-47) and
+      install-service-debugger-hook (server.lisp:249-266) move with it. They
+      differ in one documented respect: the console's ends with (ABORT), and
+      the service's looks for an ABORT restart first because a Hunchentoot
+      worker may not have one. One function taking a prefix string and an
+      on-unwind function covers both, and the difference stays visible at the
+      two call sites instead of being buried in two near-identical hooks.
+
+  A2  The vector-store guard, written twice in two skins
+      src/serve/operations.lisp:550-569  require-vectors
+      src/process/console.lisp:984-999   repository-for-similar
+
+      Same guard, nearly the same four-sentence docstring, and the same
+      sentence handed to the caller -- differing in whether it signals
+      MALFORMED-REQUEST or a plain ERROR.
+
+      Only part of this moves to loom-utils, and getting the split right
+      matters more than the saving. The guard's body calls REPOSITORY-VECTORS,
+      which is loom-workspace's, and loom-utils must not depend on
+      loom-workspace. So:
+
+        - src/utils/errors.lisp defines the refusal condition -- a condition
+          carrying a message that a surface is expected to render rather than
+          backtrace. loom-serve's MALFORMED-REQUEST (src/serve/errors.lisp:36-48)
+          becomes a subtype of it, keeping its own HTTP status mapping, which
+          is loom-serve's business and not a utility's.
+        - loom-workspace grows the guard itself, beside REPOSITORY-VECTORS: two
+          values, or the refusal, with the sentence written once.
+        - Both skins call it. The console prints the condition's message; REST
+          maps it to 400 as it does now.
+
+      RULE-0004 bears on this directly and is why the condition's supertype has
+      to be chosen deliberately: a handler written as ERROR does not catch a
+      condition defined as a direct subtype of CONDITION.
+
+  A3  path-segments, defined twice, verbatim
+      src/graph/resolve.lisp:56-60
+      src/analyzer/yaml-analyzer.lisp:93-97
+
+      Identical bodies, identical name, two systems, and no comment on either
+      acknowledging the other. There is genuinely no shared home: RULE-0002
+      forbids loom-analyzer from reaching loom-graph, and loom-graph does not
+      depend on loom-analyzer. Inside loom-analyzer the function is already
+      shared correctly -- loom-analyzer.asd's comment records that
+      markdown-analyzer reuses yaml-analyzer's PATH-SEGMENTS rather than
+      reimplementing it -- so this is one copy too many, not two.
+      To src/utils/paths.lisp.
+
+  A4  dot-prefixed, three copies, two of them in one system
+      src/analyzer/lisp-inspector.lisp:73-74   dot-prefixed-name-p
+      src/analyzer/markdown-analyzer.lisp:99-100  dot-prefixed-segment-p
+      src/workspace/workspace.lisp:174-175     dot-prefixed-p
+
+      The same predicate under three names. The first two are both loom-analyzer
+      and have no layering excuse at all. See group C: the external utils
+      library already carries STRING-STARTS-WITH-P, and loom-analyzer already
+      depends on it, so two of the three copies can go without loom-utils
+      existing. The third is loom-workspace's and is a one-line call either way.
+
+  A5  Segment collapsing, two copies that have diverged
+      src/graph/resolve.lisp:62-68            normalize-segments
+      src/analyzer/markdown-analyzer.lisp:252-264  collapse-path-segments
+
+      Same job, opposite answers on one input. On a `..' with nothing left to
+      pop, normalize-segments silently drops it -- POP on an empty list -- and
+      collapse-path-segments deliberately keeps it, its docstring saying a
+      target reaching above the workspace root should stay visibly wrong.
+      Neither cross-references the other. Unifying these is a decision about
+      which behaviour is right, taken once, and not a mechanical merge; the
+      markdown side has an argument on the record and the graph side has none.
+      To src/utils/paths.lisp after that decision, not before.
+
+  A6  Plist filtering, four sites
+      src/graph/transaction.lisp:226-229   strip-plist            drop named keys
+      src/serve/operations.lisp:407-418    lean-context-item      drop named keys
+      src/workspace/init.lisp:151-161      manifest-scalars       drop by string
+      src/graph/resolve.lisp:693-709       declared-properties-only  keep by test
+
+      All four are LOOP FOR (key value) ON plist BY #'CDDR with a different
+      predicate. strip-plist is already the general one, and lean-context-item
+      is exactly (strip-plist item *context-scoring-keys*) -- loom-serve already
+      depends on loom-graph, so that one call site needs nothing new. A
+      filter-plist taking a predicate covers the other two.
+
+      This one has a choice of home: loom-graph already holds strip-plist and
+      three of the four callers can reach it. src/utils/plists.lisp is the
+      better home only because a plist walk has nothing to do with a graph.
+      Either is defensible; what is not defensible is four.
+
+  A7  Waiting on a thread, and sleeping in slices
+      src/workspace/vectors.lisp:286-294    await-vector-build
+      src/workspace/workspace.lisp:1180-1188  await-repository-index
+      src/serve/server.lisp:281-291         serve-sleep
+      src/workspace/workspace.lisp:1117-1124  monitor-sleep
+
+      The two await- functions are byte-identical, 69 tokens each, differing
+      only in which accessor produced the thread. Both are loom-workspace, so
+      this pair needs no new system -- one (await-thread thread seconds) in
+      loom-workspace closes it today.
+
+      serve-sleep and monitor-sleep are the identical slice loop differing only
+      in the stop predicate, across loom-serve and loom-workspace. loom-serve
+      depends on loom-workspace, so a (sleep-until seconds predicate) in
+      loom-workspace would also close this without a new system.
+      src/utils/threads.lisp is the tidier home for both because neither has
+      anything to do with a repository, but the layering does not require it.
+
+  GROUP B -- the shared home already exists, lower down
+
+  B1  Natural-key derivation, three copies. The most important finding here.
+      src/ontology/root-ontology.lisp:342-353  entity-natural-key    off a live entity
+      src/graph/enrich.lisp:113-123            inspected-natural-key off a properties plist
+      src/graph/resolve.lisp:622-635           generated-natural-key off file and name
+
+      All three are (find-entity-type type) -> entity-type-natural-key ->
+      (cons type (loop for key in ... collect <source>)). Only the innermost
+      collect clause differs. Two of the three docstrings already cite the
+      third -- "exactly as GENERATED-NATURAL-KEY does and for the same reason".
+
+      They have already diverged, and the divergence is the kind CON-0001 is
+      about. generated-natural-key yields NIL for any key component that is not
+      :NAME or :FILE; inspected-natural-key reads that component from the
+      properties plist. :METHOD keys on four components. So for a method the
+      two derive different keys for one entity, which is the failure both
+      docstrings say they were written to prevent: a lookup under a key that
+      matches nothing, followed by a second entity asserted beside the one it
+      failed to find.
+
+      Home: loom-ontology, beside entity-natural-key. Not loom-utils -- the
+      function reads entity-type specs, which are the ontology's, and
+      RULE-0001 forbids loom-ontology from reaching a utility system anyway.
+      loom-graph already depends on loom-ontology, so both callers reach it
+      with no new edge. One (natural-key-for type lookup-function) with three
+      call sites passing three lookups.
+
+      A test that the three agree on a :METHOD is what makes this stay closed,
+      and CON-0003 requires it to fail before the change.
+
+  B2  register-analyzer / register-inspector
+      src/analyzer/analyzer.lisp:179-185
+      src/analyzer/inspector.lisp:69-75
+      Identical bodies, same package, second docstring cites the first. One
+      register-by-class in loom-analyzer.
+
+  B3  The violation boilerplate in the rules engine
+      src/graph/rules.lisp:41, 59, 100, 115, 137
+      Five run-check methods, each repeating :rule-id (getp rule :doc-id) and
+      :severity (getp rule :severity) in a make-violation. Two of them --
+      :no-edge and :no-call-to -- additionally repeat the same
+      edges-between-systems loop and the same "~(~a~) edge from ~a to ~a"
+      detail string; :no-call-to is :no-edge plus a MEMBER test on the callee
+      name. A (violation-for rule subject detail) in loom-graph, and
+      :no-call-to expressed as :no-edge with a filter.
+
+  B4  The entity-constructor scaffold, eight sites
+      src/analyzer/lisp-analyzer.lisp:777, 790, 839, 855, 871, 1024, 1060, 1511
+      Eight make-*-entity functions, each repeating a properties-table with
+      :file :start-line :end-line :documentation :language :system and adding
+      one or two of its own. Ten properties-table sites in that one file. One
+      constructor taking the class, the name, the span and an extra-properties
+      plist. Stays in loom-analyzer.
+
+  B5  find-entity-by-key / find-relationship-by-key
+      src/graph/graph-manager.lisp:186-189, 286-289
+      Same body over graph-entity-keys / graph-rel-keys and get-entity /
+      get-relationship. Stays in loom-graph.
+
+  B6  match-rank / search-rank
+      src/knowledge/services.lisp:277-280, 350-353
+      The name-match-rank / name-search-rank split below them is deliberate and
+      DES-0043 D3 argues it. These two entity-reading wrappers are identical
+      but for which of the two they call. Stays in loom-knowledge.
+
+  B7  handle-defclass / handle-define-condition
+      src/analyzer/lisp-analyzer.lisp:1583-1594
+      Identical handler bodies differing in one keyword passed to
+      class-definition-entities. Stays in loom-analyzer.
+
+  B8  The two parallel type registries
+      src/ontology/root-ontology.lisp:174-219
+      *entity-type-registry* / *relationship-type-registry*, then find-,
+      register-, all- and clear- written twice each: eight functions, four of
+      them one-line gethash or clrhash. Whether to parameterize is a judgement
+      call -- the eight names are the published API and collapsing them behind
+      a kind argument makes every call site longer. Recorded as a family rather
+      than proposed as a change. Stays in loom-ontology either way.
+
+  B9  git-commit / git-branch
+      src/workspace/workspace.lisp:273-278, 280-289
+      Same git-output call, same status check, same string-trim of the same
+      three characters, same two values. git-diff-hash (:317-326) is the same
+      shape with fnv-1a in place of the trim. One (git-line root &rest
+      arguments) in loom-workspace.
+
+  GROUP C -- already carried by the external utils library
+
+  Checked with Loom rather than assumed, which is REQ-0042's own question asked
+  of Loom: `similar <name> --against utils' for each candidate. Nothing reached
+  the 0.80 survey cut for path-segments, strip-plist, log-event,
+  await-vector-build or identifier-shaped-p, so those are Loom's own and group
+  A stands. Two near-misses matter, and both are cases where a name search
+  could not have found them:
+
+  C1  utils:string-starts-with-p and string-ends-with-p
+      ~/lisp/utils/src/strings.lisp:114-128, scoring 0.670 and 0.628 against
+      dot-prefixed-p -- below the cut, and the right answer anyway.
+      They subsume all three dot-prefixed copies (A4) and all three JavaScript
+      comment predicates: js-line-comment-p, js-block-close-p and
+      js-block-open-p at src/analyzer/js-analyzer.lisp:632-650 are three copies
+      of "trim, then compare two characters at one end". loom-analyzer already
+      depends on #:utils, so five of those six sites cost no new dependency at
+      all.
+
+  C2  utils:string-is-int, string-is-number and string-to-number
+      ~/lisp/utils/src/strings.lisp:136-180, scoring 0.776 and 0.751 against
+      is-integer-p.
+      The same is-/to- pairing as is-integer-p and to-integer
+      (src/serve/operations.lisp:157-173), which repeat one parse-integer
+      :junk-allowed walk with a full-length check in two functions -- the
+      predicate is exactly (and (to-integer value) t). string-to-number also
+      does what to-cosine (:225-235) hand-rolls: to-cosine's docstring says it
+      restricts the character set and does the arithmetic itself specifically
+      to avoid READ-FROM-STRING interning a symbol or evaluating a #., and
+      parse-number is the library answer to that.
+
+      Two contract differences to settle before swapping, neither hidden:
+      string-is-int accepts a single leading + or -, and string-to-number
+      returns a float for "3.5" where to-integer returns NIL. The boolean pair
+      is-boolean-p / to-boolean (:176-202) has no counterpart in utils and
+      stays where it is.
+
+      This costs loom-serve a dependency on #:utils. It is a leaf library
+      already in the image, so the layering table is unchanged; it is still a
+      dependency being added and belongs in the asd's comment rather than only
+      here.
+
+  GROUP D -- deliberate copies across a boundary, two of which have drifted
+
+  These are duplications the code documents as intentional because a dependency
+  is forbidden. The point of the group is that two of them are no longer copies,
+  which is the failure the comments were written to prevent.
+
+  D1  identifier-shaped-p / identifier-shaped-token-p -- diverged
+      src/knowledge/prose.lisp:49-60
+      src/analyzer/markdown-analyzer.lisp:327-338
+      The second's docstring says it is "the same shape LOOM-KNOWLEDGE's drift
+      report filters unresolved markdown names by". It is not: it adds (some
+      #'alpha-char-p token), so a bare version number is a name to one and not
+      to the other. Nothing compares them.
+
+  D2  normalize-segments / collapse-path-segments -- diverged. A5 above.
+
+  D3  normalize-route / normalize-js-route -- identical, and the pattern the
+      other two should follow.
+      src/graph/resolve.lisp:600-610, src/analyzer/js-analyzer.lisp:443-451
+      RULE-0002 named as the reason for the copy, and a test compares the two.
+      No change wanted. When a copy is unavoidable, this is what makes it
+      survivable: the reason on both sides and a test that fails when they
+      drift.
+
+  WHAT THE MOVE COSTS
+
+  Adding a system is not free and the places that have to change are countable:
+
+    - src/full-test.lisp:19-28, *test-systems*, gains an eleventh entry.
+    - tools/test/harness.lisp callers that name systems explicitly.
+    - CLAUDE.md's layering table gains a row above loom-ontology.
+    - docs/rules/RULE-0009.yaml, new.
+    - Each consuming system's asd, with the dependency argued in its comment
+      the way loom-analyzer.asd argues eclector and cl-yaml.
+
+  The peer property is not at risk and should be shown not to be rather than
+  asserted: loom-utils sits below all four of loom-process, loom-serve,
+  loom-rest and loom-mcp, so it creates no edge between them.
+  `sbcl --script tools/test/load-test.lisp loom-serve' is the instrument, and it
+  should be run after A1 and A2 specifically, because those two are the
+  findings that touch console.lisp and server.lisp.
+
+  `check' reports no violations on this tree and has since BUG-0009. It should
+  still report none after each step, and RULE-0001 is the one to watch: it is
+  what refuses loom-ontology a dependency on loom-utils, and finding B1 is
+  where somebody would be tempted to give it one.
+
+  FOUND WHILE IMPLEMENTING
+
+  Two things the survey could not have told anyone, both worth more than any
+  single finding above.
+
+  F1  A third AWAIT-THREAD, and how it announced itself.
+      src/serve/server.lisp had its own AWAIT-THREAD -- join with a timeout,
+      no polling -- doing the same job as the two in A7. The survey scored it
+      below the cut and had to: it embeds names and docstrings, and "await a
+      drain" and "await a build" share neither.
+
+      It announced itself as 44 test failures across loom-serve and loom-rest,
+      all reading "The value NIL is not of type SB-THREAD:THREAD", because
+      loom-serve's package began using loom-utils and its own DEFUN then
+      redefined LOOM-UTILS:AWAIT-THREAD for every system in the image --
+      including loom-workspace's AWAIT-REPOSITORY-INDEX, which passes NIL when
+      no build is in flight and which every read operation goes through.
+      Nothing warns about this: a DEFUN on an inherited symbol is a
+      redefinition, not a conflict, and the failure surfaced two systems away
+      from the file that caused it.
+
+      So the check to run before adding a package to a system's :USE list is a
+      scan of the new package's exports against every DEFUN and DEFPARAMETER in
+      the systems that will inherit them. Run over all sixteen loom-utils
+      exports and all eleven systems, that scan found exactly one collision,
+      and it was this one.
+
+      The three are now one function, and it is loom-serve's implementation
+      rather than loom-workspace's: joining with a timeout is the same answer
+      as spinning on THREAD-ALIVE-P every 100ms without the wakeups. One
+      behaviour had to be chosen rather than inherited -- loom-serve read
+      JOIN-THREAD's :TIMED-OUT default as "still running", correct for a caller
+      that then finishes the stop itself, and wrong for loom-workspace, where an
+      index thread that aborted has finished and reading it as "still indexing"
+      would make every later request answer that for the life of the process.
+      The merged version answers from THREAD-ALIVE-P after the join, which is
+      right for both, and a test asserts it.
+
+  F2  A test that passed against the version it was written to reject.
+      The first version of that test aborted the thread before calling
+      AWAIT-THREAD, so the early THREAD-ALIVE-P clause answered T whichever way
+      the join was read: 38 of 38 against both implementations. CON-0003 caught
+      it only because the check was actually run -- the old implementation was
+      pasted back in and the suite re-run, which is the whole of what CON-0003
+      asks and is skippable in a way that reads like diligence. The test now
+      aborts the thread during the wait: 38 of 38 with the change, 37 of 38
+      without.
+
+      A second false signal came from the same experiment: ASDF served a stale
+      fasl after the file was copied back, and the suite reported a failure
+      against source that was already correct. Clearing
+      ~/.cache/common-lisp/.../Loom is what settles a result that disagrees with
+      the file in front of you.
+
+  OUTSTANDING
+
+  O1  A5, the two segment collapsers, is the one group A finding not
+      implemented. NORMALIZE-SEGMENTS and COLLAPSE-PATH-SEGMENTS disagree on a
+      `..' with nothing left to pop -- the first silently drops it, the second
+      keeps it so a target reaching above the workspace root stays visibly
+      wrong -- and only the second has an argument on the record. Unifying them
+      means changing one of the two behaviours, and the graph side feeds
+      RESOLVE-MODULE-SPECIFIER, where a kept `..' changes which joins are made
+      between a front end and a server. That is a decision with a test behind
+      it, not a move, and it is left rather than guessed at.
+
+  O2  D1, IDENTIFIER-SHAPED-P against IDENTIFIER-SHAPED-TOKEN-P, is still two
+      diverged functions whose docstring claims they are one. The copy is
+      legitimate -- loom-analyzer may not depend on loom-knowledge -- so the fix
+      is either a move to loom-utils or the treatment D3 gives its own pair: a
+      test that compares the two and fails when they drift.
+
+  FALSE POSITIVES WORTH RECORDING
+
+  Named so they are not re-flagged by the next run of this survey.
+
+    relationships-from / relationships-to, src/graph/graph-manager.lisp:332-342.
+    The survey's top row at 0.9750, and correct as it stands: both already
+    delegate to edges-matching and the only difference is which index they read.
+
+    search-repositories / repositories-holding, src/workspace/search.lisp:50-136,
+    at 0.868. One merges and ranks rows across trees, the other counts without
+    summarizing. Different work, similar prose.
+
+    The 94 same-name pairs DES-0041 D4 counted and dropped are almost entirely a
+    defstruct's generated constructor against its own accessor. D4 is right to
+    drop them and this review found no exception.

@@ -11,7 +11,7 @@
 ;;;; between them they are enough to use the knowledge engine.
 
 (defpackage #:loom-process
-  (:use #:cl #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace
+  (:use #:cl #:loom-utils #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace
         #:loom-knowledge)
   (:export
    ;; entry points

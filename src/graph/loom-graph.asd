@@ -9,7 +9,7 @@
   ;; (DES-0003 R6): PROTECTED-TABLE lives here and never in loom-ontology, so
   ;; RULE-0001 is untouched, and loom-knowledge gains thread safety from the
   ;; layer beneath it without acquiring a lock or a write path of its own.
-  :depends-on (#:loom-ontology #:bordeaux-threads)
+  :depends-on (#:loom-utils #:loom-ontology #:bordeaux-threads)
   :serial t
   :components
   (

@@ -285,13 +285,7 @@ would write a store whose header and data came from different passes."
 
 (defun await-vector-build (repository &optional (seconds *vector-build-wait*))
   "Wait for a build in flight, up to SECONDS. True when there is none left."
-  (let ((thread (repository-vector-build repository)))
-    (or (null thread)
-        (not (bordeaux-threads:thread-alive-p thread))
-        (loop repeat (* 10 seconds)
-              do (sleep 0.1)
-              until (not (bordeaux-threads:thread-alive-p thread))
-              finally (return (not (bordeaux-threads:thread-alive-p thread)))))))
+  (await-thread (repository-vector-build repository) seconds))
 
 (defun repository-vectors (repository)
   "REPOSITORY\'s vector store, or NIL when there is not one worth using.
@@ -313,6 +307,31 @@ repository that has a store can cost a query anything."
               (loom-embed:load-vector-store (repository-name repository)
                                             (current-embedder)))
         cached)))
+
+(defun require-repository-vectors (repository)
+  "REPOSITORY and its vector store, or a REFUSAL naming what is missing.
+
+REV-0002 A2. This guard was written twice -- once in loom-serve's
+REQUIRE-VECTORS and once in loom-process's REPOSITORY-FOR-SIMILAR -- with the
+same sentence in both. The two are peers and neither may depend on the other,
+so the sentence could only be written once by moving it down to the system that
+owns REPOSITORY-VECTORS, which is this one.
+
+DES-0041 D10 is why this refuses rather than answering empty. `context' without
+a store answers lexically and says nothing, because it still has an answer. A
+resemblance query has no lexical fallback -- REQ-0045 R4 is why it should not
+get one -- so an empty result would mean both `nothing resembles this' and
+`nothing could have', and the two need telling apart. No ollama, no store, and
+a store whose embedder identity does not match are one state with one meaning
+(REQ-0048 R6), and the meaning is this sentence.
+
+A REFUSAL and not a MALFORMED-REQUEST: this system knows nothing of HTTP status
+codes. loom-serve subtypes the condition to give it a 400."
+  (let ((store (repository-vectors repository)))
+    (unless store
+      (refuse "~a has no vector store. Run embed on it first."
+              (repository-name repository)))
+    (values repository store)))
 
 (defun forget-repository-vectors (repository)
   "Drop the cached store so the next query reads from disk again."

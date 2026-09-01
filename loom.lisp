@@ -12,7 +12,7 @@
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 
 (let ((here (make-pathname :name nil :type nil :defaults *load-truename*)))
-  (dolist (system '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
+  (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
                     "workspace/" "process/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
              asdf:*central-registry* :test #'equal)))

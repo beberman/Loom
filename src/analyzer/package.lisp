@@ -8,7 +8,7 @@
 ;;;; once self-analysis runs, so the coupling cannot creep back in unnoticed.
 
 (defpackage #:loom-analyzer
-  (:use #:cl #:loom-ontology)
+  (:use #:cl #:loom-utils #:loom-ontology)
 
   ;; From the standalone library rather than defined here. SLURP-FILE and
   ;; SPLIT-LINES were this system's own until the library carried the same two

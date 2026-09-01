@@ -1,7 +1,7 @@
 ;;;; Package definition for the Loom in-memory Graph Manager.
 
 (defpackage #:loom-graph
-  (:use #:cl #:loom-ontology)
+  (:use #:cl #:loom-utils #:loom-ontology)
   (:export
    ;; the graph itself
    #:graph

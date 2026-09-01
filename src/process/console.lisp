@@ -17,34 +17,16 @@
 ;;;; Logging and supervision (SS3.3)
 ;;;; ==================================================================
 
-(defvar *log* '()
-  "Recent events, most recent first: (timestamp label text).
-SS3.2's log command reads this. Bounded, because it is a convenience for a
-developer at a console and not a durable record of anything -- under
-files-as-truth nothing recovers from it.")
-
-(defparameter *log-limit* 200)
-
-(defun log-event (label format &rest arguments)
-  (push (list (get-universal-time) label (apply #'format nil format arguments)) *log*)
-  (when (> (length *log*) *log-limit*)
-    (setf *log* (subseq *log* 0 *log-limit*)))
-  (values))
-
-(defun install-debugger-hook ()
-  "Make sure no non-interactive thread can block on a debugger prompt.
-
-SS3.3: \"The image sets *debugger-hook* to that same logging path, so no
-non-interactive thread can block on a debugger prompt even if a condition
-escapes a handler.\" A process waiting on a debugger nobody can see is
-indistinguishable, from the outside, from a process doing nothing."
-  (setf *debugger-hook*
-        (lambda (condition hook)
-          (declare (ignore hook))
-          (log-event "error" "~a: ~a" (type-of condition) condition)
-          (format *error-output* "~&[loom] unhandled ~a: ~a~%" (type-of condition) condition)
-          (finish-output *error-output*)
-          (abort))))
+;;;; *LOG*, *LOG-LIMIT*, LOG-EVENT and INSTALL-DEBUGGER-HOOK are LOOM-UTILS',
+;;;; since REV-0002 A1. All four were duplicated byte for byte in
+;;;; src/serve/server.lisp, and neither system may depend on the other, so
+;;;; there was nowhere below both to put them until loom-utils existed.
+;;;;
+;;;; SS3.3's requirement is unchanged and is now met by the shared hook: "The
+;;;; image sets *debugger-hook* to that same logging path, so no non-interactive
+;;;; thread can block on a debugger prompt even if a condition escapes a
+;;;; handler." A process waiting on a debugger nobody can see is
+;;;; indistinguishable, from the outside, from a process doing nothing.
 
 ;;;; ==================================================================
 ;;;; Parsing a command line
@@ -249,8 +231,8 @@ Junk after the digits is refused rather than silently truncated. `impact foo
 invisible in the output -- the report is simply smaller than the caller asked
 for. REV-0001 finding 4 is about exactly that class of quiet dishonesty in this
 command."
-  (multiple-value-bind (n end) (parse-integer text :junk-allowed t)
-    (unless (and n (= end (length text)) (not (minusp n)))
+  (let ((n (to-integer text)))
+    (unless (and n (not (minusp n)))
       (error "~a must be a non-negative integer, not ~s." what text))
     n))
 
@@ -991,12 +973,7 @@ resembles this' and `nothing could have', and the two need telling apart. No
 ollama, no store, and a store whose embedder identity does not match are still
 one state with one meaning (REQ-0048 R6); the meaning is reported rather than
 returned as an empty list."
-  (let* ((repository (current-repository designator))
-         (store (repository-vectors repository)))
-    (unless store
-      (error "~a has no vector store. Run `embed ~:*~a' first."
-             (repository-name repository)))
-    (values repository store)))
+  (require-repository-vectors (current-repository designator)))
 
 (define-command similar (term &optional against)
     "similar <name> [<repository>]"
@@ -1585,7 +1562,7 @@ repository has:~%" (length qualified))
   ;; unparseable count was swallowed by the OR, so `log abc' quietly printed the
   ;; default twenty as though that had been asked for.
   (let ((n (if count (resolve-count count "count") 20)))
-    (dolist (entry (subseq *log* 0 (min n (length *log*))))
+    (dolist (entry (recent-log n))
       (destructuring-bind (at label text) entry
         (multiple-value-bind (second minute hour) (decode-universal-time at)
           (format t "~&~2,'0d:~2,'0d:~2,'0d ~a ~a~%" hour minute second label text))))))
@@ -1723,7 +1700,7 @@ the developer somewhere they have to know Lisp to escape."
 
 SS3.1: the process is \"started by the developer and pointed at a
 repository\", so `loom /path/to/repo` indexes it and hands over a prompt."
-  (install-debugger-hook)
+  (install-debugger-hook :prefix "loom" :on-unwind #'abort)
   ;; REQ-0036 R9, DES-0030 D1. The operator's switch, read once at startup:
   ;; LOOM_CONTEXT_LOG names a directory, or is any non-empty value to mean
   ;; <loom>/.loom/context/. Unset -- the default -- and nothing here writes

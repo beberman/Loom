@@ -18,7 +18,7 @@
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
 (loom-harness:load-systems "tools/test/family-census.lisp"
-                           :systems '("embed/" "ontology/" "graph/" "analyzer/" "knowledge/" "workspace/")
+                           :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/" "workspace/")
                            :libraries '("cl-yaml" "bordeaux-threads" "fiveam" "random-uuid" "eclector" "stem" "cl-json" "drakma")
                            :load :loom-workspace)
 

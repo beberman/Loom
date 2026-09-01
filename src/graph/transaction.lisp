@@ -223,11 +223,6 @@ concurrent writer it would mark a set of facts that never existed together."
         r
         (rebind-relationship r :from-id from :to-id to))))
 
-(defun strip-plist (plist keys)
-  "PLIST without the entries named in KEYS."
-  (loop for (key value) on plist by #'cddr
-        unless (member key keys) append (list key value)))
-
 (defun droppable-problem (plist)
   "PLIST marked as an endpoint problem, which BUG-0030 F1 drops rather than
 signals. Every problem this method produces is one: a relationship whose FROM

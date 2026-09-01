@@ -155,10 +155,10 @@ By membership in *MANIFEST-SECTIONS* rather than by an EQ test per header. The
 filter used to name :CREATED alone, and adding a second list without widening
 it writes `rendered: \"\"' into somebody else's manifest as a scalar beside the
 real one."
-  (loop for (key value) on plist by #'cddr
-        unless (member (string-downcase (symbol-name key)) *manifest-sections*
-                       :test #'string=)
-          append (list key value)))
+  (filter-plist plist
+                (lambda (key)
+                  (not (member (string-downcase (symbol-name key))
+                               *manifest-sections* :test #'string=)))))
 
 (defun render-manifest (plist sections)
   "The manifest text: scalars, then each list in *MANIFEST-SECTIONS* order.

@@ -53,12 +53,6 @@ filesystem and must not acquire one, and a specifier naming a file no analyzer
 claimed is a specifier that resolves to nothing, which is the right answer
 either way.")
 
-(defun path-segments (path)
-  (loop with start = 0
-        for pos = (position #\/ path :start start)
-        collect (subseq path start (or pos (length path)))
-        while pos do (setf start (1+ pos))))
-
 (defun normalize-segments (segments)
   "SEGMENTS with `.', `..' and empty components resolved away."
   (let ((out '()))
@@ -704,9 +698,7 @@ DEFCLASS or DEFMETHOD mints an entity the retract half below cannot see -- it
 keys on exactly that property. No macro in this tree takes that shape and
 DES-0002 named none, so it is a gap on the record rather than a defect being
 worked around; closing it is two property declarations."
-  (loop for (key value) on plist by #'cddr
-        when (find-property type key)
-          append (list key value)))
+  (filter-plist plist (lambda (key) (find-property type key))))
 
 (defun generated-entity (plan)
   "The entity a definer call site brings into existence.

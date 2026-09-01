@@ -17,7 +17,7 @@
   ;; and scans the sidecar at query time, and loom-workspace -- which builds the
   ;; sidecar -- depends on this system, so the loader could not have lived
   ;; there.
-  :depends-on (#:loom-ontology #:loom-graph #:stem #:loom-embed)
+  :depends-on (#:loom-utils #:loom-ontology #:loom-graph #:stem #:loom-embed)
   :serial t
   :components
   (

@@ -15,7 +15,8 @@
   ;; this tree is in system :SRC and every layering rule matches nothing. The
   ;; instrument for this line is tools/load-test.lisp, which loads this system
   ;; into a fresh image and asserts (find-package "LOOM-PROCESS") is NIL.
-  :depends-on (#:loom-ontology
+  :depends-on (#:loom-utils
+	 #:loom-ontology
 	       #:loom-graph
 	       #:loom-analyzer
 	       #:loom-workspace

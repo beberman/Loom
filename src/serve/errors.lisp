@@ -33,7 +33,7 @@ skins branch on where the check happened rather than on what it decided.
 Subtypes carry the status each skin gives it: MALFORMED-REQUEST is 400,
 UNKNOWN-ENTITY and UNKNOWN-OPERATION are 404, CAPABILITY-ERROR is 403."))
 
-(define-condition malformed-request (request-error)
+(define-condition malformed-request (request-error loom-utils:refusal)
   ((message :initarg :message
             :initform "malformed request"
             :reader request-message))

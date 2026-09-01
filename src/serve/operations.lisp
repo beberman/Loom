@@ -119,7 +119,7 @@ to guess which repository a program meant is the point."
   (repository-graph (require-repository designator)))
 
 ;;;; ==================================================================
-;;;; Reading a wire value -- one predicate and one converter per type
+;;;; Refusing a wire value -- the request-level half
 ;;;; ==================================================================
 ;;;;
 ;;;; Both skins reach the same entry with different types: an HTTP query
@@ -133,73 +133,11 @@ to guess which repository a program meant is the point."
 ;;;; operation entry wants and the only one that knows what to call the
 ;;;; argument in a message.
 ;;;;
-;;;; game-server BUG-0001 is what this shape is answering. That tree decodes an
-;;;; integer by signalling on junk and a boolean by returning false on junk,
-;;;; three lines apart in one function, and has three exported predicates
-;;;; disagreeing about what a number is. The lesson taken here is not that
-;;;; strict beats permissive -- it is that the policy must be stated once and
-;;;; shared, because the two branches there were written by the same author on
-;;;; the same day and still disagreed.
-
-(defparameter *true-tokens* '("true" "t" "1" "yes" "on")
-  "Spellings of true a caller may send. Compared case-insensitively.
-
-Wider than a JSON boolean because a query string has no booleans: `?source=1'
-and `?source=true' are both ordinary, and refusing one would make the REST
-surface stricter than the MCP one for no reason a caller could discover.")
-
-(defparameter *false-tokens* '("false" "nil" "0" "no" "off")
-  "Spellings of false. An explicit false is a request and not junk, so it is
-enumerated rather than left to fall through -- the whole point of BUG-0031's
-sibling defect is that unreadable input must not arrive at the same answer an
-author deliberately asked for.")
-
-(defun is-integer-p (value)
-  "True when VALUE can be read as an integer -- already one, or a string
-spelling one exactly. A partial parse is not an integer: \"3x\" is a question
-about intent and REV-0001 finding 4 is why it is not answered as 3."
-  (typecase value
-    (integer t)
-    (string (multiple-value-bind (n end) (parse-integer value :junk-allowed t)
-              (and n (= end (length value)) t)))
-    (t nil)))
-
-(defun to-integer (value)
-  "VALUE as an integer, or NIL when it is not one. IS-INTEGER-P is the test."
-  (typecase value
-    (integer value)
-    (string (multiple-value-bind (n end) (parse-integer value :junk-allowed t)
-              (and n (= end (length value)) n)))
-    (t nil)))
-
-(defun is-boolean-p (value)
-  "True when VALUE can be read as a boolean.
-
-T counts, and so does every spelling in *TRUE-TOKENS* and *FALSE-TOKENS*. NIL
-does not: an absent argument and an argument spelled `false' are different
-requests, and every caller here distinguishes them by testing for NIL first."
-  (or (eq value t)
-      (and (member value '(:true :false)) t)
-      (and (stringp value)
-           (or (member value *true-tokens* :test #'string-equal)
-               (member value *false-tokens* :test #'string-equal))
-           t)))
-
-(defun to-boolean (value)
-  "VALUE as a boolean, and a second value saying whether it could be read.
-
-Two values because one cannot carry the answer: NIL is both a legitimate false
-and the only thing an unreadable value could return, and collapsing them is
-precisely game-server BUG-0001's silent misread. A caller that ignores the
-second value has written the bug that report is about."
-  (cond ((eq value t) (values t t))
-        ((eq value :true) (values t t))
-        ((eq value :false) (values nil t))
-        ((and (stringp value) (member value *true-tokens* :test #'string-equal))
-         (values t t))
-        ((and (stringp value) (member value *false-tokens* :test #'string-equal))
-         (values nil t))
-        (t (values nil nil))))
+;;;; The first two of the three are LOOM-UTILS', since REV-0002 C2. They are
+;;;; the half with no opinion about requests, and console.lisp had its own copy
+;;;; of the integer walk in RESOLVE-COUNT. Only the coercers are here, because
+;;;; only they signal MALFORMED-REQUEST, and only this system maps that to a
+;;;; status code.
 
 (defun request-integer (value what)
   "VALUE as a non-negative integer, NIL when absent, or a malformed request.
@@ -214,25 +152,6 @@ report is simply smaller than the caller asked for."
         (t (error 'malformed-request
                   :message (format nil "~a must be a non-negative integer, not ~s."
                                    what value)))))
-
-(defun to-cosine (value)
-  "VALUE as a single float, or NIL when it does not spell a decimal number.
-
-Digits and at most one point, parsed by hand. console.lisp reads its cut with
-READ-FROM-STRING, which is safe at a console a human types at and not at a
-query parameter: the reader interns whatever symbol it is handed, and with
-*READ-EVAL* left alone a #. is evaluated. Restricting the character set first
-and doing the arithmetic afterwards costs six lines and reaches no reader."
-  (typecase value
-    (real (float value 1.0))
-    (string
-     (let ((dot (position #\. value)))
-       (when (and (some #'digit-char-p value)
-                  (every (lambda (c) (or (digit-char-p c) (char= c #\.))) value)
-                  (or (null dot) (null (position #\. value :start (1+ dot)))))
-         (/ (float (parse-integer (remove #\. value)) 1.0)
-            (expt 10 (if dot (- (length value) dot 1) 0))))))
-    (t nil)))
 
 (defun request-cosine (value what)
   "VALUE as a cosine in [0,1], NIL when absent, or a malformed request.
@@ -548,25 +467,24 @@ An estimate that ignored them would be the same class of error one layer down."
 ;;;; ------------------------------------------------------------------
 
 (defun require-vectors (designator)
-  "The repository DESIGNATOR names and its vector store, or a refusal naming both.
+  "The repository DESIGNATOR names and its vector store, or a malformed request.
 
-Two values. REQUIRE-REPOSITORY decides the first and DES-0041 D10 decides the
-second: there is no lexical resemblance query to fall back to, so an empty
-answer would mean `nothing resembles this' and `nothing could have' at once.
-No ollama, no store, and a store whose embedder identity does not match are one
-state with one meaning (REQ-0048 R6), and the meaning is this sentence.
+REQUIRE-REPOSITORY decides the first and LOOM-WORKSPACE:REQUIRE-REPOSITORY-VECTORS
+the second, including the sentence a caller reads -- REV-0002 A2 moved that down
+to the system owning REPOSITORY-VECTORS, because loom-process\'s console had a
+second copy of it and the two systems are peers.
 
-MALFORMED-REQUEST rather than REPOSITORY-INDEXING, which is the other refusal a
-caller can be handed about a repository that will answer later. That one is 503
-because the request succeeds unchanged in a few seconds; this one does not
-succeed until somebody runs `embed', so 400 and the command that fixes it."
-  (let* ((watched (require-repository designator))
-         (store (repository-vectors watched)))
-    (unless store
-      (error 'malformed-request
-             :message (format nil "~a has no vector store. Run embed on it first."
-                              (repository-name watched))))
-    (values watched store)))
+What stays here is the re-typing, and it is the whole reason this wrapper
+exists. MALFORMED-REQUEST rather than the REFUSAL underneath, which is the other
+refusal a caller can be handed about a repository that will answer later:
+REPOSITORY-INDEXING is 503 because the request succeeds unchanged in a few
+seconds; this one does not succeed until somebody runs `embed\', so 400 and the
+command that fixes it."
+  (let ((watched (require-repository designator)))
+    (handler-case (require-repository-vectors watched)
+      (loom-utils:refusal (condition)
+        (error 'malformed-request
+               :message (loom-utils:refusal-message condition))))))
 
 (define-operation :similar :read (repository term (against) (limit))
     "Definitions that resemble one, by meaning rather than by name. \

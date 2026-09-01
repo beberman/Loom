@@ -15,7 +15,7 @@
 ;;;; reaching back into the graph.
 
 (defpackage #:loom-knowledge
-  (:use #:cl #:loom-ontology #:loom-graph)
+  (:use #:cl #:loom-utils #:loom-ontology #:loom-graph)
   (:export
    ;; summaries -- the shared vocabulary of every answer
    #:entity-summary

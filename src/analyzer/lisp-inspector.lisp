@@ -70,17 +70,14 @@ measurement here would be unfalsifiable."))
 ;;;; Units
 ;;;; ==================================================================
 
-(defun dot-prefixed-name-p (name)
-  (and (stringp name) (plusp (length name)) (char= #\. (char name 0))))
-
 (defun hidden-path-p (path)
   "True when PATH lies inside a dot-directory or is itself dot-prefixed.
 The same exclusion REPOSITORY-FILES makes, for the same reason: nothing in
 .git or a tool's bookkeeping directory is a system to load.
 
 PATH is relative to the repository root -- see DISCOVER-UNITS."
-  (or (dot-prefixed-name-p (file-namestring path))
-      (some #'dot-prefixed-name-p (rest (pathname-directory path)))))
+  (or (dot-prefixed-p (file-namestring path))
+      (some #'dot-prefixed-p (rest (pathname-directory path)))))
 
 (defun test-unit-path-p (path)
   "True when PATH's .asd looks like a test system rather than a primary one.
