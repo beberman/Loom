@@ -115,12 +115,21 @@ loom> find @Loom repository
 
   Two independent fixes, either sufficient: ship a way for the service to
   outlive sessions -- a user-level service unit or a login item, so it is
-  already up before any session opens -- and say so in the prepared guidance
-  instead of the current step one; or have a refused MCP endpoint be retried on
-  first use rather than resolved once, which is the host's to fix and worth
-  filing there. The first is Loom's to do and is the one that removes the race
-  rather than narrowing it.
+  already up before any session opens; or have a refused MCP endpoint be
+  retried on first use rather than resolved once, which is the host's to fix
+  and worth filing there. The first is Loom's to do and is the one that removes
+  the race rather than narrowing it.
+
+  The documentation half is done: `claude-md-pointer.md` now opens with the
+  lifecycle -- start it and wait before opening the session, the measured 12s
+  to first answer and 18s to `ready`, and `repository-state`'s three states so
+  a caller knows `find`/`describe`/`impact`/`check` are trustworthy at
+  `:embedding` and only `context` is still warming. Every tree gets it on the
+  next `init --update`. What is still open is the mechanism: nothing yet makes
+  the service outlive a session, so the guidance can only tell a reader to
+  arrange that themselves.
   -- game-server, implementing PLAN-0006, 2026-09-02
+  -- template updated 2026-09-02; the lifecycle mechanism is the open half
 
 - **`describe`'s REST answer does not say which of its neighbours are inbound,
   and the prepared guidance tells a caller to read exactly that before
