@@ -39,6 +39,25 @@ at all while `game:find-objects` had six, so a grep for the bare name reported a
 dead function as busy.
 — game-server, recorded in its own CLAUDE.md
 
+## Ruling out a hypothesis before writing a line to test it
+
+**`describe` on `dhandler-acquire-connection` showed zero inbound `calls`
+edges — only `implements` and `mentions` — and that eliminated a specific,
+plausible cause in one call.** Diagnosing a heap-corrupting crash under
+concurrent database load (game-server's REQ-0003), the natural suspect for
+"what marks a connection as staying open outside its own lock" was
+`dhandler-acquire-connection`/`dhandler-release-connection`, the one pair of
+functions in the codebase that sets `leave-open` on a shared connection
+object. `describe` on the interface returned its two method implementations
+and a plan citing it, and no `calls` edge at all: nothing in the running
+server invokes it. That answer redirected the investigation to the actual
+cause (an unlocked schema-selection sequence run from handler construction)
+before any time went into instrumenting or testing the dead path. The
+existing entries above show `describe` catching a grep's false positive —
+this is the same signal used the other direction, to stop chasing a
+hypothesis a real call graph never supported.
+— diagnosing game-server's REQ-0003, 2026-09-01
+
 ## Overturning a document that had gone stale
 
 **One `find` call overturned two documents.** `get-package-file` resolves in
@@ -111,6 +130,18 @@ spliced into YAML by a script is exactly the malformed-document case it exists
 for. Repeated on DES-0042 the following session: five `affects:` names and two
 `refines:`, all resolved.
 — implementing REQ-0038 and designing REQ-0040, 2026-08-21 and 2026-08-23
+
+**Four requirement/design/plan cycles in one session, `check-document` run on
+each of the twelve documents as it was written, zero surprises.** Two
+back-to-back concurrency fixes on game-server (REQ-0003/DES-0003/PLAN-0004,
+then REQ-0004/DES-0004/PLAN-0005) each named 10-20 entities in `affects:`,
+including two functions deliberately deleted mid-plan
+(`add-to-connection-cache`, `remove-from-connection-cache`). `check` afterward
+reported exactly those two as newly unresolved and nothing else — the same
+"unresolved because the plan succeeded" signal PLAN-0002 gave, holding across
+a fourth and fifth consecutive plan on the same tree with no accumulating
+drift in what the index could confirm.
+— completing game-server's PLAN-0004 and PLAN-0005, 2026-09-01
 
 ## The index tracks the working tree, not the last commit
 
@@ -230,6 +261,83 @@ the area, and running the pipeline with one parameter varied found everything el
 collapsed loops at one tolerance, zero at another, is not a question an index can answer and
 should not be asked to.
 — chasing front-end's BUG-0015, 2026-08-27
+
+## The rename that broke three documents, caught in the same minute it happened
+
+**`check` reported three `affects:` entries unresolved the moment two files moved,
+and nobody would have gone looking.** PLAN-0006 step 7 moved
+`model-handler.lisp` and `game-handler.lisp` from `data-api/` into `mpackage/`.
+Three documents -- a requirement, a design and a plan -- named them by
+fully-qualified id, because an earlier ambiguity had forced the qualified form.
+`git mv` cannot know that, and the documents still read as correct: the names
+were right, the classes existed, only the paths in them were now fiction.
+
+The next `check-document` call named all three. The fix was two minutes.
+
+This is the exact operation `affects:` exists to survive, and the exact reason
+the field is checked rather than decorative. The alternative history is that
+three documents quietly describe a file layout the tree stopped having, and the
+next person to trust them is the one who finds out.
+— game-server, PLAN-0006 step 7, 2026-09-02
+
+## An ambiguity report that was really a dead-code report
+
+**`check-document` flagged `get-typeid` as ambiguous, and the second candidate was
+a file nothing loads.** Writing PLAN-0006 I named `get-typeid` in `affects:` and
+the check came back ambiguous between
+`function:data-api/model-handler.lisp:get-typeid` and
+`function:data-api/operator-handler.lisp:get-typeid`. I qualified the id and
+moved on -- the immediate cost was one edit.
+
+The second candidate was the interesting half. `operator-handler.lisp` is in no
+`.asd`, nothing loads it, and it carries a diverged copy of a function the live
+handler also defines. That file was already on the plan's list to delete on other
+grounds, and this arrived without being asked for: an independent signal, from a
+document check, that the file was not merely unloaded but had drifted. After the
+deletion `find get-typeid` returns exactly one entity.
+
+Worth recording next to the standing complaint that generic-function ambiguity in
+`affects:` is noise (TODO.md, 2026-09-01, filed as BUG-0061). Both are true.
+Ambiguity between a generic and its own methods costs an edit and teaches nothing;
+ambiguity between two files, one of which is dead, is the report doing real work.
+Whatever narrows the first should be careful not to silence the second.
+— game-server, PLAN-0006 steps 1 and 8, 2026-09-02
+
+## Which of two trees owns the name, asked four times in one session
+
+**`find` with no `repository` answered "this lives in `utils`, not here" in one call,
+each time.** The game-server tree re-exports the utils library's symbols through
+`gs-utils`, so `gs-utils:json-decode-from-string` and `gs-utils:string-to-number`
+read as local definitions and are not. Tracking a float-truncation bug meant knowing
+which tree to fix, and getting it wrong means editing a file whose behaviour is
+decided elsewhere.
+
+Four such questions came up over the session -- the two above, plus
+`json-key-name` and `*json-key-to-lisp*`, whose halves turned out to live in
+different packages with only one re-exported. Each was one call. The bug was fixed
+in the right repository on the first attempt, and the fix landed as that tree's
+own BUG-0001.
+
+The prepared guidance predicts this case in as many words and cites four grep calls
+spent on it once. It held.
+— game-server and utils, PLAN-0006 step 1, 2026-09-02
+
+## The transition that showed its work before writing anything
+
+**`complete` with no verdicts printed the chain, the blockers and what it still
+needed, and wrote nothing.** Closing PLAN-0006 meant asserting that a requirement
+and a design were implemented. The dry run returned `PLAN-0006 → DES-0005 →
+REQ-0005`, no problems, no blockers, each `awaiting-verdict`.
+
+Seeing the shape before committing to it is what made the next step careful rather
+than automatic. It sent me back to re-read the requirement's six items, which is
+where I noticed that item 4 said "no change to the type definitions in game/" and
+that six default float literals there had in fact changed. That exception is now
+recorded in the requirement, above the verdict, instead of being contradicted by it.
+
+A transition that just did the write on the first call would have been correct and
+would have produced a less honest document.
+— game-server, closing PLAN-0006, 2026-09-02
 
 ## The standing measurement
 

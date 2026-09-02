@@ -90,6 +90,47 @@ loom> find @Loom repository
      weak because the JS analyzer indexed no definition by their name),
      2026-08-29
 
+- **The `loom_*` MCP tools were unreachable for an entire session because the
+  service was down when the session started, and every prepared tree's guidance
+  says to prefer them.** `.mcp.json` registers the endpoint, but the host
+  resolves MCP connections once at startup: the session opened with
+  `loom (ConnectionRefused)`, the first tool call was
+  `tools/loom-serve.sh update` exactly as the prepared guidance instructs, and
+  the tools still never appeared. Roughly forty queries went over REST instead,
+  which worked but meant hand-writing URL encoding and JSON parsing for answers
+  the tools would have returned shaped. The prepared guidance has a
+  chicken-and-egg in it: "turn Loom on at the start of every session" is step
+  one of the session, and by then it is too late for the tools that session
+  will use. Either the guidance should say to start the service *before*
+  opening the session, or the MCP registration needs to survive a cold
+  endpoint and connect on first use.
+  -- game-server, implementing PLAN-0006, 2026-09-02
+
+- **`describe`'s REST answer does not say which of its neighbours are inbound,
+  and the prepared guidance tells a caller to read exactly that before
+  deleting anything.** CLAUDE.md's dead-code rule is "`loom_describe` every
+  candidate before removing it, and read the *inbound* `calls` and `tests`
+  edges". The JSON carries `entity`, `provenance`, `signature`, `arity`,
+  `summary`, `properties`, `neighbors`, `federated`, `document` -- `neighbors`
+  is a list, and no key names a direction. Probing for `calls_in`, `callers`
+  and `inbound` found none of them. The deletion went ahead on `impact` plus a
+  grep for the name, which is the fallback the rule exists to replace. The
+  console skin may well render direction; the REST caller the rule is written
+  for cannot see it.
+  -- game-server, deleting `data-api/operator-handler.lisp`, 2026-09-02
+
+- **Four surfaces carry no staleness field, and an edit-query loop is where
+  that bites.** `find`, `impact`, `check` and `rules` return nothing about when
+  the tree was read -- documented, and the documented answer is "ask `status`
+  when it matters". After a `git mv` of two files, `find` kept answering with
+  the old paths for a few seconds; the fix was a `sleep` before re-querying,
+  and knowing to insert one came from watching for it rather than from the
+  answer. A caller cannot tell a stale answer from a current one without
+  doubling the number of calls. Not full drift on every answer -- the
+  `indexed-at` and `diff` fingerprint alone would let a caller notice the
+  answer predates a save it just made.
+  -- game-server, PLAN-0006 step 7, 2026-09-02
+
 ## The graph and what it stores
 
 - **Drop `:unresolved-calls` as a stored property, and take a generated
@@ -107,6 +148,22 @@ loom> find @Loom repository
      `describe` now prints the names as an `external` band rather than holding
      them where nobody could see them.
 
+- **A file in no build system is indexed exactly like a live one, and this
+  session is a worked example of the cost.** The blindness is documented --
+  "a source file is indexed whether or not any system loads it ... Read the
+  build file" -- and `data-api/operator-handler.lisp` is what it looks like in
+  practice: fully indexed, definitions present, participating in a
+  `check-document` ambiguity report, and named by no `.asd` anywhere. Nothing
+  could call it and it had been that way long enough to accumulate a second,
+  diverged copy of `get-typeid`. `status` already reports `unclaimed` -- tracked
+  files no analyzer claims -- and the mirror of it is the gap here: analyzed
+  files no build file claims. For Lisp that is a parseable s-expression and the
+  systems are already named in `.asd` files the index can see; the same idea
+  generalises to `package.json` and `pyproject.toml`. It would have surfaced
+  this file without anyone suspecting it, which is the difference between a
+  documented gap and a working check.
+  -- game-server, PLAN-0006 step 8, 2026-09-02
+
 ## Documents and the workflow around them
 
 - **A test that reads a live document pins a judgement.**
@@ -119,10 +176,69 @@ loom> find @Loom repository
   -- implementing REQ-0040, 2026-08-23
   -- REQ-0057 asks for the audit, 2026-08-27
 
+- **`check_document` reports a generic function name as `ambiguous` in
+  `affects:` whenever the generic has a `:before`/`:after` method alongside
+  its primary method, even though naming the generic is exactly what an
+  `affects:` entry should be able to do.** `db-query` (game-server,
+  `data-api/db/connection.lisp`) has a primary method and a `:before` method
+  doing the reconnect-on-entry work; every one of REQ-0003, DES-0003,
+  PLAN-0004 and REQ-0004 named `db-query` in `affects:` because the design is
+  about that function's behavior as a whole, and all four came back
+  `ambiguous` between the two method entities. The ambiguity is real at the
+  graph level -- they are two distinct entities -- but not actionable for a
+  document author, who has no reason to pick one method over the other when
+  the claim is about the generic's behavior. Recurred identically across four
+  documents in one session with zero cost each time (both candidates are
+  genuine, nothing was actually wrong), which is what makes it noise rather
+  than a caught error: a generic and its own methods sharing a bare name in
+  `affects:` might resolve as one match rather than reporting ambiguity.
+  -- writing game-server's REQ-0003/DES-0003/PLAN-0004/REQ-0004, 2026-09-01
+  -- filed as BUG-0061, refines REQ-0030 and DES-0029. A generic with no
+     defgeneric mints N :method entities and no :interface, so RESOLVE-ONE's
+     protocol clause (which requires exactly one :interface) cannot fire.
+     Needs the design REQ-0030's OPEN QUESTIONS deferred: several :method
+     entities differing only by qualifier and specializers are one generic,
+     and a :before is a real method of it. REQ-0020 is the same missing edge
+     on the call path.
+
+- **`check-document` reports a reference broken by a rename as `unresolved`
+  and stops there, when the same name usually exists one path away.**
+  PLAN-0006 step 7 moved `model-handler.lisp` and `game-handler.lisp` from
+  `data-api/` into `mpackage/`. Three documents named them by fully-qualified
+  id -- `class:data-api/game-handler.lisp:game-handler` and two others -- and
+  `check` reported all three unresolved immediately, which is the system
+  working and is recorded as such in `VALUE.md`. Closing them took a `find`
+  per name to learn the new path and a hand edit per document. For the
+  *ambiguous* case the report already lists `candidates`, and that field is
+  exactly what makes ambiguity cheap to fix; an unresolved qualified id whose
+  bare name resolves elsewhere could carry the same list. The rename is the
+  common cause of this state and the suggestion is one lookup the tool is
+  better placed to do than the caller.
+  -- game-server, PLAN-0006 step 7, 2026-09-02
+
 ## Preparing somebody else's tree
 
-None open. Both entries that stood here -- refreshing a marked region, and
-saying where Loom's boundary is -- are in the tables below.
+- **A bug that turns out to live in a vendored dependency gets no index
+  support at all, and nothing suggests registering the dependency's tree as
+  the fix.** Diagnosing game-server's REQ-0003 crash led into `~/lisp/cl-dbi`
+  and `~/lisp/cl-mysql` -- local checkouts of libraries the server depends on,
+  neither watched by Loom (the watched set is Loom itself, `game-server`,
+  `front-end` and `utils`). The actual root cause -- `dbi:connect-cached`
+  keying its cache on `(current-thread . connect-args)`, so two independent
+  connection-pool members opened from one thread silently collapsed onto one
+  real connection -- was found entirely by `grep`, `cat`, and direct SBCL
+  introspection (`describe`, `function-lambda-expression`) across three
+  packages with confusing nickname relationships (`dbi.cache.thread` nicknamed
+  `dbi.cache`, `cl-mysql-system`). This is exactly the kind of unfamiliar,
+  multi-file, cross-package tracing an index helps most with, and it got none.
+  `POST /v1/watch` would have registered either tree in one call -- the gap is
+  that nothing prompted doing so; the loom skill's own tree list reads as
+  fixed rather than as something a session facing a dependency-internals bug
+  should extend on the spot. Worth a line in the skill: when a symptom traces
+  into a `depends-on` name outside the watched set, register its source tree
+  before falling back to grep.  The new feature would be to that if a dependancy internal request
+  see a request for an external tree and that tree's source is available it is added to the index.
+  -- diagnosing game-server's REQ-0003, 2026-09-01
 
 ## Measuring Loom
 
