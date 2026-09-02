@@ -90,20 +90,36 @@ loom> find @Loom repository
      weak because the JS analyzer indexed no definition by their name),
      2026-08-29
 
-- **The `loom_*` MCP tools were unreachable for an entire session because the
-  service was down when the session started, and every prepared tree's guidance
-  says to prefer them.** `.mcp.json` registers the endpoint, but the host
-  resolves MCP connections once at startup: the session opened with
-  `loom (ConnectionRefused)`, the first tool call was
-  `tools/loom-serve.sh update` exactly as the prepared guidance instructs, and
-  the tools still never appeared. Roughly forty queries went over REST instead,
-  which worked but meant hand-writing URL encoding and JSON parsing for answers
-  the tools would have returned shaped. The prepared guidance has a
-  chicken-and-egg in it: "turn Loom on at the start of every session" is step
-  one of the session, and by then it is too late for the tools that session
-  will use. Either the guidance should say to start the service *before*
-  opening the session, or the MCP registration needs to survive a cold
-  endpoint and connect on first use.
+- **The prepared guidance's own first step is too late to save that session's
+  MCP tools, and the service not outliving sessions is what makes it bite.**
+  Every prepared tree says to prefer the `loom_*` tools and to run
+  `tools/loom-serve.sh update` at the start of a session. Both are good advice
+  and together they cannot be followed: the host resolves MCP connections once
+  when the session opens, so a service started by the session's first tool call
+  has already missed the handshake, and the tools stay unavailable for its whole
+  length no matter how healthy the endpoint becomes.
+
+  Measured rather than inferred, because the tree's owner reasonably believed
+  the service had been up throughout. The process listening on 4780 was pid
+  5125; the session's first tool call printed `started (pid 5125)`, and
+  `cmd_start` prints that only on the path that launches a process, printing
+  `already running ($state)` otherwise; `ps` put 5125's start at 08:21:05,
+  the session's own opening minute. So the service was down for the handshake,
+  came up seconds later, and stayed up for the following three hours. Roughly
+  forty queries went over REST, which worked -- and meant hand-writing URL
+  encoding and JSON parsing for answers the tools return shaped.
+
+  Nothing is wrong with the endpoint or the registration. `.mcp.json` is
+  correct and `POST /mcp` answers 200. The whole of the defect is that the
+  service is started per-session by a session that has already lost the race.
+
+  Two independent fixes, either sufficient: ship a way for the service to
+  outlive sessions -- a user-level service unit or a login item, so it is
+  already up before any session opens -- and say so in the prepared guidance
+  instead of the current step one; or have a refused MCP endpoint be retried on
+  first use rather than resolved once, which is the host's to fix and worth
+  filing there. The first is Loom's to do and is the one that removes the race
+  rather than narrowing it.
   -- game-server, implementing PLAN-0006, 2026-09-02
 
 - **`describe`'s REST answer does not say which of its neighbours are inbound,
