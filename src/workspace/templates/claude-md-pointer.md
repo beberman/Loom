@@ -22,6 +22,47 @@ without it:
 - When work lands, do not edit a status by hand. Run the transition command,
   which moves every document the plan implements and files it correctly.
 
+### The service has to be running *before* the session starts
+
+**Start Loom, wait for it, and then open the session.** A session whose first
+tool call starts the service does not get the `loom_*` tools at all: the host
+resolves MCP connections once at startup and does not retry, so the handshake
+has already failed and the tools stay unavailable for that session's whole
+length however healthy the endpoint becomes seconds later. Nothing is wrong
+with `.mcp.json` or the endpoint when this happens — `POST /mcp` answers 200
+throughout. Everything still works over REST, which is what the fallback below
+is for, at the cost of hand-written URL encoding and JSON parsing all session.
+
+Better still, make the service outlive sessions — a login item or a user
+service unit — because then the race cannot happen rather than being narrowly
+avoided.
+
+**Starting takes tens of seconds, and the port refuses connections for the
+first part of it.** Measured on one machine, warm cache, nine watched trees:
+12s before the port answered at all, 18s to `ready`. A cold start is much
+longer; `tools/loom-serve.sh` waits up to ~150s, sized against a cold fasl
+cache. That first window, when nothing is listening, is what loses the
+handshake.
+
+**Once it answers, check `state` — "answering" and "ready" are different.**
+`repository-state` defines three:
+
+    indexing    nothing can be answered yet
+    embedding   the graph is built and answerable: queries return lexically
+                correct answers, without the semantic candidates they would
+                have had a minute later
+    ready       both
+
+`find`, `describe`, `impact` and `check` are trustworthy at `embedding`; it is
+`context`'s semantic seeding that is still warming. Ask rather than guess:
+
+```bash
+curl -s '{{ENDPOINT}}/v1/status?repository={{REPOSITORY-NAME}}'
+```
+
+Registrations survive a restart, so registering this tree is something a
+service that has never seen it needs, not something to repeat on every bounce.
+
 ### Reach for the index, not for the shell
 
 Saying "ask Loom first" once is not enough — the shell gets reached for anyway,
