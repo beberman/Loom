@@ -1,34 +1,47 @@
 id: PLAN-0050
-title: DES-0047 in fourteen steps -- the property, the declaration, the partition, the resolver, the pass, the measurement, the address
+title: DES-0047 in fifteen steps -- the property, the declaration, the stamp, the resolver, the pass, the measurement, the address on three surfaces
 status: draft
 date: 2026-09-03
 refines: [DES-0047]
 affects: [resolve-module-specifier, build-module-scope, visible-candidates,
           resolve-calls, resolve-and-check, index-repository, repository-registry,
           parse-frameworks, read-frameworks, frameworks-problems,
-          default-system-for-path, js-system-for-path, make-js-file-entity,
-          make-call-site-entity, generated-entity, declared-properties-only,
-          callable-lookup, find-entities, search-entities, best-name-match,
-          repository-status, print-status, run-command, current-repository,
-          repository-token-p, prepare-repository, module-scoped-language-p]
+          default-system-for-path, analyze-path, make-call-site-entity,
+          generated-entity, declared-properties-only, inspected-properties,
+          callable-lookup, find-entities, properties-match-p, search-entities,
+          best-name-match, repository-status, print-status, run-command,
+          current-repository, repository-token-p, find-repository,
+          require-repository, invoke-operation, validate-arguments,
+          check-capability, prepare-repository, module-scoped-language-p]
 tags: [javascript, imports, aliases, domains, module-resolution, front-end,
-       req-0063, des-0047, des-0009, des-0021, des-0025]
+       req-0063, des-0047, des-0006, des-0009, des-0021, des-0025]
 summary: |
-  Fourteen steps, each ending at a green `tools/loom-test.sh' and a `check' that
-  still reads 0 violations, 8 unresolved and 7 ambiguous. The order is set by
-  five hard dependencies: the ontology property before anything writes it,
-  because DECLARED-PROPERTIES-ONLY drops an undeclared one in silence and an
+  Fifteen steps, each ending at a green `tools/loom-test.sh' and a `check' that
+  still reads 0 violations, 8 unresolved and 7 ambiguous. Re-sequenced against
+  DES-0047 as amended at d817913: A1 makes :DOMAIN a keyword and moves the write
+  from twenty analyzer sites to one stamp in ANALYZE-PATH, and A2 makes the
+  domain an address on REST and MCP as well as the console.
+
+  The order is set by seven hard dependencies, all of which survive the
+  amendments: the ontology property before anything writes it, because
+  DECLARED-PROPERTIES-ONLY drops an undeclared one in silence and an
   UPDATE-PROPERTIES naming one rejects its whole transaction; the parser before
-  DOMAIN-FOR-PATH; the analyzer's :DOMAIN before BUILD-MODULE-SCOPE, which reads
-  it rather than recomputing it; the resolver before the scope; the scope before
-  RESOLVE-IMPORTS.
+  DOMAIN-FOR-PATH; the stamp before BUILD-MODULE-SCOPE, which reads the property
+  rather than recomputing it; the resolver before the scope; the scope before
+  RESOLVE-IMPORTS; RESOLVE-IMPORTS before RESOLVE-AND-CHECK; and, new with A2,
+  the loom-workspace designator split of step 12 before the REST and MCP address
+  of step 13, which calls it.
 
   Step 7 wires RESOLVE-IMPORTS into RESOLVE-AND-CHECK and is the one step that
   can change what nine watched trees index. What proves it did not is the entity
   and relationship counts on the six Common Lisp trees in tools/extra-repos read
   before and after, which must be identical, since MODULE-SCOPED-LANGUAGE-P is
   false there and BUILD-MODULE-SCOPE returns an empty table before any domain is
-  looked up.
+  looked up. Steps 12 and 13 are the two that can break the peer property, and
+  `sbcl --script tools/test/load-test.lisp loom-serve' is the only instrument
+  that sees it: its own header names CURRENT-REPOSITORY from console.lisp as one
+  of the three edits it exists to catch, and A2d's split is exactly that
+  temptation.
 
   REQ-0063 R4's measurement first becomes takeable at step 11, after step 9 puts
   the count on `status' and step 10 writes front-end's `domains:' declaration. It
@@ -36,13 +49,20 @@ summary: |
   service.py's ensure, because `tools/loom.sh' reindexes every tree it names on
   every call and front-end is 476 module files.
 
-  Three things the design did not settle are settled here and named as such:
-  :SYSTEM is declared on twelve entity types rather than the eight R4 lists;
-  :DOMAIN is a string rather than a keyword; and :UNCLAIMED-TARGET is decided
-  inside loom-graph from *MODULE-FILE-EXTENSIONS* rather than from an analyzer's
-  claim list loom-graph cannot see. One thing is deferred rather than settled:
-  tools/js/extract.js records no `require()' call as an import source, so
-  DES-0047 R14's functions/ clause cannot be measured on front-end.
+  Four things the amended design leaves unsettled are settled here and named as
+  such: :UNCLAIMED-TARGET is decided inside loom-graph from
+  *MODULE-FILE-EXTENSIONS*, because no analyzer's claim list is reachable from
+  there; the designator split tries the whole string before splitting, because
+  FIND-REPOSITORY accepts a path and a path is full of slashes;
+  REQUIRE-REPOSITORY-NOW takes the same split as REQUIRE-REPOSITORY, because
+  :STATUS is one of R15's six scoping operations and does not go through the
+  latter; and enrich.lisp:104 is a fourth post-analysis site writing :SYSTEM
+  outside the ANALYZE-PATH funnel, beside the three in resolve.lisp the design
+  names. One thing is deferred rather than settled: tools/js/extract.js records
+  no `require()' call as an import source, so DES-0047 R14's functions/ clause
+  cannot be measured on front-end, and it is still the single OUTSTANDING item
+  at step 15.
+
 body: |
   FILES
 
@@ -63,14 +83,13 @@ body: |
     src/analyzer/frameworks.lisp      `domains:' parsed; PARSE-DOMAIN,
                                       DOMAIN-TABLE, DOMAIN-PROBLEMS, the preset
                                       table
-    src/analyzer/analyzer.lisp        DOMAIN-FOR-PATH and *DOMAINS*, beside
-                                      DEFAULT-SYSTEM-FOR-PATH
+    src/analyzer/analyzer.lisp        DOMAIN-FOR-PATH and *DOMAINS* beside
+                                      DEFAULT-SYSTEM-FOR-PATH; ANALYZE-PATH
+                                      (line 214) stamps :DOMAIN onto every
+                                      entity op it returns
     src/analyzer/package.lisp         exports for the above
-    src/analyzer/js-analyzer.lisp     :DOMAIN written where :SYSTEM is, at
-                                      lines 374 and 796
-    src/analyzer/lisp-analyzer.lisp   the same, at 544, 1298 and 1656
-    src/analyzer/yaml-analyzer.lisp   the same, at 321, 336 and 369
-    src/analyzer/markdown-analyzer.lisp  the same, at 457
+    src/graph/enrich.lisp             :DOMAIN beside :SYSTEM in
+                                      INSPECTED-PROPERTIES (line 104)
     src/graph/resolve.lisp            RESOLVE-MODULE-SPECIFIER takes :DOMAIN and
                                       returns a cause; the preset table;
                                       BUILD-MODULE-SCOPE takes :DOMAINS and
@@ -87,13 +106,26 @@ body: |
                                       REPOSITORY-STATUS carries
                                       :UNRESOLVED-IMPORTS and :DOMAIN-PROBLEMS
     src/workspace/init.lisp           PROPOSE-DOMAINS in the preparation plan
-    src/process/console.lisp          *COMMAND-DOMAIN*, CURRENT-DOMAIN,
-                                      DOMAIN-FILTER; RUN-COMMAND splits on `/';
-                                      PRINT-STATUS gains the imports line; the
-                                      index commands refuse a domain token
+    src/process/console.lisp          *COMMAND-DOMAIN*, DOMAIN-FILTER;
+                                      RUN-COMMAND splits the @token through
+                                      loom-workspace; PRINT-STATUS gains the
+                                      imports line; the index commands refuse a
+                                      domain token
+    src/knowledge/services.lisp       BEST-NAME-MATCH takes property-filters
+    src/knowledge/context.lisp        the two seeding walks take them
+    src/knowledge/similar.lisp        the candidate walk takes them
+    src/serve/registry.lisp           INVOKE-OPERATION refuses a domain-bearing
+                                      designator on a :WRITE or :REPL entry
+    src/serve/operations.lisp         REQUIRE-REPOSITORY and
+                                      REQUIRE-REPOSITORY-NOW return the domain
+                                      as a second value; RESOLVE-ENTITY and the
+                                      six scoping entries pass it on
+    src/mcp/tools.lisp                nothing, and step 13 says how that is
+                                      checked rather than assumed
     src/ontology/test/*, src/analyzer/test/frameworks.lisp,
     src/analyzer/test/analyzer.lisp, src/graph/test/resolve.lisp,
-    src/workspace/test/workspace.lisp, src/process/test/console.lisp
+    src/workspace/test/workspace.lisp, src/process/test/console.lisp,
+    src/serve/test/*, src/rest/test/*, src/mcp/test/*
                                       the per-step tests named below
     ~/github/front-end/.loom/frameworks.yaml   the `domains:' declaration, three
                                       entries, outside this repository
@@ -125,7 +157,7 @@ body: |
       They are the regression surface for step 7 and are read over REST rather
       than asked about here.
 
-  Three things `impact' does not report because they are not edges:
+  Five things `impact' does not report because they are not edges:
 
     - DECLARED-PROPERTIES-ONLY (resolve.lisp:687) filters a generated entity's
       plist through FIND-PROPERTY, so a :DOMAIN not declared on the minted type
@@ -137,6 +169,17 @@ body: |
       cannot precede step 1.
     - FRAMEWORKS-PROBLEMS is exported and called by nothing but its own test.
       Step 9 builds the reporting path it needs rather than extending one.
+    - ANALYZE-PATH (analyzer.lisp:214) is the sole production caller of
+      ANALYZE-FILE; every other caller in the tree is a test helper -- JS-OPS,
+      MD-OPS, DOCS-OPS, FIXTURE-OPS, ANALYZE-SOURCE and the two enrich parity
+      tests all call ANALYZE-FILE directly. So A1's stamp covers every indexed
+      file and no entity any analyzer test builds, which is what step 8's
+      fixture has to be built through the workspace pipeline to see.
+    - REQUIRE-REPOSITORY has seventeen call sites and Loom reports fifteen as
+      :CALL-SITE entities. A DEFINE-OPERATION body yields one site per call name
+      at the body's start line (DES-0014), so two calls to one name in one body
+      collapse to one site. Fifteen is an under-count of an edit surface, not a
+      smaller one.
 
   Four counts that must not move on Loom's own tree until step 12 changes what
   `find' selects: 409 files, 3776 entities, 18214 relationships, 251 documents.
@@ -144,41 +187,67 @@ body: |
   component of no natural key anywhere, so no id changes and no entity is
   reasserted as a second one.
 
-  WHAT THE DESIGN DID NOT SETTLE, DECIDED HERE
+  WHAT THE AMENDMENTS SETTLED, AND WHAT THEY LEFT OPEN
 
-  D-a. :SYSTEM is declared on twelve entity types, not eight. DES-0047 R4 names
-  :FILE, :FUNCTION, :VARIABLE, :CLASS, :INTERFACE, :METHOD, :TEST and :DOCUMENT.
-  code-ontology.lisp declares :SYSTEM at lines 165, 320, 372, 413, 469, 620, 658,
-  738, 881, 926, 1192 and 1253, which adds :PACKAGE, :CALL-SITE, :DESIGN and
-  :ARCHITECTURE. :CALL-SITE cannot be left out: resolve.lisp:890 and 1159 mint
-  one and R4 requires them to copy :DOMAIN, and MAKE-CALL-SITE-ENTITY passes its
-  plist through PROPERTIES-TABLE with no filter, so the property would be stored
-  undeclared and never validated. Step 1 declares all twelve.
+  Two of this plan's four decisions are now the design's. D-a -- :SYSTEM is
+  declared on twelve entity types and not the eight the design first named -- is
+  DES-0047 R4, with :PACKAGE, :CALL-SITE, :DESIGN and :ARCHITECTURE added and
+  :CALL-SITE given the reason resolve.lisp:890 and 1159 supply. D-b is reversed:
+  :DOMAIN is a keyword, matching :SYSTEM's type at all twelve declarations. The
+  interning objection this plan raised does not survive R10's refusal, which
+  forces a lookup of a caller's token against the declared set before anything is
+  interned, and PROPERTIES-MATCH-P's EQUAL holds on a keyword because two
+  occurrences of one keyword are EQ. D-d is reversed by A2: the domain is an
+  address on REST and MCP as well as the console, which is step 13.
 
-  D-b. :DOMAIN holds a string; :SYSTEM holds a keyword. PROPERTIES-MATCH-P
-  compares with EQUAL, and the value the console has to match is the text after
-  the `/' in `@front-end/server'. A keyword would mean interning arbitrary text
-  from a foreign repository's YAML on every query. The ontology declares it
-  `string'.
+  D-c stands unchanged. :UNCLAIMED-TARGET is decided from
+  *MODULE-FILE-EXTENSIONS*. DES-0047 R7 defines the cause as "a path whose
+  extension no analyzer claims", and no analyzer's claim list is reachable from
+  loom-graph -- loom-graph depends on loom-utils, loom-ontology and
+  bordeaux-threads, which RULE-0001 and RULE-0002 enforce, and loom-ontology
+  holds no extension-to-language table. The decidable form in loom-graph is: a
+  rewritten path carrying an explicit extension that is not in the preset's
+  extension list is :UNCLAIMED-TARGET; a path with no extension, or with one in
+  the list, that is still not in KNOWN is :UNRESOLVED. That separates front-end's
+  6 .css and 1 .json from a stale declaration, which is what R7 exists to do. The
+  rejected alternative is handing the claim list down beside :DOMAINS, which is a
+  third data channel through RESOLVE-AND-CHECK for a distinction two lists of
+  extensions already make.
 
-  D-c. :UNCLAIMED-TARGET is decided from *MODULE-FILE-EXTENSIONS*. DES-0047 R7
-  defines the cause as "a path whose extension no analyzer claims", and no
-  analyzer's claim list is reachable from loom-graph -- loom-graph depends on
-  loom-utils, loom-ontology and bordeaux-threads, which RULE-0001 and RULE-0002
-  enforce, and loom-ontology holds no extension-to-language table. The decidable
-  form in loom-graph is: a rewritten path carrying an explicit extension that is
-  not in the preset's extension list is :UNCLAIMED-TARGET; a path with no
-  extension, or with one in the list, that is still not in KNOWN is :UNRESOLVED.
-  That separates front-end's 6 .css and 1 .json from a stale declaration, which
-  is what R7 exists to do. The rejected alternative is handing the claim list
-  down beside :DOMAINS, which is a third data channel through RESOLVE-AND-CHECK
-  for a distinction two lists of extensions already make.
+  Three new decisions the amendments made necessary and did not make.
 
-  D-d. `@front-end/server' is a console address only. DES-0047 R10 changes
-  RUN-COMMAND. loom-rest and loom-mcp take `repository' as a request parameter
-  and the design proposes no domain parameter for either, so `loom_find' has no
-  domain argument after this plan. Step 12 says so in the help text rather than
-  leaving a caller to discover it.
+  D-e. THE SPLIT TRIES THE WHOLE DESIGNATOR FIRST, THEN SPLITS AT THE LAST `/'.
+  R10 says "splits a leading @token on its first `/'", which is right for a
+  console token and wrong for the shared function A2d puts in loom-workspace.
+  FIND-REPOSITORY accepts a name or a root path -- its own docstring's middle
+  branch exists so `unwatch "~/lisp/Loom"' matches a repository registered as
+  /home/beberman/lisp/Loom/ -- and every path designator contains slashes. A
+  first-`/' split turns "/home/beberman/lisp/Loom" into an empty repository name
+  and a domain called "home". The rule here is: look the whole designator up
+  through FIND-REPOSITORY; only when that finds nothing, split at the last `/'
+  and look the left half up. Both halves must be non-empty. That answers
+  `front-end/server' and `/home/beberman/github/front-end/server' identically,
+  leaves every designator that names a watched repository whole untouched, and
+  agrees with R10 on every console token, since a token with one `/' splits the
+  same way under either rule.
+
+  D-f. REQUIRE-REPOSITORY-NOW TAKES THE SAME SPLIT. A2c names REQUIRE-REPOSITORY
+  as the place the existence refusal lives. :STATUS is one of R15's six scoping
+  operations and does not call it: operations.lisp:548 calls
+  REQUIRE-REPOSITORY-NOW, which exists so that an introspection call is not
+  blocked by the index it is introspecting. Both functions take the split and
+  both return the domain as a second value, or `status @front-end/server' is
+  refused as an unwatched repository.
+
+  D-g. THE FOURTH POST-ANALYSIS SITE IS enrich.lisp:104. The design names three
+  sites outside the ANALYZE-PATH funnel that copy :SYSTEM (resolve.lisp 742, 890,
+  1159). INSPECTED-PROPERTIES (enrich.lisp:97-111) is a fourth: it writes
+  `:system (inspected-system (getf definition :system))' onto an entity minted
+  from a child image's report, and DES-0011's enrichment is opt-in and Lisp-only,
+  so the value would always be the default domain. It gets the copy anyway,
+  because the invariant the design states is that an entity carrying :SYSTEM
+  carries :DOMAIN, and a fourth site quietly exempt is the drift A1's single
+  stamp exists to prevent.
 
   RISKS
 
@@ -240,22 +309,81 @@ body: |
   extractor is a change to what every JavaScript tree records as an import and is
   deliberately not in this plan.
 
+  R-g. Steps 12 and 13 can break the peer property, and only one instrument
+  sees it. tools/test/load-test.lisp's own header names three edits it exists to
+  catch, and the third is "CURRENT-REPOSITORY or RESOLVE-ENTITY from
+  console.lisp". A2d's split is exactly that temptation: loom-serve needs the
+  same name/domain parse loom-process needs, and the shortest way to get it is a
+  `#:loom-process' in loom-serve.asd. Putting the parse in loom-workspace is what
+  keeps the peers peers, and loom-process and loom-serve both already depend on
+  loom-workspace, so no .asd changes. `sbcl --script tools/test/load-test.lisp
+  loom-serve' must print T after step 12 and again after step 13. `check' cannot
+  say anything about it either way: no rule names loom-serve, loom-rest, loom-mcp
+  or loom-process.
+
+  R-h. A path designator gets split into a domain. Covered by D-e, and the
+  regression it would cause is silent on the surface that matters least and loud
+  on the one that matters most: over REST, `?repository=/home/beberman/lisp/Loom'
+  on :REINDEX would be refused as an unwatched repository, which is visible; on
+  the console, `unwatch "~/lisp/Loom"' would be refused the same way, which is
+  the defect FIND-REPOSITORY's middle branch was written to close. The test is a
+  workspace test that FIND-REPOSITORY's three existing branches answer the same
+  designators after the split as before it.
+
+  R-i. A read-tier operation accepts a domain and ignores it. This is the one
+  silent wrong answer DES-0047's CONSEQUENCES leaves reachable: scoping is
+  opt-in, a body that never reads REQUIRE-REPOSITORY's second value answers about
+  the whole repository, and the caller who named part of it cannot tell. Step 13
+  closes it as far as a test can: a test walks ALL-OPERATIONS, and every :READ
+  entry must either answer differently for a domain than for its repository on a
+  two-domain fixture, or be named in a list with a one-line reason -- :CHECK,
+  :RULES, :STRUCTURE, :DRIFT, :SURVEY and :CHECK-DOCUMENT answer about a whole
+  repository by construction. The residual is honest and worth stating: the list
+  can be extended, so this converts a silent wrong answer into a decision
+  somebody has to write down, not into an impossibility.
+  WHICH ARROWS ARE DEPENDENCIES
+
+  Hard, and all seven survive the amendments: 1 to 3 and 1 to 6 (the ontology
+  property before anything writes it); 2 to 3 (DOMAIN-FOR-PATH needs the parsed
+  declaration); 3 to 5 (BUILD-MODULE-SCOPE reads the property the stamp wrote);
+  4 to 5; 5 to 6; 6 to 7; 7 to 8 and 7 to 9 (nothing to report before the pass
+  runs); 9 to 11 and 10 to 11 (the measurement reads the status line and needs a
+  declaration to measure); 1 to 12 and 3 to 12 (the filter tests a property that
+  has to exist and be written). New with A2: 12 to 13 is hard -- step 13's two
+  refusals both call the SPLIT-DESIGNATOR step 12 puts in loom-workspace.
+
+  Preferences, with their reasons: 8 before 9, 10 and 11, so the front-end figure
+  is a measurement rather than the test (CON-0003); 7 before 12, which is not a
+  dependency at all, since the filter needs only the property from step 3; 14
+  last but one, because its output is a proposal a human confirms.
+
+  What moved. Steps 1 through 11 keep their numbers; 1, 2, 3, 5 and 8 changed
+  and say so in their headings. Step 12 changed and 13 is new. The old step 13,
+  the `init' proposal, is now 14, and the old step 14, `complete', is now 15.
+
   STEPS
 
-  1. THE ONTOLOGY PROPERTIES.  src/ontology/code-ontology.lisp.
+  1. THE ONTOLOGY PROPERTIES.  src/ontology/code-ontology.lisp.  AMENDED: the
+     type is `keyword', not `string'.
 
-     Declare `(:domain string ...)' immediately after each of the twelve
+     Declare `(:domain keyword ...)' immediately after each of the twelve
      `(:system keyword ...)' declarations, at lines 165, 320, 372, 413, 469, 620,
-     658, 738, 881, 926, 1192 and 1253. Declare `(:unresolved-imports list ...)'
-     on :FILE beside :IMPORT-SOURCES. Give MAKE-CALL-SITE-ENTITY (line 790) a
-     `domain' keyword and put it in the properties plist beside `system'; it is
-     not a natural-key component, so it may arrive with the others.
+     658, 738, 881, 926, 1192 and 1253 -- :FILE, :PACKAGE, :CLASS, :INTERFACE,
+     :FUNCTION, :METHOD, :VARIABLE, :CALL-SITE, :TEST, :DOCUMENT, :DESIGN and
+     :ARCHITECTURE, which is DES-0047 R4 as amended. No `:one-of', for the reason
+     :SYSTEM gives: the vocabulary is whatever the indexed repository declared.
+
+     Declare `(:unresolved-imports list ...)' on :FILE beside :IMPORT-SOURCES.
+     Give MAKE-CALL-SITE-ENTITY (line 790) a `domain' keyword and put it in the
+     properties plist beside `system'; it is not a natural-key component, so it
+     may arrive with the others.
 
      Verification: `tools/loom-test.sh' green across all nine systems. A new test
      in the ontology suite walks every entity type and asserts that a type
-     declaring :SYSTEM declares :DOMAIN. It fails before this step because
-     :DOMAIN is declared nowhere, and it fails again the day someone adds
-     :SYSTEM to a thirteenth type. `tools/loom.sh 'check'' at 0/8/7.
+     declaring :SYSTEM declares :DOMAIN and that the two declare the same type.
+     It fails before this step because :DOMAIN is declared nowhere, and it fails
+     again the day someone adds :SYSTEM to a thirteenth type or widens either to
+     a string. `tools/loom.sh 'check'' at 0/8/7.
 
      This is the first step that can be run. Nothing writes :DOMAIN yet, so the
      index is byte-identical.
@@ -263,8 +391,14 @@ body: |
   2. THE DECLARATION.  src/analyzer/frameworks.lisp, src/analyzer/package.lisp,
      src/analyzer/test/frameworks.lisp.
 
+     AMENDED: the domain name is interned as a keyword here, once, when the
+     declaration is read. That is the whole of A1's answer to the interning
+     objection -- the bound on the keyword package is the declaration, which is
+     three entries on front-end, and :SYSTEM has always had exactly that bound.
+
      PARSE-DOMAIN reads one `domains:' entry into
-     `(:name :root :resolution :aliases :aliases-from)'. `name' and `root' are
+     `(:name :root :resolution :aliases :aliases-from)', with :NAME a keyword and
+     :ROOT, the alias keys and the alias targets strings. `name' and `root' are
      required; an entry missing either declares nothing. `resolution' is one of
      "bundler", "node-esm", "commonjs" and defaults to "bundler"; a fourth name
      is refused rather than defaulted. `aliases' is a key-to-repository-relative-
@@ -277,7 +411,7 @@ body: |
      lives here because the analyzer parses the name; the graph receives the
      expansion as data in step 4.
 
-     DOMAIN-TABLE returns name-to-plist with the reserved `default' entry
+     DOMAIN-TABLE returns keyword-to-plist with the reserved :DEFAULT entry
      (root "", no aliases, bundler) present whenever no declaration supplies one,
      and `aliases-from' resolved by copying the named domain's map. A chain is
      refused, not followed.
@@ -297,13 +431,23 @@ body: |
      .loom/frameworks.yaml, so READ-FRAMEWORKS still returns NIL for it and
      `check' stays at 0/8/7.
 
-  3. THE PARTITION.  src/analyzer/analyzer.lisp, package.lisp, the four
-     analyzers, src/workspace/workspace.lisp.
+  3. THE STAMP.  src/analyzer/analyzer.lisp, src/analyzer/package.lisp,
+     src/workspace/workspace.lisp, src/graph/enrich.lisp.  AMENDED: one stamp in
+     ANALYZE-PATH, not eight writes in four analyzers. The four analyzers are
+     unedited by this step.
 
      DOMAIN-FOR-PATH beside DEFAULT-SYSTEM-FOR-PATH (analyzer.lisp:280): the
-     declared domain with the longest root that is a prefix of PATH, "default"
-     when none is. `*domains*' is the special it reads, defaulting to NIL, which
-     makes every path "default".
+     declared domain with the longest root that is a prefix of PATH, :DEFAULT
+     when none is, as a keyword. `*domains*' is the special it reads, defaulting
+     to NIL, which makes every path :DEFAULT.
+
+     ANALYZE-PATH (analyzer.lisp:214) computes the domain once for the
+     workspace-relative path it already computes for ANALYZE-FILE, and stamps it
+     onto every entity op ANALYZE-FILE returned. One site rather than twenty, and
+     it is sound because the two properties differ in exactly the way that
+     permits it: :SYSTEM varies within a file -- the :FILE entity's own docstring
+     records a two-IN-PACKAGE file getting one value that does not describe all
+     of it -- and a domain is a function of the path alone.
 
      INDEX-REPOSITORY (workspace.lisp:714) binds `*domains*' from
      REPOSITORY-DOMAINS around the file loop, in the same LET as `*route-callers*'
@@ -311,17 +455,27 @@ body: |
      not place another's paths. REPOSITORY-DOMAINS goes beside REPOSITORY-REGISTRY
      (workspace.lisp:701) and returns DOMAIN-TABLE over the frameworks plist.
 
-     Write `:domain (domain-for-path path)' at every site that writes :SYSTEM:
-     js-analyzer.lisp 374 and 796, lisp-analyzer.lisp 544, 1298 and 1656,
-     yaml-analyzer.lisp 321, 336 and 369, markdown-analyzer.lisp 457. All eight,
-     in the same call, so the two path classifications cannot drift.
+     INSPECTED-PROPERTIES (enrich.lisp:104) copies :DOMAIN beside :SYSTEM, which
+     is D-g: it is a fourth minting site outside the funnel, alongside
+     resolve.lisp's three, and the design names only three.
+
+     What this step does not touch: js-analyzer.lisp 374 and 796,
+     lisp-analyzer.lisp 544, 1298 and 1656, yaml-analyzer.lisp 321, 336 and 369,
+     markdown-analyzer.lisp 457. All eight keep writing :SYSTEM and none writes
+     :DOMAIN. lisp-analyzer.lisp:544, which mints a :CALL-SITE for an initform
+     call, is inside the funnel -- it is part of what ANALYZE-FILE returns -- so
+     the stamp reaches it and it needs no edit either.
 
      Verification: three tests. DOMAIN-FOR-PATH against nested roots returns the
-     longer. Every path is in exactly one domain, asserted over a fixture
-     declaration with three roots and a path matching two of them. And on Loom's
-     own tree, `tools/loom.sh 'status'' still reads 409 files, 3776 entities,
-     18214 relationships -- one property per entity is not an entity.
-     `tools/loom-test.sh' green; `check' at 0/8/7.
+     longer, as a keyword. Every path is in exactly one domain, asserted over a
+     fixture declaration with three roots and a path matching two of them. And an
+     ANALYZE-PATH test over a real file on disk asserting that every entity op it
+     returns carries :DOMAIN -- which has to go through ANALYZE-PATH, because
+     JS-OPS, MD-OPS, DOCS-OPS and FIXTURE-OPS all call ANALYZE-FILE directly and
+     would see no stamp at all. On Loom's own tree `tools/loom.sh 'status'' still
+     reads 409 files, 3776 entities, 18214 relationships: one property per entity
+     is not an entity, and :DOMAIN is a component of no natural key, so no id
+     moves. `tools/loom-test.sh' green; `check' at 0/8/7.
 
   4. THE RESOLVER.  src/graph/resolve.lisp, src/graph/test/resolve.lisp.
 
@@ -355,9 +509,9 @@ body: |
 
   5. THE SCOPE.  src/graph/resolve.lisp, src/graph/test/resolve.lisp.
 
-     BUILD-MODULE-SCOPE gains `&key domains' -- the name-to-plist table -- and
-     looks each importer's domain up by the :DOMAIN property its :FILE entity
-     carries. No prefix matching in loom-graph; step 3 decided the partition and
+     BUILD-MODULE-SCOPE gains `&key domains' -- the keyword-to-plist table step
+     2 built -- and looks each importer's domain up by the :DOMAIN keyword its
+     :FILE entity carries. No prefix matching in loom-graph; step 3 decided the partition and
      this reads the answer. It returns a second value: path to list of
      `(:specifier "..." :cause ...)' for everything that resolved to nothing.
 
@@ -454,6 +608,13 @@ body: |
          app/strict/ resolves to nothing where the same specifier in app/
          resolves, which is one assertion with two different answers;
        - the four causes, one file each.
+
+     Built through the workspace pipeline rather than through ANALYZE-FILE.
+     AMENDED, and it is A1's one consequence for the tests: the fixture asserts
+     on :DOMAIN, ANALYZE-PATH is what stamps it, and every analyzer test helper
+     in this tree calls ANALYZE-FILE instead. WITH-WORKSPACE-FIXTURE
+     (src/workspace/test/workspace.lisp:77) writes real files and indexes them,
+     which is the path that stamps.
 
      Guarded on node the way src/analyzer/test/js-analyzer.lisp's JS-TEST macro
      guards: without node the tests skip rather than fail, since a red suite on a
@@ -597,31 +758,51 @@ body: |
       7, which is REQ-0063's second cost and the reason VISIBLE-CANDIDATES was
       narrowing against a third of the module graph.
 
-  12. THE ADDRESS.  src/process/console.lisp, src/knowledge/services.lisp,
+  12. THE ADDRESS ON THE CONSOLE.  src/workspace/workspace.lisp,
+      src/process/console.lisp, src/knowledge/services.lisp,
       src/knowledge/context.lisp, src/knowledge/similar.lisp,
-      src/process/test/console.lisp.
+      src/workspace/test/workspace.lisp, src/process/test/console.lisp.
+      AMENDED: the split moves down into loom-workspace, and the filter carries a
+      keyword.
 
-      RUN-COMMAND (console.lisp:1651) splits the stripped @token on its first
-      `/': `@front-end/server' binds *COMMAND-REPOSITORY* to "front-end" and
-      *COMMAND-DOMAIN* to "server", both for one command's dynamic extent.
-      CURRENT-REPOSITORY (console.lisp:130) is untouched -- it receives the half
-      it already handled. CURRENT-DOMAIN returns the domain plist or NIL and
-      refuses an unknown name the way CURRENT-REPOSITORY refuses an unknown
-      repository, listing the domains this repository declares.
+      SPLIT-DESIGNATOR goes in loom-workspace beside FIND-REPOSITORY
+      (workspace.lisp:138) and returns two values, the repository and the domain
+      plist. Its rule is D-e: look the whole designator up through
+      FIND-REPOSITORY first, and only when that finds nothing split at the last
+      `/', requiring both halves non-empty. An unknown domain is a refusal naming
+      the domains the repository declares, which is what forces the lookup to
+      happen before the token is interned and is A1's answer to the interning
+      objection. loom-workspace is the home because loom-process and loom-serve
+      are peers that may not reach each other (DES-0006 R5) and both depend on
+      it; loom-utils cannot hold it, because validating a domain reads the
+      repository registry and loom-utils depends on nothing.
 
-      DOMAIN-FILTER returns `(:domain "server")' or NIL, and the selection
-      commands pass it as `property-filters'. That is one argument at
-      console.lisp:731 for `find'. It is more than the design's "every service
-      that already threads property-filters" implies: SEARCH-ENTITIES
-      (services.lisp:355) is the only function in loom-knowledge that takes
-      `property-filters' today, and four other selection paths call FIND-ENTITIES
-      without it -- BEST-NAME-MATCH (services.lisp:411), which is what `describe'
-      and `impact' pick with; the two seeding walks in context.lisp at 582 and
-      603; and the candidate walk in similar.lisp:201. Each gains a
-      `property-filters' keyword defaulting to NIL and passes it through. The
-      predicate itself stays in one place: PROPERTIES-MATCH-P inside
-      FIND-ENTITIES (query.lisp:42), before the sort and before the cap, which is
-      D4.
+      RUN-COMMAND (console.lisp:1651) strips the @token as it does today and
+      passes the remainder to SPLIT-DESIGNATOR, binding *COMMAND-REPOSITORY* and
+      a new *COMMAND-DOMAIN* for one command's dynamic extent.
+      REPOSITORY-TOKEN-P (console.lisp:121) is untouched: it tests for `@', a
+      console spelling neither skin has. CURRENT-REPOSITORY (console.lisp:130)
+      keeps DES-0021 D2's precedence and routes its explicit-designator branch
+      through the same split, which is where R-h bites if the split is
+      first-`/'.
+
+      DOMAIN-FILTER returns `(:domain :server)' or NIL -- a keyword, since A1
+      makes :DOMAIN one and PROPERTIES-MATCH-P compares with EQUAL, which two
+      occurrences of one keyword satisfy through EQ. The selection commands pass
+      it as `property-filters'. That is one argument at console.lisp:731 for
+      `find'. It is more than the design's "every service that already threads
+      property-filters" implies: SEARCH-ENTITIES (services.lisp:355) is the only
+      function in loom-knowledge that takes `property-filters' today, and four
+      other selection paths call FIND-ENTITIES without it -- BEST-NAME-MATCH
+      (services.lisp:411); the two seeding walks in context.lisp at 582 and 603;
+      and the candidate walk in similar.lisp:201. Each gains a `property-filters'
+      keyword defaulting to NIL and passes it through. Those four are still the
+      right four under A2a's read-tier rule, and one more surfaces from it: both
+      RESOLVE-ENTITY wrappers -- console.lisp:176 and operations.lisp:96 -- call
+      BEST-NAME-MATCH, so `describe' and `impact' reach it on either surface and
+      each wrapper gains the same pass-through. The predicate itself stays in one
+      place: PROPERTIES-MATCH-P inside FIND-ENTITIES (query.lisp:42), before the
+      sort and before the cap, which is D4.
 
       `status' accepts a domain and reports that domain's slice. The commands
       whose subject is the index -- reindex, pause, unwatch, watch, init,
@@ -633,16 +814,94 @@ body: |
       whole repository graph, because the cross-domain edges step 6 draws are the
       answer rather than noise.
 
-      Verification: console tests mirroring the eight repository-token tests at
-      src/process/test/console.lisp:481-598 -- a domain token narrows `find', an
-      unknown domain is refused naming the declared ones, the token does not
-      outlive its command, a token with no `/' still names a repository and binds
-      no domain, and `reindex @front-end/server' refuses. A knowledge test that a
-      domain filter applied to a fixture where twenty better-ranked hits sit in
-      another domain still returns the ten in this one, which is D4's defect and
-      fails if the filter is applied after the cap.
+      Verification, in four parts.
 
-  13. THE PROPOSAL.  src/workspace/init.lisp, src/analyzer/frameworks.lisp,
+        a. Console tests mirroring the eight repository-token tests at
+           src/process/test/console.lisp:481-598 -- a domain token narrows
+           `find', an unknown domain is refused naming the declared ones, the
+           token does not outlive its command, a token with no `/' still names a
+           repository and binds no domain, and `reindex @front-end/server'
+           refuses.
+        b. A knowledge test that a domain filter applied to a fixture where
+           twenty better-ranked hits sit in another domain still returns the ten
+           in this one, which is D4's defect and fails if the filter is applied
+           after the cap.
+        c. A workspace test that FIND-REPOSITORY's three branches answer the same
+           designators after the split as before it, including
+           "/home/.../Loom" and "~/lisp/Loom". That is R-h, and it fails against
+           a first-`/' split.
+        d. `sbcl --script tools/test/load-test.lisp loom-serve' prints T. This is
+           the step where a `#:loom-process' in loom-serve.asd becomes tempting,
+           and the only instrument that sees it.
+
+  13. THE ADDRESS ON REST AND MCP.  src/serve/registry.lisp,
+      src/serve/operations.lisp, src/serve/test/registry.lisp,
+      src/serve/test/operations.lisp, src/rest/test/routes.lisp,
+      src/mcp/test/tools.lisp.  NEW: DES-0047 R15 and R16.
+
+      Nothing in ARG-SHAPE changes, so VALIDATE-ARGUMENTS (registry.lisp:83) and
+      TOOL-INPUT-SCHEMA read what they read today, `tools/list' keeps its shape
+      and neither skin is edited. `front-end/server' is one string in the
+      `repository' argument on all three surfaces. The route is safe without a
+      check: PATH-OPERATION-NAME (routes.lisp:26) reads only the operation name
+      after /v1/, and the repository arrives in the query string or the JSON
+      body, so a `/' in the value never reaches the router.
+
+      The presence refusal, R16's first half. INVOKE-OPERATION (registry.lisp:105)
+      gains one form after CHECK-CAPABILITY and beside VALIDATE-ARGUMENTS: an
+      operation whose tier is :WRITE or :REPL, given a `repository' argument that
+      SPLIT-DESIGNATOR resolves to a domain, signals MALFORMED-REQUEST before the
+      body runs. Tier is a field the struct already carries, so this is one
+      lookup rather than a name list to keep current, and A2a checked it against
+      the table as it stands: every index-subject entry is :WRITE and every
+      selection entry is :READ.
+
+      The existence refusal, R16's second half. REQUIRE-REPOSITORY
+      (operations.lisp:59) calls SPLIT-DESIGNATOR and returns the domain as a
+      second value; an undeclared domain is a MALFORMED-REQUEST naming the ones
+      the repository has. Its seventeen call sites bind one value and are
+      unchanged. REQUIRE-REPOSITORY-NOW (operations.lisp:44) takes the same
+      treatment, which is D-f: :STATUS is one of R15's six scoping operations and
+      goes through that function rather than the other. Both refusals are
+      REQUEST-ERRORs, so INVOKE-OPERATION's first handler clause carries them out
+      whole and each skin already turns them into 400 and an MCP error object.
+
+      The six that scope -- :FIND, :DESCRIBE, :IMPACT, :CONTEXT, :SIMILAR,
+      :STATUS -- take the second value and pass it as a `property-filters' entry
+      into the loom-knowledge functions step 12 widened. :FIND's repository stays
+      optional (REQ-0051): with no repository there is no designator to carry a
+      domain, so the federated branch is unchanged.
+
+      OPERATION-SUMMARY is where the form gets stated, because with no `domain'
+      property in the schema an MCP client sees it nowhere else. The six get one
+      clause added to the sentence they already carry.
+
+      Verification, in four parts, all CON-0003.
+
+        a. A write-tier operation given a domain is refused. The trap: a
+           designator "front-end/server" is refused today too, as an unwatched
+           repository. So the assertion is on the message -- it must say that
+           this operation does not take a domain -- and on the effect: :REINDEX
+           on a fixture must leave REPOSITORY-INDEXED-AT unchanged. A test
+           asserting only that something was refused passes for the wrong reason.
+        b. A read-tier operation given a domain the repository does not declare
+           is refused, and the message names the domains it does declare. Same
+           trap, same discrimination.
+        c. A REST call and an MCP tools/call that each scope to a domain and
+           return fewer entities than the same call without one, plus one refused
+           call on each surface. That is R15's stated acceptance.
+        d. R-i's guard: a test walks ALL-OPERATIONS and requires every :READ
+           entry either to answer differently for a domain than for its
+           repository on a two-domain fixture, or to be named in a list with a
+           one-line reason. :CHECK, :RULES, :STRUCTURE, :DRIFT, :SURVEY and
+           :CHECK-DOCUMENT answer about a whole repository by construction and
+           go in that list. A read entry added later fails this test until
+           somebody writes down which it is.
+
+      And `sbcl --script tools/test/load-test.lisp loom-serve' prints T. This
+      step and step 12 are the two where it could stop.
+
+  14. THE PROPOSAL.  src/workspace/init.lisp, src/analyzer/frameworks.lisp,
       src/workspace/test/init.lisp.
 
       PROPOSE-DOMAINS reads two signals and proposes, never decides. A nested
@@ -668,7 +927,7 @@ body: |
       the presets above and one report line for a `paths' entry with two targets.
       It fails today because PROPOSE-DOMAINS does not exist.
 
-  14. FINISH.  `tools/loom.sh 'complete PLAN-0050 DES-0047=<verdict>''.
+  15. FINISH.  `tools/loom.sh 'complete PLAN-0050 DES-0047=<verdict>''.
 
       Loom performs the status transitions; the verdict is the judgement it will
       not make. What to expect:
@@ -678,7 +937,7 @@ body: |
           `commonjs'". Those three specifiers are `require()' calls, and
           tools/js/extract.js records no `require()' as an import source, so they
           are not in :IMPORT-SOURCES for any resolver to see. Every other clause
-          of R1 through R14 lands. The `commonjs' preset itself is covered by
+          of R1 through R16 lands. The `commonjs' preset itself is covered by
           step 8's fixture.
         - `partial' is not terminal, so the walk stops at DES-0047 and never
           reaches REQ-0063. REQ-0063's own R4 acceptance -- front-end's alias
@@ -698,13 +957,16 @@ body: |
   7 ambiguous. A rise in either count is this plan's own documents naming
   something that does not exist.
 
-  After step 7 and again after step 12:
+  After step 7, after step 12 and after step 13:
   `sbcl --script tools/test/load-test.lisp loom-serve' prints T. No .asd
   `:depends-on' changes anywhere in this plan, and loom-graph's stays
   `(#:loom-utils #:loom-ontology #:bordeaux-threads)', which is what RULE-0001
   and RULE-0002 read. Note what those rules cannot say: no rule names loom-serve,
   loom-rest, loom-mcp or loom-process, so `check' is silent about the peer
-  property either way and load-test.lisp is the only instrument for it.
+  property either way and load-test.lisp is the only instrument for it. Steps 12
+  and 13 are where it could stop printing T, because both need a name/domain
+  parse the console also needs and loom-serve reaching into console.lisp for it
+  is the third of the three edits load-test.lisp's header names.
 
   Numbers that should not move, on Loom's own tree, through step 11:
   409 files, 3776 entities, 18214 relationships, 251 documents, 1045 tests
@@ -715,6 +977,14 @@ body: |
   Numbers that should not move on the six Common Lisp trees in tools/extra-repos
   or on game-server, read from /v1/status before and after step 7: `entities' and
   `relationships', identical in every pair.
+
+  After step 13, on the running service: one REST call and one MCP tools/call
+  against front-end scoped to a domain, each answering with fewer entities than
+  the same call unscoped; one write-tier call carrying a domain refused with a
+  message that says a domain is not taken there; one read-tier call carrying an
+  undeclared domain refused with a message naming src, server and functions.
+  That is R15's acceptance and R16's, and it is taken through
+  tools/loom-serve.sh update rather than by hand.
 
   Numbers that should move, on front-end, measured by step 11's census:
   alias-rooted :IMPORT-SOURCES entries between 1305 and 1320, of which all
