@@ -6,8 +6,9 @@ refines: [REQ-0063]
 affects: [resolve-module-specifier, build-module-scope, visible-candidates,
           resolve-calls, resolve-and-check, index-repository, repository-registry,
           parse-frameworks, read-frameworks, default-system-for-path,
-          repository-status, print-status, run-command, current-repository,
-          repository-token-p, search-entities]
+          analyze-path, repository-status, print-status, run-command,
+          current-repository, repository-token-p, search-entities,
+          find-repository, require-repository, invoke-operation]
 tags: [javascript, imports, aliases, domains, module-resolution, front-end,
        req-0063, req-0024, req-0023, des-0009, des-0021, des-0025]
 summary: |
@@ -31,6 +32,14 @@ summary: |
   whose extension no analyzer claims is the fourth, and 7 of front-end's 1305
   alias specifiers are one (6 .css, 1 .json). Counting those as stale
   declarations would be the false report R7 exists to prevent.
+
+  Amended 2026-09-03, after PLAN-0050: :DOMAIN is a keyword, matching :SYSTEM at
+  all twelve of its declarations rather than the eight this document first
+  named, and a caller's token is looked up against the declared set before
+  anything is interned. The domain is an address on REST and MCP as well as the
+  console -- `front-end/server' is one designator string on all three surfaces,
+  read-tier operations accept it and write-tier ones refuse it, and no entry's
+  argument shape changes.
 body: |
   PROBLEM
 
@@ -128,11 +137,30 @@ body: |
 
   DOMAIN-FOR-PATH beside DEFAULT-SYSTEM-FOR-PATH (analyzer.lisp:280): the
   declared domain with the longest root that is a prefix of the path, and
-  `default' when none is. The analyzer writes :DOMAIN onto every entity type
-  that carries :SYSTEM today -- :FILE, :FUNCTION, :VARIABLE, :CLASS, :INTERFACE,
-  :METHOD, :TEST, :DOCUMENT -- in the same place and from the same call, so the
-  two cannot drift apart. The three sites in resolve.lisp that copy `:system
-  (getp file :system)' onto a minted entity (742, 890, 1159) copy :DOMAIN
+  `default' when none is. Its value is a keyword, the type :SYSTEM carries at
+  every one of its declarations; A1 below is the argument.
+
+  :DOMAIN is declared wherever :SYSTEM is declared, which is twelve entity types
+  and not the eight this document first named: :FILE, :PACKAGE, :CLASS,
+  :INTERFACE, :FUNCTION, :METHOD, :VARIABLE, :CALL-SITE, :TEST, :DOCUMENT,
+  :DESIGN and :ARCHITECTURE, at code-ontology.lisp 165, 320, 372, 413, 469, 620,
+  658, 738, 881, 926, 1192 and 1253. :CALL-SITE is the one that cannot be left
+  out: resolve.lisp:890 and :1159 mint a call site copying `:system (getp file
+  :system)' and `:system (getp caller :system)', and the :DOMAIN copy those two
+  lines acquire needs somewhere to land.
+
+  ANALYZE-PATH (analyzer.lisp:214) stamps :DOMAIN onto every entity op it
+  returns, rather than each of the twenty sites in loom-analyzer that spell
+  `:system' today writing its own. The two properties differ in exactly the way
+  that permits it. :SYSTEM varies within one file -- the :FILE entity's
+  docstring records that a file with two IN-PACKAGE sections gets one value that
+  does not describe all of it, while its definitions each take the binding
+  nearest them -- and a domain is a function of the path alone, so every op
+  ANALYZE-PATH returns for one file carries one value. One site rather than
+  twenty, and an analyzer written later for a third language cannot forget it.
+
+  The three sites in resolve.lisp that copy `:system' onto an entity minted
+  after analysis (742, 890, 1159) are outside that funnel and copy :DOMAIN
   alongside it.
 
   The declaration reaches the analyzer the way *ROUTE-CALLERS* does (DES-0025
@@ -205,17 +233,30 @@ body: |
   once per index", resolve.lisp:175). NIL still means build it, so every
   existing caller and every existing test is unchanged.
 
-  THE ADDRESS -- loom-process, console.lisp
+  THE ADDRESS -- loom-process, and the same address over loom-rest and loom-mcp
 
   RUN-COMMAND (console.lisp:1651) strips a leading @token today. It gains one
   `position #\/': `@front-end/server' binds *COMMAND-REPOSITORY* to "front-end"
   and a new *COMMAND-DOMAIN* to "server", for the same one-command dynamic
   extent and for the same reason (DES-0021 D2) -- two of the commands that need
   one are variadic, so there is no argument position to put it in.
-  CURRENT-REPOSITORY is untouched: it receives the half it already handled.
-  CURRENT-DOMAIN returns the domain plist or NIL, and refuses an unknown name
-  the way CURRENT-REPOSITORY refuses an unknown repository, listing the domains
-  this repository declares.
+  CURRENT-REPOSITORY keeps DES-0021 D2's precedence and refuses an unknown
+  domain by naming the ones this repository declares.
+
+  The split of `front-end/server' into a repository and a domain, and the lookup
+  of the second against the first's declaration, live in loom-workspace beside
+  FIND-REPOSITORY. Both peers need them and neither may reach the other:
+  loom-process and loom-serve depend on loom-workspace and not on each other
+  (DES-0006 R5). loom-utils is the wrong home despite the peer test naming it,
+  because validating a domain reads the repository registry and loom-utils
+  depends on nothing. REPOSITORY-TOKEN-P stays in console.lisp: it tests for
+  `@', which is a console spelling that neither skin has.
+
+  On REST and MCP the address is the same string in the `repository' argument --
+  `?repository=front-end/server', `{"repository": "front-end/server"}' -- and
+  A2 below is the argument for that rather than a separate `domain' argument.
+  Read-tier operations accept a domain and scope their selection with it;
+  write-tier ones refuse it before the body runs.
 
   A domain token scopes entity selection and never graph traversal. That single
   sentence settles every command:
@@ -292,6 +333,11 @@ body: |
   loom-knowledge, and DES-0009's argument against exactly that is why :SYSTEM
   stopped being a path guess made by the query layer.
 
+  The property's type is a keyword, for A1's reason, and PROPERTIES-MATCH-P's
+  EQUAL comparison holds on one: two occurrences of a keyword are EQ and EQ
+  implies EQUAL, so the filter this decision rests on matches the keyword the
+  domain lookup returned rather than the string a caller sent.
+
   D2. THE ALIAS MAP READS FROM .loom/frameworks.yaml ONLY, and `init' seeds it
   from jsconfig.json. This is against the requirement's lean of reading jsconfig
   at resolution time, and the ground is what reading it correctly costs. A
@@ -343,6 +389,96 @@ body: |
   that place. It runs inside FIND-ENTITIES, before the sort and before the cap,
   and every service that already threads `property-filters' gets domain scoping
   without a signature change.
+
+  TWO AMENDMENTS, DECIDED AFTER PLAN-0050 -- 2026-09-03
+
+  A1. :DOMAIN IS A KEYWORD, the type :SYSTEM already has. PLAN-0050 wrote it
+  `string' while :SYSTEM is `keyword' at all twelve of its declarations, and two
+  path-derived classifications of the same entity that differ in type get
+  compared, filtered and printed by code that has to remember which is which.
+  Resolved by giving :DOMAIN the keyword rather than by widening :SYSTEM to a
+  string: that would touch ENTITY-SYSTEM and the rules engine that compares its
+  value, DEFAULT-SYSTEM-FOR-PATH which returns a keyword, and DES-0024's family
+  matching, for no gain.
+
+  The objection PLAN-0050 raised against the keyword -- that it means interning
+  foreign YAML text, or a caller's token, per query -- does not survive R10's
+  refusal. An unknown domain must be refused naming the domains the repository
+  has, which forces a lookup of the caller's token against the declared set
+  before anything is interned: an unknown token is refused and never interned,
+  and a known one resolves to the keyword PARSE-FRAMEWORKS interned once when it
+  read the declaration. The interned set is bounded by the declaration, which is
+  three entries on front-end. :SYSTEM has always had exactly that bound, since
+  it interns whatever the indexed tree's own packages and directories are named.
+
+  PROPERTIES-MATCH-P compares with EQUAL (query.lisp:39-40). Two occurrences of
+  one keyword are EQ, and EQ implies EQUAL, so D4's filter mechanism is
+  unaffected: the filter carries the keyword the domain lookup returned.
+
+  A2. THE DOMAIN IS AN ADDRESS ON REST AND MCP, not the console alone. A UI will
+  be built on REST and has to be able to ask what the console can ask, and an
+  agent driving Loom over MCP has the same claim. Four decisions.
+
+  A2a. WHICH OPERATIONS: read tier accepts a domain, write tier refuses one.
+  That is the console rule -- selection scopes, an index-subject command refuses
+  -- restated in a field the registry already carries, so it is one lookup
+  rather than a list of names to keep current. It holds against the table as it
+  stands: every console command whose subject is the index is a :WRITE entry
+  (:WATCH, :PAUSE, :UNWATCH, :REINDEX, :INIT, :ARCHITECTURE, :REMOVE, :EMBED),
+  and every selection command is a :READ entry (:FIND, :DESCRIBE, :IMPACT,
+  :CONTEXT, :STRUCTURE, :SIMILAR, :SURVEY, :STATUS, :CHECK, :CHECK-DOCUMENT,
+  :RULES, :DRIFT). So the operation set is the set REQ-0063 R5 asks for.
+  :SET-STATUS and :COMPLETE are the two write entries that look like selections
+  and are correctly refused: their subject is a document file, not an entity
+  set. :SURVEY takes two designators and accepts a domain in each, which is a
+  consequence of putting the parse in one function rather than a case argued for
+  on its own.
+
+  A2b. THE DESIGNATOR CARRIES THE DOMAIN; there is no separate `domain'
+  argument. `front-end/server' is then one string on all three surfaces, so a
+  caller transliterating from the console's `@front-end/server' to
+  `?repository=front-end/server' or `{"repository": "front-end/server"}' spells
+  one thing once. Nothing in ARG-SHAPE changes, so VALIDATE-ARGUMENTS and
+  TOOL-INPUT-SCHEMA read what they read today and neither skin is edited --
+  DES-0006 R5's property, which is the reason the registry is declarative. The
+  route is safe: PATH-OPERATION-NAME (routes.lisp:26) reads only the operation
+  name after /v1/ and the repository arrives in the query string or the JSON
+  body, so a `/' in the value never reaches the router.
+
+  The cost is discoverability. With no `domain' property in the schema, an MCP
+  client sees the form only in the tool description, which is OPERATION-SUMMARY
+  (mcp/tools.lisp:167) and is the same sentence the console prints for `help'.
+  That is where the form gets stated. A separate `(domain)' argument would buy a
+  typed schema property at the price of editing every read entry, two spellings
+  of one address, and a new refusal for a `domain' sent without a `repository' --
+  which :FIND, whose repository is optional since REQ-0051, makes reachable.
+
+  A2c. THE TWO REFUSALS LIVE APART, split by what each needs to know. Whether a
+  domain may be *present* needs the tier and the string, and INVOKE-OPERATION
+  holds both, so it is refused there beside VALIDATE-ARGUMENTS -- the registry
+  header's own job for the argument shape, "refuse a decoded request before the
+  function runs". Whether the domain *exists* cannot be refused there: the legal
+  set is a property of the repository the same argument names, and
+  VALIDATE-ARGUMENTS reads ARG-SHAPE, a static list. So it is refused inside
+  REQUIRE-REPOSITORY (operations.lisp:59), which its own comment calls "the one
+  place every operation passes through", as a MALFORMED-REQUEST naming the
+  repository's domains. Both are REQUEST-ERRORs, so INVOKE-OPERATION's first
+  handler clause carries them out whole and each skin already turns them into
+  400 and an MCP error rather than one undifferentiated failure.
+
+  REQUIRE-REPOSITORY returns the domain as a second value. Its seventeen call
+  sites bind one value and are unchanged; a body that scopes takes two.
+
+  A2d. THE PARSE MOVES DOWN, THE SIGIL DOES NOT. REPOSITORY-TOKEN-P tests for
+  `@', a console spelling neither skin has, and stays in console.lisp. The
+  name/domain split and the lookup against the declaration are what both peers
+  need, and the argument is FIND-OPERATION's one layer lower: both skins arrive
+  with a string, so the one conversion lives in the registry rather than at each
+  of them. Here the one place is loom-workspace, beside FIND-REPOSITORY --
+  loom-process and loom-serve are peers that may not reach each other and both
+  depend on it. loom-utils, which the peer test would otherwise name, cannot
+  hold it: validating a domain reads the repository registry, and loom-utils
+  depends on nothing.
 
   ALTERNATIVES CONSIDERED
 
@@ -404,10 +540,14 @@ body: |
       lies. Each refusal names the two entries it is about. No declaration is
       resolved by order of appearance.
 
-  R4  The analyzer writes :DOMAIN, from DOMAIN-FOR-PATH, onto every entity type
-      that carries :SYSTEM, and the three entity-minting sites in resolve.lisp
-      copy it where they copy :SYSTEM. One new ontology property, declared on
-      the same eight types :SYSTEM is declared on.
+  R4  :DOMAIN is a keyword, declared on the twelve entity types that declare
+      :SYSTEM -- :FILE, :PACKAGE, :CLASS, :INTERFACE, :FUNCTION, :METHOD,
+      :VARIABLE, :CALL-SITE, :TEST, :DOCUMENT, :DESIGN, :ARCHITECTURE.
+      ANALYZE-PATH stamps it, from DOMAIN-FOR-PATH, onto every entity op it
+      returns for a file; resolve.lisp's three post-analysis minting sites copy
+      it where they copy :SYSTEM. No analyzer writes it per entity, and a
+      producer that writes :SYSTEM per entity and :DOMAIN per entity would be
+      the drift this stamping exists to prevent.
 
   R5  RESOLVE-MODULE-SPECIFIER takes `&key domain' and returns a second value
       naming the cause when it returns NIL. With DOMAIN NIL it behaves as it
@@ -451,7 +591,9 @@ body: |
       *COMMAND-DOMAIN* for one command's dynamic extent. A domain token narrows
       entity selection through `property-filters' and never narrows traversal.
       An unknown domain is refused naming the repository's domains. Commands
-      whose subject is the index refuse a domain token and say why.
+      whose subject is the index refuse a domain token and say why. The split
+      and the domain lookup are loom-workspace's, called by the console and by
+      loom-serve alike; the `@' sigil is the console's alone.
 
   R11 `init' proposes a domain per nested manifest and per include root of a
       jsconfig.json or tsconfig.json, with the preset it can support: `commonjs'
@@ -482,14 +624,33 @@ body: |
       resolving under `node-esm' -- all 18 carry explicit extensions -- and
       functions/'s 3 extensionless relative specifiers resolve under `commonjs'.
 
+  R15 The domain is an address on all three surfaces in one spelling: the
+      `repository' designator may be `<name>/<domain>' on the console, over REST
+      and over MCP. No entry's ARG-SHAPE changes, so VALIDATE-ARGUMENTS and
+      TOOL-INPUT-SCHEMA are unedited and `tools/list' keeps its shape. Every
+      read-tier operation accepts one; the six that scope selection -- :FIND,
+      :DESCRIBE, :IMPACT, :CONTEXT, :SIMILAR, :STATUS -- take REQUIRE-REPOSITORY's
+      second value and pass it as a `property-filters' entry. Acceptance is a
+      REST call and an MCP tools/call that each scope to a domain, and a third
+      of each that is refused.
+
+  R16 A domain-bearing designator on a :WRITE or :REPL entry is refused in
+      INVOKE-OPERATION beside VALIDATE-ARGUMENTS, before the body runs. An
+      undeclared domain is refused inside REQUIRE-REPOSITORY, naming the domains
+      the repository has. Both are REQUEST-ERRORs, so REST answers 400 and MCP
+      an error object rather than either answering about the whole repository.
+
   CONSEQUENCES
 
-  What changes: one ontology property on eight entity types; one key in
-  PARSE-FRAMEWORKS; DOMAIN-FOR-PATH in loom-analyzer and one call from the
-  analyzer's file-entity construction; three `:system' copies in resolve.lisp
-  gaining a sibling; two keyword arguments and one extra return value in
-  resolve.lisp; one new pass and one new argument in RESOLVE-AND-CHECK; one
-  `position #\/' and one special in console.lisp; one status line.
+  What changes: one ontology property on twelve entity types; one key in
+  PARSE-FRAMEWORKS; DOMAIN-FOR-PATH in loom-analyzer and one stamp in
+  ANALYZE-PATH; three `:system' copies in resolve.lisp gaining a sibling; two
+  keyword arguments and one extra return value in resolve.lisp; one new pass and
+  one new argument in RESOLVE-AND-CHECK; a designator split and a domain lookup
+  in loom-workspace; one `position #\/' and one special in console.lisp; a tier
+  check beside VALIDATE-ARGUMENTS and a second return value from
+  REQUIRE-REPOSITORY, whose seventeen existing call sites bind one value and are
+  unchanged; one status line.
 
   What gets simpler: VISIBLE-CANDIDATES stops being a narrowing tier that sees a
   third of the module graph, without any change to VISIBLE-CANDIDATES. `impact'
@@ -498,9 +659,11 @@ body: |
 
   What every future change now carries:
 
-    - An analyzer that writes :SYSTEM writes :DOMAIN in the same call. Two
-      path-derived classifications maintained in two places will disagree, and
-      the disagreement will be invisible.
+    - An analyzer added later gets :DOMAIN from ANALYZE-PATH and must not write
+      its own. A producer outside that funnel -- loom-graph's three minting
+      sites -- copies it where it copies :SYSTEM. Two path-derived
+      classifications maintained in two places will disagree, and the
+      disagreement will be invisible.
     - A resolution preset added later is a row in one table plus a name in one
       `one-of'. A preset added as a flag instead re-opens D3.
     - A rule naming :IMPORTS in `:rel-types' depends on RESOLVE-IMPORTS having
@@ -512,3 +675,9 @@ body: |
     - A domain token is a selection filter. Any command later given traversal
       scoping by domain is a change to R10's rule and needs its own argument,
       because hiding cross-domain edges would hide the edges R8 exists to draw.
+    - An operation registered at :READ tier accepts a domain designator whether
+      or not its author considered one. Scoping is opt-in -- the body asks
+      REQUIRE-REPOSITORY for its second value -- so an operation that does not
+      ask answers about the whole repository to a caller who named part of it.
+      That is the one silent wrong answer this design leaves reachable, and a
+      new read entry is where to look for it.
