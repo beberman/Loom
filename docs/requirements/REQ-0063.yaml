@@ -1,0 +1,243 @@
+id: REQ-0063
+title: A module alias resolves against a domain rather than a repository, and 1320 of front-end's 1885 in-tree imports resolve to nothing without one
+status: draft
+date: 2026-09-03
+refines: [REQ-0024]
+affects: [resolve-module-specifier, build-module-scope, visible-candidates,
+          resolve-calls, resolve-and-check, parse-frameworks, current-repository,
+          repository-token-p, default-system-for-path]
+importance: Critical
+tags: [javascript, imports, aliases, domains, module-resolution, front-end,
+       req-0024, req-0023, des-0025]
+summary: |
+  RESOLVE-MODULE-SPECIFIER handles specifiers beginning with a dot and nothing
+  else. On front-end that is 565 of 1885 in-tree imports; the other 1320 are
+  alias-rooted -- `utils/wrappedLogger.js', `geometry/Point.js' -- and resolve
+  to nothing. BUILD-MODULE-SCOPE is therefore narrowing calls against 30% of
+  the module graph, and REQ-0024 R1's :IMPORTS edges have no targets to point
+  at.
+
+  The alias table cannot belong to the repository, because the rule that reads
+  it does not. front-end holds three module systems under one root: src/ resolved
+  by webpack and vite with extension guessing and an index fallback, server/
+  resolved by a node ESM hook that does neither, and functions/ resolved by
+  plain node against its own package.json with no aliases at all. One resolver
+  applied tree-wide would answer server/ and functions/ with src/'s rules.
+
+  So this asks for a domain: a subtree with a module system, an alias map and a
+  resolution rule. Domains partition a repository's files -- every file in
+  exactly one, so an entity carries one domain and no query can count it twice
+  -- and become addressable, `@front-end/server' scoping a command the way
+  `@front-end' already does.
+body: |
+  WHAT IS WRONG
+
+  RESOLVE-MODULE-SPECIFIER (src/graph/resolve.lisp:64) states its own limit:
+  "Relative specifiers only. A bare one -- `react', `lodash' -- names a package
+  outside the tree, and an aliased one -- `@/components/x' -- needs a bundler
+  configuration Loom does not read; both resolve to nothing here, which leaves
+  their call names exactly as unnarrowed as they are today."
+
+  On front-end the residue that docstring describes is the majority of the
+  module graph. Measured 2026-09-03, over 476 .js/.jsx/.mjs/.cjs files, with
+  node_modules, dist, build and _old-develop excluded:
+
+      directory   files   relative   alias   package   node:
+      src/          453        545    1305       468       3
+      server/        17         19      15        25      22
+      functions/      4          3       0         3       0
+      (root)          2          1       0         6       3
+
+  1320 alias-rooted specifiers, 565 relative. 70% of what one file in this tree
+  says about another is invisible to the index.
+
+  The cost is not confined to the missing edges. BUILD-MODULE-SCOPE
+  (resolve.lisp:86) already calls RESOLVE-MODULE-SPECIFIER on every
+  :IMPORT-SOURCES entry and hands the result to VISIBLE-CANDIDATES, which
+  reduces a call's candidate set to definitions the caller's module can see.
+  A scope table built from 30% of the imports narrows 30% of what it could.
+  VISIBLE-CANDIDATES never empties a set, so the effect is an unreduced
+  fan-out rather than a wrong answer -- but front-end's index holds 7703
+  entities and 54138 relationships, and the tier that exists to cut ambiguity
+  is running on a third of its input.
+
+  ONE ALIAS TABLE, FOUR CONSUMERS, THREE RULES
+
+  front-end declares 32 aliases in src/alias.config.mjs as plain
+  resolve(__dirname, ...) pairs. Four things read them:
+
+      webpack.config.mjs:7      imports it, spreads it into resolve.alias
+      vite.config.ts:4          imports it; vitest shares it through vite
+      server/register-aliases.mjs:27  imports it, registers a node ESM
+                                resolve hook (`node --import', used by the
+                                `proxy' and `trials:smoke' scripts)
+      jsconfig.json             restates the same 32 as compilerOptions.paths
+
+  jsconfig.json and src/alias.config.mjs were diffed on 2026-09-03: the same 32
+  keys, the same 32 targets, nothing in one absent from the other. There is one
+  table, not two, and a repository-wide alias map would be right about it.
+
+  What is not one is the rule that consumes it. register-aliases.mjs:64 states
+  the difference: "No extension guessing, no index resolution: imports carry
+  explicit extensions by convention, so a resolved file is resolved as-is."
+  Webpack and vite do both. functions/ reads neither table -- it has its own
+  package.json, its own dependencies, node 18, CommonJS require() rather than
+  ESM, and jsconfig.json excludes it by name.
+
+      domain      module system   aliases   extension guessing   index fallback
+      src/        ESM, bundler         32                  yes             yes
+      server/     ESM, node hook       32                   no              no
+      functions/  CommonJS              0        node's own rules
+
+  HOW MUCH THAT DIFFERENCE COSTS TODAY: NOTHING
+
+  All 15 of server/'s alias specifiers carry an explicit extension, which is
+  the convention register-aliases.mjs says they must. 1275 of src/'s 1305 do
+  too; 30 do not and need the guessing or the index fallback that only the
+  bundler performs. So a repository-wide resolver with bundler rules would
+  produce the same answer on every one of front-end's 1320 alias specifiers as
+  three domain-aware resolvers would.
+
+  This requirement asks for domains anyway, and the honest reason is not
+  resolution correctness this week. It is that the alias map has to be owned by
+  something, a repository is the wrong owner on a tree whose subtrees resolve
+  differently, and building the map repository-wide first means moving it
+  later. The second reason is R5's addressing, which is a query feature and
+  independent of aliases entirely.
+
+  A DOMAIN IS A LABEL, NOT AN INDEX
+
+  The counting hazard is real and it comes from the other design. If a domain
+  were a separately watched root with its own graph, src/ would be indexed once
+  under @front-end and again under @front-end/src, and a query across both
+  would return two of everything. server/'s 15 imports into src/ would become
+  cross-graph federation edges (DES-0025) rather than ordinary ones, which is a
+  large mechanism bought to model a directory.
+
+  A domain is instead a partition of one repository's files. Every file belongs
+  to exactly one -- longest matching prefix wins, and anything unclaimed falls
+  to a default domain named for the repository -- so an entity carries exactly
+  one domain, `find @front-end foo' walks one index and returns each hit once,
+  and `find @front-end/server foo' filters that same index by prefix. The
+  partition is an invariant a check can state rather than a convention.
+
+  WHAT EXISTS TO BUILD ON
+
+  RESOLVE-MODULE-SPECIFIER resolves against the index and never the filesystem,
+  and its docstring says loom-graph "has no filesystem and must not acquire
+  one". That holds here: reading a declaration is loom-analyzer's job, and
+  RESOLVE-AND-CHECK (src/workspace/workspace.lisp:630) already hands
+  EXTERNAL-PACKAGES and the framework registry down into passes for exactly
+  this reason.
+
+  .loom/frameworks.yaml is the file that holds "what a repository declares
+  about itself that Loom cannot derive" (src/analyzer/frameworks.lisp:5-42),
+  parsed with cl-yaml in loom-analyzer, already carrying three keys whose
+  justification has this shape, and already arguing that a further key is
+  cheaper than a further file. .loom/manifest.yaml is not a candidate:
+  READ-MANIFEST (src/workspace/init.lisp:86) is a line scanner, deliberately,
+  because loom-workspace has no YAML parser, and a domain declaration nests.
+
+  *COMMAND-REPOSITORY* (src/process/console.lisp:107) is the precedent for R5.
+  A leading @token is stripped by RUN-COMMAND and bound for one command's
+  dynamic extent, which is what lets every command take a repository without
+  any command's lambda list changing (DES-0021 D2). A domain is the same shape.
+
+  REQUIREMENTS
+
+  R1  A domain is a declared subtree of a repository carrying a module system,
+      an alias map and a resolution rule -- whether a specifier without an
+      extension may acquire one, and whether a directory may resolve to its
+      index file. A repository with no declaration has one domain covering it,
+      and every tree Loom indexes today keeps the behaviour it has.
+
+  R2  Domains partition the files of a repository. Every file is in exactly
+      one, by longest matching prefix, with unclaimed files falling to the
+      repository's default domain. Overlapping declarations are refused with
+      the overlap named rather than resolved by an order of declaration.
+
+  R3  RESOLVE-MODULE-SPECIFIER resolves a specifier in the domain of the file
+      that wrote it, applying that domain's alias map and rule. loom-graph
+      still reads no configuration and touches no filesystem: the domains
+      arrive as data, handed into RESOLVE-AND-CHECK the way EXTERNAL-PACKAGES
+      and the framework registry already are.
+
+  R4  BUILD-MODULE-SCOPE resolves through R3, so call narrowing sees the whole
+      module graph. Acceptance is that front-end's 1320 alias specifiers
+      resolve, measured against the 1320 counted above.
+
+  R5  A command addresses a domain: `@front-end/server' scopes it to that
+      domain's files, `@front-end' to the whole repository, on every command a
+      repository token works on today. An unknown domain is refused naming the
+      domains the repository has, as an unknown repository already is.
+
+  R6  An :IMPORTS edge is asserted from each file to each file it imports,
+      which is REQ-0024 R1's outstanding item. The relationship is declared
+      already (:from (:file :module), code-ontology.lisp:1361) and carries
+      :transitive-impact with :impact-direction :reverse, so `impact' on a
+      module reaches its importers at file granularity. A cross-domain import
+      is an ordinary edge; nothing about R2 forbids one, and server/ writes 15.
+
+  R7  A specifier that resolves to nothing is counted and reportable per
+      repository, split by cause: a package outside the tree, an alias key no
+      domain declares, and an alias key that resolves to a path the index does
+      not hold. The third is the one that means a declaration has gone stale,
+      and without the split it is indistinguishable from the first, which is
+      the normal and correct case for 502 of front-end's specifiers.
+
+  R8  `init' proposes domains rather than requiring them to be written blind. A
+      nested package.json and a jsconfig.json's include/exclude both mark a
+      boundary, and front-end's three are discoverable from those two signals.
+      The author confirms; Loom does not decide.
+
+  R9  A JavaScript test suite covers the alias tier, the partition invariant
+      and the cross-domain import, with fixtures in Loom's own tree, so R4's
+      measurement on front-end stays a measurement rather than the test.
+
+  WHAT THIS IS NOT
+
+  It is not node module resolution. Resolving `express' means reading
+  package.json exports, conditional exports and a node_modules walk, and the
+  answer is a file Loom does not index. A bare specifier that matches no alias
+  key stays unresolved, which is correct rather than incomplete: 502 of
+  front-end's specifiers name packages outside the tree.
+
+  It is not the execution of a repository's configuration. src/alias.config.mjs
+  is JavaScript and computes its targets with resolve(__dirname, ...), so
+  reading it means running it. Loom does not execute the trees it indexes, and
+  the declarative statement of the same 32 aliases exists in this tree already.
+  A tree whose aliases live only in an executable config declares them in
+  .loom/ instead.
+
+  It is not a system. DES-0009 R2's :SYSTEM is the segment after src/, so
+  front-end's files are already :UI, :CORE, :DOMAIN, :SERVER, :FUNCTIONS. That
+  answers "what is this part of", and a domain answers "what rules resolve a
+  name written here". The two boundaries coincide for server/ and functions/
+  and cut across each other inside src/, so neither can be derived from the
+  other.
+
+  It is not federation. DES-0025's cross-repository edges exist for endpoints
+  in separate graphs. A domain is inside one graph and one repository, and R2
+  is what keeps it that way.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  - Where is the domain recorded -- on each :FILE entity as a property, or in a
+    repository-level table consulted at query time? The property makes R5 a
+    filter over entities the graph already holds; the table keeps a
+    declaration's change from requiring a reindex.
+
+  - Does the alias map read from jsconfig.json/tsconfig.json directly, or is
+    .loom/frameworks.yaml the only source? Reading jsconfig is standard, JSON,
+    and already correct on this tree; it is also a second discovery path to
+    keep working, and R8 could seed a declaration from it once instead.
+
+  - Is a domain's resolution rule a set of flags -- extension guessing, index
+    fallback -- or a named preset (`bundler', `node-esm', `commonjs')? The
+    three domains here are exactly three presets, and a flag set that can
+    express eight combinations invites seven nobody has.
+
+  - Does `@front-end/server' filter the answer or the search? Filtering the
+    answer is one predicate in one place and reports a truncation count taken
+    before the filter; filtering the search is faster and touches every
+    service.
