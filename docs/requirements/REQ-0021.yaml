@@ -737,8 +737,19 @@ body: |
   honest qualifier, hubs and per-system test coverage, and names the commit it
   was taken at. It found BUG-0025 on its first run.
 
-  Everything else remains, and the honest summary is that this requirement's
-  first stage is done rather than its first half:
+  REVISED 2026-09-03. Three items are open, and the list below said ten. R1a's
+  script and R13's removal have both landed and are corrected in place; R11 and
+  R12 have happened without being measured. What is actually left:
+
+    R7, source comments   Nobody records that a comment was read.
+    R7, prose structure   No pass compares a prose structural claim against the
+                          system edges `structure' computes. Its own
+                          requirement, unwritten -- see the note under R7.
+    DES-0022 D2a          Whether one read-only reviewer agent is installed
+                          after all, under STILL OPEN below.
+
+  The rest of this section is the record of how each requirement was met, kept
+  because the reasoning is the part a later reader needs:
 
   R1, R2, R3, R4, R4a, R4b, R14, R16, R17 are implemented -- DES-0022 S2's Loom
   half, PLAN-0023. `init` creates the directories, transcribes the workflow
@@ -749,12 +760,17 @@ body: |
   author's 171-line CLAUDE.md byte-identical above the appended region, and the
   prepared tree indexing at 13 documents with `unresolved` still 0.
 
-  R1a and R18 are partly done and the remainder is one artifact. The consent
-  answers are threaded as arguments and nothing prompts, which is what R16
-  requires of the command -- but the *asking* needs a terminal and therefore a
-  shell script, and that script is not written. R18's registration works where
-  no .mcp.json exists and reports rather than merges where one does, which is
-  the honest limit of a format with no comment syntax.
+  R1a is implemented; R18 is implemented to the limit of the format. The
+  consent answers are threaded as arguments and nothing prompts, which is what
+  R16 requires of the command, and the *asking* is tools/loom-init.sh: it puts
+  R16's two questions at a terminal, takes --yes, --claude-md, --no-claude-md,
+  --docs, --endpoint and --update so a non-interactive caller never reaches a
+  prompt, and drives init, watch and architecture in that order, because a
+  structural report needs an index and init runs before there is one. It writes
+  and never commits, so `git status' in the target shows exactly what was added.
+  R18's registration works where no .mcp.json exists and reports rather than
+  merges where one does, which is the honest limit of a format with no comment
+  syntax.
 
   R4c and R4d are satisfied by construction rather than by work: a prepared
   workspace gets no transcribed workflow rule, and the installed text tells an
@@ -789,8 +805,14 @@ body: |
     its own; scoping it into this one produced an implementation narrower than
     the sentence.
 
-  R13, R13a, R13b, R13c -- removal in two modes and the manifest it rests on.
-  DES-0022 S4, gated on S2 writing the manifest.
+  R13, R13a, R13b and R13c are implemented -- DES-0022 S4, on the manifest S2
+  writes. `remove [tooling|all] [<name>]' at src/process/console.lisp:1317
+  takes Loom out of a prepared repository. Tooling is the default and keeps
+  every document, because "remove Loom" is two requests and deleting a team's
+  knowledge because the tool is leaving would be the worst outcome this
+  requirement could produce. A problem list means nothing is deleted rather
+  than some of it, the report names what was deleted and what was kept, and it
+  closes by saying nothing was committed.
 
   R8 and R10 hold so far as the Loom half goes -- the installed skill reaches
   the service by URL and names its repository in every example, and a prepared
@@ -803,12 +825,22 @@ body: |
   R10a is REQ-0025 R7 and is that requirement's to deliver, per the ORDER
   section above.
 
-  R11 and R12 -- acceptance on game-server, and a real task run there. Neither
-  can be measured until init exists. What can be said now is the baseline they
-  will be measured against: game-server holds 4173 entities, 21893
-  relationships, 12 documents and 0 decisions, rules, requirements, designs or
-  plans, and `structure` on it now produces 27 systems and a 23-implementor
-  protocol without any of those documents existing.
+  R11 and R12 have happened and are not written up. The baseline this document
+  recorded was game-server at 12 documents with 0 requirements, designs, plans,
+  decisions or rules. Measured 2026-09-03 it holds 36 documents -- 5
+  requirements, 5 designs, 6 plans, 3 bugs, 1 review, 1 architecture and 1
+  concept -- written by agents working in the prepared tree, and its git log
+  carries the workflow they came from: BUG-0003, a merge of
+  bug-0002-update-misread-as-create, and a merge of req-0005-persistence-encoding.
+  front-end holds 67. So a prepared repository has been worked in, repeatedly,
+  by something other than its author.
+
+  What is missing is the measurement rather than the event. R11 asks what
+  preparation cost and what it bought, and nothing scored either; the evidence
+  above is a document count and a branch naming convention, which says the
+  workflow was followed and not whether it helped. That is the shape of R12's
+  gap too. Until somebody writes it down this stays partial for want of a
+  record, not for want of the work.
 
   AMENDMENTS MADE 2026-08-13
 

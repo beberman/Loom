@@ -141,3 +141,22 @@ body: |
   DES-0042 leaves one further signal open: the walk's horizon does not report
   whether it was still finding things at cost 4, so a caller cannot tell a
   bundle that reached everything from one the horizon also cut.
+
+  RE-CHECKED 2026-09-03
+
+  *CONTEXT-SOURCE-SHARE* is still 1/2 at src/knowledge/context.lisp:41, and no
+  measurement has been taken since PLAN-0045 S5. R2 stands exactly where this
+  section left it.
+
+  The horizon signal above has a measurement now. `context @front-end changing
+  the type of a map element` at the default budget reports the neighbour band
+  as 110 found and 0 sent, having filled 3988 of 4000 tokens on the three bands
+  above it, and withholds 116 items and 12535 tokens. A caller reading that
+  bundle sees no neighbour and cannot tell it from a walk that reached none:
+  the band the whole expansion design exists to produce was priced out entirely,
+  which is the case DES-0042's open signal describes and the first one recorded
+  against it.
+
+  Nothing here is spun out. R2 is this requirement's to settle, and what would
+  settle it is a judged call on the corpus REQ-0036 keeps rather than another
+  setting.

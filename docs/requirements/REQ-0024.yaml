@@ -236,6 +236,18 @@ body: |
 
   NOT IN
 
+  SPUN OUT 2026-09-03. R1's :IMPORTS edges are REQ-0063 R6, and the reason they
+  had not been built turned out to be larger than a missing pass. front-end
+  writes 1320 of its 1885 in-tree imports as alias-rooted specifiers, which
+  RESOLVE-MODULE-SPECIFIER refuses because it handles a leading dot and nothing
+  else, so the edges had no targets to point at. The alias table cannot belong
+  to the repository either: src/, server/ and functions/ resolve under three
+  different rules. REQ-0063 asks for the domain that owns one, and takes the
+  edges with it.
+
+  The paragraph below is what this document knew in 2026-08-14, kept because its
+  second reason is the one REQ-0063 acts on.
+
   R1's ":IMPORTS edges from the module graph" is not built. The specifiers are
   recorded, so no reanalysis is needed to build it later (DEC-0003's shape), but
   no edge exists. Two reasons, and only the first is a decision: WHAT THIS IS
