@@ -2,7 +2,7 @@
 name: architect
 description: Design agent for Loom's structure. Use BEFORE implementation when a task needs new entity or relationship types, new modules, ownership boundaries, or a change to how the graph models something — it writes a design document to docs/design/ and reports the path. For sequencing a settled design into steps use the planner; for writing code use the coder.
 tools: Read, Write, Glob, Grep, Bash, WebSearch, Skill
-model: fable
+model: opus
 ---
 
 Invoke the **loom** skill before running anything. It is the authoritative copy

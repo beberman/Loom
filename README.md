@@ -9,10 +9,87 @@ an area. `docs/` holds the reasoning; `CLAUDE.md` is the pointer an agent reads.
 
 ## Running it
 
+    tools/loom-serve.sh update                    the normal way to bring it up
     sbcl --script loom.lisp                       the console
     sbcl --script loom-serve.lisp [repo ...]      console and listener on 4780
     sbcl --script loom-serve.lisp --headless ...  listener alone
     tools/loom-test.sh                            the full suite
+
+`tools/loom-serve.sh` is the launcher: `status`, `start`, `stop`, `restart` and
+`update`, which starts a service that is down, restarts one whose code is stale,
+and does nothing otherwise. `status` also lists the watched trees. It takes the
+repository list from the file described below; the two `sbcl` lines take theirs
+on the command line. `start` asks the service to build each repository's vector
+store and does not wait for it.
+
+## Which trees it watches
+
+`loom-serve.lisp` takes repository roots as arguments, and watches its own tree
+first whether or not you name it (DES-0007 R1) — without it the staleness check
+`tools/loom-serve.sh status` makes has no repository to read an `indexed-at`
+from. So this watches two trees:
+
+    sbcl --script loom-serve.lisp --headless ~/lisp/game-server
+
+That list lives only as long as the process. `tools/loom-serve.sh` keeps it in a
+file instead: **`tools/extra-repos`**, one absolute path per line, `#` to end of
+line a comment, blank lines ignored. `start` appends each surviving line to the
+command it builds, after Loom's own root.
+
+    # Extra trees watched alongside Loom, for dogfooding.
+    /home/beberman/lisp/game-server
+    /home/beberman/github/front-end
+
+The file is gitignored: which trees a machine holds is a property of that
+machine. `LOOM_EXTRA_REPOS=/some/other/file tools/loom-serve.sh start` reads a
+different file, and a missing or empty one leaves the command what it was
+before this existed.
+
+Editing the file changes nothing until the process is replaced:
+
+    tools/loom-serve.sh restart
+
+`update` is not enough on its own. It restarts a service whose image is older
+than the source and does nothing otherwise, and `tools/extra-repos` is not
+source — so an `update` with no source change behind it prints "running and
+current; nothing to do" and goes on watching what it watched before.
+
+`status` says which trees are watched, under the line about the process:
+
+    $ tools/loom-serve.sh status
+    running, code current
+      ready      Loom                   /home/beberman/lisp/Loom/
+      ready      game-server            /home/beberman/lisp/game-server/
+      indexing   front-end              /home/beberman/github/front-end/
+
+State, name and root, one line per tree; `indexing` rather than `ready` is a
+restart still working through it. The list is read back from the service rather
+than from the file, because the two disagree exactly when it matters: a path in
+the file that could not be watched is skipped with a message to the log and
+never becomes a repository, and a tree added over `/v1/watch` is watched and is
+in no file. `start` prints the other half of the comparison — `watching <root>
+plus N from <file>` — so a file that was not found reads as `plus 0` rather
+than as silence.
+
+A query answering over fewer trees than expected is that list being short, not
+the query being wrong.
+
+Watching a tree in a service that is already running is a different operation
+and persists nothing:
+
+    curl -X POST 'http://127.0.0.1:4780/v1/watch?path=/home/beberman/lisp/game-server'
+
+It registers and indexes the tree in the live image and writes to no file;
+`/v1/pause` keeps the index and stops polling, `/v1/unwatch` drops it. The next
+restart watches Loom plus `tools/extra-repos` regardless of what any of the
+three did. Use it to try a tree out; add the line to the file to keep it.
+
+`tools/extra-repos` is read by `tools/loom-serve.sh` and by nothing else.
+`tools/loom.sh` starts a console process of its own that watches this tree
+alone, so `find` there searches Loom and no more; name another tree in the same
+invocation to reach it.
+
+    tools/loom.sh 'watch "~/lisp/game-server" | find compose-view'
 
 ## What has to be installed
 
