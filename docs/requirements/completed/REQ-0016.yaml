@@ -1,6 +1,6 @@
 id: REQ-0016
 title: context must reach the subsystem a task names, not the entities whose names resemble it
-status: partial
+status: implemented
 date: 2026-08-06
 affects: [build-context, context-item, render-context, seed-entities, search-entities,
           seed-matches, seed-score, seed-slice, admit-seeds, seed-type-rank,
@@ -82,11 +82,25 @@ body: |
   R3  Entities matching the query lexically but sitting in an unrelated part of
       the graph must rank below entities reached structurally from the seed.
 
-      PARTIAL. The walk orders neighbours by cost, and SET-CORS-HANDLER no
-      longer displaces DHANDLER-GET. What remains is a tie between two lexical
-      matches: on front-end, `changing the type of a map element` returns
-      MAPELEMENTTYPE and not MAPELEMENTTYPEEDITOR, which answers the same three
-      terms from a longer name. That is the one miss in the acceptance set.
+      MET FOR STRUCTURE; THE LEXICAL TIE IS REQ-0045'S. The walk orders
+      neighbours by cost, and SET-CORS-HANDLER no longer displaces
+      DHANDLER-GET. What remains is a tie between two lexical matches: on
+      front-end, `changing the type of a map element` returns MAPELEMENTTYPE
+      and not MAPELEMENTTYPEEDITOR, which answers the same three terms from a
+      longer name. That is the one miss in the acceptance set.
+
+      Re-run 2026-09-03 against front-end at 17f19b6: the bundle seeds
+      MapElement.type, MapElementType and its default-export variable, and
+      MAPELEMENTTYPEEDITOR is absent. It is
+      src/ui/edit/terrain/Editor/MapElementTypeEditor.jsx:37-334 and carries 17
+      vitest cases, so the miss is a ranking result rather than a gap in the
+      index.
+
+      REQ-0045 owns the remainder. Two attempts to fix it through scoring were
+      reverted, which is what says the defect is not a weight: a navigational
+      query and a concept query want opposite things from a name that contains
+      another name, and one matching policy cannot serve both. That is REQ-0045's
+      sentence, not this one's, and no further work belongs here.
 
   R4  Test fixtures must rank below production code when both match, unless the
       query asks about tests.
@@ -114,7 +128,13 @@ body: |
       floored at 1. Eight seeds on a prose query are eight guesses and they are
       not independent.
 
-      Still open: no seeds means no walk and no bundle.
+      The empty case is REQ-0037's. "No seeds means no walk and no bundle" was
+      this requirement's last open clause, and a bundle now says which words of
+      the task no name in the repository answered -- RENDER-CONTEXT at
+      src/knowledge/context.lisp:2294 prints it, and prints the seeds beneath it
+      so the negative costs the caller none of the positives. REQ-0039 and
+      REQ-0046 take the other half, choosing a seed by what a definition says it
+      does and weighting a term by how common it is.
 
   R6  Acceptance is measured on more than one tree.
 
@@ -182,15 +202,28 @@ body: |
   R7 would not have been suppressed. R7's defect was that the CHECK-* family is
   many, which is a diversity problem rather than a term-rarity one.
 
-  WHAT IS OUTSTANDING
+  WHERE THE TWO PARTIAL CLAUSES WENT, 2026-09-03
 
-  R3's tie-break. MAPELEMENTTYPEEDITOR answers three of four query terms and
-  loses to MAPELEMENTTYPE, which answers the same three from a shorter name.
-  One entity of thirty-two.
+  Nothing here is outstanding. Seven of the nine requirements were met by this
+  document's own work; the two that were not are owned by requirements that
+  refine it, and this one closes rather than tracking them from a distance.
 
-  R5's empty case. No seeds, no bundle.
+    R3's tie-break        REQ-0045, draft. Navigational search and concept
+                          location must not share a matching policy.
+    R5's empty case       REQ-0037, partial. A bundle must be able to answer
+                          that nothing here does that. The seed half is
+                          REQ-0039 and REQ-0046.
 
-  Neither is addressed by anything on the `search-index` branch, and both
-  attempts to fix R3 through scoring were reverted. Whoever takes it up should
-  start from what neither attempt explained: BM25 dropped WORKINGSET and
-  COLOREDITOR, which are ordinary name matches, and no measurement says why.
+  Five requirements refine this one -- REQ-0037, REQ-0039, REQ-0040, REQ-0045,
+  REQ-0046 -- which is what a document whose subject outgrew it looks like.
+  REQ-0040 is the budget this one never had: the bundles measured here were
+  scored for what they contained rather than for whether a caller could read
+  them, and 308 items across three judged calls went unread.
+
+  WHAT THE NEXT ATTEMPT SHOULD START FROM
+
+  Kept because it is the one thing three measurements did not explain, and
+  REQ-0045 inherits the question. BM25 dropped WORKINGSET and COLOREDITOR,
+  which are ordinary name matches, and no measurement says why. Both attempts
+  to fix R3 through scoring were reverted, and neither is on the `search-index`
+  branch in a state worth resuming.

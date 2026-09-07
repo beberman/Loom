@@ -1,7 +1,8 @@
 #!/bin/bash
 # Bring the Loom service up, and keep it honestly current.
 #
-#   tools/loom-serve.sh status     is it running, and is its code current
+#   tools/loom-serve.sh status     is it running, is its code current, and
+#                                  which trees it is watching
 #   tools/loom-serve.sh start      spawn it headless, detached
 #   tools/loom-serve.sh stop       SIGTERM it and wait for it to go
 #   tools/loom-serve.sh restart    stop, then start
@@ -55,7 +56,14 @@ repository=${root##*/}
 # one -- REQ-0012, REQ-0015 and REQ-0016 are three in one afternoon, and
 # BUG-0030 is a fourth found the moment a third tree was watched. A tree that
 # has to be re-watched by hand after every `update` is a tree nobody queries.
-extra_repos_file=${LOOM_EXTRA_REPOS:-$(dirname "$0")/extra-repos}
+# $root/tools rather than $(dirname "$0"): this script has already cd'd to
+# $root by the time this line runs, so a relative $0 -- `./loom-serve.sh' from
+# inside tools/, which is how a person in that directory types it -- made
+# dirname yield `.' and the path resolve to $root/extra-repos, which does not
+# exist. `[ -f ]' below then read no extras and said nothing, because a missing
+# file is also how a machine with no extra trees is spelled. The symptom was a
+# service watching Loom alone that gave no sign of having tried.
+extra_repos_file=${LOOM_EXTRA_REPOS:-$root/tools/extra-repos}
 
 # Context logging, DES-0030 D1. CONFIGURE-CONTEXT-LOG-FROM-ENVIRONMENT reads
 # LOOM_CONTEXT_LOG once, at startup, and writes nothing when it is unset. This
@@ -168,6 +176,13 @@ cmd_status() {
         stale)   echo "running, code stale (source changed since it was loaded)" ;;
         unknown) echo "running, self-watch not registered; staleness unknown" ;;
     esac
+    # The watched trees, under the line about the process. Two questions get
+    # asked of a running service and this verb answered only one of them: `is
+    # its code current' says nothing about which trees it holds, and a service
+    # watching Loom alone because tools/extra-repos went unread reported
+    # "running, code current" while every query over another tree came back
+    # empty.
+    print_repositories
     return 0
 }
 
@@ -192,6 +207,7 @@ cmd_start() {
             [ -n "$line" ] && extra+=("$line")
         done < "$extra_repos_file"
     fi
+    echo "watching $root plus ${#extra[@]} from $extra_repos_file"
     nohup sbcl --script loom-serve.lisp --headless "$root" \
           ${extra[@]+"${extra[@]}"} >>"$logfile" 2>&1 &
     disown
@@ -240,6 +256,30 @@ start_vector_builds() {
              >/dev/null 2>&1 &
     done
     disown -a 2>/dev/null || true
+}
+
+# What is actually watched, one indented line per repository: state, name,
+# root. Read back from the service rather than from tools/extra-repos, because
+# the two disagree exactly when it matters -- a path in the file that could not
+# be watched is skipped with a message to the log and never becomes a
+# repository, and a tree added over /v1/watch is watched and is in no file.
+#
+# sed rather than a JSON parser, on the same grounds as JSON_NUMBER above: jq is
+# not installed here and these three fields are bare tokens. `tr' puts each
+# repository object on its own line first; the substitution on ROOT undoes
+# JSON's escaping of `/', which is the only escape a filesystem path produces.
+#
+# Silence on a body that yields no rows rather than a diagnostic: the caller
+# printed the running/not-running line already, and every state in which there
+# is nothing to list is one that line has named.
+print_repositories() {
+    local body
+    body=$(curl -sf --max-time 20 "$base/status" 2>/dev/null) || return 0
+    printf '%s' "$body" | tr '{' '\n' |
+        sed -n 's/.*"name":"\([^"]*\)".*"root":"\([^"]*\)".*"state":"\([^"]*\)".*/\3\t\1\t\2/p' |
+        while IFS=$'\t' read -r rstate rname rroot; do
+            printf '  %-10s %-22s %s\n' "$rstate" "$rname" "${rroot//\\\//\/}"
+        done
 }
 
 cmd_stop() {

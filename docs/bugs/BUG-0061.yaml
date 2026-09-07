@@ -1,0 +1,131 @@
+id: BUG-0061
+title: A generic function defined only by defmethod resolves as ambiguous in affects:, because RESOLVE-ONE's protocol exception requires an :interface entity that no defgeneric produced
+status: open
+date: 2026-09-01
+refines: [REQ-0030, DES-0029]
+affects: [resolve-one, resolve-document-links, linkable-index,
+          make-method-entity, make-interface-entity]
+tags: [documents, resolution, ambiguity, clos, defmethod, method-qualifier,
+       con-0001, game-server]
+severity: medium
+summary: |
+  RESOLVE-ONE (src/graph/resolve.lisp:1476) resolves a candidate set of
+  exactly one :INTERFACE plus its :METHOD entities to the interface, on the
+  ground that a protocol and its implementations are one thing answering to
+  one name. The clause tests (= 1 (length interfaces)). A generic function
+  with no DEFGENERIC form -- methods alone bring it into existence -- produces
+  N :METHOD entities and zero :INTERFACE entities, so the clause fails and the
+  name is reported ambiguous in affects:, though naming that generic is
+  exactly what an affects: entry is for.
+
+  Measured on game-server, 2026-09-01. data-api/db/connection.lisp defines
+  db-query with a primary method at line 363 and a :before method at line 376
+  doing the reconnect-on-entry work, and no defgeneric anywhere in the tree.
+  REQ-0003, DES-0003, PLAN-0004 and REQ-0004 each named db-query in affects:
+  because the design is about that function's behavior as a whole, and all
+  four came back ambiguous between the two method entities. Both candidates
+  are genuine and nothing is actually wrong, so the report is noise: it
+  recurred identically across four documents in one session at zero cost each
+  time, which is the failure mode REQ-0030 names -- a report that mixes rot
+  with correctly-spelled CLOS names stops being driven to zero and stops
+  being read.
+body: |
+  SYMPTOM
+
+  Writing game-server's REQ-0003/DES-0003/PLAN-0004/REQ-0004, 2026-09-01.
+  Each document's affects: named db-query. `check` reported all four as
+  ambiguous references, candidates being the two method entities:
+
+      method:data-api/db/connection.lisp:db-query
+      method:data-api/db/connection.lisp:db-query:before
+
+  The author has no reason to pick one method over the other -- the claim in
+  every one of the four documents is about the generic's behavior, which the
+  :before method is half of. The escape hatch REQ-0030 R3 delivered (name the
+  entity by the id `find` prints) works, but points at one method and so
+  writes a slightly wrong edge, which is the shape REQ-0030's own measured
+  workaround produced.
+
+  CAUSE
+
+  Two facts compound.
+
+  The analyzer mints an entity per definition form. make-method-entity
+  (lisp-analyzer.lisp:871) emits a :METHOD carrying its :qualifier -- :before,
+  :after, :around or NIL. make-interface-entity (lisp-analyzer.lisp:855) emits
+  an :INTERFACE, and the only Lisp sources for one are a DEFGENERIC form
+  (lisp-analyzer.lisp:1257) and an :accessor/:reader slot option
+  (lisp-analyzer.lisp:1107). A generic created implicitly by DEFMETHOD has no
+  :INTERFACE entity, and nothing ties its methods to each other.
+
+  RESOLVE-ONE's protocol clause (src/graph/resolve.lisp:1478-1482):
+
+      (if (and (= 1 (length interfaces))
+               (every (lambda (e)
+                        (member (entity-type e) '(:interface :method)))
+                      candidates))
+          (values (first interfaces) nil)
+          (values nil candidates))
+
+  requires exactly one interface. For db-query, interfaces is empty, so the
+  clause returns (values nil candidates) and RESOLVE-DOCUMENT-LINKS pushes the
+  name onto :AMBIGUOUS-REFERENCES.
+
+  WHY THIS NEEDS A DESIGN, NOT A ONE-LINE LOOSENING
+
+  REQ-0030's OPEN QUESTIONS section already asked whether more ambiguous sets
+  should resolve, and named the interface-plus-methods clause as the precedent.
+  This bug is a second concrete instance, and the general rule it points to is:
+  several :METHOD entities that share a name and differ only by qualifier and
+  specializers are one generic function, whether or not a DEFGENERIC or an
+  accessor slot minted an :INTERFACE for it. The naive fix -- resolve any
+  all-:METHOD candidate set to something -- has to answer:
+
+  - What does it resolve TO? There is no :INTERFACE entity to return. Either
+    RESOLVE-DOCUMENT-LINKS learns to edge a document to a :METHOD (and picks
+    which one, or edges to all of them), or the resolution pass mints the
+    missing :INTERFACE the way RESOLVE-GENERATED-DEFINITIONS mints generated
+    definitions -- CON-0001's minting exception, with the retract half as its
+    price.
+
+  - How is "one generic" told from "N unrelated functions"? Two plain
+    DEFUNs of one name in one package are genuinely ambiguous and REQ-0030 R7
+    requires they stay so. A :METHOD entity carries specializers and a
+    qualifier; a :FUNCTION does not. The candidate-set test is "every
+    candidate is a :METHOD" -- but a :METHOD and a same-named :FUNCTION
+    together is a real collision, not a protocol.
+
+  - This is REQ-0020's modelling gap seen from the document path. REQ-0020
+    ("a generic function ... is one callee, not N unrelated interfaces") is
+    status: partial and is the same missing edge between a generic's methods,
+    hit by RESOLVE-CALLS instead of RESOLVE-ONE. A design that ties methods to
+    their generic once would serve both resolvers; fixing RESOLVE-ONE alone
+    leaves REQ-0020 to solve it again.
+
+  SCOPE
+
+  db-query is the only case observed so far. The population on both trees is
+  worth counting before choosing a fix: how many names does `check` report
+  ambiguous today whose entire candidate set is :METHOD entities differing
+  only by qualifier and specializers? On Loom (few qualified methods) it is
+  likely near zero; on game-server it is the number that says whether this is
+  a paper cut or a class of noise.
+
+  FIX
+
+  Not settled -- see the design questions above. Whatever lands must keep
+  REQ-0030 R5 true: the interface-plus-methods clause and the :DOCUMENTS /
+  :DECIDES / :REFINES edge counts on Loom's own tree are unchanged, and two
+  plain functions of one name stay ambiguous.
+
+  ACCEPTANCE
+
+  On game-server, with REQ-0003/DES-0003/PLAN-0004/REQ-0004 naming db-query in
+  affects::
+
+      tools/loom.sh 'watch "/home/beberman/lisp/game-server" | check @game-server'
+
+  reports zero ambiguous references for db-query and an edge from each of the
+  four documents to the generic. `impact @game-server db-query 3` finds
+  DES-0003 governing it. Loom's own ambiguous-reference count is unchanged or
+  accounted for one by one.

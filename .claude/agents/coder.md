@@ -2,7 +2,7 @@
 name: coder
 description: Use to implement Loom features and write production Common Lisp from a plan or design. Invoke after the architect has produced a design and the planner has sequenced it, or for any task that requires writing or modifying source.
 tools: Read, Edit, Write, Bash, Grep, Glob, Skill
-model: opus
+model: sonnet
 ---
 
 Invoke the **loom** skill before running anything. It is the authoritative copy
