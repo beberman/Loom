@@ -2,10 +2,12 @@ id: REQ-0062
 title: find must be able to return only code or only documentation, because a noun like `repository` names 20 definitions and 3053 prose lines and the caller cannot say which kind they want
 status: draft
 date: 2026-08-29
+amended: 2026-09-10
 refines: [REQ-0054]
 affects: [search-entities, print-find-occurrences, textual-occurrences]
 importance: Minor
-tags: [find, filtering, cli, rest, mcp, developer-usage, req-0054]
+tags: [find, filtering, cli, rest, mcp, developer-usage, req-0054,
+       occurrences, bug-0063]
 summary: |
   `find <name>` matches every entity type at once. On a common noun that mixes
   code and documents this makes the answer unusable in one direction or the
@@ -27,6 +29,18 @@ summary: |
   band. That band is 3053 lines, mostly in `.md` files, and it reads as a
   result set rather than as the "no such definition, here is where the string
   occurs" fallback REQ-0054 built it to be.
+
+  A second instance, 2026-09-10, is the same defect from the opposite end and is
+  worse: the band does not appear at all. `find @Loom severity` returns 2 --
+  `violation-severity` and a rule test, both about RULE documents' enforcement
+  strength -- and no occurrence band, because the band fires only on a zero-hit
+  find and this find matched. The term is written 48 times as a YAML key in
+  `docs/` and once in the analyzer, and none of that is in the answer. A caller
+  investigating BUG-0063 read the two hits, concluded severity was a rule field,
+  and would have been wrong; `grep` is what found the 48.
+
+  So the two hits were worse than no hits. Zero would have printed the
+  occurrences and told the truth.
 body: |
   WHAT EXISTS
 
@@ -69,6 +83,19 @@ body: |
       added there, because a switch nobody is told about is a switch nobody
       types.
 
+  R5  The occurrence band's trigger is the term's character, not the hit count.
+      Firing only at zero hits means a term that is mostly prose and incidentally
+      also a definition name gets the answer for the definition and none of the
+      prose -- and gives it with the confidence of a match. A small hit count on
+      a term written hundreds of times elsewhere is the case that needs the band
+      most, because the caller has an answer and no reason to doubt it.
+
+      What decides it is a comparison the answer already has the material for:
+      hits against occurrences. `find severity` at 2 and 48 is a different
+      answer from `find complete-plan` at 1 and 12, where the occurrences are
+      that definition's own callers and documents. The band is worth printing
+      when the occurrences are mostly not accounted for by the hits.
+
   ACCEPTANCE
 
   `find @Loom repository --code` returns only the code definitions and a
@@ -80,6 +107,11 @@ body: |
   as a two-term search or refuses with a sentence naming the type positional,
   and does not present 3053 occurrence lines as a result.
 
+  `find @Loom severity` returns its 2 definitions *and* says the string is
+  written 48 times elsewhere, naming the files. `find @Loom complete-plan`
+  returns its definition and does not, because its occurrences are that
+  definition's own call sites and the documents that name it.
+
   OPEN QUESTIONS
 
   - Whether "documents about X" is a `find` question at all. `find` matches
@@ -90,3 +122,14 @@ body: |
   - Whether the code/document split should be a first-class `family` on the
     entity type rather than two hardcoded lists at the call site. `structure`
     and `resolve` both already carry their own copies.
+  - Whether R5 makes this Major rather than Minor. The 2026-08-29 instance is a
+    verbose answer a caller can see past. The 2026-09-10 instance is a confident
+    wrong one -- two hits, no band, and the 48 occurrences that contradict them
+    absent from the answer. A misleading answer is a different class of defect
+    from an unfiltered one, and the importance recorded here is still the
+    original judgement. Left for the author.
+  - How the hits-against-occurrences comparison in R5 is priced.
+    TEXTUAL-OCCURRENCES walks the tree, and today that cost is paid only on a
+    miss, which R4 of REQ-0054 made a deliberate property. Paying it on every
+    find would undo that; deciding from the counts alone needs a count the
+    scan produces.
