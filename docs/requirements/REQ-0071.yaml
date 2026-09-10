@@ -1,0 +1,121 @@
+id: REQ-0071
+title: A repository must be able to declare the Loom configuration that serves it, and the file that does it already exists under a name that no longer describes it
+status: draft
+date: 2026-09-10
+refines: [REQ-0021]
+affects: [read-frameworks, parse-frameworks, read-manifest, prepare-repository]
+importance: Major
+tags: [configuration, init, frameworks, manifest, multi-user, oauth, ids,
+       des-0025, des-0048, req-0064, trust-boundary]
+summary: |
+  `.loom/frameworks.yaml` holds three keys -- `definer-macros`,
+  `route-callers`, `archived-paths` -- and its own header concedes the problem
+  this requirement is about: "Three keys now, and the file's name has grown a
+  little narrow: what it holds is what a repository declares about itself that
+  Loom cannot derive. A third key is cheaper than a second file, and every one
+  of them has the same shape of justification -- a fact only this repository's
+  author has."
+
+  Three more keys are already known to be coming. DES-0048 needs a per-type
+  block size, declared by the project rather than by a developer's environment.
+  REQ-0064's service needs to know where to authenticate, which for an
+  organisation means an OAuth endpoint. And which directories a repository wants
+  indexed is a question every prepared tree eventually asks and today answers by
+  registering a root and accepting what the analyzers claim.
+
+  None of these is a framework. The file is the right file and the name is
+  wrong, and adding a fourth, fifth and sixth key under `frameworks:` makes the
+  name actively misleading rather than merely narrow.
+body: |
+  WHAT EXISTS
+
+  Two dot-prefixed files, in two layers, read two ways.
+
+    `.loom/manifest.yaml` -- what `init` wrote, so `remove` can undo it. Read by
+    READ-MANIFEST, a line scanner, because loom-workspace deliberately has no
+    YAML parser and DES-0018 kept it that way.
+
+    `.loom/frameworks.yaml` -- what the repository declares about itself that
+    Loom cannot derive. Read in loom-analyzer, which has cl-yaml, and handed
+    down to the passes the way *MACRO-GENERATORS* is.
+
+  Both are skipped by REPOSITORY-FILES, correctly: they are Loom's configuration
+  rather than the repository's content, and indexing them as engineering
+  knowledge would be a category error.
+
+  WHAT IS WANTED
+
+  R1  One place where a repository declares the configuration of the Loom that
+      serves it, named for what it holds. Whether that is `.loom/frameworks.yaml`
+      renamed, or a new file with `frameworks:` as one section inside it, is the
+      first thing to decide -- and a rename has to leave the old name readable,
+      because every prepared tree on disk carries it and DES-0044 R7 does not
+      refresh a file a team may have edited.
+
+  R2  Per-type document block sizes, as DES-0048 requires. The project declares
+      them because block size is a property of the project's document rate, not
+      of a developer's machine.
+
+  R3  Which directories a repository wants indexed, and which it does not.
+      `archived-paths:` is already a narrow instance of this -- it names what to
+      rank down rather than what to read -- and the general question is asked by
+      every tree with a `vendor/`, a `node_modules/` it does not gitignore, or a
+      generated directory.
+
+  R4  Where the service authenticates, once there is a service to authenticate
+      against. REQ-0064 asks for a service that outlives a session; an
+      organisation running one needs to say where its identity provider is.
+
+  R5  Whatever performs a lease, an index or an authentication must be able to
+      read the setting that governs it. The manifest's line scanner exists
+      because loom-workspace has no parser on purpose, so a setting read by
+      loom-workspace either moves to a layer that parses or is handed down. A
+      half-parser in the layer that has no parser is what DES-0018 refused, and
+      this must not reintroduce it by accident.
+
+  THE TRUST BOUNDARY R4 CROSSES, AND R2 AND R3 DO NOT
+
+  R2 and R3 are the repository describing itself. A wrong block size makes a
+  ragged ledger; a wrong indexed-directory list makes a worse index. The blast
+  radius is the repository's own answers, and the author is the person harmed.
+
+  R4 is different in kind. A file in a repository telling a service where to
+  authenticate is a repository directing the service's trust decisions, and a
+  repository is not always written by someone the service's operator trusts --
+  a clone of somebody else's project, a dependency registered under REQ-0069, a
+  branch from an outside contributor. An identity-provider location supplied by
+  the thing being indexed is a way to point authentication at an endpoint of the
+  attacker's choosing.
+
+  So the file cannot be one undifferentiated bag. What a repository may declare
+  about itself and what an operator declares about the service are two
+  categories, and only the first belongs in a file that arrives with a clone.
+  R4's setting is named here because it is coming and because this is where
+  somebody would put it; where it actually belongs is probably beside the
+  service, not beside the code.
+
+  That distinction is the reason this is a requirement rather than a commit
+  adding three keys.
+
+  ACCEPTANCE
+
+  A repository declares a block size for BUG and none for REQ; leasing uses the
+  declared size for one and the default for the other, and says which. A
+  repository prepared before this lands, carrying `.loom/frameworks.yaml` with
+  the three original keys, keeps working with no edit. A setting that names an
+  authentication endpoint is either refused from this file or accepted only
+  under a rule the operator wrote, and the refusal says why rather than
+  ignoring the key.
+
+  OPEN QUESTIONS
+
+  - Rename, or nest? A rename is honest and costs every prepared tree a
+    compatibility path. Nesting `frameworks:` inside a file named for the whole
+    is a smaller move and leaves the old name meaning what it always meant.
+  - Does the manifest merge into this or stay separate? It is Loom's record of
+    what it did, not the repository's declaration of what it wants -- different
+    authors, different lifetimes. Probably separate, and the argument should be
+    written down rather than assumed from the current shape.
+  - What reads a setting nobody has declared. A default that is silent and a
+    default that is reported are different tools; DES-0048's block size is the
+    first setting where a caller will want to know which value it got.

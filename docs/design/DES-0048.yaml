@@ -134,13 +134,54 @@ body: |
   about a claim, rather than inside the id, where it would be permanent and
   would cost the format.
 
-  BLOCK SIZE
+  ONE FILE, BLOCKS PER TYPE
 
-  A configurable parameter read from the environment, defaulting to a value this
-  design does not fix. It trades two things against each other and both are
-  real: a small block claims often, which raises the conflict rate and the
-  number of network round trips; a large block leaves large gaps, which pushes
-  ids into more digits sooner and makes `ls docs/requirements' sparse.
+  One `.id-blocks.yaml' per code tree, holding every claim for every document
+  type. Not a file per type: nine files carrying one line each is bookkeeping
+  with no reader, and a single file means one fetch, one conflict surface and
+  one thing to look at when an id looks wrong.
+
+  The blocks inside it are per (origin, type). The nine sequences are
+  independent -- `ls docs/bugs' sorts bugs and nothing else -- and one range
+  spanning every type would burn the rest of it in every type an instance does
+  not write: an instance that files a hundred bugs and two requirements would
+  strand ninety-eight requirement numbers. Per-type costs more claims, and
+  claims are what block size is for.
+
+  BLOCK SIZE, PER TYPE, DECLARED BY THE PROJECT
+
+  Configured per document type, because the sequences move at different rates:
+  a tree files bugs far faster than it writes concepts, and one size that suits
+  both is two wrong sizes.
+
+  Declared in the repository being developed rather than in a developer's
+  environment. Block size is a property of the project -- its team size and its
+  document rate -- not of the machine an instance runs on, and an environment
+  variable is per developer and would drift between them. The ledger stores
+  explicit ranges, so a drifted size corrupts nothing; it makes the ledger
+  ragged and the reason unrecoverable, which is worse in a file whose whole job
+  is to be readable when an id looks wrong.
+
+  `.loom/frameworks.yaml' is where this belongs, and its own header already
+  argues the case: "what it holds is what a repository declares about itself
+  that Loom cannot derive. A third key is cheaper than a second file, and every
+  one of them has the same shape of justification -- a fact only this
+  repository's author has." A block size is exactly that. REQ-0071 carries the
+  question of what that file is called once it holds this and the rest of what
+  is coming.
+
+  One layering constraint, from that file's own header: `.loom/manifest.yaml' is
+  line-scanned because loom-workspace deliberately has no YAML parser, and
+  `.loom/frameworks.yaml' lives in loom-analyzer, which has cl-yaml. Whatever
+  performs the lease has to be able to read the size, so either the lease runs
+  where a parser already is, or the size is handed down the way
+  *MACRO-GENERATORS* already is.
+
+  WHAT THE SIZE TRADES
+
+  A small block claims often, which raises the conflict rate and the number of
+  network round trips; a large block leaves large gaps, which pushes ids into
+  more digits sooner and makes `ls docs/requirements' sparse.
 
   Gaps are already accepted by REQ-0025's BURNED IDS section -- "`ls
   docs/requirements' will show 0029, 0030, 0032, and that is correct rather than
@@ -178,14 +219,10 @@ body: |
 
   OPEN QUESTIONS
 
-  - One block per (origin, type), or one block per origin spanning every type?
-    Per-type keeps each sequence dense and needs a claim per type an instance
-    actually uses. Per-origin is one claim serving all nine, and wastes the rest
-    of the range in every type the instance does not write -- an instance that
-    files a hundred bugs and two requirements burns ninety-eight requirement
-    numbers. Per-type is the likelier answer and costs more claims.
-  - What the default block size is. It cannot be derived from anything in the
-    tree; it is a judgement about team size and document rate.
+  - What the default block size is, per type, for a repository that declares
+    none. It cannot be derived from anything in a tree; it is a judgement about
+    team size and document rate, and the default is what every prepared
+    repository gets until somebody thinks about it.
   - What creates the branch, and when. `init' preparing a repository is the
     obvious place, and a project that was prepared before this design lands has
     no branch until something makes one -- which is REQ-0052's `init --update'
