@@ -1,0 +1,117 @@
+id: DEC-0007
+title: Impact and priority are two axes; importance and severity are one axis under two names
+status: accepted
+date: 2026-09-10
+supersedes: []
+affects: [as-keyword, document-properties,
+          "method:src/analyzer/yaml-analyzer.lisp:type-specific-properties::(eql document),t,t"]
+tags: [ontology, documents, severity, importance, priority, triage, vocabulary,
+       con-0001, bug-0063]
+decision: |
+  A document carries two judgements, not one, and they are separate fields.
+
+  IMPACT -- how much it costs. One axis, one vocabulary
+  (critical / major / minor), two field names because the genres ask it
+  differently:
+
+    importance:  on a requirement -- would the product be wrong without this,
+                 or only poorer?
+    severity:    on a bug -- how severe is the impact when it happens?
+
+  The two names stay. A bug is not a requirement and the question cannot be
+  phrased once for both, but it is the same question and the vocabulary is
+  therefore shared.
+
+  PRIORITY -- when to work it. Its own field, derived rather than judged fresh,
+  from three inputs:
+
+    the impact above,
+    the probability of occurrence,
+    and the sequence: a bug that a requirement already planned will resolve on
+    its way past is sequenced behind that requirement rather than fixed twice.
+
+  Probability of occurrence gets no field. It is not measurable outside a
+  production environment, so recording it here would be a guess in a slot that
+  reads as measured. It stays an input the author weighs, and `priority:`
+  records the outcome.
+
+  error / warning / advisory is a third vocabulary belonging only to rules --
+  it answers how strictly a rule is enforced -- and is not a candidate for
+  either axis above.
+rationale: |
+  Loom's own docs/ carried nine distinct severities -- high 10, major 9,
+  medium 8, minor 6, error 6, low 3, critical 3, advisory 2, warning 1 -- with
+  no vocabulary declared and, as BUG-0063 found, no property to hold any of
+  them. Underneath the spread was a second judgement with nowhere to go:
+  thirteen bugs open a body section with `PRIORITY: P<n>, 2026-08-18`, a single
+  triage session writing into prose what no field could take.
+
+  Where both values exist they diverge, which is what establishes that they are
+  two questions rather than two spellings of one:
+
+      BUG-0034  severity: high     P4
+      BUG-0032  severity: high     P3
+      BUG-0002  severity: medium   P5
+      BUG-0015  severity: low      P5
+
+  BUG-0034 is the legible pairing -- bad when it happens, worked later -- and
+  neither value can be recovered from the other.
+
+  BUG-0015 is the case that forced the decision, and it exercises all three of
+  priority's inputs at once. Its impact is wide: one unrelated edit runs
+  RESOLVE-CALLS over the whole index and clears the agreement record from every
+  confirmed edge, 983 of them measured. Its probability is high: every poll that
+  finds any file changed triggers it. And its sequence is bound to somebody
+  else's work, because both remaining fixes were rejected by DES-0011 and it
+  waits on that design being reopened. High impact, high probability, and last
+  anyway. Only the third input explains that, and only a field can hold it --
+  which is why the bug's own body opens "PRIORITY: P5 ... Last, and the reason
+  is in the section above rather than in the defect's size." Its `low` is an
+  impact value carrying a priority argument, and a reader has no way to know.
+
+  Probability is refused rather than deferred, and the asymmetry with impact is
+  what makes that consistent. Impact is assessable by reading the code: 983
+  edges came from the tree, not from a deployment. Probability is a fact about
+  how the software is used, and nothing in a repository holds it. In production
+  it has real units -- incidents per request, or incidents per client per hour
+  -- so what would reopen this is a deployment producing incident counts, at
+  which point the measure is already named. Until then a `probability:` field
+  could hold only a guess, and a guess in a numeric field is CON-0001's
+  fabricated fact: the number would read as evidence where the absence reads as
+  a gap.
+consequences: |
+  `severity:` is declared on the :DOCUMENT entity type with :IMPORTANCE's
+  vocabulary and read in TYPE-SPECIFIC-PROPERTIES' :DOCUMENT method beside it.
+  `priority:` is declared and read the same way. Both are then returned by
+  `describe`, which is the whole difference between a judgement the engine holds
+  and one only a human reading YAML can see.
+
+  The nine existing spellings do not map mechanically onto three. Whether a bug
+  marked `high` meant `major` is a judgement per document and the author is gone
+  from most of them, so the migration is read-and-decide rather than
+  search-and-replace. The same is true of the thirteen prose PRIORITY sections,
+  though those at least carry their own scale.
+
+  A priority set once and never revisited is stale in a way an impact value is
+  not -- impact is a property of the defect and changes when the defect changes;
+  priority is a decision about a schedule and goes out of date when other work
+  lands. The thirteen carry 2026-08-18 and nothing has reported them since. A
+  field can support that report; a paragraph cannot.
+
+  Any document genre added from here has to say which axis it is on. That is the
+  part of this decision that outlives the bug that prompted it.
+
+  A cost worth naming: three judgement fields is more than most trees carry, and
+  two of them are named for the same intuition. The defence is that the pairing
+  in the table above is unrecoverable from either value alone, and the evidence
+  is that thirteen authors wrote the missing one into prose rather than do
+  without it.
+lessons:
+  - A judgement written into prose thirteen times is a field the schema is
+    missing, and the prose spelling drifts exactly the way the YAML field did --
+    P1 through P5, plus one CRITICAL.
+  - Two fields that diverge wherever both are set are two questions. One field
+    used for two questions is legible only to whoever set it.
+  - A number is refused when it cannot be measured, not softened. An unmeasurable
+    probability in a numeric field reads as evidence; its absence reads as a gap,
+    and the gap is the honest state.

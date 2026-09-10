@@ -7,7 +7,7 @@ refines: [BUG-0062]
 affects: [as-keyword,
           "method:src/analyzer/yaml-analyzer.lisp:type-specific-properties::(eql document),t,t"]
 tags: [documents, ontology, severity, priority, bugs, vocabulary, con-0001,
-       silent-drop, triage]
+       silent-drop, triage, dec-0007]
 severity: high
 summary: |
   48 documents under `docs/` carry a `severity:` key. No entity holds it.
@@ -162,7 +162,9 @@ body: |
   about it. Loom's own tree holding no copy of that template is the mechanism,
   and it is filed separately.
 
-  F6. TWO AXES, THREE FIELDS. Decided 2026-09-10, by the tree's owner.
+  F6. TWO AXES, THREE FIELDS. Decided 2026-09-10 by the tree's owner, and
+  carried by DEC-0007, which is the record of it. Restated here because a fix
+  section that names the decision without stating it is unreadable on its own.
 
   IMPACT is one axis and carries two names because the genres ask it
   differently. `importance:` on a requirement asks whether the product would be
