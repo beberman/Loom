@@ -241,6 +241,74 @@ loom> find @Loom repository
   better placed to do than the caller.
   -- game-server, PLAN-0006 step 7, 2026-09-02
 
+- **A document extracted to carry a parent's unfinished work blocks that parent
+  forever if it `refines:` it, which is the opposite of why it was extracted.**
+  The convention in `front-end` is to pull what did not land into a new
+  requirement rather than mark the parent partial, so the parent can close --
+  REQ-0009 says so of itself, having been pulled out of DES-0002. But REQ-0009
+  also declared `refines: [REQ-0001]`, and `complete` refuses a document another
+  unfinished document refines, so REQ-0001 could never close. Three requirements
+  were blocked this way and two of the three edges were arguable; one was simply
+  wrong. `complete` reports `blocked-by: ['REQ-0009']` and stops there, which is
+  correct and unhelpful: nothing distinguishes *the child is genuinely
+  unfinished* from *the child is this parent's residue and the edge is
+  backwards*. The tool has the material to tell them apart -- a child whose own
+  text says it was extracted, or one whose `affects:` is disjoint from its
+  parent's claim -- and a one-line hint at the point of refusal would have saved
+  the whole detour.
+  -- front-end, closing REQ-0001, 2026-09-09
+
+- **There is no query for the `refines` graph.** Establishing why three
+  requirements were blocked meant dumping `refines:` out of 45 documents with a
+  shell loop and reading the result by hand. `describe` gives one document's
+  fields, `impact` walks code, and `complete` walks one plan's chain -- none
+  answers "show me the document graph" or "what refines REQ-0002". The inverse
+  direction is the one that was wanted and is the one nothing offers.
+  -- front-end, closing REQ-0001, 2026-09-09
+
+- **`severity:` on a bug has no vocabulary, where `importance:` has a closed
+  one.** Loom's own `docs/` carries nine distinct severities -- `advisory`,
+  `critical`, `error`, `high`, `low`, `major`, `medium`, `minor`, `warning` --
+  across the tree, with no `:one-of` in the ontology and nothing reporting the
+  spread. Two bugs marked `high` and `major` cannot be compared, and a reader
+  cannot tell whether `error` outranks `critical`. `importance` was given a
+  closed vocabulary on 2026-08-23 and `severity` was not, apparently only
+  because nobody wrote it down.
+  -- Loom, filing BUG-0062, 2026-09-09
+
+- **`describe` on a document cannot answer the staleness question it answers for
+  code.** A code entity carries `file` and `file-stale`, which is the field to
+  read before trusting an answer about something just edited. A document entity
+  returns `"file": null, "file-stale": null` in provenance even though its path
+  is right there in `properties`. Documents rot in their own way -- an `affects:`
+  entry going stale is the whole point of `check` -- so the asymmetry is odd, and
+  a caller holding a `describe` answer for a document has no way to ask how old
+  it is.
+  -- front-end, writing REQ-0010, 2026-09-09
+
+- **`complete`'s `dry-run` field is `null` rather than `true` when the walk finds
+  nothing to change.** PLAN-0002 and PLAN-0003 returned `"dry-run": true`;
+  PLAN-0006, already fully terminal, returned `"dry-run": null` with every
+  document `already-finished` or `unchanged`. A caller testing that field to
+  decide whether a write happened reads falsy in the one case where nothing was
+  written and nothing would be, which inverts the signal exactly where it should
+  be clearest.
+  -- front-end, closing REQ-0001, 2026-09-09
+
+- **`complete` stops at an already-terminal document instead of walking through
+  it, so a requirement whose design closed earlier is unreachable from its own
+  plan.** `complete plan=PLAN-0004` in front-end returned exactly two rows --
+  `PLAN-0004 unchanged`, `DES-0006 already-finished` -- and never mentioned
+  REQ-0004, which DES-0006 refines and which was still `accepted`. Nothing was
+  blocked and no problem was reported; the walk simply ended at the design,
+  because the design had been closed in an earlier session. The requirement was
+  correct, complete and closeable, and the plan that implemented it could not
+  say so. Closing it needed `set-status`, which is the write path that does not
+  show the chain -- so the one document whose verdict most deserved the dry-run
+  review is the one that had to be set blind. An `already-finished` document
+  should be a node the walk passes through, not a stop.
+  -- front-end, closing REQ-0004, 2026-09-09
+
 ## Preparing somebody else's tree
 
 - **A bug that turns out to live in a vendored dependency gets no index
@@ -264,6 +332,20 @@ loom> find @Loom repository
   before falling back to grep.  The new feature would be to that if a dependancy internal request
   see a request for an external tree and that tree's source is available it is added to the index.
   -- diagnosing game-server's REQ-0003, 2026-09-01
+
+- **Loom's own tree holds no copy of the workflow-concept document it writes into
+  every other tree, so changes to that template are never exercised against
+  anything.** `docs/concepts/CON-0001.yaml` in Loom is "Resolution pass" -- a
+  real concept document about the resolution pass, unrelated to the conventions
+  text `init` renders from `src/workspace/templates/workflow-concept.yaml`. The
+  template is therefore the one document Loom ships that Loom never reads,
+  never checks and never dogfoods. That is the mechanism behind BUG-0062: the
+  `importance:` field was added to the ontology and to every requirement in
+  Loom's tree on 2026-08-23 and never reached the template, and nothing anywhere
+  could have noticed, because no prepared tree can see the omission and Loom has
+  no copy to compare against. Any field added to the ontology from here will fail
+  the same way.
+  -- front-end, filing BUG-0062, 2026-09-09
 
 ## Measuring Loom
 

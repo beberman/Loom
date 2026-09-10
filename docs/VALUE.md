@@ -339,6 +339,60 @@ A transition that just did the write on the first call would have been correct a
 would have produced a less honest document.
 — game-server, closing PLAN-0006, 2026-09-02
 
+**The same dry run, asked of three requirements at once, found a miswired edge
+instead of a verdict.** `complete` with no verdicts on PLAN-0002 and PLAN-0003
+reported `REQ-0001 blocked-by [REQ-0009]`, `REQ-0002 blocked-by [REQ-0008]` and
+`REQ-0003 blocked-by [REQ-0010, REQ-0007]`. The instruction had been to close all
+three, and the honest answer was that none of them could be: each was refused by
+a document that refines it.
+
+Two of those refusals were correct and one was not -- REQ-0009 had been extracted
+to CARRY REQ-0001's residue and then declared it as a parent, which is the one
+arrangement that guarantees the parent never closes. Removing that single edge
+freed it; the other two stayed blocked, and rightly. Marking three statuses by
+hand would have been one `sed` and would have asserted two things that are false.
+— front-end, closing REQ-0001, 2026-09-09
+
+## A 196-line component classified without opening it
+
+**`describe function:src/ui/edit/graphics/editor/ColorEditor.jsx:ColorEditor`
+returned the call-names list, and the list was the answer.**
+`colorSet.register`, `colorSet.delete`, `colorSet.findByName`,
+`handleAddColor`, `handleDeleteColor`, `confirmDeleteColor`, `usePersist`,
+`useEventReceiver` -- enough to say that this editor holds its verbs as local
+callbacks in the JSX over a domain set, which is neither of the two patterns the
+codebase was believed to have.
+
+The question was whether a chat interface could address every editing mode
+through one vocabulary, and it turned on how many shapes the editors actually
+take. Two were known: an intent bus in the terrain and graphics trees, and the
+`use*EditorActions` hooks everywhere else. `ColorEditor` is a third, and it is
+the least reachable of them, because nothing it does is callable without React.
+That changed the design's cost estimate in the same minute it was found.
+
+A grep for `ColorEditor` gives the import sites and the definition. The shape of
+what it does internally is what mattered, and one call had it.
+— front-end, designing REQ-0010, 2026-09-09
+
+## The field that was read everywhere and written nowhere
+
+**`describe @Loom document:docs/requirements/REQ-0001.yaml` returned
+`"importance": "major"` in its properties, which turned an offhand question into
+a filed bug with evidence.** The question was why `front-end`'s requirements had
+no `importance:` field when Loom's did -- the kind of thing that is usually a
+local habit and not worth chasing.
+
+One cross-repository `describe` settled that the field is machine-read rather
+than decorative prose, and from there `find` and the ontology gave the closed
+vocabulary, the analyzer line that reads it, and the tests over it. The template
+that prepares every other tree turned out never to mention it, which is
+BUG-0062, and `front-end` had 62 of 63 documents silently carrying nothing.
+
+Being able to ask one tree a question while working in another is what made the
+comparison cheap enough to make at all. Opening Loom's source to guess would not
+have happened over a passing question.
+— front-end, filing BUG-0062, 2026-09-09
+
 ## The standing measurement
 
 `tools/test/acceptance.py` scores 42 of 44 hand-judged expectations present across

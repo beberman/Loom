@@ -1,0 +1,124 @@
+id: BUG-0062
+title: importance is read by the analyzer and declared in the ontology but named nowhere an author reads, so every prepared repository writes documents without it and DES-0044 R7 makes the omission permanent
+status: open
+date: 2026-09-09
+refines: [DES-0044]
+affects: [as-keyword,
+          "method:src/analyzer/yaml-analyzer.lisp:type-specific-properties::(eql document),t,t"]
+tags: [documents, workflow, init, template, ontology, importance, con-0001, front-end]
+severity: high
+summary: |
+  `importance:` is a first-class document field. The ontology declares it
+  (src/ontology/code-ontology.lisp:953) with a closed vocabulary,
+  TYPE-SPECIFIC-PROPERTIES reads it for every workflow category
+  (src/analyzer/yaml-analyzer.lisp:353), and `describe` returns it under
+  properties. Loom's own tree uses it on 64 documents.
+
+  The text `init` writes as the tree's workflow concept -- the document every
+  author of a prepared repository reads to learn how to write a document --
+  documents `refines`, `affects`, `describes`, `status` and `tags`, and does not
+  mention `importance` anywhere.
+
+  Measured in front-end, a repository Loom prepared: 62 of its 63 documents
+  carried no importance until 2026-09-09, when it was noticed by reading Loom's
+  own documents and comparing. Every ranking, filter or report that would use
+  the field saw nothing, and nothing anywhere said why.
+
+  This is the shape yaml-analyzer.lisp:345-348 already names about :AFFECTS --
+  "a field only one genre's method reads is a field ... nothing sees. :AFFECTS
+  was exactly that until BUG-0023" -- arrived at from the other end. The field
+  is read correctly and written by nobody, because nobody was told.
+body: |
+  THREE DEFECTS, AND THE THIRD IS WHY THE FIRST TWO PERSIST
+
+  D1. THE TEMPLATE OMITS THE FIELD.
+
+  `src/workspace/templates/workflow-concept.yaml` has a section called THE
+  FIELDS THAT RESOLVE covering `refines` and `affects`, a section on `status`
+  with the per-kind vocabulary, and a closing section on the two mistakes that
+  cost a document its place in the index. There is no mention of `importance`,
+  its vocabulary, or the fact that the analyzer reads it.
+
+  An author working from that document writes correct YAML that is missing a
+  field the engine is reading. There is no way to discover this from inside the
+  prepared repository: `check` says nothing, `describe` shows the property
+  absent without saying it could be present, and the conventions document --
+  which asserts of itself that it "describes how to write a document" -- is
+  complete on its own terms.
+
+  D2. DES-0044 R7 MAKES IT PERMANENT FOR EVERY EXISTING TREE.
+
+  R7 is explicit and was written deliberately: the workflow concept "is not
+  refreshed even though Loom rendered it from a template, because it is a
+  document the team owns and may have edited", and therefore "an improvement to
+  `workflow-concept.yaml` reaches new trees only. Recording it here rather than
+  discovering it later."
+
+  That reasoning is sound for a document a team has edited. Its consequence here
+  is that fixing D1 repairs no repository that already exists. front-end would
+  have kept the gap indefinitely, and so will every other prepared tree, because
+  the only signal that the field exists is reading Loom's own docs/ directory
+  and noticing a key that the conventions never mentioned.
+
+  This is the first instance of R7's "real limit" costing something concrete,
+  which is worth recording against it whatever is decided.
+
+  D3. THE SAFETY NET THE ANALYZER DEFERS TO DOES NOT EXIST.
+
+  The analyzer is silent about an out-of-vocabulary value on purpose, and says
+  where the report belongs (yaml-analyzer.lisp:349-352):
+
+    ;; AS-KEYWORD with an allowed list, so a value outside the three lands
+    ;; as NIL rather than as a fourth level nobody defined. Silent, and
+    ;; deliberately: the report for a typo'd importance belongs to `check'
+    ;; over the whole tree rather than to an analyzer reading one file.
+
+  `check` does not do this. Outside the analyzer and the ontology declaration,
+  `importance` appears nowhere in src/ that is not a test -- there is no rule,
+  no check clause, and nothing in the check response that mentions it.
+
+  So an author who does learn the field exists and writes `importance: Blocker`,
+  or `imortance: Major`, gets exactly the same result as writing nothing: the
+  property is absent, no diagnostic is produced at analysis time by design, and
+  the report that was supposed to catch it at tree level was never written. The
+  deliberate silence is only defensible with the second half in place.
+
+  WHAT WOULD FIX IT
+
+  F1. The template gains an importance section: the field, the closed vocabulary
+  Critical / Major / Minor, that it is read into the graph and returned by
+  `describe`, and the silent-drop behaviour so an author knows to verify a value
+  took rather than assume it.
+
+  F2. `check` reports a document whose `importance:` key is present in the YAML
+  but absent from the entity -- which is exactly the typo case, distinguishable
+  from an absent field because the raw key is there. This is what
+  yaml-analyzer.lisp:351 already promises and is the smaller half of the fix.
+
+  F3. Something has to reach existing trees, and this is the part that needs a
+  decision rather than an implementation. Options, none obviously right:
+
+    - `check` reports the conventions document as out of date against the
+      template by digest, without touching it. Non-destructive, and it puts the
+      notice where an author already looks.
+    - `init --update` refreshes the Loom half of the workflow concept the way it
+      refreshes the other three generated files, which DES-0044 D7 rejected for
+      reasons that still apply.
+    - Accept the limit and treat the field as advisory in prepared trees, which
+      means Loom's own repository uses a convention its users structurally
+      cannot know about.
+
+  The third is the status quo and is the reason this is filed as high rather
+  than medium: it is not that a field is missing from a template, it is that a
+  documented-nowhere field silently divides Loom's own practice from every
+  repository it prepares.
+
+  HOW IT WAS FOUND
+
+  Working in front-end on a requirement, the author asked why front-end's
+  requirements had no importance field when Loom's did. The field was traced to
+  the ontology and the analyzer, confirmed to be read (a front-end document
+  given `importance: Major` came back from `describe` as `"importance": "major"`
+  once the watcher polled), and the template was found not to mention it.
+  front-end's CON-0001 has since been edited by hand to document the field and
+  its 62 documents backfilled, which is the workaround, not the fix.
