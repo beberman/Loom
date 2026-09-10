@@ -35,7 +35,16 @@
 
 set -u
 
-root=/home/beberman/lisp/Loom
+# REQ-0072 R1. The checkout this script lives in, resolved through any symlink,
+# so a `loom' on PATH that points here reaches the tree it points into rather
+# than whatever directory the caller happened to be standing in. `readlink -f'
+# because the link is the whole point: $0 is /usr/local/bin/loom, and its
+# dirname is /usr/local/bin, which contains no Loom.
+#
+# Hardcoded until 2026-09-10, on all three of loom.sh, loom-test.sh and
+# loom-serve.sh, which made the tree unmovable and the scripts unlinkable.
+# next-doc-id.sh had derived its own root correctly since it was written.
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd) || exit 1
 cd "$root" || exit 1
 
 # The same rule loom-serve.lisp's own PIDFILE-PATH states in Lisp, written
