@@ -1,6 +1,6 @@
 id: REQ-0065
 title: find, impact, check and rules must say when the tree was read, because a caller in an edit-query loop cannot otherwise tell a stale answer from a current one
-status: draft
+status: implemented
 date: 2026-09-10
 refines: [REQ-0050]
 affects: [search-entities, impact-report, check-document-references, index-provenance]
@@ -75,6 +75,44 @@ body: |
 
   A benchmark before and after shows `find` unchanged within noise, which is
   what R2 is protecting.
+
+  WHAT LANDED, 2026-09-10
+
+  ANSWER-PROVENANCE, beside FILE-PROVENANCE and INDEX-PROVENANCE and
+  deliberately neither of them: no per-file stat, no drift, everything read off
+  the repository struct. `find' (named form), `impact', `check' and `rules'
+  each carry it under `provenance', matching `describe'.
+
+  R3 is answered rather than enforced. `status' and `structure' keep their
+  fields inline and that divergence is kept, because it is not arbitrary: there
+  the commit and the fingerprint ARE the answer -- both commands are about the
+  state of the index -- while on these four they are metadata about an answer
+  that is about something else. Changing the two would also break
+  `tools/loom-serve.sh' and `tools/test/service.py', which read those fields
+  directly.
+
+  The federated `find' carries none, and that is R1 read honestly rather than an
+  omission. It searches every watched tree, so there is no one index for a
+  provenance to be about; it already answers the question in its own vocabulary
+  with `searched' and `skipped'. A single `diff' there would be one tree's
+  fingerprint presented as the whole answer's.
+
+  MEASURED. 20 calls each over REST: `find' 7.0ms, `rules' 4.7ms, `describe'
+  6.5ms -- against the 4.7ms `describe' baseline the drift experiment took to
+  25.6ms. R2's cost is nil.
+
+  The call-site ceiling caught the change and was re-measured rather than
+  adjusted, as its own docstring requires: 422 by the census against a ceiling
+  of 418, raised to 464. Four of DEFINE-OPERATION's 24 new sites are this
+  requirement's. The ambiguous population is 20 for the third measurement
+  running, which is the number the ceiling exists to watch.
+
+  A note on the test, because the first attempt was wrong in an instructive
+  way. It asked the live service for the repository named "Loom" and failed in
+  a fresh image with nothing watched -- RULE-0008's own lesson, arrived at from
+  inside the suite. It lives in the workspace suite against
+  WITH-WORKSPACE-FIXTURE now, and asserts the *absence* of :DRIFT, because the
+  absence is what R2 requires.
 
   OPEN QUESTIONS
 

@@ -165,8 +165,12 @@ before trusting an answer about code you have just changed:
   describes the tree as it stands.
 - `loom_describe` carries `file` and `file-stale`: the same question about the
   one file the entity is defined in.
-- `loom_find`, `loom_impact`, `loom_check` and `loom_rules` carry none of it.
-  Ask `loom_status` when it matters.
+- `loom_find`, `loom_impact`, `loom_check` and `loom_rules` carry
+  `provenance`: the commit, branch and `diff` hash the index was built from,
+  and `indexed-at`. No `drift` — computing it costs a stat per claimed file,
+  which on the four commands you call most is a price paid on every answer to
+  tell you something is usually true. Compare `diff` against what you saw
+  before your edit; if it has not moved, the answer predates your save.
 
 Comparing a reported commit against `git rev-parse HEAD` yourself answers a
 different question. The commit moves on `git commit` and the analyzer reads the

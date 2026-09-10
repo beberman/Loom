@@ -189,7 +189,11 @@ distinguishes saves.
                                   since the index read them. 0 is current.
     describe                      file and file-stale: the same question about
                                   the one file this entity is defined in.
-    find, impact, check, rules    nothing. Ask status when it matters.
+    find, impact, check, rules    provenance: the commit, branch, diff hash and
+                                  indexed-at. No drift -- it costs a stat per
+                                  claimed file, and these four are the ones you
+                                  call in a loop. Compare diff against what you
+                                  saw before your edit.
 
 Do not compare a reported commit against `git rev-parse HEAD` instead. That
 answers a different question: the commit moves on `git commit` and the analyzer
