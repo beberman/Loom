@@ -416,6 +416,26 @@ share is the form that does not need a tuned constant per tree.
 Advisory: ADMIT-SEEDS relaxes it rather than return fewer seeds than there are
 candidates.")
 
+(defparameter *seed-owner-share* 3
+  "How many members of one class may be seeds of one bundle.
+
+ADMIT-SEEDS' third count, and BUG-0060 is why it exists. The first two charge a
+slice and a name, and a method family escapes both: `LayerEditorState' has five
+methods answering five different slices -- {active, partition}, {map},
+{active, map}, {layer, partition}, {layer} -- under five distinct names. Neither
+existing cap fires, both behave exactly as designed, and one class took six of
+eight slots on a front-end task while `RenderEngineLeaflet', which the task
+named by its exact full name, got none.
+
+ADMIT-SEEDS' own docstring already contains the argument, one step short of
+this case: \"A family sharing a slice is the same crowding as a family sharing a
+word.\" A family sharing a *parent* is the same crowding again.
+
+Three, to match *SEED-NAME-SHARE*, and advisory the same way: a task about one
+class still seeds on that class as many times as the tree offers, because
+ADMIT-SEEDS relaxes every cap rather than return fewer seeds than there are
+candidates.")
+
 (defparameter *seed-name-share* 3
   "How many definitions of one name may be seeds of one bundle.
 
@@ -1089,6 +1109,23 @@ no embedder."
           ;; on a tie between two lexical candidates is SEED-SCORE\'s order.
           (stable-sort fused #'> :key (lambda (pair) (gethash (car pair) scores)))))))
 
+(defun seed-owner (entity)
+  "The class a method belongs to, from its own name, or NIL when it has none.
+
+Read off the name because that is where it is: a JavaScript method is minted as
+`RenderEngineLeaflet.renderLayer' and carries no edge to its class and no owner
+property, so the qualified name is the only record of the family.
+
+NIL for a :FILE and a :DOCUMENT, whose names are paths and whose dots are
+extensions, and NIL for any name with no dot -- which is every Lisp definition
+in this tree, so the cap this feeds is inert on a Lisp-only repository rather
+than guessing at a family that is not spelled."
+  (unless (member (entity-type entity) '(:file :document))
+    (let* ((name (and (slot-boundp entity 'name) (name entity)))
+           (dot  (and name (position #\. name :from-end t))))
+      (when (and dot (plusp dot))
+        (subseq name 0 dot)))))
+
 (defun admit-seeds (ranked limit &key protected)
   "The first LIMIT entities of RANKED, holding back a slice past its share and
 a name past its own.
@@ -1132,6 +1169,7 @@ exactly as it did before either cap existed."
         ;; character, ignoring case -- so this table and the MEMBER below agree
         ;; on what counts as the same name.
         (copies (make-hash-table :test #'equalp))
+        (family (make-hash-table :test #'equalp))
         (chosen '())
         (held   '())
         (taken  0))
@@ -1139,13 +1177,21 @@ exactly as it did before either cap existed."
       (when (< taken limit)
         (let* ((slice (seed-slice (cdr pair)))
                (names (gethash slice spent))
-               (name  (significant-name (car pair))))
+               (name  (significant-name (car pair)))
+               ;; BUG-0060's third charge. NIL for anything whose name does not
+               ;; spell a parent, and a NIL owner is uncharged rather than
+               ;; sharing one bucket -- every unqualified name in the tree would
+               ;; otherwise be one family and cap each other at three.
+               (owner (seed-owner (car pair))))
           (cond ((and (or (dense-only-p (cdr pair))
                           (< (length names) *seed-term-share*)
                           (member name names :test #'string-equal))
-                      (< (gethash name copies 0) *seed-name-share*))
+                      (< (gethash name copies 0) *seed-name-share*)
+                      (or (null owner)
+                          (< (gethash owner family 0) *seed-owner-share*)))
                  (pushnew name (gethash slice spent) :test #'string-equal)
                  (incf (gethash name copies 0))
+                 (when owner (incf (gethash owner family 0)))
                  (incf taken)
                  (push (car pair) chosen))
                 (t (push (car pair) held))))))

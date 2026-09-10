@@ -1053,6 +1053,56 @@ not enough -- they have to be countable"))
            (count "delete-obj" chosen :key #'name :test #'string=))
         "but eight vectors for one name are still three seeds")))
 
+(test one-classes-methods-cannot-take-the-whole-bundle
+  ;; BUG-0060. The two existing caps charge a slice and a name, and a method
+  ;; family escapes both: five methods of one class carry five distinct names
+  ;; and answer five different slices, so nothing counted them and
+  ;; `LayerEditorState' took six of eight slots on a front-end task while
+  ;; `RenderEngineLeaflet' -- which that task named by its exact full name --
+  ;; got none.
+  ;;
+  ;; Five other names as well, and for DENSE-ONLY-CANDIDATES-STILL-PAY-THE-NAME-
+  ;; CAP's reason: ADMIT-SEEDS relaxes every cap rather than return fewer seeds
+  ;; than there are candidates, so with nothing else waiting the held-back
+  ;; members come back and the count measures the fixture instead of the cap.
+  (let* ((ranked (append
+                  (loop for i from 0 below 6
+                        for n = (format nil "Owner.member~d" i)
+                        collect (ranked-pair (k-def 'function-entity n
+                                                    (format nil "src/o~d.js" i))
+                                             (cons (format nil "term~d" i) 0)))
+                  (loop for i from 0 below 5
+                        collect (ranked-pair
+                                 (k-def 'function-entity (format nil "other-~d" i)
+                                        (format nil "src/x~d.js" i))
+                                 (cons (format nil "w~d" i) 0)))))
+         (chosen (loom-knowledge::admit-seeds ranked 8)))
+    (is (= 8 (length chosen)) "the bundle still fills")
+    (is (= loom-knowledge::*seed-owner-share*
+           (count-if (lambda (e) (string= "Owner" (loom-knowledge::seed-owner e)))
+                     chosen))
+        "six members of one class are three seeds")))
+
+(test a-name-that-spells-no-parent-is-charged-to-no-family
+  ;; The NIL owner must not become one bucket every unqualified name shares --
+  ;; that would cap the whole of a Lisp tree at three seeds. Six plain names,
+  ;; six distinct slices, no cap.
+  (let ((ranked (loop for i from 0 below 6
+                      collect (ranked-pair
+                               (k-def 'function-entity (format nil "plain-~d" i)
+                                      (format nil "src/p~d.lisp" i))
+                               (cons (format nil "t~d" i) 0)))))
+    (is (null (loom-knowledge::seed-owner (car (first ranked)))))
+    (is (= 6 (length (loom-knowledge::admit-seeds ranked 8)))
+        "six unqualified names all reach the bundle")))
+
+(test a-file-name-with-an-extension-is-not-a-family
+  ;; SEED-OWNER reads the part before the last dot, and a :FILE's name is a
+  ;; path -- so without the type exclusion every .js file in a directory would
+  ;; be one family and three of them would cap the rest.
+  (let ((f (k-def 'file-entity "src/ui/RenderEngineLeaflet.js" "src/ui/RenderEngineLeaflet.js")))
+    (is (null (loom-knowledge::seed-owner f)))))
+
 (test a-dense-only-seed-does-not-answer-a-term
   ;; REQ-0048 R4 through the whole path rather than at SEMANTIC-CANDIDATES.
   ;; Cosine returns nearest neighbours for every query ever asked, so a
