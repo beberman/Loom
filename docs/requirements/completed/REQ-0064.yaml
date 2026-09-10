@@ -1,6 +1,6 @@
 id: REQ-0064
 title: The service must be able to outlive a session, because a session that starts it has already missed the MCP handshake and loses the loom_* tools for its whole length
-status: partial
+status: implemented
 date: 2026-09-10
 refines: [REQ-0008, DES-0006]
 affects: [serve-forever, server-running-p, prepare-repository]
@@ -96,7 +96,7 @@ body: |
   installed unit and `tools/loom-serve.sh restart` are interchangeable for
   picking up a source change.
 
-  OUTSTANDING, 2026-09-10
+  HOW IT WAS CLOSED, 2026-09-10
 
   The mechanism is built and verified as far as it can be without turning it
   on. PLAN-0051 delivered R1 through R5: `tools/loom-serve.sh install' writes
@@ -120,11 +120,23 @@ body: |
       systemctl --user enable --now loom.service
       loginctl enable-linger $USER        # optional; Linger=no today
 
-  Two things close this. Enable it, then open a session and confirm the tools
-  are present without any `tools/loom-serve.sh' call in the transcript. Until
-  then the race is removable rather than removed.
+  MEASURED, and this is what closes the requirement. A session opened after the
+  unit was enabled found Loom available on its first turn with no
+  `tools/loom-serve.sh' call anywhere in its transcript, and answered from
+  `loom_status': state ready, commit 267db68 on main, drift 0, 576 files, 8199
+  entities, 57273 relationships.
 
-  ENABLED 2026-09-10, and enabling it found a defect in the delivered work.
+  It was a session working in **front-end**, which is stronger evidence than the
+  acceptance asked for. The requirement was written from a game-server session
+  that lost the handshake; the answer is a third repository's session picking
+  the tools up from one service it did not start. That is the race removed
+  rather than narrowed -- there is no per-session start left to lose.
+
+  `Linger=yes` as well, so the service survives the last session ending rather
+  than needing one open.
+
+  ENABLING IT FOUND A DEFECT IN THE DELIVERED WORK, and it is worth keeping
+  because it is the second of two that only appeared on first real use.
 
   The unit started, found an unsupervised service already holding 4780, and
   exited -- `[loom-serve] another Loom service is already listening; exiting.'
