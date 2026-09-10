@@ -1,0 +1,75 @@
+id: REQ-0067
+title: complete's blocked-by refusal must distinguish a genuinely unfinished child from a parent's extracted residue, because the convention that lets a parent close is what blocks it
+status: draft
+date: 2026-09-10
+refines: [REQ-0022, DES-0019]
+affects: [document-blockers, complete-plan]
+importance: Major
+tags: [complete, documents, workflow, refines, blocked-by, front-end]
+summary: |
+  The convention in front-end is to pull what did not land into a new
+  requirement rather than mark the parent partial, so the parent can close.
+  REQ-0009 says exactly that of itself, having been pulled out of DES-0002.
+  REQ-0009 also declares `refines: [REQ-0001]`, and `complete` refuses a
+  document another unfinished document refines -- so REQ-0001 could never close.
+
+  Three of front-end's requirements were blocked this way on 2026-09-09. Two of
+  the three edges were arguable; one was simply wrong. `complete` reported
+  `blocked-by: ['REQ-0009']` and stopped there, which is correct and unhelpful:
+  nothing in the answer distinguishes *the child is genuinely unfinished* from
+  *the child is this parent's residue and the edge points the wrong way*.
+
+  The tool has the material to tell them apart and the caller has to reconstruct
+  it. Establishing which of the three was which meant reading all three
+  children.
+body: |
+  WHAT IS WANTED
+
+  R1  A `:blocked` row carries, per blocker, what is known about why that
+      blocker exists: its status, its date relative to the parent's, and whether
+      its `affects:` overlaps the parent's. A child extracted to carry a
+      parent's residue is newer than its parent and typically claims code the
+      parent does not.
+
+  R2  The refusal names the two ways through. Finish the child, or -- when the
+      child is residue -- remove the `refines:` edge, which is a one-line edit to
+      the child's own file. The second is invisible today: a reader of
+      `blocked-by` sees a fact about the graph and no hint that the graph is
+      what they may want to change.
+
+  R3  No document is edited and no edge is guessed at. The signals in R1 are
+      evidence for a judgement a person makes, and CON-0001 forbids `complete`
+      from asserting that an edge is backwards.
+
+  R4  The hint is at the point of refusal rather than in a separate command. The
+      whole cost of this defect is a detour taken from a message that had
+      already stopped, so a report a caller has to go and ask for repeats it.
+
+  WHY THE EDGE IS ARGUABLE RATHER THAN WRONG
+
+  A residue requirement does refine its parent in the ordinary sense: it answers
+  a question the parent raised. What it does not do is stand between the parent
+  and completion, and `refines:` is read by `complete` as though it always does.
+  Whether the fix is a second edge type, a flag on the edge, or a convention
+  that residue documents do not declare `refines:` at all is a design question
+  this requirement does not answer -- R2's advice to remove the edge is the
+  workaround available today, not the recommendation.
+
+  ACCEPTANCE
+
+  Run `complete` on a plan whose chain reaches a requirement blocked by a
+  newer document with a disjoint `affects:`. The refusal names the blocker,
+  says it is newer than the document it blocks and claims different code, and
+  names removing the `refines:` edge as one of the two ways forward. Run it on a
+  requirement blocked by a genuinely unfinished sibling design and the same
+  fields say so instead: same age, overlapping claim, still open.
+
+  OPEN QUESTIONS
+
+  - Whether Loom should have a way to say "this document carries what its parent
+    did not" in the document itself. That would make the signals in R1
+    unnecessary and is the larger change; the convention exists in front-end's
+    prose and nowhere in the ontology.
+  - Whether the same information belongs in a query rather than only in a
+    refusal. The document graph has no query of its own, which is filed
+    separately.

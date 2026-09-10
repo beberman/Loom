@@ -1,0 +1,68 @@
+id: BUG-0064
+title: describe on a document returns file null and file-stale null in provenance, though the document's own path is in properties two keys away
+status: open
+date: 2026-09-10
+refines: [REQ-0050]
+affects: [describe-entity, file-provenance]
+tags: [describe, provenance, staleness, documents, rest, req-0050, front-end]
+severity: medium
+summary: |
+  `describe` carries REQ-0050 R1's provenance so a REST or MCP caller can ask
+  what tree an answer is about and whether the entity's own file has moved since
+  the index read it. For a code entity it answers:
+
+    "provenance": {"commit": "75a2813...", "branch": "main",
+                   "diff": "cbf29ce484222325", "dirty": null,
+                   "file": "src/knowledge/services.lisp", "file-stale": null}
+
+  For a document entity, on the same repository in the same call, `file` and
+  `file-stale` are both null -- while `properties` in the same answer carries
+  `path`, the document's location on disk.
+
+  The cause is in the operation rather than in FILE-PROVENANCE.
+  src/serve/operations.lisp:297 passes `(getp entity :file)`, and a `:document`
+  entity has no `:file` property: the YAML analyzer writes its location as
+  `:path`. FILE-PROVENANCE is handed NIL and correctly reports nothing about a
+  file it was not told about.
+body: |
+  WHY IT MATTERS RATHER THAN BEING COSMETIC
+
+  Documents rot in their own way and Loom's whole document workflow is built on
+  noticing it -- an `affects:` entry going stale is what `check` exists to
+  report. A caller holding a `describe` answer for a document is in exactly the
+  position REQ-0050 R1 describes: it has an answer, it does not know how old the
+  answer is, and the field that would say is null.
+
+  It bites hardest in the loop the document commands create. `set-status` and
+  `complete` write documents; the watcher then reindexes; a caller that
+  describes the document in between gets an answer about the file as it was
+  before its own write, and `file-stale` -- the field whose entire purpose is to
+  say so -- reads null both before and after. The four surfaces that carry no
+  provenance at all are a separate gap; this one is a surface that carries the
+  provenance and fills the two document-relevant fields with nothing.
+
+  The asymmetry is also a wrong answer rather than a missing one. Null is what
+  FILE-PROVENANCE returns for a file it could not stat, so a caller that reads
+  `file-stale: null` on a code entity and on a document entity is reading two
+  different facts through one spelling.
+
+  WHAT WOULD FIX IT
+
+  F1. The `:describe` operation asks the entity for its location rather than for
+  one property name: `:file` for a code entity, `:path` for a document. Either a
+  helper both call sites share, or the analyzer writes `:file` on a `:document`
+  as well and `:path` stays as the alias -- the second is the larger change and
+  touches what `check` and `check-document` read.
+
+  F2. Whichever way the path is found, `file-stale` for a document must mean
+  what it means for a definition: the file's content hash differs from the one
+  the index recorded, not merely that a stat succeeded.
+
+  HOW IT WAS FOUND
+
+  front-end, writing REQ-0010, 2026-09-09: a caller wanted to know whether a
+  `describe` answer for a document predated an edit it had just made and found
+  the field null. Confirmed against Loom's own tree on 2026-09-10 --
+  `GET /v1/describe?repository=Loom&term=BUG-0062` returns
+  `"file": null, "file-stale": null` with `"path"` present in `properties` --
+  and traced to operations.lisp:297.

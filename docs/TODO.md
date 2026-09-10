@@ -130,6 +130,9 @@ loom> find @Loom repository
   arrange that themselves.
   -- game-server, implementing PLAN-0006, 2026-09-02
   -- template updated 2026-09-02; the lifecycle mechanism is the open half
+  -- REQ-0064 carries the mechanism: a user-level unit so the service is up
+     before a session opens, installed by a command rather than pasted, and the
+     prepared guidance changed from `start it' to `install it once', 2026-09-10
 
 - **`describe`'s REST answer does not say which of its neighbours are inbound,
   and the prepared guidance tells a caller to read exactly that before
@@ -143,6 +146,17 @@ loom> find @Loom repository
   console skin may well render direction; the REST caller the rule is written
   for cannot see it.
   -- game-server, deleting `data-api/operator-handler.lisp`, 2026-09-02
+  -- **The diagnosis is wrong and the entry is kept for the correction.**
+     `describe`'s `neighbors` is a list of *groups*, each carrying `direction`:
+     `{"direction": "in", "rel-type": "calls", "entities": [...]}`. Checked over
+     REST against Loom on 2026-09-10 -- `describe group-neighbors` returns six
+     groups, the first `direction: "out", rel-type: "calls"`. The probes that
+     found nothing looked for top-level keys (`calls_in`, `callers`,
+     `inbound`); the direction is one level down. What is real is that the
+     prepared guidance says "read the inbound `calls` and `tests` edges" without
+     saying the answer is grouped by direction, so a caller who has not read
+     GROUP-NEIGHBORS cannot find the field. A line in the template, not a defect
+     in the answer, 2026-09-10
 
 - **Four surfaces carry no staleness field, and an edit-query loop is where
   that bites.** `find`, `impact`, `check` and `rules` return nothing about when
@@ -155,6 +169,9 @@ loom> find @Loom repository
   `indexed-at` and `diff` fingerprint alone would let a caller notice the
   answer predates a save it just made.
   -- game-server, PLAN-0006 step 7, 2026-09-02
+  -- REQ-0065 carries it, with the four surfaces measured over REST on
+     2026-09-10 and R2 holding the line at `indexed-at` plus the fingerprint --
+     a tree-wide drift check took `describe` from 4.7ms to 25.6ms, 2026-09-10
 
 ## The graph and what it stores
 
@@ -188,6 +205,11 @@ loom> find @Loom repository
   this file without anyone suspecting it, which is the difference between a
   documented gap and a working check.
   -- game-server, PLAN-0006 step 8, 2026-09-02
+  -- REQ-0043 asks for it and is `draft`: R1 is the ASDF component-list check,
+     citing game-server/utils/token.lisp, datascience's range-tree.lisp and
+     matrix-utils' four undefined exports. `data-api/operator-handler.lisp` is a
+     fourth instance, and the generalisation to `package.json` and
+     `pyproject.toml` is this entry's addition to it, 2026-09-10
 
 ## Documents and the workflow around them
 
@@ -240,6 +262,11 @@ loom> find @Loom repository
   common cause of this state and the suggestion is one lookup the tool is
   better placed to do than the caller.
   -- game-server, PLAN-0006 step 7, 2026-09-02
+  -- REQ-0066 carries it. DOCUMENT-REFERENCE-REPORT
+     (src/workspace/workspace.lisp:1678) has four branches: `:ambiguous` carries
+     `:candidates`, `:unresolved` carries field and name only. R2 keeps the
+     status unresolved -- the candidates are a suggestion attached to a refusal,
+     2026-09-10
 
 - **A document extracted to carry a parent's unfinished work blocks that parent
   forever if it `refines:` it, which is the opposite of why it was extracted.**
@@ -257,6 +284,10 @@ loom> find @Loom repository
   parent's claim -- and a one-line hint at the point of refusal would have saved
   the whole detour.
   -- front-end, closing REQ-0001, 2026-09-09
+  -- REQ-0067 carries it: per-blocker age and `affects:` overlap at the point
+     of refusal, and the refusal naming removal of the edge as one of the two
+     ways forward. Whether a residue document should declare `refines:` at all
+     is left open rather than decided, 2026-09-10
 
 - **There is no query for the `refines` graph.** Establishing why three
   requirements were blocked meant dumping `refines:` out of 45 documents with a
@@ -265,6 +296,13 @@ loom> find @Loom repository
   answers "show me the document graph" or "what refines REQ-0002". The inverse
   direction is the one that was wanted and is the one nothing offers.
   -- front-end, closing REQ-0001, 2026-09-09
+  -- **Half the diagnosis is wrong.** `describe` answers the inverse direction
+     today, on both surfaces: `describe DES-0044` prints `<- refines: PLAN-0047,
+     BUG-0051, BUG-0062`, and the REST answer carries it as a `neighbors` group
+     with `direction: "in"`. Checked against Loom, 2026-09-10. What has no query
+     is the *chain* -- nothing walks `refines:` transitively in either
+     direction, and `complete`'s upward walk runs only from a plan and only as
+     the rows of a write it is proposing. REQ-0068 carries that, 2026-09-10
 
 - **`severity:` on a bug has no vocabulary, where `importance:` has a closed
   one.** Loom's own `docs/` carries nine distinct severities -- `advisory`,
@@ -275,6 +313,12 @@ loom> find @Loom repository
   closed vocabulary on 2026-08-23 and `severity` was not, apparently only
   because nobody wrote it down.
   -- Loom, filing BUG-0062, 2026-09-09
+  -- BUG-0063 carries it, and it is worse than this entry says: `severity:` is
+     not merely unconstrained, it is unparsed. TYPE-SPECIFIC-PROPERTIES reads it
+     only in its `:rule` method, the `:document` type declares no such property,
+     and `describe BUG-0062` returns twelve properties without it. 48 documents
+     write a field nothing reads -- the shape the `:importance` docstring six
+     lines above it in the ontology warns about, 2026-09-10
 
 - **`describe` on a document cannot answer the staleness question it answers for
   code.** A code entity carries `file` and `file-stale`, which is the field to
@@ -285,6 +329,10 @@ loom> find @Loom repository
   a caller holding a `describe` answer for a document has no way to ask how old
   it is.
   -- front-end, writing REQ-0010, 2026-09-09
+  -- BUG-0064 carries it, with the cause: operations.lisp:297 passes
+     `(getp entity :file)` and a `:document` entity writes its location as
+     `:path`, so FILE-PROVENANCE is handed NIL and correctly says nothing about
+     a file it was not told about, 2026-09-10
 
 - **`complete`'s `dry-run` field is `null` rather than `true` when the walk finds
   nothing to change.** PLAN-0002 and PLAN-0003 returned `"dry-run": true`;
@@ -294,6 +342,9 @@ loom> find @Loom repository
   written and nothing would be, which inverts the signal exactly where it should
   be clearest.
   -- front-end, closing REQ-0001, 2026-09-09
+  -- BUG-0065 D2 carries it. BUG-0057's re-entry calls COMPLETE-PLAN again with
+     `:force-write t`, which clears `dry-run`; NIL renders as `null` rather than
+     `false`, so the field reads `true` or absent and never false, 2026-09-10
 
 - **`complete` stops at an already-terminal document instead of walking through
   it, so a requirement whose design closed earlier is unreachable from its own
@@ -308,6 +359,12 @@ loom> find @Loom repository
   review is the one that had to be set blind. An `already-finished` document
   should be a node the walk passes through, not a stop.
   -- front-end, closing REQ-0004, 2026-09-09
+  -- BUG-0065 D1 carries it. transition.lisp:739-746 records
+     `:already-finished` without pushing the document onto `finished`, so
+     REFINES-TARGETS is never called for it, and the dry-run frontier extension
+     at line 789 excludes it by the same test. DOCUMENT-BLOCKERS already treats
+     a terminal document as not blocking, so the two halves of the code
+     disagree about what terminal means, 2026-09-10
 
 ## Preparing somebody else's tree
 
@@ -332,6 +389,10 @@ loom> find @Loom repository
   before falling back to grep.  The new feature would be to that if a dependancy internal request
   see a request for an external tree and that tree's source is available it is added to the index.
   -- diagnosing game-server's REQ-0003, 2026-09-01
+  -- REQ-0069 carries it. R1 makes the suggestion from the miss -- a name a
+     `depends-on` supplies is a different miss from a name nothing supplies --
+     and R3 refuses to watch a dependency unasked: a tree with forty of them
+     would become forty-one indexes on the strength of one query, 2026-09-10
 
 - **Loom's own tree holds no copy of the workflow-concept document it writes into
   every other tree, so changes to that template are never exercised against
@@ -346,6 +407,11 @@ loom> find @Loom repository
   no copy to compare against. Any field added to the ontology from here will fail
   the same way.
   -- front-end, filing BUG-0062, 2026-09-09
+  -- REQ-0070 carries it: a test comparing the rendered template against the
+     fields TYPE-SPECIFIC-PROPERTIES' `:document` method actually reads, both
+     directions, failing on the day the ontology gains a field. It does not
+     reach trees already prepared -- DES-0044 R7 stands and BUG-0062 F3 is that
+     decision, 2026-09-10
 
 ## Measuring Loom
 

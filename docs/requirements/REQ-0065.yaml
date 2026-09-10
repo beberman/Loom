@@ -1,0 +1,88 @@
+id: REQ-0065
+title: find, impact, check and rules must say when the tree was read, because a caller in an edit-query loop cannot otherwise tell a stale answer from a current one
+status: draft
+date: 2026-09-10
+refines: [REQ-0050]
+affects: [search-entities, impact-report, check-document-references, index-provenance]
+importance: Major
+tags: [staleness, provenance, rest, mcp, find, impact, check, rules, req-0050,
+       game-server]
+summary: |
+  REQ-0050 R1 put provenance on the answers a REST or MCP caller reads, on the
+  ground that such a caller has no console drift line and no other way to ask
+  what tree an answer is about. Four surfaces were not given it. Measured over
+  REST against Loom on 2026-09-10:
+
+    describe   provenance: commit, commit-reason, branch, diff, dirty,
+               file, file-stale
+    status     the same fields inline
+    structure  the same fields inline, plus drift
+    find       entities, total, truncated
+    impact     seed, count, depth, truncated, impacted, tests, documents,
+               mentions, decisions, possibly-affected, federated
+    check      unparsed, violations, unenforced, unresolved, ...
+    rules      rules
+
+  The documented answer is "ask `status` when it matters", which doubles the
+  number of calls and requires the caller to know in advance that it matters.
+
+  It bit on game-server, PLAN-0006 step 7, 2026-09-02. After a `git mv` of two
+  files, `find` kept answering with the old paths for a few seconds. The fix was
+  a `sleep` before re-querying, and knowing to insert one came from watching for
+  it rather than from the answer.
+body: |
+  WHY THESE FOUR AND NOT AN AUDIT
+
+  They are the four an agent calls in a loop. `find` after a rename, `impact`
+  before an edit, `check` after writing a document, `rules` before arguing with
+  one -- each is issued repeatedly against a tree the caller is itself changing,
+  which is the only situation in which staleness is a live question. `describe`,
+  `status` and `structure` already answer it.
+
+  WHAT IS WANTED
+
+  R1  `find`, `impact`, `check` and `rules` each carry the index's provenance:
+      at minimum `indexed-at` and the `diff` fingerprint, which is what
+      INDEX-PROVENANCE already computes for `status`. A caller that saved a file
+      and re-queried can compare the fingerprint against the one it saw before
+      and know whether the answer predates its own write.
+
+  R2  Not full drift on every answer. `describe`'s own docstring records the
+      measurement that decides this: a tree-wide drift check took the second
+      cheapest command Loom has from 4.7ms to 25.6ms. `indexed-at` and the
+      fingerprint are read off the repository struct and cost nothing, and they
+      are enough for the comparison R1 describes.
+
+  R3  One shape, not four. `describe` nests the fields under `provenance` and
+      `status` and `structure` carry them inline, which is already two shapes
+      for one fact. Whatever these four take should be the shape a caller can
+      read the same way on all seven surfaces, and the existing divergence
+      should be resolved rather than extended.
+
+  R4  The console is unchanged where it already prints a freshness line and
+      unchanged where it prints nothing. This is a field on the data for a
+      caller that cannot see the console, which is REQ-0050 R1's whole argument.
+
+  R5  The prepared guidance stops saying "ask `status` when it matters". A
+      reader told to make a second call to check the first will not make it.
+
+  ACCEPTANCE
+
+  A caller edits a file, waits for nothing, and calls `find` twice. The two
+  answers differ in the `diff` fingerprint, and the second's matches what
+  `status` reports. `impact`, `check` and `rules` each carry the same two
+  fields with the same names and the same nesting as `describe`.
+
+  A benchmark before and after shows `find` unchanged within noise, which is
+  what R2 is protecting.
+
+  OPEN QUESTIONS
+
+  - Whether a stale answer should be refused rather than labelled. It should
+    not, on CON-0001's reasoning -- a recorded gap beats a fabricated fact and
+    also beats no answer -- but a caller may want to ask for the refusal, and a
+    `require-fresh` parameter is a smaller thing than a policy.
+  - Whether `check-document`, `similar`, `survey` and `context` belong in this
+    set. `context` carries a record id and its own freshness story; the other
+    three are not called in an edit loop. Left out deliberately rather than
+    forgotten.

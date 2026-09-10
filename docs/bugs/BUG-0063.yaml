@@ -1,0 +1,112 @@
+id: BUG-0063
+title: severity is written by 48 documents and read by nothing, because :document declares no such property and TYPE-SPECIFIC-PROPERTIES parses it only for a rule
+status: open
+date: 2026-09-10
+refines: [BUG-0062]
+affects: [as-keyword,
+          "method:src/analyzer/yaml-analyzer.lisp:type-specific-properties::(eql document),t,t"]
+tags: [documents, ontology, severity, bugs, vocabulary, con-0001, silent-drop]
+severity: high
+summary: |
+  48 documents under `docs/` carry a `severity:` key. No entity holds it.
+  `describe BUG-0062` returns twelve properties -- title, summary, category,
+  doc-id, path, body, refines, mentions, affects, status, system, format -- and
+  severity is not among them, because TYPE-SPECIFIC-PROPERTIES reads `:severity`
+  only in its `:rule` method (src/analyzer/yaml-analyzer.lisp:301) and the
+  `:document` method (line 345) does not read it. The `:document` entity type
+  declares no such property either, so there is nowhere for it to land.
+
+  This is the exact shape the `:importance` docstring in the ontology warns
+  about, in the same file, six lines above the declaration:
+  "Declared here because a property this type does not declare is a field the
+  author writes and nothing ever reads -- which is precisely what :AFFECTS was
+  until it was declared, 67 documents carrying 610 names that resolved to
+  nothing and were not reported unresolved either."
+
+  The vocabulary spread is the visible symptom and was what led here. Loom's
+  own tree carries nine distinct severities: high 10, major 9, medium 8,
+  minor 6, error 6, low 3, critical 3, advisory 2, warning 1. Two bugs marked
+  `high` and `major` cannot be compared, and a reader cannot tell whether
+  `error` outranks `critical`. Nothing reports the spread because nothing reads
+  the field.
+body: |
+  WHAT IS TRUE OF THE FIELD TODAY
+
+  D1. IT IS NOT PARSED FOR A DOCUMENT.
+
+  TYPE-SPECIFIC-PROPERTIES has a `:rule` method that reads `:severity` through
+  AS-KEYWORD against `(:error :warning :advisory)` with `:error` as the default,
+  and the `:rule` entity type declares the property twice over
+  (src/ontology/code-ontology.lisp:1059 and 1275). That is the whole of
+  severity's implementation, and it is about a RULE-nnnn document's enforcement
+  strength, not about how bad a bug is.
+
+  Every workflow category -- arch, requirements, plans, reviews, bugs -- lands
+  in the `:document` method. Its own comment names the failure mode it is
+  guarding against: "a field only one genre's method reads is a field ...
+  nothing sees. :AFFECTS was exactly that until BUG-0023." `severity:` is that
+  field now, from the other side: read by one genre's method, written by 48
+  documents of other genres.
+
+  D2. THERE IS NO VOCABULARY, AND THE TWO CANDIDATE VOCABULARIES ARE INCOMPATIBLE.
+
+  The rule vocabulary is `error / warning / advisory`, which answers "how
+  strictly is this enforced". The nine values found in `docs/` answer at least
+  two other questions: `critical / major / minor` mirrors `importance:`, and
+  `high / medium / low` is a third scale on top of that. 25 of the 48 documents
+  are on one of the two three-point scales and cannot be compared across them.
+
+  A closed vocabulary for a bug's severity is therefore not a matter of copying
+  the rule's -- it is a decision that has never been made. `importance:` got
+  one on 2026-08-23 with the argument recorded in its docstring: "A scale with
+  five points invites the middle one, and the question this answers -- would the
+  product be wrong without it, or only poorer -- has three honest answers."
+  Nothing equivalent was ever written for severity.
+
+  D3. NOTHING WOULD REPORT A TYPO EVEN IF IT WERE PARSED.
+
+  This is BUG-0062 D3 unchanged: the analyzer is silent about an
+  out-of-vocabulary value on purpose and defers the report to `check` over the
+  whole tree, and `check` does not do this for `importance:` and would not for
+  `severity:` either. Fixing one fixes both.
+
+  WHY IT SURVIVED
+
+  Nothing is broken in a way anybody could see. A document with `severity: high`
+  parses, indexes, resolves its `affects:` and answers `describe` -- the field
+  simply is not in the answer, and no reader of a bug document reads it from
+  the index rather than from the file. The field is used by humans reading YAML
+  and by nothing else, which is why nine spellings accumulated without
+  friction.
+
+  WHAT WOULD FIX IT
+
+  F1. Decide the vocabulary for a document's severity, and record the argument
+  the way `:importance` records its own. The question a bug's severity answers
+  is not the question a rule's answers, so the `:rule` vocabulary is a
+  candidate rather than the answer.
+
+  F2. Declare `:severity` on the `:document` entity type with that `:one-of`,
+  and read it in TYPE-SPECIFIC-PROPERTIES' `:document` method beside
+  `:importance`.
+
+  F3. Migrate the 48 documents. Nine values to three or four is a judgement per
+  document, not a mapping -- `high` and `major` may or may not be the same
+  claim, and the author is gone from most of them.
+
+  F4. `check` reports a document whose `severity:` key is present in the YAML
+  and absent from the entity, which is BUG-0062 F2 for the same reason and
+  should be one implementation covering both fields.
+
+  F5. The workflow-concept template gains the field, which is BUG-0062 F1's
+  problem and inherits BUG-0062 F3's difficulty: no prepared tree can be told
+  about it. Loom's own tree holding no copy of that template is the mechanism,
+  and it is filed separately.
+
+  HOW IT WAS FOUND
+
+  Filing BUG-0062 on 2026-09-09 raised the question of what other document
+  fields are written and unread. `grep -rhn "^severity:" docs/` produced nine
+  distinct values; `describe BUG-0062` over REST returned twelve properties
+  with severity absent; `grep -n severity src/analyzer/yaml-analyzer.lisp`
+  returned one parse, in the `:rule` method.

@@ -1,0 +1,108 @@
+id: REQ-0064
+title: The service must be able to outlive a session, because a session that starts it has already missed the MCP handshake and loses the loom_* tools for its whole length
+status: draft
+date: 2026-09-10
+refines: [REQ-0008, DES-0006]
+affects: [serve-forever, server-running-p, prepare-repository]
+importance: Major
+tags: [mcp, service, lifecycle, supervision, tooling, init, game-server]
+summary: |
+  Every prepared tree's guidance says to prefer the `loom_*` MCP tools and to
+  run `tools/loom-serve.sh update` at the start of a session. Both are good
+  advice and together they cannot be followed. The host resolves MCP connections
+  once, when the session opens, so a service started by the session's first tool
+  call has already missed the handshake and the tools stay unavailable for the
+  session's whole length however healthy the endpoint becomes.
+
+  Measured rather than inferred, on game-server, 2026-09-02. The process
+  listening on 4780 was pid 5125; the session's first tool call printed
+  `started (pid 5125)`, and CMD_START prints that only on the path that launches
+  a process, printing `already running ($state)` otherwise; `ps` put 5125's
+  start at 08:21:05, the session's own opening minute. The service was down for
+  the handshake, came up seconds later, and stayed up for the following three
+  hours. Roughly forty queries went over REST instead, which worked and meant
+  hand-writing URL encoding and JSON parsing for answers the tools return
+  shaped.
+
+  Nothing is wrong with the endpoint or the registration. `.mcp.json` is correct
+  and `POST /mcp` answers 200. The whole of the defect is that the service is
+  started per-session by a session that has already lost the race.
+body: |
+  WHAT EXISTS
+
+  `sbcl --script loom-serve.lisp --headless` is already the half of this that
+  works: SERVE-FOREVER never reads stdin, so the listener does not fall over
+  when its terminal closes, and loom-serve.lisp's own header says why
+  (lines 19-25). REQ-0008 and DES-0006 built it for a supervisor. What has never
+  been written is the supervisor.
+
+  `tools/loom-serve.sh start` launches that process from whatever shell runs it,
+  which in practice is the session's first tool call. `cmd_status` reports `not
+  running` when no process holds the port, and every prepared tree's CLAUDE.md
+  tells the reader to start it -- which is the correct instruction issued at the
+  one moment it cannot help.
+
+  The documentation half is done and is not the fix. `claude-md-pointer.md` now
+  opens with the lifecycle: start it and wait before opening the session, the
+  measured 12s to first answer and 18s to `ready`, and REPOSITORY-STATE's three
+  states so a caller knows `find`, `describe`, `impact` and `check` are
+  trustworthy at `:embedding` while only `context` is still warming. Every tree
+  gets that on the next `init --update`. It can only tell a reader to arrange
+  the lifecycle themselves.
+
+  WHAT IS WANTED
+
+  R1  Loom ships a way for the service to outlive a session and to be running
+      before one opens. A user-level systemd unit under WSL Ubuntu is the
+      obvious shape -- `systemctl --user enable --now loom` -- since that is the
+      environment this tree runs in and `--headless` was built for exactly a
+      supervisor. A login item or a shell-profile hook is the fallback for an
+      environment with no user systemd.
+
+  R2  The unit is generated or installed by a command rather than pasted from a
+      document. `tools/loom-serve.sh install` writing the unit file, naming the
+      repositories it will watch, and reporting what it wrote. A unit a reader
+      hand-copies is a unit that drifts from the script beside it.
+
+  R3  Starting it twice is safe and says so. The unit and `tools/loom-serve.sh
+      start` must not fight: whichever runs second reports `already running` and
+      exits zero, which CMD_STATUS already distinguishes.
+
+  R4  The prepared guidance changes from "start it at the beginning of your
+      session" to "install it once", and says what to do when the tools are
+      absent anyway -- REST is the documented fallback and the guidance should
+      name it rather than leave a caller to derive it, which is what the
+      measured session did for forty queries.
+
+  R5  `init` and `init --update` write R4's text, so a tree prepared before this
+      lands gets it by the REQ-0052 mechanism rather than by hand.
+
+  WHAT THIS IS NOT
+
+  Not a retry inside the host. The other sufficient fix is for a refused MCP
+  endpoint to be retried on first use rather than resolved once, and that is the
+  host's to fix and worth filing there. It narrows the race for every MCP server
+  at once; it is not Loom's to build and Loom cannot depend on it landing.
+
+  Not a change to how the service is started by hand. `sbcl --script
+  loom-serve.lisp` with a console stays exactly as it is -- it is how the thing
+  is developed.
+
+  ACCEPTANCE
+
+  A machine where R1 has been done opens a fresh session and the `loom_*` tools
+  are in the tool list on the first turn, with no `tools/loom-serve.sh` call in
+  the transcript. Rebooting and opening a session gives the same answer. The
+  installed unit and `tools/loom-serve.sh restart` are interchangeable for
+  picking up a source change.
+
+  OPEN QUESTIONS
+
+  - Which repositories a system-installed service watches. `tools/extra-repos`
+    is a file in Loom's tree read at start; a unit installed once and a watch
+    list edited often want the same relationship the script already has, which
+    argues for the unit reading the same file rather than baking a list into
+    ExecStart.
+  - Whether a supervised service should reindex on start or restore an index.
+    12s to first answer is tolerable for a login-time start and is not for a
+    restart in the middle of work, and this requirement does not decide it.

@@ -1,0 +1,96 @@
+id: BUG-0065
+title: complete stops at an already-finished document instead of walking through it, and reports dry-run null on the run that writes nothing
+status: open
+date: 2026-09-10
+refines: [REQ-0022, BUG-0057]
+affects: [complete-plan, terminal-status-p, refines-targets]
+tags: [complete, documents, workflow, transition, dry-run, bug-0057, front-end]
+severity: high
+summary: |
+  Two defects in COMPLETE-PLAN's report, both found closing front-end's
+  documents on 2026-09-09, both in src/workspace/transition.lisp.
+
+  D1. A document that was already terminal ends the walk. `complete
+  plan=PLAN-0004` in front-end returned exactly two rows -- `PLAN-0004
+  unchanged` and `DES-0006 already-finished` -- and never mentioned REQ-0004,
+  which DES-0006 refines and which was still `accepted`. Nothing was blocked and
+  no problem was reported. The requirement was correct, complete and closeable,
+  and the plan that implemented it could not say so.
+
+  D2. `dry-run` is null on the run that writes nothing. PLAN-0002 and PLAN-0003
+  returned `"dry-run": true`; PLAN-0006, already fully terminal, returned
+  `"dry-run": null` with every row `already-finished` or `unchanged`. A caller
+  testing that field to learn whether a write happened reads falsy in the one
+  case where nothing was written and nothing would be.
+body: |
+  D1. THE WALK STOPS AT A TERMINAL DOCUMENT
+
+  transition.lisp:739-746 records `:already-finished` and does not push the
+  document onto `finished`, so REFINES-TARGETS is never called for it and its
+  parents never enter the frontier. The dry-run frontier extension at line 789
+  excludes terminal documents by the same test, so a preview does not reach them
+  either.
+
+  The comment there gives the reasoning: "It needs no verdict, it blocks
+  nothing, and the walk stops here rather than climbing through it: nothing
+  about it changed, so nothing above it changed because of it."
+
+  That is true of a document finished by this cascade and false of one finished
+  in an earlier session. front-end is the case: DES-0006 was closed by hand
+  weeks before PLAN-0004 was completed, so by the time the plan ran there was
+  nothing left to change about the design -- and REQ-0004 above it was still
+  open, still refined only by that design, and now unreachable from any plan.
+  The condition that would have finished it had already happened and the walk
+  could no longer observe it.
+
+  Closing REQ-0004 needed `set-status`, which is the write path that shows no
+  chain. So the one document whose verdict most deserved a dry-run review is the
+  one that had to be set blind, and `set-status` -- which both the skill and the
+  generated CLAUDE.md describe as the escape hatch for a *blocked* document --
+  became the ordinary way through for a document that was not blocked at all.
+
+  An `already-finished` document should be a node the walk passes through. It
+  contributes no edit and no verdict; what it contributes is its own
+  `refines:` targets, and it should contribute them for the same reason a
+  document finished by this cascade does: its being terminal is part of why its
+  parent may now be finishable. DOCUMENT-BLOCKERS already treats a terminal
+  document as not blocking, so the two halves of the code disagree about what
+  terminal means -- blocking-wise it is settled, walking-wise it is a stop.
+
+  D2. DRY-RUN NULL
+
+  `dry-run` is bound at line 658 as `(and (null parsed) (not force-write))`.
+  BUG-0057's re-entry at line 843 calls COMPLETE-PLAN again with
+  `:force-write t` when a dry run found nothing awaiting a verdict, so the
+  answer that returns is the second call's, where `force-write` is true and
+  `dry-run` is therefore NIL. NIL renders as `null` over JSON rather than as
+  `false`, which is a second, smaller wrong: a boolean field that is sometimes
+  `true` and never `false` gives a caller no way to tell "not a preview" from
+  "field not set".
+
+  The value is defensible on its own terms -- the second call really is not a
+  dry run -- and useless to the caller, who wants to know whether the command
+  wrote. On a fully-terminal plan the answer is: it did not, `changed` is empty,
+  every row is `already-finished` or `unchanged`, and the one field shaped like
+  the question says null.
+
+  WHAT WOULD FIX IT
+
+  F1. A terminal document is walked through: recorded `already-finished` as
+  now, and its REFINES-TARGETS added to the next frontier. The all-or-nothing
+  verdict rule is untouched -- a parent reached this way still needs a verdict
+  and still refuses without one.
+
+  F2. `dry-run` is `false` rather than null on any run that is not a preview,
+  and the answer carries something a caller can test for "nothing was written":
+  `changed` being empty already says it, and saying so in the field named after
+  the question is the fix. The re-entry must not be the thing that decides it.
+
+  F3. CON-0003: a test that fails without F1 is a plan whose only refined
+  document is already terminal above an open grandparent, and one for F2 asserts
+  `dry-run` is false rather than null on the BUG-0057 re-entry path.
+
+  HOW IT WAS FOUND
+
+  front-end, closing REQ-0001 and REQ-0004, 2026-09-09. Both confirmed against
+  Loom's source on 2026-09-10 at transition.lisp:658, 739-746, 789 and 843.

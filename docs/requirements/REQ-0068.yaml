@@ -1,0 +1,83 @@
+id: REQ-0068
+title: The document graph has no query beyond one hop, so establishing why three requirements were blocked meant dumping refines out of 45 files with a shell loop
+status: draft
+date: 2026-09-10
+refines: [REQ-0022]
+affects: [refines-targets, describe-entity, impact-report]
+importance: Minor
+tags: [documents, refines, query, describe, workflow, front-end]
+summary: |
+  front-end, closing REQ-0001 on 2026-09-09: establishing why three requirements
+  were blocked meant reading `refines:` out of 45 documents with a shell loop and
+  assembling the chain by hand.
+
+  One hop is already answered, in both directions, and the session that hit this
+  did not know it. `describe DES-0044` prints
+
+    -> refines: REQ-0052
+    <- refines: PLAN-0047, BUG-0051, BUG-0062
+
+  and the REST answer carries the same as two `neighbors` groups with
+  `direction: "out"` and `direction: "in"`. So "what refines DES-0044" is a
+  question Loom answers today.
+
+  What has no query is the chain. Nothing walks `refines:` transitively in
+  either direction, and nothing renders the document graph as a graph. `impact`
+  walks code and does not follow `refines:`; `complete` walks one plan's chain
+  upward and reports it only as the rows of a transition it is proposing to
+  write.
+body: |
+  WHAT EXISTS, PRECISELY
+
+  - `describe <doc>` -- one hop out (`refines:` as written) and one hop in
+    (documents that name this one), on the console and over REST.
+  - `complete <plan>` -- the upward walk, level by level, but only from a plan,
+    only upward, and only as a side effect of proposing a write. A dry run is
+    the closest thing to a chain query that exists and it refuses to run on
+    anything but a plan.
+  - `check` -- reports a `refines:` naming nothing, which is the graph's health
+    rather than its shape.
+
+  WHAT IS WANTED
+
+  R1  A query that takes a document and returns its `refines:` chain to a
+      depth, in a named direction. Upward -- what this answers, and what that
+      answers -- is the direction `complete` walks. Downward -- what answers
+      this -- is the direction that says whether a requirement is finished.
+
+  R2  Each node in the answer carries its status. The question that sent the
+      session to a shell loop was not "what is the shape" but "which of these is
+      unfinished, and is that why the walk stopped", and a chain without
+      statuses does not answer it.
+
+  R3  It runs from any document, not only from a plan. The blocked requirements
+      in front-end were reached from a requirement.
+
+  R4  It writes nothing and proposes nothing. This is the read half of what
+      `complete` does, and separating them is the point: a caller that wants to
+      understand the chain should not have to invoke the command that changes
+      it.
+
+  WHY IT IS MINOR
+
+  The information is reachable. One `describe` per document answers each hop,
+  and a chain of four documents is four calls. The cost is that a caller has to
+  know to make them and has to hold the shape in their head, which on 45
+  documents is where the shell loop came from.
+
+  ACCEPTANCE
+
+  A single call from front-end's REQ-0001 returns REQ-0009 among the documents
+  that refine it, with REQ-0009's status, without a second call and without
+  reading a file. The same call from a plan returns what `complete`'s dry run
+  reports as rows, minus the verdicts and the proposed writes.
+
+  OPEN QUESTIONS
+
+  - Whether this is a new verb or `impact` learning to follow `refines:`.
+    `impact` already reports documents that bear on an entity and is the command
+    an agent reaches for; a `refines:` walk is a different traversal with
+    different termination and would need its own bands.
+  - Whether the answer should include `:documents` and `:mentions` edges or only
+    the declared `refines:`. The chain is what was wanted; the rest is what
+    `describe` already gives.

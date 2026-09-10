@@ -1,0 +1,78 @@
+id: REQ-0066
+title: An unresolved qualified reference must carry the candidates its bare name resolves to, because a rename is the common cause and the tool is better placed to do the lookup than the caller
+status: draft
+date: 2026-09-10
+refines: [REQ-0030]
+affects: [document-reference-report, resolve-one, check-document-references]
+importance: Minor
+tags: [check, check-document, documents, rename, unresolved, candidates,
+       game-server]
+summary: |
+  DOCUMENT-REFERENCE-REPORT (src/workspace/workspace.lisp:1678) has four
+  outcomes. `:ambiguous` carries `:candidates` -- the ids RESOLVE-ONE could not
+  choose between -- and that field is what makes an ambiguity cheap to fix.
+  `:unresolved` carries `:field`, `:name` and nothing else.
+
+  A rename is the common way a reference becomes unresolved, and after one the
+  same definition is usually one path away under the same bare name.
+  game-server, PLAN-0006 step 7, 2026-09-02: moving `model-handler.lisp` and
+  `game-handler.lisp` from `data-api/` into `mpackage/` broke three references
+  named by fully-qualified id --
+  `class:data-api/game-handler.lisp:game-handler` and two others. `check`
+  reported all three unresolved immediately, which is the system working and is
+  recorded as such in VALUE.md. Closing them took a `find` per name to learn the
+  new path and a hand edit per document.
+
+  The lookup that would have answered all three is the one RESOLVE-ONE already
+  performs on the bare name.
+body: |
+  WHAT IS WANTED
+
+  R1  An `:unresolved` report whose *bare* name resolves -- the qualified id
+      failed, the last segment of it matches one or more entities -- carries
+      those entities as `:candidates`, in the same field name and shape
+      `:ambiguous` uses.
+
+  R2  The status stays `:unresolved`. It is not ambiguity and it is not a
+      resolution: the author wrote a qualified id and no entity has it, which is
+      a fact the report must keep saying. The candidates are a suggestion
+      attached to a refusal, which is what `:ambiguous` already is on the other
+      branch.
+
+  R3  A candidate whose qualified id differs from the written one only in its
+      path is marked as such, because that is the rename case and it is the one
+      an author can act on without thinking. A candidate that shares the bare
+      name and is a different type or a different system is still worth
+      reporting and is not the same suggestion.
+
+  R4  Nothing is rewritten. CON-0001 and DEC-0001 both point the same way here:
+      the report suggests, the author edits the file, and the index is rebuilt
+      from what they wrote. A `check --fix` that edited documents would be
+      guessing which of two same-named definitions the author meant.
+
+  R5  The console prints the candidates under the unresolved line the way it
+      prints them under the ambiguous one, and the REST answer carries them for
+      a caller that reads `unresolved-qualified`.
+
+  WHY IT IS MINOR
+
+  The reference is already reported, by name, with its document and its field.
+  Nothing is silently wrong and no fabricated fact is at stake -- this is the
+  cost of acting on a correct report, measured at one `find` and one edit per
+  reference. Three in one session is the largest instance so far.
+
+  ACCEPTANCE
+
+  Move a file whose definition is named by qualified id in a document. `check`
+  reports the reference unresolved and names the definition's new id among its
+  candidates. Delete the definition instead, and the same reference reports
+  unresolved with no candidates -- which is the answer that makes the first one
+  worth reading.
+
+  OPEN QUESTIONS
+
+  - Whether the search should cross repositories. REQ-0056 taught `check` to
+    resolve `affects:` against another watched tree, and a definition moved
+    between two watched trees is the same rename one level up. The federated
+    lookup already exists; whether an unresolved report should pay for it is a
+    cost question this requirement does not answer.

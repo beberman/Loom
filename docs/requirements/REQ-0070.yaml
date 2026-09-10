@@ -1,0 +1,80 @@
+id: REQ-0070
+title: Loom must dogfood the workflow-concept template, because it is the one document Loom ships that Loom never reads and any field added to the ontology will be omitted from it unnoticed
+status: draft
+date: 2026-09-10
+refines: [DES-0044]
+affects: [render-template, prepare-repository]
+importance: Major
+tags: [init, templates, dogfooding, documents, ontology, workflow, bug-0062,
+       front-end]
+summary: |
+  `src/workspace/templates/workflow-concept.yaml` is the conventions document
+  `init` writes into every prepared tree -- the text an author of that tree
+  reads to learn how to write a document. Loom's own `docs/concepts/CON-0001.yaml`
+  is "Resolution pass", a real concept document about the resolution pass, and
+  has nothing to do with it. So the template is the one document Loom ships that
+  Loom never reads, never checks and never dogfoods.
+
+  That is the mechanism behind BUG-0062. `importance:` was added to the ontology
+  and to Loom's own requirements on 2026-08-23 and never reached the template.
+  Nothing anywhere could have noticed: no prepared tree can see an omission from
+  the document that defines its conventions, and Loom has no copy to compare
+  against. front-end carried 62 documents with no importance field until
+  2026-09-09, when somebody happened to read Loom's documents and Loom's own
+  ontology side by side.
+
+  Any field added to the ontology from here fails the same way. BUG-0063 is the
+  second instance, found by looking rather than by anything reporting it.
+body: |
+  WHAT IS WANTED
+
+  R1  Something in Loom's own tree compares the template against the fields the
+      analyzer actually reads. TYPE-SPECIFIC-PROPERTIES' `:document` method is
+      the list: every key it looks up is a field an author must be told about,
+      and a key it reads that the template does not mention is the defect. A
+      test is the cheapest form and fails on the day the ontology gains a field.
+
+  R2  The comparison runs against the *rendered* template, not the source file,
+      so a placeholder that a render drops is caught with the rest. RENDER-TEMPLATE
+      is what `init` calls and is what a prepared tree receives.
+
+  R3  The reverse direction is reported too: a field the template documents that
+      no method reads. That is the same silent drop from the author's side --
+      correct YAML written to instruction and discarded -- and BUG-0023 is the
+      standing instance of it.
+
+  R4  The template is indexed. Whether by giving Loom a copy under `docs/` or by
+      teaching the YAML analyzer to claim `src/workspace/templates/*.yaml`, the
+      document Loom ships should be a document Loom can be asked about. Today
+      `find` and `describe` know nothing of it.
+
+  WHAT THIS DOES NOT FIX
+
+  DES-0044 R7 stands: the workflow concept is not refreshed by `init --update`,
+  because it is a document the team owns and may have edited, so an improvement
+  to the template reaches new trees only. This requirement makes the omission
+  *visible on the day it happens* rather than years later in somebody else's
+  tree. Reaching the trees that already exist is BUG-0062 F3 and is a separate
+  decision.
+
+  ACCEPTANCE
+
+  Add a property to the `:document` entity type and read it in
+  TYPE-SPECIFIC-PROPERTIES without touching the template. The suite fails, names
+  the field, and names the template file. Add the field to the template and it
+  passes.
+
+  Run the same check against the tree as it stands and it fails today on
+  `importance:` and on whatever BUG-0063 decides about `severity:`, which is
+  what makes it worth having rather than a test written green.
+
+  OPEN QUESTIONS
+
+  - Whether the check belongs in the FiveAM suite or in `check`. The suite fails
+    a developer changing the ontology, which is the person who can fix it; `check`
+    would report it in every prepared tree, where nobody can. The suite is the
+    likelier home and `tools/loom-test.sh` is what would run it.
+  - Whether `loom-skill.md` and `claude-md-pointer.md` need the same treatment.
+    They document commands rather than fields, and a command removed from the
+    registry with the template still describing it is the same defect in a form
+    nothing checks either.
