@@ -2,6 +2,7 @@ id: BUG-0065
 title: complete stops at an already-finished document instead of walking through it, and reports dry-run null on the run that writes nothing
 status: open
 date: 2026-09-10
+amended: 2026-09-10
 refines: [REQ-0022, BUG-0057]
 affects: [complete-plan, terminal-status-p, refines-targets]
 tags: [complete, documents, workflow, transition, dry-run, bug-0057, front-end]
@@ -74,12 +75,63 @@ body: |
   every row is `already-finished` or `unchanged`, and the one field shaped like
   the question says null.
 
+  D3. FIXING D1 EXPOSES A GENRE THE WALK CANNOT PASS THROUGH AT ALL.
+
+  Found 2026-09-10 while checking a different claim, and it is a consequence of
+  D1's fix rather than a defect visible today.
+
+  Four categories have no terminal status in *WORKFLOW-STATUS-VOCABULARY*:
+  arch, decisions and rules carry an empty terminal column, and concepts are not
+  in the table. A decision is `proposed', `accepted', `superseded' or
+  `rejected', and TERMINAL-STATUS-P is false for all four.
+
+  These do not block anything, and that is already handled: FINISHABLE-P
+  (transition.lisp:539) returns false for exactly these four and
+  DOCUMENT-BLOCKERS filters on it, with the reason in its docstring -- "Those
+  are *in force* rather than outstanding: an active rule refining a concept is
+  not unfinished work holding the concept open."
+
+  What is not handled is the walk reaching one. The loop's clauses are ordered
+  no-status, already-finished, blocked, no-verdict, verdict. A concept takes the
+  first and is reported `:no-status'. A decision takes none of the first three:
+  it has a status vocabulary, it is never terminal, and it blocks nothing -- so
+  it falls to `:awaiting-verdict', and the all-or-nothing rule refuses the whole
+  cascade until the caller supplies a verdict for a decision. Supply one and
+  TERMINAL-STATUS-P is still false, so the walk stops there regardless.
+
+  Nine documents in this tree refine DEC-0006 or another decision, so the chain
+  exists. It is unreachable today only because D1 stops the walk first, which
+  measured on 2026-09-10:
+
+      complete plan=PLAN-0043
+        PLAN-0043  final        unchanged
+        REQ-0048   implemented  already-finished
+        DES-0040   implemented  already-finished
+
+  DES-0040 refines DEC-0006. The walk halts at DES-0040 because it is already
+  terminal, and never asks what DEC-0006 would do. Fix D1 and it asks.
+
+  So D1's fix has to pass through a non-terminal genre the way it passes through
+  a terminal one: contribute no verdict and no edit, contribute REFINES-TARGETS,
+  and be reported as what it is. FINISHABLE-P is the predicate that already
+  names the four categories, and it is the one the walk should consult.
+
+  The same output reproduces D2: `"dry-run": null` on a run where every row is
+  `already-finished` or `unchanged` and `changed` is empty.
+
   WHAT WOULD FIX IT
 
   F1. A terminal document is walked through: recorded `already-finished` as
   now, and its REFINES-TARGETS added to the next frontier. The all-or-nothing
   verdict rule is untouched -- a parent reached this way still needs a verdict
   and still refuses without one.
+
+  F1b. A document whose category has no terminal status is walked through the
+  same way and never asked for a verdict. FINISHABLE-P is false for exactly the
+  four categories concerned and is the test to use, so a decision, rule,
+  architecture note or concept in the chain contributes its REFINES-TARGETS and
+  is reported as in force rather than as awaiting anything. Without this, F1
+  turns a walk that stops early into a cascade that refuses.
 
   F2. `dry-run` is `false` rather than null on any run that is not a preview,
   and the answer carries something a caller can test for "nothing was written":
@@ -88,7 +140,10 @@ body: |
 
   F3. CON-0003: a test that fails without F1 is a plan whose only refined
   document is already terminal above an open grandparent, and one for F2 asserts
-  `dry-run` is false rather than null on the BUG-0057 re-entry path.
+  `dry-run` is false rather than null on the BUG-0057 re-entry path. F1b needs a
+  third: a chain running plan -> design -> decision, where the decision must
+  neither be asked for a verdict nor end the walk. PLAN-0043 -> DES-0040 ->
+  DEC-0006 is that chain in this tree and needs no fixture.
 
   HOW IT WAS FOUND
 

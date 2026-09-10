@@ -345,14 +345,60 @@ body: |
       the other direction: it would rebind a reference that has already escaped
       the branch in a commit message or a review.
 
+  A6  BLOCK LEASING, AND IT IS THE ANSWER THIS DOCUMENT LANDS ON.
+      Decided 2026-09-10; DES-0048 carries the mechanism.
+
+      A2's counter conflicts once per document, and at ten developers that is
+      daily and each conflict costs A4's renumber. It does not scale past a
+      handful of people, which is what A2 was not measured against.
+
+      Leasing changes the unit. An instance claims a contiguous range and mints
+      from it locally, so coordination happens once per block-size documents
+      rather than once per document. The conflict rate falls by the block size,
+      and -- the part that matters more -- a conflict now costs nothing: two
+      instances claiming one range have written no documents yet, so the loser
+      re-derives a range and retries. A2's conflict costs a renumber; A6's costs
+      a round trip.
+
+      Gossip between Loom instances was considered and refused. Announcing
+      individual allocations is eventually consistent, so two instances
+      allocating in the same instant learn of each other afterwards -- detection
+      with a faster loop, ending in the same renumber A2 ends in. Prevention
+      under partition requires the namespace to have been divided in advance,
+      which is what a lease is. And the transport does not survive the
+      deployment: Loom binds 127.0.0.1 with no authentication over eleven
+      write-tier operations, and a team of ten is behind NAT and VPN rather than
+      on one LAN, so discovery would need a rendezvous point -- the central
+      service the exercise was avoiding.
+
+      The lease ledger is a file on an orphan branch of the repository being
+      developed, so the rendezvous point is the remote every developer already
+      pushes to, and a rejected push is the compare-and-swap. The ordering rule
+      that makes the retry automatable is claim-before-mint: a block is claimed
+      and confirmed before any id comes out of it.
+
+      This removes R3. The ledger is per-project because it lives in the
+      project, so there is nothing to key on a root commit. It also removes the
+      precondition corrected into this document above: no shared filesystem and
+      no shared service instance is needed, only the shared remote.
+
+      Block size is a configured parameter rather than a constant, read from the
+      environment, because it trades conflict rate against the size of the gaps
+      it leaves and neither can be settled from anything in a tree.
+
   WHAT THE TWO ANSWERS COST
 
   The ledger prevents the collision and needs a deployment this tree does not
   have. The counter detects it, needs nothing, and leaves a renumber that is
-  cheap in files and lossy in history. R7's duplicate check is required by both
-  and is the only part of this document that is unconditionally worth building:
-  it is the backstop for R6's offline fallback under the ledger, and the second
-  line of defence under the counter.
+  cheap in files and lossy in history -- daily, at ten developers. A6's lease
+  prevents it, needs no service and no shared filesystem, and pays a round trip
+  once per block instead of a renumber once per collision. That is why the
+  document lands on A6.
+
+  R7's duplicate check is required by all three and is the one part of this
+  document that is unconditionally worth building: the backstop for R6's offline
+  fallback, which A6 still needs for a block exhausted while the remote is
+  unreachable.
 
   REQUIREMENTS
 

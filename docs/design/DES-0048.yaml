@@ -1,0 +1,196 @@
+id: DES-0048
+title: A document id comes from a block leased on an orphan branch of the project's own repository, and a rejected push is the compare-and-swap
+status: draft
+date: 2026-09-10
+refines: [REQ-0025]
+affects: [prepare-repository, find-repository, git-diff-hash]
+tags: [documents, ids, workflow, multi-user, git, leases, con-0004, req-0025,
+       req-0021]
+summary: |
+  Loom leases a contiguous range of document numbers and mints ids from it
+  locally. The lease ledger is `.id-blocks.yaml` on an orphan branch of the
+  repository being developed -- not of Loom's tree -- holding that one file and
+  nothing else. Claiming a block is fetch, append, commit, push. Allocating an
+  id afterwards touches no network at all.
+
+  Git's non-fast-forward rejection is the concurrency primitive. Two instances
+  claiming the same range both commit locally; the second push is refused, and
+  Loom re-reads the branch, re-derives a range that does not overlap, and pushes
+  again. That retry is safe to automate for exactly one reason, and it is the
+  ordering rule the whole design rests on: **a block is claimed and its push
+  confirmed before any id is minted from it.** No document exists when the
+  conflict is resolved, so nothing is renumbered and nothing is lost.
+
+  This is what makes the block model different in kind from the counter of
+  REQ-0025 A2 rather than a bigger version of it. A2 conflicts once per
+  document, and resolving the conflict costs a renumber that is lossy in commit
+  history. This conflicts once per block, and resolving it costs nothing.
+body: |
+  WHERE THE LEDGER LIVES
+
+  In the repository being developed, on its own remote, not in Loom's tree and
+  not in Loom's state directory.
+
+  That placement removes REQ-0025 R3. R3 keys the ledger on the root commit
+  because the ledger was to live outside every worktree, in the service's state
+  directory, and therefore needed a key naming which project a counter belonged
+  to. A ledger committed to the project's own repository is inherently
+  per-project: it arrives with the clone, it forks with the fork, and there is
+  nothing to key.
+
+  It also removes the precondition REQ-0025 was corrected for on 2026-09-10. A
+  service-local ledger coordinates only instances that share a filesystem; this
+  one coordinates every clone that can reach the remote, which is every
+  developer on the project by definition, however remote they are. Discovery
+  does not arise, because there is nothing to discover: the rendezvous point is
+  the remote everyone already pushes to.
+
+  THE BRANCH
+
+  An orphan branch -- created with no parent, sharing no history with `main' --
+  named by convention and holding exactly one file. Orphan rather than a branch
+  off main, for three reasons:
+
+    Its history is block claims and nothing else, so `git log' on it reads as
+    the allocation record.
+
+    It never merges into main and main never merges into it, so a block claim
+    cannot entangle with a code merge and a code merge cannot conflict on the
+    ledger.
+
+    Fetching it costs one small object graph rather than the project's history.
+
+  Loom manipulates it without checking it out. The developer's working tree and
+  index are never touched: the branch is read with `git fetch` into a remote
+  ref, the new tree is built with the plumbing that writes objects directly, and
+  the ref is moved and pushed. A checkout would fight the developer for the
+  working tree, and a `git worktree add' would leave a directory to clean up.
+
+  THE PROTOCOL
+
+  Claiming a block:
+
+    1. Fetch the ledger branch.
+    2. Read `.id-blocks.yaml' and compute the next free range for this
+       (origin, type) -- the highest end across every claim, plus one.
+    3. Append the claim and push.
+    4. If the push is rejected as non-fast-forward, discard the computed range,
+       go to 1. Never retry the same range.
+
+  Minting an id:
+
+    Take the next unused number in a block this origin already holds and has
+    confirmed. No network, no lock, no coordination.
+
+  Step 4 is the compare-and-swap and the push is what performs it. Git refuses
+  to move a ref whose old value is not what the pusher believed, which is
+  precisely the primitive an optimistic allocator needs, already implemented,
+  already authenticated, already working over NAT. Nothing here is a new
+  protocol.
+
+  The retry is bounded in practice rather than by construction: each round trip
+  loses only to an instance that pushed first, and a claim happens once per
+  block-size documents, so two instances racing is already rare and three is
+  vanishingly so.
+
+  WHY CLAIM-BEFORE-MINT IS THE WHOLE DESIGN
+
+  Reverse the order -- mint first, reconcile later -- and the retry is no longer
+  automatable. Losing a race would mean documents already exist carrying numbers
+  another instance owns, and resolving that is a renumber: cheap in the files,
+  which Loom can rewrite, and permanently wrong in the losing branch's commit
+  messages, which nothing can. REQ-0025 A4 measures that cost and this design
+  exists to never pay it.
+
+  So a block whose push has not been confirmed is not a block. An instance that
+  cannot push has not claimed anything and must not mint from what it computed.
+
+  WHAT THE FILE HOLDS
+
+  One entry per claim: the origin, the document type, the explicit start and end
+  of the range, and the date.
+
+  Explicit start and end rather than a size and a count. If block size is
+  configurable -- and it is -- then two instances configured differently would
+  read one another's entries wrongly under any encoding that stores the size
+  separately from the range. The range is the fact; the configured size only
+  decides how large a *new* claim asks to be.
+
+  Entries are append-only and a claimed range is never edited, narrowed or
+  reused. That is REQ-0025 R5's monotonicity, arrived at for the same reason:
+  a range handed back could be handed out again, and any id minted from it may
+  already be named in a commit message or a review.
+
+  ORIGIN IS THE LOOM INSTANCE
+
+  Not the machine and not the developer. The instance is what serializes: two
+  developers sharing one Loom on one server draw from one block and cannot
+  collide, because a single instance mints under its own lock. Two Loom
+  instances on one machine are two origins and hold two blocks, correctly, since
+  neither can see the other's allocation.
+
+  This is also why the machine-and-branch qualifier REQ-0025 rejects is not
+  needed anywhere: the origin is recorded in the ledger, where it is evidence
+  about a claim, rather than inside the id, where it would be permanent and
+  would cost the format.
+
+  BLOCK SIZE
+
+  A configurable parameter read from the environment, defaulting to a value this
+  design does not fix. It trades two things against each other and both are
+  real: a small block claims often, which raises the conflict rate and the
+  number of network round trips; a large block leaves large gaps, which pushes
+  ids into more digits sooner and makes `ls docs/requirements' sparse.
+
+  Gaps are already accepted by REQ-0025's BURNED IDS section -- "`ls
+  docs/requirements' will show 0029, 0030, 0032, and that is correct rather than
+  damage" -- so block leasing takes a position the document already holds rather
+  than introducing one.
+
+  OFFLINE, AND THE ONE CASE THAT STILL DEGRADES
+
+  An instance holding a block allocates offline indefinitely. That is the
+  ordinary case and it needs nothing.
+
+  The one degraded case is a block exhausted while the remote is unreachable.
+  There is no safe claim to make, so REQ-0025 R6 applies unchanged: mint from
+  the local rule, record that the id was allocated without a lease, and let R7's
+  duplicate check catch the result. Block size is what makes this rare, which is
+  a second reason it is worth configuring rather than fixing.
+
+  AUTHENTICATION
+
+  This design needs none of its own. The ledger is pushed to the project's
+  remote with the developer's existing git credentials, so it inherits whatever
+  the organisation already enforces there. Loom performs a push the developer is
+  entitled to perform.
+
+  The authentication Loom does need is a separate concern and belongs with
+  REQ-0064: a service that outlives a session, and eventually one running for an
+  organisation rather than a person, has to authenticate its callers. That is
+  about who may ask Loom to do things. It is not about this.
+
+  WHAT LOOM MUST NOT DO
+
+  Touch any ref but the ledger branch. Touch the working tree or the index.
+  Push to main. Rewrite a claimed range. Mint from an unconfirmed claim. Each is
+  a way for an allocator to damage a repository it was only asked to read.
+
+  OPEN QUESTIONS
+
+  - One block per (origin, type), or one block per origin spanning every type?
+    Per-type keeps each sequence dense and needs a claim per type an instance
+    actually uses. Per-origin is one claim serving all nine, and wastes the rest
+    of the range in every type the instance does not write -- an instance that
+    files a hundred bugs and two requirements burns ninety-eight requirement
+    numbers. Per-type is the likelier answer and costs more claims.
+  - What the default block size is. It cannot be derived from anything in the
+    tree; it is a judgement about team size and document rate.
+  - What creates the branch, and when. `init' preparing a repository is the
+    obvious place, and a project that was prepared before this design lands has
+    no branch until something makes one -- which is REQ-0052's `init --update'
+    problem in a new form.
+  - Whether `check' should report the ledger against the tree: a claimed range
+    with no documents in it is an instance that leased and never wrote, and a
+    document whose number falls in another origin's range is a lease violated.
+    Both are findable and neither is currently anybody's job.
