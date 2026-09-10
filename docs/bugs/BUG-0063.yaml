@@ -43,7 +43,9 @@ summary: |
   requirement. Priority is the other, derived from impact weighted by
   probability of occurrence and sequenced against the requirements already
   planned. Of the three, one is declared and unread, one is prose, and one is
-  read correctly.
+  read correctly. Three and no more: probability of occurrence is an input to
+  priority and not a field, because it is not measurable outside a production
+  environment.
 body: |
   WHAT IS TRUE OF THE FIELD TODAY
 
@@ -192,10 +194,24 @@ body: |
   and a priority set on 2026-08-18 and never revisited is worth reporting as
   stale -- a thing a field supports and a paragraph does not.
 
-  OPEN, and smaller than what was just settled: whether probability of
-  occurrence gets a field of its own or stays an input the author weighs while
-  setting priority. A recorded probability makes a stale priority checkable
-  against it; an unrecorded one keeps the field count at three.
+  WITHDRAWN rather than deferred, same day: probability of occurrence gets no
+  field. It is not measurable outside a production environment. In production it
+  has real units -- incidents per request, or incidents per client per hour --
+  and Loom has neither the deployment nor the telemetry to produce either, so a
+  `probability:` field here could only hold a guess written in a slot that reads
+  as measured. That is CON-0001's shape: the number would be a fabricated fact
+  where the absence is a recorded gap.
+
+  The asymmetry with impact is what makes this consistent rather than
+  inconsistent. Impact is assessable by reading the code -- BUG-0015's blast
+  radius is 983 edges and the count came from the tree, not from a deployment.
+  Probability is a fact about how the software is used, and nothing in the
+  repository holds it.
+
+  So probability stays an input the author weighs while setting priority, and
+  `priority:` is where the outcome is recorded. What would reopen this is a
+  deployment producing incident counts, at which point the units above are
+  already named.
 
   HOW IT WAS FOUND
 
