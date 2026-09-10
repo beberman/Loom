@@ -25,6 +25,13 @@ summary: |
   `:path`. FILE-PROVENANCE is handed NIL and correctly reports nothing about a
   file it was not told about.
 body: |
+  PRIORITY: P4, 2026-09-10
+
+  Deferred on blast radius. The document's path is in `properties' in the same
+  answer, so a caller that needs it has it; what is missing is `file-stale',
+  which no caller has yet been measured wanting for a document. Cheap to fix and
+  cheap to live with, which puts it behind things that are neither.
+
   WHY IT MATTERS RATHER THAN BEING COSMETIC
 
   Documents rot in their own way and Loom's whole document workflow is built on

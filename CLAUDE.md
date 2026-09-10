@@ -247,6 +247,22 @@ does; the second exists because `main` returns immediately when stdin is closed,
 which under a supervisor would take the listener down with it. REQ-0008 and
 DES-0006 are the reasoning.
 
+**Install the unit and the `loom_*` tools stop depending on your timing.** The
+host resolves MCP connections once when a session opens, so a service the
+session's own first tool call starts has already missed the handshake and the
+tools are gone for that session's whole length. A service that outlives
+sessions is up before the next one opens:
+
+    tools/loom-serve.sh install                   # writes the systemd user unit
+    systemctl --user enable --now loom.service    # turn it on
+    loginctl enable-linger $USER                  # optional: survive logout
+
+`install` writes the unit and stops there — enabling changes what the machine
+does with no session open. Once it is enabled, `start`, `stop`, `restart` and
+`update` all hand the verb to systemd rather than spawning a second service
+beside the supervised one, so `tools/loom-serve.sh` stays the thing to type
+either way. REQ-0064.
+
 ## Where the knowledge lives
 
 Not here. This file is a pointer; the reasoning is in `docs/`, indexed and

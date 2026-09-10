@@ -33,9 +33,23 @@ with `.mcp.json` or the endpoint when this happens — `POST /mcp` answers 200
 throughout. Everything still works over REST, which is what the fallback below
 is for, at the cost of hand-written URL encoding and JSON parsing all session.
 
-Better still, make the service outlive sessions — a login item or a user
-service unit — because then the race cannot happen rather than being narrowly
-avoided.
+**Install it once and the race cannot happen.** A service that outlives
+sessions is already up when the next one opens, which beats remembering to
+start it in time:
+
+From your Loom checkout, once:
+
+```bash
+tools/loom-serve.sh install                   # writes the systemd user unit
+systemctl --user enable --now loom.service    # turn it on
+loginctl enable-linger $USER                  # optional: survive logout
+```
+
+`install` writes the unit and stops there; enabling changes what your machine
+does with no session open, which is yours to decide. Once it is enabled,
+`tools/loom-serve.sh start|stop|restart|update` all hand the verb to systemd
+rather than spawning a second service beside the supervised one, so there is
+still one thing to type.
 
 **Starting takes tens of seconds, and the port refuses connections for the
 first part of it.** Measured on one machine, warm cache, nine watched trees:

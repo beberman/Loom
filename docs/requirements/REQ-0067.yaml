@@ -23,6 +23,17 @@ summary: |
   it. Establishing which of the three was which meant reading all three
   children.
 body: |
+  PRIORITY: P4, 2026-09-10
+
+  Deferred on frequency. Hit once, closing front-end's REQ-0001 on 2026-09-09,
+  where three requirements were blocked and the detour was reading three
+  children to tell residue from unfinished work. The workaround is exactly that
+  reading and it costs minutes, not hours.
+
+  Impact is a wrong conclusion rather than a wrong answer: `complete' reports
+  blocked-by correctly and the caller misreads why. Sequence: BUG-0065's F1 and
+  F1b touch the same walk, so this is cheaper after them than before.
+
   WHAT IS WANTED
 
   R1  A `:blocked` row carries, per blocker, what is known about why that

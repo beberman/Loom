@@ -26,6 +26,12 @@ summary: |
   document, and resolving the conflict costs a renumber that is lossy in commit
   history. This conflicts once per block, and resolving it costs nothing.
 body: |
+  PRIORITY: P5, 2026-09-10
+
+  Deferred with REQ-0025, which it refines, and for that document's reason: one
+  developer cannot collide with themselves. The design is settled rather than
+  outstanding -- what waits is the implementation, not a decision.
+
   WHERE THE LEDGER LIVES
 
   In the repository being developed, on its own remote, not in Loom's tree and

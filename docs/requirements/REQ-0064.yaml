@@ -1,6 +1,6 @@
 id: REQ-0064
 title: The service must be able to outlive a session, because a session that starts it has already missed the MCP handshake and loses the loom_* tools for its whole length
-status: draft
+status: partial
 date: 2026-09-10
 refines: [REQ-0008, DES-0006]
 affects: [serve-forever, server-running-p, prepare-repository]
@@ -95,6 +95,34 @@ body: |
   the transcript. Rebooting and opening a session gives the same answer. The
   installed unit and `tools/loom-serve.sh restart` are interchangeable for
   picking up a source change.
+
+  OUTSTANDING, 2026-09-10
+
+  The mechanism is built and verified as far as it can be without turning it
+  on. PLAN-0051 delivered R1 through R5: `tools/loom-serve.sh install' writes
+  ~/.config/systemd/user/loom.service, `serve' is the foreground verb the unit
+  supervises, and `start', `stop', `restart' and `update' delegate to systemctl
+  whenever the unit is active, so there is one control surface either way.
+
+  Verified: the unit passes `systemd-analyze --user verify'; `serve' execs, so
+  the supervised process is sbcl itself (measured -- pid 264962 was
+  `sbcl --script loom-serve.lisp --headless', with no shell holding it) and it
+  reads `tools/extra-repos' by the same path `start' does, six repositories
+  watched; the port answered; and `status' and `stop' still track a process the
+  script did not spawn.
+
+  Not verified, and this is why the requirement is partial rather than
+  implemented: the ACCEPTANCE above is a claim about a fresh session finding the
+  `loom_*' tools in its tool list on the first turn, and that cannot be observed
+  until the unit is enabled. Enabling changes what the machine does with no
+  session open, so PLAN-0051 left it deliberately:
+
+      systemctl --user enable --now loom.service
+      loginctl enable-linger $USER        # optional; Linger=no today
+
+  Two things close this. Enable it, then open a session and confirm the tools
+  are present without any `tools/loom-serve.sh' call in the transcript. Until
+  then the race is removable rather than removed.
 
   OPEN QUESTIONS
 

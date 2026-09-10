@@ -26,6 +26,12 @@ summary: |
   The lookup that would have answered all three is the one RESOLVE-ONE already
   performs on the bare name.
 body: |
+  PRIORITY: P4, 2026-09-10
+
+  Deferred on frequency. Three unresolved references in one session, each closed
+  by one `find' and one hand edit. The report is already correct and already
+  names the document and the field; this saves a lookup per reference.
+
   WHAT IS WANTED
 
   R1  An `:unresolved` report whose *bare* name resolves -- the qualified id

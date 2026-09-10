@@ -8,6 +8,13 @@
 #   tools/loom-serve.sh restart    stop, then start
 #   tools/loom-serve.sh reload     stop, then start (an alias for restart)
 #   tools/loom-serve.sh update     start / restart / nothing, whichever applies
+#   tools/loom-serve.sh install    write the systemd user unit (does not enable it)
+#
+# REQ-0064. Once that unit is enabled, systemd owns the process and this script
+# defers to it: start, stop, restart and update each notice an active unit and
+# hand the verb to systemctl rather than spawning a second, unsupervised
+# service beside the supervised one. There is one control surface either way,
+# and which one is in charge is a question the caller does not have to ask.
 #
 # DES-0007 R4. `update' is the one verb meant to be called before relying on
 # MCP or REST: it pays a restart's cost only when something actually changed,
@@ -46,6 +53,22 @@ logfile=/tmp/loom-serve-${sanitized}.log
 
 base=http://127.0.0.1:4780/v1
 repository=${root##*/}
+
+# REQ-0064. The user unit this script can install and, once installed, defers
+# to. User rather than system: the service indexes one developer's checkouts
+# and runs as them, and a system unit would need a user to run as and a reason
+# to outlive them.
+unit_name=loom.service
+unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+unit_file="$unit_dir/$unit_name"
+
+# True when systemd is supervising the service right now. False -- quietly, and
+# including when there is no user systemd at all -- when it is not, so every
+# caller can ask without first asking whether asking is possible.
+unit_active() {
+    command -v systemctl >/dev/null 2>&1 || return 1
+    [ "$(systemctl --user is-active "$unit_name" 2>/dev/null)" = active ]
+}
 
 # Extra repositories to watch alongside this one, one absolute path per line,
 # '#' comments and blank lines ignored. Gitignored, because the paths are a
@@ -186,7 +209,47 @@ cmd_status() {
     return 0
 }
 
+# The extra repository roots, into the array named by $1. Read here rather
+# than inline in cmd_start because `serve' needs the same list and a second
+# copy of this loop would be a watch list that differs by which verb started
+# the service. A missing or empty file leaves the array empty, which makes the
+# command identical to what it was before this file existed.
+read_extra_repos() {
+    local -n _out=$1
+    _out=()
+    [ -f "$extra_repos_file" ] || return 0
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%%#*}
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [ -n "$line" ] && _out+=("$line")
+    done < "$extra_repos_file"
+}
+
+# REQ-0064 S1. The foreground service, for the systemd unit to supervise.
+#
+# `exec', so the process systemd tracks is sbcl and not a shell waiting on it:
+# a Type=simple unit whose ExecStart forks has lost its service the moment it
+# starts, and reports it active while supervising nothing.
+#
+# Absent from the usage line on purpose. It exists for the unit; a developer
+# who wants a foreground service already has `sbcl --script loom-serve.lisp
+# --headless', which is what this becomes.
+cmd_serve() {
+    local extra
+    read_extra_repos extra
+    echo "watching $root plus ${#extra[@]} from $extra_repos_file"
+    exec sbcl --script loom-serve.lisp --headless "$root" \
+         ${extra[@]+"${extra[@]}"}
+}
+
 cmd_start() {
+    if unit_active; then
+        echo "supervised by systemd; delegating"
+        systemctl --user start "$unit_name"
+        return $?
+    fi
     # Discarding the pid: the side effect, clearing a pidfile whose process a
     # signal this script never saw already ended, is the point.
     live_pid_or_clean >/dev/null
@@ -195,18 +258,8 @@ cmd_start() {
         echo "already running ($state)"
         return 0
     fi
-    # loom-serve.lisp takes any number of repository roots. A missing or empty
-    # file leaves the array empty and the command identical to what it was.
-    local extra=()
-    if [ -f "$extra_repos_file" ]; then
-        local line
-        while IFS= read -r line || [ -n "$line" ]; do
-            line=${line%%#*}
-            line="${line#"${line%%[![:space:]]*}"}"
-            line="${line%"${line##*[![:space:]]}"}"
-            [ -n "$line" ] && extra+=("$line")
-        done < "$extra_repos_file"
-    fi
+    local extra
+    read_extra_repos extra
     echo "watching $root plus ${#extra[@]} from $extra_repos_file"
     nohup sbcl --script loom-serve.lisp --headless "$root" \
           ${extra[@]+"${extra[@]}"} >>"$logfile" 2>&1 &
@@ -283,6 +336,11 @@ print_repositories() {
 }
 
 cmd_stop() {
+    if unit_active; then
+        echo "supervised by systemd; delegating"
+        systemctl --user stop "$unit_name"
+        return $?
+    fi
     local pid i
     pid=$(live_pid_or_clean)
     if [ -n "$pid" ]; then
@@ -309,6 +367,16 @@ cmd_stop() {
 }
 
 cmd_restart() {
+    # REQ-0064 S3. Delegated as one systemctl call rather than as cmd_stop plus
+    # cmd_start, because those two would stop the supervised process and spawn
+    # an unsupervised replacement -- leaving systemd reporting the unit
+    # inactive while something holds the port, which is the one state that
+    # makes `status' lie.
+    if unit_active; then
+        echo "supervised by systemd; delegating"
+        systemctl --user restart "$unit_name"
+        return $?
+    fi
     cmd_stop || return 1
     cmd_start
 }
@@ -321,7 +389,58 @@ cmd_reload() {
     cmd_restart
 }
 
+# REQ-0064 S2. Write the unit; do not turn it on.
+#
+# Enabling is left to the operator because it changes what the machine does
+# when nobody is logged in, and a script that decides that silently is a script
+# nobody reads twice. The same reasoning covers lingering: without
+# `loginctl enable-linger' the user manager stops with the last session and
+# takes the service with it, which under WSL is usually the instance going away
+# anyway. Both commands are printed; neither is run.
+cmd_install() {
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo "install: no systemctl on PATH; this machine has no systemd to install into" >&2
+        return 1
+    fi
+    mkdir -p "$unit_dir" || return 1
+    cat > "$unit_file" <<UNIT
+[Unit]
+Description=Loom engineering knowledge service
+Documentation=file://$root/CLAUDE.md
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=$root
+ExecStart=$root/tools/loom-serve.sh serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+    echo "wrote $unit_file"
+    systemctl --user daemon-reload || return 1
+    echo "reloaded the user manager"
+    echo
+    echo "Not enabled and not started -- that is yours to decide:"
+    echo "    systemctl --user enable --now $unit_name"
+    echo
+    echo "To keep it up with no session open (optional):"
+    echo "    loginctl enable-linger $USER"
+}
+
 cmd_update() {
+    if unit_active; then
+        # `stale' means the image predates the source. Under supervision the
+        # way to a fresh image is a unit restart, which cmd_restart delegates.
+        probe
+        case "$state" in
+            stale) cmd_restart ;;
+            *)     echo "supervised by systemd and $state; nothing to do" ;;
+        esac
+        return $?
+    fi
     probe
     case "$state" in
         down)  cmd_start ;;
@@ -337,8 +456,10 @@ case "${1-}" in
     restart) cmd_restart ;;
     reload)  cmd_reload ;;
     update)  cmd_update ;;
+    install) cmd_install ;;
+    serve)   cmd_serve ;;
     *)
-        echo "usage: tools/loom-serve.sh {status|start|stop|restart|reload|update}" >&2
+        echo "usage: tools/loom-serve.sh {status|start|stop|restart|reload|update|install}" >&2
         exit 2
         ;;
 esac

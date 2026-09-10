@@ -22,6 +22,14 @@ summary: |
   skill's own tree list reads as a fixed set rather than as something a session
   facing a dependency-internals bug should extend on the spot.
 body: |
+  PRIORITY: P4, 2026-09-10
+
+  Deferred on frequency. Hit once, diagnosing game-server's REQ-0003 on
+  2026-09-01. `POST /v1/watch' is the workaround, it takes one call, and it
+  works today -- the gap is that nothing prompts it. cl-dbi and cl-mysql are
+  both watched now, so the instance that produced this entry is closed and what
+  remains is the prompt for the next one.
+
   WHAT IS WANTED
 
   R1  When a query names something the tree depends on and does not define,

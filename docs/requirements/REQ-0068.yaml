@@ -27,6 +27,13 @@ summary: |
   upward and reports it only as the rows of a transition it is proposing to
   write.
 body: |
+  PRIORITY: P4, 2026-09-10
+
+  Deferred on frequency, and its scope shrank on measurement. `describe' already
+  answers one hop in both directions -- `<- refines:' is printed and carried over
+  REST -- so the workaround for "what refines X" is one call, not a shell loop.
+  What is missing is the transitive chain, wanted once, on 45 documents.
+
   WHAT EXISTS, PRECISELY
 
   - `describe <doc>` -- one hop out (`refines:` as written) and one hop in

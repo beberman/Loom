@@ -27,6 +27,18 @@ summary: |
   wrong, and adding a fourth, fifth and sixth key under `frameworks:` makes the
   name actively misleading rather than merely narrow.
 body: |
+  PRIORITY: P4, 2026-09-10
+
+  Split by section rather than deferred whole.
+
+  R2, the per-type block sizes, is deferred with REQ-0025 and DES-0048.
+  R4, where the service authenticates, waits on REQ-0064 producing a service
+  worth authenticating to, and on the trust-boundary question this document
+  raises being answered.
+  R1 and R3 -- what the file is called, and which directories a repository
+  wants indexed -- stand on their own and are the half worth doing first. R3 is
+  asked by every prepared tree with a vendor/ or a generated directory.
+
   WHAT EXISTS
 
   Two dot-prefixed files, in two layers, read two ways.

@@ -32,6 +32,22 @@ summary: |
   rejected here, because the id is not an internal handle -- it is what a human
   types in a refines: field and what `ls docs/bugs` sorts by.
 body: |
+  PRIORITY: P5, 2026-09-10
+
+  Deferred on headcount, and a named condition reopens it.
+
+  Impact is wide -- two documents sharing an id become one entity for the five
+  id-keyed types, silently, and `impact' then reports the wrong design as
+  governing a function. Probability today is zero: one developer, one machine,
+  no concurrent allocation between syncs. Sequence: nothing waits on this.
+
+  It reopens the day a second person works on a tree Loom serves, and the work
+  is ready rather than unstarted -- DES-0048 carries the mechanism.
+
+  R7 is the exception and is NOT deferred. A duplicate doc-id check is cheap,
+  is required by every answer this document considered, and catches the copy
+  rather than move into completed/ that one developer produces on their own.
+
   ORDER
 
   This is independent of REQ-0021 and wanted sooner. REQ-0021 prepares a
