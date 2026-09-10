@@ -124,6 +124,25 @@ body: |
   are present without any `tools/loom-serve.sh' call in the transcript. Until
   then the race is removable rather than removed.
 
+  ENABLED 2026-09-10, and enabling it found a defect in the delivered work.
+
+  The unit started, found an unsupervised service already holding 4780, and
+  exited -- `[loom-serve] another Loom service is already listening; exiting.'
+  That exit is a *success*, so Restart=on-failure correctly declined to retry
+  and the unit sat `enabled, inactive, MainPID=0' with a stray process
+  answering every query and nothing reporting a fault.
+
+  S3 delegated on `is-active', which was false precisely because the unit had
+  lost the race, so `start' spawned another unsupervised process rather than
+  asking systemd to start the one it owns. Delegation now keys on ownership --
+  enabled OR active -- and `install' warns when a service is already listening
+  that systemd is not running, which is the moment before a reader enables it.
+
+  Verified after the fix: MainPID 406846 is the process holding 127.0.0.1:4780,
+  `is-active' reports active, and `tools/loom-serve.sh status' reports running
+  and current. What remains is only the fresh-session half, which this session
+  cannot observe about itself.
+
   OPEN QUESTIONS
 
   - Which repositories a system-installed service watches. `tools/extra-repos`

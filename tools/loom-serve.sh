@@ -70,6 +70,26 @@ unit_active() {
     [ "$(systemctl --user is-active "$unit_name" 2>/dev/null)" = active ]
 }
 
+# True when systemd OWNS the service, running or not.
+#
+# This and not unit_active is what the verbs below delegate on, and the
+# difference is a defect that shipped: with the unit enabled but stopped, an
+# unsupervised process holding the port made `is-active' false, so `start'
+# spawned a second one instead of asking systemd to start the first. Worse
+# silently -- loom-serve.lisp exits 0 when another service is already
+# listening, so the unit that lost the race reported success and
+# Restart=on-failure correctly declined to retry. `enabled', `inactive',
+# MainPID=0, and a stray process serving every query.
+unit_enabled() {
+    command -v systemctl >/dev/null 2>&1 || return 1
+    [ "$(systemctl --user is-enabled "$unit_name" 2>/dev/null)" = enabled ]
+}
+
+# The one question every verb asks: is this service systemd's to run?
+unit_owns() {
+    unit_enabled || unit_active
+}
+
 # Extra repositories to watch alongside this one, one absolute path per line,
 # '#' comments and blank lines ignored. Gitignored, because the paths are a
 # property of one machine and not of the project.
@@ -245,7 +265,7 @@ cmd_serve() {
 }
 
 cmd_start() {
-    if unit_active; then
+    if unit_owns; then
         echo "supervised by systemd; delegating"
         systemctl --user start "$unit_name"
         return $?
@@ -336,7 +356,7 @@ print_repositories() {
 }
 
 cmd_stop() {
-    if unit_active; then
+    if unit_owns; then
         echo "supervised by systemd; delegating"
         systemctl --user stop "$unit_name"
         return $?
@@ -372,7 +392,7 @@ cmd_restart() {
     # an unsupervised replacement -- leaving systemd reporting the unit
     # inactive while something holds the port, which is the one state that
     # makes `status' lie.
-    if unit_active; then
+    if unit_owns; then
         echo "supervised by systemd; delegating"
         systemctl --user restart "$unit_name"
         return $?
@@ -422,6 +442,17 @@ UNIT
     echo "wrote $unit_file"
     systemctl --user daemon-reload || return 1
     echo "reloaded the user manager"
+    # An unsupervised service already on the port would make the unit exit 0 on
+    # its first start -- "another Loom service is already listening" -- and stay
+    # inactive with nothing reporting a failure, because that exit is a success.
+    # Say so here, where the reader is about to enable it.
+    probe
+    if [ "$state" != down ] && ! unit_active; then
+        echo
+        echo "NOTE: a Loom service is already listening and systemd is not running it."
+        echo "      Stop it first, or the unit will exit at once and stay inactive:"
+        echo "          tools/loom-serve.sh stop"
+    fi
     echo
     echo "Not enabled and not started -- that is yours to decide:"
     echo "    systemctl --user enable --now $unit_name"
@@ -431,7 +462,7 @@ UNIT
 }
 
 cmd_update() {
-    if unit_active; then
+    if unit_owns; then
         # `stale' means the image predates the source. Under supervision the
         # way to a fresh image is a unit restart, which cmd_restart delegates.
         probe
