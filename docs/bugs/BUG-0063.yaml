@@ -35,8 +35,15 @@ summary: |
   Underneath the spread is a second field that does not exist. Thirteen bugs
   carry a `PRIORITY:` line in their prose -- P1 through P5, all dated
   2026-08-18, one spelled `CRITICAL` instead -- because there is nowhere else to
-  put it. Severity is how bad it is when it happens; priority is when to work
-  it. Both are wanted, one field is declared, and neither is read.
+  put it.
+
+  Two axes, three fields, settled 2026-09-10 and written out in F6. Impact is
+  one axis under two names: `importance:` on a requirement, `severity:` on a
+  bug, one shared vocabulary, phrased differently because a bug is not a
+  requirement. Priority is the other, derived from impact weighted by
+  probability of occurrence and sequenced against the requirements already
+  planned. Of the three, one is declared and unread, one is prose, and one is
+  read correctly.
 body: |
   WHAT IS TRUE OF THE FIELD TODAY
 
@@ -126,10 +133,15 @@ body: |
 
   WHAT WOULD FIX IT
 
-  F1. Decide the vocabulary for a document's severity, and record the argument
-  the way `:importance` records its own. The question a bug's severity answers
-  is not the question a rule's answers, so the `:rule` vocabulary is a
-  candidate rather than the answer.
+  F1. The vocabulary for a document's severity is `:importance`'s --
+  critical / major / minor -- because F6 settles that they are one axis. The
+  `:rule` vocabulary is not a candidate: error / warning / advisory answers how
+  strictly a rule is enforced, which is a third question and belongs only to
+  rules.
+
+  What this does not decide is the per-document mapping. Nine spellings to three
+  is a judgement per bug, not a table -- `high` and `major` may or may not be the
+  same claim, and the author is gone from most of them. That is F3.
 
   F2. Declare `:severity` on the `:document` entity type with that `:one-of`,
   and read it in TYPE-SPECIFIC-PROPERTIES' `:document` method beside
@@ -148,23 +160,42 @@ body: |
   about it. Loom's own tree holding no copy of that template is the mechanism,
   and it is filed separately.
 
-  F6. `priority:` is declared as a field of its own rather than folded into
-  severity. Two questions, two fields: severity is the cost when it happens and
-  is a property of the defect; priority is when to work it and is a decision
-  about a schedule, revised as other work lands. Folding them loses the pairing
-  that makes BUG-0034 legible.
+  F6. TWO AXES, THREE FIELDS. Decided 2026-09-10, by the tree's owner.
 
-  The thirteen prose sections migrate to it. They carry their own dates, and a
-  priority set on 2026-08-18 and never revisited is worth reporting as stale --
-  which is a thing a field can support and a paragraph cannot.
+  IMPACT is one axis and carries two names because the genres ask it
+  differently. `importance:` on a requirement asks whether the product would be
+  wrong without it or only poorer. `severity:` on a bug asks how severe the
+  impact is when it happens. The question is the same and the phrasing cannot
+  be, because a bug is not a requirement -- so the two names stay and the
+  vocabulary is shared, which is F1.
 
-  Whether `importance:` and `priority:` are the same field is the question F6
-  has to answer before it is implemented. `importance` is declared with
-  `critical / major / minor` and its docstring prices it as "would the product
-  be wrong without it, or only poorer" -- which is a requirement's version of
-  severity, not of schedule. Three fields across two document genres, each
-  answering one question, is the shape to argue for or against; two of them
-  named for the same intuition is how this started.
+  PRIORITY is the other axis and has no field at all. It is when to work the
+  thing, and it is derived rather than judged fresh: impact weighted by the
+  probability of occurrence, then sequenced against the requirements already
+  planned -- because a bug a future requirement will resolve on its way past
+  should be sequenced behind that requirement rather than fixed twice.
+
+  So `priority:` is declared as its own field. Folding it into severity loses
+  the pairing that makes BUG-0034 legible, and the three inputs are not
+  recoverable from the output.
+
+  BUG-0015 is this decision's own worked example on all three inputs. Its impact
+  is wide -- one unrelated edit clears the agreement record from every confirmed
+  edge, 983 measured -- so its `low` is an impact value carrying a priority
+  argument. Its probability is high: every poll that finds any file changed
+  triggers it. And its sequence is bound to somebody else's work, because both
+  remaining fixes were rejected by DES-0011 and it waits on that design being
+  reopened. High impact, high probability, and last anyway. Only the third input
+  explains that, and only a field can hold it.
+
+  The thirteen prose sections migrate to the field. They carry their own dates,
+  and a priority set on 2026-08-18 and never revisited is worth reporting as
+  stale -- a thing a field supports and a paragraph does not.
+
+  OPEN, and smaller than what was just settled: whether probability of
+  occurrence gets a field of its own or stays an input the author weighs while
+  setting priority. A recorded probability makes a stale priority checkable
+  against it; an unrecorded one keeps the field count at three.
 
   HOW IT WAS FOUND
 
