@@ -3,10 +3,16 @@ title: context for a terrain-editor task led with a play-mode class and an archi
 status: open
 severity: major
 date: 2026-08-29
+amended: 2026-09-10
 refines: [REQ-0026]
 affects: [seed-entities, build-context]
 tags: [context, recall, seeding, javascript, front-end, req-0026, req-0036]
 summary: |
+  RE-MEASURED 2026-09-10. Two of the three failures below are fixed and the
+  third's stated cause is wrong: the definitions exist and are not being
+  chosen. The body opens with the new measurement; what follows it is the
+  2026-08-29 record, kept for the one failure that is still live.
+
   The task string was "load and hold the map TerrainPartition in
   useLayerEditorState when the active layer is a terrain layer and render faces
   and arcs in RenderEngineLeaflet" (front-end, PLAN-0006 Task 1, 2026-08-29).
@@ -27,6 +33,131 @@ summary: |
   them -- but they were a minority of the answer. The rest was found by grep
   and by reading the plan.
 body: |
+  RE-MEASURED 2026-09-10, AND THE DIAGNOSIS BELOW IS TWO-THIRDS STALE
+
+  The same task string, the same tree, the same budget, run again:
+
+    Fixed. The seed band now leads with six LayerEditorState members from
+    `useLayerEditorState.js' -- activePartition, selectMap, activeMap,
+    isPartitionLayer, hasLayer and the class -- which is the file the task
+    named and the accessors the task was about.
+
+    Fixed by banding. `docs/archive/plan-working-set.md' has dropped out of the
+    seed band into `mention', where REQ-0026's bands put prose.
+
+    Still wrong, and demoted rather than gone. `TerrainLayer', the play-mode
+    PIXI class, is still a seed, now seventh rather than first.
+
+    Still wrong, and the reason recorded below is FALSE. `RenderEngineLeaflet'
+    is absent, and not because the analyzer indexed no definition by that name:
+    `find' returns 122 entities for it, including `class RenderEngineLeaflet'
+    at src/ui/edit/graphics/rendering/leaflet/RenderEngineLeaflet.js:115 and
+    ~120 methods on it. The definitions exist. They are not being chosen.
+
+  WHY IT IS NOT CHOSEN, ISOLATED
+
+  Not a budget cut. The answer reports `seed: {found: 8, sent: 8}' -- the band
+  found eight candidates and sent all eight, so nothing was clipped for size.
+
+  Three runs against front-end separate the cause from the task:
+
+    "TerrainPartition and RenderEngineLeaflet"
+      -> TerrainPartition.constructor, RenderEngineLeaflet.renderLayer,
+         TerrainPartition, TerrainPartition
+
+    "render faces and arcs in RenderEngineLeaflet"
+      -> RenderEngineLeaflet.livePartitionUpdate, useDesignScreen,
+         RenderEngineLeaflet
+
+    the full task
+      -> LayerEditorState.activePartition, .selectMap, .activeMap,
+         LayerEditorState, .isPartitionLayer, .hasLayer, TerrainLayer,
+         useDesignScreen
+
+  The name seeds on its own and loses every slot in company. Six of the eight
+  went to one class and its methods.
+
+  THE MECHANISM: A FAMILY SHARING A PARENT IS CROWDING NOTHING COUNTS
+
+  ADMIT-SEEDS charges a candidate two ways, and its docstring gives the
+  reasoning for both: a slice -- the set of terms a seed answers to -- may
+  contribute *SEED-TERM-SHARE* (2) distinct names, and a name may be
+  *SEED-NAME-SHARE* (3) entities. The second half of that docstring is the
+  argument this defect extends: "Exempting anything that answered to more than
+  one term let five members of the CHECK-DATABASE-* family take five of eight
+  slots ... A family sharing a slice is the same crowding as a family sharing a
+  word."
+
+  A method family shares neither. `LayerEditorState.activePartition',
+  `.selectMap', `.activeMap', `.isPartitionLayer' and `.hasLayer' are five
+  distinct names answering five different slices -- {active, partition}, {map},
+  {active, map}, {layer, partition}, {layer}. Neither cap fires, both are
+  behaving as designed, and one class takes six of eight slots.
+
+  So the crowding rule needs a third charge, keyed on the definition's owner:
+  a family sharing a *parent* is the same crowding as a family sharing a slice.
+
+  WHAT MUST NOT BE DONE ABOUT IT BLIND
+
+  Every constant in SEED-SCORE and ADMIT-SEEDS was measured rather than
+  reasoned to, against the 450-case known-item harness -- DES-0033, DES-0036
+  and REQ-0016 R7 and R8 each record a change that looked obviously right and
+  moved the score the wrong way, and DES-0036 built a weighting that measured
+  at exactly the two numbers it set out to beat. A third cap is a change of the
+  same kind and belongs behind `tools/test/recall.py' and
+  `tools/test/acceptance.py', not behind an argument.
+
+  The measurement to beat is stated so the next attempt does not have to
+  re-derive it: fe-1 (WorkingSet) and fe-10 (SaveDesign) are the two front-end
+  cases PLAN-0039 S3 lost when MATCH-COVERAGE replaced (LENGTH MATCHES), and
+  any owner-cap has to hold them.
+
+  WHAT LANDED, 2026-09-10: THE THIRD CHARGE
+
+  *SEED-OWNER-SHARE*, 3, and SEED-OWNER beside it. A candidate whose name
+  spells a parent -- everything before the last dot -- is charged to that
+  parent, and a family may hold three of the eight slots. NIL for a :FILE and a
+  :DOCUMENT, whose dots are extensions, and NIL for any name with no dot, so
+  the cap is inert on a Lisp-only tree rather than guessing at a family nobody
+  spelled. A NIL owner is uncharged rather than sharing one bucket, which would
+  cap every unqualified name in a tree against every other.
+
+  Measured, and the point of measuring was that it might not be neutral:
+
+    recall.py, 450 known-item cases   435/450 strict, 436/450 lenient
+                                      -- identical before and after
+    acceptance.py                     33/44 strict, 39/44 lenient
+                                      -- identical, three absence cases still absent
+    the full FiveAM suite             11 of 11 systems
+
+  On the reported task, the LayerEditorState family fell from six of eight
+  slots to four -- three methods plus the class, which carries no dot and is
+  therefore uncharged. The two freed slots went to `useLayerEditorState' and
+  `TerrainPartition', and `terrainpartition' moved from `weak' to `answered'.
+
+  STILL OPEN, AND THIS BUG STAYS OPEN FOR IT
+
+  `RenderEngineLeaflet' is still not seeded. The band reports `found 8, sent 8'
+  with an empty held-back list, so it is not being capped and not being clipped
+  -- it ranks below the eight that were taken, and freeing two slots was not
+  enough to reach it.
+
+  Which is a second defect and probably the more interesting one, because on
+  the scoring as written it should not be true. SEED-SCORE's `named' band is
+  worth 100000 and NAMED-BY-TASK-P is satisfied by a rank-0 match on a word the
+  caller wrote; `RenderEngineLeaflet' is the class's exact name and
+  `renderengineleaflet' is exactly what the task says. `TerrainPartition' --
+  the same shape of name, the same kind of match -- is admitted eighth. So two
+  candidates that look identical to the scoring rank either side of the cut,
+  and the reason is not yet known.
+
+  What would answer it is the score of each, not another experiment on the
+  bundle: the next attempt should read SEED-SCORE's terms for both entities
+  rather than infer from what came back. Tuning *SEED-OWNER-SHARE* down to 2 to
+  make this one case pass is refused -- it would be fitting a constant to one
+  anecdote, which is what DES-0033 and DES-0036 each record going wrong.
+
+  THE ORIGINAL DIAGNOSIS, 2026-08-29, KEPT FOR WHAT IS STILL TRUE
   THREE DISTINCT FAILURES
 
   1. A NAME COLLISION PROMOTED THE WRONG SUBSYSTEM. "terrain" and "layer" in
