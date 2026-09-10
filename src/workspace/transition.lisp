@@ -706,6 +706,15 @@ from a plan. Use set-status for one document."
                   ;; has to be decided before the parent is judged.
                   (loop while frontier
                         do (let ((finished '())
+                                 ;; BUG-0065 F1 and F1b. Documents the walk
+                                 ;; passes through rather than decides: already
+                                 ;; terminal, or of a category with no terminal
+                                 ;; status. Separate from FINISHED because they
+                                 ;; contribute REFINES-TARGETS and nothing else
+                                 ;; -- no verdict, no edit, and no membership in
+                                 ;; SETTLED, which is what this cascade is in
+                                 ;; the act of finishing and they are not.
+                                 (passed '())
                                  (next '()))
                              (dolist (document frontier)
                                (unless (member document visited)
@@ -720,27 +729,77 @@ from a plan. Use set-status for one document."
                                    (cond
                                      ;; A type with no status field at all --
                                      ;; a concept, which REQ documents in this
-                                     ;; tree routinely refine. The walk stops
-                                     ;; here and says so rather than stopping
-                                     ;; silently, because "nothing happened to
-                                     ;; CON-0004" is a fact the caller wants.
+                                     ;; tree routinely refine. Reported rather
+                                     ;; than passed over silently, because
+                                     ;; "nothing happened to CON-0004" is a fact
+                                     ;; the caller wants. Walked through since
+                                     ;; BUG-0065 F1b: it decides nothing, so it
+                                     ;; ends nothing.
                                      ((null vocabulary)
                                       (record (list :doc-id doc-id :category category
                                                     :status nil :verdict nil
-                                                    :blocked-by '() :action :no-status)))
+                                                    :blocked-by '() :action :no-status))
+                                      (push document passed))
+                                     ;; BUG-0065 F1b. A decision, a rule and an
+                                     ;; architecture note have a status
+                                     ;; vocabulary and no terminal member of it,
+                                     ;; so none of the clauses below fits: not
+                                     ;; terminal, not blocking -- FINISHABLE-P
+                                     ;; already excludes them from
+                                     ;; DOCUMENT-BLOCKERS -- and therefore
+                                     ;; falling to :AWAITING-VERDICT, where the
+                                     ;; all-or-nothing rule would refuse the
+                                     ;; whole cascade until the caller supplied
+                                     ;; a verdict for a decision. And no verdict
+                                     ;; would help: TERMINAL-STATUS-P is false
+                                     ;; for every member of the vocabulary, so
+                                     ;; the walk would stop there having
+                                     ;; extracted a judgement that changed
+                                     ;; nothing.
+                                     ;;
+                                     ;; They are in force rather than
+                                     ;; outstanding, which is the same sentence
+                                     ;; FINISHABLE-P's docstring uses to keep
+                                     ;; them from blocking. Reported as such and
+                                     ;; walked through.
+                                     ((not (finishable-p document))
+                                      (record (list :doc-id doc-id :category category
+                                                    :status (getp document :status)
+                                                    :verdict nil :blocked-by '()
+                                                    :action :in-force))
+                                      (push document passed))
                                      ;; Already finished before this cascade
-                                     ;; started. It needs no verdict, it blocks
-                                     ;; nothing, and the walk stops here rather
-                                     ;; than climbing through it: nothing about
+                                     ;; started. It needs no verdict and blocks
+                                     ;; nothing, and BUG-0065 D1 is that the
+                                     ;; walk used to stop here: "nothing about
                                      ;; it changed, so nothing above it changed
-                                     ;; because of it. Reported anyway, because
-                                     ;; a caller reading the chain wants to see
-                                     ;; where it already ends.
+                                     ;; because of it."
+                                     ;;
+                                     ;; True of a document this cascade
+                                     ;; finished, false of one finished in an
+                                     ;; earlier session. front-end is the case:
+                                     ;; DES-0006 closed weeks before PLAN-0004
+                                     ;; ran, so REQ-0004 above it was reachable
+                                     ;; from no plan at all and had to be set
+                                     ;; blind with `set-status'. The condition
+                                     ;; that would have finished it had already
+                                     ;; happened and the walk could no longer
+                                     ;; observe it.
+                                     ;;
+                                     ;; So it contributes no verdict and no edit
+                                     ;; and does contribute its own
+                                     ;; REFINES-TARGETS, which is what
+                                     ;; DOCUMENT-BLOCKERS has always assumed
+                                     ;; about it: terminal means settled, and
+                                     ;; settled is a reason a parent may now be
+                                     ;; finishable rather than a reason to stop
+                                     ;; asking.
                                      ((terminal-status-p document (getp document :status))
                                       (record (list :doc-id doc-id :category category
                                                     :status (getp document :status)
                                                     :verdict nil :blocked-by '()
-                                                    :action :already-finished)))
+                                                    :action :already-finished))
+                                      (push document passed))
                                      (blocked
                                       (when verdict
                                         (push (format nil "~a is still refined by ~
@@ -782,7 +841,7 @@ set-status to override." doc-id blocked (rest blocked))
                              ;; of its children's outcomes and none of its
                              ;; grandchildren's.
                              (setf settled (append finished settled))
-                             (dolist (document finished)
+                             (dolist (document (append finished passed))
                                (setf next (append next (refines-targets graph document))))
                              ;; A dry run walks the whole chain on the
                              ;; assumption that every document it reports would

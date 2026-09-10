@@ -68,6 +68,13 @@ body: |~%  D1  the shape.~%" id status refines))
   (format nil "id: ~a~%title: a requirement~%status: ~a~%~@[refines: [~{~a~^, ~}]~%~]~
 body: |~%  R1  the ask.~%" id status refines))
 
+(defun decision-document (id refines &key (status "accepted"))
+  ;; BUG-0065 F1b's fixture. A decision's vocabulary -- proposed, accepted,
+  ;; superseded, rejected -- has no terminal member, which is what makes it
+  ;; the genre the walk could neither finish nor pass.
+  (format nil "id: ~a~%title: a decision~%status: ~a~%refines: [~{~a~^, ~}]~%~
+rationale: |~%  because.~%" id status refines))
+
 ;;; ------------------------------------------------------------------
 ;;; The edit rule (DES-0019 D2)
 ;;; ------------------------------------------------------------------
@@ -619,6 +626,55 @@ body: |~%  STEPS~%~%  1. do the thing.~%"))
                          :key (lambda (r) (getf r :doc-id)) :test #'string=)))
           (is (eq :already-finished (getf row :action))
               "the finished document is reported and left alone"))))))
+
+(test the-walk-passes-through-a-document-that-was-already-finished
+  ;; BUG-0065 D1. The walk used to stop at a terminal document on the ground
+  ;; that "nothing about it changed, so nothing above it changed because of
+  ;; it" -- true of one this cascade finished, false of one finished earlier.
+  ;; front-end is the case: DES-0006 closed weeks before PLAN-0004 ran, so
+  ;; REQ-0004 above it was reachable from no plan at all and had to be set
+  ;; blind with set-status.
+  (with-document-tree (root)
+    (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
+    (write-document root "docs/design/completed/DES-0001.yaml"
+                    (design-document "DES-0001" '("REQ-0001") :status "implemented"))
+    (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
+    (with-indexed-tree (repository root)
+      (let* ((report (complete-plan repository "PLAN-0001" :verdicts "REQ-0001=implemented"))
+             (rows   (getf report :documents))
+             (row    (find "DES-0001" rows :key (lambda (r) (getf r :doc-id)) :test #'equal)))
+        (is (null (getf report :problems)) "~a" (getf report :problems))
+        (is (eq :already-finished (getf row :action))
+            "the finished design is still reported as finished")
+        (is (find "REQ-0001" rows :key (lambda (r) (getf r :doc-id)) :test #'equal)
+            "and the requirement above it is reached rather than invisible")
+        (is (search (format nil "~%status: implemented~%")
+                    (document-text root "docs/requirements/completed/REQ-0001.yaml")))))))
+
+(test a-decision-in-the-chain-is-in-force-rather-than-awaiting-a-verdict
+  ;; BUG-0065 D3, which only exists once D1 is fixed. A decision has a status
+  ;; vocabulary with no terminal member, so it is not terminal, and
+  ;; FINISHABLE-P already keeps it from blocking -- leaving :AWAITING-VERDICT,
+  ;; where the all-or-nothing rule would refuse the whole cascade until the
+  ;; caller supplied a verdict for a decision. No verdict would help: none of
+  ;; the four is terminal, so the walk would stop having extracted a judgement
+  ;; that changed nothing.
+  (with-document-tree (root)
+    (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
+    (write-document root "docs/decisions/DEC-0001.yaml" (decision-document "DEC-0001" '("REQ-0001")))
+    (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("DEC-0001")))
+    (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
+    (with-indexed-tree (repository root)
+      (let* ((report (complete-plan repository "PLAN-0001"
+                                    :verdicts "DES-0001=implemented REQ-0001=implemented"))
+             (rows   (getf report :documents))
+             (row    (find "DEC-0001" rows :key (lambda (r) (getf r :doc-id)) :test #'equal)))
+        (is (null (getf report :problems)) "~a" (getf report :problems))
+        (is (eq :in-force (getf row :action))
+            "the decision is reported in force, not awaiting a verdict")
+        (is (null (getf row :verdict)) "and no verdict was applied to it")
+        (is (find "REQ-0001" rows :key (lambda (r) (getf r :doc-id)) :test #'equal)
+            "the requirement beyond it is reached")))))
 
 (test a-cascade-with-something-to-decide-is-still-a-dry-run
   ;; The control, and the property the change must not cost. DES-0019 D5's
