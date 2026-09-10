@@ -116,10 +116,28 @@ cmd_install() {
         echo "          export PATH=\"$dir:\$PATH\""
     fi
 
-    # R6. One command prepares both halves. Enabling the unit stays the
-    # operator's, which is REQ-0064's rule and this script does not override it.
+    # R6. One command prepares both halves -- but only when this process is the
+    # one the unit would belong to.
+    #
+    # Linking into /usr/local/bin needs root and the unit does not: a systemd
+    # *user* unit belongs to a login session, and under `sudo' $HOME is /root,
+    # which has no user manager here. The first version called through anyway
+    # and wrote /root/.config/systemd/user/loom.service, then failed on
+    # daemon-reload with "Failed to connect to bus: No medium found" -- so a run
+    # that had already linked both commands correctly reported failure and left
+    # a file behind for a manager that will never read it.
     echo
     echo "--- the service unit ---"
+    if [ "$(id -u)" -eq 0 ]; then
+        echo "skipped: a user unit belongs to a login session, not to root."
+        if [ -n "${SUDO_USER-}" ]; then
+            echo "Run this as $SUDO_USER, without sudo:"
+        else
+            echo "Run this as the user the service should belong to:"
+        fi
+        echo "    $root/tools/loom-serve.sh install"
+        return 0
+    fi
     "$root/tools/loom-serve.sh" install
 }
 

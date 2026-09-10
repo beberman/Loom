@@ -431,6 +431,23 @@ cmd_install() {
         echo "install: no systemctl on PATH; this machine has no systemd to install into" >&2
         return 1
     fi
+    # Checked BEFORE writing anything, because the first version wrote the unit
+    # and then failed on daemon-reload -- which under `sudo' meant a file left in
+    # /root/.config/systemd/user for a user manager that does not exist, and a
+    # nonzero exit from a command whose real work had already succeeded.
+    #
+    # A user unit belongs to a login session's own manager. Root has none here,
+    # so this is the check that catches being run as the wrong user rather than
+    # the wrong machine.
+    if ! systemctl --user show-environment >/dev/null 2>&1; then
+        echo "install: no user systemd manager is reachable for $(id -un)." >&2
+        if [ -n "${SUDO_USER-}" ]; then
+            echo "         You are running under sudo. The unit belongs to $SUDO_USER, not root:" >&2
+            echo "             $root/tools/loom-serve.sh install" >&2
+            echo "         -- run that without sudo." >&2
+        fi
+        return 1
+    fi
     mkdir -p "$unit_dir" || return 1
     cat > "$unit_file" <<UNIT
 [Unit]
@@ -463,11 +480,21 @@ UNIT
         echo "          tools/loom-serve.sh stop"
     fi
     echo
-    echo "Not enabled and not started -- that is yours to decide:"
-    echo "    systemctl --user enable --now $unit_name"
-    echo
-    echo "To keep it up with no session open (optional):"
-    echo "    loginctl enable-linger $USER"
+    # Re-running install on a live unit is the ordinary case after a source
+    # change, and telling the operator to enable something already running is
+    # the kind of wrong instruction that teaches people to stop reading output.
+    if unit_enabled; then
+        echo "Already enabled. The new unit file takes effect on the next restart:"
+        echo "    systemctl --user restart $unit_name"
+    else
+        echo "Not enabled and not started -- that is yours to decide:"
+        echo "    systemctl --user enable --now $unit_name"
+    fi
+    if [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" != yes ]; then
+        echo
+        echo "To keep it up with no session open (optional):"
+        echo "    loginctl enable-linger $(id -un)"
+    fi
 }
 
 cmd_update() {

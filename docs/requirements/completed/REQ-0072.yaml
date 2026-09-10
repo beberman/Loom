@@ -88,6 +88,32 @@ body: |
   installed by cloning it, and this makes the clone reachable rather than
   turning it into an artifact.
 
+  FOUND ON FIRST REAL USE, 2026-09-10
+
+  The first `sudo tools/loom-install.sh --dir /usr/local/bin' linked both
+  commands correctly and then reported failure. Under sudo `$HOME' is `/root',
+  so R6's call through to `loom-serve.sh install' wrote
+  /root/.config/systemd/user/loom.service and died on `daemon-reload' --
+  "Failed to connect to bus: No medium found" -- because root has no user
+  manager. A run whose real work had succeeded exited nonzero and left a file
+  behind for a manager that will never read it.
+
+  Two rules follow, and both are now enforced:
+
+    Linking into /usr/local/bin needs root; a systemd *user* unit must not be
+    installed by root at all. It belongs to a login session. The installer
+    skips R6 when `id -u' is 0 and names the unprivileged command instead.
+
+    `loom-serve.sh install' checks it can reach a user manager BEFORE writing
+    anything, rather than writing and then failing. A command that leaves a
+    file behind on the path that reports failure is worse than one that
+    refuses.
+
+  The same use also showed the install advice was unconditional: it told an
+  operator to `enable --now' a unit that was already enabled and running.
+  It now reads the unit's state and says `restart' instead, and suppresses the
+  linger suggestion when lingering is already on.
+
   A NOTE ON ITS OWN affects:
 
   Empty, and not by oversight. Everything this requirement changes is a shell
