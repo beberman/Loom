@@ -1,0 +1,98 @@
+id: REQ-0072
+title: Loom must be installable so its commands work from any directory, by linking the checkout rather than copying it, because the running image has to be the source you just edited
+status: implemented
+date: 2026-09-10
+refines: [REQ-0064]
+affects: []
+importance: Major
+tags: [install, tooling, deployment, path, symlink, service, req-0064]
+summary: |
+  `tools/loom.sh` and `tools/loom-serve.sh` already `cd` to the tree themselves,
+  so they work from any directory once you type the whole path. What is missing
+  is that they are not on `PATH`, and that three of them cannot be moved
+  anywhere because they hardcode one machine's checkout:
+
+    tools/loom-serve.sh:38   root=/home/beberman/lisp/Loom
+    tools/loom.sh:22         cd /home/beberman/lisp/Loom || exit 1
+    tools/loom-test.sh:11    cd /home/beberman/lisp/Loom || exit 1
+
+  `tools/next-doc-id.sh:32` shows the answer already in the tree:
+  `root=$(cd "$(dirname "$0")/.." && pwd)`.
+
+  An installer puts `loom` and `loom-serve` on `PATH` as **symlinks into the
+  checkout**, not copies. Loom is a source tree an SBCL script loads at runtime
+  and it indexes itself; a copy in a system directory would go stale against
+  the checkout on every commit, and `tools/loom-serve.sh update` exists
+  precisely because the running image must track the source. A symlink always
+  runs what you just edited.
+body: |
+  WHY NOT /usr/bin, AND WHY NOT A COPY
+
+  `/usr/bin` is the distribution's namespace; locally installed software
+  belongs in `/usr/local/bin`, which is already on `PATH` on this machine.
+
+  Copying is wrong for a reason particular to this program rather than as a
+  style preference. Loom is not a compiled binary: `tools/loom-serve.sh` runs
+  `sbcl --script loom-serve.lisp` against a working tree, the systemd unit
+  REQ-0064 installs names that tree by absolute path, and the tree is also one
+  of the repositories Loom indexes. Two copies would mean an installed one that
+  is never the one under test, and a `status` line reporting `code stale`
+  against a source nobody is editing.
+
+  WHAT IS WANTED
+
+  R1  Every script derives its own root from its own location, resolving
+      symlinks, so a link on `PATH` reaches the checkout it points into.
+      `readlink -f "$0"` and then the parent of `tools/`.
+
+  R2  `tools/loom-install.sh` links `loom` and `loom-serve` into a directory on
+      `PATH`, preferring `/usr/local/bin` and falling back to `~/.local/bin`.
+      It links; it never copies.
+
+  R3  It never escalates on its own. `/usr/local/bin` is not writable by the
+      user, so the installer prints the one `sudo` command rather than running
+      it -- the same rule `tools/loom-serve.sh install` follows about enabling
+      the unit, and for the same reason: a script that quietly acquires root is
+      a script nobody reads twice.
+
+  R4  It reports what it did and what it did not, including a fallback target
+      that is not on `PATH`. `~/.local/bin` does not exist on this machine and
+      is not on `PATH`, so linking there and saying nothing would produce an
+      installer that appears to succeed and changes nothing.
+
+  R5  It undoes itself. `--uninstall` removes only links that point into this
+      checkout, so it cannot delete somebody else's `loom`.
+
+  R6  It calls `tools/loom-serve.sh install`, so one command prepares both the
+      `PATH` links and the service unit. Enabling the unit stays the operator's,
+      per REQ-0064.
+
+  ACCEPTANCE
+
+  From a directory that is not the checkout, `loom 'status'` answers and
+  `loom-serve status` reports the service. `tools/loom.sh` run by its own path
+  still works, unchanged. Moving the checkout and re-running the installer
+  produces links to the new location; the old links are replaced rather than
+  duplicated. `--uninstall` leaves no link behind and does not touch the unit,
+  which REQ-0064 owns.
+
+  WHAT THIS IS NOT
+
+  A system-wide, multi-user install. `/usr/bin` with a system unit is the shape
+  for a server serving several developers, which is REQ-0071 R4's territory and
+  is deferred with it -- that deployment needs an answer about who may connect
+  before it needs an installer. This is one developer, one checkout, one user
+  service.
+
+  A packaging story. No .deb, no version, no dependency declaration. Loom is
+  installed by cloning it, and this makes the clone reachable rather than
+  turning it into an artifact.
+
+  A NOTE ON ITS OWN affects:
+
+  Empty, and not by oversight. Everything this requirement changes is a shell
+  script, and no analyzer claims those -- they are part of the 48 tracked files
+  `status` reports as `unclaimed`, which is REQ-0059's band. So a requirement
+  about Loom's own tooling cannot name what it affects in the index that Loom
+  keeps of itself. Worth knowing when reading `impact` for this one: it will be
+  silent, correctly.

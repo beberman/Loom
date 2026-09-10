@@ -1,0 +1,48 @@
+id: PLAN-0052
+title: Derive the root in three scripts, then link two names onto PATH -- REQ-0072 in four steps
+status: final
+date: 2026-09-10
+refines: [REQ-0072]
+affects: []
+tags: [install, tooling, path, symlink, req-0072, req-0064]
+summary: |
+  R1 first and alone, because it is the only step with risk: `tools/loom.sh`,
+  `tools/loom-test.sh` and `tools/loom-serve.sh` each hardcoded one machine's
+  checkout, and `loom-serve.sh` is what the systemd unit REQ-0064 installed now
+  runs. Get the derivation wrong and the enabled service stops working.
+
+  The installer is then a script with no Lisp in it and nothing to break.
+body: |
+  STEPS
+
+  S1. The root derivation, in all three scripts, from `next-doc-id.sh`'s
+      existing form plus `readlink -f`: the link on PATH is the whole point, and
+      `$0` is then `/usr/local/bin/loom`, whose dirname holds no Loom.
+
+  S2. `tools/loom-install.sh`. Links, choice of directory, ownership guard,
+      `--uninstall`, and a call through to `loom-serve.sh install`.
+
+  S3. No silent fallback. The first draft fell back from `/usr/local/bin` to
+      `~/.local/bin` when the first was not writable, which on this machine
+      links two files nothing can reach and reports success -- R4's own failure
+      shape, produced by the code meant to avoid it. Both directories are named
+      and the caller chooses.
+
+  S4. CLAUDE.md's tools paragraph, which says six things run Loom and now has
+      seven.
+
+  VERIFIED
+
+  Each script resolves to the checkout, directly and through a symlink in a
+  third directory. `loom-serve status` and `loom status` both answer by name
+  from `/tmp` with the link directory on PATH. Re-running replaces its own links
+  rather than duplicating them. A symlink under one of our names pointing
+  outside the checkout is skipped by name rather than clobbered, and survives
+  `--uninstall`. The unit stays active throughout. Full suite 11 of 11, run
+  through the re-rooted `loom-test.sh` itself.
+
+  NOT DONE, AND LEFT TO THE OPERATOR
+
+  Installing. `/usr/local/bin` needs root, so the installer prints the `sudo`
+  line rather than running it, and no links are left on this machine by the
+  work -- the test links were removed. One command installs it.

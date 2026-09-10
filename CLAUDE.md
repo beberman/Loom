@@ -80,10 +80,15 @@ tools/loom.sh 'impact repository 3'
 tools/loom-test.sh
 ```
 
-**`tools/` operates Loom; `tools/test/` measures it.** Six things run Loom --
-`loom.sh`, `loom-serve.sh`, `loom-init.sh`, `loom-test.sh`, `next-doc-id.sh`
-and `allow-loom.py`, the permission hook -- beside `js/`, which is not a tool
-at all: the analyzer loads `js/extract.js` at runtime. Everything that verifies
+**`tools/` operates Loom; `tools/test/` measures it.** Seven things run Loom --
+`loom.sh`, `loom-serve.sh`, `loom-install.sh`, `loom-init.sh`, `loom-test.sh`,
+`next-doc-id.sh` and `allow-loom.py`, the permission hook -- beside `js/`, which
+is not a tool at all: the analyzer loads `js/extract.js` at runtime.
+
+`tools/loom-install.sh` links `loom` and `loom-serve` onto `PATH` and calls
+`loom-serve.sh install` for the unit. Links, never copies: Loom is a source tree
+SBCL loads at runtime and indexes itself, so a copy would be a second Loom that
+is never the one under test. REQ-0072. Everything that verifies
 or measures is under `tools/test/`: the three `test-*.py` suites,
 `load-test.lisp` for the peer property, the four census scripts, the case
 builders with `cases/` beside them, the `acceptance.py` and `recall.py`
