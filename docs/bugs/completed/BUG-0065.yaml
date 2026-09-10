@@ -1,6 +1,6 @@
 id: BUG-0065
 title: complete stops at an already-finished document instead of walking through it, and reports dry-run null on the run that writes nothing
-status: open
+status: closed
 date: 2026-09-10
 amended: 2026-09-10
 refines: [REQ-0022, BUG-0057]
@@ -145,7 +145,59 @@ body: |
   neither be asked for a verdict nor end the walk. PLAN-0043 -> DES-0040 ->
   DEC-0006 is that chain in this tree and needs no fixture.
 
+  WHAT LANDED, 2026-09-10
+
+  The walk gained a second accumulator. FINISHED is what this cascade decided;
+  PASSED is what it walked through -- already terminal, or of a category with
+  no terminal status. Both contribute REFINES-TARGETS to the next frontier;
+  only FINISHED joins SETTLED, because SETTLED is what the cascade is in the
+  act of finishing and a passed document is not.
+
+  F1b gained a report action of its own, `:in-force', from FINISHABLE-P's own
+  sentence about why these genres do not block: they are in force rather than
+  outstanding.
+
+  F2 is at the serve boundary rather than in COMPLETE-PLAN, and that is
+  layering rather than taste. loom-workspace does not depend on loom-serve, and
+  *JSON-FALSE* is truthy to Lisp -- the console reads (getf report :dry-run)
+  directly and would read every false as true if that value reached it.
+  BOOLEAN-FIELDS converts at the one place that encodes.
+
+  MEASURED ON THIS TREE. `complete plan=PLAN-0043' returned three rows before
+  and ten after:
+
+      PLAN-0043  final         would-set
+      REQ-0048   implemented   already-finished
+      DES-0040   implemented   already-finished
+      DEC-0006   accepted      in-force
+      REQ-0047   implemented   already-finished
+      REQ-0037   partial       blocked
+      REQ-0016   implemented   already-finished
+      REQ-0039   partial       awaiting-verdict
+      REQ-0036   implemented   already-finished
+      CON-0007   (none)        no-status
+
+  Everything from DEC-0006 down was unreachable from any plan. That REQ-0039
+  awaits a verdict and REQ-0037 is blocked are facts this tree held and could
+  not be asked for.
+
+  D2, on three plans that take BUG-0057's re-entry -- PLAN-0047, PLAN-0019,
+  PLAN-0036 -- now reads `dry-run: false' where it read `null', with `changed'
+  empty beside it.
+
+  F2's second clause is WITHDRAWN rather than built. It asked for "something a
+  caller can test for nothing was written"; `changed' being empty already is
+  that, and a second field carrying the same fact would be a second thing to
+  keep true.
+
+  CON-0003. Removing PASSED from the frontier computation fails
+  THE-WALK-PASSES-THROUGH-A-DOCUMENT-THAT-WAS-ALREADY-FINISHED and
+  A-DECISION-IN-THE-CHAIN-IS-IN-FORCE-RATHER-THAN-AWAITING-A-VERDICT and
+  nothing else; the serve test asserts the JSON false directly.
+
   HOW IT WAS FOUND
 
   front-end, closing REQ-0001 and REQ-0004, 2026-09-09. Both confirmed against
   Loom's source on 2026-09-10 at transition.lisp:658, 739-746, 789 and 843.
+  D3 was found on 2026-09-10 while checking a different claim, and is a
+  consequence of D1's fix rather than a defect that was ever observable.

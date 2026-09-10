@@ -728,3 +728,17 @@ the second for the first is the defect" json-price console-price)
         (context-record-error (condition)
           (is (eq :unknown-id (loom-workspace::context-record-error-reason condition)))
           (is-true (search "No context record" (princ-to-string condition))))))))
+
+(test a-dry-run-field-that-is-false-encodes-as-false-and-not-as-null
+  ;; BUG-0065 D2. NIL is this encoder's overloaded value -- false, empty and
+  ;; absent at once -- so :DRY-RUN arrived as `null' on every run that was not
+  ;; a preview. Measured on PLAN-0006: "dry-run": null with every row
+  ;; already-finished. The field was therefore `true' or missing and never
+  ;; `false', which is not a boolean a client can branch on.
+  (let ((converted (loom-serve::boolean-fields '(:dry-run nil :changed nil) '(:dry-run))))
+    (is (eq loom-serve::*json-false* (getf converted :dry-run))
+        "a NIL dry-run becomes the JSON false")
+    (is (null (getf converted :changed))
+        "and a NIL under a key nobody named is left alone"))
+  (let ((untouched (loom-serve::boolean-fields '(:dry-run t) '(:dry-run))))
+    (is (eq t (getf untouched :dry-run)) "a true dry-run is not rewritten")))

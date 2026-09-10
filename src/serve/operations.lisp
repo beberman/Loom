@@ -818,7 +818,27 @@ because the underlying command collected them all for that purpose."
     (if problems
         (error 'malformed-request
                :message (format nil "~{~a~^~%~}" problems))
-        report)))
+        (boolean-fields report '(:dry-run)))))
+
+(defun boolean-fields (plist keys)
+  "PLIST with a NIL under any of KEYS replaced by the JSON literal `false'.
+
+BUG-0065 D2. :DRY-RUN is the field a caller reads to learn whether it is
+looking at a preview, and NIL is this encoder's overloaded value -- false,
+empty, and absent all at once -- so it arrived as `null'. Measured on
+PLAN-0006: `\"dry-run\": null' on a cascade where every row was
+`already-finished'. The field was therefore `true' or missing and never
+`false', which is not a boolean a client can branch on.
+
+Here rather than in COMPLETE-PLAN, and that is layering rather than taste:
+loom-workspace does not depend on loom-serve, and *JSON-FALSE* is truthy to
+Lisp -- the console reads (getf report :dry-run) directly and would see every
+false as true if this value reached it. It is applied at the boundary that
+encodes, which is the only place that needs it."
+  (loop for (key value) on plist by #'cddr
+        append (list key (if (and (null value) (member key keys))
+                             *json-false*
+                             value))))
 
 (define-operation :set-status :write (repository document status)
     "Set one document's status and file it where that status belongs."
