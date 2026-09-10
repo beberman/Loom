@@ -112,6 +112,7 @@
    ;; REQ-0050 R1: the tree an index was built from and how far behind it is,
    ;; in one plist, so every surface reports provenance the same way.
    #:index-provenance
+   #:answer-provenance
    ;; REQ-0050 R1 for an answer about one definition: the same fingerprint, and
    ;; one stat rather than one per claimed file.
    #:file-provenance

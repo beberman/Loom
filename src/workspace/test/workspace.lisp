@@ -425,11 +425,34 @@ status: draft
           "the highest-value assertion in the suite: the index agrees with
 the files whichever way it got there"))))
 
+(test answer-provenance-says-when-without-paying-for-drift
+  ;; REQ-0065 R1 and R2. `find', `impact', `check' and `rules' are the four an
+  ;; agent calls while changing the tree they are about, and they carried no
+  ;; provenance at all -- the documented answer was "ask `status' when it
+  ;; matters", which doubles the call count and needs the caller to know in
+  ;; advance that it matters.
+  ;;
+  ;; R2 is the half a test can hold. :DRIFT must be absent: it is a stat per
+  ;; claimed file, measured at 4.7ms to 25.6ms on `describe' when it was tried
+  ;; there, and an edit that reached for INDEX-PROVENANCE here because the name
+  ;; reads better would put that cost on the four cheapest commands in the
+  ;; system. The absence is the requirement, so the absence is what is asserted.
+  (with-workspace-fixture (repository)
+    (let ((provenance (answer-provenance repository)))
+      (is (not (member :drift provenance))
+          "no drift -- R2 keeps a per-file stat off these four")
+      (is (not (member :file provenance))
+          "and no file: these answers are not about one")
+      (is (member :diff provenance)
+          "the fingerprint a caller compares against its previous answer")
+      (is (member :indexed-at provenance)
+          "and when the index was built"))))
+
 ;;; ------------------------------------------------------------------
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 418
+(defparameter *call-site-ceiling* 464
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -616,6 +639,26 @@ Eight new JS-TESTs for the runner's forms are 27 of the 28. JS-TEST swallows
 its body, so every call inside one is a site by construction -- which is what
 this population is and not what it guards against. The ambiguous population did
 not move, which is the number that does when a name has collided.
+
+RE-MEASURED 2026-09-10 AT 422, CEILING RAISED TO 464. Counted by the census and
+not read off the suite, which is what the paragraph above requires. The
+composition, against the 2026-08-27 measurement:
+
+    define-command     143 -> 154
+    define-operation   102 -> 126
+    js-test             84 ->  91
+    let* / register-handler / let / dolist   -> 8
+    ambiguous occurrences    20 ->  20
+
+Every one of the three macro populations is a body-swallowing form, so a call
+inside one is a site by construction. REQ-0065 is 4 of define-operation's 24:
+`find', `impact', `check' and `rules' each gained an ANSWER-PROVENANCE call
+inside a DEFINE-OPERATION body.
+
+The ambiguous population is 20 for the third measurement running. That is the
+number this ceiling exists to watch -- it moves when a name collides, and the
+macro populations move whenever anybody writes a command -- so a rise composed
+entirely of the other four is growth rather than drift.
 
 418 is 380 plus 10% headroom, the rule the first measurement used.")
 

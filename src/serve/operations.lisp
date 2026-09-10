@@ -246,7 +246,15 @@ searched and each row says which it came from."
                                        (list* :repository (repository-name watched) row))
                                      entities)
                    :total total
-                   :truncated (> total (length entities)))
+                   :truncated (> total (length entities))
+                   ;; REQ-0065 R1, and only on the named form. The federated
+                   ;; `find' searches every watched tree, so there is no one
+                   ;; index for a provenance to be about -- it already answers
+                   ;; that question in its own vocabulary with :SEARCHED and
+                   ;; :SKIPPED, which say which trees the answer covers. A
+                   ;; single :DIFF there would be one tree's fingerprint
+                   ;; presented as the whole answer's, which is worse than none.
+                   :provenance (answer-provenance watched))
              ;; REQ-0051 R3, and the clause the whole requirement is for. Paid
              ;; only on the miss, which is where the reader decides to reach for
              ;; grep instead.
@@ -306,9 +314,11 @@ Pass source=true for the definition's text."
 (define-operation :impact :read (repository term (depth))
     "What may need attention if this changes, with paths and depths."
   (let ((graph (repository-view repository)))
-    (impact-report graph (id (resolve-entity graph term))
-                   :max-depth (or (request-integer depth "depth")
-                                  *default-impact-depth*))))
+    (append (impact-report graph (id (resolve-entity graph term))
+                           :max-depth (or (request-integer depth "depth")
+                                          *default-impact-depth*))
+            ;; REQ-0065 R1.
+            (list :provenance (answer-provenance (require-repository repository))))))
 
 (defparameter *context-scoring-keys*
   '(:cost :via :direction :convergence :effective-cost :relation-count)
@@ -637,7 +647,11 @@ references, unread definers, and dropped edges."
           ;; BUG-0030 F1. Empty on all three watched trees, and carried anyway:
           ;; the whole point of the mechanism is that a fourth missing :TO
           ;; entry shows up here instead of taking a repository dark.
-          :dropped-edges (mapcar #'dropped-edge-summary (dropped-edges graph)))))
+          :dropped-edges (mapcar #'dropped-edge-summary (dropped-edges graph))
+          ;; REQ-0065 R1. `check' is run after writing a document and again
+          ;; after the edit that answers it, so whether an answer predates the
+          ;; write is exactly the question a caller has here.
+          :provenance (answer-provenance watched))))
 
 (define-operation :check-document :read (repository path (contents))
     "What one document's declared references resolve to, before it is written \
@@ -693,7 +707,15 @@ its entries is worse than a call that failed."
 
 (define-operation :rules :read (repository)
     "Active rules and what they constrain."
-  (list :rules (mapcar #'rule-summary (active-rules (repository-view repository)))))
+  ;; REQ-0065 R1. Provenance nested under one key rather than spread inline,
+  ;; matching `describe'. R3's divergence with `status' and `structure' is kept
+  ;; rather than removed, and it is not arbitrary: there the commit and the
+  ;; fingerprint ARE the answer -- both commands are about the state of the
+  ;; index -- while here they are metadata about an answer that is about
+  ;; something else, and a caller reading a rule should not have to skip four
+  ;; keys that are not rules.
+  (list :rules (mapcar #'rule-summary (active-rules (repository-view repository)))
+        :provenance (answer-provenance (require-repository repository))))
 
 ;;;; ==================================================================
 ;;;; Write tier

@@ -1410,6 +1410,37 @@ never asked."
                                                (get-universal-time)))
                            t))))
 
+(defun answer-provenance (repository)
+  "When the index was built and from what, with nothing computed now.
+
+REQ-0065. `find', `impact', `check' and `rules' are the four surfaces an agent
+calls in a loop while changing the tree they are about, which is the only
+situation in which staleness is a live question -- and they carried no
+provenance at all. The documented answer was \"ask `status' when it matters\",
+which doubles the call count and requires knowing in advance that it matters.
+
+Deliberately neither of the two beside it. FILE-PROVENANCE stats one file, and
+these answers are not about one file. INDEX-PROVENANCE computes :DRIFT, which
+is one stat per claimed file: measured over REST on Loom, that took `describe'
+from 4.7ms to 25.6ms, and REQ-0065 R2 keeps it off the four cheapest commands
+in the system for that reason.
+
+Everything here is read off the repository struct. A caller that saved a file
+and re-queried compares :DIFF against what it saw before and learns whether the
+answer predates its own write, which is all R1 asks for.
+
+No :DRIFT and no :FILE keys at all, rather than nought and NIL. FILE-PROVENANCE
+omits :DRIFT on the same reasoning -- a caller reading 0 would take it for a
+statement about the repository, which this never asked."
+  (let* ((fingerprint (repository-indexed-fingerprint repository))
+         (diff (getf fingerprint :diff)))
+    (list :commit (getf fingerprint :commit)
+          :commit-reason (getf fingerprint :commit-reason)
+          :branch (getf fingerprint :branch)
+          :diff diff
+          :dirty (and diff (not (string= diff (clean-diff-hash))) t)
+          :indexed-at (repository-indexed-at repository))))
+
 (defun index-provenance (repository)
   "The tree REPOSITORY's index was built from, and how far behind it now is.
 
