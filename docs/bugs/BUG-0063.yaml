@@ -1,11 +1,13 @@
 id: BUG-0063
-title: severity is written by 48 documents and read by nothing, because :document declares no such property and TYPE-SPECIFIC-PROPERTIES parses it only for a rule
+title: severity is written by 48 documents and read by nothing, and priority is written into prose by 13 bugs because no field exists for it
 status: open
 date: 2026-09-10
+amended: 2026-09-10
 refines: [BUG-0062]
 affects: [as-keyword,
           "method:src/analyzer/yaml-analyzer.lisp:type-specific-properties::(eql document),t,t"]
-tags: [documents, ontology, severity, bugs, vocabulary, con-0001, silent-drop]
+tags: [documents, ontology, severity, priority, bugs, vocabulary, con-0001,
+       silent-drop, triage]
 severity: high
 summary: |
   48 documents under `docs/` carry a `severity:` key. No entity holds it.
@@ -29,6 +31,12 @@ summary: |
   `high` and `major` cannot be compared, and a reader cannot tell whether
   `error` outranks `critical`. Nothing reports the spread because nothing reads
   the field.
+
+  Underneath the spread is a second field that does not exist. Thirteen bugs
+  carry a `PRIORITY:` line in their prose -- P1 through P5, all dated
+  2026-08-18, one spelled `CRITICAL` instead -- because there is nowhere else to
+  put it. Severity is how bad it is when it happens; priority is when to work
+  it. Both are wanted, one field is declared, and neither is read.
 body: |
   WHAT IS TRUE OF THE FIELD TODAY
 
@@ -70,6 +78,43 @@ body: |
   whole tree, and `check` does not do this for `importance:` and would not for
   `severity:` either. Fixing one fixes both.
 
+  D4. PRIORITY IS A SECOND FIELD, WRITTEN INTO PROSE.
+
+  Thirteen bugs open a body section with `PRIORITY: P<n>, 2026-08-18` -- a
+  single triage session that had a judgement to record and no field to record it
+  in. The scale is P1-P5 with one `CRITICAL` spelling, so the prose field has
+  already drifted the way the YAML field did.
+
+  Where both values exist they diverge, which is the proof that they answer
+  different questions:
+
+      BUG-0034  severity: high     P4
+      BUG-0032  severity: high     P3
+      BUG-0035  severity: high     P2
+      BUG-0002  severity: medium   P5
+      BUG-0015  severity: low      P5
+
+  BUG-0034 is the clean case: bad when it happens, worked later. Nothing about
+  `high` says when to do it and nothing about `P4` says what it costs, and the
+  two together say something neither says alone.
+
+  BUG-0015 is the case that exposes the confusion. Its severity is `low` and its
+  own first line says the reason is priority rather than size: "PRIORITY: P5 ...
+  Last, and the reason is in the section above rather than in the defect's
+  size." The reasons given are all priority reasons -- half of it is fixed, the
+  rest is covered by a test, enrichment is on-demand, and both remaining fixes
+  were rejected by DES-0011. Read as severity the number is wrong: one unrelated
+  edit runs RESOLVE-CALLS over the whole index and clears the agreement record
+  from every confirmed edge, 983 of them measured. The bug fails safe -- absent
+  `:sources` is evidence of nothing rather than a false claim -- but it fails
+  wide.
+
+  So the tree does both things and a reader cannot tell which. Some bugs keep
+  the two apart (BUG-0034, high and P4); at least one prices severity as
+  priority (BUG-0015, low and P5, with its own text disclaiming size as the
+  reason). Neither convention is written down, because neither field is
+  declared.
+
   WHY IT SURVIVED
 
   Nothing is broken in a way anybody could see. A document with `severity: high`
@@ -103,6 +148,24 @@ body: |
   about it. Loom's own tree holding no copy of that template is the mechanism,
   and it is filed separately.
 
+  F6. `priority:` is declared as a field of its own rather than folded into
+  severity. Two questions, two fields: severity is the cost when it happens and
+  is a property of the defect; priority is when to work it and is a decision
+  about a schedule, revised as other work lands. Folding them loses the pairing
+  that makes BUG-0034 legible.
+
+  The thirteen prose sections migrate to it. They carry their own dates, and a
+  priority set on 2026-08-18 and never revisited is worth reporting as stale --
+  which is a thing a field can support and a paragraph cannot.
+
+  Whether `importance:` and `priority:` are the same field is the question F6
+  has to answer before it is implemented. `importance` is declared with
+  `critical / major / minor` and its docstring prices it as "would the product
+  be wrong without it, or only poorer" -- which is a requirement's version of
+  severity, not of schedule. Three fields across two document genres, each
+  answering one question, is the shape to argue for or against; two of them
+  named for the same intuition is how this started.
+
   HOW IT WAS FOUND
 
   Filing BUG-0062 on 2026-09-09 raised the question of what other document
@@ -110,3 +173,8 @@ body: |
   distinct values; `describe BUG-0062` over REST returned twelve properties
   with severity absent; `grep -n severity src/analyzer/yaml-analyzer.lisp`
   returned one parse, in the `:rule` method.
+
+  D4 came from being asked why BUG-0015 is `low`, 2026-09-10. Its own PRIORITY
+  line answers with priority reasons and disclaims size, which raised the
+  question of where priority is recorded; `grep -rln "PRIORITY:" docs/bugs/`
+  answered thirteen, all dated 2026-08-18, none in a field.
