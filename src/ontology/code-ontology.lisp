@@ -962,6 +962,56 @@ Three values and no more.  A scale with five points invites the middle one, and
 the question this answers -- would the product be wrong without it, or only
 poorer -- has three honest answers.  Requirements carry it; nothing stops
 another category doing the same, and nothing requires it.")
+               (:severity keyword
+                :one-of (:critical :major :minor)
+                :documentation "How severe this document's subject is when it
+happens -- a bug's impact.  The same axis :IMPORTANCE measures and therefore the
+same three values, which DEC-0007 settled: a requirement asks whether the
+product would be wrong without it or only poorer, a bug asks how severe the
+impact is when it happens, and the two names stay because a bug is not a
+requirement while the question is one question.
+
+Distinct from :RULE's own :SEVERITY, which is error/warning/advisory and answers
+how strictly a rule is enforced.  Two entity types, two vocabularies, one field
+name, and no conflict -- measured on this tree, the nine documents using the
+rule spelling are all rules.
+
+Declared here because it was not, and 48 documents wrote it into YAML that
+nothing read.  BUG-0063.  The paragraph :IMPORTANCE ends with is what happened
+here in full: a property this type does not declare is a field the author writes
+and nothing ever reads.")
+               (:priority keyword
+                :one-of (:p1 :p2 :p3 :p4 :p5)
+                :documentation "When to work it, as against how bad it is.
+
+The second axis DEC-0007 separates, and it is derived rather than judged fresh:
+severity weighted by the probability of occurrence, then sequenced against the
+requirements already planned, because a bug a future requirement will resolve on
+its way past is sequenced behind it rather than fixed twice.
+
+Where both values exist they diverge, which is what establishes they are two
+questions rather than two spellings of one -- BUG-0034 is severity major and
+priority P4, BUG-0015 severity major and P5.  Neither is recoverable from the
+other.
+
+P1-P5 rather than a scale invented here: thirteen bugs were already writing it
+into their prose on 2026-08-18, having no field to write it in, and a vocabulary
+a tree is already using beats one chosen for it.  The prose stays where it is --
+it carries the reasoning, and this carries the value.
+
+Probability of occurrence deliberately gets no field of its own.  It is not
+measurable outside a production environment, where it has real units -- incidents
+per request, incidents per client per hour -- so a number here could only be a
+guess in a slot that reads as measured, which is CON-0001's fabricated fact.
+DEC-0007 refuses it rather than defers it.")
+               (:dropped-fields list
+                :documentation "Names this document wrote whose value was
+outside the field's vocabulary, so nothing was stored.  BUG-0062 F2 and
+BUG-0063 F4.
+
+An empty list and an absent field are the same thing here and that is fine: the
+population this exists to report is non-empty exactly when somebody typed
+`severity: high' and got silence.")
                (:category string
                 :documentation "The docs/ subdirectory the file was found in.")
                (:format keyword :one-of (:markdown :docx :org :text :yaml))

@@ -1,6 +1,7 @@
 id: REQ-0071
 title: A repository must be able to declare the Loom configuration that serves it, and the file that does it already exists under a name that no longer describes it
 status: draft
+priority: p4
 date: 2026-09-10
 refines: [REQ-0021]
 affects: [read-frameworks, parse-frameworks, read-manifest, prepare-repository]

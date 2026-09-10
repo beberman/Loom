@@ -1,6 +1,7 @@
 id: BUG-0029
 title: Name resolution folds case, so in a case-sensitive language every logger.error call becomes an edge to a component named Error
 status: closed
+priority: p1
 date: 2026-08-14
 refines: [REQ-0024]
 affects: [resolve-calls, resolve-one, build-definition-index, impact-set,

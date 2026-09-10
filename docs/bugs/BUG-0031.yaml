@@ -1,10 +1,11 @@
 id: BUG-0031
 title: The MCP tool schema types every argument as a string, because arg-shape carries only a name and whether it is required
 status: open
+priority: p5
 date: 2026-08-16
 affects: [define-operation, validate-arguments, request-integer, request-boolean]
 tags: [mcp, serve, registry, schema, req-0031, des-0006]
-severity: low
+severity: minor
 summary: |
   tools/list advertises loom_describe as
 

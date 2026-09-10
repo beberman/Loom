@@ -1,10 +1,11 @@
 id: BUG-0034
 title: A federated edge cannot be retracted, so the second federation pass over two repositories is rejected whole
 status: closed
+priority: p4
 date: 2026-08-18
 affects: [federated-retractions, federate-repositories, plan-op, apply-op]
 tags: [federation, transaction, graph, workspace, bug-0030, dec-0003]
-severity: high
+severity: major
 summary: |
   FEDERATED-RETRACTIONS builds a RETRACT-OP whose target is a *relationship*
   id. RETRACT-OP is an entity operation: PLAN-OP looks the target up with

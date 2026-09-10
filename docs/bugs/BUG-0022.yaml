@@ -1,12 +1,13 @@
 id: BUG-0022
 title: An entity may carry a property no DEFENTITY declares, and VALIDATE-ENTITY reports nothing
 status: open
+priority: p5
 date: 2026-08-10
 refines: [PLAN-0015]
 affects: [validate-entity, properties-table, getp, ontology-schema,
           entity-type-properties]
 tags: [ontology, validation, test-quality, con-0003]
-severity: medium
+severity: minor
 summary: |
   PROPERTIES-TABLE accepts any keyword and VALIDATE-ENTITY checks only that
   required properties are present and declared ones are well-typed, so an

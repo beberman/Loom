@@ -5,7 +5,7 @@ date: 2026-08-22
 refines: [REQ-0016, REQ-0036]
 affects: [seed-entities]
 tags: [measurement, instrument, acceptance, req-0036, req-0016]
-severity: medium
+severity: minor
 summary: |
   tools/acceptance.py's R7 case asks game-server for seven names and one of
   them, config-get, is not in game-server's index:

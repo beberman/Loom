@@ -1,10 +1,11 @@
 id: BUG-0002
 title: find silently caps at twenty hits and cannot enumerate a type
 status: closed
+priority: p5
 date: 2026-07-29
 refines: [REQ-0003]
 affects: [search-entities, split-command-line]
-severity: medium
+severity: major
 summary: |
   `find` passes :limit 20 to search-entities and prints whatever comes back with
   no indication that anything was dropped, so a common term returns twenty

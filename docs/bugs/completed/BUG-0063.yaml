@@ -1,6 +1,6 @@
 id: BUG-0063
 title: severity is written by 48 documents and read by nothing, and priority is written into prose by 13 bugs because no field exists for it
-status: open
+status: closed
 date: 2026-09-10
 amended: 2026-09-10
 refines: [BUG-0062]
@@ -8,7 +8,7 @@ affects: [as-keyword,
           "method:src/analyzer/yaml-analyzer.lisp:type-specific-properties::(eql document),t,t"]
 tags: [documents, ontology, severity, priority, bugs, vocabulary, con-0001,
        silent-drop, triage, dec-0007]
-severity: high
+severity: major
 summary: |
   48 documents under `docs/` carry a `severity:` key. No entity holds it.
   `describe BUG-0062` returns twelve properties -- title, summary, category,
@@ -215,6 +215,54 @@ body: |
   deployment producing incident counts, at which point the units above are
   already named.
 
+  WHAT LANDED, 2026-09-10
+
+  F1 and F6 needed no argument: DEC-0007 had settled both. `:SEVERITY` and
+  `:PRIORITY` are declared on `:DOCUMENT`, severity taking :IMPORTANCE's
+  critical/major/minor and priority taking p1-p5, and TYPE-SPECIFIC-PROPERTIES'
+  :DOCUMENT method reads both.
+
+  A measurement made the design simpler than the bug expected. Severity is used
+  by exactly two populations and they do not overlap: 42 bugs, and 9 rule
+  documents carrying error/warning/advisory -- which is `:RULE`'s own declared
+  vocabulary, correct, and about how strictly a rule is enforced. So two entity
+  types carry two vocabularies under one field name with no conflict, and F3's
+  migration was 24 documents rather than 48.
+
+  F3, THE MIGRATION, AND THE JUDGEMENT IN IT. 18 of the 42 bugs were already on
+  critical/major/minor. The other 24 were on high/medium/low, and the mapping is
+  per document rather than positional, which is what this bug required: nothing
+  says a `high' author meant what a `critical' author meant.
+
+  Priced on DEC-0007's axis -- how severe is the impact when it happens:
+
+    critical, 4. A wrong fact at tree scale or a silent loss: a call matching
+    every same-named definition (BUG-0035), a document dropped with no count
+    (BUG-0033), every local variable name becoming a call (BUG-0025), 207 of 246
+    bundles carrying a null seed list (BUG-0037).
+
+    major, 14. Visible degradation with a bounded blast radius.
+
+    minor, 6. Poorer rather than wrong: a report whose candidates are both
+    genuine (BUG-0061), a path available in the same answer under another key
+    (BUG-0064), a count that overclaims but stays directional (BUG-0018).
+
+  BUG-0015 is the migration's own worked example and moved from `low' to
+  `major' with priority p5. Its impact is wide -- one unrelated edit clears the
+  agreement record from 983 edges -- and it is still last, because both
+  remaining fixes were rejected by DES-0011. High impact and last is a sentence
+  the tree could not write before today, and it is the whole argument for two
+  fields.
+
+  F4 is BUG-0062 F2 and landed there.
+
+  F5 landed in the template with BUG-0062 F1.
+
+  The thirteen prose PRIORITY sections and the nine deferred documents carry
+  `priority:' now. The prose stays: it holds the reasoning, and the field holds
+  the value.
+
+  HOW IT WAS FOUND
   HOW IT WAS FOUND
 
   Filing BUG-0062 on 2026-09-09 raised the question of what other document

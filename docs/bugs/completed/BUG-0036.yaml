@@ -6,7 +6,7 @@ refines: [BUG-0035]
 affects: [call-targets, resolve-calls, entities-by-name, candidate-entities,
           member-call-parts, member-call-candidates]
 tags: [resolution, javascript, methods, receiver, con-0001, req-0015, bug-0035]
-severity: medium
+severity: major
 body: |
   FIXED 2026-08-18
 

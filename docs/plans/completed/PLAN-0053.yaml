@@ -1,0 +1,75 @@
+id: PLAN-0053
+title: Two fields declared, a template that is tested against them, and a check for the key that drops -- BUG-0062, BUG-0063 and REQ-0070 in seven steps
+status: final
+date: 2026-09-10
+refines: [BUG-0062, BUG-0063, REQ-0070]
+affects: [as-keyword, document-properties,
+          "method:src/analyzer/yaml-analyzer.lisp:type-specific-properties::(eql document),t,t"]
+tags: [documents, ontology, severity, priority, importance, template, check,
+       dogfooding, bug-0062, bug-0063, req-0070, dec-0007]
+summary: |
+  One cluster, because the three documents ask for one implementation.
+  BUG-0062 F2 and BUG-0063 F4 are the same check. BUG-0062 F1 and BUG-0063 F5
+  are the same template edit. REQ-0070 is what makes the next such omission
+  fail on the day it happens rather than years later in somebody else's tree.
+
+  DEC-0007 settled the model, so nothing here is a judgement about what the
+  fields mean: impact is one axis under two names, `importance:` on a
+  requirement and `severity:` on a bug, sharing critical/major/minor; priority
+  is its own field.
+
+  Measured before starting, and it answers the one design question: only bugs
+  use the impact sense of severity. The nine rule documents carry
+  error/warning/advisory, which is `:rule`'s own declared vocabulary and is
+  correct -- so two entity types carry two vocabularies under one field name
+  without conflict, and the migration is 24 bugs rather than 48 documents.
+body: |
+  STEPS
+
+  S1. The ontology declares `:severity` and `:priority` on `:DOCUMENT`.
+      Severity takes :IMPORTANCE's vocabulary, which is DEC-0007 and BUG-0063
+      F1. `:RULE`'s own severity is untouched: it answers how strictly a rule
+      is enforced, which is a third question.
+
+  S2. TYPE-SPECIFIC-PROPERTIES' `:DOCUMENT` method reads both, beside
+      :IMPORTANCE and by the same AS-KEYWORD-with-a-list rule.
+
+  S3. REQ-0070's test, written before the template is fixed so that it fails
+      first: every key the `:DOCUMENT` method looks up must be named in the
+      rendered workflow-concept template, and every field the template
+      documents must be one the method reads. Both directions, because a field
+      the template describes and nothing reads is the same silent drop from the
+      author's side -- BUG-0023 is the standing instance.
+
+  S4. The template gains importance, severity and priority. The test passes.
+
+  S5. `check` reports a document whose YAML carries one of these keys and whose
+      entity does not. That is the typo case, and it is distinguishable from an
+      absent field because the raw key is there. It is what
+      yaml-analyzer.lisp:349-352 already promises: "the report for a typo'd
+      importance belongs to `check' over the whole tree rather than to an
+      analyzer reading one file."
+
+  S6. Migrate 24 bugs from high/medium/low onto critical/major/minor. A
+      judgement per document and not a table, which BUG-0063 F3 requires and
+      which the two scales make unavoidable: nothing says whether a `high`
+      author meant what a `critical` author meant.
+
+  S7. Migrate the prose PRIORITY sections onto the field. The prose stays --
+      it carries the reasoning, and the field carries the value.
+
+  SEQUENCING, AND WHY S6 IS NOT LAST
+
+  S5 before S6 would make `check` report 24 documents at once, which is correct
+  and unreadable. S6 before S5 leaves nothing for S5 to report on this tree,
+  which is worse: a check whose first run is empty has not been shown to work.
+  So S5 lands, S6 migrates, and the count S5 reports goes from 24 to 0 -- which
+  is the demonstration.
+
+  RISK
+
+  The vocabulary for `:priority` is not settled by DEC-0007, which fixed the
+  axis and not its values. This plan uses the P1-P5 the thirteen prose sections
+  already use, on the ground that a vocabulary a tree is already writing beats
+  one invented for it. If that is wrong it is wrong cheaply: the field is
+  declared in one place and read in one other.

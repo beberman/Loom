@@ -1,11 +1,12 @@
 id: BUG-0015
 title: RESOLVE-CALLS erases the :SOURCES union and the :INTROSPECTED source slot from every confirmed edge, in the same ENRICH-REPOSITORY call that wrote them
 status: open
+priority: p5
 date: 2026-08-08
 refines: [PLAN-0010]
 affects: [enrich-repository, enrich-ops, enriched-edge, union-sources, resolve-calls,
           resolve-and-check, absorb-relationship, absorb-properties]
-severity: low
+severity: major
 summary: |
   DES-0011 R6 records agreement between the text pass and the image pass as a
   :SOURCES property on the one surviving edge, "so agreement between the passes

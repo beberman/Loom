@@ -5,7 +5,7 @@ date: 2026-08-22
 refines: [REQ-0039]
 affects: [stem-variants, task-tokens, seed-score, best-name-rank]
 tags: [retrieval, context, ranking, stemming, req-0016, req-0039]
-severity: high
+severity: major
 summary: |
   STEM-VARIANTS applies its -ing rule to any word of six characters or more.
   "string" is exactly six and ends in "ing", so it is stemmed as though it were

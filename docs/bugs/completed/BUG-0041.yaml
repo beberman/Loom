@@ -5,7 +5,7 @@ date: 2026-08-22
 refines: [REQ-0016]
 affects: [admit-seeds, seed-slice, build-context]
 tags: [retrieval, context, ranking, req-0016, req-0040]
-severity: high
+severity: major
 summary: |
   `context "wrapped logger set level"` against front-end returns eight seeds,
   every one of them named `logger'. The bundle names one thing eight times and

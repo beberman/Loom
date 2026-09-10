@@ -6,7 +6,7 @@ amended: 2026-09-10
 refines: [REQ-0022, BUG-0057]
 affects: [complete-plan, terminal-status-p, refines-targets]
 tags: [complete, documents, workflow, transition, dry-run, bug-0057, front-end]
-severity: high
+severity: major
 summary: |
   Two defects in COMPLETE-PLAN's report, both found closing front-end's
   documents on 2026-09-09, both in src/workspace/transition.lisp.

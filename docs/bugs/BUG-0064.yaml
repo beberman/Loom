@@ -1,11 +1,12 @@
 id: BUG-0064
 title: describe on a document returns file null and file-stale null in provenance, though the document's own path is in properties two keys away
 status: open
+priority: p4
 date: 2026-09-10
 refines: [REQ-0050]
 affects: [describe-entity, file-provenance]
 tags: [describe, provenance, staleness, documents, rest, req-0050, front-end]
-severity: medium
+severity: minor
 summary: |
   `describe` carries REQ-0050 R1's provenance so a REST or MCP caller can ask
   what tree an answer is about and whether the entity's own file has moved since

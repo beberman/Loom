@@ -1,11 +1,12 @@
 id: BUG-0035
 title: A JavaScript call matches every same-named definition in the repository, including when the calling file defines one itself
 status: closed
+priority: p2
 date: 2026-08-18
 refines: [BUG-0029]
 affects: [candidate-entities, call-targets, resolve-calls, entities-by-name]
 tags: [resolution, javascript, scope, modules, con-0001, req-0015, bug-0029]
-severity: high
+severity: critical
 body: |
   FIXED 2026-08-18
 

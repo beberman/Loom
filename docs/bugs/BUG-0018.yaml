@@ -1,11 +1,12 @@
 id: BUG-0018
 title: "\"445 tests covering 302 units\" overclaims -- :TESTS is reachability, and a test file's own private helper counts as a unit under test"
 status: open
+priority: p5
 date: 2026-08-08
 refines: [PLAN-0011]
 affects: [resolve-tests, print-status]
 tags: [graph, knowledge, tests, honesty]
-severity: low
+severity: minor
 summary: |
   RESOLVE-TESTS derives a :TESTS edge from every :CALLS edge a :TEST entity has
   to a :FUNCTION, :METHOD or :INTERFACE, and says so plainly (DES-0002 R9).

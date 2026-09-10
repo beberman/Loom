@@ -1,6 +1,7 @@
 id: REQ-0043
 title: A definition nothing can reach must be reported, whether because no build file loads its file or because the name is exported and defined nowhere
 status: draft
+priority: p4
 date: 2026-08-21
 refines: [REQ-0013]
 affects: [analyze-file, repository-files, repository-status, check-document-references]

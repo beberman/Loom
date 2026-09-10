@@ -6,7 +6,7 @@ refines: [DES-0044]
 affects: [as-keyword,
           "method:src/analyzer/yaml-analyzer.lisp:type-specific-properties::(eql document),t,t"]
 tags: [documents, workflow, init, template, ontology, importance, con-0001, front-end]
-severity: high
+severity: major
 summary: |
   `importance:` is a first-class document field. The ontology declares it
   (src/ontology/code-ontology.lisp:953) with a closed vocabulary,
@@ -113,6 +113,33 @@ body: |
   documented-nowhere field silently divides Loom's own practice from every
   repository it prepares.
 
+  WHAT LANDED, 2026-09-10, WITH BUG-0063 AND REQ-0070 AS ONE CHANGE
+
+  F1. The template gains a section on the two judgements: the three fields,
+  their vocabularies, what each asks, and the silent-drop behaviour so an author
+  knows to verify a value took rather than assume it.
+
+  F2. `check' reports `dropped-fields' -- a document whose YAML carries one of
+  these keys and whose entity does not. DROPPED-VOCABULARY-FIELDS records the
+  names in the analyzer, where the raw key is still visible, and the report asks
+  the whole tree. That is exactly the split yaml-analyzer.lisp:349-352
+  promised and nothing implemented.
+
+  Demonstrated rather than asserted: the check reported 24 documents on this
+  tree before the migration and 0 after, and `severity: high' written back into
+  BUG-0031 is reported by document and file.
+
+  F3 IS STILL OPEN AND IS WHY THIS BUG STAYS OPEN. Nothing here reaches a tree
+  that was prepared before today. DES-0044 R7 stands -- the workflow concept is
+  not refreshed, because it is a document the team owns and may have edited --
+  so front-end and game-server keep conventions that do not mention severity or
+  priority, exactly as they kept ones that did not mention importance. The three
+  options this bug lists are unchanged and none has been chosen.
+
+  What did change is that the omission is now caught on the day it is made
+  rather than years later in somebody else's tree, which is REQ-0070.
+
+  HOW IT WAS FOUND
   HOW IT WAS FOUND
 
   Working in front-end on a requirement, the author asked why front-end's
