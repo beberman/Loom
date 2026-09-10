@@ -2,6 +2,7 @@ id: REQ-0025
 title: Document ids must be allocated by the service from a ledger it can rebuild, so that two branches of one project never pick the same number
 status: draft
 date: 2026-08-12
+amended: 2026-09-10
 refines: [CON-0004]
 affects: [derive-id, linkable-index, resolve-one, find-repository, watch-repository,
           repository-name, require-repository, set-document-status, complete-plan,
@@ -82,6 +83,37 @@ body: |
 
   A duplicate-doc-id check makes that visible after the fact and is worth
   having regardless. It is not a substitute for not colliding.
+
+  THE PRECONDITION THE LEDGER NEEDS, WHICH THIS DOCUMENT DID NOT STATE
+
+  Added 2026-09-10, as a correction rather than a refinement.
+
+  R9 puts the ledger in "the service's own state directory". R4's scan covers
+  "every registered checkout". R10 measures acceptance with "two checkouts of
+  one project registered with one service". All three assume one running Loom
+  instance can see both checkouts.
+
+  Two developers on two machines, each running their own Loom, have two state
+  directories and two ledgers that never meet. Alice's allocator does not know
+  Bob's number exists and cannot; nothing in R1-R6 makes it so. So the scenario
+  in this document's own summary -- "Alice on one branch gets REQ-0025 and Bob
+  on another gets REQ-0026" -- is solved only when Alice and Bob share a service
+  or share a filesystem.
+
+  That is not a defect in the design. Preventing a collision requires
+  synchronous shared state, and a service or a mount is what that means; there
+  is no third arrangement. It is a defect in the document, which specifies an
+  allocator without naming the deployment it needs.
+
+  So R1-R6 are conditional, and the condition does not hold today. REQ-0064 asks
+  for a per-user service that outlives a session on one machine. Nothing in this
+  tree asks for a shared multi-user Loom, and until something does, the ledger
+  is a design for a deployment that does not exist.
+
+  The open question below about unregistered checkouts is this same fact
+  approached from one step away, and its answer is now known: R4's floor is
+  worth nothing across machines, because the scan cannot reach a checkout no
+  local service is watching.
 
   WHY NOT UUIDS
 
@@ -247,7 +279,84 @@ body: |
   here rather than there because it is a property of one service holding
   several checkouts, which is what this requirement introduces.
 
+  AN ALTERNATIVE THAT NEEDS NO SERVICE: DETECT RATHER THAN PREVENT
+
+  Added 2026-09-10. The title of this document names the ledger, and this
+  section does not; which of the two answers the document lands on is open.
+
+  Given the precondition above, there are three families of answer and this
+  document had considered two. Coordinate -- the ledger, needing a service or a
+  mount. Randomize -- UUIDs, rejected above for what the id is for. Partition --
+  put the origin inside the id, `REQ-alice-0025', which is the only family that
+  needs no shared state at all.
+
+  Partition was not considered here and is rejected on measurement. There are
+  10,489 references to 263 distinct document ids in this tree: 5,942 in docs/,
+  2,869 in src/, 1,317 in commit messages and 361 in CLAUDE.md, tools/ and
+  .claude/. The 1,317 in git history cannot be rewritten, so a qualifier applies
+  only to ids minted after it lands and the tree carries two formats
+  permanently. It also abandons the shared sequence R3 exists to protect: a
+  per-origin number no longer means "the 25th requirement in this project", and
+  the argument two sections up that a gap is information dies with it. In this
+  tree specifically the obvious qualifier is unavailable anyway -- branches are
+  named after the documents they carry (`bug-0055', `plan-0036'), so deriving an
+  id from a branch name closes a loop.
+
+  What is left is to keep local allocation and make the collision loud.
+
+  A1  Allocation stays local and needs nothing: the highest id in this checkout
+      plus one, which is what tools/next-doc-id.sh does today.
+
+  A2  A committed counter file -- docs/.next-id, one line per document type,
+      holding the highest id allocated -- written in the same commit that
+      creates the document.
+
+      Two developers creating a REQ concurrently both change the REQ line from
+      0064 to 0065. Git conflicts, and the conflict cannot be resolved by
+      keeping both files under different names, which is the first of the two
+      escapes WHAT IS WRONG names and the silent one. Alice creating a REQ while
+      Bob creates a BUG touch different lines and do not conflict, which is
+      correct: there was no collision.
+
+      The counter is not an allocator and must not be described as one. Neither
+      developer sees the other's write until they sync, so it cannot hand out a
+      number nobody else can get. What it guarantees is that when they do sync,
+      the collision surfaces and cannot be merged away.
+
+  A3  Every document records `origin:' -- the machine and branch its id was
+      minted on. It prevents nothing. It makes a duplicate diagnosable: when R7
+      fires, a reader can see which two checkouts produced it rather than
+      inferring from dates.
+
+  A4  What resolving the conflict costs, stated rather than assumed. One of the
+      two documents is renumbered. Its in-tree references can be found and
+      rewritten, since Loom indexes refines: and affects: -- but the losing
+      branch's own commit messages cannot be, and this tree writes ids into
+      commit messages 1,317 times.
+
+      So a renumber is cheap in the files and permanently wrong in the history
+      of the branch that loses. That is the argument for syncing before
+      allocating rather than for building a renumber command: the counter's
+      conflict makes a missed sync loud, and the cost of the fix is what makes
+      syncing worth doing.
+
+  A5  Nothing renumbers automatically, and nothing renumbers on push. An
+      automatic rewrite is the reclamation BURNED IDS forbids, arrived at from
+      the other direction: it would rebind a reference that has already escaped
+      the branch in a commit message or a review.
+
+  WHAT THE TWO ANSWERS COST
+
+  The ledger prevents the collision and needs a deployment this tree does not
+  have. The counter detects it, needs nothing, and leaves a renumber that is
+  cheap in files and lossy in history. R7's duplicate check is required by both
+  and is the only part of this document that is unconditionally worth building:
+  it is the backstop for R6's offline fallback under the ledger, and the second
+  line of defence under the counter.
+
   REQUIREMENTS
+
+  Conditional on the precondition stated above.
 
   R1  Allocating a document id is a service operation, reachable from the
       console and over REST and MCP, and it names the repository it allocates
@@ -316,12 +425,13 @@ body: |
     ontology models means every document carries a property that is nearly
     always absent; a note in the ledger means the ledger holds something files
     do not, which is the property R4 exists to protect.
-  - How does the allocator see checkouts that are not registered? R4's scan
-    covers repositories the service is watching. A developer's branch that
-    nobody has run `watch` on is invisible to it, and its ids are allocated by
-    R6's fallback. Whether the service should be told about a project's
-    checkouts independently of watching them is the question that decides how
-    good R4's floor actually is.
+  - ANSWERED 2026-09-10, and the answer is in the precondition section above.
+    R4's scan covers repositories the service is watching, so a checkout on
+    another developer's machine is invisible to it and no amount of telling one
+    service about it helps -- the service cannot read a filesystem it has no
+    access to. R4's floor is worth nothing across machines. What the question
+    was really asking is whether this design needs shared infrastructure, and it
+    does.
   - Is the root commit stable enough in practice? It is stable under rename,
     mirror and fork, and it is not stable across a history rewrite -- a
     squashed or filtered repository has a new root and would start a fresh
