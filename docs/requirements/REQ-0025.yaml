@@ -1,6 +1,7 @@
 id: REQ-0025
 title: Document ids must be allocated by the service from a ledger it can rebuild, so that two branches of one project never pick the same number
 status: draft
+priority: p5
 date: 2026-08-12
 amended: 2026-09-10
 refines: [CON-0004]

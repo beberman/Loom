@@ -1,10 +1,11 @@
 id: BUG-0033
 title: A document that fails to parse is dropped without a count, a violation or a line in status
 status: closed
+priority: p2
 date: 2026-08-17
 affects: [analyze-file, repository-status, index-file, note-error, resolve-document-links]
 tags: [analyzer, documents, yaml, reporting, con-0001, con-0006]
-severity: high
+severity: critical
 summary: |
   PLAN-0032's title was changed to "DES-0026 in seven steps: the walk, the tiers,
   the index, the ranking". The colon is unquoted, so the file stopped being

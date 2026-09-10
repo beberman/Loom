@@ -149,6 +149,29 @@ is what a human writes, and refusing it would be pedantry."
       (let ((k (intern (string-upcase s) :keyword)))
         (when (or (null allowed) (member k allowed)) k)))))
 
+(defun dropped-vocabulary-fields (table fields)
+  "The names in FIELDS whose value in TABLE is written and outside its vocabulary.
+
+BUG-0062 F2 and BUG-0063 F4, which are one report. AS-KEYWORD returns NIL both
+for a key nobody wrote and for a key written as `severity: high' when the
+vocabulary holds three other words, and those are opposite situations: the
+first is an author who did not use the field, the second is one who used it and
+whose value went nowhere.
+
+The raw key is what tells them apart, and it is only visible here -- by the
+time the writer sees the ops the evidence is a NIL like any other. So the
+analyzer records the names and `check' reports them, which is exactly the split
+the comment on :IMPORTANCE promises: \"the report for a typo'd importance
+belongs to `check' over the whole tree rather than to an analyzer reading one
+file.\"
+
+FIELDS is (name . allowed) pairs. A value the vocabulary accepts is not
+recorded, and neither is an absent one."
+  (loop for (name . allowed) in fields
+        for raw = (yaml-value table (intern (string-upcase name) :keyword))
+        when (and (as-string raw) (null (as-keyword raw allowed)))
+          collect name))
+
 (defun parse-document (contents &optional path)
   "CONTENTS as a YAML mapping. Signals DOCUMENT-ERROR on anything else.
 
@@ -352,6 +375,25 @@ and registering a type\" stays true of the fields as well as the directory."))
         ;; over the whole tree rather than to an analyzer reading one file.
         :importance (as-keyword (yaml-value table :importance)
                                 '(:critical :major :minor))
+        ;; BUG-0063. The same axis under the name a bug uses, and therefore the
+        ;; same three values -- DEC-0007. :RULE's method above reads its own
+        ;; :SEVERITY against error/warning/advisory, which is a different
+        ;; question and stays where it is.
+        :severity (as-keyword (yaml-value table :severity)
+                              '(:critical :major :minor))
+        ;; The other axis. Silent on a value outside the five for the reason
+        ;; the comment above gives about importance, and reported by `check'
+        ;; for the same reason.
+        :priority (as-keyword (yaml-value table :priority)
+                              '(:p1 :p2 :p3 :p4 :p5))
+        ;; BUG-0062 F2 / BUG-0063 F4. What the three lines above threw away
+        ;; because it was written and not in the vocabulary, as against never
+        ;; written at all.
+        :dropped-fields (dropped-vocabulary-fields
+                         table
+                         '(("importance" . (:critical :major :minor))
+                           ("severity"   . (:critical :major :minor))
+                           ("priority"   . (:p1 :p2 :p3 :p4 :p5))))
         :affects (as-list-of-strings (yaml-value table :affects))
         :status (as-keyword (yaml-value table :status)
                             ;; :IMPLEMENTED and :PARTIAL complete CON-0004's

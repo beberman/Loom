@@ -1,11 +1,12 @@
 id: BUG-0025
 title: A let binding is recorded as a call, so every local variable name that matches a function somewhere becomes an edge to it
 status: closed
+priority: p1
 date: 2026-08-13
 refines: [PLAN-0022]
 affects: [impact-set, resolve-document-links, document-summary, entity-system]
 tags: [analyzer, resolution, con-0001, des-0015, false-edge]
-severity: high
+severity: critical
 summary: |
   The Lisp analyzer records the name bound by a `let` or `let*` as a called
   function. A binding pair `(field (compute x))` is syntactically identical to

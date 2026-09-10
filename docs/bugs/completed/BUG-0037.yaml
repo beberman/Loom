@@ -5,7 +5,7 @@ date: 2026-08-21
 refines: [PLAN-0035]
 affects: [seed-entities]
 tags: [retrieval, context, evaluation, req-0036, des-0030, req-0037, destructive-sort]
-severity: high
+severity: critical
 summary: |
   SEED-ENTITIES sorts its candidate alist with STABLE-SORT and then reads the
   same variable again to build the record detail DES-0030 D3 asks for:

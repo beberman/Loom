@@ -1,6 +1,6 @@
 id: REQ-0070
 title: Loom must dogfood the workflow-concept template, because it is the one document Loom ships that Loom never reads and any field added to the ontology will be omitted from it unnoticed
-status: draft
+status: implemented
 date: 2026-09-10
 refines: [DES-0044]
 affects: [render-template, prepare-repository]
@@ -57,6 +57,34 @@ body: |
   tree. Reaching the trees that already exist is BUG-0062 F3 and is a separate
   decision.
 
+  WHAT LANDED, 2026-09-10
+
+  Two tests in the init suite, run against the RENDERED template, which is R2.
+
+  EVERY-FIELD-THE-ANALYZER-READS-IS-NAMED-IN-THE-CONVENTIONS-A-TREE-IS-GIVEN
+  asserts R1: every key TYPE-SPECIFIC-PROPERTIES' :DOCUMENT method looks up is
+  named in the conventions a prepared tree receives.
+
+  THE-CONVENTIONS-DESCRIBE-NO-FIELD-THE-ANALYZER-WOULD-DISCARD asserts R3, the
+  same silent drop from the author's side -- BUG-0023's shape, where correct
+  YAML written to instruction was discarded.
+
+  The list of fields is written in the test rather than derived from the method,
+  and that is the whole design: deriving it would make the test pass by
+  construction and assert nothing. Two things must agree, so one of them is the
+  assertion and the other is the subject.
+
+  It failed first, on importance, severity and priority, naming each -- which is
+  CON-0003 without contriving it, since the template was fixed afterwards.
+
+  R4 is NOT done and is withdrawn rather than deferred. Indexing the template
+  would make it findable, and the test is what makes an omission fail; a
+  `find' that reaches the template answers a question nobody asked, and the
+  templates directory is deliberately excluded from indexing as a category of
+  text that describes an elsewhere. If a reason to index it appears it will be
+  a different requirement.
+
+  ACCEPTANCE
   ACCEPTANCE
 
   Add a property to the `:document` entity type and read it in

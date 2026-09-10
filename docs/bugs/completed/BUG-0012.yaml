@@ -1,11 +1,12 @@
 id: BUG-0012
 title: A collided entity's outgoing edges are a union of every colliding definition's edges, not the surviving one's
 status: closed
+priority: p4
 date: 2026-08-06
 refines: [PLAN-0009, DES-0010]
 affects: [generic-definition-entities, method-entity-from-tail, absorb-entity]
 tags: [analyzer, graph, lisp, clos, blind-spot]
-severity: medium
+severity: major
 summary: |
   DES-0010 R4 discloses that an inline (:method ...) clause and a standalone
   DEFMETHOD with identical name, qualifier and specializers in the same file

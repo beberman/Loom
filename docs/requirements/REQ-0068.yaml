@@ -1,6 +1,7 @@
 id: REQ-0068
 title: The document graph has no query beyond one hop, so establishing why three requirements were blocked meant dumping refines out of 45 files with a shell loop
 status: draft
+priority: p4
 date: 2026-09-10
 refines: [REQ-0022]
 affects: [refines-targets, describe-entity, impact-report]

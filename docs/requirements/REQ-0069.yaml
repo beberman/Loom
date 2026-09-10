@@ -1,6 +1,7 @@
 id: REQ-0069
 title: A symptom that traces into a dependency outside the watched set gets no index support, and nothing suggests registering the dependency's own source tree
 status: draft
+priority: p4
 date: 2026-09-10
 refines: [REQ-0023]
 affects: [prepare-repository, repository-for-similar]

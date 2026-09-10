@@ -100,6 +100,65 @@ would bury exactly what impact exists to surface")
                  "~a does not say that a commit message is evidence no index ~
 holds, which is the case that surprises" file)))))
 
+(defparameter *document-fields-the-analyzer-reads*
+  '("refines" "affects" "status" "importance" "severity" "priority")
+  "Every key TYPE-SPECIFIC-PROPERTIES' :DOCUMENT method looks up.
+
+REQ-0070's list, and it is written here rather than derived because the point is
+that two things must agree: this is the assertion, and the method is the
+subject. Deriving it from the method would make the test pass by construction
+and assert nothing.
+
+Add a key to that method and add it here, and the test below will tell you
+whether the template was told.")
+
+(test every-field-the-analyzer-reads-is-named-in-the-conventions-a-tree-is-given
+  ;; REQ-0070. The workflow-concept template is the one document Loom ships that
+  ;; Loom never reads: docs/concepts/CON-0001.yaml in this tree is "Resolution
+  ;; pass", unrelated, so nothing here exercises the text every other repository
+  ;; is handed.
+  ;;
+  ;; That is the mechanism behind BUG-0062 rather than a tidiness argument.
+  ;; `importance:' was added to the ontology and to every requirement in this
+  ;; tree on 2026-08-23 and never reached the template, and nothing anywhere
+  ;; could have noticed: no prepared repository can see an omission from the
+  ;; document that defines its conventions, and Loom had no copy to compare
+  ;; against. front-end carried 62 documents without the field until somebody
+  ;; happened to read both trees side by side. BUG-0063 is the second instance,
+  ;; found by looking rather than by anything reporting it.
+  ;;
+  ;; Against the RENDERED template, which is what a prepared tree receives, so a
+  ;; placeholder that a render drops is caught with the rest.
+  (with-target-tree (root)
+    (prepare-repository root :append-claude-md nil)
+    (let ((text (target-text root "docs/concepts/CON-0001.yaml")))
+      (dolist (field *document-fields-the-analyzer-reads*)
+        (is-true (search field text)
+                 "the analyzer reads `~a:' and the conventions never mention it, ~
+so an author working from them writes correct YAML that is missing a field the ~
+engine is reading" field)))))
+
+(test the-conventions-describe-no-field-the-analyzer-would-discard
+  ;; REQ-0070 R3, the same silent drop from the author's side. A field the
+  ;; template documents and no method reads is correct YAML written to
+  ;; instruction and discarded -- BUG-0023 is the standing instance, where 67
+  ;; documents carried 610 names in `affects:' that resolved to nothing and were
+  ;; not reported unresolved either.
+  ;;
+  ;; Scoped to the fields section, because the template's prose legitimately
+  ;; names things that are not document fields.
+  (with-target-tree (root)
+    (prepare-repository root :append-claude-md nil)
+    (let* ((text (target-text root "docs/concepts/CON-0001.yaml"))
+           (at   (search "THE FIELDS THAT RESOLVE" text))
+           (section (and at (subseq text at (min (length text) (+ at 4000))))))
+      (is-true section "the template has no fields section to check")
+      (dolist (claimed '("refines" "affects" "importance" "severity" "priority"))
+        (when (search claimed section)
+          (is-true (member claimed *document-fields-the-analyzer-reads*
+                           :test #'string=)
+                   "the conventions describe `~a:' and no method reads it" claimed))))))
+
 (test a-tree-with-no-claude-md-gets-one-without-being-asked
   ;; Writing a file that does not exist is not editing one, so R3 does not bear
   ;; on it and R16's second consent is not needed. Consent is about touching

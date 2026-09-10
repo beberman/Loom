@@ -5,7 +5,7 @@ date: 2026-08-22
 refines: [BUG-0037]
 affects: [federation-report]
 tags: [federation, req-0027, destructive-sort, bug-0037]
-severity: medium
+severity: major
 summary: |
   FEDERATION-REPORT builds its plist in one LIST form, and the first three
   slots sort the three variables the last two then read:

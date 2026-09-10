@@ -3,7 +3,7 @@ title: next-doc-id.sh maps DEC to docs/design, so it answers DEC-0001 for a cate
 status: closed
 date: 2026-08-22
 tags: [documents, tooling, con-0004, duplicate-id]
-severity: medium
+severity: major
 summary: |
   The category table in tools/next-doc-id.sh reads
 

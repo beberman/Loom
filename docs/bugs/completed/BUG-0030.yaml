@@ -1,6 +1,7 @@
 id: BUG-0030
 title: One illegal edge endpoint rejects a whole repository's transaction, and the third missing type took the whole of front-end
 status: closed
+priority: p1
 date: 2026-08-16
 affects: [apply-transaction, resolve-document-links, analyze-file]
 tags: [graph, ontology, markdown, transaction, front-end, con-0001, con-0006]

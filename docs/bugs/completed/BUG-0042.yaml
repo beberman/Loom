@@ -5,7 +5,7 @@ date: 2026-08-22
 refines: [REQ-0016]
 affects: ['*context-stopwords*', task-token-origins, task-tokens]
 tags: [retrieval, context, seeding, stopwords, req-0016]
-severity: high
+severity: major
 summary: |
   `context @front-end get type from obj' searched on `type' and `obj'. `get'
   was a stopword, so GETTYPEFROMOBJ competed on two of the caller's four words

@@ -648,10 +648,29 @@ references, unread definers, and dropped edges."
           ;; the whole point of the mechanism is that a fourth missing :TO
           ;; entry shows up here instead of taking a repository dark.
           :dropped-edges (mapcar #'dropped-edge-summary (dropped-edges graph))
+          ;; BUG-0062 F2 / BUG-0063 F4. A document that wrote a vocabulary
+          ;; field and spelled the value wrong, which sets nothing and until now
+          ;; looked exactly like not writing the field at all.
+          :dropped-fields (dropped-document-fields graph)
           ;; REQ-0065 R1. `check' is run after writing a document and again
           ;; after the edit that answers it, so whether an answer predates the
           ;; write is exactly the question a caller has here.
           :provenance (answer-provenance watched))))
+
+(defun dropped-document-fields (graph)
+  "Every document carrying a vocabulary field whose value went nowhere.
+
+The report half of BUG-0062 F2 and BUG-0063 F4. The analyzer records the names
+because the raw key is only visible while the YAML is in hand; this asks the
+whole tree, which is where a caller can act on the answer."
+  (loop for type in *document-types*
+        append (loop for document in (entities-of-type graph type)
+                     for fields = (getp document :dropped-fields)
+                     when fields
+                       collect (list :document (or (getp document :doc-id)
+                                                   (name document))
+                                     :file (getp document :path)
+                                     :fields fields))))
 
 (define-operation :check-document :read (repository path (contents))
     "What one document's declared references resolve to, before it is written \

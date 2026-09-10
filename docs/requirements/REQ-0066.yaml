@@ -1,6 +1,7 @@
 id: REQ-0066
 title: An unresolved qualified reference must carry the candidates its bare name resolves to, because a rename is the common cause and the tool is better placed to do the lookup than the caller
 status: draft
+priority: p4
 date: 2026-09-10
 refines: [REQ-0030]
 affects: [document-reference-report, resolve-one, check-document-references]

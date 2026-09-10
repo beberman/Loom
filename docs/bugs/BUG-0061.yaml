@@ -7,7 +7,7 @@ affects: [resolve-one, resolve-document-links, linkable-index,
           make-method-entity, make-interface-entity]
 tags: [documents, resolution, ambiguity, clos, defmethod, method-qualifier,
        con-0001, game-server]
-severity: medium
+severity: minor
 summary: |
   RESOLVE-ONE (src/graph/resolve.lisp:1476) resolves a candidate set of
   exactly one :INTERFACE plus its :METHOD entities to the interface, on the

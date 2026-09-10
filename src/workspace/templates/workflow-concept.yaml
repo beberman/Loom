@@ -59,6 +59,36 @@ body: |
   An architecture document writes `describes:` instead, and has no affects: --
   it describes structure, it does not govern it.
 
+  THE TWO JUDGEMENTS, AND WHY THEY ARE TWO FIELDS
+
+  How much it matters and when to do it are different questions, and each has
+  its own field. Both are read into the index and returned by `describe`.
+
+      importance:  critical | major | minor    on a requirement
+      severity:    critical | major | minor    on a bug
+      priority:    p1 | p2 | p3 | p4 | p5      on either
+
+  IMPACT is one axis under two names, because the genres ask it differently. A
+  requirement asks: would the product be wrong without this, or only poorer? A
+  bug asks: how severe is the impact when it happens? Same three values, and a
+  scale with five points invites the middle one.
+
+  PRIORITY is when to work it, and it is derived rather than judged fresh:
+  impact weighted by how likely the thing is to happen, then sequenced against
+  the work already planned -- because a bug that a requirement will resolve on
+  its way past should be sequenced behind it rather than fixed twice.
+
+  Keep them apart. A bug can be severe and last: wide impact, and a design
+  change already scheduled that will remove it. Neither value can be recovered
+  from the other, which is why one field cannot carry both.
+
+  A value outside the list above is dropped in silence at analysis time and
+  reported by `check` over the whole tree. So `severity: high` sets nothing,
+  and `describe` on the document is how you confirm a value took.
+
+  A rule's `severity:` is a different field with a different vocabulary --
+  error | warning | advisory -- and answers how strictly the rule is enforced.
+
   STATUS, AND WHO MOVES IT
 
   Every document carries status:, and the vocabulary is per kind:

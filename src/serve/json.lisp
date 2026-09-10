@@ -98,6 +98,10 @@
     ;; for the same reason it must encode as [] rather than null: a client
     ;; branching on "did anything fail to parse" reads it directly.
     :unparsed
+    ;; BUG-0062 F2 / BUG-0063 F4. Empty is the healthy answer and is the
+    ;; answer, so it must not arrive as the null a caller reads as "not
+    ;; checked". :FIELDS is the inner list of names for the same reason.
+    :dropped-fields :fields
     ;; REQ-0051, DES-0043 D2. The federated `find''s three lists. :SKIPPED is
     ;; already above for the init report and carries the same meaning here.
     ;; :SEARCHED empty is a `find' issued with nothing watched, and :ELSEWHERE

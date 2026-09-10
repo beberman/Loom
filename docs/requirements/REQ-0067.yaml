@@ -1,6 +1,7 @@
 id: REQ-0067
 title: complete's blocked-by refusal must distinguish a genuinely unfinished child from a parent's extracted residue, because the convention that lets a parent close is what blocks it
 status: draft
+priority: p4
 date: 2026-09-10
 refines: [REQ-0022, DES-0019]
 affects: [document-blockers, complete-plan]
