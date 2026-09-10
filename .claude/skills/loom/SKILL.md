@@ -243,7 +243,15 @@ tools/loom-serve.sh stop       SIGTERM it and wait for it to go
 tools/loom-serve.sh restart    stop, then start
 tools/loom-serve.sh reload     stop, then start (an alias for restart)
 tools/loom-serve.sh update     start / restart / nothing, whichever applies
+tools/loom-serve.sh install    write the systemd user unit (does not enable it)
 ```
+
+`install` is the one to run once rather than per session. A service started by
+a session's first tool call has already missed the MCP handshake, so the
+`loom_*` tools are unavailable for that whole session however healthy the
+endpoint is — installing the unit and enabling it removes the race instead of
+narrowing it. Once enabled, every verb above delegates to systemd rather than
+spawning a second service beside the supervised one. REQ-0064.
 
 `update` is the one verb worth reaching for. It pays a restart's cost only when
 something actually changed — a no-op in ~30ms on the common case, a ~4.5s

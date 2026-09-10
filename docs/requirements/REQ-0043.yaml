@@ -17,6 +17,15 @@ summary: |
   Three instances found across three repositories in one sitting, plus the
   neighbouring case: a package exporting a name that nothing defines.
 body: |
+  PRIORITY: P4, 2026-09-10
+
+  Deferred on rate. A file no build system loads accumulates as fast as somebody
+  writes files and forgets the .asd, which at one developer is slowly -- four
+  instances in thirteen months across four trees. Impact when it happens is a
+  confident wrong answer (`no callers' meaning `nothing loads it'), so this is a
+  defer on probability alone and should be re-read if a second developer joins
+  or if a tree is prepared for somebody else.
+
   THE INSTANCES
 
   - game-server/utils/token.lisp: five exported names, absent from the .asd,

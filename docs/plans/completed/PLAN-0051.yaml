@@ -1,0 +1,91 @@
+id: PLAN-0051
+title: A serve verb, an install verb, and one control surface -- six steps to a Loom that is up before the session opens
+status: final
+date: 2026-09-10
+refines: [REQ-0064]
+affects: [serve-forever, server-running-p]
+tags: [mcp, service, lifecycle, systemd, tooling, req-0064]
+summary: |
+  REQ-0064 R1 through R5, on this machine's actual environment: systemd is pid
+  1, the user manager reports `running`, and XDG_RUNTIME_DIR is set, so a
+  user unit is the mechanism rather than a login item.
+
+  The unit does not name repositories. It runs `tools/loom-serve.sh serve`, a
+  new foreground verb that reads `tools/extra-repos` the way `start` already
+  does, so the watch list stays a file a developer edits rather than a unit
+  they regenerate.
+
+  The risk the plan is sequenced around is two control surfaces: a unit that
+  supervises the process and a script that spawns its own with nohup. S3
+  removes it by delegating, so `tools/loom-serve.sh restart` does the right
+  thing whether or not the unit is installed.
+body: |
+  STEPS
+
+  S1. A `serve` verb. Foreground, no nohup, no disown, and `exec` rather than a
+      call so the process systemd supervises is sbcl itself and not a shell
+      holding it. The extras-file reading in CMD_START moves to a function both
+      verbs call; today it is inline and would be the second copy.
+
+      `serve` is deliberately not in the usage line: it exists for the unit and
+      a developer typing it by hand gets a foreground service, which is what
+      `sbcl --script loom-serve.lisp --headless` already is.
+
+  S2. An `install` verb. Writes ~/.config/systemd/user/loom.service, runs
+      `systemctl --user daemon-reload`, prints the path it wrote and the one
+      command left to run. It does not enable and does not start: turning on a
+      thing that survives logout is the operator's decision and a script that
+      makes it silently is a script nobody trusts twice.
+
+      Type=simple, since S1 execs. Restart=on-failure rather than always, so a
+      deliberate stop stays stopped. WorkingDirectory is the root, because
+      loom-serve.lisp is invoked by relative path today.
+
+  S3. One control surface. `start`, `stop`, `restart` and `update` check
+      `systemctl --user is-active loom.service` first and delegate when it is
+      active. Without this, `restart` SIGTERMs the supervised process and spawns
+      an unsupervised replacement, leaving systemd believing the unit is
+      inactive while something holds the port -- which is the state that makes
+      `status` lie.
+
+  S4. The template. `claude-md-pointer.md` currently says "Better still, make
+      the service outlive sessions -- a login item or a user service unit --
+      because then the race cannot happen". That sentence names the fix and
+      gives the reader nothing to run. It becomes the two commands, and the
+      surrounding paragraph stops telling a reader to start the service at the
+      beginning of a session.
+
+  S5. Loom's own CLAUDE.md and the loom skill, for the same change. Every
+      prepared tree gets S4 on the next `init --update`, which is REQ-0052's
+      mechanism; this tree is not prepared by init and has to be edited.
+
+  S6. Verification, and what it deliberately stops short of. `systemd-analyze
+      verify` on the written unit checks it parses and its dependencies resolve
+      without starting anything. `install` is run so the file exists and the
+      user has one command to type. The unit is NOT enabled or started by this
+      plan.
+
+  WHAT THIS PLAN DOES NOT DO
+
+  Enable the unit. `systemctl --user enable --now loom` is one command and it
+  is the user's to run, because it changes what happens on their machine when
+  no session is open.
+
+  Decide about lingering. `loginctl show-user` reports `Linger=no`, so the user
+  manager -- and the service with it -- stops when the last session ends. Under
+  WSL that is usually the whole instance going away, so it may not matter;
+  `loginctl enable-linger` is the fix if it does. Named here rather than done,
+  for S2's reason.
+
+  Authenticate anything. REQ-0064 R1's unit serves one user on one machine.
+  Multi-user and OAuth are REQ-0071 R4 and are deferred there.
+
+  RISKS
+
+  A unit that forks loses its process. S1's `exec` is what prevents it and is
+  the one line in this plan that is not obviously safe to get wrong.
+
+  loom-serve.lisp writes its own pidfile whether or not systemd is supervising.
+  That is harmless -- `probe` reads the port, and `live_pid_or_clean` clears a
+  stale file -- but a reader who expects systemd to own the pid should find the
+  reason in S2's comment rather than in this plan.
