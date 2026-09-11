@@ -109,6 +109,11 @@
    ;; follows is that file's.
    (:file "init")
    (:file "architecture")
+   ;; After "workspace": it takes WRITE-FILE, *FIXTURE-ROOT* and
+   ;; CLEANUP-FIXTURE, and builds its repository on disk and through the
+   ;; pipeline -- because ANALYZE-PATH is what stamps :DOMAIN, and every
+   ;; analyzer helper in this tree calls ANALYZE-FILE instead.
+   (:file "domains")
    ;; After "workspace": it takes WITH-WORKSPACE-FIXTURE and WRITE-FILE, and
    ;; the line numbers it asserts are that fixture's src/alpha.lisp.
    (:file "source")

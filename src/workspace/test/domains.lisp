@@ -1,0 +1,191 @@
+;;;; Domains, end to end (REQ-0063 R9, DES-0047 R13, PLAN-0050 S8).
+;;;;
+;;;; Every other test of this work exercises one layer: the parser against a
+;;;; string, the resolver against a hand-built table, the pass against a graph
+;;;; assembled in memory. This one writes a repository to disk, declares three
+;;;; domains in its .loom/frameworks.yaml, and indexes it through the pipeline
+;;;; -- which is what makes step 11 a measurement rather than the test.
+;;;;
+;;;; Through WITH-WORKSPACE-FIXTURE rather than through ANALYZE-FILE, and that
+;;;; is not a preference. ANALYZE-PATH is what stamps :DOMAIN, and every
+;;;; analyzer test helper in this tree calls ANALYZE-FILE instead -- so a
+;;;; fixture built the usual way would assert on a property nothing had
+;;;; written and fail for a reason that has nothing to do with domains.
+
+(in-package :loom-workspace-test)
+
+(in-suite all-tests)
+
+(defparameter *domain-frameworks* "domains:
+  - name: app
+    root: app/
+    resolution: bundler
+    aliases:
+      widgets: app/ui/widgets
+      lib: app/lib
+  - name: strict
+    root: app/strict/
+    resolution: node-esm
+    aliases-from: app
+  - name: legacy
+    root: legacy/
+    resolution: commonjs
+"
+  "Three domains: a bundler root with two alias keys, a nested node-esm root
+inheriting them through `aliases-from', and a commonjs root with none.
+
+The nesting is the point of the second: app/strict/ lies under app/, so
+longest-prefix matching is what decides which one a file in it belongs to.")
+
+(defun make-domain-repository ()
+  "A repository on disk declaring *DOMAIN-FRAMEWORKS*, indexed through the
+pipeline."
+  (setf *fixture-root*
+        (merge-pathnames (format nil "loom-domains-~36r/" (random (expt 2 48)))
+                         (uiop:temporary-directory)))
+  (ensure-directories-exist *fixture-root*)
+  (write-file ".loom/frameworks.yaml" *domain-frameworks*)
+  ;; The alias target, reached from app/ by its key rather than by a path.
+  (write-file "app/ui/widgets/Panel.jsx"
+              "export function Panel() { return null; }
+")
+  (write-file "app/lib/helpers.js"
+              "export function help() { return 1; }
+")
+  ;; Written in app/, resolving through the alias map.
+  (write-file "app/Home.jsx"
+              "import { Panel } from 'widgets/Panel.jsx';
+export function Home() { return Panel(); }
+")
+  ;; Written in app/, extensionless: bundler guesses.
+  (write-file "app/Guessing.jsx"
+              "import { help } from 'lib/helpers';
+export function g() { return help(); }
+")
+  ;; The nested domain. Inherits app's aliases and resolves under node-esm,
+  ;; which guesses nothing.
+  (write-file "app/strict/Guard.js"
+              "import { Panel } from 'widgets/Panel.jsx';
+import { help } from 'lib/helpers';
+export function guard() { return Panel() && help(); }
+")
+  ;; The four causes, one file each.
+  (write-file "app/CauseExternal.js" "import x from 'react';
+export const a = x;
+")
+  (write-file "app/CauseUnresolved.js" "import x from './nowhere';
+export const b = x;
+")
+  (write-file "app/CauseUnclaimed.js" "import x from 'widgets/Missing.jsx';
+export const c = x;
+")
+  (write-file "legacy/CauseOutOfDomain.js" "import x from 'widgets/Panel.jsx';
+export const d = x;
+")
+  (watch-repository *fixture-root* :monitor nil :quiet t))
+
+(defmacro with-domain-repository ((repository) &body body)
+  `(let ((,repository (make-domain-repository)))
+     (unwind-protect (progn ,@body)
+       (unwatch-repository (repository-name ,repository))
+       (cleanup-fixture))))
+
+(defun node-available-p ()
+  "True when a JavaScript child can actually be started.
+
+JS-ANALYZER's JS-AVAILABLE-P by another name, and the duplication is
+deliberate: that one lives in LOOM-ANALYZER-TEST, which this system does not
+load and should not start loading for one predicate. Both ask
+LOOM-ANALYZER::ENSURE-JS-CHILD under its own lock, which is the question."
+  (bt:with-lock-held (loom-analyzer::*js-child-lock*)
+    (not (null (loom-analyzer::ensure-js-child)))))
+
+(defmacro domain-test (name &body body)
+  "A test needing a live node, skipping rather than failing without one.
+
+JS-TEST's rule, restated here because that macro is the analyzer suite's: a red
+suite on a machine that cannot run acorn teaches nobody anything, and a skip is
+a branch rather than an early return because FiveAM's TEST establishes no block
+to return from."
+  `(test ,name
+     (if (node-available-p)
+         (progn ,@body)
+         (skip "node is not on PATH; the JavaScript analyzer cannot run here"))))
+
+(defun file-entity (repository path)
+  (find path (entities-of-type (repository-graph repository) :file)
+        :key (lambda (e) (getp e :path)) :test #'equal))
+
+(defun imports-of (repository path)
+  "The paths the file at PATH draws :IMPORTS edges to."
+  (let* ((graph (repository-graph repository))
+         (file (file-entity repository path)))
+    (when file
+      (loop for r in (relationships-from graph (id file))
+            when (eq :imports (rel-type r))
+              collect (getp (get-entity graph (to-id r)) :path)))))
+
+(defun causes-of (repository path)
+  "Specifier to cause, for everything in PATH that resolved to nothing."
+  (let ((file (file-entity repository path)))
+    (loop for entry in (and file (getp file :unresolved-imports))
+          collect (cons (getf entry :specifier) (getf entry :cause)))))
+
+(domain-test an-alias-key-resolves-through-the-declared-map
+  ;; The tier REQ-0063 exists for: 1320 of front-end's 1885 in-tree imports are
+  ;; written this way and resolved to nothing.
+  (with-domain-repository (repository)
+    (is (member "app/ui/widgets/Panel.jsx" (imports-of repository "app/Home.jsx")
+                :test #'equal)
+        "app/Home.jsx imports ~a" (imports-of repository "app/Home.jsx"))))
+
+(domain-test a-nested-root-takes-the-file-from-the-domain-above-it
+  ;; Longest-prefix matching as an equality on the property itself, rather than
+  ;; through anything it goes on to affect.
+  (with-domain-repository (repository)
+    (is (eq :strict (getp (file-entity repository "app/strict/Guard.js") :domain)))
+    (is (eq :app (getp (file-entity repository "app/Home.jsx") :domain)))
+    (is (eq :legacy (getp (file-entity repository "legacy/CauseOutOfDomain.js") :domain)))))
+
+(domain-test aliases-from-gives-the-nested-domain-the-map-it-inherits
+  (with-domain-repository (repository)
+    (is (member "app/ui/widgets/Panel.jsx"
+                (imports-of repository "app/strict/Guard.js") :test #'equal)
+        "the inherited key resolves in the nested domain too")))
+
+(domain-test a-cross-domain-import-is-an-ordinary-edge
+  ;; Nothing about the boundary is recorded on the edge. A file in app/strict/
+  ;; importing a file in app/ draws what any other import draws -- the domain
+  ;; is a property of the endpoints, not of the relationship.
+  (with-domain-repository (repository)
+    (let* ((graph (repository-graph repository))
+           (from (file-entity repository "app/strict/Guard.js"))
+           (edge (find :imports (relationships-from graph (id from)) :key #'rel-type)))
+      (is-true edge "there is an :IMPORTS edge to examine")
+      (when edge
+        (is (eq :strict (getp from :domain)))
+        (is (eq :app (getp (get-entity graph (to-id edge)) :domain))
+            "the two ends are in different domains")))))
+
+(domain-test node-esm-refuses-the-guess-that-bundler-makes
+  ;; One assertion with two different answers, which is what makes the presets
+  ;; data rather than decoration: the same extensionless specifier, written in
+  ;; two domains, resolving in one and not the other.
+  (with-domain-repository (repository)
+    (is (member "app/lib/helpers.js" (imports-of repository "app/Guessing.jsx")
+                :test #'equal)
+        "bundler guesses the extension")
+    (is (not (member "app/lib/helpers.js" (imports-of repository "app/strict/Guard.js")
+                     :test #'equal))
+        "and node-esm does not, for the same specifier against the same file")))
+
+(domain-test each-of-the-four-causes-is-recorded-on-the-file-that-produced-it
+  (with-domain-repository (repository)
+    (is (equal '(:external) (mapcar #'cdr (causes-of repository "app/CauseExternal.js"))))
+    (is (equal '(:unresolved) (mapcar #'cdr (causes-of repository "app/CauseUnresolved.js"))))
+    (is (equal '(:unclaimed-target)
+               (mapcar #'cdr (causes-of repository "app/CauseUnclaimed.js")))
+        "the alias rewrote it and the index holds nothing under the result")
+    (is (equal '(:out-of-domain)
+               (mapcar #'cdr (causes-of repository "legacy/CauseOutOfDomain.js")))
+        "a key app declares and legacy does not")))
