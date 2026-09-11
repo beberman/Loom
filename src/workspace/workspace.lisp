@@ -165,6 +165,63 @@ all, and NORMALIZE-ROOT signals on those."
           (and root (rooted-at (namestring root))))
         (rooted-at (namestring (pathname-as-directory (pathname designator)))))))
 
+(define-condition unknown-domain (loom-utils:refusal) ()
+  (:documentation "A designator named a domain the repository does not declare."))
+
+(defun split-designator (designator)
+  "DESIGNATOR as a repository and a domain, or a repository and NIL.
+
+  (split-designator \"front-end/server\")  => repository, the server domain plist
+  (split-designator \"front-end\")         => repository, NIL
+
+The whole designator is looked up first, and only split when that finds
+nothing. That ordering is the whole correctness of this function, not a
+refinement. A repository is addressable by its path as well as its name, and
+every path has slashes in it: splitting first would turn
+\"/home/beberman/lisp/Loom\" into a repository named \"/home/beberman/lisp\"
+and a domain named \"Loom\", and the path spelling the console encourages --
+`unwatch \"~/lisp/Loom\"' -- would stop working.
+
+Split at the LAST slash, and both halves must be non-empty.
+
+An unknown domain is refused, naming what the repository does declare. That
+refusal is why the lookup happens before the name is interned: a typo must not
+add a keyword to the image, and the caller gets told what they could have
+written.
+
+Returns NIL for the repository when the designator names none, leaving the
+caller to refuse in its own words -- the callers already have a message for
+that and it is not this function's to duplicate."
+  (let ((whole (find-repository designator)))
+    (if whole
+        (values whole nil)
+        (let ((slash (position #\/ designator :from-end t)))
+          (if (or (null slash) (zerop slash) (= slash (1- (length designator))))
+              (values nil nil)
+              (let* ((name (subseq designator 0 slash))
+                     (domain-name (subseq designator (1+ slash)))
+                     (repository (find-repository name)))
+                (if (null repository)
+                    (values nil nil)
+                    (let* ((domains (repository-domains repository))
+                           (declared (and domains
+                                          (loop for key being the hash-keys of domains
+                                                unless (eq key *default-domain*)
+                                                  collect key))))
+                      (let ((match (find domain-name declared
+                                         :test (lambda (text key)
+                                                 (string-equal text (symbol-name key))))))
+                        (if match
+                            (values repository (gethash match domains))
+                            (error 'unknown-domain
+                                   :message
+                                   (if declared
+                                       (format nil "~a declares no domain ~s. It declares ~{~(~a~)~^, ~}."
+                                               (repository-name repository) domain-name
+                                               (sort (mapcar #'symbol-name declared) #'string<))
+                                       (format nil "~a declares no domains at all, so ~s names nothing. Add a domains: section to .loom/frameworks.yaml."
+                                               (repository-name repository) domain-name)))))))))))))
+
 (defun all-repositories () (reverse *repositories*))
 
 ;;;; ==================================================================

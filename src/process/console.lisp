@@ -118,6 +118,46 @@ later query about the wrong tree with nothing in the question or the answer
 saying so. That is CON-0001's fabricated fact arrived at by omission, and
 REQ-0021 R8 already calls it worse than a failure.")
 
+(defparameter *command-domain* nil
+  "The domain a command should act on, as the plist the analyzer parsed.
+
+Bound beside *COMMAND-REPOSITORY* for one command's dynamic extent and never
+set, for that variable's reason: a session that remembers a selection answers a
+later query about the wrong part of the tree with nothing in the question or the
+answer saying so.
+
+NIL means the whole repository, which is every command that names no domain and
+every repository that declares none.")
+
+(defun domain-filter ()
+  "The property filter for the domain this command names, or NIL.
+
+A keyword, because :DOMAIN is one -- the analyzer interns the name once when
+the declaration is read. PROPERTIES-MATCH-P compares with EQUAL, which two
+occurrences of one keyword satisfy through EQ.
+
+NIL rather than an empty filter, so a command that names no domain passes
+nothing and the query path is the one it has always been."
+  (when *command-domain*
+    (list :domain (getf *command-domain* :name))))
+
+(defun refuse-domain (command)
+  "Refuse COMMAND when the token named a domain, and say why.
+
+PLAN-0050 S12. These commands act on the index itself -- they build it, drop
+it, or write into the tree. A domain partitions an index; it is not one, so
+there is nothing for `reindex @front-end/server' to mean that is not either a
+lie or a much larger feature.
+
+Refused rather than ignored, which is the CON-0001 rule at the console: a
+command that silently acted on the whole repository after being handed part of
+one would be answering a question nobody asked."
+  (when *command-domain*
+    (error "~a acts on a whole index, and ~(~a~) is one domain inside it. A ~
+domain partitions an index rather than being one. Drop the domain from the ~
+token and run ~a on the repository."
+           command (getf *command-domain* :name) command)))
+
 (defun repository-token-p (token)
   "True when TOKEN is a leading @name naming a repository."
   (and (stringp token)
@@ -139,7 +179,13 @@ that position meant it, and overriding it from a token earlier on the line
 would be the surprise this exists to remove. With one repository watched
 nothing changes and nothing has to be typed."
   (let ((named (or designator *command-repository*)))
-    (cond (named (or (find-repository named)
+    (cond (named (or ;; PLAN-0050 S12. Through the split, so that a designator
+                     ;; naming a domain -- `front-end/server' -- finds the
+                     ;; repository rather than failing as an unknown name. An
+                     ;; unknown domain refuses inside SPLIT-DESIGNATOR, naming
+                     ;; what the repository does declare, and that refusal is
+                     ;; more useful than this function's.
+                     (split-designator named)
                      ;; A designator that still carries the sigil got here as a
                      ;; positional argument rather than being stripped, which
                      ;; means it was not first on the line. Found by writing
@@ -433,6 +479,7 @@ command."
 (define-command watch (path)
     "watch \"<directory>\""
     "Register a repository, index it, and begin watching. Resumes a paused one."
+  (refuse-domain "watch")
   (let ((repository (watch-repository path)))
     (log-event "watch" "~a" (repository-root repository))
     (print-status (repository-status repository))))
@@ -440,6 +487,7 @@ command."
 (define-command pause (&optional designator)
     "pause [<name>]"
     "Stop watching but keep the index. Resume with watch."
+  (refuse-domain "pause")
   ;; DEC-0004: a console session and an index have different lifetimes, so
   ;; there has to be a way to stop the polling that does not spend the seconds
   ;; the graph cost to build.
@@ -451,6 +499,7 @@ command."
 (define-command unwatch (&optional designator)
     "unwatch [<name>]"
     "Stop watching and drop the index."
+  (refuse-domain "unwatch")
   (let ((repository (unwatch-repository (repository-name (current-repository designator)))))
     (format t "~&Dropped ~a.~%" (repository-name repository))))
 
@@ -467,6 +516,7 @@ command."
 (define-command reindex (&optional designator)
     "reindex [<name>]"
     "Discard and rebuild the index from disk. Always safe."
+  (refuse-domain "reindex")
   (let ((repository (current-repository designator)))
     (reindex-repository repository)
     (print-status (repository-status repository))))
@@ -474,6 +524,7 @@ command."
 (define-command enrich (&optional designator)
     "enrich [<name>]"
     "Ask each language's toolchain to enrich the index. On demand only."
+  (refuse-domain "enrich")
   ;; On demand and nowhere else (DES-0011 R9). Nothing in POLL-ONCE, the
   ;; monitor, watch or reindex reaches ENRICH-REPOSITORY: a run loads the whole
   ;; target in a fresh process, which is seconds to minutes against a poll cycle
@@ -753,8 +804,12 @@ properly needs to know the list was cut."
     (if (or named (null (all-repositories)))
         (let ((repository (current-repository)))
           (multiple-value-bind (hits total)
+              ;; PLAN-0050 S12. The filter is NIL unless the command's token
+              ;; named a domain, so a caller who named none gets the query
+              ;; path this has always taken.
               (search-entities (repository-graph repository) :name term
-                               :type type :limit *console-find-limit*)
+                               :type type :limit *console-find-limit*
+                               :property-filters (domain-filter))
             (cond
               ((null hits)
                (print-find-elsewhere
@@ -1237,6 +1292,7 @@ of tokens." value))
     "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>] [--update] \
 [--apply] [--replace-unproven]"
     "Prepare a repository for the Loom workflow. Writes; never commits."
+  (refuse-domain "init")
   ;; REQ-0021 R16's consents arrive as arguments rather than as prompts, here as
   ;; much as in the service: this command has to be callable from a script, and
   ;; a prompt in a run with no terminal is a stall nobody sees. Running the
@@ -1365,6 +1421,7 @@ changed.~%"))))
 (define-command architecture (&optional designator)
     "architecture [<name>]"
     "Write an ARCH document from the index. Says only what was measured."
+  (refuse-domain "architecture")
   ;; REQ-0021 R5/R6, and the second half of preparing a tree: init makes the
   ;; directories, this puts something in them. Separate from `init' because a
   ;; structural report needs an index and init runs before there is one -- so
@@ -1699,9 +1756,20 @@ the developer somewhere they have to know Lisp to escape."
         (cond ((null command)
                (format t "~&Unknown command ~s. Try: help~%" (first tokens)))
               (t (handler-case
+                     ;; PLAN-0050 S12. The token may name a domain of a
+                     ;; repository as well as a repository. SPLIT-DESIGNATOR
+                     ;; decides which, and it looks the whole token up before
+                     ;; splitting so a path designator keeps working.
+                     ;;
                      ;; Bound for this command's dynamic extent and no longer.
-                     (let ((*command-repository* repository))
-                       (apply (command-handler command) arguments))
+                     (multiple-value-bind (watched domain)
+                         (if repository
+                             (split-designator repository)
+                             (values nil nil))
+                       (declare (ignore watched))
+                       (let ((*command-repository* repository)
+                             (*command-domain* domain))
+                         (apply (command-handler command) arguments)))
                    (error (condition)
                      (log-event "error" "~a: ~a" (first tokens) condition)
                      (format t "~&~a~%" condition))))))))
