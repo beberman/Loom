@@ -835,3 +835,99 @@ Do not touch this.
         "and taken back, because they were recorded rather than inferred")
     (is-true (probe-file (target-file root ".claude/settings.json"))
              "while .claude/ itself stays -- Loom found it, and their file is in it")))
+
+;;; ------------------------------------------------------------------
+;;; Proposing domains from a repository's own config (PLAN-0050 S14)
+;;; ------------------------------------------------------------------
+
+(defparameter *proposal-jsconfig* "{
+  \"compilerOptions\": {
+    \"moduleResolution\": \"bundler\",
+    \"baseUrl\": \".\",
+    \"paths\": {
+      \"utils/*\": [\"src/utils/*\"],
+      \"ui/*\": [\"src/ui/*\"],
+      \"either/*\": [\"src/a/*\", \"src/b/*\"]
+    }
+  },
+  \"include\": [\"src/**/*\", \"server/**/*\"]
+}
+"
+  "Two include roots, two translatable aliases, and one that names two targets.
+
+The third is the point. A key with two targets has no unambiguous prefix, so
+translating it would be a guess written into a file the author is about to
+confirm -- CON-0001. It is reported instead.")
+
+(test a-repository-proposes-a-domain-for-each-include-root
+  (with-target-tree (root)
+    (write-target-file root "jsconfig.json" *proposal-jsconfig*)
+    (multiple-value-bind (proposals problems) (loom-analyzer:propose-domains root)
+      (declare (ignorable problems))
+      (is (= 2 (length proposals)) "one per include root: ~a"
+          (mapcar (lambda (p) (getf p :root)) proposals))
+      (let ((roots (sort (mapcar (lambda (p) (getf p :root)) proposals) #'string<)))
+        (is (equal '("server/" "src/") roots)))
+      (is (every (lambda (p) (eq :bundler (getf p :resolution))) proposals)
+          "moduleResolution bundler gives the bundler preset"))))
+
+(test a-paths-entry-with-two-targets-is-reported-and-not-translated
+  ;; CON-0001 at the proposal: a guess at which of two targets a key means
+  ;; would be a fabricated fact in a file the author is about to accept.
+  (with-target-tree (root)
+    (write-target-file root "jsconfig.json" *proposal-jsconfig*)
+    (multiple-value-bind (proposals problems) (loom-analyzer:propose-domains root)
+      (is (= 1 (length problems)) "~a" problems)
+      (is-true (search "either" (first problems)) "~a" problems)
+      (is-true (search "2 targets" (first problems)) "~a" problems)
+      (let ((aliases (getf (first proposals) :aliases)))
+        (is (= 2 (length aliases)) "the two translatable ones: ~a" aliases)
+        (is (equal "src/utils" (cdr (assoc "utils" aliases :test #'string=)))
+            "and the trailing /* is off both halves")))))
+
+(test a-nested-package-json-with-no-type-proposes-commonjs
+  ;; Node's own default, and the reason front-end's functions/ resolves
+  ;; differently from the rest of that tree.
+  (with-target-tree (root)
+    (write-target-file root "functions/package.json" "{\"name\": \"fns\"}
+")
+    (let ((proposals (loom-analyzer:propose-domains root)))
+      (is (= 1 (length proposals)))
+      (is (equal "functions/" (getf (first proposals) :root)))
+      (is (eq :commonjs (getf (first proposals) :resolution))))))
+
+(test a-nested-package-json-declaring-a-type-proposes-nothing
+  ;; A package that says what it is needs no guess.
+  (with-target-tree (root)
+    (write-target-file root "mod/package.json" "{\"type\": \"module\"}
+")
+    (is (null (loom-analyzer:propose-domains root)))))
+
+(test a-repository-with-no-javascript-config-proposes-nothing
+  (with-target-tree (root)
+    (multiple-value-bind (proposals problems) (loom-analyzer:propose-domains root)
+      (is (null proposals))
+      (is (null problems)))))
+
+(test the-preparation-plan-carries-the-domain-proposal
+  ;; End to end: the proposal reaches the report PREPARE-REPOSITORY returns, so
+  ;; the author sees it before anything is written. Nothing about it is written
+  ;; into the tree -- a declaration assembled from guesses would be a
+  ;; configuration file nobody decided on.
+  (with-target-tree (root)
+    (write-target-file root "jsconfig.json" *proposal-jsconfig*)
+    (write-target-file root "functions/package.json" "{\"name\": \"fns\"}
+")
+    (let* ((report (prepare-repository root :append-claude-md nil))
+           (proposals (getf report :domain-proposals)))
+      (is (null (getf report :problems)) "~a" (getf report :problems))
+      (is (= 3 (length proposals))
+          "src/ and server/ from include, functions/ from its package.json: ~a"
+          (mapcar (lambda (p) (getf p :root)) proposals))
+      (is-true (find :commonjs proposals :key (lambda (p) (getf p :resolution)))
+               "the nested package with no type resolves under commonjs")
+      (is (= 1 (length (getf report :domain-notes)))
+          "and the untranslatable paths entry is reported: ~a"
+          (getf report :domain-notes))
+      (is (null (target-text root ".loom/frameworks.yaml"))
+          "no declaration is written -- the proposal is shown, not applied"))))

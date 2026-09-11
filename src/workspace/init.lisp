@@ -363,6 +363,13 @@ not tell the first two apart, and getting that wrong deletes somebody's file."
   (replaces '())
   (update nil)          ; this run refreshes rather than creates
   (skipped '())         ; (relative-path . why) -- declined or already there
+  ;; PLAN-0050 S14. Domains this repository's own configuration suggests, and
+  ;; what could not be read from it. Shown rather than written: every value is
+  ;; a guess from a file kept for another toolchain, and the one fact that
+  ;; usually matters most -- which directories resolve under node rules -- is
+  ;; in neither signal. The author confirms.
+  (domain-proposals '())
+  (domain-notes '())
   (problems '()))
 
 (defun update-state (root relative rendered-now &key region)
@@ -705,6 +712,11 @@ and leaves the tree exactly as it was."
         (let ((parent (make-pathname :name nil :type nil :defaults (car pair))))
           (when (and (probe-file parent) (pathname-name (probe-file parent)))
             (refuse "~a is a file, so ~a cannot be written." parent (car pair)))))
+      ;; PLAN-0050 S14. Read last, because it writes nothing and a failure to
+      ;; read a repository's jsconfig.json must not stop it being prepared.
+      (multiple-value-bind (proposals notes) (propose-domains root)
+        (setf (prep-domain-proposals prep) proposals
+              (prep-domain-notes prep) notes))
       (setf (prep-files prep) (nreverse (prep-files prep))
             (prep-appends prep) (nreverse (prep-appends prep))
             (prep-skipped prep) (nreverse (prep-skipped prep))
@@ -914,7 +926,21 @@ compile-time failure ENTITY-TYPE carries the same note about one file over."
                   :workflow-concept (prep-concept-id prep)
                   :endpoint (prep-endpoint prep)
                   :created (apply-preparation prep)
-                  :skipped (prep-skipped prep)))))))
+                  :skipped (prep-skipped prep)
+                  ;; PLAN-0050 S14. Carried on the report rather than written
+                  ;; into the tree: these are guesses read from a file kept for
+                  ;; another toolchain, and the fact that usually matters most
+                  ;; -- which directories resolve under node rules -- is in
+                  ;; neither signal. The author writes the declaration.
+                  :domain-proposals
+                  (mapcar (lambda (proposal)
+                            (list :name (getf proposal :name)
+                                  :root (getf proposal :root)
+                                  :resolution (getf proposal :resolution)
+                                  :aliases (length (getf proposal :aliases))
+                                  :from (getf proposal :from)))
+                          (prep-domain-proposals prep))
+                  :domain-notes (prep-domain-notes prep)))))))
 
 ;;;; ==================================================================
 ;;;; Taking Loom back out (REQ-0021 R13, DES-0022 S4)
