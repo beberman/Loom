@@ -600,3 +600,48 @@ this repository, so an answer proves which graph was consulted."
 ;;; ------------------------------------------------------------------
 ;;; The imports line (PLAN-0050 S9)
 ;;; ------------------------------------------------------------------
+
+;;; ------------------------------------------------------------------
+;;; A domain in the @token (PLAN-0050 S12)
+;;; ------------------------------------------------------------------
+
+(test a-token-with-no-slash-names-a-repository-and-binds-no-domain
+  ;; The ordinary case, and the one that must not change. Nothing is watched
+  ;; here, so the command refuses -- what is asserted is that it refuses as an
+  ;; unknown repository rather than as an unknown domain.
+  (let ((output (with-output-to-string (*standard-output*)
+                  (run-command "find @nosuchrepo alpha"))))
+    (is-true (or (search "No repository named" output)
+                 (search "Nothing is being watched" output))
+             "~a" output)
+    (is (not (search "declares no domain" output))
+        "a token with no slash is not read as a domain")))
+
+(test the-domain-token-does-not-outlive-its-command
+  ;; *COMMAND-DOMAIN* is bound for one command's dynamic extent, for the reason
+  ;; *COMMAND-REPOSITORY* is: a session that remembered a selection would answer
+  ;; a later query about the wrong part of the tree with nothing saying so.
+  (run-command "find @nosuchrepo alpha")
+  (is (null loom-process::*command-domain*)
+      "the binding is gone once the command returns"))
+
+(test an-index-command-refuses-a-domain-token
+  ;; A domain partitions an index rather than being one, so there is nothing
+  ;; `reindex @repo/domain' could mean that is not a lie.
+  (let ((loom-process::*command-domain* (list :name :server)))
+    (let ((output (with-output-to-string (*standard-output*)
+                    (handler-case (loom-process::refuse-domain "reindex")
+                      (error (e) (format t "~a" e))))))
+      (is-true (search "reindex" output) "~a" output)
+      (is-true (search "server" output) "it names the domain that was given")
+      (is-true (search "partitions an index" output)
+               "and says why, rather than only refusing"))))
+
+(test no-domain-token-means-no-filter
+  ;; DOMAIN-FILTER returns NIL rather than an empty filter, so a command that
+  ;; names no domain takes the query path it has always taken.
+  (let ((loom-process::*command-domain* nil))
+    (is (null (loom-process::domain-filter))))
+  (let ((loom-process::*command-domain* (list :name :server)))
+    (is (equal '(:domain :server) (loom-process::domain-filter))
+        "and a keyword, because :DOMAIN is one")))

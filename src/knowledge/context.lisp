@@ -561,7 +561,7 @@ the navigational commands do not."
                           (string= probe candidate :end2 (length probe)))
                      (setf best (min best 1))))))))))
 
-(defun seed-matches (view origins types)
+(defun seed-matches (view origins types &key property-filters)
   "How TOKENS meet the index: an alist of (entity . ((token . rank) ...)).
 
 In the order the entities were first reached, so a bundle does not reorder
@@ -599,7 +599,8 @@ took two of eight slots on a query about string prefixes."
         ;; until DES-0036 D1. Recorded before the type filter, because how
         ;; common a word is in a tree is a fact about the tree and not about
         ;; which types a caller asked for.
-        (let ((reached (find-entities view :name-like token)))
+        (let ((reached (find-entities view :name-like token
+                                        :property-filters property-filters)))
           (push (cons token (length reached)) frequencies)
         (dolist (entity reached)
           (when (or (null types) (member (entity-type entity) types))
@@ -620,7 +621,7 @@ took two of eight slots on a query about string prefixes."
       ;; It is a linear scan and it is the second reason DES-0026 D4's inverted
       ;; index is worth building -- the first being that FIND-ENTITIES above is
       ;; already one.
-      (dolist (entity (find-entities view))
+      (dolist (entity (find-entities view :property-filters property-filters))
         (let ((prose (getp entity :documentation)))
           (when (and prose (or (null types) (member (entity-type entity) types)))
             (let ((words (make-hash-table :test #'equal)))
@@ -1440,7 +1441,7 @@ else."
       ;; paying for the discovery again.
       (loom-embed:embedder-unavailable () nil))))
 
-(defun seed-entities (view task &key (limit 8) types)
+(defun seed-entities (view task &key (limit 8) types property-filters)
   "Entities whose names the words of TASK point at, best match first.
 
 The naive half of SS11's \"first implementation is simple\", and the half most
@@ -1464,7 +1465,8 @@ waiting (ADMIT-SEEDS)."
   ;; neighbourhood is a directory listing, the function's is the code that
   ;; will break.
   (multiple-value-bind (matches frequencies)
-      (seed-matches view (task-token-origins task) types)
+      (seed-matches view (task-token-origins task) types
+                    :property-filters property-filters)
    (let* ((demote-tests (not (task-wants-tests-p task)))
          (terms      (task-terms task))
          (origins    (task-token-origins task))
@@ -1777,6 +1779,7 @@ neighbour two hops out all read as the same kind of line."
 
 (defun build-context (view task &key (budget *context-token-budget*)
                                      (seed-limit 8) types source-fn provenance
+                                     property-filters
                                      (source-definitions *context-source-definitions*))
   "A budgeted context bundle for TASK: the entities its words point at, their
 immediate relationships, and the decisions bearing on them.
@@ -1805,7 +1808,8 @@ Every call is logged to *CONTEXT-LOG*."
   ;; belongs to. Carried whole and rendered by RENDER-CONTEXT, so a bundle
   ;; pasted into a session an hour later still says what it was built from.
   (multiple-value-bind (seeds seed-detail term-states)
-      (seed-entities view task :limit seed-limit :types types)
+      (seed-entities view task :limit seed-limit :types types
+                     :property-filters property-filters)
    (let* (;; DES-0026 D6/D8, PLAN-0032 S1. Was: NEIGHBORS on each seed, PUSHNEW,
          ;; every edge the same price and nothing ordering the result. A one-hop
          ;; expansion cannot satisfy REQ-0016 R6 at any budget -- the four

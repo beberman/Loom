@@ -33,6 +33,8 @@
    #:repository-commit
    #:*repositories*
    #:find-repository
+   #:split-designator
+   #:unknown-domain
    #:all-repositories
 
    ;; REQ-0051, DES-0043. `find' across every watched tree, and the count-only

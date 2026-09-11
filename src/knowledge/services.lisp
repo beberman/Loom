@@ -402,13 +402,18 @@ that must choose one entity for a name is asking the question the seeder
 already answers."
   (+ (* 10 (search-rank entity pattern)) (seed-type-rank entity)))
 
-(defun best-name-match (view term)
+(defun best-name-match (view term &key property-filters)
   "The summary of the one entity TERM most likely names, or NIL.
 
 For a caller that has to choose -- `describe' and `impact' -- rather than list.
-Nothing here filters: a file still wins where no definition shares its name,
-which is every entity on both Lisp trees."
-  (let ((hits (find-entities view :name-like term)))
+Nothing here filters on type: a file still wins where no definition shares its
+name, which is every entity on both Lisp trees.
+
+PROPERTY-FILTERS narrows the candidates before the choice is made, which is how
+a domain address reaches `describe' and `impact'. Applied inside FIND-ENTITIES
+rather than to the result, so this returns the best match within the domain
+rather than the best match overall when it happens to fall in one."
+  (let ((hits (find-entities view :name-like term :property-filters property-filters)))
     (when hits
       (first (summarize-entities
               (list (first (stable-sort hits #'<

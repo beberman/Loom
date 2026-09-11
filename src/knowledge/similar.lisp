@@ -191,14 +191,15 @@ than an error to raise at a caller who asked about something else."
 ;;;; The survey (DES-0041 D5, R3)
 ;;;; ==================================================================
 
-(defun survey-candidates (view)
+(defun survey-candidates (view &key property-filters)
   "The entities of VIEW a survey compares, in a stable order.
 
 The five types the store holds vectors for. A :FILE's name is a path and a
 :TEST is not a definition anybody migrates, so both would put a row in the
 table whose pair nobody wants."
   (loop for type in '(:function :method :class :interface :variable)
-        append (find-entities view :entity-type type)))
+        append (find-entities view :entity-type type
+                               :property-filters property-filters)))
 
 (defun resemblance-survey (source-view source-store target-view target-store
                            &key (cut *survey-cut*))

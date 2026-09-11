@@ -238,3 +238,55 @@ to return from."
   (with-workspace-fixture (repository)
     (is (null (getf (repository-status repository) :unresolved-imports))
         "a Lisp-only tree reports no import split at all")))
+
+;;; ------------------------------------------------------------------
+;;; Addressing a domain (PLAN-0050 S12)
+;;; ------------------------------------------------------------------
+
+(test splitting-a-designator-never-breaks-a-path-that-names-a-repository
+  ;; R-h. Every path has slashes in it. A split that ran before the lookup
+  ;; would read "/home/beberman/lisp/Loom" as a repository called
+  ;; "/home/beberman/lisp" and a domain called "Loom", and the path spelling
+  ;; the console encourages would stop working.
+  ;;
+  ;; The three FIND-REPOSITORY branches, asserted through SPLIT-DESIGNATOR: the
+  ;; name, the normalised path, and the raw path.
+  (with-workspace-fixture (repository)
+    (let ((name (repository-name repository))
+          (root (namestring (repository-root repository))))
+      (dolist (designator (list name root (string-right-trim "/" root)))
+        (multiple-value-bind (found domain) (split-designator designator)
+          (is (eq repository found) "~s did not find the repository" designator)
+          (is (null domain) "~s bound a domain and should not" designator))))))
+
+(domain-test a-designator-can-name-a-domain-of-a-repository
+  (with-domain-repository (repository)
+    (let ((name (repository-name repository)))
+      (multiple-value-bind (found domain)
+          (split-designator (concatenate 'string name "/strict"))
+        (is (eq repository found))
+        (is (eq :strict (getf domain :name)))))))
+
+(domain-test an-unknown-domain-is-refused-and-names-the-declared-ones
+  ;; The refusal is why the lookup happens before the name is interned: a typo
+  ;; must not add a keyword to the image, and the caller is told what they
+  ;; could have written.
+  (with-domain-repository (repository)
+    (let ((name (repository-name repository)))
+      (handler-case
+          (progn (split-designator (concatenate 'string name "/nosuchdomain"))
+                 (is-true nil "an unknown domain was accepted"))
+        (loom-utils:refusal (condition)
+          (let ((text (loom-utils:refusal-message condition)))
+            (is-true (search "nosuchdomain" text) "~a" text)
+            (is-true (search "app" text) "the declared domains are named: ~a" text)
+            (is-true (search "strict" text) "~a" text)))))))
+
+(test a-designator-naming-no-repository-returns-nothing-rather-than-refusing
+  ;; The callers already have a message for an unwatched repository and it is
+  ;; not this function's to duplicate.
+  (with-workspace-fixture (repository)
+    (is-true repository "the fixture is watched, so the lookup has somewhere to fail")
+    (multiple-value-bind (found domain) (split-designator "no-such-repository")
+      (is (null found))
+      (is (null domain)))))

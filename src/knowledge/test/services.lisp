@@ -637,3 +637,78 @@ The lock is the table's own.")))))
     (is (search ":" (getf row :location))
         "file and line range, as `find' and `describe' print it: ~a"
         (getf row :location))))
+
+;;; ------------------------------------------------------------------
+;;; A domain filter runs before the cap (PLAN-0050 S12, DES-0047 D4)
+;;; ------------------------------------------------------------------
+
+(defun domain-fixture (&key (in-other 20) (in-mine 10))
+  "A graph where IN-OTHER better-named entities sit in one domain and IN-MINE
+sit in another.
+
+Better-named on purpose: every name in the other domain is an exact match for
+the search term and every name in this one is a longer compound, so match
+quality alone would return the other domain's entities first and fill the cap
+with them."
+  (let ((g (make-graph)))
+    (dotimes (i in-other)
+      (add-entity g (make-instance 'function-entity
+                                   :name "render"
+                                   :origin-file (format nil "src/play/p~d.js" i)
+                                   :properties (properties-table
+                                                (list :file (format nil "src/play/p~d.js" i)
+                                                      :start-line 1 :end-line 2
+                                                      :language :javascript
+                                                      :domain :play)))))
+    (dotimes (i in-mine)
+      (add-entity g (make-instance 'function-entity
+                                   :name (format nil "renderPanel~d" i)
+                                   :origin-file (format nil "src/edit/e~d.js" i)
+                                   :properties (properties-table
+                                                (list :file (format nil "src/edit/e~d.js" i)
+                                                      :start-line 1 :end-line 2
+                                                      :language :javascript
+                                                      :domain :edit)))))
+    g))
+
+(test a-domain-filter-is-applied-before-the-cap-and-not-after
+  ;; DES-0047 D4. Twenty better-ranked hits sit in another domain. A filter
+  ;; applied to the result of a capped search would see only those twenty, cut
+  ;; them all, and answer nothing -- so the caller who named a domain would be
+  ;; told the domain is empty when it holds ten.
+  (let* ((g (domain-fixture))
+         (asked 10))
+    (multiple-value-bind (hits total)
+        (search-entities g :name "render" :limit asked
+                           :property-filters '(:domain :edit))
+      (is (= 10 total) "the ten in this domain are the whole population, not 30")
+      (is (= 10 (length hits)) "and all ten come back")
+      ;; By name, because a summary carries no :DOMAIN. Every entity in the
+      ;; edit domain is named renderPanelN and every one in play is named
+      ;; render, so the names say which domain answered. Whether a summary
+      ;; should carry the domain is a real question and not this step's.
+      (is (every (lambda (h) (eql 0 (search "renderPanel" (getf h :name)))) hits)
+          "every hit is one of the domain's own: ~a"
+          (mapcar (lambda (h) (getf h :name)) hits)))))
+
+(test a-domain-filter-narrows-rather-than-reorders
+  ;; Without the filter the same query answers about both domains, which is
+  ;; what makes the assertion above about the filter and not about the fixture.
+  (multiple-value-bind (hits total)
+      (search-entities (domain-fixture) :name "render" :limit 10)
+    (is (= 30 total) "both domains, thirty matches")
+    (is (= 10 (length hits)) "capped at ten")))
+
+(test a-domain-filter-reaches-the-entity-describe-would-choose
+  ;; BEST-NAME-MATCH is what `describe' and `impact' resolve through on both
+  ;; surfaces, so a domain address has to narrow it too or those two commands
+  ;; answer about the whole repository while `find' answers about the domain.
+  (let ((g (domain-fixture)))
+    (let ((mine (best-name-match g "render" :property-filters '(:domain :edit)))
+          (any  (best-name-match g "render")))
+      (is-true mine "a match exists inside the domain")
+      (is (eql 0 (search "renderPanel" (getf mine :name)))
+          "the filtered answer is one of the domain's own: ~a" (getf mine :name))
+      (is (string= "render" (getf any :name))
+          "and without the filter the better-named other domain wins: ~a"
+          (getf any :name)))))
