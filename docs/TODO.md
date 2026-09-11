@@ -483,6 +483,14 @@ loom> find @Loom repository
      guarantees the directory is fresh per case are where to start, rather than
      the flush, 2026-09-10
 
+     A later sighting the same day settles the shape. The failing case was
+     A-WRITE-OPERATION-IS-NOT-RECORDED -- "a write adds no record" -- a
+     different test in the same file asserting the opposite thing. A read test
+     seeing a foreign record and a write test seeing any record at all are one
+     fault: records cross between cases. So the subject is not either test, it
+     is WITH-RECORDED-LOG and whatever is supposed to give each case a
+     directory of its own, 2026-09-10
+
 - **Context logging is off by default during work on Loom, and the corpus was
   purged to what scores.** On 2026-08-22 `.loom/context` held 2032 records and
   27MB, of which 15 carried a judgement. Two runs of the 450-case known-item
