@@ -173,6 +173,17 @@ against a real two-package file and
 THE-FILE-ENTITY-TAKES-THE-LAST-IN-PACKAGE-IN-THE-FILE asserts it. No :one-of --
 unlike :LANGUAGE the vocabulary is open, since it is whatever the indexed
 workspace's own packages and directories happen to be named.")
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")
                (:line-count   integer)
                (:content-hash string
                 :documentation "Digest of the analyzed contents.  An unchanged
@@ -227,6 +238,15 @@ once and never rewrites it, and resolution re-derives from it on every pass, so
 an edge a retract destroyed comes back. Until such a pass exists this property
 is a recorded fact with no edge drawn from it -- a gap a reader can see rather
 than one they cannot.")
+               (:unresolved-imports list
+                :documentation "Import specifiers in this file that resolved to
+no module, each with the cause.  DES-0047.
+
+Recorded rather than dropped, which is CON-0001 at the import layer: a
+specifier that resolves to nothing is a fact about this file and the reason it
+resolved to nothing is the fact a reader acts on -- an alias nobody declared
+reads differently from a path that is simply wrong.  Measured on front-end,
+1320 of 1885 in-tree imports.")
                (:test-file-p boolean :default nil
                 :documentation "Set when this is a file the test runner would
 run -- REQ-0053 R2.  Two signals, either sufficient: the path matches the
@@ -318,6 +338,17 @@ be a recorded gap rather than a silent mis-resolution (CON-0001).")
                (:start-line     integer)
                (:end-line       integer)
                (:system         keyword)
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")
                (:language       keyword :one-of *source-languages*)))
 
 (defentity :module
@@ -375,7 +406,18 @@ analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
 DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
-DES-0009.")))
+DES-0009.")
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")))
 
 (defentity :interface
   :documentation "A contract without implementation: a TypeScript interface,
@@ -416,7 +458,18 @@ analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
 DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
-DES-0009.")))
+DES-0009.")
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")))
 
 (defentity :function
   :documentation "A named callable unit in source code."
@@ -473,6 +526,17 @@ DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
 DES-0009.")
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")
                (:call-names list
                 :documentation "Every callee name the analyzer could not
 resolve inside this one file.  Written by the analyzer and never rewritten
@@ -624,6 +688,17 @@ DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
 DES-0009.")
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")
                (:call-names       list)
                (:qualified-calls  list)
                (:unresolved-calls list)))
@@ -661,7 +736,18 @@ analyzer that parsed the file: a Lisp file's IN-PACKAGE binding, and
 DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
-DES-0009.")))
+DES-0009.")
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")))
 
 (defentity :call-site
   :documentation "One call name at one place in one file, as an entity.
@@ -739,7 +825,18 @@ Absent for the other kinds.")
                 :documentation "The system this belongs to, taken from the
 entity the site was derived from rather than re-decided. What makes
 EDGES-BETWEEN-SYSTEMS see a call site at all, and so what keeps RULE-0001 to
-RULE-0003 from silently ignoring the new edges (DES-0014 R7).")))
+RULE-0003 from silently ignoring the new edges (DES-0014 R7).")
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")))
 
 ;;; The one place in this file that is not declaration, and the header above
 ;;; says everything here is. It is here anyway because two systems mint this
@@ -789,7 +886,7 @@ describe."
 
 (defun make-call-site-entity (&key file start-line end-line call-name
                                    referrer-kind candidate-count
-                                   language system generated-by)
+                                   language system domain generated-by)
   "The one constructor for a :CALL-SITE, used by both systems that mint one.
 
 Natural-key properties are passed at construction and never SETP'd afterwards,
@@ -812,7 +909,11 @@ values it did not yet have."
                                     ;; referenced name is stored once.
                                     :generated-by generated-by
                                     :language language
-                                    :system system))))
+                                    :system system
+                                    ;; Not a natural-key component, so it may
+                                    ;; arrive with the others rather than being
+                                    ;; SETP'd later. PLAN-0050 S1.
+                                    :domain domain))))
 
 ;;;; ==================================================================
 ;;;; Knowledge -- the part that cannot be recovered by re-reading source
@@ -885,6 +986,17 @@ DEFAULT-SYSTEM-FOR-PATH's path segment for a language with no such construct.
 No :one-of -- unlike :LANGUAGE the vocabulary is open, since it is whatever
 the indexed workspace's own packages and directories happen to be named.
 DES-0009.")
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")
                ;; A test is almost never written as its own form -- it is a
                ;; call to a framework macro -- so unlike every other definition
                ;; entity this one is usually minted by a resolution pass rather
@@ -929,6 +1041,17 @@ analyzer that parsed the file: a document has no grouping construct of its
 own, so this is always DEFAULT-SYSTEM-FOR-PATH's path segment -- :DOCS for
 everything under docs/. No :one-of, for the same reason the code entity types
 give. DES-0009.")
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")
                (:doc-id string
                 :documentation "The id: field.  How other documents name this
 one, and what `describe REQ-0002' looks up.  Every workflow category -- arch,
@@ -1264,7 +1387,18 @@ docstring.")
                (:ambiguous-references list)
                (:system keyword
                 :documentation "DES-0009 R3: the shared path default, since a
-document has no grouping construct of its own to read.")))
+document has no grouping construct of its own to read.")
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")))
 
 (defentity :architecture
   :documentation "The structure and mechanism of the software as it stands:
@@ -1323,7 +1457,18 @@ replaces, which is how a structural rewrite retires its predecessor.")
                (:mentions list)
                (:unresolved-references list)
                (:ambiguous-references list)
-               (:system keyword)))
+               (:system keyword)
+               (:domain      keyword
+                :documentation "The domain this entity's file falls in -- a path
+prefix declared in .loom/frameworks.yaml carrying an alias map and a resolution
+preset.  DES-0047 R4.
+
+A keyword, interned once when the declaration is read, so the bound on the
+keyword package is the declaration rather than the tree: three entries on
+front-end.  :SYSTEM has always had exactly that bound.
+
+No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
+indexed repository declared.")))
 
 (defentity :rule
   :documentation "A normative, checkable constraint, read from docs/rules

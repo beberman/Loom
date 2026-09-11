@@ -991,7 +991,7 @@ file, and every property with its value, in a stable order."
   '(;; a  plain specializer
     ("(defmethod render ((x hop)) x)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:domain nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
@@ -1000,7 +1000,7 @@ file, and every property with its value, in a stable order."
     ;;    the :QUALIFIER property AND into the id's third segment
     ("(defmethod render :around ((x hop)) x)"
      (:method "render" "method:sample.lisp:render:around:hop" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:domain nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier :around)
        (:shadowed-definitions nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
@@ -1008,7 +1008,7 @@ file, and every property with its value, in a stable order."
     ;; c  EQL specializer, rendered rather than resolved
     ("(defmethod render ((x (eql :oneof))) x)"
      (:method "render" "method:sample.lisp:render::(eql oneof)" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:documentation nil) (:domain nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil)
        (:specializers ("(eql oneof)")) (:start-line 1)
@@ -1018,7 +1018,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod (setf render) (v (x hop)) v)"
      (:method "(setf render)" "method:sample.lisp:(setf render)::t,hop"
       "sample.lisp"
-      ((:arguments ("v" "x")) (:call-names nil) (:documentation nil) (:end-line 1)
+      ((:arguments ("v" "x")) (:call-names nil) (:documentation nil) (:domain nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "(setf render)")
        (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:specializers ("t" "hop")) (:start-line 1) (:system nil)
@@ -1029,7 +1029,7 @@ file, and every property with its value, in a stable order."
     ;;    and mints an entity with the body where its arguments belong.
     ("(defmethod render () 1)"
      (:method "render" "method:sample.lisp:render::" "sample.lisp"
-      ((:arguments nil) (:call-names nil) (:documentation nil) (:end-line 1) (:file "sample.lisp")
+      ((:arguments nil) (:call-names nil) (:documentation nil) (:domain nil) (:end-line 1) (:file "sample.lisp")
        (:generic-function "render") (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:specializers nil)
        (:start-line 1) (:system nil) (:unresolved-calls nil)))
@@ -1037,7 +1037,7 @@ file, and every property with its value, in a stable order."
     ;; f  an & marker stops the specializer walk but not the argument list
     ("(defmethod render ((x hop) &rest args) args)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
-      ((:arguments ("x" "&rest" "args")) (:call-names nil) (:documentation nil) (:end-line 1)
+      ((:arguments ("x" "&rest" "args")) (:call-names nil) (:documentation nil) (:domain nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "render") (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:specializers ("hop"))
@@ -1046,7 +1046,7 @@ file, and every property with its value, in a stable order."
     ;; g  wholly unspecialized, and the only entry with a call in its body
     ("(defmethod render (a b) (helper a b))"
      (:method "render" "method:sample.lisp:render::t,t" "sample.lisp"
-      ((:arguments ("a" "b")) (:call-names ("helper")) (:documentation nil) (:end-line 1)
+      ((:arguments ("a" "b")) (:call-names ("helper")) (:documentation nil) (:domain nil) (:end-line 1)
        (:file "sample.lisp") (:generic-function "render") (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:specializers ("t" "t"))
@@ -1061,7 +1061,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod render ((x hop)) (helper x))"
      (:method "render" "method:src/graph/foo.lisp:render::hop"
       "src/graph/foo.lisp"
-      ((:arguments ("x")) (:call-names ("helper")) (:documentation nil) (:end-line 1)
+      ((:arguments ("x")) (:call-names ("helper")) (:documentation nil) (:domain nil) (:end-line 1)
        (:file "src/graph/foo.lisp") (:generic-function "render")
        (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:specializers ("hop")) (:start-line 1) (:system :graph)
