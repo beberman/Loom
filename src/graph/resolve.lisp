@@ -61,27 +61,128 @@ either way.")
             ((string= segment "..") (pop out))
             (t (push segment out))))))
 
-(defun resolve-module-specifier (specifier importer known)
-  "The workspace path SPECIFIER names when written in IMPORTER, or NIL.
-KNOWN is a table of every file path the index holds.
+(defun matching-alias (specifier aliases)
+  "The longest alias key of ALIASES that SPECIFIER is written under, or NIL.
 
-Relative specifiers only. A bare one -- `react', `lodash' -- names a package
-outside the tree, and an aliased one -- `@/components/x' -- needs a bundler
-configuration Loom does not read; both resolve to nothing here, which leaves
-their call names exactly as unnarrowed as they are today."
-  (when (and (stringp specifier) (plusp (length specifier))
-             (char= (char specifier 0) #\.))
-    (let* ((directory (butlast (path-segments importer)))
-           (target (format nil "~{~a~^/~}"
-                           (normalize-segments
-                            (append directory (path-segments specifier))))))
-      (or (and (gethash target known) target)
-          (loop for extension in *module-file-extensions*
-                for candidate = (concatenate 'string target extension)
-                when (gethash candidate known) do (return candidate))
-          (loop for extension in *module-file-extensions*
-                for candidate = (concatenate 'string target "/index" extension)
-                when (gethash candidate known) do (return candidate))))))
+A key matches a specifier equal to it or beginning with it followed by `/',
+never a bare prefix of a longer word: `utils' must not claim `utilsx/thing'.
+
+Longest first, so a declaration carrying both `ui' and `ui/widgets' sends
+`ui/widgets/Button' to the second. Two returns -- the key and its target -- so
+the caller does not look the target up again."
+  (let ((best nil) (best-length -1))
+    (dolist (pair aliases)
+      (let* ((key (car pair))
+             (length (length key)))
+        (when (and (> length best-length)
+                   (<= length (length specifier))
+                   (string= key specifier :end2 length)
+                   (or (= length (length specifier))
+                       (char= (char specifier length) #\/)))
+          (setf best pair best-length length))))
+    best))
+
+(defun resolution-preset (domain)
+  "The extension list, guessing flag and index fallback DOMAIN resolves under.
+
+Read from the plist the analyzer handed in, never from a table this system
+reaches for. DOMAIN-TABLE expands the preset into the plist precisely so that
+loom-graph reads no configuration -- DES-0025 D4, and the production dependency
+S3 already had to undo once.
+
+A domain carrying no expansion falls back to the six bundler extensions with
+guessing and the index fallback, which is what every tree resolved under before
+domains existed."
+  (if (getf domain :resolution)
+      ;; :RESOLUTION is the marker that DOMAIN-TABLE expanded this plist, and
+      ;; it is the right one because :EXTENSIONS is not: node-esm's list is
+      ;; legitimately empty, so testing the list made node-esm indistinguishable
+      ;; from a caller who named no domain -- and it then resolved under
+      ;; bundler, which is the one answer node-esm exists to refuse.
+      (values (getf domain :extensions)
+              (getf domain :guess-extension)
+              (getf domain :index-fallback))
+      ;; No expansion on the plist: a caller that named no domain at all. The
+      ;; six bundler extensions with guessing and the index fallback, which is
+      ;; what *MODULE-FILE-EXTENSIONS* has always held and what every tree
+      ;; resolved under before domains existed.
+      (values *module-file-extensions* t t)))
+
+(defun resolve-under-preset (target known extensions guess index-fallback)
+  "TARGET as an indexed path under a preset, or NIL.
+
+The exact path first, whatever the preset: a specifier that names a file this
+index holds resolves to it under every toolchain. Guessing and the index
+fallback are what the presets differ on."
+  (or (and (gethash target known) target)
+      (and guess
+           (loop for extension in extensions
+                 for candidate = (concatenate 'string target extension)
+                 when (gethash candidate known) do (return candidate)))
+      (and index-fallback
+           (loop for extension in extensions
+                 for candidate = (concatenate 'string target "/index" extension)
+                 when (gethash candidate known) do (return candidate)))))
+
+(defun resolve-module-specifier (specifier importer known &key domain sibling-aliases)
+  "The workspace path SPECIFIER names when written in IMPORTER, and why not.
+
+  (resolve-module-specifier specifier importer known &key domain sibling-aliases)
+  ;; -> (values target-path-or-nil cause-when-nil)
+
+KNOWN is a table of every file path the index holds. DOMAIN is the plist the
+analyzer parsed, handed in and never read from disk -- loom-graph reads no
+configuration. NIL means the default domain, which means the six bundler
+extensions with guessing and the index fallback, and therefore today's
+behaviour character for character: DES-0047 R2's promise that every tree keeps
+the behaviour it has.
+
+SIBLING-ALIASES is the set of alias keys OTHER domains declare, and exists for
+one cause. A specifier written under a key this domain does not declare and
+another does is a different fact from one written under a key nobody declares:
+the first is a file importing across a boundary its own domain cannot see, and
+the second is an external package. Telling them apart needs the whole table,
+which this function is not given, so the caller passes the keys.
+
+THE FOUR CAUSES, which is what makes a miss actionable rather than a silence:
+
+  :EXTERNAL          not relative, no alias key matched anywhere. `react'.
+  :OUT-OF-DOMAIN     an alias key another domain declares and this one does not.
+  :UNCLAIMED-TARGET  it resolved to a path no indexed file holds -- the target
+                     exists as text and the index has nothing under it, which
+                     on a real tree means a directory the analyzer does not
+                     claim rather than a typo.
+  :UNRESOLVED        relative, and no candidate under the preset is indexed.
+
+CON-0001 at the import layer. 1320 of front-end's 1885 in-tree imports resolve
+to nothing today and the index records only that they did not; the cause is the
+half a reader acts on, because an alias nobody declared and a path that is
+simply wrong need different repairs."
+  (unless (and (stringp specifier) (plusp (length specifier)))
+    (return-from resolve-module-specifier (values nil :unresolved)))
+  (multiple-value-bind (extensions guess index-fallback) (resolution-preset domain)
+    (let ((relative (char= (char specifier 0) #\.)))
+      (cond
+        (relative
+         (let* ((directory (butlast (path-segments importer)))
+                (target (format nil "~{~a~^/~}"
+                                (normalize-segments
+                                 (append directory (path-segments specifier))))))
+           (let ((found (resolve-under-preset target known extensions guess index-fallback)))
+             (if found (values found nil) (values nil :unresolved)))))
+        (t
+         (let ((alias (matching-alias specifier (getf domain :aliases))))
+           (cond
+             (alias
+              (let* ((key (car alias))
+                     (rest (subseq specifier (length key)))
+                     (target (concatenate 'string (cdr alias) rest))
+                     (found (resolve-under-preset target known extensions
+                                                  guess index-fallback)))
+                (if found (values found nil) (values nil :unclaimed-target))))
+             ((and sibling-aliases (matching-alias specifier sibling-aliases))
+              (values nil :out-of-domain))
+             (t (values nil :external)))))))))
 
 (defun build-module-scope (view)
   "File path -> the paths of the files it imports, for module-scoped languages.

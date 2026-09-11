@@ -1152,6 +1152,95 @@ Lisp's folding by being compared against a Lisp definition")
 than to a path nobody holds")))
 
 
+(defun known-table (&rest paths)
+  (let ((known (make-hash-table :test #'equal)))
+    (dolist (p paths known) (setf (gethash p known) t))))
+
+(defun bundler-domain (&rest aliases)
+  (list :extensions '(".js" ".jsx" ".mjs" ".cjs" ".ts" ".tsx")
+        :guess-extension t :index-fallback t
+        :resolution :bundler :aliases aliases))
+
+(test an-alias-key-rewrites-a-specifier-and-resolves-it
+  ;; The 1320 of front-end's 1885 in-tree imports REQ-0063 is about. Every one
+  ;; is alias-rooted and resolved to nothing because the resolver handled only
+  ;; specifiers beginning with a dot.
+  (let ((known (known-table "src/utils/wrappedLogger.js")))
+    (is (equal "src/utils/wrappedLogger.js"
+               (loom-graph::resolve-module-specifier
+                "utils/wrappedLogger.js" "src/ui/Home.jsx" known
+                :domain (bundler-domain (cons "utils" "src/utils")))))))
+
+(test the-longer-of-two-overlapping-alias-keys-wins
+  (let ((known (known-table "src/ui/widgets/Button.jsx" "src/other/widgets/Button.jsx")))
+    (is (equal "src/ui/widgets/Button.jsx"
+               (loom-graph::resolve-module-specifier
+                "ui/widgets/Button.jsx" "src/main.js" known
+                :domain (bundler-domain (cons "ui" "src/other")
+                                        (cons "ui/widgets" "src/ui/widgets")))))))
+
+(test an-alias-key-does-not-claim-a-longer-word-it-merely-prefixes
+  ;; `utils' must not claim `utilsx/thing'.
+  (let ((known (known-table "src/utils/thing.js")))
+    (is (null (loom-graph::resolve-module-specifier
+               "utilsx/thing" "src/main.js" known
+               :domain (bundler-domain (cons "utils" "src/utils")))))))
+
+(test one-specifier-answers-three-ways-under-the-three-presets
+  ;; CON-0003 at the preset: three answers, not three passes. The same
+  ;; specifier against the same index, resolving differently because the
+  ;; toolchain differs -- which is the whole reason the presets are data.
+  (let ((known (known-table "src/mod.js" "src/dir/index.js")))
+    ;; Built the way DOMAIN-TABLE builds one, :RESOLUTION included, because
+    ;; that key is what tells an expanded plist from a caller who named no
+    ;; domain -- and node-esm's empty extension list cannot.
+    (flet ((try (spec name extensions guess fallback)
+             (loom-graph::resolve-module-specifier
+              spec "src/main.js" known
+              :domain (list :resolution name :extensions extensions
+                            :guess-extension guess :index-fallback fallback
+                            :aliases '()))))
+      (is (equal "src/mod.js"
+                 (try "./mod" :bundler '(".js" ".jsx") t t))
+          "bundler guesses the extension")
+      (is (null (try "./mod" :node-esm '() nil nil))
+          "node-esm requires the specifier to name the file")
+      (is (equal "src/dir/index.js"
+                 (try "./dir" :commonjs '(".js" ".json" ".node") t t))
+          "commonjs falls back to an index file")
+      (is (null (try "./dir" :node-esm '() nil nil))
+          "and node-esm does not"))))
+
+(test each-of-the-four-causes-is-returned-for-a-specifier-built-to-produce-it
+  ;; The half a reader acts on. An alias nobody declared and a path that is
+  ;; simply wrong need different repairs, and until now both were a silence.
+  (let ((known (known-table "src/utils/real.js")))
+    (flet ((cause (spec &rest args)
+             (nth-value 1 (apply #'loom-graph::resolve-module-specifier
+                                 spec "src/main.js" known args))))
+      (is (eq :external (cause "react" :domain (bundler-domain)))
+          "not relative, no alias key anywhere")
+      (is (eq :out-of-domain
+              (cause "server/db" :domain (bundler-domain)
+                                 :sibling-aliases (list (cons "server" "src/server"))))
+          "a key another domain declares and this one does not")
+      (is (eq :unclaimed-target
+              (cause "utils/missing" :domain (bundler-domain (cons "utils" "src/utils"))))
+          "the alias rewrote it and the index holds nothing under the result")
+      (is (eq :unresolved (cause "./nowhere" :domain (bundler-domain)))
+          "relative, and no candidate under the preset is indexed"))))
+
+(test an-alias-target-outside-the-declaring-domains-own-root-resolves
+  ;; All 32 of front-end's server/ aliases point under src/, so a resolver that
+  ;; required the target to lie under the declaring domain's root would resolve
+  ;; none of them.
+  (let ((known (known-table "src/shared/types.js")))
+    (is (equal "src/shared/types.js"
+               (loom-graph::resolve-module-specifier
+                "shared/types.js" "server/api.js" known
+                :domain (append (list :root "server/")
+                                (bundler-domain (cons "shared" "src/shared"))))))))
+
 ;;; ------------------------------------------------------------------
 ;;; A member call names a receiver (BUG-0036)
 ;;; ------------------------------------------------------------------
