@@ -638,11 +638,28 @@ call site mints an entity, and that entity has to exist and carry its
 :CALL-NAMES before RESOLVE-CALLS can turn them into edges; and coverage is
 derived from those edges, so RESOLVE-TESTS has to follow RESOLVE-CALLS rather
 than merely accompany it. The full sequence is resolve-definitions,
-resolve-generated-definitions, resolve-calls, resolve-tests,
-resolve-document-links, check-rules, and each arrow in it is a dependency
-rather than a preference."
-  (let ((graph (repository-graph repository))
-        (workspace (repository-name repository)))
+resolve-generated-definitions, resolve-imports, resolve-calls, resolve-tests,
+resolve-document-links, check-document-links, check-rules.
+
+Two of those arrows are not dependencies and the difference is worth keeping.
+RESOLVE-IMPORTS before CHECK-RULES is one: RUN-CHECK's :NO-EDGE kind takes
+:REL-TYPES, so a rule may name :IMPORTS, and a rule checked before the edges
+exist reports no violation and looks enforced. CHECK-RULES was already last, so
+satisfying it costs nothing.
+
+RESOLVE-IMPORTS before RESOLVE-CALLS is a preference with a cost. The two
+resolve the same specifiers, and building the module scope once rather than
+twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
+  (let* ((graph (repository-graph repository))
+         (workspace (repository-name repository))
+         (domains (repository-domains repository)))
+    ;; Built once here, and both values kept: RESOLVE-IMPORTS needs the misses
+    ;; and RESOLVE-CALLS needs the scope, and BUILD-MODULE-SCOPE computes them
+    ;; together. Empty for a tree of Common Lisp, where MODULE-SCOPED-LANGUAGE-P
+    ;; is false for every file, which is why seven of the nine watched trees
+    ;; cannot move by anything in this sequence.
+    (multiple-value-bind (module-scope unresolved-imports)
+        (build-module-scope graph :domains domains)
     (flet ((submit (label ops)
              (when ops
                (handler-case (apply-transaction graph ops)
@@ -680,7 +697,15 @@ rather than a preference."
       ;; the analyzer's table -- and what COMMON-LISP exports is a fact about a
       ;; language, which DES-0012 puts in an analyzer and CON-0005 keeps out
       ;; of the writer. This system is the one that may know both.
+      ;; PLAN-0050 S7. Before RESOLVE-CALLS so the scope is built once, and
+      ;; before CHECK-RULES so a rule naming :IMPORTS is checked against edges
+      ;; that exist.
+      (submit "resolve-imports"        (resolve-imports graph :workspace-id workspace
+                                                              :domains domains
+                                                              :module-scope module-scope
+                                                              :unresolved unresolved-imports))
       (submit "resolve-calls"          (resolve-calls graph :workspace-id workspace
+                                                            :module-scope module-scope
                                                             :external-packages
                                                             (external-package-exports)))
       ;; And RESOLVE-TESTS after RESOLVE-CALLS, which is the second half of why
@@ -696,7 +721,7 @@ rather than a preference."
       ;; about the disk (BUG-0027).
       (submit "check-document-links"   (check-document-links repository
                                                              :workspace-id workspace))
-      (submit "check-rules"            (violation-ops graph :workspace-id workspace)))))
+      (submit "check-rules"            (violation-ops graph :workspace-id workspace))))))
 
 (defun repository-domains (repository)
   "The domain table this repository declared, or NIL when it declared none.
