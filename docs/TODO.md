@@ -425,14 +425,28 @@ loom> find @Loom repository
   will name itself, which is what the fix bought; until then this entry is the
   only record that there is something to catch.
   -- working on Loom itself, 2026-08-28
-  -- **It recurred on 2026-09-10 and was lost the same way, by a different
-     mechanism.** A full run reported `FAIL LOOM-SERVE/TEST', 10 of 11 systems.
-     Three further runs were clean -- 255 of 255 in the serve suite -- and the
-     failing run's output had already scrolled past: the reflex was to re-run
-     rather than to read what BUG-0058's fix had just printed. So the
-     instrument works and the habit does not. The next occurrence should be
-     captured with `tools/loom-test.sh 2>&1 | tee' before anything else is
-     done with it, 2026-09-10
+  -- **It recurred twice on 2026-09-10, and the second time it named itself.**
+     The first recurrence was lost the way the entry describes: `FAIL
+     LOOM-SERVE/TEST', 10 of 11, three clean runs after it, and the failing
+     output already scrolled past because the reflex was to re-run rather than
+     read what BUG-0058's fix had just printed.
+
+     Captured on the second, by piping the run through `tee' before doing
+     anything else with it:
+
+         A-READ-OPERATION-WRITES-A-RECORD-NAMING-ITSELF in OPERATIONS []:
+           one read, one record
+
+     src/serve/test/operations.lisp:396. It asserts that one `find' through
+     CALL-OPERATION leaves exactly one record in the context log, and it
+     intermittently sees a number other than one. So the population is a
+     logging race and not a query defect, which is a much smaller search than
+     `something in loom-serve'.
+
+     That is what BUG-0058's fix bought, collected a year of runs late because
+     the instrument was working and the habit was not. Whoever takes it should
+     look at DRAINED-RECORDS and at whether the write is flushed before the
+     read, 2026-09-10
 
 - **Context logging is off by default during work on Loom, and the corpus was
   purged to what scores.** On 2026-08-22 `.loom/context` held 2032 records and

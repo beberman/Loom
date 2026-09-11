@@ -478,3 +478,34 @@ constrained on both ends")))
            (length (getf schema :relationship-types))))
     (is-false (tree-contains-function-p schema)
               "the schema is served over HTTP and must hold no closures")))
+
+(test every-type-declaring-a-system-declares-a-domain-of-the-same-type
+  ;; PLAN-0050 S1, DES-0047 R4. :DOMAIN answers for a path prefix what :SYSTEM
+  ;; answers for a package, and every entity that can say which system it
+  ;; belongs to must be able to say which domain -- otherwise `@front-end/server'
+  ;; filters some entity types and silently drops the rest, which is the shape
+  ;; of a wrong answer rather than a missing feature.
+  ;;
+  ;; It fails the day someone adds :SYSTEM to a thirteenth type without the
+  ;; companion, and the day either is widened to a string -- the second matters
+  ;; because DOMAIN-FOR-PATH interns the name once at declaration time, and a
+  ;; string-typed property would let a second spelling through.
+  (let ((checked 0))
+    (dolist (type (loom-ontology:all-entity-types))
+      (let ((system (loom-ontology:find-property type :system))
+            (domain (loom-ontology:find-property type :domain)))
+        (when system
+          (incf checked)
+          (is-true domain
+                   "~a declares :SYSTEM and no :DOMAIN, so it cannot be ~
+addressed by domain" type)
+          (when domain
+            (is (eq (loom-ontology:property-type system)
+                    (loom-ontology:property-type domain))
+                "~a declares :SYSTEM as ~a and :DOMAIN as ~a" type
+                (loom-ontology:property-type system)
+                (loom-ontology:property-type domain))))))
+    (is (= 12 checked)
+        "twelve types declared :SYSTEM when DES-0047 R4 was written; a ~
+different count means a type was added or removed and this test has not been ~
+read since")))
