@@ -1,6 +1,6 @@
 id: BUG-0062
 title: importance is read by the analyzer and declared in the ontology but named nowhere an author reads, so every prepared repository writes documents without it and DES-0044 R7 makes the omission permanent
-status: open
+status: closed
 date: 2026-09-09
 refines: [DES-0044]
 affects: [as-keyword,
@@ -129,15 +129,44 @@ body: |
   tree before the migration and 0 after, and `severity: high' written back into
   BUG-0031 is reported by document and file.
 
-  F3 IS STILL OPEN AND IS WHY THIS BUG STAYS OPEN. Nothing here reaches a tree
-  that was prepared before today. DES-0044 R7 stands -- the workflow concept is
-  not refreshed, because it is a document the team owns and may have edited --
-  so front-end and game-server keep conventions that do not mention severity or
-  priority, exactly as they kept ones that did not mention importance. The three
-  options this bug lists are unchanged and none has been chosen.
+  F3, AND DES-0044 D7 REVERSED WITH ITS REASON ANSWERED
 
-  What did change is that the omission is now caught on the day it is made
-  rather than years later in somebody else's tree, which is REQ-0070.
+  D7 refused to refresh this file because "it is a document the team owns and
+  may have edited". That was true of a file with no way to say which half is
+  whose. The `loom:yours' split D2 built for the CLAUDE.md region is that way,
+  and it applies here unchanged: the template carries begin/yours/end markers
+  inside its body block, Loom's half is regenerated, the author's is copied, and
+  a document carrying no marker is refused with the repair named rather than
+  guessed at.
+
+  What D7 got right is kept. SPLIT-MARKED-REGION's `before' is everything above
+  `body: |', so a status, an importance and a priority the team set survive a
+  refresh untouched, and Loom still never rewrites a document it did not write.
+
+  BOTH PREPARED TREES ARE UPDATED, 2026-09-10, which is what makes this closed
+  rather than designed:
+
+    game-server  SKILL.md, CLAUDE.md and CON-0001 replaced. Its concept was
+                 pure template -- only the substituted id and date differed --
+                 so it had no author half and gained an empty one.
+    front-end    the same three. Its concept carried twenty-two hand-written
+                 lines defining what Critical means for that codebase, added as
+                 the workaround this bug recorded; they are below the marker
+                 now and survived byte for byte, along with the 65 author lines
+                 in its CLAUDE.md region.
+
+  Measured after: 261 insertions and 9 deletions on front-end, and the nine
+  removed lines are all Loom's own template text. Both trees reindex with 0
+  unparsed.
+
+  A defect in the fix, found on the first tree refreshed and worth keeping.
+  REPLACE-LOOM-HALF wrote the marker at column zero, which is correct for a
+  CLAUDE.md region and ends a YAML block scalar -- the first of the two mistakes
+  this very template warns an author about, committed by the code that writes
+  it. The repair was to delete the indentation logic rather than fix it:
+  LOOM-HALF cuts at the marker's own character, so the rendered half already
+  ends with whatever whitespace preceded it, and computing an indent added the
+  template's two spaces to two of its own.
 
   HOW IT WAS FOUND
   HOW IT WAS FOUND
