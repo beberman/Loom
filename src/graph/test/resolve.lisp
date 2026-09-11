@@ -1025,13 +1025,84 @@ Lisp's folding by being compared against a Lisp definition")
 ;;; true in Common Lisp, where a symbol is visible throughout its package
 ;;; however many files that package spans, so the rule is the language's.
 
-(defun r-js-file (graph path &key imports)
+(defun r-js-file (graph path &key imports domain)
   (let ((e (make-instance 'file-entity :name path :origin-file path
                           :properties (properties-table
                                        (list :path path :language :javascript
+                                             :domain domain
                                              :import-sources imports)))))
     (add-entity graph e)
     e))
+
+(defun r-domains (&rest entries)
+  "A domain table, built the way DOMAIN-TABLE builds one."
+  (let ((table (make-hash-table :test #'eq)))
+    (dolist (entry entries table)
+      (destructuring-bind (name &rest aliases) entry
+        (setf (gethash name table)
+              (list :name name :resolution :bundler
+                    :extensions '(".js" ".jsx" ".mjs" ".cjs" ".ts" ".tsx")
+                    :guess-extension t :index-fallback t
+                    :aliases aliases))))))
+
+(test with-no-domains-the-scope-is-what-it-has-always-been
+  ;; R2's promise at this layer: a tree that declares nothing resolves exactly
+  ;; as it did, and step 7 can therefore be added to RESOLVE-AND-CHECK on nine
+  ;; watched trees without changing eight of them.
+  (let ((g (make-graph)))
+    (r-js-file g "ui/Home.jsx" :imports '("./parts/Widget" "react"))
+    (r-js-file g "ui/parts/Widget.jsx")
+    (let ((scope (build-module-scope g)))
+      (is (equal '("ui/parts/Widget.jsx") (gethash "ui/Home.jsx" scope))
+          "the relative import resolves and the bare one does not"))))
+
+(test an-alias-specifier-is-in-the-scope-only-when-a-domain-declares-its-key
+  (let ((g (make-graph)))
+    (r-js-file g "src/ui/Home.jsx" :domain :ui :imports '("utils/log.js"))
+    (r-js-file g "src/utils/log.js" :domain :ui)
+    (is (null (gethash "src/ui/Home.jsx" (build-module-scope g)))
+        "with no domains the alias resolves to nothing, as it does today")
+    (is (equal '("src/utils/log.js")
+               (gethash "src/ui/Home.jsx"
+                        (build-module-scope
+                         g :domains (r-domains (list :ui (cons "utils" "src/utils"))))))
+        "and to the file the declared key names once a domain declares it")))
+
+(test the-second-value-carries-one-entry-per-unresolved-specifier-with-its-cause
+  (let ((g (make-graph)))
+    (r-js-file g "src/ui/Home.jsx" :domain :ui
+               :imports '("react" "./nowhere" "server/db"))
+    (r-js-file g "src/server/db.js" :domain :server)
+    (multiple-value-bind (scope unresolved)
+        (build-module-scope g :domains (r-domains (list :ui)
+                                                  (list :server (cons "server" "src/server"))))
+      (declare (ignore scope))
+      (let ((misses (gethash "src/ui/Home.jsx" unresolved)))
+        (is (= 3 (length misses)) "one entry per specifier that resolved to nothing")
+        (is (eq :external (getf (first misses) :cause)))
+        (is (eq :unresolved (getf (second misses) :cause)))
+        (is (eq :out-of-domain (getf (third misses) :cause))
+            "a key the server domain declares and the ui domain does not")))))
+
+(test resolve-calls-handed-a-scope-draws-what-it-draws-building-its-own
+  ;; What makes step 7's single build safe rather than assumed: the pass will
+  ;; be handed a scope built once, beside the unresolved specifiers, instead of
+  ;; building its own inside CALLABLE-LOOKUP.
+  (let ((own nil) (handed nil))
+    (let ((g (make-graph)))
+      (r-js-file g "ui/Home.jsx" :imports '("./parts/Widget"))
+      (r-js-file g "ui/parts/Widget.jsx")
+      (r-js-function g "render" "ui/Home.jsx" :unresolved '("Widget"))
+      (r-js-function g "Widget" "ui/parts/Widget.jsx")
+      (setf own (length (resolve-calls g))))
+    (let ((g (make-graph)))
+      (r-js-file g "ui/Home.jsx" :imports '("./parts/Widget"))
+      (r-js-file g "ui/parts/Widget.jsx")
+      (r-js-function g "render" "ui/Home.jsx" :unresolved '("Widget"))
+      (r-js-function g "Widget" "ui/parts/Widget.jsx")
+      (setf handed (length (resolve-calls g :module-scope (build-module-scope g)))))
+    (is (= own handed) "~a ops building its own, ~a handed one" own handed)
+    (is (plusp own) "and the fixture actually resolves something")))
 
 (test a-definition-in-the-calling-file-shadows-every-other-of-that-name
   (let* ((g (make-graph))

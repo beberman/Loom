@@ -184,26 +184,67 @@ simply wrong need different repairs."
               (values nil :out-of-domain))
              (t (values nil :external)))))))))
 
-(defun build-module-scope (view)
-  "File path -> the paths of the files it imports, for module-scoped languages.
+(defun sibling-alias-keys (domains except)
+  "Every alias key declared by a domain in DOMAINS other than EXCEPT.
+
+The set :OUT-OF-DOMAIN is decided against, as keys rather than a second map: a
+specifier written under a key some other domain declares is a file importing
+across a boundary its own domain cannot see, and that is a different fact from
+an external package. What it resolves TO is that other domain's business."
+  (let ((keys '()))
+    (when domains
+      (maphash (lambda (name domain)
+                 (unless (eq name except)
+                   (dolist (pair (getf domain :aliases))
+                     (pushnew (car pair) keys :test #'string=))))
+               domains))
+    (mapcar (lambda (key) (cons key nil)) keys)))
+
+(defun build-module-scope (view &key domains)
+  "File path -> the paths of the files it imports, and what did not resolve.
+
+  (build-module-scope view &key domains)
+  ;; -> (values scope unresolved)
 
 Empty for a tree of Common Lisp, which is what makes this cost nothing where it
 buys nothing: VISIBLE-CANDIDATES asks the table only after
-MODULE-SCOPED-LANGUAGE-P has already said yes."
+MODULE-SCOPED-LANGUAGE-P has already said yes.
+
+DOMAINS is the keyword-to-plist table the analyzer built. Each importer's
+domain is looked up by the :DOMAIN keyword its :FILE entity already carries --
+no prefix matching here, because step 3 decided the partition and this reads
+the answer. A file carrying no domain, which is every file in every tree that
+declared none, gets NIL and therefore the behaviour this function has always
+had.
+
+The second value is CON-0001 at the import layer: path to a list of
+(:specifier ... :cause ...) for everything that resolved to nothing. Recorded
+rather than dropped, because the cause is the half a reader acts on."
   (let ((known (make-hash-table :test #'equal))
-        (scope (make-hash-table :test #'equal)))
+        (scope (make-hash-table :test #'equal))
+        (unresolved (make-hash-table :test #'equal)))
     (dolist (file (entities-of-type view :file))
       (let ((path (getp file :path)))
         (when path (setf (gethash path known) t))))
     (dolist (file (entities-of-type view :file))
       (let ((path (getp file :path)))
         (when (and path (module-scoped-language-p (getp file :language)))
-          (let ((targets '()))
+          (let* ((name (getp file :domain))
+                 (domain (and domains name (gethash name domains)))
+                 (siblings (and domains name (sibling-alias-keys domains name)))
+                 (targets '())
+                 (misses '()))
             (dolist (specifier (getp file :import-sources))
-              (let ((target (resolve-module-specifier specifier path known)))
-                (when target (pushnew target targets :test #'equal))))
-            (setf (gethash path scope) targets)))))
-    scope))
+              (multiple-value-bind (target cause)
+                  (resolve-module-specifier specifier path known
+                                            :domain domain
+                                            :sibling-aliases siblings)
+                (if target
+                    (pushnew target targets :test #'equal)
+                    (push (list :specifier specifier :cause cause) misses))))
+            (setf (gethash path scope) targets)
+            (when misses (setf (gethash path unresolved) (nreverse misses)))))))
+    (values scope unresolved)))
 
 (defun visible-candidates (candidates caller scope)
   "CANDIDATES reduced to the ones the module CALLER is written in can see.
@@ -269,11 +310,16 @@ one step and still be reviewable."
   ;; alone because a plain function is not what a property access reaches.
   (by-property   (make-hash-table :test #'equal) :type hash-table))
 
-(defun name-lookup (view types &key external-packages package-graph)
+(defun name-lookup (view types &key external-packages package-graph module-scope)
   "ENTITIES-BY-NAME plus the package-aware index over the same entities.
 
 PACKAGE-GRAPH may be supplied by a caller resolving several kinds of name in
-one pass, so the graph is assembled once rather than once per index."
+one pass, so the graph is assembled once rather than once per index.
+
+MODULE-SCOPE is there for the same reason and defaults to NIL meaning build
+one. A caller that already built the scope -- because it also wanted the
+unresolved specifiers, which building it twice would compute twice and report
+once -- hands it in."
   (let* ((by-name (entities-by-name view types))
          (pg (or package-graph
                  (build-package-graph view :external-packages external-packages)))
@@ -285,13 +331,14 @@ one pass, so the graph is assembled once rather than once per index."
                      (push e (gethash (cons home name) by-home))))))
              by-name)
     (%make-name-lookup :by-name by-name :by-home by-home :package-graph pg
-                       :module-scope (build-module-scope view)
+                       :module-scope (or module-scope (build-module-scope view))
                        :by-property (methods-by-property by-name))))
 
-(defun callable-lookup (view &key external-packages package-graph)
+(defun callable-lookup (view &key external-packages package-graph module-scope)
   "The callable half of NAME-LOOKUP, which is what RESOLVE-CALLS wants."
   (name-lookup view *callable-types*
-               :external-packages external-packages :package-graph package-graph))
+               :external-packages external-packages :package-graph package-graph
+               :module-scope module-scope))
 
 (defun member-call-parts (name)
   "The receiver and the property of a member call name -- `log.commit\' is LOG
@@ -1297,7 +1344,7 @@ DES-0014, PLAN-0014 step 4."
         (when name (list name)))
       (getp caller :call-names)))
 
-(defun resolve-calls (view &key workspace-id external-packages)
+(defun resolve-calls (view &key workspace-id external-packages module-scope)
   "Operations linking each recorded call name to the definition it names.
 
 For every callable carrying :CALL-NAMES, each name is looked up in the
@@ -1326,7 +1373,8 @@ the same question and can answer it again.
 Idempotent: an edge that already exists upserts onto itself by natural key, and
 a name that resolved last pass resolves to the same edge this pass. Safe to run
 after every analysis pass."
-  (let ((index (callable-lookup view :external-packages external-packages))
+  (let ((index (callable-lookup view :external-packages external-packages
+                                     :module-scope module-scope))
         ;; The ambiguous call sites this pass produced, keyed by id: the
         ;; dedupe for the asserts below and the produced set for the sweep at
         ;; the end, which are the same question asked twice.
