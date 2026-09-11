@@ -1084,6 +1084,59 @@ Lisp's folding by being compared against a Lisp definition")
         (is (eq :out-of-domain (getf (third misses) :cause))
             "a key the server domain declares and the ui domain does not")))))
 
+(test a-resolved-specifier-draws-an-imports-edge-and-is-not-named-unresolved
+  (let* ((g (make-graph))
+         (home (r-js-file g "ui/Home.jsx" :imports '("./parts/Widget")))
+         (widget (r-js-file g "ui/parts/Widget.jsx")))
+    (apply-transaction g (resolve-imports g))
+    (is (= 1 (length (relationships-from g (id home))))
+        "one :IMPORTS edge")
+    (is (equal (id widget) (to-id (first (relationships-from g (id home)))))
+        "pointing at the file the specifier names")
+    (is (null (getp (get-entity g (id home)) :unresolved-imports))
+        "and nothing is recorded as unresolved")))
+
+(test an-unresolved-specifier-draws-no-edge-and-is-recorded-with-its-cause
+  (let* ((g (make-graph))
+         (home (r-js-file g "ui/Home.jsx" :imports '("react" "./nowhere"))))
+    (apply-transaction g (resolve-imports g))
+    (is (null (relationships-from g (id home))) "no edge for either")
+    (let ((misses (getp (get-entity g (id home)) :unresolved-imports)))
+      (is (= 2 (length misses)))
+      (is (eq :external (getf (first misses) :cause)))
+      (is (eq :unresolved (getf (second misses) :cause))))))
+
+(test the-unresolved-write-is-unconditional-so-an-entry-can-shrink-back-to-none
+  ;; The reason the :UNRESOLVED-CALLS write gives a hundred lines down: writing
+  ;; only when something failed would make the property a high-water mark, so a
+  ;; file whose every specifier now resolves would keep naming the one that
+  ;; used to fail.
+  (let* ((g (make-graph))
+         (home (r-js-file g "ui/Home.jsx" :imports '("./parts/Widget"))))
+    (apply-transaction g (resolve-imports g))
+    (is (= 1 (length (getp (get-entity g (id home)) :unresolved-imports)))
+        "the target does not exist yet, so it is recorded")
+    (r-js-file g "ui/parts/Widget.jsx")
+    (apply-transaction g (resolve-imports g))
+    (is (null (getp (get-entity g (id home)) :unresolved-imports))
+        "and once it does, the entry shrinks back to none")))
+
+(test running-the-import-pass-twice-over-an-unchanged-view-changes-nothing
+  ;; DEC-0003. The pass derives both outputs from :IMPORT-SOURCES and consumes
+  ;; neither, so it can be re-run -- which it is, on every poll that finds any
+  ;; file changed.
+  (let* ((g (make-graph))
+         (home (r-js-file g "ui/Home.jsx" :imports '("./parts/Widget" "react"))))
+    (r-js-file g "ui/parts/Widget.jsx")
+    (apply-transaction g (resolve-imports g))
+    (let ((edges (length (relationships-from g (id home))))
+          (misses (getp (get-entity g (id home)) :unresolved-imports)))
+      (apply-transaction g (resolve-imports g))
+      (is (= edges (length (relationships-from g (id home))))
+          "no edge was added by the second run")
+      (is (equal misses (getp (get-entity g (id home)) :unresolved-imports))
+          "and the recorded misses are the same ones"))))
+
 (test resolve-calls-handed-a-scope-draws-what-it-draws-building-its-own
   ;; What makes step 7's single build safe rather than assumed: the pass will
   ;; be handed a scope built once, beside the unresolved specifiers, instead of

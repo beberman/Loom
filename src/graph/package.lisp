@@ -50,6 +50,7 @@
 
    ;; cross-file resolution (SS8.3) -- reads a view, returns ops
    #:resolve-calls
+   #:resolve-imports
    #:build-module-scope
    #:resolve-definitions
    #:resolve-inheritance

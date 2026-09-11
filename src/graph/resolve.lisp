@@ -246,6 +246,59 @@ rather than dropped, because the cause is the half a reader acts on."
             (when misses (setf (gethash path unresolved) (nreverse misses)))))))
     (values scope unresolved)))
 
+(defun resolve-imports (view &key workspace-id domains module-scope unresolved)
+  "Operations linking each import specifier to the file it names.
+
+One :IMPORTS edge per resolved (importer, target) pair, and one
+UPDATE-PROPERTIES writing :UNRESOLVED-IMPORTS onto every :FILE that recorded
+any specifier at all.
+
+DEC-0003, and the shape RESOLVE-CALLS already has with :CALL-NAMES: both
+outputs are derived from :IMPORT-SOURCES on every pass and neither consumes it.
+A pass that rewrote its own input could not be re-run, and the edge a retract
+destroyed would never come back.
+
+The UPDATE-PROPERTIES is unconditional for a file with any :IMPORT-SOURCES, for
+the reason the :UNRESOLVED-CALLS write gives a hundred lines down: a file whose
+every specifier now resolves has to have that written down, and one whose
+target has since been deleted has to have the entry grow back. Writing only
+when something failed would make the property a high-water mark.
+
+MODULE-SCOPE and UNRESOLVED are BUILD-MODULE-SCOPE's two values and are handed
+in together by a caller that already has them -- which is what
+RESOLVE-AND-CHECK will do, because building the scope twice would compute the
+same misses twice and report them once. Taking only the first and recomputing
+the second would be that same waste wearing the argument that avoids it, so
+they arrive as a pair or not at all."
+  (multiple-value-bind (scope unresolved)
+      (if module-scope
+          (values module-scope (or unresolved (make-hash-table :test #'equal)))
+          (build-module-scope view :domains domains))
+    (let ((ops '())
+          ;; Path to entity, built on the walk this function already makes.
+          ;; A natural-key lookup per import would ask the same question once
+          ;; per specifier and would encode the key shape here, where it is not
+          ;; this function's to know.
+          (by-path (make-hash-table :test #'equal)))
+      (dolist (file (entities-of-type view :file))
+        (let ((path (getp file :path)))
+          (when path (setf (gethash path by-path) file))))
+      (dolist (file (entities-of-type view :file))
+        (let ((path (getp file :path)))
+          (when (and path (module-scoped-language-p (getp file :language)))
+            (dolist (target (gethash path scope))
+              (let ((to (gethash target by-path)))
+                (when to
+                  (push (assert-edge :imports file to :workspace-id workspace-id)
+                        ops))))
+            (when (getp file :import-sources)
+              (push (update-properties (id file)
+                                       (list :unresolved-imports
+                                             (gethash path unresolved))
+                                       workspace-id)
+                    ops)))))
+      (nreverse ops))))
+
 (defun visible-candidates (candidates caller scope)
   "CANDIDATES reduced to the ones the module CALLER is written in can see.
 
