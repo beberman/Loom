@@ -189,3 +189,52 @@ to return from."
     (is (equal '(:out-of-domain)
                (mapcar #'cdr (causes-of repository "legacy/CauseOutOfDomain.js")))
         "a key app declares and legacy does not")))
+
+(domain-test a-root-no-indexed-file-lies-under-is-reported
+  ;; R3's seventh refusal, and the only one that needs the tree rather than the
+  ;; declaration -- which is why it is checked in REPOSITORY-STATUS and tested
+  ;; here against a real repository instead of a hand-built status plist.
+  ;;
+  ;; It is the shape a stale declaration takes: a root renamed in the tree and
+  ;; not in the file partitions nothing, every file that should have been in it
+  ;; falls to :DEFAULT, every alias it declared stops applying, and the file
+  ;; still looks exactly as correct as it did.
+  (with-domain-repository (repository)
+    (write-file ".loom/frameworks.yaml"
+                (concatenate 'string *domain-frameworks*
+                             "  - name: ghost
+    root: no/such/directory/
+"))
+    (index-repository repository :quiet t)
+    (let ((problems (getf (repository-status repository) :domain-problems)))
+      (is-true (find-if (lambda (p) (search "ghost" p)) problems)
+               "the ghost root is reported: ~a" problems)
+      (is-true (find-if (lambda (p) (search "no indexed file lies under" p)) problems)
+               "and the reason is named"))))
+
+(domain-test the-status-splits-imports-by-cause-with-the-zeroes-kept
+  ;; S9 puts the decision in REPOSITORY-STATUS rather than in the printer: a
+  ;; module-scoped tree gets five numbers and a Common Lisp tree gets NIL, so
+  ;; the printer has nothing to decide. This asserts the decision.
+  ;;
+  ;; Every key present including the zeroes, which is DES-0002 R10's rule: a
+  ;; count that vanishes when it is nought cannot be told from a count nobody
+  ;; computed. On this fixture out-of-domain is the one that is non-zero and
+  ;; external is not, which is the opposite of a real tree -- so asserting
+  ;; presence rather than magnitude is what makes the test portable.
+  (with-domain-repository (repository)
+    (let ((imports (getf (repository-status repository) :unresolved-imports)))
+      (is-true imports "a tree with JavaScript in it reports an import split")
+      (dolist (key '(:resolved :external :out-of-domain :unresolved :unclaimed-target))
+        (is-true (integerp (getf imports key))
+                 "~a is absent or not a number: ~a" key imports))
+      (is (plusp (getf imports :resolved)) "the fixture resolves something")
+      (is (plusp (getf imports :out-of-domain))
+          "and legacy/ importing an app/ alias key is counted out-of-domain"))))
+
+(test a-repository-with-no-module-scoped-file-reports-no-import-split
+  ;; A Common Lisp tree has no import graph, and five noughts there would be a
+  ;; count of a question nobody asked. No node needed: this asserts the absence.
+  (with-workspace-fixture (repository)
+    (is (null (getf (repository-status repository) :unresolved-imports))
+        "a Lisp-only tree reports no import split at all")))
