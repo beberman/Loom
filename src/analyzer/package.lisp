@@ -87,6 +87,11 @@
    #:*frameworks-file*
    #:frameworks-path
    #:read-frameworks
+   #:parse-domain
+   #:domain-table
+   #:domain-problems
+   #:*resolution-presets*
+   #:*default-domain*
    #:parse-frameworks
    #:frameworks-registry
    #:frameworks-problems

@@ -104,3 +104,129 @@ and the tree writes sendGet")
   ;; The normal case for every repository Loom indexed before DES-0025.
   (is (null (read-frameworks "/nonexistent-tree-for-this-test/")))
   (is (null (frameworks-problems "/nonexistent-tree-for-this-test/"))))
+
+;;; ------------------------------------------------------------------
+;;; Domains (DES-0047, PLAN-0050 S2)
+;;; ------------------------------------------------------------------
+
+(defun domains-of (yaml)
+  (getf (parse-frameworks yaml) :domains))
+
+(test a-domain-declares-a-name-a-root-and-a-resolution
+  (let ((d (first (domains-of "domains:
+  - name: server
+    root: src/server/
+    resolution: node-esm
+"))))
+    (is (eq :server (getf d :name)) "the name is interned as a keyword, once")
+    (is (string= "src/server/" (getf d :root)) "the root stays a string: it is compared against paths")
+    (is (eq :node-esm (getf d :resolution)))))
+
+(test a-domain-defaults-to-bundler-resolution
+  (is (eq :bundler (getf (first (domains-of "domains:
+  - name: ui
+    root: src/ui/
+")) :resolution))))
+
+(test a-domain-missing-a-name-or-a-root-declares-nothing
+  ;; PARSE-FRAMEWORKS' own rule one level down: a half-read domain would place
+  ;; files into a prefix whose alias map nobody wrote.
+  (is (null (domains-of "domains:
+  - root: src/ui/
+")))
+  (is (null (domains-of "domains:
+  - name: ui
+"))))
+
+(test an-unknown-resolution-is-refused-rather-than-defaulted
+  ;; Defaulting it would hand a tree the wrong toolchain in silence.
+  (let* ((yaml "domains:
+  - name: ui
+    root: src/ui/
+    resolution: webpack5
+")
+         (d (first (domains-of yaml))))
+    (is (null (getf d :resolution)) "no resolution rather than bundler")
+    (is (= 1 (length (domain-problems (domains-of yaml)))))
+    (is (search "webpack5" (first (domain-problems (domains-of yaml)))))))
+
+(test two-domains-cannot-share-a-name
+  (let ((problems (domain-problems (domains-of "domains:
+  - name: ui
+    root: src/ui/
+  - name: ui
+    root: src/other/
+"))))
+    (is (= 1 (length problems)))
+    (is (search "share one name" (first problems)))
+    (is (search "src/other/" (first problems)) "and it names the entries it is about")))
+
+(test two-domains-cannot-share-a-root
+  (let ((problems (domain-problems (domains-of "domains:
+  - name: ui
+    root: src/ui/
+  - name: widgets
+    root: src/ui/
+"))))
+    (is (= 1 (length problems)))
+    (is (search "share the root" (first problems)))))
+
+(test the-default-name-is-reserved
+  (let ((problems (domain-problems (domains-of "domains:
+  - name: default
+    root: src/ui/
+"))))
+    (is (= 1 (length problems)))
+    (is (search "reserved name" (first problems)))))
+
+(test aliases-from-must-name-a-declared-domain
+  (let ((problems (domain-problems (domains-of "domains:
+  - name: ui
+    root: src/ui/
+    aliases-from: nowhere
+"))))
+    (is (= 1 (length problems)))
+    (is (search "not declared" (first problems)))))
+
+(test aliases-from-is-one-hop-and-not-a-chain
+  ;; A chain is a small language, and a small language in a configuration file
+  ;; is how the file stops being readable.
+  (let* ((yaml "domains:
+  - name: base
+    root: src/base/
+    aliases:
+      utils: src/base/utils/
+  - name: middle
+    root: src/middle/
+    aliases-from: base
+  - name: leaf
+    root: src/leaf/
+    aliases-from: middle
+")
+         (problems (domain-problems (domains-of yaml)))
+         (table (domain-table (domains-of yaml))))
+    (is (= 1 (length problems)))
+    (is (search "one hop is allowed and a chain is not" (first problems)))
+    (is (equal '(("utils" . "src/base/utils/"))
+               (getf (gethash :middle table) :aliases))
+        "the one legal hop still copies")
+    (is (null (getf (gethash :leaf table) :aliases))
+        "and the refused one contributes nothing rather than half a map")))
+
+(test the-default-domain-is-in-the-table-whether-declared-or-not
+  ;; So DOMAIN-FOR-PATH always has somewhere to put a file and no caller tests
+  ;; for NIL.
+  (let ((table (domain-table (domains-of "domains:
+  - name: ui
+    root: src/ui/
+"))))
+    (is (gethash :default table))
+    (is (string= "" (getf (gethash :default table) :root)))
+    (is (eq :bundler (getf (gethash :default table) :resolution)))))
+
+(test every-resolution-name-has-a-preset
+  ;; The three names PARSE-DOMAIN accepts and the three the graph will expand
+  ;; must be the same three, or a declaration parses and resolves nothing.
+  (dolist (name '(:bundler :node-esm :commonjs))
+    (is-true (assoc name *resolution-presets*)
+             "~a parses and has no preset" name)))
