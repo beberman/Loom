@@ -681,6 +681,29 @@ body: |
      PRINT-STATUS has no such branch. `tools/loom.sh 'status'' on Loom's own tree
      shows no imports line and the same 409/3776/18214.
 
+   AMENDED 2026-09-11, having run it, on two counts.
+
+   Loom's own tree DOES print an imports line, five zeroes, because Loom vendors
+   acorn: tools/js/extract.js and four files under tools/js/vendor/ are
+   JavaScript, so MODULE-SCOPED-REPOSITORY-P is true. That is the correct answer
+   rather than an exception to the rule -- the question is askable on this tree
+   and the answer is nought -- and it is the same wrong premise R-a carried,
+   that Loom is a Common Lisp repository. It is not.
+
+   The verification moves off PRINT-STATUS and onto REPOSITORY-STATUS, where
+   this step puts the decision: a module-scoped tree gets five numbers and a
+   Lisp tree gets NIL, so the printer has nothing left to decide. A hand-built
+   status plist proved the wrong instrument -- PRINT-STATUS reads some forty
+   keys and formats them with ~D and ~:P, so a plist missing any one dies with a
+   type error that says nothing about imports. Two tests were spent chasing
+   which key before the instrument was changed rather than the helper extended
+   again.
+
+   The tests run against real repositories now: the S8 fixture asserts the five
+   keys present and numeric with a non-trivial split, and a Lisp-only fixture
+   asserts the absence. Both are stronger than asserting printf output, and the
+   line itself is visible in `tools/loom.sh 'status''.
+
   10. FRONT-END'S DECLARATION.  ~/github/front-end/.loom/frameworks.yaml, which
       is outside this repository and is committed there.
 
