@@ -1,5 +1,5 @@
 id: DES-0049
-title: find gains a family selector, and the occurrence band fires on what the term is rather than on whether anything matched
+title: find gains a code-or-documents selector; the occurrence band's trigger stays as it is, because no cheap signal separates the cases
 status: draft
 date: 2026-09-11
 refines: [REQ-0062]
@@ -19,11 +19,16 @@ summary: |
   about the 195 places the word is written in this tree, most of them a YAML
   key meaning something else.
 
-  The second change costs something and the first does not. Scanning the tree
-  for occurrences takes about 30ms against 8ms for an ordinary `find'. This
-  design pays that only when the hit count is small, and prints a count rather
-  than a list. A threshold on the relationship between the two counts was
-  tried, measured, and does not work; D4 records the numbers.
+  The second change is refused on cost, and the diagnosis behind it is
+  accepted. Scanning the tree for occurrences takes about 30ms against 8ms for
+  an ordinary `find', and the answers that would pay it are the low-hit ones --
+  which is the common shape of a specific-name lookup. A cheaper trigger was
+  looked for and does not exist: a ratio between hits and occurrences does not
+  separate the cases, and D3 records the numbers that close it.
+
+  So the band's trigger is unchanged. What this design delivers is the family
+  selector, the truncation count computed over the filtered population, and a
+  heading that says the occurrence list is a fallback rather than a result.
 body: |
   D1  THE TWO FAMILIES, AND WHERE THE LIST LIVES
 
@@ -54,47 +59,29 @@ body: |
   over the filtered population, so `20 of 202' becomes `20 of 20' when the
   other 182 were excluded.
 
-  D3  THE OCCURRENCE BAND'S TRIGGER, AND WHAT IT COSTS
+  D3  R5 IS REFUSED, NOT DEFERRED. THE BAND STAYS AT ZERO HITS
 
-  This is the decision the design exists to make. REQ-0054 R4 made the scan a
-  cost paid only on a miss, deliberately. R5 asks for it on a hit as well.
+  R5 asks for the occurrence band to fire on a hit and not only on a miss. That
+  is refused on cost, and the diagnosis behind it is accepted.
 
-  Measured on this machine, ten calls each:
+  The diagnosis stands. `find severity' returns three definitions about rule
+  enforcement, and says nothing about the 195 places the word is written in
+  this tree -- most of them a YAML key meaning something else. A reader takes
+  the three as the whole answer. That happened, and it is what REQ-0062 records.
+
+  The fix costs a tree scan. Measured on this machine, ten calls each:
 
       Loom       find complete-plan      8ms      find on a miss   35ms
       front-end  find Game              12ms      find on a miss   42ms
 
-  So the scan is about 30ms. Three ways to pay it:
+  So about 30ms, on the cheapest command in the system, and the answers that
+  would pay it are the low-hit ones -- which is the common shape of a
+  specific-name lookup. A four-fold cost on the ordinary case to catch the
+  occasional one is the wrong trade.
 
-  (a) Always. Every `find' becomes 35ms rather than 8ms. Refused: it is a
-      four-fold cost on the cheapest command in the system, paid on every
-      query to catch a case that arises on some of them.
-
-  (b) Never, and say so. Print a line on a low-hit answer saying the string may
-      also appear in prose, without looking. Cheap and honest, and it tells a
-      caller nothing they could act on -- the whole value is in the number.
-
-  (c) When the hit count is low enough that the caller could be misled. The
-      cost is bounded to those queries and the number is real.
-
-  This design takes (c), with the threshold named and tunable:
-  *OCCURRENCE-BAND-HIT-CAP*, initially 8. A find returning more than eight
-  definitions is not a find whose caller is about to mistake two rows for the
-  whole answer.
-
-  The honest cost of (c) is that a specific-name lookup -- `find
-  complete-plan', one hit -- is exactly the shape that falls under the cap, so
-  it pays the 30ms. That is the common case, and this design accepts it
-  knowingly rather than discovering it later. If the measurement in the plan
-  shows it hurts more than it helps, (b) is the fallback and the threshold is
-  one number to set to zero.
-
-  D4  WHAT IS PRINTED ONCE THE SCAN IS PAID FOR: A COUNT, NOT A LIST
-
-  The first version of this section proposed a ratio -- print the band when
-  occurrences exceed hits by some factor. Measured against real terms on this
-  tree, it does not work, and the numbers are worth keeping because they close
-  the idea rather than merely discourage it:
+  A cheaper trigger was looked for and does not exist. The obvious one is a
+  ratio: print when occurrences exceed hits by some factor. Measured against
+  real terms, it does not separate the cases:
 
       term              definitions   occurrences   ratio
       severity                    3           195    65
@@ -105,34 +92,24 @@ body: |
       resolve-imports             1            33    33
       importance                  6           185    31
 
-  `severity' is the case the requirement was written from and should print.
-  `status' and `find' should not, and their ratios are higher than
-  `complete-plan''s, which also should not. No threshold separates them,
-  because prose in this tree names its own definitions constantly and a high
-  ratio is the normal condition rather than the exceptional one.
+  `severity' should print. `status', `find' and `complete-plan' should not, and
+  two of those three have a higher ratio than `complete-plan', which is the
+  clearest case of occurrences the hits do explain. Prose in this tree names its
+  own definitions constantly, so a high ratio is the normal condition rather
+  than the exceptional one. Telling an occurrence the hits
+  explain from one they do not needs attribution -- which file each occurrence
+  is in, and whether that file holds or names a matched definition -- and that
+  is a larger piece of work than this requirement asks for.
 
-  Distinguishing an occurrence the hits explain from one they do not needs
-  attribution -- which file each occurrence is in, and whether that file holds
-  or names a matched definition. The index has the material for some of that in
-  its :MENTIONS and :CALLS edges, and a design that used it would be a larger
-  piece of work than this requirement asks for.
+  So the trigger is unchanged: the band prints when nothing matched, which is
+  REQ-0054 R4's rule and costs nothing on an answer that found something.
 
-  So the band prints a count and not a list:
+  What is left of R5 is a record rather than a mechanism. The case it names is
+  real and Loom cannot currently warn about it. If it recurs often enough to be
+  worth 30ms, or if somebody builds the attribution, this is the measurement to
+  argue against.
 
-      3 definitions named `severity'. The string occurs 195 times in text;
-      `find severity --occurrences' lists them.
-
-  One line, one number, on any answer with at most *OCCURRENCE-BAND-HIT-CAP*
-  hits. It needs no threshold on the relationship between the two counts, so it
-  cannot get that threshold wrong. It is also the half that would have
-  prevented the error the requirement records: reading two definitions about
-  rule enforcement and concluding that was all `severity' meant. A number in
-  the hundreds beside three definitions is enough to make a reader look.
-
-  The list stays where it is -- printed whole on a zero-hit find, as REQ-0054
-  built it -- and becomes available on demand through a flag.
-
-  D5  THE BAND SAYS IT IS A FALLBACK
+  D4  THE BAND SAYS IT IS A FALLBACK
 
   R3, and it is independent of everything above. Today a miss prints the
   occurrence list under a sentence, and a hit prints rows. The two read as the
@@ -156,15 +133,9 @@ body: |
   word in the tree would remove the 30ms and is a much larger thing than this
   requirement asks for.
 
-  OPEN QUESTION FOR THE PLAN
+  NOTHING IS LEFT OPEN FOR THE PLAN
 
-  *OCCURRENCE-BAND-HIT-CAP* is 8 on no evidence. The plan should measure what
-  fraction of real `find' calls fall under it, because that fraction is what
-  the 30ms is multiplied by. A specific-name lookup returning one hit is both
-  the common case and the case the count helps most, so a cap that excluded it
-  would remove the value along with the cost.
-
-  Also unmeasured: whether the count is worth 30ms at all. The fallback is to
-  print nothing extra and leave the band at zero hits, which is today's
-  behaviour and costs nothing. That is one parameter set to zero, and the plan
-  should say what it measured before leaving it non-zero.
+  The cost question D3 raises was put to the requirement's author on
+  2026-09-11 and answered: the 30ms is not worth it. So there is no threshold
+  to tune, no parameter to set, and no measurement the plan has to take before
+  it can proceed. The plan sequences D1, D2 and D4 and nothing else.

@@ -122,6 +122,21 @@ body: |
   - Whether the code/document split should be a first-class `family` on the
     entity type rather than two hardcoded lists at the call site. `structure`
     and `resolve` both already carry their own copies.
+  - ANSWERED 2026-09-11: R5 is refused rather than built, so this stays Minor.
+    DES-0049 D3 has the measurement. The band would cost a 30ms tree scan on
+    the cheapest command in the system, paid on exactly the low-hit answers
+    that are the common shape of a specific-name lookup, and no cheaper trigger
+    separates the cases -- a ratio between hits and occurrences puts `status'
+    and `find' above `complete-plan', which is the clearest case of occurrences
+    the hits do explain.
+
+    The diagnosis stands and the record is the point: `find severity' answers
+    with three definitions about rule enforcement and says nothing about 195
+    occurrences, and a reader took the three as the whole answer. Loom cannot
+    warn about that today. If it recurs often enough to be worth the 30ms, or
+    if somebody builds the attribution that would make a cheaper trigger
+    possible, DES-0049 D3 is the measurement to argue against.
+
   - Whether R5 makes this Major rather than Minor. The 2026-08-29 instance is a
     verbose answer a caller can see past. The 2026-09-10 instance is a confident
     wrong one -- two hits, no band, and the 48 occurrences that contradict them
