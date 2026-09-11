@@ -312,6 +312,29 @@ command."
           (getf status :unresolved-references)
           (getf status :ambiguous-references)
           (getf status :unhandled-definer-macros))
+  ;; PLAN-0050 S9. Printed only when the repository holds a module-scoped file,
+  ;; because a Common Lisp tree has no import graph and a row of zeroes there
+  ;; is a count of a question nobody asked -- REPOSITORY-STATUS answers NIL for
+  ;; such a tree rather than five noughts, so the absence is decided there.
+  ;;
+  ;; Within the line every number prints, zeroes included, which is the rule
+  ;; the `tests' line above states: a count that vanishes when it is nought
+  ;; cannot be told from a count nobody computed. The four causes are what make
+  ;; the number actionable -- 502 external is a healthy tree importing
+  ;; libraries, and 502 out-of-domain is a declaration that is wrong.
+  (let ((imports (getf status :unresolved-imports)))
+    (when imports
+      (format t "  imports    : ~d resolved, ~d external, ~d out-of-domain, ~
+~d unresolved, ~d target unclaimed~%"
+              (getf imports :resolved 0)
+              (getf imports :external 0)
+              (getf imports :out-of-domain 0)
+              (getf imports :unresolved 0)
+              (getf imports :unclaimed-target 0))))
+  ;; Beside the imports line because they are read together: a count that looks
+  ;; wrong is usually a declaration that is wrong, and this is where it says so.
+  (dolist (problem (getf status :domain-problems))
+    (format t "  domains    : ~a~%" problem))
   ;; DES-0018 D5. Printed only when git could not be asked, because on a
   ;; healthy tree there is nothing to say and a line reading "ignoring: fine"
   ;; would be noise on every status call. When it does print, it is the

@@ -1513,6 +1513,65 @@ needs git and says why it is missing when there is none."
           :dirty (and diff (not (string= diff (clean-diff-hash))) t)
           :drift (index-drift repository))))
 
+(defun domain-root-problems (repository domains)
+  "R3's seventh refusal: a declared root under which no indexed file lies.
+
+Decidable here and nowhere earlier. DOMAIN-PROBLEMS runs in the analyzer over
+the declaration alone and cannot know what the tree holds; this has the file
+list at hand, so the check costs a walk already paid for.
+
+Worth reporting because it is the shape a stale declaration takes. A root
+renamed in the tree and not in the file partitions nothing, every file that
+should have been in it falls to :DEFAULT, and every alias it declared stops
+applying -- with the file still looking exactly as correct as it did."
+  (when domains
+    (let ((paths (mapcar (lambda (f) (getp f :path))
+                         (entities-of-type (repository-graph repository) :file)))
+          (problems '()))
+      (maphash
+       (lambda (name domain)
+         (let ((root (getf domain :root)))
+           (when (and root (plusp (length root))
+                      (notany (lambda (path)
+                                (and path
+                                     (<= (length root) (length path))
+                                     (string= root path :end2 (length root))))
+                              paths))
+             (push (format nil "domain `~(~a~)' declares root ~s and no indexed ~
+file lies under it"
+                           name root)
+                   problems))))
+       domains)
+      (nreverse problems))))
+
+(defun import-summary (repository)
+  "The import graph as five numbers: resolved, and one per cause.
+
+Summed over the :FILE entities rather than recomputed, because RESOLVE-IMPORTS
+already wrote both halves -- the edges and the causes -- and a second
+resolution pass here could disagree with the graph a caller is about to query.
+
+Always five numbers, zeroes included, which is DES-0002 R10's rule: a count
+that vanishes when it is nought cannot be told from a count nobody computed."
+  (let ((graph (repository-graph repository))
+        (resolved 0)
+        (by-cause (list :external 0 :out-of-domain 0
+                        :unclaimed-target 0 :unresolved 0)))
+    (dolist (file (entities-of-type graph :file))
+      (dolist (r (relationships-from graph (id file)))
+        (when (eq :imports (rel-type r)) (incf resolved)))
+      (dolist (entry (getp file :unresolved-imports))
+        (incf (getf by-cause (getf entry :cause) 0))))
+    (list* :resolved resolved by-cause)))
+
+(defun module-scoped-repository-p (repository)
+  "True when any indexed file is in a language with its own module namespace.
+
+What the imports line is printed on. A Common Lisp tree has no import graph,
+and a row of zeroes there is a count of a question nobody asked."
+  (some (lambda (file) (module-scoped-language-p (getp file :language)))
+        (entities-of-type (repository-graph repository) :file)))
+
 (defun repository-status (repository)
   "SS3.2's status, as plain data: \"indexing progress, entity and relationship
 counts, watcher health, unresolved document references, unenforced rules, and
@@ -1652,6 +1711,20 @@ the last error per thread.\""
                               (length (getf (repository-enrichment repository)
                                             :absences)))
           :enrichment-at (getf (repository-enrichment repository) :at)
+          ;; PLAN-0050 S9. DOMAIN-PROBLEMS answers over the declaration,
+          ;; FRAMEWORKS-PROBLEMS over the file, and DOMAIN-ROOT-PROBLEMS over
+          ;; the tree -- three questions about one declaration, reported as one
+          ;; list because a reader repairing the file does not care which of the
+          ;; three noticed.
+          :domain-problems (append (frameworks-problems (repository-root repository))
+                                   (domain-problems
+                                    (getf (repository-frameworks repository) :domains))
+                                   (domain-root-problems
+                                    repository (repository-domains repository)))
+          ;; Five numbers whenever the tree has a module-scoped file, and
+          ;; absent when it has none: a Common Lisp tree has no import graph.
+          :unresolved-imports (when (module-scoped-repository-p repository)
+                                (import-summary repository))
           ;; DES-0013, PLAN-0013 step 5. Two scalars, for the reason the
           ;; enrichment block above gives: this plist is serialized to JSON for
           ;; REST and MCP callers, so a count travels where a nested region
