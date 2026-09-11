@@ -768,6 +768,35 @@ body: |
       refusal from step 2 or step 9 names its two entries, and a divergence line
       against jsconfig.json means a key was mistyped here.
 
+      DONE 2026-09-11. The 32 aliases were generated from jsconfig.json rather
+      than typed, so a key cannot differ from its source. All 32 have the form
+      "key/*": ["target/*"], which is the shape D2 calls translatable. `status'
+      reports no domain problems.
+
+      The measurement, taken twice on the same tree by removing the declaration
+      and putting it back:
+
+                            without domains    with domains
+        imports resolved              567            1938
+        imports external             1919             534
+        target unclaimed                0               8
+        unresolved                      8               8
+        entities                     8199            7125
+        relationships               57840           55942
+        call-site entities           1149              75
+
+      1371 more imports resolve. The 1385 that stopped being counted external
+      were never external. They are in-tree files written through an alias, and
+      Loom had no way to tell that from a library import.
+
+      The entity drop is all call-site entities. 1149 to 75 is -1074, which is
+      the whole difference. Function, method, class and variable counts are
+      identical. A call-site entity is minted when a call name matches several
+      definitions and the resolver refuses to pick one. Once a file's imports
+      resolve, VISIBLE-CANDIDATES narrows those candidates to what the file
+      actually imports, so 1074 of the ambiguities become single answers that
+      need no anchor. That is what REQ-0063 asked for.
+
   11. THE MEASUREMENT.  tools/test/import-census.py.
 
       REQ-0063 R4 and DES-0047 R14. The instrument brings the service up itself
