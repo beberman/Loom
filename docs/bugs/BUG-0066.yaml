@@ -1,0 +1,97 @@
+id: BUG-0066
+title: A concept declares status, tags and affects and the ontology holds none of them, so CON-0006's six affects entries resolve to nothing and are not reported either
+status: open
+date: 2026-09-10
+severity: major
+priority: p2
+refines: [BUG-0023, BUG-0063]
+affects: [as-keyword, document-properties,
+          "method:src/analyzer/yaml-analyzer.lisp:type-specific-properties::(eql concept),t,t"]
+tags: [documents, ontology, concepts, silent-drop, affects, con-0001, bug-0023,
+       req-0070]
+summary: |
+  `:CONCEPT` declares eight properties -- doc-id, title, summary, body,
+  evidence, refines, mentions, unresolved-references -- and
+  TYPE-SPECIFIC-PROPERTIES' `:CONCEPT` method returns NIL, with the comment "A
+  concept carries only the common fields."
+
+  Concept files do not write only the common fields. Measured across three
+  trees on 2026-09-10:
+
+      Loom       CON-0004   status
+      Loom       CON-0006   status, tags, affects
+      Loom       CON-0007   status, tags
+      front-end  CON-0001   status, importance, tags
+      game-server CON-0001  status, tags
+
+  `affects:` is the one that costs something. CON-0006 names six real functions
+  -- seed-entities, seed-matches, search-entities, search-rank, build-context,
+  admit-seeds -- and `describe CON-0006` returns properties
+  `title, summary, category, doc-id, path, body, mentions` and a single
+  outbound edge band, `mentions`, from prose backticks. The six declared claims
+  produce no edge, resolve to nothing, and are not reported unresolved either.
+
+  That is BUG-0023 exactly, which closed for `:DOCUMENT` and was never asked
+  about `:CONCEPT`: "a requirement, a plan, a bug report and an architecture
+  note could all write affects: and every one of them was discarded in silence."
+body: |
+  WHY THE DETECTOR BUILT TODAY DOES NOT CATCH IT
+
+  BUG-0062 F2 and BUG-0063 F4 landed this morning as `check`'s `dropped-fields`:
+  a document whose YAML carries a vocabulary key and whose entity does not.
+  DROPPED-VOCABULARY-FIELDS is called from the `:DOCUMENT` method. The
+  `:CONCEPT` method returns NIL before reaching anything, so a concept is
+  outside the report by construction.
+
+  WHY REQ-0070'S TEST DOES NOT CATCH IT EITHER, AND THIS IS THE SHARPER HALF
+
+  REQ-0070 landed today to make exactly this class fail on the day it happens.
+  Its test compares the rendered workflow-concept template against the fields
+  TYPE-SPECIFIC-PROPERTIES' **:DOCUMENT** method reads.
+
+  The workflow concept is a `:CONCEPT`. So the test asserts the agreement of two
+  things, neither of which governs the file it is reading.
+
+  Loom's own template writes `status: accepted` into that file. A concept cannot
+  hold a status -- `:CONCEPT` declares no such property -- so Loom generates,
+  into every repository it prepares, a document carrying a field Loom then
+  ignores. REQ-0070's test passes throughout.
+
+  WHAT IS ACTUALLY WANTED, WHICH IS A DECISION FIRST
+
+  Two coherent answers and they differ in what a concept is for.
+
+  A. A concept is a document like the others. It gets :STATUS, :TAGS and
+     :AFFECTS, its method reads them, and DES-0019 D3 is revisited -- that
+     decision says "four concepts in this tree carry no status line and
+     :CONCEPT has nowhere to put one, so inserting a line would write a fact the
+     index cannot hold", which was an argument about `complete` not editing a
+     file, not about whether the field should exist. Five files already write
+     the line, so the premise is no longer true.
+
+  B. A concept is not a workflow document and should stop pretending. Then the
+     template stops writing `status:`, the three Loom concepts lose theirs, and
+     `check` reports a concept that writes one. CON-0006's `affects:` still has
+     to go somewhere, because six declared claims about code are not prose.
+
+  A is likelier to be right, on the evidence that every tree writes these
+  fields unprompted. But it is a decision about the genre and belongs to
+  whoever owns CON-0004's workflow.
+
+  WHATEVER IS DECIDED, TWO THINGS FOLLOW
+
+  F1. REQ-0070's test checks the method that governs the file it reads, rather
+      than the one whose name matches the directory. As written it would pass
+      against a template for any genre, which is the defect it exists to
+      prevent, one level up.
+
+  F2. `check`'s dropped-fields covers every document genre rather than the one
+      whose method happens to call the helper. A genre that reads nothing should
+      report everything it was given, not nothing.
+
+  HOW IT WAS FOUND
+
+  Refreshing front-end's and game-server's conventions on 2026-09-10 under
+  BUG-0062 F3. `describe CON-0001` against front-end returned `status: None` and
+  `importance: None` for a file that plainly carries both, which was checked
+  because the number looked wrong rather than because anything reported it.
