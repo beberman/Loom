@@ -1,6 +1,6 @@
 id: REQ-0063
 title: A module alias resolves against a domain rather than a repository, and 1320 of front-end's 1885 in-tree imports resolve to nothing without one
-status: draft
+status: implemented
 date: 2026-09-03
 refines: [REQ-0024]
 affects: [resolve-module-specifier, build-module-scope, visible-candidates,

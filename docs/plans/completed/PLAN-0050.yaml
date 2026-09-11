@@ -1,6 +1,6 @@
 id: PLAN-0050
 title: DES-0047 in fifteen steps -- the property, the declaration, the stamp, the resolver, the pass, the measurement, the address on three surfaces
-status: draft
+status: final
 date: 2026-09-03
 refines: [DES-0047]
 affects: [resolve-module-specifier, build-module-scope, visible-candidates,
