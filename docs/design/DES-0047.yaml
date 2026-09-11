@@ -1,6 +1,6 @@
 id: DES-0047
 title: A domain is a path prefix carrying an alias map and one of three resolution presets, declared in .loom/frameworks.yaml and written onto every entity as :DOMAIN
-status: draft
+status: partial
 date: 2026-09-03
 refines: [REQ-0063]
 affects: [resolve-module-specifier, build-module-scope, visible-candidates,
@@ -41,6 +41,39 @@ summary: |
   read-tier operations accept it and write-tier ones refuse it, and no entry's
   argument shape changes.
 body: |
+  OUTSTANDING, 2026-09-11
+
+  One clause of R14 does not land, and it cannot without a change this design
+  deliberately did not make.
+
+  R14 says functions/'s three extensionless relative specifiers resolve under
+  commonjs. They do not, because Loom records no import for them at all.
+  tools/js/extract.js reads ImportDeclaration, ExportNamedDeclaration with a
+  source, and ExportAllDeclaration. It does not read require(), and
+  functions/index.js writes all four of its imports as require() calls:
+
+      const functions = require("firebase-functions");
+      const logger = require("firebase-functions/logger");
+      const helloWorld = require('./hello');
+      const handlers = require('./api/handlers');
+
+  Measured: `describe functions/index.js' against front-end returns no
+  import-sources and no unresolved-imports. There is nothing for a resolver to
+  resolve, so the clause is about a population that does not reach the graph.
+
+  The commonjs preset itself works and is not what is outstanding. The
+  end-to-end fixture asserts a specifier resolving under commonjs where the
+  same specifier fails under node-esm, which is the behaviour R14's clause was
+  written to check.
+
+  What would close it is teaching the extractor to record require() as an
+  import source. That changes what every JavaScript tree records, so it is a
+  requirement of its own rather than a correction to this one.
+
+  Everything else in R1 through R16 lands. REQ-0063's own acceptance is
+  measured separately and does not depend on this clause: 1938 of front-end's
+  imports resolve where 567 did.
+
   PROBLEM
 
   RESOLVE-MODULE-SPECIFIER (src/graph/resolve.lisp:64) tests `(char= (char
