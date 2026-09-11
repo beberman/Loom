@@ -55,3 +55,29 @@
 ;;; four checks that were here are four checks there, so this system's count
 ;;; drops by four and nothing is less tested.
 
+(test analyze-path-stamps-a-domain-onto-every-entity-it-returns
+  ;; PLAN-0050 S3. The stamp is in ANALYZE-PATH rather than in each analyzer,
+  ;; and this has to go through ANALYZE-PATH to see it: JS-OPS, MD-OPS,
+  ;; DOCS-OPS and FIXTURE-OPS all call ANALYZE-FILE directly and would see no
+  ;; stamp at all.
+  ;;
+  ;; Against a real file on disk, because ANALYZE-PATH is what reads one.
+  (let* ((path (merge-pathnames "src/analyzer/analyzer.lisp"
+                                (asdf:system-source-directory :loom-analyzer)))
+         (root (asdf:system-source-directory :loom-analyzer)))
+    (when (probe-file path)
+      (let* ((*domains* (domain-table
+                         (getf (parse-frameworks "domains:
+  - name: analyzer
+    root: src/analyzer/
+") :domains)))
+             (ops (analyze-path path :workspace-root root))
+             (entities (remove-if-not (lambda (op) (typep op 'loom-ontology:assert-entity-op)) ops)))
+        (is (plusp (length entities)) "the file produced entities to stamp")
+        (dolist (op entities)
+          (let ((entity (loom-ontology:op-entity op)))
+            (when (loom-ontology:find-property (loom-ontology:entity-type entity) :domain)
+              (is (eq :analyzer (loom-ontology:getp entity :domain))
+                  "~a carries ~a rather than the declared domain"
+                  (loom-ontology:entity-type entity)
+                  (loom-ontology:getp entity :domain)))))))))

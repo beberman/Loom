@@ -230,3 +230,55 @@ and the tree writes sendGet")
   (dolist (name '(:bundler :node-esm :commonjs))
     (is-true (assoc name *resolution-presets*)
              "~a parses and has no preset" name)))
+
+(test the-longest-matching-root-wins-over-nested-ones
+  ;; DES-0047 R4. Longest-prefix rather than first-match is what makes nested
+  ;; roots an identity rather than an invariant somebody has to enforce: the
+  ;; answer does not depend on the order the declaration listed them in.
+  (let ((*domains* (domain-table (domains-of "domains:
+  - name: ui
+    root: src/ui/
+  - name: app
+    root: src/
+"))))
+    (is (eq :ui (domain-for-path "src/ui/Home.jsx")) "the longer root wins")
+    (is (eq :app (domain-for-path "src/main.js")) "and the shorter still places what it alone matches")
+    (is (keywordp (domain-for-path "src/ui/Home.jsx")) "as a keyword")))
+
+(test a-path-under-no-declared-root-is-in-the-default-domain
+  (let ((*domains* (domain-table (domains-of "domains:
+  - name: ui
+    root: src/ui/
+"))))
+    (is (eq :default (domain-for-path "server/api.js")))))
+
+(test with-no-declaration-every-path-is-in-the-default-domain
+  ;; The state every tree has had until now, and why this step changes no
+  ;; answer on any of them.
+  (let ((*domains* nil))
+    (is (eq :default (domain-for-path "src/ui/Home.jsx")))
+    (is (eq :default (domain-for-path "anything")))))
+
+(test the-order-of-declaration-cannot-change-which-domain-a-path-is-in
+  ;; The same three roots, declared both ways round.
+  (let ((forward "domains:
+  - name: a
+    root: src/
+  - name: b
+    root: src/ui/
+  - name: c
+    root: src/ui/widgets/
+")
+        (backward "domains:
+  - name: c
+    root: src/ui/widgets/
+  - name: b
+    root: src/ui/
+  - name: a
+    root: src/
+")
+        (path "src/ui/widgets/Button.jsx"))
+    (is (eq (let ((*domains* (domain-table (domains-of forward)))) (domain-for-path path))
+            (let ((*domains* (domain-table (domains-of backward)))) (domain-for-path path)))
+        "declaration order is not part of the answer")
+    (is (eq :c (let ((*domains* (domain-table (domains-of forward)))) (domain-for-path path))))))

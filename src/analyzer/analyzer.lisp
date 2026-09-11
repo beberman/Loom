@@ -220,10 +220,38 @@ CONTENTS overrides what is on disk -- the hook for analyzing an editor buffer
 that has not been saved."
   (let ((analyzer (find-analyzer path)))
     (when analyzer
-      (analyze-file analyzer
-                    (workspace-relative-path path workspace-root)
-                    (or contents (read-file path))
-                    workspace-id))))
+      (let* ((relative (workspace-relative-path path workspace-root))
+             (ops (analyze-file analyzer relative
+                                (or contents (read-file path))
+                                workspace-id)))
+        ;; PLAN-0050 S3, DES-0047 as amended. One stamp here rather than a write
+        ;; in each of twenty analyzer sites, and it is sound because the two
+        ;; properties differ in exactly the way that permits it: a domain is a
+        ;; function of the path alone, so every entity a file produces has the
+        ;; same one, while :SYSTEM varies within a file and must be written
+        ;; where the binding is known.
+        ;;
+        ;; This also reaches the sites an analyzer mints indirectly -- the
+        ;; :CALL-SITE lisp-analyzer.lisp makes for an initform call is part of
+        ;; what ANALYZE-FILE returned, so it is stamped without being edited.
+        (stamp-domain ops (domain-for-path relative))))))
+
+(defun stamp-domain (ops domain)
+  "OPS with DOMAIN written onto every entity each asserts.
+
+Returns OPS, mutated in place: an op holds the entity it will upsert, and the
+entity is this function's to finish before anybody sees it.
+
+Only :ASSERT-ENTITY-OPs carry an entity, and only entity types that declare
+:DOMAIN can hold one -- DECLARED-PROPERTIES-ONLY drops an undeclared property
+in silence, so writing it unconditionally would be a no-op on the types that do
+not declare it rather than an error. The declaration check is left to the
+ontology for that reason."
+  (dolist (op ops ops)
+    (when (typep op 'loom-ontology:assert-entity-op)
+      (let ((entity (loom-ontology:op-entity op)))
+        (when entity
+          (loom-ontology:setp entity :domain domain))))))
 
 (defun analyze-tree (root &key workspace-id (workspace-root root))
   "Ops for every analyzable file under ROOT, as one list.
@@ -276,6 +304,43 @@ OFFSET-LINE hands out."
   "The one directory a tree's layering rules look inside. A path outside it
 keeps DEFAULT-SYSTEM-FOR-PATH's older, shallower convention -- see its own
 docstring.")
+
+(defparameter *domains* nil
+  "The domain table this repository declared, or NIL.
+
+Bound per repository by loom-workspace around the file loop, exactly as
+*ROUTE-CALLERS* is and for the reason DES-0025 D1 gives: one watched tree's
+aliases must not place another's paths.
+
+NIL is the state every tree has had until now and makes DOMAIN-FOR-PATH answer
+:DEFAULT for everything, which is why this step changes no answer.")
+
+(defun domain-for-path (path)
+  "The domain PATH falls in, as a keyword. DES-0047 R4.
+
+The declared domain whose root is the longest prefix of PATH, and
+*DEFAULT-DOMAIN* when none is. Longest-prefix rather than first-match, which is
+what makes nested roots -- src/ and src/ui/ -- an identity rather than an
+invariant somebody has to enforce: src/ui/Home.jsx is in the second because its
+root is longer, whatever order the declaration listed them in.
+
+A function of the path alone, which is what lets ANALYZE-PATH stamp it once for
+a whole file. :SYSTEM cannot be done that way and the :FILE entity's own
+docstring says why -- a file with two IN-PACKAGE sections gets one :SYSTEM that
+does not describe all of it, while its definitions each carry the binding
+lexically nearest them. A domain has no such interior variation."
+  (if (and (stringp path) *domains*)
+      (let ((best nil) (best-length -1))
+        (maphash (lambda (name domain)
+                   (let* ((root (or (getf domain :root) ""))
+                          (length (length root)))
+                     (when (and (> length best-length)
+                                (<= length (length path))
+                                (string= root path :end2 length))
+                       (setf best name best-length length))))
+                 *domains*)
+        (or best *default-domain*))
+      *default-domain*))
 
 (defun default-system-for-path (path)
   "The system PATH belongs to, as a keyword, or NIL.
