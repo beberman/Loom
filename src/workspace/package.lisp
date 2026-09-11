@@ -34,6 +34,7 @@
    #:*repositories*
    #:find-repository
    #:split-designator
+   #:domain-property-filter
    #:unknown-domain
    #:all-repositories
 

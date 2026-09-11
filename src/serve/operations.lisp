@@ -44,56 +44,80 @@ Recursive for the same reason DES-0004's is: a re-entry must not self-deadlock."
 (defun require-repository-now (designator)
   "REQUIRE-REPOSITORY without waiting for an index still being built.
 
-For `status\' alone. Every other operation reads the graph and must not see an
+For `status' alone. Every other operation reads the graph and must not see an
 empty one, but status is the operation whose job is to say what state things
 are in -- and an introspection call that blocked until the thing it was
 introspecting finished would be unable to report the state it exists to
-report."
-  (cond ((null designator)
-         (error 'malformed-request
-                :message "This operation needs the name of a repository. Ask status for the list."))
-        ((find-repository designator))
-        (t (error 'malformed-request
-                  :message (format nil "No repository named ~a is watched." designator)))))
+report.
+
+Two values, the repository and the domain, for the reason REQUIRE-REPOSITORY
+gives."
+  (when (null designator)
+    (error 'malformed-request
+           :message "This operation needs the name of a repository. Ask status for the list."))
+  (multiple-value-bind (repository domain) (split-designator designator)
+    (if (null repository)
+        (error 'malformed-request
+               :message (format nil "No repository named ~a is watched." designator))
+        (values repository domain))))
 
 (defun require-repository (designator)
-  "The repository DESIGNATOR names, or a malformed request naming it.
+  "The repository DESIGNATOR names, and the domain it named inside it.
+
+  (require-repository \"front-end/server\")  => repository, the server domain
+  (require-repository \"front-end\")         => repository, NIL
 
 No default, no fallback to the sole watched repository, no CURRENT-REPOSITORY.
 DES-0006 is explicit that an operation invoked without a designator is a
-malformed request rather than an ambiguous one to be resolved by guessing."
-  (cond ((null designator)
-         (error 'malformed-request
-                :message "This operation needs the name of a repository. Ask status for the list."))
-        ;; The one place every operation passes through, which is why the wait
-        ;; is here and not in each of them. loom-serve.lisp registers a
-        ;; repository and indexes it on another thread so the listener can bind
-        ;; its port at once; a request arriving in that window waits for the
-        ;; graph rather than being answered from an empty one. An empty graph is
-        ;; not a slow answer, it is a confident wrong one -- `find' would report
-        ;; that nothing matches, indistinguishable from the truthful version of
-        ;; itself.
-        ((let ((repository (find-repository designator)))
-           (when repository
-             ;; Report rather than wait. A caller that waits is a caller with
-             ;; nothing to say for as long as the wait lasts, and over MCP that
-             ;; is an agent sitting on a tool call with no way to know whether
-             ;; anything is happening. Saying so costs one round trip and tells
-             ;; it what to do.
-             ;;
-             ;; *INDEX-BUILD-WAIT* is a grace period rather than the wait it
-             ;; used to be, and is 0: a caller who would rather block sets it.
-             (unless (await-repository-index repository *index-build-wait*)
-               (error 'repository-indexing
-                      :message (format nil "~a is still being indexed. ~
-Ask again in a few seconds; `status' says when it is ready."
-                                       (repository-name repository))))
-             repository)))
-        (t (error 'malformed-request
-                  :message (format nil "No repository named ~a. Ask status for the list."
-                                   designator)))))
+malformed request rather than an ambiguous one to be resolved by guessing.
 
-(defun resolve-entity (graph term)
+PLAN-0050 S13. SPLIT-DESIGNATOR rather than FIND-REPOSITORY, so a designator
+naming a domain resolves to its repository and the domain travels back. An
+undeclared domain refuses inside the split, naming the ones the repository has,
+and that refusal is a REQUEST-ERROR which INVOKE-OPERATION carries out whole.
+
+The seventeen call sites that bind one value are unchanged: a second value
+nobody asks for costs them nothing.
+
+Written with the binding outside any COND, which is where the second value was
+lost on the first attempt. A COND clause with no body returns only the primary
+value of its test, so the domain never left this function and every scoped call
+answered about the whole repository -- a silent wrong answer of exactly the kind
+R-i is about, produced by the code meant to prevent it.
+
+The wait is here and not in each operation because this is the one place they
+all pass through. loom-serve.lisp registers a repository and indexes it on
+another thread so the listener can bind its port at once; a request arriving in
+that window waits for the graph rather than being answered from an empty one.
+An empty graph is not a slow answer, it is a confident wrong one -- `find'
+would report that nothing matches, indistinguishable from the truthful version
+of itself.
+
+*INDEX-BUILD-WAIT* is a grace period rather than the wait it used to be, and is
+0: a caller who would rather block sets it. Reporting beats waiting, because a
+caller that waits has nothing to say for as long as the wait lasts, and over
+MCP that is an agent sitting on a tool call with no way to know whether
+anything is happening."
+  (when (null designator)
+    (error 'malformed-request
+           :message "This operation needs the name of a repository. Ask status for the list."))
+  (multiple-value-bind (repository domain) (split-designator designator)
+    (when (null repository)
+      (error 'malformed-request
+             :message (format nil "No repository named ~a. Ask status for the list."
+                              designator)))
+    (unless (await-repository-index repository *index-build-wait*)
+      (error 'repository-indexing
+             :message (format nil "~a is still being indexed. ~
+Ask again in a few seconds; `status' says when it is ready."
+                              (repository-name repository))))
+    (values repository domain)))
+
+(defun resolve-entity (graph term &key property-filters)
+  "The entity TERM names: an id if it is one, otherwise the best name match.
+
+PROPERTY-FILTERS narrows the name match, which is how a domain address reaches
+`describe' and `impact' -- both resolve through here."
   "The entity TERM names: an id if it is one, otherwise the best name match.
 
 Re-implemented here rather than reached for. console.lisp has a function of
@@ -109,7 +133,7 @@ to guess which repository a program meant is the point."
       ;; definition: `describe' and `impact' both ask questions a container
       ;; answers badly. `find' still calls SEARCH-ENTITIES and still lists the
       ;; file first.
-      (let ((hit (best-name-match graph term)))
+      (let ((hit (best-name-match graph term :property-filters property-filters)))
         (when hit (get-entity graph (getf hit :id))))
       (error 'unknown-entity
              :message (format nil "Nothing in the index matches ~s." term))))
@@ -230,10 +254,11 @@ searched and each row says which it came from."
         ;; the three lists REQ-0051 R4 and R5 need -- what was searched, what
         ;; was not, and what it cost.
         (search-repositories term :type type :limit limit)
-        (let ((watched (require-repository repository)))
+        (multiple-value-bind (watched domain) (require-repository repository)
           (multiple-value-bind (entities total)
               (search-entities (repository-graph watched)
-                               :name term :type type :limit limit)
+                               :name term :type type :limit limit
+                               :property-filters (domain-property-filter domain))
             ;; BUG-0002. :TOTAL and :TRUNCATED alongside the rows, because a
             ;; caller that received the limit and nothing else cannot tell a
             ;; complete answer from a cut one -- and an agent asking how many of
@@ -295,9 +320,9 @@ Pass source=true for the definition's text."
   ;; REST and MCP at once: loom-rest walks ARG-SHAPE for routes and loom-mcp
   ;; walks it for tools/list, so declaring the argument declares both surfaces
   ;; and neither file is edited. DES-0006 R5's property, exercised.
-  (let* ((repository-struct (require-repository repository))
-         (graph (repository-graph repository-struct))
-         (entity (resolve-entity graph term))
+  (multiple-value-bind (repository-struct domain) (require-repository repository)
+   (let* ((graph (repository-graph repository-struct))
+         (entity (resolve-entity graph term :property-filters (domain-property-filter domain)))
          ;; REQ-0050 R1. A REST or MCP consumer cannot see the console's
          ;; drift line and has no other way to ask what tree this answer is
          ;; about, so it travels on the data.
@@ -309,16 +334,22 @@ Pass source=true for the definition's text."
         ;; text is not a fact the analyzer asserted about the entity, it is a
         ;; read of a file performed now, and its :STATUS is about that read.
         (append detail (list :source (definition-source repository-struct (id entity))))
-        detail)))
+        detail))))
 
 (define-operation :impact :read (repository term (depth))
     "What may need attention if this changes, with paths and depths."
-  (let ((graph (repository-view repository)))
-    (append (impact-report graph (id (resolve-entity graph term))
+  (multiple-value-bind (watched domain) (require-repository repository)
+   (let ((graph (repository-graph watched)))
+    ;; The domain scopes the seed and never the walk: the cross-domain edges
+    ;; step 6 draws are the answer rather than noise, so `impact' on a
+    ;; definition in one domain still reports what it reaches in another.
+    (append (impact-report graph (id (resolve-entity graph term
+                                                     :property-filters
+                                                     (domain-property-filter domain)))
                            :max-depth (or (request-integer depth "depth")
                                           *default-impact-depth*))
             ;; REQ-0065 R1.
-            (list :provenance (answer-provenance (require-repository repository))))))
+            (list :provenance (answer-provenance watched))))))
 
 (defparameter *context-scoring-keys*
   '(:cost :via :direction :convergence :effective-cost :relation-count)
@@ -380,7 +411,7 @@ An estimate that ignored them would be the same class of error one layer down."
   ;; is loom-workspace's because it needs REPOSITORY-ROOT, and loom-knowledge
   ;; cannot reach up there (DES-0027 D1). This entry has the repository, so the
   ;; fetch is passed in and the tier logic stays where the bundle is built.
-  (let ((repo (require-repository repository)))
+  (multiple-value-bind (repo context-domain) (require-repository repository)
     (let ((started (get-internal-real-time)))
       (multiple-value-bind (bundle instrumentation)
           ;; DEC-0006. Bound here rather than read inside BUILD-CONTEXT for the
@@ -404,6 +435,7 @@ An estimate that ignored them would be the same class of error one layer down."
             ;; from "3x" returns a bundle that is simply smaller than the one
             ;; asked for, with nothing in the output saying why.
             (build-context (repository-graph repo) task
+                           :property-filters (domain-property-filter context-domain)
                            :budget (or (request-integer budget "budget")
                                        *context-token-budget*)
                            :provenance (index-provenance repo)
@@ -503,7 +535,14 @@ Pass against to search a different repository than the subject's."
   ;; term: a resemblance query names two trees at most and one subject, and the
   ;; cross-repository form is the case the requirement was written for.
   (multiple-value-bind (source source-store) (require-vectors repository)
-    (let ((subject (resolve-entity (repository-graph source) term)))
+    ;; The domain comes from the designator rather than from REQUIRE-VECTORS,
+    ;; which answers about the store. SPLIT-DESIGNATOR has already refused an
+    ;; undeclared one by the time REQUIRE-VECTORS returned, so this cannot
+    ;; refuse twice.
+    (let* ((similar-domain (nth-value 1 (split-designator repository)))
+           (subject (resolve-entity (repository-graph source) term
+                                    :property-filters
+                                    (domain-property-filter similar-domain))))
       (multiple-value-bind (target target-store)
           (if against (require-vectors against) (values source source-store))
         (list :repository (repository-name source)

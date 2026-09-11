@@ -470,7 +470,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 464
+(defparameter *call-site-ceiling* 512
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -677,6 +677,31 @@ The ambiguous population is 20 for the third measurement running. That is the
 number this ceiling exists to watch -- it moves when a name collides, and the
 macro populations move whenever anybody writes a command -- so a rise composed
 entirely of the other four is growth rather than drift.
+
+RE-MEASURED 2026-09-11 AT 466, CEILING RAISED TO 512, and this time the
+ambiguous population did its job. PLAN-0050 S13 first read 467 with the
+ambiguous count at 21, and the census named the twenty-first: DOMAIN-FILTER. It
+had been written twice, once in loom-process and once in loom-serve, so every
+call to the name was ambiguous between two packages. The repair was to move it
+into loom-workspace as DOMAIN-PROPERTY-FILTER, which both peers already depend
+on -- the same home SPLIT-DESIGNATOR has, for the same reason. The population
+went back to 20.
+
+That is what this ceiling is for. The macro populations grow whenever anybody
+writes a command and say nothing; the ambiguous count moved by one and named
+the collision.
+
+The composition at 466, against the 2026-09-10 measurement:
+
+    define-command     154 -> 162
+    define-operation   126 -> 129
+    js-test             91 ->  91
+    domain-test          0 ->  33
+    let* / register-handler / let / dolist    8 -> 8
+    ambiguous occurrences    20 ->  20
+
+domain-test is new and is PLAN-0050 S8's fixture macro. It swallows its body
+like js-test does, so every call inside one is a site by construction.
 
 418 is 380 plus 10% headroom, the rule the first measurement used.")
 

@@ -742,3 +742,66 @@ the second for the first is the defect" json-price console-price)
         "and a NIL under a key nobody named is left alone"))
   (let ((untouched (loom-serve::boolean-fields '(:dry-run t) '(:dry-run))))
     (is (eq t (getf untouched :dry-run)) "a true dry-run is not rewritten")))
+
+;;; ------------------------------------------------------------------
+;;; Every read operation says what it does with a domain (PLAN-0050 S13)
+;;; ------------------------------------------------------------------
+
+(defparameter *whole-repository-reads*
+  '(:check :rules :structure :drift :survey :check-document :status
+    :server-status)
+  "Read operations that answer about a whole repository by construction.
+
+R-i is the one silent wrong answer DES-0047 leaves reachable: scoping is
+opt-in, so a read operation that never looks at the domain answers about the
+whole repository and the caller who named part of it cannot tell.
+
+A test cannot prove an operation honours a domain without a two-domain fixture
+per operation. What it can do is force the question to be answered in writing.
+Every read operation is either scoped or named here with a reason:
+
+  check, rules        report on the whole index; a rule is a query over all of
+                      it and a violation is not located in a domain
+  structure, drift    describe the repository as a whole, which is what they
+                      are for
+  survey              compares two repositories, so a domain of one is not the
+                      unit
+  check-document      answers about one document by path
+  status              reports the repository's state; the import split it
+                      carries is already per repository
+  server-status       answers about the service and takes no repository at
+                      all, so there is no designator for a domain to ride on
+
+An operation added later fails the test below until somebody decides which it
+is. That converts a silent wrong answer into a decision that has to be written
+down. It does not make the wrong answer impossible, and the list can be
+extended by anyone -- which is the honest residual and is worth stating.")
+
+(defparameter *domain-scoped-reads*
+  '(:find :describe :impact :context :similar)
+  "Read operations that narrow their selection to a named domain.")
+
+(test every-read-operation-either-scopes-to-a-domain-or-says-why-not
+  (let ((unclassified '()))
+    (dolist (operation (loom-serve:all-operations))
+      (let ((name (loom-serve:operation-name operation)))
+        (when (and (eq :read (loom-serve:operation-tier operation))
+                   (not (member name *domain-scoped-reads*))
+                   (not (member name *whole-repository-reads*)))
+          (push name unclassified))))
+    (is (null unclassified)
+        "~{~a~^, ~} is a read operation that neither scopes to a domain nor is ~
+listed as answering about a whole repository. Decide which it is and say so in ~
+*WHOLE-REPOSITORY-READS* or *DOMAIN-SCOPED-READS*."
+        unclassified)))
+
+(test the-two-read-lists-name-no-operation-twice-and-none-that-is-gone
+  ;; A list that drifts from the registry stops being a decision and becomes a
+  ;; comment.
+  (let ((registered (mapcar #'loom-serve:operation-name (loom-serve:all-operations))))
+    (dolist (name (append *domain-scoped-reads* *whole-repository-reads*))
+      (is-true (member name registered)
+               "~a is listed but no longer registered" name))
+    (dolist (name *domain-scoped-reads*)
+      (is (not (member name *whole-repository-reads*))
+          "~a is in both lists" name))))

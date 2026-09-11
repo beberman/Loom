@@ -222,6 +222,24 @@ that and it is not this function's to duplicate."
                                        (format nil "~a declares no domains at all, so ~s names nothing. Add a domains: section to .loom/frameworks.yaml."
                                                (repository-name repository) domain-name)))))))))))))
 
+(defun domain-property-filter (domain)
+  "The property filter selecting DOMAIN, or NIL.
+
+A keyword, because :DOMAIN is one -- the analyzer interns the name once when
+the declaration is read, and PROPERTIES-MATCH-P compares with EQUAL, which two
+occurrences of one keyword satisfy through EQ.
+
+NIL rather than an empty filter, so a caller that named no domain takes the
+query path it always took.
+
+Here rather than in each of loom-process and loom-serve, which is where it was
+first written twice. Two same-named functions in two packages made every call
+to the name ambiguous, and the call-site census caught it: the ambiguous
+population went from 20 to 21 and named DOMAIN-FILTER as the twenty-first. The
+peers cannot reach each other and both depend on this system, which is the same
+reason SPLIT-DESIGNATOR lives here."
+  (when domain (list :domain (getf domain :name))))
+
 (defun all-repositories () (reverse *repositories*))
 
 ;;;; ==================================================================
