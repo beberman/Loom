@@ -588,6 +588,29 @@ body: |
           its :CALLS count may fall; neither is asserted here, both are recorded
           for step 11.
 
+        AMENDED 2026-09-10, having run it: `loom' cannot be in that list and no
+        step of this plan can put it there. Loom indexes its own source, so any
+        edit to Loom's tree moves Loom's own graph by construction. S7 added
+        three calls to RESOLVE-AND-CHECK -- REPOSITORY-DOMAINS,
+        BUILD-MODULE-SCOPE and RESOLVE-IMPORTS -- and Loom's relationship count
+        rose by exactly three, which is the index reading the code the step
+        wrote rather than the step changing what the code does.
+
+        The correct form of the proof for Loom is the composition and not the
+        total: the delta must equal the number of new call edges the step's own
+        source introduces, and be attributable to them by name. Measured:
+        18813 to 18816, and `describe resolve-and-check' names the three.
+
+        A second trap, found the same way. Suppressing the edge push to isolate
+        it ALSO edits Loom's source, so that run's Loom number is comparable to
+        nothing. Self-indexing makes any experiment that edits the tree a
+        confounded one -- which is a property of this repository rather than of
+        this step, and is the reason the other trees carry the proof.
+
+        The other trees are unaffected and the check stands for them as written.
+        Measured: cl-dbi, cl-mysql, game-server and utils identical in both
+        numbers; front-end 57273 to 57840, +567, all of them :IMPORTS.
+
   8. THE FIXTURE SUITE.  src/workspace/test/domains.lisp, and the suite list in
      src/workspace/test/suite.lisp.
 
