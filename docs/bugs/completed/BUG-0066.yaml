@@ -1,6 +1,6 @@
 id: BUG-0066
 title: A concept declares status, tags and affects and the ontology holds none of them, so CON-0006's six affects entries resolve to nothing and are not reported either
-status: open
+status: closed
 date: 2026-09-10
 severity: major
 priority: p2
@@ -88,6 +88,51 @@ body: |
   F2. `check`'s dropped-fields covers every document genre rather than the one
       whose method happens to call the helper. A genre that reads nothing should
       report everything it was given, not nothing.
+
+  WHAT LANDED, 2026-09-10: OPTION A
+
+  A concept is a document like the others, decided on the evidence this bug
+  measured -- five files across three trees writing these fields unprompted, so
+  the convention already existed and the ontology was the half that had not
+  been told.
+
+  `:CONCEPT` declares :STATUS (accepted | superseded, which is CON-0004's own
+  table), :TAGS, :IMPORTANCE and :AFFECTS, and its method reads them. No
+  :SEVERITY and no :PRIORITY: a concept is not a defect and nothing schedules
+  one, and nothing in any tree writes either -- a property declared for symmetry
+  is a field an author may write and a reader may not trust.
+
+  CON-0006's six `affects:` entries now produce six `:documents` edges to
+  seed-entities, seed-matches, search-entities, search-rank, build-context and
+  admit-seeds. front-end's `importance: Major` is read. Both prepared trees'
+  concepts carry their status and tags.
+
+  F2 moved to DOCUMENT-PROPERTIES, which every genre passes through, rather
+  than living in the one method that happened to call the helper.
+
+  F1: REQ-0070's list is named for the genre it checks and holds the concept's
+  fields, because the file it reads is a concept.
+
+  A SECOND TYPE HAD THE SAME OMISSION. `:RULE` never declared :STATUS although
+  its method had always read it, so DOCUMENT-STATUS-VOCABULARY -- which reads
+  the declaration and not the stored property -- answered NIL for every rule and
+  `complete' reported one as :NO-STATUS. Declared now.
+
+  That removed DES-0019 D3's last exemplar. Its refusal stays as defensive code
+  and the test asserts the invariant that makes it unreachable instead: every
+  document type declares a status property. The old test asserted a property of
+  :CONCEPT that was this defect rather than a design.
+
+  A DEFECT IN F2, CAUGHT BY THE REPORT ITSELF. Generalising the check to every
+  genre applied the document severity vocabulary to rules, whose severity is
+  error/warning/advisory, and `check' reported all nine of this tree's rules as
+  mis-spelled. A report whose first run is nine false positives teaches a reader
+  to ignore it. VOCABULARY-FIELDS-FOR is genre-aware for that one field, and the
+  lesson is narrower than care: generalising a per-genre check has to carry the
+  per-genre part with it, and the field that varies is the one whose name two
+  genres share.
+
+  check reports 0 dropped fields and 0 violations on this tree.
 
   HOW IT WAS FOUND
 

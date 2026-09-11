@@ -298,9 +298,49 @@ author knowing they exist.
 A generic function so SS10.1's \"adding a category means creating a directory
 and registering a type\" stays true of the fields as well as the directory."))
 
+(defparameter *vocabulary-fields*
+  '(("importance" . (:critical :major :minor))
+    ("severity"   . (:critical :major :minor))
+    ("priority"   . (:p1 :p2 :p3 :p4 :p5)))
+  "The document fields with a closed vocabulary, and what each allows.
+
+Read here rather than per genre because BUG-0066 is what per genre costs. The
+report these feed was reached from the :DOCUMENT method alone, so a concept --
+whose method returns NIL before reaching anything -- was outside it by
+construction, and front-end's `importance: Major' on a concept was dropped in
+exactly the silence the report exists to break.
+
+:STATUS is deliberately absent. Its vocabulary is per genre rather than closed
+here, and a status outside it falls back to a default rather than to NIL, which
+is a different failure with a different report.")
+
+(defun vocabulary-fields-for (type-key)
+  "*VOCABULARY-FIELDS* as TYPE-KEY reads them.
+
+Genre-aware for one field and one genre. A :RULE's `severity:' is
+error/warning/advisory and answers how strictly the rule is enforced, which is
+a different question from a bug's impact -- DEC-0007 -- so checking a rule
+against the document vocabulary reports all nine of this tree's rules as
+mis-spelled, which is what the first version of this did.
+
+The lesson is narrower than \"be careful\": generalising a per-genre check to
+every genre has to carry the per-genre part with it, and the field that varies
+is the one whose name two genres share."
+  (if (eq type-key :rule)
+      (cons '("severity" . (:error :warning :advisory))
+            (remove "severity" *vocabulary-fields* :key #'car :test #'string=))
+      *vocabulary-fields*))
+
 (defun document-properties (type-key table path category body)
   "The whole property plist for a document: the common fields, then its genre's."
   (append (base-properties table path category body)
+          ;; BUG-0066 F2. Every genre, because a genre that reads nothing should
+          ;; report everything it was given rather than nothing. Appended here
+          ;; rather than inside BASE-PROPERTIES for the reason that function's
+          ;; docstring gives about what belongs to it: this is not a field a
+          ;; document carries, it is a statement about what was thrown away.
+          (list :dropped-fields
+                (dropped-vocabulary-fields table (vocabulary-fields-for type-key)))
           (type-specific-properties type-key table path)))
 
 (defmethod type-specific-properties ((type-key (eql :decision)) table path)
@@ -359,10 +399,28 @@ and registering a type\" stays true of the fields as well as the directory."))
         :system     (default-system-for-path path)))
 
 (defmethod type-specific-properties ((type-key (eql :concept)) table path)
-  ;; A concept carries only the common fields. BASE-PROPERTIES supplies :SUMMARY
-  ;; and :DOC-ID from the same YAML keys every other genre uses.
-  (declare (ignore table path))
-  nil)
+  ;; BUG-0066. This method returned NIL on the ground that "a concept carries
+  ;; only the common fields", and concept files do not: measured across three
+  ;; trees, five write `status:', four write `tags:', one writes `importance:'
+  ;; and CON-0006 writes `affects:' naming six real functions that produced no
+  ;; edge, resolved to nothing, and were not reported unresolved either -- which
+  ;; is BUG-0023 verbatim, closed for :DOCUMENT and never asked about here.
+  ;;
+  ;; Read rather than forbidden, which is the decision of the two this bug
+  ;; offered: every tree writes these fields unprompted, so the convention
+  ;; already exists and the ontology was the half that had not been told.
+  ;;
+  ;; No :SEVERITY and no :PRIORITY. A concept is not a defect and nothing
+  ;; schedules one, and nothing in any tree writes either on a concept -- a
+  ;; property declared for symmetry is a field an author may write and a reader
+  ;; may not trust. If one appears, *VOCABULARY-FIELDS* reports it.
+  (declare (ignore path))
+  (list :status (or (as-keyword (yaml-value table :status) '(:accepted :superseded))
+                    :accepted)
+        :tags (as-list-of-strings (yaml-value table :tags))
+        :importance (as-keyword (yaml-value table :importance)
+                                '(:critical :major :minor))
+        :affects (as-list-of-strings (yaml-value table :affects))))
 
 (defmethod type-specific-properties ((type-key (eql :document)) table path)
   ;; Every workflow category -- arch, requirements, plans, reviews, bugs --
@@ -386,14 +444,6 @@ and registering a type\" stays true of the fields as well as the directory."))
         ;; for the same reason.
         :priority (as-keyword (yaml-value table :priority)
                               '(:p1 :p2 :p3 :p4 :p5))
-        ;; BUG-0062 F2 / BUG-0063 F4. What the three lines above threw away
-        ;; because it was written and not in the vocabulary, as against never
-        ;; written at all.
-        :dropped-fields (dropped-vocabulary-fields
-                         table
-                         '(("importance" . (:critical :major :minor))
-                           ("severity"   . (:critical :major :minor))
-                           ("priority"   . (:p1 :p2 :p3 :p4 :p5))))
         :affects (as-list-of-strings (yaml-value table :affects))
         :status (as-keyword (yaml-value table :status)
                             ;; :IMPLEMENTED and :PARTIAL complete CON-0004's
