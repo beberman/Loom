@@ -444,9 +444,17 @@ loom> find @Loom repository
      `something in loom-serve'.
 
      That is what BUG-0058's fix bought, collected a year of runs late because
-     the instrument was working and the habit was not. Whoever takes it should
-     look at DRAINED-RECORDS and at whether the write is flushed before the
-     read, 2026-09-10
+     the instrument was working and the habit was not.
+
+     A third sighting the same day narrows it further, and rules out the first
+     guess. Both assertions failed together -- `one read, one record' AND `the
+     record says which operation it was' -- and the second sits inside a
+     `(when records ...)'. So the list is not empty and its first element is
+     not the `find': a foreign record is present and sorts ahead of the one the
+     test wrote. That is leakage into the log directory or a late write from an
+     earlier case, not a write this test lost. WITH-RECORDED-LOG and whatever
+     guarantees the directory is fresh per case are where to start, rather than
+     the flush, 2026-09-10
 
 - **Context logging is off by default during work on Loom, and the corpus was
   purged to what scores.** On 2026-08-22 `.loom/context` held 2032 records and

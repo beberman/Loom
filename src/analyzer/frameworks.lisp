@@ -104,6 +104,73 @@ because a tree that routes through four wrapper names should write them once."
       (list :callees (mapcar #'string-downcase callees)
             :argument-index index))))
 
+(defparameter *resolution-presets*
+  '((:bundler   :extensions (".js" ".jsx" ".mjs" ".cjs" ".ts" ".tsx")
+                 :guess-extension t :index-fallback t)
+    (:node-esm  :extensions ()
+                :guess-extension nil :index-fallback nil)
+    (:commonjs  :extensions (".js" ".json" ".node")
+                :guess-extension t :index-fallback t))
+  "What each resolution name means, as data. DES-0047.
+
+Three names rather than a set of switches, because the three are what real
+toolchains do and a reader recognises them: a bundler guesses an extension and
+falls back to index files, Node's ESM loader does neither and requires the
+specifier to name the file, and CommonJS guesses among a different extension
+list. A tree that wants a fourth combination is telling us about a toolchain we
+have not met, and should say so rather than assemble one from flags.
+
+Here rather than in loom-graph because the analyzer is what parses the name.
+The graph receives the expansion as data and reads no configuration, which is
+the property DES-0025 D4 established and this keeps.")
+
+(defparameter *default-domain* :default
+  "The domain a path falls in when no declared root is a prefix of it.
+
+Reserved: a declaration using this name is refused rather than merged, because
+two things would then answer to one name and neither could be addressed.")
+
+(defun parse-domain (table)
+  "One `domains:' entry as (:name :root :resolution :aliases :aliases-from).
+
+NAME and ROOT are required and an entry missing either declares nothing, which
+is PARSE-FRAMEWORKS' rule one level down: a half-read domain would place files
+into a prefix whose alias map nobody wrote.
+
+NAME is interned as a keyword here, once, when the declaration is read. That is
+the whole bound on the keyword package -- three entries on front-end -- and it
+is the bound :SYSTEM has always had. The root, the alias keys and the alias
+targets stay strings, because they are compared against paths.
+
+RESOLUTION defaults to bundler and a name outside the three is left NIL rather
+than defaulted, so DOMAIN-PROBLEMS can report it. Defaulting an unknown name
+would silently give a tree the wrong toolchain."
+  (let* ((name (as-string (yaml-value table :name)))
+         (root (as-string (yaml-value table :root)))
+         (declared (as-string (yaml-value table :resolution)))
+         (resolution (cond ((null declared) :bundler)
+                           ((string-equal declared "bundler") :bundler)
+                           ((string-equal declared "node-esm") :node-esm)
+                           ((string-equal declared "commonjs") :commonjs)
+                           (t nil)))
+         (aliases (let ((raw (yaml-value table :aliases))
+                        (pairs '()))
+                    (when (hash-table-p raw)
+                      (maphash (lambda (k v)
+                                 (let ((key (as-string k)) (target (as-string v)))
+                                   (when (and key target)
+                                     (push (cons key target) pairs))))
+                               raw))
+                    (nreverse pairs))))
+    (when (and name root)
+      (list :name (intern (string-upcase name) :keyword)
+            :root root
+            :resolution resolution
+            :declared-resolution declared
+            :aliases aliases
+            :aliases-from (let ((from (as-string (yaml-value table :|aliases-from|))))
+                            (and from (intern (string-upcase from) :keyword)))))))
+
 (defun as-sequence (value)
   "A YAML sequence as a list, whatever cl-yaml made of it."
   (typecase value
@@ -137,7 +204,105 @@ out which half."
             ;; behind. DES-0025 D6a.
             :archived-paths
             (mapcar #'string-downcase
-                    (as-list-of-strings (yaml-value parsed :|archived-paths|)))))))
+                    (as-list-of-strings (yaml-value parsed :|archived-paths|)))
+            ;; DES-0047. The fourth key, built the way :ROUTE-CALLERS is.
+            :domains
+            (remove nil (mapcar #'parse-domain
+                                (as-sequence (yaml-value parsed :|domains|))))))))
+
+(defun domain-table (domains)
+  "DOMAINS as a keyword-to-plist table, with :DEFAULT always present.
+
+:DEFAULT is the domain a path falls in when no declared root is a prefix of it,
+and it is in the table whether or not anybody declared it -- root \"\", no
+aliases, bundler -- so DOMAIN-FOR-PATH always has somewhere to put a file and
+no caller has to test for NIL.
+
+`aliases-from' is resolved here by copying the named domain's map, and a chain
+is refused rather than followed: an entry whose source itself uses
+`aliases-from' contributes no aliases, and DOMAIN-PROBLEMS says so. One hop is
+a convenience for two domains that share a map; a chain is a small language,
+and a small language in a configuration file is how the file stops being
+readable.
+
+Entries the problems report rejects are still in the table, carrying what they
+declared. Refusing to build them would make the report and the behaviour
+disagree, and the report is what a reader acts on."
+  (let ((table (make-hash-table :test #'eq)))
+    (setf (gethash *default-domain* table)
+          (list :name *default-domain* :root "" :resolution :bundler :aliases '()))
+    (dolist (domain domains)
+      (setf (gethash (getf domain :name) table) domain))
+    ;; Second pass: a copy needs every entry present, whatever order they came in.
+    (maphash (lambda (name domain)
+               (let ((from (getf domain :aliases-from)))
+                 (when from
+                   (let ((source (gethash from table)))
+                     (setf (gethash name table)
+                           (append (list :aliases
+                                         (if (and source (null (getf source :aliases-from)))
+                                             (getf source :aliases)
+                                             '()))
+                                   domain))))))
+             table)
+    table))
+
+(defun domain-problems (domains)
+  "Human-readable refusals for DOMAINS, each naming the entries it is about.
+
+DES-0047 R3's six checkable refusals. The seventh -- a root under which no
+indexed file lies -- needs the file list, which this function does not have and
+the caller in loom-workspace does.
+
+Reported rather than signalled, and the declaration is applied anyway. A
+repository whose domains are half wrong still indexes; what it must not do is
+index quietly. CON-0001 is the rule: the gap is recorded where somebody reads
+it."
+  (let ((problems '())
+        (by-name (make-hash-table :test #'eq))
+        (by-root (make-hash-table :test #'equal)))
+    (dolist (domain domains)
+      (let ((name (getf domain :name))
+            (root (getf domain :root)))
+        (when (eq name *default-domain*)
+          (push (format nil "domain `~(~a~)' uses the reserved name -- it is what ~
+a path falls in when no declared root matches, so a declaration cannot take it"
+                        name)
+                problems))
+        (let ((seen (gethash name by-name)))
+          (if seen
+              (push (format nil "domains `~(~a~)' at roots ~s and ~s share one name"
+                            name (getf seen :root) root)
+                    problems)
+              (setf (gethash name by-name) domain)))
+        (let ((seen (gethash root by-root)))
+          (if seen
+              (push (format nil "domains `~(~a~)' and `~(~a~)' share the root ~s"
+                            (getf seen :name) name root)
+                    problems)
+              (setf (gethash root by-root) domain)))
+        (unless (getf domain :resolution)
+          (push (format nil "domain `~(~a~)' declares resolution ~s, which is not ~
+one of bundler, node-esm or commonjs"
+                        name (getf domain :declared-resolution))
+                problems))))
+    ;; The two aliases-from refusals, once every name is known.
+    (dolist (domain domains)
+      (let ((from (getf domain :aliases-from)))
+        (when from
+          (let ((source (gethash from by-name)))
+            (cond
+              ((null source)
+               (push (format nil "domain `~(~a~)' takes aliases from `~(~a~)', ~
+which is not declared"
+                             (getf domain :name) from)
+                     problems))
+              ((getf source :aliases-from)
+               (push (format nil "domain `~(~a~)' takes aliases from `~(~a~)', ~
+which takes its own from `~(~a~)' -- one hop is allowed and a chain is not"
+                             (getf domain :name) from (getf source :aliases-from))
+                     problems)))))))
+    (nreverse problems)))
 
 (defun read-frameworks (root)
   "ROOT's framework declarations, or NIL when it has none.
