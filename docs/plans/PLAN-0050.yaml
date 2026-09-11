@@ -833,6 +833,49 @@ body: |
       7, which is REQ-0063's second cost and the reason VISIBLE-CANDIDATES was
       narrowing against a third of the module graph.
 
+      DONE 2026-09-11. tools/test/import-census.py. It goes through service.py's
+      ensure, so it starts the service and refuses to print a figure against one
+      it could not reach.
+
+      front-end, measured:
+
+        1385 of 2511 recorded specifiers begin with a declared alias key
+        1938 import links drawn
+         534 external
+           8 unclaimed target
+           8 unresolved
+
+      THE DENOMINATOR IS OUTSIDE THE EXPECTED BAND, which this step said to
+      record rather than treat as a failure. 1385 against 1305 to 1320. Two
+      reasons, both predictable: the earlier figures came from text scans on
+      2026-09-03 and the tree has been committed to since, and a scan matching
+      `from "..."' does not count the same constructs the extractor does.
+
+      ALL SIXTEEN REMAINING FAILURES ARE EXPLAINED, and five are bugs in
+      front-end rather than limits of Loom.
+
+      Eleven are files no analyzer claims: six .css modules, two .scss, one
+      .css, two .json fixtures. Each is correctly counted -- an alias-rooted one
+      as unclaimed target, a relative one as unresolved -- and they are the
+      population the acceptance predicted.
+
+      Five are broken imports in front-end, in two files nothing imports:
+
+        src/ui/edit/terrain/Editor/TerrainTypeEditor.jsx imports
+        `rendering/StyleLeafletAdaptor.js'. That file is at
+        rendering/leaflet/StyleLeafletAdaptor.js.
+
+        src/hooks.js imports ./common/logconfig, ./redux/user,
+        ./config/navProps and ./config/loggedInNavProps. None of those paths
+        exists. logconfig is at src/utils/logconfig.js and navProps at
+        src/ui/nav/navProps.js.
+
+      Nothing in the repository imports either file, and src/hooks.js has not
+      been touched since an early commit. The import graph's first real use
+      found two dead files, which is the kind of answer REQ-0063 was written to
+      make possible.
+
+
   12. THE ADDRESS ON THE CONSOLE.  src/workspace/workspace.lisp,
       src/process/console.lisp, src/knowledge/services.lisp,
       src/knowledge/context.lisp, src/knowledge/similar.lisp,
