@@ -698,6 +698,19 @@ rather than a preference."
                                                              :workspace-id workspace))
       (submit "check-rules"            (violation-ops graph :workspace-id workspace)))))
 
+(defun repository-domains (repository)
+  "The domain table this repository declared, or NIL when it declared none.
+
+NIL rather than a table holding only :DEFAULT, because DOMAIN-FOR-PATH tests
+the special itself: a tree with no declaration should not pay a hash lookup per
+file to be told what it already knows.
+
+Beside REPOSITORY-REGISTRY and for its reason -- built per repository from that
+repository's own frameworks plist, so two watched trees cannot place each
+other's files."
+  (let ((domains (getf (repository-frameworks repository) :domains)))
+    (when domains (domain-table domains))))
+
 (defun repository-registry (repository)
   "The generator registry this repository's resolution passes should use.
 
@@ -734,7 +747,10 @@ thread exists."
       ;; DES-0025 D1. Bound around this repository's files and nothing else, so
       ;; front-end's `sendGet' convention cannot make another watched tree read
       ;; its own string literals as routes.
-      (let ((*route-callers* (getf (repository-frameworks repository) :route-callers)))
+      (let ((*route-callers* (getf (repository-frameworks repository) :route-callers))
+            ;; PLAN-0050 S3, bound in the same LET and for the same reason: one
+            ;; watched tree's declared roots must not place another's paths.
+            (*domains* (repository-domains repository)))
         (dolist (path files)
           (when (index-file repository path :quiet quiet) (incf indexed))))
       (resolve-and-check repository :quiet quiet)
@@ -912,7 +928,12 @@ CONDITION reaches warnings too."
                         (setf units (append units (inspection-units inspection)))
                         (push inspection inspections)
                         (multiple-value-bind (ops report)
-                            (enrich-ops graph inspection :workspace-id workspace)
+                            ;; PLAN-0050 S3. loom-workspace is where both
+                            ;; systems are reachable, so it is what hands the
+                            ;; graph a domain function rather than the graph
+                            ;; reaching for one.
+                            (enrich-ops graph inspection :workspace-id workspace
+                                        :domain-of-path #'domain-for-path)
                           (apply-transaction graph ops)
                           ;; The parent refused some definitions a range before
                           ;; ENRICH-OPS ever saw them; both refusals are the same
@@ -967,7 +988,8 @@ CONDITION reaches warnings too."
         ;; fighting.
         (dolist (inspection inspections)
           (apply-transaction graph (enrich-ops graph inspection
-                                               :workspace-id workspace)))
+                                               :workspace-id workspace
+                                               :domain-of-path #'domain-for-path)))
         (setf (repository-enrichment repository)
               (append (list :runs (1+ (or (getf previous :runs) 0))
                             :at (get-universal-time)

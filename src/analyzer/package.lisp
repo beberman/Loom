@@ -88,6 +88,9 @@
    #:frameworks-path
    #:read-frameworks
    #:parse-domain
+   #:domain-for-path
+   #:stamp-domain
+   #:*domains*
    #:domain-table
    #:domain-problems
    #:*resolution-presets*

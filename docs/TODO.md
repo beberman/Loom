@@ -415,6 +415,33 @@ loom> find @Loom repository
 
 ## Measuring Loom
 
+- **A production layering violation passed the full suite and was caught only
+  by an instrument the suite does not run.** PLAN-0050 S3 needed a domain on an
+  entity the enrichment pass mints, and the direct fix -- calling
+  `loom-analyzer:domain-for-path` from `src/graph/enrich.lisp` -- makes the
+  production loom-graph depend on the production loom-analyzer, which the
+  layering table forbids and `loom-graph/test`'s own comment is explicit about:
+  "neither production system depends on the other".
+
+  `tools/loom-test.sh` was green, 11 of 11, because loom-graph's *test* system
+  depends on loom-analyzer for a DES-0011 fixture, so the symbol resolved.
+  `sbcl --script tools/test/load-test.lisp loom-graph` answered `LOOM-GRAPH
+  failed to load`, which is the whole finding.
+
+  The repair was to pass the function in from loom-workspace, where both
+  systems are reachable, rather than have the graph reach for it -- DES-0025
+  D4's property that loom-graph reads no configuration, arrived at from a third
+  direction.
+
+  What makes this worth an entry rather than a commit line: CLAUDE.md already
+  says `load-test.lisp` is the instrument for what `check` cannot see, and
+  nothing runs it. RULE-0001 to RULE-0003 cannot see it either -- they key on
+  ENTITY-SYSTEM, which is a package name. So the only guard against a
+  production cross-layer dependency is a developer remembering a command, and
+  this one was only remembered because the edit felt wrong.
+  -- working on Loom itself, PLAN-0050 S3, 2026-09-10
+
+
 - **A full run that fails once cannot say which test, because the failure was
   intermittent and the run that caught it is gone.** BUG-0058 fixed the
   instrument -- `tools/loom-test.sh` discarded FiveAM's whole failure block, so

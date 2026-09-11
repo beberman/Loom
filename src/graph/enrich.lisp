@@ -94,14 +94,33 @@ not required to render it back into a string first."
     (keyword system)
     (t       (intern (string-upcase (string system)) :keyword))))
 
-(defun inspected-properties (definition language)
-  "The properties the text pass would have written for DEFINITION."
+(defun inspected-properties (definition language &optional domain-of-path)
+  "The properties the text pass would have written for DEFINITION.
+
+DOMAIN-OF-PATH is a function from a workspace-relative path to a domain
+keyword, handed in by the caller rather than called for. loom-graph reads no
+configuration and this is why: DOMAIN-FOR-PATH lives in loom-analyzer, and
+calling it here would make the production graph depend on the production
+analyzer -- which neither does, which the layering table says, and which
+`sbcl --script tools/test/load-test.lisp loom-graph' is the instrument for.
+Measured: it failed to load with the direct call in place while the full suite
+stayed green, because the test system pulls the analyzer in anyway.
+
+NIL leaves :DOMAIN unset, which is what an enrich run that was given no
+function should write rather than a guess."
   (let ((kind (getf definition :kind)))
     (append (list :file       (getf definition :file)
                   :start-line (getf definition :start-line)
                   :end-line   (getf definition :end-line)
                   :language   language
-                  :system     (inspected-system (getf definition :system)))
+                  :system     (inspected-system (getf definition :system))
+                  ;; PLAN-0050 S3, D-g. This is a fourth minting site outside
+                  ;; ANALYZE-PATH's funnel, alongside resolve.lisp's three, so
+                  ;; the stamp does not reach it and the property is computed
+                  ;; here -- from a function the caller supplies, never from one
+                  ;; this system reaches for.
+                  :domain     (and domain-of-path
+                                   (funcall domain-of-path (getf definition :file))))
             ;; A macro is a :FUNCTION carrying :MACRO-P in this ontology, and
             ;; the child knows which it saw. Dropping the distinction here
             ;; would cost a fact the image reported for nothing.
@@ -278,7 +297,7 @@ gap cost only itself."
 ;;;; The pass
 ;;;; ==================================================================
 
-(defun enrich-ops (graph inspection &key workspace-id)
+(defun enrich-ops (graph inspection &key workspace-id domain-of-path)
   "Two values: ops merging INSPECTION into GRAPH, and a report plist.
 
 INSPECTION is DES-0011's facts document as plain data. Nothing here writes;
@@ -315,7 +334,8 @@ refusals are counted (REQ-0018 R4)."
              (tally :dropped-no-location))
             (t
              (let* ((name (getf definition :name))
-                    (properties (inspected-properties definition language))
+                    (properties (inspected-properties definition language
+                                                      domain-of-path))
                     (key (inspected-natural-key type name properties))
                     (existing (find-entity-by-key graph key)))
                (cond
