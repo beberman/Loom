@@ -425,7 +425,16 @@ copied rather than rewritten, and the text outside the region is not read.
 A region with no author marker keeps everything from the end marker on and gains
 the marker, so a tree prepared before DES-0044 acquires it by being refreshed
 once rather than by hand (BUG-0051). Reaching this at all means the digest
-proved the region was Loom's, or the caller consented to replacing it whole."
+proved the region was Loom's, or the caller consented to replacing it whole.
+
+NEW-HALF already ends with whatever whitespace preceded the marker in the
+template, because LOOM-HALF cuts at the marker's own character and not at the
+start of its line. So the marker is written bare and lands correctly indented
+wherever the template put it -- at column zero in a CLAUDE.md region, and at the
+body's indentation inside a document, where a line at column zero would end the
+block scalar. An attempt to compute and prepend that indentation here produced
+`    <!-- loom:yours -->' on the first document refreshed: four spaces, being
+the template's two plus two added again."
   (let* ((begin (search *marker-begin* contents))
          (end (search *marker-end* contents :start2 begin))
          (yours (search *marker-yours* contents :start2 begin :end2 end))
@@ -529,7 +538,53 @@ below a ~a marker inside the region, first"
                         (skip relative why))))
                  (:replace (replace-file
                             path (replace-loom-half existing (loom-half rendered))))
-                 (t (skip relative why))))))))
+                 (t (skip relative why)))))))
+      ;; --- the workflow concept -----------------------------------
+      ;; BUG-0062 F3, and a reversal of DES-0044 D7 with its reason answered
+      ;; rather than ignored. D7 refused to refresh this file because "it is a
+      ;; document the team owns and may have edited", and that was true of a
+      ;; file with no way to say which half is whose. The `loom:yours' split
+      ;; D2 built for the CLAUDE.md region is that way, and it applies here
+      ;; unchanged: Loom's half is regenerated, the author's is copied, and a
+      ;; document carrying no marker is refused rather than guessed at.
+      ;;
+      ;; What D7 got right is kept. Loom still never rewrites a document it did
+      ;; not write, and still never touches the front matter -- SPLIT-MARKED-
+      ;; REGION's `before' is everything above `body: |', so a status, an
+      ;; importance and a priority the team set survive a refresh untouched.
+      (let* ((relative (format nil "~a/concepts/~a.yaml" document-directory concept-id))
+             (path (merge-pathnames relative root))
+             (existing (and (probe-file path)
+                            (handler-case (read-file path) (error () nil))))
+             (rendered (render-template "workflow-concept.yaml" substitutions)))
+        (multiple-value-bind (mine found)
+            (if existing (loom-half existing) (values nil nil))
+          (cond
+            ((null existing) (skip relative "there is no workflow concept to refresh"))
+            ((null mine)
+             ;; Every tree prepared before today, including the two this was
+             ;; built for. Refused with the repair named, because the file is a
+             ;; document and replacing it whole would take the team's own
+             ;; conventions with it -- front-end's are twenty-two lines
+             ;; defining what Critical means for that codebase.
+             (skip relative
+                   (format nil "carries no ~a marker -- it predates the split, ~
+so a refresh cannot tell Loom's half from yours. Put ~a and ~a around Loom's ~
+text, with anything you wrote below ~a, and refreshes will work from then on"
+                           *marker-begin* *marker-begin* *marker-end*
+                           *marker-yours*)))
+            (t
+             (multiple-value-bind (state why)
+                 (update-state root relative (loom-half rendered) :region mine)
+               (case state
+                 (:current (skip relative "already current"))
+                 (:unproven (if replace-unproven
+                                (replace-file
+                                 path (replace-loom-half existing (loom-half rendered)))
+                                (skip relative why)))
+                 (:replace (replace-file
+                            path (replace-loom-half existing (loom-half rendered))))
+                 (t (skip relative why)))))))))
       (setf (prep-replaces prep) (nreverse (prep-replaces prep))
             (prep-skipped prep) (nreverse (prep-skipped prep)))
       prep)))
