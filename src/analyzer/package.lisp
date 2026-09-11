@@ -93,6 +93,7 @@
    #:*domains*
    #:domain-table
    #:domain-problems
+   #:propose-domains
    #:*resolution-presets*
    #:*default-domain*
    #:parse-frameworks

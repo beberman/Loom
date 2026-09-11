@@ -330,6 +330,132 @@ file."
                         (error () nil))))
         (when contents (parse-frameworks contents))))))
 
+(defun read-json-file (path)
+  "PATH as a parsed JSON object, or NIL.
+
+cl-yaml reads strict JSON, which is what jsconfig.json and package.json are
+when they parse at all. A file carrying comments -- JSONC, which some editors
+write -- does not parse here, and NIL is the honest answer: a partial read of a
+configuration file is worse than none, because the half that parsed looks like
+the whole."
+  (when (probe-file path)
+    (handler-case
+        (let ((parsed (yaml:parse (with-open-file (in path :external-format :utf-8)
+                                    (let ((text (make-string (file-length in))))
+                                      (subseq text 0 (read-sequence text in)))))))
+          (and (hash-table-p parsed) parsed))
+      ((or error yaml.error:yaml-error) () nil))))
+
+(defun preset-for-module-resolution (name)
+  "The resolution preset a tsconfig `moduleResolution' names, or :BUNDLER."
+  (cond ((null name) :bundler)
+        ((string-equal name "bundler") :bundler)
+        ((string-equal name "node16") :node-esm)
+        ((string-equal name "nodenext") :node-esm)
+        ((string-equal name "node") :commonjs)
+        ((string-equal name "classic") :commonjs)
+        (t :bundler)))
+
+(defun trailing-wildcard-p (text)
+  "True when TEXT ends in `/*'."
+  (let ((n (length text)))
+    (and (>= n 2) (string= "/*" text :start2 (- n 2)))))
+
+(defun without-trailing-wildcard (text)
+  (subseq text 0 (- (length text) 2)))
+
+(defun translate-paths (paths)
+  "A tsconfig `paths' table as (alias-list . problem-list).
+
+Only one shape translates: \"key/*\": [\"target/*\"] -- one target, a trailing
+wildcard on both sides. That is what every entry front-end writes looks like,
+and it is the only form whose meaning as a prefix is unambiguous.
+
+An entry with several targets or a wildcard anywhere but the end is reported
+and not translated. CON-0001: a guess at which of three targets a key means
+would be a fabricated fact in a file the author is about to confirm."
+  (let ((aliases '()) (problems '()))
+    (when (hash-table-p paths)
+      (maphash
+       (lambda (key value)
+         (let* ((key (as-string key))
+                (targets (as-list-of-strings value)))
+           (cond
+             ((null key))
+             ((/= 1 (length targets))
+              (push (format nil "~s names ~d targets; a domain alias names one"
+                            key (length targets))
+                    problems))
+             ((not (trailing-wildcard-p key))
+              (push (format nil "~s does not end in /*, so its prefix is not clear" key)
+                    problems))
+             ((not (trailing-wildcard-p (first targets)))
+              (push (format nil "~s maps to ~s, which does not end in /*"
+                            key (first targets))
+                    problems))
+             (t (push (cons (without-trailing-wildcard key)
+                            (without-trailing-wildcard (first targets)))
+                      aliases)))))
+       paths))
+    (cons (nreverse aliases) (nreverse problems))))
+
+(defun propose-domains (root)
+  "Domains ROOT's own configuration suggests, and what could not be read.
+
+  (propose-domains root) => (values proposals problems)
+
+Proposes, never decides. Every value here comes from a file the repository
+already keeps for its own toolchain, and the one fact that matters most is
+usually in neither: front-end's server/ resolves under node rules, and that is
+stated in a runtime hook rather than in any config a parser can read. The
+author supplies it. This exists to make the other thirty-two entries something
+nobody types.
+
+Two signals.
+
+A jsconfig.json or tsconfig.json proposes one domain per `include' root, with
+the preset its `moduleResolution' names and the aliases its `paths' translate
+to. A nested package.json declaring no `type' proposes commonjs at its own
+directory, which is Node's own default and the reason front-end's functions/
+resolves differently from the rest of the tree."
+  (let ((proposals '()) (problems '()))
+    (dolist (config '("jsconfig.json" "tsconfig.json"))
+      (let ((parsed (read-json-file (merge-pathnames config (pathname root)))))
+        (when parsed
+          (let* ((options (yaml-value parsed :|compilerOptions|))
+                 (preset (preset-for-module-resolution
+                          (and (hash-table-p options)
+                               (as-string (yaml-value options :|moduleResolution|)))))
+                 (translated (translate-paths
+                              (and (hash-table-p options)
+                                   (yaml-value options :|paths|))))
+                 (includes (as-list-of-strings (yaml-value parsed :|include|))))
+            (dolist (problem (cdr translated))
+              (push (format nil "~a: ~a" config problem) problems))
+            (dolist (include includes)
+              ;; "src/**/*" names the root src/. The glob is the file set, and
+              ;; a domain root is the prefix in front of it.
+              (let* ((star (search "*" include))
+                     (root-path (string-right-trim "/" (if star (subseq include 0 star) include))))
+                (when (plusp (length root-path))
+                  (push (list :name (intern (string-upcase root-path) :keyword)
+                              :root (concatenate 'string root-path "/")
+                              :resolution preset
+                              :aliases (car translated)
+                              :from config)
+                        proposals))))))))
+    (dolist (nested (directory (merge-pathnames "*/package.json" (pathname root))))
+      (let ((parsed (read-json-file nested)))
+        (when (and parsed (null (as-string (yaml-value parsed :|type|))))
+          (let ((directory (car (last (pathname-directory nested)))))
+            (push (list :name (intern (string-upcase directory) :keyword)
+                        :root (concatenate 'string directory "/")
+                        :resolution :commonjs
+                        :aliases '()
+                        :from "package.json")
+                  proposals)))))
+    (values (nreverse proposals) (nreverse problems))))
+
 (defun frameworks-registry (frameworks &optional (base *macro-generators*))
   "BASE plus FRAMEWORKS' definer macros, as a fresh table.
 
