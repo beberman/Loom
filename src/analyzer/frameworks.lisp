@@ -230,9 +230,20 @@ declared. Refusing to build them would make the report and the behaviour
 disagree, and the report is what a reader acts on."
   (let ((table (make-hash-table :test #'eq)))
     (setf (gethash *default-domain* table)
-          (list :name *default-domain* :root "" :resolution :bundler :aliases '()))
+          (append (cdr (assoc :bundler *resolution-presets*))
+                  (list :name *default-domain* :root "" :resolution :bundler
+                        :aliases '())))
     (dolist (domain domains)
-      (setf (gethash (getf domain :name) table) domain))
+      ;; The preset is expanded HERE, into the plist, so loom-graph receives
+      ;; the extension list and the two flags as data and reads no
+      ;; configuration -- DES-0025 D4, and PLAN-0050 S2's "the graph receives
+      ;; the expansion as data in step 4". A graph that reached for
+      ;; *RESOLUTION-PRESETS* would be a production dependency on the analyzer,
+      ;; which is what S3 already had to undo once.
+      (setf (gethash (getf domain :name) table)
+            (append (cdr (assoc (or (getf domain :resolution) :bundler)
+                                *resolution-presets*))
+                    domain)))
     ;; Second pass: a copy needs every entry present, whatever order they came in.
     (maphash (lambda (name domain)
                (let ((from (getf domain :aliases-from)))
