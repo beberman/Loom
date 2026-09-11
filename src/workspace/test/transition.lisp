@@ -199,17 +199,27 @@ body: |~%  status: implemented is written here too.~%")))
         (is (search "status: draft" (document-text root "docs/requirements/REQ-0001.yaml"))
             "the file was not touched")))))
 
-(test a-document-whose-type-has-no-status-property-is-refused-not-repaired
-  ;; DES-0019 D3. :CONCEPT declares no :STATUS, so inserting a line would write
-  ;; a fact the index cannot hold -- and the file would then carry a field
-  ;; nothing reads, which is the shape BUG-0019 and BUG-0023 are both made of.
-  (with-document-tree (root)
-    (write-document root "docs/concepts/CON-0001.yaml"
-                    (format nil "id: CON-0001~%title: a concept~%body: |~%  words.~%"))
-    (with-indexed-tree (repository root)
-      (let ((report (set-document-status repository "CON-0001" "superseded")))
-        (is (= 1 (length (getf report :problems))))
-        (is (search "no status field" (first (getf report :problems))))))))
+(test every-document-type-declares-a-status-property
+  ;; DES-0019 D3 wrote a refusal for a document whose type declares no :STATUS:
+  ;; inserting a line would write a fact the index cannot hold, and the file
+  ;; would then carry a field nothing reads, which is the shape BUG-0019 and
+  ;; BUG-0023 are both made of. Its exemplar was :CONCEPT.
+  ;;
+  ;; BUG-0066 removed that exemplar and the last one beside it. A concept
+  ;; declares :STATUS now because five concept files across three trees were
+  ;; already writing one, and :RULE declares it because the :RULE method had
+  ;; always read it and only the declaration was missing -- which made
+  ;; DOCUMENT-STATUS-VOCABULARY, reading the declaration and not the stored
+  ;; property, answer NIL for every rule.
+  ;;
+  ;; So the refusal stays as defensive code and this asserts the invariant that
+  ;; makes it unreachable, which is the stronger statement and the one that
+  ;; fails if a genre is added without a status. The old test asserted a
+  ;; property of :CONCEPT that was a defect rather than a design.
+  (dolist (type loom-graph::*document-types*)
+    (is-true (loom-ontology:find-property type :status)
+             "~a declares no :STATUS, so SET-DOCUMENT-STATUS would refuse every ~
+document of that genre and `complete' would report it :NO-STATUS" type)))
 
 (test setting-the-status-a-document-already-has-writes-nothing
   ;; R7's shape at the primitive. An idempotent command that rewrites the file

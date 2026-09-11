@@ -1106,6 +1106,13 @@ asserted."
   :properties ((:rule-id  string  :required t)
                (:subject  string  :required t
                 :documentation "Id of the entity or relationship in breach.")
+               ;; BUG-0066, the same omission one entity type over. The
+               ;; :RULE method has always read `status:' against these two
+               ;; values, and the declaration was never written -- so
+               ;; DOCUMENT-STATUS-VOCABULARY, which reads the declaration and
+               ;; not the stored property, answered NIL for every rule and
+               ;; `complete' reported one as :NO-STATUS.
+               (:status keyword :one-of (:active :retired))
                (:severity keyword :one-of (:error :warning :advisory) :default :error)
                (:detail   string)))
 
@@ -1120,6 +1127,22 @@ from docs/concepts (SS10.1)."
                (:title    string)
                (:summary  string)
                (:body     string)
+               ;; BUG-0066. Declared because five concept files across three
+               ;; trees write them and nothing held them. :STATUS has the two
+               ;; values CON-0004's table gives a concept; the workflow
+               ;; vocabulary makes neither terminal, so a concept is in force
+               ;; rather than finishable and `complete' passes through it.
+               (:status keyword :one-of (:accepted :superseded))
+               (:tags list)
+               (:importance keyword :one-of (:critical :major :minor))
+               (:affects list
+                :documentation "Names this concept bears on, resolved the way
+every other genre's is.  CON-0006 named six functions that produced no edge
+until this existed -- BUG-0023's silent drop, one entity type later.")
+               (:dropped-fields list
+                :documentation "Vocabulary fields written here whose value went
+nowhere.  BUG-0066 F2: computed for every genre rather than for the one whose
+method called the helper.")
                (:evidence list
                 :documentation "Entity ids the concept was drawn from.  A
 concept is usually :inferred, so this is what its DERIVED-FROM tracks.")

@@ -448,6 +448,24 @@ the files whichever way it got there"))))
       (is (member :indexed-at provenance)
           "and when the index was built"))))
 
+(test a-rules-severity-is-not-checked-against-a-bugs-vocabulary
+  ;; BUG-0066 F2's own defect, caught the moment the report was generalised.
+  ;; A :RULE's `severity:' is error/warning/advisory and answers how strictly
+  ;; the rule is enforced; a bug's is critical/major/minor and answers impact.
+  ;; DEC-0007 separates the two. Checking every genre against one vocabulary
+  ;; reported all nine of this tree's rules as mis-spelled -- a report whose
+  ;; first run is nine false positives teaches a reader to ignore it.
+  (let ((for-rule (loom-analyzer::vocabulary-fields-for :rule))
+        (for-doc  (loom-analyzer::vocabulary-fields-for :document)))
+    (is (equal '(:error :warning :advisory)
+               (cdr (assoc "severity" for-rule :test #'string=)))
+        "a rule is checked against the enforcement vocabulary")
+    (is (equal '(:critical :major :minor)
+               (cdr (assoc "severity" for-doc :test #'string=)))
+        "and a document against the impact one")
+    (is (= (length for-rule) (length for-doc))
+        "the same fields either way -- only severity's vocabulary differs")))
+
 ;;; ------------------------------------------------------------------
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------

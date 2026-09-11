@@ -100,17 +100,21 @@ would bury exactly what impact exists to surface")
                  "~a does not say that a commit message is evidence no index ~
 holds, which is the case that surprises" file)))))
 
-(defparameter *document-fields-the-analyzer-reads*
-  '("refines" "affects" "status" "importance" "severity" "priority")
-  "Every key TYPE-SPECIFIC-PROPERTIES' :DOCUMENT method looks up.
+(defparameter *concept-fields-the-analyzer-reads*
+  '("refines" "affects" "status" "tags" "importance")
+  "Every key the analyzer reads from a CONCEPT, which is what the workflow
+concept is.
 
-REQ-0070's list, and it is written here rather than derived because the point is
-that two things must agree: this is the assertion, and the method is the
-subject. Deriving it from the method would make the test pass by construction
-and assert nothing.
+REQ-0070's list, written here rather than derived because the point is that two
+things must agree: this is the assertion, and the method is the subject.
+Deriving it from the method would make the test pass by construction and assert
+nothing.
 
-Add a key to that method and add it here, and the test below will tell you
-whether the template was told.")
+NAMED FOR THE GENRE IT CHECKS, which is BUG-0066 F1. It said :DOCUMENT until
+2026-09-10 and the file it reads is a :CONCEPT, so the test asserted the
+agreement of two things neither of which governed its subject -- and passed
+throughout while Loom's own template wrote `status: accepted' into a genre that
+could not hold a status.")
 
 (test every-field-the-analyzer-reads-is-named-in-the-conventions-a-tree-is-given
   ;; REQ-0070. The workflow-concept template is the one document Loom ships that
@@ -132,7 +136,7 @@ whether the template was told.")
   (with-target-tree (root)
     (prepare-repository root :append-claude-md nil)
     (let ((text (target-text root "docs/concepts/CON-0001.yaml")))
-      (dolist (field *document-fields-the-analyzer-reads*)
+      (dolist (field *concept-fields-the-analyzer-reads*)
         (is-true (search field text)
                  "the analyzer reads `~a:' and the conventions never mention it, ~
 so an author working from them writes correct YAML that is missing a field the ~
@@ -153,10 +157,14 @@ engine is reading" field)))))
            (at   (search "THE FIELDS THAT RESOLVE" text))
            (section (and at (subseq text at (min (length text) (+ at 4000))))))
       (is-true section "the template has no fields section to check")
-      (dolist (claimed '("refines" "affects" "importance" "severity" "priority"))
+      (dolist (claimed '("refines" "affects" "importance" "severity" "priority" "tags"))
         (when (search claimed section)
-          (is-true (member claimed *document-fields-the-analyzer-reads*
-                           :test #'string=)
+          ;; The template describes the whole workflow, so it names fields other
+          ;; genres read as well as the concept's own. What must not appear is a
+          ;; field NO genre reads, which is BUG-0023's shape.
+          (is-true (or (member claimed *concept-fields-the-analyzer-reads*
+                               :test #'string=)
+                       (member claimed '("severity" "priority") :test #'string=))
                    "the conventions describe `~a:' and no method reads it" claimed))))))
 
 (test a-tree-with-no-claude-md-gets-one-without-being-asked
