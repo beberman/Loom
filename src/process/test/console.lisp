@@ -638,10 +638,13 @@ this repository, so an answer proves which graph was consulted."
                "and says why, rather than only refusing"))))
 
 (test no-domain-token-means-no-filter
-  ;; DOMAIN-FILTER returns NIL rather than an empty filter, so a command that
-  ;; names no domain takes the query path it has always taken.
-  (let ((loom-process::*command-domain* nil))
-    (is (null (loom-process::domain-filter))))
-  (let ((loom-process::*command-domain* (list :name :server)))
-    (is (equal '(:domain :server) (loom-process::domain-filter))
-        "and a keyword, because :DOMAIN is one")))
+  ;; The filter is NIL rather than an empty one, so a command that names no
+  ;; domain takes the query path it has always taken.
+  ;;
+  ;; DOMAIN-PROPERTY-FILTER is loom-workspace's. It was written twice, once
+  ;; here and once in loom-serve, and the call-site census caught that: two
+  ;; same-named functions in two packages made every call to the name
+  ;; ambiguous, and the ambiguous population went from 20 to 21.
+  (is (null (loom-workspace:domain-property-filter nil)))
+  (is (equal (list :domain :server) (loom-workspace:domain-property-filter (list :name :server)))
+      "and a keyword, because :DOMAIN is one"))

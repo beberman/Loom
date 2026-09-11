@@ -129,29 +129,17 @@ answer saying so.
 NIL means the whole repository, which is every command that names no domain and
 every repository that declares none.")
 
-(defun domain-filter ()
-  "The property filter for the domain this command names, or NIL.
-
-A keyword, because :DOMAIN is one -- the analyzer interns the name once when
-the declaration is read. PROPERTIES-MATCH-P compares with EQUAL, which two
-occurrences of one keyword satisfy through EQ.
-
-NIL rather than an empty filter, so a command that names no domain passes
-nothing and the query path is the one it has always been."
-  (when *command-domain*
-    (list :domain (getf *command-domain* :name))))
-
 (defun refuse-domain (command)
   "Refuse COMMAND when the token named a domain, and say why.
 
 PLAN-0050 S12. These commands act on the index itself -- they build it, drop
 it, or write into the tree. A domain partitions an index; it is not one, so
-there is nothing for `reindex @front-end/server' to mean that is not either a
-lie or a much larger feature.
+there is nothing `reindex @repo/domain' could mean that is not either a lie or
+a much larger feature.
 
-Refused rather than ignored, which is the CON-0001 rule at the console: a
-command that silently acted on the whole repository after being handed part of
-one would be answering a question nobody asked."
+Refused rather than ignored, which is CON-0001 at the console: a command that
+silently acted on the whole repository after being handed part of one would be
+answering a question nobody asked."
   (when *command-domain*
     (error "~a acts on a whole index, and ~(~a~) is one domain inside it. A ~
 domain partitions an index rather than being one. Drop the domain from the ~
@@ -809,7 +797,7 @@ properly needs to know the list was cut."
               ;; path this has always taken.
               (search-entities (repository-graph repository) :name term
                                :type type :limit *console-find-limit*
-                               :property-filters (domain-filter))
+                               :property-filters (domain-property-filter *command-domain*))
             (cond
               ((null hits)
                (print-find-elsewhere

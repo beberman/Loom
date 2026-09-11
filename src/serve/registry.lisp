@@ -102,6 +102,42 @@ would produce two messages for one caller mistake."
                                      name)))
   t)
 
+(defun refuse-domain-on-write (operation arguments)
+  "Refuse a write or repl operation whose repository argument names a domain.
+
+PLAN-0050 S13, DES-0047 R16. A domain partitions an index. It is not one, so
+there is nothing `reindex' on a domain could mean that is not either a lie or a
+much larger feature.
+
+Keyed on the tier the operation struct already carries rather than on a list of
+names, so an operation added later is covered by what it declares itself to be.
+Checked against the table as it stands: every operation whose subject is the
+index is :WRITE and every one that selects from it is :READ.
+
+Signalled before the body runs, so a refused call has no effect at all.
+
+The check is skipped when the designator names a whole repository, which is the
+ordinary case and the one that must stay free: SPLIT-DESIGNATOR looks the whole
+designator up first, so a path with slashes in it is never read as a domain."
+  (when (member (operation-tier operation) '(:write :repl))
+    (let ((designator (getf arguments :repository)))
+      (when (and (stringp designator) (plusp (length designator)))
+        (multiple-value-bind (repository domain)
+            (handler-case (split-designator designator)
+              ;; An unknown domain is refused by SPLIT-DESIGNATOR with a better
+              ;; message than this function could write, and that refusal is
+              ;; already a REQUEST-ERROR. Let it out.
+              (loom-utils:refusal (condition) (error condition)))
+          (declare (ignore repository))
+          (when domain
+            (error 'malformed-request
+                   :message
+                   (format nil "~(~a~) acts on a whole index, and ~(~a~) is one ~
+domain inside it. A domain partitions an index rather than being one. Name the ~
+repository alone."
+                           (operation-name operation)
+                           (getf domain :name)))))))))
+
 (defun invoke-operation (operation grants arguments)
   "Run OPERATION for a caller holding GRANTS. The one function both skins call.
 
@@ -125,6 +161,7 @@ the argument for what it names."
   (check-capability grants (operation-tier operation)
                     :operation (operation-name operation))
   (validate-arguments operation arguments)
+  (refuse-domain-on-write operation arguments)
   (let ((started (get-internal-real-time)))
     (handler-case
         (let ((result (funcall (operation-function operation) arguments)))
