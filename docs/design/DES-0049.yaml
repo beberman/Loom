@@ -15,13 +15,15 @@ summary: |
   The second is when the occurrence band prints. Today it prints only when
   nothing matched, so a term that is mostly prose and incidentally also a
   definition name gets the answer for the definition and none of the prose.
-  `find severity' returns two rule-related definitions and says nothing about
-  the 48 places the word is written as a YAML key.
+  `find severity' returns three rule-related definitions and says nothing
+  about the 195 places the word is written in this tree, most of them a YAML
+  key meaning something else.
 
   The second change costs something and the first does not. Scanning the tree
   for occurrences takes about 30ms against 8ms for an ordinary `find'. This
-  design pays that only when the hit count is small enough that the caller
-  could be misled, and says plainly what that threshold costs.
+  design pays that only when the hit count is small, and prints a count rather
+  than a list. A threshold on the relationship between the two counts was
+  tried, measured, and does not work; D4 records the numbers.
 body: |
   D1  THE TWO FAMILIES, AND WHERE THE LIST LIVES
 
