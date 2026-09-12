@@ -230,6 +230,20 @@ def describe(watched, repositories):
         else:
             tail = "index current with the tree"
         print("service: %s %s  %s" % (name, commit, tail), file=sys.stderr)
+        # BUG-0067 R2. `ready' means the index can be queried and says nothing
+        # about the vector store, so a repository that has none reads exactly
+        # like one whose store is built. A sweep of DES-0050's fusion settings
+        # was measured that way -- every store gone, `context' answering
+        # lexically, four cells returning identical numbers -- and the figure
+        # it printed was mismatch.md's own pre-dense bar of 9 of 120,
+        # reproduced from a document rather than measured.
+        #
+        # Said here rather than refused, because a tree with no store is the
+        # ordinary case and REQ-0048 R6 makes its answer a good one. What must
+        # not happen is the figure being read without it.
+        if row.get("vector-store") == "absent":
+            print("service: %s HAS NO VECTOR STORE -- this run measures the "
+                  "lexical seeder alone." % name, file=sys.stderr)
 
 
 def ensure(instrument, repositories=()):

@@ -78,6 +78,7 @@
    #:start-vector-build
    #:await-vector-build
    #:vector-build-status
+   #:vector-store-on-disk-p
    #:*vector-build-wait*
    #:require-repository-vectors
    #:forget-repository-vectors
