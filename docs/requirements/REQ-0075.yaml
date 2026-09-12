@@ -1,0 +1,136 @@
+id: REQ-0075
+title: A maintainer map in the repository must name the team that approves a document, because docs/ is flat by type and a path-keyed owners file cannot see which system a design affects
+status: draft
+priority: p4
+date: 2026-09-12
+amended: 2026-09-12
+refines: [CON-0004, CON-0008, REQ-0022]
+affects: [read-frameworks, parse-frameworks, prepare-repository,
+          set-document-status, complete-plan, document-blockers,
+          unresolved-references, entity-system, resolve-one, find-repository]
+importance: Major
+tags: [workflow, maintainers, review, approval, documents, multi-user, teams,
+       req-0071, req-0025, des-0009, des-0024, con-0004, con-0008]
+summary: |
+  An architect approves designs for part of a tree. Nothing in Loom or in git
+  can route a design to them. `docs/design/` is flat by type, which CON-0004
+  does deliberately -- the directory names the type -- so a file-path owners rule
+  matches every design or none. The area a design bears on is in its `affects:`,
+  not in its path.
+
+  Loom holds what answers it. `affects:` resolves to entities, an entity carries
+  `:system` from the package its file declares (DES-0009), and a rule already
+  names a *family* of systems rather than one: `from-family:` covers
+  game-server's fourteen `game/*` packages with one entry (DES-0024). A map from
+  the same key to a team makes "who approves this design" a query over the index
+  instead of a convention nobody can check.
+
+  The map holds teams and not people. A forge already knows who is in
+  `AI-Strategy-Games/payments`, already enforces it through branch protection,
+  and already handles someone joining or leaving. Listing people in a Loom file
+  would be a second answer to a question the forge answers better. What the
+  forge cannot answer is which team owns the payments *system* as Loom defines
+  it, because that is a package family rather than a directory -- and that is
+  the one column this file exists to hold.
+
+  The map is `.loom/maintainers.yaml`, its own file rather than a key in the one
+  REQ-0071 is renaming, because it is read by a different audience and changes
+  when a product reorganises rather than when a repository does.
+body: |
+  PRIORITY: P4, 2026-09-12
+
+  Impact is that approval has no addressee. A design sits at `draft` and nothing
+  distinguishes nobody has picked this up from the person who must approve it
+  has not seen it -- which is the second of the three gaps REQ-0009 named as its
+  argument for a database, and which CON-0008 answers by convention only as far
+  as naming the reviewer.
+
+  Probability today is zero on one developer, and unlike REQ-0073 and REQ-0074
+  this does not wait on a team boundary: one developer serving six repositories
+  still benefits from a queue of documents at `draft` whose downstream work has
+  started. Deferred on value rather than on possibility.
+
+  Sequence: independent of REQ-0073 and REQ-0074. Wanted with REQ-0071 R1, which
+  is renaming the file this one sits beside. REQ-0076's R2 section generates a
+  forge owners file from this map and cannot start before it.
+
+  WHY NOT A PATH-KEYED OWNERS FILE
+
+  A forge's owners file keys on file path. It would work if documents were filed
+  by area, and CON-0004 files them by type on purpose: the directory names the
+  type, and `docs/plans/x.md` is invisible to Loom while `docs/notes/x.yaml` is
+  an uncategorised document. Subdividing `docs/design/` by area would break that
+  and would still not work, because a design frequently affects several systems
+  and a file lives in one directory.
+
+  So the routing key is `affects:`, the lookup is one Loom can do and a forge
+  cannot, and the enforcement stays the forge's: REQ-0076 generates the
+  path-keyed file from this map so that the rule the forge enforces is the rule
+  this map states.
+
+  WHAT IS WANTED
+
+  R1  `.loom/maintainers.yaml` maps a system or a family to one or more team
+      identifiers, with the family syntax DES-0024 already defines for rules --
+      the name, or the name followed by `/` or `.`.
+
+  R2  A team identifier is opaque to Loom and resolvable by REQ-0076's adapter.
+      Loom never stores who is in a team, never reconciles membership, and
+      reports the identifier unresolved rather than guessing when no adapter can
+      resolve it. Membership is the forge's answer and this file does not hold a
+      second copy of it.
+
+  R3  Loom answers which team maintains a document by resolving its `affects:`
+      to entities, reading `:system` from each, and looking each up in the map.
+      A document whose `affects:` reaches several systems has several
+      maintaining teams and the answer says which name brought which in.
+
+  R4  A document whose `affects:` reaches a system the map does not cover is
+      reported. An uncovered system is the gap that makes a queue incomplete
+      without saying so, and CON-0001 puts it in the report rather than
+      assigning a default owner.
+
+  R5  A document with no `affects:` at all is reported separately. A requirement
+      written before anyone knows what it touches has no system to key on, which
+      is a normal state for a new requirement and not the same fact as a system
+      nobody owns.
+
+  R6  A review queue, as one read operation: documents at `draft` in a
+      repository, each with its maintaining teams, its age, whether work naming
+      it has started, and -- with REQ-0074 -- the requests open against that
+      repository. It is read-only and per repository, so a team per service gets
+      its own queue with no extra concept.
+
+  R7  The queue serves three consumers from one operation -- an MCP tool for a
+      maintainer's agent, a page over the REST routes for a maintainer who is
+      not in a session, and REQ-0076's notifier. MCP is a pull protocol, so the
+      tool answers only when someone opens a session; reaching a maintainer who
+      has not opened one needs the third consumer and cannot be built from the
+      tool alone.
+
+  R8  Nothing in the queue writes a status, per CON-0008. A queue that could
+      approve a document would put the approval outside the files.
+
+  ACCEPTANCE
+
+  Write `.loom/maintainers.yaml` on this tree mapping `loom-graph` and
+  `loom-analyzer` to two team identifiers. Ask who maintains DES-0012, whose
+  `affects:` reaches both, and both teams come back with the entity that brought
+  each in. Ask the queue for documents at `draft` and every open design is
+  listed with its teams. Add a design affecting `loom-mcp`, which the map does
+  not cover, and it is listed with its system reported as uncovered rather than
+  omitted or defaulted. Ask with no adapter configured and the team identifiers
+  come back unresolved rather than as an empty list of people.
+
+  OPEN QUESTIONS
+
+  - Whether a document may name its own maintaining team, overriding the map. A
+    requirement that affects nothing yet has no system to key on, and a product
+    manager is not the maintainer of a system in any case.
+  - Whether the queue should rank. A design at `draft` for a day and one at
+    `draft` for four months are different, and age alone is not the ranking: a
+    design nothing downstream refines is not blocking anyone.
+  - Whether one team may be the maintainer of systems in several repositories.
+    The map is per repository, so a team owning `payments` and the payments
+    client in front-end appears in two files with no statement that it is one
+    team. The forge answers that and Loom would only be restating it.

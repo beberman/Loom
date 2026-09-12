@@ -1,0 +1,93 @@
+id: CON-0008
+title: The merge is the approval, so a status transition is a reviewed one-line commit
+status: accepted
+date: 2026-09-12
+refines: [CON-0004]
+affects: [set-document-status, complete-plan, document-blockers, unresolved-references]
+tags: [workflow, approval, status, multi-user, review, con-0004, req-0009,
+       dec-0001]
+summary: |
+  CON-0004 names its own weakest point: "Nothing in Loom verifies a status...
+  Status is the one field in this workflow held up by discipline alone." REQ-0009
+  reads that as an argument for a database with enforced transitions, ownership
+  and a structured reason per change, and asks to override DEC-0001 for docs/.
+
+  There is a second answer that overrides nothing. A status line is a one-line
+  diff, and git already has a review mechanism for a diff. If a transition only
+  ever happens in a commit merged to the default branch, then the merge policy
+  is the transition enforcement, `git blame` on that line names who moved it and
+  when, and the commit message carries why. Three of REQ-0009's gaps close
+  without a second system of record.
+
+  This convention is what the team workflow of REQ-0073 to REQ-0077 assumes
+  throughout, and it is the reason none of those documents asks for a user
+  interface that can approve anything.
+body: |
+  THE CONVENTION
+
+  Three rules, and the third is the one that is easy to get wrong.
+
+  A document lands on the default branch early, at `draft`. A draft on main is
+  not a commitment. It is an allocated id, a resolvable reference, and a place
+  for the argument to happen in the open.
+
+  A transition out of `draft` is its own commit, reviewed by whoever owns the
+  decision. It is one line. The review is therefore about the judgement rather
+  than about the prose, which is what makes requiring a reviewer affordable.
+
+  Work may proceed against a `draft` document, and the refusal comes later. A
+  design may refine a draft requirement and a branch may implement a draft
+  design. What `complete` refuses is the claim that the work is finished while
+  the documents above it are still drafts. Blocking at the start would serialize
+  every chain behind an approval and is the reason the first rule exists.
+
+  WHY DOCUMENTS LAND AT DRAFT RATHER THAN WAITING FOR APPROVAL
+
+  A document held on a branch until it is approved cannot be referred to. Its id
+  is not allocated in any tree anyone else can see, `refines:` naming it resolves
+  to nothing, and `check` reports the reference as unresolved on every machine
+  but the author's. So holding a requirement back until it is accepted blocks
+  every downstream document that would answer it, and the block lasts exactly as
+  long as the argument about the requirement does.
+
+  Landing it at `draft` costs nothing and makes the chain resolvable from the
+  first commit. The status field is then doing its actual job: saying that this
+  is written down and not yet agreed.
+
+  WHAT THIS ANSWERS IN REQ-0009, AND WHAT IT DOES NOT
+
+  REQ-0009 names three gaps.
+
+  No document has an owner. Answered by REQ-0075: a map from a system or a
+  family to a team, resolved through the document's `affects:`. The map is a
+  file; the membership of the team is the forge's.
+
+  A status change carries no structured reason. Answered by the transition being
+  a commit: the author, the date and the message are git's, and `git log -L` on
+  the status line is the full history of that field. CLAUDE.md already states
+  the division -- the index holds the present, git holds the past -- and a
+  transition history is a question about the past.
+
+  No enforced transitions. Answered by branch protection requiring the review
+  that REQ-0075's map identifies, and by REQ-0076 generating a path-keyed owners
+  file so the forge enforces the map rather than merely reporting it.
+
+  What this does not answer is a transition made by someone who commits directly
+  to the default branch. The convention is worth exactly as much as the branch
+  protection under it, and on a repository with none it degrades to what
+  CON-0004 already describes: discipline. That is a deployment property rather
+  than a property of Loom, and Loom's part is to report the status it reads and
+  never to move one.
+
+  THE COROLLARY FOR EVERY INTERFACE
+
+  No interface Loom offers may write a status. Not the review queue of
+  REQ-0075, not a page over the REST routes, not a forge adapter reacting to an
+  issue being closed. A control that approved a document would put the approval
+  outside the files, which is the second system of record DEC-0001 forbids, and
+  it would do it in the one place where the file and the forge are most likely
+  to disagree.
+
+  `set-status` and `complete` are the exceptions that prove the shape: both
+  write a file in the working tree, and what they write still has to be
+  committed, reviewed and merged like anything else.

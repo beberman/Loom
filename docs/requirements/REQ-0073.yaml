@@ -1,0 +1,179 @@
+id: REQ-0073
+title: A declared reference must be able to name another repository, because federation matches only code entities on a bare name and no document-to-document edge can cross
+status: draft
+priority: p3
+date: 2026-09-12
+amended: 2026-09-12
+refines: [REQ-0027, CON-0004, CON-0008]
+affects: [federated-affects-ops, federated-mentions-ops, federate-repositories,
+          declared-edge-type-for, federated-declared-names,
+          classified-unresolved-references, resolve-document-links, resolve-one,
+          unresolved-references, document-reference-report, find-repository,
+          require-repository, read-frameworks, parse-frameworks,
+          watch-repository, repository-graph, short-commit]
+importance: Major
+tags: [multi-repo, federation, documents, refines, references, organization,
+       req-0027, des-0025, req-0025, con-0004, con-0008, front-end, game-server]
+summary: |
+  REQ-0027 R4 made a document in one repository govern code in another, and
+  FEDERATED-AFFECTS-OPS draws that edge today. It matches an unresolved name
+  against `:function`, `:method`, `:class` and `:interface` in the other watched
+  repositories. Documents are not candidates, so no `refines:` can cross a
+  repository boundary and the chain CON-0004 is built on ends at the boundary.
+
+  Four things stop a document naming a document in another tree, and each is a
+  different fix.
+
+  Ids are per repository. DES-0048's ledger "arrives with the clone", so
+  REQ-0034 names a different document in every repository and a bare doc-id
+  cannot cross at all.
+
+  The field a name was written in is not recorded. RESOLVE-DOCUMENT-LINKS stores
+  an unresolved name as a string -- `(pushnew name unresolved :test #'string=)`,
+  src/graph/resolve.lisp:1730 -- so DECLARED-EDGE-TYPE-FOR cannot read it and
+  guesses the edge type from the target's own doc-id prefix instead: `DEC-` or
+  `DES-` gives `:decides`, everything else gives `:documents`. A crossing
+  `refines:` would be indistinguishable from a crossing `affects:`.
+
+  An alias names no repository. `@game-server` is resolved by FIND-REPOSITORY
+  against what a local service happens to watch, under the name that watch gave
+  it, so the same reference can mean different repositories on two machines or
+  nothing at all on a third.
+
+  Federation needs every tree on one filesystem. A REPOSITORY is a local `root`
+  with a file monitor and `git check-ignore` calls against that path
+  (src/workspace/workspace.lisp:20-97), and FEDERATE-REPOSITORIES pairs entries
+  in `*repositories*`. A front-end developer who wants a cross-repository answer
+  must clone game-server and keep it current, and the edge records
+  `:foreign-commit` from whatever commit their clone sits at.
+body: |
+  PRIORITY: P3, 2026-09-12
+
+  Impact is that the workflow chain stops at a repository boundary. A design in
+  front-end cannot refine a requirement in game-server, so a product built from
+  two trees keeps two unconnected chains and "what asked for this" has no answer
+  across the boundary.
+
+  Probability today is low and the reopening condition is named. One developer
+  serving six repositories does not collide, and nothing in this tree currently
+  writes a cross-repository `refines:`. It reopens when a second team owns one
+  of the watched repositories, which is the condition REQ-0025 also names.
+
+  Sequence: REQ-0074 depends on this entirely and should not be designed around
+  before it. REQ-0075 does not. R9 and R10 are what REQ-0077 builds on.
+
+  WHAT IS WRONG
+
+  FEDERATED-AFFECTS-OPS, src/workspace/federate.lisp:318, is the pass that
+  crosses on a declared name. Its candidate set is four code entity types. A
+  document is never a candidate, so the four declared link fields divide in two:
+  `affects:`, `describes:` and `applies-to:` reach code and can cross;
+  `refines:` and `supersedes:` reach documents and cannot.
+
+  The ontology is not what stops it. `:refines` is declared
+  `:from (:document :design :architecture :decision :rule :concept)` to the same
+  set, src/ontology/code-ontology.lisp:1764, and a federated edge is an ordinary
+  relationship carrying `:federated t`. A cross-repository `refines:` would be
+  accepted by the transaction validator today. Nothing derives it.
+
+  Bare-name matching would not be the right mechanism even if documents were
+  candidates. It requires exactly one match across every watched repository;
+  two matches stay unresolved, which is CON-0001 working correctly. Doc-ids
+  restart at 0001 in every repository, so a bare `REQ-0034` across six
+  repositories is the ambiguous case by construction rather than by accident.
+
+  WHAT IS WANTED
+
+  R1  A declared reference may name a repository: `@game-server/REQ-0034`. The
+      `@` token already names a repository on the console (REQ-0023) and means
+      the same thing here.
+
+  R2  A qualified reference resolves against the named repository and no other.
+      No bare-name search, no fallback to the local tree, no fallback to the
+      union of watched trees.
+
+  R3  The edge type comes from the field the name was written in. `refines:`
+      gives `:refines`, `affects:` gives `:decides` or `:documents` by the
+      author's type as it does within a tree. DECLARED-EDGE-TYPE-FOR's guess
+      from the target's doc-id prefix is a workaround for R4 and goes away
+      with it.
+
+  R4  An unresolved reference records the field it was written in. The
+      representation is a design question: `:unresolved-references` is a list of
+      strings read by CLASSIFIED-UNRESOLVED-REFERENCES, FEDERATED-DECLARED-NAMES,
+      UNRESOLVED-REFERENCES and the `status` count, and widening it touches all
+      four. REQ-0066 wants `:candidates` on the same record and should land with
+      this rather than separately.
+
+  R5  A repository declares the organisation it belongs to and the alias it is
+      known by. The organisation is what makes an alias mean one repository:
+      `@payments` is `AI-Strategy-Games/payments` because both repositories name
+      that organisation, not because each repository carries a copy of the
+      other's remote URL. This is the file REQ-0071 R1 is renaming.
+
+  R6  The set of repositories in an organisation is discovered rather than
+      declared, and the report names which source answered. With a forge adapter
+      (REQ-0076) it is the organisation's repository list. Without one it is
+      what the local service watches. A single file listing an organisation's
+      repositories would make one repository special and would go stale the day
+      a service is added.
+
+  R7  A qualified reference whose repository cannot be reached is reported
+      distinctly from one whose repository is reachable and holds no such
+      document. The first is a configuration to fix and the second is a
+      reference to fix, and a single `unresolved` line sends the reader to the
+      wrong one half the time.
+
+  R8  A reference is declared only by the repository that needs it. Nothing
+      writes a file into another repository and nothing requires push access to
+      one. DES-0025's wholesale retract-and-re-derive continues to own the
+      lifecycle of every federated edge, so a document deleted in the far tree
+      removes the edge on the next index of either.
+
+  R9  Resolving a reference to a document must not require the far tree's
+      source. A document reference needs the far repository's documents and its
+      declared aliases -- `docs/` and the file REQ-0071 renames -- which on this
+      tree is 279 YAML files. It must not require a working copy of the far
+      tree, an analyzer pass over its source, or a file monitor on it. Code
+      federation keeps its present requirements; this separates the two, because
+      the cheap half is the half that crosses team boundaries.
+
+  R10 A repository whose documents were read from a fetched ref rather than from
+      a watched working tree is marked as such, with the commit it was read at.
+      SHORT-COMMIT already records `:foreign-commit` on every federated edge;
+      this makes the provenance readable at the repository rather than only on
+      the edge, so an answer derived against a three-day-old fetch says so.
+
+  R11 `impact` and `describe` report a crossing `:refines` in the federated band
+      they already build, in both directions. FEDERATED-SUMMARIES and
+      FEDERATED-BAND read edges rather than types, so the band is expected to
+      need no change and the acceptance test says whether that held.
+
+  ACCEPTANCE
+
+  Write a design in front-end declaring `refines: [@game-server/REQ-nnnn]`
+  against a requirement that exists in game-server. `check` in front-end reports
+  no unresolved reference for it. `impact` on the game-server requirement lists
+  the front-end design in its federated band, and `impact` on the front-end
+  design lists the game-server requirement. Change the alias to a repository
+  that is not in the organisation and `check` says the repository is unreachable
+  rather than that the document does not exist. Delete the game-server
+  requirement, index either tree, and the edge is gone from both reports.
+
+  For R9 and R10: unwatch game-server entirely, give front-end only a fetched
+  copy of game-server's `docs/`, and the same reference still resolves. Ask for
+  game-server's code from front-end and the answer says the source is not
+  present rather than that the definition does not exist. `status` names
+  game-server as read from a ref at a commit rather than watched.
+
+  OPEN QUESTIONS
+
+  - Whether `@repo/name` should also be accepted for code, so a product
+    requirement can write `affects: [@game-server/create-game]` rather than rely
+    on the bare name being unique across every watched tree. The bare-name path
+    stays either way for the references already written; the question is whether
+    the qualified form is offered for code as well as for documents.
+  - Whether a document-only repository is a third state beside watched and
+    absent, or a repository whose analyzer set is empty. The second needs no new
+    concept and makes every existing report say "no code entities", which may
+    read as a defect rather than as a configuration.
