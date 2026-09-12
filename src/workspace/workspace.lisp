@@ -1663,6 +1663,24 @@ the last error per thread.\""
           ;; needs told about: every other operation waits for it, and status is
           ;; the one that says why the waiting would happen.
           :state (repository-state repository)
+          ;; BUG-0067 R1. :STATE says :READY for a repository whose store is
+          ;; built and for one that has none, and a caller cannot tell which
+          ;; answer `context' will give it. These two say it, and they say
+          ;; different things on purpose: VECTOR-STORE is whether a file
+          ;; exists, asked of the filesystem and cheap; VECTORS is how many
+          ;; vectors are loaded, which is NIL until something has queried this
+          ;; repository. DES-0002 R10 -- a count that vanishes when nought
+          ;; cannot be told from one nobody computed -- so nought is
+          ;; :VECTOR-STORE NIL and uncomputed is :VECTORS NIL beside a true
+          ;; :VECTOR-STORE.
+          ;; A keyword and not a boolean, because NIL encodes to JSON null
+          ;; and null is what a caller also sees from a service too old to
+          ;; carry this field. :ABSENT says nought; a missing field says
+          ;; nobody computed it. DES-0002 R10.
+          :vector-store (if (vector-store-on-disk-p repository) :present :absent)
+          :vectors (let ((cached (repository-cached-vectors repository)))
+                     (unless (eq cached :unloaded)
+                       (and cached (loom-embed:vector-store-count cached))))
           :indexed-at (repository-indexed-at repository)
           ;; REQ-0050 R1 and R2. INDEXED-AT is a generation counter: it orders
           ;; reindexes and names no tree. The commit alone is not enough either

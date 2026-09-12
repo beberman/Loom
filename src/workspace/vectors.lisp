@@ -337,6 +337,22 @@ codes. loom-serve subtypes the condition to give it a 400."
   "Drop the cached store so the next query reads from disk again."
   (setf (repository-cached-vectors repository) :unloaded))
 
+(defun vector-store-on-disk-p (repository)
+  "True when a vector store file exists for REPOSITORY. Reads no vectors.
+
+PROBE-FILE on the header rather than LOAD-VECTOR-STORE, because `status' is
+asked often -- `loom-serve.sh' polls it -- and loading a store is a five
+megabyte read. The two answers differ: a file that exists but was built by
+another embedder loads as NIL, so this says the file is there and not that a
+query would get candidates from it.
+
+BUG-0067. REPOSITORY-STATE reports :READY for a repository that has no store
+and never started one, which is the same word it uses for one whose store is
+built. A harness waited on :READY and measured the lexical seeder alone across
+a whole sweep."
+  (and (probe-file (loom-embed:vector-store-paths (repository-name repository)))
+       t))
+
 (defun vector-build-status (repository)
   "What EMBED would say about REPOSITORY, as a plist. Reaches no embedder."
   (let* ((store (let ((cached (repository-cached-vectors repository)))

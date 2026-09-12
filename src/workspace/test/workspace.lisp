@@ -150,6 +150,30 @@ check:
       (is (null (entities-of-type g :rule-violation))
           "the fixture is clean, and a clean tree must report nothing"))))
 
+(test status-says-whether-a-repository-has-a-vector-store
+  ;; BUG-0067. :STATE reports :READY for a repository whose store is built and
+  ;; for one that has none, so a caller waiting on :READY cannot tell whether
+  ;; `context' will answer with semantic candidates or without them. A sweep of
+  ;; DES-0050's fusion settings was measured against a service whose stores had
+  ;; all gone, and the figure it printed was mismatch.md's pre-dense bar --
+  ;; reproduced from a document rather than measured.
+  ;;
+  ;; A keyword and not a boolean, and the membership check is the point: NIL
+  ;; encodes to JSON null, which is also what a service too old to carry the
+  ;; field returns, so nought and uncomputed would read alike. DES-0002 R10.
+  (with-workspace-fixture (repository)
+    (let ((status (repository-status repository)))
+      (is (member :vector-store status)
+          "the key is absent, so a caller cannot ask the question at all")
+      (is (member (getf status :vector-store) '(:present :absent))
+          ":VECTOR-STORE must say which, not answer NIL")
+      (is (eq :absent (getf status :vector-store))
+          "the fixture built no store, so the answer is :ABSENT")
+      (is (member :vectors status)
+          "the count key is absent")
+      (is (null (getf status :vectors))
+          "nothing has queried this repository, so no store is loaded"))))
+
 (test status-reports-what-a-developer-needs-to-see
   (with-workspace-fixture (repository)
     (let ((status (repository-status repository)))

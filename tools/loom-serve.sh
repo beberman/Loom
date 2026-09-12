@@ -181,7 +181,38 @@ probe() {
     # under DES-0008 R1 and R2: the only mechanism left that changes running
     # code is a fresh process, so :started-at is always the moment the running
     # code was loaded.
-    if [ "$indexed" -gt "$started" ]; then state=stale; else state=current; fi
+    #
+    # Two questions, and the filesystem answers the one that matters. BUG-0067:
+    # :indexed-at only moves once the watcher has reindexed this tree, which is
+    # asynchronous and takes seconds, so between an edit and that reindex the
+    # index test says `current' about an image that predates the edit. `update'
+    # believed it and did nothing, `status' printed "code current", and a
+    # harness run in that window measured the old code and looked successful.
+    # The mtime test asks the source directly and has no watcher in it.
+    if [ "$indexed" -gt "$started" ] || source_newer_than "$started"; then
+        state=stale
+    else
+        state=current
+    fi
+}
+
+# Universal time (seconds from 1900) to Unix time (seconds from 1970). What
+# :started-at and :indexed-at are in, and what `find -newermt @' wants.
+UNIVERSAL_TO_UNIX=2208988800
+
+# True when any file the image was built from is newer than the image.
+#
+# The question `update' has to answer is "does the running process predate my
+# edit", and the only reliable witness is the edit itself. Every other signal
+# available here is derived from something that runs later: the index from the
+# watcher, the pidfile from a restart that has not happened yet.
+source_newer_than() {
+    local started unix_started
+    started=$1
+    [ -n "$started" ] || return 1
+    unix_started=$((started - UNIVERSAL_TO_UNIX))
+    [ -n "$(find "$root/src" "$root/loom.lisp" "$root/loom-serve.lisp" \
+                 -name '*.lisp' -newermt "@$unix_started" -print -quit 2>/dev/null)" ]
 }
 
 # ------------------------------------------------------------------
@@ -497,13 +528,37 @@ UNIT
     fi
 }
 
+# Poll until the running image is no longer stale, or give up saying so.
+#
+# BUG-0067 R3. `cmd_restart' hands the verb to systemd and returns; loading
+# eleven systems takes most of a minute, and the OLD process answers every
+# query in that window. A caller that measured as soon as `update' returned
+# measured the code it had just replaced, and nothing said so -- the run looked
+# successful because it was, against the wrong image.
+#
+# PROBE is the right predicate to wait on because it now asks the filesystem:
+# while the old process answers, its :started-at predates the edit and
+# SOURCE_NEWER_THAN fires, so `stale' persists until the new image is up.
+await_fresh_image() {
+    local waited=0 limit=${LOOM_UPDATE_TIMEOUT:-180}
+    while [ "$waited" -lt "$limit" ]; do
+        probe
+        [ "$state" = current ] && return 0
+        sleep 3
+        waited=$((waited + 3))
+    done
+    echo "update: the image is still $state after ${limit}s." >&2
+    echo "update: whatever you measure now may be the code you replaced." >&2
+    return 1
+}
+
 cmd_update() {
     if unit_owns; then
         # `stale' means the image predates the source. Under supervision the
         # way to a fresh image is a unit restart, which cmd_restart delegates.
         probe
         case "$state" in
-            stale) cmd_restart ;;
+            stale) cmd_restart && await_fresh_image ;;
             *)     echo "supervised by systemd and $state; nothing to do" ;;
         esac
         return $?
@@ -511,7 +566,7 @@ cmd_update() {
     probe
     case "$state" in
         down)  cmd_start ;;
-        stale) cmd_restart ;;
+        stale) cmd_restart && await_fresh_image ;;
         *)     echo "running and $state; nothing to do" ;;
     esac
 }

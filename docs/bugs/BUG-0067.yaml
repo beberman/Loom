@@ -44,18 +44,62 @@ body: |
   the lexical answer a good answer rather than a degraded one. The gap is that
   the instrument cannot tell which answer it got.
 
-  THE SECOND HAZARD, FOUND WHILE CHASING THE FIRST
+  THE SECOND HAZARD, FOUND WHILE CHASING THE FIRST, AND IT IS WORSE
 
-  `loom-serve.sh status' prints "code current" before the reloaded code is
-  serving. A mismatch run started immediately after `update' returned the
-  previous image's numbers -- 30 strict where the new setting gives 30 and the
-  old gives 31 -- and the run looked successful. It was caught only because two
+  `loom-serve.sh status' printed "code current" while the previous image was
+  answering. A mismatch run started immediately after `update' returned the old
+  image's numbers and looked successful. It was caught only because two
   configurations that must differ returned byte-identical results.
 
-  A probe on behaviour is what settled it: fe-11 in `acceptance.py' passes under
-  :RELATIVE-SCORE and fails under :RECIPROCAL-RANK, so one case says which code
-  is answering. That works and is not a fix; it is a workaround that happens to
-  exist because this defect had a case.
+  The cause is in PROBE and it is not a race in `status'. PROBE decided
+  staleness by comparing this tree's :INDEXED-AT against the service's
+  :STARTED-AT -- an index newer than the image means the source moved. But
+  :INDEXED-AT only moves once the watcher has reindexed Loom's own tree, which
+  is asynchronous and takes seconds. Between an edit and that reindex, PROBE
+  said `current' about an image that predated the edit.
+
+  CMD_UPDATE then believed it. Its supervised branch restarts only on `stale'
+  and otherwise prints "nothing to do" and returns, so an edit followed by
+  `update' could leave the old image running with nothing said. Every harness
+  run in that window measured the code it had just replaced.
+
+  The second half is that `cmd_restart' hands the verb to systemd and returns
+  while eleven systems load. The old process answers for most of a minute
+  after `update' has returned successfully.
+
+  A behavioural probe is what settled it during the session: fe-11 in
+  `acceptance.py' passes under :RELATIVE-SCORE and fails under
+  :RECIPROCAL-RANK, so one case says which code is answering. That is a
+  workaround that happened to exist because this defect had a case.
+
+  WHAT LANDED, 2026-09-12
+
+  R1  `repository-status' carries :VECTOR-STORE, :PRESENT or :ABSENT, from a
+      PROBE-FILE on the store header rather than a five megabyte load, and
+      :VECTORS, the count when a store is loaded and NIL when none is. A
+      keyword and not a boolean because NIL encodes to JSON null and null is
+      also what a service too old to carry the field returns.
+
+  R2  `service.py's DESCRIBE prints "HAS NO VECTOR STORE -- this run measures
+      the lexical seeder alone" per repository that has none. Said rather than
+      refused: a tree with no store is the ordinary case and REQ-0048 R6 makes
+      its answer a good one. What must not happen is the figure being read
+      without it.
+
+  R3  PROBE asks the filesystem. SOURCE_NEWER_THAN converts :STARTED-AT from
+      universal to Unix time and runs `find -newermt' over src/, loom.lisp and
+      loom-serve.lisp, so an edit makes the image stale the instant it is
+      saved and no watcher is in the loop. AWAIT_FRESH_IMAGE then polls PROBE
+      after a restart until it reports current, which waits for exactly the
+      right thing: while the old process answers, its :STARTED-AT predates the
+      edit and the mtime test keeps it stale.
+
+      Verified behaviourally rather than by reading the script. With the
+      service on :RECIPROCAL-RANK, fe-11 fails; flipping *FUSION* and running
+      `update'; fe-11 passes on the first call after `update' returns. Before
+      the change the same sequence returned the old image's answer.
+
+  R4 is not done. Nothing yet explains what removed the stores.
 
   WHAT IS WANTED
 
