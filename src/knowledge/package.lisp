@@ -91,6 +91,11 @@
    #:semantic-candidates
    #:*rrf-k*
    #:*semantic-weight*
+   #:*fusion*
+   #:*fusion-head*
+   #:*lexical-weight*
+   #:*lexical-weight-unnamed*
+   #:*spelled-word-floor*
    #:*semantic-limit*
    #:*semantic-floor*
    #:*semantic-relative-floor*

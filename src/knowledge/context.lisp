@@ -780,6 +780,72 @@ why."
                 matches)
        t))
 
+(defparameter *spelled-word-floor* 2
+  "How many words of an entity's name the caller must have written for the
+fusion to read the lexical list as naming something.
+
+2 excludes a one-word name that happens to be an ordinary English word, which
+is the half of NAMED-BY-TASK-P that fires too often. Set to 1 to accept those;
+set high to make every list read as unnamed, which is the fixed-weight
+behaviour with *LEXICAL-WEIGHT-UNNAMED* in force.")
+
+(defun dot-segments (name)
+  "NAME split on #\., which SPLIT-NAME-PARTS does not treat as a boundary."
+  (let ((segments '()) (start 0))
+    (loop for dot = (position #\. name :start start)
+          do (push (subseq name start (or dot (length name))) segments)
+             (if dot (setf start (1+ dot)) (return)))
+    (nreverse segments)))
+
+(defun spelled-name-words (entity)
+  "ENTITY's name as the words a caller could have written, deduplicated.
+
+SPLIT-NAME-PARTS per dot-separated segment rather than over the whole name. A
+dot is a member separator in JavaScript and is not one of that function's
+boundaries, so it splits `ListMapper.toNative' into list, mapper.to and native
+-- three words with one boundary in the wrong place. Splitting the segments
+first gives list, mapper, to, native.
+
+Words under three characters are dropped, which is TASK-TOKEN-ORIGINS' own
+floor: the caller cannot have written what the tokenizer would not keep."
+  (let ((name (significant-name entity)))
+    (when name
+      (let ((words '()))
+        (dolist (segment (dot-segments name))
+          (dolist (part (split-name-parts segment))
+            (when (>= (length part) 3)
+              (pushnew part words :test #'string=))))
+        (nreverse words)))))
+
+(defun spelled-name-p (entity terms)
+  "True when the caller wrote at least *SPELLED-WORD-FLOOR* words of ENTITY's name.
+
+NAMED-BY-TASK-P asks whether the entity's whole name is one of the caller's
+words, and that is wrong in both directions. It misses `ListMapper.toNative'
+written as `list mapper to native' -- four words, none of them the whole name.
+It fires on SEGMENT in `segment terrain into region polygons', where one
+ordinary English word is a definition's whole name and the query is about
+something else. DES-0050 D8 has both, one from each corpus.
+
+A term equal to the whole name counts for every word in it: a caller who typed
+`renderengineleaflet' spelled render, engine and leaflet in one go, and asking
+for the parts separately would refuse the clearest case there is.
+
+Used for the fusion weight and deliberately not for SEED-SCORE's `named' band.
+That band orders the lexical list; this decides how much the lexical list is
+worth against the dense one, and moving both at once would leave neither
+measurable."
+  (and (not (slot-accessor-p entity))
+       (let* ((words (spelled-name-words entity))
+              (name  (significant-name entity))
+              (whole (and name (string-downcase name))))
+         (and words
+              (>= (if (and whole (member whole terms :test #'string=))
+                      (length words)
+                      (count-if (lambda (word) (member word terms :test #'string=))
+                                words))
+                  *spelled-word-floor*)))))
+
 (defun demoted-test-p (entity demote-tests production)
   "True when ENTITY is test code that R4 should rank below production code.
 Exempt when a non-test candidate carries the same name; PRODUCTION-NAMES says
@@ -1043,15 +1109,103 @@ seed set gets an expansion too, and whether the ten cases equal weight appears
 to lose return as items is a question only a measurement with the band running
 can answer. PLAN-0043 S6 is that measurement and is what sets this number.")
 
-(defun fuse-rankings (lexical semantic &key protected)
-  "One ranked list from two, by reciprocal rank. DES-0040 D4.
+(defparameter *fusion* :reciprocal-rank
+  "How FUSE-RANKINGS combines the lexical and the dense list.
 
-    score(c) = sum over the lists holding c of  w / (*RRF-K* + rank(c))
+:RECIPROCAL-RANK reads positions and ignores scores, which is what DES-0040 D4
+built and what every number recorded before DES-0050 was measured against.
 
-Rank rather than score, because a cosine and a SEED-SCORE band are not on one
+:RELATIVE-SCORE normalises each list against its own best and worst and adds
+them with *LEXICAL-WEIGHT*. DES-0050 D5.
+
+Two values rather than one, so the change can be measured against itself: bound
+to :RECIPROCAL-RANK, nothing downstream can behave differently than it did
+before relative score fusion existed. That identity is step 1 of DES-0050's
+order and it is what makes the numbers after step 2 readable.")
+
+(defparameter *fusion-head* 20
+  "How many lexical candidates enter the relative-score normalisation.
+
+Bounded rather than the whole list, and DES-0050 D6 is why. SEED-SCORE carries
+the entity type in a band worth 1000000, so one :FILE or :DOCUMENT inside the
+head multiplies the range by ten and compresses the named boundary -- the
+100000 band that normalisation exists here to find -- into a tenth of the
+interval, handing the head back to the dense list.
+
+50 keeps the odds low and does not remove the case. Measured at 20, 50 and 200
+on DES-0050's three tasks, all three place the target identically, because no
+type-band candidate falls inside any of them. That is luck rather than a
+property and nothing detects it yet.
+
+A candidate outside the head contributes nothing from the lexical side, which
+is the treatment a candidate absent from the dense list already gets.")
+
+(defparameter *lexical-weight* 0.4
+  "The lexical list's share of a relative-score fusion, in [0,1].
+
+The dense list takes the rest. *SEMANTIC-WEIGHT* at 1.5 against a lexical 1.0
+is the same split written as a ratio and corresponds to 0.4 here.
+
+Used when the task named the candidate at lexical rank 1.
+*LEXICAL-WEIGHT-UNNAMED* is used when it did not, and DES-0050 D8 is why the
+two are separate.")
+
+(defparameter *lexical-weight-unnamed* 0.1
+  "The lexical list's share when the task named nothing at lexical rank 1.
+
+A task whose top lexical candidate was not named by the caller has a lexical
+list with no discontinuity in it -- every candidate sits in one band, and the
+ordering inside that band is coverage and match quality rather than anything
+the caller wrote. `tools/test/cases/mismatch.json' is 120 queries built to be
+exactly that case: each describes an entity in words its author did not use,
+checked mechanically, so no lexical candidate can be the answer and every slot
+the lexical list takes is a slot the dense list needed.
+
+Equal to *LEXICAL-WEIGHT* is the fixed-weight behaviour and is the value to set
+to turn this off.
+
+Measured at 0.4 fixed, relative score fusion holds known-item at 435 of 450 and
+takes acceptance from 33 to 35 strict and 39 to 44 lenient, and drops mismatch
+from 31 to 25. The two families want opposite things from one number, which is
+what makes it two.")
+
+(defun fuse-rankings (lexical semantic &key protected lexical-score
+                                            (lexical-weight *lexical-weight*))
+  "One ranked list from two, by *FUSION*. DES-0040 D4 and DES-0050 D5.
+
+    :RECIPROCAL-RANK   score(c) = sum over the lists holding c of
+                                    w / (*RRF-K* + rank(c))
+
+    :RELATIVE-SCORE    each list normalised to [0,1] against its own best and
+                       worst, then *LEXICAL-WEIGHT* * lexical + the rest * dense
+
+Rank fusion was chosen because a cosine and a SEED-SCORE band are not on one
 scale and nothing here should pretend they are. DES-0032 refused to place a
-threshold in a quantity it had measured across six queries; this refuses to
+threshold in a quantity it had measured across six queries; this refused to
 calibrate two.
+
+What it cannot do is tell a list whose ordering carries information from one
+whose ordering carries almost none, and both lists that reach here are eight
+long. The dense list spans 5 to 7% of its best cosine, because
+*SEMANTIC-RELATIVE-FLOOR* builds it to sit within 10%. The lexical list opens
+with a 100000-unit jump wherever the caller named something, because SEED-SCORE
+is a band vector. Rank fusion flattens the second into the first.
+
+It also cannot be retuned out of it. Lexical rank 1 outranks semantic rank N
+only when N > *RRF-K*/2 + 1.5, which at 60 needs a dense list of 32 against a
+*SEMANTIC-LIMIT* of 8 -- and dropping the constant does not fix it either:
+measured at 60, 30, 10, 3 and 0 against BUG-0060's recorded lists, the target
+stays at fused rank 12, 12, 12, 12 and 10. DES-0050 D3.
+
+:RELATIVE-SCORE reaches rank 4. It needs no code to find the cliff: normalising
+over *FUSION-HEAD* candidates divides by a range of about 1000, so a
+100000-unit jump lands past the top of the interval and every named candidate
+normalises to approximately 1.0. That is also how it can go wrong silently, and
+DES-0050 D6 names both ways.
+
+LEXICAL-SCORE reads one entity\'s SEED-SCORE and is required for
+:RELATIVE-SCORE, which has nothing to normalise without it. The rank path
+ignores it.
 
 A candidate on both lists carries both kinds of match: its lexical terms and
 its similarity. That is what makes it not dense-only, so ADMIT-SEEDS charges it
@@ -1088,19 +1242,62 @@ no embedder."
       (let ((scores (make-hash-table :test #'eq))
             (matches (make-hash-table :test #'eq))
             (order '()))
-        (flet ((note (entity rank weight found)
+        (flet ((note (entity contribution found)
                  (unless (nth-value 1 (gethash entity scores))
                    (push entity order))
-                 (incf (gethash entity scores 0.0d0)
-                       (/ weight (+ *rrf-k* rank)))
+                 (incf (gethash entity scores 0.0d0) contribution)
                  (setf (gethash entity matches)
                        (append (gethash entity matches) found))))
-          (loop for (entity . found) in lexical
-                for rank from 1
-                do (note entity rank 1.0d0 found))
-          (loop for (entity . found) in semantic
-                for rank from 1
-                do (note entity rank (float *semantic-weight* 1.0d0) found)))
+          (ecase *fusion*
+            (:reciprocal-rank
+             (loop for (entity . found) in lexical
+                   for rank from 1
+                   do (note entity (/ 1.0d0 (+ *rrf-k* rank)) found))
+             (loop for (entity . found) in semantic
+                   for rank from 1
+                   do (note entity (/ (float *semantic-weight* 1.0d0)
+                                      (+ *rrf-k* rank))
+                            found)))
+            (:relative-score
+             (unless lexical-score
+               (error "FUSE-RANKINGS was asked for a relative-score fusion ~
+                       without LEXICAL-SCORE. The lexical side has no scores to ~
+                       normalise, and the fusion would silently be the dense ~
+                       list alone."))
+             (let* ((head (subseq lexical 0 (min *fusion-head* (length lexical))))
+                    (values (mapcar (lambda (pair) (funcall lexical-score (car pair)))
+                                    head))
+                    ;; SEED-SCORE is lower-is-better, so the best is the least
+                    ;; of these and the normalisation runs down from the worst.
+                    (worst (reduce #'max values))
+                    (best (reduce #'min values))
+                    (span (- worst best))
+                    (weight (float lexical-weight 1.0d0))
+                    (cosines (mapcar (lambda (pair)
+                                       (or (cdr (assoc :similarity (cdr pair))) 0))
+                                     semantic))
+                    (top (reduce #'max cosines))
+                    (bottom (reduce #'min cosines))
+                    (spread (- top bottom)))
+               ;; A list whose members all score alike holds candidates nothing
+               ;; separates. They normalise together at 1.0 rather than through
+               ;; a division by zero, which is the same answer with the
+               ;; degenerate case named.
+               (loop for pair in head
+                     for value in values
+                     do (note (car pair)
+                              (* weight (if (zerop span)
+                                            1.0d0
+                                            (/ (- worst value) (float span 1.0d0))))
+                              (cdr pair)))
+               (loop for pair in semantic
+                     for cosine in cosines
+                     do (note (car pair)
+                              (* (- 1.0d0 weight)
+                                 (if (zerop spread)
+                                     1.0d0
+                                     (/ (- cosine bottom) (float spread 1.0d0))))
+                              (cdr pair)))))))
         (dolist (entity protected)
           (when (nth-value 1 (gethash entity scores))
             (incf (gethash entity scores) 1.0d0)))
@@ -1487,15 +1684,23 @@ waiting (ADMIT-SEEDS)."
          ;; of the alist and missed the rest. BUG-0037: 207 of 246 recorded
          ;; bundles carried a null `terms' and a score recomputed from no matches
          ;; at all, which is the corpus REQ-0036 measures the ranking against.
+         ;; Scored once into a table rather than inside the sort key, because
+         ;; DES-0050's fusion reads the same numbers the sort does and
+         ;; recomputing them there would let the two drift. One entry per
+         ;; entity: SEED-MATCHES keys its alist by entity, so CANDIDATES holds
+         ;; no duplicates to disagree about.
+         (scored     (let ((table (make-hash-table :test #'eq)))
+                       (dolist (pair candidates table)
+                         (setf (gethash (car pair) table)
+                               (seed-score (car pair) (cdr pair)
+                                           :demote-tests demote-tests
+                                           :terms terms
+                                           :production production
+                                           :origins origins
+                                           :frequencies frequencies
+                                           :corpus-size corpus-size)))))
          (lexical    (stable-sort (copy-list candidates) #'<
-                                  :key (lambda (pair)
-                                         (seed-score (car pair) (cdr pair)
-                                                     :demote-tests demote-tests
-                                                     :terms terms
-                                                     :production production
-                                                     :origins origins
-                                                     :frequencies frequencies
-                                                     :corpus-size corpus-size))))
+                                  :key (lambda (pair) (gethash (car pair) scored))))
          ;; DES-0040 D4. With no embedder this is LEXICAL itself, so nothing
          ;; below this line can behave differently than it did before dense
          ;; retrieval existed.
@@ -1509,7 +1714,18 @@ waiting (ADMIT-SEEDS)."
                            when (named-by-task-p entity found terms)
                              collect entity))
          (protected  (when *protect-named* named))
-         (ranked     (fuse-rankings lexical semantic :protected protected))
+         ;; The weight the fusion gives the lexical side turns on whether the
+         ;; caller named the candidate at the head of it. A lexical list whose
+         ;; first entry was not named has no discontinuity: every candidate is
+         ;; in one band and the ordering inside it is coverage rather than
+         ;; anything the caller wrote. DES-0050 D8.
+         (lexical-named (and lexical (spelled-name-p (car (first lexical)) terms)))
+         (ranked     (fuse-rankings lexical semantic :protected protected
+                                    :lexical-weight (if lexical-named
+                                                        *lexical-weight*
+                                                        *lexical-weight-unnamed*)
+                                    :lexical-score (lambda (entity)
+                                                     (gethash entity scored))))
          (chosen     (admit-seeds ranked limit :protected protected)))
     ;; Second value: the chosen seeds with the score and the terms each
     ;; answered to. DES-0030 D3 -- a record holding the seeds without their

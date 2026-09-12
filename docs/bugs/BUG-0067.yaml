@@ -1,0 +1,91 @@
+id: BUG-0067
+title: A recall harness measured half the seeder for a whole sweep, because the vector stores were gone and `ready` does not mean a repository has one
+status: open
+severity: major
+priority: p2
+date: 2026-09-12
+refines: [REQ-0036]
+affects: [service.py, repository-state, vector-build-status, start-vector-builds]
+tags: [harness, measurement, vectors, recall, rule-0008, req-0048, des-0050]
+summary: |
+  A four-cell sweep of DES-0050's fusion settings returned known-item 409 of
+  450 and mismatch 9 of 120, identical in all four cells however the weights
+  moved. The numbers were printed, formatted correctly, and meant nothing: the
+  vector stores for every watched repository were gone, so `context' answered
+  from the lexical seeder alone and no weight between two lists could matter
+  when there was one list.
+
+  9 of 120 is the giveaway in hindsight. `tools/test/cases/mismatch.md' records
+  exactly that as the bar before dense retrieval existed: "mismatch strict
+  9/120 7.5%". The harness reproduced a number from a document rather than
+  measuring the tree, and nothing said so.
+
+  This is RULE-0008's failure mode -- a measurement that did not happen must
+  not read like one that returned nothing to say -- reaching the half of the
+  service `ensure' does not check.
+body: |
+  WHAT ensure CHECKS AND WHAT IT DOES NOT
+
+  `tools/test/service.py' runs `loom-serve.sh update' and waits for every
+  repository a case file names to reach `ready'. That covers the index. It does
+  not cover the vector store, and the two are separate: REPOSITORY-STATE reports
+  :EMBEDDING while a store is building and :READY once it is not, which is also
+  what it reports for a repository that has no store at all and never started
+  one.
+
+  So `ready' means "the index can be queried". A caller reading it as "the
+  service is whole" gets a lexical-only answer with no warning, and for
+  `recall.py' against the mismatch family that is a measurement of something
+  else entirely.
+
+  `similar' already refuses this case correctly and says so -- "front-end has
+  no vector store. Run embed on it first." -- which is how the absence was
+  finally seen. `context' cannot refuse it, and should not: REQ-0048 R6 makes
+  the lexical answer a good answer rather than a degraded one. The gap is that
+  the instrument cannot tell which answer it got.
+
+  THE SECOND HAZARD, FOUND WHILE CHASING THE FIRST
+
+  `loom-serve.sh status' prints "code current" before the reloaded code is
+  serving. A mismatch run started immediately after `update' returned the
+  previous image's numbers -- 30 strict where the new setting gives 30 and the
+  old gives 31 -- and the run looked successful. It was caught only because two
+  configurations that must differ returned byte-identical results.
+
+  A probe on behaviour is what settled it: fe-11 in `acceptance.py' passes under
+  :RELATIVE-SCORE and fails under :RECIPROCAL-RANK, so one case says which code
+  is answering. That works and is not a fix; it is a workaround that happens to
+  exist because this defect had a case.
+
+  WHAT IS WANTED
+
+  R1  `status' distinguishes a repository with no vector store from one whose
+      store is built. :READY covers both today and they are not the same state.
+
+  R2  `service.py's ensure refuses, or says plainly what it is measuring, when
+      a repository named by the case file has no vector store. RULE-0008's
+      posture: exit with a sentence rather than print a figure against a
+      service it could not reach, extended to a service it reached in half.
+
+  R3  `loom-serve.sh status' does not report "code current" until the reloaded
+      code is answering. A check that leads the thing it checks is worse than
+      no check, because it is trusted.
+
+  R4  Whatever lost the stores is found. They were present at the start of the
+      session, absent after several `update' cycles, and nothing in the log
+      said when. This is the part with no diagnosis yet and R1 through R3 are
+      all about noticing rather than preventing.
+
+  ACCEPTANCE
+
+  With a repository's vector store deleted, `status' says so and `recall.py'
+  refuses to score against it. A sweep like DES-0050's cannot silently produce
+  the pre-dense bar and present it as a result.
+
+  WHAT IT COST
+
+  One four-cell sweep, re-run after rebuilding the stores. The re-run put the
+  same configuration at known-item 435, mismatch 30 and acceptance 35, against
+  the void run's 409, 9 and 33 -- so the defect did not merely add noise, it
+  reversed the conclusion. DES-0050 D10 has both tables and the note that the
+  first is void.
