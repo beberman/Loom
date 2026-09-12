@@ -1,6 +1,6 @@
 id: BUG-0060
 title: context for a terrain-editor task led with a play-mode class and an archived doc, and returned none of the three files the change edited
-status: open
+status: closed
 severity: major
 date: 2026-08-29
 amended: 2026-09-11
@@ -244,7 +244,32 @@ body: |
       sbcl --script tools/test/seed-trace.lisp /home/beberman/github/front-end \
         load and hold the map TerrainPartition in useLayerEditorState ...
 
-  STILL OPEN, AND THIS BUG STAYS OPEN FOR IT
+  FIXED 2026-09-12
+
+  `renderengineleaflet' reads ANSWERED where it read WEAK. The seeder admits
+  the class, and DES-0050 D11 has the settings and the numbers:
+  :RELATIVE-SCORE fusion, each list normalised against its own range, and
+  SPELLED-NAME-P deciding what the lexical side is worth.
+
+  The bundle then withholds it. At the default 4000-token budget the reported
+  task returns `seed: found 8, sent 6', and the two not sent are
+  `RenderEngineLeaflet' and `useDesignScreen', both named in the seed record.
+  So the seeding is fixed and a caller at that budget still does not receive
+  the class body. REQ-0040's withholding line is what says so, and it is a
+  different requirement from this one.
+
+  fe-11 in `tools/test/acceptance.py' is the case, added while this bug was
+  open and failing at the time. It passes.
+
+  WHAT THE OLD ANALYSIS BELOW IS STILL FOR
+
+  The 2026-09-10 and 2026-08-29 readings are kept because both were wrong in
+  instructive ways and each is marked. The first blamed analyzer coverage; the
+  definitions existed. The second said the class ranked below the eight; it
+  ranked fourth. Neither was found from the bundle, and
+  `tools/test/seed-trace.lisp' exists because of that.
+
+  WHAT WAS STILL OPEN, AND WAS
 
   `RenderEngineLeaflet' is still not seeded. The 2026-09-10 reading of why
   follows and is superseded by the measurement above: it does not rank below
