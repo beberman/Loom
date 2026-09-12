@@ -5,7 +5,8 @@ severity: major
 priority: p2
 date: 2026-09-12
 refines: [REQ-0036]
-affects: [service.py, repository-state, vector-build-status, start-vector-builds]
+affects: [repository-state, vector-build-status, vector-store-on-disk-p,
+          repository-status, build-vector-store, assemble-vector-store]
 tags: [harness, measurement, vectors, recall, rule-0008, req-0048, des-0050]
 summary: |
   A four-cell sweep of DES-0050's fusion settings returned known-item 409 of
@@ -24,6 +25,14 @@ summary: |
   not read like one that returned nothing to say -- reaching the half of the
   service `ensure' does not check.
 body: |
+  NOT IN affects:
+
+  `tools/test/service.py' and `loom-serve.sh's START_VECTOR_BUILDS are both
+  changed by this bug and neither is in affects:, because affects: resolves
+  against the index and Loom indexes neither -- there is no Python analyzer,
+  and a shell function is not a definition. Naming them there made `check'
+  report two unresolved references, which is the field working correctly.
+
   WHAT ensure CHECKS AND WHAT IT DOES NOT
 
   `tools/test/service.py' runs `loom-serve.sh update' and waits for every
