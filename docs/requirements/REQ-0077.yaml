@@ -1,0 +1,142 @@
+id: REQ-0077
+title: Federation requires every tree on one filesystem, so a developer on a product of ten repositories must clone ten, and the cross-repository answer they get is derived against whatever commit each clone sits at
+status: draft
+priority: p4
+date: 2026-09-12
+refines: [REQ-0073, REQ-0027, REQ-0064]
+affects: [federate-repositories, watch-repository, index-repository,
+          repository-graph, short-commit, find-repository, require-repository,
+          prepare-repository, read-frameworks, federation-report]
+importance: Major
+tags: [multi-repo, federation, deployment, service, organization, sparse,
+       req-0073, req-0064, des-0025, dec-0001, front-end, game-server]
+summary: |
+  A REPOSITORY is a local `root` with a file monitor, a stamp table and
+  `git check-ignore` calls against that path (src/workspace/workspace.lisp:20-97).
+  FEDERATE-REPOSITORIES pairs entries in `*repositories*`, and every entry is one
+  of those. So every cross-repository answer Loom gives requires every tree
+  checked out on one filesystem and indexed by one service.
+
+  That holds for one developer with six repositories and fails three ways for a
+  team. Ten services means ten clones per developer, each to be kept current.
+  Walking a tree is not free -- the `unindexed` slot exists because computing it
+  per query made `status` over nine repositories take 8.9 seconds, 7.1 of them
+  front-end alone. And the federated edge records `:foreign-commit` from
+  whatever commit the developer's clone of the far tree happens to sit at, so
+  two developers asking the same question get different answers and the edge
+  records which without anyone reading it.
+
+  Three deployment shapes answer this, and the cheapest one is available because
+  of what crosses. Code federation needs the far tree's source and an analyzer
+  pass. Document federation -- REQ-0073's crossing `refines:`, REQ-0074's
+  requests -- needs the far tree's documents and its declared aliases, which on
+  this tree is 279 YAML files and no source at all. The half that crosses team
+  boundaries is the cheap half.
+body: |
+  PRIORITY: P4, 2026-09-12
+
+  Impact is that the team workflow of REQ-0073 to REQ-0076 assumes a deployment
+  nobody described. REQ-0073 R9 says a document reference must not require the
+  far tree's source; this is the requirement that says what a repository Loom
+  has documents for but no source of actually is.
+
+  Probability today is zero: six repositories on one filesystem is the developed
+  case and it works. It reopens at the first developer who is not expected to
+  clone every repository in the product.
+
+  Sequence: REQ-0073 R9 and R10 first, because they state the property; this
+  states the shapes that provide it. Independent of REQ-0074 and REQ-0075.
+
+  THE THREE SHAPES
+
+  Every tree local. What exists. Works with no network, no service beyond the
+  developer's own, and no trust in anything remote. It is the right answer for a
+  product of a few repositories and it stops being the right answer at a count
+  no requirement can name in advance.
+
+  A service per organisation. One Loom indexes canonical clones of each
+  repository's default branch; developers query it for cross-repository answers
+  and run their own for the tree they are editing. Version skew becomes one
+  visible fact -- the commit that service indexed, and when -- rather than a
+  variable per developer. REQ-0064 already made the service outlive a session,
+  which is the half of this that exists.
+
+  Documents without source. A repository Loom holds the documents of and not the
+  code. Enough for every cross-repository document reference and every request
+  state, obtainable by fetching one ref and reading two directories, and not
+  enough for a `:serves` route match or an `affects:` reaching a function. This
+  is the shape that keeps the first shape viable as a product grows, because the
+  repositories a developer does not edit are usually the ones they only need
+  documents from.
+
+  WHAT IS WANTED
+
+  R1  A repository may be registered with its documents and without its source,
+      and every report says which kind it is. `status` names it, `find` says the
+      source is absent rather than that a definition does not exist, and
+      `describe` on a document in it answers normally.
+
+  R2  A document-only repository is obtained without a working copy. One fetch
+      of a named ref, reading the document directories and the file REQ-0071
+      renames. No analyzer pass over source that was not fetched, no file
+      monitor, and no `git check-ignore` subprocess per query against a tree
+      that is not checked out.
+
+  R3  Its freshness is recorded and reported: the ref, the commit, and when it
+      was fetched. A cross-repository answer derived against a three-day-old
+      fetch is correct about a three-day-old tree, and the answer must say so
+      rather than read like an answer about the tree now.
+
+  R4  A query that needs what a document-only repository does not hold refuses
+      and says why. Asking for the callers of a function in a repository whose
+      source was never fetched is not a zero-result answer; CON-0001 makes it a
+      reported gap, and the distinction is the whole difference between "nothing
+      calls it" and "nothing here could have told you".
+
+  R5  A service may hold repositories of both kinds at once, and federation
+      draws what each kind supports. A document-only repository contributes
+      document edges and no route claims, and FEDERATION-REPORT says which
+      repositories could not contribute a route rather than reporting their
+      routes as unmatched.
+
+  R6  The organisation is the unit a service is configured with. A service told
+      an organisation resolves REQ-0073 R6's repository set from it, rather than
+      being handed a list of paths that goes stale when a service is added.
+
+  R7  A shared service answers with the commit it indexed, per repository, in
+      every answer that crossed a boundary. A developer reading a cross-repository
+      answer must be able to tell it apart from one derived against their own
+      checkout.
+
+  R8  Nothing about the three shapes changes what is derivable. A document-only
+      repository is files fetched from a remote and read; DEC-0001 holds
+      unchanged, and no shape introduces a fact that is not re-derivable by
+      fetching again.
+
+  ACCEPTANCE
+
+  Register game-server as document-only from a fetched ref, with no working
+  copy. A `refines: [@game-server/REQ-nnnn]` in front-end resolves, `impact` on
+  the game-server requirement lists the front-end design, and `status` names
+  game-server as document-only with its ref, commit and fetch time. Ask for the
+  callers of a game-server function and the answer says the source was not
+  fetched. Ask `federation-report` and game-server is listed as contributing no
+  route claims rather than as having unmatched ones.
+
+  Then register it fully, with a working copy, and every one of those answers
+  changes to the full form with no document reference resolving differently.
+
+  OPEN QUESTIONS
+
+  - Whether a document-only repository should refresh itself on a schedule, and
+    what it means for an index to be current when its source of truth is a
+    remote ref rather than a watched directory. The file monitor answers
+    freshness for a watched tree and has no equivalent here.
+  - Whether a published index is a fourth shape. Building the index in CI on
+    merge and having other repositories consume it is smaller than fetching
+    documents and re-reading them, and it makes a derived artifact the thing a
+    tree believes about its neighbour. `:foreign-commit` makes the staleness
+    visible; nothing makes the derivation checkable without the source.
+  - Whether a shared service is a trust boundary. It answers questions about
+    repositories the asker may not have access to, and REQ-0071 R4 defers the
+    authentication question that would decide it.

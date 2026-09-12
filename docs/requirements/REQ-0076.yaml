@@ -1,0 +1,200 @@
+id: REQ-0076
+title: A forge adapter carries the request signal, the generated owners file and the approval record, and the first of those is what delivers a cross-repository request to the team that must answer it
+status: draft
+priority: p3
+date: 2026-09-12
+amended: 2026-09-12
+refines: [REQ-0074, REQ-0075, CON-0008]
+affects: [short-commit, federation-report, prepare-repository, read-frameworks,
+          parse-frameworks, set-document-status, complete-plan, entity-system]
+importance: Major
+tags: [workflow, forge, github, adapter, notifications, review, multi-user,
+       req-0074, req-0075, con-0008, dec-0001, front-end, game-server]
+summary: |
+  REQ-0074 makes a cross-repository request a file in the requesting tree and
+  keeps every state derivable without a forge. That is the record and it is not
+  the delivery. A file in front-end reaches the payments team only if someone
+  runs a Loom that watches front-end and then asks it, which is a dashboard
+  nobody is looking at. The signal has to arrive where that team already works.
+
+  So this splits by section rather than deferring whole, the way REQ-0071 does.
+
+  R1, the request signal, is what makes REQ-0074 function and carries its
+  priority. On a pull request that adds or changes a request declaration, a job
+  in the requesting repository opens or updates an issue in the named
+  repository. It needs the requesting repository and a token, and nothing else:
+  no federation, no far index, no shared service. The signal path is therefore
+  the cheapest part of this workflow to build and the part without which none of
+  the rest is reached.
+
+  R2, generating the forge's path-keyed owners file from REQ-0075's map, is what
+  turns that map from a report into an enforced rule.
+
+  R3 and R4, reading approval events and notifying maintainers, are convenience
+  and stay at P5.
+
+  Underneath all three: the forge is a projection and never the record. Delete
+  every issue the adapter opened and nothing is lost. Configure no adapter and
+  every state still computes from files, with each report naming which source
+  answered.
+body: |
+  PRIORITY: P3 for R1, P4 for R2, P5 for R3 and R4. 2026-09-12.
+
+  R1 is the delivery mechanism for REQ-0074 and carries that document's
+  priority. A request nobody is told about is a file.
+
+  R2 waits on REQ-0075 existing. Its value is that a rule the forge enforces
+  stops being a rule Loom merely reports.
+
+  R3 and R4 are convenience. Every report they improve already answers from git
+  and the index, less precisely.
+
+  Sequence: R1 lands with REQ-0074. R2 after REQ-0075. R3 and R4 whenever a
+  maintainer who is not the document's author first needs reaching.
+
+  WHY GITHUB FIRST
+
+  front-end and game-server are both in the `AI-Strategy-Games` organisation on
+  github.com, and a user service and a proxy would be the third and fourth
+  repositories in it. GitHub is the adapter that can be tested against a real
+  organisation rather than the one the design assumes.
+
+  THE SIGNAL, IN SEQUENCE
+
+  A front-end developer declares a request on a branch and opens a pull request.
+  A job in front-end runs Loom over the branch, finds request declarations that
+  differ from the merge base, and opens an issue in `AI-Strategy-Games/payments`
+  titled with the capability, bodied with the requesting document, its
+  repository, its branch and its commit, and labelled as a Loom request. GitHub
+  notifies the payments team through the watch rules they already have. That is
+  the signal, and it costs the payments team no new tool.
+
+  The issue is opened at pull request time rather than at merge, because a
+  request the payments team will refuse is cheapest to discover before the
+  front-end product manager has accepted an approach that depends on it. The
+  issue carries the request's state from REQ-0074's lifecycle -- `proposed`
+  while the branch is unmerged -- so the payments team can see that nothing is
+  committed yet. When the branch merges the issue is updated to `open`; when the
+  branch closes unmerged it is updated to `withdrawn`.
+
+  WHAT IS WANTED
+
+  R1  THE REQUEST SIGNAL. P3, with REQ-0074.
+
+  R1.1  A job in the requesting repository, triggered on pull request events and
+        on pushes to the default branch, reconciles the request declarations in
+        the tree with the issues the adapter has opened. It reads the repository
+        it runs in and calls the forge. It does not need the target repository's
+        index, its source, or a service that watches both.
+
+  R1.2  Reconciliation is idempotent and disposable. Running it against a forge
+        that lost every issue recreates them; running it twice changes nothing;
+        running it after a request is withdrawn updates that issue and opens no
+        other. This is DES-0025's retract-and-re-derive argument applied
+        outward, and the reason is the same: a mirror reconciled incrementally
+        will drift.
+
+  R1.3  The issue names the request's state and the commit the state was
+        computed at. A `proposed` request and an `open` one ask different things
+        of the reader and must not present identically.
+
+  R1.4  The issue is a projection. Closing it does not close the request,
+        reopening it does not reopen the request, and editing its body changes
+        nothing. The next reconciliation restores what the files say, and a
+        discrepancy is reported rather than reconciled in the forge's favour.
+
+  R1.5  A request whose target repository is not in the organisation, or which
+        the token cannot write to, is reported as undelivered against the
+        requesting repository. An undelivered signal that fails quietly is worse
+        than no signal, because the requesting team believes they have asked.
+
+  R2  THE GENERATED OWNERS FILE. P4, after REQ-0075.
+
+  R2.1  A path-keyed owners file is generated from REQ-0075's map and the index,
+        so the review the forge requires is the review the map specifies.
+
+  R2.2  It is generated, checked in, and verified by regenerating and comparing.
+        A stale owners file routes a design to the wrong team silently, and the
+        comparison is what makes that a failed check rather than a discovery
+        months later.
+
+  R2.3  It states that it is generated and names what to edit instead. REQ-0021
+        R6 is the standing argument about what a generator may write: what was
+        measured, never what must remain true.
+
+  R3  THE APPROVAL RECORD. P5.
+
+  R3.1  The adapter reads the review approvals on the commit that moved a
+        document's status, so `impact` on a document can report who accepted it
+        and when.
+
+  R3.2  Without an adapter the same question is answered from `git log -L` on
+        the status line, which names the committing author rather than the
+        approving reviewer. Both answers are reported with their source named,
+        and the weaker one is not presented as the stronger.
+
+  R4  NOTIFICATION. P5.
+
+  R4.1  The adapter resolves REQ-0075's team identifiers to forge accounts and
+        notifies them of documents awaiting their review and requests awaiting
+        their answer.
+
+  R4.2  Loom stores no membership. The resolution is a call at the time of use,
+        and a team that cannot be resolved is reported rather than skipped.
+
+  R5  ACROSS ALL SECTIONS.
+
+  R5.1  Every operation is optional and every report degrades. With no adapter,
+        the branch list comes from `git for-each-ref`, the approval record from
+        `git log`, the request states from the files of both trees, and
+        notification is absent. A report says which of the two it answered from
+        rather than presenting a degraded answer as a complete one.
+
+  R5.2  The forge is read for events and written only for projections. Loom
+        never reads a document's status, a maintaining team, or a request's
+        existence from the forge. A forge answer that contradicts a file is
+        reported as a discrepancy and the file wins, which is DEC-0001 applied
+        to a service rather than to the graph.
+
+  R5.3  The adapter interface is written from two forges rather than one. A
+        second forge's API is read before the interface is fixed, because an
+        interface derived from one implementation is that implementation's shape
+        with different names.
+
+  R5.4  Credentials are per repository and per user, and where the adapter
+        authenticates is the question REQ-0071 R4 defers. A Loom with no token
+        does R5.1.
+
+  ACCEPTANCE
+
+  For R1: with an adapter configured for `AI-Strategy-Games`, declare a request
+  in a front-end branch against game-server and open a pull request. An issue
+  appears in game-server naming the requesting document, its branch and its
+  state as `proposed`. Re-run the job and no second issue is opened. Merge the
+  branch and the issue reads `open`. Remove the declaration and merge; the issue
+  reads `withdrawn`. Delete the issue, re-run, and it returns with the same
+  content. Point the request at a repository outside the organisation and the
+  requesting repository reports the signal as undelivered.
+
+  For R2: generate the owners file on this tree from a maintainer map, edit it
+  by hand, and the check fails naming the difference.
+
+  For R3: ask `impact` for a document whose status moved behind a required
+  review and it names the approving reviewer. Remove the token, ask again, and
+  it names the committing author and says the source was git.
+
+  OPEN QUESTIONS
+
+  - Whether the adapter belongs in a system of its own. It is the first thing in
+    Loom that makes an outbound network call to a service that is not a
+    repository, and the layering in CLAUDE.md has no home for that.
+  - Whether the signal job runs Loom or a smaller client. Running Loom in CI on
+    every pull request indexes a tree to read a handful of declarations from a
+    diff, and the declarations are YAML a much smaller program could read. The
+    cost of the smaller program is a second implementation of the request format
+    that can disagree with the first.
+  - Whether a request should also open a pull request rather than only an issue
+    when the answering team has agreed. An issue asks; a pull request proposes
+    the contract. The second is possible where the request names a route and the
+    answering repository has a declarative route table, and is out of reach
+    otherwise.

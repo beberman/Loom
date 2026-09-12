@@ -1,0 +1,218 @@
+id: REQ-0074
+title: A capability one repository needs from another must be a claim in a file with a lifecycle, because the team that needs it cannot allocate a document id in the repository that would answer it
+status: draft
+priority: p3
+date: 2026-09-12
+amended: 2026-09-12
+refines: [REQ-0073, REQ-0027, CON-0004, CON-0008]
+affects: [federated-affects-ops, federate-repositories, federation-report,
+          route-claims, classified-unresolved-references, complete-plan,
+          document-blockers, unresolved-references, read-frameworks,
+          set-document-status, short-commit]
+importance: Major
+tags: [multi-repo, federation, documents, workflow, requests, claims, lifecycle,
+       req-0073, des-0025, req-0067, con-0008, front-end, game-server]
+summary: |
+  A front-end developer writes a requirement, the product manager accepts it,
+  and the work needs a capability the server does not have. The server is
+  another repository owned by another team. That developer needs to state the
+  need where the server team will see it, to learn what the server team decided,
+  and to be blocked from claiming their own requirement finished until it is
+  answered.
+
+  `refines:` cannot express it. The downstream document names an upstream that
+  already exists, and here the answering document has not been written -- nobody
+  can declare `refines: [@payments/REQ-0034]` before payments allocates 0034.
+  The reference runs the other way: the requester names a repository and a
+  capability, and the answering document names the request.
+
+  DES-0025 already has the mechanism and calls it by name: "What crosses is a
+  claim: a normalized string one repository asserts and another may satisfy."
+  Two claim kinds are built -- an HTTP route and a relative path in prose -- and
+  REQ-0027 R4 added a third in the declared name. A capability request is a
+  fourth claim, and FEDERATION-REPORT already carries the shape of its report:
+  `published`, `consumed`, `matched`, and `unmatched-consumed`, which is an open
+  request under a different name.
+
+  What a request adds over the three existing claim kinds is a lifecycle. A
+  route either matches or does not. A request is proposed, then open, then
+  answered or declined or deferred, and finally satisfied -- and a team plans
+  differently against each of those. Silence and a refusal must not look alike.
+body: |
+  PRIORITY: P3, 2026-09-12
+
+  Impact is a dependency across teams tracked outside Loom. The requesting team
+  writes the need in a chat message or a forge issue, and the link between the
+  front-end requirement and the server requirement that answers it exists in
+  neither index.
+
+  Probability today is zero and the reopening condition is a team boundary. One
+  developer working across front-end and game-server is both parties and needs
+  no protocol. It reopens when a second team owns one of the repositories.
+
+  Sequence: REQ-0073 first and without exception, because a request is answered
+  by a document in another repository naming the requesting document by
+  qualified id. REQ-0076's R1 section is what delivers the signal and this
+  requirement is not useful without it; the two should land together.
+
+  WHY THE EDGE IS DRAWN FROM THE ANSWERING SIDE
+
+  Both ids exist by the time the answer is written and only one exists when the
+  request is made. So the request carries a repository and a description, and
+  the answering document carries the qualified id of the request. That is the
+  direction `refines:` already runs -- the document that comes second names the
+  document that came first -- and it means the requester never predicts a number
+  in a tree they do not own.
+
+  It also puts each half in the tree of the team that owns it. The statement of
+  need is a fact about the front-end and the front-end team owns it. The
+  commitment to build, and the refusal to, are facts about the server and the
+  server team owns them. Neither team edits the other's files, which is what
+  makes this work with branch protection and no shared write access.
+
+  THE LIFECYCLE
+
+  Six states. The first is derived from git rather than declared, and the last
+  from the code rather than from anyone's judgement.
+
+    proposed   The requesting document exists on a branch and not on the
+               repository's default branch. The need is stated and nothing is
+               committed by either side.
+
+    open       The requesting document is on the default branch. The requesting
+               team has accepted its own requirement; no answering document
+               exists.
+
+    answered   A document in the named repository declares this request. The
+               answering team has taken it on and the answering document carries
+               its own status from there.
+
+    declined   The named repository records a refusal. This is a document in the
+               answering team's tree, because the refusal is their decision and
+               CON-0008 has every judgement landing as a reviewed commit in the
+               tree of the team that made it.
+
+    deferred   Accepted, not now, with the condition that would reopen it.
+               REQ-0025's own body is the shape: a priority, a date, and a named
+               condition.
+
+    withdrawn  The requesting document no longer declares the request, or its
+               branch was closed without merging.
+
+  `proposed` is a fact about refs, not about a forge. A request is proposed when
+  the file declaring it is on a branch and not on the default branch, which
+  `git merge-base` answers. That matters because it keeps the state derivable
+  with no adapter configured, and REQ-0076 then delivers a signal about a state
+  it did not invent.
+
+  WHY THE SIGNAL FIRES AT PROPOSED RATHER THAN AT OPEN
+
+  A request the answering team will refuse is cheapest to discover before the
+  requesting team's own requirement is accepted. Signalling only when the
+  requirement reaches the default branch means the product manager has already
+  approved an approach that depends on a capability nobody agreed to build, and
+  the refusal then invalidates work rather than redirecting it.
+
+  The cost is that the answering team is asked about things that may never be
+  merged. That is what `withdrawn` is for, and it is why the signal must carry
+  which state it is in rather than presenting every request identically.
+
+  WHAT IS WANTED
+
+  R1  A document may declare a capability it needs from another repository: a
+      repository alias, a description, and optionally the contract that would
+      satisfy it -- an HTTP route, an exported name, an interface.
+
+  R2  An answering document in the named repository declares the qualified id of
+      the request. The edge is derived from that declaration, by the pass
+      DES-0025 owns, and is retracted and re-derived wholesale like every other
+      federated edge.
+
+  R3  Every request has one of the six states above, and the state is derived.
+      Nothing is stored that a reindex could not recompute from the two trees
+      and their refs, which is DEC-0001 applied to the lifecycle rather than to
+      the graph.
+
+  R4  An open or proposed request is reported against the repository it names,
+      and appears when that repository is asked, not only when the requesting
+      repository is asked. The report a server team reads is "what is being
+      asked of us", and every existing report is scoped to the tree that
+      declares the claim.
+
+  R5  A declined request records the refusal in the answering team's tree and
+      the requesting team reads it from there. A decline that exists only as a
+      closed forge issue is state outside the files, which CON-0008 forbids in
+      the one place the file and the forge are most likely to disagree.
+
+  R6  `complete` refuses to mark a document implemented while a request it
+      declares is in any state but satisfied, and names the request, its state
+      and its answering document in the refusal. DOCUMENT-BLOCKERS walks within
+      one repository today; this is the same refusal across a boundary, and
+      REQ-0067 is sharpening what that refusal says.
+
+  R7  A request naming a contract is satisfied by the contract rather than by a
+      status. ROUTE-CLAIMS and FEDERATION-REPORT already answer whether a route
+      one repository consumes is published by another, and `unmatched-consumed`
+      is an unsatisfied contract. A request tied to a route closes when the route
+      matches, with no status for anyone to flip and no way for the record to
+      drift from the code.
+
+  R8  A request with no contract is satisfied when its answering document
+      reaches `implemented`. This is the weaker form and the report says which
+      of the two kinds a request is, because the second can be wrong and the
+      first cannot.
+
+  R9  Nothing is written into the answering repository and no forge is required
+      for any state to be computed. The reports are derived from files in both
+      trees. REQ-0076 delivers a signal about them and mirrors them outward; the
+      files stay the record.
+
+  R10 An answered request is not reported as an unresolved reference.
+      CLASSIFIED-UNRESOLVED-REFERENCES exists because REQ-0056 found a true
+      report counted as rot; an answered request must not repeat that.
+
+  R11 A request survives the requesting document being renamed or completed. A
+      request declared by a requirement that reaches `implemented` and moves to
+      `completed/` is still the origin of the answering document, and the edge
+      must not vanish because a file moved.
+
+  ACCEPTANCE
+
+  In front-end, on a branch, declare a requirement needing a capability from
+  game-server, naming a route game-server does not publish. Ask game-server for
+  its requests: the front-end request is listed as `proposed`, with its
+  requester, its branch and its date. Merge the front-end branch and the same
+  request reads `open`. `complete` on the front-end plan refuses and names the
+  request and its state.
+
+  Write the answering requirement in game-server declaring the front-end
+  qualified id. The request reads `answered` and `complete` still refuses,
+  because the answering requirement is not implemented. Implement the route in
+  game-server; the request reads `satisfied` with no status edited by anyone,
+  and `complete` succeeds.
+
+  Then the other branch: decline the request by recording the refusal in
+  game-server instead. The front-end report reads `declined` and names the
+  document carrying the refusal, `complete` refuses and says the request was
+  declined rather than that it is open, and deleting the declaring block from
+  the front-end requirement reads `withdrawn` on game-server's side.
+
+  OPEN QUESTIONS
+
+  - Whether a request is a field on an existing document or a document type of
+    its own. A field keeps the need attached to the requirement that has it and
+    needs no new directory. A type gives the request its own id, which R5 and
+    the forge mirror both want something stable to name, and gives a refusal
+    somewhere to point that is not a file the answering team may not edit.
+  - Whether the answering document declares the request through `refines:` with
+    a qualified id or through a field of its own. `refines:` is close: the
+    server requirement does answer the question the front-end requirement asked.
+    It differs in that it crosses an ownership boundary and carries a
+    negotiation state, and `refines:` is read by `complete` as an unconditional
+    blocker, which REQ-0067 is already finding too blunt within one tree.
+  - Whether a request may name several repositories. "Any service that stores a
+    user record must expose a deletion path" is one need of three teams, and
+    three separate requests lose that it is one need.
+  - Whether a `deferred` request should block `complete` at all. The requesting
+    team may have a path that does not need the capability, and a deferral with
+    a named condition is information they can act on rather than a wall.
