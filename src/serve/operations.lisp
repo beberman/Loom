@@ -113,6 +113,20 @@ Ask again in a few seconds; `status' says when it is ready."
                               (repository-name repository))))
     (values repository domain)))
 
+(defun requested-kind (value)
+  "VALUE as a family keyword, or NIL, or a malformed request naming the two.
+
+The two words rather than a free keyword, because a caller who writes
+`kind=documents' should be told what to write rather than silently answered
+about everything."
+  (when (and (stringp value) (plusp (length value)))
+    (let ((kind (intern (string-upcase value) :keyword)))
+      (unless (member kind loom-knowledge:*find-kinds*)
+        (error 'malformed-request
+               :message (format nil "kind must be one of ~{~(~a~)~^, ~}, not ~s."
+                                loom-knowledge:*find-kinds* value)))
+      kind)))
+
 (defun resolve-entity (graph term &key property-filters)
   "The entity TERM names: an id if it is one, otherwise the best name match.
 
@@ -238,7 +252,7 @@ The console's own cap, so the two answer the same question the same way.")
 ;; precedent and has been the one operation with no designator requirement since
 ;; it was written -- for the same reason, that it is the call a caller makes
 ;; before it knows which repository to name.
-(define-operation :find :read ((repository) term (entity-type) (limit))
+(define-operation :find :read ((repository) term (entity-type) (kind) (limit))
     "Where something is defined. Without a repository, every watched one is \
 searched and each row says which it came from."
   ;; Wrapped under :ENTITIES rather than returned as a bare list, so that every
@@ -247,17 +261,18 @@ searched and each row says which it came from."
   ;; null instead of [], which is the ambiguity *ARRAY-VALUED-KEYS* exists to
   ;; prevent and which a top-level value has no key to be rescued by.
   (let ((type (requested-entity-type entity-type))
+        (kind (requested-kind kind))
         (limit (or (request-integer limit "limit") *find-limit*)))
     (if (null repository)
         ;; The federated form returns SEARCH-REPOSITORIES' plist whole: the same
         ;; :ENTITIES, :TOTAL and :TRUNCATED a named search answers with, plus
         ;; the three lists REQ-0051 R4 and R5 need -- what was searched, what
         ;; was not, and what it cost.
-        (search-repositories term :type type :limit limit)
+        (search-repositories term :type type :kind kind :limit limit)
         (multiple-value-bind (watched domain) (require-repository repository)
           (multiple-value-bind (entities total)
               (search-entities (repository-graph watched)
-                               :name term :type type :limit limit
+                               :name term :type type :kind kind :limit limit
                                :property-filters (domain-property-filter domain))
             ;; BUG-0002. :TOTAL and :TRUNCATED alongside the rows, because a
             ;; caller that received the limit and nothing else cannot tell a

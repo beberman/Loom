@@ -16,6 +16,10 @@ change to Loom's own source. The script below is the fallback and always works:
 ```
 tools/loom.sh 'context <task words>'  # start here: what to read before editing
 tools/loom.sh 'find <name>'           # where something is defined -- in every
+tools/loom.sh 'find <name> --code'    # ...or only code, or --documentation for
+                                      #   only documents. `repository' names 232
+                                      #   entities here and most callers want one
+                                      #   family. REQ-0062.
                                       #   watched tree, unless you name one.
                                       #   A zero-hit answer that named one says
                                       #   what the others hold: `0 here; 1 in

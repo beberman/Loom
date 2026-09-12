@@ -33,6 +33,12 @@ Or as MCP tools, if `.mcp.json` registered the endpoint: `loom_context`,
 `loom_similar`, `loom_survey`, `loom_set_status`, `loom_complete`. Each takes
 `repository`, except `loom_find`, where it is optional.
 
+`loom_find` also takes `kind`, which is `code` or `documentation`. A common
+noun names both: on Loom's own tree `repository` names 232 entities, most of
+them code, and a caller wanting the documents had no way to ask. The filter
+matches NAMES -- for documents *about* a subject rather than named after it,
+ask `loom_context`.
+
 ### Picking the one to call
 
 The first tool is one of these, not the shell. If the question is *where is

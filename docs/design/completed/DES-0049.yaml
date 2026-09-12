@@ -1,6 +1,6 @@
 id: DES-0049
 title: find gains a code-or-documents selector; the occurrence band's trigger stays as it is, because no cheap signal separates the cases
-status: draft
+status: implemented
 date: 2026-09-11
 refines: [REQ-0062]
 affects: [search-entities, print-find-occurrences, textual-occurrences, find-entities]

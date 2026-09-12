@@ -353,3 +353,46 @@ how the SS9 rule about facts reached only through a stale edge is exercised."
       (is (= 1 (length found))
           "the call to a sibling package is internal traffic")
       (is (equal (id stranger) (to-id (first found)))))))
+
+;;; ------------------------------------------------------------------
+;;; Filtering on a set of types (PLAN-0054 S1)
+;;; ------------------------------------------------------------------
+
+(test a-type-set-returns-its-members-and-excludes-the-rest
+  (let ((g (make-graph)))
+    (add-entity g (q-function "alpha" 10))
+    (add-entity g (make-instance 'class-entity :name "Beta" :origin-file "f.lisp"
+                                 :properties (properties-table
+                                              '(:file "f.lisp" :start-line 1 :end-line 2))))
+    (add-entity g (make-instance 'variable-entity :name "gamma" :origin-file "f.lisp"
+                                 :properties (properties-table
+                                              '(:file "f.lisp" :start-line 3 :end-line 3))))
+    (let ((found (find-entities g :entity-types '(:function :class))))
+      (is (= 2 (length found)) "~a" (mapcar #'name found))
+      (is (null (find :variable found :key #'entity-type))
+          "the type outside the set is excluded"))))
+
+(test a-type-and-a-type-set-given-together-intersect
+  ;; Neither wins. That is the only reading that cannot surprise a caller who
+  ;; passed both by accident: an intersection can only narrow, where letting
+  ;; one override the other would silently widen the answer.
+  (let ((g (make-graph)))
+    (add-entity g (q-function "alpha" 10))
+    (add-entity g (make-instance 'class-entity :name "Beta" :origin-file "f.lisp"
+                                 :properties (properties-table
+                                              '(:file "f.lisp" :start-line 1 :end-line 2))))
+    (is (= 1 (length (find-entities g :entity-type :function
+                                      :entity-types '(:function :class))))
+        "the intersection is the functions")
+    (is (null (find-entities g :entity-type :variable
+                               :entity-types '(:function :class)))
+        "and a type outside the set intersects to nothing")))
+
+(test no-type-set-is-no-filter
+  ;; Every existing caller passes no ENTITY-TYPES, so the default must be
+  ;; indistinguishable from the behaviour before this argument existed.
+  (let ((g (make-graph)))
+    (add-entity g (q-function "alpha" 10))
+    (add-entity g (q-function "beta" 20))
+    (is (= 2 (length (find-entities g))))
+    (is (= 2 (length (find-entities g :entity-types nil))))))

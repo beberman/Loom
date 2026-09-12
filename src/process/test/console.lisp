@@ -648,3 +648,34 @@ this repository, so an answer proves which graph was consulted."
   (is (null (loom-workspace:domain-property-filter nil)))
   (is (equal (list :domain :server) (loom-workspace:domain-property-filter (list :name :server)))
       "and a keyword, because :DOMAIN is one"))
+
+;;; ------------------------------------------------------------------
+;;; The family flag (PLAN-0054 S3)
+;;; ------------------------------------------------------------------
+
+(test the-family-flag-is-stripped-from-wherever-it-is-written
+  ;; Both orders are what somebody types and neither is wrong, so the flag is
+  ;; found anywhere and the term is read from what is left. A flag mistaken for
+  ;; the term would search for "--code".
+  (multiple-value-bind (kind rest) (loom-process::kind-flag '("repository" "--code"))
+    (is (eq :code kind))
+    (is (equal '("repository") rest)))
+  (multiple-value-bind (kind rest) (loom-process::kind-flag '("--doc" "repository"))
+    (is (eq :documentation kind))
+    (is (equal '("repository") rest)))
+  (multiple-value-bind (kind rest)
+      (loom-process::kind-flag '("repository" "--documentation" "class"))
+    (is (eq :documentation kind))
+    (is (equal '("repository" "class") rest)
+        "the type positional survives with the flag between the two")))
+
+(test no-flag-is-no-family
+  (multiple-value-bind (kind rest) (loom-process::kind-flag '("repository"))
+    (is (null kind))
+    (is (equal '("repository") rest))))
+
+(test find-with-no-name-says-what-to-type
+  ;; The lambda list is &rest now, so a bare `find' no longer fails on arity.
+  (let ((output (with-output-to-string (*standard-output*)
+                  (run-command "find"))))
+    (is-true (search "find needs a name" output) "~a" output)))

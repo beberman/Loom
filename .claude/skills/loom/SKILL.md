@@ -101,7 +101,12 @@ reindex                   discard and rebuild from disk. Always safe.
 status                    counts, watcher state, unresolved references, and
                           the `unread` line: source the reader passed over or
                           had to repair. Both read zero on a healthy tree.
-find <name> [<type>]      where something is defined, in every watched tree
+find <name> [<type>] [--code|--documentation]
+                          where something is defined, in every watched tree.
+                          The flag narrows to code or to documents: `repository'
+                          names 232 entities on this tree and most callers want
+                          one family. It matches NAMES -- for documents ABOUT a
+                          subject, ask `context'.
                           unless a leading @token names one. Each row is
                           prefixed with the tree it came from. Naming a tree and
                           finding nothing there prints what the others hold --

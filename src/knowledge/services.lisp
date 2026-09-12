@@ -352,7 +352,35 @@ caller: it merges rows from several graphs and has only summaries by then."
   (name-search-rank (and (slot-boundp entity 'name) (name entity))
                     (entity-type entity) pattern))
 
-(defun search-entities (view &key name type limit property-filters)
+(defparameter *find-kinds* '(:code :documentation)
+  "The two families `find' can be narrowed to.
+
+Two rather than more, because these are the two a caller confuses: `find
+repository' on this tree returns twenty code definitions and Loom also holds
+documents about repositories, and there was no way to ask for one without the
+other. A third family would need a question somebody actually asks.")
+
+(defun kind-types (kind)
+  "The entity types KIND covers, or NIL for no narrowing.
+
+The document family is LOOM-GRAPH:*DOCUMENT-TYPES*, which already exists and is
+what the document analyzers mint. The code family is its complement over the
+types the ontology declares -- computed rather than listed, so a type added
+later joins the right family without anybody editing this function.
+
+The complement is the half worth watching. A type the ontology declares and no
+document analyzer mints lands in `code' whether or not it is code:
+:RULE-VIOLATION, :WORKSPACE, :SNAPSHOT, :REPOSITORY, :BRANCH and :COMMIT are all
+in that position. None is a definition `find' would return, so the effect is
+nil and the partition test says which side each falls on rather than only that
+the two do not overlap."
+  (ecase (or kind :none)
+    (:none nil)
+    (:documentation loom-graph:*document-types*)
+    (:code (remove-if (lambda (type) (member type loom-graph:*document-types*))
+                      (loom-ontology:all-entity-types)))))
+
+(defun search-entities (view &key name type limit property-filters kind)
   "Entities matching NAME (substring, case-insensitive) and TYPE, best match
 first, and how many matched before LIMIT cut the list.
 
@@ -364,7 +392,15 @@ is what IMPACT-REPORT already carries for the same reason one command over.
 
 The total is the length before truncation, so a caller comparing it with what
 it received knows whether it saw everything."
+  (when (and kind type (not (member type (kind-types kind))))
+    ;; Refused rather than resolved. `find x class --documentation' names a
+    ;; code type and a document family, and either answer -- the type or the
+    ;; family -- is a guess about which the caller meant.
+    (error 'loom-utils:refusal
+           :message (format nil "~(~a~) is not a ~(~a~) type, so the two cannot both hold."
+                            type kind)))
   (let ((hits (find-entities view :entity-type type :name-like name
+                                  :entity-types (kind-types kind)
                                   :property-filters property-filters)))
     (when name
       (setf hits (stable-sort hits #'< :key (lambda (e) (search-rank e name)))))

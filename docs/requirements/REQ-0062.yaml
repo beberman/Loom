@@ -1,6 +1,6 @@
 id: REQ-0062
 title: find must be able to return only code or only documentation, because a noun like `repository` names 20 definitions and 3053 prose lines and the caller cannot say which kind they want
-status: draft
+status: partial
 date: 2026-08-29
 amended: 2026-09-10
 refines: [REQ-0054]
@@ -111,6 +111,21 @@ body: |
   written 48 times elsewhere, naming the files. `find @Loom complete-plan`
   returns its definition and does not, because its occurrences are that
   definition's own call sites and the documents that name it.
+
+  OUTSTANDING
+
+  R5 is refused, not built. The occurrence band still fires only on a zero-hit
+  find, so `find severity' answers with its definitions and says nothing about
+  the 48 other places the string is written. DES-0049 D3 has the measurement
+  that refused it: a 30ms tree scan on the cheapest command in the system, and
+  no cheaper trigger separates the cases -- a hits-to-occurrences ratio puts
+  `status' at 37 and `find' at 40 above `complete-plan' at 16, and
+  `complete-plan' is the clearest case of occurrences the hits do explain.
+
+  R1 through R4 are built. The diagnosis behind R5 stands: a caller read three
+  definitions as the whole answer and Loom cannot warn about that today.
+  Re-open this if it recurs often enough to be worth the 30ms, or if somebody
+  builds the attribution that would make a cheaper trigger possible.
 
   OPEN QUESTIONS
 
