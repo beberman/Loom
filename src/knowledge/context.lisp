@@ -780,6 +780,72 @@ why."
                 matches)
        t))
 
+(defparameter *spelled-word-floor* 2
+  "How many words of an entity's name the caller must have written for the
+fusion to read the lexical list as naming something.
+
+2 excludes a one-word name that happens to be an ordinary English word, which
+is the half of NAMED-BY-TASK-P that fires too often. Set to 1 to accept those;
+set high to make every list read as unnamed, which is the fixed-weight
+behaviour with *LEXICAL-WEIGHT-UNNAMED* in force.")
+
+(defun dot-segments (name)
+  "NAME split on #\., which SPLIT-NAME-PARTS does not treat as a boundary."
+  (let ((segments '()) (start 0))
+    (loop for dot = (position #\. name :start start)
+          do (push (subseq name start (or dot (length name))) segments)
+             (if dot (setf start (1+ dot)) (return)))
+    (nreverse segments)))
+
+(defun spelled-name-words (entity)
+  "ENTITY's name as the words a caller could have written, deduplicated.
+
+SPLIT-NAME-PARTS per dot-separated segment rather than over the whole name. A
+dot is a member separator in JavaScript and is not one of that function's
+boundaries, so it splits `ListMapper.toNative' into list, mapper.to and native
+-- three words with one boundary in the wrong place. Splitting the segments
+first gives list, mapper, to, native.
+
+Words under three characters are dropped, which is TASK-TOKEN-ORIGINS' own
+floor: the caller cannot have written what the tokenizer would not keep."
+  (let ((name (significant-name entity)))
+    (when name
+      (let ((words '()))
+        (dolist (segment (dot-segments name))
+          (dolist (part (split-name-parts segment))
+            (when (>= (length part) 3)
+              (pushnew part words :test #'string=))))
+        (nreverse words)))))
+
+(defun spelled-name-p (entity terms)
+  "True when the caller wrote at least *SPELLED-WORD-FLOOR* words of ENTITY's name.
+
+NAMED-BY-TASK-P asks whether the entity's whole name is one of the caller's
+words, and that is wrong in both directions. It misses `ListMapper.toNative'
+written as `list mapper to native' -- four words, none of them the whole name.
+It fires on SEGMENT in `segment terrain into region polygons', where one
+ordinary English word is a definition's whole name and the query is about
+something else. DES-0050 D8 has both, one from each corpus.
+
+A term equal to the whole name counts for every word in it: a caller who typed
+`renderengineleaflet' spelled render, engine and leaflet in one go, and asking
+for the parts separately would refuse the clearest case there is.
+
+Used for the fusion weight and deliberately not for SEED-SCORE's `named' band.
+That band orders the lexical list; this decides how much the lexical list is
+worth against the dense one, and moving both at once would leave neither
+measurable."
+  (and (not (slot-accessor-p entity))
+       (let* ((words (spelled-name-words entity))
+              (name  (significant-name entity))
+              (whole (and name (string-downcase name))))
+         (and words
+              (>= (if (and whole (member whole terms :test #'string=))
+                      (length words)
+                      (count-if (lambda (word) (member word terms :test #'string=))
+                                words))
+                  *spelled-word-floor*)))))
+
 (defun demoted-test-p (entity demote-tests production)
   "True when ENTITY is test code that R4 should rank below production code.
 Exempt when a non-test candidate carries the same name; PRODUCTION-NAMES says
@@ -1653,7 +1719,7 @@ waiting (ADMIT-SEEDS)."
          ;; first entry was not named has no discontinuity: every candidate is
          ;; in one band and the ordering inside it is coverage rather than
          ;; anything the caller wrote. DES-0050 D8.
-         (lexical-named (and lexical (member (car (first lexical)) named :test #'eq)))
+         (lexical-named (and lexical (spelled-name-p (car (first lexical)) terms)))
          (ranked     (fuse-rankings lexical semantic :protected protected
                                     :lexical-weight (if lexical-named
                                                         *lexical-weight*

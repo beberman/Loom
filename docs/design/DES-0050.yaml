@@ -326,6 +326,92 @@ body: |
   much of the lexical head the caller actually spelled would serve both this
   and the protected band that has been switched off since PLAN-0043.
 
+  D10  THE PREDICATE, AND WHAT IT CHANGES
+
+  D8 named NAMED-BY-TASK-P as the blocker and SPELLED-NAME-P is the repair.
+
+  A candidate counts as named when the caller wrote at least
+  *SPELLED-WORD-FLOOR* words of its name. The name is split on dots first and
+  then by SPLIT-NAME-PARTS, because a dot is a member separator in JavaScript
+  and is not one of that function's boundaries. A term equal to the whole name
+  counts for every word in it.
+
+  Checked against the cases that motivated it:
+
+    entity                task                              old      new
+    ListMapper.toNative   "list mapper to native"           -        named
+    getDefinitionList     "get definition list"             -        named
+    slot-defn             "slot defn"                       -        named
+    RenderEngineLeaflet   fe-11's task                      named    named
+    segment               "segment terrain into region..."  named    -
+    partition             "undo and redo a partition edit"  named    -
+
+  The first three are the cases the fixed-weight fusion lost; all three are the
+  `name' family, and NAMED-BY-TASK-P missed them because it asks whether the
+  whole name is one of the caller's words and these names are three or four.
+  SEGMENT is the case that has kept *PROTECT-NAMED* switched off since
+  PLAN-0043, and the floor of 2 is what excludes it.
+
+  Used for the fusion weight only, deliberately not for SEED-SCORE's `named'
+  band. That band orders the lexical list; this decides what the lexical list is
+  worth against the dense one. Moving both at once would leave neither
+  measurable.
+
+  MEASURED, floor 2, head 20, named 0.4, unnamed 0.1
+
+  Each configuration run twice, with fe-11 as the probe for which code is
+  actually answering -- it passes under :RELATIVE-SCORE and fails under
+  :RECIPROCAL-RANK, which is the only reliable reading available. BUG-0067 is
+  why that is needed.
+
+    measure                reciprocal-rank    relative + spelled
+    known-item strict      432, 435           435, 435
+    known-item lenient     434, 436           436, 436
+    mismatch strict        31, 31             30, 30
+    mismatch lenient       34, 34             35, 35
+    acceptance strict      33/45              35/45
+    acceptance lenient     39/45              44/45
+    fe-11                  FAIL               pass
+
+  known-item varies by 3 between identical baseline runs, so the +0 to +3 there
+  is the new fusion sitting at the top of the old one's noise band rather than
+  a gain that can be claimed. mismatch and acceptance are stable across repeats
+  and their differences are real.
+
+  The one regression is one mismatch case, and the diff says what happened to
+  it rather than leaving it a number:
+
+    front-end TerrainPartition.removeArc   strict -> lenient only
+    front-end PolygonGraphic.mousedown     gained, lenient
+
+  So no case left the bundle. One was demoted out of the seed band and one
+  appeared that was not there before.
+
+  WHAT D7's RULE SAYS, AND WHAT THE EVIDENCE SAYS
+
+  The rule is that the change ships only if fe-11 passes and none of the three
+  baselines falls. mismatch strict is 30 against a baseline of 31, so by the
+  letter it is refused, by one case that is demoted rather than lost.
+
+  The rule was written to stop a constant being fitted to the anecdote that
+  motivated it, and that risk is real here: *SPELLED-WORD-FLOOR* of 2 was chosen
+  because it separates the six cases in the table above. Against that, the gain
+  is on the corpus least susceptible to it -- acceptance is the judged,
+  held-out set REQ-0036 R11 protects, and it moves 33 to 35 strict and 39 to 44
+  lenient, five of its six missing cases recovered.
+
+  Recorded rather than decided here. The default ships as :RECIPROCAL-RANK and
+  every baseline reproduces at that setting.
+
+  THE VOID SWEEP
+
+  A first run of this measurement returned known-item 409, mismatch 9 and
+  acceptance 33, identical across four cells however the weights moved. The
+  vector stores were gone and `context' was answering lexically, so no weight
+  between two lists could matter when there was one list. 9 of 120 is
+  `mismatch.md's pre-dense bar, which the harness reproduced from the document
+  rather than measuring. Those numbers are void and BUG-0067 is the defect.
+
   ACCEPTANCE
 
   fe-11 seeds RenderEngineLeaflet under :RELATIVE-SCORE at every cell measured,
