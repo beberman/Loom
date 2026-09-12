@@ -1109,19 +1109,28 @@ seed set gets an expansion too, and whether the ten cases equal weight appears
 to lose return as items is a question only a measurement with the band running
 can answer. PLAN-0043 S6 is that measurement and is what sets this number.")
 
-(defparameter *fusion* :reciprocal-rank
+(defparameter *fusion* :relative-score
   "How FUSE-RANKINGS combines the lexical and the dense list.
 
-:RECIPROCAL-RANK reads positions and ignores scores, which is what DES-0040 D4
-built and what every number recorded before DES-0050 was measured against.
+:RELATIVE-SCORE normalises each list to [0,1] against its own best and worst,
+the lexical side over *FUSION-HEAD* candidates, and adds them with a lexical
+weight. DES-0050 D5, and the default since D11.
 
-:RELATIVE-SCORE normalises each list against its own best and worst and adds
-them with *LEXICAL-WEIGHT*. DES-0050 D5.
+:RECIPROCAL-RANK reads positions and ignores scores. DES-0040 D4 built it and
+every number recorded before DES-0050 was measured against it. Kept and
+reachable rather than deleted.
 
-Two values rather than one, so the change can be measured against itself: bound
-to :RECIPROCAL-RANK, nothing downstream can behave differently than it did
-before relative score fusion existed. That identity is step 1 of DES-0050's
-order and it is what makes the numbers after step 2 readable.")
+Two values rather than one, so either can be measured against the other: bound
+to :RECIPROCAL-RANK, nothing downstream behaves differently than it did before
+relative score fusion existed. The suite asserts that identity rather than
+leaving it measured, and it is what made DES-0050's grid readable.
+
+Rank fusion cannot be retuned into the right answer, which is why this is a
+switch and not a constant. Lexical rank 1 outranks semantic rank N only when
+N > *RRF-K*/2 + 1.5, which at the standard 60 needs a dense list of 32 against
+a *SEMANTIC-LIMIT* of 8 -- and dropping the constant does not fix it either.
+Measured at 60, 30, 10, 3 and 0 against BUG-0060's recorded lists, the
+exactly-named class stays at fused rank 12, 12, 12, 12 and 10. DES-0050 D3.")
 
 (defparameter *fusion-head* 20
   "How many lexical candidates enter the relative-score normalisation.

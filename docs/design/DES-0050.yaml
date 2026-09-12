@@ -1,5 +1,5 @@
 id: DES-0050
-title: Relative score fusion is built, measured and left switched off, because it fixes the exactly-named class and costs six of the mismatch family that dense weight bought
+title: Seed fusion moves from reciprocal rank to relative score, because no RRF constant seeds an exactly-named class and normalising each list against its own range seeds it fourth
 status: draft
 date: 2026-09-11
 refines: [BUG-0060]
@@ -411,6 +411,50 @@ body: |
   between two lists could matter when there was one list. 9 of 120 is
   `mismatch.md's pre-dense bar, which the harness reproduced from the document
   rather than measuring. Those numbers are void and BUG-0067 is the defect.
+
+  D11  THE DEFAULT IS FLIPPED, 2026-09-12
+
+  *FUSION* ships as :RELATIVE-SCORE, with *FUSION-HEAD* 20, *LEXICAL-WEIGHT*
+  0.4, *LEXICAL-WEIGHT-UNNAMED* 0.1 and *SPELLED-WORD-FLOOR* 2.
+
+  Measured at exactly those settings, on a service carrying BUG-0067's fixes so
+  that a store cannot be silently absent:
+
+    known-item   strict 433/450  96.2%   lenient 435/450  96.7%
+      name       strict 144/150          lenient 145/150
+      inflected  strict 145/150          lenient 145/150
+      prose      strict 144/150          lenient 145/150
+    mismatch     strict  30/120  25.0%   lenient  35/120  29.2%
+    acceptance   strict  35/45           lenient  44/45
+    fe-11        pass
+
+  Against :RECIPROCAL-RANK at 432-435 / 31 / 33 [39]: known-item inside its own
+  noise band, mismatch one case demoted from the seed band and one gained in
+  the weaker reading, acceptance two strict and five lenient better.
+
+  D7's rule refused this on mismatch strict, by that one case. The refusal is
+  overridden deliberately and by the author rather than by the measurement
+  being re-read until it passed. What the rule was protecting against is a
+  constant fitted to its own anecdote, and the record stands: *SPELLED-WORD-
+  FLOOR* of 2 was chosen because it separates the six cases in D10's table. The
+  argument for shipping anyway is that the gain falls on acceptance -- the
+  judged, held-out set REQ-0036 R11 protects, which no constant here was tuned
+  against -- and that the one loss is a demotion rather than a disappearance.
+
+  WHAT FE-11 PASSING MEANS, EXACTLY
+
+  The seeder admits `RenderEngineLeaflet' and the bundle then withholds it.
+  At the default 4000-token budget the reported task returns `seed: found 8,
+  sent 6', and the two not sent are `RenderEngineLeaflet' and
+  `useDesignScreen', both listed in the bundle's seed record. The term
+  `renderengineleaflet' reads ANSWERED where it read WEAK, because
+  CLASSIFY-TERMS runs on what ADMIT-SEEDS chose rather than on what the budget
+  delivered.
+
+  So what this design fixed is the seeding, which is what BUG-0060 was about. A
+  caller at that budget still does not receive the class body, and REQ-0040's
+  withholding line is what says so. Claiming the bundle contains it would be
+  claiming more than happened.
 
   ACCEPTANCE
 
