@@ -68,6 +68,15 @@ CASES = [
     ("front-end", "segment terrain into region polygons", ["polygonsToPartition"], "fe-8"),
     ("front-end", "switching between editor modes", ["EditorModeToggle"], "fe-9"),
     ("front-end", "saving a piece design and reporting rejections", ["SaveDesign"], "fe-10"),
+    # fe-11 is BUG-0060's case and is here rather than in known-item.json because
+    # that file is regenerated from entity dumps and a hand-written case in it
+    # would be lost. The query names the class verbatim and the class is lexical
+    # rank 4 of the whole candidate set; reciprocal-rank fusion puts it at 12.
+    # DES-0050 has the trace.
+    ("front-end",
+     "load and hold the map TerrainPartition in useLayerEditorState when the "
+     "active layer is a terrain layer and render faces and arcs in RenderEngineLeaflet",
+     ["RenderEngineLeaflet"], "fe-11"),
     # loom -- the four misses the context log recorded against Loom's own tree on
     # 2026-08-18, turned into cases by REQ-0039. Each was recovered by the agent
     # with `find` after `context` returned lexical matches, and each names the

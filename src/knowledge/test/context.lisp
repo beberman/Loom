@@ -968,9 +968,21 @@ not enough -- they have to be countable"))
 ;;; Fusion -- PLAN-0043 S5, DES-0040 D4 and D6
 ;;; ------------------------------------------------------------------
 
+(defmacro with-rank-fusion (&body body)
+  "Run BODY under :RECIPROCAL-RANK.
+
+Every test below it asserts reciprocal-rank arithmetic -- who outranks whom for
+a given pair of positions -- and its fixtures carry positions rather than
+scores. DES-0050 made :RELATIVE-SCORE the default, and a relative-score fusion
+of a list with no scores is refused rather than guessed at, so the binding is
+what keeps these tests about the thing they were written for. The
+relative-score path has its own tests further down."
+  `(let ((loom-knowledge::*fusion* :reciprocal-rank)) ,@body))
+
 (defun fused-names (lexical semantic)
-  (mapcar (lambda (pair) (name (car pair)))
-          (loom-knowledge::fuse-rankings lexical semantic)))
+  (with-rank-fusion
+    (mapcar (lambda (pair) (name (car pair)))
+            (loom-knowledge::fuse-rankings lexical semantic))))
 
 (defun ranked-pair (entity &rest matches)
   (cons entity matches))
@@ -983,7 +995,7 @@ not enough -- they have to be countable"))
   (let* ((a (k-function "alpha" 10))
          (b (k-function "beta" 30))
          (lexical (list (ranked-pair a '("x" . 0)) (ranked-pair b '("y" . 1)))))
-    (is (eq lexical (loom-knowledge::fuse-rankings lexical nil))
+    (is (eq lexical (with-rank-fusion (loom-knowledge::fuse-rankings lexical nil)))
         "the very list, not a copy of it")))
 
 (test a-candidate-on-both-lists-outranks-one-on-either-alone
@@ -1004,9 +1016,10 @@ not enough -- they have to be countable"))
   ;; charges it to the slice its terms make, exactly as it would have without
   ;; an embedder.
   (let* ((e (k-function "both" 10))
-         (fused (loom-knowledge::fuse-rankings
-                 (list (ranked-pair e '("term" . 0)))
-                 (list (ranked-pair e '(:similarity . 0.8))))))
+         (fused (with-rank-fusion
+                  (loom-knowledge::fuse-rankings
+                   (list (ranked-pair e '("term" . 0)))
+                   (list (ranked-pair e '(:similarity . 0.8)))))))
     (is (= 1 (length fused)) "one entity, not two")
     (let ((matches (cdr (first fused))))
       (is (= 2 (length matches)))
@@ -1138,8 +1151,9 @@ not enough -- they have to be countable"))
                  (first (fused-names lexical semantic)))
         "unprotected, the resemblance wins")
     (is (string= "mapper"
-                 (name (car (first (loom-knowledge::fuse-rankings
-                                    lexical semantic :protected (list named))))))
+                 (name (car (first (with-rank-fusion
+                                     (loom-knowledge::fuse-rankings
+                                      lexical semantic :protected (list named)))))))
         "protected, the name the caller wrote wins")))
 
 (test protection-is-a-band-and-not-a-weight
@@ -1152,8 +1166,9 @@ not enough -- they have to be countable"))
          (semantic (list (ranked-pair loud '(:similarity . 0.99)))))
     (is (equal '("alpha" "beta" "loud")
                (mapcar (lambda (p) (name (car p)))
-                       (loom-knowledge::fuse-rankings lexical semantic
-                                                      :protected (list a b)))))))
+                       (with-rank-fusion
+                         (loom-knowledge::fuse-rankings lexical semantic
+                                                        :protected (list a b))))))))
 
 (test protecting-nothing-leaves-the-fusion-as-it-was
   (let* ((a (k-function "alpha" 10))
@@ -1161,11 +1176,132 @@ not enough -- they have to be countable"))
          (lexical (list (ranked-pair a '("x" . 1))))
          (semantic (list (ranked-pair b '(:similarity . 0.9)))))
     (is (equal (mapcar (lambda (p) (name (car p)))
-                       (loom-knowledge::fuse-rankings lexical semantic))
+                       (with-rank-fusion
+                         (loom-knowledge::fuse-rankings lexical semantic)))
                (mapcar (lambda (p) (name (car p)))
-                       (loom-knowledge::fuse-rankings lexical semantic
-                                                      :protected '()))))))
+                       (with-rank-fusion
+                         (loom-knowledge::fuse-rankings lexical semantic
+                                                        :protected '())))))))
 
+
+;;; ------------------------------------------------------------------
+;;; Relative score fusion -- DES-0050
+;;; ------------------------------------------------------------------
+
+(defun score-table (&rest entity-score-pairs)
+  "A LEXICAL-SCORE function over ENTITY-SCORE-PAIRS."
+  (let ((table (make-hash-table :test #'eq)))
+    (loop for (entity score) on entity-score-pairs by #'cddr
+          do (setf (gethash entity table) score))
+    (lambda (entity) (gethash entity table))))
+
+(test a-relative-score-fusion-without-scores-is-refused
+  ;; The lexical side has nothing to normalise, so the fusion would be the
+  ;; dense list alone -- an answer that looks like a fusion and is not one.
+  ;; CON-0001's posture on a value that cannot be derived.
+  (let* ((a (k-function "alpha" 10))
+         (b (k-function "beta" 30))
+         (loom-knowledge::*fusion* :relative-score))
+    (signals error
+      (loom-knowledge::fuse-rankings (list (ranked-pair a '("x" . 0)))
+                                     (list (ranked-pair b '(:similarity . 0.9)))))))
+
+(test a-named-cliff-outranks-a-flat-dense-list
+  ;; BUG-0060's shape, as arithmetic rather than as a bundle. Two lexical
+  ;; candidates the caller named sit 100000 below everything else, which is
+  ;; SEED-SCORE's `named' band; three dense candidates sit within 5% of each
+  ;; other, which is what *SEMANTIC-RELATIVE-FLOOR* builds. Under
+  ;; :RECIPROCAL-RANK the dense list takes the head -- that is the defect --
+  ;; and under :RELATIVE-SCORE the named pair keeps it.
+  (let* ((named-1 (k-function "render-engine-leaflet" 10))
+         (named-2 (k-function "terrain-partition" 20))
+         (unnamed (k-function "some-method" 30))
+         (dense-1 (k-function "near-1" 40))
+         (dense-2 (k-function "near-2" 50))
+         (dense-3 (k-function "near-3" 60))
+         (lexical (list (ranked-pair named-1 '("renderengineleaflet" . 0))
+                        (ranked-pair named-2 '("terrainpartition" . 0))
+                        (ranked-pair unnamed '("render" . 1))))
+         (semantic (list (ranked-pair dense-1 '(:similarity . 0.757))
+                         (ranked-pair dense-2 '(:similarity . 0.735))
+                         (ranked-pair dense-3 '(:similarity . 0.714))))
+         (scores (score-table named-1 600 named-2 600 unnamed 100101))
+         (rank-fused (with-rank-fusion
+                       (mapcar (lambda (p) (name (car p)))
+                               (loom-knowledge::fuse-rankings lexical semantic))))
+         (score-fused (let ((loom-knowledge::*fusion* :relative-score)
+                            (loom-knowledge::*lexical-weight* 0.5))
+                        (mapcar (lambda (p) (name (car p)))
+                                (loom-knowledge::fuse-rankings
+                                 lexical semantic :lexical-score scores)))))
+    (is (string= "near-1" (first rank-fused))
+        "reciprocal rank hands the head to the dense list")
+    (is (string= "render-engine-leaflet" (first score-fused))
+        "relative score keeps it with the name the caller wrote")
+    (is (< (position "terrain-partition" score-fused :test #'string=)
+           (position "near-1" score-fused :test #'string=))
+        "and the whole cliff, not only its first member")))
+
+(test a-head-of-equal-scores-normalises-together
+  ;; A lexical head nothing separates divides by a span of zero. Every member
+  ;; normalises to 1.0 rather than signalling, because they are equally good
+  ;; and that is the answer.
+  (let* ((a (k-function "alpha" 10))
+         (b (k-function "beta" 30))
+         (dense (k-function "dense" 50))
+         (loom-knowledge::*fusion* :relative-score)
+         ;; Bound rather than defaulted: at an even split every candidate here
+         ;; scores alike, which is what makes the tie visible. The shipped
+         ;; *LEXICAL-WEIGHT* is not 0.5 and would decide the order by weight.
+         (loom-knowledge::*lexical-weight* 0.5)
+         (fused (loom-knowledge::fuse-rankings
+                 (list (ranked-pair a '("x" . 0)) (ranked-pair b '("y" . 0)))
+                 (list (ranked-pair dense '(:similarity . 0.9)))
+                 :lexical-score (score-table a 600 b 600))))
+    (is (= 3 (length fused)) "no candidate was lost to a division by zero")
+    (is (equal '("alpha" "beta") (subseq (mapcar (lambda (p) (name (car p))) fused) 0 2))
+        "tied lexical candidates keep SEED-SCORE's order between them")))
+
+(test only-the-fusion-head-contributes-a-lexical-score
+  ;; *FUSION-HEAD* bounds the normalisation because SEED-SCORE's type band is
+  ;; worth 1000000 and one :FILE inside the head would compress the named
+  ;; boundary this fusion exists to find. A candidate past the head is treated
+  ;; the way a candidate absent from the dense list is treated.
+  (let* ((a (k-function "alpha" 10))
+         (b (k-function "beta" 30))
+         (dense (k-function "dense" 50))
+         (loom-knowledge::*fusion* :relative-score)
+         (loom-knowledge::*fusion-head* 1)
+         (fused (loom-knowledge::fuse-rankings
+                 (list (ranked-pair a '("x" . 0)) (ranked-pair b '("y" . 0)))
+                 (list (ranked-pair dense '(:similarity . 0.9)))
+                 :lexical-score (score-table a 600 b 100601))))
+    (is (= 2 (length fused)) "the candidate past the head is not in the fusion")
+    (is (not (member "beta" fused :key (lambda (p) (name (car p))) :test #'string=)))))
+
+(test an-unnamed-lexical-head-weighs-less
+  ;; DES-0050 D8. The mismatch family is 120 queries built so that no lexical
+  ;; candidate can be the answer, and on those every slot the lexical list
+  ;; takes is one the dense list needed. What marks the case is that the task
+  ;; named nothing at lexical rank 1.
+  (let* ((flat-1 (k-function "flat-one" 10))
+         (flat-2 (k-function "flat-two" 20))
+         (dense  (k-function "dense" 30))
+         (lexical (list (ranked-pair flat-1 '("word" . 1))
+                        (ranked-pair flat-2 '("word" . 2))))
+         (semantic (list (ranked-pair dense '(:similarity . 0.9))))
+         (scores (score-table flat-1 100502 flat-2 100602))
+         (loom-knowledge::*fusion* :relative-score))
+    (is (string= "flat-one"
+                 (name (car (first (loom-knowledge::fuse-rankings
+                                    lexical semantic :lexical-score scores
+                                    :lexical-weight 0.6)))))
+        "weighted towards the lexical side, its head leads")
+    (is (string= "dense"
+                 (name (car (first (loom-knowledge::fuse-rankings
+                                    lexical semantic :lexical-score scores
+                                    :lexical-weight 0.2)))))
+        "weighted away from it, the dense candidate does")))
 
 ;;; ------------------------------------------------------------------
 ;;; What the budget refused (PLAN-0045 S1, DES-0042 D3)
