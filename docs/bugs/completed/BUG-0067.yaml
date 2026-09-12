@@ -1,6 +1,6 @@
 id: BUG-0067
 title: A recall harness measured half the seeder for a whole sweep, because the vector stores were gone and `ready` does not mean a repository has one
-status: open
+status: closed
 severity: major
 priority: p2
 date: 2026-09-12
