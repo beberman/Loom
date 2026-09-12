@@ -1,6 +1,6 @@
 id: PLAN-0054
 title: Four steps to a code-or-documents selector, from one type list already in the graph
-status: draft
+status: final
 date: 2026-09-11
 refines: [DES-0049]
 affects: [find-entities, search-entities, print-find-occurrences]
