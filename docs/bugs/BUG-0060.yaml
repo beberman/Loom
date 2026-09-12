@@ -3,15 +3,25 @@ title: context for a terrain-editor task led with a play-mode class and an archi
 status: open
 severity: major
 date: 2026-08-29
-amended: 2026-09-10
+amended: 2026-09-11
+priority: p2
 refines: [REQ-0026]
 affects: [seed-entities, build-context]
-tags: [context, recall, seeding, javascript, front-end, req-0026, req-0036]
+tags: [context, recall, seeding, javascript, front-end, req-0026, req-0036,
+       fusion, dense-retrieval, req-0048, req-0016]
 summary: |
-  RE-MEASURED 2026-09-10. Two of the three failures below are fixed and the
-  third's stated cause is wrong: the definitions exist and are not being
-  chosen. The body opens with the new measurement; what follows it is the
-  2026-08-29 record, kept for the one failure that is still live.
+  TRACED 2026-09-11. One failure is still live -- `RenderEngineLeaflet' is not
+  seeded -- and the cause is reciprocal-rank fusion, not the lexical ranking.
+  The class is lexical rank 4 and fused rank 12. With *SEMANTIC-WEIGHT* at 1.5
+  against a lexical weight of 1.0 and *RRF-K* at 60, every candidate on the
+  semantic list outranks every candidate that is only on the lexical one, so a
+  semantic list as long as the seed limit takes every slot. Rebuilt with no
+  vector store, the same task seeds `RenderEngineLeaflet' fourth and the answer
+  is right.
+
+  Two of the three failures below are fixed. The body opens with the
+  measurement; what follows it is the 2026-09-10 and 2026-08-29 records, each
+  kept with its superseded reading marked.
 
   The task string was "load and hold the map TerrainPartition in
   useLayerEditorState when the active layer is a terrain layer and render faces
@@ -135,27 +145,124 @@ body: |
   therefore uncharged. The two freed slots went to `useLayerEditorState' and
   `TerrainPartition', and `terrainpartition' moved from `weak' to `answered'.
 
+  MEASURED 2026-09-11: DENSE RETRIEVAL TAKES THE WHOLE HEAD OF THE LIST
+
+  The stated cause below -- "it ranks below the eight that were taken" -- is
+  false. `RenderEngineLeaflet' is lexical rank 4 of the whole candidate set,
+  score 600. It is fused rank 12.
+
+  Traced through SEED-ENTITIES against front-end with the vector store bound
+  the way LOOM-SERVE binds it. The two lists FUSE-RANKINGS was given:
+
+    LEXICAL, first 8          SEMANTIC, all 8 (cosine)
+    1 useLayerEditorState     1 LayerEditorState.selectMap         0.757
+    2 TerrainPartition        2 LayerEditorState.activePartition   0.750
+    3 TerrainPartition (var)  3 LayerEditorState.isPartitionLayer  0.747
+    4 RenderEngineLeaflet     4 LayerEditorState.hasLayer          0.745
+    5 RE-Leaflet.renderPart.  5 LayerEditorState.activeMap         0.738
+    6 RE-Leaflet.livePart.    6 useDesignScreen                    0.732
+    7 growMap                 7 LayerEditorState                   0.720
+    8 resizeMap               8 TerrainLayer                       0.714
+
+  The fused order puts all eight semantic candidates above all eight lexical
+  ones. That is arithmetic, not a close call: RRF scores a candidate
+  w/(*RRF-K* + rank), *SEMANTIC-WEIGHT* is 1.5 and the lexical weight is 1.0,
+  so a semantic candidate at rank 8 scores 1.5/68 = 0.0221 and a lexical
+  candidate at rank 1 scores 1.0/61 = 0.0164. With *RRF-K* at 60 the rank
+  spread inside a list of 8 is worth far less than the weight between the two
+  lists. Any candidate on the semantic list outranks every candidate that is
+  only on the lexical one.
+
+  So when the semantic list is as long as the seed limit, it takes every slot,
+  and lexical gets in only where a cap holds dense back. That is what happened:
+  *SEED-OWNER-SHARE* held the LayerEditorState family to four of eight, and the
+  two freed slots went to fused 9 and 10 -- `useLayerEditorState' and
+  `TerrainPartition'. `RenderEngineLeaflet' at fused 12 was two places past the
+  reach of the freed slots.
+
+  WITHOUT A VECTOR STORE THE ANSWER IS RIGHT
+
+  The same task, the same tree, the same limit, indexed by WATCH-REPOSITORY
+  with no store built, so SEMANTIC-CANDIDATES returns NIL and FUSE-RANKINGS
+  returns LEXICAL unchanged:
+
+    useLayerEditorState, TerrainPartition, TerrainPartition, RenderEngineLeaflet,
+    RenderEngineLeaflet.renderPartition, RenderEngineLeaflet.livePartitionUpdate,
+    growMap, resizeMap
+
+  Four of the eight are the two classes the task named and their methods. This
+  is not a defect in the lexical seeder, in SEED-SCORE, or in the owner cap. It
+  is dense retrieval displacing an exact name match.
+
+  THE MECHANISM THAT WOULD PREVENT IT IS BUILT AND SWITCHED OFF
+
+  FUSE-RANKINGS takes PROTECTED and gives each of them a 1.0 bonus against a
+  reciprocal-rank sum that cannot exceed about 0.04 -- a band, not a weight.
+  Its docstring names this exact failure: "grep would find MAPPER.TONATIVE for
+  `mapper to native'. A retrieval mechanism that does worse than grep on a query
+  naming a thing has not earned the right to rank it."
+
+  SEED-ENTITIES computes PROTECTED as (WHEN *PROTECT-NAMED* NAMED), and
+  *PROTECT-NAMED* is NIL. So the band never fires. That is deliberate and
+  measured -- its docstring records 433/38/42 for "guaranteeing them a slot
+  without a place" against 443/39/43 -- and the reason is that NAMED-BY-TASK-P
+  calls far too much named: on "segment terrain into region polygons" it fires
+  on SEGMENT, and protecting a set that large displaces candidates that were
+  being found.
+
+  *SEMANTIC-WEIGHT*'s own docstring records the same trade from the other side:
+  at equal weight, known-item reached 448 of 450 and lost none of the eleven
+  exact-name cases REQ-0048 R2 protects; at 1.5 it is 443, and buys 10 cases on
+  the mismatch family. `RenderEngineLeaflet' is one of the five that 1.5 costs.
+
+  WHAT IS ACTUALLY MISSING
+
+  A predicate that separates `renderengineleaflet' from `segment'. Both are
+  words the caller wrote and both match a name at rank 0, so NAMED-BY-TASK-P
+  cannot tell them apart. TASK-TOKEN-ORIGINS cannot either: it splits on `-'
+  and `_' only, so `renderengineleaflet' has no parts and is its own origin.
+
+  One candidate discriminator is already computed and thrown away.
+  SEED-MATCHES returns FREQUENCIES -- per token, how many entities
+  FIND-ENTITIES reached -- and SEED-SCORE declares it IGNORE. A transcribed
+  identifier reaches entities in one file (`renderengineleaflet' reaches 122,
+  all of them RenderEngineLeaflet.js and its methods); an English word reaches
+  entities scattered across the tree. Files touched, rather than entities
+  matched, is the shape of that measurement, and it is not the count
+  FREQUENCIES holds today.
+
+  This is a ranking change and belongs behind `tools/test/recall.py' and
+  `tools/test/acceptance.py', with the floor the section below states: fe-1
+  (WorkingSet) and fe-10 (SaveDesign) must hold.
+
+  The trace above is `tools/test/seed-trace.lisp', written for this and kept.
+  It prints the two lists, the fusion and the caps for one task against one
+  tree, which is what settles whether a bundle came back wrong because of the
+  analyzer, the lexical score, the fusion or a cap. Run it before arguing from
+  a bundle:
+
+      sbcl --script tools/test/seed-trace.lisp /home/beberman/github/front-end \
+        load and hold the map TerrainPartition in useLayerEditorState ...
+
   STILL OPEN, AND THIS BUG STAYS OPEN FOR IT
 
-  `RenderEngineLeaflet' is still not seeded. The band reports `found 8, sent 8'
-  with an empty held-back list, so it is not being capped and not being clipped
-  -- it ranks below the eight that were taken, and freeing two slots was not
-  enough to reach it.
+  `RenderEngineLeaflet' is still not seeded. The 2026-09-10 reading of why
+  follows and is superseded by the measurement above: it does not rank below
+  the eight, it ranks fourth lexically and twelfth after the fusion.
 
-  Which is a second defect and probably the more interesting one, because on
-  the scoring as written it should not be true. SEED-SCORE's `named' band is
-  worth 100000 and NAMED-BY-TASK-P is satisfied by a rank-0 match on a word the
-  caller wrote; `RenderEngineLeaflet' is the class's exact name and
-  `renderengineleaflet' is exactly what the task says. `TerrainPartition' --
-  the same shape of name, the same kind of match -- is admitted eighth. So two
-  candidates that look identical to the scoring rank either side of the cut,
-  and the reason is not yet known.
+  WAS: "two candidates that look identical to the scoring rank either side of
+  the cut, and the reason is not yet known. What would answer it is the score
+  of each, not another experiment on the bundle." That was the right
+  instruction and it was followed. They do not rank either side of the cut:
+  `RenderEngineLeaflet' scores 600 and `TerrainPartition' scores 600, they are
+  lexical ranks 4 and 2, and both are above the cut in the lexical list. The
+  fusion is what separates them -- `TerrainPartition' is fused 10 and reached a
+  slot the owner cap freed, `RenderEngineLeaflet' is fused 12 and did not.
 
-  What would answer it is the score of each, not another experiment on the
-  bundle: the next attempt should read SEED-SCORE's terms for both entities
-  rather than infer from what came back. Tuning *SEED-OWNER-SHARE* down to 2 to
-  make this one case pass is refused -- it would be fitting a constant to one
-  anecdote, which is what DES-0033 and DES-0036 each record going wrong.
+  Tuning *SEED-OWNER-SHARE* down to 2 to make this one case pass is refused --
+  it would be fitting a constant to one anecdote, which is what DES-0033 and
+  DES-0036 each record going wrong. So is tuning *SEMANTIC-WEIGHT* down to 1.0
+  for it: its own docstring records what that costs on the mismatch family.
 
   THE ORIGINAL DIAGNOSIS, 2026-08-29, KEPT FOR WHAT IS STILL TRUE
   THREE DISTINCT FAILURES

@@ -94,7 +94,8 @@ is not a tool at all: the analyzer loads `js/extract.js` at runtime.
 SBCL loads at runtime and indexes itself, so a copy would be a second Loom that
 is never the one under test. REQ-0072. Everything that verifies
 or measures is under `tools/test/`: the three `test-*.py` suites,
-`load-test.lisp` for the peer property, the four census scripts, the case
+`load-test.lisp` for the peer property, `seed-trace.lisp` for why a seed band
+holds what it holds, the four census scripts, the case
 builders with `cases/` beside them, the `acceptance.py` and `recall.py`
 harnesses, and the two shared libraries they load -- `harness.lisp` and
 `service.py`. Nothing in `tools/test/` is run by `tools/loom-test.sh`, which is
