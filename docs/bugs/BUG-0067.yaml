@@ -99,7 +99,61 @@ body: |
       `update'; fe-11 passes on the first call after `update' returns. Before
       the change the same sequence returned the old image's answer.
 
-  R4 is not done. Nothing yet explains what removed the stores.
+  R4, DIAGNOSED 2026-09-12: NOTHING REMOVED THEM
+
+  The stores were never deleted. They were overwritten with a shape their own
+  loader refuses, and every query then answered as though the tree had none.
+
+  BUILD-VECTOR-STORE computed its dimension count as
+
+      (if vectors (length (first vectors)) 0)
+
+  so a repository whose index held no candidates produced no documents, no
+  vectors, and dimensions 0. ASSEMBLE-VECTOR-STORE wrote that -- count 0,
+  dimensions 0 -- over whatever store was already there.
+  LOAD-VECTOR-STORE tests (PLUSP DIMENSIONS) and refuses it, for the rest of
+  the file's life. The result is a store that exists on disk, parses as JSON,
+  and can never load.
+
+  That explains every symptom and contradicts the one this bug opened with.
+  `similar' said "has no vector store" because REPOSITORY-VECTORS got NIL from
+  the loader, not because a file was missing. Every watched repository went at
+  once because the trigger arrives per repository from one place. The unwatched
+  `datascience' store survived because nothing embedded it.
+
+  HOW IT IS REACHED
+
+  `tools/loom-serve.sh's START_VECTOR_BUILDS POSTs /embed for every repository
+  as soon as PROBE reports the listener answering, and the listener answers
+  before indexing has finished. An embed that arrives in that window sees an
+  empty VECTOR-CANDIDATES. Fifteen service restarts across a DES-0050
+  measurement session is fifteen chances at it.
+
+  A second path keeps it poisoned once it happens: /embed builds when there is
+  no loadable store, and the poisoned store is not loadable, so the next embed
+  against a still-empty index writes dimensions 0 again.
+
+  THE FIX, AND WHERE IT IS
+
+  BUILD-VECTOR-STORE returns NIL and writes nothing when there is nothing to
+  embed. ASSEMBLE-VECTOR-STORE refuses a dimension count below 1 outright.
+
+  Guarded at the writer rather than at the launcher, and that is the load-
+  bearing choice: the launcher race is one way in, and a file its own reader
+  refuses must not be writable by any way in. A writer that can produce one is
+  worse than a writer that errors, because the file looks like an answer.
+
+  Two tests, each checked to fail without the change. The first writes a good
+  store, runs an empty build against it, and asserts the good store still
+  loads. The second asserts the dimension guard signals.
+
+  WHAT R1 WOULD AND WOULD NOT HAVE CAUGHT
+
+  R1 reports :VECTOR-STORE :PRESENT from a PROBE-FILE, and the poisoned file is
+  present. So R1 would have said :PRESENT throughout the void sweep and caught
+  nothing. It remains worth having for the case it does cover -- a store that
+  was never built -- and it is not the guard for this one. The guard for this
+  one is that the file can no longer be written.
 
   WHAT IS WANTED
 
@@ -115,10 +169,10 @@ body: |
       code is answering. A check that leads the thing it checks is worse than
       no check, because it is trusted.
 
-  R4  Whatever lost the stores is found. They were present at the start of the
-      session, absent after several `update' cycles, and nothing in the log
-      said when. This is the part with no diagnosis yet and R1 through R3 are
-      all about noticing rather than preventing.
+  R4  Whatever lost the stores is found. Diagnosed and fixed: nothing lost
+      them. A build against a not-yet-indexed repository wrote a
+      zero-dimension store over the good one, and the loader refuses that
+      forever. The section below has it.
 
   ACCEPTANCE
 

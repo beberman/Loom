@@ -183,6 +183,38 @@ files under <loom>/.loom/vectors/ and must not touch a real store.")
     (dolist (entity entities) (add-entity graph entity))
     (loom-workspace::make-repository :root #p"/tmp/vec/" :name name :graph graph)))
 
+(test an-empty-build-writes-nothing-and-leaves-the-store-alone
+  ;; BUG-0067 R4, and the defect it covers destroyed real stores. A build
+  ;; against a repository whose index holds no candidates computed DIMENSIONS
+  ;; as 0, wrote count 0 and dimensions 0 over whatever was there, and
+  ;; LOAD-VECTOR-STORE refuses that forever because it tests (PLUSP
+  ;; DIMENSIONS). The file existed, parsed, and could never load, so every
+  ;; query answered as though the tree had no store.
+  ;;
+  ;; Reachable from the launcher rather than from a strange tree:
+  ;; tools/loom-serve.sh POSTs /embed for every repository as soon as the
+  ;; listener answers, which is before indexing has finished.
+  (with-clean-store ()
+    (let ((embedder (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
+      (loom-embed:write-vector-store (sample-store) *test-repository-name*)
+      (is (not (null (loom-embed:load-vector-store *test-repository-name* embedder)))
+          "the premise: a good store is on disk before the empty build")
+      (let ((repository (vec-repository *test-repository-name*)))
+        (is (null (build-vector-store repository embedder))
+            "an empty build must return NIL rather than a zero-dimension store"))
+      (is (not (null (loom-embed:load-vector-store *test-repository-name* embedder)))
+          "the good store must still load; an empty build overwrote it"))))
+
+(test a-zero-dimension-store-is-refused-rather-than-written
+  ;; The guard under the one above, stated where a future caller would hit it.
+  ;; A writer that can produce a file its own reader refuses is worse than one
+  ;; that errors, because the file looks like an answer.
+  (with-clean-store ()
+    (let ((embedder (loom-embed:make-fixed-embedder :id "fixed:test" :dimensions 3)))
+      (signals loom-embed:embedder-unavailable
+        (loom-workspace::assemble-vector-store (vec-repository *test-repository-name*)
+                               embedder '() 0)))))
+
 (defun store-vector-for (store id)
   "The vector STORE holds for ID, as a list, or NIL."
   (let ((dimensions (loom-embed:vector-store-dimensions store)))

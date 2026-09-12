@@ -80,7 +80,19 @@ stores impossible."
     (nreverse out)))
 
 (defun assemble-vector-store (repository embedder rows dimensions)
-  "Write a store from ROWS, each (id digest . vector), and return it."
+  "Write a store from ROWS, each (id digest . vector), and return it.
+
+Refuses a store LOAD-VECTOR-STORE could not read back. Zero dimensions is the
+one that happened: BUG-0067 R4, where a build against a not-yet-indexed
+repository wrote count 0 and dimensions 0 over a good store, and the loader
+rejects that for the rest of the store's life. A writer that can produce a file
+its own reader refuses is worse than one that errors, because the file looks
+like an answer."
+  (unless (plusp dimensions)
+    (error 'loom-embed:embedder-unavailable
+           :detail (format nil "refusing to write a ~d-dimension store for ~a; ~
+                                LOAD-VECTOR-STORE would never read it back"
+                           dimensions (repository-name repository))))
   (let* ((count (length rows))
          (ids (make-array count))
          (digests (make-array count))
@@ -122,16 +134,31 @@ definitions take 319 seconds. UPDATE-VECTOR-STORE is what makes that a
 one-time cost rather than the price of every reindex."
   (let* ((entities (vector-candidates (repository-graph repository)))
          (documents (mapcar #'entity-document entities))
-         (vectors (embed-documents embedder documents batch)))
-    (assemble-vector-store
-     repository embedder
-     (loop for entity in entities
-           for document in documents
-           for vector in vectors
-           collect (list* (princ-to-string (id entity))
-                          (loom-embed:document-digest document)
-                          vector))
-     (if vectors (length (first vectors)) 0))))
+         (vectors (and documents (embed-documents embedder documents batch))))
+    ;; Nothing to embed writes nothing, and BUG-0067 R4 is the whole reason
+    ;; this clause exists. Without it the arithmetic below made DIMENSIONS 0,
+    ;; ASSEMBLE-VECTOR-STORE wrote a header saying count 0 and dimensions 0
+    ;; over whatever was there, and LOAD-VECTOR-STORE refuses that forever --
+    ;; it tests (PLUSP DIMENSIONS). So a good store became a file that exists,
+    ;; parses, and can never load, and every query answered as though the tree
+    ;; had no store at all.
+    ;;
+    ;; It is reachable from the launcher rather than from a strange tree.
+    ;; `tools/loom-serve.sh' POSTs /embed for every repository as soon as the
+    ;; listener answers, which is before indexing has finished, so an embed can
+    ;; arrive while VECTOR-CANDIDATES is still empty. Guarding the write rather
+    ;; than the launcher, because a store that cannot load must not be
+    ;; writable by any path.
+    (when (and entities vectors)
+      (assemble-vector-store
+       repository embedder
+       (loop for entity in entities
+             for document in documents
+             for vector in vectors
+             collect (list* (princ-to-string (id entity))
+                            (loom-embed:document-digest document)
+                            vector))
+       (length (first vectors))))))
 
 (defun update-vector-store (repository embedder &key (batch *vector-batch*))
   "Bring REPOSITORY's store up to date, embedding only what changed.
