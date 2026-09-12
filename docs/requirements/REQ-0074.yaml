@@ -34,6 +34,12 @@ summary: |
   `published`, `consumed`, `matched`, and `unmatched-consumed`, which is an open
   request under a different name.
 
+  Two shapes were open and are decided, 2026-09-12. A request is a field on the
+  document that has the need rather than a document type of its own. An
+  answering document declares `refines:` with a qualified id rather than a field
+  of its own, which makes `complete` block the requesting document while the
+  answering one is unfinished with no change to DOCUMENT-BLOCKERS.
+
   What a request adds over the three existing claim kinds is a lifecycle. A
   route either matches or does not. A request is proposed, then open, then
   answered or declined or deferred, and finally satisfied -- and a team plans
@@ -87,10 +93,18 @@ body: |
                answering team has taken it on and the answering document carries
                its own status from there.
 
-    declined   The named repository records a refusal. This is a document in the
-               answering team's tree, because the refusal is their decision and
-               CON-0008 has every judgement landing as a reviewed commit in the
-               tree of the team that made it.
+    declined   The named repository records a refusal, as a decision document
+               refining the request. A refusal with its rationale is what a DEC
+               is for and it needs no addition to any status vocabulary.
+
+               A decline does not unblock. The requesting team has to regroup --
+               find another path, narrow the requirement, or drop it -- and
+               `complete` refuses until they record which. Note that the edge
+               mechanism alone would do the opposite: FINISHABLE-P is false for
+               a decision, so a DEC refining the request blocks nothing, and a
+               refusal would wave the requesting document through unnoticed.
+               R6.3 is what stops that, and it is the reason the field-based
+               blocker cannot defer to the edge for this state.
 
     deferred   Accepted, not now, with the condition that would reopen it.
                REQ-0025's own body is the shape: a priority, a date, and a named
@@ -119,14 +133,19 @@ body: |
 
   WHAT IS WANTED
 
-  R1  A document may declare a capability it needs from another repository: a
-      repository alias, a description, and optionally the contract that would
-      satisfy it -- an HTTP route, an exported name, an interface.
+  R1  A request is a field on an existing document, not a document type of its
+      own: a repository alias, a description, and optionally the contract that
+      would satisfy it -- an HTTP route, an exported name, an interface. Decided
+      2026-09-12. The need belongs to the requirement that has it, no directory
+      or id space is added, and a requirement needing three capabilities carries
+      three entries rather than spawning three documents.
 
-  R2  An answering document in the named repository declares the qualified id of
-      the request. The edge is derived from that declaration, by the pass
-      DES-0025 owns, and is retracted and re-derived wholesale like every other
-      federated edge.
+  R2  An answering document in the named repository declares
+      `refines: [@front-end/REQ-0012]` -- REQ-0073's qualified reference in the
+      field that already means one document answers another. Decided 2026-09-12.
+      No new relationship type and no second field: the server requirement does
+      answer the question the front-end requirement asked, which is what
+      `:refines` says.
 
   R3  Every request has one of the six states above, and the state is derived.
       Nothing is stored that a reindex could not recompute from the two trees
@@ -146,9 +165,49 @@ body: |
 
   R6  `complete` refuses to mark a document implemented while a request it
       declares is in any state but satisfied, and names the request, its state
-      and its answering document in the refusal. DOCUMENT-BLOCKERS walks within
-      one repository today; this is the same refusal across a boundary, and
-      REQ-0067 is sharpening what that refusal says.
+      and its answering document in the refusal. Two mechanisms, because a
+      request has an answering document only in some of its states.
+
+  R6.1  Once a request is answered, R2's choice makes the refusal free.
+        DOCUMENT-BLOCKERS collects the unfinished documents refining a document
+        -- `:rel-types '(:refines) :direction :in`,
+        src/workspace/transition.lisp -- so an answering requirement that is not
+        yet at a terminal status already blocks the requesting one. Nothing in
+        that function changes.
+
+  R6.2  It does not work yet, for a reason R2 does not remove. DES-0025 stores a
+        federated edge in the *claiming* repository's graph, and the claimant
+        here is the answering repository, so front-end's graph holds no record
+        of the payments requirement that refines its own. DOCUMENT-BLOCKERS
+        reads one graph. Answering "what refines this document" across a
+        boundary needs a lookup over the watched graphs, at the cost
+        FEDERATE-REPOSITORIES already pays per reindex, or the reverse index
+        DES-0025 considered and did not take.
+
+  R6.3  A request in a state with no unfinished answering document -- proposed,
+        open, declined, withdrawn -- is blocked by the field rather than by an
+        edge, since there is no edge to carry it.
+
+        Declined is the state this matters most for and the one the edge gets
+        backwards. A decline is an answer and it is not a satisfaction: the
+        capability is not coming, and a requirement written against it cannot be
+        implemented as written. `complete` refuses and says the request was
+        declined and by which decision, which is different from saying it is
+        still open. The refusal ends when the requesting team acts -- they
+        remove the request declaration having found another path, narrow the
+        requirement, or take `partial` with an OUTSTANDING section naming the
+        capability they did not get. Each of those is a reviewed commit in their
+        own tree, so the regroup is recorded rather than assumed.
+
+  R6.4  A blocker in another repository is distinguished from a local one in the
+        refusal. REQ-0067 is adding signals that tell a genuinely unfinished
+        child from a parent's extracted residue, and two of them -- the child is
+        newer, the child's `affects:` does not overlap the parent's -- are true
+        of every cross-repository answer by construction. Left alone, REQ-0067's
+        advice on such a blocker would be to remove the `refines:` edge, which
+        is the one thing that must not happen here. The distinguishing fact is
+        that the child is in another repository, and REQ-0067's signals do not
+        consider repository.
 
   R7  A request naming a contract is satisfied by the contract rather than by a
       status. ROUTE-CLAIMS and FEDERATION-REPORT already answer whether a route
@@ -199,17 +258,11 @@ body: |
 
   OPEN QUESTIONS
 
-  - Whether a request is a field on an existing document or a document type of
-    its own. A field keeps the need attached to the requirement that has it and
-    needs no new directory. A type gives the request its own id, which R5 and
-    the forge mirror both want something stable to name, and gives a refusal
-    somewhere to point that is not a file the answering team may not edit.
-  - Whether the answering document declares the request through `refines:` with
-    a qualified id or through a field of its own. `refines:` is close: the
-    server requirement does answer the question the front-end requirement asked.
-    It differs in that it crosses an ownership boundary and carries a
-    negotiation state, and `refines:` is read by `complete` as an unconditional
-    blocker, which REQ-0067 is already finding too blunt within one tree.
+  - What names a request, now that R1 makes it a field. The forge issue of
+    REQ-0076 and the decline of R5 both need to point at one, and a requirement
+    carrying three requests has three that the document's own id cannot tell
+    apart. A stable key derived from the target repository and the contract is
+    the obvious answer and is not obviously enough.
   - Whether a request may name several repositories. "Any service that stores a
     user record must expose a deletion path" is one need of three teams, and
     three separate requests lose that it is one need.
