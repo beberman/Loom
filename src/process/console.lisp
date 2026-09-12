@@ -767,6 +767,12 @@ properly needs to know the list was cut."
           ((null rows)
            (format t "  and the text does not contain it either, so the name is dead.~%"))
           (t
+           ;; DES-0049 D4. The heading names what the list is before the list
+           ;; arrives. A caller who read 3053 occurrence lines as a result set
+           ;; is REQ-0062's own instance, and BUG-0002 is the standing rule it
+           ;; follows: a cut list says it was cut, and a fallback list says it
+           ;; is a fallback.
+           (format t "  Not definitions -- the places the string is written:~%")
            (format t "  It occurs in the text ~d time~:p:~%" total)
            (dolist (row rows)
              (format t "    ~a:~d  ~a~%"
@@ -774,8 +780,28 @@ properly needs to know the list was cut."
            (when (getf occurrences :truncated)
              (format t "    ~d of ~d shown.~%" (length rows) total))))))
 
-(define-command find (term &optional type)
-    "find <name> [<type>]"
+(defun kind-flag (arguments)
+  "The family ARGUMENTS names, and ARGUMENTS without the flag.
+
+  (kind-flag '(\"repository\" \"--code\"))  =>  :code, (\"repository\")
+
+Stripped anywhere among the arguments rather than fixed in a position, because
+`find repository --code' and `find --code repository' are both what somebody
+types and neither is wrong. The term and the type are read from what is left,
+so a flag can never be mistaken for either."
+  (let ((kind nil) (rest '()))
+    (dolist (argument arguments)
+      (cond ((and (stringp argument) (string-equal argument "--code"))
+             (setf kind :code))
+            ((and (stringp argument)
+                  (or (string-equal argument "--documentation")
+                      (string-equal argument "--doc")))
+             (setf kind :documentation))
+            (t (push argument rest))))
+    (values kind (nreverse rest))))
+
+(define-command find (&rest arguments)
+    "find <name> [<type>] [--code|--documentation]"
     "Where something is defined. Without a repository, every watched one."
   ;; REQ-0051 R1. With no @token and several repositories watched this used to
   ;; reach CURRENT-GRAPH and be refused with "Several repositories are watched.
@@ -786,9 +812,13 @@ properly needs to know the list was cut."
   ;; The nothing-watched case still goes through CURRENT-REPOSITORY, whose
   ;; message says what to type. REQ-0051 R4's distinction at its most extreme: a
   ;; `find' against an empty registry must not answer "found nowhere".
-  (let ((type (and type (intern (string-upcase type) :keyword)))
-        (named (or *command-repository*
-                   (and (null (rest (all-repositories))) t))))
+  (multiple-value-bind (kind rest) (kind-flag arguments)
+   (let* ((term (first rest))
+          (type (and (second rest) (intern (string-upcase (second rest)) :keyword)))
+          (named (or *command-repository*
+                     (and (null (rest (all-repositories))) t))))
+    (unless term
+      (error "find needs a name. Try: find <name> [<type>] [--code|--documentation]"))
     (if (or named (null (all-repositories)))
         (let ((repository (current-repository)))
           (multiple-value-bind (hits total)
@@ -796,9 +826,28 @@ properly needs to know the list was cut."
               ;; named a domain, so a caller who named none gets the query
               ;; path this has always taken.
               (search-entities (repository-graph repository) :name term
-                               :type type :limit *console-find-limit*
+                               :type type :kind kind :limit *console-find-limit*
                                :property-filters (domain-property-filter *command-domain*))
             (cond
+              ;; DES-0049. A family that excluded everything is not the same
+              ;; miss as a term nothing carries, and must not print the same
+              ;; answer. `find repository --documentation' matched twenty code
+              ;; definitions and no document, and saying "nothing matches"
+              ;; before listing 3482 occurrence lines was wrong twice: the term
+              ;; is not absent, and the occurrences are not what the caller
+              ;; wants to see.
+              ((and (null hits) kind)
+               (let ((unfiltered (nth-value 1 (search-entities
+                                               (repository-graph repository)
+                                               :name term :type type))))
+                 (format t "~&No ~(~a~) entity is named ~s.~%" kind term)
+                 (when (plusp unfiltered)
+                   (format t "  ~d entit~:@p of another kind ~:[is~;are~] -- drop the flag to see ~
+~:[it~;them~].~%"
+                           unfiltered (> unfiltered 1) (> unfiltered 1)))
+                 (when (eq kind :documentation)
+                   (format t "  `find' matches names. For documents ABOUT ~s, ask `context'.~%"
+                           term))))
               ((null hits)
                (print-find-elsewhere
                 term
@@ -818,18 +867,23 @@ properly needs to know the list was cut."
                  (when (> total (length hits))
                    (format t "~&~d of ~d shown. Narrow the term, or name a type.~%"
                            (length hits) total))))))
-        (let* ((report (search-repositories term :type type
+        ;; The federated branch takes the family too: a caller searching every
+        ;; watched tree has as much use for it as one naming a tree.
+        (let* ((report (search-repositories term :type type :kind kind
                                                  :limit *console-find-limit*))
                (hits (getf report :entities))
                (total (getf report :total)))
           (cond
+            ((and (null hits) kind)
+             (format t "~&No ~(~a~) entity is named ~s in any watched repository.~%"
+                     kind term))
             ((null hits)
              (format t "~&Nothing matches ~s in any watched repository.~%" term))
             (t (dolist (hit hits) (print-find-line hit))
                (when (> total (length hits))
                  (format t "~&~d of ~d shown. Narrow the term, or name a type.~%"
                          (length hits) total))))
-          (print-find-cost report)))))
+          (print-find-cost report))))))
 
 (define-command describe (term &optional flag)
     "describe <name> [--source]"

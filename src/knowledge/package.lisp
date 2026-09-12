@@ -40,6 +40,8 @@
 
    ;; services (SS11's read-only tools)
    #:search-entities
+   #:*find-kinds*
+   #:kind-types
    ;; BUG-0032: picking one entity for a name, which `find' does not do.
    #:best-name-match
    #:describe-entity

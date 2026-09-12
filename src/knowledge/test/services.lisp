@@ -712,3 +712,100 @@ with them."
       (is (string= "render" (getf any :name))
           "and without the filter the better-named other domain wins: ~a"
           (getf any :name)))))
+
+;;; ------------------------------------------------------------------
+;;; The two families (PLAN-0054 S2, DES-0049 D1)
+;;; ------------------------------------------------------------------
+
+(test the-two-families-partition-every-declared-type
+  ;; What makes a complement safe rather than a second list to keep current.
+  ;; Asserted as a partition -- every type in exactly one -- rather than as
+  ;; disjointness, because disjointness alone would pass with :WORKSPACE,
+  ;; :COMMIT and four others silently filed as code and nobody the wiser.
+  (let ((code (kind-types :code))
+        (documents (kind-types :documentation))
+        (all (loom-ontology:all-entity-types)))
+    (dolist (type all)
+      (let ((in-code (and (member type code) t))
+            (in-documents (and (member type documents) t)))
+        (is (not (eq in-code in-documents))
+            "~a is in ~a" type
+            (cond ((and in-code in-documents) "both families")
+                  (t "neither family")))))
+    (is (= (length all) (+ (length code) (length documents)))
+        "the two families together are every declared type")))
+
+(test the-document-family-is-what-the-document-analyzers-mint
+  (is (equal (sort (copy-list loom-graph:*document-types*) #'string<)
+             (sort (copy-list (kind-types :documentation)) #'string<))
+      "the family is *DOCUMENT-TYPES* itself, not a copy that can drift"))
+
+(test no-kind-is-no-narrowing
+  (is (null (kind-types nil))))
+
+(defun family-fixture ()
+  "A graph holding a function and a document, both named `repository'."
+  (let ((g (make-graph)))
+    (add-entity g (make-instance 'function-entity :name "repository"
+                                 :origin-file "src/workspace.lisp"
+                                 :properties (properties-table
+                                              '(:file "src/workspace.lisp"
+                                                :start-line 1 :end-line 2))))
+    (add-entity g (make-instance 'document-entity :name "repository"
+                                 :origin-file "docs/arch/ARCH-0001.yaml"
+                                 :properties (properties-table
+                                              '(:path "docs/arch/ARCH-0001.yaml"
+                                                :doc-id "ARCH-0001"))))
+    g))
+
+(test a-family-narrows-find-to-one-of-two-same-named-entities
+  (let ((g (family-fixture)))
+    (multiple-value-bind (hits total) (search-entities g :name "repository")
+      (declare (ignorable hits))
+      (is (= 2 total) "both without a family"))
+    (multiple-value-bind (hits total) (search-entities g :name "repository" :kind :code)
+      (is (= 1 total))
+      (is (eq :function (getf (first hits) :type))))
+    (multiple-value-bind (hits total)
+        (search-entities g :name "repository" :kind :documentation)
+      (is (= 1 total))
+      (is (eq :document (getf (first hits) :type))))))
+
+(test the-truncation-count-is-computed-over-the-filtered-population
+  ;; R2, and it asserts the count rather than the rows: a filter applied after
+  ;; the cap would return the right row here and the wrong number beside it,
+  ;; which is the answer that tells a caller to narrow a term already as narrow
+  ;; as it goes.
+  (let ((g (make-graph)))
+    (dotimes (i 20)
+      (add-entity g (make-instance 'function-entity :name (format nil "repo~d" i)
+                                   :origin-file "src/f.lisp"
+                                   :properties (properties-table
+                                                (list :file "src/f.lisp"
+                                                      :start-line i :end-line i)))))
+    (dotimes (i 5)
+      (add-entity g (make-instance 'document-entity :name (format nil "repo-doc~d" i)
+                                   :origin-file (format nil "docs/d~d.yaml" i)
+                                   :properties (properties-table
+                                                (list :path (format nil "docs/d~d.yaml" i)
+                                                      :doc-id (format nil "DOC-~d" i))))))
+    (multiple-value-bind (hits total) (search-entities g :name "repo" :limit 3)
+      (is (= 3 (length hits)))
+      (is (= 25 total) "unfiltered, the population is everything named repo"))
+    (multiple-value-bind (hits total)
+        (search-entities g :name "repo" :limit 3 :kind :documentation)
+      (is (= 3 (length hits)))
+      (is (= 5 total) "filtered, it is the five documents and not twenty-five"))))
+
+(test a-type-and-a-family-that-contradict-are-refused
+  (let ((g (family-fixture)))
+    (handler-case
+        (progn (search-entities g :name "repository" :type :class :kind :documentation)
+               (is-true nil "a code type and a document family were both accepted"))
+      (loom-utils:refusal (condition)
+        (is-true (search "class" (loom-utils:refusal-message condition)))
+        (is-true (search "documentation" (loom-utils:refusal-message condition)))))
+    (multiple-value-bind (hits total)
+        (search-entities g :name "repository" :type :function :kind :code)
+      (declare (ignorable hits))
+      (is (= 1 total) "a type inside the family is not refused"))))

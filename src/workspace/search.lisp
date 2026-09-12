@@ -32,7 +32,7 @@ built and answerable and whose vector store is not, and `find' is lexical, so
 it is searched exactly as :READY is."
   (not (eq :indexing (repository-state repository))))
 
-(defun repository-hits (repository term &key type limit)
+(defun repository-hits (repository term &key type kind limit)
   "SEARCH-ENTITIES against REPOSITORY, each row tagged with its tree.
 
 Two values, as SEARCH-ENTITIES has since BUG-0002: the rows, and how many
@@ -41,13 +41,13 @@ not name its tree reads as a claim about one system, which is REQ-0027 R5's
 rule applied to a band it did not cover."
   (multiple-value-bind (rows total)
       (search-entities (repository-graph repository)
-                       :name term :type type :limit limit)
+                       :name term :type type :kind kind :limit limit)
     (values (mapcar (lambda (row)
                       (list* :repository (repository-name repository) row))
                     rows)
             total)))
 
-(defun search-repositories (term &key type limit repositories)
+(defun search-repositories (term &key type kind limit repositories)
   "Every watched repository's answer to TERM, merged and ranked once.
 
 Returns a plist:
@@ -85,7 +85,7 @@ tree's definition is better than another's at equal rank."
     (dolist (repository (or repositories (all-repositories)))
       (if (searchable-p repository)
           (multiple-value-bind (hits count)
-              (repository-hits repository term :type type :limit limit)
+              (repository-hits repository term :type type :kind kind :limit limit)
             (setf rows (append rows hits))
             (incf total count)
             (push (list :repository (repository-name repository) :total count)

@@ -39,16 +39,28 @@ overlay in the name, and a caller wanting precision can filter the result."
   (loop for (key value) on filters by #'cddr
         always (equal value (gethash key (properties entity)))))
 
-(defun find-entities (view &key entity-type name-like property-filters include-stale)
+(defun find-entities (view &key entity-type entity-types name-like
+                                property-filters include-stale)
   "Entities matching every supplied criterion; all of them are optional, so
 no criteria returns everything non-stale.
 
 The entry point behind \"where is X defined\" (SS11's loom_find). Stale
 entities are excluded by default for the same reason stale edges are excluded
 from traversal: SS9 keeps unverified facts out of agent context until they are
-re-confirmed."
+re-confirmed.
+
+ENTITY-TYPES is a set, beside the single ENTITY-TYPE. Both are kept because
+seventeen callers pass the singular and none of them wants a list, and both
+apply when both are given -- they intersect rather than one winning, which is
+the only reading that cannot surprise a caller who passed both by accident.
+
+No family logic here. This layer is handed a set of types and filters on it,
+the same shape as PROPERTY-FILTERS and for the same reason: DES-0025 D4 keeps
+vocabulary and configuration out of loom-graph. Deciding that six of these
+types are documents and the rest are code is loom-knowledge's job."
   (loop for e in (all-entities view)
         when (and (or (null entity-type) (eq entity-type (entity-type e)))
+                  (or (null entity-types) (member (entity-type e) entity-types))
                   (or (null name-like) (name-matches-p e name-like))
                   (properties-match-p e property-filters)
                   (or include-stale (not (stale-p e))))

@@ -1,0 +1,105 @@
+id: PLAN-0054
+title: Four steps to a code-or-documents selector, from one type list already in the graph
+status: draft
+date: 2026-09-11
+refines: [DES-0049]
+affects: [find-entities, search-entities, print-find-occurrences]
+tags: [find, filtering, cli, rest, mcp, req-0062, des-0049]
+summary: |
+  Small, because the design turned out small once R5 was refused. Four steps,
+  each ending at a green `tools/loom-test.sh' and a `check' still reading
+  0 violations, 8 unresolved, 7 ambiguous.
+
+  The order is set by one dependency: the query layer has to be able to filter
+  on a set of types before anything can ask it to.
+body: |
+  STEPS
+
+  1. THE TYPE SET.  src/graph/query.lisp, src/graph/test/query.lisp.
+
+     FIND-ENTITIES gains `:entity-types', a list, beside the `:entity-type' it
+     has. Both may be given; the singular is kept because seventeen callers
+     pass it and none of them wants a list.
+
+     No family logic here. The graph is handed a set of types and filters on
+     it, which is the same shape as `:property-filters' and for the same
+     reason: DES-0025 D4 keeps configuration and vocabulary out of loom-graph.
+
+     Verification: a test that a two-type set returns both and excludes a
+     third, and a test that `:entity-type' and `:entity-types' given together
+     intersect rather than one winning.
+
+  2. THE FAMILY.  src/knowledge/services.lisp,
+     src/knowledge/test/services.lisp.
+
+     SEARCH-ENTITIES gains `:kind', taking :CODE or :DOCUMENTATION, and turns
+     it into the type set. The document family is LOOM-GRAPH:*DOCUMENT-TYPES*.
+     The code family is its complement over the entity types the ontology
+     declares, computed rather than listed, so a type added later joins the
+     right family without anybody editing this.
+
+     `:kind' and `:type' given together are refused when they contradict --
+     `find x class --documentation' names a code type and a document family.
+     Refused rather than resolved: either answer is a guess about which the
+     caller meant.
+
+     R2 needs no work. SEARCH-ENTITIES already computes its total after
+     filtering, so `20 of 202' becomes `20 of 20' the moment the filter exists.
+
+     Verification: a test that the two families partition the types -- every
+     declared type is in exactly one -- which is what makes the complement safe
+     rather than a second list to keep current. A test that the truncation count
+     is computed over the filtered population, which is R2 and would pass by
+     accident if the filter ran after the cap, so it asserts the count and not
+     the rows.
+
+  3. THE SURFACES.  src/process/console.lisp, src/serve/operations.lisp,
+     src/process/test/console.lisp, src/serve/test/operations.lisp.
+
+     Console: `--code' and `--documentation' anywhere among `find''s arguments,
+     stripped before the term and type are read. REST and MCP: a `kind'
+     argument on :FIND taking the two words.
+
+     :FIND's repository stays optional, so the federated branch takes the kind
+     as well -- a caller searching every watched tree has as much use for the
+     filter as one naming a tree.
+
+     Verification: a console test that the flag narrows and one that it is
+     stripped rather than read as the term. A REST test that `kind=documentation'
+     returns fewer than the same call without it.
+
+  4. THE FALLBACK HEADING, AND THE GUIDANCE.  src/process/console.lisp,
+     src/workspace/templates/claude-md-pointer.md,
+     src/workspace/templates/loom-skill.md, CLAUDE.md,
+     .claude/skills/loom/SKILL.md.
+
+     D4. PRINT-FIND-OCCURRENCES gains a heading naming what the list is: the
+     string's places in text, not definitions. Printed whether or not a family
+     was named, because the misread REQ-0062 records was of an unfiltered miss.
+
+     R4. The `find' line in both templates and in this tree's own two copies
+     gains the selector. A switch nobody is told about is a switch nobody types.
+
+     Verification: a console test that a miss prints the heading. The guidance
+     is prose and is checked by reading it.
+
+  WHAT THIS PLAN DOES NOT DO
+
+  R5. Refused in DES-0049 D3 on a measurement, not deferred. No step here
+  touches the occurrence band's trigger.
+
+  A by-subject search. `find --documentation' filters hits by family. The
+  documents describing repositories are not named "repository", and a caller
+  wanting those wants `context'. Step 3's console says so when a filtered
+  answer is empty.
+
+  RISK
+
+  One, and it is step 2's. The code family is a complement, so a type the
+  ontology declares and the document analyzers do not mint lands in `code'
+  whether or not it is code. :RULE-VIOLATION, :WORKSPACE, :SNAPSHOT,
+  :REPOSITORY, :BRANCH and :COMMIT are all in that position. None is a
+  definition a `find' would return, so the partition test in step 2 asserts
+  what the families hold rather than only that they are disjoint -- a test that
+  checked disjointness alone would pass with every one of those six silently
+  filed as code.

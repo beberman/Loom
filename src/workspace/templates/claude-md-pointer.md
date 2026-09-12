@@ -89,6 +89,7 @@ does this reach*, or *what has been decided about this* — the first tool is
 | Question | Use | Not |
 |---|---|---|
 | where is X defined | `loom_find` | `grep -rn "defun X"` |
+| ...only the code, or only the docs | `loom_find` with `kind` | two greps and a filter |
 | which tree owns this name | `loom_find` with no `repository` | one call per tree |
 | who calls X, how many, from where | `loom_describe` | `grep -rn "X"` |
 | does X exist at all | `loom_find` | `grep -rl` over a tree |
