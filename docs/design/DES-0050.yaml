@@ -1,0 +1,237 @@
+id: DES-0050
+title: The fusion keeps a cliff and drops a flat ordering, because dense candidates sit within 7% of each other by construction and RRF spends a full rank decay on that
+status: draft
+date: 2026-09-11
+refines: [BUG-0060]
+affects: [fuse-rankings, seed-entities, seed-score, semantic-candidates,
+          admit-seeds, named-by-task-p]
+tags: [context, seeding, fusion, rrf, dense-retrieval, recall, bug-0060,
+       req-0048, req-0016, des-0040]
+summary: |
+  `context' loses an exact name match to dense retrieval. BUG-0060 has the
+  trace: `RenderEngineLeaflet' is lexical rank 4 and fused rank 12, and the
+  caller wrote the word.
+
+  Reciprocal-rank fusion reads positions and ignores scores. That was chosen so
+  nothing would have to calibrate a cosine against a SEED-SCORE band. The cost
+  is that it cannot tell a list whose ordering means something from a list whose
+  ordering means almost nothing, and on this tree the two lists differ exactly
+  that way.
+
+  Measured over three front-end tasks, the dense list spans 5.0%, 5.6% and 7.0%
+  of its best cosine. That is not a property of the tasks.
+  *SEMANTIC-RELATIVE-FLOOR* is 0.90, so the list is built to sit within 10% of
+  the best. Dense rank 1 against dense rank 8 is a few thousandths of a cosine.
+
+  The lexical list is not a spread at all. SEED-SCORE is a lexicographic band
+  vector packed into an integer, and its top band is worth 100000: whether the
+  caller named this entity. On two of the three tasks the list opens with a
+  cliff -- four named candidates, then a 100000 jump -- and on the third there
+  is no cliff, because nothing was named and every candidate sits in one band.
+
+  So the design is not a calibration between two score scales. It is to carry
+  one bit the lexical side already computes across the fusion, and to let the
+  agreement between the two lists say how much the fusion should be trusted.
+
+  D3 records what this must beat and D6 records what it must not break. The
+  mechanism is close to the PROTECTED band that already exists and is switched
+  off, and the difference is the predicate: *PROTECT-NAMED* protects everything
+  NAMED-BY-TASK-P calls named, which on "segment terrain into region polygons"
+  includes SEGMENT.
+body: |
+  D1  WHAT WAS MEASURED
+
+  Three tasks against front-end, through `tools/test/seed-trace.lisp', with the
+  vector store read from disk so the numbers are the service's.
+
+  Task A  "load and hold the map TerrainPartition in useLayerEditorState when
+           the active layer is a terrain layer and render faces and arcs in
+           RenderEngineLeaflet"
+  Task B  "the bit that merges edits"
+  Task C  "undo and redo a partition edit"
+
+  Lexical scores of the first eight, and dense cosines of the first eight:
+
+    task   lexical first 8              dense first 8        dense span
+    A      500 600 600 600 100101 ...   0.757 .. 0.714       5.6% of best
+    B      100502 .. 100602             0.660 .. 0.627       5.0%
+    C      1700 100502 .. 100601        0.787 .. 0.732       7.0%
+
+  The dense span is 5 to 7% every time because *SEMANTIC-RELATIVE-FLOOR* is
+  0.90. The list cannot span more than 10% and in practice spans half that.
+
+  D2  THE LEXICAL SCORE IS BANDED, AND THE BAND IS THE SIGNAL
+
+  SEED-SCORE returns
+
+      1000000*type + 100000*not-named + 10000*accessor + 1000*test
+        + 100*(8 - coverage) + 10*prose-only + name-rank
+
+  so a difference of 100000 is a change of kind and a difference of 1 is a
+  change of degree. Reading the three tasks by that decomposition:
+
+    A   500, 600, 600, 600     four candidates the caller NAMED
+        100101 onward          nothing else was named
+    C   1700                   one candidate the caller named
+        100502 onward          nothing else was named
+    B   100502 .. 100602       nothing was named; one flat band, range 100
+
+  A and C open with a discontinuity. B has none.
+
+  This is why a mean-and-variance calibration between the two lists is refused.
+  The lexical quantity is not on an interval scale: 100000 is a flag wearing a
+  number, and fitting a linear map to it would decide that being unnamed costs
+  100000 units, which is as arbitrary as RRF deciding it costs one rank. What
+  can cross the fusion honestly is the flag itself.
+
+  D3  THE ANCHOR SET IS FULL, AND THE ANCHORS ARE THE DISPUTED ITEMS
+
+  Calibrating the two scales on the candidates both lists hold was considered
+  and is refused, and the measurement is the reason rather than the principle.
+
+  Every dense candidate appears somewhere in the lexical list, on all three
+  tasks. The lexical list is 600 to 1200 candidates deep, so a dense hit almost
+  always has a lexical position, and the thin-overlap problem that usually
+  sinks anchor calibration does not arise here.
+
+  Where they sit is the problem:
+
+    task   dense rank 1..8 sits at lexical
+    A      14, 15, 25, 26, 80, 134, 140, 275
+    B      1, 2, 14, 25, 32, 35, 58, 327
+    C      10, 12, 13, 14, 16, 34, 36, 37
+
+  Fit a shift on task A and it says dense 1..8 maps to lexical 14..275, which
+  pushes the whole dense list below lexical rank 14 and deletes its
+  contribution. That is the right answer for task A and destroys task B, where
+  dense's top two are lexical's top two. The anchors record that the two
+  systems disagree. They do not record which is right.
+
+  What the anchor spread does measure is agreement, and that is worth keeping
+  as a signal even though it is worthless as a scale correction. Task B's
+  anchors are tight at the head; task A's are scattered from 14 to 275.
+
+  D4  THE CHANGE: A NAMED CLIFF SURVIVES THE FUSION
+
+  FUSE-RANKINGS already takes PROTECTED and gives each of them a 1.0 bonus
+  against a reciprocal-rank sum that cannot exceed about 0.04. The band works.
+  What is wrong is the set it is given.
+
+  SEED-ENTITIES computes PROTECTED as (WHEN *PROTECT-NAMED* NAMED), where NAMED
+  is every candidate NAMED-BY-TASK-P accepts. That predicate fires on any
+  entity whose whole name is one of the caller's words, so on "segment terrain
+  into region polygons" it fires on SEGMENT, and *PROTECT-NAMED*'s docstring
+  records both mechanisms measuring worse for it: 441/39/41 for promoting them
+  and 433/38/42 for guaranteeing them a slot, against 443/39/43 baseline.
+
+  The change is to protect the CLIFF rather than the predicate. A candidate is
+  protected when it is named AND it is in the leading band of the lexical list
+  -- that is, its SEED-SCORE shares the top band vector with lexical rank 1.
+
+  On task A that is four candidates, not every entity in front-end whose name
+  is a word somebody typed. On task C it is one. On task B it is none, because
+  there is no cliff, and the fusion is then exactly what it is today.
+
+  Two properties follow and both are what makes this different from
+  *PROTECT-NAMED*:
+
+    The protected set is bounded by the shape of the answer rather than by the
+    size of the tree. A task naming nothing protects nothing. A task naming one
+    thing protects one thing.
+
+    SEGMENT is not protected on "segment terrain into region polygons" unless
+    it is in the leading band, and it is not: an entity matching one common word
+    has coverage 1 and sits far below a candidate matching three.
+
+  D5  WHAT "LEADING BAND" MEANS, EXACTLY
+
+  Not a score threshold. The bands above `coverage' are compared as a tuple:
+
+      (type, not-named, accessor, test)
+
+  A candidate is in the leading band when that tuple equals lexical rank 1's.
+  Coverage, prose-only and name-rank are the continuous tail and are not part
+  of the comparison -- they are what orders candidates WITHIN the band, and
+  including them would make the leading band a single candidate on most tasks.
+
+  Task A's leading tuple is (0,0,0,0) and four candidates share it. Task C's is
+  (0,0,0,1) -- the top candidate is a test entity -- and one candidate shares
+  it. Task B's leading tuple is (0,1,0,0), which is the not-named tuple, and
+  the rule below refuses it.
+
+  A leading band that is the NOT-NAMED tuple protects nothing. That is the
+  whole of what stops this becoming *PROTECT-NAMED* again: task B's entire
+  list is in its leading band, and protecting a whole list is protecting
+  nothing while costing the dense ordering.
+
+  A cap stays on it regardless. *SEED-CLIFF-LIMIT*, proposed at 4, bounds the
+  protected set however many candidates share the leading tuple, so a task
+  whose leading band is broad cannot flood the slots. 4 is half the seed limit
+  and is a starting value, not a measurement; D6 says what decides it.
+
+  D6  WHAT THIS MUST BEAT AND WHAT IT MUST NOT BREAK
+
+  Three harnesses, in the order they are decisive:
+
+    tools/test/recall.py tools/test/cases/known-item.json   450 known-item cases
+    tools/test/recall.py tools/test/cases/mismatch.json     120 mismatch cases
+    tools/test/acceptance.py                                45 judged bundles
+
+  The baseline is measured rather than quoted. *SEMANTIC-WEIGHT*'s docstring
+  records 443/39/43 at its own settings and BUG-0060 records 435/450 and 33/44
+  at a later one; neither is today's. Measured 2026-09-11 against the service
+  at 75d3370, front-end at 7ad171d and game-server at d81bc61:
+
+    known-item   strict 434/449  96.7%    lenient 435/449  96.9%
+    mismatch     strict  31/120  25.8%    lenient  34/120  28.3%
+    acceptance   strict  33/44            lenient  39/44
+
+  The first run of known-item returned 431/446 and is discarded: front-end was
+  reindexing a branch merge mid-run and four cases came back HTTP 500. A
+  recall figure measured against a tree that moved under it is the failure
+  RULE-0008 names, and the re-run on the settled index is the number above.
+
+  front-end is under active development, so a case file naming it measures a
+  tree that changes between runs. Re-measure the baseline immediately before
+  and after the change in the same sitting rather than comparing against this
+  table weeks from now.
+
+  The floor BUG-0060 states holds here: fe-1 (WorkingSet) and fe-10
+  (SaveDesign) are the two front-end cases PLAN-0039 S3 lost when
+  MATCH-COVERAGE replaced (LENGTH MATCHES), and any change to the seed
+  admission has to hold them.
+
+  The case this exists to fix is not in any corpus yet and must be added before
+  the change, so that it fails first. CON-0003: a test must fail without the
+  change it covers. Task A with `RenderEngineLeaflet' as the target is the
+  case, and it belongs in known-item.json against front-end.
+
+  ACCEPTANCE
+
+  Task A seeds `RenderEngineLeaflet'. It does not today: confirmed again on the
+  settled index at 7ad171d, where the seed band is four LayerEditorState
+  members, TerrainLayer, useDesignScreen and useLayerEditorState, and the term
+  `renderengineleaflet' reads weak.
+
+  Task B's bundle is unchanged, because it has no cliff and the fusion is
+  untouched. known-item does not fall. The
+  mismatch family does not fall -- that is the family *SEMANTIC-WEIGHT* 1.5 was
+  raised to buy, and a change that takes it back has bought nothing.
+
+  OPEN QUESTIONS
+
+  - Whether the agreement signal in D3 is worth building after the cliff rule
+    lands. It is a second mechanism aimed at the same failure and the cliff rule
+    may close the cases on its own. Measure first, and if the cliff rule holds
+    known-item and fixes task A, leave agreement unbuilt.
+
+  - Whether *SEMANTIC-RELATIVE-FLOOR* at 0.90 is doing harm of its own. It
+    makes the dense ordering nearly information-free by construction, and RRF
+    then spends a full rank decay across it. A wider floor would give the dense
+    ranks something to say and would admit worse candidates; neither half of
+    that trade is measured. This design does not touch it.
+
+  - Whether the leading-band tuple should include `accessor' and `test'. Task
+    C's leading tuple is (0,0,0,1) because its top candidate is a test entity,
+    which means the protected candidate on that task is a test. That is correct
+    by the rule and may be wrong by intent.
