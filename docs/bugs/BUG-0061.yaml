@@ -2,6 +2,8 @@ id: BUG-0061
 title: A generic function defined only by defmethod resolves as ambiguous in affects:, because RESOLVE-ONE's protocol exception requires an :interface entity that no defgeneric produced
 status: open
 date: 2026-09-01
+amended: 2026-09-12
+priority: p4
 refines: [REQ-0030, DES-0029]
 affects: [resolve-one, resolve-document-links, linkable-index,
           make-method-entity, make-interface-entity]
@@ -101,6 +103,63 @@ body: |
     hit by RESOLVE-CALLS instead of RESOLVE-ONE. A design that ties methods to
     their generic once would serve both resolvers; fixing RESOLVE-ONE alone
     leaves REQ-0020 to solve it again.
+
+  POPULATION MEASURED 2026-09-12, AND IT IS ONE
+
+  The SCOPE section below asked for this count before choosing a fix. Taken
+  over `check' on both trees, classifying each ambiguous name by the types in
+  its candidate set:
+
+    Loom          7 ambiguous, 1 all-method
+    game-server   0 ambiguous, 0 all-method
+
+  Loom's one is `initialize-instance', named in PLAN-0003's affects: and
+  ambiguous between two :AFTER methods, on RELATIONSHIP and on ENTITY. The
+  other six are pairs of plain :FUNCTION entities sharing a name across
+  systems -- RESOLVE-ENTITY in loom-serve and loom-process, and three
+  inspector functions that a test file redefines -- and REQ-0030 R7 requires
+  those stay ambiguous.
+
+  game-server reports zero because the four documents that hit it no longer
+  name db-query, not because the defect was fixed. The code shape is unchanged:
+  `find @game-server db-query' still returns two :METHOD entities at
+  data-api/db/connection.lisp:374 and :387 with no :INTERFACE between them, and
+  RESOLVE-ONE's clause still requires exactly one. A document naming it today
+  would be reported ambiguous again.
+
+  WHAT THE MEASUREMENT CHANGES
+
+  The one live instance is a generic this tree does not define.
+  INITIALIZE-INSTANCE belongs to COMMON-LISP; Loom writes two methods on it and
+  no DEFGENERIC, because writing one would be redefining a standard generic.
+
+  So the fix this bug proposed -- mint the missing :INTERFACE the way
+  RESOLVE-GENERATED-DEFINITIONS mints generated definitions -- has nothing to
+  mint from in the only case that is live. An :INTERFACE for
+  INITIALIZE-INSTANCE would be an entity for a definition that is not in the
+  tree, which is a different and worse proposition than the db-query case the
+  bug was written from, where the generic genuinely is this tree's.
+
+  That does not make the bug wrong. It makes the candidate fix narrower than it
+  looked, and it means a design has to say what an all-method set resolves to
+  when the generic is foreign. Edging the document to every method is the
+  option the body below does not consider and is the one that needs no minting.
+
+  PRIORITY: P4, 2026-09-12
+
+  Deferred on rate. One instance on one tree, and REQ-0030 R3's escape hatch --
+  name the entity by the id `find' prints -- works today, which is what
+  game-server's author used. Severity stays minor: the report is noise rather
+  than a wrong answer, and CON-0001's posture is that a reported gap is the
+  correct outcome.
+
+  Re-read this if the count moves. REQ-0030's own argument is that a report
+  mixing rot with correctly-spelled CLOS names stops being driven to zero and
+  stops being read, and one entry in seven is not yet that.
+
+  The general fix belongs to REQ-0020, which is `partial' and is the same
+  missing edge between a generic's methods reached from RESOLVE-CALLS instead
+  of RESOLVE-ONE. Fixing RESOLVE-ONE alone leaves REQ-0020 to solve it again.
 
   SCOPE
 
