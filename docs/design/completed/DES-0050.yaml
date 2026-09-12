@@ -1,6 +1,6 @@
 id: DES-0050
 title: Seed fusion moves from reciprocal rank to relative score, because no RRF constant seeds an exactly-named class and normalising each list against its own range seeds it fourth
-status: draft
+status: implemented
 date: 2026-09-11
 refines: [BUG-0060]
 affects: [fuse-rankings, seed-entities, seed-score, semantic-candidates,

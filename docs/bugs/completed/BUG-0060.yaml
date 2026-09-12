@@ -1,6 +1,6 @@
 id: BUG-0060
 title: context for a terrain-editor task led with a play-mode class and an archived doc, and returned none of the three files the change edited
-status: open
+status: closed
 severity: major
 date: 2026-08-29
 amended: 2026-09-11
