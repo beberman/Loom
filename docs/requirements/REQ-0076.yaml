@@ -54,7 +54,7 @@ body: |
 
   WHY GITHUB FIRST
 
-  front-end and game-server are both in the `AI-Strategy-Games` organisation on
+  front-end and game-server are both in the `AI-Strategy-Games` organization on
   github.com, and a user service and a proxy would be the third and fourth
   repositories in it. GitHub is the adapter that can be tested against a real
   organisation rather than the one the design assumes.

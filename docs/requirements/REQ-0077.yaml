@@ -1,5 +1,7 @@
 id: REQ-0077
-title: Federation requires every tree on one filesystem, so a developer on a product of ten repositories must clone ten, and the cross-repository answer they get is derived against whatever commit each clone sits at
+title: Federation requires every tree on one filesystem, so a developer on a
+product of ten repositories must clone ten, and the cross-repository answer
+they get is derived against whatever commit each clone sits at
 status: draft
 priority: p4
 date: 2026-09-12
