@@ -206,9 +206,11 @@ body: |
 
   D5  WHERE IT SITS
 
-  A new system, loom-docstore, which depends on loom-utils and nothing else.
-  loom-workspace is its only client. The name is not loom-store, because
-  "store" already means the vector store in src/embed/store.lisp.
+  A new system, loom-docstore, which depends on no other Loom system. It uses
+  two libraries: the standalone utils library for READ-FILE, and UIOP to run
+  git for the file store's history. loom-workspace is its only client. The
+  name is not loom-store, because "store" already means the vector store in
+  src/embed/store.lisp.
 
   loom-docstore deals in refs, addresses, versions and bytes. It never sees
   an ontology operation. It cannot reach loom-graph or loom-analyzer, and it
@@ -227,13 +229,11 @@ body: |
   CLAUDE.md's rule decides the placement. loom-workspace depends on
   loom-docstore, so the shared home is the lower system, not loom-utils.
 
-  Proposed rule, written with the S1 commit: nothing in loom-docstore reaches
-  loom-graph, loom-analyzer, loom-ontology or loom-knowledge. Nothing in
-  loom-analyzer or loom-knowledge reaches loom-docstore. It is written as
-  :NO-EDGE checks that name each forbidden system. RULE-0001 and RULE-0009 use
-  to-system: outside, and that would also forbid the edge to loom-utils.
-  Because loom-knowledge cannot reach the system at all, RULE-0003's deny list
-  needs no new names.
+  Three rules, written with the S1 commit. loom-docstore reaches no other Loom
+  system, checked with to-system: outside, as RULE-0001 and RULE-0009 check
+  the two existing leaves. loom-analyzer does not reach loom-docstore.
+  loom-knowledge does not reach loom-docstore. Because loom-knowledge cannot
+  reach the system at all, RULE-0003's deny list needs no new names.
 
   WHAT THE STORE HOLDS
 
@@ -308,7 +308,6 @@ body: |
                                                    contents are given
     DEFINITION-SOURCE             source.lisp      DOCSTORE-READ for a        1
                                                    document served whole
-    FILE-PROVENANCE               workspace.lisp   audited in S1              1
     PLAN-DOCUMENT-EDIT,           transition.lisp  DOCSTORE-TRANSITION and    2
       APPLY-DOCUMENT-EDIT,                         DOCSTORE-APPLY-BATCH
       APPLY-TRANSITION
@@ -323,9 +322,9 @@ body: |
     tools/next-doc-id.sh          tools/           the file store's           3
                                                    allocate-id
 
-  FILE-PROVENANCE is called from console.lisp:896 and serve/operations.lisp:345.
-  Whether either passes a document's address has not been checked. S1 settles
-  it.
+  FILE-PROVENANCE is not in the table. Its two callers, console.lisp:896 and
+  serve/operations.lisp:345, pass the entity's :FILE property. No document
+  entity carries :FILE, so it never reads a document. Checked 2026-09-14.
 
   PREPARE-REPOSITORY creates document directories. Choosing a store is
   DES-0022's amendment and is not in this design.
@@ -458,9 +457,8 @@ body: |
     S0  Write tools/test/index-dump.lisp. Dump the three trees at main. No
         source changes.
     S1  Create loom-docstore with the phase-1 functions, the file store, the
-        in-memory store and the stamps. Write the layering rule. Part A passes
-        against both stores. loom-workspace does not call it yet. Audit
-        FILE-PROVENANCE.
+        in-memory store and the stamps. Write the three layering rules. Part A
+        passes against both stores. loom-workspace does not call it yet.
     S2  Route INDEX-REPOSITORY, REINDEX-REPOSITORY, POLL-ONCE,
         DETECT-DELETIONS, INDEX-DRIFT and COUNT-UNSTAMPED through the store,
         and take documents out of REPOSITORY-FILES. Add the retry test. The
