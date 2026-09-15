@@ -52,6 +52,13 @@
    #:file-docstore
    #:make-file-docstore
 
+   ;; memory-store.lisp
+   #:memory-docstore
+   #:make-memory-docstore
+   #:memory-docstore-put
+   #:memory-docstore-replace
+   #:memory-docstore-remove
+
    ;; stamps.lisp
    #:*mtime-settle-seconds*
    #:file-stamp

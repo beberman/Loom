@@ -97,6 +97,22 @@ fresh harness."
 (register-store-kind "file store" #'call-with-file-harness)
 
 ;;;; ==================================================================
+;;;; The in-memory store as a kind
+;;;; ==================================================================
+
+(defun call-with-memory-harness (function)
+  (let ((store (make-memory-docstore)))
+    (funcall function
+             (make-harness
+              store
+              (lambda (category name text)
+                (docstore-record-ref (memory-docstore-put store category name text)))
+              (lambda (ref text) (memory-docstore-replace store ref text))
+              (lambda (ref) (memory-docstore-remove store ref))))))
+
+(register-store-kind "in-memory store" #'call-with-memory-harness)
+
+;;;; ==================================================================
 ;;;; Phase 1, read
 ;;;; ==================================================================
 

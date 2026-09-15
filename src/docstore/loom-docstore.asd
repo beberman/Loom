@@ -28,6 +28,9 @@
    ;; After "stamps": a file store's version is a stamp, and CHANGED-SINCE
    ;; decides with STAMP-CHANGED-P.
    (:file "file-store")
+   ;; DES-0051 D6. Built for the suite, to differ from the file store in every
+   ;; way a caller could come to depend on.
+   (:file "memory-store")
    )
   :in-order-to ((test-op (test-op :loom-docstore/test)))
   )
