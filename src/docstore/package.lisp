@@ -48,6 +48,10 @@
    ;; protocol.lisp -- D10
    #:docstore-materialize
 
+   ;; file-store.lisp
+   #:file-docstore
+   #:make-file-docstore
+
    ;; stamps.lisp
    #:*mtime-settle-seconds*
    #:file-stamp

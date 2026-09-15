@@ -25,6 +25,9 @@
    ;; workspace.lisp. The file store's versions are stamps, and the code tier
    ;; in loom-workspace keeps using them from here.
    (:file "stamps")
+   ;; After "stamps": a file store's version is a stamp, and CHANGED-SINCE
+   ;; decides with STAMP-CHANGED-P.
+   (:file "file-store")
    )
   :in-order-to ((test-op (test-op :loom-docstore/test)))
   )
@@ -41,6 +44,11 @@
   :components
   (
    (:file "suite")
+   ;; DES-0051 D9 part A, run against every store in *STORE-KINDS*.
+   (:file "conformance")
+   ;; Part C. After "conformance" for its WRITE-TEXT, FRESH-DIRECTORY and
+   ;; claim function.
+   (:file "file-store")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-docstore-test :test-runner)
