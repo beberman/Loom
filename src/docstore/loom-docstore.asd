@@ -1,0 +1,48 @@
+(in-package :asdf-user)
+
+(defsystem :loom-docstore
+  :description "The document-store protocol, and the stores that implement it."
+  :version "0.1.0"
+  :author "Brian Eberman"
+  :license "MIT"
+  ;; DES-0051 D5. A leaf: it deals in refs, addresses, versions and bytes and
+  ;; never sees an ontology operation, so no Loom system appears below.
+  ;; RULE-0010 checks that. loom-workspace is its only client, and RULE-0011
+  ;; and RULE-0012 keep loom-analyzer and loom-knowledge from reaching it.
+  ;;
+  ;; Not loom-store: "store" already means the vector store in
+  ;; src/embed/store.lisp.
+  ;;
+  ;; UTILS is the standalone library, for READ-FILE. A stamp hashes the text
+  ;; READ-FILE returns, so the stamp and the analyzer see the same string.
+  :depends-on (#:utils)
+  :serial t
+  :components
+  (
+   (:file "package")
+   (:file "protocol")
+   ;; FILE-STAMP, STAMP-FILE and *MTIME-SETTLE-SECONDS* came from
+   ;; workspace.lisp. The file store's versions are stamps, and the code tier
+   ;; in loom-workspace keeps using them from here.
+   (:file "stamps")
+   )
+  :in-order-to ((test-op (test-op :loom-docstore/test)))
+  )
+
+(defsystem :loom-docstore/test
+  :description "Test suite for :loom-docstore."
+  :version "0.1.0"
+  :author "Brian Eberman"
+  :license "MIT"
+  ;; UIOP for WITH-TEMPORARY-FILE in the stamp tests.
+  :depends-on (#:loom-docstore #:uiop #:fiveam)
+  :serial t
+  :pathname "test/"
+  :components
+  (
+   (:file "suite")
+   )
+  :perform (test-op (op c)
+                    (unless (symbol-call :loom-docstore-test :test-runner)
+                      (error "loom-docstore tests failed.")))
+  )

@@ -18,6 +18,13 @@
   ;; and STRING-LINES replace loom-analyzer's SLURP-FILE and SPLIT-LINES.
   (:import-from #:utils #:read-file #:string-lines #:proper-list-p #:alistp)
 
+  ;; DES-0051 D5. The stamps moved down to loom-docstore, where the file
+  ;; store's versions are stamps too. The code tier uses them from there.
+  (:import-from #:loom-docstore
+                #:*mtime-settle-seconds* #:file-stamp #:make-file-stamp
+                #:file-stamp-write-date #:file-stamp-content-hash
+                #:stamp-file #:stamp-changed-p)
+
   (:export
    ;; the registry
    #:repository

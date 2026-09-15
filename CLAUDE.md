@@ -171,7 +171,7 @@ Full suite, in a live image:
 
 ```lisp
 (load "src/full-test.lisp")
-(loom-test:full-test)      ; eleven systems, per-system summary
+(loom-test:full-test)      ; twelve systems, per-system summary
 ```
 
 or `tools/loom-test.sh` from outside one — note that is `/usr/bin/sbcl`, not the
@@ -189,6 +189,11 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
     loom-ontology   entity and relationship declarations. Depends on nothing.
     loom-graph      the only writer. Transactions, queries, resolution, rules.
     loom-analyzer   path + contents -> operations. Never touches the graph.
+    loom-docstore   documents behind a protocol: refs, addresses, versions,
+                    text. Depends on no other Loom system (RULE-0010).
+                    loom-workspace is its only client; loom-analyzer and
+                    loom-knowledge may not reach it (RULE-0011, RULE-0012).
+                    Holds the file stamps. DES-0051.
     loom-knowledge  read-only services: find, describe, impact, context,
                     structure.
     loom-workspace  indexing pipeline, file monitor, and the write path:

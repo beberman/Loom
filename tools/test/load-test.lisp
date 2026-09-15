@@ -35,7 +35,7 @@
 ;;;; under test load it without saying so, which is the whole question.
 (loom-harness:load-systems "tools/test/load-test.lisp"
                            :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/"
-                                      "knowledge/" "workspace/" "serve/" "rest/" "mcp/")
+                                      "knowledge/" "docstore/" "workspace/" "serve/" "rest/" "mcp/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "stem"))
 
 (let* ((name (or (second sb-ext:*posix-argv*)

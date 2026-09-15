@@ -1,0 +1,15 @@
+id: RULE-0011
+title: The analyzer does not reach the document store
+status: active
+severity: error
+refines: [DES-0051]
+statement: |
+  An analyzer receives an address and text and returns ontology operations
+  (RULE-0002). It never asks where a document is kept. loom-workspace reads
+  the text through the store and hands it over with the address, exactly as
+  it hands over a code file's text with its path. DES-0051 D5.
+check:
+  kind: no-edge
+  from-system: loom-analyzer
+  to-system: loom-docstore
+  rel-types: [calls, imports, depends-on]
