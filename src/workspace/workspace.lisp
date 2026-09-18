@@ -468,6 +468,28 @@ its own."
                            ignored))
                :listing (lambda () (tree-listing root)))))))
 
+(defun indexed-document (repository address)
+  "The store ref and the version indexed for the document at ADDRESS, or NIL.
+
+The one place outside the pipeline that turns an address back into a ref.
+DEFINITION-SOURCE and CHECK-DOCUMENT-REFERENCES both need it: an address is a
+name the analyzer reads a category from, never a place either of them may open
+(DES-0051 N1)."
+  (gethash address (repository-documents repository)))
+
+(defun stored-document-text (repository address)
+  "The text the store holds at ADDRESS, or NIL when it holds none.
+
+NIL for an address the index has never met, so a caller falls back to the disk
+-- which is what a YAML file the monitor has not polled yet is, and what
+REQ-0034 asks for. NIL as well for a document the store lists and cannot read:
+the caller\'s answer is then the one it gives for a file it cannot read, and
+`unindexed\' already counts the failure."
+  (let ((entry (indexed-document repository address)))
+    (when entry
+      (handler-case (docstore-read (repository-document-store repository) (car entry))
+        (error () nil)))))
+
 (defun known-document-addresses (repository)
   "Every document address the index has met: indexed, or failed."
   (let ((documents (repository-documents repository))
@@ -2129,7 +2151,11 @@ requirement, to learn something the index could have answered before any file
 existed.
 
 PATH may name a file the repository does not hold and the index has never
-seen. CONTENTS overrides what is on disk, which is DES-0029 D5: ANALYZE-PATH
+seen. With no CONTENTS, a document the index holds is read through the store
+and anything else is read from disk (DES-0051), so a path in neither keeps the
+answer it has always had: no such file, and no contents given.
+
+CONTENTS overrides both, which is DES-0029 D5: ANALYZE-PATH
 has taken that argument since the analyzer protocol was written -- \"the hook
 for analyzing an editor buffer that has not been saved\" -- so an agent
 composing a document in memory needs no scratch file.
@@ -2148,6 +2174,10 @@ carry and thrown away, so the graph after the call is the graph before it."
          (root (repository-root repository))
          (full (merge-pathnames path root))
          (source (or contents
+                     ;; The store before the disk (DES-0051). A document the
+                     ;; index holds is read through DOCSTORE-READ, so this
+                     ;; answers for a store with no files under it at all.
+                     (stored-document-text repository path)
                      (and (probe-file full) (read-file full)))))
     (cond
       ((null (find-analyzer full))

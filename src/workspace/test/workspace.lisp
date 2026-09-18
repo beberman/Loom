@@ -65,6 +65,13 @@ is about."
                               (namestring (merge-pathnames relative *fixture-root*)))
                         :output nil :error-output nil)))
 
+(defun remove-fixture-document (relative)
+  "Take the document at RELATIVE out of the store, however the fixture holds it."
+  (if *fixture-docstore*
+      (loom-docstore:memory-docstore-remove *fixture-docstore*
+                                            (fixture-document-ref relative))
+      (delete-file (merge-pathnames relative *fixture-root*))))
+
 (defun repair-fixture-document (relative)
   "Let reads of the document at RELATIVE succeed again."
   (if *fixture-docstore*

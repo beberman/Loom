@@ -46,7 +46,11 @@ ALPHA-TWICE and a test that silently probed the wrong entity would still pass."
   ;; what `describe' prints of one to a summary, so --source is the way to read
   ;; the argument itself -- and before this it had no answer but ":UNLOCATED".
   ;; Served whole, from line 1, under the same contract as a ranged entity.
-  (with-workspace-fixture (repository)
+  ;;
+  ;; Both stores, from here to the end of the document tests: a :PATH is an
+  ;; address rather than a place to open (DES-0051 N1), and the in-memory run
+  ;; is what says so, since nothing under its root is on disk.
+  (with-workspace-fixtures (repository)
     (let ((r (source-of repository "DEC-0001" :decision)))
       (is (eq :current (getf r :status)))
       (is (string= "1-7" (getf r :range))
@@ -121,6 +125,41 @@ ALPHA-TWICE and a test that silently probed the wrong entity would still pass."
     (let ((r (source-of repository "alpha" :function)))
       (is (eq :missing (getf r :status)))
       (is (null (getf r :text))))))
+
+(test an-edited-document-is-served-and-flagged-rather-than-refused
+  ;; The document half of R5, and it is decided differently from a code file's.
+  ;; A file is :STALE when its content hash disagrees with the stamp the index
+  ;; took. A document has no stamp: the store hands out a version with the
+  ;; text, and :CURRENT means the version read is the version indexed. On the
+  ;; file store that is stricter than the hash -- a document saved again with
+  ;; the same bytes has a new write date and reads :STALE -- and the text is
+  ;; still what the store holds, which is what a caller asked for.
+  (with-workspace-fixtures (repository)
+    (write-file "docs/decisions/DEC-0001.yaml"
+                "id: DEC-0001
+type: decision
+title: Alpha stays arithmetic
+status: accepted
+affects: [alpha]
+rationale: |
+  Keeping alpha-twice free of side effects makes it testable, and cheap.
+")
+    (let ((r (source-of repository "DEC-0001" :decision)))
+      (is (eq :stale (getf r :status)))
+      (is (search "and cheap" (getf r :text))
+          "what the store holds now, not what the index remembers"))))
+
+(test a-document-the-store-no-longer-holds-reports-that-it-is-gone
+  ;; The document's :MISSING, which arrives as DOCSTORE-MISSING rather than as
+  ;; a failed open. Reported and not signalled, as a vanished file is: a caller
+  ;; asking for a document wants an answer about it, and "gone" is one.
+  (with-workspace-fixtures (repository)
+    (remove-fixture-document "docs/decisions/DEC-0001.yaml")
+    (let ((r (source-of repository "DEC-0001" :decision)))
+      (is (eq :missing (getf r :status)))
+      (is (null (getf r :text)))
+      (is (null (getf r :range))
+          "a whole-file answer has no range to report, gone or not"))))
 
 (test a-file-too-short-for-its-range-says-so-rather-than-returning-less
   ;; The other half of R5, and the one a naive implementation gets wrong by

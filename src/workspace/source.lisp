@@ -68,7 +68,7 @@ A document the index read from the store is read through the store again
 is nowhere on disk. It is :CURRENT when the version read is the version indexed.
 That is stricter than the content hash a code file is compared by: on the file
 store a document saved again with the same text reads :STALE."
-  (let ((entry (gethash relative (repository-documents repository))))
+  (let ((entry (indexed-document repository relative)))
     (if entry
         (multiple-value-bind (text version)
             (docstore-read (repository-document-store repository) (car entry))
@@ -177,49 +177,56 @@ surprise in the :READ tier, and the monitor already owns that job."
            (t
             (let ((path (merge-pathnames relative (repository-root repository))))
               (handler-case
-                  (multiple-value-bind (contents status) (served-text repository relative path)
-                  (let* ((lines    (string-lines contents))
-                         (total    (length lines)))
-                    (when whole (setf start 1 end total pad nil))
-                    (if (> start total)
-                        (list :status :short :file relative
-                              :range (format nil "~d-~d" start end)
-                              :indexed-at (repository-indexed-at repository))
-                        ;; END may outrun a file that shrank without dropping
-                        ;; below START; clamping serves what is there and the
-                        ;; range reports what was served.
-                        (let* ((from      (if pad
-                                              (padded-start repository relative lines start)
-                                              start))
-                               (last      (min (+ end *source-trailing-pad*) total))
-                               (available (1+ (- last from)))
-                               (shown     (min available limit))
-                               (served    (+ from shown -1)))
-                          (list :status status
-                                :file relative
-                                ;; R9: the padded range, because it is what was
-                                ;; actually returned. A caller told 29-36 and
-                                ;; handed 22-38 cannot otherwise tell what it
-                                ;; read, and R4 exists so that it can.
-                                :range (format nil "~d-~d" from served)
-                                ;; The entity's own range, unchanged and beside
-                                ;; it. Padding is a property of the answer and
-                                ;; never of the entity -- nothing that reads
-                                ;; :START-LINE sees a different number. Absent
-                                ;; for a whole-file document answer, which has
-                                ;; no entity range to report.
-                                :definition-range (unless whole
-                                                    (format nil "~d-~d" start end))
-                                :text (with-output-to-string (out)
-                                        (loop for i from (1- from) below served
-                                              do (write-line (aref lines i) out)))
-                                :truncated (< shown available)
-                                :withheld (- available shown)
-                                :indexed-at (repository-indexed-at repository))))))
+                  (multiple-value-bind (contents status)
+                      (served-text repository relative path)
+                    (let* ((lines (string-lines contents))
+                           (total (length lines)))
+                      (when whole (setf start 1 end total pad nil))
+                      (if (> start total)
+                          (list :status :short :file relative
+                                :range (format nil "~d-~d" start end)
+                                :indexed-at (repository-indexed-at repository))
+                          ;; END may outrun a file that shrank without dropping
+                          ;; below START; clamping serves what is there and the
+                          ;; range reports what was served.
+                          (let* ((from      (if pad
+                                                (padded-start repository relative lines start)
+                                                start))
+                                 (last      (min (+ end *source-trailing-pad*) total))
+                                 (available (1+ (- last from)))
+                                 (shown     (min available limit))
+                                 (served    (+ from shown -1)))
+                            (list :status status
+                                  :file relative
+                                  ;; R9: the padded range, because it is what was
+                                  ;; actually returned. A caller told 29-36 and
+                                  ;; handed 22-38 cannot otherwise tell what it
+                                  ;; read, and R4 exists so that it can.
+                                  :range (format nil "~d-~d" from served)
+                                  ;; The entity's own range, unchanged and beside
+                                  ;; it. Padding is a property of the answer and
+                                  ;; never of the entity -- nothing that reads
+                                  ;; :START-LINE sees a different number. Absent
+                                  ;; for a whole-file document answer, which has
+                                  ;; no entity range to report.
+                                  :definition-range (unless whole
+                                                      (format nil "~d-~d" start end))
+                                  :text (with-output-to-string (out)
+                                          (loop for i from (1- from) below served
+                                                do (write-line (aref lines i) out)))
+                                  :truncated (< shown available)
+                                  :withheld (- available shown)
+                                  :indexed-at (repository-indexed-at repository))))))
                 (error ()
-                  ;; The file was named by the index and cannot be read now.
-                  ;; Reported rather than signalled: a caller asking for source
-                  ;; wants an answer about the file, and "gone" is one.
-                  (list :status :missing :file relative
-                        :range (format nil "~d-~d" start end)
-                        :indexed-at (repository-indexed-at repository))))))))))))
+                  ;; The file was named by the index and cannot be read now,
+                  ;; or the store no longer holds the document. Reported rather
+                  ;; than signalled: a caller asking for source wants an answer
+                  ;; about the file, and "gone" is one.
+                  ;;
+                  ;; No :RANGE for a document. WHOLE means the entity carries
+                  ;; none, and the range a whole-file answer reports is the one
+                  ;; the read worked out -- which is what just failed.
+                  (list* :status :missing :file relative
+                         :indexed-at (repository-indexed-at repository)
+                         (unless whole
+                           (list :range (format nil "~d-~d" start end))))))))))))))

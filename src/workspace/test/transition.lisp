@@ -534,6 +534,32 @@ affects: [start-server]~%body: |~%  D1  the shape.~%")))
         (is (= before-edges (length (all-relationships graph)))
             "the draft named a function and earned it no edge")))))
 
+(test checking-a-document-with-no-contents-reads-it-from-the-store
+  ;; REQ-0034 lets an agent ask what a document's references resolve to before
+  ;; the document is written, which is why CONTENTS overrides what is stored.
+  ;; With no CONTENTS the operation has to find the text itself, and DES-0051
+  ;; moves where that is: a document the index holds is read through
+  ;; DOCSTORE-READ, so the answer no longer depends on there being a file.
+  ;;
+  ;; The in-memory run is the one that means something. Before this the file
+  ;; store answered from disk and the in-memory store answered "no such file,
+  ;; and no contents given" about a document it was holding.
+  (with-workspace-fixtures (repository)
+    (let ((report (check-document-references repository "docs/decisions/DEC-0001.yaml")))
+      (is (null (getf report :error))
+          "the store holds this document: ~a" (getf report :error))
+      (is (equal "DEC-0001" (getf report :document)))
+      (is (eq :resolved (reference-status report "alpha"))
+          "the one name DEC-0001 affects: ~a" (getf report :references)))))
+
+(test checking-a-path-the-store-does-not-hold-keeps-its-old-answer
+  ;; The fallback stays. A path that is neither in the store nor on disk is
+  ;; the same refusal it has always been, because reading nothing and being
+  ;; handed nothing are one answer: there is no text to check.
+  (with-workspace-fixtures (repository)
+    (let ((report (check-document-references repository "docs/decisions/DEC-0099.yaml")))
+      (is (equal "no such file, and no contents given" (getf report :error))))))
+
 (test a-path-no-analyzer-claims-is-refused-with-a-reason
   ;; A path no analyzer claims produced nothing, and saying so is a different
   ;; answer from reporting a document with no references. Reporting them alike
