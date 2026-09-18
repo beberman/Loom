@@ -262,17 +262,40 @@ body: |~%  status: implemented is written here too.~%")))
                  "the file is still flat")
         (is (null (document-at-p root "docs/design/completed/DES-0002.yaml")))))))
 
-(test a-status-outside-the-categorys-vocabulary-is-refused
-  ;; The union of the four workflow vocabularies is what the :DOCUMENT entity
-  ;; type declares, so validating against the ontology alone would let a
-  ;; requirement be set to `closed'. The category is what narrows it, and
-  ;; without that narrowing this test passes for the wrong reason.
+(test a-requirement-can-be-closed-and-is-filed-with-the-finished-ones
+  ;; REQ-0009. A requirement that is finished and not implemented had no word
+  ;; for itself: draft reads as work in progress and implemented is false. The
+  ;; word is `closed', and it is terminal, so the document is filed where the
+  ;; finished ones are rather than left flat offering itself to `context'.
+  ;;
+  ;; Before the vocabulary change this failed with "closed is not a status a
+  ;; requirements document takes. Try: draft, accepted, implemented, partial".
   (with-document-trees (root)
     (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
     (with-indexed-tree (repository root)
       (let ((report (set-document-status repository "REQ-0001" "closed")))
+        (is (null (getf report :problems)) "~a" (getf report :problems))
+        (is-true (document-at-p root "docs/requirements/completed/REQ-0001.yaml")
+                 "a closed requirement stayed flat")
+        (is (search (format nil "~%status: closed~%")
+                    (document-text root "docs/requirements/completed/REQ-0001.yaml")))))))
+
+(test a-status-outside-the-categorys-vocabulary-is-refused
+  ;; The union of the four workflow vocabularies is what the :DOCUMENT entity
+  ;; type declares, so validating against the ontology alone would let a
+  ;; requirement be set to `final'. The category is what narrows it, and
+  ;; without that narrowing this test passes for the wrong reason.
+  ;;
+  ;; `final' and not `closed'. Closed was the word here until REQ-0009 gave it
+  ;; to requirements as well, at which point this test started failing -- which
+  ;; is the narrowing doing its job on a vocabulary that had moved. A plan
+  ;; reaches final and a requirement does not.
+  (with-document-trees (root)
+    (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
+    (with-indexed-tree (repository root)
+      (let ((report (set-document-status repository "REQ-0001" "final")))
         (is (= 1 (length (getf report :problems))))
-        (is (search "closed" (first (getf report :problems))))
+        (is (search "final" (first (getf report :problems))))
         (is (search "status: draft" (document-text root "docs/requirements/REQ-0001.yaml"))
             "the file was not touched")))))
 

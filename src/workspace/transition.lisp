@@ -51,7 +51,7 @@
 ;;;; ==================================================================
 
 (defparameter *workflow-status-vocabulary*
-  '(("requirements" (:draft :accepted :implemented :partial)             (:implemented))
+  '(("requirements" (:draft :accepted :implemented :partial :closed)     (:implemented :closed))
     ("design"       (:draft :accepted :implemented :partial :superseded) (:implemented :superseded))
     ("plans"        (:draft :final)                                      (:final))
     ("bugs"         (:open :closed)                                      (:closed))
@@ -72,6 +72,13 @@ The terminal column means finished, and a document is finished when there is no
 work left in it: implemented for a REQ or a DES, final for a PLAN, closed for a
 BUG or REV, and `superseded' for a DES. A partial document stays flat, because
 it has an OUTSTANDING section, which is work.
+
+A requirement takes `closed' as well, and it means finished and not
+implemented: the ask was withdrawn, answered elsewhere, or decided against.
+REQ-0009 is the case that asked for it -- a requirement whose design was built
+and whose ask the design then made unnecessary. Without the word the only
+honest filing was to leave it in draft, which reads as work in progress, or to
+call it implemented, which is false.
 
 `superseded' was not terminal until 2026-08-23, and the reason it was not is
 worth keeping: RULE-0007's text named one word, and departing from it in code
