@@ -33,7 +33,7 @@ compares or inspects one (DES-0051 N2)."
 ;;;; Conditions
 ;;;; ==================================================================
 ;;;;
-;;;; Both are errors, so a HANDLER-CASE on ERROR catches them (RULE-0004).
+;;;; All three are errors, so a HANDLER-CASE on ERROR catches them (RULE-0004).
 
 (define-condition docstore-error (error)
   ((store :initarg :store :initform nil :reader docstore-error-store)
@@ -46,6 +46,22 @@ compares or inspects one (DES-0051 N2)."
              (format stream "The document store holds nothing under ~a."
                      (docstore-error-ref condition)))))
 
+(define-condition docstore-refused (docstore-error)
+  ((reason :initarg :reason :initform "" :reader docstore-refused-reason))
+  (:documentation "A store would not carry out an operation, and says why.
+
+An addition to DES-0051 D2, which named DOCSTORE-MISSING and DOCSTORE-CONFLICT
+and left the store's other refusals unsaid. A write has more ways to be refused
+than a stale version: a document with no top-level status line, a destination
+that is taken, a file that cannot be written. Each is a sentence naming the
+document, because the caller prints it for a person.
+
+REASON is the same sentence DOCSTORE-APPLY-BATCH puts in its problems list. A
+refusal reads the same whether it arrives one at a time or in a batch, which is
+what lets the batch and the single operations share one planner.")
+  (:report (lambda (condition stream)
+             (write-string (docstore-refused-reason condition) stream))))
+
 (define-condition docstore-conflict (docstore-error)
   ((expected :initarg :expected :initform nil :reader docstore-conflict-expected)
    (actual :initarg :actual :initform nil :reader docstore-conflict-actual))
@@ -57,6 +73,38 @@ than overwritten.")
   (:report (lambda (condition stream)
              (format stream "~a changed after it was read. The write was refused and the document is unchanged."
                      (docstore-error-ref condition)))))
+
+;;;; ==================================================================
+;;;; The address
+;;;; ==================================================================
+
+(defparameter *completed-directory* "completed"
+  "The subdirectory a terminal document lives in. RULE-0007's convention, named
+once because both directions of the move read it, and both stores do.")
+
+(defun address-segments (address)
+  "ADDRESS split on / and \\, empty segments dropped."
+  (loop with length = (length address)
+        with start = 0
+        while (<= start length)
+        for stop = (or (position-if (lambda (c) (member c '(#\/ #\\))) address :start start)
+                       length)
+        when (> stop start) collect (subseq address start stop)
+        do (setf start (1+ stop))))
+
+(defun address-category (address)
+  "The category ADDRESS is filed under, as a string, or NIL.
+
+The name of the directory holding the document, or of its parent when the
+document is in completed/. Both stores need it and neither may ask the
+analyzer: an address is where a category is written down, which is the one
+thing DES-0051 D1 says a store may read out of one."
+  (let* ((segments (address-segments address))
+         (directories (butlast segments)))
+    (when (and directories
+               (string-equal *completed-directory* (car (last directories))))
+      (setf directories (butlast directories)))
+    (car (last directories))))
 
 ;;;; ==================================================================
 ;;;; Phase 1, read

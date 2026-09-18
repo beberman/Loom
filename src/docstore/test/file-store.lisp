@@ -12,7 +12,8 @@
   `(let ((,root (fresh-directory)))
      (unwind-protect
           (let ((,store (make-file-docstore ,root :claim #'yaml-under-docs-p
-                                                  :ignore ,ignore)))
+                                                  :ignore ,ignore
+                                                  :terminal-p #'test-terminal-p)))
             ,@body)
        (uiop:delete-directory-tree ,root :validate t))))
 
@@ -126,3 +127,58 @@
                  (addresses store)))
       (is (equal '("docs/decisions/DEC-0002.yaml") (addresses listed))
           "the store walked the tree rather than the listing it was given"))))
+
+(test a-crlf-document-keeps-its-line-endings-through-a-transition
+  ;; File property, and PLAN-0055 risk 5. REPLACE-STATUS-LINE carries a
+  ;; carriage return from the old line onto the new one, and nothing covered
+  ;; that until the function moved down here. Without the carry the edited file
+  ;; has one LF line in the middle of a CRLF file, which every later diff of
+  ;; that document shows as a change nobody made.
+  (with-file-store (store root)
+    (let ((path (merge-pathnames "docs/plans/PLAN-0001.yaml" root)))
+      (write-text path (format nil "id: PLAN-0001~c~%title: a plan~c~%status: draft~c~%"
+                               #\Return #\Return #\Return))
+      (let* ((record (docstore-transition store "docs/plans/PLAN-0001.yaml" :final))
+             (text (docstore-read store (docstore-record-ref record)))
+             (lines (loop with start = 0
+                          while (< start (length text))
+                          collect (multiple-value-bind (end next) (line-end text start)
+                                    (prog1 (subseq text start end) (setf start next))))))
+        (is (search "status: final" text) "the status line was not rewritten")
+        (is (every (lambda (line) (and (plusp (length line))
+                                       (char= #\Return (char line (1- (length line))))))
+                   lines)
+            "a line lost its carriage return: ~s" lines)))))
+
+(test a-terminal-status-moves-the-file-into-completed
+  ;; File property: the store's move is a rename on disk, so the old path is
+  ;; gone and the new directory exists. RULE-0007's convention, which is what
+  ;; STATUS-DESTINATION and FLAT-DIRECTORY came down here to keep.
+  (with-file-store (store root)
+    (let ((flat (merge-pathnames "docs/plans/PLAN-0001.yaml" root))
+          (filed (merge-pathnames "docs/plans/completed/PLAN-0001.yaml" root)))
+      (write-text flat (format nil "id: PLAN-0001~%status: draft~%"))
+      (docstore-transition store "docs/plans/PLAN-0001.yaml" :final)
+      (is (null (probe-file flat)) "the flat file is still there")
+      (is (probe-file filed) "nothing was written into completed/")
+      (docstore-transition store "docs/plans/completed/PLAN-0001.yaml" :draft)
+      (is (probe-file flat) "a status that stopped being terminal did not come back out")
+      (is (null (probe-file filed)) "and the completed/ copy is still there"))))
+
+(test a-file-that-cannot-be-written-is-refused-before-anything-is-written
+  ;; File property: PROBE-WRITABLE opens for append and closes without writing
+  ;; a byte, which is a real probe rather than a guess about permissions. The
+  ;; alternative is finding out during the write, which is the one thing
+  ;; planning before writing exists to prevent.
+  (with-file-store (store root)
+    (let ((path (merge-pathnames "docs/decisions/DEC-0001.yaml" root)))
+      (write-text path "id: DEC-0001")
+      (uiop:run-program (list "chmod" "444" (namestring path)))
+      (unwind-protect
+           (progn
+             (signals docstore-refused (docstore-write store "docs/decisions/DEC-0001.yaml"
+                                                       "id: DEC-0001 edited"))
+             (is (string= "id: DEC-0001"
+                          (docstore-read store "docs/decisions/DEC-0001.yaml"))
+                 "the refused write landed anyway"))
+        (uiop:run-program (list "chmod" "644" (namestring path)))))))

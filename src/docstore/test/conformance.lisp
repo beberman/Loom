@@ -80,6 +80,19 @@ fresh harness."
     (ensure-directories-exist root)
     root))
 
+(defun test-terminal-p (category status)
+  "CON-0004's terminal column, cut down to what these tests use.
+
+The real table is *WORKFLOW-STATUS-VOCABULARY* in loom-workspace and stays
+there: which statuses finish a document is the workflow's question, and a
+store only ever asks it. Both harnesses pass this one in, so a transition
+moves on both stores or on neither."
+  (and (member status
+               (cond ((string-equal "plans" category) '(:final))
+                     ((string-equal "bugs" category) '(:closed))
+                     (t '())))
+       t))
+
 (defun yaml-under-docs-p (path)
   "The document analyzer's claim, restated for tests: YAML under a docs segment."
   (and (member (pathname-type path) '("yaml" "yml") :test #'string-equal)
@@ -91,7 +104,8 @@ fresh harness."
     (unwind-protect
          (funcall function
                   (make-harness
-                   (make-file-docstore root :claim #'yaml-under-docs-p)
+                   (make-file-docstore root :claim #'yaml-under-docs-p
+                                            :terminal-p #'test-terminal-p)
                    (lambda (category name text)
                      (let ((ref (format nil "docs/~a/~a.yaml" category name)))
                        (write-text (merge-pathnames ref root) text)
@@ -114,7 +128,7 @@ fresh harness."
 ;;;; ==================================================================
 
 (defun call-with-memory-harness (function)
-  (let ((store (make-memory-docstore)))
+  (let ((store (make-memory-docstore :terminal-p #'test-terminal-p)))
     (funcall function
              (make-harness
               store
@@ -295,3 +309,184 @@ fresh harness."
           (is (= 2 (length changes)) "~a: known-only reported ~s" kind changes))
         (is (null (docstore-changed-since store nil :contents nil :known-only t))
             "~a: a NIL token describes no document" kind)))))
+
+;;;; ==================================================================
+;;;; Phase 2, write
+;;;; ==================================================================
+
+(defparameter *plan-text*
+  "id: PLAN-0001
+title: a plan
+status: draft
+"
+  "A document with a top-level status line, which a transition needs.")
+
+(defun text-of (harness ref)
+  (docstore-read (harness-store harness) ref))
+
+(defun harness-addresses (harness)
+  "Every address the store holds, sorted. Named for the harness because
+test/file-store.lisp already has an ADDRESSES that takes a store."
+  (sort (mapcar #'docstore-record-address
+                (docstore-enumerate (harness-store harness)))
+        #'string<))
+
+(test a-write-replaces-the-text-and-moves-the-version
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (ref (put harness "decisions" "DEC-0001" "id: DEC-0001")))
+      (multiple-value-bind (text version) (docstore-read store ref)
+        (declare (ignore text))
+        (let ((record (docstore-write store ref "id: DEC-0001 edited")))
+          (is (string= "id: DEC-0001 edited" (text-of harness (docstore-record-ref record)))
+              "~a: the write did not land" kind)
+          (is (not (equalp version (docstore-record-version record)))
+              "~a: the new record carries the version the document had before" kind))))))
+
+(test a-write-with-a-stale-version-is-refused-and-the-store-is-unchanged
+  ;; Compare-and-swap, which is the window DES-0051 D2 closes.
+  ;; PLAN-DOCUMENT-EDIT reads a document and APPLY-DOCUMENT-EDIT writes it
+  ;; later, and nothing checked that it had not moved in between.
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (ref (put harness "decisions" "DEC-0001" "id: DEC-0001"))
+           (version (nth-value 1 (docstore-read store ref))))
+      (edit harness ref "id: DEC-0001 from somebody else")
+      (signals docstore-conflict
+        (docstore-write store ref "id: DEC-0001 from us" :expected-version version))
+      (is (string= "id: DEC-0001 from somebody else" (text-of harness ref))
+          "~a: the refused write changed the document anyway" kind))))
+
+(test a-create-adds-a-document-and-a-taken-name-is-refused
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (record (docstore-create store "decisions" "DEC-0001" "id: DEC-0001")))
+      (is (string= "docs/decisions/DEC-0001.yaml" (docstore-record-address record))
+          "~a: created at ~a" kind (docstore-record-address record))
+      (is (string= "id: DEC-0001" (text-of harness (docstore-record-ref record)))
+          "~a: the created document does not read back" kind)
+      (signals docstore-refused
+        (docstore-create store "decisions" "DEC-0001" "id: DEC-0001 again"))
+      (is (string= "id: DEC-0001" (text-of harness (docstore-record-ref record)))
+          "~a: the refused create overwrote the document" kind))))
+
+(test a-transition-sets-the-status-and-the-caller-uses-the-returned-ref
+  ;; DES-0051 N3. Where the document goes is the store's business, and the two
+  ;; stores answer differently: the file store's ref is the path and changes,
+  ;; the in-memory store's ref is stable and only the address moves. A caller
+  ;; that reads the new ref off the record works on both.
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (ref (put harness "plans" "PLAN-0001" *plan-text*))
+           (record (docstore-transition store ref :final)))
+      (is (string= "docs/plans/completed/PLAN-0001.yaml" (docstore-record-address record))
+          "~a: a final plan landed at ~a" kind (docstore-record-address record))
+      (is (search "status: final" (text-of harness (docstore-record-ref record)))
+          "~a: the status line was not rewritten" kind)
+      (is (equal (list (docstore-record-address record)) (harness-addresses harness))
+          "~a: the store lists ~s" kind (harness-addresses harness))
+      (let ((back (docstore-transition store (docstore-record-ref record) :draft)))
+        (is (string= "docs/plans/PLAN-0001.yaml" (docstore-record-address back))
+            "~a: a status that stops being terminal moved the document to ~a"
+            kind (docstore-record-address back))
+        (is (search "status: draft" (text-of harness (docstore-record-ref back)))
+            "~a: the status line did not come back" kind)))))
+
+(test a-category-with-no-terminal-status-never-moves
+  ;; The three categories CON-0004 gives no terminal status: an accepted
+  ;; decision is in force rather than finished, and filing it under a name
+  ;; meaning done with these would bury it.
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (ref (put harness "decisions" "DEC-0001"
+                     "id: DEC-0001
+status: proposed
+"))
+           (record (docstore-transition store ref :accepted)))
+      (is (string= "docs/decisions/DEC-0001.yaml" (docstore-record-address record))
+          "~a: a decision moved to ~a" kind (docstore-record-address record)))))
+
+(test a-document-with-no-status-line-is-refused-a-transition
+  ;; Refused and not repaired. A document with no top-level status line may be
+  ;; one whose type has no status at all -- a concept is -- and writing one in
+  ;; would invent a field its author never wrote.
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (ref (put harness "plans" "PLAN-0001" "id: PLAN-0001
+title: a plan with a summary that mentions status: draft
+")))
+      (signals docstore-refused (docstore-transition store ref :final))
+      (is (equal '("docs/plans/PLAN-0001.yaml") (harness-addresses harness))
+          "~a: the refused transition moved the document to ~s" kind (harness-addresses harness)))))
+
+(test a-batch-that-plans-applies-every-entry-and-returns-a-record-for-each
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (plan (put harness "plans" "PLAN-0001" *plan-text*))
+           (design (put harness "design" "DES-0001" "id: DES-0001
+status: draft
+")))
+      (multiple-value-bind (records problems)
+          (docstore-apply-batch store (list (list :transition plan :final)
+                                            (list :write design "id: DES-0001 rewritten")))
+        (is (null problems) "~a: ~s" kind problems)
+        (is (= 2 (length records)) "~a: ~s" kind records)
+        (is (equal '("docs/design/DES-0001.yaml" "docs/plans/completed/PLAN-0001.yaml")
+                   (harness-addresses harness))
+            "~a: the store holds ~s" kind (harness-addresses harness))
+        (is (string= "id: DES-0001 rewritten"
+                     (text-of harness (docstore-record-ref (second records))))
+            "~a: the second entry did not land" kind)))))
+
+(test a-refused-batch-writes-nothing-and-lists-every-problem
+  ;; Every problem and not the first: an agent that has to run a command five
+  ;; times to find five problems stops reading the fifth. Nothing is written,
+  ;; which on the file store is what :PLANNED means and on the in-memory store
+  ;; is what :ATOMIC means -- the two agree here and differ only once a write
+  ;; has begun.
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (plan (put harness "plans" "PLAN-0001" *plan-text*))
+           (version (nth-value 1 (docstore-read store plan))))
+      ;; Different text, not the same text written again: a file store's
+      ;; version is a stamp over the bytes, so rewriting them unchanged inside
+      ;; one second is not a change and would not conflict.
+      (edit harness plan "id: PLAN-0001
+title: a plan somebody else edited
+status: draft
+")
+      (multiple-value-bind (records problems)
+          (docstore-apply-batch store (list (list :transition plan :final
+                                                  :expected-version version)
+                                            (list :write "mem:nothing" "text")))
+        (is (null records) "~a: a refused batch returned ~s" kind records)
+        (is (= 2 (length problems)) "~a: ~s" kind problems)
+        (is (search "changed after it was read" (first problems)) "~a: ~s" kind problems)
+        (is (search "holds nothing under" (second problems)) "~a: ~s" kind problems)
+        (is (equal '("docs/plans/PLAN-0001.yaml") (harness-addresses harness))
+            "~a: the refused batch moved something" kind)
+        (is (search "status: draft" (text-of harness plan))
+            "~a: the refused batch wrote the status line" kind)))))
+
+(test two-entries-of-one-batch-cannot-land-on-one-address
+  ;; Each entry checked against the store alone would pass: neither
+  ;; destination exists until the other entry writes it. A batch that lost one
+  ;; of two documents would report success.
+  (for-each-store (kind harness)
+    (let ((store (harness-store harness)))
+      (multiple-value-bind (records problems)
+          (docstore-apply-batch store (list (list :create "plans" "PLAN-0001" *plan-text*)
+                                            (list :create "plans" "PLAN-0001" *plan-text*)))
+        (is (null records) "~a: ~s" kind records)
+        (is (= 1 (length problems)) "~a: ~s" kind problems)
+        (is (null (harness-addresses harness))
+            "~a: the store holds ~s" kind (harness-addresses harness))))))
+
+(test capabilities-name-every-write-operation-and-the-batch-guarantee
+  (for-each-store (kind harness)
+    (let ((capabilities (docstore-capabilities (harness-store harness))))
+      (dolist (operation '(:write :create :transition))
+        (is (eq :native (getf capabilities operation))
+            "~a: ~s reads ~s" kind operation (getf capabilities operation)))
+      (is (member (getf capabilities :batch) '(:atomic :planned))
+          "~a: the batch guarantee reads ~s" kind (getf capabilities :batch)))))

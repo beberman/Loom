@@ -28,7 +28,19 @@
                 #:make-file-docstore #:docstore-enumerate #:docstore-read
                 #:docstore-changed-since #:docstore-materialize #:docstore-missing
                 #:make-docstore-record #:docstore-record-ref
-                #:docstore-record-address #:docstore-record-version)
+                #:docstore-record-address #:docstore-record-version
+                ;; The write half, and the status line it edits. These were
+                ;; transition.lisp's until PLAN-0055 step 7 moved them down to
+                ;; the stores. init.lisp reads LINE-END and WHITESPACE-CHAR-P
+                ;; from here for the same reason: the lower system is the
+                ;; shared home when one caller's system already depends on it.
+                #:docstore-write #:docstore-create #:docstore-transition
+                #:docstore-apply-batch #:docstore-refused #:docstore-refused-reason
+                #:docstore-conflict
+                #:whitespace-char-p #:line-end #:status-key-line-p
+                #:status-line-value #:top-level-status-line #:replace-status-line
+                #:flat-directory #:status-destination #:probe-writable
+                #:*completed-directory* #:address-category)
 
   (:export
    ;; the registry

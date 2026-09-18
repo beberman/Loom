@@ -22,9 +22,15 @@
    #:docstore-error-store
    #:docstore-error-ref
    #:docstore-missing
+   #:docstore-refused
+   #:docstore-refused-reason
    #:docstore-conflict
    #:docstore-conflict-expected
    #:docstore-conflict-actual
+
+   ;; protocol.lisp -- the address
+   #:*completed-directory*
+   #:address-category
 
    ;; protocol.lisp -- phase 1, read
    #:docstore-enumerate
@@ -60,6 +66,19 @@
    #:memory-docstore-remove
    #:memory-docstore-break
    #:memory-docstore-repair
+
+   ;; status-line.lisp -- one line of a document's text
+   #:whitespace-char-p
+   #:line-end
+   #:status-key-line-p
+   #:status-line-value
+   #:top-level-status-line
+   #:replace-status-line
+
+   ;; file-store.lisp -- where a file belongs
+   #:flat-directory
+   #:status-destination
+   #:probe-writable
 
    ;; stamps.lisp
    #:*mtime-settle-seconds*

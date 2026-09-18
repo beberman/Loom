@@ -25,8 +25,13 @@
    ;; workspace.lisp. The file store's versions are stamps, and the code tier
    ;; in loom-workspace keeps using them from here.
    (:file "stamps")
+   ;; Finding and replacing a document's top-level status line, from
+   ;; transition.lisp. Text only: both stores set a status, and text is what
+   ;; every store holds.
+   (:file "status-line")
    ;; After "stamps": a file store's version is a stamp, and CHANGED-SINCE
-   ;; decides with STAMP-CHANGED-P.
+   ;; decides with STAMP-CHANGED-P. After "status-line": a transition rewrites
+   ;; one line of the document's text before the file moves.
    (:file "file-store")
    ;; DES-0051 D6. Built for the suite, to differ from the file store in every
    ;; way a caller could come to depend on.
