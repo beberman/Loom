@@ -58,6 +58,8 @@
    #:memory-docstore-put
    #:memory-docstore-replace
    #:memory-docstore-remove
+   #:memory-docstore-break
+   #:memory-docstore-repair
 
    ;; stamps.lisp
    #:*mtime-settle-seconds*

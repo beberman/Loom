@@ -51,7 +51,18 @@
   ;; walk found none, and nobody may read it as nobody having looked.
   (unclaimed nil)
   (errors '())                  ; (path . condition-text), most recent first
-  (stamps (make-hash-table :test #'equal))   ; relative path -> FILE-STAMP
+  (stamps (make-hash-table :test #'equal))   ; relative path -> FILE-STAMP, code only
+  ;; DES-0051. The document store, and what the index knows of it. DOCSTORE is
+  ;; NIL until REPOSITORY-DOCUMENT-STORE builds the default file store, so a
+  ;; repository made by hand gets one on first use. DOCSTORE-TOKEN is the token
+  ;; the last CHANGED-SINCE returned, passed back and never read (N2).
+  ;; DOCUMENTS maps each address indexed to (ref . version). DOCUMENT-FAILURES
+  ;; maps an address whose read or analysis failed to its ref, and the poll
+  ;; reads each one again (D7).
+  (docstore nil)
+  (docstore-token nil)
+  (documents (make-hash-table :test #'equal))
+  (document-failures (make-hash-table :test #'equal))
   (monitor nil)
   (stopping nil)                ; asks the monitor thread to return
   ;; DES-0011 R8: per-unit statuses, inspector absences, drop counts and a run
@@ -405,8 +416,82 @@ meeting a generated architecture document six months later cannot tell whether
 it was ever true."
   (git-commit (repository-root repository)))
 
+(defun store-document-p (path)
+  "True when PATH is a document the document store holds, rather than a file
+the walk indexes: the document analyzer claims it, so YAML under docs/.
+
+One predicate in three places -- the file store's claim, REPOSITORY-FILES'
+exclusion and DETECT-DELETIONS' skip -- so the store and the walk can neither
+both take a document nor both leave it. DES-0051 D5."
+  (typep (find-analyzer path) 'document-analyzer))
+
+(defvar *tree-listing* nil
+  "Inside WITH-TREE-LISTING, (root-namestring . listing), the listing :UNREAD
+until something walks. NIL outside one.")
+
+(defmacro with-tree-listing ((root) &body body)
+  "Run BODY with one directory listing of ROOT shared by every walk inside it.
+
+REPOSITORY-FILES and the file store's CHANGED-SINCE both walk the tree, and the
+walk is most of what a poll costs: 308ms on Loom, 100ms on game-server and
+303ms on front-end, measured 2026-09-15, every two seconds. Shared, a pass walks
+once, as it did before documents moved behind the store."
+  `(let ((*tree-listing* (cons (namestring ,root) :unread)))
+     ,@body))
+
+(defun tree-listing (root)
+  "Every pathname under ROOT. Walked once per WITH-TREE-LISTING."
+  (let ((shared *tree-listing*))
+    (cond ((not (and shared (string= (car shared) (namestring root))))
+           (directory (merge-pathnames "**/*.*" root)))
+          ((eq (cdr shared) :unread)
+           (setf (cdr shared) (directory (merge-pathnames "**/*.*" root))))
+          (t (cdr shared)))))
+
+(defun repository-document-store (repository)
+  "REPOSITORY's document store, building the default file store on first use.
+
+The file store needs two facts loom-docstore cannot compute: which paths are
+documents, and which ones git ignores. Both are passed in here, with the tree
+listing. A reason git could not answer is recorded as REPOSITORY-FILES records
+its own."
+  (or (repository-docstore repository)
+      (setf (repository-docstore repository)
+            (let ((root (repository-root repository)))
+              (make-file-docstore
+               root
+               :claim #'store-document-p
+               :ignore (lambda (paths)
+                         (multiple-value-bind (ignored reason) (ignored-paths root paths)
+                           (when reason
+                             (setf (repository-ignore-reason repository) reason))
+                           ignored))
+               :listing (lambda () (tree-listing root)))))))
+
+(defun known-document-addresses (repository)
+  "Every document address the index has met: indexed, or failed."
+  (let ((documents (repository-documents repository))
+        (addresses '()))
+    (maphash (lambda (address entry)
+               (declare (ignore entry))
+               (push address addresses))
+             documents)
+    (maphash (lambda (address ref)
+               (declare (ignore ref))
+               (unless (gethash address documents)
+                 (push address addresses)))
+             (repository-document-failures repository))
+    addresses))
+
+(defun count-unindexed-documents (repository)
+  "Documents whose read or analysis failed, of which the index holds no earlier
+text. The documents' half of `unindexed', as COUNT-UNSTAMPED is the code's."
+  (let ((documents (repository-documents repository)))
+    (loop for address being the hash-keys of (repository-document-failures repository)
+          count (not (gethash address documents)))))
+
 (defun repository-files (repository)
-  "Every file under the repository root that some analyzer claims.
+  "Every code file under the repository root that some analyzer claims.
 
 Skips .git and any dot-directory: nothing in them is source, and .git in
 particular churns constantly.
@@ -428,15 +513,20 @@ asked about from thousands to hundreds.
 
 A tree git cannot answer for -- not a repository, no git, a timeout -- is
 indexed whole, and the reason is recorded on the repository for `status' to
-report. That is a gap a reader can see rather than a silent clean."
+report. That is a gap a reader can see rather than a silent clean.
+
+A document is not here. The document store holds it, and INDEX-DOCUMENT indexes
+what the store hands over (DES-0051). The walk is TREE-LISTING's, which a pass
+shares with the file store."
   (let* ((root (repository-root repository))
          (claimed (remove-if-not
                    (lambda (path)
                      (and (pathname-name path)
                           (not (dot-prefixed-p (file-namestring path)))
                           (notany #'dot-prefixed-p (rest (pathname-directory path)))
-                          (analyzable-p path)))
-                   (directory (merge-pathnames "**/*.*" root)))))
+                          (analyzable-p path)
+                          (not (store-document-p path))))
+                   (tree-listing root))))
     (multiple-value-bind (ignored reason)
         (ignored-paths root (mapcar (lambda (p) (workspace-relative-path p root))
                                     claimed))
@@ -581,8 +671,12 @@ for."
         (list :count nil :by-extension '() :reason reason)
         (let* ((root (repository-root repository))
                (claimed (let ((table (make-hash-table :test #'equal)))
-                          (dolist (path files table)
-                            (setf (gethash (workspace-relative-path path root) table) t))))
+                          (dolist (path files)
+                            (setf (gethash (workspace-relative-path path root) table) t))
+                          ;; DES-0051. The store's documents are claimed too,
+                          ;; and FILES no longer holds them.
+                          (dolist (address (known-document-addresses repository) table)
+                            (setf (gethash address table) t))))
                (counts (make-hash-table :test #'equal))
                (total 0))
           (dolist (path tracked)
@@ -650,32 +744,157 @@ Kept under this name because POLL-ONCE, INDEX-DRIFT and FILE-PROVENANCE ask
 the question of a repository, and STAMP-CHANGED-P asks it of a stamp."
   (stamp-changed-p (gethash relative (repository-stamps repository)) path now))
 
-(defun index-file (repository path &key quiet)
-  "Analyze one file into the repository's index. Returns T on success.
+(defun analysis-failed (repository relative condition quiet)
+  "Record that RELATIVE could not be read or analyzed. Returns NIL.
 
-SS3.3: a condition here must not escape. A file that fails to analyze is
-counted and reported; the pass continues."
+SS3.3: a condition here must not escape. A file that fails is counted and
+reported, and the pass continues."
+  (note-error repository relative condition)
+  (unless quiet
+    (format *standard-output* "~&  ! ~a: ~a~%" relative condition))
+  nil)
+
+(defun index-contents (repository relative contents &key path quiet)
+  "Analyze CONTENTS as the file at RELATIVE and apply the result. T on success.
+
+PATH is what the analyzer is handed, RELATIVE under the root by default. For a
+document that is its address, which nothing opens (DES-0051 N1): the analyzer
+reads the category from it and takes the text from CONTENTS."
+  (handler-case
+      (let ((ops (analyze-path (or path (merge-pathnames relative (repository-root repository)))
+                               :contents contents
+                               :workspace-id (repository-name repository)
+                               :workspace-root (repository-root repository))))
+        (when ops
+          (apply-transaction (repository-graph repository) ops)
+          t))
+    (error (condition)
+      (analysis-failed repository relative condition quiet))))
+
+(defun index-file (repository path &key quiet)
+  "Read one code file, analyze it into the index, and stamp it. T on success.
+
+Read once and hand the text to both the analyzer and the stamp: the stamp has
+to describe the bytes that were analyzed rather than whatever is on disk by the
+time it is taken. A document does not come through here. The store reads it,
+and INDEX-DOCUMENT indexes what the store hands over."
   (let ((relative (workspace-relative-path path (repository-root repository))))
     (handler-case
-        ;; Read once and hand the text to both the analyzer and the stamp:
-        ;; ANALYZE-PATH takes :CONTENTS for exactly this, and the stamp has to
-        ;; describe the bytes that were analyzed rather than whatever is on
-        ;; disk by the time it is taken.
-        (let* ((contents (read-file path))
-               (ops (analyze-path path
-                                  :contents contents
-                                  :workspace-id (repository-name repository)
-                                  :workspace-root (repository-root repository))))
-          (when ops
-            (apply-transaction (repository-graph repository) ops)
+        (let ((contents (read-file path)))
+          (when (index-contents repository relative contents :path path :quiet quiet)
             (setf (gethash relative (repository-stamps repository))
                   (stamp-file path contents))
             t))
       (error (condition)
-        (note-error repository relative condition)
-        (unless quiet
-          (format *standard-output* "~&  ! ~a: ~a~%" relative condition))
-        nil))))
+        (analysis-failed repository relative condition quiet)))))
+
+;;;; ==================================================================
+;;;; Documents, through the store (DES-0051)
+;;;; ==================================================================
+
+(defun index-document (repository record text &key quiet)
+  "Index the document RECORD names, whose TEXT the store handed over. T on success.
+
+A success records RECORD's ref and version in DOCUMENTS. A failure leaves
+DOCUMENTS as it was and records the ref in DOCUMENT-FAILURES, which the next
+poll reads again. A code file that fails has no stamp and is read again on
+every poll, and D7 keeps that for documents: the token has already moved past
+these bytes, so the store will not report them again."
+  (let ((address (docstore-record-address record)))
+    (docstore-materialize (repository-document-store repository) record text)
+    (cond ((index-contents repository address text :quiet quiet)
+           (setf (gethash address (repository-documents repository))
+                 (cons (docstore-record-ref record) (docstore-record-version record)))
+           (remhash address (repository-document-failures repository))
+           t)
+          (t
+           (setf (gethash address (repository-document-failures repository))
+                 (docstore-record-ref record))
+           nil))))
+
+(defun document-read-failed (repository record reason quiet)
+  "Record that the store listed RECORD's document and could not read it."
+  (setf (gethash (docstore-record-address record) (repository-document-failures repository))
+        (docstore-record-ref record))
+  (analysis-failed repository (docstore-record-address record) reason quiet))
+
+(defun retract-document (repository address)
+  "Retract everything the index read from the document at ADDRESS."
+  (apply-transaction (repository-graph repository)
+                     (list (retract-file address (repository-name repository))))
+  (remhash address (repository-documents repository))
+  (remhash address (repository-document-failures repository)))
+
+(defun index-all-documents (repository &key quiet)
+  "Index every document the store holds. Returns how many were indexed.
+
+CHANGED-SINCE with a NIL token, which is the rebuild path. DOCUMENTS and
+DOCUMENT-FAILURES are rebuilt from what it returns, and the token it returns
+is the one the next poll passes back."
+  (clrhash (repository-documents repository))
+  (clrhash (repository-document-failures repository))
+  (let ((indexed 0))
+    (multiple-value-bind (changes token)
+        (docstore-changed-since (repository-document-store repository) nil)
+      (dolist (change changes)
+        (ecase (first change)
+          (:changed
+           (when (index-document repository (second change) (third change) :quiet quiet)
+             (incf indexed)))
+          (:failed
+           (document-read-failed repository (second change) (third change) quiet))))
+      (setf (repository-docstore-token repository) token))
+    indexed))
+
+(defun poll-documents (repository &key quiet)
+  "Index what the store changed since the last token, retract what it removed,
+and read every failed document again. Two values: how many documents were read,
+and whether any indexed document was retracted.
+
+A failed document is read again on every poll, as a code file with no stamp
+is (DES-0051 D7). CHANGED-SINCE does not report it again, because the token has
+moved past the text it handed out, so the retry reads it with DOCSTORE-READ.
+A document the store no longer holds leaves DOCUMENT-FAILURES instead."
+  (let* ((store (repository-document-store repository))
+         (documents (repository-documents repository))
+         (failures (repository-document-failures repository))
+         (retry (loop for address being the hash-keys of failures using (hash-value ref)
+                      collect (cons address ref)))
+         (read 0)
+         (retracted nil))
+    (multiple-value-bind (changes token)
+        (docstore-changed-since store (repository-docstore-token repository))
+      (dolist (change changes)
+        (let ((address (if (eq (first change) :removed)
+                           (third change)
+                           (docstore-record-address (second change)))))
+          (setf retry (remove address retry :key #'car :test #'string=))
+          (ecase (first change)
+            (:changed
+             (incf read)
+             (index-document repository (second change) (third change) :quiet quiet))
+            (:failed
+             (incf read)
+             (document-read-failed repository (second change) (third change) quiet))
+            (:removed
+             ;; One whose analysis failed left nothing in the graph to retract.
+             (cond ((gethash address documents)
+                    (retract-document repository address)
+                    (setf retracted t))
+                   (t (remhash address failures)))))))
+      (setf (repository-docstore-token repository) token))
+    (loop for (address . ref) in retry
+          do (handler-case
+                 (multiple-value-bind (text version) (docstore-read store ref)
+                   (incf read)
+                   (index-document repository (make-docstore-record ref address version) text
+                                   :quiet quiet))
+               (docstore-missing ()
+                 (remhash address failures))
+               (error (condition)
+                 (incf read)
+                 (analysis-failed repository address condition quiet))))
+    (values read retracted)))
 
 (defun resolve-and-check (repository &key quiet)
   "The passes that need the whole repository in one place.
@@ -810,6 +1029,7 @@ on REINDEX-REPOSITORY's lock because it is a real independent entry point:
 WATCH-REPOSITORY calls it directly on first registration, before any monitor
 thread exists."
   (with-repository-lock (repository)
+   (with-tree-listing ((repository-root repository))
     (let ((files (repository-files repository))
           (indexed 0))
       (unless quiet
@@ -827,12 +1047,17 @@ thread exists."
             ;; watched tree's declared roots must not place another's paths.
             (*domains* (repository-domains repository)))
         (dolist (path files)
-          (when (index-file repository path :quiet quiet) (incf indexed))))
+          (when (index-file repository path :quiet quiet) (incf indexed)))
+        ;; DES-0051. The documents, from the store, after the code. Inside the
+        ;; same bindings, because *DOMAINS* places a document's :DOMAIN as it
+        ;; places a code file's.
+        (incf indexed (index-all-documents repository :quiet quiet)))
       (resolve-and-check repository :quiet quiet)
       (setf (repository-file-count repository) indexed
             ;; Free here: FILES is the walk already paid for, and a file that
             ;; failed to analyze is a file with no stamp.
-            (repository-unindexed repository) (count-unstamped repository files)
+            (repository-unindexed repository) (+ (count-unstamped repository files)
+                                                 (count-unindexed-documents repository))
             ;; REQ-0059, on the same walk and for the same reason: FILES is the
             ;; claimed set, and what git tracks beyond it is the coverage gap.
             (repository-unclaimed repository) (unclaimed-summary repository files)
@@ -846,7 +1071,7 @@ thread exists."
       ;; building. Deferred through a function cell so loom-workspace's own load
       ;; order does not have to put federate.lisp before this file.
       (federate-after-index repository :quiet quiet)
-      indexed)))
+      indexed))))
 
 (defun federate-after-index (repository &key quiet)
   "Re-derive cross-repository edges, if federation is loaded.
@@ -881,6 +1106,11 @@ would belong to does not exist yet at the instant protection has to begin."
       (with-repository-lock (repository)
         (setf (repository-graph repository) (make-graph))
         (clrhash (repository-stamps repository))
+        ;; DES-0051. A NIL token reads every document again, as the cleared
+        ;; stamps read every code file again.
+        (setf (repository-docstore-token repository) nil)
+        (clrhash (repository-documents repository))
+        (clrhash (repository-document-failures repository))
         (setf (repository-errors repository) '())
         (index-repository repository :quiet quiet))
     ;; The graph was discarded and rebuilt, so every entity id in the store is
@@ -1109,6 +1339,7 @@ it."
   (let ((moved nil))
    (prog1
     (with-repository-lock (repository)
+    (with-tree-listing ((repository-root repository))
     (let* ((changed '())
            (now (get-universal-time))
            (files (repository-files repository)))
@@ -1117,13 +1348,18 @@ it."
           (when (file-changed-p repository relative path now)
             (push path changed))))
       (dolist (path changed) (index-file repository path :quiet quiet))
+      ;; DES-0051. The documents, from the store: what changed since the
+      ;; token, what it removed, and every document that failed last time.
+      (multiple-value-bind (documents-read documents-retracted)
+          (poll-documents repository :quiet quiet)
       ;; After the indexing pass, so what is left is what the analyzer could
       ;; not stamp rather than what this poll was about to read. REQ-0050 R3,
       ;; and free: FILES is the walk this poll already pays for.
-      (setf (repository-unindexed repository) (count-unstamped repository files)
+      (setf (repository-unindexed repository) (+ (count-unstamped repository files)
+                                                 (count-unindexed-documents repository))
             (repository-unclaimed repository) (unclaimed-summary repository files))
       (let ((removed (detect-deletions repository)))
-        (when (or changed removed)
+        (when (or changed removed (plusp documents-read) documents-retracted)
           (setf moved t)
           (resolve-and-check repository :quiet quiet)
           ;; DES-0007: until this line, INDEX-REPOSITORY (line 241) was the
@@ -1139,7 +1375,7 @@ it."
           (setf (repository-indexed-at repository) now
                 (repository-indexed-fingerprint repository)
                 (index-fingerprint (repository-root repository)))))
-      (length changed)))
+      (+ (length changed) documents-read)))))
     ;; Outside the lock, and only when something actually moved. A store the
     ;; index has outgrown answers queries with vectors for definitions that no
     ;; longer exist and none for the ones that do -- stale in the one way that
@@ -1160,12 +1396,17 @@ it."
       (start-vector-build repository :existing-only t)))))
 
 (defun detect-deletions (repository)
-  "Retract files the index knows about that are no longer on disk."
+  "Retract code files the index knows about that are no longer on disk.
+
+A document's origin is a store address, and the store reports a removal
+(POLL-DOCUMENTS). An in-memory store's addresses are never on disk, so probing
+one would retract every document on every poll."
   (let ((graph (repository-graph repository))
         (gone '()))
     (dolist (file (origin-files graph))
-      (unless (probe-file (merge-pathnames file (repository-root repository)))
-        (push file gone)))
+      (let ((path (merge-pathnames file (repository-root repository))))
+        (unless (or (store-document-p path) (probe-file path))
+          (push file gone))))
     (when gone
       (apply-transaction graph
                          (mapcar (lambda (file)
@@ -1270,7 +1511,7 @@ client that can poll `status\'.")
   "Wait for REPOSITORY's index if one is being built. True when none is left."
   (await-thread (repository-index-build repository) seconds))
 
-(defun watch-repository (path &key (monitor t) quiet background)
+(defun watch-repository (path &key (monitor t) quiet background docstore)
   "Register the repository at PATH, index it, and begin watching.
 SS3.2's watch command. Re-watching an already-registered repository reindexes
 it rather than registering a second copy.
@@ -1282,18 +1523,24 @@ monitor when the console exits but leaves the repositories registered, because
 and used to reindex it without ever watching it again. What a developer saw was
 `watcher: stopped' on a repository they had just asked to watch, and watching
 a subdirectory instead appearing to fix it, because a different root is a new
-registration. START-MONITOR is idempotent, so saying it twice costs nothing."
+registration. START-MONITOR is idempotent, so saying it twice costs nothing.
+
+DOCSTORE is where the repository's YAML documents are read (DES-0051). Without
+one, the repository builds a file store over its root on first use."
   (let* ((root (normalize-root path))
          (existing (find (namestring root) *repositories*
                          :key (lambda (r) (namestring (repository-root r)))
                          :test #'string=)))
     (if existing
-        (progn (reindex-repository existing :quiet quiet)
+        (progn (when docstore
+                 (setf (repository-docstore existing) docstore))
+               (reindex-repository existing :quiet quiet)
                (when monitor (start-monitor existing))
                existing)
         (let ((repository (make-repository
                            :root root
-                           :name (or (car (last (pathname-directory root))) "repository"))))
+                           :name (or (car (last (pathname-directory root))) "repository")
+                           :docstore docstore)))
           (push repository *repositories*)
           ;; BACKGROUND registers the repository and returns before it holds
           ;; anything. loom-serve.lisp uses it so the listener binds its port
@@ -1436,7 +1683,33 @@ UNINDEXED-FILES, which costs the walk and which `status' pays for."
                            (file-changed-p repository relative path now))
                    (incf drift))))
              (repository-stamps repository))
-    drift))
+    (+ drift (document-drift repository))))
+
+(defun document-drift (repository)
+  "How many documents the index read have changed or gone since it read them.
+
+CHANGED-SINCE with :KNOWN-ONLY, so the file store stats each document the token
+describes and walks nothing, which keeps this on INDEX-DRIFT's budget. A
+document the index never read is `unindexed', as for code. One whose re-read
+failed after an earlier success is drift, because the index still holds the
+old text, as an old stamp said before documents moved behind the store."
+  (let ((documents (repository-documents repository))
+        (behind (make-hash-table :test #'equal)))
+    (when (repository-docstore-token repository)
+      (dolist (change (docstore-changed-since (repository-document-store repository)
+                                              (repository-docstore-token repository)
+                                              :contents nil :known-only t))
+        (let ((address (if (eq (first change) :removed)
+                           (third change)
+                           (docstore-record-address (second change)))))
+          (when (gethash address documents)
+            (setf (gethash address behind) t)))))
+    (maphash (lambda (address ref)
+               (declare (ignore ref))
+               (when (gethash address documents)
+                 (setf (gethash address behind) t)))
+             (repository-document-failures repository))
+    (hash-table-count behind)))
 
 (defun unindexed-files (repository)
   "How many files an analyzer claims that the index has no stamp for.
@@ -1451,9 +1724,15 @@ Costs what REPOSITORY-FILES costs: a recursive directory walk and one `git
 check-ignore' call, 179ms on Loom. Reported by `status', which is a deliberate
 question asked rarely, and by nothing in a query's latency path."
   (let ((root (repository-root repository))
-        (stamps (repository-stamps repository)))
-    (loop for path in (repository-files repository)
-          count (null (gethash (workspace-relative-path path root) stamps)))))
+        (stamps (repository-stamps repository))
+        (documents (repository-documents repository)))
+    (with-tree-listing (root)
+      (+ (loop for path in (repository-files repository)
+               count (null (gethash (workspace-relative-path path root) stamps)))
+         ;; DES-0051. A document the store holds that the index has not read.
+         (count-if-not (lambda (record)
+                         (gethash (docstore-record-address record) documents))
+                       (docstore-enumerate (repository-document-store repository)))))))
 
 (defun index-fingerprint (root)
   "ROOT's branch, commit and diff hash as a plist, for recording at index time.

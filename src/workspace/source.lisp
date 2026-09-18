@@ -59,6 +59,23 @@ be vouched for."
         :current
         :stale)))
 
+(defun served-text (repository relative path)
+  "The text to serve for RELATIVE, and :CURRENT or :STALE. Signals when it
+cannot be read, DOCSTORE-MISSING for a document the store no longer holds.
+
+A document the index read from the store is read through the store again
+(DES-0051). Its address is not a path Loom opens, and on an in-memory store it
+is nowhere on disk. It is :CURRENT when the version read is the version indexed.
+That is stricter than the content hash a code file is compared by: on the file
+store a document saved again with the same text reads :STALE."
+  (let ((entry (gethash relative (repository-documents repository))))
+    (if entry
+        (multiple-value-bind (text version)
+            (docstore-read (repository-document-store repository) (car entry))
+          (values text (if (equalp version (cdr entry)) :current :stale)))
+        (let ((contents (read-file path)))
+          (values contents (source-status repository relative path contents))))))
+
 (defparameter *source-trailing-pad* 0
   "Lines served after an entity's :END-LINE.
 
@@ -160,8 +177,8 @@ surprise in the :READ tier, and the monitor already owns that job."
            (t
             (let ((path (merge-pathnames relative (repository-root repository))))
               (handler-case
-                  (let* ((contents (read-file path))
-                         (lines    (string-lines contents))
+                  (multiple-value-bind (contents status) (served-text repository relative path)
+                  (let* ((lines    (string-lines contents))
                          (total    (length lines)))
                     (when whole (setf start 1 end total pad nil))
                     (if (> start total)
@@ -178,7 +195,7 @@ surprise in the :READ tier, and the monitor already owns that job."
                                (available (1+ (- last from)))
                                (shown     (min available limit))
                                (served    (+ from shown -1)))
-                          (list :status (source-status repository relative path contents)
+                          (list :status status
                                 :file relative
                                 ;; R9: the padded range, because it is what was
                                 ;; actually returned. A caller told 29-36 and
@@ -198,7 +215,7 @@ surprise in the :READ tier, and the monitor already owns that job."
                                               do (write-line (aref lines i) out)))
                                 :truncated (< shown available)
                                 :withheld (- available shown)
-                                :indexed-at (repository-indexed-at repository)))))
+                                :indexed-at (repository-indexed-at repository))))))
                 (error ()
                   ;; The file was named by the index and cannot be read now.
                   ;; Reported rather than signalled: a caller asking for source

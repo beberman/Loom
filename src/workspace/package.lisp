@@ -23,7 +23,12 @@
   (:import-from #:loom-docstore
                 #:*mtime-settle-seconds* #:file-stamp #:make-file-stamp
                 #:file-stamp-write-date #:file-stamp-content-hash
-                #:stamp-file #:stamp-changed-p)
+                #:stamp-file #:stamp-changed-p
+                ;; The protocol, and the store a repository gets by default.
+                #:make-file-docstore #:docstore-enumerate #:docstore-read
+                #:docstore-changed-since #:docstore-materialize #:docstore-missing
+                #:make-docstore-record #:docstore-record-ref
+                #:docstore-record-address #:docstore-record-version)
 
   (:export
    ;; the registry

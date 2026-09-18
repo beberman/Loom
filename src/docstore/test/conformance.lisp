@@ -4,10 +4,12 @@
 ;;;; Each test loops over *STORE-KINDS*. A store joins the suite by adding one
 ;;;; entry there, and no test is edited. A failure message names the store.
 ;;;;
-;;;; A store kind supplies a store and three ways to change what it holds
-;;;; behind its back: put, edit and delete. For the file store those are
-;;;; writes to disk. That is how a second writer -- an editor saving a file --
-;;;; reaches a store, and changed-since has to see it.
+;;;; A store kind supplies a store and four ways to change what it holds behind
+;;;; its back: put, edit, delete and break. The first three are writes to disk
+;;;; for the file store. That is how a second writer -- an editor saving a
+;;;; file -- reaches a store, and changed-since has to see it. Break makes a
+;;;; document the store still holds fail to read, which is mode 000 on a file
+;;;; and a flag in memory.
 
 (in-package :loom-docstore-test)
 
@@ -16,12 +18,12 @@
 ;; passed by never running, and a mutation of the store is what showed it.
 (in-suite all-tests)
 
-(defstruct (harness (:constructor make-harness (store put edit delete)))
-  "A fresh store, and three ways to change it that do not go through it.
+(defstruct (harness (:constructor make-harness (store put edit delete break)))
+  "A fresh store, and four ways to change it that do not go through it.
 
 PUT takes a category, a name and text, and returns the ref. EDIT takes a ref
-and text. DELETE takes a ref."
-  store put edit delete)
+and text. DELETE and BREAK take a ref."
+  store put edit delete break)
 
 (defvar *store-kinds* '()
   "Each store the conformance tests run against: (name . function). The
@@ -48,6 +50,10 @@ fresh harness."
 
 (defun erase (harness ref)
   (funcall (harness-delete harness) ref))
+
+(defun break-document (harness ref)
+  "Make reads of REF fail, with the document still held and still listed."
+  (funcall (harness-break harness) ref))
 
 (defun changes-of (kind changes)
   "The entries of CHANGES whose first element is KIND."
@@ -91,7 +97,14 @@ fresh harness."
                        (write-text (merge-pathnames ref root) text)
                        ref))
                    (lambda (ref text) (write-text (merge-pathnames ref root) text))
-                   (lambda (ref) (delete-file (merge-pathnames ref root)))))
+                   (lambda (ref) (delete-file (merge-pathnames ref root)))
+                   (lambda (ref)
+                     (uiop:run-program (list "chmod" "000"
+                                             (namestring (merge-pathnames ref root)))))))
+      ;; Mode 000 back to readable before the tree goes, so the walk that
+      ;; deletes it is not the thing that fails.
+      (dolist (path (uiop:directory-files (merge-pathnames "docs/decisions/" root)))
+        (uiop:run-program (list "chmod" "644" (namestring path)) :ignore-error-status t))
       (uiop:delete-directory-tree root :validate t))))
 
 (register-store-kind "file store" #'call-with-file-harness)
@@ -108,7 +121,8 @@ fresh harness."
               (lambda (category name text)
                 (docstore-record-ref (memory-docstore-put store category name text)))
               (lambda (ref text) (memory-docstore-replace store ref text))
-              (lambda (ref) (memory-docstore-remove store ref))))))
+              (lambda (ref) (memory-docstore-remove store ref))
+              (lambda (ref) (memory-docstore-break store ref "cannot read it"))))))
 
 (register-store-kind "in-memory store" #'call-with-memory-harness)
 
@@ -238,3 +252,46 @@ fresh harness."
           (is (null next) "~a: a token came back" kind))
         (is (equal (list ref) (changed-refs (docstore-changed-since store token)))
             "~a: the :contents nil call changed what the token reports" kind)))))
+
+(test a-document-that-cannot-be-read-comes-back-failed
+  ;; The third change kind. A store that holds a document and cannot read it
+  ;; has to say so: leaving it out reads as a clean store, and the caller would
+  ;; record the index as current on a document it never saw. DOCSTORE-READ
+  ;; signals for the same reason rather than returning empty text.
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (readable (put harness "decisions" "DEC-0001" "id: DEC-0001"))
+           (broken (put harness "decisions" "DEC-0002" "id: DEC-0002")))
+      (break-document harness broken)
+      (let ((changes (docstore-changed-since store nil)))
+        (is (equal (list readable) (changed-refs changes))
+            "~a: changed-since reported ~s as readable" kind (changed-refs changes))
+        (is (equal (list broken)
+                   (mapcar (lambda (change) (docstore-record-ref (second change)))
+                           (changes-of :failed changes)))
+            "~a: the unreadable document came back as ~s" kind changes)
+        (is (every #'stringp (mapcar #'third (changes-of :failed changes)))
+            "~a: a :failed entry carries no reason" kind))
+      (signals error (docstore-read store broken)))))
+
+(test known-only-reports-edits-and-removals-and-not-new-documents
+  ;; INDEX-DRIFT's form. Drift is how far the index is behind on what it read;
+  ;; a document nobody has read yet is `unindexed' instead, and counting it
+  ;; here would count it twice.
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (edited (put harness "decisions" "DEC-0001" "id: DEC-0001"))
+           (removed (put harness "rules" "RULE-0001" "id: RULE-0001")))
+      (put harness "plans" "PLAN-0001" "id: PLAN-0001")
+      (let ((token (nth-value 1 (docstore-changed-since store nil))))
+        (edit harness edited "id: DEC-0001 edited")
+        (erase harness removed)
+        (put harness "design" "DES-0001" "id: DES-0001")
+        (let ((changes (docstore-changed-since store token :contents nil :known-only t)))
+          (is (equal (list edited) (changed-refs changes))
+              "~a: known-only reported ~s as changed" kind (changed-refs changes))
+          (is (equal (list removed) (mapcar #'second (changes-of :removed changes)))
+              "~a: known-only reported ~s" kind changes)
+          (is (= 2 (length changes)) "~a: known-only reported ~s" kind changes))
+        (is (null (docstore-changed-since store nil :contents nil :known-only t))
+            "~a: a NIL token describes no document" kind)))))

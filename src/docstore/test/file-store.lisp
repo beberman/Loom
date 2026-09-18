@@ -110,3 +110,19 @@
              (is (null (gethash "docs/decisions/DEC-0002.yaml" token))
                  "a document nobody could read has a stamp in the token"))
         (uiop:run-program (list "chmod" "644" (namestring path)))))))
+
+(test the-store-walks-the-listing-it-is-given
+  ;; File property: the walk is the expensive part of a poll, so the workspace
+  ;; hands the store the listing its own walk already paid for. A store that
+  ;; walked the tree itself would pass every other test and double the cost.
+  (with-file-store (store root)
+    (write-text (merge-pathnames "docs/decisions/DEC-0001.yaml" root) "id: DEC-0001")
+    (write-text (merge-pathnames "docs/decisions/DEC-0002.yaml" root) "id: DEC-0002")
+    (let ((listed (make-file-docstore
+                   root :claim #'yaml-under-docs-p
+                        :listing (lambda ()
+                                   (list (merge-pathnames "docs/decisions/DEC-0002.yaml" root))))))
+      (is (equal '("docs/decisions/DEC-0001.yaml" "docs/decisions/DEC-0002.yaml")
+                 (addresses store)))
+      (is (equal '("docs/decisions/DEC-0002.yaml") (addresses listed))
+          "the store walked the tree rather than the listing it was given"))))

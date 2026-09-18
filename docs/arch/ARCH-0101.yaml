@@ -42,9 +42,12 @@ invariants: |
       input could not be re-run, so an edge destroyed by a retract would never
       return (DEC-0003).
 
-  I5  FILES ARE TRUTH. The graph is an index over files and may be discarded
-      and rebuilt at any time. Anything Loom knows that is not derivable from
-      files must be written back to files or it is not knowledge (DEC-0001).
+  I5  THE INDEX IS DERIVED. The graph is an index over what the checkout and
+      the document store hold, and may be discarded and rebuilt at any time.
+      Source code is read from the checkout. YAML documents are read through
+      the document store, and the first store is the files under docs/
+      (DES-0051). Anything Loom knows that neither holds must be written back
+      to one of them or it is not knowledge (DEC-0001).
 
   I6  A GAP IS RECORDED, NEVER GUESSED. An ambiguous name resolves to nothing
       and is reported. A damaged form costs a form and is recorded with its
@@ -60,10 +63,11 @@ body: |
   Read from the .asd :depends-on graph rather than from habit, 2026-08-11:
 
       loom-ontology    (nothing in-tree)
+      loom-docstore    (nothing in-tree)
       loom-graph       loom-ontology
       loom-analyzer    loom-ontology
       loom-knowledge   loom-ontology loom-graph
-      loom-workspace   loom-ontology loom-graph loom-analyzer
+      loom-workspace   loom-ontology loom-graph loom-analyzer loom-docstore
       loom-process     loom-ontology loom-graph loom-analyzer loom-workspace
                        loom-knowledge
       loom-serve       loom-ontology loom-graph loom-analyzer loom-workspace
@@ -74,6 +78,11 @@ body: |
   Tier 1 is loom-ontology: declarations and nothing else. Entity types,
   relationship types, natural keys, and the impact metadata each relationship
   carries. It depends on nothing because everything depends on it.
+
+  loom-docstore is a leaf beside it. It deals in refs, addresses, versions and
+  text, and holds the file stamps. loom-workspace is its only client, and
+  RULE-0010 to RULE-0012 keep it a leaf that loom-analyzer and loom-knowledge
+  cannot reach (DES-0051).
 
   Tier 2 is loom-graph and loom-analyzer, siblings that cannot see each other.
   loom-graph owns storage, transactions, queries and the resolution passes.
@@ -100,8 +109,12 @@ body: |
 
   THE WRITE PATH, END TO END
 
-  A file changes. The monitor notices, reads it, and asks the registry which
-  analyzer claims the path -- FIND-ANALYZER takes the first whose
+  A code file changes, or the document store reports a changed document. The
+  monitor notices and holds the text: it reads the code file, or takes the text
+  the store handed over. I2 holds either way. The workspace fetches, and the
+  analyzer still receives a path and text, where a document's path is its
+  address. The monitor asks the registry which analyzer claims the path --
+  FIND-ANALYZER takes the first whose
   ANALYZER-HANDLES-P says yes, so extensions must not overlap between
   analyzers. ANALYZE-FILE returns a list of operations that always opens with
   RETRACT-FILE for that path: an incremental update is a full replacement of

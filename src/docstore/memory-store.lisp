@@ -18,7 +18,7 @@
 (defstruct (memory-document (:conc-name memory-document-))
   "One document the in-memory store has held. A removed document stays, marked,
 so CHANGED-SINCE can report its removal to a token taken before it."
-  ref address text (version 1) created changed (removed nil))
+  ref address text (version 1) created changed (removed nil) (unreadable nil))
 
 (defclass memory-docstore ()
   ((documents :initform '() :accessor memory-docstore-documents
@@ -91,6 +91,29 @@ so CHANGED-SINCE can report its removal to a token taken before it."
           (memory-document-changed document) (advance store))
     nil))
 
+(defun memory-docstore-break (store ref reason)
+  "Make reads of the document REF names fail with REASON, and count that as a
+change. The store still holds the document and still lists it.
+
+A read that fails is a change kind of its own, and the file store has one --
+a document it can stat and cannot open. Without this the in-memory store has
+none, and the workspace's retry of a failed document (DES-0051 D7) is
+exercised on the file store alone, where CHANGED-SINCE re-reports the document
+anyway because a failure leaves it out of the token. Here the sequence number
+moves past it, so the retry is the only way back."
+  (let ((document (find-document-or-signal store ref)))
+    (setf (memory-document-unreadable document) reason
+          (memory-document-changed document) (advance store))
+    nil))
+
+(defun memory-docstore-repair (store ref)
+  "Let reads of the document REF names succeed again, without advancing the
+sequence. A caller that recovers the document has read it again itself, which
+is what the retry is for."
+  (let ((document (find-document-or-signal store ref)))
+    (setf (memory-document-unreadable document) nil)
+    nil))
+
 ;;;; ==================================================================
 ;;;; Phase 1, read
 ;;;; ==================================================================
@@ -100,20 +123,36 @@ so CHANGED-SINCE can report its removal to a token taken before it."
 
 (defmethod docstore-read ((store memory-docstore) ref)
   (let ((document (find-document-or-signal store ref)))
+    (when (memory-document-unreadable document)
+      (error "~a" (memory-document-unreadable document)))
     (values (copy-seq (memory-document-text document))
             (memory-document-version document))))
 
-(defmethod docstore-changed-since ((store memory-docstore) token &key (contents t))
+(defmethod docstore-changed-since ((store memory-docstore) token &key (contents t) known-only)
   "Every document whose last change is later than TOKEN, newest first.
 
 A document removed after TOKEN is :REMOVED only if it existed when TOKEN was
 taken. One put and removed in between was never seen, and reporting its
-removal would name a document the caller never had."
+removal would name a document the caller never had. With KNOWN-ONLY, a
+document put after TOKEN is not reported at all.
+
+A document MEMORY-DOCSTORE-BREAK has made unreadable is :FAILED rather than
+:CHANGED."
   (let ((since (or token 0))
         (changes '()))
     (dolist (document (memory-docstore-documents store))
-      (when (> (memory-document-changed document) since)
-        (cond ((not (memory-document-removed document))
+      (when (and (> (memory-document-changed document) since)
+                 (not (and known-only (> (memory-document-created document) since))))
+        (cond ((and (not (memory-document-removed document))
+                    (memory-document-unreadable document)
+                    contents)
+               ;; :FAILED only where text was asked for. With :CONTENTS NIL the
+               ;; caller is counting what moved, and a document that moved and
+               ;; cannot be read has still moved.
+               (push (list :failed (document-record document)
+                           (memory-document-unreadable document))
+                     changes))
+              ((not (memory-document-removed document))
                (push (list :changed (document-record document)
                            (and contents (copy-seq (memory-document-text document))))
                      changes))

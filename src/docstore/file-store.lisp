@@ -18,15 +18,26 @@
           :documentation "A function of an absolute pathname, true for a document.")
    (ignore :initarg :ignore :initform nil :reader file-docstore-ignore
            :documentation "NIL, or a function of a list of relative paths
-returning a hash table (EQUAL) whose keys are the ignored ones."))
+returning a hash table (EQUAL) whose keys are the ignored ones.")
+   (listing :initarg :listing :initform nil :reader file-docstore-listing
+            :documentation "NIL, or a function of no arguments returning every
+pathname under ROOT, as DIRECTORY does. loom-workspace passes the listing its
+own walk of the tree already paid for, so one poll walks the tree once."))
   (:documentation "Documents as files under ROOT. DES-0051 D6."))
 
-(defun make-file-docstore (root &key claim ignore)
-  "A file store over ROOT. CLAIM and IGNORE as the slots describe."
+(defun make-file-docstore (root &key claim ignore listing)
+  "A file store over ROOT. CLAIM, IGNORE and LISTING as the slots describe."
   (make-instance 'file-docstore
                  :root (pathname root)
                  :claim (or claim (constantly nil))
-                 :ignore ignore))
+                 :ignore ignore
+                 :listing listing))
+
+(defun file-listing (store)
+  "Every pathname under STORE's root: the LISTING function's, or a fresh walk."
+  (if (file-docstore-listing store)
+      (funcall (file-docstore-listing store))
+      (directory (merge-pathnames "**/*.*" (file-docstore-root store)))))
 
 (defun dotted-p (name)
   "True when NAME is a string beginning with a dot.
@@ -60,7 +71,7 @@ extension. The walk in REPOSITORY-FILES skips both, for the same reasons."
 The walk, the dot filter, the claim and then the ignore query, in the order
 REPOSITORY-FILES uses. Git is asked about the claimed paths only, and once."
   (let* ((claimed (remove-if-not (lambda (path) (held-p store path))
-                                 (directory (merge-pathnames "**/*.*" (file-docstore-root store)))))
+                                 (file-listing store)))
          (ignored (and claimed
                        (file-docstore-ignore store)
                        (funcall (file-docstore-ignore store)
@@ -86,8 +97,8 @@ not on disk or is not a document."
     (let ((text (read-file path)))
       (values text (stamp-file path text)))))
 
-(defmethod docstore-changed-since ((store file-docstore) token &key (contents t))
-  "Walk the documents and compare each with TOKEN's stamp for it.
+(defun walk-changes (store token contents)
+  "CHANGED-SINCE by walking the documents and comparing each with TOKEN's stamp.
 
 STAMP-CHANGED-P decides, so a same-second edit is seen (CON-0002). A changed
 file is read once, and its new stamp is taken from that text. A path TOKEN
@@ -135,3 +146,43 @@ out of the returned token, so it has no stamp until a read succeeds."
       (dolist (address (sort removed #'string<))
         (push (list :removed address address) changes)))
     (values (nreverse changes) (and contents next))))
+
+(defun known-changes (store token contents)
+  "CHANGED-SINCE over the documents TOKEN describes, and no others.
+
+One stat per document and no walk, which is why the form exists: INDEX-DRIFT
+asks it on every `context' answer. A document gone from disk is :REMOVED, and
+one whose stamp disagrees is :CHANGED, which is the question INDEX-DRIFT asked
+of REPOSITORY-STAMPS before documents moved here. Sorted by address, because a
+hash table's order is not a fact about the tree."
+  (let ((now (get-universal-time))
+        (next (make-hash-table :test #'equal))
+        (changes '()))
+    (when token
+      (dolist (address (sort (loop for address being the hash-keys of token collect address)
+                             #'string<))
+        (let ((known (gethash address token))
+              (path (merge-pathnames address (file-docstore-root store))))
+          (cond ((null (probe-file path))
+                 (push (list :removed address address) changes))
+                ((not (stamp-changed-p known path now))
+                 (setf (gethash address next) known))
+                ((not contents)
+                 (push (list :changed (address-record address nil) nil) changes))
+                (t
+                 (handler-case
+                     (let* ((text (read-file path))
+                            (stamp (stamp-file path text)))
+                       (setf (gethash address next) stamp)
+                       (push (list :changed (address-record address stamp) text) changes))
+                   (error (condition)
+                     (push (list :failed (address-record address nil)
+                                 (princ-to-string condition))
+                           changes))))))))
+    (values (nreverse changes) (and contents next))))
+
+(defmethod docstore-changed-since ((store file-docstore) token &key (contents t) known-only)
+  "WALK-CHANGES, or KNOWN-CHANGES when KNOWN-ONLY."
+  (if known-only
+      (known-changes store token contents)
+      (walk-changes store token contents)))

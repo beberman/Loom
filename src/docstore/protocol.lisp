@@ -74,12 +74,16 @@ promises only the ref and the address."))
 Two values: the text, and a version describing exactly that text. Signals
 DOCSTORE-MISSING when REF names nothing."))
 
-(defgeneric docstore-changed-since (store token &key contents)
+(defgeneric docstore-changed-since (store token &key contents known-only)
   (:documentation "What changed in STORE since TOKEN. Two values: the changes and a new token.
 
-Each change is (:CHANGED record text) or (:REMOVED ref address). A NIL TOKEN
-means since nothing, and every document comes back :CHANGED. That is the
-rebuild path.
+Each change is (:CHANGED record text), (:REMOVED ref address) or (:FAILED
+record reason). A NIL TOKEN means since nothing, and every document comes back
+:CHANGED. That is the rebuild path.
+
+:FAILED is a document the store holds and could not read. DES-0051 D2 names
+two kinds of change, and a third is needed because leaving the document out
+would read as a clean store. It stays out of the returned token.
 
 The call has no side effect. The same token passed twice returns the same
 changes if nothing moved. A caller advances by keeping the returned token.
@@ -90,7 +94,15 @@ that were analyzed, not whatever is there by the time it is taken.
 
 With CONTENTS NIL, a :CHANGED entry carries NIL for its text and the returned
 token is NIL. A token has to describe text somebody read, and this form reads
-none. INDEX-DRIFT uses it to count what moved."))
+none.
+
+With KNOWN-ONLY, only documents TOKEN describes are reported, so a document
+added since is not, and a NIL TOKEN describes none. INDEX-DRIFT uses it with
+CONTENTS NIL: drift is how far the index is behind on what it read, and a
+document it never read is `unindexed' instead. The form exists for its cost.
+The file store answers it with one stat per document where the full form
+walks the tree, 100 to 308ms a tree measured 2026-09-15, and drift rides on
+every `context' answer. It is an addition to DES-0051 D2."))
 
 (defparameter *docstore-operations*
   '((:enumerate . docstore-enumerate)
