@@ -1,6 +1,6 @@
 id: DES-0051
 title: Documents are read and written through a document-store protocol, the file tree and an in-memory store implement it from the first commit, and each step is accepted only when a full index dump is unchanged
-status: draft
+status: implemented
 priority: p1
 date: 2026-09-14
 refines: [REQ-0009]

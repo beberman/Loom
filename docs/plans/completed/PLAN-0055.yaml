@@ -1,6 +1,6 @@
 id: PLAN-0055
 title: DES-0051 in ten steps -- the dump, the system, two stores, rebuild and poll, reads, the write protocol, transitions, workflow, and closing REQ-0009
-status: draft
+status: final
 date: 2026-09-14
 refines: [DES-0051]
 affects: [repository-files, index-file, index-repository, reindex-repository,
