@@ -1,0 +1,75 @@
+id: BUG-0068
+type: bug
+title: A dotted list inside a definer macro's argument costs the whole file
+status: open
+severity: major
+date: 2026-09-18
+importance: Major
+affects: [first-string-literal, definer-call-site, analyze-file]
+refines: [DES-0014]
+tags: [analyzer, lisp, call-site, definer-macro, dotted-list, des-0014,
+       con-0001, req-0053]
+summary: |
+  FIRST-STRING-LITERAL walks a call site's argument with `loop for element
+  in', which signals on an improper list. An argument to a definer macro is an
+  arbitrary form and may hold one -- a quoted dotted pair, a LOOP
+  destructuring pattern, a DESTRUCTURING-BIND lambda list. The condition
+  escapes ANALYZE-FILE, the file is recorded as an error, and every definition
+  in it is missing from the index.
+
+  Found on Loom's own tree: `status' read `errors: 1' and the file was
+  src/docstore/test/suite.lisp, whose
+
+      (loop for (operation . function) in *docstore-operations* ...)
+
+  sits inside a FiveAM `test' form. Every `test' form is a definer call site,
+  so this walk runs over the argument list of every one of them.
+body: |
+  WHAT HAPPENS
+
+  DEFINER-CALL-SITE records :STRING-ARGUMENTS by calling FIRST-STRING-LITERAL
+  on each argument of a top-level call to a macro the analyzer does not
+  otherwise account for. easy-routes writes the route one level down, inside a
+  spec list, which is why the walk recurses at all.
+
+  The walk was `loop for element in x', which requires a proper list. Three
+  shapes reach it and none of them is one:
+
+      (test f (list '(1 . 2)))                          a quoted dotted pair
+      (test f (loop for (x . y) in pairs do ...))       a LOOP pattern
+      (test f (destructuring-bind (x . y) p ...))       a lambda list
+
+  Each signals `The value 2 is not of type LIST' out of ANALYZE-FILE. SS3.3
+  catches it on the file, so the pass continues and the file is marked -- the
+  analyzer does not crash, it loses the file.
+
+  The same body under a DEFUN is fine. DEFUN is a definition head, so
+  CALL-SITE-HEAD-P is true and no call site is recorded; only a form whose head
+  the analyzer does not already account for reaches this walk.
+
+  WHAT IT COST
+
+  One file on this tree, and it was invisible for four days: `check' reports
+  violations and unresolved references and says nothing about analysis errors,
+  and `status' reports them on a line nobody reading a green suite looks at.
+  The suite passed throughout -- src/docstore/test/suite.lisp compiles and runs
+  fine, it is only the index that cannot read it.
+
+  COLLECT-CALL-NAMES beside it has walked tails with `for tail = ... while
+  (consp tail)' since it was written, and its docstring says why. This one
+  function did not, and nothing tested an improper list anywhere in the
+  analyzer.
+
+  THE FIX
+
+  Walk conses instead. A dotted tail holds no string literal worth finding, so
+  it is passed over rather than examined -- which also keeps a string in a
+  later argument reachable, since the walk continues past the pair rather than
+  stopping at it.
+
+  WHAT IS NOT FIXED
+
+  Nothing reports an analysis error where a reader would meet it. `check' is
+  where a developer looks for what the index could not read, and `unparsed'
+  and `errors' are both absent from it. That is its own defect and not this
+  one.
