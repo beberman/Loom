@@ -18,6 +18,34 @@
   ;; and STRING-LINES replace loom-analyzer's SLURP-FILE and SPLIT-LINES.
   (:import-from #:utils #:read-file #:string-lines #:proper-list-p #:alistp)
 
+  ;; DES-0051 D5. The stamps moved down to loom-docstore, where the file
+  ;; store's versions are stamps too. The code tier uses them from there.
+  (:import-from #:loom-docstore
+                #:*mtime-settle-seconds* #:file-stamp #:make-file-stamp
+                #:file-stamp-write-date #:file-stamp-content-hash
+                #:stamp-file #:stamp-changed-p
+                ;; The protocol, and the store a repository gets by default.
+                #:make-file-docstore #:docstore-enumerate #:docstore-read
+                #:docstore-changed-since #:docstore-materialize #:docstore-missing
+                #:make-docstore-record #:docstore-record-ref
+                #:docstore-record-address #:docstore-record-version
+                ;; The write half, and the status line it edits. These were
+                ;; transition.lisp's until PLAN-0055 step 7 moved them down to
+                ;; the stores. init.lisp reads LINE-END and WHITESPACE-CHAR-P
+                ;; from here for the same reason: the lower system is the
+                ;; shared home when one caller's system already depends on it.
+                #:docstore-write #:docstore-create #:docstore-transition
+                #:docstore-apply-batch #:docstore-error #:docstore-refused
+                #:docstore-refused-reason #:docstore-conflict
+                #:whitespace-char-p #:line-end #:status-key-line-p
+                #:status-line-value #:top-level-status-line #:replace-status-line
+                #:flat-directory #:status-destination #:probe-writable
+                #:*completed-directory* #:address-category
+                ;; Phase 3. NEXT-DOCUMENT-ID was init.lisp's and is the file
+                ;; store's allocator now; init.lisp reads it from here.
+                #:next-document-id #:docstore-allocate-id #:docstore-may-transition
+                #:docstore-history #:docstore-locate #:docstore-capabilities)
+
   (:export
    ;; the registry
    #:repository
@@ -143,6 +171,15 @@
    ;; that edits a document rather than reading one. Both return a report
    ;; plist whose :PROBLEMS is empty exactly when something was written.
    #:set-document-status
+   ;; CON-0004's terminal column, in the form a document store takes. Exported
+   ;; because whoever builds a store wires it in: REPOSITORY-DOCUMENT-STORE
+   ;; does it for the default file store, and a caller passing WATCH-REPOSITORY
+   ;; a store of its own has to do the same or no document it holds ever moves.
+   #:terminal-category-status-p
+   #:*terminal-status-p*
+   #:category-id-prefix
+   #:*category-id-prefix*
+   #:*document-id-prefixes*
    #:complete-plan
    #:parse-verdicts
    #:document-status-vocabulary

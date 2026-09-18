@@ -1,0 +1,536 @@
+id: DES-0051
+title: Documents are read and written through a document-store protocol, the file tree and an in-memory store implement it from the first commit, and each step is accepted only when a full index dump is unchanged
+status: implemented
+priority: p1
+date: 2026-09-14
+refines: [REQ-0009]
+affects: [repository-files, file-changed-p, stamp-file, index-file,
+          index-repository, reindex-repository, poll-once, detect-deletions,
+          index-drift, count-unstamped, check-document-references,
+          definition-source, plan-document-edit, apply-transition,
+          set-document-status, complete-plan, status-destination,
+          flat-directory, document-store-entry, docstore-apply-batch]
+tags: [documents, document-store, protocol, adapter, refactor, identity,
+       change-detection, workflow, rebuild-equivalence, dec-0001, dec-0002,
+       con-0002, con-0008, des-0048, req-0009]
+summary: |
+  Loom reads and writes YAML documents directly as files today. This design
+  puts a protocol between the workspace and the documents. The protocol's
+  first implementation is the file tree. A tracker or a document service can
+  implement it later without a change above it.
+
+  Nine generic functions carry the eight operations named in `Loom - A Code
+  Knowledge Engine': enumerate, read, write, allocate-id, changed-since,
+  compare-and-swap, may-transition, history and locate. Compare-and-swap is an
+  argument on every write rather than an operation of its own. A batch is a
+  ninth function, and a capability declaration is a tenth.
+
+  Two stores are built together: the file store and an in-memory store for the
+  suite. The in-memory store is built to differ from the file store in every
+  way a caller could come to depend on. Its references are not paths, its
+  addresses never exist on disk, its versions are counters, and a transition
+  never moves a document. A test that passes on the file store and fails on
+  the in-memory store has found a caller that assumes a file.
+
+  The work lands in three phases: read path, write path, workflow. Each step
+  is accepted when a dump of the whole index, taken before and after, is
+  byte-identical on Loom, game-server and front-end. The two existing
+  rebuild-equivalence tests are not enough for this. They compare two
+  indexes built by the same code, and they compare ids only. Five of the six
+  document entity types are keyed on :DOC-ID, so a document read from the
+  wrong address keeps its id and both tests pass.
+
+  REQ-0009 asked for documents to move into a database. This design answers
+  it with a protocol instead. When this design is implemented, REQ-0009
+  closes with status `closed': not implemented, and not to be.
+body: |
+  D1  THREE NAMES FOR A DOCUMENT, EACH WITH ONE OWNER
+
+  A document has three identifiers. Each belongs to one layer, and no layer
+  reads another layer's identifier.
+
+    ref        The store's identity for the document. The store mints it.
+               Callers compare refs with STRING= and pass them back. They never
+               parse one.
+
+    address    A repository-relative path in the document layout,
+               docs/<category>/[completed/]<name>.<ext>. The analyzer receives
+               it with the bytes, exactly as ANALYZE-PATH receives a path today.
+               DOCUMENT-TYPE-FOR and DOCUMENT-CATEGORY read the category from
+               it. Loom never opens an address.
+
+    entity id  Derived by the analyzer from the address and the content, as
+               DEC-0002 has it now. Unchanged by this design.
+
+  The file store's ref and address are the same string, the relative path.
+  That is what makes the file store alone unable to prove the protocol is
+  real. Any caller would work with either. D6's in-memory store gives them
+  different values, so a caller that uses one where it needs the other fails.
+
+  A ref is stable until one of the store's own write operations returns a
+  replacement. The file store's ref changes when a transition moves a
+  document into completed/, because the path changes. A tracker's ref never
+  changes. Both are legal. A caller holds the ref a write returned and never
+  predicts one.
+
+  WHAT IDENTIFIES A TRACKER-BACKED REQ-0031
+
+  Its ref is an identifier the tracker does not reissue. A Jira issue key is
+  not one, because moving an issue to another project changes the key. The
+  numeric issue id is one. Its address is docs/requirements/REQ-0031.yaml,
+  chosen by that store's materializer (D10). Its entity id is therefore
+  document:docs/requirements/REQ-0031.yaml, the same id the file store gives
+  it today.
+
+  That answers DESIGN-ASSUMPTION-CHANGES.md section 7 on DEC-0002. Ids in
+  `describe', `find' and `impact' do not change shape when the store changes,
+  because the graph never sees a ref. One DEC-0002 question stays open: a
+  :DOCUMENT is keyed on :PATH, so today a move into completed/ changes its id
+  and forces the reindex that APPLY-TRANSITION's docstring describes. Whether
+  :DOCUMENT should key on :DOC-ID instead does not depend on the store. It is
+  left out of this design, because this design's acceptance test forbids
+  changing any id.
+
+  D2  THE OPERATIONS, BY PHASE
+
+  Every function takes the store first. A record is a struct of ref, address
+  and version.
+
+  Phase 1, read
+
+    (docstore-enumerate store)                       -> records
+        Every document the store holds. No bytes.
+
+    (docstore-read store ref)                        -> bytes, version
+        VERSION describes the bytes returned, never what the store holds a
+        moment later. Signals DOCSTORE-MISSING when the ref names nothing.
+
+    (docstore-changed-since store token &key (contents t))
+                                                     -> changes, token
+        CHANGES is a list of (:changed record bytes) and (:removed ref
+        address). A NIL token means "since nothing" and returns every
+        document as :changed. That is the rebuild path.
+        The call has no side effect. The same token passed twice returns the
+        same changes if nothing moved. The caller advances by keeping the
+        returned token.
+        Bytes travel with the change, and the token describes those bytes.
+        This is CON-0002's last paragraph stated for every store: INDEX-FILE
+        reads a file once and hands the same text to the analyzer and to the
+        stamp, so the stamp describes what was analyzed.
+        With :CONTENTS NIL it reports what moved, carries no bytes and returns
+        a NIL token. A token must describe bytes somebody read. INDEX-DRIFT
+        uses this form.
+
+    (docstore-capabilities store)                    -> plist, D3
+
+  Phase 2, write
+
+    (docstore-write store ref bytes &key expected-version)      -> record
+    (docstore-create store category name bytes)                 -> record
+    (docstore-transition store ref status &key expected-version) -> record
+    (docstore-apply-batch store operations)          -> results, problems
+
+        Each write takes EXPECTED-VERSION, and a mismatch signals
+        DOCSTORE-CONFLICT with the store unchanged. That keyword is
+        compare-and-swap. PLAN-DOCUMENT-EDIT reads a file and
+        APPLY-DOCUMENT-EDIT later writes it with :IF-EXISTS :SUPERSEDE, and
+        nothing checks that the file did not change in between. This closes
+        that window.
+        DOCSTORE-TRANSITION sets a status. Where the document then lives is
+        the store's business (N3). The returned record carries the new ref and
+        address.
+        DOCSTORE-CREATE has one caller today: ARCHITECTURE writing an ARCH
+        document.
+
+  Phase 3, workflow
+
+    (docstore-allocate-id store category)            -> doc-id
+    (docstore-may-transition store ref status actor) -> allowed, reason
+    (docstore-history store ref)                     -> entries of
+                                                        (when who field from to why)
+    (docstore-locate store ref)                      -> string a person can open
+
+  The status vocabulary is not the store's. *WORKFLOW-STATUS-VOCABULARY* is
+  CON-0004's, it is the same on every store, and it stays in loom-workspace.
+  DOCSTORE-MAY-TRANSITION answers only whether this actor may make this move.
+  On the file store the answer is always yes, because CON-0008 makes the
+  merge the approval. A tracker answers from its own permission model.
+
+  D3  CAPABILITIES
+
+  DOCSTORE-CAPABILITIES returns one entry per operation, and each entry is
+  one of these values:
+
+    :native       the store answers it
+    :single-writer  it answers correctly while one writer exists
+    :absent       it does not answer; Loom names the degraded behaviour
+
+  and two properties:
+
+    :batch          :atomic or :planned (D4)
+    :branch-scoped  T when a document revision belongs to a branch
+
+  The file store declares allocate-id :SINGLE-WRITER. Highest plus one, which
+  is what tools/next-doc-id.sh computes today, is correct for one developer
+  and wrong for two. DES-0048's lease upgrades it to :NATIVE. The protocol
+  slot exists now so that upgrade changes one method.
+
+  The protocol is not cut down to what the weakest store can do. A missing
+  capability is declared and reported, which is CON-0001: a recorded gap
+  rather than an operation that appears to work.
+
+  D4  THE BATCH IS IN THE PROTOCOL NOW
+
+  COMPLETE-PLAN transitions a plan and every document it refines in one
+  command. That makes several writes one operation, and the protocol says so
+  with DOCSTORE-APPLY-BATCH. Each entry is a write, a create or a transition,
+  each with its expected version.
+
+  A store declares one of two guarantees:
+
+    :atomic   all entries land or none do
+    :planned  every refusal is found before any write, and a failure during
+              the apply returns the entries that landed
+
+  The file store is :PLANNED. APPLY-DOCUMENT-EDIT's docstring already says so:
+  "It is not atomic across files and cannot be." A git commit would make it
+  atomic, but Loom does not commit; `complete' leaves the tree dirty on
+  purpose. A tracker is :PLANNED at best, with one API call per entry.
+
+  A partial apply is already recoverable. Re-running `complete' with the same
+  verdicts skips every document already at its target status: PLAN-DOCUMENT-
+  EDIT gives it no new contents and no move, and EDIT-WRITES-P is false. So
+  under :PLANNED, COMPLETE-PLAN reports what landed and what did not, and the
+  same command finishes the rest. DESIGN-ASSUMPTION-CHANGES.md section 9
+  offered a batch or a resumable partial state. This design has both.
+
+  D5  WHERE IT SITS
+
+  A new system, loom-docstore, which depends on no other Loom system. It uses
+  two libraries: the standalone utils library for READ-FILE, and UIOP to run
+  git for the file store's history. loom-workspace is its only client. The
+  name is not loom-store, because "store" already means the vector store in
+  src/embed/store.lisp.
+
+  loom-docstore deals in refs, addresses, versions and bytes. It never sees
+  an ontology operation. It cannot reach loom-graph or loom-analyzer, and it
+  must not reach them.
+
+  The file store needs two facts it cannot compute itself:
+
+    which paths are documents    DOCUMENT-ANALYZER's claim, in loom-analyzer
+    which paths git ignores      IGNORED-PATHS, in loom-workspace
+
+  loom-workspace passes both in as functions when it builds the store. That is
+  how RESOLVE-AND-CHECK already passes *MACRO-GENERATORS* to loom-graph.
+
+  File stamps move into loom-docstore: FILE-STAMP, STAMP-FILE, FILE-CHANGED-P
+  and *MTIME-SETTLE-SECONDS*. The code tier keeps using them from there.
+  CLAUDE.md's rule decides the placement. loom-workspace depends on
+  loom-docstore, so the shared home is the lower system, not loom-utils.
+
+  Three rules, written with the S1 commit. loom-docstore reaches no other Loom
+  system, checked with to-system: outside, as RULE-0001 and RULE-0009 check
+  the two existing leaves. loom-analyzer does not reach loom-docstore.
+  loom-knowledge does not reach loom-docstore. Because loom-knowledge cannot
+  reach the system at all, RULE-0003's deny list needs no new names.
+
+  WHAT THE STORE HOLDS
+
+  The YAML documents DOCUMENT-ANALYZER claims: .yaml and .yml under docs/.
+  That is 274 files in this tree.
+
+  Markdown stays with the source and is read from the checkout. The author
+  settled this on 2026-09-14. A markdown file has no id, no status and no
+  transition, so seven of the eight operations have nothing to act on.
+  REQ-0028claims it wherever the tree
+  keeps it, beside the code it describes, and no tracker would hold
+  src/models/README.md. CHECK-DOCUMENT-LINKS probes the disk for markdown
+  link targets. Those targets are files in the checkout, so the probe stays.
+
+  D6  THE TWO STORES
+
+                      file store                   in-memory store
+    ref               relative path                "mem:" plus a counter,
+                                                   never reused
+    address           the same as ref              docs/<category>/<doc-id>.yaml,
+                                                   synthesized, never on disk
+    version           file stamp of the bytes      per-document counter
+                      returned (CON-0002)
+    token             the stamp table              one store-wide sequence number
+    transition        moves into or out of         address unchanged; nothing
+                      completed/                   under completed/
+    enumerate order   directory walk order         reverse insertion order
+    batch             :planned                     :atomic
+    disk              is the store                 touches none
+
+  Every row where the two differ is a property the file store has and a caller
+  must not rely on. Each difference catches one kind of caller:
+
+    ref is not the address     a caller that passes one where it needs the
+                               other
+    the address is not on disk a PROBE-FILE, READ-FILE or RENAME-FILE on a
+                               document
+    counters, not stamps       a caller that reads a version or a token
+    no completed/              a caller that computes placement
+    a different order          a result that depends on indexing order
+
+  The last one is real. Two files carrying one doc-id collapse into one
+  entity for the id-keyed types, and which file's origin wins depends on the
+  order they were indexed. REQ-0009 names that case. The dump catches a
+  change to it on the file store. The order difference makes it show up in
+  the suite.
+
+  The file store has more than one writer: Loom, and every editor that saves
+  a file under docs/. That is why its versions are stamps rather than a
+  counter it keeps, and why compare-and-swap matters on the file store as
+  much as on any remote one.
+
+  D7  EVERY CALLER THAT ASSUMES A FILE TODAY
+
+    function                      file             replaced by              phase
+    REPOSITORY-FILES              workspace.lisp   documents leave the walk;  1
+                                                   DOCSTORE-ENUMERATE
+    FILE-CHANGED-P and the        workspace.lisp   DOCSTORE-CHANGED-SINCE     1
+      document half of the stamps
+    POLL-ONCE                     workspace.lisp   changed-since for          1
+                                                   documents, stamps for code
+    DETECT-DELETIONS              workspace.lisp   :removed entries           1
+    INDEX-FILE                    workspace.lisp   bytes from the change,     1
+                                                   ANALYZE-PATH on the address
+    INDEX-REPOSITORY,             workspace.lisp   changed-since with a NIL   1
+      REINDEX-REPOSITORY                           token; a fresh store token
+    INDEX-DRIFT                   workspace.lisp   code stamps plus           1
+                                                   changed-since :contents nil
+    COUNT-UNSTAMPED               workspace.lisp   documents whose analysis   1
+                                                   failed (below)
+    CHECK-DOCUMENT-REFERENCES     workspace.lisp   DOCSTORE-READ when no      1
+                                                   contents are given
+    DEFINITION-SOURCE             source.lisp      DOCSTORE-READ for a        1
+                                                   document served whole
+    PLAN-DOCUMENT-EDIT,           transition.lisp  DOCSTORE-TRANSITION and    2
+      APPLY-DOCUMENT-EDIT,                         DOCSTORE-APPLY-BATCH
+      APPLY-TRANSITION
+    STATUS-DESTINATION,           transition.lisp  move into the file store   2
+      FLAT-DIRECTORY,
+      *COMPLETED-DIRECTORY*,
+      REPLACE-STATUS-LINE
+    DOCUMENT-FILE                 transition.lisp  an address-to-ref table    2
+                                                   in the workspace
+    the ARCH writer               architecture.lisp DOCSTORE-CREATE and       3
+                                                   DOCSTORE-ALLOCATE-ID
+    tools/next-doc-id.sh          tools/           the file store's           3
+                                                   allocate-id
+
+  FILE-PROVENANCE is not in the table. Its two callers, console.lisp:896 and
+  serve/operations.lisp:345, pass the entity's :FILE property. No document
+  entity carries :FILE, so it never reads a document. Checked 2026-09-14.
+
+  PREPARE-REPOSITORY creates document directories. Choosing a store is
+  DES-0022's amendment and is not in this design.
+
+  A FAILED DOCUMENT IS RETRIED, AS IT IS TODAY
+
+  INDEX-FILE writes a stamp only when analysis succeeds. A file that fails has
+  no stamp, so FILE-CHANGED-P reports it on every poll and it is read again.
+  COUNT-UNSTAMPED counts it as `unindexed'. A store token advances past the
+  bytes it handed out whether or not the analysis worked. To keep the current
+  behaviour, the workspace keeps the refs whose analysis failed, re-reads them
+  with DOCSTORE-READ on each poll, and counts them for `unindexed'. The dump
+  cannot see this, because it is behaviour over time rather than a state. S2
+  adds a test for it: a malformed document is read again on the next poll, and
+  it counts as unindexed until it is fixed.
+
+  D8  THE ACCEPTANCE INSTRUMENT
+
+  Two tests exist, in src/workspace/test/workspace.lisp:
+  REINDEXING-PRODUCES-AN-IDENTICAL-INDEX and AN-INCREMENTAL-UPDATE-MATCHES-A-
+  FULL-REBUILD. They stay, and they run against both stores. They are not this
+  refactor's oracle, for three reasons:
+
+    1. Each compares two indexes built by one version of the code. The
+       refactor needs the old code's index compared with the new code's.
+    2. They compare entity ids and relationship ids. :DECISION, :DESIGN,
+       :ARCHITECTURE, :RULE and :CONCEPT are keyed on :DOC-ID. If DEC-0001 were
+       read from the wrong address, or given the wrong :CATEGORY, its id would
+       not change.
+    3. The fixture holds two documents, DEC-0001 and RULE-0001. This tree
+       holds 274.
+
+  The instrument is new: tools/test/index-dump.lisp. It indexes named trees
+  directly, not through the service, so RULE-0008's service check does not
+  apply. For each tree it writes one sorted file:
+
+    one line per entity        id, type, name, origin file, and every
+                               property sorted by key, printed readably
+    one line per relationship  id, type, both endpoints, properties
+    a status block             file count, unindexed, unclaimed, drift,
+                               unresolved references, rule violations,
+                               errors
+
+  Two properties default to GET-UNIVERSAL-TIME: :TAKEN-AT on :SNAPSHOT and
+  :DECIDED-AT on :DECISION (code-ontology.lisp:119 and :1328). The dump
+  prints a fixed placeholder for each and names both in its header. Any
+  other difference between two dumps is a real difference.
+
+  THE CRITERION
+
+  For every step that touches loom-workspace, dump Loom, game-server and
+  front-end with the code before the step and the code after it. Take both
+  dumps in the same sitting, against the same checked-out commit of each
+  tree. front-end changes between sittings, and DES-0050 D7 records a run
+  lost to that. `diff' must print nothing.
+
+  The write phase needs a second comparison, because a write changes files.
+  Copy each tree twice. Run one scripted sequence of `set-status' and
+  `complete' commands on each copy, one with the old code and one with the
+  new. Then `diff -r' the two copies' docs/ trees, and dump both. Both
+  comparisons must be empty.
+
+  D9  THE SUITE, IN THREE PARTS
+
+    A  Conformance. One test body per property of the protocol, run once for
+       each store. enumerate lists what was created. A read's version
+       describes the bytes it returned. changed-since with NIL returns
+       everything. changed-since is pure. After one edit it reports that edit
+       and nothing else. A deletion comes back as :removed. A write with a
+       stale version is refused and the store is unchanged. A refused batch
+       leaves the store unchanged. A transition returns a record, and the
+       caller uses its ref.
+
+    B  The pipeline above the protocol. The existing workspace and transition
+       tests that create documents do it through a fixture helper that writes
+       through the store, not through WRITE-FILE. They run against both
+       stores.
+
+    C  File store only. Placement into and out of completed/. The same-second
+       edit CON-0002 describes. Dot-prefixed and git-ignored paths. The Emacs
+       lock symlink REPOSITORY-FILES' docstring describes.
+
+  A test moves from B to C only with a comment naming the property of files
+  it tests. If a test has to move for any other reason, the protocol is in
+  the wrong place, and the fix goes in the protocol rather than the test.
+
+  CON-0003 for part A: for each property, S1 breaks that one property in the
+  in-memory store, runs the test, and records the failure in the commit
+  message. The breakage is not kept.
+
+  D10  THE MATERIALIZER, DEFINED AND NOT BUILT
+
+    (docstore-materialize store record bytes)
+
+  Loom calls it after every read and every :changed entry. It writes the
+  working copy that editors and agents read. The file store's method does
+  nothing, because its content is already at its address. So does the
+  in-memory store's method: nothing above the protocol needs a document on
+  disk, and part B proves that on every run.
+
+  The rule it carries: Loom never reads a document from the working copy. The
+  working copy is for editors and agents. Syncing edits made in a working copy
+  back to a remote store is not designed here. It is built when a store needs
+  it.
+
+  NON-GOALS, STATED AS RULES FOR THE CODE ABOVE THE PROTOCOL
+
+    N1  No caller above the protocol opens, stats, probes, renames or globs a
+        document. An address is a name the analyzer reads a category from.
+        It is not a place Loom may open.
+
+    N2  No caller stores, compares or inspects a token or a version. It passes
+        back what it was given.
+
+    N3  No caller computes where a document belongs after a transition.
+        STATUS-DESTINATION, FLAT-DIRECTORY and *COMPLETED-DIRECTORY* leave
+        transition.lisp for the file store.
+
+    N4  The protocol is not reduced to the weakest store's abilities. D3.
+
+  Also not in this design: DES-0048's ledger, a tracker store, syncing a
+  working copy, `init' choosing a store (DES-0022), and re-keying :DOCUMENT
+  (D1).
+
+  THE ORDER
+
+  Each step is one commit. The suite passes and `check' reports nothing new
+  after every step.
+
+    S0  Write tools/test/index-dump.lisp. Dump the three trees at main. No
+        source changes.
+    S1  Create loom-docstore with the phase-1 functions, the file store, the
+        in-memory store and the stamps. Write the three layering rules. Part A
+        passes against both stores. loom-workspace does not call it yet.
+    S2  Route INDEX-REPOSITORY, REINDEX-REPOSITORY, POLL-ONCE,
+        DETECT-DELETIONS, INDEX-DRIFT and COUNT-UNSTAMPED through the store,
+        and take documents out of REPOSITORY-FILES. Add the retry test. The
+        dump diff is empty on all three trees. This step changes the monitor
+        and every path into the graph, so most of the risk is here.
+    S3  Route DEFINITION-SOURCE and CHECK-DOCUMENT-REFERENCES through
+        DOCSTORE-READ. Part B passes against the in-memory store. The dump
+        diff is empty.
+    S4  Phase 2. Add write, create, transition and apply-batch with their
+        conflict condition. Move the status-line edit and placement into the
+        file store. transition.lisp calls the store. Both comparisons in D8
+        are empty.
+    S5  Phase 3. Add allocate-id (:SINGLE-WRITER on the file store),
+        may-transition, history and locate. ARCHITECTURE creates through the
+        store. Both comparisons are empty.
+    S6  Add :CLOSED to the requirements vocabulary as a terminal status, and
+        to CON-0004. Then close the chain with `complete PLAN-nnnn
+        DES-0051=implemented REQ-0009=closed'.
+
+  S0 to S3 change no behaviour, and they are where most of the risk is. S5
+  can wait for a second store without harm, because a declared protocol slot
+  is what DES-0048 needs, not an implementation behind it.
+
+  WHAT CHANGES IN OTHER DOCUMENTS
+
+  DESIGN-ASSUMPTION-CHANGES.md lists the effects on the rest of docs/. This
+  design settles five of its entries. The DES in its section 2 is this one.
+  Section 9's batch question is D4. The DEC-0002 entry is D1: ids keep their
+  shape, and the :DOCUMENT re-key stays open. The layering question under
+  RULE-0001 and RULE-0009 is D5: the store sits below loom-workspace as its
+  own system, and is not part of loom-workspace. Section 8's REQ-0009 entry
+  is the next section.
+
+  REQ-0009 CLOSES AS NOT IMPLEMENTED
+
+  REQ-0009 asked for documents to move into a database with an enforced
+  workflow, overriding DEC-0001. This design builds no database. It puts the
+  documents behind a protocol, so the file tree, a tracker or a database can
+  hold them. The author decided on 2026-09-14 that REQ-0009 closes when this
+  design is implemented. Its status becomes `closed': it is not implemented,
+  and it is not to be.
+
+  Implemented and closed are different verdicts. Implemented means every
+  requirement the document states is now true. Closed means the document is
+  finished without being implemented, and nobody will implement it.
+
+  The requirements vocabulary has no such status today.
+  *WORKFLOW-STATUS-VOCABULARY* allows a requirement draft, accepted,
+  implemented and partial, and only implemented is terminal. So `set-status
+  REQ-0009 closed' is refused now. The :DOCUMENT ontology already allows
+  :CLOSED, because bugs and reviews use it (code-ontology.lisp:1067-1069).
+  S6 adds :CLOSED to the requirements row as a terminal status, and to the
+  REQ line of CON-0004's status list. Its test sets a requirement to closed
+  and asserts the file moves into completed/. The test fails before the
+  change, because the status is refused.
+
+  DES-0051 refines REQ-0009, so `complete' on the plan that implements this
+  design walks up to REQ-0009 and asks for its verdict. The closing command is
+  `complete PLAN-nnnn DES-0051=implemented REQ-0009=closed'.
+
+  ARCH-0101 is not restated by this design. It describes what exists, and it
+  is restated in the S2 commit, when the protocol exists.
+
+  OPEN QUESTIONS
+
+  - One store per repository, or one per document type. This design builds
+    one per repository and does not rule out more.
+  - Whether a tracker store's read renders an issue into the YAML format.
+    That keeps the analyzer unchanged, and it puts the question of where
+    refines: and affects: live in a tracker inside that one store. This
+    design assumes it does, and nothing here depends on the answer.
+  - DOCSTORE-CHANGED-SINCE runs inside WITH-REPOSITORY-LOCK, as the stamp walk
+    does now. A remote store's call takes a network round trip. The first
+    remote store has to decide whether the lock is held across that call.
+    RULE-0004 applies to its handlers.

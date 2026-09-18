@@ -34,7 +34,7 @@
 ;; cl-json are loom-embed's, reached through loom-knowledge.
 (loom-harness:load-systems "tools/test/call-site-census.lisp"
                            :systems '("utils/" "ontology/" "graph/" "analyzer/"
-                                      "knowledge/" "workspace/" "embed/")
+                                      "knowledge/" "docstore/" "workspace/" "embed/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid"
                                         "eclector" "stem" "cl-json" "drakma")
                            :load :loom-workspace)

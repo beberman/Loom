@@ -240,14 +240,19 @@ rather than an answer." )
     (format out "  above.~@[ ~d candidate~:p ~:*~[~;was~:;were~] left out because the name matches~%  several entities and a reference to it would resolve to none of them.~]~%"
             (and (plusp dropped) dropped))))
 
-(defun generate-architecture (repository &key document-directory)
+(defun generate-architecture (repository)
   "Write an architecture document for REPOSITORY from its index. Returns a report.
 
 Create-only, like everything else init writes: an existing document is reported
 and left alone, so re-running never overwrites what a human improved (REQ-0021
-R9). The document directory comes from the manifest where there is one, because
-that is where R2's choice was recorded and a generator that guessed `docs' would
-write into the wrong place in exactly the trees that chose otherwise."
+R9). The store is what enforces that now -- DOCSTORE-CREATE refuses a name that
+is taken -- and the store is also where the document directory comes from. R2's
+choice is recorded in the manifest, and a generator that guessed `docs' would
+write into the wrong place in exactly the trees that chose otherwise.
+
+The DOCUMENT-DIRECTORY argument is gone with it. No caller passed one, and an
+argument that could disagree with the store about where documents live is a
+second answer to a question the manifest already settles."
   (let* ((repository (if (repository-p repository)
                          repository
                          (or (find-repository repository)
@@ -256,43 +261,36 @@ write into the wrong place in exactly the trees that chose otherwise."
                                                              repository)))))))
          (root (repository-root repository))
          (graph (repository-graph repository))
-         (manifest (read-manifest root))
-         (docs-name (or document-directory
-                        (getf manifest :document-directory)
-                        "docs"))
-         (arch-dir (merge-pathnames (format nil "~a/arch/" docs-name) root)))
+         (store (repository-document-store repository)))
     (with-repository-lock (repository)
-      (let ((provenance (index-provenance repository)))
-        (let* ((report (apply #'structure-report graph
-                              :repository (repository-name repository)
-                              provenance))
-               (doc-id (next-document-id arch-dir "ARCH"))
-               (path (merge-pathnames (format nil "~a.yaml" doc-id) arch-dir)))
-          (multiple-value-bind (describes dropped) (architecture-describes graph report)
-            (cond
-              ((probe-file path)
-               (list :repository (repository-name repository)
-                     :problems (list (format nil "~a already exists." path))
-                     :created nil))
-              (t
-               (ensure-directories-exist path)
-               (with-open-file (out path :direction :output :if-exists :error
-                                         :if-does-not-exist :create)
-                 (write-string (render-architecture report doc-id describes dropped) out))
-               (let ((relative (workspace-relative-path path root)))
-                 ;; So that removal can account for it. Init records what it
-                 ;; wrote, but this runs later -- once there is an index to
-                 ;; derive a report from -- and without recording itself here
-                 ;; full removal meets a document the manifest cannot explain
-                 ;; and refuses on it, which is R13a protecting the tree from
-                 ;; Loom's own output. Found by running removal against a
-                 ;; prepared copy of game-server.
-                 (record-created-path root relative)
-                 (list :repository (repository-name repository)
-                       :problems '()
-                       :document doc-id
-                       :commit (getf provenance :commit)
-                       :describes (length describes)
-                       :dropped dropped
-                       :recorded (and (read-manifest root) t)
-                       :created relative))))))))))
+      (let* ((provenance (index-provenance repository))
+             (report (apply #'structure-report graph
+                            :repository (repository-name repository)
+                            provenance)))
+        (multiple-value-bind (describes dropped) (architecture-describes graph report)
+          (handler-case
+              (let* ((doc-id (docstore-allocate-id store "arch"))
+                     (record (docstore-create
+                              store "arch" doc-id
+                              (render-architecture report doc-id describes dropped)))
+                     (relative (docstore-record-address record)))
+                ;; So that removal can account for it. Init records what it
+                ;; wrote, but this runs later -- once there is an index to
+                ;; derive a report from -- and without recording itself here
+                ;; full removal meets a document the manifest cannot explain
+                ;; and refuses on it, which is R13a protecting the tree from
+                ;; Loom's own output. Found by running removal against a
+                ;; prepared copy of game-server.
+                (record-created-path root relative)
+                (list :repository (repository-name repository)
+                      :problems '()
+                      :document doc-id
+                      :commit (getf provenance :commit)
+                      :describes (length describes)
+                      :dropped dropped
+                      :recorded (and (read-manifest root) t)
+                      :created relative))
+            (docstore-error (condition)
+              (list :repository (repository-name repository)
+                    :problems (list (princ-to-string condition))
+                    :created nil))))))))

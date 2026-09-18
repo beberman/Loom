@@ -51,7 +51,7 @@
 ;;;; ==================================================================
 
 (defparameter *workflow-status-vocabulary*
-  '(("requirements" (:draft :accepted :implemented :partial)             (:implemented))
+  '(("requirements" (:draft :accepted :implemented :partial :closed)     (:implemented :closed))
     ("design"       (:draft :accepted :implemented :partial :superseded) (:implemented :superseded))
     ("plans"        (:draft :final)                                      (:final))
     ("bugs"         (:open :closed)                                      (:closed))
@@ -72,6 +72,13 @@ The terminal column means finished, and a document is finished when there is no
 work left in it: implemented for a REQ or a DES, final for a PLAN, closed for a
 BUG or REV, and `superseded' for a DES. A partial document stays flat, because
 it has an OUTSTANDING section, which is work.
+
+A requirement takes `closed' as well, and it means finished and not
+implemented: the ask was withdrawn, answered elsewhere, or decided against.
+REQ-0009 is the case that asked for it -- a requirement whose design was built
+and whose ask the design then made unnecessary. Without the word the only
+honest filing was to leave it in draft, which reads as work in progress, or to
+call it implemented, which is false.
 
 `superseded' was not terminal until 2026-08-23, and the reason it was not is
 worth keeping: RULE-0007's text named one word, and departing from it in code
@@ -98,6 +105,40 @@ The second value is NIL for a category with no completed/ subdirectory, which
 is also what an unregistered category returns."
   (let ((entry (assoc category *workflow-status-vocabulary* :test #'string-equal)))
     (values (second entry) (third entry))))
+
+(defparameter *document-id-prefixes*
+  '(("requirements" . "REQ") ("arch" . "ARCH") ("decisions" . "DEC")
+    ("design" . "DES") ("plans" . "PLAN") ("reviews" . "REV")
+    ("bugs" . "BUG") ("concepts" . "CON") ("rules" . "RULE"))
+  "Document category -> the prefix its ids carry. CON-0004's convention.
+
+tools/next-doc-id.sh carries the same nine rows for a shell, and BUG-0039 is
+what one wrong row costs: DEC named docs/design, matched no DEC-nnnn and
+answered DEC-0001 while four decisions existed, and DES had no row at all.
+Both tables restate CON-0004 and neither derives from the other, so a category
+added there is added in both places.")
+
+(defun category-id-prefix (category)
+  "The id prefix documents in CATEGORY carry, or NIL for a category with none.
+
+A store asks this before allocating an id. NIL is an answer: a document
+directory the workflow does not name has no id convention, and inventing one
+from the directory's spelling is the fabricated fact CON-0001 forbids."
+  (cdr (assoc category *document-id-prefixes* :test #'string-equal)))
+
+(setf *category-id-prefix* #'category-id-prefix)
+
+(defun terminal-category-status-p (category status)
+  "True when STATUS finishes a document filed under CATEGORY.
+
+The terminal column above, in the form a document store takes: a store has an
+address and reads a category out of it, and has no entity to consult. The
+entity form beside it is TERMINAL-STATUS-P, which the walk uses."
+  (multiple-value-bind (allowed terminal) (category-vocabulary category)
+    (declare (ignore allowed))
+    (and (member status terminal) t)))
+
+(setf *terminal-status-p* #'terminal-category-status-p)
 
 (defun document-status-vocabulary (entity)
   "Two values for ENTITY: the statuses it may take, and the terminal ones.
@@ -163,166 +204,51 @@ could not name a decision's category could not validate its status."
       (let ((file (origin-file entity)))
         (and file (document-category file)))))
 
-(defun document-file (repository entity)
-  "The absolute path ENTITY was read from, or NIL when it has no origin.
+(defun document-store-entry (repository entity)
+  "Two values: the store ref for ENTITY's document and the address it is at.
+NIL when the index does not hold one.
+
 ORIGIN-FILE rather than a :PATH property, because only :DOCUMENT declares one:
 the id-keyed types are deliberately findable after their file moves, and the
-origin is the one place every document type records where it came from."
-  (let ((relative (origin-file entity)))
-    (when relative
-      (merge-pathnames (parse-namestring relative) (repository-root repository)))))
-
-;;;; ==================================================================
-;;;; The edit: one line, found by a rule that cannot be wrong (D2)
-;;;; ==================================================================
-
-(defun whitespace-char-p (character)
-  (member character '(#\Space #\Tab #\Return #\Newline #\Page)))
-
-(defun line-end (contents start)
-  "Two values: the index just past the last character of the line beginning at
-START, and the index the next line begins at."
-  (let ((newline (position #\Newline contents :start start)))
-    (if newline
-        (values newline (1+ newline))
-        (values (length contents) (length contents)))))
-
-(defun status-key-line-p (line)
-  "True when LINE is a top-level `status:' key.
-
-Column zero is the whole test, and it is not a heuristic. A block scalar's
-content must be indented more than the key that introduces it, and every
-top-level key of a YAML mapping sits at column zero, so a line whose first
-character is not whitespace is not inside a block scalar. `status:' at column
-zero is therefore the document's own status field, and the ones this file's
-sibling documents write in prose -- indented under a summary: or a body: -- are
-invisible here by construction.
-
-Case-sensitive, because YAML keys are: `Status:' is a different key and
-silently treating it as this one would edit a field nothing reads."
-  (let ((key "status:"))
-    (and (>= (length line) (length key))
-         (string= key line :end2 (length key))
-         (not (whitespace-char-p (char line 0))))))
-
-(defun status-line-value (line)
-  "The status LINE declares, as a keyword, or NIL when it declares none.
-
-The trailing comment is dropped rather than parsed: YAML starts one at a `#'
-preceded by whitespace, and CON-0004's own bug template writes
-`status: open              # closed once fixed'. Reading the comment as part of
-the value would make every such document's status unrecognisable."
-  (let* ((rest (subseq line (length "status:")))
-         (comment (loop for i from 0 below (length rest)
-                        when (and (char= #\# (char rest i))
-                                  (or (zerop i) (whitespace-char-p (char rest (1- i)))))
-                          return i))
-         (text (string-trim '(#\Space #\Tab #\Return)
-                            (subseq rest 0 (or comment (length rest))))))
-    (when (plusp (length text))
-      (intern (string-upcase text) :keyword))))
-
-(defun top-level-status-line (contents)
-  "Three values for CONTENTS: the character range of its top-level status line
-and the status that line declares. NIL when there is none.
-
-The first such line and not the only one: a well-formed YAML mapping cannot
-have two, and a document that somehow does is one where editing the first is
-the same choice a parser makes."
-  (loop with length = (length contents)
-        with start = 0
-        while (< start length)
-        do (multiple-value-bind (end next) (line-end contents start)
-             (let ((line (subseq contents start end)))
-               (when (status-key-line-p line)
-                 (return (values start end (status-line-value line)))))
-             (setf start next))
-        finally (return nil)))
-
-(defun replace-status-line (contents start end status)
-  "CONTENTS with the line between START and END replaced by one declaring STATUS.
-
-Everything outside the range is copied through untouched, which is what makes a
-completed plan's diff one changed line. A carriage return at the end of the old
-line is carried onto the new one, so a CRLF file does not acquire one mixed
-ending where the edit landed."
-  (let ((crlf (and (> end start) (char= #\Return (char contents (1- end))))))
-    (concatenate 'string
-                 (subseq contents 0 start)
-                 (format nil "status: ~(~a~)" status)
-                 (if crlf (string #\Return) "")
-                 (subseq contents end))))
-
-;;;; ==================================================================
-;;;; Where the file belongs (RULE-0007, and R3)
-;;;; ==================================================================
-
-(defparameter *completed-directory* "completed"
-  "The subdirectory a terminal document lives in. RULE-0007's convention, named
-once because both directions of the move read it.")
-
-(defun flat-directory (path)
-  "The directory PATH's document lives in when its status is not terminal --
-its own directory, or the parent when it is already inside completed/."
-  (let ((directory (pathname-directory path)))
-    (if (string-equal *completed-directory* (car (last directory)))
-        (make-pathname :directory (butlast directory) :name nil :type nil
-                       :defaults path)
-        (make-pathname :directory directory :name nil :type nil :defaults path))))
-
-(defun status-destination (path terminal)
-  "Where the document at PATH belongs, given whether its status is TERMINAL.
-
-Derived from the directory the file is in rather than from a `docs' segment in
-its path, so a foreign tree prepared by REQ-0021 -- which may keep its documents
-anywhere -- gets the same answer this one does.
-
-Both directions, which is what R3's \"placement and status can no longer
-disagree\" means: a status that becomes terminal moves the file in, and one that
-stops being terminal moves it back out. A category with no terminal status never
-computes a destination different from where the file already is, so decisions,
-rules and architecture documents never move."
-  (let ((flat (flat-directory path)))
-    (merge-pathnames
-     (make-pathname :name (pathname-name path) :type (pathname-type path))
-     (if terminal
-         (merge-pathnames (make-pathname :directory (list :relative *completed-directory*))
-                          flat)
-         flat))))
+origin is the one place every document type records where it came from. That
+origin is the store address, and DOCUMENTS maps it to the ref the store knows
+it by -- which on the file store is the same string and on another store is
+not (DES-0051 D1). This replaced DOCUMENT-FILE, which merged the origin with
+the repository root and handed back a path to open."
+  (let ((address (origin-file entity)))
+    (when address
+      (let ((entry (indexed-document repository address)))
+        (when entry (values (car entry) address))))))
 
 ;;;; ==================================================================
 ;;;; Plan, then apply (D6)
 ;;;; ==================================================================
 
 (defstruct (document-edit (:conc-name edit-))
-  "One document's whole transition, computed before anything is written."
+  "One document's whole transition, computed before anything is written.
+
+Since DES-0051 the workspace neither edits the text nor works out where the
+file goes. It carries the ref the store knows the document by, the version it
+read, and the two statuses; DOCSTORE-TRANSITION does the rest and says in its
+returned record where the document ended up."
   (doc-id "")
   (category nil)
-  (source nil)          ; absolute pathname, as it stands
-  (destination nil)     ; absolute pathname, where the new status puts it
-  (from nil)            ; the status the file currently declares
+  (ref nil)             ; the store's ref for the document, read at plan time
+  (address nil)         ; the address it was at then
+  (version nil)         ; the version read, which the write is conditional on
+  (from nil)            ; the status the document currently declares
   (to nil)              ; the status it will declare
-  (contents nil)        ; the whole new file, or NIL when the line is unchanged
   (blocked-by '()))     ; doc-ids of unfinished plans still refining this one
 
-(defun edit-writes-p (edit)
-  (or (edit-contents edit)
-      (not (equal (namestring (edit-source edit))
-                  (namestring (edit-destination edit))))))
+(defun edit-changes-p (edit)
+  "True when EDIT sets a status the document does not already declare.
 
-(defun probe-writable (path)
-  "NIL when PATH can be written, or a sentence saying why not.
-
-Opened for append and closed without writing a byte, which is a real probe
-rather than a guess about permissions: the alternatives are reading a mode
-bitmask, which says nothing about ACLs or a read-only mount, and finding out
-during the write, which is the one thing the plan-then-apply split exists to
-prevent."
-  (handler-case
-      (progn (with-open-file (out path :direction :output :if-exists :append
-                                       :if-does-not-exist :error))
-             nil)
-    (error (condition) (format nil "cannot be written: ~a" condition))))
+What it is not is a prediction of whether the store will write. A document
+already declaring its target status may still be filed in the wrong directory,
+and the store moves it -- so every planned edit is sent, and APPLY-TRANSITION
+reports what actually changed from the records that come back. This answers
+only the question a report row asks: is the caller setting something?"
+  (not (eq (edit-from edit) (edit-to edit))))
 
 (defun plan-document-edit (repository entity status)
   "Two values: the DOCUMENT-EDIT setting ENTITY's status to STATUS, and a list
@@ -352,97 +278,108 @@ a command five times to discover five problems will stop reading the fifth."
           (refuse "~(~a~) is not a status a ~a document takes. Try: ~{~(~a~)~^, ~}"
                   status (or category (string-downcase (entity-type entity)))
                   allowed))
-        (let ((source (document-file repository entity)))
+        (multiple-value-bind (ref address) (document-store-entry repository entity)
           (cond
-            ((null source) (refuse "the index does not record which file it came from."))
-            ((null (probe-file source)) (refuse "~a is not on disk." source))
+            ((null ref) (refuse "the index does not record which file it came from."))
             (t
-             (let ((contents (handler-case (read-file source)
-                               (error (condition)
-                                 (refuse "~a cannot be read: ~a" source condition)
-                                 nil))))
+             (multiple-value-bind (contents version)
+                 (handler-case (docstore-read (repository-document-store repository) ref)
+                   (error (condition)
+                     (refuse "~a cannot be read: ~a" address condition)
+                     (values nil nil)))
                (when contents
-                 (multiple-value-bind (start end current) (top-level-status-line contents)
-                   (cond
-                     ((null start)
-                      ;; D3: refused, not repaired. A document with no top-level
-                      ;; status line is one whose type may not have a status at
-                      ;; all, and inserting one would invent a field its author
-                      ;; never wrote.
-                      (refuse "~a has no top-level status: line." source))
-                     (t
-                      (when (and allowed current (not (member current allowed)))
-                        ;; BUG-0019's shape: `status: fixed', dropped to NIL by
-                        ;; AS-KEYWORD, so the index held no status while the file
-                        ;; held a word. A document in an unknown state is exactly
-                        ;; where a human should look, so it is reported rather
-                        ;; than silently overwritten.
-                        (refuse "the file declares ~(~a~), which is not a status this ~
+                 (let ((current (nth-value 2 (top-level-status-line contents))))
+                   (when (and allowed current (not (member current allowed)))
+                     ;; BUG-0019's shape: `status: fixed', dropped to NIL by
+                     ;; AS-KEYWORD, so the index held no status while the file
+                     ;; held a word. A document in an unknown state is exactly
+                     ;; where a human should look, so it is reported rather
+                     ;; than silently overwritten.
+                     (refuse "the file declares ~(~a~), which is not a status this ~
 document takes; fix it by hand first." current))
-                      (let* ((destination (status-destination
-                                           source (terminal-status-p entity status)))
-                             (moving (not (equal (namestring source)
-                                                 (namestring destination)))))
-                        (when (and moving (probe-file destination))
-                          (refuse "~a already exists." destination))
-                        (when moving
-                          (handler-case (ensure-directories-exist destination)
-                            (error (condition)
-                              (refuse "~a cannot be created: ~a"
-                                      (make-pathname :name nil :type nil
-                                                     :defaults destination)
-                                      condition))))
-                        (let ((unwritable (probe-writable source)))
-                          (when unwritable (refuse "~a ~a" source unwritable)))
-                        (unless problems
-                          (return-from plan-document-edit
-                            (values (make-document-edit
-                                     :doc-id doc-id
-                                     :category category
-                                     :source source
-                                     :destination destination
-                                     :from current
-                                     :to status
-                                     :contents (unless (eq current status)
-                                                 (replace-status-line contents start end status)))
-                                    nil)))))))))))))
+                   ;; A document with no top-level status line reaches the store
+                   ;; with CURRENT NIL and is refused there, in the one place
+                   ;; that can also refuse a taken destination or a file it
+                   ;; cannot write. Everything above is CON-0004's vocabulary,
+                   ;; which is the workspace's and no store's (DES-0051 D2).
+                   (unless problems
+                     (return-from plan-document-edit
+                       (values (make-document-edit
+                                :doc-id doc-id
+                                :category category
+                                :ref ref
+                                :address address
+                                ;; The version read here and not the one
+                                ;; indexed. A developer who saves an edit the
+                                ;; monitor has not seen yet gets the status
+                                ;; line written into the text they saved;
+                                ;; comparing against the indexed version would
+                                ;; refuse that, which is the case DEC-0001
+                                ;; settles in the file's favour.
+                                :version version
+                                :from current
+                                :to status)
+                               nil))))))))))
       (values nil (nreverse problems)))))
 
-(defun apply-document-edit (edit)
-  "Write one planned EDIT: the line, then the move. Returns a report plist.
+(defun change-report (repository edit record)
+  "The report plist for EDIT, given the RECORD the store returned.
 
-Called only with a list PLAN-DOCUMENT-EDIT refused nothing in, which is what
-makes this the short function. It is not atomic across files and cannot be; what
-the split buys is that nothing is written until everything has been checked, so
-the surviving failure mode is a full disk or a permission change between the
-check and the write."
-  (let ((source (edit-source edit))
-        (destination (edit-destination edit)))
-    (when (edit-contents edit)
-      (with-open-file (out source :direction :output :if-exists :supersede
-                                  :if-does-not-exist :error)
-        (write-string (edit-contents edit) out)))
-    (unless (equal (namestring source) (namestring destination))
-      (ensure-directories-exist destination)
-      (rename-file source destination))
+:FILE is the address merged with the repository root, which is the string this
+report has always carried and what the console prints for a person to open.
+DOCSTORE-LOCATE is the protocol's answer to that question and arrives in step
+9; on the file store the two agree."
+  (let ((address (docstore-record-address record)))
     (list :doc-id (edit-doc-id edit)
           :from (edit-from edit)
           :to (edit-to edit)
-          :file (namestring destination)
-          :moved (not (equal (namestring source) (namestring destination))))))
+          :file (namestring (merge-pathnames address (repository-root repository)))
+          :moved (not (string= address (edit-address edit))))))
+
+(defun store-changed-p (edit record)
+  "True when the store actually changed the document EDIT named.
+
+The address moved, or the version did. Neither is the workspace guessing: both
+come off the record the store returned. A transition to the status a document
+already declares, with the file already where that status puts it, writes
+nothing and reads as no change here -- which is R7's empty :CHANGED and the
+reason `set-status' twice shows one diff rather than two."
+  (or (not (string= (docstore-record-address record) (edit-address edit)))
+      (not (equalp (docstore-record-version record) (edit-version edit)))))
 
 (defun apply-transition (repository edits &key reindex)
-  "Apply every EDIT and rebuild the index. Returns the list of change reports.
+  "Apply every EDIT through the document store. Two values: the change reports
+and the problems.
 
-REINDEX-REPOSITORY rather than a poll, and RULE-0007 records why: a :DOCUMENT's
+One DOCSTORE-APPLY-BATCH for the whole command, which is DES-0051 D4: the store
+plans every entry and refuses all of them together, so nothing is written while
+any entry is refused. That is the property APPLY-DOCUMENT-EDIT's plan-then-apply
+split had within `complete\' and every caller now has.
+
+A file store is :PLANNED, so a failure once writing has begun leaves the tree
+part-way and returns the records that landed. Those are reported as changes
+beside the problem that stopped it, and re-running the same command finishes the
+rest -- a document already at its target status plans to a no-op.
+
+REINDEX-REPOSITORY rather than a poll, and RULE-0007 records why: a :DOCUMENT\'s
 natural key is (:PATH), so a move changes its id and therefore every edge
 endpoint, and INDEX-REPOSITORY does not retract what is no longer on disk. The
 cheaper call would leave the old path in the index beside the new one and every
 reference to it ambiguous."
-  (let ((changed (mapcar #'apply-document-edit edits)))
-    (when (and reindex (some (lambda (report) (getf report :moved)) changed))
-      (reindex-repository repository :quiet t))
-    changed))
+  (multiple-value-bind (records problems)
+      (docstore-apply-batch
+       (repository-document-store repository)
+       (mapcar (lambda (edit)
+                 (list :transition (edit-ref edit) (edit-to edit)
+                       :expected-version (edit-version edit)))
+               edits))
+    (let ((changed (loop for edit in edits
+                         for record in records
+                         when (store-changed-p edit record)
+                           collect (change-report repository edit record))))
+      (when (and reindex (some (lambda (report) (getf report :moved)) changed))
+        (reindex-repository repository :quiet t))
+      (values changed problems))))
 
 ;;;; ==================================================================
 ;;;; set-status: the primitive
@@ -502,14 +439,21 @@ refused would only be telling them to use the editor."
                 (list :repository (repository-name repository)
                       :document (or (getp entity :doc-id) designator)
                       :problems edit-problems :changed '())
-                (list :repository (repository-name repository)
-                      :document (edit-doc-id edit)
-                      :problems '()
-                      :changed (if (edit-writes-p edit)
-                                   (apply-transition repository (list edit) :reindex reindex)
-                                   '())
-                      :status (edit-to edit)
-                      :file (namestring (edit-destination edit))))))))))
+                (multiple-value-bind (changed apply-problems)
+                    (apply-transition repository (list edit) :reindex reindex)
+                  (list :repository (repository-name repository)
+                        :document (edit-doc-id edit)
+                        :problems apply-problems
+                        :changed changed
+                        :status (edit-to edit)
+                        ;; From the change when there was one, and from where
+                        ;; the document already was when there was not. The
+                        ;; store is the only thing that knows either.
+                        :file (if changed
+                                  (getf (first changed) :file)
+                                  (namestring (merge-pathnames
+                                               (edit-address edit)
+                                               (repository-root repository)))))))))))))
 
 ;;;; ==================================================================
 ;;;; The propagation query (D4)
@@ -689,7 +633,7 @@ from a plan. Use set-status for one document."
                                     :verdict (edit-to edit)
                                     :blocked-by '()
                                     :action (cond (dry-run :would-set)
-                                                  ((edit-writes-p edit) :set)
+                                                  ((edit-changes-p edit) :set)
                                                   (t :unchanged))))
                       (setf frontier (refines-targets graph plan))))
                   ;; --- the walk upward ----------------------------------
@@ -827,7 +771,7 @@ set-status to override." doc-id blocked (rest blocked))
                                                         :status (edit-from edit)
                                                         :verdict verdict :blocked-by '()
                                                         :action (cond (dry-run :would-set)
-                                                                      ((edit-writes-p edit) :set)
+                                                                      ((edit-changes-p edit) :set)
                                                                       (t :unchanged))))
                                           ;; Terminal only. A `partial' verdict
                                           ;; means work remains, so the parent
@@ -877,7 +821,12 @@ whose verdict is not terminal, and goes no further than what the plan refines --
                                   (mapcar #'car unused) (rest unused))
                           problems)))
                 (let ((rows (nreverse rows))
-                      (edits (remove-if-not #'edit-writes-p (nreverse edits))))
+                      ;; Every planned edit, not only the ones that look like
+                      ;; writes. A document already declaring its target status
+                      ;; can still be filed in the wrong directory, and only
+                      ;; the store knows; a no-op transition writes nothing and
+                      ;; STORE-CHANGED-P keeps it out of :CHANGED.
+                      (edits (nreverse edits)))
                   ;; BUG-0057. A dry run is a preview of the verdicts the
                   ;; caller has to supply. When no document in the cascade can
                   ;; take one, there is nothing to preview and no second call
@@ -907,14 +856,22 @@ whose verdict is not terminal, and goes no further than what the plan refines --
                       (complete-plan repository designator
                                      :verdicts verdicts :reindex reindex
                                      :force-write t)))
-                  (list :repository (repository-name repository)
-                        :plan (or (getp plan :doc-id) designator)
-                        :dry-run dry-run
-                        :problems problems
-                        :documents rows
-                        ;; R7: re-running on a completed plan changes nothing
-                        ;; and says so. The empty :CHANGED list is the saying.
-                        :changed (if (or dry-run problems)
-                                     '()
-                                     (apply-transition repository edits
-                                                       :reindex reindex))))))))))))
+                  (multiple-value-bind (changed apply-problems)
+                      (if (or dry-run problems)
+                          (values '() '())
+                          (apply-transition repository edits :reindex reindex))
+                    (list :repository (repository-name repository)
+                          :plan (or (getp plan :doc-id) designator)
+                          :dry-run dry-run
+                          ;; The store's refusals arrive here rather than from
+                          ;; the walk: planning the batch is where a taken
+                          ;; destination or an unwritable file is found, and
+                          ;; under :PLANNED nothing has been written when they
+                          ;; are. A partial apply reports both -- what landed
+                          ;; under :CHANGED and what stopped it here -- and the
+                          ;; same command run again finishes the rest.
+                          :problems (append problems apply-problems)
+                          :documents rows
+                          ;; R7: re-running on a completed plan changes nothing
+                          ;; and says so. The empty :CHANGED list is the saying.
+                          :changed changed)))))))))))

@@ -13,7 +13,7 @@
 
 (let ((here (make-pathname :name nil :type nil :defaults *load-truename*)))
   (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
-                    "workspace/" "process/"))
+                    "docstore/" "workspace/" "process/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
              asdf:*central-registry* :test #'equal)))
 

@@ -13,6 +13,9 @@
                ;; builds the vector sidecar; loom-embed is a leaf below both it
                ;; and loom-knowledge, which reads the store at query time.
                #:loom-embed
+               ;; DES-0051. Documents are read and written through its
+               ;; protocol, and the file stamps live there.
+               #:loom-docstore
                #:bordeaux-threads
                ;; The standalone library's kernel: READ-FILE, STRING-LINES,
                ;; PROPER-LIST-P and ALISTP. The last two were defined in

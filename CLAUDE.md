@@ -95,7 +95,8 @@ SBCL loads at runtime and indexes itself, so a copy would be a second Loom that
 is never the one under test. REQ-0072. Everything that verifies
 or measures is under `tools/test/`: the three `test-*.py` suites,
 `load-test.lisp` for the peer property, `seed-trace.lisp` for why a seed band
-holds what it holds, the four census scripts, the case
+holds what it holds, `index-dump.lisp` for comparing a whole index built by
+two versions of the code (DES-0051 D8), the four census scripts, the case
 builders with `cases/` beside them, the `acceptance.py` and `recall.py`
 harnesses, and the two shared libraries they load -- `harness.lisp` and
 `service.py`. Nothing in `tools/test/` is run by `tools/loom-test.sh`, which is
@@ -170,7 +171,7 @@ Full suite, in a live image:
 
 ```lisp
 (load "src/full-test.lisp")
-(loom-test:full-test)      ; eleven systems, per-system summary
+(loom-test:full-test)      ; twelve systems, per-system summary
 ```
 
 or `tools/loom-test.sh` from outside one — note that is `/usr/bin/sbcl`, not the
@@ -188,6 +189,11 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
     loom-ontology   entity and relationship declarations. Depends on nothing.
     loom-graph      the only writer. Transactions, queries, resolution, rules.
     loom-analyzer   path + contents -> operations. Never touches the graph.
+    loom-docstore   documents behind a protocol: refs, addresses, versions,
+                    text. Depends on no other Loom system (RULE-0010).
+                    loom-workspace is its only client; loom-analyzer and
+                    loom-knowledge may not reach it (RULE-0011, RULE-0012).
+                    Holds the file stamps. DES-0051.
     loom-knowledge  read-only services: find, describe, impact, context,
                     structure.
     loom-workspace  indexing pipeline, file monitor, and the write path:

@@ -24,7 +24,7 @@
                        (make-pathname :name nil :type nil :defaults *load-truename*)))
 
 (loom-harness:load-systems "tools/test/entity-dump.lisp"
-                           :systems '("utils/" "ontology/" "graph/" "analyzer/" "knowledge/" "workspace/" "embed/")
+                           :systems '("utils/" "ontology/" "graph/" "analyzer/" "knowledge/" "docstore/" "workspace/" "embed/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid" "eclector" "stem" "cl-json" "drakma")
                            :load :loom-workspace)
 

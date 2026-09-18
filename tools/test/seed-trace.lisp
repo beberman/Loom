@@ -27,7 +27,7 @@
 
 (loom-harness:load-systems "tools/test/seed-trace.lisp"
                            :systems '("utils/" "embed/" "ontology/" "graph/" "analyzer/"
-                                      "knowledge/" "workspace/")
+                                      "knowledge/" "docstore/" "workspace/")
                            :libraries '("cl-yaml" "bordeaux-threads" "random-uuid"
                                         "eclector" "stem" "cl-json" "drakma")
                            :load :loom-workspace)

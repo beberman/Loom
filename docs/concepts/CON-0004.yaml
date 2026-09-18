@@ -71,7 +71,7 @@ body: |
 
   Every document carries status:, and the vocabulary is per type:
 
-    REQ    draft -> accepted -> implemented | partial
+    REQ    draft -> accepted -> implemented | partial | closed
     DES    draft -> accepted -> implemented | partial | superseded
     ARCH   draft -> accepted -> superseded
     DEC    accepted | superseded
@@ -80,6 +80,11 @@ body: |
     REV    open -> closed
     RULE   active | retired
     CON    accepted | superseded
+
+  A REQ closes when it is finished and not implemented: the ask was withdrawn,
+  answered elsewhere, or decided against. The alternative was to leave it in
+  draft, which reads as work in progress, or to call it implemented, which is
+  false. A closed requirement is filed with the finished ones.
 
   The one that is routinely got wrong is the transition out of draft on a REQ
   or a DES, because it is not the document's own author who owes it. A plan

@@ -1,0 +1,17 @@
+id: RULE-0012
+title: The knowledge services do not reach the document store
+status: active
+severity: error
+refines: [DES-0051]
+statement: |
+  loom-knowledge answers from the graph. A document it reports on is an
+  entity there, and it has no reason to read the store behind it.
+  loom-workspace is the store's only client. DES-0051 D5.
+
+  Because loom-knowledge cannot reach the store at all, the store's writes
+  need no names on RULE-0003's deny list.
+check:
+  kind: no-edge
+  from-system: loom-knowledge
+  to-system: loom-docstore
+  rel-types: [calls, imports, depends-on]

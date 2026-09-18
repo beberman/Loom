@@ -1,0 +1,23 @@
+id: RULE-0010
+title: The document store depends on no other Loom system
+status: active
+severity: error
+refines: [DES-0051]
+statement: |
+  loom-docstore deals in refs, addresses, versions and text. It never sees an
+  ontology operation, so it has no reason to reach loom-ontology, loom-graph
+  or loom-analyzer, and it must not.
+
+  The file store needs two facts it cannot compute itself: which paths are
+  documents, and which paths git ignores. loom-workspace passes both in as
+  functions when it builds the store. That is how the store learns them
+  without a dependency. DES-0051 D5.
+
+  The third leaf, beside loom-ontology (RULE-0001) and loom-utils
+  (RULE-0009). The check below cannot see an external library, so the
+  standalone UTILS library it uses is governed by this prose alone.
+check:
+  kind: no-edge
+  from-system: loom-docstore
+  to-system: outside
+  rel-types: [calls, imports, depends-on]

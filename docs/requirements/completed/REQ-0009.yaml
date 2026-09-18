@@ -1,6 +1,6 @@
 id: REQ-0009
 title: Documents under docs/ must move to a database, explicitly overriding DEC-0001
-status: draft
+status: closed
 date: 2026-08-03
 affects: [register-document-type, document-properties, collect-body,
           resolve-document-links, apply-transaction, retract-file,

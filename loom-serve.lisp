@@ -36,7 +36,7 @@
 (defparameter *here* (make-pathname :name nil :type nil :defaults *load-truename*))
 
 (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
-                  "workspace/" "process/" "serve/" "rest/" "mcp/"))
+                  "docstore/" "workspace/" "process/" "serve/" "rest/" "mcp/"))
   (pushnew (merge-pathnames (concatenate 'string "src/" system) *here*)
            asdf:*central-registry* :test #'equal))
 

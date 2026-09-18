@@ -1,0 +1,365 @@
+id: PLAN-0055
+title: DES-0051 in ten steps -- the dump, the system, two stores, rebuild and poll, reads, the write protocol, transitions, workflow, and closing REQ-0009
+status: final
+date: 2026-09-14
+refines: [DES-0051]
+affects: [repository-files, index-file, index-repository, reindex-repository,
+          poll-once, detect-deletions, index-drift, count-unstamped,
+          unindexed-files, unclaimed-summary, watch-repository,
+          file-changed-p, stamp-file, definition-source,
+          check-document-references, plan-document-edit, apply-transition,
+          set-document-status, complete-plan, document-store-entry,
+          status-destination, flat-directory, replace-status-line,
+          top-level-status-line, generate-architecture, next-document-id,
+          category-vocabulary]
+tags: [documents, document-store, protocol, refactor, rebuild-equivalence,
+       des-0051, req-0009, con-0002, con-0003]
+summary: |
+  Ten steps. Step 1 builds the instrument that accepts or refuses every step
+  after it. Steps 2 to 4 build loom-docstore and its two stores while nothing
+  calls them. Steps 5 and 6 move the read path. Steps 7 and 8 move the write
+  path. Step 9 adds the workflow operations. Step 10 closes REQ-0009.
+
+  Every step is one commit on des-0051. After each one, `tools/loom-test.sh'
+  passes and `check' reports 0 violations, 8 unresolved references and 7
+  ambiguous ones, the counts on 2026-09-14. After every step that touches
+  loom-workspace, the index dump of all three clones is unchanged.
+
+  Steps 5 and 8 carry most of the risk. Step 5 changes the monitor and every
+  path into the graph. Step 8 changes the only code in Loom that writes a
+  document.
+body: |
+  CONVENTIONS FOR EVERY STEP
+
+  Before editing, `git worktree add <scratch>/before HEAD'. That worktree is
+  the code before the step. After editing, run tools/test/index-dump.lisp
+  from the worktree and from the working tree against each clone, then
+  `diff' each pair. An empty diff is the acceptance. Remove the worktree when
+  the step is committed.
+
+  After a change to Loom's source, run `tools/loom-serve.sh update' before
+  using the loom_* tools. The running service keeps the code it started with.
+
+  STEPS
+
+  1. THE DUMP.  tools/test/index-dump.lisp (new), CLAUDE.md.
+
+     Modelled on tools/test/entity-dump.lisp. It loads through harness.lisp,
+     calls WATCH-REPOSITORY with :MONITOR NIL, and walks the graph. It writes
+     sorted lines to standard output:
+
+       E <id> <type> <name> <origin-file> <key>=<value> ...
+       R <id> <type> <from> <to> <key>=<value> ...
+       S <key> <value>
+
+     One E line per entity, with properties sorted by key. One R line per
+     relationship. One S line per REPOSITORY-STATUS key. Values print under
+     WITH-STANDARD-IO-SYNTAX with *PRINT-READABLY* T, so a value that would
+     print differently on each run signals rather than printing an address.
+
+     :TAKEN-AT and :DECIDED-AT print as `<time>'. Status keys holding a time
+     or describing the vector sidecar are left out. Both lists are printed in
+     a header line. Any other key that differs between two runs of the same
+     code is added to the lists, with a reason in the script.
+
+     The targets are clones, not live trees. Clone Loom at this step's parent
+     commit, and game-server and front-end at their HEAD, into a scratch
+     directory outside every watched tree. Record the three commit hashes in
+     the commit message. The same clones serve every later step. A dump of
+     the live Loom tree would differ after every step, because every step
+     edits Loom's source.
+
+     CLAUDE.md's list of what is in tools/test/ gains the script.
+
+     Verification. Two runs of the same code against the same clone are
+     identical, on all three clones. Change the tags of DEC-0001 in a copy of
+     the Loom clone: the dump differs, while the sorted entity ids and
+     relationship ids do not. That is DES-0051 D8's second reason, shown
+     rather than argued. The commit message records both results.
+
+  2. THE SYSTEM.  src/docstore/loom-docstore.asd, package.lisp, protocol.lisp,
+     stamps.lisp, test/suite.lisp (all new); src/workspace/workspace.lisp,
+     src/workspace/loom-workspace.asd, src/full-test.lisp; the system lists
+     below; three new rules; CLAUDE.md; .claude/skills/loom/SKILL.md.
+
+     protocol.lisp holds the record struct, the conditions DOCSTORE-MISSING
+     and DOCSTORE-CONFLICT, and every generic function in DES-0051 D2 and D3,
+     phases 2 and 3 included. The methods come in their phases. Until then
+     DOCSTORE-CAPABILITIES says :ABSENT for an operation with no method.
+
+     stamps.lisp takes FILE-STAMP, STAMP-FILE and *MTIME-SETTLE-SECONDS* from
+     workspace.lisp. It adds STAMP-CHANGED-P, which takes a known stamp rather
+     than a repository. FILE-CHANGED-P stays in workspace.lisp as a wrapper
+     over it, because FILE-PROVENANCE and INDEX-DRIFT call it by that name.
+
+     Registration. loom-workspace.asd gains loom-docstore in :DEPENDS-ON.
+     src/full-test.lisp's *TEST-SYSTEMS* gains loom-docstore/test. The
+     directory "docstore/" joins every system list that names "workspace/".
+     The candidates are loom.lisp, loom-serve.lisp, tools/loom-test.sh and
+     tools/test's load-test, call-site-census, family-census, package-census,
+     seed-trace, summary-band, entity-dump and index-dump. A list that lacks
+     it cannot load loom-workspace, and harness.lisp says so by name.
+
+     Three rules, with the next free RULE ids: loom-docstore reaches no other
+     Loom system (to-system: outside, as in RULE-0009); loom-analyzer does not
+     reach loom-docstore; loom-knowledge does not reach loom-docstore.
+
+     CLAUDE.md's layering table gains loom-docstore. "eleven systems" becomes
+     twelve there and in SKILL.md.
+
+     Verification. The suite passes with twelve systems. `rules' lists the
+     three new rules as enforced. `sbcl --script tools/test/load-test.lisp
+     loom-serve' still prints T. The dump diff is empty.
+
+  3. THE FILE STORE, READ HALF.  src/docstore/file-store.lisp,
+     test/conformance.lisp, test/file-store.lisp (all new).
+
+     FILE-DOCSTORE holds a root, a claim function and an ignore function.
+     loom-docstore cannot see the analyzer or git, so both functions are
+     passed in.
+
+     Enumerate walks the root the way REPOSITORY-FILES does. It skips
+     dot-prefixed files and directories, then applies the claim function,
+     then the ignore function. It keeps the walk order. Read returns the
+     bytes and the stamp of those bytes.
+
+     The token is a table from relative path to stamp. CHANGED-SINCE copies
+     the table before changing it, so the call has no side effect. For each
+     claimed path it applies STAMP-CHANGED-P. A :changed entry's bytes are
+     read once, and its new stamp is taken from those bytes. A path in the
+     token that is no longer on disk is :removed.
+
+     Verification. Part A runs against the file store. Each test in
+     test/conformance.lisp takes a store constructor, so step 4 adds the
+     second store without editing a test. Part C goes in test/file-store.lisp:
+     the same-second edit from CON-0002, dot-prefixed and git-ignored paths,
+     and the Emacs lock symlink. Nothing calls the store yet, so the dump is
+     not run.
+
+  4. THE IN-MEMORY STORE.  src/docstore/memory-store.lisp (new),
+     test/conformance.lisp.
+
+     Every row of DES-0051 D6's table. MEMORY-DOCSTORE-PUT seeds it for tests
+     until step 7 gives it DOCSTORE-CREATE.
+
+     Verification. Part A passes against both stores. CON-0003: for each
+     property part A tests, break that one property in the in-memory store,
+     run the suite, see the failure, and revert. The commit message lists
+     each property and the test that caught it.
+
+  5. REBUILD AND POLL THROUGH THE STORE.  src/workspace/workspace.lisp,
+     src/workspace/package.lisp, src/workspace/test/workspace.lisp,
+     docs/arch/ARCH-0101.yaml.
+
+     One commit, because the halves cannot be separated. Once
+     REPOSITORY-FILES stops returning documents, the old POLL-ONCE stops
+     seeing document edits.
+
+     The repository struct gains four slots. DOCSTORE and DOCSTORE-TOKEN
+     hold the store and its current token. DOCUMENTS maps an address to its
+     ref and the version indexed. DOCUMENT-FAILURES holds the refs whose
+     analysis failed. WATCH-REPOSITORY takes :DOCSTORE. Without it,
+     WATCH-REPOSITORY builds a file store, passing the document analyzer's
+     claim and IGNORED-PATHS.
+
+     Rebuild. REPOSITORY-FILES stops returning what the store claims.
+     INDEX-FILE splits in two. INDEX-CONTENTS takes a relative path and
+     bytes, analyzes them and applies the result. INDEX-FILE reads a code
+     file and calls INDEX-CONTENTS. INDEX-REPOSITORY indexes code as before,
+     then indexes every :changed entry of (docstore-changed-since store nil).
+     REINDEX-REPOSITORY clears the token along with the stamps.
+
+     Poll. POLL-ONCE indexes code by stamps as before. It then calls
+     CHANGED-SINCE with the token. It indexes each :changed entry and
+     retracts each :removed address. It re-reads each ref in
+     DOCUMENT-FAILURES with DOCSTORE-READ. DETECT-DELETIONS skips origin
+     files that are store addresses. A document change sets MOVED, as a code
+     change does, so the vector refresh and INDEXED-AT still follow a
+     document edit.
+
+     Counts. UNCLAIMED-SUMMARY, COUNT-UNSTAMPED and UNINDEXED-FILES receive
+     the code files plus the store's addresses, and read failures from
+     DOCUMENT-FAILURES. INDEX-DRIFT adds the count from CHANGED-SINCE with
+     :CONTENTS NIL. Without these changes, `unclaimed' would count every
+     document as unclaimed.
+
+     ARCH-0101 is restated in the same commit: I5, the tiers, and the first
+     sentence of the write path. DESIGN-ASSUMPTION-CHANGES.md section 5
+     lists the edits.
+
+     Verification. The dump diff is empty on all three clones.
+     WITH-WORKSPACE-FIXTURE takes the store as a parameter. Every test in
+     test/workspace.lisp that writes under docs/ runs against both stores,
+     the two equivalence tests included. That is part B for the pipeline.
+     Two new tests. A malformed document is read again on the next poll and
+     counts as unindexed until it is fixed (DES-0051 D7). A document-only
+     edit moves INDEXED-AT.
+
+  6. READS OUTSIDE THE PIPELINE.  src/workspace/source.lisp,
+     src/workspace/workspace.lisp, src/workspace/test/source.lisp,
+     src/workspace/test/workspace.lisp.
+
+     DEFINITION-SOURCE serves a document whole from its :PATH. Every YAML
+     document carries one, the id-keyed types included. For a :PATH that is
+     a store address, it reads through DOCUMENTS and DOCSTORE-READ. The
+     status is :stale when the version read differs from the version
+     indexed, and :missing on DOCSTORE-MISSING.
+
+     CHECK-DOCUMENT-REFERENCES, given no contents, reads the same way. A path
+     the store does not hold keeps today's answer: "no such file, and no
+     contents given".
+
+     Verification. The document tests in test/source.lisp run against both
+     stores. The dump diff is empty.
+
+  7. THE WRITE PROTOCOL IN BOTH STORES.  src/docstore/protocol.lisp,
+     file-store.lisp, memory-store.lisp, test/conformance.lisp,
+     test/file-store.lisp; src/workspace/transition.lisp and init.lisp, for
+     imports only.
+
+     Methods for DOCSTORE-WRITE, DOCSTORE-CREATE, DOCSTORE-TRANSITION and
+     DOCSTORE-APPLY-BATCH.
+
+     The file store takes these from transition.lisp: TOP-LEVEL-STATUS-LINE,
+     REPLACE-STATUS-LINE, STATUS-KEY-LINE-P, STATUS-LINE-VALUE,
+     STATUS-DESTINATION, FLAT-DIRECTORY, *COMPLETED-DIRECTORY* and
+     PROBE-WRITABLE. It also takes LINE-END and WHITESPACE-CHAR-P.
+     init.lisp uses those two as well, and it now imports them from
+     loom-docstore. That is the lower-system rule in CLAUDE.md.
+     transition.lisp imports all of them and is otherwise unchanged in this
+     step.
+
+     The file store refuses five things. A document with no top-level status
+     line. A destination that already exists. A file it cannot write. A
+     version that does not match. A new document whose name is taken. The
+     batch plans every entry and refuses the whole batch, listing every
+     problem, before it writes anything. A failure during the apply returns
+     the entries that landed. The in-memory store's batch is atomic.
+
+     Verification. Part A's phase-2 properties pass against both stores, with
+     step 4's CON-0003 mutations repeated for them. A compare-and-swap test:
+     change a file between the read and the write, and the write is refused
+     with the file unchanged. The CRLF test in risk 5. The dump diff is
+     empty.
+
+  8. TRANSITIONS THROUGH THE STORE.  src/workspace/transition.lisp,
+     src/workspace/test/transition.lisp.
+
+     PLAN-DOCUMENT-EDIT reads through DOCSTORE-READ and keeps the version it
+     read. The vocabulary check and the blocker query stay in the workspace.
+     The store's refusals come from planning the batch. APPLY-TRANSITION
+     calls DOCSTORE-APPLY-BATCH. It reindexes when any returned address
+     differs from the old one, which is the same condition as today.
+     DOCUMENT-FILE is replaced by a lookup in DOCUMENTS.
+
+     The expected version is the one read at plan time, not the one indexed.
+     If a developer saves an edit that the monitor has not yet seen, the
+     status line is written into the edited text and the edit is kept, as
+     today. Comparing against the indexed version would refuse that case.
+
+     COMPLETE-PLAN reports a partial apply under :PLANNED. It lists the
+     entries that landed and the ones that did not. Re-running the same
+     command finishes the rest (DES-0051 D4).
+
+     test/transition.lisp builds its trees with 59 WRITE-DOCUMENT calls, on 88
+     lines naming a docs/ path. A test that asserts on
+     a report moves to the store-parameterised fixture: the problems, the
+     blockers, the verdict walk, and R7's empty :CHANGED. A test that asserts
+     on file text or placement stays with the file store, with a comment
+     naming the file property it tests (DES-0051 D9).
+
+     Verification, DES-0051 D8's write comparison. At the start of the step,
+     choose a command sequence on the Loom clone. It must include:
+       - a set-status that moves a document into completed/
+       - one that moves it back out
+       - a `complete' on a draft plan that refines at least one document
+     Record the sequence in the commit message. Run it from the
+     before-worktree and from the working tree, each on its own copy of the
+     clone. `diff -r' of the two docs/ trees is empty, and the two dumps are
+     identical. Every refusal message asserted in test/transition.lisp is
+     unchanged.
+
+  9. WORKFLOW.  src/docstore/protocol.lisp, file-store.lisp,
+     memory-store.lisp, test/conformance.lisp; src/workspace/architecture.lisp,
+     src/workspace/init.lisp, src/workspace/test/architecture.lisp.
+
+     Allocate-id. NEXT-DOCUMENT-ID moves into loom-docstore, and init.lisp
+     takes it from there. The file store's allocate-id is that function, and
+     it declares :SINGLE-WRITER. The file store is built with the manifest's
+     :DOCUMENT-DIRECTORY, defaulting to docs, because GENERATE-ARCHITECTURE
+     reads that key today.
+
+     May-transition is always true on the file store (CON-0008). History runs
+     `git log --follow' over the address through UIOP. It is declared :ABSENT
+     when git cannot answer for the tree. Locate returns the absolute path.
+
+     GENERATE-ARCHITECTURE creates its document through DOCSTORE-ALLOCATE-ID
+     and DOCSTORE-CREATE. tools/next-doc-id.sh stays as it is, for people and
+     agents at a shell.
+
+     Verification. Part A's phase-3 properties pass against both stores. The
+     tests in test/architecture.lisp pass unchanged. The dump diff is empty.
+
+  10. CLOSING REQ-0009.  src/workspace/transition.lisp,
+      src/workspace/test/transition.lisp, docs/concepts/CON-0004.yaml.
+
+      :CLOSED joins the requirements row of *WORKFLOW-STATUS-VOCABULARY* as a
+      terminal status. The table's docstring gains a sentence: for a
+      requirement, closed means finished and not implemented. CON-0004's REQ
+      line becomes `draft -> accepted -> implemented | partial | closed', with
+      the same sentence.
+
+      Verification. The new test sets a requirement to closed and asserts the
+      file moves into completed/. Before the vocabulary change, it fails with
+      the refusal "closed is not a status a requirements document takes".
+
+      Then run `tools/loom.sh 'complete PLAN-0055'' and read the chain it
+      prints. Then run `tools/loom.sh 'complete PLAN-0055
+      DES-0051=implemented REQ-0009=closed''. On completion, push and merge
+      des-0051 to main.
+
+  WHAT THIS PLAN DOES NOT DO
+
+  Most of DESIGN-ASSUMPTION-CHANGES.md stays out of this plan. It does not
+  supersede DEC-0001, re-scope CON-0002 or DES-0048, split CON-0004, amend
+  CON-0008, add notes to RULE-0003 or RULE-0004, give `init' a store choice
+  (DES-0022), or add store keys to the manifest (REQ-0071). Each is its own
+  document change.
+
+  Also out: building a materializer beyond the no-op method, a second real
+  store, and re-keying :DOCUMENT on :DOC-ID.
+
+  RISKS
+
+  1. Indexing order. Step 5 moves documents from their place in the
+     directory walk to after every code file. Order changes the index only
+     where two YAML files carry one doc-id and collapse into one entity. If
+     the dump differs for that reason, step 5 indexes code files and store
+     records together in walk order instead.
+
+  2. DETECT-DELETIONS iterates every origin file in the graph and probes the
+     disk for each. With the in-memory store, every document would read as
+     deleted on every poll. Step 5 makes it skip store addresses. The
+     in-memory store is what exposes a miss here, because on the file store
+     the probe finds the file.
+
+  3. The status block. `unclaimed', `unindexed' and `drift' are computed
+     from the file list, and step 5 takes documents out of it. The S lines
+     of the dump catch a count that moves.
+
+  4. Behaviour over time, which a dump cannot see: the retry of a failed
+     document, and the vector refresh and INDEXED-AT update after a
+     document-only edit. Step 5 adds tests for the first and last. The vector
+     refresh follows MOVED, and the INDEXED-AT test proves MOVED was set.
+
+  5. Step 8's byte equality. REPLACE-STATUS-LINE carries a CRLF line ending
+     onto the new line, and it moves in step 7. No test covers that today,
+     and the write comparison in step 8 covers only files the command
+     sequence touches. So step 7 adds a file-store test that sets the status
+     of a CRLF document and asserts every line still ends in CRLF. It fails
+     if the carry is removed from REPLACE-STATUS-LINE.
+
+  6. Unchanged, and noted here so it is not mistaken for this plan's defect.
+     DOCS-RELATIVE-P matches a path segment named docs. So a tree whose
+     manifest names another document directory has no YAML documents indexed
+     today, and still will not after this plan.

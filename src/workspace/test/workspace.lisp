@@ -17,12 +17,81 @@
 
 (defparameter *fixture-root* nil)
 
+(defvar *fixture-store* :file
+  "Which document store WITH-WORKSPACE-FIXTURE builds: :FILE or :MEMORY.
+DES-0051 D9 part B. WITH-WORKSPACE-FIXTURES runs a body under each.")
+
+(defvar *fixture-docstore* nil
+  "The in-memory store the current fixture holds its documents in, or NIL when
+they are files.")
+
+(defun fixture-document-p (relative)
+  "True when RELATIVE is a path the document store holds: YAML under docs/."
+  (and (eql 0 (search "docs/" relative))
+       (member (pathname-type relative) '("yaml" "yml") :test #'string-equal)
+       t))
+
+(defun put-fixture-document (relative contents)
+  "Put CONTENTS into the in-memory store at address RELATIVE, replacing what
+is there. The path under docs/ gives the category and the name."
+  (let ((existing (find relative (loom-docstore:docstore-enumerate *fixture-docstore*)
+                        :key #'loom-docstore:docstore-record-address :test #'string=)))
+    (if existing
+        (loom-docstore:memory-docstore-replace
+         *fixture-docstore* (loom-docstore:docstore-record-ref existing) contents)
+        (loom-docstore:memory-docstore-put
+         *fixture-docstore*
+         (second (loom-utils:path-segments relative))
+         (pathname-name relative)
+         contents))))
+
+(defun fixture-document-ref (relative)
+  "The in-memory store's ref for the document at RELATIVE."
+  (let ((record (find relative (loom-docstore:docstore-enumerate *fixture-docstore*)
+                      :key #'loom-docstore:docstore-record-address :test #'string=)))
+    (and record (loom-docstore:docstore-record-ref record))))
+
+(defun break-fixture-document (relative reason)
+  "Make the document at RELATIVE unreadable, however the fixture holds it.
+
+Mode 000 for a file, MEMORY-DOCSTORE-BREAK in memory. Both leave the document
+in the store and listed: what fails is the read, which is the case DES-0051 D7
+is about."
+  (if *fixture-docstore*
+      (loom-docstore:memory-docstore-break *fixture-docstore*
+                                           (fixture-document-ref relative)
+                                           reason)
+      (uiop:run-program (list "chmod" "000"
+                              (namestring (merge-pathnames relative *fixture-root*)))
+                        :output nil :error-output nil)))
+
+(defun remove-fixture-document (relative)
+  "Take the document at RELATIVE out of the store, however the fixture holds it."
+  (if *fixture-docstore*
+      (loom-docstore:memory-docstore-remove *fixture-docstore*
+                                            (fixture-document-ref relative))
+      (delete-file (merge-pathnames relative *fixture-root*))))
+
+(defun repair-fixture-document (relative)
+  "Let reads of the document at RELATIVE succeed again."
+  (if *fixture-docstore*
+      (loom-docstore:memory-docstore-repair *fixture-docstore*
+                                            (fixture-document-ref relative))
+      (uiop:run-program (list "chmod" "644"
+                              (namestring (merge-pathnames relative *fixture-root*)))
+                        :output nil :error-output nil)))
+
 (defun write-file (relative contents)
+  "Write CONTENTS at RELATIVE under the fixture root, or into the in-memory
+store when the fixture has one and RELATIVE is a document. Returns the path."
   (let ((path (merge-pathnames relative *fixture-root*)))
-    (ensure-directories-exist path)
-    (with-open-file (out path :direction :output
-                              :if-exists :supersede :if-does-not-exist :create)
-      (write-string contents out))
+    (if (and *fixture-docstore* (fixture-document-p relative))
+        (put-fixture-document relative contents)
+        (progn
+          (ensure-directories-exist path)
+          (with-open-file (out path :direction :output
+                                    :if-exists :supersede :if-does-not-exist :create)
+            (write-string contents out))))
     path))
 
 (defun make-fixture-repository ()
@@ -31,6 +100,9 @@
         (merge-pathnames (format nil "loom-fixture-~36r/" (random (expt 2 48)))
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
+  (setf *fixture-docstore* (and (eq *fixture-store* :memory)
+                                (loom-docstore:make-memory-docstore
+                                 :terminal-p #'terminal-category-status-p)))
   ;; The IN-PACKAGE is load-bearing, not decoration (BUG-0010). RULE-0001 below
   ;; names :KERNEL, and after DES-0009 that is a package name rather than a
   ;; path segment: without this form src/alpha.lisp falls through to
@@ -67,9 +139,10 @@ check:
   to-system: docs
   rel-types: [calls]
 ")
-  (watch-repository *fixture-root* :monitor nil :quiet t))
+  (watch-repository *fixture-root* :monitor nil :quiet t :docstore *fixture-docstore*))
 
 (defun cleanup-fixture ()
+  (setf *fixture-docstore* nil)
   (when *fixture-root*
     (ignore-errors (uiop:delete-directory-tree *fixture-root* :validate t))
     (setf *fixture-root* nil)))
@@ -79,6 +152,22 @@ check:
      (unwind-protect (progn ,@body)
        (unwatch-repository (repository-name ,repository))
        (cleanup-fixture))))
+
+(defmacro with-workspace-fixtures ((repository) &body body)
+  "WITH-WORKSPACE-FIXTURE once with the file store and once with the in-memory
+store. DES-0051 D9 part B: a test that passes on files and fails in memory has
+found a caller that assumes a document is a file.
+
+Every test whose subject is a document, a count over documents, or the whole
+index runs here. A test about code alone -- enrichment, call sites, definer
+macros, the occurrence bands, `git' -- stays on WITH-WORKSPACE-FIXTURE, where
+it would pay twice for a store it never asks about.
+
+A failure names the assertion and not the run, because both runs are one test.
+Bind *FIXTURE-STORE* to :FILE or to :MEMORY and run the test again to see which
+of the two it was."
+  `(dolist (*fixture-store* '(:file :memory))
+     (with-workspace-fixture (,repository) ,@body)))
 
 ;;; ------------------------------------------------------------------
 ;;; Indexing (SS3.4)
@@ -107,7 +196,7 @@ check:
         "and by the spelling a person types, which is the fix")))
 
 (test watching-a-repository-indexes-source-and-documents-together
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (let ((g (repository-graph repository)))
       (is (= 3 (length (entities-of-type g :function))))
       (is (= 1 (length (entities-of-type g :decision))))
@@ -129,7 +218,7 @@ check:
           "and within one"))))
 
 (test the-pipeline-resolves-document-links
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (let* ((g (repository-graph repository))
            (decision (first (entities-of-type g :decision)))
            (targets (mapcar (lambda (r) (name (get-entity g (to-id r))))
@@ -137,7 +226,7 @@ check:
       (is (equal '("alpha") targets)))))
 
 (test the-pipeline-runs-the-rule-checks
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (let ((g (repository-graph repository)))
       ;; BUG-0010, and CON-0003's question asked of the assertion below: a rule
       ;; whose from-system: matches no entity reports zero exactly the way a
@@ -175,7 +264,7 @@ check:
           "nothing has queried this repository, so no store is loaded"))))
 
 (test status-reports-what-a-developer-needs-to-see
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (let ((status (repository-status repository)))
       (is (= 4 (getf status :files)))
       (is (plusp (getf status :entities)))
@@ -252,46 +341,97 @@ check:
   ;; The zero is asserted first and is not ceremony: a count that is only ever
   ;; read when it is non-zero cannot be told from a count nobody computes,
   ;; which is the DES-0002 R10 reading the two lines beside it already take.
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (is (eql 0 (getf (repository-status repository) :unparsed))
         "the fixture parses, which is what makes the next assertion mean something")
-    (let ((path (write-file "docs/plans/PLAN-0001.yaml"
-                            "id: PLAN-0001
+    (write-file "docs/plans/PLAN-0001.yaml"
+                "id: PLAN-0001
 title: DES-0026 in seven steps: the walk, the tiers, the index, the ranking
 status: draft
-")))
-      (loom-workspace::index-file repository path :quiet t)
-      (let ((status (repository-status repository))
-            (unparsed (unparsed-facts (repository-graph repository))))
-        (is (eql 1 (getf status :unparsed)))
-        (is (= 1 (length unparsed)))
-        (is (search "PLAN-0001.yaml" (getf (first unparsed) :path))
-            "named, because a count without a path is a fact nobody can act on")
-        (is (search "line 2" (getf (first unparsed) :error))
-            "and the parser's own message, which is the distance between
-\"a document is missing\" and \"quote the title\"")))))
+")
+    ;; POLL-ONCE rather than INDEX-FILE, which is the code path and has been
+    ;; since DES-0051: a document reaches the index as bytes the store handed
+    ;; over, and on the in-memory store there is no file to hand INDEX-FILE.
+    (poll-once repository :quiet t)
+    (let ((status (repository-status repository))
+          (unparsed (unparsed-facts (repository-graph repository))))
+      (is (eql 1 (getf status :unparsed)))
+      (is (= 1 (length unparsed)))
+      (is (search "PLAN-0001.yaml" (getf (first unparsed) :path))
+          "named, because a count without a path is a fact nobody can act on")
+      (is (search "line 2" (getf (first unparsed) :error))
+          "and the parser's own message, which is the distance between
+\"a document is missing\" and \"quote the title\""))))
 
 (test a-document-that-parses-again-stops-being-counted
   ;; The count is a function of the tree rather than of history, the same way
   ;; BUG-0030's dropped edges are: RETRACT-FILE clears the marked entity along
   ;; with everything else read from the file, and the re-analysis decides
   ;; again.
-  (with-workspace-fixture (repository)
-    (let ((broken (write-file "docs/plans/PLAN-0001.yaml"
-                              "id: PLAN-0001
+  (with-workspace-fixtures (repository)
+    (write-file "docs/plans/PLAN-0001.yaml"
+                "id: PLAN-0001
 title: A title: with a colon
 status: draft
-")))
-      (loom-workspace::index-file repository broken :quiet t)
-      (is (eql 1 (getf (repository-status repository) :unparsed)))
-      (write-file "docs/plans/PLAN-0001.yaml"
-                  "id: PLAN-0001
+")
+    (poll-once repository :quiet t)
+    (is (eql 1 (getf (repository-status repository) :unparsed)))
+    (write-file "docs/plans/PLAN-0001.yaml"
+                "id: PLAN-0001
 title: \"A title: with a colon\"
 status: draft
 ")
-      (loom-workspace::index-file repository broken :quiet t)
-      (is (eql 0 (getf (repository-status repository) :unparsed))
-          "quoting the title is the whole repair, and the count says so"))))
+    (poll-once repository :quiet t)
+    (is (eql 0 (getf (repository-status repository) :unparsed))
+        "quoting the title is the whole repair, and the count says so")))
+
+(test a-document-that-cannot-be-read-is-read-again-and-counts-as-unindexed
+  ;; DES-0051 D7, the half the index dump cannot see: it is behaviour over two
+  ;; polls rather than a state after one.
+  ;;
+  ;; A code file whose analysis fails gets no stamp, so FILE-CHANGED-P reports
+  ;; it on every poll and COUNT-UNSTAMPED counts it as `unindexed'. A store
+  ;; token moves past the bytes it handed out whether or not the analysis
+  ;; worked, so keeping that behaviour is the workspace's job: it holds the
+  ;; refs that failed, reads them again with DOCSTORE-READ on each poll, and
+  ;; counts them.
+  ;;
+  ;; The two stores fail a read differently and recover differently, which is
+  ;; why this runs on both. The file store leaves a failed address out of the
+  ;; token, so CHANGED-SINCE offers the document again by itself. The in-memory
+  ;; store's sequence number moves past it, so the retry is the only way back
+  ;; -- and the repair here does not advance that sequence, so the last
+  ;; assertion is about the retry and nothing else.
+  (with-workspace-fixtures (repository)
+    (is (eql 0 (getf (repository-status repository) :unindexed))
+        "the fixture is fully indexed, which is what makes the count below mean
+something")
+    ;; Broken before its first read, and that is the case D7 is about: a
+    ;; document that indexed once and then stopped reading keeps the entity it
+    ;; asserted, exactly as a code file keeps the stamp of its last good read.
+    ;; `unindexed' counts what the index has never held.
+    (write-file "docs/plans/PLAN-0001.yaml"
+                "id: PLAN-0001
+title: A plan the store will not read
+status: draft
+")
+    (break-fixture-document "docs/plans/PLAN-0001.yaml" "cannot read it")
+    (poll-once repository :quiet t)
+    (is (eql 1 (getf (repository-status repository) :unindexed))
+        "a document the store could not read is not counted as unindexed")
+    (is (null (find "PLAN-0001" (entities-of-type (repository-graph repository) :document)
+                    :key #'name :test #'equal))
+        "and nothing it could not read reached the index")
+    (poll-once repository :quiet t)
+    (is (eql 1 (getf (repository-status repository) :unindexed))
+        "a second poll wrote the failure off instead of keeping it")
+    (repair-fixture-document "docs/plans/PLAN-0001.yaml")
+    (poll-once repository :quiet t)
+    (is (eql 0 (getf (repository-status repository) :unindexed))
+        "the document reads again and is still counted as unindexed")
+    (is (find "PLAN-0001" (entities-of-type (repository-graph repository) :document)
+              :key #'name :test #'equal)
+        "a document that failed once was never read again")))
 
 (test re-watching-a-registered-repository-starts-watching-it-again
   ;; The console's lifecycle in a live image: MAIN stops the monitors on its
@@ -299,7 +439,7 @@ status: draft
   ;; a repository that is already registered and not being watched. That branch
   ;; used to reindex without starting a monitor, which reported `watcher:
   ;; stopped' for a repository the developer had just asked to watch.
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (start-monitor repository)
     (is-true (monitor-running-p repository))
     (stop-monitor repository)                    ; what MAIN does on exit
@@ -314,7 +454,7 @@ status: draft
   ;; DEC-0004: two named states and three commands between them. The reason
   ;; pause exists at all is that this assertion has to hold -- if pausing cost
   ;; the index there would be no difference from unwatch and no reason for it.
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (start-monitor repository)
     (is (eq :watching (getf (repository-status repository) :monitor)))
     (let ((entities (length (all-entities (repository-graph repository)))))
@@ -357,7 +497,7 @@ status: draft
           "retract-file plus fresh asserts, driven by the monitor"))))
 
 (test a-deleted-file-leaves-the-index
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (delete-file (merge-pathnames "src/beta.lisp" *fixture-root*))
     (poll-once repository :quiet t)
     (let ((g (repository-graph repository)))
@@ -388,7 +528,7 @@ status: draft
   ;; against a process's own start time, and that comparison is a fabricated
   ;; "current" unless the monitor's own path writes the slot too. Before the
   ;; fix INDEX-REPOSITORY was its only writer.
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (let ((before (repository-indexed-at repository)))
       ;; GET-UNIVERSAL-TIME counts whole seconds, so a poll in the same second
       ;; as the initial index would move the slot to a value EQL to the old one
@@ -414,6 +554,28 @@ status: draft
         (is (eql after (repository-indexed-at repository))
             "a poll that found nothing moved indexed-at anyway")))))
 
+(test a-document-only-edit-moves-indexed-at
+  ;; DES-0051 D7. Documents come from the store rather than the walk, and a
+  ;; poll that read only a document must still set MOVED: INDEXED-AT follows
+  ;; it, and so does the vector refresh, which this cannot observe directly.
+  (with-workspace-fixtures (repository)
+    (let ((before (repository-indexed-at repository)))
+      (loop while (<= (get-universal-time) before) do (sleep 0.2))
+      (write-file "docs/decisions/DEC-0001.yaml"
+                  "id: DEC-0001
+type: decision
+title: Alpha stays arithmetic, and says so
+status: accepted
+affects: [alpha]
+")
+      (is (plusp (poll-once repository :quiet t))
+          "the poll read nothing")
+      (is (> (repository-indexed-at repository) before)
+          "a poll that read only a document left indexed-at where it was")
+      (is (search "says so" (getp (first (entities-of-type (repository-graph repository) :decision))
+                                  :title))
+          "the edit did not reach the index"))))
+
 ;;; ------------------------------------------------------------------
 ;;; Rebuild equivalence (SS14.4)
 ;;; ------------------------------------------------------------------
@@ -421,7 +583,7 @@ status: draft
 (test reindexing-produces-an-identical-index
   ;; SS14.4 wants B and C "identical -- not merely equivalent, since ids are
   ;; derived from natural keys rather than generated".
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (let ((before (sort (mapcar #'id (all-entities (repository-graph repository)))
                         #'string<)))
       (reindex-repository repository :quiet t)
@@ -430,7 +592,7 @@ status: draft
                        #'string<))))))
 
 (test an-incremental-update-matches-a-full-rebuild
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (write-file "src/beta.lisp" "(defun beta (x) (alpha-twice x))
 ")
     (poll-once repository :quiet t)
@@ -1245,7 +1407,7 @@ and the whole of its damage in the other two."
           (getf status :tested-units))))
 
 (test a-reindex-and-a-poll-do-not-corrupt-the-index
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (let* ((rebuilder
              (bt:make-thread
               (lambda ()
@@ -1310,7 +1472,7 @@ files: ~a against ~a" after-threads (stress-counts repository)))))
           "the damaged form mints nothing"))))
 
 (test a-rule-violation-is-detected-and-recorded
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     ;; Make kernel call into docs, which the fixture's RULE-0001 forbids. The
     ;; caller is the real ALPHA the pipeline analyzed, which is what makes this
     ;; the one assertion in the nine suites that spans the whole of DES-0009's
@@ -1352,7 +1514,7 @@ comparing against nothing and its silence would mean nothing")
 (test a-link-to-a-file-that-is-not-there-is-reported
   ;; The finding BUG-0027 exists for. Measured on ~/lisp/game-server: 38 broken
   ;; link targets across six files while `status' read `unresolved: 0'.
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (write-file "docs/notes.md"
                 "see [alpha](../src/alpha.lisp) and [gone](../src/missing.lisp)
 ")
@@ -1372,7 +1534,7 @@ comparing against nothing and its silence would mean nothing")
   ;; Without this, five of game-server's eight reported findings were files
   ;; sitting right there on disk, which is how a staleness report stops being
   ;; read.
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (write-file "schema.sql" "-- no analyzer claims this
 ")
     (write-file "CLAUDE.md" "# instructions, excluded from indexing by name
@@ -1411,7 +1573,7 @@ this asserts deliberately."
                       :output nil :error-output nil)))
 
 (test unclaimed-counts-tracked-files-no-analyzer-claims-and-names-the-extensions
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (write-file "tools/harness.py" "def helper():
     return 1
 ")
@@ -1449,7 +1611,7 @@ echo hi
   ;; unknown beats a zero that reads like a clean answer. A directory that is
   ;; not a git repository is the ordinary case here -- the fixture is one until
   ;; the test above makes it otherwise.
-  (with-workspace-fixture (repository)
+  (with-workspace-fixtures (repository)
     (let ((status (repository-status repository)))
       (is (null (getf status :unclaimed))
           "no count, because none could be taken")

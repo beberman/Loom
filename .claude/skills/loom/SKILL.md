@@ -287,9 +287,10 @@ tools/loom-test.sh        # summary only
 tools/loom-test.sh -v     # with compile output
 ```
 
-Nine systems, per-system pass/fail summary — the original six (ontology,
-analyzer, graph, workspace, knowledge, process) plus loom-serve, loom-rest and
-loom-mcp, added by PLAN-0005. Note this is `/usr/bin/sbcl`, not the SBCL
+Twelve systems, per-system pass/fail summary: the original six (ontology,
+analyzer, graph, workspace, knowledge, process), loom-serve, loom-rest and
+loom-mcp from PLAN-0005, the two leaves loom-utils and loom-embed, and
+loom-docstore from PLAN-0055. Note this is `/usr/bin/sbcl`, not the SBCL
 behind SLIME; where the two could disagree, say which one you ran.
 
 The script writes and runs this driver, which is also the preamble any one-off
@@ -299,8 +300,8 @@ script needs:
 (require :asdf)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 (let ((here #p"/home/beberman/lisp/Loom/"))
-  (dolist (system '("ontology/" "graph/" "analyzer/" "knowledge/"
-                    "workspace/" "process/" "serve/" "rest/" "mcp/"))
+  (dolist (system '("utils/" "embed/" "ontology/" "graph/" "analyzer/" "knowledge/"
+                    "docstore/" "workspace/" "process/" "serve/" "rest/" "mcp/"))
     (pushnew (merge-pathnames (concatenate 'string "src/" system) here)
              asdf:*central-registry* :test #'equal)))
 (handler-bind ((warning #'muffle-warning))
@@ -313,7 +314,7 @@ script needs:
 `hunchentoot` and `cl-json`, which loom-serve/rest/mcp depend on, are not in
 that explicit quickload list and do not need to be: once quicklisp/setup.lisp
 is loaded, `asdf:load-system` resolves a system's own `:depends-on` through
-quicklisp automatically, and `loom-test:full-test` loads all nine systems by
+quicklisp automatically, and `loom-test:full-test` loads all twelve systems by
 name. The explicit list above is only for libraries no `.asd` in the tree
 names as a dependency.
 

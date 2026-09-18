@@ -18,6 +18,7 @@
 (defparameter *test-systems*
   '((:loom-utils/test     . "LOOM-UTILS-TEST")
     (:loom-embed/test     . "LOOM-EMBED-TEST")
+    (:loom-docstore/test  . "LOOM-DOCSTORE-TEST")
     (:loom-ontology/test  . "ROOT-ONTOLOGY-TEST")
     (:loom-analyzer/test  . "LOOM-ANALYZER-TEST")
     (:loom-graph/test     . "LOOM-GRAPH-TEST")
