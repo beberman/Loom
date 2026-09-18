@@ -640,11 +640,25 @@ is a message, a docstring, a format control; a string in the first level or
 two of a declarative form is what that form was given. easy-routes puts the
 route one level down, inside the spec list, and nothing this is meant to read
 puts it deeper. Going all the way would find the first string in a handler
-body and call it a route."
+body and call it a route.
+
+The walk is over conses rather than `for element in\', and that is the whole of
+BUG-0068. A call site\'s argument is an arbitrary form, and an arbitrary form
+may be an improper list -- a quoted dotted pair, a LOOP destructuring pattern
+like (operation . function), a DESTRUCTURING-BIND lambda list. `in\' signals on
+the tail, the condition escapes ANALYZE-FILE, and the whole file is recorded as
+an error rather than indexed. The cost is every definition in it, and this
+walked the argument list of every top-level call to a definer macro -- which on
+this tree is every FiveAM `test\' form. COLLECT-CALL-NAMES beside it has walked
+tails this way since it was written; this one function did not.
+
+A dotted tail holds no string literal worth finding, so it is passed over
+rather than examined."
   (cond ((stringp x) x)
         ((and (consp x) (< depth 3))
-         (loop for element in x
-               for found = (first-string-literal element (1+ depth))
+         (loop for tail = x then (cdr tail)
+               while (consp tail)
+               for found = (first-string-literal (car tail) (1+ depth))
                when found return found))))
 
 (defun definer-call-site (form start end &optional system)

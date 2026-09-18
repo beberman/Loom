@@ -822,6 +822,43 @@ name the entity rather than invent a name for it")
             "the argument list is walked for calls, or the generated entity
 would exist with no edges and impact would still report nothing")))))
 
+(test a-dotted-list-inside-a-call-sites-argument-does-not-cost-the-file
+  ;; BUG-0068. An argument to a definer macro is an arbitrary form, and an
+  ;; arbitrary form may be an improper list. FIRST-STRING-LITERAL walked one
+  ;; with `for element in\', which signals on the tail; the condition escaped
+  ;; ANALYZE-FILE and the file was recorded as an error, so every definition in
+  ;; it was missing from the index.
+  ;;
+  ;; Three shapes, because they are the three that occur: a quoted dotted pair,
+  ;; a LOOP destructuring pattern, and a DESTRUCTURING-BIND lambda list. Each
+  ;; is inside a `test\' form, which is what makes it a definer call site --
+  ;; the same body under a DEFUN never reaches this walk.
+  (dolist (body '("(list '(1 . 2))"
+                 "(loop for (operation . function) in *pairs* do (check function))"
+                 "(destructuring-bind (x . y) pair (check y))"))
+    (multiple-value-bind (g file)
+        (analyze-source (format nil "(test checks-it ~a)" body))
+      (declare (ignore g))
+      (is (not (null (getp file :definer-call-sites)))
+          "~a recorded no call site" body)
+      (is (null (getp file :analysis-error))
+          "~a left the file marked: ~a" body (getp file :analysis-error)))))
+
+(test a-string-after-a-dotted-tail-is-still-found
+  ;; The fix passes over a dotted tail rather than stopping at one, so a
+  ;; string in a later argument is still the route easy-routes writes there.
+  (multiple-value-bind (g file)
+      (analyze-source "(defroute named ('(1 . 2) \"/public/games\") (handle))")
+    (declare (ignore g))
+    (let ((site (first (getp file :definer-call-sites))))
+      (is (not (null site)))
+      ;; Position 2: the spec list, which is where easy-routes writes the
+      ;; route. Position 1 is the name.
+      (is (equal '((2 . "/public/games"))
+                 (getf site :string-arguments))
+          "the string beyond the dotted pair was not found: ~a"
+          (getf site :string-arguments)))))
+
 (test a-definition-is-not-a-call-site
   (multiple-value-bind (g file)
       (analyze-source "(in-package :foo)
