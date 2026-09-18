@@ -101,7 +101,8 @@ store when the fixture has one and RELATIVE is a document. Returns the path."
                          (uiop:temporary-directory)))
   (ensure-directories-exist *fixture-root*)
   (setf *fixture-docstore* (and (eq *fixture-store* :memory)
-                                (loom-docstore:make-memory-docstore)))
+                                (loom-docstore:make-memory-docstore
+                                 :terminal-p #'terminal-category-status-p)))
   ;; The IN-PACKAGE is load-bearing, not decoration (BUG-0010). RULE-0001 below
   ;; names :KERNEL, and after DES-0009 that is a package name rather than a
   ;; path segment: without this form src/alpha.lisp falls through to

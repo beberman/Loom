@@ -167,6 +167,12 @@
    ;; that edits a document rather than reading one. Both return a report
    ;; plist whose :PROBLEMS is empty exactly when something was written.
    #:set-document-status
+   ;; CON-0004's terminal column, in the form a document store takes. Exported
+   ;; because whoever builds a store wires it in: REPOSITORY-DOCUMENT-STORE
+   ;; does it for the default file store, and a caller passing WATCH-REPOSITORY
+   ;; a store of its own has to do the same or no document it holds ever moves.
+   #:terminal-category-status-p
+   #:*terminal-status-p*
    #:complete-plan
    #:parse-verdicts
    #:document-status-vocabulary

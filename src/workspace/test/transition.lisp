@@ -27,27 +27,104 @@
 ;;; Fixtures
 ;;; ------------------------------------------------------------------
 
+(defvar *transition-store* :file
+  "Which document store the fixture builds: :FILE or :MEMORY.
+DES-0051 D9 part B. WITH-DOCUMENT-TREES runs a body under each.")
+
+(defvar *transition-docstore* nil
+  "The in-memory store the current fixture holds its documents in, or NIL when
+they are files.")
+
 (defmacro with-document-tree ((root) &body body)
-  "A throwaway directory with a docs/ tree in it, deleted afterwards."
+  "A throwaway directory with a docs/ tree in it, deleted afterwards.
+
+The directory exists under either store: a tree has code files and a .git
+directory as well as documents, and only the documents move into the store."
   `(let ((,root (ensure-directories-exist
                  (merge-pathnames (format nil "loom-transition-~a/" (random 100000))
-                                  (uiop:temporary-directory)))))
+                                  (uiop:temporary-directory))))
+         (*transition-docstore* (and (eq *transition-store* :memory)
+                                     ;; With CON-0004's terminal column, as
+                                     ;; REPOSITORY-DOCUMENT-STORE gives its
+                                     ;; default store: a store told nothing
+                                     ;; moves no document, and every one of
+                                     ;; the placement tests below would pass
+                                     ;; by never transitioning anything.
+                                     (loom-docstore:make-memory-docstore
+                                      :terminal-p #'terminal-category-status-p))))
      (unwind-protect (progn ,@body)
        (uiop:delete-directory-tree ,root :validate t :if-does-not-exist :ignore))))
 
+(defmacro with-document-trees ((root) &body body)
+  "WITH-DOCUMENT-TREE once with the file store and once with the in-memory one.
+
+DES-0051 D9 part B: a test that passes on files and fails in memory has found
+a caller that assumes a document is a file. A failure names the assertion and
+not the run, because both runs are one test -- bind *TRANSITION-STORE* to see
+which of the two it was."
+  `(dolist (*transition-store* '(:file :memory))
+     (with-document-tree (,root) ,@body)))
+
+(defun store-document-path-p (relative)
+  "True when RELATIVE is a path the document store holds: YAML under docs/."
+  (let ((name (string relative)))
+    (and (eql 0 (search "docs/" name))
+         (member (pathname-type name) '("yaml" "yml") :test #'string-equal)
+         t)))
+
+(defun document-ref (relative)
+  "The in-memory store's ref for the document at RELATIVE, or NIL."
+  (let ((record (find relative (loom-docstore:docstore-enumerate *transition-docstore*)
+                      :key #'loom-docstore:docstore-record-address :test #'string=)))
+    (and record (loom-docstore:docstore-record-ref record))))
+
 (defun write-document (root relative contents)
+  "Put CONTENTS at RELATIVE, in whichever store the fixture holds.
+
+A path the store does not claim is written to disk under either store: the
+trees below carry a file in the way of a completed/ directory, and a .rst that
+no analyzer claims, and neither is a document."
   (let ((path (merge-pathnames relative root)))
-    (ensure-directories-exist path)
-    (with-open-file (out path :direction :output :if-exists :supersede)
-      (write-string contents out))
+    (cond ((and *transition-docstore* (store-document-path-p relative))
+           (let ((ref (document-ref relative)))
+             (if ref
+                 (loom-docstore:memory-docstore-replace *transition-docstore* ref contents)
+                 (loom-docstore:memory-docstore-put
+                  *transition-docstore*
+                  (second (loom-utils:path-segments relative))
+                  (pathname-name relative)
+                  contents))))
+          (t
+           (ensure-directories-exist path)
+           (with-open-file (out path :direction :output :if-exists :supersede)
+             (write-string contents out))))
     path))
 
 (defun document-text (root relative)
-  (utils:read-file (merge-pathnames relative root)))
+  "The text of the document at RELATIVE, from whichever store holds it.
+
+A test that asserts on this is asking what the document says, which every
+store can answer. A test that asks where the file is uses PROBE-FILE and is a
+file-store test (DES-0051 D9 part C)."
+  (let ((ref (and *transition-docstore* (document-ref relative))))
+    (if ref
+        (loom-docstore:docstore-read *transition-docstore* ref)
+        (utils:read-file (merge-pathnames relative root)))))
+
+(defun document-at-p (root relative)
+  "True when the store the fixture holds has a document at RELATIVE.
+
+PROBE-FILE's question, asked of whichever store this is. Where a document is
+filed is placement, and every store answers that with an address; that the
+address is also a path on disk is the file property, and a test that needs it
+says PROBE-FILE and stays on the file store (DES-0051 D9 part C)."
+  (if *transition-docstore*
+      (and (document-ref relative) t)
+      (and (probe-file (merge-pathnames relative root)) t)))
 
 (defun watch-tree (root)
   "Index ROOT without starting a monitor. A poll would race every write below."
-  (watch-repository root :monitor nil :quiet t))
+  (watch-repository root :monitor nil :quiet t :docstore *transition-docstore*))
 
 (defun drop-tree (repository)
   (unwatch-repository (repository-name repository)))
@@ -126,15 +203,15 @@ body: |~%  status: implemented is written here too.~%")))
 (test setting-a-terminal-status-moves-the-file-into-completed
   ;; R3: placement and status can no longer disagree, because one operation
   ;; sets both.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/bugs/BUG-0001.yaml"
                     (format nil "id: BUG-0001~%title: a defect~%status: open~%"))
     (with-indexed-tree (repository root)
       (let ((report (set-document-status repository "BUG-0001" "closed")))
         (is (null (getf report :problems)) "~a" (getf report :problems))
-        (is (null (probe-file (merge-pathnames "docs/bugs/BUG-0001.yaml" root)))
+        (is (null (document-at-p root "docs/bugs/BUG-0001.yaml"))
             "the flat file is gone")
-        (is-true (probe-file (merge-pathnames "docs/bugs/completed/BUG-0001.yaml" root))
+        (is-true (document-at-p root "docs/bugs/completed/BUG-0001.yaml")
                  "the file is in completed/")
         (is (search (format nil "~%status: closed~%")
                     (document-text root "docs/bugs/completed/BUG-0001.yaml")))))))
@@ -143,14 +220,14 @@ body: |~%  status: implemented is written here too.~%")))
   ;; The other direction of R3. Without it "placement and status cannot
   ;; disagree" holds in one direction only, and reopening a bug leaves a closed
   ;; file in completed/ saying open.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/bugs/completed/BUG-0002.yaml"
                     (format nil "id: BUG-0002~%title: a defect~%status: closed~%"))
     (with-indexed-tree (repository root)
       (let ((report (set-document-status repository "BUG-0002" "open")))
         (is (null (getf report :problems)) "~a" (getf report :problems))
-        (is-true (probe-file (merge-pathnames "docs/bugs/BUG-0002.yaml" root)))
-        (is (null (probe-file (merge-pathnames "docs/bugs/completed/BUG-0002.yaml" root))))))))
+        (is-true (document-at-p root "docs/bugs/BUG-0002.yaml"))
+        (is (null (document-at-p root "docs/bugs/completed/BUG-0002.yaml")))))))
 
 (test a-superseded-design-is-filed-with-the-finished-ones
   ;; A superseded design has no work left in it. It stayed flat until
@@ -158,15 +235,15 @@ body: |~%  status: implemented is written here too.~%")))
   ;; which left DES-0034 and DES-0036 -- both built, measured and withdrawn --
   ;; sitting in docs/design/ where `ls' and `context' read them as work in
   ;; progress.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/design/DES-0001.yaml"
                     (design-document "DES-0001" '("REQ-0001")))
     (with-indexed-tree (repository root)
       (let ((report (set-document-status repository "DES-0001" "superseded")))
         (is (null (getf report :problems)) "~a" (getf report :problems))
-        (is (null (probe-file (merge-pathnames "docs/design/DES-0001.yaml" root)))
+        (is (null (document-at-p root "docs/design/DES-0001.yaml"))
             "the flat file is gone")
-        (is-true (probe-file (merge-pathnames "docs/design/completed/DES-0001.yaml" root))
+        (is-true (document-at-p root "docs/design/completed/DES-0001.yaml")
                  "the file is in completed/")
         (is (search (format nil "~%status: superseded~%")
                     (document-text root "docs/design/completed/DES-0001.yaml")))))))
@@ -175,22 +252,22 @@ body: |~%  status: implemented is written here too.~%")))
   ;; The line the terminal set is drawn on. `partial' and `superseded' are both
   ;; end states of a design in the sense that no plan is running against them,
   ;; and only one of them means there is nothing left to do.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/design/DES-0002.yaml"
                     (design-document "DES-0002" '("REQ-0001")))
     (with-indexed-tree (repository root)
       (let ((report (set-document-status repository "DES-0002" "partial")))
         (is (null (getf report :problems)) "~a" (getf report :problems))
-        (is-true (probe-file (merge-pathnames "docs/design/DES-0002.yaml" root))
+        (is-true (document-at-p root "docs/design/DES-0002.yaml")
                  "the file is still flat")
-        (is (null (probe-file (merge-pathnames "docs/design/completed/DES-0002.yaml" root))))))))
+        (is (null (document-at-p root "docs/design/completed/DES-0002.yaml")))))))
 
 (test a-status-outside-the-categorys-vocabulary-is-refused
   ;; The union of the four workflow vocabularies is what the :DOCUMENT entity
   ;; type declares, so validating against the ontology alone would let a
   ;; requirement be set to `closed'. The category is what narrows it, and
   ;; without that narrowing this test passes for the wrong reason.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
     (with-indexed-tree (repository root)
       (let ((report (set-document-status repository "REQ-0001" "closed")))
@@ -225,7 +302,7 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
   ;; R7's shape at the primitive. An idempotent command that rewrites the file
   ;; anyway is one that shows a diff on every run, which is how a developer
   ;; learns to stop reading them.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (with-indexed-tree (repository root)
       (let ((report (set-document-status repository "DES-0001" "draft")))
@@ -240,7 +317,7 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
   ;; REQ-0022's strongest argument for building this rather than restating it.
   ;; Two plans refine one design; completing the first must not mark the design
   ;; implemented, and saying which plan is in the way is the useful answer.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
     (write-document root "docs/plans/PLAN-0002.yaml" (plan-document "PLAN-0002" '("DES-0001")))
@@ -261,7 +338,7 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
   ;; The complement, and the half that makes the test above mean something: with
   ;; the second plan already final, the same call goes through. Without this the
   ;; blocking test would pass against an implementation that blocked everything.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
     (write-document root "docs/plans/completed/PLAN-0002.yaml"
@@ -270,14 +347,14 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
       (let ((report (complete-plan repository "PLAN-0001" :verdicts "DES-0001=implemented")))
         (is (null (getf report :problems)) "~a" (getf report :problems))
         (is (= 2 (length (getf report :changed))))
-        (is-true (probe-file (merge-pathnames "docs/design/completed/DES-0001.yaml" root)))
-        (is-true (probe-file (merge-pathnames "docs/plans/completed/PLAN-0001.yaml" root)))))))
+        (is-true (document-at-p root "docs/design/completed/DES-0001.yaml"))
+        (is-true (document-at-p root "docs/plans/completed/PLAN-0001.yaml"))))))
 
 (test the-cascade-walks-upward-only-through-a-terminal-verdict
   ;; RULE-0005: "The walk continues upward only on implemented." A design marked
   ;; partial has an OUTSTANDING section, which is work, so the requirement above
   ;; it is not implemented either and must not be offered as though it were.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
@@ -293,13 +370,13 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
             "the walk stopped at the partial design: ~a" ids)
         (is (search "status: draft" (document-text root "docs/requirements/REQ-0001.yaml"))
             "the requirement above a partial design stays where it is")
-        (is-true (probe-file (merge-pathnames "docs/design/DES-0001.yaml" root))
+        (is-true (document-at-p root "docs/design/DES-0001.yaml")
                  "a partial document stays flat -- it has an OUTSTANDING section")))))
 
 (test a-terminal-verdict-carries-the-cascade-to-the-requirement
   ;; The whole point, end to end: plan, design and requirement move together in
   ;; one command, with three status lines and three renames.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
@@ -319,7 +396,7 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
 (test completing-a-plan-twice-changes-nothing-the-second-time
   ;; R7. The second run has to find the moved files, which is what makes this a
   ;; test of the reindex as well as of idempotence.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
     (with-indexed-tree (repository root)
@@ -335,7 +412,7 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
   ;; All or nothing. A cascade that applied the verdict it was given and left
   ;; the other document in draft would produce exactly the half-updated state
   ;; RULE-0005 was written to prevent, one command later.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
@@ -351,7 +428,7 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
 (test a-dry-run-writes-nothing-and-names-what-it-would-need
   ;; D5: the dry run is the default rather than a flag, which is the right
   ;; default for a command whose failure mode is editing files.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
     (with-indexed-tree (repository root)
@@ -368,7 +445,7 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
   ;; A plan is identified by its :CATEGORY -- the fact the indexer recorded from
   ;; the directory -- and not by a PLAN- prefix, which a foreign tree prepared
   ;; by REQ-0021 need not share.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (with-indexed-tree (repository root)
       (let ((report (complete-plan repository "DES-0001" :verdicts "REQ-0001=implemented")))
@@ -385,6 +462,12 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
   ;; requirement's completed/ directory needs, so its move cannot be prepared --
   ;; and the plan and the design, which were checked and would have been written
   ;; first, must still be exactly as they were.
+  ;;
+  ;; File property (DES-0051 D9 part C), and the only one of these that is: the
+  ;; thing in the way is a plain file, and a directory that cannot be created
+  ;; is a refusal no store without directories has. The property being tested
+  ;; is the protocol's -- DOCSTORE-APPLY-BATCH refuses the whole batch before
+  ;; writing -- and this is the cheapest way to make a store refuse one entry.
   (with-document-tree (root)
     (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
     ;; No extension, so no analyzer claims it and it is not a document; it is
@@ -402,11 +485,85 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
         (is (search "status: draft" (document-text root "docs/design/DES-0001.yaml"))
             "and so is the design")))))
 
+(test an-edit-the-monitor-has-not-seen-is-kept-and-the-status-written-into-it
+  ;; DES-0051 D2 closes a window with EXPECTED-VERSION, and the version that
+  ;; goes in it has to be the one read at plan time rather than the one the
+  ;; index holds. A developer saving a document the monitor has not polled yet
+  ;; is the ordinary case: the index is behind, the store is not, and DEC-0001
+  ;; settles it in the file's favour. Comparing against the indexed version
+  ;; would refuse this write and hand back a conflict about an edit the caller
+  ;; never made.
+  (with-document-trees (root)
+    (write-document root "docs/bugs/BUG-0001.yaml"
+                    (format nil "id: BUG-0001~%title: a defect~%status: open~%"))
+    (with-indexed-tree (repository root)
+      ;; Saved after the index read it, and no poll in between.
+      (write-document root "docs/bugs/BUG-0001.yaml"
+                      (format nil "id: BUG-0001~%title: a defect, described at last~%~
+status: open~%"))
+      (let ((report (set-document-status repository "BUG-0001" "closed")))
+        (is (null (getf report :problems)) "~a" (getf report :problems))
+        (let ((text (document-text root "docs/bugs/completed/BUG-0001.yaml")))
+          (is (search "described at last" text)
+              "the unseen edit was overwritten with what the index remembered")
+          (is (search (format nil "~%status: closed~%") text)
+              "the status was not written into the text that was there"))))))
+
+(test a-partial-apply-reports-what-landed-and-the-same-command-finishes-the-rest
+  ;; DES-0051 D4, the :PLANNED guarantee's second half. Planning finds every
+  ;; refusal before a byte is written; what it cannot rule out is a failure
+  ;; once writing has begun, and a file store cannot be atomic across files --
+  ;; Loom does not commit, and `complete' leaves the tree dirty on purpose.
+  ;;
+  ;; File property (DES-0051 D9 part C): the failure is a rename out of a
+  ;; directory that is not writable, which is the only cheap way to make a
+  ;; write fail after it has been planned. The in-memory store is :ATOMIC and
+  ;; has nothing that can fail here.
+  ;;
+  ;; docs/design/completed/ exists before the run, so planning succeeds:
+  ;; ENSURE-DIRECTORIES-EXIST has nothing to create and PROBE-WRITABLE opens
+  ;; the file itself, which mode 555 on the directory above does not stop. The
+  ;; rename does need to write that directory, and that is where it fails.
+  (with-document-tree (root)
+    (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '()))
+    (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
+    (ensure-directories-exist (merge-pathnames "docs/design/completed/" root))
+    (with-indexed-tree (repository root)
+      (let ((design-directory (namestring (merge-pathnames "docs/design/" root))))
+        (uiop:run-program (list "chmod" "555" design-directory))
+        (unwind-protect
+             (let ((report (complete-plan repository "PLAN-0001"
+                                          :verdicts "DES-0001=implemented")))
+               (is-true (getf report :problems) "the failed rename reported nothing")
+               (is (search "1 of 2" (first (getf report :problems)))
+                   "the problem does not say how much landed: ~a" (getf report :problems))
+               (is (= 1 (length (getf report :changed)))
+                   "~a landed" (length (getf report :changed)))
+               (is (equal "PLAN-0001" (getf (first (getf report :changed)) :doc-id))
+                   "the entry that landed is not the one reported")
+               (is-true (probe-file (merge-pathnames "docs/plans/completed/PLAN-0001.yaml" root))
+                        "the plan did not move")
+               (is-true (probe-file (merge-pathnames "docs/design/DES-0001.yaml" root))
+                        "the design moved after all"))
+          (uiop:run-program (list "chmod" "755" design-directory)))
+        ;; The tree is part-way and says so. Finishing it is SET-DOCUMENT-STATUS
+        ;; rather than the same `complete' again, and the difference is worth
+        ;; keeping: the design's file already declares `implemented', so the
+        ;; cascade reads it as already finished and plans no edit for it. The
+        ;; primitive plans one anyway, the store sees a status whose placement
+        ;; disagrees, and the move is what it writes.
+        (let ((report (set-document-status repository "DES-0001" "implemented")))
+          (is (null (getf report :problems)) "~a" (getf report :problems))
+          (is (= 1 (length (getf report :changed)))
+              "a document already declaring its status was left where it was")
+          (is-true (probe-file (merge-pathnames "docs/design/completed/DES-0001.yaml" root))
+                   "the design is still flat"))))))
+
 (test a-document-whose-file-declares-an-unknown-status-is-reported-not-overwritten
   ;; BUG-0019's shape: `status: fixed' was dropped to NIL by AS-KEYWORD, so the
   ;; index held no status while the file held a word. A document in an unknown
   ;; state is exactly where a human should look.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/bugs/BUG-0001.yaml"
                     (format nil "id: BUG-0001~%title: a defect~%status: fixed~%"))
     (with-indexed-tree (repository root)
@@ -442,7 +599,7 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
   ;; either. What was wrong is that the stop silently invalidated an argument
   ;; already supplied. This is the case the suite did not have -- a well-formed
   ;; verdict for a document that is neither blocked nor reached.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
@@ -460,7 +617,7 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
   ;; The complement, without which the test above passes against an
   ;; implementation that refuses every cascade with a non-terminal verdict in
   ;; it. Here the walk stops at the partial design and no verdict is left over.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
@@ -489,7 +646,7 @@ document of that genre and `complete' would report it :NO-STATUS" type)))
         :key (lambda (e) (getf e :name)) :test #'string=))
 
 (test a-draft-resolves-against-the-index-without-being-written
-  (with-document-tree (root)
+  (with-document-trees (root)
     ;; A tree with two same-named functions in it, so the ambiguous case is
     ;; real rather than simulated, and one that is unique.
     (write-document root "src/server.lisp"
@@ -519,7 +676,7 @@ body: |~%  D1  the shape.~%"))
 (test checking-a-document-asserts-nothing
   ;; REQ-0034 R4, and the acceptance is the count rather than the intent: a
   ;; report is worth nothing if asking for it changes the answer.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "src/server.lisp"
                     (format nil "(in-package :app)~%(defun start-server () t)~%"))
     (with-indexed-tree (repository root)
@@ -569,7 +726,7 @@ affects: [start-server]~%body: |~%  D1  the shape.~%")))
   ;; the repository keeps them, and a claimed file really is a document -- one
   ;; with no declared fields, which this operation reports as no references
   ;; rather than as a refusal.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "src/server.lisp"
                     (format nil "(in-package :app)~%(defun start-server () t)~%"))
     (with-indexed-tree (repository root)
@@ -588,7 +745,7 @@ affects: [start-server]~%body: |~%  D1  the shape.~%")))
   ;; REQ-0030 R3 reaching the author through REQ-0034's operation, which is
   ;; the pair working: the report says a name is ambiguous and prints the ids,
   ;; and an id put back in the field resolves to exactly one entity.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "src/server.lisp"
                     (format nil "(in-package :app)~%(defun check-database () t)~%"))
     (write-document root "src/api.lisp"
@@ -624,7 +781,7 @@ status: draft~%affects: [~a]~%body: |~%  D1~%" candidate))))
   ;; every run; a verdict offered for the plan itself was refused as not in the
   ;; cascade; `set-status' was the way through, and both the skill and the
   ;; generated CLAUDE.md say "run the transition command" and mean `complete'.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/plans/PLAN-0001.yaml"
                     (format nil "id: PLAN-0001~%title: a plan~%status: draft~%~
 body: |~%  STEPS~%~%  1. do the thing.~%"))
@@ -645,7 +802,7 @@ body: |~%  STEPS~%~%  1. do the thing.~%"))
   ;; The commoner shape, and the one a narrow fix for "refines nothing" would
   ;; have missed: the frontier is not empty, every document on it is already
   ;; terminal, and so no verdict is possible here either.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/requirements/REQ-0001.yaml"
                     (requirement-document "REQ-0001" :status "implemented"))
     (write-document root "docs/design/DES-0001.yaml"
@@ -670,7 +827,7 @@ body: |~%  STEPS~%~%  1. do the thing.~%"))
   ;; front-end is the case: DES-0006 closed weeks before PLAN-0004 ran, so
   ;; REQ-0004 above it was reachable from no plan at all and had to be set
   ;; blind with set-status.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
     (write-document root "docs/design/completed/DES-0001.yaml"
                     (design-document "DES-0001" '("REQ-0001") :status "implemented"))
@@ -695,7 +852,7 @@ body: |~%  STEPS~%~%  1. do the thing.~%"))
   ;; caller supplied a verdict for a decision. No verdict would help: none of
   ;; the four is terminal, so the walk would stop having extracted a judgement
   ;; that changed nothing.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/requirements/REQ-0001.yaml" (requirement-document "REQ-0001"))
     (write-document root "docs/decisions/DEC-0001.yaml" (decision-document "DEC-0001" '("REQ-0001")))
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("DEC-0001")))
@@ -716,7 +873,7 @@ body: |~%  STEPS~%~%  1. do the thing.~%"))
   ;; The control, and the property the change must not cost. DES-0019 D5's
   ;; default is right wherever there is a verdict to withhold, and an agent that
   ;; runs `complete' and walks away must still have done nothing.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
     (with-indexed-tree (repository root)
@@ -730,7 +887,7 @@ body: |~%  STEPS~%~%  1. do the thing.~%"))
   ;; so the old behaviour left PLAN-0001, which really is finished, unable to
   ;; say so through this command. The blocked document is reported and left
   ;; alone, which is what `blocked' has always meant.
-  (with-document-tree (root)
+  (with-document-trees (root)
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
     (write-document root "docs/plans/PLAN-0002.yaml" (plan-document "PLAN-0002" '("DES-0001")))

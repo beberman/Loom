@@ -7,9 +7,9 @@ refines: [REQ-0009]
 affects: [repository-files, file-changed-p, stamp-file, index-file,
           index-repository, reindex-repository, poll-once, detect-deletions,
           index-drift, count-unstamped, check-document-references,
-          definition-source, plan-document-edit, apply-document-edit,
-          apply-transition, set-document-status, complete-plan,
-          status-destination, flat-directory, document-file]
+          definition-source, plan-document-edit, apply-transition,
+          set-document-status, complete-plan, status-destination,
+          flat-directory, document-store-entry, docstore-apply-batch]
 tags: [documents, document-store, protocol, adapter, refactor, identity,
        change-detection, workflow, rebuild-equivalence, dec-0001, dec-0002,
        con-0002, con-0008, des-0048, req-0009]

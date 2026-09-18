@@ -448,6 +448,16 @@ once, as it did before documents moved behind the store."
            (setf (cdr shared) (directory (merge-pathnames "**/*.*" root))))
           (t (cdr shared)))))
 
+(defvar *terminal-status-p* nil
+  "How a document store decides whether a status finishes a document.
+
+A function of a category string and a status keyword, or NIL for a store where
+nothing is terminal and no document ever moves. Placement is the store's
+business (DES-0051 N3) and the vocabulary is CON-0004's, which lives in
+transition.lisp -- a file compiled after this one, so the function arrives in
+this variable rather than by name. TERMINAL-CATEGORY-STATUS-P puts it here when
+transition.lisp loads.")
+
 (defun repository-document-store (repository)
   "REPOSITORY's document store, building the default file store on first use.
 
@@ -466,7 +476,12 @@ its own."
                            (when reason
                              (setf (repository-ignore-reason repository) reason))
                            ignored))
-               :listing (lambda () (tree-listing root)))))))
+               :listing (lambda () (tree-listing root))
+               ;; Read on every call rather than captured, so a store built
+               ;; before transition.lisp loaded still asks the real table.
+               :terminal-p (lambda (category status)
+                             (and *terminal-status-p*
+                                  (funcall *terminal-status-p* category status))))))))
 
 (defun indexed-document (repository address)
   "The store ref and the version indexed for the document at ADDRESS, or NIL.
