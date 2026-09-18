@@ -179,6 +179,18 @@ would silently give a tree the wrong toolchain."
     (vector (coerce value 'list))
     (t (list value))))
 
+(defun parse-declaration-block (table)
+  "A YAML mapping as a plist of keywords to strings, or NIL.
+
+Uninterpreted on purpose. DES-0052 D3: which keys a document store's
+declaration may carry is written down in that store's constructor and nowhere
+else, so this renders the block and stops. A value that is not a scalar is
+rendered by AS-STRING, which is what every other scalar in this file gets."
+  (when (hash-table-p table)
+    (loop for key being the hash-keys of table using (hash-value value)
+          append (list (intern (string-upcase (string key)) :keyword)
+                       (as-string value)))))
+
 (defun parse-frameworks (contents)
   "A .loom/frameworks.yaml as (:definer-macros ... :route-callers ...).
 
@@ -208,7 +220,13 @@ out which half."
             ;; DES-0047. The fourth key, built the way :ROUTE-CALLERS is.
             :domains
             (remove nil (mapcar #'parse-domain
-                                (as-sequence (yaml-value parsed :|domains|))))))))
+                                (as-sequence (yaml-value parsed :|domains|))))
+            ;; DES-0052. The fifth, and the only one this system does not read
+            ;; itself: a block handed through to a document store's
+            ;; constructor, which is the one thing that knows what its keys
+            ;; mean. Parsed into a plist and not interpreted.
+            :document-store
+            (parse-declaration-block (yaml-value parsed :|document-store|))))))
 
 (defun domain-table (domains)
   "DOMAINS as a keyword-to-plist table, with :DEFAULT always present.

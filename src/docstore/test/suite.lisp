@@ -101,3 +101,77 @@
       (is (stamp-changed-p (make-file-stamp (1- write-date) (sxhash "bravo"))
                            path (+ write-date *mtime-settle-seconds* 1))
           "a moved write date was not a change"))))
+
+
+;;;; ==================================================================
+;;;; Choosing a store (DES-0052)
+;;;; ==================================================================
+
+(test both-stores-register-themselves
+  ;; A registry with one entry demonstrates nothing. Each store calls
+  ;; REGISTER-DOCSTORE-KIND at the bottom of its own file, so the table is
+  ;; built by loading and not by a list somebody maintains.
+  (is (equal '(:file :memory) (docstore-kinds))
+      "the registered kinds are ~s" (docstore-kinds)))
+
+(test a-kind-nothing-registered-is-refused-and-the-refusal-names-what-is
+  ;; Falling back to the file store would index a checkout\'s docs/ while the
+  ;; caller believed they were reading from somewhere else -- the one failure
+  ;; no count reveals (DES-0052 D5).
+  (let ((refusal (handler-case (progn (make-docstore :jira) nil)
+                   (docstore-refused (c) (docstore-refused-reason c)))))
+    (is (stringp refusal) "an unregistered kind built something")
+    (is (search "jira" refusal) "the refusal does not name the kind: ~a" refusal)
+    (is (search "file" refusal) "the refusal does not name what is registered: ~a"
+        refusal)))
+
+(test registering-a-kind-twice-replaces-rather-than-accumulates
+  ;; REGISTER-ANALYZER\'s rule, and for the same reason: recompiling a file in
+  ;; a live image runs its registration form again, and a second entry would
+  ;; make which constructor runs depend on load order.
+  (let ((*docstore-kinds* *docstore-kinds*))
+    (register-docstore-kind :probe (lambda (config services)
+                                     (declare (ignore config services)) :first))
+    (register-docstore-kind :probe (lambda (config services)
+                                     (declare (ignore config services)) :second))
+    (is (eq :second (make-docstore :probe)))
+    (is (= 1 (count :probe (docstore-kinds))) "the kind is registered twice")))
+
+(test an-unknown-declaration-key-is-refused-by-name
+  ;; DES-0052 D4. The workspace stopped reading the block, so nothing else is
+  ;; looking: a key nobody reads has to be refused rather than passed over, or
+  ;; a typo is invisible.
+  (let ((refusal (handler-case
+                     (progn (make-docstore :file
+                                           :config '(:kind "file" :extnesion "yaml")
+                                           :services (list :root #p"/tmp/"))
+                            nil)
+                   (docstore-refused (c) (docstore-refused-reason c)))))
+    (is (stringp refusal) "a misspelled key was accepted")
+    (is (search "extnesion" refusal) "the refusal does not name the key: ~a" refusal)
+    (is (search "extension" refusal) "nor what the store does take: ~a" refusal)))
+
+(test a-declaration-reaches-the-store-it-declares
+  ;; The whole point of CONFIG: the workspace passed a value it never read and
+  ;; the store used it.
+  (let ((store (make-docstore :file
+                              :config '(:kind "file" :extension "md")
+                              :services (list :root #p"/tmp/"))))
+    (is (string= "md" (file-docstore-extension store))))
+  (let ((store (make-docstore :file :services (list :root #p"/tmp/"))))
+    (is (string= "yaml" (file-docstore-extension store))
+        "a declaration that says nothing gets the default")))
+
+(test a-file-store-with-no-root-is-refused
+  ;; SERVICES is the workspace\'s half and a missing root is its mistake, not
+  ;; the declaration\'s -- but it is refused in the same place and with the same
+  ;; condition, because a caller printing the reason does not care whose it was.
+  (signals docstore-refused (make-docstore :file :config '(:kind "file"))))
+
+(test an-in-memory-store-can-be-declared
+  ;; Registered so a tree can be run against it without a Lisp caller, which is
+  ;; also what keeps the registry honest: two kinds from the start.
+  (let ((store (make-docstore :memory :config '(:kind "memory")
+                                      :services (list :root #p"/tmp/"))))
+    (is (typep store 'memory-docstore))
+    (is (null (docstore-enumerate store)) "a fresh in-memory store holds nothing")))

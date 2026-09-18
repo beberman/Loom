@@ -57,6 +57,9 @@
    ;; file-store.lisp
    #:file-docstore
    #:make-file-docstore
+   #:file-docstore-root
+   #:file-docstore-extension
+   #:file-docstore-document-directory
 
    ;; memory-store.lisp
    #:memory-docstore
@@ -74,6 +77,12 @@
    #:status-line-value
    #:top-level-status-line
    #:replace-status-line
+
+   ;; factory.lisp -- choosing a store
+   #:*docstore-kinds*
+   #:register-docstore-kind
+   #:docstore-kinds
+   #:make-docstore
 
    ;; file-store.lisp -- allocating an id, and where a file belongs
    #:next-document-id

@@ -601,3 +601,40 @@ to do it."
     (unless (git-answers-for-p (file-docstore-root store))
       (setf (getf capabilities :history) :absent))
     capabilities))
+
+;;;; ==================================================================
+;;;; The kind (DES-0052)
+;;;; ==================================================================
+
+(defparameter *file-docstore-config-keys* '(:kind :extension)
+  "What a file store\'s declaration may say. :KIND is the selector itself and
+is carried through so a caller can hand the block over whole.")
+
+(defun file-docstore-from-config (config services)
+  "A file store from a repository\'s declaration and the workspace\'s services.
+
+DES-0052 D2. CONFIG is what the declaration said and nothing here defaulted;
+SERVICES is what the workspace built and is the same for every kind, so the
+three tree-shaped functions are read here and a store that has no tree simply
+does not read them.
+
+CHECK-CONFIG-KEYS first, so a key nobody reads is refused by name rather than
+passed over -- the workspace stopped reading this block, and nothing else is
+looking (DES-0052 D4)."
+  (check-config-keys config *file-docstore-config-keys* :file)
+  (destructuring-bind (&key root claim ignore listing terminal-p category-prefix
+                            document-directory &allow-other-keys)
+      services
+    (unless root
+      (error 'docstore-refused :ref :file
+             :reason "A file document store needs a root, and none was given."))
+    (make-file-docstore root
+                        :claim claim
+                        :ignore ignore
+                        :listing listing
+                        :terminal-p terminal-p
+                        :category-prefix category-prefix
+                        :document-directory (or document-directory "docs")
+                        :extension (or (config-value config :extension :file) "yaml"))))
+
+(register-docstore-kind :file #'file-docstore-from-config)

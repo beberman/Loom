@@ -195,6 +195,64 @@ of the two it was."
     (is (eq repository (find-repository "~/"))
         "and by the spelling a person types, which is the fix")))
 
+(test a-repository-with-no-declaration-gets-a-file-store
+  ;; The case every repository is in until it says otherwise, and the default
+  ;; has to be the one that reads the tree it was pointed at.
+  (with-workspace-fixture (repository)
+    (is (typep (loom-workspace::repository-document-store repository)
+               'loom-docstore:file-docstore))))
+
+(defun rewatch-with-declaration (repository text)
+  "Declare TEXT in the fixture's .loom/frameworks.yaml and watch the tree again.
+
+The fixture's repository has already built and memoised a store, so a
+declaration written now reaches nothing until the tree is watched fresh. Both
+halves are here rather than in each test because forgetting the unwatch leaves
+the old repository registered and the new one is never the one under test."
+  (unwatch-repository (repository-name repository))
+  (write-file ".loom/frameworks.yaml" text)
+  (watch-repository *fixture-root* :monitor nil :quiet t))
+
+(test a-declared-store-kind-is-the-one-the-repository-gets
+  ;; DES-0052, end to end: .loom/frameworks.yaml names a kind, the factory
+  ;; builds it, and the pipeline indexes through it. The in-memory store is
+  ;; what makes this observable -- it holds nothing, so the two YAML documents
+  ;; sitting on disk are indexed by nobody, which is exactly what declaring a
+  ;; store that is not the tree means.
+  (with-workspace-fixture (repository)
+    (let ((fresh (rewatch-with-declaration repository "document-store:
+  kind: memory
+")))
+      (is (typep (loom-workspace::repository-document-store fresh)
+                 'loom-docstore:memory-docstore)
+          "the declaration was not read")
+      (is (zerop (getf (repository-status fresh) :documents))
+          "the store holds no document, so the index must hold none")
+      (is-true (probe-file (merge-pathnames "docs/decisions/DEC-0001.yaml"
+                                            *fixture-root*))
+               "and the file is still on disk, indexed by nobody"))))
+
+(test a-declared-kind-nothing-registered-refuses-when-the-tree-is-watched
+  ;; DES-0052 D6. The store is built inside WATCH-REPOSITORY\'s first index, so
+  ;; a developer who mistyped a kind hears about it where they are standing
+  ;; rather than from a poll two seconds later on a supervised service.
+  (with-workspace-fixture (repository)
+    (signals loom-docstore:docstore-refused
+      (rewatch-with-declaration repository "document-store:
+  kind: jira
+"))))
+
+(test a-declared-key-the-store-does-not-take-refuses-the-same-way
+  ;; The other half of DES-0052 D4, at the level a person meets it: the
+  ;; workspace hands the block over without reading it, so a misspelled key is
+  ;; refused by the store or by nobody.
+  (with-workspace-fixture (repository)
+    (signals loom-docstore:docstore-refused
+      (rewatch-with-declaration repository "document-store:
+  kind: file
+  extnesion: yaml
+"))))
+
 (test watching-a-repository-indexes-source-and-documents-together
   (with-workspace-fixtures (repository)
     (let ((g (repository-graph repository)))
