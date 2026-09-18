@@ -13,7 +13,8 @@
      (unwind-protect
           (let ((,store (make-file-docstore ,root :claim #'yaml-under-docs-p
                                                   :ignore ,ignore
-                                                  :terminal-p #'test-terminal-p)))
+                                                  :terminal-p #'test-terminal-p
+                                                  :category-prefix #'test-category-prefix)))
             ,@body)
        (uiop:delete-directory-tree ,root :validate t))))
 
@@ -182,3 +183,75 @@
                           (docstore-read store "docs/decisions/DEC-0001.yaml"))
                  "the refused write landed anyway"))
         (uiop:run-program (list "chmod" "644" (namestring path)))))))
+
+(defun git (root &rest arguments)
+  (uiop:run-program (append (list "git" "-C" (namestring root)) arguments)
+                    :output nil :error-output nil :ignore-error-status t))
+
+(defun git-tree (root)
+  "Make ROOT a git repository a commit can be made in."
+  (git root "init" "-q")
+  (git root "config" "user.email" "suite@example.invalid")
+  (git root "config" "user.name" "The Suite"))
+
+(test locate-is-the-absolute-path
+  ;; File property: DOCSTORE-LOCATE is "a string a person can open", and for
+  ;; this store that is the path. The in-memory store has no method, which is
+  ;; the honest answer for documents that are nowhere on disk.
+  (with-file-store (store root)
+    (write-text (merge-pathnames "docs/decisions/DEC-0001.yaml" root) "id: DEC-0001")
+    (let ((located (docstore-locate store "docs/decisions/DEC-0001.yaml")))
+      (is (stringp located))
+      (is-true (probe-file located) "locate returned ~a, which is not there" located))))
+
+(test history-follows-a-document-through-the-rename-a-transition-makes
+  ;; File property, and the reason --follow is in the command rather than a
+  ;; plain `git log'. A transition renames the file, so a finished document
+  ;; asked about at its completed/ address would otherwise report only the
+  ;; commit that put it there and none of the work that came before.
+  (with-file-store (store root)
+    (git-tree root)
+    (write-text (merge-pathnames "docs/plans/PLAN-0001.yaml" root)
+                (format nil "id: PLAN-0001~%status: draft~%"))
+    (git root "add" "-A")
+    (git root "commit" "-q" "-m" "PLAN-0001: the plan")
+    (let ((record (docstore-transition store "docs/plans/PLAN-0001.yaml" :final)))
+      (git root "add" "-A")
+      (git root "commit" "-q" "-m" "PLAN-0001: finished")
+      (let ((history (docstore-history store (docstore-record-ref record))))
+        (is (= 2 (length history))
+            "the history of a moved document is ~s" history)
+        (destructuring-bind (when who field from to why) (first history)
+          (is (stringp when) "the date is ~s" when)
+          (is (string= "The Suite" who))
+          (is (eq :commit field))
+          (is (null from) "a commit has no from-value to name: ~s" from)
+          (is (= 40 (length to)) "the to-value is the hash: ~s" to)
+          (is (string= "PLAN-0001: finished" why)
+              "the newest entry is ~s" why))
+        (is (string= "PLAN-0001: the plan" (sixth (second history)))
+            "the commit before the rename is ~s" (second history))))))
+
+(test a-tree-git-cannot-answer-for-says-so-rather-than-reporting-no-history
+  ;; CON-0001 in the capability. A scratch directory is not a checkout, and an
+  ;; empty history there would read exactly like a document nobody has ever
+  ;; touched.
+  (with-file-store (store root)
+    (write-text (merge-pathnames "docs/decisions/DEC-0001.yaml" root) "id: DEC-0001")
+    (is (eq :absent (getf (docstore-capabilities store) :history))
+        "history reads ~s for a directory that is not a checkout"
+        (getf (docstore-capabilities store) :history))
+    (signals docstore-refused (docstore-history store "docs/decisions/DEC-0001.yaml"))))
+
+(test allocate-id-counts-completed-as-well-as-the-open-documents
+  ;; File property, and the whole correctness of the allocator: `complete'
+  ;; moves a finished document into completed/, so the highest id in a mature
+  ;; category is normally in there. Looking only at the open ones answered
+  ;; BUG-0026 on 2026-08-14 when BUG-0026 and BUG-0027 were both already taken
+  ;; and filed, and the duplicate that was written had to be renumbered.
+  (with-file-store (store root)
+    (write-text (merge-pathnames "docs/plans/PLAN-0001.yaml" root) "id: PLAN-0001")
+    (write-text (merge-pathnames "docs/plans/completed/PLAN-0007.yaml" root) "id: PLAN-0007")
+    (is (string= "PLAN-0008" (docstore-allocate-id store "plans"))
+        "allocated ~a with PLAN-0007 in completed/"
+        (docstore-allocate-id store "plans"))))

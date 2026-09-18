@@ -35,12 +35,17 @@ Placement is the store's and the vocabulary is not (DES-0051 N3). This store
 has no directories, so the move is a change of address and nothing else -- and
 that it is a change of address at all is the point, because a caller that read
 the new address out of the returned record works on both stores and one that
-computed docs/<category>/completed/ for itself works on neither."))
+computed docs/<category>/completed/ for itself works on neither.")
+   (category-prefix :initarg :category-prefix :initform nil
+                    :reader memory-docstore-category-prefix
+                    :documentation "As the file store's: a function of a
+category returning the id prefix its documents carry, or NIL."))
   (:documentation "Documents held in memory, for the suite. DES-0051 D6."))
 
-(defun make-memory-docstore (&key terminal-p)
+(defun make-memory-docstore (&key terminal-p category-prefix)
   "An empty in-memory store."
-  (make-instance 'memory-docstore :terminal-p terminal-p))
+  (make-instance 'memory-docstore :terminal-p terminal-p
+                                  :category-prefix category-prefix))
 
 (defun advance (store)
   (incf (memory-docstore-sequence store)))
@@ -320,8 +325,48 @@ in the applying can fail."
                         (nreverse plans))
                 nil))))
 
+
+;;;; ==================================================================
+;;;; Phase 3, workflow
+;;;; ==================================================================
+;;;;
+;;;; Two of the four. This store has no history and nowhere a person could open,
+;;;; and says so by having no method: DOCSTORE-CAPABILITIES reads :ABSENT for
+;;;; both, which is DES-0051 D3's recorded gap rather than an operation that
+;;;; appears to work.
+
+(defmethod docstore-allocate-id ((store memory-docstore) category)
+  "The highest id in CATEGORY plus one, from the documents the store holds.
+
+The file store\'s rule, over a list instead of a directory -- and removed
+documents count, because reusing a retired number makes an old reference point
+silently at new content."
+  (let ((prefix (and (memory-docstore-category-prefix store)
+                     (funcall (memory-docstore-category-prefix store) category))))
+    (unless prefix
+      (error 'docstore-refused :store store :ref category
+             :reason (format nil "This store was not told what id prefix ~a documents ~
+carry, so it cannot allocate one." category)))
+    (let ((highest 0))
+      (dolist (document (memory-docstore-documents store))
+        (when (string-equal category (address-category (memory-document-address document)))
+          (let* ((name (pathname-name (memory-document-address document)))
+                 (dash (position #\- name :from-end t)))
+            (when (and dash (string-equal prefix (subseq name 0 dash)))
+              (let ((n (parse-integer name :start (1+ dash) :junk-allowed t)))
+                (when (and n (> n highest)) (setf highest n)))))))
+      (format nil "~a-~4,\'0d" prefix (1+ highest)))))
+
+(defmethod docstore-may-transition ((store memory-docstore) ref status actor)
+  "Always, as on the file store. This store has no permission model either."
+  (declare (ignore store ref status actor))
+  (values t nil))
+
 (defmethod docstore-capabilities ((store memory-docstore))
-  "The default, with the batch guarantee this store actually gives."
+  "The default, with the batch guarantee this store actually gives, and
+ALLOCATE-ID as weak as the file store\'s: highest plus one is right for one
+writer."
   (let ((capabilities (call-next-method)))
-    (setf (getf capabilities :batch) :atomic)
+    (setf (getf capabilities :batch) :atomic
+          (getf capabilities :allocate-id) :single-writer)
     capabilities))

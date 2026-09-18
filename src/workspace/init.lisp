@@ -309,24 +309,6 @@ before DES-0044 and is what a refresh reports rather than guesses at."
 ;;;; Ids, allocated the one way this tree allocates them
 ;;;; ==================================================================
 
-(defun next-document-id (directory prefix)
-  "The next free PREFIX id in DIRECTORY, as PREFIX-nnnn.
-
-REQ-0021 R14 as amended: init allocates through whatever allocator the tree
-has, and where none is reachable it uses REQ-0025 R6's own fallback -- the
-highest id in this checkout plus one. What it may not do is invent a third
-rule, because two allocation rules in one tree is how a counter stops being
-trustworthy. When REQ-0025's operation exists this function calls it instead."
-  (let ((highest 0))
-    (dolist (path (append (directory (merge-pathnames "*.yaml" directory))
-                          (directory (merge-pathnames "completed/*.yaml" directory))))
-      (let* ((name (pathname-name path))
-             (dash (position #\- name :from-end t)))
-        (when (and dash (string-equal prefix (subseq name 0 dash)))
-          (let ((n (parse-integer name :start (1+ dash) :junk-allowed t)))
-            (when (and n (> n highest)) (setf highest n))))))
-    (format nil "~a-~4,'0d" prefix (1+ highest))))
-
 ;;;; ==================================================================
 ;;;; Plan, then apply
 ;;;; ==================================================================

@@ -458,6 +458,20 @@ transition.lisp -- a file compiled after this one, so the function arrives in
 this variable rather than by name. TERMINAL-CATEGORY-STATUS-P puts it here when
 transition.lisp loads.")
 
+(defvar *category-id-prefix* nil
+  "How a document store learns which id prefix a category uses.
+
+A function of a category string, or NIL. The same arrangement as
+*TERMINAL-STATUS-P* and for the same reason: the convention is CON-0004's and
+lives in transition.lisp, which is compiled after this file.")
+
+;; READ-MANIFEST is init.lisp's and that file loads after this one. Declared
+;; rather than hooked through a variable like the two above, because it is a
+;; plain function this system owns and the call below happens at runtime, long
+;; after both files are loaded. The declaim is what keeps the compiler from
+;; reporting it as undefined.
+(declaim (ftype (function (t) t) read-manifest))
+
 (defun repository-document-store (repository)
   "REPOSITORY's document store, building the default file store on first use.
 
@@ -481,7 +495,15 @@ its own."
                ;; before transition.lisp loaded still asks the real table.
                :terminal-p (lambda (category status)
                              (and *terminal-status-p*
-                                  (funcall *terminal-status-p* category status))))))))
+                                  (funcall *terminal-status-p* category status)))
+               :category-prefix (lambda (category)
+                                  (and *category-id-prefix*
+                                       (funcall *category-id-prefix* category)))
+               ;; REQ-0021: a prepared tree may keep its documents somewhere
+               ;; other than docs/, and DOCSTORE-CREATE is what has to put a
+               ;; new one there.
+               :document-directory (or (getf (read-manifest root) :document-directory)
+                                       "docs"))))))
 
 (defun indexed-document (repository address)
   "The store ref and the version indexed for the document at ADDRESS, or NIL.

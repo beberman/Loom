@@ -75,7 +75,8 @@
    #:top-level-status-line
    #:replace-status-line
 
-   ;; file-store.lisp -- where a file belongs
+   ;; file-store.lisp -- allocating an id, and where a file belongs
+   #:next-document-id
    #:flat-directory
    #:status-destination
    #:probe-writable

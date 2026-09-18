@@ -99,6 +99,28 @@ is also what an unregistered category returns."
   (let ((entry (assoc category *workflow-status-vocabulary* :test #'string-equal)))
     (values (second entry) (third entry))))
 
+(defparameter *document-id-prefixes*
+  '(("requirements" . "REQ") ("arch" . "ARCH") ("decisions" . "DEC")
+    ("design" . "DES") ("plans" . "PLAN") ("reviews" . "REV")
+    ("bugs" . "BUG") ("concepts" . "CON") ("rules" . "RULE"))
+  "Document category -> the prefix its ids carry. CON-0004's convention.
+
+tools/next-doc-id.sh carries the same nine rows for a shell, and BUG-0039 is
+what one wrong row costs: DEC named docs/design, matched no DEC-nnnn and
+answered DEC-0001 while four decisions existed, and DES had no row at all.
+Both tables restate CON-0004 and neither derives from the other, so a category
+added there is added in both places.")
+
+(defun category-id-prefix (category)
+  "The id prefix documents in CATEGORY carry, or NIL for a category with none.
+
+A store asks this before allocating an id. NIL is an answer: a document
+directory the workflow does not name has no id convention, and inventing one
+from the directory's spelling is the fabricated fact CON-0001 forbids."
+  (cdr (assoc category *document-id-prefixes* :test #'string-equal)))
+
+(setf *category-id-prefix* #'category-id-prefix)
+
 (defun terminal-category-status-p (category status)
   "True when STATUS finishes a document filed under CATEGORY.
 

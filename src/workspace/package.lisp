@@ -35,12 +35,16 @@
                 ;; from here for the same reason: the lower system is the
                 ;; shared home when one caller's system already depends on it.
                 #:docstore-write #:docstore-create #:docstore-transition
-                #:docstore-apply-batch #:docstore-refused #:docstore-refused-reason
-                #:docstore-conflict
+                #:docstore-apply-batch #:docstore-error #:docstore-refused
+                #:docstore-refused-reason #:docstore-conflict
                 #:whitespace-char-p #:line-end #:status-key-line-p
                 #:status-line-value #:top-level-status-line #:replace-status-line
                 #:flat-directory #:status-destination #:probe-writable
-                #:*completed-directory* #:address-category)
+                #:*completed-directory* #:address-category
+                ;; Phase 3. NEXT-DOCUMENT-ID was init.lisp's and is the file
+                ;; store's allocator now; init.lisp reads it from here.
+                #:next-document-id #:docstore-allocate-id #:docstore-may-transition
+                #:docstore-history #:docstore-locate #:docstore-capabilities)
 
   (:export
    ;; the registry
@@ -173,6 +177,9 @@
    ;; a store of its own has to do the same or no document it holds ever moves.
    #:terminal-category-status-p
    #:*terminal-status-p*
+   #:category-id-prefix
+   #:*category-id-prefix*
+   #:*document-id-prefixes*
    #:complete-plan
    #:parse-verdicts
    #:document-status-vocabulary

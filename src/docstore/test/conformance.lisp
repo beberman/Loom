@@ -93,6 +93,12 @@ moves on both stores or on neither."
                      (t '())))
        t))
 
+(defun test-category-prefix (category)
+  "CON-0004's category-to-prefix convention, cut down to what these tests use.
+The real table is *DOCUMENT-ID-PREFIXES* in loom-workspace and stays there."
+  (cdr (assoc category '(("plans" . "PLAN") ("decisions" . "DEC") ("design" . "DES"))
+              :test #'string-equal)))
+
 (defun yaml-under-docs-p (path)
   "The document analyzer's claim, restated for tests: YAML under a docs segment."
   (and (member (pathname-type path) '("yaml" "yml") :test #'string-equal)
@@ -105,7 +111,8 @@ moves on both stores or on neither."
          (funcall function
                   (make-harness
                    (make-file-docstore root :claim #'yaml-under-docs-p
-                                            :terminal-p #'test-terminal-p)
+                                            :terminal-p #'test-terminal-p
+                                            :category-prefix #'test-category-prefix)
                    (lambda (category name text)
                      (let ((ref (format nil "docs/~a/~a.yaml" category name)))
                        (write-text (merge-pathnames ref root) text)
@@ -128,7 +135,8 @@ moves on both stores or on neither."
 ;;;; ==================================================================
 
 (defun call-with-memory-harness (function)
-  (let ((store (make-memory-docstore :terminal-p #'test-terminal-p)))
+  (let ((store (make-memory-docstore :terminal-p #'test-terminal-p
+                                     :category-prefix #'test-category-prefix)))
     (funcall function
              (make-harness
               store
@@ -490,3 +498,94 @@ status: draft
             "~a: ~s reads ~s" kind operation (getf capabilities operation)))
       (is (member (getf capabilities :batch) '(:atomic :planned))
           "~a: the batch guarantee reads ~s" kind (getf capabilities :batch)))))
+
+;;;; ==================================================================
+;;;; Phase 3, workflow
+;;;; ==================================================================
+
+(test allocate-id-is-the-highest-in-the-category-plus-one
+  ;; A gap is never reused. Highest plus one and not lowest free, because
+  ;; reusing a retired number makes an old reference point silently at new
+  ;; content -- CON-0004 records that this has already cost a document its
+  ;; place in the index.
+  (for-each-store (kind harness)
+    (let ((store (harness-store harness)))
+      (is (string= "PLAN-0001" (docstore-allocate-id store "plans"))
+          "~a: an empty category allocated ~a" kind (docstore-allocate-id store "plans"))
+      (put harness "plans" "PLAN-0003" *plan-text*)
+      (is (string= "PLAN-0004" (docstore-allocate-id store "plans"))
+          "~a: with PLAN-0003 held, allocated ~a" kind
+          (docstore-allocate-id store "plans"))
+      (is (string= "DEC-0001" (docstore-allocate-id store "decisions"))
+          "~a: a category is counted on its own" kind))))
+
+(test allocating-does-not-take-the-id
+  ;; Two calls with nothing between them answer the same, which is what
+  ;; :SINGLE-WRITER means: the store hands out a number and records nothing,
+  ;; so two writers get the same one. Asserted rather than left implicit,
+  ;; because DES-0048's lease is the upgrade and this is the behaviour it
+  ;; replaces.
+  (for-each-store (kind harness)
+    (let ((store (harness-store harness)))
+      (is (string= (docstore-allocate-id store "plans")
+                   (docstore-allocate-id store "plans"))
+          "~a: the second call answered differently" kind)
+      (is (eq :single-writer (getf (docstore-capabilities store) :allocate-id))
+          "~a: allocate-id declares ~s" kind
+          (getf (docstore-capabilities store) :allocate-id)))))
+
+(test a-category-with-no-id-convention-is-refused-rather-than-invented
+  ;; CON-0001. A document directory the workflow does not name has no prefix,
+  ;; and making one out of the directory\'s spelling would mint ids nothing
+  ;; else in the tree agrees with.
+  (for-each-store (kind harness)
+    ;; Computed before IS rather than inside it: FIVEAM's IS takes the form
+    ;; apart to report its arguments, and a macro in that position has its
+    ;; body evaluated outside the handler.
+    (let ((refused (handler-case
+                       (progn (docstore-allocate-id (harness-store harness) "notebooks") nil)
+                     (docstore-refused () t))))
+      (is-true refused "~a: a category with no prefix allocated an id" kind))))
+
+(test may-transition-is-true-where-the-merge-is-the-approval
+  ;; CON-0008. Neither of these stores has a permission model: whoever can
+  ;; write the document can set its status, and a check here would be theatre
+  ;; in front of an editor. The operation exists for a tracker, which answers
+  ;; from its own model.
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (ref (put harness "plans" "PLAN-0001" *plan-text*)))
+      (is-true (docstore-may-transition store ref :final "anybody")
+               "~a: refused a transition" kind))))
+
+(defun operation-answer (store ref operation)
+  "Three ways an operation can turn out: :ANSWERED, :REFUSED or :NO-METHOD."
+  (let ((function (ecase operation
+                    (:history 'docstore-history)
+                    (:locate 'docstore-locate))))
+    (if (null (compute-applicable-methods (fdefinition function) (list store ref)))
+        :no-method
+        (handler-case (progn (funcall function store ref) :answered)
+          (docstore-error () :refused)))))
+
+(test what-a-store-does-not-answer-it-declares-absent
+  ;; DES-0051 D3, and the property that makes capabilities worth reading: what
+  ;; the plist says is what happens at the call. :NATIVE answers. :ABSENT
+  ;; either has no method or refuses -- what it must not do is return nothing
+  ;; and let an empty history read like a document nothing ever touched
+  ;; (CON-0001).
+  ;;
+  ;; Both outcomes are live here. The in-memory store has no DOCSTORE-HISTORY
+  ;; method at all, and the file store has one that refuses, because a scratch
+  ;; directory is not a git checkout.
+  (for-each-store (kind harness)
+    (let* ((store (harness-store harness))
+           (capabilities (docstore-capabilities store))
+           (ref (put harness "plans" "PLAN-0001" *plan-text*)))
+      (dolist (operation '(:history :locate))
+        (let ((outcome (operation-answer store ref operation)))
+          (ecase (getf capabilities operation)
+            (:native (is (eq :answered outcome)
+                         "~a: ~s is :native and came back ~s" kind operation outcome))
+            (:absent (is (member outcome '(:refused :no-method))
+                         "~a: ~s is :absent and came back ~s" kind operation outcome))))))))

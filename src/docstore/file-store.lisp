@@ -40,10 +40,19 @@ documents are created in. PLAN-0055 step 9 passes the manifest's
 :DOCUMENT-DIRECTORY here; until then every caller gets the default.")
    (extension :initarg :extension :initform "yaml"
               :reader file-docstore-extension
-              :documentation "The file type a created document gets."))
+              :documentation "The file type a created document gets.")
+   (category-prefix :initarg :category-prefix :initform nil
+                    :reader file-docstore-category-prefix
+                    :documentation "NIL, or a function of a category string
+returning the id prefix documents in it carry -- \"arch\" to \"ARCH\".
+
+Another fact loom-docstore cannot compute. Which prefix a category uses is
+CON-0004's convention, the same on every store, and it lives in loom-workspace
+beside the status vocabulary. Without one DOCSTORE-ALLOCATE-ID refuses rather
+than inventing a prefix from the directory name."))
   (:documentation "Documents as files under ROOT. DES-0051 D6."))
 
-(defun make-file-docstore (root &key claim ignore listing terminal-p
+(defun make-file-docstore (root &key claim ignore listing terminal-p category-prefix
                                      (document-directory "docs") (extension "yaml"))
   "A file store over ROOT. The keywords are the slots above."
   (make-instance 'file-docstore
@@ -52,6 +61,7 @@ documents are created in. PLAN-0055 step 9 passes the manifest's
                  :ignore ignore
                  :listing listing
                  :terminal-p terminal-p
+                 :category-prefix category-prefix
                  :document-directory document-directory
                  :extension extension))
 
@@ -460,3 +470,134 @@ part-way, and re-running the same command finishes it."
                        (list (format nil "~a of ~a entries were written, and then: ~a"
                                      (length landed) (length operations) condition))))))
          (values (nreverse landed) nil))))))
+
+
+;;;; ==================================================================
+;;;; Phase 3, workflow
+;;;; ==================================================================
+
+(defun next-document-id (directory prefix)
+  "The next free PREFIX id in DIRECTORY, as PREFIX-nnnn.
+
+REQ-0021 R14 as amended: init allocates through whatever allocator the tree
+has, and where none is reachable it uses REQ-0025 R6's own fallback -- the
+highest id in this checkout plus one. What it may not do is invent a third
+rule, because two allocation rules in one tree is how a counter stops being
+trustworthy. When REQ-0025's operation exists this function calls it instead."
+  (let ((highest 0))
+    (dolist (path (append (directory (merge-pathnames "*.yaml" directory))
+                          (directory (merge-pathnames "completed/*.yaml" directory))))
+      (let* ((name (pathname-name path))
+             (dash (position #\- name :from-end t)))
+        (when (and dash (string-equal prefix (subseq name 0 dash)))
+          (let ((n (parse-integer name :start (1+ dash) :junk-allowed t)))
+            (when (and n (> n highest)) (setf highest n))))))
+    (format nil "~a-~4,'0d" prefix (1+ highest))))
+
+(defun category-directory (store category)
+  (merge-pathnames (format nil "~a/~a/"
+                           (file-docstore-document-directory store) category)
+                   (file-docstore-root store)))
+
+(defmethod docstore-allocate-id ((store file-docstore) category)
+  "The next free id in CATEGORY: the highest in this checkout plus one.
+
+:SINGLE-WRITER, and the capability says so. Highest plus one is right for one
+developer and wrong for two -- both would be handed the same number and one
+document would have to be renumbered after the fact. DES-0048's lease is the
+upgrade to :NATIVE, and it changes this method and nothing above it."
+  (let ((prefix (and (file-docstore-category-prefix store)
+                     (funcall (file-docstore-category-prefix store) category))))
+    (unless prefix
+      (error 'docstore-refused :store store :ref category
+             :reason (format nil "This store was not told what id prefix ~a documents ~
+carry, so it cannot allocate one." category)))
+    (next-document-id (category-directory store category) prefix)))
+
+(defmethod docstore-may-transition ((store file-docstore) ref status actor)
+  "Always. CON-0008: on a checkout the merge is the approval.
+
+There is no permission model in a file tree -- whoever can write the file can
+set the status, and a check here would be theatre in front of an editor. A
+tracker answers from its own model, which is why the operation exists."
+  (declare (ignore store ref status actor))
+  (values t nil))
+
+(defmethod docstore-locate ((store file-docstore) ref)
+  "The absolute path, which is a string a person can open."
+  (namestring (merge-pathnames ref (file-docstore-root store))))
+
+(defun git-answers-for-p (root)
+  "True when git can answer about ROOT."
+  (handler-case
+      (multiple-value-bind (output error code)
+          (uiop:run-program (list "git" "-C" (namestring root) "rev-parse" "--git-dir")
+                            :output :string :error-output :string
+                            :ignore-error-status t)
+        (declare (ignore output error))
+        (zerop code))
+    (error () nil)))
+
+(defun parse-history-line (line)
+  "One `git log\' line -- hash, ISO date, author, subject -- as a history entry."
+  (let* ((fields (loop with start = 0
+                       repeat 4
+                       collect (let ((tab (position #\Tab line :start start)))
+                                 (prog1 (subseq line start (or tab (length line)))
+                                   (setf start (if tab (1+ tab) (length line))))))))
+    (destructuring-bind (hash when who why) fields
+      ;; (when who field from to why). The field is :COMMIT and the hash is
+      ;; the to-value, because a commit changes the whole document rather than
+      ;; one field and there is no from-value to name.
+      (list when who :commit nil hash why))))
+
+(defmethod docstore-history ((store file-docstore) ref)
+  "What git records about the document at REF, newest first.
+
+`git log --follow\', so a document that moved into completed/ keeps the
+history it had under its old path -- which is the whole reason a file store can
+answer this at all, since a transition renames the file. Each entry is
+(when who field from to why): the field is :COMMIT and the hash is what stands
+in for a from-value, because a commit changes the whole document rather than
+one field.
+
+Refuses rather than returning nothing for a tree git cannot answer for.
+DOCSTORE-CAPABILITIES reports :ABSENT there, and an empty history and no
+history at all must not read alike (CON-0001)."
+  (let ((root (file-docstore-root store)))
+    (unless (git-answers-for-p root)
+      (error 'docstore-refused :store store :ref ref
+             :reason (format nil "~a is not a git checkout, so no history is recorded ~
+for ~a." (namestring root) ref)))
+    (multiple-value-bind (output error code)
+        (uiop:run-program (list "git" "-C" (namestring root) "log" "--follow"
+                                "--date=iso-strict"
+                                ;; A literal tab, built rather than written:
+                                ;; Common Lisp has no \t escape, and "\t" in
+                                ;; a string is the character t.
+                                (format nil "--format=%H~c%ad~c%an~c%s"
+                                        #\Tab #\Tab #\Tab)
+                                "--" ref)
+                          :output :string :error-output :string :ignore-error-status t)
+      (declare (ignore error))
+      (unless (zerop code)
+        (error 'docstore-refused :store store :ref ref
+               :reason (format nil "git could not answer for ~a." ref)))
+      (loop for line in (uiop:split-string (string-right-trim '(#\Newline) output)
+                                           :separator '(#\Newline))
+            unless (zerop (length line))
+              collect (parse-history-line line)))))
+
+(defmethod docstore-capabilities ((store file-docstore))
+  "The default, with the two this store answers less than fully.
+
+ALLOCATE-ID is :SINGLE-WRITER, and HISTORY is :ABSENT for a tree git cannot
+answer for -- a checkout copied out of its repository, or a prepared tree that
+was never initialised. Named rather than discovered at the call, because
+DES-0051 D3 is that a caller asks what a store can do before it asks the store
+to do it."
+  (let ((capabilities (call-next-method)))
+    (setf (getf capabilities :allocate-id) :single-writer)
+    (unless (git-answers-for-p (file-docstore-root store))
+      (setf (getf capabilities :history) :absent))
+    capabilities))
