@@ -1,7 +1,7 @@
 id: DES-0052
 type: design
 title: A document store is chosen by a registered kind, built by a factory in loom-docstore, and given two arguments
-status: draft
+status: implemented
 date: 2026-09-18
 refines: [DES-0051, REQ-0071]
 affects: [repository-document-store, make-file-docstore, make-memory-docstore,
