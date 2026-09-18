@@ -29,6 +29,10 @@
    ;; transition.lisp. Text only: both stores set a status, and text is what
    ;; every store holds.
    (:file "status-line")
+   ;; DES-0052's registry, before the stores rather than after: each one calls
+   ;; REGISTER-DOCSTORE-KIND at the bottom of its own file, and their
+   ;; constructors read CONFIG through CONFIG-VALUE and CHECK-CONFIG-KEYS.
+   (:file "factory")
    ;; After "stamps": a file store's version is a stamp, and CHANGED-SINCE
    ;; decides with STAMP-CHANGED-P. After "status-line": a transition rewrites
    ;; one line of the document's text before the file moves.

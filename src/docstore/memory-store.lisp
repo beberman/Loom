@@ -370,3 +370,24 @@ writer."
     (setf (getf capabilities :batch) :atomic
           (getf capabilities :allocate-id) :single-writer)
     capabilities))
+
+;;;; ==================================================================
+;;;; The kind (DES-0052)
+;;;; ==================================================================
+
+(defparameter *memory-docstore-config-keys* '(:kind)
+  "An in-memory store declares nothing but that it is one. It has no root, no
+extension and nowhere to put a document but in itself.")
+
+(defun memory-docstore-from-config (config services)
+  "An in-memory store from a declaration that says only which kind it is.
+
+Registered so that a tree can be run against this store by declaring it, which
+is the only way to reach it without a Lisp caller. It keeps nothing across a
+restart, which is what makes it a demonstration and a test double rather than
+a store anybody should declare in earnest."
+  (check-config-keys config *memory-docstore-config-keys* :memory)
+  (destructuring-bind (&key terminal-p category-prefix &allow-other-keys) services
+    (make-memory-docstore :terminal-p terminal-p :category-prefix category-prefix)))
+
+(register-docstore-kind :memory #'memory-docstore-from-config)

@@ -472,38 +472,77 @@ lives in transition.lisp, which is compiled after this file.")
 ;; reporting it as undefined.
 (declaim (ftype (function (t) t) read-manifest))
 
-(defun repository-document-store (repository)
-  "REPOSITORY's document store, building the default file store on first use.
+(defun declared-store-config (root)
+  "ROOT's `document-store' declaration as a plist, or NIL.
 
-The file store needs two facts loom-docstore cannot compute: which paths are
-documents, and which ones git ignores. Both are passed in here, with the tree
-listing. A reason git could not answer is recorded as REPOSITORY-FILES records
-its own."
+.loom/frameworks.yaml and not the manifest. REQ-0071 is that frameworks.yaml
+holds what a repository declares about itself that Loom cannot derive, which is
+what a store choice is; the manifest records what `init' chose and wrote, and
+READ-MANIFEST is a line scanner in which a nested block is not representable.
+
+Read here rather than off REPOSITORY-FRAMEWORKS, which INDEX-REPOSITORY fills
+in: this is called from the poll and from the read tier too, and depending on
+the order those run in would make the store's identity depend on which caller
+arrived first."
+  (getf (read-frameworks root) :document-store))
+
+(defun store-services (repository)
+  "What the workspace supplies to any document store, whatever its kind.
+
+DES-0052 D2. The same plist for every kind, so nothing here knows which keys a
+kind reads. Three of them are about the tree a store may sit on -- which paths
+are documents, which git ignores, and the listing the walk already paid for --
+and a store with no tree simply does not read them. Two are CON-0004's tables,
+which no store may hold and every store needs.
+
+DOCUMENT-DIRECTORY is here and not in the declaration because it describes the
+repository rather than the store: it is REQ-0021 R2's layout choice, `init'
+recorded it in the manifest, and every store's addresses reflect it."
+  (let ((root (repository-root repository)))
+    (list :root root
+          :claim #'store-document-p
+          :ignore (lambda (paths)
+                    (multiple-value-bind (ignored reason) (ignored-paths root paths)
+                      (when reason
+                        (setf (repository-ignore-reason repository) reason))
+                      ignored))
+          :listing (lambda () (tree-listing root))
+          ;; Read on every call rather than captured, so a store built before
+          ;; transition.lisp loaded still asks the real table.
+          :terminal-p (lambda (category status)
+                        (and *terminal-status-p*
+                             (funcall *terminal-status-p* category status)))
+          :category-prefix (lambda (category)
+                             (and *category-id-prefix*
+                                  (funcall *category-id-prefix* category)))
+          :document-directory (or (getf (read-manifest root) :document-directory)
+                                  "docs"))))
+
+(defun repository-document-store (repository)
+  "REPOSITORY's document store, built from its declaration on first use.
+
+DES-0052. The kind comes from .loom/frameworks.yaml and is :FILE where nothing
+says otherwise, which is every repository that has not declared one. Everything
+after the kind is handed over: the declaration untouched, and the services
+above. Which keys the declaration may carry is the constructor's business, and
+this function reads none of them.
+
+Lazy and memoised, and the first call is inside WATCH-REPOSITORY --
+INDEX-REPOSITORY calls INDEX-ALL-DOCUMENTS, which no per-file handler wraps --
+so a declaration that refuses does so where the developer who wrote it is
+standing rather than inside a two-second poll (DES-0052 D6)."
   (or (repository-docstore repository)
       (setf (repository-docstore repository)
-            (let ((root (repository-root repository)))
-              (make-file-docstore
-               root
-               :claim #'store-document-p
-               :ignore (lambda (paths)
-                         (multiple-value-bind (ignored reason) (ignored-paths root paths)
-                           (when reason
-                             (setf (repository-ignore-reason repository) reason))
-                           ignored))
-               :listing (lambda () (tree-listing root))
-               ;; Read on every call rather than captured, so a store built
-               ;; before transition.lisp loaded still asks the real table.
-               :terminal-p (lambda (category status)
-                             (and *terminal-status-p*
-                                  (funcall *terminal-status-p* category status)))
-               :category-prefix (lambda (category)
-                                  (and *category-id-prefix*
-                                       (funcall *category-id-prefix* category)))
-               ;; REQ-0021: a prepared tree may keep its documents somewhere
-               ;; other than docs/, and DOCSTORE-CREATE is what has to put a
-               ;; new one there.
-               :document-directory (or (getf (read-manifest root) :document-directory)
-                                       "docs"))))))
+            (let ((config (declared-store-config (repository-root repository))))
+              (make-docstore (or (declared-store-kind config) :file)
+                             :config config
+                             :services (store-services repository))))))
+
+(defun declared-store-kind (config)
+  "The kind CONFIG names, as a keyword, or NIL when it names none."
+  (let ((kind (getf config :kind)))
+    (when (and (stringp kind) (plusp (length kind)))
+      (intern (string-upcase kind) :keyword))))
 
 (defun indexed-document (repository address)
   "The store ref and the version indexed for the document at ADDRESS, or NIL.

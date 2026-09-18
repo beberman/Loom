@@ -1,0 +1,153 @@
+id: DES-0052
+type: design
+title: A document store is chosen by a registered kind, built by a factory in loom-docstore, and given two arguments
+status: draft
+date: 2026-09-18
+refines: [DES-0051, REQ-0071]
+affects: [repository-document-store, make-file-docstore, make-memory-docstore,
+          read-frameworks, parse-frameworks, watch-repository, docstore-refused]
+importance: Major
+tags: [document-store, configuration, factory, registry, frameworks, manifest,
+       des-0051, req-0071, req-0021, con-0001, rule-0010]
+summary: |
+  REPOSITORY-DOCUMENT-STORE calls MAKE-FILE-DOCSTORE with six keyword
+  arguments and is the only production code that builds a store. Three of the
+  six are file-store-specific and three are not, and nothing at the call site
+  says which are which -- a store built without TERMINAL-P moves no document
+  and reports no error.
+
+  This design puts the choice in a registry and the construction in a factory,
+  both in loom-docstore, and splits the arguments in two. CONFIG is what the
+  repository declares and passes through the workspace untouched. SERVICES is
+  what the workspace constructs and is the same shape for every kind. The
+  contract is between the declaration and the constructor; the workspace is a
+  conduit and knows only which kind to ask for.
+body: |
+  WHY NOT A KEYWORD LIST IN THE WORKSPACE
+
+  Today:
+
+      (make-file-docstore root
+        :claim #'store-document-p               file store only
+        :ignore (lambda (paths) ...)            file store only
+        :listing (lambda () (tree-listing root)) file store only
+        :terminal-p ...                         every store
+        :category-prefix ...                    every store
+        :document-directory ...)                every store
+
+  The split is invisible and the failure is silent. A store built without
+  TERMINAL-P transitions nothing and refuses nothing: PLAN-0055 step 8 built
+  the in-memory fixtures that way and every placement test passed by never
+  moving a document. Adding a second kind here means the workspace learns
+  which arguments each kind takes, which is the knowledge this design is
+  removing from it.
+
+  D1  THE REGISTRY
+
+  loom-docstore gains *DOCSTORE-KINDS* and REGISTER-DOCSTORE-KIND, and each
+  store registers itself at the bottom of its own file:
+
+      (register-docstore-kind :file #'file-docstore-from-config)
+
+  The third use of a pattern this tree already has twice. REGISTER-ANALYZER
+  is the same function with the same re-registration rule -- replace by key
+  rather than accumulate, so recompiling a file in a live image does not leave
+  two -- and the conformance harness's REGISTER-STORE-KIND is the same shape
+  for stores already: the in-memory store joined part A by adding one entry
+  and no test was edited.
+
+  Two kinds register from the start, :FILE and :MEMORY. A registry with one
+  entry demonstrates nothing, and the in-memory store reachable by declaration
+  is how a tree can be run against it without a Lisp caller.
+
+  D2  TWO ARGUMENTS, NOT ONE
+
+      (make-docstore kind &key config services)
+
+  CONFIG is data the repository declares. The workspace does not read it, does
+  not validate it, and does not know what any key means. It is the file store's
+  EXTENSION today and a tracker's endpoint and project tomorrow.
+
+  SERVICES is live code the workspace constructs, identical for every kind:
+  the root, the three functions the file store needs for the tree it sits on
+  (CLAIM, IGNORE, LISTING), the two CON-0004 tables every store needs
+  (TERMINAL-P, CATEGORY-PREFIX), and DOCUMENT-DIRECTORY. A kind takes what it
+  uses and ignores the rest, so the workspace still knows nothing kind-specific.
+
+  They are two arguments rather than one merged plist, and the reason is not
+  tidiness. A declaration is a file in the repository. If the two merged, a
+  line in that file naming a service key would arrive in the same structure the
+  workspace's own closures went into, and the constructor could not tell which
+  came from where. Separate arguments make that unrepresentable rather than
+  merely unlikely.
+
+  DOCUMENT-DIRECTORY is a service and not config, which is worth stating
+  because it is the one that could go either way. It is REQ-0021 R2's choice
+  about the repository's layout, it is recorded in the manifest as something
+  `init' wrote, and every store's addresses reflect it -- the in-memory store
+  builds docs/<category>/<name>.yaml today. It describes the repository rather
+  than the store.
+
+  D3  WHERE EACH COMES FROM
+
+  CONFIG comes from .loom/frameworks.yaml, which is what REQ-0071 says that
+  file is: "what a repository declares about itself that Loom cannot derive."
+  It is parsed by cl-yaml in loom-analyzer, so a nested block costs nothing:
+
+      document-store:
+        kind: file
+        extension: yaml
+
+  The manifest is not the place. .loom/manifest.yaml records what `init'
+  chose and wrote so that removing Loom does not have to guess, READ-MANIFEST
+  is a line scanner rather than a parser, and a nested block is not
+  representable in it. DOCUMENT-DIRECTORY stays there because `init' chose it.
+
+  REQ-0071's own subject is that frameworks.yaml has outgrown its name. This
+  design adds a key to it and does not rename it; the rename is REQ-0071's.
+
+  D4  UNPACKING IS TOTAL
+
+  A kind's constructor is the schema. There is no second schema in the
+  workspace, and `check' can say nothing about a block it does not interpret --
+  which is the trade this design makes and the reason the refusal has to be
+  loud.
+
+  An unknown config key is refused by name. Not ignored: a typo in a key the
+  workspace no longer reads is invisible, and `documnet-store' silently
+  ignored is CON-0001's fabricated fact in the one shape nothing reports.
+
+  A missing required key is refused with what it needed. A store that cannot
+  be built must not fall back to the file store: indexing the checkout's docs/
+  while the developer believes they are reading from a tracker is the failure
+  no count would reveal.
+
+  D5  AN UNKNOWN KIND NAMES WHAT IS REGISTERED
+
+  MAKE-DOCSTORE signals DOCSTORE-REFUSED for a kind nothing registered, and
+  the reason lists the kinds that did. The condition already exists and already
+  carries a sentence a caller prints for a person (DES-0051, PLAN-0055 step 7).
+
+  D6  THE REFUSAL SURFACES AT WATCH TIME
+
+  REPOSITORY-DOCUMENT-STORE is lazy and memoised, and the first call is inside
+  WATCH-REPOSITORY: INDEX-REPOSITORY calls INDEX-ALL-DOCUMENTS, which is not
+  inside a per-file handler, so a refusal propagates out of `watch' rather than
+  into a two-second poll on a supervised service. That is where a developer who
+  mistyped a declaration is standing, and it is why the laziness costs nothing
+  here.
+
+  D7  WHAT THIS DESIGN DOES NOT DO
+
+  It does not load a store dynamically. The mechanism exists -- ASDF is loaded
+  and the test drivers use QL:QUICKLOAD -- and the registry is what makes it
+  additive later: a load step before the lookup changes no caller. It is not
+  done now because a store outside this tree is a system Loom cannot index,
+  which DEC-0001 makes a real loss, and because RULE-0010 is a `check' over
+  ENTITY-SYSTEM that cannot see a file the tree does not hold -- so the rule
+  keeping loom-docstore a leaf would stop being enforceable for exactly the
+  adapter most likely to break it.
+
+  It does not build a second real store, rename frameworks.yaml, give `init' a
+  store question (DES-0022's amendment), or teach `check' anything about a
+  declaration.
