@@ -259,6 +259,10 @@ D5's order, without repeats.
   2. The parent of the outermost package containing IMPORTER. A package named
      ledger is imported as `ledger' only when its parent is on sys.path.
   3. DOMAIN's root, which arrives as data: loom-graph reads no configuration.
+     Only a declared domain's. The implicit :DEFAULT domain has root \"\" and is
+     in the table whether or not anything declared it, so taking its root would
+     make a repository-root module importable from tools/ whenever some
+     unrelated JavaScript domain is declared and not otherwise (REV-0003 item 4).
 
 Never \"walk up until some directory holds the module\". Python does not look
 there, and the first local file named like a library would capture every import
@@ -274,7 +278,7 @@ of it."
                   do (setf top (parent-directory-prefix top)))
             (push top roots))
           (push directory roots)))
-    (let ((root (getf domain :root)))
+    (let ((root (and (not (eq :default (getf domain :name))) (getf domain :root))))
       (when root
         (push (if (or (string= root "") (char= #\/ (char root (1- (length root)))))
                   root

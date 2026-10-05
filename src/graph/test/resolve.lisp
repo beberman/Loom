@@ -1680,6 +1680,20 @@ distinction this whole change is"))))
                          :domain (list :name :functions :root "functions/")))
       "the domain root is the third root"))
 
+(test the-implicit-default-domains-root-is-not-a-third-import-root
+  ;; DES-0053 D5: the third root is a declared one. The default domain has root
+  ;; \"\" and exists whether or not anything declared it, so it must not make
+  ;; tools/x.py's `import config' reach the repository-root config.py.
+  (let ((known '("config.py" "tools/x.py")))
+    (is (eq :unrooted
+            (nth-value 1 (py-resolve "config" "tools/x.py" '("config.py" "tools/x.py" "tools/y.py")
+                                     :domain (list :name :default :root ""))))
+        "tools/ is a script directory, so config is looked for there only")
+    (is (equal "config.py"
+               (py-resolve "config" "tools/x.py" known
+                           :domain (list :name :app :root "")))
+        "a declared domain whose root is the repository root does reach it")))
+
 (test a-library-the-tree-does-not-hold-is-external
   (multiple-value-bind (target cause)
       (py-resolve "googleapiclient.discovery" "functions/sheets.py" *lfia-paths*)
