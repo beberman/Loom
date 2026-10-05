@@ -1653,15 +1653,32 @@ type: decision
 title: Inside a venv
 status: accepted
 ")
+    (write-file "docs/ok.yaml" "id: DEC-9998
+type: decision
+title: Outside the venv
+status: accepted
+")
     (reindex-repository repository :quiet t)
     (let* ((g (repository-graph repository))
            (files (mapcar #'name (entities-of-type g :file)))
-           (documents (mapcar #'name (entities-of-type g :document))))
+           ;; Every entity's own path, not the document names: a YAML document
+           ;; that carries an id is named by it (`DEC-9999'), so a check on the
+           ;; names could not fail for the one file this fixture writes to catch
+           ;; the second walk (REV-0003 item 8). The README is named by its path,
+           ;; which is why that half was sound.
+           (documents (loop for e in (all-entities g)
+                            when (member (entity-type e)
+                                         '(:document :decision :design :requirement
+                                           :plan :bug :review :rule :concept :architecture))
+                              collect (or (getp e :path) (origin-file e)))))
+      (is (member "docs/ok.yaml" documents :test #'equal)
+          "control: the same collection sees a YAML decision outside the venv: ~a"
+          documents)
       (is (member "src/alpha.lisp" files :test #'string=)
           "the tree's own source is indexed: ~a" files)
       (is (notany (lambda (path) (eql 0 (search "env/" path))) files)
           "nothing under the venv is a file: ~a" files)
-      (is (notany (lambda (path) (search "env/" path)) documents)
+      (is (notany (lambda (path) (eql 0 (search "env/" path))) documents)
           "and no document under it is either: ~a" documents)
       (is (null (find "venv-function" (entities-of-type g :function)
                       :key #'name :test #'string=)))
@@ -1729,6 +1746,30 @@ def test_post():
           (is (equal (list (id post))
                      (mapcar #'to-id (relationships-from g (id case) :rel-type :tests)))
               "the case tests the function its body calls")))))
+
+(test an-in-place-venv-in-a-subdirectory-excludes-only-what-venv-created
+  ;; `python -m venv .' run in functions/ writes functions/pyvenv.cfg beside
+  ;; functions/main.py, so excluding the whole prefix drops the program. Only the
+  ;; cfg and the directories venv makes are the environment's own.
+  (with-workspace-fixture (repository)
+    (write-file "functions/pyvenv.cfg" "home = /usr/bin
+")
+    (write-file "functions/main.py" "def run(): pass
+")
+    (write-file "functions/ledger/__init__.py" "")
+    (write-file "functions/lib/python3.12/site-packages/dep.py" "def dep(): pass
+")
+    (write-file "functions/bin/activate_this.py" "def activate(): pass
+")
+    (reindex-repository repository :quiet t)
+    (let ((files (mapcar #'name (entities-of-type (repository-graph repository) :file))))
+      (is (member "functions/main.py" files :test #'string=)
+          "the project's own source beside the cfg is indexed: ~a" files)
+      (is (member "functions/ledger/__init__.py" files :test #'string=))
+      (is (notany (lambda (path) (or (search "functions/lib/" path)
+                                     (search "functions/bin/" path)))
+                  files)
+          "and what venv created is not: ~a" files))))
 
 (test a-pyvenv-cfg-at-the-root-does-not-exclude-the-repository
   ;; `python -m venv .' writes one beside the project's own source. Excluding

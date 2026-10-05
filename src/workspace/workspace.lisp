@@ -438,7 +438,7 @@ for no second walk.
 
 A pyvenv.cfg at the root itself is not a prefix. `python -m venv .' puts one
 there beside the project's own source, and excluding \"\" would exclude the
-whole repository."
+whole repository. UNDER-VENV-P applies the same reasoning to every other prefix."
   (loop for path in (tree-listing root)
         for name = (file-namestring path)
         when (equal name "pyvenv.cfg")
@@ -446,11 +446,27 @@ whole repository."
                         (slash (position #\/ relative :from-end t)))
                    (and slash (list (subseq relative 0 (1+ slash)))))))
 
+(defparameter *venv-created-entries* '("bin" "lib" "lib64" "include" "Lib" "Scripts")
+  "The directories `python -m venv' and virtualenv create beside pyvenv.cfg, on
+POSIX and on Windows. Nothing else under a venv's prefix is theirs.")
+
 (defun under-venv-p (relative prefixes)
-  "True when the relative path RELATIVE lies under one of PREFIXES."
+  "True when the relative path RELATIVE is a venv's own: the pyvenv.cfg under one
+of PREFIXES or a path inside a directory the tool creates there.
+
+Not everything under a prefix, because `python -m venv' run in functions/ writes
+functions/pyvenv.cfg beside functions/main.py, the project's own source, and the
+whole prefix excluded would drop the program (REV-0003 item 5). It is the same
+reasoning as the root's carve-out in VENV-PREFIXES, extended to every prefix."
   (some (lambda (prefix)
           (and (<= (length prefix) (length relative))
-               (string= prefix relative :end2 (length prefix))))
+               (string= prefix relative :end2 (length prefix))
+               (let* ((rest (subseq relative (length prefix)))
+                      (slash (position #\/ rest)))
+                 (or (string= rest "pyvenv.cfg")
+                     (and slash
+                          (member (subseq rest 0 slash) *venv-created-entries*
+                                  :test #'string=))))))
         prefixes))
 
 (defvar *tree-listing* nil
