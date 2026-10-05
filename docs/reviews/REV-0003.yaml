@@ -1,0 +1,181 @@
+id: REV-0003
+title: Review of req-0078 (PLAN-0056, the Python analyzer) -- two fabricated-fact bugs, eight lesser findings, and the loom-serve flake reproduced on main
+status: open
+date: 2026-10-05
+refines: [PLAN-0056]
+affects: [call-targets, python-caller-candidates, walk-attribute-path, landing,
+          missing-imported-calls, resolve-one, python-import-roots, venv-prefixes,
+          py-owned-sites, py-supersede, resolve-settings]
+tags: [review, python, des-0053, req-0078, con-0001, con-0005, call-resolution]
+summary: |
+  Diff main...req-0078, 4de6bf2 to dfbddcc. Checked with /usr/bin/sbcl:
+  `tools/loom-test.sh` passes 12 of 12. `check` prints 0 violations, 8
+  unresolved and 7 ambiguous, the PLAN-0056 baseline. `sbcl --script
+  tools/test/load-test.lisp loom-serve` prints T. Layering holds:
+  python-analyzer.lisp and extractor-child.lisp call nothing in loom-graph,
+  no .asd gained a dependency, and RESOLVE-SETTINGS returns operations
+  and adds no mutator.
+
+  Two defects write false facts into the index. BUG-0070: eight
+  confidence-1.0 :CALLS edges on Loom's own index go to a Python function
+  the source does not name. Seven are dict `.get` calls that land on
+  tools/test/service.py's HTTP `get`. One is a Lisp call site that lands on
+  acceptance.py's `git`. BUG-0071: `check` reports a call to an inherited
+  classmethod, or to a name a package re-exports with `import *`, as a name
+  its module no longer holds. Eight lesser findings follow, ranked. The
+  A-WRITE-OPERATION-IS-NOT-RECORDED flake also happens on main, so this
+  branch did not cause it.
+body: |
+  FINDINGS, BY SEVERITY
+
+  1. MAJOR. Fabricated cross-file and cross-language :CALLS edges. BUG-0070.
+     tools/py/extract.py:359 and :365 write `a.b.m()` and `expr.m()` as the
+     bare name `m`. CALL-TARGETS resolves that as a plain call, and
+     VISIBLE-CANDIDATES' fallback finds every Python `m` in the tree.
+     PYTHON-CALLER-CANDIDATES (resolve.lisp) narrows Python callers only,
+     so Lisp and JavaScript callers still reach Python definitions. Found
+     on Loom by scanning the index for cross-file Python edges that came
+     from a bare name. Fix: a Python bare name matches same-file
+     definitions only, and non-Python callers never see Python candidates.
+
+  2. MAJOR. `check` reports names that Python resolves. BUG-0071. LANDING
+     returns :MISSING-IN-TARGET when "Class.name" is absent from the
+     class's own file, and never looks at a base class.
+     WALK-ATTRIBUTE-PATH does the same for a module whose names come from
+     `from .x import *`. MAKE-PY-FILE-ENTITY drops star imports from
+     :IMPORT-BINDINGS. Both cases were reproduced through
+     MISSING-IMPORTED-CALLS. Fix: return a cause that `check` does not
+     report whenever the class has bases or the module has a star import.
+
+  3. MEDIUM. `affects: [SPREADSHEET_ID]` is ambiguous in the config.py
+     shape. resolve.lisp RESOLVE-ONE keys on the name.
+     `SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")` mints
+     variable:functions/config.py:SPREADSHEET_ID and
+     setting:SPREADSHEET_ID. A decision naming SPREADSHEET_ID gets no edge
+     and an :AMBIGUOUS-REFERENCES entry. All eight of lfia's config reads
+     have this shape. RESOLVE-AND-CHECK's comment says the order exists
+     "so a document's `affects: [SPREADSHEET_ID]' finds the setting". The
+     test A-DOCUMENT-NAMING-A-SETTING-RESOLVES-TO-IT uses a :FUNCTION
+     reader named "load", which avoids the collision, so it passes for a
+     shape the canonical case does not have. Fix: one more exception in
+     RESOLVE-ONE, beside the interface-plus-methods rule. A candidate set
+     of one :SETTING plus :VARIABLEs whose :ENVIRONMENT-READS name it
+     resolves to the setting. Otherwise, document the `setting:NAME` id
+     form and correct the comment. Test with a variable reader of the same
+     name.
+
+  4. LOW. The default domain makes the repository root a third Python
+     import root. resolve.lisp PYTHON-IMPORT-ROOTS pushes `(getf domain
+     :root)`. DOMAIN-TABLE always adds :DEFAULT with root "", and
+     REPOSITORY-DOMAINS returns a table only when frameworks.yaml declares
+     some domain. So whether a Python file in tools/ can import a
+     repository-root config.py depends on whether some unrelated
+     JavaScript domain is declared. DES-0053 D5 says the third root comes
+     "from .loom/frameworks.yaml". The NOTES for step 5 record the
+     behaviour but do not call it a departure. Fix: skip the :DEFAULT
+     domain's root, or amend D5.
+
+  5. LOW. An in-place venv in a subdirectory excludes that subdirectory's
+     own source. workspace.lisp VENV-PREFIXES carves out the root because
+     "`python -m venv .' puts one there beside the project's own source".
+     The same command run in functions/ writes functions/pyvenv.cfg, and
+     every file under functions/ is then dropped, lfia's whole program
+     included. Fix: under a prefix, exclude only what venv creates (bin/,
+     lib/, lib64/, include/, Lib/, Scripts/) and the cfg file. Or apply
+     the root's reasoning to any prefix that also holds claimed source
+     outside those directories.
+
+  6. LOW. Two asserts of one :CALL-SITE key on a semicolon-joined line
+     (CON-0005). python-analyzer.lisp PY-CALL-SITES dedupes within one
+     item or statement. PY-OWNED-SITES concatenates across them. `x = f();
+     y = f()`, `f(); f()` and `x = f(); f()` each emit
+     call-site:app/m.py:1:f twice, with two different :CONTAINS owners.
+     `a = b = f()` is handled. Fix: dedupe on id across all of
+     PY-OWNED-SITES, keeping the first owner. Test on the operations, as
+     TWO-CALLS-OF-ONE-NAME-IN-ONE-GUARD-YIELD-ONE-SITE does.
+
+  7. LOW. A parameter default puts an environment default into the index.
+     `def f(token=os.environ.get('TOKEN', 'hunter2'))` stores
+     ("token=os.environ.get('TOKEN', 'hunter2')") in :ARGUMENTS. The
+     :ENVIRONMENT-READS property is clean, and Loom never reads the
+     environment or a .env file. But DES-0053 D10's sentence "drops the one
+     value a read names in source, its default" is false for this shape,
+     and decorator :ARGUMENTS record literal values verbatim. The design's
+     own position is that source text is already served by `context`. Fix:
+     narrow the D10 sentence to the :ENVIRONMENT-READS property, or blank
+     the default in :ARGUMENTS when it contains a recognised read.
+
+  8. LOW. Half of the venv test asserts nothing.
+     A-VIRTUAL-ENVIRONMENT-IS-EXCLUDED-BY-ITS-PYVENV-CFG-AND-NOT-BY-GIT-OR-NAME
+     writes env/lib/docs/notes.yaml with `id: DEC-9999`. It then checks
+     that no :DOCUMENT *name* contains "env/". A YAML document with an id
+     is named by the id (yaml-analyzer.lisp:576), so that check cannot
+     fail for the YAML file. The README.md half is sound, because a
+     markdown document is named by its path. Fix: test :PATH or the origin
+     file.
+
+  9. LOW. Departures left the design text false, and DES-0053 is about to
+     be marked implemented. D9 says earlier ranges are shadowed "whatever
+     the kinds", but a variable rebound by a variable records none.
+     WHAT EACH THING BECOMES says "loom-process, loom-serve, loom-rest and
+     loom-mcp change nothing", but console.lisp and operations.lisp
+     changed. D5's third root is item 4. PLAN-0056 records all three in
+     NOTES. A reader of an implemented design reads the design. Amend
+     those three sentences before `complete`. PY-SUPERSEDE's docstring
+     also went wrong when the variable clause was inserted. It breaks
+     mid-sentence after "827 methods", and "are why the last two exist"
+     now points at the overload rule and the variable rule. The figures
+     support replacement, the accessor merge and the overload merge.
+
+  10. COSMETIC. console.lisp's `check` prints a missing call with
+      "~a.~{~a~^.~}". For specifier "." and path ("dates"), that prints
+      `..dates`, which reads as a two-level climb. PY-DOTTED already
+      handles a trailing dot. Use the same rule.
+
+  CHECKED AND FOUND SOUND
+
+  - The child. `python3 -I -B`, an argv function read at each launch,
+    one retry for a dead child, and a timeout around write and read.
+    extract.py imports ast, builtins, json, sys and tokenize. It calls no
+    exec, eval, compile-for-exec or importlib. It never opens the path it
+    is given. THE-CHILD-NEVER-RUNS-WHAT-IT-READS fails loudly on a
+    missing reply, since PY-REPLY signals, so it cannot pass vacuously. A
+    missing interpreter yields a :FILE with :ANALYSIS-FAILED-P and the
+    reason.
+  - R14. js-analyzer.lisp's tests and domains.lisp are unedited. The
+    symbol macros keep SETF, EQ and WITH-LOCK-HELD working.
+  - DEC-0003. :UNRESOLVED-IMPORTED-CALLS is rewritten every pass from
+    :IMPORTED-CALLS, which nothing rewrites. RESOLVE-SETTINGS derives
+    from :ENVIRONMENT-READS and sweeps only settings, and the retract
+    test brings the re-export edge back.
+  - Relative imports climb one directory per dot after the first. That
+    is Python's rule and D5's. The plan's "..x climbs two" was wrong, and
+    NOTES say so.
+  - The six `affects:` edits to function:src/process/console.lisp:main.
+    Before step 8, console.lisp's main was the only `main` in the index,
+    so each edit restores the edge the documents already had.
+  - :SETTING as a :DECIDES, :DOCUMENTS and :MENTIONS target is needed for
+    any document to name a setting. It widens nothing else.
+  - Venv exclusion reaches both walks: REPOSITORY-FILES, which feeds
+    INDEX-REPOSITORY and POLL-ONCE, and the document store's ignore
+    function. No other caller of INDEX-FILE exists.
+
+  THE LOOM-SERVE FLAKE
+
+  A scratch driver ran LOOM-SERVE-TEST's ALL-TESTS eight times in one fresh
+  image per tree. On req-0078 all 8 runs passed. On main, in a worktree at
+  715eedf, 2 of 8 failed. One failure was A-WRITE-OPERATION-IS-NOT-RECORDED.
+  The other was AN-EMPTY-ANSWER-IS-RECORDED-AS-AN-ANSWER, which uses the
+  same WITH-RECORDED-LOG and DRAINED-RECORDS fixture. Main also showed 273
+  or 274 results per run, so the assertion count varies. The branch touches
+  neither context-log.lisp nor the registry. Its serve diff adds one key to
+  the :check operation and two assertions. The flake predates the branch,
+  and its likely home is the asynchronous record writer behind
+  DRAIN-CONTEXT-LOG.
+outcome: |
+  Not safe to complete as it stands. Items 1 and 2 put false facts into
+  the index and into `check` on trees this design targets, and item 1 is
+  live on Loom's own index. Fix both, each with a test that fails at
+  dfbddcc, before `complete PLAN-0056`. Items 3 to 10 can follow. Item 9
+  should land before `complete`, because `complete` marks DES-0053
+  implemented.

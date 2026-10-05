@@ -1451,14 +1451,33 @@ DES-0014 answers separately."
   (and caller (eq :python (getp caller :language))))
 
 (defun python-caller-candidates (candidates caller)
-  "CANDIDATES a Python CALLER can reach: Python definitions only.
+  "CANDIDATES CALLER can reach, with the Python line drawn in both directions.
 
-CPython code does not call Lisp or JavaScript in process, so a same-named
-definition in either is a candidate the source cannot have meant. DES-0053 D6.
-Every other caller keeps the set it had."
-  (if (python-caller-p caller)
-      (remove-if-not (lambda (e) (eq :python (getp e :language))) candidates)
-      candidates))
+CPython code does not call Lisp or JavaScript in process, and neither calls into
+CPython, so a same-named definition across that line is a candidate the source
+cannot have meant. DES-0053 D6, and BUG-0070 for the half that was missing: a
+Lisp or JavaScript name that fell back to its spelling used to reach a Python
+definition at confidence 1.0.
+
+A Python caller also keeps only the plain functions of its own file. A bare
+name no import binds cannot reach another file (the imported-calls tier is how
+one does), and `d[k].get(x)' is written as the bare name `get', so VISIBLE-
+CANDIDATES' never-empty fallback used to hand it every `get' in the tree. A
+method is kept from any file: that is the member-call tiers' union of genuine
+possibilities, and nothing else produces one for a Python caller.
+
+A NIL caller keeps the set it had, because it asks only whether a name reaches
+anything (RESOLVE-GENERATED-DEFINITIONS)."
+  (flet ((python-p (e) (eq :python (getp e :language))))
+    (cond ((null caller) candidates)
+          ((python-caller-p caller)
+           (let ((file (getp caller :file)))
+             (remove-if-not (lambda (e)
+                              (and (python-p e)
+                                   (or (eq :method (entity-type e))
+                                       (equal file (getp e :file)))))
+                            candidates)))
+          (t (remove-if #'python-p candidates)))))
 
 (defun call-targets (index name caller)
   "What a call to NAME from CALLER links to: a list of edge plists, each

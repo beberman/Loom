@@ -1834,13 +1834,14 @@ of :SPECIFIER, :PATH and :LINE."
     (is (equal '((:specifier "googleapiclient.discovery" :path ("build") :line 11
                   :cause :external))
                (getp bound :unresolved-imported-calls)))
-    ;; The control: the bare spelling of the same call is the defect. Each build
-    ;; is reached exactly once, from the bare caller's call site, so the bound
-    ;; caller added nothing and this could not pass for the wrong reason.
+    ;; The bare spelling used to be the control here: it fanned out to both
+    ;; builds at 1/2. BUG-0070 closed that, since a bare name no import binds
+    ;; cannot reach another file, so the control now asserts the same silence
+    ;; and the bound caller's own assertions above carry the test.
     (dolist (target (list cross simplifi))
-      (is (= 1 (length (relationships-to g (id target) :rel-type :calls)))
-          "the bare call fans out to both, at 1/2, and the bound one does not"))
-    (is (null (called-ids g bare)) "the bare caller's edges run from its site")))
+      (is (null (relationships-to g (id target) :rel-type :calls))
+          "neither the bare call nor the bound one reaches another file's build"))
+    (is (null (called-ids g bare)))))
 
 (test a-module-attribute-call-reaches-the-module-and-not-the-callers-own-file
   ;; main.py:56 calls sheets.read_tab(...) from seed_accounts_map. main.py also
@@ -2139,3 +2140,54 @@ of :SPECIFIER, :PATH and :LINE."
         (is (equal (list setting)
                    (mapcar #'to-id (relationships-from g (id plan) :rel-type :documents))))
         (is (null (getp plan :unresolved-references)))))))
+
+;;; ------------------------------------------------------------------
+;;; The Python line, drawn both ways (BUG-0070)
+;;; ------------------------------------------------------------------
+
+(defun r-foreign-caller (graph language name file call-names)
+  "A function in LANGUAGE (:LISP or :JAVASCRIPT) calling CALL-NAMES by spelling."
+  (let ((e (make-instance 'function-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language language
+                                             :call-names call-names)))))
+    (add-entity graph e)
+    e))
+
+(test a-python-bare-name-reaches-no-other-files-definition
+  ;; extract.py writes `d["k"].get(x)' as the bare name `get'. tools/test/
+  ;; service.py holds the one Python `get' on Loom's tree, and seven dict lookups
+  ;; used to land on it at confidence 1.0.
+  (let* ((g (make-graph))
+         (caller (r-py-function g "bind" "tools/py/extract.py" :unresolved '("get")))
+         (far (r-py-function g "get" "tools/test/service.py")))
+    (r-py-tree g "tools/py/extract.py" "tools/test/service.py")
+    (apply-transaction g (resolve-calls g))
+    (is (null (called-ids g caller)))
+    (is (null (relationships-to g (id far) :rel-type :calls)))
+    (is (equal '("get") (getp caller :unresolved-calls))
+        "recorded unresolved, not dropped")))
+
+(test a-python-bare-name-still-reaches-its-own-file
+  ;; The control: the narrowing must not remove the local definition, or the
+  ;; test above would pass for a resolver that resolves no Python name at all.
+  (let* ((g (make-graph))
+         (caller (r-py-function g "run" "app/m.py" :unresolved '("helper")))
+         (local (r-py-function g "helper" "app/m.py")))
+    (r-py-tree g "app/m.py")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id local)) (called-ids g caller)))))
+
+(test a-lisp-or-javascript-name-reaches-no-python-definition
+  ;; file-store.lisp's `(git ...)' and a JavaScript `git()' both fell back to
+  ;; their spelling and landed on tools/test/acceptance.py's `git'.
+  (let* ((g (make-graph))
+         (lisp (r-foreign-caller g :lisp "probe" "src/a.lisp" '("git")))
+         (js (r-foreign-caller g :javascript "probe" "web/a.js" '("git")))
+         (py (r-py-function g "git" "tools/test/acceptance.py")))
+    (r-py-tree g "tools/test/acceptance.py")
+    (apply-transaction g (resolve-calls g))
+    (is (null (called-ids g lisp)))
+    (is (null (called-ids g js)))
+    (is (null (relationships-to g (id py) :rel-type :calls)))))
