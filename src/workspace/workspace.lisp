@@ -1050,7 +1050,7 @@ call site mints an entity, and that entity has to exist and carry its
 derived from those edges, so RESOLVE-TESTS has to follow RESOLVE-CALLS rather
 than merely accompany it. The full sequence is resolve-definitions,
 resolve-generated-definitions, resolve-imports, resolve-calls, resolve-tests,
-resolve-document-links, check-document-links, check-rules.
+resolve-settings, resolve-document-links, check-document-links, check-rules.
 
 Two of those arrows are not dependencies and the difference is worth keeping.
 RESOLVE-IMPORTS before CHECK-RULES is one: RUN-CHECK's :NO-EDGE kind takes
@@ -1125,6 +1125,10 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
       ;; derived from the :CALLS edges a test's body produced, so a pass that
       ;; has not run yet leaves every test covering nothing.
       (submit "resolve-tests"          (resolve-tests graph :workspace-id workspace))
+      ;; Before RESOLVE-DOCUMENT-LINKS so a document's `affects: [SPREADSHEET_ID]'
+      ;; finds the setting, and before the rules so CHECK-RULES sees the edges
+      ;; (DES-0053 D10).
+      (submit "resolve-settings"       (resolve-settings graph :workspace-id workspace))
       (submit "resolve-document-links" (resolve-document-links graph :workspace-id workspace))
       ;; After RESOLVE-DOCUMENT-LINKS and before the rules, because it writes a
       ;; property that same pass's siblings read, and because a rule check is a

@@ -1977,6 +1977,45 @@ a tree that writes its cases in the same file as its code: vitest\'s
                     ops))))))
     (nreverse ops)))
 
+(defparameter *setting-reader-types* '(:function :method :test :variable :file)
+  "What a :READS edge may start at: the same list the ontology declares.")
+
+(defun resolve-settings (view &key workspace-id)
+  "Operations minting one :SETTING per name read and one :READS edge per reader.
+
+DES-0053 D10. The analyzer writes :ENVIRONMENT-READS on the entity whose code
+makes the read and nothing else. That a name read in two files is one thing is
+a fact about the whole workspace, which no analyzer can see, so the node is
+derived here, on every pass, from the property. The property is never
+rewritten, and so a re-run after a retract rebuilds what the retract destroyed
+(DEC-0003).
+
+A setting no reader names any more is retracted, as CALL-SITE-RETRACTIONS sweeps
+an ambiguous site. A reader that stops reading needs no edge sweep: its file was
+reanalyzed, and RETRACT-FILE took its edges first. The retracts go last and name
+only settings no assert above touches, for the reason CALL-SITE-RETRACTIONS
+gives. The pass returns operations and calls nothing that writes the graph."
+  (let ((minted (make-hash-table :test #'equal))
+        (ops '()))
+    (dolist (type *setting-reader-types*)
+      (dolist (reader (entities-of-type view type))
+        (dolist (name (remove-duplicates (getp reader :environment-reads)
+                                         :test #'string=))
+          (let ((setting (make-instance 'setting-entity
+                                        :name name
+                                        :properties (properties-table
+                                                     (list :name name
+                                                           :sources '(:environment))))))
+            (unless (gethash (id setting) minted)
+              (setf (gethash (id setting) minted) t)
+              (push (assert-entity setting workspace-id) ops))
+            (push (assert-edge :reads reader setting :workspace-id workspace-id)
+                  ops)))))
+    (dolist (setting (entities-of-type view :setting))
+      (unless (gethash (id setting) minted)
+        (push (retract (id setting) workspace-id) ops)))
+    (nreverse ops)))
+
 ;;;; ==================================================================
 ;;;; Document links (SS10.3)
 ;;;; ==================================================================

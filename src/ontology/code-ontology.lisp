@@ -1840,7 +1840,7 @@ a distinct tests field rather than mixed into the impact set.")
 (defrelationship :documents
   :from (:document :design :architecture :decision :rule :concept)
   :to (:function :method :class :interface :variable :module :package :file :concept :test
-       :document)
+       :document :setting)
   :transitive-impact nil :impact-direction :reverse :collect-as :documents
   :documentation "One step, applied at the end, gathered into a distinct
 documents field.
@@ -1922,7 +1922,8 @@ traversal question is unchanged, only the strength of the claim.")
 
 (defrelationship :decides
   :from (:decision :design)
-  :to (:function :method :class :interface :variable :module :package :file :concept :test)
+  :to (:function :method :class :interface :variable :module :package :file :concept :test
+       :setting)
   :transitive-impact nil :impact-direction :reverse :collect-as :decisions
   :documentation "What a recorded decision governs.  Declared by the
 affects: field of a decision document (SS10.3), resolved against the entity

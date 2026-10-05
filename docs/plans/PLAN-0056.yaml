@@ -772,3 +772,12 @@ body: |
   should report. RESOLVE-CALLS gained a :DOMAINS argument, because the walk
   resolves specifiers in other files under those files' own domains, and
   RESOLVE-AND-CHECK passes it.
+
+  Step 7. :SETTING cannot be the target of :DECIDES or :DOCUMENTS as step 1
+  declared them, so a document's `affects: [SPREADSHEET_ID]' resolved and then
+  lost its edge. Both relationships now list :SETTING. The test uses a decision
+  and a plan. SEARCH-ENTITIES and DESCRIBE-ENTITY needed no change; the test is
+  in src/knowledge/test/services.lisp. RESOLVE-SETTINGS adds no mutator, so
+  RULE-0003 is unchanged. One run of the full suite failed
+  A-WRITE-OPERATION-IS-NOT-RECORDED in loom-serve and passed on the rerun with
+  no edit between.

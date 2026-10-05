@@ -809,3 +809,37 @@ with them."
         (search-entities g :name "repository" :type :function :kind :code)
       (declare (ignorable hits))
       (is (= 1 total) "a type inside the family is not refused"))))
+
+;;; ------------------------------------------------------------------
+;;; A :SETTING is found and described like any entity (DES-0053 D10)
+;;; ------------------------------------------------------------------
+
+(test find-and-describe-answer-for-a-setting
+  ;; Nothing in the knowledge layer names :SETTING, and a type missing from a
+  ;; list it walks is reported by nothing (PLAN-0056, BLAST RADIUS). This is the
+  ;; check that `find SPREADSHEET_ID' and `describe' reach the node.
+  (let* ((g (make-graph))
+         (reader (make-instance 'variable-entity :name "SPREADSHEET_ID"
+                                :origin-file "functions/config.py"
+                                :properties (properties-table
+                                             '(:file "functions/config.py"
+                                               :start-line 3 :end-line 3
+                                               :language :python
+                                               :environment-reads ("SPREADSHEET_ID")))))
+         (setting (make-instance 'setting-entity :name "SPREADSHEET_ID"
+                                 :properties (properties-table
+                                              '(:name "SPREADSHEET_ID"
+                                                :sources (:environment))))))
+    (add-entity g reader)
+    (add-entity g setting)
+    (apply-transaction g (list (assert-edge :reads reader setting)))
+    (let ((hits (search-entities g :name "SPREADSHEET_ID" :type :setting)))
+      (is (= 1 (length hits)))
+      (is (eq :setting (getf (first hits) :type))))
+    (let* ((detail (describe-entity g (id setting)))
+           (group (find-if (lambda (n) (and (eq :in (getf n :direction))
+                                            (eq :reads (getf n :rel-type))))
+                           (getf detail :neighbors))))
+      (is (not (null group)) "the reader is listed as a neighbour")
+      (is (equal '("SPREADSHEET_ID")
+                 (mapcar (lambda (e) (getf e :name)) (getf group :entities)))))))

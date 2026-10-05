@@ -86,6 +86,7 @@
 
    ;; test coverage, derived from what a test's body calls (DES-0002 R9)
    #:resolve-tests
+   #:resolve-settings
    #:*tested-types*
 
    ;; document link resolution (SS10.3)

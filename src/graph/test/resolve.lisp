@@ -2043,3 +2043,99 @@ of :SPECIFIER, :PATH and :LINE."
         (r-resolve g)
         (is (equal (list (id again)) (called-ids g caller))
             "and the next pass derives it again from what the caller recorded")))))
+
+;;;; ==================================================================
+;;;; RESOLVE-SETTINGS (DES-0053 D10)
+;;;; ==================================================================
+
+(defun r-reader (graph type name file &rest names)
+  "A Python entity of TYPE whose code reads each of NAMES from the environment."
+  (let ((e (r-py-definition graph type name file)))
+    (setp e :environment-reads names)
+    e))
+
+(defun r-settle (graph)
+  (apply-transaction graph (resolve-settings graph)))
+
+(defun reads-ids (graph entity)
+  (mapcar #'to-id (relationships-from graph (id entity) :rel-type :reads)))
+
+(test two-readers-of-one-name-give-one-setting-and-two-reads-edges
+  (let* ((g (make-graph))
+         (a (r-reader g :variable "SPREADSHEET_ID" "functions/config.py" "SPREADSHEET_ID"))
+         (b (r-reader g :function "load" "functions/sheets.py" "SPREADSHEET_ID" "OTHER")))
+    (r-settle g)
+    (let ((settings (entities-of-type g :setting)))
+      (is (equal '("OTHER" "SPREADSHEET_ID")
+                 (sort (mapcar #'name settings) #'string<)))
+      (let ((shared (find "SPREADSHEET_ID" settings :key #'name :test #'string=)))
+        (is (equal '(:environment) (getp shared :sources)))
+        (is (member (id shared) (reads-ids g a) :test #'string=))
+        (is (member (id shared) (reads-ids g b) :test #'string=))
+        (is (= 2 (length (relationships-to g (id shared) :rel-type :reads)))
+            "one node, one edge from each reader")))))
+
+(test a-repeated-name-on-one-reader-is-one-edge
+  (let* ((g (make-graph))
+         (a (r-reader g :function "f" "app/a.py" "K" "K")))
+    (r-settle g)
+    (is (= 1 (length (reads-ids g a))))))
+
+(test a-setting-survives-one-reader-and-is-swept-when-the-last-goes
+  (let* ((g (make-graph))
+         (a (r-reader g :function "f" "app/a.py" "K"))
+         (b (r-reader g :function "g" "app/b.py" "K")))
+    (r-settle g)
+    (setp a :environment-reads nil)
+    (r-settle g)
+    (is (= 1 (length (entities-of-type g :setting)))
+        "b still reads it")
+    (setp b :environment-reads nil)
+    (r-settle g)
+    (is (null (entities-of-type g :setting))
+        "no reader names it, so it is derived no longer")))
+
+(test resolving-settings-twice-changes-nothing
+  (let ((g (make-graph)))
+    (r-reader g :function "f" "app/a.py" "K")
+    (r-settle g)
+    (r-settle g)
+    (is (= 1 (length (entities-of-type g :setting))))
+    (is (= 1 (length (relationships-to g (id (first (entities-of-type g :setting)))
+                                       :rel-type :reads))))))
+
+(test a-setting-reaches-its-readers-and-their-callers
+  (let* ((g (make-graph))
+         (reader (r-reader g :function "load" "app/sheets.py" "K"))
+         (caller (r-py-definition g :function "main" "app/main.py")))
+    (apply-transaction g (list (assert-edge :calls caller reader)))
+    (r-settle g)
+    (let ((result (impact-set g (id (first (entities-of-type g :setting))))))
+      (is (equal '("load" "main")
+                 (sort (mapcar (lambda (e) (name (impact-entry-entity e)))
+                               (remove :file (impact-result-impacted result)
+                                       :key (lambda (e) (entity-type (impact-entry-entity e)))))
+                       #'string<))))))
+
+(test a-document-naming-a-setting-resolves-to-it
+  ;; Neither :DECIDES nor :DOCUMENTS listed :SETTING as a target, so `affects:
+  ;; [SPREADSHEET_ID]' would have resolved and then lost its edge. A plan bears
+  ;; on a setting; a decision governs one.
+  (let ((g (make-graph)))
+    (r-reader g :function "load" "app/sheets.py" "SPREADSHEET_ID")
+    (let ((decision (r-decision g "DEC-9000" :affects '("SPREADSHEET_ID")))
+          (plan (make-instance 'document-entity :name "docs/plans/PLAN-9000.yaml"
+                               :origin-file "docs/plans/PLAN-9000.yaml"
+                               :properties (properties-table
+                                            '(:path "docs/plans/PLAN-9000.yaml"
+                                              :doc-id "PLAN-9000"
+                                              :affects ("SPREADSHEET_ID"))))))
+      (add-entity g plan)
+      (r-settle g)
+      (apply-transaction g (resolve-document-links g :workspace-id "w"))
+      (let ((setting (id (first (entities-of-type g :setting)))))
+        (is (equal (list setting)
+                   (mapcar #'to-id (relationships-from g (id decision) :rel-type :decides))))
+        (is (equal (list setting)
+                   (mapcar #'to-id (relationships-from g (id plan) :rel-type :documents))))
+        (is (null (getp plan :unresolved-references)))))))
