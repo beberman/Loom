@@ -1168,6 +1168,19 @@ other's files."
   (let ((domains (getf (repository-frameworks repository) :domains)))
     (when domains (domain-table domains))))
 
+(defun repository-entry-points (repository)
+  "The entry-points this repository declared, or NIL. DES-0054 D3.
+
+Beside REPOSITORY-DOMAINS and for its reason: read from this repository's own
+frameworks plist, so one watched tree's declarations cannot mark another's
+functions. RESOLVE-AND-CHECK hands it to the passes as data -- loom-graph reads
+no configuration."
+  (getf (repository-frameworks repository) :entry-points))
+
+(defun repository-setting-declarations (repository)
+  "The setting-declarations this repository declared, or NIL. DES-0054 D3."
+  (getf (repository-frameworks repository) :setting-declarations))
+
 (defun repository-registry (repository)
   "The generator registry this repository's resolution passes should use.
 
