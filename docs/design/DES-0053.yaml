@@ -1,0 +1,834 @@
+id: DES-0053
+title: A Python analyzer parses with python3's own ast in a long-lived child, binds every call to a local name or an import inside the file, and leaves cross-file resolution and Firebase to loom-graph and a second stage
+status: draft
+date: 2026-10-04
+refines: [REQ-0078]
+affects: [find-analyzer, register-analyzer, analyzable-p, parse-javascript,
+          ensure-js-child, resolve-module-specifier, build-module-scope,
+          resolve-calls, call-targets, caller-call-names, member-call-candidates,
+          visible-candidates, module-scoped-language-p, make-call-site-entity,
+          entity-arity, render-signature, repository-files, propose-domains,
+          unresolved-references]
+importance: Major
+tags: [analyzer, python, ontology, imports, call-resolution, environment,
+       tests, firebase, req-0078, req-0024, req-0018, req-0041, des-0014,
+       des-0015, des-0025, des-0045, des-0047, con-0001, con-0005]
+summary: |
+  Loom claims no .py file. This design answers REQ-0078 R1 to R6 and leaves
+  R7 to R11, the Firebase half, to a second design. It makes five choices.
+
+  The parser is python3's own `ast`, run in one long-lived child process with
+  the same framed protocol tools/js/extract.js uses. The child never imports
+  or runs the code it reads. A tree analyzed on a machine with no python3
+  still indexes every .py file, with the reason recorded on each.
+
+  The child binds every call inside the file before anything leaves it. A
+  call reaches either a name the module defines, an import, `self`, a local
+  object, or a builtin. A call bound to an import is written as a specifier
+  and an attribute path in a new :IMPORTED-CALLS property, not as a bare
+  name. Measured on ~/github/lfia-accounting, the bare-name encoding the
+  JavaScript analyzer uses would put three wrong fan-outs on `build` alone.
+
+  loom-graph resolves Python specifiers with Python's rules: the importer's
+  package, its own directory when that directory is not a package, and its
+  domain root (DES-0047). A domain root is therefore the general "import
+  root" REQ-0078's second open question asks for, and firebase.json becomes
+  one more proposer of domains in the second stage.
+
+  Environment reads become a new :SETTING entity reached by a new :READS
+  edge, minted by a graph pass from an analyzer-written property. This is the
+  one ontology change of the expensive kind. It is what makes `find`,
+  `describe` and `impact` answer "what reads SPREADSHEET_ID" with no new
+  command, and it is the node the second stage hangs secrets on.
+
+  Decorators are recorded on the entity they decorate, with the decorator's
+  resolved module path and its literal keyword arguments. That is the whole
+  of what the Firebase stage needs from this one.
+body: |
+  PROBLEM
+
+  REQ-0078's measurement holds and the tree has grown since. On 2026-10-04
+  ~/github/lfia-accounting holds 32 .py files outside functions/venv: nine
+  in functions/, thirteen in functions/ledger/ and ten in functions/tests/.
+  Loom produces no code entity from any of them. Loom's own tree tracks 10
+  .py files under tools/, 2176 lines, and `status` lists them as unclaimed.
+
+  Census of calls, taken with python3 3.12.3's ast while lfia held 18 files
+  (1186 lines) and Loom's tools/ held 10 (2176 lines):
+
+                                              lfia   Loom tools/
+      calls                                    539          661
+      bare call to a builtin (print, len)      131          190
+      bare call to a module-level def           46           97
+      bare call to an imported name             45            2
+      bare call to anything else                42            0
+      attribute call on an import binding       97           81
+      attribute call on self                     1            0
+      attribute call on another name           132          187
+      attribute call on an expression          109          104
+      decorators                                 8            0
+      nested defs                                4            0
+      `if __name__ == "__main__":` guards        0            6
+
+  Three properties of this code make a reader built like the JavaScript one
+  give wrong answers rather than none.
+
+  First, an import binding is erased by a bare-name encoding. The JavaScript
+  analyzer writes `api.fetchGame()` as a member call and `foo()` as FOO, and
+  lets VISIBLE-CANDIDATES narrow by the files a module imports. VISIBLE-
+  CANDIDATES never empties a set: where no tier applies it returns every
+  candidate in the repository. Three cases from lfia show what that does.
+  sheets.py writes `from googleapiclient.discovery import build` and calls
+  `build("sheets", ...)`. googleapiclient is external, so no tier applies,
+  and the call fans out to cross_check.build and simplifi.build at 1/2 each.
+  main.py calls `cross_check.build(...)` and `simplifi.build(...)`; both
+  reduce to BUILD, main.py imports both modules, and each call fans out to
+  both. main.py:56 calls `sheets.read_tab(...)` from seed_accounts_map;
+  READ_TAB matches main.py's own HTTP function read_tab on the local tier,
+  and the edge lands on the wrong function. In Loom's tools/,
+  acceptance.py:250 calls `service.watched_repositories()` from its own
+  watched_repositories; CALL-TARGETS removes the caller, so the real edge
+  into tools/test/service.py is lost. The source names the module in every
+  one of these calls.
+
+  Second, the modules are found by where they are run, not by a package.
+  functions/ has no __init__.py, and main.py imports `config`, `rules` and
+  `sheets` by bare name, because Firebase runs main.py from functions/. Four
+  of Loom's tools/test scripts import `service` the same way, because Python
+  puts a script's own directory on sys.path. functions/tests/ imports
+  `ledger.refs`, which resolves only when functions/ is on sys.path.
+
+  Third, a module re-exports. functions/ledger/__init__.py writes `from
+  .posting import correct, post, reverse`, and tests write `from ledger
+  import Draft, Line, Source` and `import ledger` followed by `ledger.post`.
+  The definition is one file further than the import names.
+
+  Two facts from Python itself bear on reconciliation (CON-0005). The
+  4837 files of lfia's own virtual environment, read as a corpus and not
+  indexed, hold 827 method names defined twice in one class body, 276
+  `@x.setter`, `.getter` or `.deleter` decorators and 789 `@overload`
+  decorators. Python replaces a rebound name, except that a property's
+  accessor chain and an overload set are one definition written several
+  times.
+
+  WHAT OQ1 GOT WRONG ABOUT THE PRECEDENT
+
+  REQ-0078's first open question says REQ-0024 chose tree-sitter so that the
+  JavaScript analyzer needs nothing installed. It did not. REQ-0024's
+  OUTSTANDING section records the choice: acorn and acorn-jsx, vendored under
+  tools/js/, run by `node` in a child process. *NODE-PROGRAM* is "node", and
+  a machine without node indexes every JavaScript file as a :FILE carrying
+  *JS-UNAVAILABLE-REASON*. So the JavaScript analyzer already needs a
+  language runtime, and records its absence rather than failing. Asking
+  python3 for the same thing is that precedent, not a departure from it.
+
+  The question also joins two different things. `ast.parse` is a parser. It
+  reads text and does not import, execute or resolve anything, so it works on
+  code whose dependencies are not installed, which is REQ-0018's baseline.
+  Loading a module and introspecting it is DES-0011's inspector, which runs
+  only on `enrich`. This design uses the first and leaves the second to a
+  later inspector.
+
+  DECISIONS
+
+  D1  THE PARSER IS python3's ast IN ONE LONG-LIVED CHILD
+
+  tools/py/extract.py is the child. It reads the frame tools/js/extract.js
+  reads -- `<path>\n<byte-length>\n<source bytes>` -- and writes one JSON
+  line per file. It is started on first use and reused for every file, the
+  shape REQ-0024 measured at 0.65s for 468 JavaScript files.
+
+  It runs as `python3 -I -B`. -I keeps PYTHONPATH, the user site directory
+  and the current directory off sys.path, so a tree that contains its own
+  `ast.py` or `json.py` cannot replace a module the extractor imports. -B
+  writes no .pyc files into anybody's tree.
+
+  The extractor imports `ast`, `tokenize`, `builtins`, `json` and `sys`, and
+  nothing from the tree it reads. It never calls `exec`, `eval`, `compile`
+  with exec mode, or `importlib`.
+
+  Cost, measured with the same interpreter: `ast.parse` over all 4837 files
+  of lfia's venv (1,853,648 lines) took 8.45s, 1.7ms a file, and failed on
+  none. The 18 lfia files took 0.010s.
+
+  The interpreter's version is a parsing limit. python3 3.12.3 cannot parse
+  syntax added in 3.13. Such a file is damage (D7), and the recorded error
+  names the interpreter version so the reader can tell an old interpreter
+  from a broken file.
+
+  D2  THE CHILD BINDS EACH CALL; LISP DECIDES WHAT THE BINDING MEANS
+
+  extract.js reports what the syntax says and js-analyzer.lisp decides what
+  it means to the graph. The same split holds here, with one addition. Which
+  statement a name is bound by is a fact of Python's syntax and scoping, not
+  a judgement about the repository, so the child computes it. For each call
+  it reports one of five bindings:
+
+      local     the callee is a name bound by a module-level def, class or
+                assignment in this file. Reported as the name.
+      import    the callee's first name is bound by an import statement in
+                an enclosing scope. Reported as the specifier as written,
+                the attribute path after the binding, and the line.
+                `from sheets import upsert` then `upsert()` is ("sheets",
+                ["upsert"]). `import sheets` then `sheets.clear()` is
+                ("sheets", ["clear"]). `from sheets import read_tab as
+                _read` then `_read()` is ("sheets", ["read_tab"]): the alias
+                is undone. `from ledger import dates` then `dates.parse()`
+                is ("ledger", ["dates", "parse"]). `import google.auth`
+                then `google.auth.default()` is ("google", ["auth",
+                "default"]).
+      self      `self.m()` or `cls.m()` inside a method of a module-level
+                class. Reported as "Class.m", which is how extract.js
+                reports `this.m()`.
+      member    `obj.m()` where obj is a parameter, a local or anything else
+                that is not an import. Reported as "obj.m", or "m" when the
+                receiver is an expression, exactly as extract.js reports it.
+      builtin   an unbound name that `builtins` defines. Dropped. Python's
+                scoping makes this exact: a name no enclosing scope binds is
+                looked up in builtins and nowhere else.
+
+  A name bound in a function's own scope -- a parameter, a local, a nested
+  def -- is not a cross-file name. A call to it is dropped, except as the
+  receiver of a member call.
+
+  Scoping follows Python: function scopes, class bodies that do not enclose
+  their methods, comprehensions with their own scope, and `global` and
+  `nonlocal` declarations. An import inside a function binds only in that
+  function. main.py's read_tab does exactly that.
+
+  D3  WHAT GETS AN ENTITY
+
+      :FILE      every claimed .py file. The module docstring becomes the
+                 file's :DOCUMENTATION. :IMPORT-SOURCES holds every
+                 specifier as written. :IMPORT-BINDINGS holds the
+                 module-level bindings, which D5's re-export walk reads.
+      :FUNCTION  a def or async def at module level.
+      :CLASS     a class at module level. :SUPERCLASS-NAMES holds each base
+                 with its import alias undone. :SLOTS holds the names the
+                 class body assigns or annotates, which is where a NamedTuple
+                 or dataclass declares its fields.
+      :METHOD    a def directly in a module-level class body, named
+                 "Class.name" as JavaScript methods are.
+      :VARIABLE  a plain name assigned at module level.
+      :TEST      a recognised test case (D8). Not also a :FUNCTION.
+
+  A def, class or lambda anywhere else -- inside a function, or inside a
+  nested class -- gets no entity. Its calls belong to the nearest enclosing
+  entity. That is extract.js's rule for inline callbacks and it holds for
+  ledger/refs.py's `advance`, a decorated function defined inside
+  lease_block. Nothing outside lease_block can name it.
+
+  No :MODULE entity is minted. A Python module is exactly one file, so a
+  :MODULE would repeat the :FILE's identity and edges. Its qualified name,
+  "ledger.refs" or "functions.ledger.refs", depends on which directory is the
+  import root, and only loom-graph can know that. Minting it in the analyzer
+  would mean guessing the root. R1 of REQ-0078 names modules; this design
+  meets it with the :FILE and its :DOCUMENTATION, and says so.
+
+  Every function, method and class carries:
+
+      :ARGUMENTS      the parameters as written, defaults and annotations
+                      included: ("lookback_days: float", "reset: bool =
+                      False"). `/`, `*`, `*args` and `**kwargs` stay in as
+                      written.
+      :DECORATORS     one plist per decorator, in source order: :NAME as
+                      written, :SPECIFIER and :PATH from D2's binding when the
+                      decorator is imported, :ARGUMENTS as (keyword . value)
+                      pairs, and :LINE. A value is recorded when it is a
+                      literal string, number, boolean or None; a bare name or
+                      a list of bare names is recorded as those names; any
+                      other expression is recorded as the symbol :EXPRESSION.
+      :DOCUMENTATION  the docstring, after the adjacent `#` comment block
+                      above the first decorator when there is one (DES-0028
+                      D2's order).
+
+  :START-LINE is the first decorator's line, so a served range shows the
+  decorators and COMMENT-EXTENT looks above them.
+
+  A decorator is a call made by the definition it decorates. The binding goes
+  into that definition's call records like any other call. Every call to a
+  decorated function runs through what the decorator returned, so a change to
+  a decorator this tree defines reaches the functions it decorates and their
+  callers. That is the impact a reader expects.
+
+  D4  CALLS THAT HAVE NO DEFINITION TO START FROM BECOME :CALL-SITE ENTITIES
+
+  DES-0014 mints a :CALL-SITE exactly where a call cannot be an edge from a
+  definition. Python has three such places:
+
+      a module-level assignment's value      referrer-kind :VARIABLE
+      a class body, or a class decorator     referrer-kind :CLASS
+      any other module-level statement,      referrer-kind :MODULE (new)
+      including `if __name__ == "__main__":`
+
+  The third is how a script's entry function stops looking dead. Six of
+  Loom's tools/test scripts end in a guard. Four call main() from it,
+  acceptance.py calls sessions_main(), and service.py calls ensure().
+
+  A site carries one call. When that call is bound to an import, the site
+  carries one :IMPORTED-CALLS entry and its :CALL-NAME is the dotted
+  spelling, kept for the natural key and the label. CALLER-CALL-NAMES
+  returns nothing for such a site, so the name is resolved once.
+
+  D5  loom-graph RESOLVES PYTHON SPECIFIERS BY PYTHON'S RULES
+
+  The analyzer sees one file and cannot know which files exist. loom-graph
+  holds the index, re-derives on every pass, and already resolves
+  JavaScript specifiers in RESOLVE-MODULE-SPECIFIER. Python gets its own
+  resolver beside it, chosen by the importer's :LANGUAGE.
+
+  A relative specifier -- ".posting", "..pkg.mod" -- starts in the
+  importer's directory and climbs one directory per dot after the first.
+
+  An absolute specifier is tried under these roots, in this order:
+
+      1. the importer's own directory, when that directory holds no
+         __init__.py. Python puts a script's directory on sys.path, and a
+         directory that is not a package can only be imported from by being
+         on sys.path. This resolves all of main.py's imports and all four
+         `import service` lines in Loom's tools/test.
+      2. the parent of the outermost package that contains the importer.
+         A package named ledger is imported as `ledger` only when its parent
+         is on sys.path, so ledger/posting.py's `from ledger.hashing import
+         content_hash` resolves under functions/.
+      3. the importer's domain root, from .loom/frameworks.yaml (DES-0047).
+
+  A specifier "a.b" names a/b.py or a/b/__init__.py under a root. Package-
+  ness is read from the index: a directory is a package when "<dir>/
+  __init__.py" is an indexed path. Nothing here reads the filesystem.
+
+  A miss carries a cause, as DES-0047's resolver does. :EXTERNAL means no
+  root holds the name and no indexed file is named for it. :UNROOTED is new:
+  no root of this importer holds it, but a module or package of that
+  top-level name is indexed somewhere else. functions/tests' `from
+  ledger.refs import ...` is :UNROOTED until a domain declares functions/ as
+  a root. That cause tells the reader which declaration is missing, where
+  :EXTERNAL would have called ledger a library.
+
+  `from S import a` also tries S.a as a submodule, because Python's import
+  statement does. The file that resolves is added to the importer's module
+  scope.
+
+  :PYTHON joins *MODULE-SCOPED-LANGUAGES*, so the local tier and the
+  imported-files tier of VISIBLE-CANDIDATES apply to Python callers.
+
+  D6  :IMPORTED-CALLS IS A RESOLUTION TIER, AND IT DOES NOT GUESS
+
+  For each entry on a caller, RESOLVE-CALLS resolves the specifier (D5) to a
+  file, then walks the attribute path the way Python looks up an attribute
+  on a module:
+
+      1. a definition of that name in the file -> the next step, or the
+         edge when the path ends there. A class at the end of the path
+         resolves to its "Class.__init__" method, because calling a class
+         runs __init__.
+      2. a module-level import binding of that name in the file (from its
+         :IMPORT-BINDINGS) -> continue from that binding's specifier.
+         This is the re-export through ledger/__init__.py.
+      3. a submodule of that name -> continue in that file.
+      4. none of these -> a miss.
+
+  The walk stops after 16 steps and refuses a cycle. A hit is one :CALLS
+  edge at full confidence. Nothing in the walk chooses between candidates,
+  because at each step the file holds at most one binding of a name
+  (CON-0005, D9).
+
+  A miss is written to a new derived property, :UNRESOLVED-IMPORTED-CALLS,
+  one plist per entry with its cause:
+
+      :EXTERNAL            the specifier is external. Not a defect.
+      :UNROOTED            as D5.
+      :MISSING-IN-TARGET   the module was found and holds no such name. This
+                           is the rot REQ-0078 R2 and R11 ask `check` to
+                           report: a renamed or deleted function that a call
+                           still names.
+      :NOT-CALLABLE        the path ended at a :VARIABLE, or at a class with
+                           no __init__ in its own file.
+
+  `check` reports :MISSING-IN-TARGET and nothing else from this list. Every
+  other cause is a counted gap, not an error.
+
+  Two narrowings apply to Python callers only. A Python caller's candidates
+  are Python definitions, because CPython code does not call Lisp or
+  JavaScript in process. And the third tier of MEMBER-CALL-CANDIDATES -- the
+  property as a bare function name -- is skipped, because it exists for
+  JavaScript's namespace import and D2 has already turned every Python
+  namespace access into an :IMPORTED-CALLS entry. The second tier stays. On
+  lfia, all 24 member calls whose property names a method the tree defines
+  land on the method the source means: rules.find, rules.one, rules.all,
+  actor.to_map, refs.next_ref, l.swapped, issuer.next_ref.
+
+  D7  A SYNTAX ERROR COSTS ITS STATEMENT, NOT THE FILE
+
+  `ast.parse` stops at the first error. The file monitor reindexes a file on
+  every save, so a file half-way through an edit is the common case for
+  damage, not a rare one.
+
+  On a SyntaxError the child splits the file at top-level statement
+  boundaries and parses each piece alone. A boundary is a line that
+  `tokenize` places at column 0, outside any bracket and string, after a
+  NEWLINE token. The piece holding the error line is damage. It goes into
+  :SUPPRESSED-REGIONS with reason "python syntax error" and its exact line
+  range. The other pieces are indexed normally.
+
+  A piece that also fails is damage in the same way. No piece is repaired,
+  and a repaired region is never indexed. That is DES-0013's rule, for
+  DES-0013's reason: a repaired region can carry a plausible range over text
+  that defines something else.
+
+  :ANALYSIS-FAILED-P is set only when no piece parsed or python3 could not
+  run.
+
+  D8  TESTS ARE RECOGNISED BY THE RUNNERS' OWN DEFAULTS
+
+  DES-0045 ships vitest's and jest's default file patterns because they are
+  facts about two runners, not about one repository. The same holds for
+  pytest and unittest.
+
+  A file is a test file when its name matches pytest's default python_files,
+  `test_*.py` or `*_test.py`, or when it defines a class whose base binds to
+  unittest's TestCase. Loom's tools/test/test-*.py match neither. They are
+  scripts run directly, so no runner would collect them and no test entity
+  is minted for them.
+
+  The cases, with the names pytest prints after the path:
+
+      a module-level function named test* in a test file   test_x
+      a method test* of a class Test* with no __init__     TestX::test_y
+      a method test* of a TestCase subclass                TestX::test_y
+
+  :FRAMEWORK is :PYTEST or :UNITTEST. A parametrized test is one entity, as
+  the source wrote one function.
+
+  A case's calls include the hooks the runner runs around it: setUp and
+  tearDown, setup_method and teardown_method, and setup_function and
+  teardown_function. That is DES-0045 D4's rule for beforeEach.
+
+  Fixture injection is deferred. A pytest fixture reaches a test through a
+  parameter name, looked up in the test's file and the conftest.py files
+  above it. That is a decorator-registered framework fact, the same shape as
+  a Firebase trigger, and the second stage owns that shape.
+
+  D9  RECONCILIATION IN PYTHON'S SEMANTICS (CON-0005)
+
+  One module-level name yields one entity: the last binding in source order,
+  whatever kind the earlier bindings were. Earlier ranges go into
+  :SHADOWED-DEFINITIONS. The same rule applies to "Class.name" in a class
+  body. A def inside a module-level `if` or `try` counts as module level.
+
+  Two shapes merge instead of replacing, because Python makes them one
+  definition:
+
+      a property accessor chain   a method decorated @property followed by
+                                  same-named methods decorated @name.setter,
+                                  @name.getter or @name.deleter. One method
+                                  entity spanning the chain. Its call records
+                                  are the union. None of them is shadowed.
+      an overload set             methods or functions decorated @overload
+                                  followed by the implementation. One entity,
+                                  the implementation. The stubs have no body
+                                  to contribute and are not recorded as
+                                  shadowed.
+
+  Branch alternatives -- the same def in both arms of an `if` -- keep the
+  last and shadow the first. That loses the first arm's calls, which is a
+  gap and not a fabrication. Neither lfia nor Loom's tools/ has one.
+
+  An attribute assigned onto a class after its definition (`C.m = f`) mints
+  nothing. Neither tree has one either.
+
+  D10 ENVIRONMENT READS ARE A :SETTING NODE, MINTED BY loom-graph
+
+  The child recognises an environment read by binding, not by spelling.
+  os.environ.get, os.getenv, os.environ[...] and os.environ.setdefault are
+  matched through whatever name `os` or `environ` is bound to. When the
+  first argument is a string literal, the name goes into :ENVIRONMENT-READS
+  on the innermost entity: the function, method or test; the :VARIABLE whose
+  value makes the read; else the :FILE. config.py's eight reads land on
+  eight variables. A read whose key is not a literal is counted in
+  :UNNAMED-ENVIRONMENT-READS on the :FILE, the way :UNNAMED-TESTS counts a
+  case with no literal title.
+
+  A default value is never recorded. `os.environ.get("SPREADSHEET_ID", "")`
+  records "SPREADSHEET_ID" and nothing else.
+
+  A graph pass, RESOLVE-SETTINGS, mints one :SETTING per distinct name in a
+  workspace and one :READS edge from each reader. It re-derives both on every
+  pass from :ENVIRONMENT-READS and sweeps a setting no reader names any more,
+  as RESOLVE-CALLS sweeps ambiguous call sites. Nothing the analyzer wrote is
+  changed (DEC-0003).
+
+  :SETTING is keyed on (:name) and carries :SOURCES, a list whose only
+  value in this stage is :ENVIRONMENT. :READS runs from a :FUNCTION, :METHOD,
+  :TEST, :VARIABLE or :FILE to a :SETTING, with transitive impact in the
+  reverse direction: a change to the setting reaches its readers and their
+  callers.
+
+  What "the index can never hold a value" means. Loom reads source files. It
+  claims no .env file, and lfia's functions/.env is git-ignored and is
+  claimed by no analyzer. What the index holds of a source file is already
+  served verbatim by `context`, so this design adds no exposure that did not
+  exist. It adds no read of the environment, of .env files or of any secret
+  store, and drops the one value a read names in source, its default.
+
+  D11 A VIRTUAL ENVIRONMENT IS EXCLUDED BY WHAT IT IS AND BY ITS NAME
+
+  The walker already skips dot-directories, so .venv never reaches an
+  analyzer. Two more rules:
+
+      the Python analyzer refuses a path with a directory segment named
+      venv, site-packages, dist-packages or __pycache__. This is
+      VENDORED-PATH-P's precedent for JavaScript.
+
+      REPOSITORY-FILES, and the file monitor's single-file path, drop every
+      path under a directory that holds a pyvenv.cfg. `python -m venv` and
+      virtualenv write that file into every environment they create, so a
+      venv named env/ or .python/ is excluded too.
+
+  Neither rule asks git. lfia's venv is excluded today only because
+  functions/.gitignore names it, and BUG-0024 measured what happens on a
+  branch where that file is absent.
+
+  D12 :SYSTEM IS THE PATH CONVENTION, AS FOR JAVASCRIPT
+
+  :SYSTEM is DEFAULT-SYSTEM-FOR-PATH's answer, so everything under
+  functions/ is :FUNCTIONS. A Python package is a stronger grouping, but
+  whether a directory is a package depends on another file, its __init__.py.
+  An analyzer sees one file. Deriving :SYSTEM from package-ness would leave
+  every sibling's :SYSTEM stale when an __init__.py is added or deleted,
+  until each sibling is reanalysed. Package-ness belongs where D5 uses it,
+  in loom-graph, which re-derives it on every pass. The cost: lfia's ledger/
+  cannot be named in a layering rule apart from the rest of functions/.
+
+  THE FOUR OPEN QUESTIONS, AS THEY BEAR ON THIS STAGE
+
+  1. Parser. python3's ast, in a child (D1). The text-only baseline REQ-0018
+     names is kept in the sense that matters: nothing is imported or run.
+     Loaded-module introspection is a DES-0011 inspector for `enrich` and is
+     not designed here.
+
+  2. Import roots. A general source-roots concept, and it already exists:
+     the domain root of DES-0047. loom-graph reads it when it resolves a
+     Python specifier (D5). Firebase does not own it. In the second stage,
+     firebase.json's `functions[].source` becomes one more proposer in
+     PROPOSE-DOMAINS, beside jsconfig.json and package.json. A domain's
+     alias map and JavaScript preset do not apply to Python files; only its
+     root does.
+
+  3. Decorator-registered entry points. Not decided here. This stage records
+     every decorator with its resolved module path (D3), which is the input
+     either answer needs. The recommendation for the second stage is a
+     generic key in .loom/frameworks.yaml matched on that resolved path, so
+     `from firebase_functions import https_fn as h` still matches. DES-0025
+     D4 rules out Loom shipping a table of other people's frameworks, so
+     the Firebase entries would not be built in. `loom init` would propose
+     them into the repository's own frameworks.yaml when it finds a
+     firebase.json, the way PROPOSE-DOMAINS proposes and never decides.
+     Pytest fixtures (D8) and Flask routes are the same shape.
+
+  4. firebase.json. Not read in this stage. Nothing in R1 to R6 needs it:
+     D5's first two roots resolve every import the acceptance list in
+     REQ-0078 names. For the second stage, READ-JSON-FILE in frameworks.lisp
+     already reads strict JSON through cl-yaml, which firebase.json and
+     .firebaserc are. That is enough for a narrow reader. A general JSON
+     analyzer would claim 13 tracked .json files in Loom's own tree, two of
+     them vendored package.json files under tools/js/vendor, and turn
+     configuration into entities with no meaning attached.
+
+  ALTERNATIVES CONSIDERED
+
+  A Python reader written in Lisp. Rejected. It would need Python's
+  tokenizer, indentation, f-strings with nested quotes (PEP 701, in 3.12),
+  decorators, the walrus operator, `match`, and full scoping for D2. That is
+  a parser project, which is REQ-0024's own reason for not hand-rolling
+  JavaScript. It would also drift from the language every release, where
+  `ast` is the language's definition of its own grammar. The only thing it
+  buys is running without python3. A tree with Python in it and no python3
+  to read it is the case D1 already handles by recording the absence.
+
+  tree-sitter, or a Python grammar vendored into the node child. Rejected.
+  tree-sitter adds an FFI dependency, and cl-yaml is meant to stay the only
+  one (loom-analyzer.asd). A Python grammar inside the JavaScript child would
+  make Python analysis depend on node, and would lag the language.
+
+  The bare-name encoding the JavaScript analyzer uses. Rejected on the
+  measurement in PROBLEM: three wrong fan-outs on `build`, one edge on the
+  wrong function at main.py:56, and one real edge lost at acceptance.py:250,
+  in two small trees. Each comes from VISIBLE-CANDIDATES returning every
+  candidate when no tier applies. That rule is right for a name nothing in
+  the file binds. A Python call nearly always has a binding the file states.
+
+  Doing all binding in the graph, from bindings the analyzer records.
+  Rejected. Scope is single-file language semantics -- function-local
+  imports, `global`, comprehension scope -- and CON-0005 puts a language's
+  single-file semantics in its analyzer. The graph keeps only what needs
+  other files: which file a specifier names, and what that file defines.
+
+  Walking up from the importer until some directory holds the module.
+  Rejected. Python does not look there, and the first local file named like
+  a library would capture every import of it: a stray requests.py would
+  receive every `requests.get` in the tree. D5's three roots are each a
+  directory Python really does search.
+
+  A :MODULE entity per file. Rejected in D3: it duplicates :FILE and its name
+  depends on the root.
+
+  Environment reads as a property and nothing else. This was the cheap
+  option, and it is rejected for what it cannot answer. `find` matches
+  names, so "what reads SYNC_LOOKBACK_DAYS" would need a new knowledge
+  command over REST and MCP. "Which functions must be redeployed when
+  ZEFFY_API_KEY rotates" is `impact` on a node, which a property cannot be.
+  The node reuses find, describe, impact, context and check unchanged. The
+  analyzer still writes only a property; the entity is derived from it, so
+  the expensive part lives in one graph pass.
+
+  Widening :CALLS to admit a :CLASS target, so that `RefIssuer(...)` reaches
+  the class. Rejected for this stage. *CALLABLE-TYPES* is shared, and
+  JavaScript's `new Foo()` would start drawing edges too, which needs its
+  own measurement. D6 routes a class call to its __init__, which is Python's
+  semantics and changes no other language.
+
+  Recording each call site's literal arguments now, for REQ-0041 R2.
+  Deferred. REQ-0041 is a draft with no design, and choosing its storage
+  here would choose it for Lisp and JavaScript too. The child reports each
+  call's positional count and keyword names in its reply, so REQ-0041's
+  design can store them without changing the extractor.
+
+  Requirement names from requirements.txt (REQ-0078 R10). Deferred to the
+  second stage. "Which code depends on firebase-functions" needs a map from
+  a distribution name to the modules it installs. Of lfia's six requirement
+  names, two do not map by spelling: google-auth installs google.auth, and
+  google-api-python-client installs googleapiclient. The map lives in the
+  installed distributions' metadata under site-packages, which D11 excludes.
+  Recording the names without the map answers only which files list them.
+
+  WHAT THE SECOND STAGE NEEDS FROM THIS ONE
+
+  S1  :DECORATORS on every function, method and class, with the resolved
+      specifier and path, and literal keyword arguments. Matching
+      firebase_functions.scheduler_fn.on_schedule and reading
+      schedule="every 1 hours", timeout_sec=540 and secrets=[ZEFFY_API_KEY]
+      needs no new analysis.
+  S2  :SETTING with an open :SOURCES list. The second stage adds :SECRET
+      from SecretParam("ZEFFY_API_KEY") and :READS edges from each function
+      whose decorator names it in secrets=.
+  S3  Import roots as domain roots, with D5's resolver taking an ordered
+      root list. firebase.json adds a proposed domain and changes no
+      resolver code.
+  S4  Entry-point marks derived by a graph pass from :DECORATORS and a
+      declaration, never written by the analyzer. A declaration change then
+      needs no reanalysis.
+  S5  Repository-level facts -- the Firebase project id, a codebase, a
+      runtime -- need an entity. :REPOSITORY exists and is the candidate.
+  S6  The same :IMPORTED-CALLS and :ENVIRONMENT-READS properties are the
+      shape a JavaScript functions tree needs: `import * as api` then
+      `api.fetchGame()` is one :IMPORTED-CALLS entry, and `process.env.X`
+      is one environment read. REQ-0078 asks that the JavaScript side reuse
+      R7 to R9 rather than repeat them; this keeps the inputs the same.
+
+  WHAT EACH THING BECOMES
+
+  tools/py/extract.py (new). Owns parsing, scoping and D2's binding of each
+  call, and D7's split on a syntax error. Mutates nothing. Imports nothing
+  from the tree it reads. Contract: one JSON line per frame, every field
+  derived from the source text alone.
+
+  src/analyzer/python-analyzer.lisp (new), in loom-analyzer. Owns the
+  decisions: which definitions become which entities (D3), call sites (D4),
+  tests (D8), reconciliation (D9), environment-read placement (D10),
+  exclusion by name (D11), :SYSTEM (D12), and the Python comment rules for
+  COMMENT-EXTENT and COMMENT-LINE-TEXT. Writes properties only and asserts no
+  relationship, as both other code analyzers do. Never touches the graph or
+  the filesystem (RULE-0002, the ANALYZE-FILE contract).
+
+  The child process code in js-analyzer.lisp -- launch, lock, one retry,
+  timeout, recorded absence -- moves into one extractor-child abstraction
+  that both analyzers use. Two copies of 120 lines of process lifecycle would
+  drift, and REV-0002 counted 22 duplications of that kind.
+
+  loom-ontology. One entity type and one relationship type, which is the
+  expensive kind: :SETTING and :READS (D10). Vocabulary widened: :PYTHON in
+  *MODULE-SCOPED-LANGUAGES*, :UNITTEST in :TEST's :FRAMEWORK, :MODULE in
+  :CALL-SITE's :REFERRER-KIND. Properties added, which is the cheap kind:
+  :IMPORTED-CALLS and :UNRESOLVED-IMPORTED-CALLS on :FUNCTION, :METHOD,
+  :TEST and :CALL-SITE; :DECORATORS on :FUNCTION, :METHOD and :CLASS;
+  :ENVIRONMENT-READS on :FUNCTION, :METHOD, :TEST, :VARIABLE and :FILE;
+  :DOCUMENTATION, :IMPORT-BINDINGS and :UNNAMED-ENVIRONMENT-READS on :FILE.
+
+  loom-graph. The Python specifier resolver and its :UNROOTED cause (D5),
+  dispatched on the importer's :LANGUAGE from BUILD-MODULE-SCOPE. The
+  :IMPORTED-CALLS tier in RESOLVE-CALLS (D6). The two Python-caller
+  narrowings (D6). RESOLVE-SETTINGS and its sweep (D10). `check` reporting
+  :MISSING-IN-TARGET beside UNRESOLVED-REFERENCES. Invariant kept: the graph
+  reads no configuration and no filesystem. Domains still arrive as data.
+
+  loom-knowledge. ENTITY-ARITY learns Python's required count, and
+  RENDER-SIGNATURE gets :PYTHON as a :CALL style (R12).
+
+  loom-workspace. The pyvenv.cfg exclusion in REPOSITORY-FILES and in the
+  monitor's single-file path (D11).
+
+  loom-process, loom-serve, loom-rest and loom-mcp change nothing. No
+  `.asd` gains a dependency: loom-analyzer already depends on cl-json, uiop
+  and bordeaux-threads for the JavaScript child.
+
+  REQUIREMENTS
+
+  R1  A Python analyzer claims .py and registers like every other. It runs
+      tools/py/extract.py as `python3 -I -B` in one long-lived child, with
+      the frame extract.js uses, a timeout, and one retry for a dead child.
+      With no python3, every .py file is indexed as a :FILE carrying the
+      reason. .pyi stub files are not claimed in this stage: a stub beside
+      its module would give `find` two entities for one definition.
+
+  R2  The child never imports, executes or compiles for execution any code
+      it reads. A test feeds it a file whose top level would write a marker
+      file if run, and asserts the marker never appears.
+
+  R3  Entities and properties as D3: :FILE, :FUNCTION, :CLASS, :METHOD,
+      :VARIABLE and :TEST, with :ARGUMENTS, :DECORATORS, :DOCUMENTATION and
+      line ranges. Definitions below module level and class level mint
+      nothing, and their calls belong to the enclosing entity.
+
+  R4  Each call is bound in the child as D2 lists. Local, self and member
+      bindings go into :CALL-NAMES. Import bindings go into
+      :IMPORTED-CALLS with the alias undone. Builtins and names bound only
+      in a function's own scope are dropped. Decorators count as calls of
+      what they decorate.
+
+  R5  Module-level calls become :CALL-SITE entities as D4 lists, with the
+      new :MODULE referrer kind for statements that are neither assignments
+      nor class bodies.
+
+  R6  loom-graph resolves Python specifiers as D5 lists, from the index
+      alone, with :EXTERNAL, :UNRESOLVED and :UNROOTED as causes. :PYTHON is
+      a module-scoped language.
+
+  R7  RESOLVE-CALLS resolves :IMPORTED-CALLS by D6's walk, including
+      re-exports and a class's __init__. A miss is written to
+      :UNRESOLVED-IMPORTED-CALLS with its cause, every pass, and `check`
+      reports :MISSING-IN-TARGET. Python callers see only Python candidates
+      and skip the third member-call tier.
+
+  R8  Tests as D8: pytest and unittest cases recognised by the runners'
+      default patterns, named as pytest prints them, with the setup and
+      teardown hooks' calls in each case. :FRAMEWORK is :PYTEST or
+      :UNITTEST.
+
+  R9  Same-key definitions are reconciled as D9: last binding wins and the
+      rest are shadowed, except property accessor chains and overload sets,
+      which merge.
+
+  R10 Environment reads are recorded as D10, names only, never a default
+      value. RESOLVE-SETTINGS mints :SETTING entities and :READS edges and
+      sweeps the ones no reader names.
+
+  R11 A virtual environment is never indexed: the name rule in the analyzer
+      and the pyvenv.cfg rule in the workspace (D11). A test builds a tree
+      with a pyvenv.cfg under a directory named env/ and no .gitignore, and
+      asserts no file under env/ is analyzed.
+
+  R12 ENTITY-ARITY counts a Python function's required parameters: those
+      before the first parameter with a default, `*`, `*args` or
+      `**kwargs`, skipping `/`, and skipping the first parameter of a method
+      that is not decorated @staticmethod. RENDER-SIGNATURE prints Python in
+      :CALL style.
+
+  R13 A syntax error costs the top-level statement holding it (D7). The
+      damaged range is in :SUPPRESSED-REGIONS with an exact line range, and
+      the error text names the interpreter's version.
+
+  R14 The child-process code is shared between the JavaScript and Python
+      analyzers. The existing JavaScript restart tests pass unchanged.
+
+  R15 loom-analyzer's FiveAM suite gains a Python suite whose fixtures are in
+      the tree. It covers each binding in D2, each walk step in D6, each
+      merge in D9, D7's split, and the runner patterns in D8. Each test
+      fails without the change it covers (CON-0003).
+
+  R16 Acceptance on ~/github/lfia-accounting, with no .loom/frameworks.yaml:
+
+          find _sync               main._sync
+          describe upsert          callers include _sync
+          impact on Rules.find     reaches simplifi functions, then
+                                   simplifi.build, then _sync, then
+                                   sync_zeffy and backfill
+          sheets._service          no edge to cross_check.build or
+                                   simplifi.build
+          seed_accounts_map        calls sheets.read_tab, not main.read_tab
+          find SPREADSHEET_ID      a :SETTING read by config's
+                                   SPREADSHEET_ID variable
+          status                   .py absent from unclaimed; nothing under
+                                   functions/venv indexed
+          check                    no new violation, and no unresolved
+                                   document reference added
+
+      And on Loom's own tree: the function each of the six guards calls --
+      main in four scripts, sessions_main in acceptance.py, ensure in
+      service.py -- shows a :MODULE call site among its callers, and
+      acceptance.py's watched_repositories calls tools/test/service.py's.
+
+      Whole-tree analysis of lfia's .py files completes in under one second,
+      and the time is recorded in the plan's notes beside the count.
+
+  DEFERRED, ON THE RECORD
+
+  - REQ-0078 R7 to R11, the Firebase stage, which S1 to S6 prepare.
+  - REQ-0078 R10's dependency names, for the distribution-to-module reason
+    above.
+  - Storing call-site argument shapes. The child reports them; REQ-0041's
+    design decides the storage.
+  - Pytest fixtures, which the second stage's decorator mechanism covers.
+  - `from x import *`. Zero instances in lfia and in Loom's tools/; 146 in
+    lfia's venv. A bare call to an unbound, non-builtin name stays in
+    :CALL-NAMES and resolves nowhere, which is a gap and not a guess.
+  - pytest.ini's python_files and python_functions overrides. lfia sets
+    neither.
+  - Receiver types from annotations or from `x = Class(...)`. D6's member
+    tier is right on all 24 of lfia's cases without them.
+
+  CONSEQUENCES
+
+  Code that changes: js-analyzer.lisp loses its child-process code to the
+  shared abstraction (R14). RESOLVE-MODULE-SPECIFIER's caller in
+  BUILD-MODULE-SCOPE dispatches on language. RESOLVE-CALLS gains a tier.
+  CALLER-CALL-NAMES learns that a call site carrying :IMPORTED-CALLS has no
+  bare name. MEMBER-CALL-CANDIDATES learns the Python narrowing.
+  ENTITY-ARITY and *SIGNATURE-STYLES* learn Python. REPOSITORY-FILES and the
+  monitor learn pyvenv.cfg. MAKE-CALL-SITE-ENTITY accepts :IMPORTED-CALLS.
+  CLAUDE.md's sentence that `js/` is the one non-tool under tools/ becomes
+  two: `js/` and `py/`.
+
+  Loom's own index changes. Its 10 tools/ Python files become entities, and
+  `status`' unclaimed line loses ".py 10". This design is dogfooded on both
+  trees, per house practice: lfia for the Firebase-shaped code, Loom's
+  tools/ for scripts with no package and no framework.
+
+  What gets simpler: :IMPORTED-CALLS is a resolution tier JavaScript can use
+  as well. extract.js already reports each import's local and imported
+  names, and js-analyzer.lisp discards them. Writing them as :IMPORTED-CALLS
+  would remove the namespace-import case from MEMBER-CALL-CANDIDATES' third
+  tier. That is a follow-on for JavaScript, measured on front-end, and not
+  part of this design.
+
+  The obligation every later change carries. A Python call that the child
+  could bind to an import must be written as :IMPORTED-CALLS, never reduced
+  to a bare name, because a bare name re-enters VISIBLE-CANDIDATES'
+  never-empty fallback and PROBLEM shows what that produces. A new analyzer
+  for a module-scoped language should ask the same question first: does the
+  source state the binding? If it does, the binding is the answer.
+
+  RISKS
+
+  The python3 on PATH decides which syntax parses. A tree written for 3.13
+  read by 3.12 shows damage that is the interpreter's age, not the file's.
+  R13's error text names the version so the two are told apart, and
+  *PYTHON-PROGRAM* can name a newer interpreter.
+
+  :SETTING is keyed on the name alone across a workspace. Two programs in
+  one repository reading the same variable name meet at one node. For an
+  environment variable that is correct, since one process environment
+  serves both. The second stage must decide whether a Firebase secret and a
+  same-named environment variable are one node. Firebase exposes a secret
+  to the function as an environment variable of that name, which argues for
+  one.

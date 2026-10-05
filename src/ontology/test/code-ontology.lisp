@@ -299,6 +299,73 @@ RESOLVE-CALLS reads, so a second copy here could drift from the key")
                (name site))
         "the label and the entity cannot disagree, because one makes the other")))
 
+(test a-setting-is-keyed-on-its-name-and-read-by-definitions
+  ;; DES-0053 D10. PLAN-OP rejects a whole transaction on one illegal endpoint,
+  ;; so a :READS pair missing here would cost RESOLVE-SETTINGS every op it
+  ;; emits, not one edge.
+  (let ((s (make-instance 'setting-entity :name "SPREADSHEET_ID"
+                          :properties (properties-table
+                                       (list :name "SPREADSHEET_ID"
+                                             :sources '(:environment))))))
+    (is (null (validate-entity s)))
+    (is (equal "setting:SPREADSHEET_ID" (id s))
+        "the name alone is the identity, so two readers meet at one node"))
+  (dolist (from '(:function :method :test :variable :file))
+    (is (null (validate-relationship-endpoints :reads from :setting))
+        "~s reads a setting" from))
+  (is (not (null (validate-relationship-endpoints :reads :class :setting)))
+      "a class reads nothing; its methods do")
+  (is (not (null (validate-relationship-endpoints :reads :function :function)))
+      "and a read ends at a setting")
+  (is (eq :reverse (relationship-type-impact-direction
+                    (find-relationship-type :reads)))
+      "a change to a setting reaches its readers")
+  (is-true (relationship-type-transitive-impact
+            (find-relationship-type :reads))))
+
+(test python-vocabulary-is-inside-the-declared-one-ofs
+  ;; DES-0053 D4 and D8. Outside a :one-of, validation rejects the entity and
+  ;; with it the whole analyzer transaction for the file.
+  (let ((site (make-call-site-entity :file "tools/a.py" :start-line 9
+                                     :call-name "main" :referrer-kind :module
+                                     :language :python)))
+    (is (null (validate-entity site))))
+  (let ((case (make-instance 'test-entity :name "test_x"
+                             :properties (properties-table
+                                          (list :file "tests/test_x.py"
+                                                :start-line 1 :end-line 2
+                                                :framework :unittest
+                                                :language :python)))))
+    (is (null (validate-entity case)))))
+
+(test a-call-site-carries-the-import-binding-it-was-made-through
+  ;; DES-0053 D4: the site's :IMPORTED-CALLS is how a bound call survives as a
+  ;; call site, where a bare :CALL-NAME would re-enter the never-empty fallback.
+  (let* ((entry '(:specifier "service" :path ("watched_repositories") :line 250))
+         (site (make-call-site-entity :file "tools/a.py" :start-line 250
+                                      :call-name "service.watched_repositories"
+                                      :referrer-kind :module :language :python
+                                      :imported-calls (list entry))))
+    (is (equal (list entry) (getp site :imported-calls)))
+    (is (null (getp (make-call-site-entity :file "a.lisp" :start-line 1
+                                           :call-name "x")
+                    :imported-calls))
+        "and a site that was made through none carries none")))
+
+(test the-python-analyzers-properties-are-declared
+  ;; DES-0053 D3, D10. VALIDATE-ENTITY checks declared properties only, so an
+  ;; undeclared one is stored and never validated, which is the failure
+  ;; :AFFECTS was for 67 documents.
+  (dolist (type '(:function :method :test :call-site))
+    (dolist (key '(:imported-calls :unresolved-imported-calls))
+      (is (find-property type key) "~s lacks ~s" type key)))
+  (dolist (type '(:function :method :class))
+    (is (find-property type :decorators) "~s lacks :decorators" type))
+  (dolist (type '(:function :method :test :variable :file))
+    (is (find-property type :environment-reads) "~s lacks :environment-reads" type))
+  (dolist (key '(:documentation :import-bindings :unnamed-environment-reads))
+    (is (find-property :file key) ":file lacks ~s" key)))
+
 (test a-definitions-package-is-the-in-package-chain-uppercased
   ;; PLAN-0015 step 4, decided against DES-0015 R3's separate property. This
   ;; test is the declared dependency: ENTITY-PACKAGE reads :SYSTEM, so if

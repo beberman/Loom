@@ -282,7 +282,32 @@ entities a definer macro brings into existence from this list on every pass,
 so an entity destroyed by a retract comes back. The call names are pre-walked
 here rather than left as a sexp because resolution reads properties and never
 source, and it cannot know in advance which argument a macro's body starts
-at.")))
+at.")
+               (:documentation string
+                :documentation "The module docstring, for a language whose
+files carry one.  DES-0053 D3, written by the Python analyzer.  Absent when the
+file has none.")
+               (:import-bindings list
+                :documentation "The module-level import bindings of this file,
+one plist per bound name: :LOCAL, :SPECIFIER as written, and :NAME, the name
+taken from that module, or NIL for a whole-module import.  DES-0053 D3, written
+by the Python analyzer.
+
+What RESOLVE-CALLS reads to follow a re-export: ledger/__init__.py's `from
+.posting import post' is the one line that says where `ledger.post' is defined.
+Module-level only, so an import inside a function adds nothing here; its calls
+resolve through :IMPORTED-CALLS instead (DES-0053 D6).")
+               (:environment-reads list
+                :documentation "Names of the environment variables read by this
+file's own top level, when no definition or variable holds the read.  DES-0053
+D10, written by the Python analyzer.  Names only: a default value is never
+recorded.  RESOLVE-SETTINGS derives :SETTING entities from every
+:ENVIRONMENT-READS on every pass.")
+               (:unnamed-environment-reads integer
+                :documentation "How many environment reads in this file were
+passed over for want of a literal key -- `os.environ.get(name)'.  Absent when
+there were none.  The count is the whole record that they exist, as
+:UNNAMED-TESTS is for a case with no literal title.  DES-0053 D10.")))
 
 (defentity :package
   :documentation "A namespace: a Lisp package, an npm package, a Python
@@ -417,7 +442,13 @@ keyword package is the declaration rather than the tree: three entries on
 front-end.  :SYSTEM has always had exactly that bound.
 
 No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
-indexed repository declared.")))
+indexed repository declared.")
+               (:decorators list
+                :documentation "One plist per decorator, in source order:
+:NAME as written, :SPECIFIER and :PATH when the decorator is imported, :ARGUMENTS
+as (keyword . value) pairs and :LINE.  DES-0053 D3, written by the Python
+analyzer.  Recorded so a later stage can match a framework's entry points on the
+decorator's resolved module path without reanalysing the source.")))
 
 (defentity :interface
   :documentation "A contract without implementation: a TypeScript interface,
@@ -596,6 +627,34 @@ JSON encoders before it answers anything, and nothing has yet asked.
 Host elements never appear. `<div>' is not a definition in any tree, so it is
 dropped at extraction rather than carried as a call name that can never
 resolve.")
+               (:imported-calls list
+                :documentation "Calls this entity makes through an import
+binding, one plist per call: :SPECIFIER as written, :PATH the attribute names
+after the binding, :LINE.  DES-0053 D2, written by the Python analyzer with any
+import alias already undone.
+
+Separate from :CALL-NAMES because a bare name loses the binding, and
+VISIBLE-CANDIDATES answers an unplaceable bare name with every candidate in the
+repository.  RESOLVE-CALLS walks each entry from the file its specifier names
+(DES-0053 D6).  Analyzer-written and never rewritten, the DEC-0003 discipline
+:CALL-NAMES keeps.")
+               (:unresolved-imported-calls list
+                :documentation "The :IMPORTED-CALLS entries that reached no
+definition, one plist each with its :CAUSE: :EXTERNAL, :UNROOTED,
+:MISSING-IN-TARGET or :NOT-CALLABLE.  Derived by RESOLVE-CALLS on every pass
+rather than accumulated, as :UNRESOLVED-CALLS is.  DES-0053 D6.")
+               (:decorators list
+                :documentation "One plist per decorator, in source order:
+:NAME as written, :SPECIFIER and :PATH when the decorator is imported, :ARGUMENTS
+as (keyword . value) pairs and :LINE.  DES-0053 D3, written by the Python
+analyzer.  Recorded so a later stage can match a framework's entry points on the
+decorator's resolved module path without reanalysing the source.")
+               (:environment-reads list
+                :documentation "Names of the environment variables read by this
+entity's own code or, for a variable, by the value that defines it.  DES-0053
+D10, written by the Python analyzer, names only.  RESOLVE-SETTINGS derives a
+:SETTING and a :READS edge from each name on every pass, so this is the input
+and is never rewritten.")
                ;; What a DEFMACRO's template says a call to it defines
                ;; (DES-0002 R1).  Written once from the source text and never
                ;; rewritten, like :SUPERCLASS-NAMES: the decision about a call
@@ -701,7 +760,35 @@ No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
 indexed repository declared.")
                (:call-names       list)
                (:qualified-calls  list)
-               (:unresolved-calls list)))
+               (:unresolved-calls list)
+               (:imported-calls list
+                :documentation "Calls this entity makes through an import
+binding, one plist per call: :SPECIFIER as written, :PATH the attribute names
+after the binding, :LINE.  DES-0053 D2, written by the Python analyzer with any
+import alias already undone.
+
+Separate from :CALL-NAMES because a bare name loses the binding, and
+VISIBLE-CANDIDATES answers an unplaceable bare name with every candidate in the
+repository.  RESOLVE-CALLS walks each entry from the file its specifier names
+(DES-0053 D6).  Analyzer-written and never rewritten, the DEC-0003 discipline
+:CALL-NAMES keeps.")
+               (:unresolved-imported-calls list
+                :documentation "The :IMPORTED-CALLS entries that reached no
+definition, one plist each with its :CAUSE: :EXTERNAL, :UNROOTED,
+:MISSING-IN-TARGET or :NOT-CALLABLE.  Derived by RESOLVE-CALLS on every pass
+rather than accumulated, as :UNRESOLVED-CALLS is.  DES-0053 D6.")
+               (:decorators list
+                :documentation "One plist per decorator, in source order:
+:NAME as written, :SPECIFIER and :PATH when the decorator is imported, :ARGUMENTS
+as (keyword . value) pairs and :LINE.  DES-0053 D3, written by the Python
+analyzer.  Recorded so a later stage can match a framework's entry points on the
+decorator's resolved module path without reanalysing the source.")
+               (:environment-reads list
+                :documentation "Names of the environment variables read by this
+entity's own code or, for a variable, by the value that defines it.  DES-0053
+D10, written by the Python analyzer, names only.  RESOLVE-SETTINGS derives a
+:SETTING and a :READS edge from each name on every pass, so this is the input
+and is never rewritten.")))
 
 (defentity :variable
   :documentation "A named binding: a constant, a special variable, a
@@ -747,7 +834,34 @@ keyword package is the declaration rather than the tree: three entries on
 front-end.  :SYSTEM has always had exactly that bound.
 
 No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
-indexed repository declared.")))
+indexed repository declared.")
+               (:environment-reads list
+                :documentation "Names of the environment variables read by this
+entity's own code or, for a variable, by the value that defines it.  DES-0053
+D10, written by the Python analyzer, names only.  RESOLVE-SETTINGS derives a
+:SETTING and a :READS edge from each name on every pass, so this is the input
+and is never rewritten.")))
+
+(defentity :setting
+  :documentation "A named configuration value a program reads: an environment
+variable in this stage.  DES-0053 D10.
+
+Minted by RESOLVE-SETTINGS from the :ENVIRONMENT-READS the analyzer wrote, and
+by no analyzer: the analyzer states that a read exists and the graph decides
+that two reads of one name meet at one node.  It carries no value and no
+file, because the index never holds a value -- the name is the identity, and
+one process environment serves every reader of it.  What it buys is that
+`find', `describe' and `impact' answer \"what reads SPREADSHEET_ID\" with no new
+command."
+  :natural-key (:name)
+  :properties ((:name     string :required t)
+               (:sources  list
+                :documentation "Where the value comes from.  :ENVIRONMENT is
+the only member in this stage; a later stage adds :SECRET.")
+               (:language keyword :one-of *source-languages*)
+               (:domain   keyword
+                :documentation "Declared for the vocabulary every code entity
+shares.  A setting spans files, so RESOLVE-SETTINGS leaves it absent.")))
 
 (defentity :call-site
   :documentation "One call name at one place in one file, as an entity.
@@ -794,10 +908,12 @@ DEFPARAMETER's line, and an ambiguous site carries its caller's, because
 downcased -- the thing RESOLVE-CALLS looks up. A property rather than the NAME
 slot for the reason the type's own documentation gives.")
                (:referrer-kind keyword
-                :one-of (:variable :class :definer-call :ambiguous)
+                :one-of (:variable :class :module :definer-call :ambiguous)
                 :documentation "Which of the three positions this site is in,
-and so which pass owns it. :VARIABLE and :CLASS are the analyzer's, derived
-from one file and aged out by RETRACT-FILE. :DEFINER-CALL and :AMBIGUOUS are
+and so which pass owns it. :MODULE is a statement at a Python module's top
+level that is neither an assignment nor a class body, `if __name__ ==
+\"__main__\":' among them -- DES-0053 D4. :VARIABLE, :CLASS and :MODULE are the
+analyzer's, derived from one file and aged out by RETRACT-FILE. :DEFINER-CALL and :AMBIGUOUS are
 the graph's, derived on every resolution pass from :DEFINER-CALL-SITES and
 :CALL-NAMES respectively, and swept by the pass that produces them.")
                (:candidate-count integer
@@ -816,6 +932,22 @@ prevent, one property over.")
                 :documentation "Written by RESOLVE-CALLS exactly as it writes
 it on a function: where an initform name that matched nothing is recorded
 rather than dropped, per CON-0001.")
+               (:imported-calls list
+                :documentation "The one call this site makes through an import
+binding, one plist: :SPECIFIER as written, :PATH the attribute names
+after the binding, :LINE.  DES-0053 D2, written by the Python analyzer with any
+import alias already undone.
+
+Separate from :CALL-NAMES because a bare name loses the binding, and
+VISIBLE-CANDIDATES answers an unplaceable bare name with every candidate in the
+repository.  RESOLVE-CALLS walks each entry from the file its specifier names
+(DES-0053 D6).  Analyzer-written and never rewritten, the DEC-0003 discipline
+:CALL-NAMES keeps.")
+               (:unresolved-imported-calls list
+                :documentation "The :IMPORTED-CALLS entries that reached no
+definition, one plist each with its :CAUSE: :EXTERNAL, :UNROOTED,
+:MISSING-IN-TARGET or :NOT-CALLABLE.  Derived by RESOLVE-CALLS on every pass
+rather than accumulated, as :UNRESOLVED-CALLS is.  DES-0053 D6.")
                (:generated-by string
                 :documentation "For a :DEFINER-CALL site, the macro whose call
 swallowed the body this name was read from -- define-operation, define-command.
@@ -886,7 +1018,8 @@ describe."
 
 (defun make-call-site-entity (&key file start-line end-line call-name
                                    referrer-kind candidate-count
-                                   language system domain generated-by)
+                                   language system domain generated-by
+                                   imported-calls)
   "The one constructor for a :CALL-SITE, used by both systems that mint one.
 
 Natural-key properties are passed at construction and never SETP'd afterwards,
@@ -908,6 +1041,11 @@ values it did not yet have."
                                     ;; derives it from :CALL-NAME, so the
                                     ;; referenced name is stored once.
                                     :generated-by generated-by
+                                    ;; DES-0053 D4: a Python site bound to an
+                                    ;; import carries the binding, and
+                                    ;; CALLER-CALL-NAMES then yields no bare
+                                    ;; name for it.
+                                    :imported-calls imported-calls
                                     :language language
                                     :system system
                                     ;; Not a natural-key component, so it may
@@ -955,7 +1093,7 @@ offers."
                (:start-line integer :required t)
                (:end-line   integer :required t)
                (:suite      string)
-               (:framework  keyword :one-of (:fiveam :vitest :jest :pytest))
+               (:framework  keyword :one-of (:fiveam :vitest :jest :pytest :unittest))
                (:language   keyword :one-of *source-languages*)
                (:documentation string
                 :documentation "The prose this definition declares about
@@ -1024,7 +1162,29 @@ which definition the name means, and a name it cannot place stays in
                 :documentation "Callee names that did not resolve inside the
 workspace.  Expected to be populous for a test: a framework's assertion
 operators -- fiveam's IS, SIGNALS, FINISHES -- are external by definition and
-correctly stay here.")))
+correctly stay here.")
+               (:imported-calls list
+                :documentation "Calls this entity makes through an import
+binding, one plist per call: :SPECIFIER as written, :PATH the attribute names
+after the binding, :LINE.  DES-0053 D2, written by the Python analyzer with any
+import alias already undone.
+
+Separate from :CALL-NAMES because a bare name loses the binding, and
+VISIBLE-CANDIDATES answers an unplaceable bare name with every candidate in the
+repository.  RESOLVE-CALLS walks each entry from the file its specifier names
+(DES-0053 D6).  Analyzer-written and never rewritten, the DEC-0003 discipline
+:CALL-NAMES keeps.")
+               (:unresolved-imported-calls list
+                :documentation "The :IMPORTED-CALLS entries that reached no
+definition, one plist each with its :CAUSE: :EXTERNAL, :UNROOTED,
+:MISSING-IN-TARGET or :NOT-CALLABLE.  Derived by RESOLVE-CALLS on every pass
+rather than accumulated, as :UNRESOLVED-CALLS is.  DES-0053 D6.")
+               (:environment-reads list
+                :documentation "Names of the environment variables read by this
+entity's own code or, for a variable, by the value that defines it.  DES-0053
+D10, written by the Python analyzer, names only.  RESOLVE-SETTINGS derives a
+:SETTING and a :READS edge from each name on every pass, so this is the input
+and is never rewritten.")))
 
 (defentity :document
   :documentation "Prose about the system: an architecture note, a README.
@@ -1540,6 +1700,16 @@ considered and rejected: every path would have grown a hop, so every depth
 `impact' reports would have changed. A name resolving to exactly one callee
 from a :FUNCTION, :METHOD or :TEST still produces the edge it produces today
 and mints nothing.")
+
+(defrelationship :reads
+  :from (:function :method :test :variable :file) :to (:setting)
+  :transitive-impact t :impact-direction :reverse
+  :documentation "A definition reads a setting.  DES-0053 D10.
+
+Reverse impact, so a change to a setting reaches its readers and, through
+:CALLS, their callers: \"which functions are affected when ZEFFY_API_KEY
+rotates\" is `impact' on the node.  Derived by RESOLVE-SETTINGS on every pass
+from :ENVIRONMENT-READS, never asserted by an analyzer.")
 
 (defrelationship :serves
   :from (:function :method) :to (:function :method)
