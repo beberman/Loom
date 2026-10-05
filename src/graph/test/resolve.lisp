@@ -1590,3 +1590,179 @@ distinction this whole change is"))))
     (apply-transaction g (resolve-document-links g :workspace-id "w"))
     (is (= 1 (length (getp doc :ambiguous-references)))
         "asked twice, answered once")))
+
+;;; ------------------------------------------------------------------
+;;; Python specifiers (DES-0053 D5)
+;;; ------------------------------------------------------------------
+;;;
+;;; The fixtures are shaped like lfia-accounting: functions/ is a directory
+;;; with no __init__.py that Firebase runs main.py from, functions/ledger/ is a
+;;; package, and functions/tests/ imports `ledger.refs', which resolves only
+;;; when functions/ is on sys.path.
+
+(defun r-py-file (graph path &key imports bindings domain)
+  (let ((e (make-instance 'file-entity :name path :origin-file path
+                          :properties (properties-table
+                                       (list :path path :language :python
+                                             :domain domain
+                                             :import-sources imports
+                                             :import-bindings bindings)))))
+    (add-entity graph e)
+    e))
+
+(defun r-py-function (graph name file &key unresolved)
+  (let ((e (make-instance 'function-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :python
+                                             :call-names unresolved)))))
+    (add-entity graph e)
+    e))
+
+(defun py-resolve (specifier importer known &key domain)
+  "RESOLVE-PYTHON-SPECIFIER over the paths KNOWN, as two values."
+  (loom-graph::resolve-python-specifier
+   specifier importer (loom-graph::make-python-index (apply #'known-table known))
+   :domain domain))
+
+(defparameter *lfia-paths*
+  '("functions/main.py" "functions/config.py" "functions/sheets.py"
+    "functions/ledger/__init__.py" "functions/ledger/posting.py"
+    "functions/ledger/hashing.py" "functions/ledger/dates.py"
+    "functions/ledger/refs.py" "functions/tests/test_refs.py"))
+
+(test a-script-directory-is-a-root-when-it-is-not-a-package
+  ;; main.py imports `config' by bare name because Firebase runs it from
+  ;; functions/, which holds no __init__.py. Root 1.
+  (is (equal "functions/config.py"
+             (py-resolve "config" "functions/main.py" *lfia-paths*))))
+
+(test the-parent-of-the-outermost-package-is-a-root
+  ;; ledger/posting.py's `from ledger.hashing import content_hash`. ledger/ is a
+  ;; package, so its own directory is not a root and its parent is. Root 2.
+  (is (equal "functions/ledger/hashing.py"
+             (py-resolve "ledger.hashing" "functions/ledger/posting.py" *lfia-paths*))))
+
+(test a-relative-specifier-starts-in-the-importers-directory
+  (is (equal "functions/ledger/posting.py"
+             (py-resolve ".posting" "functions/ledger/__init__.py" *lfia-paths*)))
+  (is (equal "functions/ledger/__init__.py"
+             (py-resolve "." "functions/ledger/posting.py" *lfia-paths*))
+      "a bare dot names the importer's own package"))
+
+(test each-dot-after-the-first-climbs-one-directory
+  ;; DES-0053 D5: "climbs one directory per dot after the first". PLAN-0056's
+  ;; wording, that `..x' climbs two directories, disagrees with the design; the
+  ;; design is Python's own rule and is what this asserts.
+  (let ((known '("a/x.py" "a/b/y.py" "a/b/c/m.py")))
+    (is (equal "a/b/y.py" (py-resolve "..y" "a/b/c/m.py" known)) "two dots, one climb")
+    (is (equal "a/x.py" (py-resolve "...x" "a/b/c/m.py" known)) "three dots, two climbs")
+    (is (eq :unresolved (nth-value 1 (py-resolve "....x" "a/m.py" '("a/m.py"))))
+        "and climbing past the root resolves nothing")))
+
+(test a-dotted-name-finds-a-package-when-there-is-no-module
+  (is (equal "functions/ledger/__init__.py"
+             (py-resolve "ledger" "functions/main.py" *lfia-paths*)))
+  (is (equal "pkg/sub/__init__.py"
+             (py-resolve "pkg.sub" "main.py" '("main.py" "pkg/__init__.py" "pkg/sub/__init__.py")))
+      "a/b names a/b/__init__.py when there is no a/b.py"))
+
+(test a-module-no-root-reaches-is-unrooted-until-a-domain-names-its-root
+  ;; functions/tests' `from ledger.refs import ...'. The tests directory holds
+  ;; no ledger, and ledger is indexed one level up: that is not an external
+  ;; library, and the cause says which declaration is missing.
+  (multiple-value-bind (target cause)
+      (py-resolve "ledger.refs" "functions/tests/test_refs.py" *lfia-paths*)
+    (is (null target))
+    (is (eq :unrooted cause)))
+  (is (equal "functions/ledger/refs.py"
+             (py-resolve "ledger.refs" "functions/tests/test_refs.py" *lfia-paths*
+                         :domain (list :name :functions :root "functions/")))
+      "the domain root is the third root"))
+
+(test a-library-the-tree-does-not-hold-is-external
+  (multiple-value-bind (target cause)
+      (py-resolve "googleapiclient.discovery" "functions/sheets.py" *lfia-paths*)
+    (is (null target))
+    (is (eq :external cause))))
+
+(test a-held-package-missing-the-submodule-is-unresolved-not-external
+  ;; The in-tree miss a reader acts on: ledger is here, ledger.missing is not.
+  (is (eq :unresolved
+          (nth-value 1 (py-resolve "ledger.missing" "functions/main.py" *lfia-paths*)))))
+
+(test a-python-resolver-answers-against-the-index-and-not-the-disk
+  ;; The Python twin of RESOLVE-MODULE-SPECIFIER-ANSWERS-AGAINST-THE-INDEX-AND-
+  ;; NOT-THE-DISK, and the proof that loom-graph reads no filesystem here.
+  ;; tools/test/service.py exists on disk as this is written and is absent from
+  ;; the table, so `import service' must not resolve; add it and it does.
+  (is (probe-file (merge-pathnames "tools/test/service.py"
+                                   (asdf:system-relative-pathname :loom-graph "../../")))
+      "precondition: the file this test pretends is unindexed exists on disk")
+  (is (eq :external
+          (nth-value 1 (py-resolve "service" "tools/test/acceptance.py"
+                                   '("tools/test/acceptance.py")))))
+  (is (equal "tools/test/service.py"
+             (py-resolve "service" "tools/test/acceptance.py"
+                         '("tools/test/acceptance.py" "tools/test/service.py")))))
+
+(defun py-scope (graph &key domains)
+  (loom-graph:build-module-scope graph :domains domains))
+
+(test from-import-of-a-submodule-adds-the-file-to-the-importers-scope
+  ;; `from ledger import dates' reads ledger/dates.py when ledger/__init__.py
+  ;; does not define dates. Read from :IMPORT-BINDINGS, module level only.
+  (let ((g (make-graph)))
+    (dolist (path *lfia-paths*)
+      (unless (string= path "functions/main.py") (r-py-file g path)))
+    (r-py-file g "functions/main.py"
+               :imports '("ledger")
+               :bindings '((:local "dates" :specifier "ledger" :name "dates")
+                           (:local "nothing" :specifier "ledger" :name "nothing")))
+    (let ((scope (py-scope g)))
+      (is (equal '("functions/ledger/dates.py" "functions/ledger/__init__.py")
+                 (gethash "functions/main.py" scope))
+          "the package, and the submodule the from-import also names; a name that
+is no submodule adds nothing"))))
+
+(test a-python-caller-sees-its-own-files-definition-before-another-files
+  ;; VISIBLE-CANDIDATES' local tier, which applies now that :PYTHON is
+  ;; module-scoped. Without it `read_tab' from main.py fans out across both.
+  (let* ((g (make-graph))
+         (caller (r-py-function g "seed" "functions/main.py" :unresolved '("read_tab")))
+         (local  (r-py-function g "read_tab" "functions/main.py"))
+         (far    (r-py-function g "read_tab" "functions/sheets.py")))
+    (r-py-file g "functions/main.py")
+    (r-py-file g "functions/sheets.py")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id local))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "one edge, to the definition in the caller's own file")
+    (is (null (relationships-to g (id far) :rel-type :calls)))))
+
+(test a-python-importer-is-resolved-by-pythons-rules-and-a-javascript-one-is-not
+  ;; The dispatch on :LANGUAGE. `config' is a sibling script to Python and an
+  ;; external package to the bundler, and both answers hold in one graph.
+  (let ((g (make-graph)))
+    (r-py-file g "app/main.py" :imports '("config"))
+    (r-py-file g "app/config.py")
+    (r-js-file g "app/main.js" :imports '("config"))
+    (r-js-file g "app/config.js")
+    (multiple-value-bind (scope unresolved) (py-scope g)
+      (is (equal '("app/config.py") (gethash "app/main.py" scope)))
+      (is (null (gethash "app/main.py" unresolved)))
+      (is (null (gethash "app/main.js" scope))
+          "a bare specifier is a package to the bundler")
+      (is (equal '((:specifier "config" :cause :external))
+                 (gethash "app/main.js" unresolved))))))
+
+(test an-unrooted-python-import-is-recorded-with-its-cause
+  (let ((g (make-graph)))
+    (dolist (path *lfia-paths*)
+      (unless (string= path "functions/tests/test_refs.py") (r-py-file g path)))
+    (r-py-file g "functions/tests/test_refs.py" :imports '("ledger.refs" "pytest"))
+    (multiple-value-bind (scope unresolved) (py-scope g)
+      (declare (ignore scope))
+      (is (equal '((:specifier "ledger.refs" :cause :unrooted)
+                   (:specifier "pytest" :cause :external))
+                 (gethash "functions/tests/test_refs.py" unresolved))))))

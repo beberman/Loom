@@ -52,6 +52,8 @@
    #:resolve-calls
    #:resolve-imports
    #:build-module-scope
+   #:resolve-python-specifier
+   #:make-python-index
    #:resolve-definitions
    #:resolve-inheritance
    #:resolve-specializers

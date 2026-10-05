@@ -358,13 +358,17 @@ command."
   ;; libraries, and 502 out-of-domain is a declaration that is wrong.
   (let ((imports (getf status :unresolved-imports)))
     (when imports
+      ;; The sixth is DES-0053 D5's: a Python import of a module the tree holds
+      ;; but none of the importer's roots reaches, which tells the reader which
+      ;; domain declaration is missing where :external would call it a library.
       (format t "  imports    : ~d resolved, ~d external, ~d out-of-domain, ~
-~d unresolved, ~d target unclaimed~%"
+~d unresolved, ~d target unclaimed, ~d unrooted~%"
               (getf imports :resolved 0)
               (getf imports :external 0)
               (getf imports :out-of-domain 0)
               (getf imports :unresolved 0)
-              (getf imports :unclaimed-target 0))))
+              (getf imports :unclaimed-target 0)
+              (getf imports :unrooted 0))))
   ;; Beside the imports line because they are read together: a count that looks
   ;; wrong is usually a declaration that is wrong, and this is where it says so.
   (dolist (problem (getf status :domain-problems))

@@ -2016,18 +2016,21 @@ file lies under it"
       (nreverse problems))))
 
 (defun import-summary (repository)
-  "The import graph as five numbers: resolved, and one per cause.
+  "The import graph as six numbers: resolved, and one per cause.
 
 Summed over the :FILE entities rather than recomputed, because RESOLVE-IMPORTS
 already wrote both halves -- the edges and the causes -- and a second
 resolution pass here could disagree with the graph a caller is about to query.
 
-Always five numbers, zeroes included, which is DES-0002 R10's rule: a count
+Always six numbers, zeroes included, which is DES-0002 R10's rule: a count
 that vanishes when it is nought cannot be told from a count nobody computed."
   (let ((graph (repository-graph repository))
         (resolved 0)
         (by-cause (list :external 0 :out-of-domain 0
-                        :unclaimed-target 0 :unresolved 0)))
+                        :unclaimed-target 0 :unresolved 0
+                        ;; DES-0053 D5's cause: a Python module indexed
+                        ;; somewhere none of the importer's roots reaches.
+                        :unrooted 0)))
     (dolist (file (entities-of-type graph :file))
       (dolist (r (relationships-from graph (id file)))
         (when (eq :imports (rel-type r)) (incf resolved)))

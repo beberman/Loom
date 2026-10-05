@@ -184,6 +184,187 @@ simply wrong need different repairs."
               (values nil :out-of-domain))
              (t (values nil :external)))))))))
 
+;;;; ==================================================================
+;;;; Python specifiers (DES-0053 D5)
+;;;; ==================================================================
+;;;;
+;;;; A Python specifier names a module by where Python looks for it, and the
+;;;; places are a function of the importer: its own directory when that is not
+;;;; a package, the parent of the package it sits in, and a declared domain
+;;;; root. Package-ness is read from the index -- a directory is a package when
+;;;; "<dir>/__init__.py" is an indexed path -- so nothing here reads the
+;;;; filesystem, and a file that exists on disk and is not indexed is not there.
+
+(defstruct (python-index (:constructor %make-python-index))
+  "What the Python resolver asks of the index, built once per pass.
+KNOWN is every indexed path. DIRECTORIES holds every directory prefix, ending
+in a slash, above an indexed .py file. TOP-NAMES holds every module, package
+and directory name that appears in the tree, which is what separates :UNROOTED
+from :EXTERNAL."
+  (known       nil)
+  (directories (make-hash-table :test #'equal) :type hash-table)
+  (top-names   (make-hash-table :test #'equal) :type hash-table))
+
+(defun make-python-index (known)
+  "The PYTHON-INDEX over KNOWN, a table of every indexed file path."
+  (let ((index (%make-python-index :known known)))
+    (maphash
+     (lambda (path present)
+       (declare (ignore present))
+       (when (and (> (length path) 3) (string= ".py" path :start2 (- (length path) 3)))
+         (let* ((segments (path-segments path))
+                (file (car (last segments)))
+                (stem (subseq file 0 (- (length file) 3))))
+           (unless (string= stem "__init__")
+             (setf (gethash stem (python-index-top-names index)) t))
+           (loop for segment in (butlast segments)
+                 for prefix = (format nil "~a/" segment)
+                   then (format nil "~a~a/" prefix segment)
+                 do (setf (gethash prefix (python-index-directories index)) t
+                          (gethash segment (python-index-top-names index)) t)))))
+     known)
+    index))
+
+(defun directory-prefix (path)
+  "PATH's directory as a prefix ending in a slash, or \"\" at the root."
+  (let ((slash (position #\/ path :from-end t)))
+    (if slash (subseq path 0 (1+ slash)) "")))
+
+(defun parent-directory-prefix (directory)
+  "The prefix of DIRECTORY's parent: a/b/ is a/, and a/ and \"\" are \"\"."
+  (let ((slash (position #\/ directory :from-end t
+                                       :end (max 0 (1- (length directory))))))
+    (if slash (subseq directory 0 (1+ slash)) "")))
+
+(defun python-module-file (index directory segments)
+  "The indexed path of the module SEGMENTS name under DIRECTORY, or NIL.
+
+\"a.b\" is a/b.py or a/b/__init__.py. No segments names the package DIRECTORY
+itself, which is its __init__.py."
+  (let ((known (python-index-known index))
+        (base (format nil "~a~{~a~^/~}" directory segments)))
+    (flet ((held (path) (and (gethash path known) path)))
+      (if (null segments)
+          (held (concatenate 'string directory "__init__.py"))
+          (or (held (concatenate 'string base ".py"))
+              (held (concatenate 'string base "/__init__.py")))))))
+
+(defun python-import-roots (importer index domain)
+  "The directories an absolute specifier written in IMPORTER is tried under, in
+D5's order, without repeats.
+
+  1. IMPORTER's own directory, when it holds no indexed __init__.py. Python
+     puts a script's directory on sys.path, and a directory that is not a
+     package can only be imported from by being on sys.path.
+  2. The parent of the outermost package containing IMPORTER. A package named
+     ledger is imported as `ledger' only when its parent is on sys.path.
+  3. DOMAIN's root, which arrives as data: loom-graph reads no configuration.
+
+Never \"walk up until some directory holds the module\". Python does not look
+there, and the first local file named like a library would capture every import
+of it."
+  (let* ((known (python-index-known index))
+         (directory (directory-prefix importer))
+         (roots '()))
+    (flet ((package-p (dir)
+             (gethash (concatenate 'string dir "__init__.py") known)))
+      (if (package-p directory)
+          (let ((top directory))
+            (loop while (and (plusp (length top)) (package-p top))
+                  do (setf top (parent-directory-prefix top)))
+            (push top roots))
+          (push directory roots)))
+    (let ((root (getf domain :root)))
+      (when root
+        (push (if (or (string= root "") (char= #\/ (char root (1- (length root)))))
+                  root
+                  (concatenate 'string root "/"))
+              roots)))
+    (remove-duplicates (nreverse roots) :test #'string= :from-end t)))
+
+(defun split-dotted (string)
+  "STRING's non-empty components between dots."
+  (loop with start = 0
+        for dot = (position #\. string :start start)
+        for part = (subseq string start dot)
+        when (plusp (length part)) collect part
+        while dot do (setf start (1+ dot))))
+
+(defun resolve-python-specifier (specifier importer index &key domain)
+  "The workspace path SPECIFIER names when written in IMPORTER, and why not.
+
+  (resolve-python-specifier specifier importer index &key domain)
+  ;; -> (values target-path-or-nil cause-when-nil)
+
+The causes are DES-0047's with one more:
+
+  :UNRESOLVED  relative and no such module, or absolute and the first segment
+               is held under one of the importer's roots but the whole name is
+               not. An in-tree miss, which is what a reader acts on.
+  :UNROOTED    absolute, no root of this importer holds the name, and a module
+               or package of that top-level name is indexed somewhere else.
+               functions/tests' `from ledger.refs import ...' is this until a
+               domain declares functions/ as a root, and the cause says which
+               declaration is missing where :EXTERNAL would have called ledger
+               a library.
+  :EXTERNAL    no root holds the name and no indexed file is named for it.
+
+A relative specifier starts in the importer's directory and climbs one
+directory per dot after the first."
+  (unless (and (stringp specifier) (plusp (length specifier)))
+    (return-from resolve-python-specifier (values nil :unresolved)))
+  (let* ((dots (or (position #\. specifier :test-not #'char=) (length specifier)))
+         (segments (split-dotted (subseq specifier dots))))
+    (if (plusp dots)
+        (let ((directory (directory-prefix importer)))
+          (dotimes (climb (1- dots))
+            (declare (ignorable climb))
+            (when (string= directory "")
+              (return-from resolve-python-specifier (values nil :unresolved)))
+            (setf directory (parent-directory-prefix directory)))
+          (let ((found (python-module-file index directory segments)))
+            (if found (values found nil) (values nil :unresolved))))
+        (let ((roots (python-import-roots importer index domain)))
+          (dolist (root roots)
+            (let ((found (python-module-file index root segments)))
+              (when found
+                (return-from resolve-python-specifier (values found nil)))))
+          (let ((top (first segments)))
+            (cond ((null top) (values nil :unresolved))
+                  ((some (lambda (root)
+                           (or (python-module-file index root (list top))
+                               (gethash (format nil "~a~a/" root top)
+                                        (python-index-directories index))))
+                         roots)
+                   (values nil :unresolved))
+                  ((gethash top (python-index-top-names index))
+                   (values nil :unrooted))
+                  (t (values nil :external))))))))
+
+(defun python-submodule-specifier (specifier name)
+  "The specifier `from SPECIFIER import NAME' may also be naming: the submodule.
+`from ledger import dates' reads ledger/dates.py when ledger/__init__.py does
+not define dates, and Python tries both."
+  (if (char= #\. (char specifier (1- (length specifier))))
+      (concatenate 'string specifier name)
+      (format nil "~a.~a" specifier name)))
+
+(defun python-submodule-targets (file importer index domain)
+  "The files FILE's `from S import a' bindings name as submodules S.a.
+
+Read from :IMPORT-BINDINGS, which holds module-level bindings only. A from-import
+inside a function adds nothing to the module scope; its calls still resolve,
+because they are :IMPORTED-CALLS entries and the walk tries the submodule
+itself (DES-0053 D6 step 3)."
+  (loop for binding in (getp file :import-bindings)
+        for specifier = (getf binding :specifier)
+        for name = (getf binding :name)
+        when (and specifier name (string/= name "*") (plusp (length specifier)))
+          append (let ((target (resolve-python-specifier
+                                (python-submodule-specifier specifier name)
+                                importer index :domain domain)))
+                   (and target (list target)))))
+
 (defun sibling-alias-keys (domains except)
   "Every alias key declared by a domain in DOMAINS other than EXCEPT.
 
@@ -222,7 +403,9 @@ The second value is CON-0001 at the import layer: path to a list of
 rather than dropped, because the cause is the half a reader acts on."
   (let ((known (make-hash-table :test #'equal))
         (scope (make-hash-table :test #'equal))
-        (unresolved (make-hash-table :test #'equal)))
+        (unresolved (make-hash-table :test #'equal))
+        ;; Built on the first Python importer, so a tree with none pays nothing.
+        (python-index nil))
     (dolist (file (entities-of-type view :file))
       (let ((path (getp file :path)))
         (when path (setf (gethash path known) t))))
@@ -232,16 +415,28 @@ rather than dropped, because the cause is the half a reader acts on."
           (let* ((name (getp file :domain))
                  (domain (and domains name (gethash name domains)))
                  (siblings (and domains name (sibling-alias-keys domains name)))
+                 (python-p (eq :python (getp file :language)))
                  (targets '())
                  (misses '()))
+            (when (and python-p (null python-index))
+              (setf python-index (make-python-index known)))
             (dolist (specifier (getp file :import-sources))
+              ;; The importer's language chooses the resolver: Python's rules
+              ;; are not JavaScript's, and every other language keeps
+              ;; RESOLVE-MODULE-SPECIFIER exactly as it was (DES-0053 D5).
               (multiple-value-bind (target cause)
-                  (resolve-module-specifier specifier path known
-                                            :domain domain
-                                            :sibling-aliases siblings)
+                  (if python-p
+                      (resolve-python-specifier specifier path python-index
+                                                :domain domain)
+                      (resolve-module-specifier specifier path known
+                                                :domain domain
+                                                :sibling-aliases siblings))
                 (if target
                     (pushnew target targets :test #'equal)
                     (push (list :specifier specifier :cause cause) misses))))
+            (when python-p
+              (dolist (target (python-submodule-targets file path python-index domain))
+                (pushnew target targets :test #'equal)))
             (setf (gethash path scope) targets)
             (when misses (setf (gethash path unresolved) (nreverse misses)))))))
     (values scope unresolved)))

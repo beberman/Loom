@@ -55,7 +55,7 @@ top three hubs in `structure', ahead of the real one at 50. All 348 were
 `logger.error(...)' call sites matched to `Error' on a spelling JavaScript does
 not consider equal; the repository renders `<Error />' twice.")
 
-(defvar *module-scoped-languages* '(:javascript :typescript)
+(defvar *module-scoped-languages* '(:javascript :typescript :python)
   "Languages in which a top-level definition is private to its file unless the
 file exports it and the reader imports it.
 
@@ -70,7 +70,13 @@ BUG-0035. After BUG-0029 removed the case fabrications, ~/github/front-end
 still drew three edges from DesignHome.jsx to three different components named
 `Error', one of which DesignHome.jsx defines itself at line 163 and renders
 twice. 130 of the repository's 163 remaining fan-outs had a candidate either in
-the calling file or in a file it imports.")
+the calling file or in a file it imports.
+
+:PYTHON joins in DES-0053 D5, in the same change as the resolver that gives
+its imports a meaning. A Python module is a file, and a name reaches another
+file only through an import statement. Listed alone, with only the JavaScript
+resolver behind it, `import config' would read :EXTERNAL and `.posting' would
+read :UNRESOLVED under JavaScript's extensions.")
 
 (defun module-scoped-language-p (language)
   "True when LANGUAGE gives each file its own namespace. NIL -- no :LANGUAGE --
