@@ -105,6 +105,9 @@
    ;; "one candidate" test drops.
    #:resolve-one
    #:match-registration
+   #:setting-with-readers
+   #:codebase-roots
+   #:covering-codebases
    #:*document-types*
    #:*mention-confidence*
 

@@ -83,7 +83,7 @@
     ;; legitimately empty -- a tree with no protocols, or one no analyzer
     ;; claimed -- and [] against null is exactly the distinction an init script
     ;; reading this over REST has to make.
-    :systems :system-edges :protocols :implementors :entry-points :hubs
+    :systems :system-edges :protocols :implementors :entry-points :hubs :triggered
     ;; The init report (DES-0022 S2). :CREATED empty is what an
     ;; already-prepared tree returns and :SKIPPED empty is the ordinary answer,
     ;; so both have to be [] -- a caller branching on "did anything happen"

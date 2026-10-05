@@ -1094,3 +1094,21 @@ body: |
   with loom-utils' and raised the :CALL-SITE ceiling test to 514 against 512, the
   same name-collision the ceiling's own docstring describes; it is GLOB-PATH-
   SEGMENTS. lfia has 11 deployed functions now where the plan counted 8.
+
+  Step 7 (the surfaces). The console's RESOLVE-ENTITY applies RESOLVE-ONE's
+  setting rule, on the coordinator's decision: the rule is now SETTING-WITH-
+  READERS in loom-graph, which RESOLVE-ONE and the console both call, so
+  `impact ZEFFY_API_KEY 3' answers for the setting when a same-named variable
+  reads that name, and a same-named variable reading something else stays
+  ambiguous. loom-serve's own RESOLVE-ENTITY takes the best name match and
+  never refuses an ambiguous name, so it needed no change. STATUS gains :DEPLOYS
+  from DEPLOYS-REPORT, a nested plist, which REPOSITORY-STATUS builds and the
+  serve :status operation passes through; a serve test shows it encodes. The
+  :triggered key is in *ARRAY-VALUED-KEYS*. The architecture generator prints the
+  same band, since DES-0022 D4 has the generator and the printer walk one plist.
+  `find --trigger' with several watched repositories and no @token is refused:
+  the federated branch has no trigger query. find's miss bands are skipped for a
+  trigger query, because an empty term would look up everything. TRIGGER-PROPERTY-
+  FILTER lives in loom-workspace beside DOMAIN-PROPERTY-FILTER, for its reason.
+  load-test prints `LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T', where T
+  is the value of its `clean' variable.

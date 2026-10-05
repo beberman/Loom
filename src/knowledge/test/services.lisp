@@ -873,3 +873,29 @@ with them."
       (is (not (null group)) "the reader is listed as a neighbour")
       (is (equal '("SPREADSHEET_ID")
                  (mapcar (lambda (e) (getf e :name)) (getf group :entities)))))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 D8: describe and impact carry the entry point
+;;; ------------------------------------------------------------------
+
+(test describe-returns-the-entry-point-and-impact-marks-the-row
+  (let* ((f (make-k-fixture))
+         (g (k-graph f))
+         (entry (list (list :framework "firebase-functions" :trigger :schedule
+                            :callee "firebase_functions.scheduler_fn.on_schedule"
+                            :options '(("schedule" . "every 1 hours"))
+                            :codebase "default" :deployed :yes))))
+    (add-relationship g (make-instance 'relationship :rel-type :calls
+                                                     :from-id (id (k-resolve f))
+                                                     :to-id (id (k-reset f))
+                                                     :origin-file (origin-file (k-resolve f))))
+    (setp (k-resolve f) :trigger :schedule)
+    (setp (k-resolve f) :entry-point entry)
+    (is (equal entry (getf (describe-entity g (id (k-resolve f))) :entry-point)))
+    (let* ((report (impact-report g (id (k-reset f))))
+           (row (find (id (k-resolve f)) (getf report :impacted)
+                      :key (lambda (r) (getf r :id)) :test #'equal)))
+      (is (not (null row)) "resolve reaches reset in the fixture")
+      (is (eq :schedule (getf row :trigger)))
+      (is (null (getf (first (remove row (getf report :impacted))) :trigger))
+          "an ordinary row carries no trigger"))))

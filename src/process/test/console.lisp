@@ -709,3 +709,117 @@ this repository, so an answer proves which graph was consulted."
   (let ((output (with-output-to-string (*standard-output*)
                   (run-command "find"))))
     (is-true (search "find needs a name" output) "~a" output)))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 D8: entry points in find, describe, impact and status
+;;; ------------------------------------------------------------------
+
+(defun add-console-entity (repository type name file &rest properties)
+  "A TYPE entity named NAME in FILE, added straight to REPOSITORY's graph."
+  (let ((entity (make-instance (ecase type
+                                 (:function 'loom-ontology:function-entity)
+                                 (:variable 'loom-ontology:variable-entity)
+                                 (:setting 'loom-ontology:setting-entity)
+                                 (:file 'loom-ontology:file-entity))
+                               :name name :origin-file file
+                               :properties (loom-ontology:properties-table
+                                            (if (eq type :setting)
+                                                ;; Closed: only what it declares.
+                                                (append (list :name name) properties)
+                                                (append (list :file file :start-line 1
+                                                              :end-line 5 :path file
+                                                              :language :python)
+                                                        properties))))))
+    (loom-graph:add-entity (loom-workspace:repository-graph repository) entity)
+    entity))
+
+(defun add-entry-point (repository name trigger &rest properties)
+  (apply #'add-console-entity repository :function name "functions/main.py"
+         :trigger trigger
+         :entry-point (list (list :framework "firebase-functions" :trigger trigger
+                                  :options '(("schedule" . "every 1 hours")
+                                             ("memory" :dotted "options.MemoryOption.MB_512"
+                                              :specifier "firebase_functions"
+                                              :path ("options"))
+                                             ("secrets" :list (:name "K" :binding :local)))
+                                  :codebase "default" :runtime "python312" :deployed :yes))
+         properties))
+
+(test find-trigger-lists-what-carries-it-and-nothing-else
+  (with-console-fixture
+    (add-entry-point repository "sync_zeffy" :schedule)
+    (add-entry-point repository "sync_ledger" :schedule)
+    (add-entry-point repository "serve_api" :https)
+    (let ((output (run-to-string "find --trigger schedule")))
+      (is (search "sync_zeffy" output))
+      (is (search "sync_ledger" output))
+      (is (not (search "serve_api" output)))
+      (is (not (search "alpha" output))))
+    (is (search "serve_api" (run-to-string "find --trigger https")))
+    (is (not (search "sync_zeffy" (run-to-string "find sync --trigger https"))))))
+
+(test an-unknown-trigger-finds-nothing-and-interns-no-keyword
+  (with-console-fixture
+    (add-entry-point repository "sync_zeffy" :schedule)
+    (let ((name "ZZQXV-NO-SUCH-TRIGGER"))
+      (is (null (find-symbol name :keyword)))
+      (let ((output (run-to-string (format nil "find --trigger ~a" (string-downcase name)))))
+        (is (search "No entity has the trigger" output))
+        (is (not (search "sync_zeffy" output))))
+      (is (null (find-symbol name :keyword))
+          "console input does not widen the keyword package"))))
+
+(test describe-prints-the-entry-point-and-impact-suffixes-the-row
+  (with-console-fixture
+    (let ((entry (add-entry-point repository "sync_zeffy" :schedule))
+          (helper (add-console-entity repository :function "_sync" "functions/main.py")))
+      (loom-graph:add-relationship
+       (loom-workspace:repository-graph repository)
+       (make-instance 'loom-ontology:relationship :rel-type :calls
+                      :from-id (loom-ontology:id entry) :to-id (loom-ontology:id helper)
+                      :origin-file "functions/main.py"))
+      (let ((described (run-to-string "describe sync_zeffy")))
+        (is (search "entry point: firebase-functions schedule" described))
+        (is (search "schedule=\"every 1 hours\"" described))
+        (is (search "memory=options.MemoryOption.MB_512" described)
+            "a dotted value prints as its text")
+        (is (search "secrets=[K]" described))
+        (is (search "codebase default (python312), deployed" described)))
+      (is (search "[entry: schedule]" (run-to-string "impact _sync 3"))))))
+
+(test status-says-what-a-firebase-json-deploys-and-what-is-missing
+  (with-console-fixture
+    (add-console-entity repository :file "firebase.json" "firebase.json"
+                        :codebases '((:source "functions" :codebase "default"
+                                      :runtime "python312" :ignore nil :defaulted nil)))
+    (add-console-entity repository :file ".firebaserc" ".firebaserc"
+                        :project-aliases '(("default" . "lfia-accounting")))
+    (add-entry-point repository "sync_zeffy" :schedule)
+    (let ((without (run-to-string "status")))
+      (is (search "deploys    : codebase default at functions (python312), 1 entry point" without))
+      (is (search "project default=lfia-accounting" without))
+      (is (search "no entry-points. `init' proposes them" without)
+          "declared codebases with no declaration is a recorded gap"))
+    (setf (loom-workspace::repository-frameworks
+           (first (loom-workspace:all-repositories)))
+          '(:entry-points ((:framework "f" :trigger :https :module "m" :names ("x")))))
+    (is (not (search "proposes them" (run-to-string "status"))))))
+
+(test a-tree-with-no-firebase-json-prints-no-deploys-line
+  (with-console-fixture
+    (is (not (search "deploys" (run-to-string "status"))))))
+
+(test a-name-shared-by-a-setting-and-the-variable-reading-it-resolves-to-the-setting
+  ;; The F3 rule of PLAN-0056, applied where a person types the name. A variable
+  ;; of the same name that reads something else keeps it ambiguous.
+  (with-console-fixture
+    (add-console-entity repository :setting "ZEFFY_API_KEY" "functions/main.py"
+                        :sources '(:secret))
+    (add-console-entity repository :variable "ZEFFY_API_KEY" "functions/main.py"
+                        :environment-reads '("ZEFFY_API_KEY"))
+    (let ((output (run-to-string "describe ZEFFY_API_KEY")))
+      (is (not (search "things are named" output)))
+      (is (search "setting ZEFFY_API_KEY" output)))
+    (add-console-entity repository :variable "ZEFFY_API_KEY" "functions/other.py"
+                        :environment-reads '("SOMETHING_ELSE"))
+    (is (search "things are named" (run-to-string "describe ZEFFY_API_KEY")))))

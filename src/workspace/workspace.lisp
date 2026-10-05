@@ -251,6 +251,22 @@ peers cannot reach each other and both depend on this system, which is the same
 reason SPLIT-DESIGNATOR lives here."
   (when domain (list :domain (getf domain :name))))
 
+(defun trigger-property-filter (name)
+  "The property filter selecting entities whose :TRIGGER is NAME, or NIL for no
+name. DES-0054 D8.
+
+The keyword is looked up and never interned. Console input must not widen the
+keyword package: the declarations bound it (DES-0047 D1), and a typed word is not
+a declaration. A name no keyword carries gets a filter that matches nothing, as a
+string, since a string is EQUAL to no keyword and to no absent trigger -- NIL would
+match every entity that has none.
+
+Here beside DOMAIN-PROPERTY-FILTER, for its reason: loom-process and loom-serve
+both need it and cannot reach each other."
+  (when (and name (plusp (length name)))
+    (let ((trigger (find-symbol (string-upcase name) :keyword)))
+      (list :trigger (or trigger "no such trigger")))))
+
 (defun all-repositories () (reverse *repositories*))
 
 ;;;; ==================================================================
@@ -2105,6 +2121,47 @@ and a row of zeroes there is a count of a question nobody asked."
   (some (lambda (file) (module-scoped-language-p (getp file :language)))
         (entities-of-type (repository-graph repository) :file)))
 
+(defun deploys-report (repository)
+  "What `status' says about deployment, or NIL when no firebase.json is indexed.
+DES-0054 D8.
+
+:CODEBASES, one plist each with :FILE, :SOURCE, :CODEBASE, :RUNTIME and
+:ENTRY-POINTS, the registrations a covering codebase holds. :ALIASES, the
+.firebaserc projects as \"alias=project\". :DECLARED, false when firebase.json
+declares codebases and .loom/frameworks.yaml has no entry-points, which makes the
+missing declaration a recorded gap and not an empty band (CON-0001).
+:UNNAMED-DECLARATIONS, the variables calling a setting declaration with no literal
+first argument, which name nothing. Computed from the graph and never stored,
+since R7 declares no property for it."
+  (let* ((graph (repository-graph repository))
+         (roots (codebase-roots graph)))
+    (when roots
+      (let ((counts (make-hash-table :test #'eq)))
+        (dolist (type '(:function :method :variable))
+          (dolist (entity (entities-of-type graph type))
+            (let ((registrations (length (getp entity :entry-point))))
+              (when (plusp registrations)
+                (let ((root (covering-codebases (getp entity :file) roots)))
+                  (when root (incf (gethash root counts 0) registrations)))))))
+        (list :codebases (loop for root in roots
+                               collect (list :file (getp (getf root :file) :path)
+                                             :source (getf root :source)
+                                             :codebase (getf root :codebase)
+                                             :runtime (getf root :runtime)
+                                             :entry-points (gethash root counts 0)))
+              :aliases (loop for file in (entities-of-type graph :file)
+                             append (loop for (alias . project) in (getp file :project-aliases)
+                                          collect (format nil "~a=~a" alias project)))
+              :declared (and (repository-entry-points repository) t)
+              :unnamed-declarations
+              (let ((declarations (repository-setting-declarations repository)))
+                (count-if (lambda (variable)
+                            (let ((call (getp variable :value-call)))
+                              (and call (null (getf call :first-string))
+                                   (match-registration call (getp variable :language)
+                                                       declarations))))
+                          (entities-of-type graph :variable))))))))
+
 (defun repository-status (repository)
   "SS3.2's status, as plain data: \"indexing progress, entity and relationship
 counts, watcher health, unresolved document references, unenforced rules, and
@@ -2302,6 +2359,9 @@ the last error per thread.\""
           ;; relationship the index knows it is missing. Zero on all three
           ;; watched trees, and unconditional so that zero can be read.
           :dropped-edges (dropped-edge-count graph)
+          ;; DES-0054 D8. NIL for a tree with no firebase.json, so `status' on
+          ;; every other tree reads as it did.
+          :deploys (deploys-report repository)
           :errors (length (repository-errors repository))
           :last-error (first (repository-errors repository)))))
 

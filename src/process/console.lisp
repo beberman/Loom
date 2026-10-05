@@ -242,12 +242,19 @@ developer needs in order to ask again precisely."
                      (when hit (get-entity graph (getf hit :id))))))
               ;; The id carries the file, so it is both the disambiguator and
               ;; the thing to type next.
-              (t (error "~d things are named ~s. Name one:~{~%  ~a~}"
-                        (length exact) term
-                        (mapcar (lambda (hit)
-                                  (format nil "~(~a~) ~a"
-                                          (getf hit :type) (getf hit :id)))
-                                exact)))))
+              ;; A setting and the variables that read it are one fact stated
+              ;; twice, and a name reaching exactly those means the setting --
+              ;; the rule RESOLVE-ONE applies to a document's reference. A variable
+              ;; of that name which reads something else keeps it ambiguous.
+              (t (or (setting-with-readers
+                      (mapcar (lambda (hit) (get-entity graph (getf hit :id))) exact)
+                      graph)
+                     (error "~d things are named ~s. Name one:~{~%  ~a~}"
+                            (length exact) term
+                            (mapcar (lambda (hit)
+                                      (format nil "~(~a~) ~a"
+                                              (getf hit :type) (getf hit :id)))
+                                    exact))))))
       (error "Nothing in the index matches ~s." term)))
 
 (defun resolve-count (text what)
@@ -274,6 +281,33 @@ command."
 ;;;; Output helpers
 ;;;; ==================================================================
 
+(defun option-text (value)
+  "VALUE, an encoded argument, as the text a reader would write for it. DES-0054
+D1: a literal as itself, a name or dotted chain as its spelling, a list in
+brackets, and the expression marker as `<expression>'."
+  (cond ((stringp value) (format nil "~s" value))
+        ((eq value :expression) "<expression>")
+        ((eq value :none) "None")
+        ((eq value :false) "False")
+        ((eq value t) "True")
+        ((and (consp value) (member (first value) '(:name :dotted))) (second value))
+        ((and (consp value) (eq :list (first value)))
+         (format nil "[~{~a~^, ~}]" (mapcar #'option-text (rest value))))
+        (t (princ-to-string value))))
+
+(defun print-entry-point (entry)
+  "One line for an :ENTRY-POINT plist: framework, trigger, the options as
+label=value, then the codebase and whether it deploys."
+  (format t "~&  entry point: ~a ~(~a~)~{ ~a~}~@[ ~a~]~%"
+          (getf entry :framework) (getf entry :trigger)
+          (loop for (label . value) in (getf entry :options)
+                collect (format nil "~a=~a" label (option-text value)))
+          (when (getf entry :codebase)
+            (format nil "codebase ~a~@[ (~a)~], ~(~a~)"
+                    (getf entry :codebase) (getf entry :runtime)
+                    (case (getf entry :deployed)
+                      (:yes "deployed") (:no "not deployed") (t "deployment unknown"))))))
+
 (defun print-summary-line (summary &optional (indent 0))
   ;; The indent is a string rather than a ~v@{ ~} directive: that form takes
   ;; INDENT as the iteration limit and then reads the *following* argument as
@@ -285,6 +319,24 @@ command."
           (make-string indent :initial-element #\Space)
           (getf summary :type) (getf summary :name)
           (getf summary :location) (getf summary :stale)))
+
+(defun print-deploys (deploys)
+  "The `deploys' lines of `status', nothing for a tree with no firebase.json.
+DES-0054 D8. When codebases are declared and no entry-points are, the line says so
+and names `init', so the gap is recorded rather than an empty band."
+  (when deploys
+    (dolist (codebase (getf deploys :codebases))
+      (format t "  deploys    : codebase ~a at ~a~@[ (~a)~], ~d entry point~:p~%"
+              (getf codebase :codebase) (getf codebase :source) (getf codebase :runtime)
+              (getf codebase :entry-points)))
+    (when (getf deploys :aliases)
+      (format t "  deploys    : project ~{~a~^, ~}~%" (getf deploys :aliases)))
+    (unless (getf deploys :declared)
+      (format t "  deploys    : firebase.json declares codebases and .loom/frameworks.yaml has no entry-points. `init' proposes them.~%"))
+    (when (plusp (getf deploys :unnamed-declarations 0))
+      (format t "  deploys    : ~d setting declaration~:p with no literal first argument name~:[s~;~] nothing~%"
+              (getf deploys :unnamed-declarations)
+              (= 1 (getf deploys :unnamed-declarations))))))
 
 (defun print-status (status)
   (format t "~&~a  ~a~%" (getf status :name) (getf status :root))
@@ -373,6 +425,7 @@ command."
   ;; wrong is usually a declaration that is wrong, and this is where it says so.
   (dolist (problem (getf status :domain-problems))
     (format t "  domains    : ~a~%" problem))
+  (print-deploys (getf status :deploys))
   ;; DES-0018 D5. Printed only when git could not be asked, because on a
   ;; healthy tree there is nothing to say and a line reading "ignoring: fine"
   ;; would be noise on every status call. When it does print, it is the
@@ -784,6 +837,18 @@ properly needs to know the list was cut."
            (when (getf occurrences :truncated)
              (format t "    ~d of ~d shown.~%" (length rows) total))))))
 
+(defun trigger-flag (arguments)
+  "The name following --trigger in ARGUMENTS, and ARGUMENTS without the pair.
+DES-0054 D8. A flag with nothing after it is an error rather than a flag
+silently ignored."
+  (let ((position (position "--trigger" arguments :test #'equal)))
+    (cond ((null position) (values nil arguments))
+          ((>= (1+ position) (length arguments))
+           (error "--trigger needs a name. Try: find [<name>] --trigger <kind>"))
+          (t (values (nth (1+ position) arguments)
+                     (append (subseq arguments 0 position)
+                             (subseq arguments (+ position 2))))))))
+
 (defun kind-flag (arguments)
   "The family ARGUMENTS names, and ARGUMENTS without the flag.
 
@@ -805,8 +870,10 @@ so a flag can never be mistaken for either."
     (values kind (nreverse rest))))
 
 (define-command find (&rest arguments)
-    "find <name> [<type>] [--code|--documentation]"
-    "Where something is defined. Without a repository, every watched one."
+    "find [<name>] [<type>] [--code|--documentation] [--trigger <kind>]"
+    "Where something is defined. Without a repository, every watched one. \
+--trigger lists what a declaration marked as an entry point of that kind, and \
+then the name may be left out."
   ;; REQ-0051 R1. With no @token and several repositories watched this used to
   ;; reach CURRENT-GRAPH and be refused with "Several repositories are watched.
   ;; Name one" -- which is right for `describe' and `impact', whose answer is
@@ -816,13 +883,18 @@ so a flag can never be mistaken for either."
   ;; The nothing-watched case still goes through CURRENT-REPOSITORY, whose
   ;; message says what to type. REQ-0051 R4's distinction at its most extreme: a
   ;; `find' against an empty registry must not answer "found nowhere".
+  (multiple-value-bind (trigger arguments) (trigger-flag arguments)
   (multiple-value-bind (kind rest) (kind-flag arguments)
    (let* ((term (first rest))
           (type (and (second rest) (intern (string-upcase (second rest)) :keyword)))
+          (trigger-filter (trigger-property-filter trigger))
           (named (or *command-repository*
                      (and (null (rest (all-repositories))) t))))
-    (unless term
+    (unless (or term trigger)
       (error "find needs a name. Try: find <name> [<type>] [--code|--documentation]"))
+    (when (and trigger (not named) (rest (all-repositories)))
+      (error "find --trigger searches one repository. Name one with ~c<name>."
+             *repository-sigil*))
     (if (or named (null (all-repositories)))
         (let ((repository (current-repository)))
           (multiple-value-bind (hits total)
@@ -831,8 +903,15 @@ so a flag can never be mistaken for either."
               ;; path this has always taken.
               (search-entities (repository-graph repository) :name term
                                :type type :kind kind :limit *console-find-limit*
-                               :property-filters (domain-property-filter *command-domain*))
+                               :property-filters (append
+                                                  (domain-property-filter *command-domain*)
+                                                  trigger-filter))
             (cond
+              ;; DES-0054 D8. A trigger nothing carries is its own answer: there is
+              ;; no name to look for elsewhere or in the text.
+              ((and (null hits) trigger)
+               (format t "~&No entity has the trigger ~(~a~)~@[ and the name ~s~].~%"
+                       trigger term))
               ;; DES-0049. A family that excluded everything is not the same
               ;; miss as a term nothing carries, and must not print the same
               ;; answer. `find repository --documentation' matched twenty code
@@ -887,7 +966,7 @@ so a flag can never be mistaken for either."
                (when (> total (length hits))
                  (format t "~&~d of ~d shown. Narrow the term, or name a type.~%"
                          (length hits) total))))
-          (print-find-cost report))))))
+          (print-find-cost report)))))))
 
 (define-command describe (term &optional flag)
     "describe <name> [--source]"
@@ -936,6 +1015,10 @@ so a flag can never be mistaken for either."
     ;; what it touches.
     (when (getf detail :summary)
       (format t "~&  ~a~%" (getf detail :summary)))
+    ;; DES-0054 D8. What a framework registered this for, one line per
+    ;; registration. A dotted value prints as its text; a name by its spelling.
+    (dolist (entry (getf detail :entry-point))
+      (print-entry-point entry))
     ;; A document's :BODY is its author's whole concatenation, so printing it
     ;; put the neighbours below an unbounded amount of prose, and for a
     ;; decision printed the rationale twice -- once under its own key and once
@@ -1211,11 +1294,11 @@ between 0 and 1." cut))
     ;; path, and printing it twice spends the width that made this legible.
     (dolist (e (getf report :impacted))
       (let ((location (getf e :location)))
-        (format t "  d~a~a ~(~a~) ~a~@[  [~a]~]  ~a~%"
+        (format t "  d~a~a ~(~a~) ~a~@[  [~a]~]  ~a~@[  [entry: ~(~a~)]~]~%"
                 (getf e :depth) (if (getf e :inferred) "?" " ")
                 (getf e :type) (getf e :name)
                 (unless (equal location (getf e :name)) location)
-                (getf e :via))))
+                (getf e :via) (getf e :trigger))))
     ;; BUG-0050 F2, said once rather than left on every row to be read against
     ;; the depth the caller typed.
     (let ((asked (getf report :depth))

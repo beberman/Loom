@@ -233,11 +233,15 @@ so some of these are called from places the index cannot see (DES-0001)."
   "Callable definitions with no in-tree caller, capped and qualified."
   (let ((found (loop for type in '(:function :method :interface)
                      append (loop for entity in (entities-of-type view type)
-                                  when (zerop (length
-                                               (remove-if-not
-                                                (lambda (r) (member (rel-type r)
-                                                                    '(:calls :implements)))
-                                                (relationships-to view (id entity)))))
+                                  ;; DES-0054 D8. A function a framework calls has no
+                                  ;; caller in the tree and is not an unexplained
+                                  ;; definition: it is in the trigger band.
+                                  when (and (null (getp entity :trigger))
+                                            (zerop (length
+                                                    (remove-if-not
+                                                     (lambda (r) (member (rel-type r)
+                                                                         '(:calls :implements)))
+                                                     (relationships-to view (id entity))))))
                                     collect entity))))
     (setf found (sort found #'string<
                       :key (lambda (e) (princ-to-string
@@ -247,6 +251,33 @@ so some of these are called from places the index cannot see (DES-0001)."
                         (subseq found 0 *structure-entry-point-limit*)
                         found))
             (length found))))
+
+(defun triggered-report (view)
+  "Entities a declaration marked as entry points, grouped by trigger. DES-0054 D8.
+
+One plist per trigger, in name order: :TRIGGER, :COUNT, and :ENTITIES capped at
+*STRUCTURE-ENTRY-POINT-LIMIT*, each row carrying :DEPLOYED, which is :YES, :NO or
+:UNKNOWN once a codebase covers it and absent before. :NO is the row worth
+reading: a function registered and never deployed."
+  (let ((groups (make-hash-table :test #'eq)))
+    (dolist (type '(:function :method :variable))
+      (dolist (entity (entities-of-type view type))
+        (let ((trigger (getp entity :trigger)))
+          (when trigger (push entity (gethash trigger groups))))))
+    (loop for trigger in (sort (loop for key being the hash-keys of groups collect key)
+                               #'string< :key #'symbol-name)
+          for found = (sort (copy-list (gethash trigger groups)) #'string<
+                            :key (lambda (e) (princ-to-string (name e))))
+          collect (list :trigger trigger
+                        :count (length found)
+                        :entities
+                        (loop for entity in (subseq found 0 (min (length found)
+                                                                *structure-entry-point-limit*))
+                              collect (append
+                                       (entity-summary entity)
+                                       (let ((deployed (getf (first (getp entity :entry-point))
+                                                             :deployed)))
+                                         (when deployed (list :deployed deployed)))))))))
 
 (defun hub-report (view)
   "The most-depended-on definitions, by inbound edge count.
@@ -342,6 +373,7 @@ and only this flag tells them apart."
        :entry-points entry-points
        :entry-point-count entry-point-count
        :entry-point-qualifier (entry-point-qualifier view)
+       :triggered (triggered-report view)
        :hubs (hub-report view)
        ;; Ordered by how much of the codebase each names, so the prose most
        ;; worth reading first is first.
@@ -428,6 +460,14 @@ follows describes what Loom could read, which may be only its documents.~%"))
     (dolist (row (getf report :entry-points))
       (format out "  ~(~a~) ~a~@[  [~a]~]~%"
               (getf row :type) (getf row :name) (getf row :location)))
+    (format out "~&~%## entry points by trigger~%")
+    (dolist (group (getf report :triggered))
+      (format out "  ~(~a~)  ~d~%" (getf group :trigger) (getf group :count))
+      (dolist (row (getf group :entities))
+        (format out "    ~(~a~) ~a~@[  [~a]~]~@[  deployed: ~(~a~)~]~%"
+                (getf row :type) (getf row :name) (getf row :location)
+                (getf row :deployed))))
+    (when (null (getf report :triggered)) (format out "  (none declared)~%"))
     (format out "~&~%## hubs, by inbound edges~%")
     (dolist (row (getf report :hubs))
       (format out "  ~5d  ~(~a~) ~a~@[  [~a]~]~%"

@@ -810,3 +810,59 @@ listed as answering about a whole repository. Decide which it is and say so in ~
     (dolist (name *domain-scoped-reads*)
       (is (not (member name *whole-repository-reads*))
           "~a is in both lists" name))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 D8: find by trigger
+;;; ------------------------------------------------------------------
+
+(defun add-triggered-function (repository name trigger)
+  (loom-graph:add-entity
+   (repository-graph repository)
+   (make-instance 'loom-ontology:function-entity :name name :origin-file "functions/main.py"
+                  :properties (loom-ontology:properties-table
+                               (list :file "functions/main.py" :start-line 1 :end-line 4
+                                     :language :python :trigger trigger)))))
+
+(test find-with-a-trigger-lists-what-carries-it-with-no-term
+  (with-operations-fixture (repository)
+    (add-triggered-function repository "sync_zeffy" :schedule)
+    (add-triggered-function repository "serve_api" :https)
+    (let ((rows (getf (call-operation :find '(:read) :repository (repository-name repository)
+                                                      :term "" :trigger "schedule")
+                      :entities)))
+      (is (equal '("sync_zeffy") (mapcar (lambda (row) (getf row :name)) rows))))
+    (is (null (getf (call-operation :find '(:read) :repository (repository-name repository)
+                                                   :term "" :trigger "nosuchtriggerzz")
+                    :entities)))
+    (is (null (find-symbol "NOSUCHTRIGGERZZ" :keyword)) "and interns nothing")
+    (is (equal '("serve_api")
+               (mapcar (lambda (row) (getf row :name))
+                       (getf (call-operation :find '(:read)
+                                             :repository (repository-name repository)
+                                             :term "serve" :trigger "https")
+                             :entities))))))
+
+(test find-with-a-trigger-and-no-repository-is-refused
+  (signals malformed-request
+    (call-operation :find '(:read) :term "" :trigger "schedule")))
+
+(test status-carries-deploys-and-encodes-as-json
+  ;; DES-0054 D8. :DEPLOYS is the one nested plist :STATUS returns, and this
+  ;; plist is serialized for REST and MCP callers.
+  (with-operations-fixture (repository)
+    (loom-graph:add-entity
+     (repository-graph repository)
+     (make-instance 'loom-ontology:file-entity :name "firebase.json"
+                    :origin-file "firebase.json"
+                    :properties (loom-ontology:properties-table
+                                 '(:path "firebase.json"
+                                   :codebases ((:source "functions" :codebase "default"
+                                                :runtime "python312" :ignore nil
+                                                :defaulted nil))))))
+    (let* ((status (call-operation :status '(:read) :repository (repository-name repository)))
+           (deploys (getf status :deploys)))
+      (is (equal "default" (getf (first (getf deploys :codebases)) :codebase)))
+      (is (null (getf deploys :declared)))
+      (let ((json (loom-serve:encode-result status)))
+        (is (search "\"deploys\"" json))
+        (is (search "python312" json))))))

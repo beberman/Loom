@@ -681,6 +681,10 @@ them is noise on the answers where nothing is wrong."
             ;; docstring inside :PROPERTIES and no surface printed it, so a
             ;; caller could read where a definition is and not what it does.
             :summary    (definition-summary entity)
+            ;; DES-0054 D8. What a framework registered this for, derived by
+            ;; RESOLVE-ENTRY-POINTS. The same list is in :PROPERTIES; it is
+            ;; lifted so the console and a REST caller need not search a table.
+            :entry-point (getp entity :entry-point)
             :properties (loop for key being the hash-keys of (properties entity)
                                 using (hash-value value)
                               unless (null value) append (list key value))
@@ -747,6 +751,10 @@ The weakest link is the claim actually being made."
   ;; with a `get', `add', `has' or `set' method at depth 1, and those rows
   ;; were the same shape as the ones reached by a resolved call.
   (append (entity-summary (impact-entry-entity entry))
+          ;; DES-0054 D8. Nothing calls an entry point, so traversal already ends
+          ;; at one and the chain is not cut; the marker says why it ends.
+          (let ((trigger (getp (impact-entry-entity entry) :trigger)))
+            (when trigger (list :trigger trigger)))
           (list :depth (impact-entry-depth entry)
                 :inferred (and (path-inferred-p (impact-entry-path entry)) t)
                 :confidence-of-path (path-confidence (impact-entry-path entry))

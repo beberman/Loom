@@ -252,9 +252,10 @@ The console's own cap, so the two answer the same question the same way.")
 ;; precedent and has been the one operation with no designator requirement since
 ;; it was written -- for the same reason, that it is the call a caller makes
 ;; before it knows which repository to name.
-(define-operation :find :read ((repository) term (entity-type) (kind) (limit))
+(define-operation :find :read ((repository) term (entity-type) (kind) (limit) (trigger))
     "Where something is defined. Without a repository, every watched one is \
-searched and each row says which it came from."
+searched and each row says which it came from. trigger lists what a declaration \
+marked as an entry point of that kind; term may then be empty."
   ;; Wrapped under :ENTITIES rather than returned as a bare list, so that every
   ;; operation in this system answers with a plist and every JSON response is
   ;; therefore an object. A bare list would also make an empty result encode as
@@ -263,6 +264,8 @@ searched and each row says which it came from."
   (let ((type (requested-entity-type entity-type))
         (kind (requested-kind kind))
         (limit (or (request-integer limit "limit") *find-limit*)))
+    (when (and trigger (null repository))
+      (error 'malformed-request :message "find with a trigger needs a repository argument."))
     (if (null repository)
         ;; The federated form returns SEARCH-REPOSITORIES' plist whole: the same
         ;; :ENTITIES, :TOTAL and :TRUNCATED a named search answers with, plus
@@ -272,8 +275,10 @@ searched and each row says which it came from."
         (multiple-value-bind (watched domain) (require-repository repository)
           (multiple-value-bind (entities total)
               (search-entities (repository-graph watched)
-                               :name term :type type :kind kind :limit limit
-                               :property-filters (domain-property-filter domain))
+                               :name (and (plusp (length term)) term)
+                               :type type :kind kind :limit limit
+                               :property-filters (append (domain-property-filter domain)
+                                                         (trigger-property-filter trigger)))
             ;; BUG-0002. :TOTAL and :TRUNCATED alongside the rows, because a
             ;; caller that received the limit and nothing else cannot tell a
             ;; complete answer from a cut one -- and an agent asking how many of
@@ -298,7 +303,9 @@ searched and each row says which it came from."
              ;; REQ-0051 R3, and the clause the whole requirement is for. Paid
              ;; only on the miss, which is where the reader decides to reach for
              ;; grep instead.
-             (when (null entities)
+             ;; Not for a trigger query: the miss bands look the term up in other
+             ;; trees and in the text, and an empty term would look up everything.
+             (when (and (null entities) (null trigger))
                (append
                 (list :elsewhere
                       (repositories-holding term :type type

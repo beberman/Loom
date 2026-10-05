@@ -2683,6 +2683,29 @@ with one would have to be written that way in the source."
   (some (lambda (edge) (equal (to-id edge) (id setting)))
         (relationships-from view (id variable) :rel-type :reads)))
 
+(defun setting-with-readers (candidates view)
+  "The one :SETTING among CANDIDATES when every other candidate is a :VARIABLE that
+reads it, else NIL.
+
+`SPREADSHEET_ID = os.environ.get(\"SPREADSHEET_ID\", \"\")' mints a :VARIABLE and a
+:SETTING of one name, and `ZEFFY_API_KEY = SecretParam(...)' does the same. They
+are one fact stated twice, since the variable is the read, so a name that reaches
+exactly these means the setting. A variable of the same name that reads something
+else is a different thing, and the set stays ambiguous (CON-0001). A variable
+reads the setting when its :ENVIRONMENT-READS holds the name or, with a VIEW, when
+it has a :READS edge to it. Shared by RESOLVE-ONE and by the console's
+RESOLVE-ENTITY, so a document and a `describe' agree on what a name means."
+  (let ((settings (remove-if-not (lambda (e) (eq :setting (entity-type e))) candidates)))
+    (and (= 1 (length settings))
+         (every (lambda (e)
+                  (or (eq e (first settings))
+                      (and (eq :variable (entity-type e))
+                           (or (member (name (first settings)) (getp e :environment-reads)
+                                       :test #'string=)
+                               (and view (reads-setting-p view e (first settings)))))))
+                candidates)
+         (first settings))))
+
 (defun resolve-one (index name &key view)
   "The single entity NAME identifies, and the candidates it was declined over.
 
@@ -2725,26 +2748,13 @@ today stops resolving."
           (t (let ((interfaces (remove-if-not
                                 (lambda (e) (eq :interface (entity-type e)))
                                 candidates))
-                   (settings (remove-if-not
-                              (lambda (e) (eq :setting (entity-type e)))
-                              candidates)))
+                   (setting (setting-with-readers candidates view)))
                (cond ((and (= 1 (length interfaces))
                            (every (lambda (e)
                                     (member (entity-type e) '(:interface :method)))
                                   candidates))
                       (values (first interfaces) nil))
-                     ((and (= 1 (length settings))
-                           (every (lambda (e)
-                                    (or (eq e (first settings))
-                                        (and (eq :variable (entity-type e))
-                                             (or (member (name (first settings))
-                                                         (getp e :environment-reads)
-                                                         :test #'string=)
-                                                 (and view
-                                                      (reads-setting-p
-                                                       view e (first settings)))))))
-                                  candidates))
-                      (values (first settings) nil))
+                     (setting (values setting nil))
                      (t (values nil candidates))))))))
 
 (defun resolve-document-links (view &key workspace-id)
