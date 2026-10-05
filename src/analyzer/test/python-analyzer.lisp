@@ -270,6 +270,29 @@ if __name__ == '__main__':
                     ops)))
        (is (= 1 (length sites)))))))
 
+(defun pa-site-ids (source)
+  "The id of every :CALL-SITE assert the analyzer emits for SOURCE, in the
+operations and not the graph, which would upsert a second assert away."
+  (mapcar (lambda (op) (id (op-entity op)))
+          (remove-if-not (lambda (op)
+                           (and (typep op 'assert-entity-op)
+                                (eq :call-site (entity-type (op-entity op)))))
+                         (analyze-file (make-instance 'loom-analyzer::python-analyzer)
+                                       "app/m.py" source "ws-test"))))
+
+(test calls-of-one-name-on-one-line-joined-by-semicolons-yield-one-site
+  ;; REV-0003 item 6. `;' makes separate statements on one line, and a site's
+  ;; key is its line and name, so PY-CALL-SITES' dedupe within a statement cannot
+  ;; see the second. Each shape below emitted the same id twice before.
+  (call-with-python
+   (lambda ()
+     (dolist (source '("x = f(); y = f()
+" "f(); f()
+" "x = f(); f()
+"))
+       (let ((ids (pa-site-ids source)))
+         (is (= 1 (length ids)) "one site for ~s: ~a" source ids))))))
+
 (test a-variable-and-a-class-own-their-calls-as-sites
   (call-with-python
    (lambda ()

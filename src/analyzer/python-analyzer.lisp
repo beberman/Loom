@@ -481,21 +481,31 @@ writer cannot reconcile two entities of one key (CON-0005)."
 
 (defun py-owned-sites (items statements path system)
   "(owner . site) pairs. A variable's and a class's calls belong to that entity,
-which no :CALLS edge may start from; a statement's belong to the file (D4)."
-  (append
-   (loop for item in items
-         for kind = (case (getf item :kind) (:variable :variable) (:class :class))
-         when kind
-           append (loop for site in (py-call-sites (getf item :calls) path
-                                                   (getf item :start) (getf item :end)
-                                                   kind system)
-                        collect (cons (getf item :name) site)))
-   (loop for statement in statements
-         append (loop for site in (py-call-sites (jlist statement :calls) path
-                                                 (jget statement :start-line)
-                                                 (jget statement :end-line)
-                                                 :module system)
-                      collect (cons nil site)))))
+which no :CALLS edge may start from; a statement's belong to the file (D4).
+
+One pair per site id across all of them. PY-CALL-SITES dedupes inside one item or
+statement, but `x = f(); y = f()' is two statements on one line and so two
+sites of one natural key (:file :start-line :call-name), which the writer cannot
+reconcile (CON-0005). The first owner is kept."
+  (let ((seen (make-hash-table :test #'equal)))
+    (remove-if
+     (lambda (pair)
+       (prog1 (gethash (id (cdr pair)) seen)
+         (setf (gethash (id (cdr pair)) seen) t)))
+     (append
+      (loop for item in items
+            for kind = (case (getf item :kind) (:variable :variable) (:class :class))
+            when kind
+              append (loop for site in (py-call-sites (getf item :calls) path
+                                                      (getf item :start) (getf item :end)
+                                                      kind system)
+                           collect (cons (getf item :name) site)))
+      (loop for statement in statements
+            append (loop for site in (py-call-sites (jlist statement :calls) path
+                                                    (jget statement :start-line)
+                                                    (jget statement :end-line)
+                                                    :module system)
+                         collect (cons nil site)))))))
 
 ;;;; ==================================================================
 ;;;; The analyzer class
