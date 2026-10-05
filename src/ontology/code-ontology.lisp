@@ -314,7 +314,20 @@ recorded.  RESOLVE-SETTINGS derives :SETTING entities from every
                 :documentation "How many environment reads in this file were
 passed over for want of a literal key -- `os.environ.get(name)'.  Absent when
 there were none.  The count is the whole record that they exist, as
-:UNNAMED-TESTS is for a case with no literal title.  DES-0053 D10.")))
+:UNNAMED-TESTS is for a case with no literal title.  DES-0053 D10.")
+               (:codebases list
+                :documentation "One plist per `functions' entry of a
+firebase.json: :SOURCE, :CODEBASE, :RUNTIME, :IGNORE and :DEFAULTED, which lists
+the fields Firebase's documented defaults supplied.  Written by the firebase
+analyzer.  DES-0054 D4.")
+               (:project-aliases list
+                :documentation "A .firebaserc's projects as (alias . project-id)
+pairs.  Written by the firebase analyzer.  DES-0054 D4.")
+               (:unnamed-registrations integer
+                :documentation "How many registration calls in this file were
+passed over for want of a name to give them, `export default onRequest(...)'.
+Absent when there were none.  The count is the whole record that they exist.
+DES-0054 D9.")))
 
 (defentity :package
   :documentation "A namespace: a Lisp package, an npm package, a Python
@@ -665,6 +678,17 @@ entity's own code or, for a variable, by the value that defines it.  DES-0053
 D10, written by the Python analyzer, names only.  RESOLVE-SETTINGS derives a
 :SETTING and a :READS edge from each name on every pass, so this is the input
 and is never rewritten.")
+               (:trigger keyword
+                :documentation "The trigger keyword of the one registration a
+declaration matched, :MULTIPLE when several did, absent when none did.  A flat
+keyword so SEARCH-ENTITIES' property filter selects on it.  Derived by
+RESOLVE-ENTRY-POINTS on every pass and never read back as input.  DES-0054 D6.")
+               (:entry-point list
+                :documentation "One plist per matching registration: :FRAMEWORK,
+:TRIGGER, :CALLEE, :OPTIONS as (label . value) pairs, :LINE and, when a codebase
+covers the file, :CODEBASE, :RUNTIME and :DEPLOYED.  Derived by
+RESOLVE-ENTRY-POINTS on every pass, so a declaration removed on a reindex clears
+it.  DES-0054 D6.")
                ;; What a DEFMACRO's template says a call to it defines
                ;; (DES-0002 R1).  Written once from the source text and never
                ;; rewritten, like :SUPERCLASS-NAMES: the decision about a call
@@ -801,7 +825,18 @@ decorator's resolved module path without reanalysing the source.")
 entity's own code or, for a variable, by the value that defines it.  DES-0053
 D10, written by the Python analyzer, names only.  RESOLVE-SETTINGS derives a
 :SETTING and a :READS edge from each name on every pass, so this is the input
-and is never rewritten.")))
+and is never rewritten.")
+               (:trigger keyword
+                :documentation "The trigger keyword of the one registration a
+declaration matched, :MULTIPLE when several did, absent when none did.  A flat
+keyword so SEARCH-ENTITIES' property filter selects on it.  Derived by
+RESOLVE-ENTRY-POINTS on every pass and never read back as input.  DES-0054 D6.")
+               (:entry-point list
+                :documentation "One plist per matching registration: :FRAMEWORK,
+:TRIGGER, :CALLEE, :OPTIONS as (label . value) pairs, :LINE and, when a codebase
+covers the file, :CODEBASE, :RUNTIME and :DEPLOYED.  Derived by
+RESOLVE-ENTRY-POINTS on every pass, so a declaration removed on a reindex clears
+it.  DES-0054 D6.")))
 
 (defentity :variable
   :documentation "A named binding: a constant, a special variable, a
@@ -853,7 +888,29 @@ indexed repository declared.")
 entity's own code or, for a variable, by the value that defines it.  DES-0053
 D10, written by the Python analyzer, names only.  RESOLVE-SETTINGS derives a
 :SETTING and a :READS edge from each name on every pass, so this is the input
-and is never rewritten.")))
+and is never rewritten.")
+               (:trigger keyword
+                :documentation "The trigger keyword of the one registration a
+declaration matched, :MULTIPLE when several did, absent when none did.  A flat
+keyword so SEARCH-ENTITIES' property filter selects on it.  Derived by
+RESOLVE-ENTRY-POINTS on every pass and never read back as input.  DES-0054 D6.")
+               (:entry-point list
+                :documentation "One plist per matching registration: :FRAMEWORK,
+:TRIGGER, :CALLEE, :OPTIONS as (label . value) pairs, :LINE and, when a codebase
+covers the file, :CODEBASE, :RUNTIME and :DEPLOYED.  Derived by
+RESOLVE-ENTRY-POINTS on every pass, so a declaration removed on a reindex clears
+it.  DES-0054 D6.")
+               (:value-call list
+                :documentation "A module-level binding whose value is one call:
+the callee's :SPECIFIER and :PATH, or :NAME for a local, :LINE, and at most
+:FIRST-STRING, the first positional argument when it is a string literal.  No
+other argument is recorded, so a param's default never reaches the index.
+Written by the analyzer, never rewritten.  DES-0054 D2.")
+               (:registration list
+                :documentation "A module-level call a framework invokes, in the
+decorator plist's shape: :NAME, :SPECIFIER, :PATH, :POSITIONAL, :ARGUMENTS and
+:LINE.  Written by the JavaScript analyzer for a `const x = onRequest(...)' and
+matched by RESOLVE-ENTRY-POINTS beside :DECORATORS.  DES-0054 D9.")))
 
 (defentity :setting
   :documentation "A named configuration value a program reads: an environment
@@ -865,12 +922,18 @@ that two reads of one name meet at one node.  It carries no value and no
 file, because the index never holds a value -- the name is the identity, and
 one process environment serves every reader of it.  What it buys is that
 `find', `describe' and `impact' answer \"what reads SPREADSHEET_ID\" with no new
-command."
+command.
+
+The type is closed (DES-0054 D7): VALIDATE-ENTITY refuses any property it does
+not declare, so a change that tries to store a value on this node fails its
+transaction instead of passing."
   :natural-key (:name)
+  :closed t
   :properties ((:name     string :required t)
                (:sources  list
-                :documentation "Where the value comes from.  :ENVIRONMENT is
-the only member in this stage; a later stage adds :SECRET.")
+                :documentation "Where the value comes from: :ENVIRONMENT, :SECRET
+or :PARAM.  A secret and an environment variable of one name are one node whose
+:SOURCES holds both.  DES-0054 D5.")
                (:language keyword :one-of *source-languages*)
                (:domain   keyword
                 :documentation "Declared for the vocabulary every code entity
@@ -1761,9 +1824,12 @@ manufacture a join neither side wrote, so it stays unmatched and is counted
 (CON-0001, REQ-0027 R3).")
 
 (defrelationship :depends-on
-  :from (:module :package :file) :to (:module :package :file)
+  :from (:module :package :file :function :method :variable)
+  :to (:module :package :file)
   :transitive-impact t :impact-direction :reverse
-  :documentation "Module-level propagation.")
+  :documentation "Module-level propagation, and the edge from a deployed
+function or exported registration to the firebase.json that deploys it, so a
+change to firebase.json reaches what it deploys.  DES-0054 D6.")
 
 (defrelationship :imports
   :from (:file :module) :to (:file :module :package)

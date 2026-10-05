@@ -1028,70 +1028,70 @@ file, and every property with its value, in a stable order."
   '(;; a  plain specializer
     ("(defmethod render ((x hop)) x)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:environment-reads nil) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
        (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:specializers ("hop"))
-       (:start-line 1) (:system nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
+       (:start-line 1) (:system nil) (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
      (x))
     ;; b  a qualifier, which is a natural-key component: it must survive into
     ;;    the :QUALIFIER property AND into the id's third segment
     ("(defmethod render :around ((x hop)) x)"
      (:method "render" "method:sample.lisp:render:around:hop" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:environment-reads nil) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
        (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier :around)
        (:shadowed-definitions nil) (:specializers ("hop"))
-       (:start-line 1) (:system nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
+       (:start-line 1) (:system nil) (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
      (x))
     ;; c  EQL specializer, rendered rather than resolved
     ("(defmethod render ((x (eql :oneof))) x)"
      (:method "render" "method:sample.lisp:render::(eql oneof)" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:environment-reads nil) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
        (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil)
        (:specializers ("(eql oneof)")) (:start-line 1)
-       (:system nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
+       (:system nil) (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
      (x))
     ;; d  a (setf f) name, which DEFINITION-NAME renders rather than flattens
     ("(defmethod (setf render) (v (x hop)) v)"
      (:method "(setf render)" "method:sample.lisp:(setf render)::t,hop"
       "sample.lisp"
       ((:arguments ("v" "x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
-       (:environment-reads nil)
+       (:entry-point nil) (:environment-reads nil)
        (:file "sample.lisp") (:generic-function "(setf render)")
        (:imported-calls nil)
        (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:specializers ("t" "hop")) (:start-line 1) (:system nil)
-       (:unresolved-calls nil) (:unresolved-imported-calls nil)))
+       (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
      (v))
     ;; e  an empty lambda list. NIL is a symbol, so a qualifier test written
     ;;    without the NIL guard reads () as a qualifier, loses the lambda list
     ;;    and mints an entity with the body where its arguments belong.
     ("(defmethod render () 1)"
      (:method "render" "method:sample.lisp:render::" "sample.lisp"
-      ((:arguments nil) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:environment-reads nil) (:file "sample.lisp")
+      ((:arguments nil) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
        (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:specializers nil)
-       (:start-line 1) (:system nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
+       (:start-line 1) (:system nil) (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
      (1))
     ;; f  an & marker stops the specializer walk but not the argument list
     ("(defmethod render ((x hop) &rest args) args)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
       ((:arguments ("x" "&rest" "args")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
-       (:environment-reads nil)
+       (:entry-point nil) (:environment-reads nil)
        (:file "sample.lisp") (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:specializers ("hop"))
-       (:start-line 1) (:system nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
+       (:start-line 1) (:system nil) (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
      (args))
     ;; g  wholly unspecialized, and the only entry with a call in its body
     ("(defmethod render (a b) (helper a b))"
      (:method "render" "method:sample.lisp:render::t,t" "sample.lisp"
       ((:arguments ("a" "b")) (:call-names ("helper")) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
-       (:environment-reads nil)
+       (:entry-point nil) (:environment-reads nil)
        (:file "sample.lisp") (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:specializers ("t" "t"))
-       (:start-line 1) (:system nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
+       (:start-line 1) (:system nil) (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
      ((helper a b)))
     ;; h  case a again, at a path DEFAULT-SYSTEM-FOR-PATH recognises. Every row
     ;;    above is analyzed at "sample.lisp", which has no system, so all seven
@@ -1103,12 +1103,12 @@ file, and every property with its value, in a stable order."
      (:method "render" "method:src/graph/foo.lisp:render::hop"
       "src/graph/foo.lisp"
       ((:arguments ("x")) (:call-names ("helper")) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
-       (:environment-reads nil)
+       (:entry-point nil) (:environment-reads nil)
        (:file "src/graph/foo.lisp") (:generic-function "render")
        (:imported-calls nil)
        (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
        (:specializers ("hop")) (:start-line 1) (:system :graph)
-       (:unresolved-calls nil) (:unresolved-imported-calls nil)))
+       (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
      ((helper x))
      "src/graph/foo.lisp"))
   "Source, expected fingerprint, expected METHOD-BODY, and the path to analyze
