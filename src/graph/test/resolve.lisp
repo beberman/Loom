@@ -1775,8 +1775,9 @@ is no submodule adds nothing"))))
 ;;; fan-outs on `build' are what the design measured. Each test is the failure
 ;;; the tier exists to prevent.
 
-(defun r-py-definition (graph type name file)
-  "A Python :FUNCTION, :METHOD, :CLASS or :VARIABLE named NAME in FILE."
+(defun r-py-definition (graph type name file &key bases)
+  "A Python :FUNCTION, :METHOD, :CLASS or :VARIABLE named NAME in FILE. BASES
+are a class's :SUPERCLASS-NAMES."
   (let ((e (make-instance (ecase type
                             (:function 'function-entity)
                             (:method 'method-entity)
@@ -1785,7 +1786,8 @@ is no submodule adds nothing"))))
                           :name name :origin-file file
                           :properties (properties-table
                                        (list :file file :start-line 1 :end-line 5
-                                             :language :python)))))
+                                             :language :python
+                                             :superclass-names bases)))))
     (add-entity graph e)
     e))
 
@@ -2191,3 +2193,96 @@ of :SPECIFIER, :PATH and :LINE."
     (is (null (called-ids g lisp)))
     (is (null (called-ids g js)))
     (is (null (relationships-to g (id py) :rel-type :calls)))))
+
+;;; ------------------------------------------------------------------
+;;; Inheritance and star imports in the walk (BUG-0071)
+;;; ------------------------------------------------------------------
+
+(defun r-call-through (graph specifier path &optional (file "app/main.py"))
+  "A caller in FILE with one imported call of PATH through SPECIFIER, and the
+resolution pass run."
+  (let ((caller (r-py-caller graph "run" file
+                             :imported-calls (list (list :specifier specifier
+                                                         :path path :line 6)))))
+    (r-py-tree graph file)
+    (r-resolve graph)
+    caller))
+
+(defun r-causes (caller)
+  (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls)))
+
+(test a-classmethod-the-class-inherits-is-the-edge-and-not-a-miss
+  ;; `from models import Foo; Foo.create()' where create is Base's.
+  (let* ((g (make-graph))
+         (create (r-py-definition g :method "Base.create" "app/models.py")))
+    (r-py-definition g :class "Base" "app/models.py")
+    (r-py-definition g :class "Foo" "app/models.py" :bases '("Base"))
+    (r-py-tree g "app/models.py")
+    (let ((caller (r-call-through g "models" '("Foo" "create"))))
+      (is (equal (list (id create)) (called-ids g caller)))
+      (is (null (loom-graph:missing-imported-calls g))))))
+
+(test a-method-a-base-the-tree-does-not-hold-may-define-is-not-reported
+  ;; pydantic's `Model.model_validate'. The base is no definition in the tree,
+  ;; so nothing shows the name absent.
+  (let ((g (make-graph)))
+    (r-py-definition g :class "Foo" "app/models.py" :bases '("BaseModel"))
+    (r-py-tree g "app/models.py")
+    (let ((caller (r-call-through g "models" '("Foo" "model_validate"))))
+      (is (null (called-ids g caller)))
+      (is (equal '(:inherited) (r-causes caller)))
+      (is (null (loom-graph:missing-imported-calls g))))))
+
+(test a-class-with-no-base-but-object-lacking-the-method-is-still-reported
+  ;; The control: the carve-out must not silence the rot `check' exists for.
+  (let ((g (make-graph)))
+    (r-py-definition g :class "Foo" "app/models.py" :bases '("object"))
+    (r-py-tree g "app/models.py")
+    (r-call-through g "models" '("Foo" "gone"))
+    (is (= 1 (length (loom-graph:missing-imported-calls g))))))
+
+(test two-classes-naming-each-other-as-bases-end-in-a-cause
+  (let ((g (make-graph)))
+    (r-py-definition g :class "A" "app/models.py" :bases '("B"))
+    (r-py-definition g :class "B" "app/models.py" :bases '("A"))
+    (r-py-tree g "app/models.py")
+    (let ((caller (r-call-through g "models" '("A" "x"))))
+      (is (equal '(:inherited) (r-causes caller))))))
+
+(test a-name-a-star-import-binds-is-followed-to-its-definition
+  ;; app/pkg/__init__.py: `from .impl import *'.
+  (let* ((g (make-graph))
+         (helper (r-py-definition g :function "helper" "app/pkg/impl.py")))
+    (r-py-file g "app/pkg/__init__.py"
+               :bindings '((:local nil :specifier ".impl" :name "*")))
+    (r-py-tree g "app/pkg/impl.py")
+    (let ((caller (r-call-through g "pkg" '("helper"))))
+      (is (equal (list (id helper)) (called-ids g caller)))
+      (is (null (loom-graph:missing-imported-calls g))))))
+
+(test a-star-import-from-a-module-the-tree-lacks-leaves-the-name-unknowable
+  (let ((g (make-graph)))
+    (r-py-file g "app/pkg/__init__.py"
+               :bindings '((:local nil :specifier "somelib" :name "*")))
+    (let ((caller (r-call-through g "pkg" '("helper"))))
+      (is (equal '(:star-import) (r-causes caller)))
+      (is (null (loom-graph:missing-imported-calls g))))))
+
+(test a-name-no-star-module-holds-is-still-missing
+  ;; Every star read and none defines it, so the claim is true and reported.
+  (let ((g (make-graph)))
+    (r-py-file g "app/pkg/__init__.py"
+               :bindings '((:local nil :specifier ".impl" :name "*")))
+    (r-py-definition g :function "other" "app/pkg/impl.py")
+    (r-py-tree g "app/pkg/impl.py")
+    (r-call-through g "pkg" '("helper"))
+    (is (= 1 (length (loom-graph:missing-imported-calls g))))))
+
+(test two-modules-star-importing-each-other-end-in-a-cause
+  (let ((g (make-graph)))
+    (r-py-file g "app/a.py" :bindings '((:local nil :specifier "b" :name "*")))
+    (r-py-file g "app/b.py" :bindings '((:local nil :specifier "a" :name "*")))
+    (let ((caller (r-call-through g "a" '("x"))))
+      (is (null (called-ids g caller)))
+      (is (null (loom-graph:missing-imported-calls g))
+          "a walk cut off at the limit has not shown the name absent"))))

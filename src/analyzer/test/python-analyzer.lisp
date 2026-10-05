@@ -104,6 +104,21 @@ class Box(Base):
        (is (eq :functions (getp (pa-named g "run") :system))
            "the path convention, as for JavaScript (D12)")))))
 
+(test a-star-import-is-kept-as-a-binding-with-no-local
+  ;; BUG-0071. Without it the index cannot tell a module that star-imports from
+  ;; one that does not, and the walk reports a name the star would have bound.
+  (call-with-python
+   (lambda ()
+     (let ((g (pa-graph "app/pkg/__init__.py" "from .impl import *
+import os
+def f():
+    from .inner import *
+" )))
+       (is (equal '((:local nil :specifier ".impl" :name "*")
+                    (:local "os" :specifier "os" :name nil))
+                  (getp (pa-file g) :import-bindings))
+           "module level only: the star inside f is a function-scope import")))))
+
 (test the-file-contains-each-definition
   (call-with-python
    (lambda ()

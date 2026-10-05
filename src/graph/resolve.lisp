@@ -1704,11 +1704,50 @@ names and the tree no longer holds."
     (when (string= file (concatenate 'string directory "__init__.py"))
       (python-module-file (walk-context-index context) directory (list name)))))
 
+(defvar *walk-nesting* 0
+  "How many walks are open inside another: a base class followed, or a star
+import entered. Bounded by *IMPORTED-CALL-WALK-LIMIT*, because two classes that
+name each other as bases and two modules that star-import each other are both
+legal text that a walk must not follow forever.")
+
+(defun nested-walk (context file names)
+  "(values callee cause) for NAMES walked from FILE inside the walk now open.
+
+Past the limit the answer is :INHERITED, not :MISSING-IN-TARGET: a walk that
+stopped because it was told to has not shown the name is absent."
+  (if (>= *walk-nesting* *imported-call-walk-limit*)
+      (values nil :inherited)
+      (let ((*walk-nesting* (1+ *walk-nesting*)))
+        (walk-attribute-path context file names))))
+
+(defun inherited-method (context class name)
+  "(values callee cause) for the method NAME that CLASS does not define itself.
+
+Python looks it up on the bases, so each base is walked from the class's own
+file in the order written, which is the order of the method resolution for the
+shapes this follows. A class with no base but `object' really lacks it:
+:MISSING-IN-TARGET, the one claim `check' reports. Otherwise the answer is
+:INHERITED unless a base yields the method, because a base the tree does not
+hold (pydantic's BaseModel, an exception) may define anything, and BUG-0071 is
+what reporting that as rot cost. A base is read by the name :SUPERCLASS-NAMES
+holds, which is the name as written except that an import alias is undone; an
+aliased base therefore fails to resolve and ends as :INHERITED, never as a
+wrong edge."
+  (let ((bases (remove "object" (getp class :superclass-names) :test #'equal)))
+    (if (null bases)
+        (values nil :missing-in-target)
+        (dolist (base bases (values nil :inherited))
+          (multiple-value-bind (callee cause)
+              (nested-walk context (getp class :file) (list base name))
+            (declare (ignore cause))
+            (when callee (return (values callee nil))))))))
+
 (defun landing (context definition rest)
   "(values callee cause) for a walk that reached DEFINITION with REST left.
 
 A function or method ends the walk. A class goes to its __init__, which is what
-calling it runs, or to the method REST names. A :VARIABLE is not callable."
+calling it runs, or to the method REST names, or to a base class that defines
+it. A :VARIABLE is not callable."
   (let ((file (getp definition :file))
         (definitions (walk-context-definitions context)))
     (case (entity-type definition)
@@ -1723,17 +1762,48 @@ calling it runs, or to the method REST names. A :VARIABLE is not callable."
               (let ((method (gethash (cons file (format nil "~a.~a" (name definition)
                                                         (first rest)))
                                      definitions)))
-                (if method (values method nil) (values nil :missing-in-target))))
+                (if method
+                    (values method nil)
+                    (inherited-method context definition (first rest)))))
              (t (values nil :not-callable))))
       (t (values nil :not-callable)))))
+
+(defun star-specifiers (context file)
+  "The specifiers of FILE's module-level `from S import *', last written first.
+Python binds in statement order, so a later star wins a name two of them hold."
+  (let ((entity (gethash file (walk-context-files context))))
+    (and entity
+         (reverse (loop for binding in (getp entity :import-bindings)
+                        when (equal "*" (getf binding :name))
+                          collect (getf binding :specifier))))))
+
+(defun walk-stars (context file names)
+  "(values callee cause) for NAMES looked up through FILE's star imports, after
+FILE itself has no definition, binding or submodule of the first name.
+
+Each star module is walked as FILE's own namespace. A hit is the edge. A miss in
+every one of them, with every one read, is the :MISSING-IN-TARGET that is true.
+A star module the tree does not hold, or a walk that ended for any other reason,
+leaves the name unknowable, and that is :STAR-IMPORT, which `check' does not
+report. A file with no star import has nothing to add, and the miss stands."
+  (let ((unknowable nil))
+    (dolist (specifier (star-specifiers context file)
+                       (values nil (if unknowable :star-import :missing-in-target)))
+      (let ((module (walk-resolve-specifier context specifier file)))
+        (if (null module)
+            (setf unknowable t)
+            (multiple-value-bind (callee cause) (nested-walk context module names)
+              (cond (callee (return (values callee nil)))
+                    ((not (eq cause :missing-in-target)) (setf unknowable t)))))))))
 
 (defun walk-attribute-path (context start names)
   "(values callee cause), walking NAMES from the module file START.
 
 Per step, in D6's order: a definition of the name in the file; a module-level
 import binding of it, which is the re-export through ledger/__init__.py; a
-submodule of that name. None of these is a miss. The walk refuses a cycle and
-stops at *IMPORTED-CALL-WALK-LIMIT*, and both end as :MISSING-IN-TARGET."
+submodule of that name; a star import of the file, which may bind any name. None
+of the first three is a miss. The walk refuses a cycle and stops at
+*IMPORTED-CALL-WALK-LIMIT*, and both end as :MISSING-IN-TARGET."
   (let ((file start) (seen '()))
     (dotimes (step *imported-call-walk-limit* (values nil :missing-in-target))
       (declare (ignorable step))
@@ -1779,7 +1849,7 @@ stops at *IMPORTED-CALL-WALK-LIMIT*, and both end as :MISSING-IN-TARGET."
              (if sub
                  (setf file sub names rest)
                  (return-from walk-attribute-path
-                   (values nil :missing-in-target))))))))))
+                   (walk-stars context file names))))))))))
 
 (defun imported-call-target (context importer entry)
   "(values callee cause) for one :IMPORTED-CALLS ENTRY made in the file IMPORTER."

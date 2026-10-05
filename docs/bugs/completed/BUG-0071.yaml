@@ -1,6 +1,6 @@
 id: BUG-0071
 title: check reports a Python call to an inherited class method or a star re-export as a name the module no longer holds
-status: open
+status: closed
 severity: major
 date: 2026-10-05
 refines: [PLAN-0056, DES-0053]

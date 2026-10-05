@@ -351,8 +351,12 @@ set only when nothing parsed or python3 could not run."
                    (remove nil (mapcar (lambda (i) (jget i :source)) imports))
                    :test #'string= :from-end t))
          (bindings (loop for import in imports
+                         ;; A star import binds no :LOCAL but is kept, with :NAME
+                         ;; "*", because the walk needs to know a module may hold
+                         ;; names its own text never wrote (BUG-0071).
                          when (and (equal "module" (jget import :scope))
-                                   (jget import :local))
+                                   (or (jget import :local)
+                                       (equal "*" (jget import :name))))
                            collect (list :local (jget import :local)
                                          :specifier (jget import :specifier)
                                          :name (jget import :name)))))

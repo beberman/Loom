@@ -296,8 +296,9 @@ file has none.")
                (:import-bindings list
                 :documentation "The module-level import bindings of this file,
 one plist per bound name: :LOCAL, :SPECIFIER as written, and :NAME, the name
-taken from that module, or NIL for a whole-module import.  DES-0053 D3, written
-by the Python analyzer.
+taken from that module, or NIL for a whole-module import.  A `from x import *'
+is one plist with :LOCAL NIL and :NAME `*'.  DES-0053 D3, written by the Python
+analyzer.
 
 What RESOLVE-CALLS reads to follow a re-export: ledger/__init__.py's `from
 .posting import post' is the one line that says where `ledger.post' is defined.
@@ -647,7 +648,10 @@ repository.  RESOLVE-CALLS walks each entry from the file its specifier names
                (:unresolved-imported-calls list
                 :documentation "The :IMPORTED-CALLS entries that reached no
 definition, one plist each with its :CAUSE: :EXTERNAL, :UNROOTED,
-:MISSING-IN-TARGET or :NOT-CALLABLE.  Derived by RESOLVE-CALLS on every pass
+:MISSING-IN-TARGET, :NOT-CALLABLE, :INHERITED (a method a base class the walk
+could not read may define) or :STAR-IMPORT (a name a `from x import *' the walk
+could not read may bind).  Only :MISSING-IN-TARGET is reported by `check'.
+Derived by RESOLVE-CALLS on every pass
 rather than accumulated, as :UNRESOLVED-CALLS is.  DES-0053 D6.")
                (:decorators list
                 :documentation "One plist per decorator, in source order:
@@ -781,7 +785,10 @@ repository.  RESOLVE-CALLS walks each entry from the file its specifier names
                (:unresolved-imported-calls list
                 :documentation "The :IMPORTED-CALLS entries that reached no
 definition, one plist each with its :CAUSE: :EXTERNAL, :UNROOTED,
-:MISSING-IN-TARGET or :NOT-CALLABLE.  Derived by RESOLVE-CALLS on every pass
+:MISSING-IN-TARGET, :NOT-CALLABLE, :INHERITED (a method a base class the walk
+could not read may define) or :STAR-IMPORT (a name a `from x import *' the walk
+could not read may bind).  Only :MISSING-IN-TARGET is reported by `check'.
+Derived by RESOLVE-CALLS on every pass
 rather than accumulated, as :UNRESOLVED-CALLS is.  DES-0053 D6.")
                (:decorators list
                 :documentation "One plist per decorator, in source order:
@@ -952,7 +959,10 @@ repository.  RESOLVE-CALLS walks each entry from the file its specifier names
                (:unresolved-imported-calls list
                 :documentation "The :IMPORTED-CALLS entries that reached no
 definition, one plist each with its :CAUSE: :EXTERNAL, :UNROOTED,
-:MISSING-IN-TARGET or :NOT-CALLABLE.  Derived by RESOLVE-CALLS on every pass
+:MISSING-IN-TARGET, :NOT-CALLABLE, :INHERITED (a method a base class the walk
+could not read may define) or :STAR-IMPORT (a name a `from x import *' the walk
+could not read may bind).  Only :MISSING-IN-TARGET is reported by `check'.
+Derived by RESOLVE-CALLS on every pass
 rather than accumulated, as :UNRESOLVED-CALLS is.  DES-0053 D6.")
                (:generated-by string
                 :documentation "For a :DEFINER-CALL site, the macro whose call
@@ -1183,7 +1193,10 @@ repository.  RESOLVE-CALLS walks each entry from the file its specifier names
                (:unresolved-imported-calls list
                 :documentation "The :IMPORTED-CALLS entries that reached no
 definition, one plist each with its :CAUSE: :EXTERNAL, :UNROOTED,
-:MISSING-IN-TARGET or :NOT-CALLABLE.  Derived by RESOLVE-CALLS on every pass
+:MISSING-IN-TARGET, :NOT-CALLABLE, :INHERITED (a method a base class the walk
+could not read may define) or :STAR-IMPORT (a name a `from x import *' the walk
+could not read may bind).  Only :MISSING-IN-TARGET is reported by `check'.
+Derived by RESOLVE-CALLS on every pass
 rather than accumulated, as :UNRESOLVED-CALLS is.  DES-0053 D6.")
                (:environment-reads list
                 :documentation "Names of the environment variables read by this
