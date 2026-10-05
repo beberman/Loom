@@ -53,6 +53,7 @@
    #:resolve-imports
    #:build-module-scope
    #:resolve-python-specifier
+   #:missing-imported-calls
    #:make-python-index
    #:resolve-definitions
    #:resolve-inheritance

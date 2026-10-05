@@ -1623,6 +1623,18 @@ repository has:~%" (length qualified))
           (format t "  ~a -> ~a~%" (getf entry :document) (getf entry :name))
           (dolist (candidate (getf entry :candidates))
             (format t "      ~a~%" candidate)))))
+    ;; DES-0053 D6. Its own heading, after the document references: a call
+    ;; through an import whose module is here and no longer holds the name it
+    ;; calls. The other causes of an unresolved import call are counted gaps and
+    ;; are not reported, since a library or a missing domain is not an error.
+    (let ((missing (missing-imported-calls graph)))
+      (when missing
+        (format t "~&~d imported call~:p naming something the module no longer holds:~%"
+                (length missing))
+        (dolist (entry missing)
+          (format t "  ~a  [~a:~a]  ~a.~{~a~^.~}~%"
+                  (getf entry :caller) (getf entry :file) (getf entry :line)
+                  (getf entry :specifier) (getf entry :path)))))
     ;; DES-0025 D6. A backticked token carrying a path separator and a file
     ;; extension is a claim about a file, not an ordinary word, so one that no
     ;; *watched* repository holds is reported. The qualifier is load-bearing and

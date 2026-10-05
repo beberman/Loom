@@ -702,6 +702,10 @@ references, unread definers, and dropped edges."
           ;; the whole point of the mechanism is that a fourth missing :TO
           ;; entry shows up here instead of taking a repository dark.
           :dropped-edges (mapcar #'dropped-edge-summary (dropped-edges graph))
+          ;; DES-0053 D6. A call through an import to a name its module no
+          ;; longer holds. Empty on a tree with no Python in it, and carried
+          ;; anyway for the reason :DROPPED-EDGES is.
+          :missing-imported-calls (missing-imported-calls graph)
           ;; BUG-0062 F2 / BUG-0063 F4. A document that wrote a vocabulary
           ;; field and spelled the value wrong, which sets nothing and until now
           ;; looked exactly like not writing the field at all.

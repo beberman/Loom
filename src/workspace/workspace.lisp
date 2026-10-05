@@ -1117,6 +1117,7 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
                                                               :unresolved unresolved-imports))
       (submit "resolve-calls"          (resolve-calls graph :workspace-id workspace
                                                             :module-scope module-scope
+                                                            :domains domains
                                                             :external-packages
                                                             (external-package-exports)))
       ;; And RESOLVE-TESTS after RESOLVE-CALLS, which is the second half of why

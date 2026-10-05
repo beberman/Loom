@@ -725,3 +725,50 @@ body: |
     - step 11's lfia list, the scratch-venv clone, and the timing in NOTES
     - `describe sessions_main` and `describe ensure` on Loom show :MODULE
       call sites
+
+  NOTES
+
+  Departures from the plan or the design, recorded where each was found.
+
+  Step 1. The eight DEFMETHOD fingerprints in
+  src/analyzer/test/lisp-analyzer.lisp list every declared :METHOD property in
+  alphabetical order, so declaring five new ones on :METHOD changed all eight
+  expected values. Nothing the analyzer writes moved.
+
+  Step 2. The extractor child's argv and timeout are functions called at each
+  launch and exchange, not the values the plan lists ("a name, a function
+  returning the argv, a timeout"). *JS-PARSE-TIMEOUT-SECONDS* is a DEFPARAMETER
+  somebody may SETF, and a captured number would stop honouring it. The
+  "stopped responding" reason names the child ("javascript extractor stopped
+  responding" is unchanged).
+
+  Step 3. The reply schema is camelCase JSON and is documented in the
+  extract.py header: imports (one entry per bound name, every scope),
+  definitions, variables, statements, envReads, and damage/error/piecesParsed on
+  a SyntaxError. Three choices the design leaves open: a call whose receiver is
+  `super()' is dropped, because a bare member name would fan out across every
+  class defining the method; a plain-name rebinding after an import does not
+  replace the import binding (`try: import json' then `except: json = None');
+  and a call on a builtin receiver (`str.join') is dropped. Splitting on a
+  syntax error never starts a statement at a column-0 else, elif, except or
+  finally, nor at the def under a decorator.
+
+  Step 4. A pyvenv.cfg at the repository root is not a venv prefix, since
+  `python -m venv .' writes one beside the project's own source and excluding
+  the empty prefix would exclude the repository. Python tests use
+  CALL-WITH-PYTHON, a function, and not a macro: a second macro in the test
+  tree would have added a sixth entry to `check''s definer macro list.
+
+  Step 5. The plan says `..x' climbs two directories. DES-0053 D5 says one per
+  dot after the first, which is Python's rule, so `..x' climbs one and `...x'
+  two. A domain's :root is the third import root whenever the plist carries a
+  :root key, and the default domain carries "", so every Python file with a
+  domain table gets the repository root as a third root.
+
+  Step 6. D6 lists four causes. A specifier that is relative and names no
+  module, or names a missing submodule of a package the tree holds, is
+  :UNRESOLVED in the resolver, and the walk writes it as :MISSING-IN-TARGET:
+  it is a module a call still names and the tree no longer holds, which `check'
+  should report. RESOLVE-CALLS gained a :DOMAINS argument, because the walk
+  resolves specifiers in other files under those files' own domains, and
+  RESOLVE-AND-CHECK passes it.

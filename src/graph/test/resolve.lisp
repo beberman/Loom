@@ -1766,3 +1766,280 @@ is no submodule adds nothing"))))
       (is (equal '((:specifier "ledger.refs" :cause :unrooted)
                    (:specifier "pytest" :cause :external))
                  (gethash "functions/tests/test_refs.py" unresolved))))))
+
+;;; ------------------------------------------------------------------
+;;; The :IMPORTED-CALLS tier (DES-0053 D6)
+;;; ------------------------------------------------------------------
+;;;
+;;; The graph is hand-built and shaped like lfia-accounting, whose three wrong
+;;; fan-outs on `build' are what the design measured. Each test is the failure
+;;; the tier exists to prevent.
+
+(defun r-py-definition (graph type name file)
+  "A Python :FUNCTION, :METHOD, :CLASS or :VARIABLE named NAME in FILE."
+  (let ((e (make-instance (ecase type
+                            (:function 'function-entity)
+                            (:method 'method-entity)
+                            (:class 'class-entity)
+                            (:variable 'variable-entity))
+                          :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :python)))))
+    (add-entity graph e)
+    e))
+
+(defun r-py-caller (graph name file &key imported-calls call-names)
+  "A Python function whose calls are all named by IMPORTED-CALLS, each a plist
+of :SPECIFIER, :PATH and :LINE."
+  (let ((e (make-instance 'function-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :python
+                                             :call-names call-names
+                                             :imported-calls imported-calls)))))
+    (add-entity graph e)
+    e))
+
+(defun called-ids (graph entity)
+  (mapcar #'to-id (relationships-from graph (id entity) :rel-type :calls)))
+
+(defun r-resolve (graph &key domains)
+  (apply-transaction graph (resolve-calls graph :domains domains)))
+
+(defun r-py-tree (graph &rest paths)
+  "A :FILE for each of PATHS that has none yet."
+  (dolist (path paths)
+    (unless (find path (entities-of-type graph :file) :key #'name :test #'string=)
+      (r-py-file graph path))))
+
+(test a-call-through-an-external-import-reaches-nothing-and-says-why
+  ;; sheets.py: `from googleapiclient.discovery import build', then build(...).
+  ;; Bare, BUILD fans out to cross_check.build and simplifi.build at 1/2 each,
+  ;; because no tier applies and VISIBLE-CANDIDATES never empties a set. Bound
+  ;; to its import it is external and draws no edge at all.
+  (let* ((g (make-graph))
+         (cross (r-py-definition g :function "build" "functions/cross_check.py"))
+         (simplifi (r-py-definition g :function "build" "functions/simplifi.py"))
+         (bound (r-py-caller g "_service" "functions/sheets.py"
+                             :imported-calls '((:specifier "googleapiclient.discovery"
+                                                :path ("build") :line 11))))
+         (bare (r-py-caller g "_service_bare" "functions/sheets.py"
+                            :call-names '("build"))))
+    (r-py-tree g "functions/sheets.py" "functions/cross_check.py" "functions/simplifi.py")
+    (r-resolve g)
+    (is (null (called-ids g bound)) "no direct edge")
+    (is (null (relationships-from g (id bound) :rel-type :contains))
+        "and no call site, which is what a fan-out would have minted")
+    (is (equal '((:specifier "googleapiclient.discovery" :path ("build") :line 11
+                  :cause :external))
+               (getp bound :unresolved-imported-calls)))
+    ;; The control: the bare spelling of the same call is the defect. Each build
+    ;; is reached exactly once, from the bare caller's call site, so the bound
+    ;; caller added nothing and this could not pass for the wrong reason.
+    (dolist (target (list cross simplifi))
+      (is (= 1 (length (relationships-to g (id target) :rel-type :calls)))
+          "the bare call fans out to both, at 1/2, and the bound one does not"))
+    (is (null (called-ids g bare)) "the bare caller's edges run from its site")))
+
+(test a-module-attribute-call-reaches-the-module-and-not-the-callers-own-file
+  ;; main.py:56 calls sheets.read_tab(...) from seed_accounts_map. main.py also
+  ;; defines its own HTTP function read_tab, which the bare spelling matched on
+  ;; the local tier.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "seed_accounts_map" "functions/main.py"
+                              :imported-calls '((:specifier "sheets"
+                                                 :path ("read_tab") :line 56))))
+         (own (r-py-definition g :function "read_tab" "functions/main.py"))
+         (wanted (r-py-definition g :function "read_tab" "functions/sheets.py")))
+    (r-py-tree g "functions/main.py" "functions/sheets.py")
+    (r-resolve g)
+    (is (equal (list (id wanted)) (called-ids g caller)))
+    (is (null (relationships-to g (id own) :rel-type :calls)))
+    (is (null (getp caller :unresolved-imported-calls)))))
+
+(test a-same-named-function-in-another-file-is-the-edge-and-not-the-removed-caller
+  ;; acceptance.py:250 calls service.watched_repositories() from its own
+  ;; watched_repositories. CALL-TARGETS removes the caller from the candidates,
+  ;; so the bare spelling lost the real edge into tools/test/service.py.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "watched_repositories" "tools/test/acceptance.py"
+                              :imported-calls '((:specifier "service"
+                                                 :path ("watched_repositories")
+                                                 :line 250))))
+         (target (r-py-definition g :function "watched_repositories" "tools/test/service.py")))
+    (r-py-tree g "tools/test/acceptance.py" "tools/test/service.py")
+    (r-resolve g)
+    (is (equal (list (id target)) (called-ids g caller)))))
+
+(test a-call-follows-a-reexport-through-the-package-init
+  ;; ledger/__init__.py writes `from .posting import post'. The definition is
+  ;; one file further than the import names.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "ledger" :path ("post")
+                                                 :line 9))))
+         (post (r-py-definition g :function "post" "functions/ledger/posting.py")))
+    (r-py-tree g "functions/main.py" "functions/ledger/posting.py")
+    (r-py-file g "functions/ledger/__init__.py"
+               :bindings '((:local "post" :specifier ".posting" :name "post")))
+    (r-resolve g)
+    (is (equal (list (id post)) (called-ids g caller)))))
+
+(test calling-a-class-reaches-its-init
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "ledger.refs"
+                                                 :path ("RefIssuer") :line 3)
+                                                (:specifier "ledger.refs"
+                                                 :path ("Plain") :line 4))))
+         (init (r-py-definition g :method "RefIssuer.__init__" "functions/ledger/refs.py")))
+    (r-py-definition g :class "RefIssuer" "functions/ledger/refs.py")
+    (r-py-definition g :class "Plain" "functions/ledger/refs.py")
+    (r-py-tree g "functions/main.py" "functions/ledger/refs.py"
+               "functions/ledger/__init__.py")
+    (r-resolve g)
+    (is (equal (list (id init)) (called-ids g caller)))
+    (is (equal '(:not-callable)
+               (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls)))
+        "a class with no __init__ in its own file is not callable here")))
+
+(test a-class-method-is-reached-through-the-class
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "rules" :path ("Rules" "find")
+                                                 :line 3))))
+         (method (r-py-definition g :method "Rules.find" "functions/rules.py")))
+    (r-py-definition g :class "Rules" "functions/rules.py")
+    (r-py-tree g "functions/main.py" "functions/rules.py")
+    (r-resolve g)
+    (is (equal (list (id method)) (called-ids g caller)))))
+
+(test two-files-re-exporting-each-other-end-as-a-miss-not-a-loop
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "main.py"
+                              :imported-calls '((:specifier "a" :path ("x") :line 1)))))
+    (r-py-file g "main.py")
+    (r-py-file g "a.py" :bindings '((:local "x" :specifier "b" :name "x")))
+    (r-py-file g "b.py" :bindings '((:local "x" :specifier "a" :name "x")))
+    (r-resolve g)
+    (is (null (called-ids g caller)))
+    (is (equal '(:missing-in-target)
+               (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls))))))
+
+(test a-renamed-target-is-missing-in-target-and-is-reported
+  ;; The rot REQ-0078 R2 asks `check' to report: the module is there, and the
+  ;; function a call still names is not.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "sheets" :path ("upsert_tab")
+                                                 :line 7)))))
+    (r-py-definition g :function "upsert" "functions/sheets.py")
+    (r-py-tree g "functions/main.py" "functions/sheets.py")
+    (r-resolve g)
+    (is (null (called-ids g caller)))
+    (is (equal '(:missing-in-target)
+               (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls))))
+    (is (equal '((:caller "run" :file "functions/main.py" :line 7
+                  :specifier "sheets" :path ("upsert_tab")))
+               (loom-graph:missing-imported-calls g)))))
+
+(test an-external-or-unrooted-miss-is-not-reported-as-missing
+  (let ((g (make-graph)))
+    (r-py-caller g "run" "functions/tests/t.py"
+                 :imported-calls '((:specifier "pytest" :path ("raises") :line 1)
+                                   (:specifier "ledger.refs" :path ("x") :line 2)))
+    (r-py-tree g "functions/tests/t.py" "functions/ledger/refs.py"
+               "functions/ledger/__init__.py")
+    (r-resolve g)
+    (is (null (loom-graph:missing-imported-calls g))
+        "a library and a missing domain declaration are counted gaps, not errors")))
+
+(test a-path-ending-at-a-variable-is-not-callable
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "config" :path ("SHEET_NAME")
+                                                 :line 3)))))
+    (r-py-definition g :variable "SHEET_NAME" "functions/config.py")
+    (r-py-tree g "functions/main.py" "functions/config.py")
+    (r-resolve g)
+    (is (null (called-ids g caller)))
+    (is (equal '(:not-callable)
+               (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls))))))
+
+(test a-call-site-bound-to-an-import-resolves-once-through-its-binding
+  ;; DES-0053 D4. CALLER-CALL-NAMES returns nothing for it, so its dotted
+  ;; :CALL-NAME is not also resolved as a bare name.
+  (let* ((g (make-graph))
+         (site (make-call-site-entity
+                :file "tools/test/acceptance.py" :start-line 300
+                :call-name "service.ensure" :referrer-kind :module
+                :language :python
+                :imported-calls '((:specifier "service" :path ("ensure") :line 301))))
+         (target (r-py-definition g :function "ensure" "tools/test/service.py"))
+         (decoy (r-py-definition g :function "service.ensure" "tools/other.py")))
+    (add-entity g site)
+    (r-py-tree g "tools/test/acceptance.py" "tools/test/service.py")
+    (r-resolve g)
+    (is (equal (list (id target)) (called-ids g site)))
+    (is (null (relationships-to g (id decoy) :rel-type :calls))
+        "the dotted spelling is a label, not a name to look up")
+    (is (null (loom-graph::caller-call-names site)))))
+
+(test a-python-member-call-with-no-method-of-that-property-draws-no-edge
+  ;; The third tier of MEMBER-CALL-CANDIDATES is JavaScript's namespace import.
+  ;; Python writes a namespace access as :IMPORTED-CALLS, so `obj.read' with no
+  ;; method `read' anywhere must not reach a plain function named read.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "app/main.py" :call-names '("obj.read")))
+         (plain (r-py-definition g :function "read" "app/io.py")))
+    (r-py-tree g "app/main.py" "app/io.py")
+    (r-resolve g)
+    (is (null (called-ids g caller)))
+    (is (null (relationships-to g (id plain) :rel-type :calls)))
+    (is (equal '("obj.read") (getp caller :unresolved-calls)))))
+
+(test a-python-member-call-reaches-the-methods-of-that-property
+  ;; The second tier stays: `rules.find' with no class named rules reaches the
+  ;; one method called find.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "app/main.py" :call-names '("rules.find")))
+         (method (r-py-definition g :method "Rules.find" "app/rules.py")))
+    (r-py-tree g "app/main.py" "app/rules.py")
+    (r-resolve g)
+    (is (equal (list (id method)) (called-ids g caller)))))
+
+(test a-python-caller-never-reaches-a-lisp-or-javascript-definition
+  ;; CPython code does not call either in process.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "app/main.py" :call-names '("helper")))
+         (lisp (r-function g "helper" "other.lisp"))
+         (js (r-js-function g "helper" "ui/helper.js")))
+    (r-py-tree g "app/main.py")
+    (r-resolve g)
+    (is (null (called-ids g caller)))
+    (is (null (relationships-to g (id lisp) :rel-type :calls)))
+    (is (null (relationships-to g (id js) :rel-type :calls)))
+    (is (equal '("helper") (getp caller :unresolved-calls)))))
+
+(test retracting-a-reexported-file-and-resolving-again-brings-the-edge-back
+  ;; DEC-0003. Retracting posting.py destroys the edge pointing into it; the
+  ;; caller and ledger/__init__.py are untouched, and what they recorded is all
+  ;; the next pass needs.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "ledger" :path ("post")
+                                                 :line 9)))))
+    (r-py-tree g "functions/main.py" "functions/ledger/posting.py")
+    (r-py-file g "functions/ledger/__init__.py"
+               :bindings '((:local "post" :specifier ".posting" :name "post")))
+    (let ((post (r-py-definition g :function "post" "functions/ledger/posting.py")))
+      (r-resolve g)
+      (is (equal (list (id post)) (called-ids g caller)))
+      (apply-transaction g (list (retract-file "functions/ledger/posting.py" nil)))
+      (is (null (called-ids g caller)) "the retract took the edge with its target")
+      (r-py-file g "functions/ledger/posting.py")
+      (let ((again (r-py-definition g :function "post" "functions/ledger/posting.py")))
+        (r-resolve g)
+        (is (equal (list (id again)) (called-ids g caller))
+            "and the next pass derives it again from what the caller recorded")))))

@@ -187,7 +187,12 @@ check:
       (is (= (length (unresolved-references graph))
              (length (getf report :unresolved))))
       (is (= (length (unenforced-rules graph))
-             (length (getf report :unenforced)))))
+             (length (getf report :unenforced))))
+      ;; DES-0053 D6. The key is present and empty on a tree with no Python:
+      ;; GETF alone cannot tell an absent key from an empty one.
+      (is-true (get-properties report '(:missing-imported-calls))
+               "the operation carries the key")
+      (is (null (getf report :missing-imported-calls))))
     (let ((rules (call-operation :rules '(:read)
                                  :repository (repository-name repository))))
       (is (= 1 (length (getf rules :rules))))
