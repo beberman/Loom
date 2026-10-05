@@ -94,20 +94,26 @@ the first (D2). A change to what RESOLVE-CALLS walks is a change to this shape."
                   out)))))))
 
 (defun py-decorator-value (value)
-  "A decorator argument as D3 records it. The child sends a kind because JSON
-null and false both decode to NIL: a literal is its value, None is :NONE, false
-is :FALSE, true is T, bare names are the list of them, and anything else is
-:EXPRESSION."
-  (let ((kind (jget value :kind)))
-    (cond ((equal kind "literal") (jget value :value))
-          ((equal kind "none") :none)
-          ((equal kind "true") t)
-          ((equal kind "false") :false)
-          ((equal kind "names") (jlist value :value))
-          (t :expression))))
+  "A decorator argument as DES-0054 D1 records it. DECODE-ARGUMENT-VALUE is the
+decoder, shared with the JavaScript analyzer."
+  (decode-argument-value value))
+
+(defun py-value-call (variable)
+  "VARIABLE's :VALUE-CALL (DES-0054 D2) as a plist: the callee's :SPECIFIER and
+:PATH, or :NAME for a local, then :LINE and :FIRST-STRING when the child sent
+one. NIL when the variable's value is not a single call."
+  (let ((call (jget variable :value-call)))
+    (when call
+      (append (if (jget call :specifier)
+                  (list :specifier (jget call :specifier) :path (jlist call :path))
+                  (list :name (jget call :name)))
+              (list :line (jget call :line))
+              (when (jget call :first-string)
+                (list :first-string (jget call :first-string)))))))
 
 (defun py-decorators (definition)
-  "One plist per decorator, in source order (D3)."
+  "One plist per decorator, in source order (D3). :POSITIONAL holds the arguments
+written without a keyword, in order, encoded as :ARGUMENTS' values are (DES-0054 D1)."
   (loop for decorator in (jlist definition :decorators)
         collect (append (list :name (jget decorator :name))
                         (when (jget decorator :specifier)
@@ -118,6 +124,8 @@ is :FALSE, true is T, bare names are the list of them, and anything else is
                                     collect (cons (jget argument :name)
                                                   (py-decorator-value
                                                    (jget argument :value))))
+                              :positional (mapcar #'py-decorator-value
+                                                  (jlist decorator :positional))
                               :line (jget decorator :line)))))
 
 ;;;; ==================================================================
@@ -155,6 +163,7 @@ recorded as an unresolved call, so it is dropped here; D9's merge reads it from
                                    (member (jget call :name) accessors :test #'equal)))
                             (jlist definition :calls)))
         :env (jlist definition :env-reads)
+        :value-call (py-value-call definition)
         :unnamed (or (jget definition :unnamed-env-reads) 0)))
 
 (defun py-module-items (reply)
@@ -449,9 +458,12 @@ and :IMPORTED-CALLS on the terms a function does, so RESOLVE-TESTS derives its
       (:test (make-instance 'test-entity :name name :origin-file path
                             :properties (py-test-properties item path system)))
       (:variable (make-instance 'variable-entity :name name :origin-file path
-                                :properties (py-entity-properties
-                                             item path system
-                                             :environment-reads (getf item :env)))))))
+                                :properties (apply #'py-entity-properties
+                                                   item path system
+                                                   :environment-reads (getf item :env)
+                                                   (when (getf item :value-call)
+                                                     (list :value-call
+                                                           (getf item :value-call)))))))))
 
 ;;;; ==================================================================
 ;;;; Call sites (D4)

@@ -285,6 +285,48 @@ OFFSET-LINE hands out."
           (t (1+ (count #\Newline string))))))
 
 ;;;; ------------------------------------------------------------------
+;;;; An argument as a child process encodes it
+;;;;
+;;;; DES-0054 D1. Here rather than in python-analyzer.lisp so the JavaScript
+;;;; analyzer, whose extractor emits the same kinds, calls the one decoder and
+;;;; the two languages cannot read a decorator argument two ways.
+;;;; ------------------------------------------------------------------
+
+(defun decode-argument-value (value)
+  "A decorator or registration argument VALUE, a decoded JSON object with a
+:KIND, as Lisp data. The child sends a kind because JSON null and false both
+decode to NIL. A literal is its bare value, so a string, a number, T, :FALSE or
+:NONE read as they always have. The rest are tagged plists:
+
+  (:NAME \"K\" :BINDING :LOCAL)
+  (:NAME \"K\" :BINDING :IMPORT :SPECIFIER \"m\" :PATH (\"a\" \"b\"))
+  (:DOTTED \"a.B.C\")                      plus :SPECIFIER and :PATH, the first
+                                          name's binding, when it is imported
+  (:LIST element ...)                     each element encoded as above
+
+Anything else is :EXPRESSION, which keeps the gap visible in the record."
+  (flet ((field (key) (cdr (assoc key value)))
+         (binding ()
+           (if (equal "import" (cdr (assoc :binding value)))
+               (list :binding :import :specifier (cdr (assoc :specifier value))
+                     :path (cdr (assoc :path value)))
+               (list :binding :local))))
+    (let ((kind (field :kind)))
+      (cond ((equal kind "literal") (field :value))
+            ((equal kind "none") :none)
+            ((equal kind "true") t)
+            ((equal kind "false") :false)
+            ((equal kind "name")
+             (list* :name (field :value) (binding)))
+            ((equal kind "dotted")
+             (list* :dotted (field :value)
+                    (when (field :specifier)
+                      (list :specifier (field :specifier) :path (field :path)))))
+            ((equal kind "list")
+             (cons :list (mapcar #'decode-argument-value (field :value))))
+            (t :expression)))))
+
+;;;; ------------------------------------------------------------------
 ;;;; The system a path belongs to, for an analyzer with nothing stronger
 ;;;;
 ;;;; DES-0009 R2: this is BUG-0006's fix, relocated from LOOM-GRAPH's
