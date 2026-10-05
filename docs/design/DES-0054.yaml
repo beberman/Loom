@@ -1,0 +1,838 @@
+id: DES-0054
+title: Firebase Functions in Loom - a generic entry-points key and a setting-declarations key in .loom/frameworks.yaml, a narrow analyzer for firebase.json and .firebaserc, and two graph passes that derive triggers, codebases and secret reads
+status: draft
+date: 2026-10-05
+refines: [REQ-0078, DES-0053]
+affects: [read-json-file, propose-domains, parse-frameworks, frameworks-problems,
+          resolve-settings, resolve-one, resolve-document-links, resolve-and-check,
+          walk-attribute-path, walk-stars, validate-entity, repository-files,
+          entry-point-report, structure-report, describe-entity, impact-report,
+          search-entities, prepare-repository, plan-preparation,
+          py-decorators, py-decorator-value, literal_value, Extractor.visit_decorator]
+importance: Major
+tags: [analyzer, python, javascript, firebase, cloud-functions, entry-points,
+       secrets, settings, configuration, frameworks, ontology, req-0078,
+       des-0053, des-0025, des-0047, con-0001, dec-0003]
+summary: |
+  DES-0053 built the Python analyzer and left REQ-0078 R7 to R11 to this
+  design. Today on ~/github/lfia-accounting, sync_zeffy is a :FUNCTION with
+  one :CALLS edge. Nothing says it runs every hour. Nothing says it needs
+  ZEFFY_API_KEY. firebase.json and .firebaserc are unclaimed. `structure`
+  lists the eight deployed functions among 31 definitions with no caller,
+  beside Draft.credit and five pytest fixtures.
+
+  Two inputs DES-0053 said were ready are not. Its S1 says the decorators
+  already hold everything stage 2 needs. They do not hold memory: all five
+  `memory=options.MemoryOption.MB_512` arguments are stored as the marker
+  :EXPRESSION. They hold no positional argument at all. And
+  `SecretParam("ZEFFY_API_KEY")` records the callee but not the string, so
+  the secret's name is nowhere in the index.
+
+  The design makes six choices.
+
+  1. Which decorator means which trigger is declared, not shipped. Two new
+     keys in .loom/frameworks.yaml, `entry-points:` and
+     `setting-declarations:`, match on the resolved module path DES-0053
+     records. They are generic: a Flask route, a Click command or a pytest
+     fixture is declared the same way. Loom keeps the Firebase entries as two
+     template files, and `init` proposes them when it finds firebase.json.
+     DES-0025 D4 stands.
+
+  2. firebase.json and .firebaserc are read on every pass by a narrow
+     analyzer that claims those two file names and nothing else. Their facts
+     become properties on their own :FILE entities. No JSON analyzer is
+     added.
+
+  3. Entry-point facts are derived properties, :TRIGGER and :ENTRY-POINT,
+     written by a new graph pass, RESOLVE-ENTRY-POINTS. No new entity type
+     and no new relationship type. :DEPENDS-ON is widened so a deployed
+     function depends on the firebase.json that deploys it.
+
+  4. A secret or a param is the :SETTING node DES-0053 built, with :SECRET
+     or :PARAM added to :SOURCES. One node per name, shared with the
+     environment variable of that name. :SETTING becomes a closed entity type
+     that rejects any property it does not declare.
+
+  5. A JavaScript functions tree reuses the keys, the analyzer and both
+     passes. Only tools/js/extract.js learns to record a registration call.
+
+  6. REQ-0078 R10 stays deferred. The JavaScript half is clean. The Python
+     half still needs a map from distribution name to module that only the
+     untracked virtual environment holds.
+body: |
+  PROBLEM
+
+  Measured on 2026-10-05 against ~/github/lfia-accounting at 6a610fb plus
+  its author's uncommitted edits, with Loom at d566c36. The tree changed
+  while it was measured. The decorator counts below held across three
+  readings. The :UNROOTED count did not, and both readings are given.
+
+      functions/main.py decorated functions          8
+        @scheduler_fn.on_schedule                    2  sync_zeffy,
+                                                        sync_zeffy_ledger
+        @https_fn.on_request                         6
+      decorators carrying secrets=[ZEFFY_API_KEY]    4
+      decorators carrying timeout_sec=               8
+      decorators carrying memory=                    5  all
+                                                        options.MemoryOption.MB_512
+      module-level SecretParam(...) declarations     1  ZEFFY_API_KEY
+      firebase.json functions entries                1  source functions,
+                                                        codebase default,
+                                                        runtime python312,
+                                                        ignore [venv,
+                                                        .env.example,
+                                                        __pycache__, tests]
+      .firebaserc projects                           1  default -> lfia-accounting
+      pytest fixtures                                5  db, chart, refs, actor,
+                                                        people
+      imports with cause :UNROOTED            25, then 34
+
+  What the index answers today:
+
+      describe sync_zeffy        a :FUNCTION, `-> calls: _sync`, nothing else
+      describe ZEFFY_API_KEY     a :VARIABLE containing one :CALL-SITE,
+                                 firebase_functions.params.SecretParam
+      find ZEFFY_API_KEY         the variable; no :SETTING of that name
+      impact upsert 5            reaches _sync, then backfill and sync_zeffy
+      structure                  31 definitions with no caller; the eight
+                                 deployed functions are listed beside
+                                 Draft.credit, Line.net and the five fixtures
+      status                     firebase.json among 4 unclaimed .json;
+                                 .firebaserc among 2 extensionless files
+
+  So R11's chain already works. A helper's impact ends at the deployed
+  functions, because nothing calls them. A document's `affects:
+  [sync_zeffy]` resolves since BUG-0023, and a renamed function becomes an
+  unresolved reference that `check` reports. What is missing is every fact
+  that says why those functions have no caller.
+
+  Three gaps in what stage 1 records block R7 and R8.
+
+  First, tools/py/extract.py's literal_value stores an attribute chain such as
+  `options.MemoryOption.MB_512` as {kind: expression}. R7 asks for memory.
+  Region is often written the same way, as `options.SupportedRegion.X`.
+
+  Second, visit_decorator records keyword arguments only. A positional
+  argument is counted by record_call and not stored. Firebase's Python SDK
+  takes keywords only. Flask's `@app.route("/x")` and the JavaScript SDK's
+  `onSchedule("every 5 minutes", fn)` do not.
+
+  Third, a call's arguments are stored nowhere except in a decorator. The
+  :CALL-SITE for `SecretParam("ZEFFY_API_KEY")` carries the callee binding
+  and the positional count 1. The string is lost.
+
+  The JavaScript side is further back. On ~/github/front-end, functions/
+  holds three registrations: `export const api =
+  functions.https.onRequest(...)` in index.js, and two `export default
+  functions.https.onRequest(...)` in hello.js and api/simple.js. The index
+  has a :VARIABLE named api with no edges. The two default exports mint no
+  entity. `find onRequest` finds the string only in the text.
+
+  THE FOUR OPEN QUESTIONS, DECIDED
+
+  Q1. GENERIC DECLARATION KEY OR FIREBASE-SPECIFIC STEP: GENERIC.
+
+  A decorator that a framework calls is one shape. Firebase triggers, Flask
+  routes, Click commands, Celery tasks and pytest fixtures all have it.
+  lfia's own tree shows the cost of not declaring it. Five of its 31
+  "no caller" rows are pytest fixtures that pytest calls. A Firebase step
+  would fix eight rows and leave those five.
+
+  DES-0025 D4 says Loom ships knowing fiveam and nothing else, and that a
+  framework's meaning is supplied by the repository. A Firebase step would
+  ship a table of another project's API in Lisp, applied to every tree
+  without the tree saying so. So the table is not in Loom's code.
+
+  It is in Loom's data, as a proposal. Two template files,
+  firebase-functions-python.yaml and firebase-functions-js.yaml, sit under
+  src/workspace/templates/. `init` shows them when it finds a firebase.json,
+  as PROPOSE-DOMAINS shows a domain it read from jsconfig.json. The author
+  copies them into the repository's own .loom/frameworks.yaml. This is
+  DES-0047 D2's pattern: a proposal read from a file and confirmed by a
+  person. A tree with no frameworks.yaml still gets R1 to R6 (REQ-0078 R12).
+
+  Q2. WHERE THE FACTS LIVE: PROPERTIES, PLUS ONE WIDENED EDGE.
+
+  An entry point is a function with extra facts, not a new thing. The facts
+  are derived properties on the :FUNCTION, :METHOD or :VARIABLE that a
+  registration names. :UNRESOLVED-IMPORTED-CALLS is the precedent: a graph
+  pass writes it onto an analyzer's entity on every pass and never reads it
+  back as input.
+
+  Codebase and project facts are properties of the :FILE entities for
+  firebase.json and .firebaserc. DES-0053 S5 proposed :REPOSITORY instead.
+  That is rejected under ALTERNATIVES.
+
+  Secrets and params are :SETTING nodes. DES-0053 kept :SOURCES open for
+  this.
+
+  Q3. HOW firebase.json IS READ: BY A NARROW ANALYZER, ON EVERY PASS.
+
+  A new analyzer claims exactly two file names, firebase.json and
+  .firebaserc. It parses with cl-yaml, as READ-JSON-FILE does. Being an
+  analyzer, it gets path and contents and returns operations, and the
+  monitor reindexes the file when it is saved. No general JSON analyzer is
+  added: Loom's own tree tracks 10 .json files, and none of them carries a
+  meaning Loom could state.
+
+  DES-0047 D2 rejected reading jsconfig.json at resolution time. Its reasons
+  were JSONC comments, `extends` chains, `baseUrl`, and a precedence rule
+  between two sources. Only the first applies here. firebase-tools reads
+  firebase.json with a parser that accepts comments. A file with a comment
+  does not parse under cl-yaml. It is then indexed as a :FILE carrying
+  :ANALYSIS-ERROR, and `status` reports it under `unparsed`. No other file
+  declares codebases, so no precedence rule is needed.
+
+  The import root is the exception, and it follows D2. A codebase's source
+  directory becomes one more signal in PROPOSE-DOMAINS. The author declares
+  the domain, and DES-0053 D5's third root picks it up. Every .py file in
+  lfia is under functions/, so its :UNROOTED imports are expected to
+  resolve once functions/ is declared. S9 measures it. pytest.ini's
+  `pythonpath = .` is the fact that makes that root true for functions/tests. firebase.json
+  says nothing about tests/: it lists them under `ignore`. So the root is
+  proposed and not applied.
+
+  Q4. HOW A JAVASCRIPT TREE REUSES IT: SAME KEYS, SAME ANALYZER, SAME
+  PASSES.
+
+  The passes match a registration plist, never a Python decorator as such.
+  Python writes the plist as :DECORATORS on a function. JavaScript writes the
+  same plist shape as :REGISTRATION on the :VARIABLE that an exported
+  `const` binds. Only extract.js changes (D9).
+
+  DECISIONS
+
+  D1  THE DECORATOR RECORD GROWS THREE VALUE KINDS AND POSITIONAL ARGUMENTS
+
+  literal_value in tools/py/extract.py today has six kinds: literal, none,
+  true, false, names and expression. It gains three, and loses `names`:
+
+      dotted    an attribute chain of plain names, `options.MemoryOption.MB_512`.
+                Recorded as the text written. When its first name is an import
+                binding, the D2 specifier and path are attached as well.
+      name      one bare name, with its binding: local, or import with
+                specifier and path. Replaces the `names` kind's single case.
+      list      a list or tuple whose every element is a literal, a name or a
+                dotted chain, each element encoded as above. `secrets=[KEY]`
+                is a list of one name. `secrets=["KEY"]` is a list of one
+                literal. Both are valid in Firebase's SDK, and today the
+                second is stored as :EXPRESSION.
+
+  Any other expression stays :EXPRESSION. A call inside a decorator argument,
+  `secrets=[SecretParam("K")]`, is :EXPRESSION. The marker stays in the
+  record, so the gap is visible there, and the argument names no setting.
+
+  visit_decorator also records positional arguments, in order, with the same
+  encoding, under :POSITIONAL. py-decorators and py-decorator-value carry both
+  through. Nothing that reads :DECORATORS today depends on the `names` kind:
+  D9 of DES-0053 reads only :NAME.
+
+  The encoding records what the source wrote. A Firebase enum such as
+  MB_512 is not translated into 512MiB. Translating would need a table of
+  Firebase's enums inside Loom, which D4 of DES-0025 rules out.
+
+  D2  A MODULE-LEVEL VARIABLE BOUND TO A CALL RECORDS THE CALL, AND ONE
+  ARGUMENT
+
+  A new analyzer property, :VALUE-CALL, goes on a :VARIABLE whose value is a
+  single call. It holds the callee's binding (:SPECIFIER and :PATH, or :NAME
+  for a local) and :LINE. It holds one argument and no other: :FIRST-STRING,
+  the first positional argument when it is a string literal.
+
+  That one argument is enough for every setting declaration in both SDKs.
+  Python writes SecretParam("K"), StringParam("K", ...) and IntParam("K",
+  ...). JavaScript writes defineSecret("K") and defineString("K", {...}).
+  The restriction is the point. A Firebase param's default value is its
+  second positional argument in Python (`StringParam("K", "dflt")`), a
+  `default=` keyword, or a `default:` key in JavaScript. None of those is a
+  first positional string, so none can reach the index through this
+  property. This is D10 of DES-0053 again: a read records its key and never
+  its default.
+
+  The :CALL-SITE DES-0053 D4 mints for the same call is unchanged. The two
+  overlap in the callee binding. :VALUE-CALL exists so that the settings pass
+  reads one property of one entity, in both languages. The JavaScript
+  analyzer mints no imported-call site to read instead.
+
+  D3  TWO NEW KEYS IN .loom/frameworks.yaml
+
+      entry-points:
+        - framework: firebase-functions
+          trigger: schedule
+          module: firebase_functions.scheduler_fn
+          names: [on_schedule]
+          settings: [secrets]     # keywords whose string literals name settings
+          positional: []          # labels for positional arguments, optional
+        - framework: firebase-functions
+          trigger: https
+          module: firebase_functions.https_fn
+          names: [on_request]
+          settings: [secrets]
+      setting-declarations:
+        - source: secret
+          module: firebase_functions.params
+          names: [SecretParam]
+        - source: param
+          module: firebase_functions.params
+          names: [StringParam, IntParam, BoolParam, ListParam]
+
+  `module` and `names` are required. `trigger` is required in an
+  entry-points entry and `source` in a setting-declarations entry. An entry
+  missing one declares nothing, and FRAMEWORKS-PROBLEMS says so. `framework`
+  is a label for the reader and defaults to the module. `trigger` and
+  `source` are interned as keywords when the file is read. That bounds them
+  by the declarations, as domain names are bounded today (DES-0047 D1).
+
+  A callee named by two entries is reported and applied by neither. Picking
+  one would be a guess between two declarations (CON-0001).
+
+  FRAMEWORKS-PROBLEMS today reports a file as "declares nothing usable" when
+  three of its keys are empty. It counts the two new keys too. Otherwise a
+  file holding only entry-points would be reported as useless.
+
+  The declarations are handed to the passes as data, as the domains are, by
+  RESOLVE-AND-CHECK. loom-graph reads no configuration. An edit to
+  frameworks.yaml takes effect on a reindex and not on a poll, the cost
+  DES-0047 already recorded for this file.
+
+  How a registration matches a declaration depends on the language of the
+  registered entity:
+
+      Python      the specifier and path joined with "." equal the module and
+                  the name joined with ".". `from firebase_functions import
+                  scheduler_fn` then `@scheduler_fn.on_schedule` and `import
+                  firebase_functions.scheduler_fn as s` then `@s.on_schedule`
+                  both give firebase_functions.scheduler_fn.on_schedule.
+                  Python module paths are dotted, so the split point does not
+                  matter.
+      JavaScript  the specifier equals the module exactly, and the path joined
+                  with "." equals the name. A specifier is a path, so it is
+                  never re-split. A default import keeps its `default` step:
+                  `import functions from "firebase-functions"` then
+                  `functions.https.onRequest` matches the name
+                  `default.https.onRequest`. The JavaScript template lists both
+                  spellings the SDK's own examples use. Both are written
+                  forms, so matching both chooses nothing.
+
+  A relative specifier never matches. A decorator a tree defines itself is
+  declared by naming the module the way that tree imports it.
+
+  D4  firebase.json AND .firebaserc: A NARROW ANALYZER, AND ONE DOT-FILE
+  ADMITTED
+
+  src/analyzer/firebase-analyzer.lisp (new) specializes
+  ANALYZER-HANDLES-P on the file name. It claims firebase.json and
+  .firebaserc in any directory outside a vendored path. READ-JSON-FILE's body
+  is split. A new PARSE-JSON-TEXT takes contents. READ-JSON-FILE keeps
+  reading from disk for PROPOSE-DOMAINS. The analyzer calls PARSE-JSON-TEXT,
+  so it never touches the filesystem.
+
+  From firebase.json it writes :CODEBASES on the file's :FILE entity. That is
+  one plist per `functions` entry: :SOURCE, :CODEBASE, :RUNTIME, :IGNORE, and
+  :DEFAULTED, which lists the fields Firebase's documented defaults
+  supplied. Two forms are read. An array is the current form. A single
+  object is the legacy one-codebase form. An absent `source` is "functions"
+  and an absent `codebase` is "default", as the Firebase CLI applies them,
+  and both appear in :DEFAULTED. An absent `runtime` stays absent.
+  front-end's firebase.json has none. Its runtime is in functions/
+  package.json's `engines`, a file this analyzer does not see. The other
+  top-level keys -- hosting, firestore, emulators -- are not read (OUT OF
+  SCOPE).
+
+  From .firebaserc it writes :PROJECT-ALIASES, alias to project id:
+  (("default" . "lfia-accounting")). `targets` is not read.
+
+  .firebaserc begins with a dot. REPOSITORY-FILES and the monitor skip every
+  dot-prefixed name (DES-0018), so no analyzer would ever see it. The walker
+  gains one exception, named exactly: *ADMITTED-DOT-FILES* holds
+  ".firebaserc" and nothing else. Admission is by exact name, never by
+  pattern, so no rule like ".firebase*" could also let in a file that holds
+  values (D7).
+
+  D5  RESOLVE-SETTINGS LEARNS TWO MORE WAYS A NAME BECOMES A SETTING
+
+  The pass keeps everything DES-0053 D10 gave it. It gains two inputs, both
+  derived and neither rewritten (DEC-0003).
+
+  A declaration. A :VARIABLE whose :VALUE-CALL matches a
+  setting-declarations entry, and that carries :FIRST-STRING, names a
+  setting. The setting gains the entry's source, :SECRET or :PARAM, in
+  :SOURCES. The variable gets a :READS edge to it. The variable is the handle
+  code reads the value through: `_sync` writes `ZEFFY_API_KEY.value`. So the
+  edge says the same thing as `SPREADSHEET_ID = os.environ.get(...)` does
+  today. A matching variable with no :FIRST-STRING (`SecretParam(name=...)`,
+  or a name built at runtime) names nothing. It is counted, and `status`
+  prints the count.
+
+  A registration argument. Each name or dotted element of a registration's
+  arguments is resolved: a local name to a module-level :VARIABLE in the same
+  file, an import binding through WALK-ATTRIBUTE-PATH to a :VARIABLE in
+  another file. When that variable names a setting by the rule above, the
+  registered function gets a :READS edge to the setting. A string literal in
+  a list argument whose keyword the entry-points entry lists under a new
+  optional field, `settings:` (Firebase's is `secrets`), names the setting
+  directly. Any other literal names nothing. Resolving a variable is keyword
+  blind on purpose. `timeout_sec=TIMEOUT` where `TIMEOUT = IntParam("T")`
+  also makes the function read T, and Firebase binds that param at deploy
+  for the same reason it binds a secret.
+
+  A secret and an environment variable of one name are one node. Firebase
+  exposes a bound secret or param to the function as an environment variable
+  of that name. So `os.environ["ZEFFY_API_KEY"]` and `SecretParam(
+  "ZEFFY_API_KEY")` read one value, and DES-0053's RISKS section asked this
+  design to decide. :SOURCES then holds both.
+
+  RESOLVE-ONE's setting rule widens to match. Today a set of exactly one
+  :SETTING plus :VARIABLEs, each carrying the name in :ENVIRONMENT-READS,
+  resolves to the setting. The rule becomes: one :SETTING plus :VARIABLEs
+  that each have a :READS edge to it. Every variable the old rule accepted
+  has that edge, so no reference that resolves today stops resolving. A
+  document naming ZEFFY_API_KEY then means the secret. RESOLVE-SETTINGS
+  already runs before RESOLVE-DOCUMENT-LINKS.
+
+  D6  RESOLVE-ENTRY-POINTS: A NEW PASS THAT DERIVES TRIGGERS AND CODEBASES
+
+  The pass runs after RESOLVE-SETTINGS and before RESOLVE-DOCUMENT-LINKS. It
+  reads :DECORATORS on :FUNCTION and :METHOD, :REGISTRATION on :VARIABLE,
+  :CODEBASES on every :FILE, and the entry-points declarations. It writes:
+
+      :TRIGGER      on the entity: the trigger keyword when exactly one
+                    registration matched, :MULTIPLE when several did. A flat
+                    keyword, so that SEARCH-ENTITIES' existing property filter
+                    can select on it.
+      :ENTRY-POINT  on the entity: a list of plists, one per matching
+                    registration: :FRAMEWORK, :TRIGGER, :CALLEE (module.name),
+                    :OPTIONS -- every recorded argument as (label . value),
+                    where a positional argument's label is the declared one or
+                    its index -- :LINE, and, when a codebase covers the file,
+                    :CODEBASE, :RUNTIME and :DEPLOYED.
+      :DEPENDS-ON   an edge from the entity to the firebase.json :FILE whose
+                    codebase deploys it, when :DEPLOYED is :YES. A change to
+                    firebase.json then reaches every function it deploys, and
+                    their callers do not, because they do not depend on it.
+
+  On every pass it writes :TRIGGER and :ENTRY-POINT for every entity carrying
+  :DECORATORS or :REGISTRATION, as a value or as NIL. A declaration removed
+  on a reindex therefore clears its marks with no file reanalyzed (DES-0053
+  S4).
+
+  Which codebase covers a file. A firebase.json at directory P with an entry
+  whose source is S covers every path under P/S/. The longest such prefix
+  wins. Two firebase.json entries covering one file at the same length give
+  no codebase, and the tie is reported. A path that matches the entry's
+  :IGNORE is not covered. An ignore entry is a glob relative to the source.
+  `*` and `?` within one segment, and `**` across segments, are matched. An
+  entry using any other glob syntax is listed as uninterpreted on the
+  codebase and does not exclude anything. Excluding on a pattern Loom cannot
+  read would hide a deployed function. lfia's four entries are all plain
+  names.
+
+  Whether a covered function is deployed. Firebase's Python runtime loads
+  <source>/main.py and deploys each function object bound in that module's
+  namespace that carries a registration (firebase_functions 0.6.0,
+  private/serving.py: inspect.getmembers(module, inspect.isfunction)). So
+  :DEPLOYED is:
+
+      :YES      the function is defined in <source>/main.py, or main.py has a
+                module-level import binding that WALK-ATTRIBUTE-PATH resolves
+                to it, or a star import that WALK-STARS resolves to it.
+      :NO       main.py is indexed, the function is reached by none of those,
+                and main.py has no star import that failed to resolve. Or the
+                file is ignored. A registered function that is never deployed
+                is a real defect -- an import forgotten in main.py -- and
+                `structure` shows it.
+      :UNKNOWN  anything else, including every JavaScript entry point in this
+                design (D9).
+
+  Note that `import handlers` in main.py does not deploy handlers.f.
+  getmembers sees a module object, not a function. Only a name bound in main
+  counts.
+
+  A registration that matches no declaration marks nothing. A function with
+  no codebase still gets :TRIGGER and :ENTRY-POINT, so a Flask tree with no
+  firebase.json uses the same key.
+
+  D7  THE INDEX CANNOT HOLD A SECRET'S OR A PARAM'S VALUE
+
+  R8 says "must be unable to hold one". Firebase keeps a value in exactly six
+  places: Secret Manager, functions/.secret.local, .env, .env.<project or
+  alias>, .env.local and .runtimeconfig.json. Four mechanisms keep each one
+  out.
+
+      1. Loom calls no secret store and reads no process environment for a
+         value. The Python child runs as `python3 -I -B`, and extract.py
+         never reads os.environ.
+      2. Every one of those files begins with a dot. REPOSITORY-FILES skips
+         them by DES-0018's rule. D4's admission names ".firebaserc" exactly
+         and nothing else.
+      3. A declaration contributes one argument, the first positional string,
+         which is the name in both SDKs (D2). A default is never a first
+         positional string.
+      4. :SETTING becomes a closed entity type. VALIDATE-ENTITY today checks
+         only the properties a type declares. It ignores any extra key on an
+         assert, and only UPDATE-PROPERTIES refuses an undeclared one. A new
+         defentity option, :CLOSED T, makes VALIDATE-ENTITY reject any key
+         the type does not declare. :SETTING declares :NAME, :SOURCES,
+         :LANGUAGE and :DOMAIN. A later change that tries to store a value on
+         the node fails its transaction rather than passing.
+
+  A test plants a sentinel string in functions/.env, functions/.secret.local
+  and functions/.runtimeconfig.json of a fixture tree, indexes it, and
+  asserts that no property of any entity contains the sentinel.
+
+  Whatever literal a source file writes is still held where DES-0053 holds
+  it, because `context` already serves source text as written. A key
+  hard-coded into main.py is a leak in the repository. Loom did not cause it
+  and cannot prevent it.
+
+  D8  WHAT THE READER SEES
+
+      describe sync_zeffy   one line under the signature:
+                              entry point: firebase-functions schedule
+                              schedule="every 1 hours" timeout_sec=540
+                              memory=options.MemoryOption.MB_512
+                              codebase default (python312), deployed
+                            and the edge group `-> reads: ZEFFY_API_KEY`.
+      impact <x>            a row whose entity carries :TRIGGER is suffixed
+                            `[entry: schedule]`. The chain is not cut off
+                            there: nothing calls an entry point, so traversal
+                            already ends at one.
+      structure             a new band, "entry points by trigger", grouped by
+                            trigger with :DEPLOYED shown. The no-caller band
+                            leaves out every entity carrying :TRIGGER. On lfia
+                            it falls from 31 to 23, and to 18 once
+                            pytest.fixture is declared as well.
+      find                  `find [<name>] --trigger <kind>` passes
+                            (:TRIGGER <kind>) as a property filter. With the
+                            flag, the name may be empty: `find --trigger
+                            schedule` lists sync_zeffy and sync_zeffy_ledger.
+                            The REST and MCP find operations gain the same
+                            argument.
+      status                a `deploys` line naming each codebase with its
+                            source, runtime and entry-point count, and the
+                            project aliases. When firebase.json declares
+                            codebases and frameworks.yaml has no entry-points
+                            key, the line says so and names `init` as the
+                            source of a proposal. That makes the missing
+                            declaration a recorded gap rather than a silent
+                            empty band (CON-0001).
+
+  D9  JAVASCRIPT: extract.js RECORDS A REGISTRATION AND A VALUE CALL
+
+  For a module-level `const NAME = <call>(...)`, exported or not, extract.js
+  writes the call to the :VARIABLE NAME:
+
+      :REGISTRATION  when an argument of the call is a function expression or
+                     an arrow. The decorator plist shape: :NAME as written,
+                     :SPECIFIER and :PATH from the import binding, :POSITIONAL,
+                     and :ARGUMENTS read from an object-literal argument's keys
+                     with D1's encoding. `onRequest({timeoutSeconds: 60,
+                     secrets: [apiKey]}, handler)` gives timeoutSeconds and
+                     secrets.
+      :VALUE-CALL    otherwise, with D2's single :FIRST-STRING.
+
+  `export default <registration call>` mints no entity today. Its deployed
+  name is decided in another file, by whatever re-exports it: front-end's
+  index.js writes `import helloWorld from "./hello.js"` then `export {
+  helloWorld }`. This design counts such a call as :UNNAMED-REGISTRATIONS on
+  the :FILE and mints nothing. Naming it would mean following re-exports to
+  the codebase's entry module.
+
+  :DEPLOYED is :UNKNOWN for every JavaScript entry point. The entry module is
+  package.json's `main`, which no analyzer reads, and for TypeScript it is a
+  compiled file the repository ignores. Defaulting to index.js would be a
+  guess.
+
+  On front-end this gives api the https trigger, covered by codebase default
+  with no runtime, and two unnamed registrations, in hello.js and
+  api/simple.js.
+
+  ALTERNATIVES CONSIDERED
+
+  A Firebase-specific analyzer step with the trigger table in Lisp. Rejected
+  under Q1. It ships sooner by the size of one template file. It breaks
+  DES-0025 D4. And it leaves lfia's five fixtures in the no-caller list. If
+  D4 is ever revisited, that is the reason to revisit, not this design.
+
+  Shipping the Firebase entries as a default applied to every tree, which
+  REQ-0078's third open question offered. Rejected for the same reason. A
+  default nobody wrote cannot be told apart from a declaration somebody did.
+
+  Reading firebase.json only at `init` and seeding frameworks.yaml with the
+  codebases, as DES-0047 D2 does for aliases. Rejected. D2 seeded because a
+  live read of tsconfig needs JSONC, `extends` and a precedence rule. None of
+  those applies to codebases. A seeded copy would go stale silently when a
+  codebase is added. R9 also asks for the project id as a fact of the tree,
+  and a seeded copy is a fact of the seeding.
+
+  A general JSON analyzer. Rejected, as DES-0053's fourth open-question
+  answer argued. It would claim 10 files in Loom, 26 in front-end and 4 in
+  lfia, and turn configuration into entities with no meaning attached.
+
+  A :REPOSITORY entity for project and codebase facts (DES-0053 S5). Rejected.
+  An analyzer sees one file and does not know the repository's root path,
+  which is :REPOSITORY's natural key. A node minted by a pass would need its
+  own sweep. A tree with two firebase.json files would put two projects on
+  one node. Properties on the :FILE are retracted with that file by
+  RETRACT-FILE for free.
+
+  A :CODEBASE or :ENTRY-POINT entity type, and a :DEPLOYS relationship.
+  Rejected. None of R7 to R11 asks a question that properties, one property
+  filter and a widened :DEPENDS-ON cannot answer. An :ENTRY-POINT node
+  between a function and its callers would add a hop to every impact path,
+  the reason DES-0014 refused to interpose its :CALL-SITE.
+
+  Recording every argument of every call, for REQ-0041. Still deferred, as
+  DES-0053 deferred it. D2 records one argument of one kind of call, which
+  chooses no storage for Lisp. It also keeps a param's default out of the
+  index, which recording every argument would not.
+
+  A :DECLARES relationship from the SecretParam variable to its setting,
+  instead of :READS. Rejected. The variable is how code reads the value, and
+  :READS already has the impact direction wanted. A second edge type would
+  split "what needs ZEFFY_API_KEY" across two edge groups for no question
+  that tells them apart.
+
+  Applying codebase source directories as Python import roots at index time.
+  Rejected under Q3. firebase.json's `ignore` excludes tests/, so the file
+  argues against the root for the very files that need it. pytest.ini is
+  what makes the root true there. A proposal the author confirms is the
+  honest form.
+
+  Treating `.value` reads, `ZEFFY_API_KEY.value` in _sync, as :READS from
+  _sync. Deferred. Attribute reads are not recorded at all, and the
+  functions that must be redeployed when the secret rotates are the four
+  whose decorators bind it. Those four are answered without it.
+
+  REQUIREMENTS
+
+  R1  literal_value encodes `dotted`, `name` (with binding) and `list` as D1
+      describes, and visit_decorator records positional arguments under
+      :POSITIONAL. On lfia, all five memory= arguments read
+      options.MemoryOption.MB_512, and no decorator argument in main.py is
+      :EXPRESSION.
+
+  R2  A module-level :VARIABLE whose value is one call carries :VALUE-CALL
+      with the callee binding, :LINE and at most :FIRST-STRING (D2). A test
+      shows `StringParam("K", "dflt")` and `StringParam("K", default="dflt")`
+      both record K and neither records dflt.
+
+  R3  parse-frameworks reads `entry-points:` and `setting-declarations:` as
+      D3 describes, including the optional `positional:` and `settings:`
+      fields. FRAMEWORKS-PROBLEMS reports a missing required field and a
+      callee named twice, and counts the new keys before calling a file
+      useless. RESOLVE-AND-CHECK hands both lists to the passes.
+
+  R4  The firebase analyzer claims firebase.json and .firebaserc by name,
+      writes :CODEBASES and :PROJECT-ALIASES (D4), and records a file that
+      does not parse as strict JSON as :ANALYSIS-ERROR. READ-JSON-FILE is
+      split around PARSE-JSON-TEXT. *ADMITTED-DOT-FILES* holds ".firebaserc"
+      alone, and both REPOSITORY-FILES and the monitor consult it.
+
+  R5  RESOLVE-SETTINGS mints settings from declarations and draws :READS from
+      declaring variables and from registered functions (D5). A secret and an
+      environment variable of one name are one :SETTING whose :SOURCES holds
+      both. RESOLVE-ONE resolves a set of one :SETTING plus variables with a
+      :READS edge to it. Nothing that resolves today stops resolving.
+
+  R6  RESOLVE-ENTRY-POINTS writes :TRIGGER and :ENTRY-POINT, covers files by
+      codebase prefix and ignore globs, computes :DEPLOYED for Python as D6
+      states, and draws :DEPENDS-ON from each deployed entity to its
+      firebase.json :FILE. It re-derives everything each pass and clears the
+      marks of an entity no declaration matches.
+
+  R7  The ontology: :DEPENDS-ON's :FROM gains :FUNCTION, :METHOD and
+      :VARIABLE, an endpoint widening. :SETTING's :SOURCES vocabulary gains
+      :SECRET and :PARAM. defentity gains :CLOSED, and :SETTING uses it.
+      Properties declared: :VALUE-CALL and :REGISTRATION on :VARIABLE;
+      :TRIGGER and :ENTRY-POINT on :FUNCTION, :METHOD and :VARIABLE;
+      :CODEBASES, :PROJECT-ALIASES and :UNNAMED-REGISTRATIONS on :FILE. No
+      entity type and no relationship type is added.
+
+  R8  The fixture of D7: a sentinel in .env, .secret.local and
+      .runtimeconfig.json is absent from every property of every entity
+      after indexing. An assert of a :SETTING carrying an undeclared key is
+      refused.
+
+  R9  describe, impact, structure, find --trigger and status show what D8
+      lists. The no-caller band excludes entities carrying :TRIGGER. find's
+      REST and MCP operations accept `trigger`.
+
+  R10 `init` proposes, and never writes: the template for the codebase's
+      language when firebase.json declares a codebase, chosen by `runtime`'s
+      prefix (python or nodejs), or by main.py or package.json in the source
+      directory when runtime is absent; and a domain at each Python
+      codebase's source directory, through PROPOSE-DOMAINS. An
+      already-prepared tree also receives the proposals. Today
+      PREPARE-REPOSITORY returns only the manifest for one, and lfia is
+      prepared.
+
+  R11 REQ-0078 R11's three clauses each get a test. A document's `affects:
+      [sync_zeffy]` becomes an edge. Renaming sync_zeffy makes that reference
+      unresolved in `check`. `affects: [read_tab]`, which main.py and
+      sheets.py both define, is reported ambiguous with both ids, and
+      `function:functions/main.py:read_tab` resolves to the deployed one.
+
+  R12 extract.js and js-analyzer.lisp write :REGISTRATION, :VALUE-CALL and
+      :UNNAMED-REGISTRATIONS as D9 describes. The passes need no
+      language-specific code beyond D3's matching rule.
+
+  R13 Acceptance on ~/github/lfia-accounting, after its author has copied the
+      proposed template into .loom/frameworks.yaml and declared the functions
+      domain:
+
+          find --trigger schedule    sync_zeffy, sync_zeffy_ledger
+          describe sync_zeffy        entry point, schedule "every 1 hours",
+                                     codebase default (python312), deployed;
+                                     -> reads: ZEFFY_API_KEY
+          impact ZEFFY_API_KEY       the four functions whose decorators bind
+                                     it, and the variable
+          impact firebase.json       the eight deployed functions
+          impact on Rules.find       unchanged from DES-0053 R16, with
+                                     [entry: ...] on the last rows
+          status                     a deploys line with codebase default and
+                                     project lfia-accounting; unrooted 0;
+                                     firebase.json and .firebaserc no longer
+                                     unclaimed
+          check                      no new violation; unresolved does not rise
+
+      And on ~/github/front-end: api carries the https trigger under codebase
+      default, and hello.js and api/simple.js each count one unnamed
+      registration. And on Loom's own tree: nothing changes except that the
+      .firebaserc admission is present. Loom has no firebase.json, and its
+      structure and status read as before.
+
+  SEQUENCING FOR THE PLAN
+
+  Each step is testable on its own, and no step depends on a later one.
+
+      S1  R1, R2. Extractor and Python analyzer only. The rest of the system
+          ignores the new fields until S5 reads them.
+      S2  R7. Ontology: properties, the widened :DEPENDS-ON, :CLOSED and the
+          closed :SETTING. R8's refusal test lands here.
+      S3  R3. frameworks.yaml keys, problems, and plumbing into
+          RESOLVE-AND-CHECK.
+      S4  R4. The firebase analyzer and the .firebaserc admission.
+      S5  R5. RESOLVE-SETTINGS and RESOLVE-ONE. R8's sentinel test lands
+          here, once settings are minted from declarations.
+      S6  R6. RESOLVE-ENTRY-POINTS.
+      S7  R9. The reader's surfaces.
+      S8  R10. init's proposals and the two template files.
+      S9  R11, R13 on lfia and Loom. Writing lfia's frameworks.yaml is a
+          change to a tree Loom does not own and needs its author's consent
+          (REQ-0021 R16).
+      S10 R12 and the front-end half of R13. Last, because it changes the
+          JavaScript extractor every front-end answer depends on. It can be
+          split into its own plan without touching S1 to S9.
+
+  DEFERRED, ON THE RECORD
+
+  - REQ-0078 R10, dependency names. The JavaScript half is clean: an npm
+    dependency's name is the bare prefix of the specifier that imports it, so
+    a dependency could be a :MODULE node with :IMPORTS edges from each file
+    whose :EXTERNAL specifier it prefixes. The Python half is not. Two of
+    lfia's six requirement names install a module spelled differently
+    (google-auth installs google.auth; google-api-python-client installs
+    googleapiclient). And lfia's tests import google.cloud.firestore, which
+    no requirement lists, since firebase-admin pulls it in. The map is in
+    *.dist-info metadata inside the virtual environment. The environment is
+    untracked, so an answer read from it would differ between two checkouts
+    of one commit. Matching PEP 503-normalized names to modules would be a
+    guess that happens to be right four times in six (CON-0001). R10 wants
+    its own design, and the :MODULE shape above is that design's starting
+    point.
+  - `options.set_global_options(...)`, a module-level call that sets defaults
+    for every function in the file. Its :CALL-SITE exists. Its arguments are
+    not merged into each entry point's :OPTIONS, so an option set only
+    globally is absent from describe.
+  - Hosting rewrites in firebase.json, which map a URL to a function by name.
+    front-end's routes /api/** to api and /helloWorld to helloWorld. That is
+    a route claim in DES-0025's sense. It joins on a function name rather
+    than a path literal, so it needs its own design.
+  - Deployed membership for JavaScript (D9), and naming default-exported
+    registrations.
+  - `.value` reads of a param handle.
+  - A decorator argument that is a call, `secrets=[SecretParam("K")]`. It is
+    :EXPRESSION and names no setting.
+  - Translating Firebase enums such as MemoryOption.MB_512.
+  - pytest.ini's `pythonpath` as a domain-proposal signal. It is the true
+    source of lfia's tests root, and is a one-line addition to
+    PROPOSE-DOMAINS once wanted.
+  - Pytest fixture injection, the edge from a fixture to the tests that name
+    it as a parameter (DES-0053 D8). Declaring `pytest.fixture` under
+    entry-points removes fixtures from the no-caller band. It does not
+    connect them to tests.
+
+  OUT OF SCOPE
+
+  REQ-0078's own exclusions hold. Loom reads source, not the cloud. It can
+  say a function is declared with a schedule. It cannot say Cloud Scheduler
+  has the job, which secret version is bound, or that the deploy succeeded.
+  firestore.rules, firestore.indexes.json and the emulators are not read.
+
+  CONSEQUENCES
+
+  Code that changes. tools/py/extract.py's literal_value and
+  visit_decorator, and a :VALUE-CALL writer. python-analyzer.lisp's
+  py-decorators and py-decorator-value. frameworks.lisp's parse-frameworks
+  and frameworks-problems, and READ-JSON-FILE's split. A new
+  firebase-analyzer.lisp. REPOSITORY-FILES and the monitor, for one admitted
+  name. resolve.lisp's RESOLVE-SETTINGS and RESOLVE-ONE, and a new
+  RESOLVE-ENTRY-POINTS. RESOLVE-AND-CHECK's sequence gains one pass and its
+  docstring's list gains one name. root-ontology.lisp's VALIDATE-ENTITY and
+  defentity. code-ontology.lisp as R7. loom-knowledge's DESCRIBE-ENTITY,
+  IMPACT-REPORT, ENTRY-POINT-REPORT and STRUCTURE-REPORT. The console's find
+  and status. The serve find operation. init.lisp's PREPARE-REPOSITORY and
+  PLAN-PREPARATION, and PROPOSE-DOMAINS. Two template files. In S10,
+  extract.js and js-analyzer.lisp.
+
+  No .asd gains a dependency. The firebase analyzer lives in loom-analyzer,
+  which already has cl-yaml. The new pass lives in loom-graph and receives
+  its declarations as data. loom-rest and loom-mcp change only through the
+  registry's find operation. The peer property of CLAUDE.md's Layering is
+  untouched.
+
+  Behaviour that changes on trees already watched. Five changes, each named
+  so a reviewer can object to one:
+
+      1. `structure`'s no-caller band drops every entity carrying :TRIGGER.
+         Its count changes on any tree that declares entry points. It does
+         not change on a tree that declares none, so Loom's, game-server's
+         and front-end's before S10 are unaffected.
+      2. The walker admits .firebaserc. On lfia and front-end, `status`'s
+         unclaimed line loses it, and firebase.json leaves the .json count.
+      3. RESOLVE-ONE's setting rule is keyed on :READS edges rather than on
+         :ENVIRONMENT-READS. That is a superset on every tree today. It is
+         the one place a document-link resolution depends on an earlier
+         pass's edges rather than on properties.
+      4. :SETTING asserts carrying an unknown key now fail. No code writes
+         one today.
+      5. The stored :DECORATORS encoding changes: the `names` kind becomes
+         `name` and `list`, and :POSITIONAL is added. Every Python file is
+         reanalyzed on the first pass after S1, which any analyzer change
+         already causes. A caller outside Loom reading :DECORATORS over REST
+         would see the new shape.
+
+  What gets simpler. "What does this function need to run" is `describe`.
+  "What must be redeployed" is `impact` on a setting or on firebase.json. A
+  Flask, Click or pytest tree gets entry points by writing three lines of
+  YAML and no Loom change.
+
+  The obligation every later change carries. A registration is matched on
+  the module path the source binds, never on the spelling of the decorator.
+  A new framework is declared in the repository and proposed from a
+  template. It is never added to a Lisp table. And any later argument
+  recording must keep D7's line: the index takes a setting's name from a
+  declaration and never anything after it.
+
+  RISKS
+
+  The template's callee list is Firebase's API at firebase_functions 0.6.0,
+  read from lfia's own environment, and firebase-functions 6.x for
+  JavaScript. A trigger the SDK adds later is absent from a repository's
+  copied declaration until its author adds it. The miss is visible: the
+  function stays in the no-caller band.
+
+  The file name firebase.json is claimed wherever it appears. A vendored copy
+  under a directory VENDORED-PATH-P does not already exclude would add a
+  codebase that does not deploy. Neither lfia nor front-end has one.
