@@ -1131,3 +1131,60 @@ body: |
   `git status --short' on lfia was byte-identical before and after. The plan's
   expected Loom figure, unclaimed +1 for the new .yaml, appears once the file is
   tracked, since the count comes from `git ls-files'.
+
+  Step 9 (R11 and acceptance). R11's three tests are in
+  src/workspace/test/workspace.lisp and pass without DES-0054, as the plan says;
+  making RESOLVE-ONE return its first candidate fails the third. Two names were
+  changed so the DES-0014 :CALL-SITE ceiling holds at 512 without raising it: the
+  suite read 515 once step 9's tests were in, and the census named the cause.
+  PYTHON-AVAILABLE-P exists in two test packages, so each call from the workspace
+  suite counted as an ambiguous site; the tests this plan added now call
+  PYTHON-CHILD-STARTABLE-P, one call instead of eleven. DECODE-ARGUMENT-VALUE's
+  local FIELD collided with loom-mcp's FIELD and is SLOT-OF. The census after:
+  41 ambiguous occurrences (49 before the two changes), the macro populations
+  unchanged. Both changes edit tests and a local name this plan added; no earlier
+  test was rewritten for any other reason.
+
+  Measured, with the baseline taken by running commit 5eeb077's code over the same
+  trees (git worktree, removed after) and this branch's code over them, lfia at
+  6562148 plus its author's uncommitted edits, which had moved again:
+
+                                  baseline     now      the plan predicted
+    lfia files                      181         183     +2 (firebase.json, .firebaserc)
+    lfia entities                  1862        1865
+    lfia unclaimed                   25          23     -2
+      .json                           6           5     6 to 5 (was 4 to 3)
+      (none)                          3           2     3 to 2 (was 2 to 1)
+    lfia structure no-caller        128         117     fall by the triggered
+                                                        entities: 11 (plan: 8)
+    lfia trigger band                 -     7 https, 4 schedule, all deployed yes
+    lfia deploys line                 -     codebase default at functions
+                                            (python312), 11 entry points;
+                                            project default=lfia-accounting
+    lfia domains line         `declares nothing usable'   gone
+    lfia unrooted                     0           0     0
+    lfia check                  0 / 0 / 0   0 / 0 / 0    no new violation
+    lfia `git status --short'   byte-identical before and after both runs
+    Loom files                      488         488
+    Loom structure no-caller        186         186     unchanged
+    Loom deploys line                 -           -     none, no firebase.json
+    Loom find --trigger schedule      -     nothing
+    Loom check                  0 / 8 / 7   0 / 8 / 7
+    front-end files                 945         947     +2
+    front-end unclaimed             118         116     firebase.json and
+                                                        .firebaserc leave it
+    front-end deploys                 -     codebase default at functions, 0 entry
+                                            points; project aigames-216202;
+                                            `has no entry-points ... init proposes
+                                            them'
+    front-end api                   variable  variable, no trigger, as planned
+    front-end check                  11         11      unresolved refs 120 / 120
+
+  The functions domain is declared in lfia's .loom/frameworks.yaml by us, and
+  `unrooted' was 0 before this plan's code as well as after: the old
+  PARSE-FRAMEWORKS read the domains key and only status' line called the file
+  useless. The plan's `unrooted 34, domain not declared' branch does not arise.
+  impact ZEFFY_API_KEY 3 lists the four functions that bind it (sync_zeffy,
+  sync_zeffy_ledger, backfill, backfill_ledger), the declaring variable and
+  main.py; impact firebase.json 3 lists the 11 deployed functions; impact
+  Rules.find 5 carries `[entry: ...]' on its last rows.

@@ -305,25 +305,25 @@ decode to NIL. A literal is its bare value, so a string, a number, T, :FALSE or
   (:LIST element ...)                     each element encoded as above
 
 Anything else is :EXPRESSION, which keeps the gap visible in the record."
-  (flet ((field (key) (cdr (assoc key value)))
+  (flet ((slot-of (key) (cdr (assoc key value)))
          (binding ()
            (if (equal "import" (cdr (assoc :binding value)))
                (list :binding :import :specifier (cdr (assoc :specifier value))
                      :path (cdr (assoc :path value)))
                (list :binding :local))))
-    (let ((kind (field :kind)))
-      (cond ((equal kind "literal") (field :value))
+    (let ((kind (slot-of :kind)))
+      (cond ((equal kind "literal") (slot-of :value))
             ((equal kind "none") :none)
             ((equal kind "true") t)
             ((equal kind "false") :false)
             ((equal kind "name")
-             (list* :name (field :value) (binding)))
+             (list* :name (slot-of :value) (binding)))
             ((equal kind "dotted")
-             (list* :dotted (field :value)
-                    (when (field :specifier)
-                      (list :specifier (field :specifier) :path (field :path)))))
+             (list* :dotted (slot-of :value)
+                    (when (slot-of :specifier)
+                      (list :specifier (slot-of :specifier) :path (slot-of :path)))))
             ((equal kind "list")
-             (cons :list (mapcar #'decode-argument-value (field :value))))
+             (cons :list (mapcar #'decode-argument-value (slot-of :value))))
             (t :expression)))))
 
 ;;;; ------------------------------------------------------------------
