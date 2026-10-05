@@ -57,6 +57,9 @@
    (:file "lisp-reader")
    (:file "lisp-inspector")
    (:file "lisp-analyzer")
+   ;; Before js-analyzer and python-analyzer, which each build one instance of
+   ;; its child (DES-0053 R14).
+   (:file "extractor-child")
    (:file "js-analyzer")
    (:file "yaml-analyzer")
    ;; After yaml-analyzer, whose *MENTION-MINIMUM-LENGTH* it reuses rather than
@@ -93,6 +96,7 @@
    (:file "inspector")
    (:file "lisp-reader")
    (:file "lisp-analyzer")
+   (:file "extractor-child")
    (:file "js-analyzer")
    (:file "yaml-analyzer")
    (:file "markdown-analyzer")
