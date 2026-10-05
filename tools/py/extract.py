@@ -151,23 +151,27 @@ def simple_name(expr):
     return None
 
 
-def format_parameter(arg, default):
+def format_parameter(arg, default, hide=None):
     text = arg.arg
     if arg.annotation is not None:
         text += ': ' + ast.unparse(arg.annotation)
     if default is not None:
-        text += (' = ' if arg.annotation is not None else '=') + ast.unparse(default)
+        # A default HIDE names is left empty rather than removed: the `=` is what
+        # says the parameter is optional, and the arity reads it (R12).
+        shown = '' if hide and hide(default) else ast.unparse(default)
+        text += (' = ' if arg.annotation is not None else '=') + shown
     return text
 
 
-def format_arguments(a):
+def format_arguments(a, hide=None):
     """The parameters as written: defaults and annotations included, with `/`,
-    `*`, `*args` and `**kwargs` left in."""
+    `*`, `*args` and `**kwargs` left in. HIDE, when given, is asked of each
+    default and blanks the ones it accepts."""
     out = []
     positional = list(a.posonlyargs) + list(a.args)
     defaults = [None] * (len(positional) - len(a.defaults)) + list(a.defaults)
     for index, (arg, default) in enumerate(zip(positional, defaults)):
-        out.append(format_parameter(arg, default))
+        out.append(format_parameter(arg, default, hide))
         if a.posonlyargs and index == len(a.posonlyargs) - 1:
             out.append('/')
     if a.vararg:
@@ -175,7 +179,7 @@ def format_arguments(a):
     elif a.kwonlyargs:
         out.append('*')
     for arg, default in zip(a.kwonlyargs, a.kw_defaults):
-        out.append(format_parameter(arg, default))
+        out.append(format_parameter(arg, default, hide))
     if a.kwarg:
         out.append('**' + format_parameter(a.kwarg, None))
     return out
@@ -388,6 +392,19 @@ class Extractor:
         # Only the key is read. The default is never recorded.
         owner.env.add(key.value if isinstance(key, ast.Constant)
                       and isinstance(key.value, str) else None)
+
+    def reads_environment(self, node, scope):
+        """True when the expression holds a read of the environment, in any of
+        the spellings D10 recognises. Asked of a parameter default so the default
+        text, which D10 promises never to record, is not kept in :ARGUMENTS."""
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Call) \
+                    and self.dotted(inner.func, scope) in ENVIRONMENT_CALLS:
+                return True
+            if isinstance(inner, ast.Subscript) \
+                    and self.dotted(inner.value, scope) == 'os.environ':
+                return True
+        return False
 
     def note_environment_subscript(self, node, scope, owner):
         if not isinstance(node.ctx, ast.Load) or self.dotted(node.value, scope) != 'os.environ':
@@ -619,7 +636,8 @@ class Extractor:
             'name': cls + '.' + node.name if class_record else node.name,
             'className': cls,
             'startLine': first, 'endLine': node.end_lineno, 'defLine': node.lineno,
-            'arguments': format_arguments(node.args),
+            'arguments': format_arguments(
+                node.args, lambda default: self.reads_environment(default, scope)),
             'decorators': decorators,
             'docstring': ast.get_docstring(node),
             'calls': owner.calls,

@@ -287,6 +287,20 @@ def f():
        (is (equal '("K") (py-get (py-def reply "f") :env-reads))
            "K and not v: the default is never recorded")))))
 
+(test a-parameter-default-that-reads-the-environment-is-not-kept-in-the-arguments
+  ;; REV-0003 item 7. D10 promises the default of a read is never recorded, and
+  ;; :ARGUMENTS holds a parameter as written. The parameter and its `=' stay,
+  ;; because the arity reads the `=' to know it is optional; only the text goes.
+  (call-with-python
+   (lambda ()
+     (let ((reply (py-reply "import os
+def f(token=os.environ.get('TOKEN', 'hunter2'), n=3, *, k: str = os.getenv('K', 'secret')): pass
+")))
+       (is (equal '("token=" "n=3" "*" "k: str = ")
+                  (py-get (py-def reply "f") :arguments)))
+       (is (equal '("TOKEN" "K") (py-get (py-def reply "f") :env-reads))
+           "the read itself is still recorded")))))
+
 (test every-spelling-of-an-environment-read-is-recognised
   (call-with-python
    (lambda ()
