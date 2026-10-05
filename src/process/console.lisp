@@ -358,13 +358,17 @@ command."
   ;; libraries, and 502 out-of-domain is a declaration that is wrong.
   (let ((imports (getf status :unresolved-imports)))
     (when imports
+      ;; The sixth is DES-0053 D5's: a Python import of a module the tree holds
+      ;; but none of the importer's roots reaches, which tells the reader which
+      ;; domain declaration is missing where :external would call it a library.
       (format t "  imports    : ~d resolved, ~d external, ~d out-of-domain, ~
-~d unresolved, ~d target unclaimed~%"
+~d unresolved, ~d target unclaimed, ~d unrooted~%"
               (getf imports :resolved 0)
               (getf imports :external 0)
               (getf imports :out-of-domain 0)
               (getf imports :unresolved 0)
-              (getf imports :unclaimed-target 0))))
+              (getf imports :unclaimed-target 0)
+              (getf imports :unrooted 0))))
   ;; Beside the imports line because they are read together: a count that looks
   ;; wrong is usually a declaration that is wrong, and this is where it says so.
   (dolist (problem (getf status :domain-problems))
@@ -1619,6 +1623,23 @@ repository has:~%" (length qualified))
           (format t "  ~a -> ~a~%" (getf entry :document) (getf entry :name))
           (dolist (candidate (getf entry :candidates))
             (format t "      ~a~%" candidate)))))
+    ;; DES-0053 D6. Its own heading, after the document references: a call
+    ;; through an import whose module is here and no longer holds the name it
+    ;; calls. The other causes of an unresolved import call are counted gaps and
+    ;; are not reported, since a library or a missing domain is not an error.
+    (let ((missing (missing-imported-calls graph)))
+      (when missing
+        (format t "~&~d imported call~:p naming something the module no longer holds:~%"
+                (length missing))
+        (dolist (entry missing)
+          ;; A specifier ending in a dot takes no second one, as PY-DOTTED
+          ;; writes it: `.' and (dates) read `.dates', not the two-level climb
+          ;; `..dates'.
+          (let ((specifier (getf entry :specifier)))
+            (format t "  ~a  [~a:~a]  ~a~:[.~;~]~{~a~^.~}~%"
+                    (getf entry :caller) (getf entry :file) (getf entry :line)
+                    specifier (char= #\. (char specifier (1- (length specifier))))
+                    (getf entry :path))))))
     ;; DES-0025 D6. A backticked token carrying a path separator and a file
     ;; extension is a claim about a file, not an ordinary word, so one that no
     ;; *watched* repository holds is reported. The qualifier is load-bearing and

@@ -4,7 +4,7 @@ status: final
 date: 2026-08-03
 refines: [DES-0007]
 affects: [poll-once, repository-indexed-at, start-server, stop-server,
-          server-status, serve-forever, main, register-operation,
+          server-status, serve-forever, function:src/process/console.lisp:main, register-operation,
           define-operation, all-repositories, watch-repository]
 tags: [process, service, mcp, lifecycle, workspace, prototype, plan]
 summary: |

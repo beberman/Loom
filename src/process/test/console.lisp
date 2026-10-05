@@ -263,6 +263,36 @@ body: |
        (ignore-errors (uiop:delete-directory-tree *console-fixture-root* :validate t))
        (setf *console-fixture-root* nil))))
 
+(test check-reports-an-imported-call-whose-module-no-longer-holds-the-name
+  ;; DES-0053 D6. The heading is absent on a tree with nothing missing and
+  ;; present, naming the call, when RESOLVE-CALLS recorded a
+  ;; :MISSING-IN-TARGET. The other causes are counted gaps and print nothing.
+  (with-console-fixture
+    (is (not (search "imported call" (run-to-string "check")))
+        "a tree with no Python prints no such heading")
+    (loom-graph:add-entity
+     (loom-workspace:repository-graph repository)
+     (make-instance 'loom-ontology:function-entity :name "run"
+                    :origin-file "app/main.py"
+                    :properties (loom-ontology:properties-table
+                                 (list :file "app/main.py" :start-line 1 :end-line 4
+                                       :language :python
+                                       :unresolved-imported-calls
+                                       '((:specifier "sheets" :path ("upsert_tab")
+                                          :line 7 :cause :missing-in-target)
+                                         (:specifier "pytest" :path ("raises")
+                                          :line 9 :cause :external)
+                                         (:specifier "." :path ("dates")
+                                          :line 11 :cause :missing-in-target))))))
+    (let ((output (run-to-string "check")))
+      (is (search "2 imported calls naming something the module no longer holds" output)
+          "~s" output)
+      (is (search "sheets.upsert_tab" output))
+      ;; REV-0003 item 10: the specifier `.' already ends in a dot.
+      (is (search "]  .dates" output) "~s" output)
+      (is (not (search "..dates" output)) "which is not a two-level climb")
+      (is (not (search "pytest" output)) "an external library is not an error"))))
+
 (test describe-of-a-document-summarises-instead-of-reprinting-it
   ;; The negative is the witness: before this, :BODY printed in full and the
   ;; sentinel was in it, however long the document was.

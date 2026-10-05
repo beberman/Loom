@@ -1,0 +1,80 @@
+id: BUG-0071
+title: check reports a Python call to an inherited class method or a star re-export as a name the module no longer holds
+status: closed
+severity: major
+date: 2026-10-05
+refines: [PLAN-0056, DES-0053]
+affects: [walk-attribute-path, landing, missing-imported-calls]
+tags: [python, check, call-resolution, con-0001, des-0053, req-0078]
+summary: |
+  `check` prints :MISSING-IN-TARGET as rot: "a renamed or deleted function
+  that a call still names" (DES-0053 D6). WALK-ATTRIBUTE-PATH writes that
+  cause whenever its own three lookup steps miss. Python's attribute lookup
+  does not stop at those three steps. Two common shapes resolve in Python
+  and are reported by `check` as broken.
+
+  `from models import Foo; Foo.create()`, where `create` is a classmethod
+  of Foo's base class. LANDING looks only for "Foo.create" in models.py,
+  misses, and returns :MISSING-IN-TARGET. Every pydantic
+  `Model.model_validate(...)` on an imported model takes this path.
+
+  `import pkg; pkg.helper()`, where pkg/__init__.py says `from .impl import
+  *`. A star import binds no :LOCAL, so it is not in :IMPORT-BINDINGS. The
+  walk finds no definition, no binding and no submodule, and returns
+  :MISSING-IN-TARGET.
+body: |
+  SYMPTOM      Two files reproduce it. app/models.py: `class Base:` with
+               a `@classmethod def create(cls)`, then `class Foo(Base):
+               pass`. app/main.py: `from models import Foo` and `def
+               run(): Foo.create()`. After RESOLVE-CALLS,
+               MISSING-IMPORTED-CALLS returns (:caller "run" :file
+               "app/main.py" :line 6 :specifier "models" :path ("Foo"
+               "create")). The console prints that under "imported calls
+               naming something the module no longer holds". The star
+               case, app/pkg/__init__.py `from .impl import *` with
+               app/pkg/impl.py defining helper, gives the same answer
+               for `pkg.helper()`. Expected: no `check` line in either
+               case. Either an edge, or an unresolved cause that `check`
+               does not report.
+
+  CAUSE        LANDING, for a :CLASS with one name left, returns
+               :MISSING-IN-TARGET when "Class.name" is not defined in the
+               class's own file. It never looks at :SUPERCLASS-NAMES.
+               WALK-ATTRIBUTE-PATH's last branch returns
+               :MISSING-IN-TARGET when a module holds no definition, no
+               :IMPORT-BINDINGS entry and no submodule of the name. It
+               never checks whether the module has a `*` import.
+               MAKE-PY-FILE-ENTITY drops star imports from
+               :IMPORT-BINDINGS because they have no :LOCAL.
+               :IMPORT-SOURCES keeps the specifier but not the `*`, so the
+               index cannot tell a star import from any other import.
+               PYTHON-SUBMODULE-TARGETS tests for :NAME "*", which
+               suggests a binding was meant to carry it. In both cases "my
+               walk did not find it" is written as "the module does not
+               hold it". That is the stronger claim, and the only one
+               `check` reports.
+
+  WHY IT HID   DES-0053 lists `from x import *` as DEFERRED and calls the
+               bare-name consequence "a gap and not a guess". That is true
+               for :CALL-NAMES. The walk turns the same gap into a
+               reported defect. D6's walk lists module lookups only and
+               never says what a class attribute lookup does, so no test
+               covers a base class. lfia has neither shape: no star
+               import, and every class-qualified call there names a
+               method the class defines itself (Rules.find). Loom's
+               tools/ has neither shape either. So `check` was clean on
+               both trees, and the console test feeds
+               :UNRESOLVED-IMPORTED-CALLS in by hand.
+
+  FIX          In LANDING, when the class has any entry in
+               :SUPERCLASS-NAMES other than `object`, return a cause that
+               `check` does not report: :NOT-CALLABLE, or a new :INHERITED.
+               A later stage could follow a base that resolves inside the
+               tree. Have MAKE-PY-FILE-ENTITY keep star imports in
+               :IMPORT-BINDINGS with :LOCAL NIL and :NAME "*". In
+               WALK-ATTRIBUTE-PATH, when the module has one, return a
+               cause that `check` does not report. Keep :MISSING-IN-TARGET for a
+               class with no bases and a module with no star import. That
+               is the case where the claim is true. Tests: both
+               reproductions above produce no MISSING-IMPORTED-CALLS
+               entry. Both fail at dfbddcc.

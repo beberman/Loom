@@ -1,0 +1,93 @@
+id: BUG-0070
+title: A Python method call on an expression and a Lisp call by spelling both draw full-confidence :CALLS edges to an unrelated Python function
+status: closed
+severity: major
+date: 2026-10-05
+refines: [PLAN-0056, DES-0053]
+affects: [call-targets, python-caller-candidates, visible-candidates]
+tags: [python, call-resolution, con-0001, fan-out, des-0053, req-0078]
+summary: |
+  DES-0053 exists to keep Python calls out of VISIBLE-CANDIDATES' never-empty
+  fallback. Two paths still reach it, and both write a :CALLS edge at
+  confidence 1.0 to a function the source does not name. On Loom's own index
+  at dfbddcc there are eight such edges.
+
+  First, extract.py writes a method call whose receiver is not a plain name,
+  such as `scope.names.get(name)` or `data["k"].get(...)`, as the bare name
+  `get`. The resolver then treats `get` as an ordinary call. No same-file
+  definition and no imported file holds a `get`, so the fallback returns
+  every Python `get` in the tree. Loom's tree has one, the HTTP helper in
+  tools/test/service.py, so seven Python functions call it: bind in
+  tools/py/extract.py, main in tools/allow-loom.py, measured_against,
+  judgements and returned_names in tools/test/acceptance.py, and
+  records_by_task and main in tools/test/seed-sheet.py. Each of these is a
+  dict `.get`.
+
+  Second, PYTHON-CALLER-CANDIDATES drops non-Python candidates for a Python
+  caller only. A Lisp or JavaScript caller still has every Python definition
+  among its candidates. call-site:src/docstore/test/file-store.lisp:207:git
+  now calls function:tools/test/acceptance.py:git. Before step 8 that call
+  was unresolved.
+body: |
+  SYMPTOM      `describe function:tools/py/extract.py:bind` prints
+               `-> calls: get`. The edge goes to tools/test/service.py:84,
+               `def get(path, timeout=60)`, a REST read. bind's only `get`
+               is `scope.names.get(name)` at extract.py:88, a dict lookup.
+               A scan of the index found seven Python-to-service.get edges
+               and one Lisp-to-Python edge. All are structural, at
+               confidence 1.0. Expected: no edge, and each name recorded
+               in :UNRESOLVED-CALLS.
+
+               Reproduced on hand-built input as well. web/app.js calls
+               `build()`, src/a.lisp calls `(build)`, and functions/x.py
+               defines `build`. After RESOLVE-CALLS both the JavaScript
+               function and the Lisp function call functions/x.py:build.
+
+  CAUSE        Two places. tools/py/extract.py CLASSIFY (lines 359 and
+               365) returns {'kind': 'member', 'name': attrs[-1]} when the
+               receiver chain has more than one attribute, or when it
+               starts at an expression. PY-CALL-NAMES puts that bare name
+               into :CALL-NAMES. To CALL-TARGETS it is a plain call
+               name, not a member call, so MEMBER-CALL-CANDIDATES never
+               sees it and the D6 narrowing that skips the third member
+               tier does not apply. Since :PYTHON is module-scoped, the
+               local tier and the imported-files tier are tried first.
+               Both are empty, and VISIBLE-CANDIDATES falls back to every
+               candidate. PYTHON-CALLER-CANDIDATES leaves the Python ones,
+               and a single survivor becomes an edge with no confidence
+               mark.
+
+               PYTHON-CALLER-CANDIDATES (resolve.lisp) also filters in
+               one direction only. The DES-0053 D6 argument, "CPython code
+               does not call Lisp or JavaScript in process", is symmetric.
+               The code applies it to Python callers and to nobody else.
+               So a Lisp name that DES-0015 cannot place falls back to
+               spelling, and a JavaScript name in the fallback tier gets
+               the whole repository, Python included.
+
+  WHY IT HID   DES-0053 D2 prescribes this encoding: "or `m` when the
+               receiver is an expression, exactly as extract.js reports
+               it." The design's CONSEQUENCES section says a bare name
+               re-enters the fallback, but it applied that only to
+               import-bound calls. The acceptance list in R16 checks that
+               named edges exist. It never asks what else a caller
+               reaches. On lfia every unplaceable bare name has several
+               candidates, or none outside its own file, so the error
+               shows up only in a tree with exactly one definition of a
+               common name. Loom's tools/ is such a tree. `check` reports
+               nothing because these are edges, not unresolved names. On
+               Loom the ambiguous count stayed at 7, which was read as
+               evidence that nothing fell through to spelling.
+
+  FIX          For a Python caller, a bare :CALL-NAMES entry should match
+               same-file definitions only. In Python a name that no import
+               binds cannot reach another file except through
+               `from x import *`, and DES-0053 defers that case as a gap.
+               Write a call on an expression receiver as a member call
+               with no receiver, so only the method tier answers it, or
+               drop it. In PYTHON-CALLER-CANDIDATES, also remove Python
+               candidates when the caller is not Python. Tests: a Python
+               caller writing `d["k"].get(x)`, with one module-level `get`
+               in another file, draws no edge. A Lisp call and a
+               JavaScript call to a name that only a Python file defines
+               draw no edge. Both tests fail at dfbddcc.

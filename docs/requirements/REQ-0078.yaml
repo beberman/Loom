@@ -1,0 +1,194 @@
+id: REQ-0078
+title: A Python analyzer, and an understanding of Firebase Functions, are needed before a Python or Firebase repository is more than a directory of prose to Loom
+status: partial
+priority: p3
+date: 2026-10-04
+refines: [REQ-0024, REQ-0018]
+affects: [analyze-file, find-analyzer, register-analyzer, analyzable-p]
+importance: major
+tags: [analyzer, python, firebase, cloud-functions, multi-language, entry-points, lfia-accounting, req-0024, req-0018]
+summary: |
+  Loom reads Lisp, JavaScript, YAML and markdown. It reads no Python.
+  ~/github/lfia-accounting is a Firebase project whose whole server side is
+  nine Python files, 952 lines, in functions/: a scheduled Zeffy sync, five
+  HTTP functions and the modules they call. Loom contributes no entities for
+  any of it, so its requirements and designs can name no code, `impact` cannot
+  reach a deployed function, and `find` for a function that runs every hour
+  answers that it does not exist.
+
+  This asks for two things that are separable and should be sequenced as
+  two. First a Python analyzer, which is a language and is wanted by every
+  Python tree. Second an understanding of Firebase Functions, which is a
+  framework's facts: a function that Firebase calls and nothing in the tree
+  does, a trigger and a schedule, the secrets it needs, and a firebase.json
+  that says which directory is deployed as which codebase. The second is the
+  same kind of gap DES-0025 D4 closed for easy-routes in Lisp, and the first is
+  the one REQ-0024 closed for JavaScript.
+body: |
+  WHAT IS WRONG
+
+      ~/github/lfia-accounting, measured 2026-10-04
+        .py files                              9, all in functions/, 952 lines
+        Loom analyzers claiming any of them    0
+        code entities Loom produces from them  0
+        find _sync                             0 hits (the helper every function calls)
+        status, unclaimed by extension         .py 9
+
+  The gap is visible, which is right: `status` counts the nine files as
+  unclaimed rather than hiding them (CON-0001). What it does not do is answer.
+  The same tree has no `describes:` or `affects:` that can name a function,
+  because naming one resolves to nothing and `check` would report it as rot.
+
+  Two properties of this code make a naive Python reader give a wrong answer
+  rather than none.
+
+  First, the entry points have no callers. sync_zeffy, backfill, read_tab and
+  the rest are decorated with firebase_functions registrations,
+  `@scheduler_fn.on_schedule(schedule="every 1 hours", secrets=[...])` and
+  `@https_fn.on_request(...)`. Nothing in Python calls them; Firebase does. An
+  analyzer that reports them as uncalled has read the most important
+  definitions in the tree as dead, which is the macro-body failure DES-0001
+  records, in a second language.
+
+  Second, the modules are not a package. functions/ has no __init__.py, and
+  main.py imports its siblings by bare name -- `import config`, `import rules`,
+  `from sheets import upsert`, `from transform import transform` -- because
+  Firebase deploys the directory as the import root. Resolving those names
+  means knowing which directory firebase.json says is the root. A resolver that
+  assumes the repository root leaves every cross-module call unresolved.
+
+  The same holds elsewhere. ~/lisp/Loom's own tools/ holds Python that Loom
+  does not read either, so this is not one tree's quirk.
+
+  TWO THINGS, NOT ONE
+
+  PYTHON, THE LANGUAGE
+
+  R1  A Python analyzer claims .py and produces file, module, class, function
+      and method entities with docstrings, decorators, parameters (with
+      defaults and annotations where present) and line ranges. A function
+      defined inside another, and a class patched after definition, are
+      reconciled in Python's semantics before they are emitted, as REQ-0024
+      asks of JavaScript.
+  R2  Calls are recorded with the shape of the call site (REQ-0041) and are
+      resolved through the tree's own imports: `from sheets import upsert`
+      makes `upsert(...)` a call of sheets.upsert; `sheets.clear(...)` and
+      `self.method(...)` likewise. A call that cannot be resolved is recorded
+      as unresolved, never guessed, and `check` reports it.
+  R3  Names a function reads from its environment are facts. A call to
+      `os.environ.get("SPREADSHEET_ID", ...)` is recorded against the function
+      or module that makes it, so "what reads SYNC_LOOKBACK_DAYS" is answerable
+      without grep. Values are never read or stored.
+  R4  Test functions are linked to the units they call, as fiveam cases and
+      vitest cases already are: pytest `test_*` functions and unittest
+      classes. An empty `tests` band is then an answer here too.
+  R5  A virtual environment is not indexed. `venv/`, `.venv/`, `__pycache__/`
+      and site-packages are excluded however the tree arrives at them, and the
+      exclusion does not depend on an ignore file being present on the
+      checked-out branch. (Measured the same day: third-party READMEs under an
+      untracked web/node_modules entered this index when the file that ignored
+      them existed on another branch only. BUG-0024's lesson, again.)
+  R6  A file that does not parse is reported and the rest of the tree is still
+      indexed. A whole tree of this size parses in well under a second.
+
+  FIREBASE FUNCTIONS, THE FRAMEWORK
+
+  R7  A function registered with a Firebase decorator is an entry point, not an
+      uncalled definition. That covers https_fn.on_request and on_call,
+      scheduler_fn.on_schedule, the firestore_fn, pubsub_fn, storage_fn and
+      identity_fn triggers, and tasks_fn. Its trigger kind and the arguments
+      that matter to an operator -- the schedule string, timeout, memory,
+      region -- are recorded on it, so "which functions run on a schedule" and
+      "which are HTTP" are questions `find` can answer.
+  R8  The secrets and params a function declares are recorded by name:
+      `SecretParam("ZEFFY_API_KEY")` and `secrets=[ZEFFY_API_KEY]` make the
+      function depend on that name. "What needs ZEFFY_API_KEY" and "which
+      functions must be redeployed when it rotates" become answerable. The
+      index holds names only, never a value, and must be unable to hold one.
+  R9  firebase.json and .firebaserc are read. A `functions` entry ties a source
+      directory, a codebase and a runtime together, and the project id is
+      recorded as a fact about the tree. That is also the import root R2 needs
+      for functions/. This is a build-file component list, one of the four
+      places the shell is the right tool today; after this it is not.
+  R10 requirements.txt and package.json dependency names are recorded, so
+      "which code depends on firebase-functions" has an answer and a version
+      bump has a reach.
+  R11 A document can name a deployed function in `affects:` or `describes:`,
+      and `impact` on a helper reaches the entry points that call it, ending at
+      the function a person would redeploy. Renaming or deleting a function is
+      reported as rot in the documents that named it.
+  R12 A repository that declares nothing about Firebase still gets R1 to R6.
+      Whether R7 to R9 are built in or declared is the open question below; the
+      constraint is that the second must not be a precondition of the first.
+
+  WHAT THIS IS NOT
+
+  It is not type checking, and it does not resolve `getattr`, dynamic imports
+  or code built from strings. It is not Python 2 or notebooks.
+
+  It is not the Firebase JavaScript or TypeScript SDK. A functions tree written
+  in JavaScript is REQ-0024's analyzer plus the same entry-point facts, and
+  should reuse R7 to R9 rather than be specified again.
+
+  It does not know what is deployed. Loom reads source, not the cloud: it can
+  say a function is declared with a schedule, not that Cloud Scheduler has the
+  job. Nor does it read firestore.rules or run the emulators; both are
+  plausible later documents.
+
+  OPEN QUESTIONS FOR THE ARCHITECTURE
+
+  1. Parser. REQ-0024 chose tree-sitter for JavaScript so that the analyzer
+     needs nothing installed. REQ-0018's stronger principle is to ask the
+     language's own toolchain, and Python's `ast` is exactly that, at the cost
+     of requiring a python3. The first pass should presumably keep REQ-0018's
+     baseline -- reads text, needs nothing, works on code that does not run --
+     and leave `ast` and loaded-module introspection to a second pass.
+  2. Import roots. R2 needs a directory to be an import root because
+     firebase.json says so, or because a sibling module of that name exists.
+     Is that a Python-analyzer fact, a Firebase fact, or a general
+     "source roots" declaration that both read?
+  3. Decorator-registered entry points are one shape, shared by Flask routes,
+     Click commands, pytest fixtures and Firebase triggers, and it is the shape
+     DES-0025's route-callers key already handles for calls. Is the right
+     answer a generic entry-point-by-decorator key in .loom/frameworks.yaml,
+     with Firebase's list shipped as a default, or a Firebase-specific
+     analyzer step? The first generalizes; the second ships sooner.
+  4. firebase.json is JSON, and Loom has no JSON analyzer: .json is unclaimed
+     on every tree it watches. R9 either adds a narrow reader for this one
+     file or is the first user of a general configuration analyzer.
+
+  OUTSTANDING
+
+  PLAN-0056 built the Python analyzer under DES-0053: R1 to R6 and R12.
+  What remains:
+
+  R7 to R9, R11  Firebase Functions: decorator entry points, secrets and
+                 params, firebase.json and .firebaserc, and rot reports for
+                 named functions. DES-0053 records decorators and their
+                 literal arguments on each entity and leaves the rest to a
+                 second design.
+  R10            requirements.txt dependency names. Two of lfia-accounting's
+                 six requirement names differ from their module names
+                 (google-auth installs google.auth), and the mapping lives
+                 in the venv's metadata, which is not indexed.
+  R1, R2         Module entities, and storing the shape of each call site
+                 (REQ-0041). DES-0053 declines both: a Python module is one
+                 file, and REQ-0041 has no design for storage.
+  R4             Python tests in files whose names contain a hyphen are not
+                 recognised, so tools/test/test-*.py yields no :test entity.
+
+  HOW TO KNOW IT IS DONE
+
+  Measured against ~/github/lfia-accounting, whose answers today are all empty:
+
+      find _sync                    returns main._sync
+      describe upsert               shows its callers, including _sync
+      impact of rules.find          reaches simplifi and then the functions
+                                    that call it, ending at sync_zeffy and
+                                    backfill
+      sync_zeffy                    an entry point, schedule "every 1 hours",
+                                    needing ZEFFY_API_KEY
+      who reads SPREADSHEET_ID      config, by the environment read
+      status                        .py no longer in unclaimed-by-extension;
+                                    the venv, if there is one, never indexed
+      check                         unresolved does not rise

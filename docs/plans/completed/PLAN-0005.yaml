@@ -3,7 +3,7 @@ title: Sequence loom-serve, loom-rest and loom-mcp into a standing service besid
 status: final
 date: 2026-08-03
 refines: [DES-0006]
-affects: [main, console, run-command, current-repository, resolve-entity,
+affects: [function:src/process/console.lisp:main, console, run-command, current-repository, resolve-entity,
           search-entities, describe-entity, impact-report, build-context,
           repository-status, watch-repository, pause-repository,
           unwatch-repository, reindex-repository, active-rules, unenforced-rules,

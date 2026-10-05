@@ -949,6 +949,19 @@ like js-test does, so every call inside one is a site by construction.
 
 418 is 380 plus 10% headroom, the rule the first measurement used.")
 
+(defparameter *python-call-site-ceiling* 128
+  "The most :CALL-SITE entities Python files in this tree may hold.
+
+Measured 2026-10-05 at PLAN-0056 step 8: 116, which is 86 :MODULE sites and 30
+:VARIABLE sites from the ten scripts under tools/. They are counted apart from
+*CALL-SITE-CEILING* because they are a population DES-0053 D4 defines on
+purpose -- a call at a module's top level has no definition to start from, and
+`if __name__ == \"__main__\": main()' is how a script's entry function stops
+looking dead -- and adding them to the Lisp ceiling would have taken its
+headroom to buy them. The Lisp population is 503 against 512 and the ambiguous
+count in it is 40. 128 is 116 plus 10% headroom, the rule the first measurement
+used.")
+
 (test a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
   ;; DES-0014 R2, over this tree rather than a fixture, because the ceiling is
   ;; a whole-tree property and the workspace fixture is four synthetic files.
@@ -964,7 +977,12 @@ like js-test does, so every call inside one is a site by construction.
   (let* ((root (asdf:system-relative-pathname :loom-workspace "../../"))
          (repository (watch-repository root :monitor nil :quiet t)))
     (unwind-protect
-         (let ((sites (entities-of-type (repository-graph repository) :call-site)))
+         (let* ((all (entities-of-type (repository-graph repository) :call-site))
+                (python (remove-if-not (lambda (site) (eq :python (getp site :language))) all))
+                (sites (set-difference all python)))
+           (is (<= (length python) *python-call-site-ceiling*)
+               "~d Python :CALL-SITE entities against a ceiling of ~d."
+               (length python) *python-call-site-ceiling*)
            (is (<= (length sites) *call-site-ceiling*)
                "~d :CALL-SITE entities against a ceiling of ~d. DES-0014: \"A
 :CALL-SITE entity is minted exactly when a call name cannot be expressed as a
@@ -1609,6 +1627,161 @@ comparing against nothing and its silence would mean nothing")
 
 
 ;;; ------------------------------------------------------------------
+;;; A virtual environment is excluded by what it is (DES-0053 D11)
+;;; ------------------------------------------------------------------
+
+(test a-virtual-environment-is-excluded-by-its-pyvenv-cfg-and-not-by-git-or-name
+  ;; The fixture is not a git repository, so no .gitignore applies, and the
+  ;; directory is named env/, which no list of names knows. Only the pyvenv.cfg
+  ;; says what it is. The README and the YAML under docs/ are there for the
+  ;; second walk: the document store enumerates the same tree, and a rule that
+  ;; only REPOSITORY-FILES applied would still index the YAML.
+  (with-workspace-fixture (repository)
+    (write-file "env/pyvenv.cfg" "home = /usr/bin
+")
+    (write-file "env/lib/x.lisp" "(defun venv-function () 1)
+")
+    (write-file "env/lib/README.md" "# vendored
+")
+    ;; Python from step 8, when .py became claimed: nothing in the path says
+    ;; venv, so only the pyvenv.cfg keeps it out.
+    (write-file "env/lib/site.py" "def venv_python_function():
+    return 1
+")
+    (write-file "env/lib/docs/notes.yaml" "id: DEC-9999
+type: decision
+title: Inside a venv
+status: accepted
+")
+    (write-file "docs/ok.yaml" "id: DEC-9998
+type: decision
+title: Outside the venv
+status: accepted
+")
+    (reindex-repository repository :quiet t)
+    (let* ((g (repository-graph repository))
+           (files (mapcar #'name (entities-of-type g :file)))
+           ;; Every entity's own path, not the document names: a YAML document
+           ;; that carries an id is named by it (`DEC-9999'), so a check on the
+           ;; names could not fail for the one file this fixture writes to catch
+           ;; the second walk (REV-0003 item 8). The README is named by its path,
+           ;; which is why that half was sound.
+           (documents (loop for e in (all-entities g)
+                            when (member (entity-type e)
+                                         '(:document :decision :design :requirement
+                                           :plan :bug :review :rule :concept :architecture))
+                              collect (or (getp e :path) (origin-file e)))))
+      (is (member "docs/ok.yaml" documents :test #'equal)
+          "control: the same collection sees a YAML decision outside the venv: ~a"
+          documents)
+      (is (member "src/alpha.lisp" files :test #'string=)
+          "the tree's own source is indexed: ~a" files)
+      (is (notany (lambda (path) (eql 0 (search "env/" path))) files)
+          "nothing under the venv is a file: ~a" files)
+      (is (notany (lambda (path) (eql 0 (search "env/" path))) documents)
+          "and no document under it is either: ~a" documents)
+      (is (null (find "venv-function" (entities-of-type g :function)
+                      :key #'name :test #'string=)))
+      (is (null (find "venv_python_function" (entities-of-type g :function)
+                      :key #'name :test #'string=))))))
+
+(defun python-available-p ()
+  "True when a Python child can actually be started. The analyzer suite's
+CALL-WITH-PYTHON asks the same question; it lives in LOOM-ANALYZER-TEST, which
+this system does not load, for NODE-AVAILABLE-P's reason."
+  (bt:with-lock-held ((loom-analyzer::child-lock loom-analyzer::*py-extractor-child*))
+    (not (null (loom-analyzer::ensure-extractor-child loom-analyzer::*py-extractor-child*)))))
+
+(test python-files-reach-the-graph-through-the-whole-pipeline
+  ;; The analyzer asserts properties and no cross-file edge, so everything below
+  ;; is the resolution passes reading what it wrote: a call through an import,
+  ;; a :SETTING minted from an environment read, and a :READS edge to it.
+  (if (not (python-available-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-file "functions/config.py" "import os
+SHEET = os.environ.get('SPREADSHEET_ID', '')
+")
+        (write-file "functions/sheets.py" "def read_tab(): pass
+")
+        (write-file "functions/main.py" "import sheets
+from config import SHEET
+def run():
+    sheets.read_tab()
+")
+        (reindex-repository repository :quiet t)
+        (let* ((g (repository-graph repository))
+               (run (find "run" (entities-of-type g :function) :key #'name :test #'string=))
+               (read-tab (find "read_tab" (entities-of-type g :function)
+                               :key #'name :test #'string=))
+               (setting (find "SPREADSHEET_ID" (entities-of-type g :setting)
+                              :key #'name :test #'string=))
+               (sheet (find "SHEET" (entities-of-type g :variable) :key #'name :test #'string=)))
+          (is-true run)
+          (is (equal (list (id read-tab))
+                     (mapcar #'to-id (relationships-from g (id run) :rel-type :calls)))
+              "main.run reaches sheets.read_tab through its import")
+          (is-true setting "the environment read became a :SETTING")
+          (is (equal (list (id setting))
+                     (mapcar #'to-id (relationships-from g (id sheet) :rel-type :reads)))
+              "and the variable that holds the read is its reader")))))
+
+(test a-python-case-draws-a-tests-edge-through-the-whole-pipeline
+  ;; D8 writes the case and its calls; RESOLVE-CALLS and RESOLVE-TESTS derive the
+  ;; edge, and nothing in loom-graph changed for it.
+  (if (not (python-available-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-file "functions/ledger.py" "def post(): pass
+")
+        (write-file "functions/test_ledger.py" "import ledger
+def test_post():
+    ledger.post()
+")
+        (reindex-repository repository :quiet t)
+        (let* ((g (repository-graph repository))
+               (case (find "test_post" (entities-of-type g :test) :key #'name :test #'string=))
+               (post (find "post" (entities-of-type g :function) :key #'name :test #'string=)))
+          (is-true case)
+          (is (equal (list (id post))
+                     (mapcar #'to-id (relationships-from g (id case) :rel-type :tests)))
+              "the case tests the function its body calls")))))
+
+(test an-in-place-venv-in-a-subdirectory-excludes-only-what-venv-created
+  ;; `python -m venv .' run in functions/ writes functions/pyvenv.cfg beside
+  ;; functions/main.py, so excluding the whole prefix drops the program. Only the
+  ;; cfg and the directories venv makes are the environment's own.
+  (with-workspace-fixture (repository)
+    (write-file "functions/pyvenv.cfg" "home = /usr/bin
+")
+    (write-file "functions/main.py" "def run(): pass
+")
+    (write-file "functions/ledger/__init__.py" "")
+    (write-file "functions/lib/python3.12/site-packages/dep.py" "def dep(): pass
+")
+    (write-file "functions/bin/activate_this.py" "def activate(): pass
+")
+    (reindex-repository repository :quiet t)
+    (let ((files (mapcar #'name (entities-of-type (repository-graph repository) :file))))
+      (is (member "functions/main.py" files :test #'string=)
+          "the project's own source beside the cfg is indexed: ~a" files)
+      (is (member "functions/ledger/__init__.py" files :test #'string=))
+      (is (notany (lambda (path) (or (search "functions/lib/" path)
+                                     (search "functions/bin/" path)))
+                  files)
+          "and what venv created is not: ~a" files))))
+
+(test a-pyvenv-cfg-at-the-root-does-not-exclude-the-repository
+  ;; `python -m venv .' writes one beside the project's own source. Excluding
+  ;; the empty prefix would index nothing at all.
+  (with-workspace-fixture (repository)
+    (write-file "pyvenv.cfg" "home = /usr/bin
+")
+    (reindex-repository repository :quiet t)
+    (let ((files (mapcar #'name (entities-of-type (repository-graph repository) :file))))
+      (is (member "src/alpha.lisp" files :test #'string=)))))
+
+;;; ------------------------------------------------------------------
 ;;; What the tree holds that no analyzer claims (REQ-0059)
 ;;; ------------------------------------------------------------------
 ;;;
@@ -1632,11 +1805,16 @@ this asserts deliberately."
 
 (test unclaimed-counts-tracked-files-no-analyzer-claims-and-names-the-extensions
   (with-workspace-fixtures (repository)
-    (write-file "tools/harness.py" "def helper():
-    return 1
+    ;; Ruby, which no analyzer claims. This test used .py until the Python
+    ;; analyzer claimed it (DES-0053): the property is "an extension nobody
+    ;; claims is counted", and the extension was only ever an example.
+    (write-file "tools/harness.rb" "def helper
+  1
+end
 ")
-    (write-file "tools/other.py" "def second():
-    return 2
+    (write-file "tools/other.rb" "def second
+  2
+end
 ")
     (write-file "tools/run.sh" "#!/bin/sh
 echo hi
@@ -1648,19 +1826,19 @@ echo hi
       (is (null (getf status :unclaimed-reason))
           "a git repository can be counted: ~a" (getf status :unclaimed-reason))
       (is (= 3 (getf status :unclaimed))
-          "two .py and one .sh are tracked and claimed by nobody; got ~a with ~a"
+          "two .rb and one .sh are tracked and claimed by nobody; got ~a with ~a"
           (getf status :unclaimed) by-extension)
       (flet ((files-of (type)
                (getf (find type by-extension :key (lambda (e) (getf e :type))
                                              :test #'string=)
                      :files)))
-        (is (eql 2 (files-of ".py"))
+        (is (eql 2 (files-of ".rb"))
             "the extensions are named with counts, which is what a reader acts on")
         (is (eql 1 (files-of ".sh")))
         (is (null (files-of ".lisp"))
             "and a claimed language is not in the gap")
         ;; Plists, not dotted pairs: an alist reaches the JSON encoder as
-        ;; "(.py . 2)" and a REST caller cannot read it (BUG-0030's shape).
+        ;; "(.rb . 2)" and a REST caller cannot read it (BUG-0030's shape).
         (is (every (lambda (e) (and (getf e :type) (getf e :files))) by-extension)
             "every entry is a plist a caller can read: ~a" by-extension)))))
 

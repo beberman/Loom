@@ -468,6 +468,36 @@ The lock is the table's own.")))))
   (is (null (render-signature
              (sig-function "protected-table" '() :type 'class-entity)))))
 
+(defun py-sig (name arguments &key method decorators)
+  (make-instance (if method 'method-entity 'function-entity) :name name
+                 :origin-file "src/lib.py"
+                 :properties (properties-table
+                              (list :file "src/lib.py" :start-line 1 :end-line 9
+                                    :language :python :arguments arguments
+                                    :decorators decorators))))
+
+(test python-arity-counts-parameters-before-a-default-or-a-star
+  ;; DES-0053 R12. The existing loop stops only at an `&' marker, so every
+  ;; Python parameter counted: `def m(self, a, *, k)' read as 4.
+  (is (eql 1 (entity-arity (py-sig "f" '("a" "b=1")))))
+  (is (eql 1 (entity-arity (py-sig "Box.m" '("self" "a" "*" "k") :method t)))
+      "self is not passed, and a bare * ends the positional ones")
+  (is (eql 1 (entity-arity (py-sig "Box.n" '("self" "a" "*args" "**kw") :method t))))
+  (is (eql 2 (entity-arity
+              (py-sig "Box.s" '("a" "b")
+                      :method t :decorators '((:name "staticmethod" :arguments nil :line 1)))))
+      "a staticmethod has no self to skip")
+  (is (eql 2 (entity-arity (py-sig "g" '("a" "/" "b"))))
+      "the / is not a parameter")
+  (is (eql 1 (entity-arity (py-sig "h" '("a" "b: int = 1" "c: str")))))
+  (is (eql 2 (entity-arity (py-sig "k" '("a" "b: Literal['x']" "c=2"))))
+      "an annotation without a default does not end the required ones")
+  (is (eql 0 (entity-arity (py-sig "z" '()))))
+  (is (eql 0 (entity-arity (py-sig "Box.i" '("self") :method t)))))
+
+(test a-python-signature-is-a-call
+  (is (string= "f(a, b=1)" (render-signature (py-sig "f" '("a" "b=1"))))))
+
 (test describe-carries-the-signature-and-the-arity-without-widening-a-summary
   ;; Type-specific detail belongs in DESCRIBE-ENTITY. ENTITY-SUMMARY is read in
   ;; bulk by `find' and `impact' and carries what is true of every entity, so a
@@ -809,3 +839,37 @@ with them."
         (search-entities g :name "repository" :type :function :kind :code)
       (declare (ignorable hits))
       (is (= 1 total) "a type inside the family is not refused"))))
+
+;;; ------------------------------------------------------------------
+;;; A :SETTING is found and described like any entity (DES-0053 D10)
+;;; ------------------------------------------------------------------
+
+(test find-and-describe-answer-for-a-setting
+  ;; Nothing in the knowledge layer names :SETTING, and a type missing from a
+  ;; list it walks is reported by nothing (PLAN-0056, BLAST RADIUS). This is the
+  ;; check that `find SPREADSHEET_ID' and `describe' reach the node.
+  (let* ((g (make-graph))
+         (reader (make-instance 'variable-entity :name "SPREADSHEET_ID"
+                                :origin-file "functions/config.py"
+                                :properties (properties-table
+                                             '(:file "functions/config.py"
+                                               :start-line 3 :end-line 3
+                                               :language :python
+                                               :environment-reads ("SPREADSHEET_ID")))))
+         (setting (make-instance 'setting-entity :name "SPREADSHEET_ID"
+                                 :properties (properties-table
+                                              '(:name "SPREADSHEET_ID"
+                                                :sources (:environment))))))
+    (add-entity g reader)
+    (add-entity g setting)
+    (apply-transaction g (list (assert-edge :reads reader setting)))
+    (let ((hits (search-entities g :name "SPREADSHEET_ID" :type :setting)))
+      (is (= 1 (length hits)))
+      (is (eq :setting (getf (first hits) :type))))
+    (let* ((detail (describe-entity g (id setting)))
+           (group (find-if (lambda (n) (and (eq :in (getf n :direction))
+                                            (eq :reads (getf n :rel-type))))
+                           (getf detail :neighbors))))
+      (is (not (null group)) "the reader is listed as a neighbour")
+      (is (equal '("SPREADSHEET_ID")
+                 (mapcar (lambda (e) (getf e :name)) (getf group :entities)))))))

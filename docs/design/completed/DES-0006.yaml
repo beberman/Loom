@@ -3,7 +3,7 @@ title: A shared loom-serve layer puts MCP and REST on one Hunchentoot listener o
 status: implemented
 date: 2026-08-02
 refines: [REQ-0008]
-affects: [main, console, run-command, current-repository, current-graph,
+affects: [function:src/process/console.lisp:main, console, run-command, current-repository, current-graph,
           resolve-entity, watch-repository, pause-repository, unwatch-repository,
           reindex-repository, repository-status, all-repositories, find-repository,
           search-entities, describe-entity, impact-report, build-context,

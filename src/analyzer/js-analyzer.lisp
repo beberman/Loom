@@ -77,146 +77,40 @@ millisecond, so this fires only when something is wrong.")
 ;;;; The child process
 ;;;; ==================================================================
 
-(defvar *js-child* nil
-  "The live extractor process, or NIL. See this file's header for why an
-analyzer may hold one.")
+(defvar *js-extractor-child*
+  (make-extractor-child
+   :name "javascript"
+   ;; Both read at use and not at load: the tests let-bind *NODE-PROGRAM* to a
+   ;; name that cannot be found and expect the next launch to fail.
+   :argv-function (lambda () (list *node-program* (namestring *js-extractor*)))
+   :timeout-function (lambda () *js-parse-timeout-seconds*))
+  "The JavaScript extractor, whose lifecycle is extractor-child.lisp's. See this
+file's header for why an analyzer may hold a process.")
 
-(defvar *js-child-lock* (bt:make-lock "loom-js-extractor")
-  "Serialises both the request/reply exchange and the process's lifecycle. The
-exchange has to be serialised regardless of the lifecycle: two threads writing
-frames into one stdin would interleave their bodies, and neither could tell
-which reply was its own.")
-
-(defvar *js-unavailable-reason* nil
-  "Why the toolchain could not be started, or NIL.
-
-REQ-0024 R2, on REQ-0018 R2's precedent: a missing toolchain is a recorded
-absence rather than a failure. A tree analyzed without node still indexes --
-every file becomes a :FILE entity carrying this string -- so the reader sees a
-gap they can name instead of an empty result they cannot explain.")
-
-(defun js-child-alive-p ()
-  (and *js-child* (uiop:process-alive-p *js-child*)))
-
-(defun start-js-child ()
-  "Launch the extractor, or record why it could not be launched. Returns the
-process or NIL."
-  (handler-case
-      (let ((process (uiop:launch-program
-                      (list *node-program* (namestring *js-extractor*))
-                      :input :stream :output :stream :error-output nil)))
-        (setf *js-unavailable-reason* nil)
-        (setf *js-child* process))
-    (error (condition)
-      ;; No node on PATH is the ordinary case here and must not signal: a
-      ;; developer indexing a mixed tree on a machine without node gets their
-      ;; Lisp answers and a note about the JavaScript.
-      (setf *js-child* nil)
-      (setf *js-unavailable-reason*
-            (format nil "cannot run ~a: ~a" *node-program* condition))
-      nil)))
+;;; The three names below were special variables before R14 moved the lifecycle
+;;; out, and two systems' tests still reach them as LOOM-ANALYZER::*JS-CHILD* and
+;;; so on: SETF, EQ and BT:WITH-LOCK-HELD must keep working on them. A symbol
+;;; macro over the instance's slot is the one spelling that does.
+(define-symbol-macro *js-child* (child-process *js-extractor-child*))
+(define-symbol-macro *js-child-lock* (child-lock *js-extractor-child*))
+(define-symbol-macro *js-unavailable-reason*
+    (child-unavailable-reason *js-extractor-child*))
 
 (defun ensure-js-child ()
   "The live child, starting it if necessary. NIL when the toolchain is absent.
 
 Called with *JS-CHILD-LOCK* held."
-  (unless (js-child-alive-p)
-    (when *js-child*
-      ;; A child that died mid-tree leaves its stdin buffered and its reply
-      ;; stream half-read. Close before relaunching so the next exchange starts
-      ;; from a clean pair of streams rather than inheriting a partial frame.
-      (ignore-errors (uiop:close-streams *js-child*))
-      (setf *js-child* nil))
-    (start-js-child))
-  *js-child*)
+  (ensure-extractor-child *js-extractor-child*))
 
 (defun stop-js-child ()
-  "Shut the extractor down. Safe to call when none is running.
-
-Nothing in the indexing path calls this -- the child is meant to outlive a
-tree pass -- but a test that has just proved the restart behaviour needs to put
-the world back, and a long-lived service reindexing a tree that no longer has
-any JavaScript in it should not keep a node process alive forever."
-  (bt:with-lock-held (*js-child-lock*)
-    (when *js-child*
-      (ignore-errors (uiop:close-streams *js-child*))
-      (ignore-errors (uiop:terminate-process *js-child* :urgent t))
-      (setf *js-child* nil))))
-
-(defmacro with-timeout-or-nil ((seconds) &body body)
-  "BODY's value, or NIL if it took longer than SECONDS.
-
-SB-EXT:WITH-TIMEOUT signals rather than returning, and the caller wants the
-distinction between `no answer' and `an answer' rather than a condition to
-re-handle. On an implementation without it the body simply runs unbounded,
-which is worse than a timeout and better than not compiling.
-
-Defined above its one caller because a macro used before it is defined is
-expanded as a function call, and the timeout would silently not exist."
-  #+sbcl `(handler-case (sb-ext:with-timeout ,seconds ,@body)
-            (sb-ext:timeout () nil))
-  #-sbcl `(progn ,seconds ,@body))
-
-(defun utf8-byte-length (string)
-  "How many bytes STRING occupies as UTF-8.
-
-The frame header counts bytes and the stream is character-oriented, so this is
-the one number the two ends have to agree on: a file with any non-ASCII in it
-makes the character count and the byte count different, and a wrong header
-would desynchronise every frame after it rather than just this one."
-  #+sbcl (length (sb-ext:string-to-octets string :external-format :utf-8))
-  #-sbcl (loop for character across string
-               sum (let ((code (char-code character)))
-                     (cond ((< code #x80) 1) ((< code #x800) 2)
-                           ((< code #x10000) 3) (t 4)))))
-
-(defun write-frame (process path contents)
-  "Write one length-prefixed request. See tools/js/extract.js for the frame."
-  (let ((stream (uiop:process-info-input process)))
-    (format stream "~a~%~d~%" path (utf8-byte-length contents))
-    (write-string contents stream)
-    (finish-output stream)))
-
-(defun read-reply (process)
-  "One line of JSON from the child, decoded. NIL if the stream closed."
-  (let ((line (read-line (uiop:process-info-output process) nil nil)))
-    (when line
-      (json:decode-json-from-string line))))
+  "Shut the extractor down. Safe to call when none is running."
+  (stop-extractor-child *js-extractor-child*))
 
 (defun parse-javascript (path contents)
   "Two values: the child's decoded reply for PATH, and a reason string when
-there is none.
-
-One retry, and only one, and only for a child that was not alive. A parse that
-fails is the child's business to report in its reply (R3) and is not retried; a
-child that has *died* is a different thing, and the next file after it should
-not be lost to a process that is already gone. Retrying more than once would
-turn a node that cannot start into a loop across every file in the tree."
-  (bt:with-lock-held (*js-child-lock*)
-    (loop for attempt from 0 below 2
-          for process = (ensure-js-child)
-          do (unless process
-               (return (values nil *js-unavailable-reason*)))
-             (handler-case
-                 (let ((reply (with-timeout-or-nil (*js-parse-timeout-seconds*)
-                                (write-frame process path contents)
-                                (read-reply process))))
-                   (if reply
-                       (return (values reply nil))
-                       ;; No reply: the child died, or took too long. Drop it so
-                       ;; ENSURE-JS-CHILD relaunches on the next pass, and let
-                       ;; the loop have its one retry.
-                       (progn
-                         (ignore-errors (uiop:close-streams process))
-                         (ignore-errors (uiop:terminate-process process :urgent t))
-                         (setf *js-child* nil)
-                         (when (= attempt 1)
-                           (return (values nil "javascript extractor stopped responding"))))))
-               (error (condition)
-                 (ignore-errors (uiop:close-streams process))
-                 (setf *js-child* nil)
-                 (when (= attempt 1)
-                   (return (values nil (princ-to-string condition)))))))))
+there is none. A parse that fails is the child's business to report in its reply
+(R3); EXCHANGE-WITH-CHILD retries only a child that died."
+  (exchange-with-child *js-extractor-child* path contents))
 
 ;;;; ==================================================================
 ;;;; Reading the reply

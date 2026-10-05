@@ -4,7 +4,7 @@ status: partial
 date: 2026-08-03
 refines: [REQ-0010]
 affects: [poll-once, repository-indexed-at, start-server, stop-server,
-          server-status, serve-forever, main, watch-repository, all-repositories,
+          server-status, serve-forever, function:src/process/console.lisp:main, watch-repository, all-repositories,
           register-operation, define-operation, check-capability,
           resolve-caller-grants, dispatch-request]
 tags: [process, service, mcp, lifecycle, workspace, prototype]

@@ -52,6 +52,9 @@
    #:resolve-calls
    #:resolve-imports
    #:build-module-scope
+   #:resolve-python-specifier
+   #:missing-imported-calls
+   #:make-python-index
    #:resolve-definitions
    #:resolve-inheritance
    #:resolve-specializers
@@ -83,6 +86,7 @@
 
    ;; test coverage, derived from what a test's body calls (DES-0002 R9)
    #:resolve-tests
+   #:resolve-settings
    #:*tested-types*
 
    ;; document link resolution (SS10.3)

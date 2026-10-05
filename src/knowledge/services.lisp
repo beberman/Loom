@@ -83,12 +83,45 @@ there -- 354 of Loom's 1303 :FUNCTION entities are the second kind. The type
 tells them apart where the value cannot."
   (when (member (entity-type entity) '(:function :method))
     (let ((arguments (getp entity :arguments)))
-      (loop for token in arguments
-            until (lambda-marker-p token)
-            count t))))
+      (if (eq :python (getp entity :language))
+          (python-arity entity arguments)
+          (loop for token in arguments
+                until (lambda-marker-p token)
+                count t)))))
+
+(defun python-parameter-stops-p (token)
+  "True when TOKEN, a Python parameter as written, ends the required ones: `*',
+`*args' and `**kwargs', or a parameter with a default.
+
+The annotation is skipped before looking for the default, because `x: int = 1'
+and `x=1' both have one and `x: Literal[\"a\"]' does not. A `=' inside a string
+in an annotation is not handled: the child writes the default as ` = ' after an
+annotation, and an annotation holding that spelling is not worth the code."
+  (let ((colon (position #\: token))
+        (equals (position #\= token)))
+    (or (char= #\* (char token 0))
+        (if (and colon (or (null equals) (< colon equals)))
+            (search " = " token :start2 colon)
+            (and equals t)))))
+
+(defun python-arity (entity arguments)
+  "ENTITY's required parameter count in Python's terms (DES-0053 R12): those
+before the first with a default, `*', `*args' or `**kwargs'. `/' is skipped. The
+first parameter of a method is skipped unless it is decorated @staticmethod,
+since a caller does not pass self or cls. The child writes :ARGUMENTS as the
+source did, so the tokens are read here and not stored twice."
+  (let ((tokens (if (and (eq :method (entity-type entity))
+                         (notany (lambda (decorator)
+                                   (equal "staticmethod" (getf decorator :name)))
+                                 (getp entity :decorators)))
+                    (rest arguments)
+                    arguments)))
+    (loop for token in tokens
+          until (python-parameter-stops-p token)
+          count (string/= token "/"))))
 
 (defparameter *signature-styles*
-  '((:javascript . :call) (:typescript . :call))
+  '((:javascript . :call) (:typescript . :call) (:python . :call))
   "How a language writes a signature, defaulting to :FORM.
 
   :form   (find-entities view &key entity-type)   the name is inside

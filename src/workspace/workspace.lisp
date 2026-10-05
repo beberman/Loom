@@ -425,6 +425,50 @@ exclusion and DETECT-DELETIONS' skip -- so the store and the walk can neither
 both take a document nor both leave it. DES-0051 D5."
   (typep (find-analyzer path) 'document-analyzer))
 
+(defun venv-prefixes (root)
+  "The directories under ROOT that hold a pyvenv.cfg, as relative prefixes
+ending in a slash. DES-0053 D11.
+
+`python -m venv' and virtualenv write that file into every environment they
+create, so a venv named env/ or .python/ is recognised by what it is and not by
+what it is called, and without asking git. lfia's venv is excluded today only
+because functions/.gitignore names it, and BUG-0024 measured what happens on a
+branch where that file is absent. Read from the shared listing, so a pass pays
+for no second walk.
+
+A pyvenv.cfg at the root itself is not a prefix. `python -m venv .' puts one
+there beside the project's own source, and excluding \"\" would exclude the
+whole repository. UNDER-VENV-P applies the same reasoning to every other prefix."
+  (loop for path in (tree-listing root)
+        for name = (file-namestring path)
+        when (equal name "pyvenv.cfg")
+          append (let* ((relative (workspace-relative-path path root))
+                        (slash (position #\/ relative :from-end t)))
+                   (and slash (list (subseq relative 0 (1+ slash)))))))
+
+(defparameter *venv-created-entries* '("bin" "lib" "lib64" "include" "Lib" "Scripts")
+  "The directories `python -m venv' and virtualenv create beside pyvenv.cfg, on
+POSIX and on Windows. Nothing else under a venv's prefix is theirs.")
+
+(defun under-venv-p (relative prefixes)
+  "True when the relative path RELATIVE is a venv's own: the pyvenv.cfg under one
+of PREFIXES or a path inside a directory the tool creates there.
+
+Not everything under a prefix, because `python -m venv' run in functions/ writes
+functions/pyvenv.cfg beside functions/main.py, the project's own source, and the
+whole prefix excluded would drop the program (REV-0003 item 5). It is the same
+reasoning as the root's carve-out in VENV-PREFIXES, extended to every prefix."
+  (some (lambda (prefix)
+          (and (<= (length prefix) (length relative))
+               (string= prefix relative :end2 (length prefix))
+               (let* ((rest (subseq relative (length prefix)))
+                      (slash (position #\/ rest)))
+                 (or (string= rest "pyvenv.cfg")
+                     (and slash
+                          (member (subseq rest 0 slash) *venv-created-entries*
+                                  :test #'string=))))))
+        prefixes))
+
 (defvar *tree-listing* nil
   "Inside WITH-TREE-LISTING, (root-namestring . listing), the listing :UNREAD
 until something walks. NIL outside one.")
@@ -505,6 +549,15 @@ recorded it in the manifest, and every store's addresses reflect it."
                     (multiple-value-bind (ignored reason) (ignored-paths root paths)
                       (when reason
                         (setf (repository-ignore-reason repository) reason))
+                      ;; A document under a virtual environment is excluded here
+                      ;; as REPOSITORY-FILES excludes code: the store enumerates
+                      ;; the same tree, so a README.md inside an un-ignored venv
+                      ;; would otherwise be indexed (DES-0053 D11).
+                      (let ((prefixes (venv-prefixes root)))
+                        (when prefixes
+                          (dolist (path paths)
+                            (when (under-venv-p path prefixes)
+                              (setf (gethash path ignored) t)))))
                       ignored))
           :listing (lambda () (tree-listing root))
           ;; Read on every call rather than captured, so a store built before
@@ -613,17 +666,24 @@ A tree git cannot answer for -- not a repository, no git, a timeout -- is
 indexed whole, and the reason is recorded on the repository for `status' to
 report. That is a gap a reader can see rather than a silent clean.
 
+Skips every path under a virtual environment, which VENV-PREFIXES recognises by
+its pyvenv.cfg and not by a name or by git (DES-0053 D11).
+
 A document is not here. The document store holds it, and INDEX-DOCUMENT indexes
 what the store hands over (DES-0051). The walk is TREE-LISTING's, which a pass
 shares with the file store."
   (let* ((root (repository-root repository))
+         (venvs (venv-prefixes root))
          (claimed (remove-if-not
                    (lambda (path)
                      (and (pathname-name path)
                           (not (dot-prefixed-p (file-namestring path)))
                           (notany #'dot-prefixed-p (rest (pathname-directory path)))
                           (analyzable-p path)
-                          (not (store-document-p path))))
+                          (not (store-document-p path))
+                          (not (and venvs
+                                    (under-venv-p (workspace-relative-path path root)
+                                                  venvs)))))
                    (tree-listing root))))
     (multiple-value-bind (ignored reason)
         (ignored-paths root (mapcar (lambda (p) (workspace-relative-path p root))
@@ -1006,7 +1066,7 @@ call site mints an entity, and that entity has to exist and carry its
 derived from those edges, so RESOLVE-TESTS has to follow RESOLVE-CALLS rather
 than merely accompany it. The full sequence is resolve-definitions,
 resolve-generated-definitions, resolve-imports, resolve-calls, resolve-tests,
-resolve-document-links, check-document-links, check-rules.
+resolve-settings, resolve-document-links, check-document-links, check-rules.
 
 Two of those arrows are not dependencies and the difference is worth keeping.
 RESOLVE-IMPORTS before CHECK-RULES is one: RUN-CHECK's :NO-EDGE kind takes
@@ -1073,6 +1133,7 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
                                                               :unresolved unresolved-imports))
       (submit "resolve-calls"          (resolve-calls graph :workspace-id workspace
                                                             :module-scope module-scope
+                                                            :domains domains
                                                             :external-packages
                                                             (external-package-exports)))
       ;; And RESOLVE-TESTS after RESOLVE-CALLS, which is the second half of why
@@ -1080,6 +1141,10 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
       ;; derived from the :CALLS edges a test's body produced, so a pass that
       ;; has not run yet leaves every test covering nothing.
       (submit "resolve-tests"          (resolve-tests graph :workspace-id workspace))
+      ;; Before RESOLVE-DOCUMENT-LINKS so a document's `affects: [SPREADSHEET_ID]'
+      ;; finds the setting, and before the rules so CHECK-RULES sees the edges
+      ;; (DES-0053 D10).
+      (submit "resolve-settings"       (resolve-settings graph :workspace-id workspace))
       (submit "resolve-document-links" (resolve-document-links graph :workspace-id workspace))
       ;; After RESOLVE-DOCUMENT-LINKS and before the rules, because it writes a
       ;; property that same pass's siblings read, and because a rule check is a
@@ -1972,18 +2037,21 @@ file lies under it"
       (nreverse problems))))
 
 (defun import-summary (repository)
-  "The import graph as five numbers: resolved, and one per cause.
+  "The import graph as six numbers: resolved, and one per cause.
 
 Summed over the :FILE entities rather than recomputed, because RESOLVE-IMPORTS
 already wrote both halves -- the edges and the causes -- and a second
 resolution pass here could disagree with the graph a caller is about to query.
 
-Always five numbers, zeroes included, which is DES-0002 R10's rule: a count
+Always six numbers, zeroes included, which is DES-0002 R10's rule: a count
 that vanishes when it is nought cannot be told from a count nobody computed."
   (let ((graph (repository-graph repository))
         (resolved 0)
         (by-cause (list :external 0 :out-of-domain 0
-                        :unclaimed-target 0 :unresolved 0)))
+                        :unclaimed-target 0 :unresolved 0
+                        ;; DES-0053 D5's cause: a Python module indexed
+                        ;; somewhere none of the importer's roots reaches.
+                        :unrooted 0)))
     (dolist (file (entities-of-type graph :file))
       (dolist (r (relationships-from graph (id file)))
         (when (eq :imports (rel-type r)) (incf resolved)))

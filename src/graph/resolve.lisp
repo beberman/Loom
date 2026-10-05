@@ -184,6 +184,191 @@ simply wrong need different repairs."
               (values nil :out-of-domain))
              (t (values nil :external)))))))))
 
+;;;; ==================================================================
+;;;; Python specifiers (DES-0053 D5)
+;;;; ==================================================================
+;;;;
+;;;; A Python specifier names a module by where Python looks for it, and the
+;;;; places are a function of the importer: its own directory when that is not
+;;;; a package, the parent of the package it sits in, and a declared domain
+;;;; root. Package-ness is read from the index -- a directory is a package when
+;;;; "<dir>/__init__.py" is an indexed path -- so nothing here reads the
+;;;; filesystem, and a file that exists on disk and is not indexed is not there.
+
+(defstruct (python-index (:constructor %make-python-index))
+  "What the Python resolver asks of the index, built once per pass.
+KNOWN is every indexed path. DIRECTORIES holds every directory prefix, ending
+in a slash, above an indexed .py file. TOP-NAMES holds every module, package
+and directory name that appears in the tree, which is what separates :UNROOTED
+from :EXTERNAL."
+  (known       nil)
+  (directories (make-hash-table :test #'equal) :type hash-table)
+  (top-names   (make-hash-table :test #'equal) :type hash-table))
+
+(defun make-python-index (known)
+  "The PYTHON-INDEX over KNOWN, a table of every indexed file path."
+  (let ((index (%make-python-index :known known)))
+    (maphash
+     (lambda (path present)
+       (declare (ignore present))
+       (when (and (> (length path) 3) (string= ".py" path :start2 (- (length path) 3)))
+         (let* ((segments (path-segments path))
+                (file (car (last segments)))
+                (stem (subseq file 0 (- (length file) 3))))
+           (unless (string= stem "__init__")
+             (setf (gethash stem (python-index-top-names index)) t))
+           (loop for segment in (butlast segments)
+                 for prefix = (format nil "~a/" segment)
+                   then (format nil "~a~a/" prefix segment)
+                 do (setf (gethash prefix (python-index-directories index)) t
+                          (gethash segment (python-index-top-names index)) t)))))
+     known)
+    index))
+
+(defun directory-prefix (path)
+  "PATH's directory as a prefix ending in a slash, or \"\" at the root."
+  (let ((slash (position #\/ path :from-end t)))
+    (if slash (subseq path 0 (1+ slash)) "")))
+
+(defun parent-directory-prefix (directory)
+  "The prefix of DIRECTORY's parent: a/b/ is a/, and a/ and \"\" are \"\"."
+  (let ((slash (position #\/ directory :from-end t
+                                       :end (max 0 (1- (length directory))))))
+    (if slash (subseq directory 0 (1+ slash)) "")))
+
+(defun python-module-file (index directory segments)
+  "The indexed path of the module SEGMENTS name under DIRECTORY, or NIL.
+
+\"a.b\" is a/b.py or a/b/__init__.py. No segments names the package DIRECTORY
+itself, which is its __init__.py."
+  (let ((known (python-index-known index))
+        (base (format nil "~a~{~a~^/~}" directory segments)))
+    (flet ((held (path) (and (gethash path known) path)))
+      (if (null segments)
+          (held (concatenate 'string directory "__init__.py"))
+          (or (held (concatenate 'string base ".py"))
+              (held (concatenate 'string base "/__init__.py")))))))
+
+(defun python-import-roots (importer index domain)
+  "The directories an absolute specifier written in IMPORTER is tried under, in
+D5's order, without repeats.
+
+  1. IMPORTER's own directory, when it holds no indexed __init__.py. Python
+     puts a script's directory on sys.path, and a directory that is not a
+     package can only be imported from by being on sys.path.
+  2. The parent of the outermost package containing IMPORTER. A package named
+     ledger is imported as `ledger' only when its parent is on sys.path.
+  3. DOMAIN's root, which arrives as data: loom-graph reads no configuration.
+     Only a declared domain's. The implicit :DEFAULT domain has root \"\" and is
+     in the table whether or not anything declared it, so taking its root would
+     make a repository-root module importable from tools/ whenever some
+     unrelated JavaScript domain is declared and not otherwise (REV-0003 item 4).
+
+Never \"walk up until some directory holds the module\". Python does not look
+there, and the first local file named like a library would capture every import
+of it."
+  (let* ((known (python-index-known index))
+         (directory (directory-prefix importer))
+         (roots '()))
+    (flet ((package-p (dir)
+             (gethash (concatenate 'string dir "__init__.py") known)))
+      (if (package-p directory)
+          (let ((top directory))
+            (loop while (and (plusp (length top)) (package-p top))
+                  do (setf top (parent-directory-prefix top)))
+            (push top roots))
+          (push directory roots)))
+    (let ((root (and (not (eq :default (getf domain :name))) (getf domain :root))))
+      (when root
+        (push (if (or (string= root "") (char= #\/ (char root (1- (length root)))))
+                  root
+                  (concatenate 'string root "/"))
+              roots)))
+    (remove-duplicates (nreverse roots) :test #'string= :from-end t)))
+
+(defun split-dotted (string)
+  "STRING's non-empty components between dots."
+  (loop with start = 0
+        for dot = (position #\. string :start start)
+        for part = (subseq string start dot)
+        when (plusp (length part)) collect part
+        while dot do (setf start (1+ dot))))
+
+(defun resolve-python-specifier (specifier importer index &key domain)
+  "The workspace path SPECIFIER names when written in IMPORTER, and why not.
+
+  (resolve-python-specifier specifier importer index &key domain)
+  ;; -> (values target-path-or-nil cause-when-nil)
+
+The causes are DES-0047's with one more:
+
+  :UNRESOLVED  relative and no such module, or absolute and the first segment
+               is held under one of the importer's roots but the whole name is
+               not. An in-tree miss, which is what a reader acts on.
+  :UNROOTED    absolute, no root of this importer holds the name, and a module
+               or package of that top-level name is indexed somewhere else.
+               functions/tests' `from ledger.refs import ...' is this until a
+               domain declares functions/ as a root, and the cause says which
+               declaration is missing where :EXTERNAL would have called ledger
+               a library.
+  :EXTERNAL    no root holds the name and no indexed file is named for it.
+
+A relative specifier starts in the importer's directory and climbs one
+directory per dot after the first."
+  (unless (and (stringp specifier) (plusp (length specifier)))
+    (return-from resolve-python-specifier (values nil :unresolved)))
+  (let* ((dots (or (position #\. specifier :test-not #'char=) (length specifier)))
+         (segments (split-dotted (subseq specifier dots))))
+    (if (plusp dots)
+        (let ((directory (directory-prefix importer)))
+          (dotimes (climb (1- dots))
+            (declare (ignorable climb))
+            (when (string= directory "")
+              (return-from resolve-python-specifier (values nil :unresolved)))
+            (setf directory (parent-directory-prefix directory)))
+          (let ((found (python-module-file index directory segments)))
+            (if found (values found nil) (values nil :unresolved))))
+        (let ((roots (python-import-roots importer index domain)))
+          (dolist (root roots)
+            (let ((found (python-module-file index root segments)))
+              (when found
+                (return-from resolve-python-specifier (values found nil)))))
+          (let ((top (first segments)))
+            (cond ((null top) (values nil :unresolved))
+                  ((some (lambda (root)
+                           (or (python-module-file index root (list top))
+                               (gethash (format nil "~a~a/" root top)
+                                        (python-index-directories index))))
+                         roots)
+                   (values nil :unresolved))
+                  ((gethash top (python-index-top-names index))
+                   (values nil :unrooted))
+                  (t (values nil :external))))))))
+
+(defun python-submodule-specifier (specifier name)
+  "The specifier `from SPECIFIER import NAME' may also be naming: the submodule.
+`from ledger import dates' reads ledger/dates.py when ledger/__init__.py does
+not define dates, and Python tries both."
+  (if (char= #\. (char specifier (1- (length specifier))))
+      (concatenate 'string specifier name)
+      (format nil "~a.~a" specifier name)))
+
+(defun python-submodule-targets (file importer index domain)
+  "The files FILE's `from S import a' bindings name as submodules S.a.
+
+Read from :IMPORT-BINDINGS, which holds module-level bindings only. A from-import
+inside a function adds nothing to the module scope; its calls still resolve,
+because they are :IMPORTED-CALLS entries and the walk tries the submodule
+itself (DES-0053 D6 step 3)."
+  (loop for binding in (getp file :import-bindings)
+        for specifier = (getf binding :specifier)
+        for name = (getf binding :name)
+        when (and specifier name (string/= name "*") (plusp (length specifier)))
+          append (let ((target (resolve-python-specifier
+                                (python-submodule-specifier specifier name)
+                                importer index :domain domain)))
+                   (and target (list target)))))
+
 (defun sibling-alias-keys (domains except)
   "Every alias key declared by a domain in DOMAINS other than EXCEPT.
 
@@ -222,7 +407,9 @@ The second value is CON-0001 at the import layer: path to a list of
 rather than dropped, because the cause is the half a reader acts on."
   (let ((known (make-hash-table :test #'equal))
         (scope (make-hash-table :test #'equal))
-        (unresolved (make-hash-table :test #'equal)))
+        (unresolved (make-hash-table :test #'equal))
+        ;; Built on the first Python importer, so a tree with none pays nothing.
+        (python-index nil))
     (dolist (file (entities-of-type view :file))
       (let ((path (getp file :path)))
         (when path (setf (gethash path known) t))))
@@ -232,16 +419,28 @@ rather than dropped, because the cause is the half a reader acts on."
           (let* ((name (getp file :domain))
                  (domain (and domains name (gethash name domains)))
                  (siblings (and domains name (sibling-alias-keys domains name)))
+                 (python-p (eq :python (getp file :language)))
                  (targets '())
                  (misses '()))
+            (when (and python-p (null python-index))
+              (setf python-index (make-python-index known)))
             (dolist (specifier (getp file :import-sources))
+              ;; The importer's language chooses the resolver: Python's rules
+              ;; are not JavaScript's, and every other language keeps
+              ;; RESOLVE-MODULE-SPECIFIER exactly as it was (DES-0053 D5).
               (multiple-value-bind (target cause)
-                  (resolve-module-specifier specifier path known
-                                            :domain domain
-                                            :sibling-aliases siblings)
+                  (if python-p
+                      (resolve-python-specifier specifier path python-index
+                                                :domain domain)
+                      (resolve-module-specifier specifier path known
+                                                :domain domain
+                                                :sibling-aliases siblings))
                 (if target
                     (pushnew target targets :test #'equal)
                     (push (list :specifier specifier :cause cause) misses))))
+            (when python-p
+              (dolist (target (python-submodule-targets file path python-index domain))
+                (pushnew target targets :test #'equal)))
             (setf (gethash path scope) targets)
             (when misses (setf (gethash path unresolved) (nreverse misses)))))))
     (values scope unresolved)))
@@ -534,8 +733,14 @@ persist\' and one arrow in a mock."
         (property-candidates
          (gethash (string-downcase property) (name-lookup-by-property index))
          property caller)
-        (admit (gethash (string-downcase property) (name-lookup-by-name index))
-               property))))
+        ;; The third tier is JavaScript's namespace import, `api.fetchGame()'.
+        ;; The Python extractor has already written every namespace access as an
+        ;; :IMPORTED-CALLS entry, so a Python caller reaching here has a receiver
+        ;; that is no module, and a bare function of the property's name is the
+        ;; wrong edge (DES-0053 D6).
+        (unless (python-caller-p caller)
+          (admit (gethash (string-downcase property) (name-lookup-by-name index))
+                 property)))))
 
 (defun candidate-entities (index name caller)
   "The definitions NAME could name, as read from CALLER.
@@ -1246,6 +1451,38 @@ DES-0014 answers separately."
                 (gethash (string-downcase (name entity)) swallowing))))
      (entities-of-type view :function))))
 
+(defun python-caller-p (caller)
+  (and caller (eq :python (getp caller :language))))
+
+(defun python-caller-candidates (candidates caller)
+  "CANDIDATES CALLER can reach, with the Python line drawn in both directions.
+
+CPython code does not call Lisp or JavaScript in process, and neither calls into
+CPython, so a same-named definition across that line is a candidate the source
+cannot have meant. DES-0053 D6, and BUG-0070 for the half that was missing: a
+Lisp or JavaScript name that fell back to its spelling used to reach a Python
+definition at confidence 1.0.
+
+A Python caller also keeps only the plain functions of its own file. A bare
+name no import binds cannot reach another file (the imported-calls tier is how
+one does), and `d[k].get(x)' is written as the bare name `get', so VISIBLE-
+CANDIDATES' never-empty fallback used to hand it every `get' in the tree. A
+method is kept from any file: that is the member-call tiers' union of genuine
+possibilities, and nothing else produces one for a Python caller.
+
+A NIL caller keeps the set it had, because it asks only whether a name reaches
+anything (RESOLVE-GENERATED-DEFINITIONS)."
+  (flet ((python-p (e) (eq :python (getp e :language))))
+    (cond ((null caller) candidates)
+          ((python-caller-p caller)
+           (let ((file (getp caller :file)))
+             (remove-if-not (lambda (e)
+                              (and (python-p e)
+                                   (or (eq :method (entity-type e))
+                                       (equal file (getp e :file)))))
+                            candidates)))
+          (t (remove-if #'python-p candidates)))))
+
 (defun call-targets (index name caller)
   "What a call to NAME from CALLER links to: a list of edge plists, each
 naming a :CALLEE and, when the link is a guess rather than a fact, the
@@ -1299,7 +1536,7 @@ anything\" without a caller to remove from the candidates or to hang a node on.
 RESOLVE-GENERATED-DEFINITIONS asks it that way, so it can decide whether an
 orphaned definer name is worth a call site at all."
   (multiple-value-bind (all placedp) (candidate-entities index name caller)
-   (let* ((candidates (remove caller all))
+   (let* ((candidates (python-caller-candidates (remove caller all) caller))
          (functions  (remove-if-not (lambda (e) (eq :function  (entity-type e))) candidates))
          (methods    (remove-if-not (lambda (e) (eq :method    (entity-type e))) candidates))
          (interfaces (remove-if-not (lambda (e) (eq :interface (entity-type e))) candidates))
@@ -1393,11 +1630,261 @@ component, so a stored copy that drifted from it would leave the entity
 resolving one name while keying on another, and nothing downstream could tell.
 DES-0014, PLAN-0014 step 4."
   (if (eq :call-site (entity-type caller))
+      ;; A site bound to an import carries its binding in :IMPORTED-CALLS and
+      ;; its :CALL-NAME is only the dotted spelling kept for the key and the
+      ;; label. Resolved here as a bare name it would re-enter
+      ;; VISIBLE-CANDIDATES' never-empty fallback, so the name is resolved once,
+      ;; through the binding (DES-0053 D4).
       (let ((name (getp caller :call-name)))
-        (when name (list name)))
+        (when (and name (null (getp caller :imported-calls)))
+          (list name)))
       (getp caller :call-names)))
 
-(defun resolve-calls (view &key workspace-id external-packages module-scope)
+;;;; ==================================================================
+;;;; Imported calls (DES-0053 D6)
+;;;; ==================================================================
+;;;;
+;;;; A Python call bound to an import is written by the analyzer as a specifier
+;;;; and an attribute path, never as a bare name: a bare name re-enters
+;;;; VISIBLE-CANDIDATES' never-empty fallback, and on lfia that put three wrong
+;;;; fan-outs on `build' alone. This tier resolves the specifier to a file (D5)
+;;;; and walks the path the way Python looks an attribute up on a module. It
+;;;; chooses between no candidates: at each step a file holds at most one
+;;;; binding of a name (CON-0005), so a hit is one edge at full confidence and a
+;;;; miss is a recorded cause.
+
+(defparameter *imported-call-walk-limit* 16
+  "Steps one imported call may take through re-exports before it is a miss.")
+
+(defstruct (walk-context (:constructor make-walk-context
+                             (index definitions files domains)))
+  "What an imported-call walk reads, built once per pass: the PYTHON-INDEX, the
+Python definitions keyed on (file . name), the :FILE entities by path, and the
+domain table."
+  index definitions files domains)
+
+(defun build-walk-context (view domains)
+  (let ((known (make-hash-table :test #'equal))
+        (files (make-hash-table :test #'equal))
+        (definitions (make-hash-table :test #'equal)))
+    (dolist (file (entities-of-type view :file))
+      (let ((path (getp file :path)))
+        (when path
+          (setf (gethash path known) t
+                (gethash path files) file))))
+    (dolist (type '(:function :method :class :variable))
+      (dolist (entity (entities-of-type view type))
+        (when (and (eq :python (getp entity :language)) (slot-boundp entity 'name))
+          (setf (gethash (cons (getp entity :file) (name entity)) definitions) entity))))
+    (make-walk-context (make-python-index known) definitions files domains)))
+
+(defun walk-resolve-specifier (context specifier importer)
+  "(values file cause) for SPECIFIER written in the file IMPORTER, under that
+file's own domain."
+  (let* ((file (gethash importer (walk-context-files context)))
+         (name (and file (getp file :domain)))
+         (domains (walk-context-domains context)))
+    (resolve-python-specifier specifier importer (walk-context-index context)
+                              :domain (and domains name (gethash name domains)))))
+
+(defun specifier-miss-cause (cause)
+  "The :UNRESOLVED-IMPORTED-CALLS cause for a specifier that named no file.
+
+:UNRESOLVED -- a relative name, or a held package missing the module -- is
+:MISSING-IN-TARGET. It is rot of the kind `check' reports: a module a call still
+names and the tree no longer holds."
+  (if (eq cause :unresolved) :missing-in-target cause))
+
+(defun import-binding-of (context file name)
+  "FILE's module-level import binding of NAME, as its :IMPORT-BINDINGS plist."
+  (let ((entity (gethash file (walk-context-files context))))
+    (and entity
+         (find name (getp entity :import-bindings)
+               :key (lambda (binding) (getf binding :local)) :test #'equal))))
+
+(defun package-submodule (context file name)
+  "The file of the submodule NAME of the package whose __init__.py is FILE."
+  (let ((directory (directory-prefix file)))
+    (when (string= file (concatenate 'string directory "__init__.py"))
+      (python-module-file (walk-context-index context) directory (list name)))))
+
+(defvar *walk-nesting* 0
+  "How many walks are open inside another: a base class followed, or a star
+import entered. Bounded by *IMPORTED-CALL-WALK-LIMIT*, because two classes that
+name each other as bases and two modules that star-import each other are both
+legal text that a walk must not follow forever.")
+
+(defun nested-walk (context file names)
+  "(values callee cause) for NAMES walked from FILE inside the walk now open.
+
+Past the limit the answer is :INHERITED, not :MISSING-IN-TARGET: a walk that
+stopped because it was told to has not shown the name is absent."
+  (if (>= *walk-nesting* *imported-call-walk-limit*)
+      (values nil :inherited)
+      (let ((*walk-nesting* (1+ *walk-nesting*)))
+        (walk-attribute-path context file names))))
+
+(defun inherited-method (context class name)
+  "(values callee cause) for the method NAME that CLASS does not define itself.
+
+Python looks it up on the bases, so each base is walked from the class's own
+file in the order written, which is the order of the method resolution for the
+shapes this follows. A class with no base but `object' really lacks it:
+:MISSING-IN-TARGET, the one claim `check' reports. Otherwise the answer is
+:INHERITED unless a base yields the method, because a base the tree does not
+hold (pydantic's BaseModel, an exception) may define anything, and BUG-0071 is
+what reporting that as rot cost. A base is read by the name :SUPERCLASS-NAMES
+holds, which is the name as written except that an import alias is undone; an
+aliased base therefore fails to resolve and ends as :INHERITED, never as a
+wrong edge."
+  (let ((bases (remove "object" (getp class :superclass-names) :test #'equal)))
+    (if (null bases)
+        (values nil :missing-in-target)
+        (dolist (base bases (values nil :inherited))
+          (multiple-value-bind (callee cause)
+              (nested-walk context (getp class :file) (list base name))
+            (declare (ignore cause))
+            (when callee (return (values callee nil))))))))
+
+(defun landing (context definition rest)
+  "(values callee cause) for a walk that reached DEFINITION with REST left.
+
+A function or method ends the walk. A class goes to its __init__, which is what
+calling it runs, or to the method REST names, or to a base class that defines
+it. A :VARIABLE is not callable."
+  (let ((file (getp definition :file))
+        (definitions (walk-context-definitions context)))
+    (case (entity-type definition)
+      ((:function :method)
+       (if rest (values nil :not-callable) (values definition nil)))
+      (:class
+       (cond ((null rest)
+              (let ((init (gethash (cons file (format nil "~a.__init__" (name definition)))
+                                   definitions)))
+                (if init (values init nil) (values nil :not-callable))))
+             ((null (rest rest))
+              (let ((method (gethash (cons file (format nil "~a.~a" (name definition)
+                                                        (first rest)))
+                                     definitions)))
+                (if method
+                    (values method nil)
+                    (inherited-method context definition (first rest)))))
+             (t (values nil :not-callable))))
+      (t (values nil :not-callable)))))
+
+(defun star-specifiers (context file)
+  "The specifiers of FILE's module-level `from S import *', last written first.
+Python binds in statement order, so a later star wins a name two of them hold."
+  (let ((entity (gethash file (walk-context-files context))))
+    (and entity
+         (reverse (loop for binding in (getp entity :import-bindings)
+                        when (equal "*" (getf binding :name))
+                          collect (getf binding :specifier))))))
+
+(defun walk-stars (context file names)
+  "(values callee cause) for NAMES looked up through FILE's star imports, after
+FILE itself has no definition, binding or submodule of the first name.
+
+Each star module is walked as FILE's own namespace. A hit is the edge. A miss in
+every one of them, with every one read, is the :MISSING-IN-TARGET that is true.
+A star module the tree does not hold, or a walk that ended for any other reason,
+leaves the name unknowable, and that is :STAR-IMPORT, which `check' does not
+report. A file with no star import has nothing to add, and the miss stands."
+  (let ((unknowable nil))
+    (dolist (specifier (star-specifiers context file)
+                       (values nil (if unknowable :star-import :missing-in-target)))
+      (let ((module (walk-resolve-specifier context specifier file)))
+        (if (null module)
+            (setf unknowable t)
+            (multiple-value-bind (callee cause) (nested-walk context module names)
+              (cond (callee (return (values callee nil)))
+                    ((not (eq cause :missing-in-target)) (setf unknowable t)))))))))
+
+(defun walk-attribute-path (context start names)
+  "(values callee cause), walking NAMES from the module file START.
+
+Per step, in D6's order: a definition of the name in the file; a module-level
+import binding of it, which is the re-export through ledger/__init__.py; a
+submodule of that name; a star import of the file, which may bind any name. None
+of the first three is a miss. The walk refuses a cycle and stops at
+*IMPORTED-CALL-WALK-LIMIT*, and both end as :MISSING-IN-TARGET."
+  (let ((file start) (seen '()))
+    (dotimes (step *imported-call-walk-limit* (values nil :missing-in-target))
+      (declare (ignorable step))
+      (when (null names)
+        (return-from walk-attribute-path (values nil :not-callable)))
+      (let ((key (cons file names)))
+        (when (member key seen :test #'equal)
+          (return-from walk-attribute-path (values nil :missing-in-target)))
+        (push key seen))
+      (let* ((name (first names))
+             (rest (rest names))
+             (definition (gethash (cons file name) (walk-context-definitions context)))
+             (binding (and (null definition) (import-binding-of context file name))))
+        (cond
+          (definition
+           (return-from walk-attribute-path (landing context definition rest)))
+          (binding
+           (let ((specifier (getf binding :specifier))
+                 (imported (getf binding :name)))
+             (multiple-value-bind (module cause)
+                 (walk-resolve-specifier context specifier file)
+               (cond
+                 ((null module)
+                  (return-from walk-attribute-path
+                    (values nil (specifier-miss-cause cause))))
+                 ((null imported) (setf file module names rest))
+                 ((string/= module file)
+                  ;; The next step finds the name as a definition, a binding or
+                  ;; a submodule of MODULE, in that order.
+                  (setf file module names (cons imported rest)))
+                 (t
+                  ;; `from . import dates' written in the package's own
+                  ;; __init__.py names itself, and only the submodule is left.
+                  (let ((sub (resolve-python-specifier
+                              (python-submodule-specifier specifier imported) file
+                              (walk-context-index context))))
+                    (if sub
+                        (setf file sub names rest)
+                        (return-from walk-attribute-path
+                          (values nil :missing-in-target)))))))))
+          (t
+           (let ((sub (package-submodule context file name)))
+             (if sub
+                 (setf file sub names rest)
+                 (return-from walk-attribute-path
+                   (walk-stars context file names))))))))))
+
+(defun imported-call-target (context importer entry)
+  "(values callee cause) for one :IMPORTED-CALLS ENTRY made in the file IMPORTER."
+  (multiple-value-bind (file cause)
+      (walk-resolve-specifier context (getf entry :specifier) importer)
+    (if file
+        (walk-attribute-path context file (getf entry :path))
+        (values nil (specifier-miss-cause cause)))))
+
+(defun missing-imported-calls (view)
+  "Every :IMPORTED-CALLS entry whose module was found and which holds no such
+name, as plists naming the caller, its file and line, and what was written.
+
+`check' reports these and no other cause (DES-0053 D6). :EXTERNAL and :UNROOTED
+are counted gaps, a library or a missing domain declaration. This one is a call
+that names a function the tree no longer holds, which is the rot REQ-0078 R2
+asks for."
+  (let ((found '()))
+    (dolist (type '(:function :method :test :call-site))
+      (dolist (caller (entities-of-type view type))
+        (dolist (miss (getp caller :unresolved-imported-calls))
+          (when (eq :missing-in-target (getf miss :cause))
+            (push (list :caller (name caller)
+                        :file (getp caller :file)
+                        :line (getf miss :line)
+                        :specifier (getf miss :specifier)
+                        :path (getf miss :path))
+                  found)))))
+    (nreverse found)))
+
+(defun resolve-calls (view &key workspace-id external-packages module-scope domains)
   "Operations linking each recorded call name to the definition it names.
 
 For every callable carrying :CALL-NAMES, each name is looked up in the
@@ -1432,6 +1919,8 @@ after every analysis pass."
         ;; dedupe for the asserts below and the produced set for the sweep at
         ;; the end, which are the same question asked twice.
         (asserted (make-hash-table :test #'equal))
+        ;; Built on the first :IMPORTED-CALLS, so a tree with none pays nothing.
+        (walk nil)
         (ops '()))
     ;; :TEST alongside the two callables, per DES-0002 R8. No new logic: it
     ;; was always a permitted :CALLS source in the ontology and had simply
@@ -1488,7 +1977,35 @@ after every analysis pass."
             (push (update-properties (id caller)
                                      (list :unresolved-calls (nreverse left))
                                      workspace-id)
-                  ops)))))
+                  ops))
+          ;; DES-0053 D6. Written unconditionally whenever the caller has
+          ;; entries, as :UNRESOLVED-CALLS is, and for the same reason: a call
+          ;; whose target was since renamed has to have that written down. Read
+          ;; from :IMPORTED-CALLS and never rewritten (DEC-0003).
+          (let ((entries (getp caller :imported-calls)))
+            (when entries
+              (unless walk (setf walk (build-walk-context view domains)))
+              (let ((hit (make-hash-table :test #'equal))
+                    (misses '()))
+                (dolist (entry entries)
+                  (multiple-value-bind (callee cause)
+                      (imported-call-target walk (getp caller :file) entry)
+                    (cond ((null callee)
+                           (push (list :specifier (getf entry :specifier)
+                                       :path (getf entry :path)
+                                       :line (getf entry :line)
+                                       :cause cause)
+                                 misses))
+                          ((null (gethash (id callee) hit))
+                           (setf (gethash (id callee) hit) t)
+                           (push (assert-edge :calls caller callee
+                                              :workspace-id workspace-id)
+                                 ops)))))
+                (push (update-properties (id caller)
+                                         (list :unresolved-imported-calls
+                                               (nreverse misses))
+                                         workspace-id)
+                      ops)))))))
     ;; The sweep last, so it names only sites no assert above touched. An
     ;; :UPDATE-PROPERTIES for a site being retracted is emitted above and is
     ;; harmless: it lands on an entity that is still there when it is applied.
@@ -1551,6 +2068,45 @@ a tree that writes its cases in the same file as its code: vitest\'s
                        (not (gethash (getp target :file) test-files)))
               (push (assert-edge :tests test target :workspace-id workspace-id)
                     ops))))))
+    (nreverse ops)))
+
+(defparameter *setting-reader-types* '(:function :method :test :variable :file)
+  "What a :READS edge may start at: the same list the ontology declares.")
+
+(defun resolve-settings (view &key workspace-id)
+  "Operations minting one :SETTING per name read and one :READS edge per reader.
+
+DES-0053 D10. The analyzer writes :ENVIRONMENT-READS on the entity whose code
+makes the read and nothing else. That a name read in two files is one thing is
+a fact about the whole workspace, which no analyzer can see, so the node is
+derived here, on every pass, from the property. The property is never
+rewritten, and so a re-run after a retract rebuilds what the retract destroyed
+(DEC-0003).
+
+A setting no reader names any more is retracted, as CALL-SITE-RETRACTIONS sweeps
+an ambiguous site. A reader that stops reading needs no edge sweep: its file was
+reanalyzed, and RETRACT-FILE took its edges first. The retracts go last and name
+only settings no assert above touches, for the reason CALL-SITE-RETRACTIONS
+gives. The pass returns operations and calls nothing that writes the graph."
+  (let ((minted (make-hash-table :test #'equal))
+        (ops '()))
+    (dolist (type *setting-reader-types*)
+      (dolist (reader (entities-of-type view type))
+        (dolist (name (remove-duplicates (getp reader :environment-reads)
+                                         :test #'string=))
+          (let ((setting (make-instance 'setting-entity
+                                        :name name
+                                        :properties (properties-table
+                                                     (list :name name
+                                                           :sources '(:environment))))))
+            (unless (gethash (id setting) minted)
+              (setf (gethash (id setting) minted) t)
+              (push (assert-entity setting workspace-id) ops))
+            (push (assert-edge :reads reader setting :workspace-id workspace-id)
+                  ops)))))
+    (dolist (setting (entities-of-type view :setting))
+      (unless (gethash (id setting) minted)
+        (push (retract (id setting) workspace-id) ops)))
     (nreverse ops)))
 
 ;;;; ==================================================================
@@ -1670,19 +2226,40 @@ its implementations, all answering to the protocol's name. A document that
 names analyze-file means the contract; picking one of its methods would be
 arbitrary and refusing outright reports the reference as rotten when it is
 perfectly good. So a candidate set consisting of exactly one :INTERFACE plus
-methods resolves to the interface."
+methods resolves to the interface.
+
+A setting and the variables that read it are the other. `SPREADSHEET_ID =
+os.environ.get(\"SPREADSHEET_ID\", \"\")' mints a :VARIABLE and a :SETTING of one
+name, and every one of lfia's eight config reads has that shape. They are one
+fact stated twice, since the variable is the read, and a document naming
+SPREADSHEET_ID means the thing the environment holds. So a set of exactly one
+:SETTING plus :VARIABLEs each carrying the name in :ENVIRONMENT-READS resolves
+to the setting. A variable of the same name that does not read it is a
+different thing, and the set stays ambiguous (CON-0001)."
   (let ((candidates (gethash (string-downcase name) index)))
     (cond ((null candidates) (values nil nil))
           ((null (rest candidates)) (values (first candidates) nil))
           (t (let ((interfaces (remove-if-not
                                 (lambda (e) (eq :interface (entity-type e)))
-                                candidates)))
-               (if (and (= 1 (length interfaces))
-                        (every (lambda (e)
-                                 (member (entity-type e) '(:interface :method)))
-                               candidates))
-                   (values (first interfaces) nil)
-                   (values nil candidates)))))))
+                                candidates))
+                   (settings (remove-if-not
+                              (lambda (e) (eq :setting (entity-type e)))
+                              candidates)))
+               (cond ((and (= 1 (length interfaces))
+                           (every (lambda (e)
+                                    (member (entity-type e) '(:interface :method)))
+                                  candidates))
+                      (values (first interfaces) nil))
+                     ((and (= 1 (length settings))
+                           (every (lambda (e)
+                                    (or (eq e (first settings))
+                                        (and (eq :variable (entity-type e))
+                                             (member (name (first settings))
+                                                     (getp e :environment-reads)
+                                                     :test #'string=))))
+                                  candidates))
+                      (values (first settings) nil))
+                     (t (values nil candidates))))))))
 
 (defun resolve-document-links (view &key workspace-id)
   "Operations linking each document's declared and mentioned references.

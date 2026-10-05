@@ -1590,3 +1590,729 @@ distinction this whole change is"))))
     (apply-transaction g (resolve-document-links g :workspace-id "w"))
     (is (= 1 (length (getp doc :ambiguous-references)))
         "asked twice, answered once")))
+
+;;; ------------------------------------------------------------------
+;;; Python specifiers (DES-0053 D5)
+;;; ------------------------------------------------------------------
+;;;
+;;; The fixtures are shaped like lfia-accounting: functions/ is a directory
+;;; with no __init__.py that Firebase runs main.py from, functions/ledger/ is a
+;;; package, and functions/tests/ imports `ledger.refs', which resolves only
+;;; when functions/ is on sys.path.
+
+(defun r-py-file (graph path &key imports bindings domain)
+  (let ((e (make-instance 'file-entity :name path :origin-file path
+                          :properties (properties-table
+                                       (list :path path :language :python
+                                             :domain domain
+                                             :import-sources imports
+                                             :import-bindings bindings)))))
+    (add-entity graph e)
+    e))
+
+(defun r-py-function (graph name file &key unresolved)
+  (let ((e (make-instance 'function-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :python
+                                             :call-names unresolved)))))
+    (add-entity graph e)
+    e))
+
+(defun py-resolve (specifier importer known &key domain)
+  "RESOLVE-PYTHON-SPECIFIER over the paths KNOWN, as two values."
+  (loom-graph::resolve-python-specifier
+   specifier importer (loom-graph::make-python-index (apply #'known-table known))
+   :domain domain))
+
+(defparameter *lfia-paths*
+  '("functions/main.py" "functions/config.py" "functions/sheets.py"
+    "functions/ledger/__init__.py" "functions/ledger/posting.py"
+    "functions/ledger/hashing.py" "functions/ledger/dates.py"
+    "functions/ledger/refs.py" "functions/tests/test_refs.py"))
+
+(test a-script-directory-is-a-root-when-it-is-not-a-package
+  ;; main.py imports `config' by bare name because Firebase runs it from
+  ;; functions/, which holds no __init__.py. Root 1.
+  (is (equal "functions/config.py"
+             (py-resolve "config" "functions/main.py" *lfia-paths*))))
+
+(test the-parent-of-the-outermost-package-is-a-root
+  ;; ledger/posting.py's `from ledger.hashing import content_hash`. ledger/ is a
+  ;; package, so its own directory is not a root and its parent is. Root 2.
+  (is (equal "functions/ledger/hashing.py"
+             (py-resolve "ledger.hashing" "functions/ledger/posting.py" *lfia-paths*))))
+
+(test a-relative-specifier-starts-in-the-importers-directory
+  (is (equal "functions/ledger/posting.py"
+             (py-resolve ".posting" "functions/ledger/__init__.py" *lfia-paths*)))
+  (is (equal "functions/ledger/__init__.py"
+             (py-resolve "." "functions/ledger/posting.py" *lfia-paths*))
+      "a bare dot names the importer's own package"))
+
+(test each-dot-after-the-first-climbs-one-directory
+  ;; DES-0053 D5: "climbs one directory per dot after the first". PLAN-0056's
+  ;; wording, that `..x' climbs two directories, disagrees with the design; the
+  ;; design is Python's own rule and is what this asserts.
+  (let ((known '("a/x.py" "a/b/y.py" "a/b/c/m.py")))
+    (is (equal "a/b/y.py" (py-resolve "..y" "a/b/c/m.py" known)) "two dots, one climb")
+    (is (equal "a/x.py" (py-resolve "...x" "a/b/c/m.py" known)) "three dots, two climbs")
+    (is (eq :unresolved (nth-value 1 (py-resolve "....x" "a/m.py" '("a/m.py"))))
+        "and climbing past the root resolves nothing")))
+
+(test a-dotted-name-finds-a-package-when-there-is-no-module
+  (is (equal "functions/ledger/__init__.py"
+             (py-resolve "ledger" "functions/main.py" *lfia-paths*)))
+  (is (equal "pkg/sub/__init__.py"
+             (py-resolve "pkg.sub" "main.py" '("main.py" "pkg/__init__.py" "pkg/sub/__init__.py")))
+      "a/b names a/b/__init__.py when there is no a/b.py"))
+
+(test a-module-no-root-reaches-is-unrooted-until-a-domain-names-its-root
+  ;; functions/tests' `from ledger.refs import ...'. The tests directory holds
+  ;; no ledger, and ledger is indexed one level up: that is not an external
+  ;; library, and the cause says which declaration is missing.
+  (multiple-value-bind (target cause)
+      (py-resolve "ledger.refs" "functions/tests/test_refs.py" *lfia-paths*)
+    (is (null target))
+    (is (eq :unrooted cause)))
+  (is (equal "functions/ledger/refs.py"
+             (py-resolve "ledger.refs" "functions/tests/test_refs.py" *lfia-paths*
+                         :domain (list :name :functions :root "functions/")))
+      "the domain root is the third root"))
+
+(test the-implicit-default-domains-root-is-not-a-third-import-root
+  ;; DES-0053 D5: the third root is a declared one. The default domain has root
+  ;; \"\" and exists whether or not anything declared it, so it must not make
+  ;; tools/x.py's `import config' reach the repository-root config.py.
+  (let ((known '("config.py" "tools/x.py")))
+    (is (eq :unrooted
+            (nth-value 1 (py-resolve "config" "tools/x.py" '("config.py" "tools/x.py" "tools/y.py")
+                                     :domain (list :name :default :root ""))))
+        "tools/ is a script directory, so config is looked for there only")
+    (is (equal "config.py"
+               (py-resolve "config" "tools/x.py" known
+                           :domain (list :name :app :root "")))
+        "a declared domain whose root is the repository root does reach it")))
+
+(test a-library-the-tree-does-not-hold-is-external
+  (multiple-value-bind (target cause)
+      (py-resolve "googleapiclient.discovery" "functions/sheets.py" *lfia-paths*)
+    (is (null target))
+    (is (eq :external cause))))
+
+(test a-held-package-missing-the-submodule-is-unresolved-not-external
+  ;; The in-tree miss a reader acts on: ledger is here, ledger.missing is not.
+  (is (eq :unresolved
+          (nth-value 1 (py-resolve "ledger.missing" "functions/main.py" *lfia-paths*)))))
+
+(test a-python-resolver-answers-against-the-index-and-not-the-disk
+  ;; The Python twin of RESOLVE-MODULE-SPECIFIER-ANSWERS-AGAINST-THE-INDEX-AND-
+  ;; NOT-THE-DISK, and the proof that loom-graph reads no filesystem here.
+  ;; tools/test/service.py exists on disk as this is written and is absent from
+  ;; the table, so `import service' must not resolve; add it and it does.
+  (is (probe-file (merge-pathnames "tools/test/service.py"
+                                   (asdf:system-relative-pathname :loom-graph "../../")))
+      "precondition: the file this test pretends is unindexed exists on disk")
+  (is (eq :external
+          (nth-value 1 (py-resolve "service" "tools/test/acceptance.py"
+                                   '("tools/test/acceptance.py")))))
+  (is (equal "tools/test/service.py"
+             (py-resolve "service" "tools/test/acceptance.py"
+                         '("tools/test/acceptance.py" "tools/test/service.py")))))
+
+(defun py-scope (graph &key domains)
+  (loom-graph:build-module-scope graph :domains domains))
+
+(test from-import-of-a-submodule-adds-the-file-to-the-importers-scope
+  ;; `from ledger import dates' reads ledger/dates.py when ledger/__init__.py
+  ;; does not define dates. Read from :IMPORT-BINDINGS, module level only.
+  (let ((g (make-graph)))
+    (dolist (path *lfia-paths*)
+      (unless (string= path "functions/main.py") (r-py-file g path)))
+    (r-py-file g "functions/main.py"
+               :imports '("ledger")
+               :bindings '((:local "dates" :specifier "ledger" :name "dates")
+                           (:local "nothing" :specifier "ledger" :name "nothing")))
+    (let ((scope (py-scope g)))
+      (is (equal '("functions/ledger/dates.py" "functions/ledger/__init__.py")
+                 (gethash "functions/main.py" scope))
+          "the package, and the submodule the from-import also names; a name that
+is no submodule adds nothing"))))
+
+(test a-python-caller-sees-its-own-files-definition-before-another-files
+  ;; VISIBLE-CANDIDATES' local tier, which applies now that :PYTHON is
+  ;; module-scoped. Without it `read_tab' from main.py fans out across both.
+  (let* ((g (make-graph))
+         (caller (r-py-function g "seed" "functions/main.py" :unresolved '("read_tab")))
+         (local  (r-py-function g "read_tab" "functions/main.py"))
+         (far    (r-py-function g "read_tab" "functions/sheets.py")))
+    (r-py-file g "functions/main.py")
+    (r-py-file g "functions/sheets.py")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id local))
+               (mapcar #'to-id (relationships-from g (id caller) :rel-type :calls)))
+        "one edge, to the definition in the caller's own file")
+    (is (null (relationships-to g (id far) :rel-type :calls)))))
+
+(test a-python-importer-is-resolved-by-pythons-rules-and-a-javascript-one-is-not
+  ;; The dispatch on :LANGUAGE. `config' is a sibling script to Python and an
+  ;; external package to the bundler, and both answers hold in one graph.
+  (let ((g (make-graph)))
+    (r-py-file g "app/main.py" :imports '("config"))
+    (r-py-file g "app/config.py")
+    (r-js-file g "app/main.js" :imports '("config"))
+    (r-js-file g "app/config.js")
+    (multiple-value-bind (scope unresolved) (py-scope g)
+      (is (equal '("app/config.py") (gethash "app/main.py" scope)))
+      (is (null (gethash "app/main.py" unresolved)))
+      (is (null (gethash "app/main.js" scope))
+          "a bare specifier is a package to the bundler")
+      (is (equal '((:specifier "config" :cause :external))
+                 (gethash "app/main.js" unresolved))))))
+
+(test an-unrooted-python-import-is-recorded-with-its-cause
+  (let ((g (make-graph)))
+    (dolist (path *lfia-paths*)
+      (unless (string= path "functions/tests/test_refs.py") (r-py-file g path)))
+    (r-py-file g "functions/tests/test_refs.py" :imports '("ledger.refs" "pytest"))
+    (multiple-value-bind (scope unresolved) (py-scope g)
+      (declare (ignore scope))
+      (is (equal '((:specifier "ledger.refs" :cause :unrooted)
+                   (:specifier "pytest" :cause :external))
+                 (gethash "functions/tests/test_refs.py" unresolved))))))
+
+;;; ------------------------------------------------------------------
+;;; The :IMPORTED-CALLS tier (DES-0053 D6)
+;;; ------------------------------------------------------------------
+;;;
+;;; The graph is hand-built and shaped like lfia-accounting, whose three wrong
+;;; fan-outs on `build' are what the design measured. Each test is the failure
+;;; the tier exists to prevent.
+
+(defun r-py-definition (graph type name file &key bases)
+  "A Python :FUNCTION, :METHOD, :CLASS or :VARIABLE named NAME in FILE. BASES
+are a class's :SUPERCLASS-NAMES."
+  (let ((e (make-instance (ecase type
+                            (:function 'function-entity)
+                            (:method 'method-entity)
+                            (:class 'class-entity)
+                            (:variable 'variable-entity))
+                          :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :python
+                                             :superclass-names bases)))))
+    (add-entity graph e)
+    e))
+
+(defun r-py-caller (graph name file &key imported-calls call-names)
+  "A Python function whose calls are all named by IMPORTED-CALLS, each a plist
+of :SPECIFIER, :PATH and :LINE."
+  (let ((e (make-instance 'function-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :python
+                                             :call-names call-names
+                                             :imported-calls imported-calls)))))
+    (add-entity graph e)
+    e))
+
+(defun called-ids (graph entity)
+  (mapcar #'to-id (relationships-from graph (id entity) :rel-type :calls)))
+
+(defun r-resolve (graph &key domains)
+  (apply-transaction graph (resolve-calls graph :domains domains)))
+
+(defun r-py-tree (graph &rest paths)
+  "A :FILE for each of PATHS that has none yet."
+  (dolist (path paths)
+    (unless (find path (entities-of-type graph :file) :key #'name :test #'string=)
+      (r-py-file graph path))))
+
+(test a-call-through-an-external-import-reaches-nothing-and-says-why
+  ;; sheets.py: `from googleapiclient.discovery import build', then build(...).
+  ;; Bare, BUILD fans out to cross_check.build and simplifi.build at 1/2 each,
+  ;; because no tier applies and VISIBLE-CANDIDATES never empties a set. Bound
+  ;; to its import it is external and draws no edge at all.
+  (let* ((g (make-graph))
+         (cross (r-py-definition g :function "build" "functions/cross_check.py"))
+         (simplifi (r-py-definition g :function "build" "functions/simplifi.py"))
+         (bound (r-py-caller g "_service" "functions/sheets.py"
+                             :imported-calls '((:specifier "googleapiclient.discovery"
+                                                :path ("build") :line 11))))
+         (bare (r-py-caller g "_service_bare" "functions/sheets.py"
+                            :call-names '("build"))))
+    (r-py-tree g "functions/sheets.py" "functions/cross_check.py" "functions/simplifi.py")
+    (r-resolve g)
+    (is (null (called-ids g bound)) "no direct edge")
+    (is (null (relationships-from g (id bound) :rel-type :contains))
+        "and no call site, which is what a fan-out would have minted")
+    (is (equal '((:specifier "googleapiclient.discovery" :path ("build") :line 11
+                  :cause :external))
+               (getp bound :unresolved-imported-calls)))
+    ;; The bare spelling used to be the control here: it fanned out to both
+    ;; builds at 1/2. BUG-0070 closed that, since a bare name no import binds
+    ;; cannot reach another file, so the control now asserts the same silence
+    ;; and the bound caller's own assertions above carry the test.
+    (dolist (target (list cross simplifi))
+      (is (null (relationships-to g (id target) :rel-type :calls))
+          "neither the bare call nor the bound one reaches another file's build"))
+    (is (null (called-ids g bare)))))
+
+(test a-module-attribute-call-reaches-the-module-and-not-the-callers-own-file
+  ;; main.py:56 calls sheets.read_tab(...) from seed_accounts_map. main.py also
+  ;; defines its own HTTP function read_tab, which the bare spelling matched on
+  ;; the local tier.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "seed_accounts_map" "functions/main.py"
+                              :imported-calls '((:specifier "sheets"
+                                                 :path ("read_tab") :line 56))))
+         (own (r-py-definition g :function "read_tab" "functions/main.py"))
+         (wanted (r-py-definition g :function "read_tab" "functions/sheets.py")))
+    (r-py-tree g "functions/main.py" "functions/sheets.py")
+    (r-resolve g)
+    (is (equal (list (id wanted)) (called-ids g caller)))
+    (is (null (relationships-to g (id own) :rel-type :calls)))
+    (is (null (getp caller :unresolved-imported-calls)))))
+
+(test a-same-named-function-in-another-file-is-the-edge-and-not-the-removed-caller
+  ;; acceptance.py:250 calls service.watched_repositories() from its own
+  ;; watched_repositories. CALL-TARGETS removes the caller from the candidates,
+  ;; so the bare spelling lost the real edge into tools/test/service.py.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "watched_repositories" "tools/test/acceptance.py"
+                              :imported-calls '((:specifier "service"
+                                                 :path ("watched_repositories")
+                                                 :line 250))))
+         (target (r-py-definition g :function "watched_repositories" "tools/test/service.py")))
+    (r-py-tree g "tools/test/acceptance.py" "tools/test/service.py")
+    (r-resolve g)
+    (is (equal (list (id target)) (called-ids g caller)))))
+
+(test a-call-follows-a-reexport-through-the-package-init
+  ;; ledger/__init__.py writes `from .posting import post'. The definition is
+  ;; one file further than the import names.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "ledger" :path ("post")
+                                                 :line 9))))
+         (post (r-py-definition g :function "post" "functions/ledger/posting.py")))
+    (r-py-tree g "functions/main.py" "functions/ledger/posting.py")
+    (r-py-file g "functions/ledger/__init__.py"
+               :bindings '((:local "post" :specifier ".posting" :name "post")))
+    (r-resolve g)
+    (is (equal (list (id post)) (called-ids g caller)))))
+
+(test calling-a-class-reaches-its-init
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "ledger.refs"
+                                                 :path ("RefIssuer") :line 3)
+                                                (:specifier "ledger.refs"
+                                                 :path ("Plain") :line 4))))
+         (init (r-py-definition g :method "RefIssuer.__init__" "functions/ledger/refs.py")))
+    (r-py-definition g :class "RefIssuer" "functions/ledger/refs.py")
+    (r-py-definition g :class "Plain" "functions/ledger/refs.py")
+    (r-py-tree g "functions/main.py" "functions/ledger/refs.py"
+               "functions/ledger/__init__.py")
+    (r-resolve g)
+    (is (equal (list (id init)) (called-ids g caller)))
+    (is (equal '(:not-callable)
+               (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls)))
+        "a class with no __init__ in its own file is not callable here")))
+
+(test a-class-method-is-reached-through-the-class
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "rules" :path ("Rules" "find")
+                                                 :line 3))))
+         (method (r-py-definition g :method "Rules.find" "functions/rules.py")))
+    (r-py-definition g :class "Rules" "functions/rules.py")
+    (r-py-tree g "functions/main.py" "functions/rules.py")
+    (r-resolve g)
+    (is (equal (list (id method)) (called-ids g caller)))))
+
+(test two-files-re-exporting-each-other-end-as-a-miss-not-a-loop
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "main.py"
+                              :imported-calls '((:specifier "a" :path ("x") :line 1)))))
+    (r-py-file g "main.py")
+    (r-py-file g "a.py" :bindings '((:local "x" :specifier "b" :name "x")))
+    (r-py-file g "b.py" :bindings '((:local "x" :specifier "a" :name "x")))
+    (r-resolve g)
+    (is (null (called-ids g caller)))
+    (is (equal '(:missing-in-target)
+               (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls))))))
+
+(test a-renamed-target-is-missing-in-target-and-is-reported
+  ;; The rot REQ-0078 R2 asks `check' to report: the module is there, and the
+  ;; function a call still names is not.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "sheets" :path ("upsert_tab")
+                                                 :line 7)))))
+    (r-py-definition g :function "upsert" "functions/sheets.py")
+    (r-py-tree g "functions/main.py" "functions/sheets.py")
+    (r-resolve g)
+    (is (null (called-ids g caller)))
+    (is (equal '(:missing-in-target)
+               (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls))))
+    (is (equal '((:caller "run" :file "functions/main.py" :line 7
+                  :specifier "sheets" :path ("upsert_tab")))
+               (loom-graph:missing-imported-calls g)))))
+
+(test an-external-or-unrooted-miss-is-not-reported-as-missing
+  (let ((g (make-graph)))
+    (r-py-caller g "run" "functions/tests/t.py"
+                 :imported-calls '((:specifier "pytest" :path ("raises") :line 1)
+                                   (:specifier "ledger.refs" :path ("x") :line 2)))
+    (r-py-tree g "functions/tests/t.py" "functions/ledger/refs.py"
+               "functions/ledger/__init__.py")
+    (r-resolve g)
+    (is (null (loom-graph:missing-imported-calls g))
+        "a library and a missing domain declaration are counted gaps, not errors")))
+
+(test a-path-ending-at-a-variable-is-not-callable
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "config" :path ("SHEET_NAME")
+                                                 :line 3)))))
+    (r-py-definition g :variable "SHEET_NAME" "functions/config.py")
+    (r-py-tree g "functions/main.py" "functions/config.py")
+    (r-resolve g)
+    (is (null (called-ids g caller)))
+    (is (equal '(:not-callable)
+               (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls))))))
+
+(test a-call-site-bound-to-an-import-resolves-once-through-its-binding
+  ;; DES-0053 D4. CALLER-CALL-NAMES returns nothing for it, so its dotted
+  ;; :CALL-NAME is not also resolved as a bare name.
+  (let* ((g (make-graph))
+         (site (make-call-site-entity
+                :file "tools/test/acceptance.py" :start-line 300
+                :call-name "service.ensure" :referrer-kind :module
+                :language :python
+                :imported-calls '((:specifier "service" :path ("ensure") :line 301))))
+         (target (r-py-definition g :function "ensure" "tools/test/service.py"))
+         (decoy (r-py-definition g :function "service.ensure" "tools/other.py")))
+    (add-entity g site)
+    (r-py-tree g "tools/test/acceptance.py" "tools/test/service.py")
+    (r-resolve g)
+    (is (equal (list (id target)) (called-ids g site)))
+    (is (null (relationships-to g (id decoy) :rel-type :calls))
+        "the dotted spelling is a label, not a name to look up")
+    (is (null (loom-graph::caller-call-names site)))))
+
+(test a-python-member-call-with-no-method-of-that-property-draws-no-edge
+  ;; The third tier of MEMBER-CALL-CANDIDATES is JavaScript's namespace import.
+  ;; Python writes a namespace access as :IMPORTED-CALLS, so `obj.read' with no
+  ;; method `read' anywhere must not reach a plain function named read.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "app/main.py" :call-names '("obj.read")))
+         (plain (r-py-definition g :function "read" "app/io.py")))
+    (r-py-tree g "app/main.py" "app/io.py")
+    (r-resolve g)
+    (is (null (called-ids g caller)))
+    (is (null (relationships-to g (id plain) :rel-type :calls)))
+    (is (equal '("obj.read") (getp caller :unresolved-calls)))))
+
+(test a-python-member-call-reaches-the-methods-of-that-property
+  ;; The second tier stays: `rules.find' with no class named rules reaches the
+  ;; one method called find.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "app/main.py" :call-names '("rules.find")))
+         (method (r-py-definition g :method "Rules.find" "app/rules.py")))
+    (r-py-tree g "app/main.py" "app/rules.py")
+    (r-resolve g)
+    (is (equal (list (id method)) (called-ids g caller)))))
+
+(test a-python-caller-never-reaches-a-lisp-or-javascript-definition
+  ;; CPython code does not call either in process.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "app/main.py" :call-names '("helper")))
+         (lisp (r-function g "helper" "other.lisp"))
+         (js (r-js-function g "helper" "ui/helper.js")))
+    (r-py-tree g "app/main.py")
+    (r-resolve g)
+    (is (null (called-ids g caller)))
+    (is (null (relationships-to g (id lisp) :rel-type :calls)))
+    (is (null (relationships-to g (id js) :rel-type :calls)))
+    (is (equal '("helper") (getp caller :unresolved-calls)))))
+
+(test retracting-a-reexported-file-and-resolving-again-brings-the-edge-back
+  ;; DEC-0003. Retracting posting.py destroys the edge pointing into it; the
+  ;; caller and ledger/__init__.py are untouched, and what they recorded is all
+  ;; the next pass needs.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "run" "functions/main.py"
+                              :imported-calls '((:specifier "ledger" :path ("post")
+                                                 :line 9)))))
+    (r-py-tree g "functions/main.py" "functions/ledger/posting.py")
+    (r-py-file g "functions/ledger/__init__.py"
+               :bindings '((:local "post" :specifier ".posting" :name "post")))
+    (let ((post (r-py-definition g :function "post" "functions/ledger/posting.py")))
+      (r-resolve g)
+      (is (equal (list (id post)) (called-ids g caller)))
+      (apply-transaction g (list (retract-file "functions/ledger/posting.py" nil)))
+      (is (null (called-ids g caller)) "the retract took the edge with its target")
+      (r-py-file g "functions/ledger/posting.py")
+      (let ((again (r-py-definition g :function "post" "functions/ledger/posting.py")))
+        (r-resolve g)
+        (is (equal (list (id again)) (called-ids g caller))
+            "and the next pass derives it again from what the caller recorded")))))
+
+;;;; ==================================================================
+;;;; RESOLVE-SETTINGS (DES-0053 D10)
+;;;; ==================================================================
+
+(defun r-reader (graph type name file &rest names)
+  "A Python entity of TYPE whose code reads each of NAMES from the environment."
+  (let ((e (r-py-definition graph type name file)))
+    (setp e :environment-reads names)
+    e))
+
+(defun r-settle (graph)
+  (apply-transaction graph (resolve-settings graph)))
+
+(defun reads-ids (graph entity)
+  (mapcar #'to-id (relationships-from graph (id entity) :rel-type :reads)))
+
+(test two-readers-of-one-name-give-one-setting-and-two-reads-edges
+  (let* ((g (make-graph))
+         (a (r-reader g :variable "SPREADSHEET_ID" "functions/config.py" "SPREADSHEET_ID"))
+         (b (r-reader g :function "load" "functions/sheets.py" "SPREADSHEET_ID" "OTHER")))
+    (r-settle g)
+    (let ((settings (entities-of-type g :setting)))
+      (is (equal '("OTHER" "SPREADSHEET_ID")
+                 (sort (mapcar #'name settings) #'string<)))
+      (let ((shared (find "SPREADSHEET_ID" settings :key #'name :test #'string=)))
+        (is (equal '(:environment) (getp shared :sources)))
+        (is (member (id shared) (reads-ids g a) :test #'string=))
+        (is (member (id shared) (reads-ids g b) :test #'string=))
+        (is (= 2 (length (relationships-to g (id shared) :rel-type :reads)))
+            "one node, one edge from each reader")))))
+
+(test a-repeated-name-on-one-reader-is-one-edge
+  (let* ((g (make-graph))
+         (a (r-reader g :function "f" "app/a.py" "K" "K")))
+    (r-settle g)
+    (is (= 1 (length (reads-ids g a))))))
+
+(test a-setting-survives-one-reader-and-is-swept-when-the-last-goes
+  (let* ((g (make-graph))
+         (a (r-reader g :function "f" "app/a.py" "K"))
+         (b (r-reader g :function "g" "app/b.py" "K")))
+    (r-settle g)
+    (setp a :environment-reads nil)
+    (r-settle g)
+    (is (= 1 (length (entities-of-type g :setting)))
+        "b still reads it")
+    (setp b :environment-reads nil)
+    (r-settle g)
+    (is (null (entities-of-type g :setting))
+        "no reader names it, so it is derived no longer")))
+
+(test resolving-settings-twice-changes-nothing
+  (let ((g (make-graph)))
+    (r-reader g :function "f" "app/a.py" "K")
+    (r-settle g)
+    (r-settle g)
+    (is (= 1 (length (entities-of-type g :setting))))
+    (is (= 1 (length (relationships-to g (id (first (entities-of-type g :setting)))
+                                       :rel-type :reads))))))
+
+(test a-setting-reaches-its-readers-and-their-callers
+  (let* ((g (make-graph))
+         (reader (r-reader g :function "load" "app/sheets.py" "K"))
+         (caller (r-py-definition g :function "main" "app/main.py")))
+    (apply-transaction g (list (assert-edge :calls caller reader)))
+    (r-settle g)
+    (let ((result (impact-set g (id (first (entities-of-type g :setting))))))
+      (is (equal '("load" "main")
+                 (sort (mapcar (lambda (e) (name (impact-entry-entity e)))
+                               (remove :file (impact-result-impacted result)
+                                       :key (lambda (e) (entity-type (impact-entry-entity e)))))
+                       #'string<))))))
+
+(test a-document-naming-a-setting-resolves-to-it
+  ;; Neither :DECIDES nor :DOCUMENTS listed :SETTING as a target, so `affects:
+  ;; [SPREADSHEET_ID]' would have resolved and then lost its edge. A plan bears
+  ;; on a setting; a decision governs one.
+  ;; The reader is the :VARIABLE `SPREADSHEET_ID = os.environ.get(...)', which
+  ;; shares its setting's name: every one of lfia's eight config reads has that
+  ;; shape. A function named `load' avoided the collision and passed for a shape
+  ;; the canonical case does not have (REV-0003 item 3).
+  (let ((g (make-graph)))
+    (r-reader g :variable "SPREADSHEET_ID" "app/config.py" "SPREADSHEET_ID")
+    (let ((decision (r-decision g "DEC-9000" :affects '("SPREADSHEET_ID")))
+          (plan (make-instance 'document-entity :name "docs/plans/PLAN-9000.yaml"
+                               :origin-file "docs/plans/PLAN-9000.yaml"
+                               :properties (properties-table
+                                            '(:path "docs/plans/PLAN-9000.yaml"
+                                              :doc-id "PLAN-9000"
+                                              :affects ("SPREADSHEET_ID"))))))
+      (add-entity g plan)
+      (r-settle g)
+      (apply-transaction g (resolve-document-links g :workspace-id "w"))
+      (let ((setting (id (first (entities-of-type g :setting)))))
+        (is (equal (list setting)
+                   (mapcar #'to-id (relationships-from g (id decision) :rel-type :decides))))
+        (is (equal (list setting)
+                   (mapcar #'to-id (relationships-from g (id plan) :rel-type :documents))))
+        (is (null (getp plan :unresolved-references)))))))
+
+;;; ------------------------------------------------------------------
+;;; The Python line, drawn both ways (BUG-0070)
+;;; ------------------------------------------------------------------
+
+(defun r-foreign-caller (graph language name file call-names)
+  "A function in LANGUAGE (:LISP or :JAVASCRIPT) calling CALL-NAMES by spelling."
+  (let ((e (make-instance 'function-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language language
+                                             :call-names call-names)))))
+    (add-entity graph e)
+    e))
+
+(test a-python-bare-name-reaches-no-other-files-definition
+  ;; extract.py writes `d["k"].get(x)' as the bare name `get'. tools/test/
+  ;; service.py holds the one Python `get' on Loom's tree, and seven dict lookups
+  ;; used to land on it at confidence 1.0.
+  (let* ((g (make-graph))
+         (caller (r-py-function g "bind" "tools/py/extract.py" :unresolved '("get")))
+         (far (r-py-function g "get" "tools/test/service.py")))
+    (r-py-tree g "tools/py/extract.py" "tools/test/service.py")
+    (apply-transaction g (resolve-calls g))
+    (is (null (called-ids g caller)))
+    (is (null (relationships-to g (id far) :rel-type :calls)))
+    (is (equal '("get") (getp caller :unresolved-calls))
+        "recorded unresolved, not dropped")))
+
+(test a-python-bare-name-still-reaches-its-own-file
+  ;; The control: the narrowing must not remove the local definition, or the
+  ;; test above would pass for a resolver that resolves no Python name at all.
+  (let* ((g (make-graph))
+         (caller (r-py-function g "run" "app/m.py" :unresolved '("helper")))
+         (local (r-py-function g "helper" "app/m.py")))
+    (r-py-tree g "app/m.py")
+    (apply-transaction g (resolve-calls g))
+    (is (equal (list (id local)) (called-ids g caller)))))
+
+(test a-lisp-or-javascript-name-reaches-no-python-definition
+  ;; file-store.lisp's `(git ...)' and a JavaScript `git()' both fell back to
+  ;; their spelling and landed on tools/test/acceptance.py's `git'.
+  (let* ((g (make-graph))
+         (lisp (r-foreign-caller g :lisp "probe" "src/a.lisp" '("git")))
+         (js (r-foreign-caller g :javascript "probe" "web/a.js" '("git")))
+         (py (r-py-function g "git" "tools/test/acceptance.py")))
+    (r-py-tree g "tools/test/acceptance.py")
+    (apply-transaction g (resolve-calls g))
+    (is (null (called-ids g lisp)))
+    (is (null (called-ids g js)))
+    (is (null (relationships-to g (id py) :rel-type :calls)))))
+
+;;; ------------------------------------------------------------------
+;;; Inheritance and star imports in the walk (BUG-0071)
+;;; ------------------------------------------------------------------
+
+(defun r-call-through (graph specifier path &optional (file "app/main.py"))
+  "A caller in FILE with one imported call of PATH through SPECIFIER, and the
+resolution pass run."
+  (let ((caller (r-py-caller graph "run" file
+                             :imported-calls (list (list :specifier specifier
+                                                         :path path :line 6)))))
+    (r-py-tree graph file)
+    (r-resolve graph)
+    caller))
+
+(defun r-causes (caller)
+  (mapcar (lambda (m) (getf m :cause)) (getp caller :unresolved-imported-calls)))
+
+(test a-classmethod-the-class-inherits-is-the-edge-and-not-a-miss
+  ;; `from models import Foo; Foo.create()' where create is Base's.
+  (let* ((g (make-graph))
+         (create (r-py-definition g :method "Base.create" "app/models.py")))
+    (r-py-definition g :class "Base" "app/models.py")
+    (r-py-definition g :class "Foo" "app/models.py" :bases '("Base"))
+    (r-py-tree g "app/models.py")
+    (let ((caller (r-call-through g "models" '("Foo" "create"))))
+      (is (equal (list (id create)) (called-ids g caller)))
+      (is (null (loom-graph:missing-imported-calls g))))))
+
+(test a-method-a-base-the-tree-does-not-hold-may-define-is-not-reported
+  ;; pydantic's `Model.model_validate'. The base is no definition in the tree,
+  ;; so nothing shows the name absent.
+  (let ((g (make-graph)))
+    (r-py-definition g :class "Foo" "app/models.py" :bases '("BaseModel"))
+    (r-py-tree g "app/models.py")
+    (let ((caller (r-call-through g "models" '("Foo" "model_validate"))))
+      (is (null (called-ids g caller)))
+      (is (equal '(:inherited) (r-causes caller)))
+      (is (null (loom-graph:missing-imported-calls g))))))
+
+(test a-class-with-no-base-but-object-lacking-the-method-is-still-reported
+  ;; The control: the carve-out must not silence the rot `check' exists for.
+  (let ((g (make-graph)))
+    (r-py-definition g :class "Foo" "app/models.py" :bases '("object"))
+    (r-py-tree g "app/models.py")
+    (r-call-through g "models" '("Foo" "gone"))
+    (is (= 1 (length (loom-graph:missing-imported-calls g))))))
+
+(test two-classes-naming-each-other-as-bases-end-in-a-cause
+  (let ((g (make-graph)))
+    (r-py-definition g :class "A" "app/models.py" :bases '("B"))
+    (r-py-definition g :class "B" "app/models.py" :bases '("A"))
+    (r-py-tree g "app/models.py")
+    (let ((caller (r-call-through g "models" '("A" "x"))))
+      (is (equal '(:inherited) (r-causes caller))))))
+
+(test a-name-a-star-import-binds-is-followed-to-its-definition
+  ;; app/pkg/__init__.py: `from .impl import *'.
+  (let* ((g (make-graph))
+         (helper (r-py-definition g :function "helper" "app/pkg/impl.py")))
+    (r-py-file g "app/pkg/__init__.py"
+               :bindings '((:local nil :specifier ".impl" :name "*")))
+    (r-py-tree g "app/pkg/impl.py")
+    (let ((caller (r-call-through g "pkg" '("helper"))))
+      (is (equal (list (id helper)) (called-ids g caller)))
+      (is (null (loom-graph:missing-imported-calls g))))))
+
+(test a-star-import-from-a-module-the-tree-lacks-leaves-the-name-unknowable
+  (let ((g (make-graph)))
+    (r-py-file g "app/pkg/__init__.py"
+               :bindings '((:local nil :specifier "somelib" :name "*")))
+    (let ((caller (r-call-through g "pkg" '("helper"))))
+      (is (equal '(:star-import) (r-causes caller)))
+      (is (null (loom-graph:missing-imported-calls g))))))
+
+(test a-name-no-star-module-holds-is-still-missing
+  ;; Every star read and none defines it, so the claim is true and reported.
+  (let ((g (make-graph)))
+    (r-py-file g "app/pkg/__init__.py"
+               :bindings '((:local nil :specifier ".impl" :name "*")))
+    (r-py-definition g :function "other" "app/pkg/impl.py")
+    (r-py-tree g "app/pkg/impl.py")
+    (r-call-through g "pkg" '("helper"))
+    (is (= 1 (length (loom-graph:missing-imported-calls g))))))
+
+(test two-modules-star-importing-each-other-end-in-a-cause
+  (let ((g (make-graph)))
+    (r-py-file g "app/a.py" :bindings '((:local nil :specifier "b" :name "*")))
+    (r-py-file g "app/b.py" :bindings '((:local nil :specifier "a" :name "*")))
+    (let ((caller (r-call-through g "a" '("x"))))
+      (is (null (called-ids g caller)))
+      (is (null (loom-graph:missing-imported-calls g))
+          "a walk cut off at the limit has not shown the name absent"))))
+
+(test a-variable-that-does-not-read-the-setting-leaves-the-name-ambiguous
+  ;; The control for the setting-and-reader rule: a same-named variable that
+  ;; reads something else is a second thing, and refusing is still right.
+  (let ((g (make-graph)))
+    (r-reader g :function "load" "app/sheets.py" "SPREADSHEET_ID")
+    (r-reader g :variable "SPREADSHEET_ID" "app/config.py" "OTHER")
+    (r-settle g)
+    (let ((decision (r-decision g "DEC-9001" :affects '("SPREADSHEET_ID"))))
+      (apply-transaction g (resolve-document-links g :workspace-id "w"))
+      (is (null (relationships-from g (id decision) :rel-type :decides)))
+      (is (= 1 (length (getp decision :ambiguous-references)))))))

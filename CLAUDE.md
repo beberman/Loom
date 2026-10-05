@@ -86,8 +86,9 @@ tools/loom-test.sh
 
 **`tools/` operates Loom; `tools/test/` measures it.** Seven things run Loom --
 `loom.sh`, `loom-serve.sh`, `loom-install.sh`, `loom-init.sh`, `loom-test.sh`,
-`next-doc-id.sh` and `allow-loom.py`, the permission hook -- beside `js/`, which
-is not a tool at all: the analyzer loads `js/extract.js` at runtime.
+`next-doc-id.sh` and `allow-loom.py`, the permission hook -- beside `js/` and
+`py/`, which are not tools at all: the analyzer loads `js/extract.js` and
+`py/extract.py` at runtime.
 
 `tools/loom-install.sh` links `loom` and `loom-serve` onto `PATH` and calls
 `loom-serve.sh install` for the unit. Links, never copies: Loom is a source tree

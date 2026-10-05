@@ -1,0 +1,904 @@
+id: PLAN-0056
+title: DES-0053 in twelve steps -- ontology, the shared child, extract.py, venv exclusion, three graph passes, the analyzer, tests, arity, acceptance on lfia and tools/, complete
+status: final
+date: 2026-10-04
+refines: [DES-0053]
+affects: [find-analyzer, register-analyzer, analyzable-p, parse-javascript,
+          ensure-js-child, resolve-module-specifier, build-module-scope,
+          resolve-imports, resolve-calls, call-targets, caller-call-names,
+          member-call-candidates, visible-candidates, module-scoped-language-p,
+          make-call-site-entity, entity-arity, render-signature,
+          repository-files, import-summary, resolve-and-check,
+          unresolved-references]
+tags: [analyzer, python, ontology, imports, call-resolution, environment,
+       tests, venv, des-0053, req-0078, con-0003, con-0005]
+summary: |
+  Twelve steps that implement DES-0053 R1 to R16, the Python half of
+  REQ-0078. Step 1 is the ontology. Steps 2 and 3 build the shared
+  child-process code and tools/py/extract.py. Step 4 excludes virtual
+  environments. Steps 5 to 7 are the three graph passes, tested on entities
+  built by hand. Step 8 registers the analyzer, and only then does any .py
+  file in a watched tree become entities. Step 9 adds pytest and unittest
+  cases. Step 10 teaches arity and signatures. Step 11 is acceptance on
+  ~/github/lfia-accounting and on Loom's own tools/. Step 12 runs `complete`.
+
+  The graph passes come before the analyzer, not after it. DES-0053 names
+  the analyzer first. The graph tests build their entities by hand, so they
+  do not need the analyzer. If the analyzer landed first, Loom's own ten
+  tools/ files would be indexed for several commits with member calls going
+  through MEMBER-CALL-CANDIDATES' third tier and no :IMPORTED-CALLS tier at
+  all. That is the wrong-edge state DES-0053's PROBLEM section measures. The
+  `check` counts would then move twice.
+
+  Out of scope: REQ-0078 R7 to R11 (Firebase), dependency names from
+  requirements.txt, pytest fixtures, `from x import *`, pytest.ini
+  overrides, receiver types, storing call-argument shapes (REQ-0041), .pyi
+  stubs, and moving the JavaScript analyzer onto :IMPORTED-CALLS. Each is
+  deferred in DES-0053 and stays deferred here.
+body: |
+  BASELINE
+
+  On 2026-10-04 at 715eedf, with DES-0053, REQ-0078 and BUG-0069 untracked
+  in the tree, `tools/loom.sh 'status'` printed:
+
+      rules      : 0 violations, 2 unenforced
+      unresolved : 8 document references, 7 ambiguous, 5 definer macros
+      imports    : 0 resolved, 0 external, 0 out-of-domain, 0 unresolved,
+                   0 target unclaimed
+      unclaimed  : 52 tracked files -- 10 .json, 10 .md, 10 .py, 6 .sh, ...
+
+  "Green" after a step means three things. `tools/loom-test.sh` passes on
+  all twelve systems. `check` prints No violations, 8 unresolved document
+  references and 7 ambiguous. `sbcl --script tools/test/load-test.lisp
+  loom-serve` prints T. A step that is expected to move one of these numbers
+  says which one and to what.
+
+  This plan's own `affects:` names only functions that exist at 715eedf. A
+  function this plan creates is named in the body, where an unresolved name
+  is dropped rather than reported.
+
+  After any change to Loom's source, run `tools/loom-serve.sh update` before
+  using a loom_* tool. The running service keeps the code it started with.
+
+  FILES
+
+  New:
+    tools/py/extract.py                     the child (D1, D2, D7, D10)
+    src/analyzer/extractor-child.lisp       the shared child lifecycle (R14)
+    src/analyzer/python-analyzer.lisp       the analyzer (D3, D4, D8, D9,
+                                            D10 placement, D11 names, D12)
+    src/analyzer/test/extractor-child.lisp  lifecycle tests
+    src/analyzer/test/python-extract.lisp   tests of the child's reply
+    src/analyzer/test/python-analyzer.lisp  tests of the operations
+
+  Changed:
+    src/ontology/code-ontology.lisp         :SETTING, :READS, vocabulary,
+                                            properties, MAKE-CALL-SITE-ENTITY
+    src/ontology/package.lisp               exports
+    src/ontology/test/code-ontology.lisp    vocabulary tests
+    src/analyzer/js-analyzer.lisp           loses the child code to
+                                            extractor-child.lisp
+    src/analyzer/loom-analyzer.asd          three components, three tests
+    src/analyzer/package.lisp               exports
+    src/graph/resolve.lisp                  Python resolver, :UNROOTED,
+                                            the :IMPORTED-CALLS tier, the two
+                                            narrowings, RESOLVE-SETTINGS,
+                                            MISSING-IMPORTED-CALLS
+    src/graph/package.lisp                  exports
+    src/graph/test/resolve.lisp             resolver, tier and settings tests
+    src/workspace/workspace.lisp            pyvenv.cfg rule, :UNROOTED in
+                                            IMPORT-SUMMARY, RESOLVE-SETTINGS
+                                            in RESOLVE-AND-CHECK
+    src/workspace/test/workspace.lisp       venv test; the unclaimed test
+                                            stops using .py
+    src/workspace/test/provenance.lisp      the drift test stops using .py
+    src/knowledge/services.lisp             ENTITY-ARITY, *SIGNATURE-STYLES*
+    src/knowledge/test/services.lisp        arity and signature tests
+                                            (today's ENTITY-ARITY assertions
+                                            are in test/similar.lisp; the new
+                                            ones go beside the service)
+    src/process/console.lisp                `status` prints :UNROOTED; `check`
+                                            prints missing imported calls
+    src/serve/operations.lisp               the :check operation returns
+                                            :MISSING-IMPORTED-CALLS
+    CLAUDE.md                               `js/` and `py/` under tools/
+
+  Deleted: none.
+
+  A DEPARTURE FROM DES-0053, STATED
+
+  DES-0053 says "loom-process, loom-serve, loom-rest and loom-mcp change
+  nothing". Two of its own requirements contradict that. `check` reporting
+  :MISSING-IN-TARGET (R7) needs a print in the console's `check` command
+  (console.lisp:1544) and a key in the serve :check operation
+  (operations.lisp:656), because both build their report key by key. The
+  :UNROOTED cause (R6) needs a field in the `status` imports line
+  (console.lisp:361), which prints five named causes. The plan edits those
+  two files. Neither edit adds a dependency: console.lisp and operations.lisp
+  already call into loom-graph and loom-workspace. load-test still decides
+  the peer property. loom-rest and loom-mcp carry the serve operation's
+  plist through unchanged.
+
+  A REFINEMENT DES-0053 LEAVES OPEN
+
+  D5 says `from S import a` also tries S.a as a submodule and adds the file
+  to the importer's module scope. The design does not say where the
+  resolver reads `a` from. This plan reads it from :IMPORT-BINDINGS, which
+  holds module-level bindings only. A from-import inside a function adds
+  nothing to the module scope. Its calls still resolve, because they are
+  :IMPORTED-CALLS entries and D6's walk step 3 tries the submodule.
+
+  BLAST RADIUS
+
+  What Loom reports, from `impact <name> 3` on 2026-10-04:
+
+    ENSURE-JS-CHILD        32 entities. PARSE-JAVASCRIPT, the JavaScript
+                           ANALYZE-FILE method, JS-AVAILABLE-P in
+                           src/analyzer/test/js-analyzer.lisp, and
+                           NODE-AVAILABLE-P in src/workspace/test/domains.lisp,
+                           which takes *JS-CHILD-LOCK* and calls
+                           ENSURE-JS-CHILD by name.
+    RESOLVE-CALLS          102 (truncated). Every test that resolves.
+    BUILD-MODULE-SCOPE     67 (truncated).
+    REPOSITORY-FILES       82 (truncated). INDEX-REPOSITORY and POLL-ONCE,
+                           so the whole pipeline and the monitor.
+    MODULE-SCOPED-LANGUAGE-P  72 (truncated).
+    UNRESOLVED-REFERENCES  53 (truncated).
+
+  Decisions Loom attaches to these: DES-0014 and DES-0015 (call sites and
+  symbol identity), DES-0047 (domains and specifier causes), DEC-0003
+  (derive, never consume), DES-0018 (git ignores), DES-0051 (the document
+  store), DES-0011, DES-0025 and DES-0053 itself. Nothing in the plan
+  contradicts one of them. DEC-0003 binds steps 6 and 7: both passes derive
+  from analyzer-written properties every pass and rewrite only their own
+  outputs.
+
+  What Loom cannot see, and why:
+
+    - The JavaScript child's state is read by tests in two systems through
+      `loom-analyzer::` qualified symbols: *JS-CHILD*, *JS-CHILD-LOCK*,
+      *JS-UNAVAILABLE-REASON*, *NODE-PROGRAM*, STOP-JS-CHILD and
+      ENSURE-JS-CHILD. A read of a special variable is not a :CALLS edge,
+      so `impact` under-reports the reach of step 2.
+    - Most callers of RESOLVE-CALLS are `test` forms, a macro body. DES-0001
+      says these under-report.
+    - Changes to console.lisp and operations.lisp cross the
+      loom-process/loom-serve boundary, which no rule covers.
+      load-test is the instrument there.
+    - Enumerations of entity types that `find`, `describe` or `structure`
+      walk. src/knowledge/structure.lisp's *DEFINITION-TYPES* and the type
+      list in similar.lisp:200 do not name :SETTING. Nothing reports a type
+      missing from a list. Step 7 checks `find` and `describe` on a
+      :SETTING directly.
+
+  RISKS
+
+  1. R14 and the JavaScript tests. src/analyzer/test/js-analyzer.lisp:330-394
+     let-binds *NODE-PROGRAM*, setfs *JS-UNAVAILABLE-REASON*, compares
+     *JS-CHILD* with EQ across files, and calls STOP-JS-CHILD.
+     domains.lisp:100 takes *JS-CHILD-LOCK*. R14 requires these to pass
+     unchanged. Step 2 keeps every one of those names. The program name is
+     read when the child is launched, not when the shared object is built.
+     Otherwise the let-binding of *NODE-PROGRAM* stops working and
+     THE-TOOLCHAIN-BEING-ABSENT-IS-RECORDED-NOT-FATAL fails.
+     If *JS-CHILD* becomes a symbol macro, it cannot also be DEFVAR'd. An
+     image that already loaded the old DEFVAR, such as the SBCL behind
+     SLIME, signals when the new file loads. Run step 2 under
+     tools/loom-test.sh (/usr/bin/sbcl, fresh image) and say so in the
+     commit.
+
+  2. Two tests depend on .py being unclaimed. From step 8, .py is claimed.
+     These two fail for that reason, not because the property they test
+     broke:
+       src/workspace/test/workspace.lisp:1633,
+         UNCLAIMED-COUNTS-TRACKED-FILES-NO-ANALYZER-CLAIMS-AND-NAMES-THE-EXTENSIONS
+         (writes tools/harness.py and tools/other.py; asserts 2 .py of 3)
+       src/workspace/test/provenance.lisp:61,
+         AN-EDIT-TO-A-FILE-NO-ANALYZER-CLAIMS-IS-NOT-DRIFT
+         (writes tools/harness.py)
+     Step 8 changes both to an extension no analyzer claims, .rb, in the
+     same commit. Check that the edited test still fails when its property
+     is broken: claim .rb from a throwaway analyzer and run the suite once.
+
+  3. CON-0005, one natural key per file. Nothing checks it. The Python
+     analyzer can derive one key twice in three ways. Two module-level
+     bindings of one name: D9 keeps the last. A property chain or overload
+     set: D9 merges. Two calls of one name in one module-level statement:
+     a :CALL-SITE's key is (:file :start-line :call-name), and :START-LINE
+     is the statement's line, so two `main()` calls in one guard derive one
+     key. Step 8 dedupes call sites on that key before emitting them. A
+     test asserts one site, not two.
+
+  4. RULE-0003's deny list. RESOLVE-SETTINGS returns operations, the way
+     RESOLVE-CALLS does. It adds no function that writes the graph. If step
+     7 adds a helper that calls ADD-ENTITY or APPLY-TRANSACTION directly,
+     its name goes into docs/rules/RULE-0003.yaml's to-names in the same
+     commit. Otherwise a knowledge-layer call to it would go unreported.
+
+  5. Layering. extract.py's binding is single-file semantics, so it stays in
+     the analyzer (CON-0005). The specifier walk needs other files, so it
+     stays in loom-graph. loom-graph reads no filesystem. Package-ness comes
+     from the index ("<dir>/__init__.py" is an indexed path). Domain roots
+     arrive as data. A test in step 5 checks that the resolver gives the
+     same answer for a path that exists on disk and is not indexed, so
+     nothing reads the disk. loom-analyzer gains no dependency: uiop,
+     cl-json and bordeaux-threads are already in loom-analyzer.asd.
+
+  6. The peer property. Steps 5 and 6 edit console.lisp and
+     operations.lisp. Run load-test after each step that touches either.
+     It must print T.
+
+  7. :PYTHON in *MODULE-SCOPED-LANGUAGES* routes every Python file through
+     BUILD-MODULE-SCOPE. With only the JavaScript resolver there, `import
+     config` reads :EXTERNAL and `.posting` reads :UNRESOLVED under JS
+     extensions. So :PYTHON joins the list in step 5, in the same commit as
+     the dispatch to the Python resolver, and not in step 1.
+
+  8. Fixtures in Loom's own tree are indexed. A fixture file named
+     src/analyzer/test/fixtures/python/test_x.py would be claimed from step
+     8. It would add pytest cases and a `main` to Loom's own index. Every
+     Python fixture in this plan is a string inside a .lisp test, passed to
+     ANALYZE-FILE with a made-up path. The JavaScript tests already work
+     this way. Step 4's venv test and step 11's scratch venv are written to
+     a temporary directory.
+
+  9. A virtual environment holding markdown. REPOSITORY-FILES is not the
+     only walk. The document store enumerates the same tree listing
+     (DES-0051), so a README.md inside an un-ignored venv would still be
+     indexed. Step 4 applies the pyvenv.cfg rule in both places, and its
+     test puts a .md file in the venv.
+
+  10. python3 on PATH. The machine has python3 3.12.3. The Python tests skip
+      when python3 cannot be started, the way JS-TEST skips without node. A
+      skip passes for the wrong reason (CON-0003). The suite prints a skip
+      count, and step 8's commit records that it is zero on this machine.
+
+  11. RULE-0006 (warning) reports a definition silently shadowed by a
+      same-key definition in its own file. D9 writes :SHADOWED-DEFINITIONS,
+      so the rule may start reporting Python files. Neither tree has a case
+      (DES-0053 D9). If `check` shows one, read it. Do not suppress it.
+
+  12. BUG-0069 is open. `complete` with no verdicts writes when every
+      refined document is blocked. Here DES-0053 will be awaiting a
+      verdict, so the dry run in step 12 should write nothing. Run `git
+      status` after the dry run to confirm.
+
+  STEPS
+
+  Each step is one commit on req-0078. Step 1 is the first that can be
+  run.
+
+  1. THE ONTOLOGY.  src/ontology/code-ontology.lisp, src/ontology/package.lisp,
+     src/ontology/test/code-ontology.lisp.
+
+     :SETTING. Natural key (:name). Properties: :SOURCES, a list whose only
+     value in this stage is :ENVIRONMENT, plus :LANGUAGE and :DOMAIN as other
+     code entities carry them. Its documentation says the graph mints it and
+     no analyzer writes it (D10).
+
+     :READS. From (:function :method :test :variable :file) to (:setting).
+     :TRANSITIVE-IMPACT T, :IMPACT-DIRECTION :REVERSE, so a change to a
+     setting reaches its readers and their callers.
+
+     Vocabulary. :MODULE joins :CALL-SITE's :REFERRER-KIND :ONE-OF list.
+     :UNITTEST joins :TEST's :FRAMEWORK list. :PYTEST is already there
+     (code-ontology.lisp:958). :PYTHON is already in *SOURCE-LANGUAGES*.
+     :PYTHON does not join *MODULE-SCOPED-LANGUAGES* here (risk 7).
+
+     Properties. :IMPORTED-CALLS and :UNRESOLVED-IMPORTED-CALLS on :FUNCTION,
+     :METHOD, :TEST and :CALL-SITE. :DECORATORS on :FUNCTION, :METHOD and
+     :CLASS. :ENVIRONMENT-READS on :FUNCTION, :METHOD, :TEST, :VARIABLE and
+     :FILE. :DOCUMENTATION, :IMPORT-BINDINGS and :UNNAMED-ENVIRONMENT-READS
+     on :FILE. Each has a documentation string naming the D-number that
+     writes it.
+
+     MAKE-CALL-SITE-ENTITY takes :IMPORTED-CALLS and stores it.
+
+     Verification. New tests: a :SETTING asserts with its key and a
+     :VARIABLE-to-:SETTING :READS edge is permitted. A :READS edge from a
+     :CLASS is dropped. A :CALL-SITE with :REFERRER-KIND :MODULE validates.
+     A :TEST with :FRAMEWORK :UNITTEST validates. MAKE-CALL-SITE-ENTITY with
+     :IMPORTED-CALLS returns an entity carrying it. Before the edit, each
+     test fails: the type is undeclared, the keyword is outside :ONE-OF, or
+     the keyword argument is unknown. Green; no count moves, because nothing
+     writes the new vocabulary yet. RULE-0001 still holds, because
+     loom-ontology gains no dependency.
+
+  2. THE SHARED CHILD.  src/analyzer/extractor-child.lisp (new),
+     src/analyzer/js-analyzer.lisp, src/analyzer/loom-analyzer.asd,
+     src/analyzer/test/extractor-child.lisp (new).
+
+     extractor-child.lisp goes between "analyzer" and "js-analyzer" in the
+     asd. It holds a struct with these slots: a name, a function returning
+     the argv (called at each launch), a timeout, the process, a lock, and
+     the unavailable reason. It holds the functions ENSURE-, STOP- and an
+     exchange that writes one frame and reads one JSON line, with exactly
+     one retry for a dead child (js-analyzer.lisp:186-219's rule). It also
+     takes WITH-TIMEOUT-OR-NIL, UTF8-BYTE-LENGTH, WRITE-FRAME and READ-REPLY
+     from js-analyzer.lisp, unchanged.
+
+     js-analyzer.lisp builds one instance whose argv function reads
+     *NODE-PROGRAM* and *JS-EXTRACTOR* at launch. It keeps every name in
+     risk 1. ENSURE-JS-CHILD, STOP-JS-CHILD and PARSE-JAVASCRIPT become
+     wrappers. *JS-CHILD*, *JS-CHILD-LOCK* and *JS-UNAVAILABLE-REASON*
+     become symbol macros over the instance's slots, so `setf`, EQ and
+     BT:WITH-LOCK-HELD work on them as before.
+
+     Verification. Every test in src/analyzer/test/js-analyzer.lisp and
+     src/workspace/test/domains.lisp passes with no edit (R14). Run
+     `git diff --stat` on both files and confirm it is empty. New tests in
+     extractor-child.lisp drive a child written inline as `python3 -c` (or
+     `node -e` when python3 is absent): the child is reused, a stopped
+     child is replaced and the next exchange answers, a missing program
+     records a reason naming it, and a child that never replies yields NIL
+     after the timeout. CON-0003: delete the retry and see the replacement
+     test fail. Make the argv a captured string and see
+     THE-TOOLCHAIN-BEING-ABSENT-IS-RECORDED-NOT-FATAL fail. Revert both.
+     Green; no count moves.
+
+  3. THE EXTRACTOR.  tools/py/extract.py (new),
+     src/analyzer/python-analyzer.lisp (new, the child half only),
+     src/analyzer/loom-analyzer.asd, src/analyzer/test/python-extract.lisp
+     (new), CLAUDE.md.
+
+     extract.py is D1, D2, D7 and D10's recognition. It runs as `python3 -I
+     -B` and reads extract.js's frame. It imports ast, tokenize, builtins,
+     json and sys, and nothing else. It never calls exec, eval, compile in
+     exec mode, or importlib. It writes one JSON line per frame. The reply
+     holds:
+       - the module docstring and every import statement, with its scope,
+         specifier, names and aliases
+       - module-level bindings
+       - every definition with its range, arguments as written, decorators
+         (name, binding, literal keyword arguments, line), docstring, and
+         nesting
+       - every call with its binding kind (local, import, self, member,
+         builtin), its enclosing definition, its line, its positional count
+         and keyword names
+       - every environment read, with its key or a non-literal marker, and
+         its enclosing definition
+       - on a SyntaxError, D7's pieces: each damaged piece's line range and
+         an error text that includes sys.version.
+     The reply holds no value from a default argument of an environment read.
+
+     python-analyzer.lisp holds only *PYTHON-PROGRAM* ("python3"),
+     *PY-EXTRACTOR* (the asd-relative path to tools/py/extract.py), the
+     extractor-child instance and PARSE-PYTHON. No analyzer is registered.
+
+     CLAUDE.md: "beside `js/`, which is not a tool at all" becomes
+     `js/` and `py/`, each loaded by the analyzer at runtime.
+
+     Verification. python-extract.lisp calls PARSE-PYTHON on inline source.
+     It asserts each D2 case from DES-0053's table, including the five
+     worked specifier and path pairs. It also asserts:
+       - a function-local import binds only in that function
+       - a class body does not enclose its methods' names
+       - a comprehension variable is not a module name
+       - `global` rebinds to module scope
+       - a parameter used as a callee is dropped
+       - `print` is dropped as builtin
+       - `from os import environ as E; E.get("K", "v")` records "K" and not
+         "v"
+       - a two-statement file with an error in the second returns the
+         first's definitions and the second's exact range
+       - the error text contains the interpreter's version
+     R2: the source's top level opens a marker path under the scratch
+     directory for writing. The test asserts the path does not exist after
+     the reply. Each assertion fails before the step, because PARSE-PYTHON
+     does not exist. That is weak evidence, so CON-0003 here means: change
+     extract.py to drop the alias undo and see the alias test fail. Then
+     add `exec(compile(source, path, "exec"))` and see the R2 test fail.
+     Revert both. Green. `status` unclaimed rises from 10 .py to 11, which
+     is tools/py/extract.py. No other count moves.
+
+  4. VIRTUAL ENVIRONMENTS BY WHAT THEY ARE.  src/workspace/workspace.lisp,
+     src/workspace/test/workspace.lisp.
+
+     REPOSITORY-FILES collects the directories holding a file named
+     pyvenv.cfg from the tree listing it already has, and drops every
+     claimed path under one. The same predicate goes into the ignore
+     function WATCH-REPOSITORY passes to the file store, so the store does
+     not enumerate a document under a venv (risk 9). INDEX-REPOSITORY and
+     POLL-ONCE both reach the analyzers through REPOSITORY-FILES
+     (workspace.lisp:1131 and 1443). This step greps for any other caller of
+     ANALYZABLE-P or TREE-LISTING that feeds INDEX-FILE and applies the rule
+     there too. DES-0053 D11 names "the monitor's single-file path". At
+     715eedf that path is POLL-ONCE.
+
+     Verification. A test builds a scratch tree that is not a git
+     repository, so no .gitignore applies. It holds env/pyvenv.cfg,
+     env/lib/x.lisp, env/lib/README.md and src/a.lisp. It asserts that
+     src/a.lisp is indexed and nothing under env/ is. Before the step,
+     env/lib/x.lisp and the README are indexed, so the test fails. Step 8
+     adds env/lib/site.py to the same test. Green; no count moves on
+     Loom's tree.
+
+  5. PYTHON SPECIFIERS.  src/graph/resolve.lisp, src/graph/package.lisp,
+     src/graph/test/resolve.lisp, src/ontology/code-ontology.lisp,
+     src/workspace/workspace.lisp, src/process/console.lisp.
+
+     A new RESOLVE-PYTHON-SPECIFIER implements D5. It is given the importer
+     path, the table of known paths, and the importer's domain root, if
+     any. A relative specifier climbs one directory per dot after the first.
+     An absolute one is tried under three roots, in order:
+       1. the importer's directory, when it holds no indexed __init__.py
+       2. the parent of the outermost package containing the importer
+       3. the domain root
+     Under a root, "a.b" names a/b.py or a/b/__init__.py. A miss is
+     :UNRESOLVED (relative), :UNROOTED (some indexed file or package has
+     that top-level name, but none of this importer's roots holds it) or
+     :EXTERNAL. For each module-level :IMPORT-BINDINGS entry `from S
+     import a`, it also tries S.a.
+
+     BUILD-MODULE-SCOPE dispatches on the importer's :LANGUAGE: :PYTHON goes
+     to the new resolver, and every other language goes to
+     RESOLVE-MODULE-SPECIFIER unchanged. :PYTHON joins
+     *MODULE-SCOPED-LANGUAGES*. IMPORT-SUMMARY counts :UNROOTED. The
+     console's `status` imports line prints it as a sixth number.
+
+     Verification. Tests in resolve.lisp, on :FILE entities built by hand
+     with :LANGUAGE :PYTHON:
+       - main.py in a directory with no __init__.py resolves `config` to its
+         sibling (root 1)
+       - ledger/posting.py resolves `ledger.hashing` with ledger/ a package
+         (root 2)
+       - `.posting` from ledger/__init__.py resolves
+       - `..x` climbs two directories
+       - "a.b" finds a/b/__init__.py when there is no a/b.py
+       - tests/test_refs.py's `ledger.refs` is :UNROOTED with no domain and
+         resolves once the domain root is functions/
+       - `googleapiclient.discovery` is :EXTERNAL
+       - `from ledger import dates` adds ledger/dates.py to the scope
+       - a Python caller's same-file def wins over a same-named def in
+         another file (VISIBLE-CANDIDATES' local tier, now that :PYTHON is
+         module-scoped)
+       - a JavaScript importer's answers are unchanged, from the existing
+         RESOLVE-MODULE-SPECIFIER tests
+     RESOLVE-MODULE-SPECIFIER-ANSWERS-AGAINST-THE-INDEX-AND-NOT-THE-DISK
+     gets a Python twin (risk 5). Before the step, `config` comes back
+     :EXTERNAL from the JavaScript path, or the Python file is not
+     module-scoped and has no scope at all. Either way the tests fail.
+     Green. load-test prints T (console.lisp changed). Loom's tree has no
+     Python file yet, so its imports line reads six zeroes.
+
+  6. THE :IMPORTED-CALLS TIER.  src/graph/resolve.lisp, src/graph/package.lisp,
+     src/graph/test/resolve.lisp, src/process/console.lisp,
+     src/serve/operations.lisp.
+
+     RESOLVE-CALLS reads each caller's :IMPORTED-CALLS beside its call
+     names. Each entry is resolved with the step-5 resolver, then walked by
+     D6's four steps. A class at the end of the walk goes to
+     "Class.__init__". The walk stops after 16 steps and refuses a cycle. A
+     hit is one :CALLS edge at confidence 1.0. A miss goes into
+     :UNRESOLVED-IMPORTED-CALLS with :EXTERNAL, :UNROOTED,
+     :MISSING-IN-TARGET or :NOT-CALLABLE. That property is written
+     unconditionally whenever the caller has entries, as :UNRESOLVED-CALLS
+     is.
+
+     CALLER-CALL-NAMES returns NIL for a :CALL-SITE carrying
+     :IMPORTED-CALLS. A Python caller's candidates are filtered to
+     :LANGUAGE :PYTHON. MEMBER-CALL-CANDIDATES skips its third tier for a
+     Python caller.
+
+     A new query, MISSING-IMPORTED-CALLS, lists every :MISSING-IN-TARGET
+     entry with its caller, file, line, specifier and path. The console's
+     `check` prints them under their own heading, after the unresolved
+     document references. The serve :check operation returns them as
+     :MISSING-IMPORTED-CALLS.
+
+     Verification. Tests on a hand-built graph shaped like lfia:
+       - sheets.py's `build` bound to googleapiclient draws no edge to
+         cross_check.build or simplifi.build, and records :EXTERNAL
+       - main.py's `sheets.read_tab` reaches sheets.read_tab and not
+         main.read_tab
+       - `ledger.post` through ledger/__init__.py's `from .posting import
+         post` reaches posting.post (the re-export)
+       - `RefIssuer(...)` reaches RefIssuer.__init__
+       - a two-file cycle of re-exports ends as a miss, not a loop
+       - a renamed target is :MISSING-IN-TARGET and appears in
+         MISSING-IMPORTED-CALLS
+       - a path ending at a :VARIABLE is :NOT-CALLABLE
+       - acceptance.py's watched_repositories calling
+         service.watched_repositories reaches the other file. CALL-TARGETS
+         removing the caller does not lose it.
+       - a Python member call with no method of that property draws no edge
+         to a same-named plain function
+       - a Python caller never reaches a Lisp or JavaScript definition
+       - retracting posting.py and re-resolving brings the re-export edge
+         back (DEC-0003)
+     Each fails before the step, because the tier and the narrowings do
+     not exist. The sheets case fans out at 1/2 through VISIBLE-CANDIDATES,
+     as DES-0053 measured. A console test, or a REST test of :check, asserts
+     the new key is present and empty on a tree with no Python. Green.
+     load-test prints T.
+
+  7. SETTINGS.  src/graph/resolve.lisp, src/graph/package.lisp,
+     src/graph/test/resolve.lisp, src/workspace/workspace.lisp.
+
+     RESOLVE-SETTINGS returns operations. It asserts one :SETTING per
+     distinct name in every :ENVIRONMENT-READS, with :SOURCES
+     (:ENVIRONMENT), and one :READS edge from each reader. It retracts every
+     :SETTING that no reader names any more, the way CALL-SITE-RETRACTIONS
+     sweeps :AMBIGUOUS sites. It changes no analyzer-written property.
+     RESOLVE-AND-CHECK submits it after resolve-tests and before
+     resolve-document-links. That order lets a document's `affects:
+     [SPREADSHEET_ID]` resolve, and lets check-rules see the edges. The
+     sequence in RESOLVE-AND-CHECK's docstring gains it.
+
+     Verification. On hand-built entities:
+       - two variables reading SPREADSHEET_ID give one :SETTING and two
+         :READS edges
+       - removing one reader's property keeps the setting; removing both
+         sweeps it
+       - IMPACT-SET on the setting reaches the readers and their callers
+       - a :DOCUMENT whose :AFFECTS names the setting resolves
+       - SEARCH-ENTITIES and DESCRIBE-ENTITY return it. This is the
+         *DEFINITION-TYPES* check from BLAST RADIUS.
+     Each fails before the step. Green. Risk 4: confirm no new graph
+     mutator was added. If one was, it goes into RULE-0003's to-names in
+     this commit.
+
+  8. THE ANALYZER.  src/analyzer/python-analyzer.lisp,
+     src/analyzer/package.lisp, src/analyzer/loom-analyzer.asd,
+     src/analyzer/test/python-analyzer.lisp (new),
+     src/workspace/test/workspace.lisp, src/workspace/test/provenance.lisp.
+
+     A Python analyzer is registered for .py, not .pyi. ANALYZABLE-P refuses
+     a path with a segment named venv, site-packages, dist-packages or
+     __pycache__, on VENDORED-PATH-P's precedent. ANALYZE-FILE turns the
+     child's reply into operations:
+       - entities as D3, with "Class.name" methods and :START-LINE at the
+         first decorator
+       - :CALL-NAMES from local, self and member bindings
+       - :IMPORTED-CALLS from import bindings, aliases undone
+       - decorators as calls of what they decorate
+       - :CALL-SITE entities for module-level calls, :REFERRER-KIND
+         :VARIABLE, :CLASS or :MODULE, deduped on their key (risk 3)
+       - D9's reconciliation, with property chains and overload sets merged
+       - D7's damage in :SUPPRESSED-REGIONS with reason "python syntax
+         error"
+       - :ENVIRONMENT-READS on the innermost entity, and
+         :UNNAMED-ENVIRONMENT-READS on the :FILE
+       - :SYSTEM from DEFAULT-SYSTEM-FOR-PATH
+       - COMMENT-EXTENT and COMMENT-LINE-TEXT methods for `#`
+     No python3 means a :FILE with :ANALYSIS-FAILED-P and the reason. Only
+     the analyzer asserts relationships: :CONTAINS from the file, as the
+     other code analyzers do, and nothing cross-file.
+
+     The two tests in risk 2 move to .rb. Step 4's venv test gains
+     env/lib/site.py.
+
+     Verification. python-analyzer.lisp, with a PY-TEST macro that skips
+     without python3:
+       - each D3 entity type from one source string
+       - a nested def mints nothing and its calls land on the enclosing
+         function (refs.py's `advance`)
+       - the six guard shapes yield :MODULE sites
+       - two `main()` calls in one guard yield one site
+       - two `def f` yield one entity, with the first in
+         :SHADOWED-DEFINITIONS
+       - @property plus @x.setter yield one method with both bodies' calls
+       - @overload stubs plus an implementation yield one entity with no
+         shadow
+       - config.py-shaped reads land on eight variables
+       - a broken second statement keeps the first's entities
+       - a path under venv/ is not claimed
+       - a missing interpreter is recorded, as in
+         THE-TOOLCHAIN-BEING-ABSENT-IS-RECORDED-NOT-FATAL
+     CON-0003 for the merge rules: replace the chain merge with
+     last-wins, see the property test fail, and revert.
+
+     Loom's own tree. This step moves counts. `status` loses ".py 11" from
+     unclaimed and gains the entities of 11 files. Expect `check` to stay
+     at 0 violations, 8 unresolved and 7 ambiguous. A rise in ambiguous
+     means a Python name fell through to the spelling fallback, and is
+     investigated before commit. `check`'s prose file references fall from
+     21 to 16: the five naming tools/test/acceptance.py, service.py and
+     recall.py now resolve to indexed files. Run on Loom's tree:
+       tools/loom.sh 'describe sessions_main | describe ensure'
+     Each lists a :MODULE call site among its callers. acceptance.py's
+     watched_repositories lists a :CALLS edge to
+     tools/test/service.py's. Green. load-test prints T.
+
+  9. TEST CASES.  src/analyzer/python-analyzer.lisp,
+     src/analyzer/test/python-analyzer.lisp.
+
+     D8. A file is a test file when its name matches test_*.py or
+     *_test.py, or when it defines a class whose base binds to
+     unittest.TestCase (by D2's binding, so `from unittest import TestCase
+     as T` counts). Cases are module-level test* functions named "test_x",
+     and test* methods of a Test* class with no __init__ or of a TestCase
+     subclass, named "TestX::test_y". :FRAMEWORK is :PYTEST or :UNITTEST.
+     A case is a :TEST and not also a :FUNCTION or :METHOD. Its calls
+     include those of setUp/tearDown, setup_method/teardown_method and
+     setup_function/teardown_function. RESOLVE-TESTS already derives :TESTS
+     edges from :CALLS, so nothing changes in loom-graph.
+
+     Verification. Inline sources at made-up paths:
+       - tests/test_refs.py with `def test_lease()` gives one :PYTEST case
+       - a TestCase subclass in tests/checks.py, which matches no pytest
+         pattern, gives :UNITTEST cases
+       - a Test* class with __init__ gives none
+       - setUp's call appears in each case's names
+       - tools/test/test-acceptance.py gives no :TEST (hyphen, not
+         underscore)
+       - a :TESTS edge appears through the full pipeline in a workspace test
+     Each fails before the step, because every def is a :FUNCTION. Green.
+     Loom's tree gains no :TEST entity, so `status` tests stays at its step-8
+     figure.
+
+  10. ARITY AND SIGNATURES.  src/knowledge/services.lisp,
+      src/knowledge/test/services.lisp.
+
+      ENTITY-ARITY for :LANGUAGE :PYTHON counts parameters before the first
+      one with a default, `*`, `*args` or `**kwargs`. It skips `/`, and it
+      skips the first parameter of a method not decorated @staticmethod
+      (R12). *SIGNATURE-STYLES* gains (:python . :call).
+
+      Verification. `def f(a, b=1)` is 1. A method `def m(self, a, *, k)` is
+      1. A @staticmethod `def s(a, b)` is 2. `def g(a, /, b)` is 2. The
+      rendered signature is `f(a, b=1)`. Before the step, the method case
+      returns 4: the current loop stops only at a `&` marker. The style
+      test gets :FORM. Green.
+
+  11. ACCEPTANCE ON BOTH TREES.  No source change, unless a defect is found.
+      A defect found here is fixed in its own commit, with a test that fails
+      without it, before this step is called done.
+
+      lfia, with no .loom/frameworks.yaml (it has .loom/manifest.yaml only):
+
+        tools/loom.sh 'watch "~/github/lfia-accounting" | find @lfia-accounting _sync | describe @lfia-accounting upsert | impact @lfia-accounting Rules.find 5 | describe @lfia-accounting _service | describe @lfia-accounting seed_accounts_map | find @lfia-accounting SPREADSHEET_ID | status @lfia-accounting | check @lfia-accounting'
+
+      One quoted argument on one line. tools/allow-loom.py allows a driver
+      script followed by single-quoted arguments, and a backslash
+      continuation is not that form.
+
+      Expected: main._sync is found. upsert's callers include _sync.
+      Rules.find's impact reaches simplifi functions, simplifi.build, _sync,
+      then sync_zeffy and backfill. sheets._service has no edge to
+      cross_check.build or simplifi.build. seed_accounts_map calls
+      sheets.read_tab, not main.read_tab. SPREADSHEET_ID is a :SETTING read
+      by config's SPREADSHEET_ID variable. In status, .py is absent from
+      unclaimed and nothing under functions/venv is indexed. The imports
+      line shows tests/'s `ledger.*` imports as :UNROOTED. check shows no
+      violation and no rise in lfia's unresolved document references against
+      a `check` taken before step 8.
+
+      The venv without git's help. lfia's venv is excluded today by line 1
+      of the root .gitignore. Clone lfia into the scratch directory and
+      delete that line. Run `python3 -m venv --without-pip functions/venv`
+      and write functions/venv/lib/x.py. Watch the clone: nothing under
+      functions/venv is indexed. Delete the clone.
+
+      Timing (R16). A scratch script loads loom-analyzer and calls
+      ANALYZE-FILE on each of lfia's tracked .py files, child start
+      included, timed with GET-INTERNAL-REAL-TIME. It must be under one
+      second. Record the file count and the time in a NOTES section of this
+      plan.
+
+      Loom's tree: repeat step 8's describes, and confirm the four `main`
+      functions each show a :MODULE call site from their own file.
+      tools/loom-test.sh, check and load-test are green.
+
+  12. COMPLETE.  docs/plans/PLAN-0056.yaml, docs/design/DES-0053.yaml,
+      docs/requirements/REQ-0078.yaml.
+
+      Run the dry run first and read the chain:
+
+        tools/loom.sh 'complete PLAN-0056'
+
+      Run `git status` to confirm the dry run wrote nothing (risk 12).
+      Expected verdicts:
+
+        DES-0053=implemented. Every one of R1 to R16 is true of the tree
+        after step 11, and its DEFERRED list is written in the design.
+        If any R16 line failed and was not fixed, the verdict is partial,
+        and DES-0053 gains an OUTSTANDING section naming the line.
+
+        REQ-0078=partial. R1 to R6 and R12 land. R7 to R11 (Firebase
+        entry points, secrets, firebase.json, dependency names, documents
+        naming deployed functions) do not. Two parts of R1 and R2 are
+        declined, not delivered: R1's module entities (DES-0053 D3 meets it
+        with the :FILE) and R2's call-site shape (REQ-0041). Before running
+        `complete`, add an OUTSTANDING section to REQ-0078 naming those
+        items and pointing at DES-0053's S1 to S6. A partial stops the
+        climb, so REQ-0024 and REQ-0018 are not restated.
+
+        tools/loom.sh 'complete PLAN-0056 DES-0053=implemented REQ-0078=partial'
+
+      Then `status`: the document count is unchanged and unresolved is
+      still 8. Do not commit from this plan. The branch is the caller's to
+      commit, push and merge.
+
+  VERIFICATION
+
+  The whole change is checked by:
+    - tools/loom-test.sh green on twelve systems, with the three new
+      analyzer test files and the new tests in ontology, graph, workspace
+      and knowledge, and zero Python skips on this machine
+    - `check` on Loom: 0 violations, 8 unresolved, 7 ambiguous, the
+      baseline
+    - `sbcl --script tools/test/load-test.lisp loom-serve` prints T
+    - Loom `status`: unclaimed no longer lists .py; the imports line counts
+      the tools/ imports, with service.py resolved for the four tools/test
+      scripts that import it
+    - step 11's lfia list, the scratch-venv clone, and the timing in NOTES
+    - `describe sessions_main` and `describe ensure` on Loom show :MODULE
+      call sites
+
+  NOTES
+
+  Departures from the plan or the design, recorded where each was found.
+
+  Step 1. The eight DEFMETHOD fingerprints in
+  src/analyzer/test/lisp-analyzer.lisp list every declared :METHOD property in
+  alphabetical order, so declaring five new ones on :METHOD changed all eight
+  expected values. Nothing the analyzer writes moved.
+
+  Step 2. The extractor child's argv and timeout are functions called at each
+  launch and exchange, not the values the plan lists ("a name, a function
+  returning the argv, a timeout"). *JS-PARSE-TIMEOUT-SECONDS* is a DEFPARAMETER
+  somebody may SETF, and a captured number would stop honouring it. The
+  "stopped responding" reason names the child ("javascript extractor stopped
+  responding" is unchanged).
+
+  Step 3. The reply schema is camelCase JSON and is documented in the
+  extract.py header: imports (one entry per bound name, every scope),
+  definitions, variables, statements, envReads, and damage/error/piecesParsed on
+  a SyntaxError. Three choices the design leaves open: a call whose receiver is
+  `super()' is dropped, because a bare member name would fan out across every
+  class defining the method; a plain-name rebinding after an import does not
+  replace the import binding (`try: import json' then `except: json = None');
+  and a call on a builtin receiver (`str.join') is dropped. Splitting on a
+  syntax error never starts a statement at a column-0 else, elif, except or
+  finally, nor at the def under a decorator.
+
+  Step 4. A pyvenv.cfg at the repository root is not a venv prefix, since
+  `python -m venv .' writes one beside the project's own source and excluding
+  the empty prefix would exclude the repository. Python tests use
+  CALL-WITH-PYTHON, a function, and not a macro: a second macro in the test
+  tree would have added a sixth entry to `check''s definer macro list.
+
+  Step 5. The plan says `..x' climbs two directories. DES-0053 D5 says one per
+  dot after the first, which is Python's rule, so `..x' climbs one and `...x'
+  two. A domain's :root is the third import root whenever the plist carries a
+  :root key, and the default domain carries "", so every Python file with a
+  domain table gets the repository root as a third root.
+
+  Step 6. D6 lists four causes. A specifier that is relative and names no
+  module, or names a missing submodule of a package the tree holds, is
+  :UNRESOLVED in the resolver, and the walk writes it as :MISSING-IN-TARGET:
+  it is a module a call still names and the tree no longer holds, which `check'
+  should report. RESOLVE-CALLS gained a :DOMAINS argument, because the walk
+  resolves specifiers in other files under those files' own domains, and
+  RESOLVE-AND-CHECK passes it.
+
+  Step 7. :SETTING cannot be the target of :DECIDES or :DOCUMENTS as step 1
+  declared them, so a document's `affects: [SPREADSHEET_ID]' resolved and then
+  lost its edge. Both relationships now list :SETTING. The test uses a decision
+  and a plan. SEARCH-ENTITIES and DESCRIBE-ENTITY needed no change; the test is
+  in src/knowledge/test/services.lisp. RESOLVE-SETTINGS adds no mutator, so
+  RULE-0003 is unchanged. One run of the full suite failed
+  A-WRITE-OPERATION-IS-NOT-RECORDED in loom-serve and passed on the rerun with
+  no edit between.
+
+  Step 8. Moves on Loom's tree. status: unclaimed loses ".py 11"; imports read
+  4 resolved, 57 external, 0 unrooted; the ten tools/ scripts add 86 :MODULE and
+  30 :VARIABLE call sites; prose file references fall from 21 to 16 as
+  predicted; python skips in the suite: 0. Five departures, each found by a
+  count that moved.
+    - `main' is defined in eight Python scripts, so six documents whose
+      `affects:' named `main' (DES-0006, DES-0007, REQ-0008, REQ-0010,
+      PLAN-0005, PLAN-0006) became ambiguous and lost their edge to console.lisp's
+      main. check showed 13 ambiguous against 7. Each now names
+      function:src/process/console.lisp:main, which linkable-index resolves by id.
+    - RULE-0006 reported `m' in tools/test/test-next-doc-id.py, a variable
+      assigned in two module-level loops. D9 says earlier ranges go to
+      :SHADOWED-DEFINITIONS whatever the kinds. A variable rebound by a variable
+      is not dead code, so the analyzer keeps last-wins and writes no shadow
+      record for that pair. A def replaced by anything, and a variable replaced
+      by a def, still record one.
+    - :MENTIONS could not end at :SETTING: two prose files name an environment
+      variable, and check reported two dropped edges. :SETTING joins its targets.
+    - The :CALL-SITE ceiling test counted 619 against 512. The Python sites are
+      a population D4 defines, so they have a ceiling of their own, 128, and the
+      Lisp ceiling is unchanged at 512 (503 measured).
+    - extract.py sent a decorator's `False' and `None' as JSON values, which both
+      decode to NIL. They are now kinds of their own ("false", "none", "true").
+  CON-0005: the call-site dedupe is tested on the operations and not on the
+  graph, because the graph upserts by natural key and would hide a second assert.
+  The provenance test moved to .rb does not fail when .rb is claimed: a file the
+  index never read has no stamp, so drift is zero whether or not it is claimed.
+  The unclaimed test does fail (4 assertions) when a throwaway analyzer claims
+  .rb.
+
+  Step 9. Loom's tree gains no :TEST entity: tools/test/test-*.py has a hyphen.
+  `status' reads 452 units covered, as at step 8. D8 names TestCase subclasses by
+  their direct base only. A class deriving from a local subclass of TestCase is
+  not recognised; neither tree has one. The first draft of the :TESTS pipeline
+  test put the test file under functions/tests/ and got no edge: its
+  `import ledger' is :UNROOTED there, which is the lfia case the domain root is
+  for. The test now sits beside the module.
+
+  Step 10. The default is read from the tokens the child wrote, as the plan
+  implies. An annotation that holds the spelling " = " inside a string is
+  mistaken for a default; the check is on the first colon and then " = ". The
+  signature of a method renders with its "Class.name", as JavaScript's does.
+
+  Step 11, acceptance, run 2026-10-05 at a7d3a3d with no defect found and no
+  source change.
+
+  lfia (the one-line command in step 11, then three follow-up describes):
+    - baseline before step 8, taken by indexing lfia from a worktree of step 7:
+      8 files, 8 entities, 0 unresolved document references, 0 ambiguous, 36
+      tracked .py files unclaimed.
+    - after: 44 files, 351 entities, 586 relationships, 57 tests covering 4
+      units in 9 test files, 0 unresolved document references, 0 ambiguous,
+      0 violations, 17 tracked files unclaimed and none of them .py.
+    - imports: 39 resolved, 60 external, 0 unresolved, 16 unrooted. The 16 are
+      functions/tests' `ledger.*` imports; no domain declares functions/ as a
+      root. That is also why only 4 units show as tested.
+    - find _sync: function functions/main.py:21-34. describe upsert: caller
+      _sync. impact Rules.find 5: 12 entities. _rows, _expand_tags,
+      _duplicate_ids, _classify and _donation_tags at d1, simplifi.build at
+      d2, _sync at d3, backfill and sync_zeffy at d4.
+    - describe sheets._service lists no outgoing call to either build. No
+      cross_check.build or simplifi.build caller of it exists.
+    - describe seed_accounts_map: sheets.read_tab lists it as a caller;
+      main.read_tab does not.
+    - find SPREADSHEET_ID: variable functions/config.py:7 and a :SETTING.
+      describe setting:SPREADSHEET_ID: read by that variable. impact on it
+      reaches the variable and its file, d1 and d2, as the variable has no
+      caller.
+    - `find site-packages` and `find pyvenv` match nothing in lfia.
+  The venv without git's help, in a clone under the scratch directory, with
+  line 1 (`venv/') deleted from .gitignore: `python3 -m venv --without-pip` made
+  functions/venv, with a .py and a README.md written under it. A second
+  environment, functions/pyenv, had a name no list holds, with the same two
+  files. Both clones indexed 44 files and 8 documents, the same as the original,
+  and `find' reports neither leak. The clone is deleted.
+  Timing (R16): 36 tracked .py files, ANALYZE-FILE each, child start included,
+  0.135 and 0.142 seconds in two runs.
+  Loom's tree: describe sessions_main and ensure each list a :MODULE site from
+  their own file. The guard calls main in test-allow-loom.py, seed-sheet.py,
+  recall.py, make-cases.py, import-census.py, tools/allow-loom.py and
+  tools/py/extract.py each list a :MODULE site at their guard's line.
+  acceptance.py's watched_repositories calls service.py's, and service.py's
+  lists it as a caller. `tools/loom-test.sh` 12 of 12, `check` 0 violations,
+  8 unresolved, 7 ambiguous, and load-test prints
+  `(find-package "LOOM-PROCESS") => T`.
+
+  REV-0003 fixes, after step 11. Decisions the review left open:
+    - BUG-0070. A Python caller keeps its own file's plain functions and any
+      method; no Python definition is a candidate for a Lisp or JavaScript
+      caller. A NIL caller is unchanged. On Loom the eight confidence-1.0
+      edges are gone: describe tools/test/service.py:get lists callers in
+      its own file only, and acceptance.py's git is called by
+      live_fingerprint alone.
+    - BUG-0071. Star imports are kept in :IMPORT-BINDINGS as (:LOCAL NIL
+      :NAME "*") and WALK-ATTRIBUTE-PATH follows them, last written first.
+      An unreadable star module ends the name as :STAR-IMPORT. A class
+      method missing from the class's own file is looked up on each base
+      named in :SUPERCLASS-NAMES, and a miss ends as :INHERITED unless the
+      only base is `object'. So a class with an in-tree base that truly
+      lacks a method is no longer reported by `check'. That is a lost true
+      positive, accepted because the base is read by the name :SUPERCLASS-
+      NAMES holds, which undoes an import alias, and reporting on that would
+      risk the fabricated claim CON-0001 refuses. Neither cause is reported.
+    - Item 3. The rule chosen is the narrow one: exactly one :SETTING plus
+      :VARIABLEs whose :ENVIRONMENT-READS name it resolves to the setting.
+      The alternative, preferring a :SETTING for any name that looks like an
+      environment variable, would guess from spelling. A same-named variable
+      that reads something else keeps the name ambiguous.
+    - Item 4. The third import root skips the implicit :DEFAULT domain.
+      D5's text now says so.
+    - Item 5. Under a pyvenv.cfg prefix only the cfg and bin, lib, lib64,
+      include, Lib and Scripts are excluded. A project's own `lib/' beside
+      a pyvenv.cfg is excluded with them; that is the cost of not naming
+      the venv, and the root carve-out has no such case.
+    - Item 7. A default holding an environment read is written as `name=' or
+      `name: T = ', empty after the `=', because python-arity reads the `='
+      to know the parameter is optional.
+    - Item 9. D9, the loom-process/loom-serve sentence and D5 are amended in
+      DES-0053, and PY-SUPERSEDE's docstring is rewritten.
+    - REV-0003's loom-serve flake is not fixed here: it reproduces on main.

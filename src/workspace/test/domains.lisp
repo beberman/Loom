@@ -225,12 +225,34 @@ to return from."
   (with-domain-repository (repository)
     (let ((imports (getf (repository-status repository) :unresolved-imports)))
       (is-true imports "a tree with JavaScript in it reports an import split")
-      (dolist (key '(:resolved :external :out-of-domain :unresolved :unclaimed-target))
+      (dolist (key '(:resolved :external :out-of-domain :unresolved :unclaimed-target
+                     :unrooted))
         (is-true (integerp (getf imports key))
                  "~a is absent or not a number: ~a" key imports))
       (is (plusp (getf imports :resolved)) "the fixture resolves something")
       (is (plusp (getf imports :out-of-domain))
           "and legacy/ importing an app/ alias key is counted out-of-domain"))))
+
+(test the-import-summary-counts-an-unrooted-python-import
+  ;; DES-0053 D5's sixth cause, summed from what RESOLVE-IMPORTS wrote on the
+  ;; :FILE. Built by hand: no Python file is claimed by an analyzer in this
+  ;; commit, and what is asserted is the summing and not the resolution.
+  (with-workspace-fixture (repository)
+    (add-entity (repository-graph repository)
+                (make-instance 'file-entity :name "functions/tests/t.py"
+                               :origin-file "functions/tests/t.py"
+                               :properties (properties-table
+                                            (list :path "functions/tests/t.py"
+                                                  :language :python
+                                                  :unresolved-imports
+                                                  '((:specifier "ledger.refs" :cause :unrooted)
+                                                    (:specifier "ledger.dates" :cause :unrooted)
+                                                    (:specifier "pytest" :cause :external))))))
+    (let ((imports (loom-workspace::import-summary repository)))
+      (is (= 2 (getf imports :unrooted)))
+      (is (= 1 (getf imports :external))))
+    (is (getf (repository-status repository) :unresolved-imports)
+        "and a repository holding a Python file is module-scoped, so it reports a split")))
 
 (test a-repository-with-no-module-scoped-file-reports-no-import-split
   ;; A Common Lisp tree has no import graph, and five noughts there would be a
