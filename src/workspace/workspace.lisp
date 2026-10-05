@@ -1156,7 +1156,12 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
       ;; Before RESOLVE-DOCUMENT-LINKS so a document's `affects: [SPREADSHEET_ID]'
       ;; finds the setting, and before the rules so CHECK-RULES sees the edges
       ;; (DES-0053 D10).
-      (submit "resolve-settings"       (resolve-settings graph :workspace-id workspace))
+      (submit "resolve-settings"       (resolve-settings
+                                        graph :workspace-id workspace
+                                        :domains domains
+                                        :setting-declarations
+                                        (repository-setting-declarations repository)
+                                        :entry-points (repository-entry-points repository)))
       (submit "resolve-document-links" (resolve-document-links graph :workspace-id workspace))
       ;; After RESOLVE-DOCUMENT-LINKS and before the rules, because it writes a
       ;; property that same pass's siblings read, and because a rule check is a
@@ -2370,9 +2375,10 @@ carry and thrown away, so the graph after the call is the graph before it."
                      (loop for (field . nil) in *declared-link-fields*
                            append (loop for name in (getp document field)
                                         collect (document-reference-report
-                                                 index field name document)))))))))))
+                                                 index field name document
+                                                 :view graph)))))))))))
 
-(defun document-reference-report (index field name document)
+(defun document-reference-report (index field name document &key view)
   "One declared reference, as what the author needs to act on it.
 
 A reference resolving to the document itself is reported as resolved and
@@ -2381,7 +2387,7 @@ there and an author reading `resolved' about a self-reference would be told
 an edge exists that does not. Compared by id rather than by identity: the
 entity here came from the analyzer and is a different object from the one in
 the index even when the document is already indexed."
-  (multiple-value-bind (target candidates) (resolve-one index name)
+  (multiple-value-bind (target candidates) (resolve-one index name :view view)
     (cond
       ((and target (equal (id target) (id document)))
        (list :field field :name name :status :self))

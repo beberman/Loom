@@ -1019,3 +1019,61 @@ body: |
     - the sentinel test in step 5 passing, with its positive control found
     - Loom's status, check and structure unchanged by steps 1 to 7 except
       where a step names the count
+
+  NOTES
+
+  Departures from the plan, by step. Commits: step 1 819dd81, step 2 39bfb08,
+  step 3 e0735aa, step 4 d74915d.
+
+  Step 1. ONTOLOGY-SCHEMA does not carry :CLOSED, and src/ontology/package.lisp
+  needed no edit: defentity's new keyword is a macro argument and exports
+  nothing. Only the :METHOD fingerprints changed in lisp-analyzer.lisp. The DEFUN
+  corpus lists no declared-property fingerprint, so it needed no edit.
+
+  Step 2. src/analyzer/package.lisp is not edited: DECODE-ARGUMENT-VALUE lives in
+  the one package js-analyzer.lisp is also in, so the second plan calls it
+  unqualified. In a :DOTTED value, :SPECIFIER and :PATH are the first name's
+  binding only, as the plan's expected value says; the remaining attributes are
+  in the text. An empty list or tuple decodes as (:LIST), not :EXPRESSION.
+  :VALUE-CALL is written only for `NAME = call(...)' with one Name target and a
+  callee that is an import or a local; a member or builtin callee records
+  nothing. A new REST test builds its Python file with
+  LOOM-SERVE-TEST::WRITE-OPERATIONS-FIXTURE-FILE and skips without python3. The
+  mutation run that reverted extract.py hung once on the inspector's timeout test
+  (a `timeout 3' child that outlived its limit for 20 minutes); killing the child
+  let the run finish. That test is outside this change.
+
+  Step 3. PARSE-FRAMEWORKS also returns :DECLARATION-PROBLEMS, because an entry
+  left out can only be named while its raw table is in hand. A callee two entries
+  declare is removed at parse time, so `neither applies it' holds for every
+  consumer. FRAMEWORKS-PROBLEMS appends them. A file holding only domains was
+  reported as declaring nothing usable before this step; it no longer is.
+
+  Step 4. The firebase analyzer sets :ANALYSIS-FAILED-P as well as :ANALYSIS-ERROR,
+  so `status' counts a JSONC firebase.json under `unparsed' (tested). The
+  freshness assertion of risk 5 passes without the admission too, since the walk
+  would then simply not see .firebaserc; the indexing and POLL-ONCE tests are the
+  ones the mutation fails. lfia moved again: 155 files at the start of step 3,
+  161 at the end of step 4. Its unclaimed line went from 24 to 22, .json 6 to 5
+  and (none) 3 to 2.
+
+  Step 5. RESOLVE-SETTINGS also takes :DOMAINS, which the import walk needs to
+  place a specifier; RESOLVE-AND-CHECK passes it. The walk reaches a :VARIABLE
+  through *WALK-LANDS-ON-VARIABLES*, a special bound by RESOLVE-SETTINGS alone,
+  since LANDING otherwise reports a variable as not callable. An imported name is
+  walked for Python only; a JavaScript registration resolves local names only
+  until the JavaScript plan supplies a resolver. A string literal under a
+  `settings:' keyword mints its setting with no source, because nothing says
+  whether it is a secret. :SOURCES is sorted alphabetically for a stable answer.
+  MATCH-REGISTRATION is exported from loom-graph. The sentinel test has a
+  second test as its positive control: it admits .env, registers an analyzer that
+  writes the contents into :DOCUMENTATION, and asserts the same walk finds the
+  sentinel. The lfia console reports `impact ZEFFY_API_KEY' as ambiguous between
+  the variable and the setting: RESOLVE-ENTITY in console.lisp does not apply
+  RESOLVE-ONE's setting rule. Step 9's `impact ZEFFY_API_KEY 3' needs either that
+  rule there or the id `setting:ZEFFY_API_KEY'. Step 7 touches console.lisp and
+  is the place to decide. The serve suite failed on one run of three with
+  AN-EMPTY-ANSWER-IS-RECORDED-AS-AN-ANSWER and A-READ-OPERATION-WRITES-A-RECORD-
+  NAMING-ITSELF; both are in the operations record family the earlier
+  main-branch flake measurement also hit, and none touched this change. The run
+  that counts is 12 of 12.

@@ -103,6 +103,7 @@
    ;; function's own docstring for the generic-plus-methods case that a naive
    ;; "one candidate" test drops.
    #:resolve-one
+   #:match-registration
    #:*document-types*
    #:*mention-confidence*
 

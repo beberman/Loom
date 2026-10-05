@@ -2162,6 +2162,275 @@ of :SPECIFIER, :PATH and :LINE."
         (is (null (getp plan :unresolved-references)))))))
 
 ;;; ------------------------------------------------------------------
+;;; DES-0054 D3 and D5: declarations, registrations and the sentinel's setting
+;;; ------------------------------------------------------------------
+
+(defparameter *r-entry-points*
+  '((:framework "firebase-functions" :trigger :https
+     :module "firebase_functions.https_fn" :names ("on_request") :settings ("secrets")
+     :positional nil)
+    (:framework "firebase-functions" :trigger :schedule
+     :module "firebase_functions.scheduler_fn" :names ("on_schedule") :settings ("secrets")
+     :positional nil)
+    (:framework "firebase-functions-js" :trigger :https
+     :module "firebase-functions" :names ("default.https.onRequest") :settings ("secrets")
+     :positional nil)))
+
+(defparameter *r-declarations*
+  '((:source :secret :module "firebase_functions.params" :names ("SecretParam"))
+    (:source :param :module "firebase_functions.params" :names ("StringParam" "IntParam"))))
+
+(defun r-settle-with (graph)
+  "RESOLVE-SETTINGS with both declaration lists, applied."
+  (apply-transaction graph (resolve-settings graph
+                                             :setting-declarations *r-declarations*
+                                             :entry-points *r-entry-points*)))
+
+(defun r-declares (graph name file call first &key (specifier "firebase_functions.params"))
+  "A Python :VARIABLE NAME in FILE bound to CALL(FIRST) -- a :VALUE-CALL as the
+analyzer writes it, with no other argument."
+  (let ((e (r-py-definition graph :variable name file)))
+    (setp e :value-call (append (list :specifier specifier :path (list call) :line 1)
+                                (when first (list :first-string first))))
+    e))
+
+(defun r-registered (graph name file arguments
+                     &key (specifier "firebase_functions") (path '("https_fn" "on_request"))
+                       positional)
+  "A Python :FUNCTION carrying one decorator, as DES-0054 D1 encodes it."
+  (let ((e (r-py-definition graph :function name file)))
+    (setp e :decorators (list (list :name "d" :specifier specifier :path path
+                                    :arguments arguments :positional positional :line 1)))
+    e))
+
+(defun r-local (name) (list :name name :binding :local))
+
+(defun r-imported (name specifier path)
+  (list :name name :binding :import :specifier specifier :path path))
+
+(defun reads-names (graph entity)
+  (sort (mapcar (lambda (id) (name (get-entity graph id))) (reads-ids graph entity))
+        #'string<))
+
+(test match-registration-follows-each-languages-own-rule
+  (flet ((hit (registration language)
+           (loom-graph:match-registration registration language *r-entry-points*)))
+    (is (eq :https (getf (hit '(:specifier "firebase_functions.https_fn" :path ("on_request"))
+                              :python)
+                         :trigger))
+        "`from firebase_functions import https_fn' joined gives the same callee")
+    (is (eq :schedule (getf (hit '(:specifier "firebase_functions" :path ("scheduler_fn" "on_schedule"))
+                                 :python)
+                            :trigger)))
+    (is (eq :schedule (getf (hit '(:specifier "firebase_functions.scheduler_fn" :path ("on_schedule"))
+                                 :python)
+                            :trigger))
+        "`import firebase_functions.scheduler_fn as s' then s.on_schedule")
+    (is (null (hit '(:specifier "firebase_functions" :path ("scheduler_fn" "on_schedule"))
+                   :javascript))
+        "a JavaScript registration is matched by the JavaScript rule only")
+    (is (eq :https (getf (hit '(:specifier "firebase-functions" :path ("default" "https" "onRequest"))
+                              :javascript)
+                         :trigger)))
+    (is (null (hit '(:specifier ".https_fn" :path ("on_request")) :python)) "relative")
+    (is (null (hit '(:specifier "./firebase-functions" :path ("default" "https" "onRequest"))
+                   :javascript)))
+    (is (null (hit '(:path ("on_schedule")) :python))
+        "a bare local decorator has no specifier and matches nothing")
+    (is (null (hit '(:specifier "firebase_functions.https_fn" :path ("on_request")) :lisp)))))
+
+(test match-registration-refuses-two-matches
+  (multiple-value-bind (one many)
+      (loom-graph:match-registration
+       '(:specifier "m" :path ("f")) :python
+       '((:module "m" :names ("f")) (:module "m" :names ("f" "g"))))
+    (is (null one))
+    (is (= 2 (length many)))))
+
+(test a-declaration-and-four-registrations-give-one-setting-and-five-reads
+  (let* ((g (make-graph))
+         (key (r-declares g "ZEFFY_API_KEY" "functions/main.py" "SecretParam" "ZEFFY_API_KEY"))
+         (bound (loop for n in '("a" "b" "c" "d")
+                      collect (r-registered
+                               g n "functions/main.py"
+                               `(("secrets" :list ,(r-local "ZEFFY_API_KEY"))
+                                 ("timeout_sec" . 540)))))
+         (plain (r-registered g "e" "functions/main.py" '(("timeout_sec" . 540)))))
+    (r-py-tree g "functions/main.py")
+    (r-settle-with g)
+    (let ((setting (first (entities-of-type g :setting))))
+      (is (= 1 (length (entities-of-type g :setting))))
+      (is (equal "ZEFFY_API_KEY" (name setting)))
+      (is (equal '(:secret) (getp setting :sources)))
+      (is (= 5 (length (relationships-to g (id setting) :rel-type :reads)))
+          "the variable and the four functions whose decorators bind it")
+      (is (member (id setting) (reads-ids g key) :test #'string=))
+      (dolist (f bound)
+        (is (member (id setting) (reads-ids g f) :test #'string=)))
+      (is (null (reads-ids g plain))))))
+
+(test a-secret-and-an-environment-read-of-one-name-are-one-setting
+  (let ((g (make-graph)))
+    (r-declares g "ZEFFY_API_KEY" "functions/main.py" "SecretParam" "ZEFFY_API_KEY")
+    (r-reader g :variable "KEY" "functions/config.py" "ZEFFY_API_KEY")
+    (r-settle-with g)
+    (let ((settings (entities-of-type g :setting)))
+      (is (= 1 (length settings)))
+      (is (equal '(:environment :secret) (getp (first settings) :sources))))))
+
+(test a-name-reaches-only-the-variable-its-own-binding-names
+  ;; REV-0003 finding 1, in a pass. K is declared in a.py and in b.py with
+  ;; different names. A bare-name lookup across the tree would give one of them
+  ;; to c.py's function, which has no K.
+  (let* ((g (make-graph))
+         (in-a (r-registered g "fa" "app/a.py" `(("secrets" :list ,(r-local "K")))))
+         (in-c (r-registered g "fc" "app/c.py" `(("secrets" :list ,(r-local "K"))))))
+    (r-declares g "K" "app/a.py" "SecretParam" "A")
+    (r-declares g "K" "app/b.py" "SecretParam" "B")
+    (r-py-tree g "app/a.py" "app/b.py" "app/c.py")
+    (r-settle-with g)
+    (is (equal '("A") (reads-names g in-a)))
+    (is (null (reads-ids g in-c)) "no K in c.py, and no lookup by spelling")))
+
+(test an-imported-name-is-walked-to-the-file-it-came-from
+  (let* ((g (make-graph))
+         (user (r-registered g "f" "app/main.py"
+                             `(("secrets" :list ,(r-imported "K" "config" '("K")))
+                               ("memory" :dotted "config.OTHER" :specifier "config"
+                                :path nil))))
+         (other (r-declares g "K" "app/other.py" "SecretParam" "WRONG")))
+    (declare (ignore other))
+    (r-declares g "K" "app/config.py" "SecretParam" "RIGHT")
+    (r-py-tree g "app/main.py" "app/config.py" "app/other.py")
+    (r-settle-with g)
+    (is (equal '("RIGHT") (reads-names g user)))))
+
+(test a-dotted-chain-is-followed-from-its-first-names-import
+  (let* ((g (make-graph))
+         (user (r-registered g "f" "app/main.py"
+                             '(("memory" :dotted "config.K" :specifier "config" :path nil)))))
+    (r-declares g "K" "app/config.py" "IntParam" "MEM")
+    (r-py-tree g "app/main.py" "app/config.py")
+    (r-settle-with g)
+    (is (equal '("MEM") (reads-names g user)))
+    (is (equal '(:param) (getp (find "MEM" (entities-of-type g :setting)
+                                     :key #'name :test #'string=)
+                               :sources)))))
+
+(test a-literal-names-a-setting-only-under-a-keyword-the-entry-lists
+  (let* ((g (make-graph))
+         (f (r-registered g "f" "app/a.py" '(("secrets" :list "LITERAL")
+                                             ("region" . "OTHER")
+                                             ("labels" :list "ALSO-NOT")))))
+    (r-py-tree g "app/a.py")
+    (r-settle-with g)
+    (is (equal '("LITERAL") (reads-names g f)))
+    (is (equal '("LITERAL") (mapcar #'name (entities-of-type g :setting))))))
+
+(test a-param-bound-to-a-timeout-is-read-keyword-blind
+  (let* ((g (make-graph))
+         (f (r-registered g "f" "app/a.py" `(("timeout_sec" ,@(r-local "T"))))))
+    (r-declares g "T" "app/a.py" "IntParam" "T")
+    (r-py-tree g "app/a.py")
+    (r-settle-with g)
+    (is (equal '("T") (reads-names g f)))))
+
+(test a-declaring-variable-with-no-first-string-names-nothing
+  (let* ((g (make-graph))
+         (v (r-declares g "X" "app/a.py" "SecretParam" nil)))
+    (r-py-tree g "app/a.py")
+    (r-settle-with g)
+    (is (null (entities-of-type g :setting)))
+    (is (null (reads-ids g v)))))
+
+(test a-registration-matching-no-entry-reads-nothing
+  (let* ((g (make-graph))
+         (f (r-registered g "f" "app/a.py" `(("secrets" :list ,(r-local "K")))
+                          :specifier "flask" :path '("route"))))
+    (r-declares g "K" "app/a.py" "SecretParam" "K")
+    (r-py-tree g "app/a.py")
+    (r-settle-with g)
+    (is (null (reads-ids g f)))))
+
+(test the-declaration-edge-follows-the-file-that-decided-it
+  ;; DES-0054 refinement 2. b.py's declaration changes from "B" to "B2" and a.py
+  ;; is untouched. The edge from a.py's function took b.py as its origin, so
+  ;; RETRACT-FILE on b.py removes it and the next pass draws the true one, even
+  ;; though some other reader still reads B from the environment. The answer
+  ;; equals a fresh build's.
+  (flet ((build (declared)
+           (let* ((g (make-graph))
+                  (user (r-registered g "f" "app/a.py"
+                                      `(("secrets" :list ,(r-imported "K" "b" '("K"))))))
+                  (env (r-reader g :function "g" "app/env.py" "B")))
+             (r-declares g "K" "app/b.py" "SecretParam" declared)
+             (r-py-tree g "app/a.py" "app/b.py" "app/env.py")
+             (r-settle-with g)
+             (values g user env))))
+    (multiple-value-bind (g user env) (build "B")
+      (declare (ignore env))
+      (is (equal '("B") (reads-names g user)))
+      (apply-transaction g (list (retract-file "app/b.py" nil)))
+      (is (null (reads-ids g user)) "the retract took the edge a.py never wrote")
+      (r-py-file g "app/b.py")
+      (r-declares g "K" "app/b.py" "SecretParam" "B2")
+      (r-settle-with g)
+      (is (equal '("B2") (reads-names g user)))
+      (let ((fresh (build "B2")))
+        (flet ((edges (graph)
+                 (sort (mapcar (lambda (r) (list (from-id r) (to-id r)))
+                               (loop for e in (all-entities graph)
+                                     append (relationships-from graph (id e) :rel-type :reads)))
+                       #'string< :key #'first)))
+          (is (equal (edges fresh) (edges g)) "equal to a fresh build"))))))
+
+(test a-document-naming-a-secret-resolves-to-the-setting-and-not-its-variable
+  ;; REV-0003 finding 3. ZEFFY_API_KEY is a :VARIABLE and, after this pass, a
+  ;; :SETTING; config.py's variable reads the name from the environment. The
+  ;; variable that declares the secret holds no environment read, so only the
+  ;; :READS edge ties it to the setting.
+  (let ((g (make-graph)))
+    (r-declares g "ZEFFY_API_KEY" "functions/main.py" "SecretParam" "ZEFFY_API_KEY")
+    (r-reader g :variable "ZEFFY_API_KEY" "functions/config.py" "ZEFFY_API_KEY")
+    (r-settle-with g)
+    (let ((index (loom-graph:linkable-index g))
+          (setting (first (entities-of-type g :setting))))
+      (is (eq setting (loom-graph:resolve-one index "ZEFFY_API_KEY" :view g)))
+      (is (null (loom-graph:resolve-one index "ZEFFY_API_KEY"))
+          "without the view the old rule applies, and the declaring variable has no
+environment read, so it stays ambiguous: nothing that resolved before moves")
+      (r-py-definition g :variable "ZEFFY_API_KEY" "functions/other.py")
+      (let ((index (loom-graph:linkable-index g)))
+        (multiple-value-bind (target candidates)
+            (loom-graph:resolve-one index "ZEFFY_API_KEY" :view g)
+          (is (null target) "a same-named variable that reads nothing keeps it ambiguous")
+          (is (= 4 (length candidates))))))
+))
+
+(test a-decision-naming-a-secret-gets-one-decides-edge
+  (let ((g (make-graph)))
+    (r-declares g "ZEFFY_API_KEY" "functions/main.py" "SecretParam" "ZEFFY_API_KEY")
+    (r-reader g :variable "ZEFFY_API_KEY" "functions/config.py" "ZEFFY_API_KEY")
+    (let ((decision (r-decision g "DEC-9001" :affects '("ZEFFY_API_KEY"))))
+      (r-settle-with g)
+      (apply-transaction g (resolve-document-links g :workspace-id "w"))
+      (is (equal (list (id (first (entities-of-type g :setting))))
+                 (mapcar #'to-id (relationships-from g (id decision) :rel-type :decides))))
+      (is (null (getp decision :unresolved-references)))
+      (is (null (getp decision :ambiguous-references))))))
+
+(test resolve-one-without-a-view-resolves-what-it-always-did
+  (let* ((g (make-graph))
+         (variable (r-reader g :variable "SPREADSHEET_ID" "app/config.py" "SPREADSHEET_ID")))
+    (declare (ignore variable))
+    (r-settle g)
+    (let ((index (loom-graph:linkable-index g)))
+      (is (eq (first (entities-of-type g :setting))
+              (loom-graph:resolve-one index "SPREADSHEET_ID")))
+      (is (eq (first (entities-of-type g :setting))
+              (loom-graph:resolve-one index "SPREADSHEET_ID" :view g))))))
+
+;;; ------------------------------------------------------------------
 ;;; The Python line, drawn both ways (BUG-0070)
 ;;; ------------------------------------------------------------------
 

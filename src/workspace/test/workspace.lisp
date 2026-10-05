@@ -1977,3 +1977,104 @@ which is not a failure and must not read as one")
   \"functions\": [{}] }")
     (reindex-repository repository :quiet t)
     (is (eql 1 (getf (repository-status repository) :unparsed)))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 R8: the index cannot hold a secret's or a param's value
+;;; ------------------------------------------------------------------
+
+(defparameter *sentinel-frameworks* "entry-points:
+  - trigger: https
+    module: firebase_functions.https_fn
+    names: [on_request]
+    settings: [secrets]
+setting-declarations:
+  - source: secret
+    module: firebase_functions.params
+    names: [SecretParam]
+  - source: param
+    module: firebase_functions.params
+    names: [StringParam]
+")
+
+(defun write-sentinel-tree ()
+  "A Firebase Python tree whose every value-bearing file holds SENTINEL-7f3a, whose
+param default is SENTINEL-DEFAULT, and whose main.py docstring holds the control."
+  (write-file ".loom/frameworks.yaml" *sentinel-frameworks*)
+  (write-file "firebase.json"
+              "{\"functions\": [{\"source\": \"functions\", \"runtime\": \"python312\"}]}")
+  (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
+  (write-file "functions/main.py" "\"\"\"CONTROL-7f3a\"\"\"
+from firebase_functions import https_fn
+from firebase_functions.params import SecretParam, StringParam
+K = SecretParam(\"K\")
+P = StringParam(\"P\", \"SENTINEL-DEFAULT\")
+@https_fn.on_request(secrets=[K])
+def f(req): pass
+")
+  (dolist (name '(".env" ".env.local" ".env.default" ".secret.local"))
+    (write-file (format nil "functions/~a" name) "K=SENTINEL-7f3a
+"))
+  (write-file "functions/.runtimeconfig.json" "{\"k\": \"SENTINEL-7f3a\"}"))
+
+(defun value-contains-p (value needle)
+  "True when NEEDLE occurs in VALUE: a string, or any string inside a list, cons
+or vector."
+  (typecase value
+    (string (search needle value))
+    (cons (or (value-contains-p (car value) needle)
+              (value-contains-p (cdr value) needle)))
+    (vector (some (lambda (v) (value-contains-p v needle)) value))
+    (t nil)))
+
+(defun index-contains-p (repository needle)
+  "True when NEEDLE is in the name or any property of any entity."
+  (some (lambda (entity)
+          (or (and (slot-boundp entity 'name) (value-contains-p (name entity) needle))
+              (loop for value being the hash-values of (properties entity)
+                      thereis (value-contains-p value needle))))
+        (all-entities (repository-graph repository))))
+
+(test the-index-holds-no-value-from-the-files-firebase-keeps-one-in
+  (if (not (python-available-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-sentinel-tree)
+        (reindex-repository repository :quiet t)
+        (is-true (index-contains-p repository "CONTROL-7f3a")
+                 "the control: the walk can see a string the index does hold")
+        (is (not (index-contains-p repository "SENTINEL-7f3a")))
+        (is (not (index-contains-p repository "SENTINEL-DEFAULT")))
+        (let ((names (mapcar #'name (entities-of-type (repository-graph repository) :setting))))
+          (is (member "K" names :test #'string=) "settings are minted, so the walk ran after them")
+          (is (member "P" names :test #'string=))))))
+
+(defclass leaky-env-analyzer (loom-analyzer:analyzer) ()
+  (:default-initargs :language nil :file-types '()))
+
+(defmethod loom-analyzer:analyzer-handles-p ((analyzer leaky-env-analyzer) path)
+  (string= ".env" (file-namestring path)))
+
+(defmethod loom-analyzer:analyze-file ((analyzer leaky-env-analyzer) path contents workspace-id)
+  (list (retract-file path workspace-id)
+        (assert-entity (make-instance 'file-entity :name path :origin-file path
+                                      :properties (properties-table
+                                                   (list :path path :documentation contents)))
+                       workspace-id)))
+
+(test the-sentinel-walk-finds-a-leak-when-one-is-let-in
+  ;; CON-0003 for the test above, as a test. Admit .env and register an analyzer
+  ;; that writes its contents into :DOCUMENTATION: the same walk must now find
+  ;; SENTINEL-7f3a. Without this the absence above could mean the walk cannot see.
+  (if (not (python-available-p))
+      (skip "python3 is not on PATH")
+      (let ((saved loom-analyzer:*analyzers*)
+            (admitted loom-workspace::*admitted-dot-files*))
+        (unwind-protect
+             (with-workspace-fixture (repository)
+               (loom-analyzer:register-analyzer (make-instance 'leaky-env-analyzer))
+               (setf loom-workspace::*admitted-dot-files* '(".firebaserc" ".env"))
+               (write-sentinel-tree)
+               (reindex-repository repository :quiet t)
+               (is-true (index-contains-p repository "SENTINEL-7f3a")))
+          (setf loom-analyzer:*analyzers* saved
+                loom-workspace::*admitted-dot-files* admitted)))))

@@ -1746,6 +1746,11 @@ wrong edge."
             (declare (ignore cause))
             (when callee (return (values callee nil))))))))
 
+(defvar *walk-lands-on-variables* nil
+  "True while RESOLVE-SETTINGS walks to a :VARIABLE rather than to something a
+call could reach. DES-0054 D5. A special and not an argument because the walk
+recurses through four functions, none of which has any other reason to know.")
+
 (defun landing (context definition rest)
   "(values callee cause) for a walk that reached DEFINITION with REST left.
 
@@ -1770,6 +1775,12 @@ it. A :VARIABLE is not callable."
                     (values method nil)
                     (inherited-method context definition (first rest)))))
              (t (values nil :not-callable))))
+      (:variable
+       ;; Only RESOLVE-SETTINGS asks for this, to find the declaring variable a
+       ;; registration argument names. A call to a variable stays not callable.
+       (if (and *walk-lands-on-variables* (null rest))
+           (values definition nil)
+           (values nil :not-callable)))
       (t (values nil :not-callable)))))
 
 (defun star-specifiers (context file)
@@ -2073,7 +2084,143 @@ a tree that writes its cases in the same file as its code: vitest\'s
 (defparameter *setting-reader-types* '(:function :method :test :variable :file)
   "What a :READS edge may start at: the same list the ontology declares.")
 
-(defun resolve-settings (view &key workspace-id)
+;;; ------------------------------------------------------------------
+;;; Which registration a declaration names (DES-0054 D3)
+;;; ------------------------------------------------------------------
+
+(defun relative-specifier-p (specifier)
+  "True for `.x', `..' and `./x': a specifier that names a place relative to the
+file writing it, and so names no module a declaration could."
+  (and (plusp (length specifier)) (char= #\. (char specifier 0))))
+
+(defun registration-matches-callee-p (registration language module name)
+  "True when REGISTRATION, a plist with :SPECIFIER and :PATH, is a call of NAME
+in MODULE as LANGUAGE writes it.
+
+Python joins the specifier and path with dots, since module paths are dotted and
+the split point does not matter: `from firebase_functions import scheduler_fn'
+and `import firebase_functions.scheduler_fn as s' both give
+firebase_functions.scheduler_fn.on_schedule. JavaScript compares the specifier to
+the module exactly, because a specifier is a path and is never re-split, and the
+path joined with dots to the name. Any other language matches nothing: a
+registration is matched on the module path its source binds and never on the
+spelling of a decorator, so one language's rule cannot fire on another's."
+  (let ((specifier (getf registration :specifier))
+        (path (getf registration :path)))
+    (and specifier
+         (not (relative-specifier-p specifier))
+         (case language
+           (:python (string= (format nil "~a~{.~a~}" specifier path)
+                             (format nil "~a.~a" module name)))
+           (:javascript (and (string= specifier module)
+                             (string= (format nil "~{~a~^.~}" path) name)))
+           (t nil)))))
+
+(defun match-registration (registration language declarations)
+  "(values DECLARATION nil) for the one of DECLARATIONS REGISTRATION calls, (values
+nil MATCHES) when it calls two, and (values nil nil) when it calls none.
+
+DECLARATIONS are entry-points or setting-declarations entries, each with :MODULE
+and :NAMES. Two matches are refused, not chosen between (CON-0001); the parse
+already removes a callee two entries declare, so this is the second guard."
+  (let ((matches (remove-if-not
+                  (lambda (declaration)
+                    (some (lambda (name)
+                            (registration-matches-callee-p
+                             registration language (getf declaration :module) name))
+                          (getf declaration :names)))
+                  declarations)))
+    (if (rest matches)
+        (values nil matches)
+        (values (first matches) nil))))
+
+;;; ------------------------------------------------------------------
+;;; Settings (DES-0053 D10, DES-0054 D5)
+;;; ------------------------------------------------------------------
+
+(defun variable-table (view)
+  "(file . name) to the module-level :VARIABLE of that name, for every language.
+A local name in a registration argument is looked up here and nowhere else, so
+it can reach a variable of its own file and never one of the same spelling in
+another (DES-0054 risk 6)."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (variable (entities-of-type view :variable) table)
+      (when (slot-boundp variable 'name)
+        (setf (gethash (cons (getp variable :file) (name variable)) table) variable)))))
+
+(defun argument-references (value direct)
+  "The names and dotted chains inside one encoded argument VALUE, flattened
+through lists, as the encoded plists. When DIRECT, a string literal is a
+reference too, as the bare string: the keyword it sits under names settings
+(`secrets=[\"K\"]'). A call is the marker :EXPRESSION and names nothing."
+  (cond ((and (consp value) (eq :list (first value)))
+         (loop for element in (rest value) append (argument-references element direct)))
+        ((and (consp value) (member (first value) '(:name :dotted))) (list value))
+        ((and direct (stringp value)) (list value))
+        (t nil)))
+
+(defun reference-variable (reference file language walk variables)
+  "The :VARIABLE the encoded REFERENCE names, written in FILE, or NIL.
+
+A local name is the module-level variable of that name in FILE. An imported one
+is walked to the file it came from, for Python only: JavaScript has no resolver
+here, and walking its specifiers as Python's would be a fabricated edge. A dotted
+chain is followed from its first name's import binding; one rooted in a local
+names nothing. WALK is a function returning the walk context, built on first
+use."
+  (flet ((walked (specifier names)
+           (let ((module (and (eq language :python)
+                              (walk-resolve-specifier (funcall walk) specifier file))))
+             (when (and module names)
+               (let ((*walk-lands-on-variables* t))
+                 (values (walk-attribute-path (funcall walk) module names)))))))
+    (case (first reference)
+      (:name
+       (if (eq :local (getf reference :binding))
+           (gethash (cons file (second reference)) variables)
+           (walked (getf reference :specifier) (getf reference :path))))
+      (:dotted
+       (when (getf reference :specifier)
+         (walked (getf reference :specifier)
+                 (append (getf reference :path)
+                         (rest (split-dots (second reference))))))))))
+
+(defun split-dots (text)
+  "TEXT split at every dot."
+  (loop for start = 0 then (1+ end)
+        for end = (position #\. text :start start)
+        collect (subseq text start end)
+        while end))
+
+(defun registrations-of (entity)
+  "ENTITY's registration plists: every decorator of a function or method, or the
+one :REGISTRATION of a variable."
+  (case (entity-type entity)
+    ((:function :method) (getp entity :decorators))
+    (:variable (let ((registration (getp entity :registration)))
+                 (and registration (list registration))))))
+
+(defun registration-arguments (registration)
+  "REGISTRATION's argument values with the keyword each sat under, as (key .
+value), keyword NIL for a positional one."
+  (append (getf registration :arguments)
+          (loop for value in (getf registration :positional) collect (cons nil value))))
+
+(defun declared-setting-names (view declarations)
+  "Variable id to (name . source) for every :VARIABLE whose :VALUE-CALL calls a
+setting declaration and carries a :FIRST-STRING (DES-0054 D5). One that carries
+none names nothing."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (variable (entities-of-type view :variable) table)
+      (let* ((call (getp variable :value-call))
+             (declaration (and call (getf call :first-string)
+                               (match-registration call (getp variable :language)
+                                                   declarations))))
+        (when declaration
+          (setf (gethash (id variable) table)
+                (cons (getf call :first-string) (getf declaration :source))))))))
+
+(defun resolve-settings (view &key workspace-id setting-declarations entry-points domains)
   "Operations minting one :SETTING per name read and one :READS edge per reader.
 
 DES-0053 D10. The analyzer writes :ENVIRONMENT-READS on the entity whose code
@@ -2083,31 +2230,108 @@ derived here, on every pass, from the property. The property is never
 rewritten, and so a re-run after a retract rebuilds what the retract destroyed
 (DEC-0003).
 
-A setting no reader names any more is retracted, as CALL-SITE-RETRACTIONS sweeps
-an ambiguous site. A reader that stops reading needs no edge sweep: its file was
-reanalyzed, and RETRACT-FILE took its edges first. The retracts go last and name
-only settings no assert above touches, for the reason CALL-SITE-RETRACTIONS
-gives. The pass returns operations and calls nothing that writes the graph."
-  (let ((minted (make-hash-table :test #'equal))
-        (ops '()))
-    (dolist (type *setting-reader-types*)
-      (dolist (reader (entities-of-type view type))
-        (dolist (name (remove-duplicates (getp reader :environment-reads)
-                                         :test #'string=))
-          (let ((setting (make-instance 'setting-entity
-                                        :name name
-                                        :properties (properties-table
-                                                     (list :name name
-                                                           :sources '(:environment))))))
-            (unless (gethash (id setting) minted)
-              (setf (gethash (id setting) minted) t)
-              (push (assert-entity setting workspace-id) ops))
-            (push (assert-edge :reads reader setting :workspace-id workspace-id)
-                  ops)))))
-    (dolist (setting (entities-of-type view :setting))
-      (unless (gethash (id setting) minted)
-        (push (retract (id setting) workspace-id) ops)))
-    (nreverse ops)))
+DES-0054 D5 adds two inputs, both derived. A declaration: a :VARIABLE whose
+:VALUE-CALL calls one of SETTING-DECLARATIONS and carries a :FIRST-STRING names
+that setting, takes the declaration's source into :SOURCES, and reads it. A
+registration argument: each name or dotted chain in the arguments of a
+decorator or :REGISTRATION that one of ENTRY-POINTS matches is resolved by its
+binding to a declaring variable, and the registered entity then reads that
+variable's setting, keyword-blind. A string literal in a list under a keyword
+the entry lists in :SETTINGS names the setting directly. DOMAINS places the
+specifiers an import walk resolves.
+
+Sources are gathered per name before anything is asserted, so each setting is
+asserted once with the union of what named it: two asserts of one key would make
+the later overwrite the earlier. A secret and an environment variable of one
+name are one node, since Firebase hands a bound secret to the function as an
+environment variable of that name.
+
+A registered entity's edge to a setting reached through a variable takes the
+variable's file as its origin, so editing that file alone retracts it. An edge
+from a literal takes the entity's own file. A setting no input names any more is
+retracted, as CALL-SITE-RETRACTIONS sweeps an ambiguous site. A reader that
+stops reading needs no edge sweep: its file was reanalyzed, and RETRACT-FILE took
+its edges first. The retracts go last and name only settings no assert above
+touches, for the reason CALL-SITE-RETRACTIONS gives. The pass returns operations
+and calls nothing that writes the graph."
+  (let ((sources (make-hash-table :test #'equal))
+        (edges (make-hash-table :test #'equal))
+        (declared (declared-setting-names view setting-declarations))
+        (variables (variable-table view))
+        (walk nil)
+        (reads '()))
+    (labels ((note (name source)
+               ;; Keyed even with no source, so a name only a literal argument
+               ;; gave is still minted.
+               (setf (gethash name sources)
+                     (if source
+                         (adjoin source (gethash name sources))
+                         (gethash name sources))))
+             (read-edge (reader name origin)
+               (let ((key (cons (id reader) name)))
+                 (unless (gethash key edges)
+                   (setf (gethash key edges) t)
+                   (push (list reader name origin) reads))))
+             (context ()
+               (or walk (setf walk (build-walk-context view domains)))))
+      ;; The environment, as before.
+      (dolist (type *setting-reader-types*)
+        (dolist (reader (entities-of-type view type))
+          (dolist (name (remove-duplicates (getp reader :environment-reads)
+                                           :test #'string=))
+            (note name :environment)
+            (read-edge reader name nil))))
+      ;; A declaring variable reads the setting it declares.
+      (dolist (variable (entities-of-type view :variable))
+        (let ((declaration (gethash (id variable) declared)))
+          (when declaration
+            (note (car declaration) (cdr declaration))
+            (read-edge variable (car declaration) nil))))
+      ;; A registered entity reads what its arguments bind.
+      (when entry-points
+        (dolist (type '(:function :method :variable))
+          (dolist (entity (entities-of-type view type))
+            (dolist (registration (registrations-of entity))
+              (let ((entry (match-registration registration (getp entity :language)
+                                               entry-points))
+                    (file (getp entity :file)))
+                (when entry
+                  (dolist (argument (registration-arguments registration))
+                    (let ((direct (and (car argument)
+                                       (member (car argument) (getf entry :settings)
+                                               :test #'string=))))
+                      (dolist (reference (argument-references (cdr argument) direct))
+                        (if (stringp reference)
+                            (progn (note reference nil)
+                                   (read-edge entity reference nil))
+                            (let* ((variable (reference-variable
+                                              reference file (getp entity :language)
+                                              #'context variables))
+                                   (declaration (and variable
+                                                     (gethash (id variable) declared))))
+                              (when declaration
+                                (read-edge entity (car declaration)
+                                           (getp variable :file))))))))))))))
+      ;; Each setting once, with every source that named it.
+      (let ((ops '()))
+        (maphash (lambda (name found)
+                   (let ((setting (make-instance
+                                   'setting-entity :name name
+                                   :properties (properties-table
+                                                (list :name name
+                                                      :sources (sort (copy-list found)
+                                                                     #'string<))))))
+                     (push (assert-entity setting workspace-id) ops)))
+                 sources)
+        (loop for (reader name origin) in (nreverse reads)
+              do (let ((setting (make-instance 'setting-entity :name name)))
+                   (push (assert-edge :reads reader setting :workspace-id workspace-id
+                                                            :origin-file origin)
+                         ops)))
+        (dolist (setting (entities-of-type view :setting))
+          (unless (nth-value 1 (gethash (name setting) sources))
+            (push (retract (id setting) workspace-id) ops)))
+        (nreverse ops)))))
 
 ;;;; ==================================================================
 ;;;; Document links (SS10.3)
@@ -2206,7 +2430,12 @@ with one would have to be written that way in the source."
       (pushnew entity (gethash (string-downcase (id entity)) index)))
     index))
 
-(defun resolve-one (index name)
+(defun reads-setting-p (view variable setting)
+  "True when VARIABLE has a :READS edge to SETTING. DES-0054 D5."
+  (some (lambda (edge) (equal (to-id edge) (id setting)))
+        (relationships-from view (id variable) :rel-type :reads)))
+
+(defun resolve-one (index name &key view)
   "The single entity NAME identifies, and the candidates it was declined over.
 
 Two values. A name that resolves answers the entity and NIL. A name matching
@@ -2235,7 +2464,13 @@ fact stated twice, since the variable is the read, and a document naming
 SPREADSHEET_ID means the thing the environment holds. So a set of exactly one
 :SETTING plus :VARIABLEs each carrying the name in :ENVIRONMENT-READS resolves
 to the setting. A variable of the same name that does not read it is a
-different thing, and the set stays ambiguous (CON-0001)."
+different thing, and the set stays ambiguous (CON-0001).
+
+VIEW widens the variable clause (DES-0054 D5): a variable with a :READS edge to
+the setting counts too, which is what `ZEFFY_API_KEY = SecretParam(...)' is. The
+old clause stays as a disjunct, so a caller that passes no view, which
+UNAMBIGUOUS-NAMES is, resolves exactly what it did and nothing that resolves
+today stops resolving."
   (let ((candidates (gethash (string-downcase name) index)))
     (cond ((null candidates) (values nil nil))
           ((null (rest candidates)) (values (first candidates) nil))
@@ -2254,9 +2489,12 @@ different thing, and the set stays ambiguous (CON-0001)."
                            (every (lambda (e)
                                     (or (eq e (first settings))
                                         (and (eq :variable (entity-type e))
-                                             (member (name (first settings))
-                                                     (getp e :environment-reads)
-                                                     :test #'string=))))
+                                             (or (member (name (first settings))
+                                                         (getp e :environment-reads)
+                                                         :test #'string=)
+                                                 (and view
+                                                      (reads-setting-p
+                                                       view e (first settings)))))))
                                   candidates))
                       (values (first settings) nil))
                      (t (values nil candidates))))))))
@@ -2289,7 +2527,7 @@ resolved on a previous pass is still in the property, so nothing drifts."
             (let* ((field (car field-and-type))
                    (edge-type (declared-edge-type field document)))
               (dolist (name (getp document field))
-                (multiple-value-bind (target candidates) (resolve-one index name)
+                (multiple-value-bind (target candidates) (resolve-one index name :view view)
                   (cond
                     ((and target (not (eq target document)))
                      (push (assert-edge edge-type document target
@@ -2314,7 +2552,7 @@ resolved on a previous pass is still in the property, so nothing drifts."
           ;; for ordinary prose and inherited by links only because the two
           ;; populations were merged before anything could tell them apart.
           (dolist (name (getp document :link-targets))
-            (let ((target (resolve-one index name)))
+            (let ((target (resolve-one index name :view view)))
               (cond
                 ;; Not in the index. That is NOT the same as not on disk, and
                 ;; the difference is the whole of why this branch does not
@@ -2354,7 +2592,7 @@ resolved on a previous pass is still in the property, so nothing drifts."
                          ops)))))
           ;; --- mentioned links -----------------------------------------
           (dolist (name (getp document :mentions))
-            (let ((target (resolve-one index name)))
+            (let ((target (resolve-one index name :view view)))
               (when (and target
                          (not (eq target document))
                          (not (member (entity-type target) *document-types*)))
