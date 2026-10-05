@@ -281,11 +281,16 @@ body: |
                                        '((:specifier "sheets" :path ("upsert_tab")
                                           :line 7 :cause :missing-in-target)
                                          (:specifier "pytest" :path ("raises")
-                                          :line 9 :cause :external))))))
+                                          :line 9 :cause :external)
+                                         (:specifier "." :path ("dates")
+                                          :line 11 :cause :missing-in-target))))))
     (let ((output (run-to-string "check")))
-      (is (search "1 imported call naming something the module no longer holds" output)
+      (is (search "2 imported calls naming something the module no longer holds" output)
           "~s" output)
       (is (search "sheets.upsert_tab" output))
+      ;; REV-0003 item 10: the specifier `.' already ends in a dot.
+      (is (search "]  .dates" output) "~s" output)
+      (is (not (search "..dates" output)) "which is not a two-level climb")
       (is (not (search "pytest" output)) "an external library is not an error"))))
 
 (test describe-of-a-document-summarises-instead-of-reprinting-it

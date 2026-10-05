@@ -1632,9 +1632,14 @@ repository has:~%" (length qualified))
         (format t "~&~d imported call~:p naming something the module no longer holds:~%"
                 (length missing))
         (dolist (entry missing)
-          (format t "  ~a  [~a:~a]  ~a.~{~a~^.~}~%"
-                  (getf entry :caller) (getf entry :file) (getf entry :line)
-                  (getf entry :specifier) (getf entry :path)))))
+          ;; A specifier ending in a dot takes no second one, as PY-DOTTED
+          ;; writes it: `.' and (dates) read `.dates', not the two-level climb
+          ;; `..dates'.
+          (let ((specifier (getf entry :specifier)))
+            (format t "  ~a  [~a:~a]  ~a~:[.~;~]~{~a~^.~}~%"
+                    (getf entry :caller) (getf entry :file) (getf entry :line)
+                    specifier (char= #\. (char specifier (1- (length specifier))))
+                    (getf entry :path))))))
     ;; DES-0025 D6. A backticked token carrying a path separator and a file
     ;; extension is a claim about a file, not an ordinary word, so one that no
     ;; *watched* repository holds is reported. The qualifier is load-bearing and
