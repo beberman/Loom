@@ -781,3 +781,33 @@ body: |
   RULE-0003 is unchanged. One run of the full suite failed
   A-WRITE-OPERATION-IS-NOT-RECORDED in loom-serve and passed on the rerun with
   no edit between.
+
+  Step 8. Moves on Loom's tree. status: unclaimed loses ".py 11"; imports read
+  4 resolved, 57 external, 0 unrooted; the ten tools/ scripts add 86 :MODULE and
+  30 :VARIABLE call sites; prose file references fall from 21 to 16 as
+  predicted; python skips in the suite: 0. Five departures, each found by a
+  count that moved.
+    - `main' is defined in eight Python scripts, so six documents whose
+      `affects:' named `main' (DES-0006, DES-0007, REQ-0008, REQ-0010,
+      PLAN-0005, PLAN-0006) became ambiguous and lost their edge to console.lisp's
+      main. check showed 13 ambiguous against 7. Each now names
+      function:src/process/console.lisp:main, which linkable-index resolves by id.
+    - RULE-0006 reported `m' in tools/test/test-next-doc-id.py, a variable
+      assigned in two module-level loops. D9 says earlier ranges go to
+      :SHADOWED-DEFINITIONS whatever the kinds. A variable rebound by a variable
+      is not dead code, so the analyzer keeps last-wins and writes no shadow
+      record for that pair. A def replaced by anything, and a variable replaced
+      by a def, still record one.
+    - :MENTIONS could not end at :SETTING: two prose files name an environment
+      variable, and check reported two dropped edges. :SETTING joins its targets.
+    - The :CALL-SITE ceiling test counted 619 against 512. The Python sites are
+      a population D4 defines, so they have a ceiling of their own, 128, and the
+      Lisp ceiling is unchanged at 512 (503 measured).
+    - extract.py sent a decorator's `False' and `None' as JSON values, which both
+      decode to NIL. They are now kinds of their own ("false", "none", "true").
+  CON-0005: the call-site dedupe is tested on the operations and not on the
+  graph, because the graph upserts by natural key and would hide a second assert.
+  The provenance test moved to .rb does not fail when .rb is claimed: a file the
+  index never read has no stamp, so drift is zero whether or not it is claimed.
+  The unclaimed test does fail (4 assertions) when a throwaway analyzer claims
+  .rb.

@@ -1872,7 +1872,7 @@ fourth tree.")
 (defrelationship :mentions
   :from (:document :design :architecture :decision :rule :concept)
   :to (:function :method :class :interface :variable :module :package :file :concept :test
-       :document)
+       :document :setting)
   :transitive-impact nil :impact-direction :reverse :collect-as :mentions
   :documentation "A document names this entity, and claims nothing further.
 

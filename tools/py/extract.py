@@ -191,7 +191,11 @@ def literal_value(node):
         value = node.operand.value
         return {'kind': 'literal', 'value': -value if isinstance(node.op, ast.USub) else value}
     if isinstance(node, ast.Constant) and (node.value is None
-                                           or isinstance(node.value, (str, int, float, bool))):
+                                           or isinstance(node.value, bool)):
+        # Kinds of their own: JSON null and false both decode to NIL in Lisp, so
+        # a bare value would leave `timeout=None' and `retry=False' one answer.
+        return {'kind': 'none' if node.value is None else str(node.value).lower()}
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, float)):
         return {'kind': 'literal', 'value': node.value}
     if isinstance(node, ast.Name):
         return {'kind': 'names', 'value': [node.id]}

@@ -323,6 +323,16 @@ RESOLVE-CALLS reads, so a second copy here could drift from the key")
   (is-true (relationship-type-transitive-impact
             (find-relationship-type :reads))))
 
+(test a-document-may-name-decide-or-bear-on-a-setting
+  ;; `affects: [SPREADSHEET_ID]' resolves to the setting; without :SETTING among
+  ;; the targets the edge is dropped and `check' reports it as an edge the
+  ;; ontology does not permit. Found at step 7 for :DECIDES and :DOCUMENTS, and
+  ;; at step 8 for :MENTIONS, when two prose files named an environment variable.
+  (dolist (pair '((:decides :decision) (:decides :design) (:documents :document)
+                  (:documents :decision) (:mentions :document)))
+    (is (null (validate-relationship-endpoints (first pair) (second pair) :setting))
+        "~s from ~s to a setting" (first pair) (second pair))))
+
 (test python-vocabulary-is-inside-the-declared-one-ofs
   ;; DES-0053 D4 and D8. Outside a :one-of, validation rejects the entity and
   ;; with it the whole analyzer transaction for the file.

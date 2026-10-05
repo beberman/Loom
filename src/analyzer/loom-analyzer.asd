@@ -100,6 +100,7 @@
    (:file "extractor-child")
    (:file "js-analyzer")
    (:file "python-extract")
+   (:file "python-analyzer")
    (:file "yaml-analyzer")
    (:file "markdown-analyzer")
    (:file "frameworks")

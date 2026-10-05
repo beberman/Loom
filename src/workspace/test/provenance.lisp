@@ -61,15 +61,16 @@ clean -- the two fields answer about different instants and that is the point"))
 (test an-edit-to-a-file-no-analyzer-claims-is-not-drift
   ;; The false positive that sent the first attempt at this back. A diff hash
   ;; moves when any file in the tree moves, and most of a tree is not indexed:
-  ;; editing tools/test/acceptance.py -- Python, which Loom does not index -- made
+  ;; editing a Ruby tool script -- a language Loom does not index -- made
   ;; the harness report a stale service whose index was perfectly current.
   ;; A staleness signal that fires on every document and tool edit is one that
   ;; gets ignored.
   (with-committed-repository (repository root)
-    ;; Python, as in the case that was actually measured. Not a .txt: since
-    ;; REQ-0028 a .md, .markdown or .txt file is claimed wherever it lives, so
-    ;; a note file would be drift and would be right to be.
-    (write-scratch-file root "tools/harness.py" "print('not indexed by any analyzer')")
+    ;; Ruby. The case that was actually measured was a Python script, and
+    ;; DES-0053 made .py claimed. Not a .txt: since REQ-0028 a .md, .markdown or
+    ;; .txt file is claimed wherever it lives, so a note file would be drift and
+    ;; would be right to be.
+    (write-scratch-file root "tools/harness.rb" "puts 'not indexed by any analyzer'")
     (is (eql 0 (getf (index-provenance repository) :drift))
         "the index is not behind on anything it claims")))
 
