@@ -824,3 +824,46 @@ body: |
   implies. An annotation that holds the spelling " = " inside a string is
   mistaken for a default; the check is on the first colon and then " = ". The
   signature of a method renders with its "Class.name", as JavaScript's does.
+
+  Step 11, acceptance, run 2026-10-05 at a7d3a3d with no defect found and no
+  source change.
+
+  lfia (the one-line command in step 11, then three follow-up describes):
+    - baseline before step 8, taken by indexing lfia from a worktree of step 7:
+      8 files, 8 entities, 0 unresolved document references, 0 ambiguous, 36
+      tracked .py files unclaimed.
+    - after: 44 files, 351 entities, 586 relationships, 57 tests covering 4
+      units in 9 test files, 0 unresolved document references, 0 ambiguous,
+      0 violations, 17 tracked files unclaimed and none of them .py.
+    - imports: 39 resolved, 60 external, 0 unresolved, 16 unrooted. The 16 are
+      functions/tests' `ledger.*` imports; no domain declares functions/ as a
+      root. That is also why only 4 units show as tested.
+    - find _sync: function functions/main.py:21-34. describe upsert: caller
+      _sync. impact Rules.find 5: 12 entities. _rows, _expand_tags,
+      _duplicate_ids, _classify and _donation_tags at d1, simplifi.build at
+      d2, _sync at d3, backfill and sync_zeffy at d4.
+    - describe sheets._service lists no outgoing call to either build. No
+      cross_check.build or simplifi.build caller of it exists.
+    - describe seed_accounts_map: sheets.read_tab lists it as a caller;
+      main.read_tab does not.
+    - find SPREADSHEET_ID: variable functions/config.py:7 and a :SETTING.
+      describe setting:SPREADSHEET_ID: read by that variable. impact on it
+      reaches the variable and its file, d1 and d2, as the variable has no
+      caller.
+    - `find site-packages` and `find pyvenv` match nothing in lfia.
+  The venv without git's help, in a clone under the scratch directory, with
+  line 1 (`venv/') deleted from .gitignore: `python3 -m venv --without-pip` made
+  functions/venv, with a .py and a README.md written under it. A second
+  environment, functions/pyenv, had a name no list holds, with the same two
+  files. Both clones indexed 44 files and 8 documents, the same as the original,
+  and `find' reports neither leak. The clone is deleted.
+  Timing (R16): 36 tracked .py files, ANALYZE-FILE each, child start included,
+  0.135 and 0.142 seconds in two runs.
+  Loom's tree: describe sessions_main and ensure each list a :MODULE site from
+  their own file. The guard calls main in test-allow-loom.py, seed-sheet.py,
+  recall.py, make-cases.py, import-census.py, tools/allow-loom.py and
+  tools/py/extract.py each list a :MODULE site at their guard's line.
+  acceptance.py's watched_repositories calls service.py's, and service.py's
+  lists it as a caller. `tools/loom-test.sh` 12 of 12, `check` 0 violations,
+  8 unresolved, 7 ambiguous, and load-test prints
+  `(find-package "LOOM-PROCESS") => T`.
