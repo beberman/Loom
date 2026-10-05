@@ -201,14 +201,14 @@ name ending in one: `overload' and `typing.overload' are both an overload."
   "What one name means once ITEM follows PREVIOUS in a module or class body.
 
 Python replaces a rebound name, so the later one wins and the earlier range goes
-into :SHADOWED. Two shapes are one definition written several times and merge
-instead (D9): a property's accessor chain, whose entity spans the chain and
-holds the union of its bodies' calls, and an overload set, whose stubs have no
-body to contribute and are neither kept nor reported as shadowed. A variable
-rebound by a variable is last-wins with no shadow record, for the reason given
-below. 827 methods
-defined twice in one class body, 276 accessor decorators and 789 @overload
-decorators in lfia's own virtual environment are why the last two exist."
+into :SHADOWED. Three shapes are not that and stay out of :SHADOWED (D9). A
+property's accessor chain is one definition: its entity spans the chain and holds
+the union of its bodies' calls. An overload set's stubs have no body to
+contribute and are neither kept nor reported as shadowed. A variable rebound by a
+variable is last-wins with no shadow record, for the reason given below. The
+figures behind replacement, the accessor merge and the overload merge are 827
+methods defined twice in one class body, 276 accessor decorators and 789
+@overload decorators in lfia's own virtual environment."
   (cond ((and (py-accessor-p item) (member (getf previous :kind) '(:function :method)))
          (list* :end (getf item :end)
                 :calls (append (getf previous :calls) (getf item :calls))

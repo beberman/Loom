@@ -867,3 +867,38 @@ body: |
   lists it as a caller. `tools/loom-test.sh` 12 of 12, `check` 0 violations,
   8 unresolved, 7 ambiguous, and load-test prints
   `(find-package "LOOM-PROCESS") => T`.
+
+  REV-0003 fixes, after step 11. Decisions the review left open:
+    - BUG-0070. A Python caller keeps its own file's plain functions and any
+      method; no Python definition is a candidate for a Lisp or JavaScript
+      caller. A NIL caller is unchanged. On Loom the eight confidence-1.0
+      edges are gone: describe tools/test/service.py:get lists callers in
+      its own file only, and acceptance.py's git is called by
+      live_fingerprint alone.
+    - BUG-0071. Star imports are kept in :IMPORT-BINDINGS as (:LOCAL NIL
+      :NAME "*") and WALK-ATTRIBUTE-PATH follows them, last written first.
+      An unreadable star module ends the name as :STAR-IMPORT. A class
+      method missing from the class's own file is looked up on each base
+      named in :SUPERCLASS-NAMES, and a miss ends as :INHERITED unless the
+      only base is `object'. So a class with an in-tree base that truly
+      lacks a method is no longer reported by `check'. That is a lost true
+      positive, accepted because the base is read by the name :SUPERCLASS-
+      NAMES holds, which undoes an import alias, and reporting on that would
+      risk the fabricated claim CON-0001 refuses. Neither cause is reported.
+    - Item 3. The rule chosen is the narrow one: exactly one :SETTING plus
+      :VARIABLEs whose :ENVIRONMENT-READS name it resolves to the setting.
+      The alternative, preferring a :SETTING for any name that looks like an
+      environment variable, would guess from spelling. A same-named variable
+      that reads something else keeps the name ambiguous.
+    - Item 4. The third import root skips the implicit :DEFAULT domain.
+      D5's text now says so.
+    - Item 5. Under a pyvenv.cfg prefix only the cfg and bin, lib, lib64,
+      include, Lib and Scripts are excluded. A project's own `lib/' beside
+      a pyvenv.cfg is excluded with them; that is the cost of not naming
+      the venv, and the root carve-out has no such case.
+    - Item 7. A default holding an environment read is written as `name=' or
+      `name: T = ', empty after the `=', because python-arity reads the `='
+      to know the parameter is optional.
+    - Item 9. D9, the loom-process/loom-serve sentence and D5 are amended in
+      DES-0053, and PY-SUPERSEDE's docstring is rewritten.
+    - REV-0003's loom-serve flake is not fixed here: it reproduces on main.

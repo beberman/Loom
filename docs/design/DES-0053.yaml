@@ -291,7 +291,11 @@ body: |
          A package named ledger is imported as `ledger` only when its parent
          is on sys.path, so ledger/posting.py's `from ledger.hashing import
          content_hash` resolves under functions/.
-      3. the importer's domain root, from .loom/frameworks.yaml (DES-0047).
+      3. the importer's domain root, from a domain declared in
+         .loom/frameworks.yaml (DES-0047). The implicit :DEFAULT domain has
+         root "" and is no declaration, so it contributes no root: a
+         repository-root module is importable from tools/ only when a
+         declared domain names the root.
 
   A specifier "a.b" names a/b.py or a/b/__init__.py under a root. Package-
   ness is read from the index: a directory is a package when "<dir>/
@@ -413,8 +417,10 @@ body: |
 
   One module-level name yields one entity: the last binding in source order,
   whatever kind the earlier bindings were. Earlier ranges go into
-  :SHADOWED-DEFINITIONS. The same rule applies to "Class.name" in a class
-  body. A def inside a module-level `if` or `try` counts as module level.
+  :SHADOWED-DEFINITIONS, except where a variable is rebound by a variable:
+  that is last-wins with no shadow record, because the earlier assignment ran
+  and nothing in it is dead (`m = re.fullmatch(...)` written in two loops).
+  The same rule applies to "Class.name" in a class body. A def inside a module-level `if` or `try` counts as module level.
 
   Two shapes merge instead of replacing, because Python makes them one
   definition:
@@ -668,8 +674,11 @@ body: |
   loom-workspace. The pyvenv.cfg exclusion in REPOSITORY-FILES and in the
   monitor's single-file path (D11).
 
-  loom-process, loom-serve, loom-rest and loom-mcp change nothing. No
-  `.asd` gains a dependency: loom-analyzer already depends on cl-json, uiop
+  loom-process and loom-serve each gain one addition and no logic.
+  console.lisp's `status` prints the :UNROOTED count and its `check` prints
+  :MISSING-IN-TARGET imported calls under their own heading, and
+  operations.lisp's :check operation carries :MISSING-IMPORTED-CALLS.
+  loom-rest and loom-mcp change nothing. No `.asd` gains a dependency: loom-analyzer already depends on cl-json, uiop
   and bordeaux-threads for the JavaScript child.
 
   REQUIREMENTS
