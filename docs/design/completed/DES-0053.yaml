@@ -1,6 +1,6 @@
 id: DES-0053
 title: A Python analyzer parses with python3's own ast in a long-lived child, binds every call to a local name or an import inside the file, and leaves cross-file resolution and Firebase to loom-graph and a second stage
-status: draft
+status: implemented
 date: 2026-10-04
 refines: [REQ-0078]
 affects: [find-analyzer, register-analyzer, analyzable-p, parse-javascript,

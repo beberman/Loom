@@ -1,6 +1,6 @@
 id: REQ-0078
 title: A Python analyzer, and an understanding of Firebase Functions, are needed before a Python or Firebase repository is more than a directory of prose to Loom
-status: draft
+status: partial
 priority: p3
 date: 2026-10-04
 refines: [REQ-0024, REQ-0018]
@@ -156,6 +156,26 @@ body: |
   4. firebase.json is JSON, and Loom has no JSON analyzer: .json is unclaimed
      on every tree it watches. R9 either adds a narrow reader for this one
      file or is the first user of a general configuration analyzer.
+
+  OUTSTANDING
+
+  PLAN-0056 built the Python analyzer under DES-0053: R1 to R6 and R12.
+  What remains:
+
+  R7 to R9, R11  Firebase Functions: decorator entry points, secrets and
+                 params, firebase.json and .firebaserc, and rot reports for
+                 named functions. DES-0053 records decorators and their
+                 literal arguments on each entity and leaves the rest to a
+                 second design.
+  R10            requirements.txt dependency names. Two of lfia-accounting's
+                 six requirement names differ from their module names
+                 (google-auth installs google.auth), and the mapping lives
+                 in the venv's metadata, which is not indexed.
+  R1, R2         Module entities, and storing the shape of each call site
+                 (REQ-0041). DES-0053 declines both: a Python module is one
+                 file, and REQ-0041 has no design for storage.
+  R4             Python tests in files whose names contain a hyphen are not
+                 recognised, so tools/test/test-*.py yields no :test entity.
 
   HOW TO KNOW IT IS DONE
 

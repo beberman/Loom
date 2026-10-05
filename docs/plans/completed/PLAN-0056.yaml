@@ -1,6 +1,6 @@
 id: PLAN-0056
 title: DES-0053 in twelve steps -- ontology, the shared child, extract.py, venv exclusion, three graph passes, the analyzer, tests, arity, acceptance on lfia and tools/, complete
-status: draft
+status: final
 date: 2026-10-04
 refines: [DES-0053]
 affects: [find-analyzer, register-analyzer, analyzable-p, parse-javascript,
