@@ -2431,6 +2431,240 @@ environment read, so it stays ambiguous: nothing that resolved before moves")
               (loom-graph:resolve-one index "SPREADSHEET_ID" :view g))))))
 
 ;;; ------------------------------------------------------------------
+;;; DES-0054 D6: entry points, codebases and deployment
+;;; ------------------------------------------------------------------
+
+(defun r-firebase (graph path &rest codebases)
+  "A firebase.json :FILE at PATH holding CODEBASES, as the firebase analyzer writes it."
+  (let ((e (make-instance 'file-entity :name path :origin-file path
+                          :properties (properties-table
+                                       (list :path path :codebases codebases)))))
+    (add-entity graph e)
+    e))
+
+(defun r-codebase (&key (source "functions") (codebase "default") (runtime "python312")
+                     ignore)
+  (append (list :source source :codebase codebase)
+          (when runtime (list :runtime runtime))
+          (list :ignore ignore :defaulted nil)))
+
+(defun r-entry-settle (graph &optional (entry-points *r-entry-points*))
+  (apply-transaction graph (resolve-entry-points graph :entry-points entry-points)))
+
+(defun r-on-request (graph name file)
+  (r-registered graph name file '(("timeout_sec" . 540))))
+
+(defun r-on-schedule (graph name file)
+  (r-registered graph name file '(("schedule" . "every 1 hours"))
+                :path '("scheduler_fn" "on_schedule")))
+
+(defun entry-of (entity) (first (getp entity :entry-point)))
+
+(defun depends-on-ids (graph entity)
+  (mapcar #'to-id (relationships-from graph (id entity) :rel-type :depends-on)))
+
+(test lfias-shape-gives-eight-triggered-deployed-functions
+  (let* ((g (make-graph))
+         (fire (r-firebase g "firebase.json" (r-codebase :ignore '("venv" "tests"))))
+         (schedule (list (r-on-schedule g "sync_zeffy" "functions/main.py")
+                         (r-on-schedule g "sync_zeffy_ledger" "functions/main.py")))
+         (https (loop for n in '("a" "b" "c" "d" "e" "f")
+                      collect (r-on-request g n "functions/main.py")))
+         (sync (r-py-definition g :function "_sync" "functions/main.py")))
+    (r-py-tree g "functions/main.py")
+    (dolist (f (append schedule https))
+      (apply-transaction g (list (assert-edge :calls f sync))))
+    (r-entry-settle g)
+    (dolist (f schedule)
+      (is (eq :schedule (getp f :trigger))))
+    (dolist (f https)
+      (is (eq :https (getp f :trigger))))
+    (dolist (f (append schedule https))
+      (let ((entry (entry-of f)))
+        (is (eq :yes (getf entry :deployed)))
+        (is (equal "default" (getf entry :codebase)))
+        (is (equal "python312" (getf entry :runtime)))
+        (is (equal (list (id fire)) (depends-on-ids g f)))))
+    (is (equal "firebase_functions.scheduler_fn.on_schedule"
+               (getf (entry-of (first schedule)) :callee)))
+    (is (equal '(("schedule" . "every 1 hours")) (getf (entry-of (first schedule)) :options)))
+    (is (= 8 (length (relationships-to g (id fire) :rel-type :depends-on))))
+    (let ((names (mapcar (lambda (e) (name (impact-entry-entity e)))
+                         (impact-result-impacted (impact-set g (id fire))))))
+      (is (= 8 (count-if (lambda (n) (not (string= n "functions/main.py"))) names)))
+      (is (not (member "_sync" names :test #'string=))
+          "what the functions call does not depend on firebase.json"))))
+
+(test two-matching-decorators-give-multiple-and-two-plists
+  (let* ((g (make-graph))
+         (f (r-py-definition g :function "f" "app/a.py")))
+    (setp f :decorators
+          (list (list :name "x" :specifier "firebase_functions"
+                      :path '("https_fn" "on_request") :arguments nil :line 1)
+                (list :name "y" :specifier "firebase_functions"
+                      :path '("scheduler_fn" "on_schedule") :arguments nil :line 2)))
+    (r-entry-settle g)
+    (is (eq :multiple (getp f :trigger)))
+    (is (= 2 (length (getp f :entry-point))))))
+
+(defun r-deploy-case (&key bindings (handler-file "functions/handlers.py") main-regions
+                        (handler-name "f") (with-handlers-file t) extra)
+  "A firebase.json, a main.py binding BINDINGS, and a registered HANDLER-NAME in
+HANDLER-FILE. Returns the handler. EXTRA is called with the graph before the pass."
+  (let* ((g (make-graph))
+         (handler (r-on-request g handler-name handler-file)))
+    (r-firebase g "firebase.json" (r-codebase))
+    (let ((main (r-py-file g "functions/main.py" :bindings bindings)))
+      (when main-regions (setp main :suppressed-regions main-regions)))
+    (when with-handlers-file (r-py-tree g handler-file))
+    (when extra (funcall extra g))
+    (r-entry-settle g)
+    (values handler g)))
+
+(test a-registered-function-main-does-not-bind-is-not-deployed
+  (is (eq :no (getf (entry-of (r-deploy-case)) :deployed))))
+
+(test a-from-import-in-main-deploys-it
+  (is (eq :yes (getf (entry-of (r-deploy-case
+                                :bindings '((:local "f" :specifier "handlers" :name "f"))))
+                     :deployed))))
+
+(test import-of-the-module-does-not-deploy-its-functions
+  ;; Firebase's getmembers sees a module object, not a function.
+  (is (eq :no (getf (entry-of (r-deploy-case
+                               :bindings '((:local "handlers" :specifier "handlers"
+                                            :name nil))))
+                    :deployed))))
+
+(test a-star-import-that-resolves-deploys-what-the-module-defines
+  (is (eq :yes (getf (entry-of (r-deploy-case
+                                :bindings '((:local nil :specifier "handlers" :name "*"))))
+                     :deployed))))
+
+(test a-star-import-that-does-not-resolve-is-unknown-and-not-no
+  ;; REV-0003 finding 2: a miss the language might resolve is not reported.
+  (is (eq :unknown (getf (entry-of (r-deploy-case
+                                    :bindings '((:local nil :specifier "vendored_pkg"
+                                                 :name "*"))))
+                         :deployed))))
+
+(test a-reexport-through-a-packages-init-deploys-it
+  (let ((handler (r-deploy-case
+                  :handler-file "functions/pkg/handlers.py"
+                  :bindings '((:local "f" :specifier "pkg" :name "f"))
+                  :extra (lambda (g)
+                           (r-py-file g "functions/pkg/__init__.py"
+                                      :bindings '((:local "f" :specifier ".handlers"
+                                                   :name "f")))))))
+    (is (eq :yes (getf (entry-of handler) :deployed)))))
+
+(test a-main-with-a-damaged-region-is-unknown-and-not-no
+  (is (eq :unknown
+          (getf (entry-of (r-deploy-case
+                           :main-regions '((:reason "python syntax error"
+                                            :start-line 3 :end-line 4))))
+                :deployed))))
+
+(test a-function-defined-in-main-is-deployed
+  (is (eq :yes (getf (entry-of (r-deploy-case :handler-file "functions/main.py"))
+                     :deployed))))
+
+(test an-ignored-path-is-not-covered
+  (let* ((g (make-graph))
+         (f (r-on-request g "test_fixture" "functions/tests/test_x.py")))
+    (r-firebase g "firebase.json" (r-codebase :ignore '("tests")))
+    (r-entry-settle g)
+    (is (eq :https (getp f :trigger)) "it is still a registration")
+    (is (null (getf (entry-of f) :codebase)) "but no codebase covers it")
+    (is (null (getf (entry-of f) :deployed)))
+    (is (null (depends-on-ids g f)))))
+
+(test two-codebases-covering-one-path-at-one-length-give-no-codebase
+  (let* ((g (make-graph))
+         (f (r-on-request g "f" "a/b/main.py")))
+    (r-firebase g "firebase.json" (r-codebase :source "a/b" :codebase "one"))
+    (r-firebase g "a/firebase.json" (r-codebase :source "b" :codebase "two"))
+    (r-entry-settle g)
+    (is (null (getf (entry-of f) :codebase)))
+    (is (equal '("a/firebase.json" "firebase.json")
+               (sort (copy-list (getf (entry-of f) :codebase-tie)) #'string<)))))
+
+(test the-longest-prefix-wins
+  (let* ((g (make-graph))
+         (f (r-on-request g "f" "app/functions/main.py")))
+    (r-firebase g "firebase.json" (r-codebase :source "app" :codebase "outer"))
+    (r-firebase g "app/firebase.json" (r-codebase :source "functions" :codebase "inner"))
+    (r-entry-settle g)
+    (is (equal "inner" (getf (entry-of f) :codebase)))))
+
+(test an-ignore-in-syntax-loom-does-not-read-excludes-nothing-and-is-listed
+  (let* ((g (make-graph))
+         (f (r-on-request g "f" "functions/a/main.py")))
+    (r-firebase g "firebase.json" (r-codebase :ignore '("{a,b}")))
+    (r-entry-settle g)
+    (is (equal "default" (getf (entry-of f) :codebase)) "not excluded")
+    (is (equal '("{a,b}") (getf (entry-of f) :uninterpreted-ignores)))))
+
+(test ignore-globs-follow-the-segments-they-name
+  (flet ((hit (pattern path) (loom-graph::ignore-matches-p pattern path)))
+    (is (hit "tests" "tests/x.py"))
+    (is (hit "tests" "pkg/tests/x.py") "a plain name matches at any depth")
+    (is (hit "*.pyc" "pkg/m.pyc"))
+    (is (not (hit "tests" "attests/x.py")))
+    (is (hit "**/node_modules/**" "a/node_modules/b/c.js"))
+    (is (hit "pkg/gen" "pkg/gen/x.py") "excluding a directory excludes what is under it")
+    (is (not (hit "pkg/gen" "other/pkg/gen/x.py")) "a path pattern is anchored at the source")
+    (is (hit "m?.py" "ma.py"))
+    (is (not (hit "m?.py" "mab.py")))))
+
+(test a-registration-matching-no-declaration-marks-nothing
+  (let* ((g (make-graph))
+         (f (r-registered g "f" "app/a.py" nil :specifier "flask" :path '("route"))))
+    (r-entry-settle g)
+    (is (null (getp f :trigger)))
+    (is (null (getp f :entry-point)))))
+
+(test a-function-with-no-firebase-json-still-gets-its-trigger
+  (let* ((g (make-graph))
+         (f (r-on-request g "f" "app/a.py")))
+    (r-entry-settle g)
+    (is (eq :https (getp f :trigger)))
+    (is (null (getf (entry-of f) :codebase)))
+    (is (null (depends-on-ids g f)))))
+
+(test removing-the-declarations-clears-the-marks-and-retracts-no-file
+  (let* ((g (make-graph))
+         (f (r-on-request g "f" "functions/main.py")))
+    (r-firebase g "firebase.json" (r-codebase))
+    (r-py-tree g "functions/main.py")
+    (r-entry-settle g)
+    (is (eq :https (getp f :trigger)))
+    (let ((files (length (entities-of-type g :file))))
+      (r-entry-settle g nil)
+      (is (null (getp f :trigger)))
+      (is (null (getp f :entry-point)))
+      (is (= files (length (entities-of-type g :file)))
+          "nothing was reanalyzed to clear it"))))
+
+(test a-non-python-entry-point-is-unknown-and-never-no
+  (let* ((g (make-graph))
+         (v (make-instance 'variable-entity :name "api" :origin-file "functions/index.js"
+                           :properties (properties-table
+                                        (list :file "functions/index.js" :start-line 1
+                                              :language :javascript
+                                              :registration
+                                              (list :name "functions.https.onRequest"
+                                                    :specifier "firebase-functions"
+                                                    :path '("default" "https" "onRequest")
+                                                    :arguments nil :line 1))))))
+    (add-entity g v)
+    (r-firebase g "firebase.json" (r-codebase :runtime nil))
+    (r-entry-settle g)
+    (is (eq :https (getp v :trigger)))
+    (is (eq :unknown (getf (entry-of v) :deployed)))
+    (is (null (depends-on-ids g v)))))
+
+;;; ------------------------------------------------------------------
 ;;; The Python line, drawn both ways (BUG-0070)
 ;;; ------------------------------------------------------------------
 

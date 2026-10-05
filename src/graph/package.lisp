@@ -87,6 +87,7 @@
    ;; test coverage, derived from what a test's body calls (DES-0002 R9)
    #:resolve-tests
    #:resolve-settings
+   #:resolve-entry-points
    #:*tested-types*
 
    ;; document link resolution (SS10.3)

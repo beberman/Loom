@@ -1078,7 +1078,8 @@ call site mints an entity, and that entity has to exist and carry its
 derived from those edges, so RESOLVE-TESTS has to follow RESOLVE-CALLS rather
 than merely accompany it. The full sequence is resolve-definitions,
 resolve-generated-definitions, resolve-imports, resolve-calls, resolve-tests,
-resolve-settings, resolve-document-links, check-document-links, check-rules.
+resolve-settings, resolve-entry-points, resolve-document-links,
+check-document-links, check-rules.
 
 Two of those arrows are not dependencies and the difference is worth keeping.
 RESOLVE-IMPORTS before CHECK-RULES is one: RUN-CHECK's :NO-EDGE kind takes
@@ -1161,6 +1162,13 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
                                         :domains domains
                                         :setting-declarations
                                         (repository-setting-declarations repository)
+                                        :entry-points (repository-entry-points repository)))
+      ;; Reads :DECORATORS, :REGISTRATION, :CODEBASES and the import bindings the
+      ;; analyzers wrote, so it needs no earlier pass; it sits after the settings
+      ;; and before the document links, where DES-0054 D6 puts it.
+      (submit "resolve-entry-points"   (resolve-entry-points
+                                        graph :workspace-id workspace
+                                        :domains domains
                                         :entry-points (repository-entry-points repository)))
       (submit "resolve-document-links" (resolve-document-links graph :workspace-id workspace))
       ;; After RESOLVE-DOCUMENT-LINKS and before the rules, because it writes a

@@ -1077,3 +1077,20 @@ body: |
   NAMING-ITSELF; both are in the operations record family the earlier
   main-branch flake measurement also hit, and none touched this change. The run
   that counts is 12 of 12.
+
+  Step 6 (RESOLVE-ENTRY-POINTS). RESOLVE-ENTRY-POINTS also takes :DOMAINS, for the
+  import walk that decides :DEPLOYED. A path an ignore pattern excludes is not
+  covered, so it carries no :CODEBASE and no :DEPLOYED at all; D6 says such a path
+  is :NO, and the plan's own test says `not covered', so the plan's reading is
+  followed, because :NO prints as a defect and a test directory is not one. An
+  ignore pattern in syntax Loom does not read is listed in the entry-point plist as
+  :UNINTERPRETED-IGNORES, since :CODEBASES belongs to the analyzer and a pass may
+  not rewrite it. A tie is :CODEBASE-TIE with both firebase.json paths. :METHOD
+  and :VARIABLE entry points get :DEPLOYED :UNKNOWN, since only a module-level
+  function is deployed by main.py's namespace. A name a star import binds is
+  :UNKNOWN when it begins with an underscore, because __all__ is not read. A
+  function bound in main.py by assignment, `g = handlers.f', is deployed by Python
+  and reads :NO here; D6 accepts it. A helper first named PATH-SEGMENTS collided
+  with loom-utils' and raised the :CALL-SITE ceiling test to 514 against 512, the
+  same name-collision the ceiling's own docstring describes; it is GLOB-PATH-
+  SEGMENTS. lfia has 11 deployed functions now where the plan counted 8.

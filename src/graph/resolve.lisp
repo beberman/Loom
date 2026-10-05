@@ -2183,12 +2183,12 @@ use."
        (when (getf reference :specifier)
          (walked (getf reference :specifier)
                  (append (getf reference :path)
-                         (rest (split-dots (second reference))))))))))
+                         (rest (split-on (second reference) #\.)))))))))
 
-(defun split-dots (text)
-  "TEXT split at every dot."
+(defun split-on (text char)
+  "TEXT split at every CHAR."
   (loop for start = 0 then (1+ end)
-        for end = (position #\. text :start start)
+        for end = (position char text :start start)
         collect (subseq text start end)
         while end))
 
@@ -2332,6 +2332,254 @@ and calls nothing that writes the graph."
           (unless (nth-value 1 (gethash (name setting) sources))
             (push (retract (id setting) workspace-id) ops)))
         (nreverse ops)))))
+
+;;;; ==================================================================
+;;;; Entry points (DES-0054 D6)
+;;;; ==================================================================
+;;;;
+;;;; A function a framework calls has no caller in the tree, and `structure' lists
+;;;; it beside the definitions nothing uses. The facts that say why are derived
+;;;; here from what the analyzers wrote -- :DECORATORS, :REGISTRATION, :CODEBASES --
+;;;; and the declarations the repository handed in, and are written back onto the
+;;;; entity every pass (DEC-0003).
+
+(defun glob-segment-match-p (pattern string &optional (p 0) (s 0))
+  "True when STRING from S matches PATTERN from P, `*' for any run of characters
+and `?' for one, inside a single path segment."
+  (cond ((= p (length pattern)) (= s (length string)))
+        ((char= #\* (char pattern p))
+         (loop for end from s to (length string)
+                 thereis (glob-segment-match-p pattern string (1+ p) end)))
+        ((= s (length string)) nil)
+        ((or (char= #\? (char pattern p)) (char= (char pattern p) (char string s)))
+         (glob-segment-match-p pattern string (1+ p) (1+ s)))
+        (t nil)))
+
+(defun glob-segments-match-p (pattern path)
+  "True when the segment lists PATTERN and PATH match whole, `**' standing for
+any number of segments, none included."
+  (cond ((null pattern) (null path))
+        ((string= "**" (first pattern))
+         (or (glob-segments-match-p (rest pattern) path)
+             (and path (glob-segments-match-p pattern (rest path)))))
+        ((null path) nil)
+        (t (and (glob-segment-match-p (first pattern) (first path))
+                (glob-segments-match-p (rest pattern) (rest path))))))
+
+(defun glob-path-segments (text)
+  "TEXT's non-empty segments between slashes, a leading `./' dropped."
+  (remove "" (remove "." (split-on text #\/) :test #'string=) :test #'string=))
+
+(defun interpretable-ignore-p (pattern)
+  "True when PATTERN uses only the syntax IGNORE-MATCHES-P reads: plain names,
+`*', `?' and `**'. Any other glob syntax is not interpreted, and excluding on a
+pattern Loom cannot read would hide a deployed function (DES-0054 D6)."
+  (notany (lambda (char) (find char "[]{}()!,")) pattern))
+
+(defun ignore-matches-p (pattern relative)
+  "True when the interpretable PATTERN excludes RELATIVE, a path relative to the
+source directory. A plain name, one segment with no `**', matches that segment
+at any depth below the source, as Firebase reads it. Any other pattern is
+matched from the source against a leading run of the path, so excluding a
+directory excludes what is under it."
+  (let ((pattern (glob-path-segments pattern))
+        (path (glob-path-segments relative)))
+    (and pattern
+         (if (and (null (rest pattern)) (string/= "**" (first pattern)))
+             (some (lambda (segment) (glob-segment-match-p (first pattern) segment)) path)
+             (loop for end from 1 to (length path)
+                     thereis (glob-segments-match-p pattern (subseq path 0 end)))))))
+
+(defun codebase-roots (view)
+  "One plist per codebase of every firebase.json in VIEW: :FILE the :FILE entity,
+:PREFIX the directory it deploys, with a trailing slash, :SOURCE, :CODEBASE,
+:RUNTIME and :IGNORE."
+  (let ((roots '()))
+    (dolist (file (entities-of-type view :file) (nreverse roots))
+      (let ((path (getp file :path)))
+        (when (and path (getp file :codebases)
+                   (string= "firebase.json" (subseq path (length (directory-prefix path)))))
+          (dolist (codebase (getp file :codebases))
+            (let ((source (format nil "~{~a/~}" (glob-path-segments (getf codebase :source)))))
+              (push (list :file file
+                          :prefix (concatenate 'string (directory-prefix path) source)
+                          :source (getf codebase :source) :codebase (getf codebase :codebase)
+                          :runtime (getf codebase :runtime) :ignore (getf codebase :ignore))
+                    roots))))))))
+
+(defun covering-codebases (path roots)
+  "(values COVERING TIED). The codebase of ROOTS whose directory is the longest
+prefix of PATH and whose ignore list does not exclude it. A tie at one length is
+no answer: TIED lists the roots and COVERING is NIL."
+  (let ((candidates
+          (remove-if-not
+           (lambda (root)
+             (let ((prefix (getf root :prefix)))
+               (and (>= (length path) (length prefix))
+                    (string= prefix path :end2 (length prefix))
+                    (notany (lambda (pattern)
+                              (and (interpretable-ignore-p pattern)
+                                   (ignore-matches-p pattern (subseq path (length prefix)))))
+                            (getf root :ignore)))))
+           roots)))
+    (when candidates
+      (let* ((longest (reduce #'max candidates :key (lambda (r) (length (getf r :prefix)))))
+             (best (remove-if-not (lambda (r) (= longest (length (getf r :prefix))))
+                                  candidates)))
+        (if (rest best) (values nil best) (values (first best) nil))))))
+
+(defun main-reach (context main-path)
+  "The ids of the functions MAIN-PATH's explicit module-level imports bind, each
+walked to its definition. `import handlers' binds a module and reaches nothing,
+which is Firebase's behaviour: getmembers sees a module object, not a function."
+  (let ((reached (make-hash-table :test #'equal))
+        (main (gethash main-path (walk-context-files context))))
+    (dolist (binding (and main (getp main :import-bindings)) reached)
+      (let ((local (getf binding :local)))
+        (when local
+          (let ((callee (walk-attribute-path context main-path (list local))))
+            (when callee (setf (gethash (id callee) reached) t))))))))
+
+(defun reached-through-stars (context main-path entity)
+  "(values REACHED UNKNOWABLE) for ENTITY through MAIN-PATH's star imports. A star
+module the tree does not hold, or a walk that ended for another reason than a
+true miss, leaves the answer unknowable. A name beginning with an underscore is
+not bound by a star, unless __all__ lists it, which is not read, so it is
+unknowable too."
+  (let ((unknowable nil)
+        (simple (name entity)))
+    (dolist (specifier (star-specifiers context main-path) (values nil unknowable))
+      (let ((module (walk-resolve-specifier context specifier main-path)))
+        (if (null module)
+            (setf unknowable t)
+            (multiple-value-bind (callee cause)
+                (walk-attribute-path context module (list simple))
+              (cond ((and callee (eq callee entity))
+                     (if (char= #\_ (char simple 0))
+                         (setf unknowable t)
+                         (return (values t nil))))
+                    ((and (null callee) (not (eq cause :missing-in-target)))
+                     (setf unknowable t)))))))))
+
+(defun python-deployed-state (context entity main-path reaches)
+  "ENTITY's :DEPLOYED for a Python function under the main.py at MAIN-PATH, by
+DES-0054 D6: :YES when it is defined there or main.py binds it by name or star,
+:NO when main.py is indexed whole and does not, :UNKNOWN otherwise.
+
+main.py not indexed gives :UNKNOWN, as does one with a damaged region: the
+binding that would deploy the function may be in the statement that did not
+parse, and :NO is printed as a defect (REV-0003 finding 2). A method or a
+variable is never a module-level function, so it is :UNKNOWN rather than :NO.
+Known gap: a function bound in main.py by assignment, `g = handlers.f', is
+deployed by Python and reads :NO here, which D6 accepts."
+  (let ((main (gethash main-path (walk-context-files context))))
+    (cond ((not (eq :function (entity-type entity))) :unknown)
+          ((equal (getp entity :file) main-path) :yes)
+          ((null main) :unknown)
+          ((find "python syntax error" (getp main :suppressed-regions)
+                 :key (lambda (region) (getf region :reason)) :test #'equal)
+           :unknown)
+          ((gethash (id entity) (funcall reaches main-path)) :yes)
+          (t (multiple-value-bind (reached unknowable)
+                 (reached-through-stars context main-path entity)
+               (cond (reached :yes) (unknowable :unknown) (t :no)))))))
+
+(defun matched-registrations (entity entry-points)
+  "(registration . entry) for each of ENTITY's registrations one entry matches."
+  (loop for registration in (registrations-of entity)
+        for entry = (match-registration registration (getp entity :language) entry-points)
+        when entry collect (cons registration entry)))
+
+(defun registration-callee (registration language entry)
+  "module.name of the one of ENTRY's names REGISTRATION calls."
+  (let ((name (find-if (lambda (name)
+                         (registration-matches-callee-p registration language
+                                                        (getf entry :module) name))
+                       (getf entry :names))))
+    (format nil "~a.~a" (getf entry :module) name)))
+
+(defun entry-point-options (registration entry)
+  "REGISTRATION's arguments as (label . value): a keyword by its name, a positional
+one by the label ENTRY declares for its position or else by its index."
+  (append (getf registration :arguments)
+          (loop for value in (getf registration :positional)
+                for index from 0
+                collect (cons (or (nth index (getf entry :positional)) index) value))))
+
+(defun entry-point-plist (entity matched roots deployed)
+  "One :ENTRY-POINT plist for MATCHED, a (registration . entry) pair of ENTITY.
+DEPLOYED is a function of a root and the entity answering :YES, :NO or :UNKNOWN."
+  (destructuring-bind (registration . entry) matched
+    (let ((language (getp entity :language)))
+      (multiple-value-bind (root tied) (covering-codebases (getp entity :file) roots)
+        (append (list :framework (getf entry :framework)
+                      :trigger (getf entry :trigger)
+                      :callee (registration-callee registration language entry)
+                      :options (entry-point-options registration entry)
+                      :line (getf registration :line))
+                (when root
+                  (append (list :codebase (getf root :codebase)
+                                :runtime (getf root :runtime)
+                                :deployed (funcall deployed root entity))
+                          (let ((open (remove-if #'interpretable-ignore-p (getf root :ignore))))
+                            (when open (list :uninterpreted-ignores open)))))
+                (when tied
+                  (list :codebase-tie (mapcar (lambda (r) (getp (getf r :file) :path))
+                                              tied))))))))
+
+(defun resolve-entry-points (view &key workspace-id entry-points domains)
+  "Operations writing :TRIGGER and :ENTRY-POINT onto every entity that carries a
+registration, and a :DEPENDS-ON edge from each deployed one to the firebase.json
+that deploys it. DES-0054 D6.
+
+Every entity carrying :DECORATORS or :REGISTRATION gets both properties on every
+pass, as a value or as NIL, so a declaration removed on a reindex clears its marks
+with no file reanalyzed. :TRIGGER is the one registration's trigger, :MULTIPLE
+when several matched, NIL when none did. A registration matching no declaration
+marks nothing, and an entity with no codebase still gets both, so a Flask tree
+uses the same key.
+
+The :DEPENDS-ON edge takes <source>/main.py as its origin, because main.py's
+bindings are what decided :DEPLOYED: editing it retracts the edge, and editing
+firebase.json retracts the target. ENTRY-POINTS and DOMAINS are data from the
+repository; the pass returns operations and calls nothing that writes the graph."
+  (let* ((roots (codebase-roots view))
+         (walk nil)
+         (reach-cache (make-hash-table :test #'equal))
+         (ops '()))
+    (labels ((context () (or walk (setf walk (build-walk-context view domains))))
+             (reaches (main-path)
+               (or (gethash main-path reach-cache)
+                   (setf (gethash main-path reach-cache) (main-reach (context) main-path))))
+             (deployed (root entity)
+               (if (eq :python (getp entity :language))
+                   (python-deployed-state (context) entity
+                                          (concatenate 'string (getf root :prefix) "main.py")
+                                          #'reaches)
+                   :unknown)))
+      (dolist (type '(:function :method :variable))
+        (dolist (entity (entities-of-type view type))
+          (when (registrations-of entity)
+            (let* ((matched (matched-registrations entity entry-points))
+                   (plists (mapcar (lambda (m) (entry-point-plist entity m roots #'deployed))
+                                   matched)))
+              (push (update-properties
+                     (id entity)
+                     (list :trigger (cond ((null matched) nil)
+                                          ((rest matched) :multiple)
+                                          (t (getf (cdr (first matched)) :trigger)))
+                           :entry-point plists)
+                     workspace-id)
+                    ops)
+              (dolist (plist plists)
+                (when (eq :yes (getf plist :deployed))
+                  (let ((root (covering-codebases (getp entity :file) roots)))
+                    (push (assert-edge :depends-on entity (getf root :file)
+                                       :workspace-id workspace-id
+                                       :origin-file (concatenate 'string (getf root :prefix)
+                                                                 "main.py"))
+                          ops))))))))
+      (nreverse ops))))
 
 ;;;; ==================================================================
 ;;;; Document links (SS10.3)

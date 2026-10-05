@@ -2078,3 +2078,65 @@ or vector."
                (is-true (index-contains-p repository "SENTINEL-7f3a")))
           (setf loom-analyzer:*analyzers* saved
                 loom-workspace::*admitted-dot-files* admitted)))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 D6 and refinement 2: an edge follows the file that decided it
+;;; ------------------------------------------------------------------
+
+(defun function-named (repository name)
+  (find name (entities-of-type (repository-graph repository) :function)
+        :key #'name :test #'string=))
+
+(defun depends-on-targets (repository entity)
+  (mapcar (lambda (edge) (getp (get-entity (repository-graph repository) (to-id edge)) :path))
+          (relationships-from (repository-graph repository) (id entity)
+                              :rel-type :depends-on)))
+
+(defun write-deploy-tree ()
+  (write-file ".loom/frameworks.yaml" *sentinel-frameworks*)
+  (write-file "firebase.json"
+              "{\"functions\": [{\"source\": \"functions\", \"runtime\": \"python312\"}]}")
+  (write-file "functions/handlers.py" "from firebase_functions import https_fn
+@https_fn.on_request()
+def f(req): pass
+")
+  (write-file "functions/main.py" "from handlers import f
+"))
+
+(test deleting-mains-import-undeploys-the-function-and-equals-a-full-reindex
+  ;; The edge's origin is main.py, so editing main.py alone retracts it; no other
+  ;; file changed and no full reindex ran.
+  (if (not (python-available-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-deploy-tree)
+        (reindex-repository repository :quiet t)
+        (let ((f (function-named repository "f")))
+          (is (eq :https (getp f :trigger)))
+          (is (eq :yes (getf (first (getp f :entry-point)) :deployed)))
+          (is (equal '("firebase.json") (depends-on-targets repository f))))
+        (write-file "functions/main.py" "x = 1
+")
+        (poll-once repository :quiet t)
+        (let ((f (function-named repository "f")))
+          (is (eq :no (getf (first (getp f :entry-point)) :deployed)))
+          (is (null (depends-on-targets repository f)))
+          (let ((polled (getp f :entry-point)))
+            (reindex-repository repository :quiet t)
+            (is (equal polled (getp (function-named repository "f") :entry-point))
+                "the polled index equals a full reindex")
+            (is (null (depends-on-targets repository (function-named repository "f")))))))))
+
+(test editing-firebase-json-alone-moves-what-it-deploys
+  (if (not (python-available-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-deploy-tree)
+        (reindex-repository repository :quiet t)
+        (is (equal '("firebase.json") (depends-on-targets repository (function-named repository "f"))))
+        (write-file "firebase.json"
+                    "{\"functions\": [{\"source\": \"functions\", \"ignore\": [\"handlers.py\"]}]}")
+        (poll-once repository :quiet t)
+        (let ((f (function-named repository "f")))
+          (is (null (getf (first (getp f :entry-point)) :codebase)) "no longer covered")
+          (is (null (depends-on-targets repository f)))))))
