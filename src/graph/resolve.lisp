@@ -2222,19 +2222,40 @@ its implementations, all answering to the protocol's name. A document that
 names analyze-file means the contract; picking one of its methods would be
 arbitrary and refusing outright reports the reference as rotten when it is
 perfectly good. So a candidate set consisting of exactly one :INTERFACE plus
-methods resolves to the interface."
+methods resolves to the interface.
+
+A setting and the variables that read it are the other. `SPREADSHEET_ID =
+os.environ.get(\"SPREADSHEET_ID\", \"\")' mints a :VARIABLE and a :SETTING of one
+name, and every one of lfia's eight config reads has that shape. They are one
+fact stated twice, since the variable is the read, and a document naming
+SPREADSHEET_ID means the thing the environment holds. So a set of exactly one
+:SETTING plus :VARIABLEs each carrying the name in :ENVIRONMENT-READS resolves
+to the setting. A variable of the same name that does not read it is a
+different thing, and the set stays ambiguous (CON-0001)."
   (let ((candidates (gethash (string-downcase name) index)))
     (cond ((null candidates) (values nil nil))
           ((null (rest candidates)) (values (first candidates) nil))
           (t (let ((interfaces (remove-if-not
                                 (lambda (e) (eq :interface (entity-type e)))
-                                candidates)))
-               (if (and (= 1 (length interfaces))
-                        (every (lambda (e)
-                                 (member (entity-type e) '(:interface :method)))
-                               candidates))
-                   (values (first interfaces) nil)
-                   (values nil candidates)))))))
+                                candidates))
+                   (settings (remove-if-not
+                              (lambda (e) (eq :setting (entity-type e)))
+                              candidates)))
+               (cond ((and (= 1 (length interfaces))
+                           (every (lambda (e)
+                                    (member (entity-type e) '(:interface :method)))
+                                  candidates))
+                      (values (first interfaces) nil))
+                     ((and (= 1 (length settings))
+                           (every (lambda (e)
+                                    (or (eq e (first settings))
+                                        (and (eq :variable (entity-type e))
+                                             (member (name (first settings))
+                                                     (getp e :environment-reads)
+                                                     :test #'string=))))
+                                  candidates))
+                      (values (first settings) nil))
+                     (t (values nil candidates))))))))
 
 (defun resolve-document-links (view &key workspace-id)
   "Operations linking each document's declared and mentioned references.

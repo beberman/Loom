@@ -2124,8 +2124,12 @@ of :SPECIFIER, :PATH and :LINE."
   ;; Neither :DECIDES nor :DOCUMENTS listed :SETTING as a target, so `affects:
   ;; [SPREADSHEET_ID]' would have resolved and then lost its edge. A plan bears
   ;; on a setting; a decision governs one.
+  ;; The reader is the :VARIABLE `SPREADSHEET_ID = os.environ.get(...)', which
+  ;; shares its setting's name: every one of lfia's eight config reads has that
+  ;; shape. A function named `load' avoided the collision and passed for a shape
+  ;; the canonical case does not have (REV-0003 item 3).
   (let ((g (make-graph)))
-    (r-reader g :function "load" "app/sheets.py" "SPREADSHEET_ID")
+    (r-reader g :variable "SPREADSHEET_ID" "app/config.py" "SPREADSHEET_ID")
     (let ((decision (r-decision g "DEC-9000" :affects '("SPREADSHEET_ID")))
           (plan (make-instance 'document-entity :name "docs/plans/PLAN-9000.yaml"
                                :origin-file "docs/plans/PLAN-9000.yaml"
@@ -2286,3 +2290,15 @@ resolution pass run."
       (is (null (called-ids g caller)))
       (is (null (loom-graph:missing-imported-calls g))
           "a walk cut off at the limit has not shown the name absent"))))
+
+(test a-variable-that-does-not-read-the-setting-leaves-the-name-ambiguous
+  ;; The control for the setting-and-reader rule: a same-named variable that
+  ;; reads something else is a second thing, and refusing is still right.
+  (let ((g (make-graph)))
+    (r-reader g :function "load" "app/sheets.py" "SPREADSHEET_ID")
+    (r-reader g :variable "SPREADSHEET_ID" "app/config.py" "OTHER")
+    (r-settle g)
+    (let ((decision (r-decision g "DEC-9001" :affects '("SPREADSHEET_ID"))))
+      (apply-transaction g (resolve-document-links g :workspace-id "w"))
+      (is (null (relationships-from g (id decision) :rel-type :decides)))
+      (is (= 1 (length (getp decision :ambiguous-references)))))))
