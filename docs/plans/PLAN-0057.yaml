@@ -1,0 +1,1021 @@
+id: PLAN-0057
+title: DES-0054 S1 to S9 in ten steps -- ontology first, the decorator encoding, the two frameworks.yaml keys, the firebase analyzer, settings, the entry-point pass, the surfaces, init's proposal, acceptance on lfia and Loom, complete; JavaScript (S10) split to its own plan
+status: draft
+date: 2026-10-05
+refines: [DES-0054]
+affects: [py-decorators, py-decorator-value, literal_value, Extractor.visit_decorator,
+          parse-frameworks, frameworks-problems, read-json-file, propose-domains,
+          resolve-settings, resolve-one, resolve-and-check, walk-attribute-path,
+          walk-stars, validate-entity, repository-files, entry-point-report,
+          structure-report, describe-entity, impact-report, search-entities,
+          prepare-repository, plan-preparation]
+tags: [analyzer, python, firebase, cloud-functions, entry-points, secrets,
+       settings, frameworks, ontology, des-0054, req-0078, con-0001, con-0003,
+       dec-0003]
+summary: |
+  Ten steps that implement DES-0054 S1 to S9: R1 to R11 and the lfia and
+  Loom halves of R13. Step 1 is the ontology, moved ahead of the extractor.
+  Step 2 changes the decorator encoding and adds :VALUE-CALL. Step 3 reads
+  the two new frameworks.yaml keys. Step 4 adds the firebase analyzer and
+  admits .firebaserc. Step 5 mints settings from declarations and widens
+  RESOLVE-ONE. Step 6 is RESOLVE-ENTRY-POINTS. Step 7 is describe, impact,
+  structure, find --trigger and status. Step 8 is init's proposal and the
+  Python template. Step 9 is acceptance on ~/github/lfia-accounting and on
+  Loom's own tree. Step 10 runs `complete`.
+
+  S10, the JavaScript half (R12 and the front-end half of R13), is split
+  into its own plan. DES-0054 S10 says it "can be split into its own plan
+  without touching S1 to S9". This plan builds everything that plan needs
+  except extract.js, js-analyzer.lisp, the JavaScript template and init's
+  nodejs proposal. THE SECOND PLAN lists it.
+
+  Out of scope, as DES-0054 defers them: REQ-0078 R10 (dependency names),
+  set_global_options merging, hosting rewrites, `.value` reads, a call
+  inside a decorator argument, enum translation, pytest.ini as a proposal
+  signal, and fixture injection.
+body: |
+  BASELINE
+
+  Loom at a64c80c on req-0078-firebase, with BUG-0069 untracked,
+  `tools/loom.sh 'status' 'check'`:
+
+      index      : 485 files, 4962 entities, 23506 relationships
+      rules      : 0 violations, 2 unenforced
+      unresolved : 8 document references, 7 ambiguous, 5 definer macros
+      imports    : 4 resolved, 57 external, ... 0 unrooted
+      unclaimed  : 42 tracked files -- 10 .json, 10 .md, 6 .sh, 5 (none),
+                   3 .js, 2 .docx, 6 other
+      check      : No violations, 8 unresolved, 7 ambiguous, 16 prose
+                   file references
+
+  ~/github/lfia-accounting at 8044c09 on its branch plan-0001, with two
+  untracked entries: .loom/frameworks.yaml (written with the user's consent)
+  and web/ (not ours):
+
+      index      : 63 files, 554 entities, 1028 relationships
+      tests      : 103 tests covering 5 units in 12 test files
+      imports    : 73 resolved, 101 external, 34 unrooted
+      domains    : .loom/frameworks.yaml declares nothing usable: a
+                   definer-macros entry needs both macro: and defines:
+      unclaimed  : 17 tracked files -- 4 .json, 3 .png, 2 (none), 2 .md, ...
+      structure  : 33 definitions with no caller
+      check      : 0 violations, 0 unresolved, 0 ambiguous
+
+  The lfia tree has moved since DES-0054 measured it. The design says 31
+  no-caller rows and an unrooted count of 25 then 34. Today main.py still
+  has eight decorated functions: sync_zeffy and sync_zeffy_ledger on
+  scheduler_fn.on_schedule, and six on https_fn.on_request. Four carry
+  secrets=[ZEFFY_API_KEY]. So this plan predicts deltas, not absolute
+  counts, and step 9 takes a fresh lfia baseline before it measures.
+
+  "Green" after a step means three things. `tools/loom-test.sh` passes on
+  all twelve systems with zero Python skips. `check` on Loom prints No
+  violations, 8 unresolved and 7 ambiguous. `sbcl --script
+  tools/test/load-test.lisp loom-serve` prints T. A step that moves one of
+  these numbers says which one and to what. Run everything with
+  /usr/bin/sbcl through tools/loom-test.sh, and say so in each commit.
+
+  After any change to Loom's source, run `tools/loom-serve.sh update`
+  before using a loom_* tool.
+
+  This plan's `affects:` names only functions that exist at a64c80c. A
+  function this plan creates is named in the body.
+
+  WHEN lfia's "declares nothing usable" CLEARS
+
+  The file holds only entry-points: and setting-declarations:. Today
+  PARSE-FRAMEWORKS ignores both keys. FRAMEWORKS-PROBLEMS tests three keys
+  and finds all three empty, so `status` prints "declares nothing usable".
+  Nothing reports unknown keys today. Step 3 clears the line. Until step 3,
+  lfia's status prints it on every run, and that is expected. lfia's file
+  has no domains: key, so the `domains` line disappears after step 3
+  rather than listing a domain. Step 9 covers what that means for R13's
+  `unrooted 0`.
+
+  REORDERED FROM DES-0054
+
+  One change to the design's order. DES-0054's S2 (ontology) becomes step
+  1, ahead of S1 (extractor). The reason: step 2 writes :VALUE-CALL on
+  :VARIABLE. VALIDATE-ENTITY ignores an undeclared key on an assert, so the
+  analyzer could write it before it is declared, and no test would notice.
+  An UPDATE-PROPERTIES naming the same key would be refused. Declaring
+  first means every later step writes a declared property. PLAN-0056 also
+  put the ontology first. The rest follows the design: S3, S4, S5, S6, S7,
+  S8, S9.
+
+  Two pieces move earlier than the design implies:
+
+    - The registration matcher (D3's matching rule, both languages) lands
+      in step 5, not step 6. RESOLVE-SETTINGS needs it to know which
+      decorator arguments belong to a registration, before
+      RESOLVE-ENTRY-POINTS exists.
+    - R3's "RESOLVE-AND-CHECK hands both lists to the passes" is split.
+      Step 3 adds the two accessor functions. Steps 5 and 6 pass the lists
+      to the passes as those passes are written. A keyword argument with no
+      reader would be untestable in step 3.
+
+  REFINEMENTS DES-0054 LEAVES OPEN
+
+  1. The value encoding, in Lisp. D1 names three kinds and does not say how
+     each is stored. This plan stores:
+       literal     the bare value, as today: a string, a number, T, :FALSE
+                   or :NONE. So every existing literal assertion holds.
+       name        (:NAME "KEY" :BINDING :LOCAL), or (:NAME "KEY" :BINDING
+                   :IMPORT :SPECIFIER "s" :PATH ("a" "b")).
+       dotted      (:DOTTED "options.MemoryOption.MB_512"), plus :SPECIFIER
+                   and :PATH when the first name is an import binding.
+       list        (:LIST e1 e2 ...), each element encoded as above.
+       other       :EXPRESSION, as today.
+     The decoder is moved out of python-analyzer.lisp into analyzer.lisp
+     and renamed DECODE-ARGUMENT-VALUE, so js-analyzer.lisp can call it in
+     the second plan. PY-DECORATOR-VALUE stays as a one-line caller.
+
+  2. Which file owns a derived edge. ASSERT-EDGE's :ORIGIN-FILE decides
+     which file's reanalysis retracts an edge. A derived edge can go stale
+     when a file other than its source changes, and no full reindex runs.
+     So:
+       - A :READS edge from a registered function to a setting, drawn
+         through a variable, takes the declaring variable's file as its
+         origin. Editing that file alone retracts it. Editing the
+         function's file retracts the function and its edges.
+       - A :DEPENDS-ON edge from a deployed function to firebase.json takes
+         <source>/main.py as its origin, because main.py's bindings decided
+         :DEPLOYED. Editing firebase.json retracts the target. Editing the
+         function's file retracts the source.
+     Steps 5 and 6 each test this: edit only the deciding file, poll, and
+     compare with a full reindex.
+
+  3. RESOLVE-ONE gets a view. It takes (index name) today and cannot see
+     edges. It gains a keyword, :VIEW. The setting clause accepts a
+     :VARIABLE that carries the name in :ENVIRONMENT-READS (today's rule)
+     or that has a :READS edge to the setting (D5's rule, when :VIEW is
+     given). Keeping the old clause as a disjunct means a caller that
+     passes no view, such as UNAMBIGUOUS-NAMES in architecture.lisp,
+     behaves exactly as today. That is R5's "nothing that resolves today
+     stops resolving" by construction. RESOLVE-DOCUMENT-LINKS and
+     DOCUMENT-REFERENCE-REPORT pass the view.
+
+  4. A main.py with a damaged region cannot prove :NO. D6 gives :NO when
+     main.py is indexed, nothing reaches the function, and no star import
+     failed. DES-0053 D7 drops a statement that does not parse. The
+     missing binding may be in that statement. So a main.py whose :FILE
+     carries :SUPPRESSED-REGIONS with reason "python syntax error" gives
+     :UNKNOWN. This is REV-0003 finding 2 again: no miss is reported where
+     the language might resolve it.
+
+  5. The deploys line needs the declarations at status time. The count of
+     declaring variables with no :FIRST-STRING (D5) is computed by
+     `status` from the graph and the repository's declarations. It is not
+     stored. R7 declares no property for it.
+
+  6. A trigger name typed at `find --trigger` is looked up with FIND-SYMBOL
+     in the keyword package and never interned. An unknown trigger finds
+     nothing. DES-0047 D1 bounds keywords by the declarations, and console
+     input must not widen that.
+
+  FILES
+
+  New:
+    src/analyzer/firebase-analyzer.lisp         the D4 analyzer
+    src/analyzer/test/firebase-analyzer.lisp    its tests
+    src/workspace/templates/firebase-functions-python.yaml
+                                                the Python template (D3, R10)
+
+  Changed:
+    src/ontology/root-ontology.lisp     defentity :CLOSED; VALIDATE-ENTITY
+    src/ontology/code-ontology.lisp     R7's properties, :DEPENDS-ON :FROM,
+                                        :SETTING closed, :SOURCES docs
+    src/ontology/package.lisp           exports, if defentity's option
+                                        needs one
+    src/ontology/test/root-ontology.lisp, test/code-ontology.lisp
+    src/graph/test/transaction.lisp     a closed :SETTING assert is refused
+    src/analyzer/test/lisp-analyzer.lisp  the DEFMETHOD and DEFUN property
+                                        fingerprints (risk 1)
+    tools/py/extract.py                 literal_value, visit_decorator,
+                                        :VALUE-CALL on module-level bindings
+    src/analyzer/analyzer.lisp          DECODE-ARGUMENT-VALUE
+    src/analyzer/python-analyzer.lisp   py-decorators (:POSITIONAL),
+                                        py-decorator-value, :VALUE-CALL
+    src/analyzer/test/python-extract.lisp, test/python-analyzer.lisp
+    src/analyzer/frameworks.lisp        PARSE-FRAMEWORKS' two keys,
+                                        FRAMEWORKS-PROBLEMS, PARSE-JSON-TEXT,
+                                        PROPOSE-DOMAINS' firebase.json signal
+    src/analyzer/test/frameworks.lisp
+    src/analyzer/loom-analyzer.asd      firebase-analyzer after frameworks;
+                                        its test file
+    src/analyzer/package.lisp           exports
+    src/graph/resolve.lisp              MATCH-REGISTRATION, RESOLVE-SETTINGS,
+                                        RESOLVE-ONE, RESOLVE-ENTRY-POINTS
+    src/graph/package.lisp              exports
+    src/graph/test/resolve.lisp
+    src/workspace/workspace.lisp        *ADMITTED-DOT-FILES*, REPOSITORY-FILES,
+                                        REPOSITORY-ENTRY-POINTS,
+                                        REPOSITORY-SETTING-DECLARATIONS,
+                                        RESOLVE-AND-CHECK, the status plist
+    src/workspace/init.lisp             PLAN-PREPARATION, PREPARE-REPOSITORY
+    src/workspace/test/workspace.lisp, test/init.lisp, test/domains.lisp
+    src/knowledge/services.lisp         DESCRIBE-ENTITY, IMPACT-REPORT rows
+    src/knowledge/structure.lisp        ENTRY-POINT-REPORT, a trigger band
+    src/knowledge/test/services.lisp, test/structure.lisp
+    src/process/console.lisp            find --trigger, describe, impact
+                                        suffix, status deploys line
+    src/process/test/console.lisp
+    src/serve/operations.lisp           :find gains trigger; :status if it
+                                        builds its plist key by key
+    src/serve/test/operations.lisp, src/rest/test/routes.lisp,
+    src/mcp/test/tools.lisp
+    docs/requirements/REQ-0078.yaml     OUTSTANDING, in step 10
+    docs/design/DES-0054.yaml           OUTSTANDING, in step 10
+
+  Deleted: none. No .asd gains a dependency.
+
+  BLAST RADIUS
+
+  What Loom reports, from `impact <name> 3` at a64c80c:
+
+    PY-DECORATORS          5 entities (truncated): PY-ITEM, PY-MODULE-ITEMS,
+                           MAKE-PY-FILE-ENTITY, the Python ANALYZE-FILE.
+                           Every Python file in every tree is reanalyzed
+                           after step 2.
+    PY-DECORATOR-VALUE     4 (truncated): the same chain.
+    RESOLVE-ONE            41 (truncated). RESOLVE-DOCUMENT-LINKS,
+                           DOCUMENT-REFERENCE-REPORT (the console and serve
+                           `check`, and draft checking in transition.lisp),
+                           and UNAMBIGUOUS-NAMES (architecture's describes).
+    RESOLVE-SETTINGS       48 (truncated). RESOLVE-AND-CHECK, so
+                           INDEX-REPOSITORY, POLL-ONCE and ENRICH-REPOSITORY.
+    REPOSITORY-FILES       87 (truncated). INDEX-REPOSITORY, POLL-ONCE (the
+                           monitor) and UNINDEXED-FILES. POLL-ONCE reaches
+                           the analyzers only through REPOSITORY-FILES, so
+                           one edit there is "both REPOSITORY-FILES and the
+                           monitor" in R4.
+    VALIDATE-ENTITY        498 (truncated). Every assert. Only a type that
+                           declares :CLOSED behaves differently.
+
+  Decisions Loom attaches: DES-0054 itself, DES-0053, DES-0047 (domains),
+  DES-0025 (frameworks.yaml, D4), DES-0018 (the walker's skips), DES-0051
+  (the document store), DEC-0003 (derive, never consume), DES-0014 and
+  DES-0029 (RESOLVE-ONE's declined candidates). Nothing here contradicts
+  one. DEC-0003 binds steps 5 and 6: both passes derive from
+  analyzer-written properties and rewrite only their own outputs.
+
+  What Loom cannot see, and why:
+
+    - Readers of :DECORATORS outside the Python analyzer. Loom finds
+      PYTHON-ARITY in services.lisp, which reads only :NAME. A REST caller
+      reading describe's properties is outside every index (risk 3).
+    - The DEFMETHOD fingerprints in lisp-analyzer.lisp list every declared
+      :METHOD property. A declaration is not a call, so `impact` on
+      code-ontology.lisp does not reach those tests (risk 1).
+    - Most callers of the passes are `test` forms, a macro body. DES-0001
+      says these under-report.
+    - console.lisp and operations.lisp cross the loom-process/loom-serve
+      boundary, which no rule covers. load-test is the instrument.
+    - The document store's own dot filter, DOTTED-P in file-store.lisp,
+      is a second walk. .firebaserc is not a document, so the store never
+      needs it. But the file stamps and the freshness line read from a
+      listing, and Loom has no edge that says which listing (risk 5).
+
+  RISKS
+
+  1. Fingerprint tests. Step 1 declares :TRIGGER and :ENTRY-POINT on
+     :FUNCTION and :METHOD. The DEFMETHOD and DEFUN fingerprints in
+     src/analyzer/test/lisp-analyzer.lisp (around lines 1031 to 1105) list
+     every declared property alphabetically. They change in step 1 for
+     that reason, as PLAN-0056 step 1's NOTES recorded. Nothing the
+     analyzer writes moves. Check the diff of that file adds only
+     `(:entry-point nil)` and `(:trigger nil)` entries.
+
+  2. The existing decorator tests encode the `names` kind. Two assertions
+     fail in step 2 because the format changed, not because a property
+     broke:
+       src/analyzer/test/python-extract.lisp, the decorator test (about
+       line 236): `secrets=[KEY]` is read as '("KEY") from {kind: names}.
+       src/analyzer/test/python-analyzer.lisp,
+       DECORATORS-ARE-RECORDED-WITH-THEIR-RESOLVED-PATH-AND-LITERAL-ARGUMENTS:
+       expects ("secrets" "KEY").
+     Step 2 changes those two assertions and nothing else in either test.
+     The schedule, timeout_sec, retry (:FALSE), memory (:NONE), region
+     (:EXPRESSION), specifier, path and :IMPORTED-CALLS assertions pass
+     unedited. That is the check that the Python analyzer keeps its
+     behaviour where D1 does not change it. `git diff` on the two test
+     files in step 2 shows only those two edits plus added tests.
+     The region= case is `pick()`, a call, so it stays :EXPRESSION under D1.
+
+  3. The :DECORATORS change is visible over REST. A describe over
+     /v1/describe returns properties. `secrets` changes from ["KEY"] to an
+     encoded list, and a nested plist may not encode as JSON the way a
+     reader expects. Step 2 adds a REST test that describes a decorated
+     Python function and asserts the JSON parses and holds "KEY" and
+     "options.MemoryOption.MB_512". No test in src/rest, src/mcp or
+     src/serve names decorators today. The change is behaviour change 5 in
+     DES-0054's CONSEQUENCES, and step 2's commit message says so.
+
+  4. A refused :SETTING drops every setting in that pass.
+     RESOLVE-AND-CHECK's SUBMIT applies a pass's operations as one
+     transaction. On an error it calls NOTE-ERROR and goes on. If one
+     :SETTING carries an undeclared key after step 1, the whole
+     resolve-settings transaction fails, and every setting and :READS edge
+     vanishes for that pass. Only `log` and status's error line show it.
+     So step 5 computes each setting's :SOURCES as the union over all its
+     inputs and asserts each setting once. Two asserts of one natural key
+     with different :SOURCES would also be wrong: the graph upserts, and
+     the second would overwrite the first (CON-0005's shape, in a pass).
+     After steps 1 and 5, run `tools/loom.sh 'log 20'` on Loom and lfia and
+     confirm no resolve-settings error.
+
+  5. .firebaserc and the stamps. REPOSITORY-FILES admits it in step 4. The
+     document store's DOTTED-P still skips it, which is correct for
+     documents. If file stamps or UNINDEXED-FILES come from a listing that
+     skips dot names, .firebaserc would read as unindexed or drifted after
+     every pass. Step 4's workspace test indexes a tree holding
+     .firebaserc, then asserts freshness reads current, drift is 0,
+     UNINDEXED-FILES is empty, and a POLL-ONCE after editing .firebaserc
+     reanalyzes it.
+
+  6. Fan-out by name (REV-0003 finding 1). A registration argument such as
+     `secrets=[ZEFFY_API_KEY]` is resolved only through its binding. A
+     local name goes to the module-level :VARIABLE of that name in the
+     same file. An import binding goes through WALK-ATTRIBUTE-PATH. No
+     lookup across the tree by spelling. A name with no binding target
+     names nothing. Registration matching is on the bound module path and
+     never on the decorator's spelling. A decorator with no import binding
+     never matches. A Python declaration matches only by the Python rule,
+     and a JavaScript registration only by the JavaScript rule. Step 5
+     tests each.
+
+  7. A false miss (REV-0003 finding 2). :DEPLOYED :NO is printed by
+     `structure` as a defect. It must not appear where Python would deploy
+     the function. Step 6 tests: a star import in main.py that resolves
+     gives :YES; one that does not resolve gives :UNKNOWN; a re-export
+     through a package's __init__.py gives :YES; a damaged main.py gives
+     :UNKNOWN (refinement 4); `import handlers` gives :NO, which is
+     Firebase's real behaviour.
+
+  8. A document naming a shared name (REV-0003 finding 3). On lfia,
+     ZEFFY_API_KEY is both variable:functions/main.py:ZEFFY_API_KEY and
+     setting:ZEFFY_API_KEY after step 5. REV-0003 found the stage-1 test
+     used a reader named "load", so it passed for a shape the real case
+     did not have. Step 5's test uses a :VARIABLE of the same name as the
+     setting, built by the analyzer from `ZEFFY_API_KEY =
+     SecretParam("ZEFFY_API_KEY")`, plus an environment-read variable of
+     the same name in another file. The set must resolve to the setting.
+     A same-named variable that reads nothing keeps it ambiguous.
+
+  9. RULE-0003's deny list. Both new passes return operations, as
+     RESOLVE-CALLS does. If a helper calls ADD-ENTITY or
+     APPLY-TRANSACTION directly, its name goes into
+     docs/rules/RULE-0003.yaml's to-names in the same commit.
+
+  10. The peer property. Step 7 edits console.lisp and operations.lisp.
+      Run load-test after it. It must print T.
+
+  11. find's term is required. The :find operation's shape lists `term`
+      as required, and TOOL-INPUT-SCHEMA turns that into MCP's `required`
+      vector. Step 7 keeps `term` required and accepts "" when `trigger`
+      is given. The console's `find` accepts no name when --trigger is
+      present. Changing `term` to optional would change the MCP schema,
+      which a client may cache.
+
+  12. The template's trigger list. It is read from lfia's installed SDK
+      (firebase_functions 0.6.0 under functions/venv, which is untracked
+      and not indexed). Reading it to write a template is authoring, not
+      indexing. A trigger the SDK adds later is absent until a repository
+      adds it. The miss is visible: the function stays in the no-caller
+      band.
+
+  13. The lfia tree moves under its author. Its branch and uncommitted
+      edits changed between DES-0054's measurement and this plan. Step 9
+      takes its own baseline. Nothing in this plan writes to lfia. Its
+      untracked web/ and .loom/frameworks.yaml are read, never edited.
+      Step 8's init check runs PLAN-PREPARATION, which writes nothing, and
+      `git -C ~/github/lfia-accounting status --short` is compared before
+      and after.
+
+  14. BUG-0069 is open: `complete` with no verdicts writes when every
+      refined document is blocked. If the JavaScript plan exists as a
+      draft refining DES-0054 when step 10 runs, DES-0054 is blocked, and
+      the dry run may write. Run `git status` after the dry run.
+
+  STEPS
+
+  Each step is one commit on req-0078-firebase, made by the caller. Step 1
+  is the first that can be run.
+
+  1. THE ONTOLOGY (DES-0054 S2, R7, and R8's refusal).
+     src/ontology/root-ontology.lisp, src/ontology/code-ontology.lisp,
+     src/ontology/package.lisp, src/ontology/test/root-ontology.lisp,
+     src/ontology/test/code-ontology.lisp, src/graph/test/transaction.lisp,
+     src/analyzer/test/lisp-analyzer.lisp.
+
+     defentity takes :CLOSED. The entity-type spec records it. When it is
+     true, VALIDATE-ENTITY also reports every key in the properties table
+     that the type does not declare, with the problem "undeclared property
+     on a closed type". Open types are unchanged.
+
+     code-ontology.lisp, as R7:
+       - :SETTING is :CLOSED T. It declares :NAME, :SOURCES, :LANGUAGE and
+         :DOMAIN, as now. :SOURCES' documentation lists :ENVIRONMENT,
+         :SECRET and :PARAM.
+       - :DEPENDS-ON :FROM gains :FUNCTION, :METHOD and :VARIABLE.
+       - :VARIABLE gains :VALUE-CALL and :REGISTRATION.
+       - :FUNCTION, :METHOD and :VARIABLE gain :TRIGGER (keyword) and
+         :ENTRY-POINT (list).
+       - :FILE gains :CODEBASES, :PROJECT-ALIASES and
+         :UNNAMED-REGISTRATIONS.
+     Each documentation string names the DES-0054 decision that writes it.
+     No entity type and no relationship type is added.
+
+     Verification. New tests:
+       - A :SETTING carrying :VALUE fails VALIDATE-ENTITY. A :FUNCTION
+         carrying an undeclared key still validates (open types unchanged).
+       - In transaction.lisp: a transaction asserting a :SETTING with
+         :VALUE "x" is rejected whole, and the graph holds no setting
+         afterwards.
+       - A :DEPENDS-ON edge from a :FUNCTION to a :FILE is permitted. One
+         from a :CLASS is dropped.
+       - Each new property validates on its type.
+     Before the edit, the refusal tests fail: an undeclared key is ignored.
+     CON-0003: remove the closed clause from VALIDATE-ENTITY and see both
+     refusal tests fail; revert. Risk 1's fingerprints change in this
+     commit. Green. No count moves: nothing writes the new vocabulary.
+     RULE-0001 holds: loom-ontology gains no dependency.
+
+  2. THE DECORATOR ENCODING AND :VALUE-CALL (DES-0054 S1, R1, R2).
+     tools/py/extract.py, src/analyzer/analyzer.lisp,
+     src/analyzer/python-analyzer.lisp, src/analyzer/package.lisp,
+     src/analyzer/test/python-extract.lisp,
+     src/analyzer/test/python-analyzer.lisp, src/rest/test/routes.lisp.
+
+     extract.py. literal_value gains the kinds `name` (with the D2 binding
+     of that name: local, or import with specifier and path), `dotted` (an
+     attribute chain of plain names, as written, with the first name's
+     import binding when it has one), and `list` (a list or tuple whose
+     every element is a literal, a name or a dotted chain). It loses
+     `names`. Anything else stays `expression`. visit_decorator records
+     positional arguments in order under `positional`, with the same
+     encoding.
+
+     A module-level assignment whose value is a single call writes
+     `valueCall` on that variable: the callee's binding (specifier and
+     path, or name for a local) and line. It writes `firstString` only
+     when the first positional argument is a string literal. It writes no
+     other argument. The call's :CALL-SITE (DES-0053 D4) is unchanged.
+
+     Lisp. DECODE-ARGUMENT-VALUE in analyzer.lisp decodes refinement 1's
+     encoding. PY-DECORATOR-VALUE calls it. PY-DECORATORS adds :POSITIONAL
+     beside :ARGUMENTS. The variable's entity carries :VALUE-CALL as
+     (:SPECIFIER s :PATH p :LINE n [:FIRST-STRING k]) or (:NAME n :LINE n
+     [:FIRST-STRING k]).
+
+     Verification. In python-extract.lisp and python-analyzer.lisp:
+       - lfia's decorator line `@https_fn.on_request(secrets=[ZEFFY_API_KEY],
+         timeout_sec=540, memory=options.MemoryOption.MB_512)` gives secrets
+         as (:LIST (:NAME "ZEFFY_API_KEY" :BINDING :LOCAL)), memory as
+         (:DOTTED "options.MemoryOption.MB_512" :SPECIFIER
+         "firebase_functions" :PATH ("options")), and no :EXPRESSION.
+       - `secrets=["K"]` is (:LIST "K").
+       - `@app.route("/x")` records "/x" under :POSITIONAL.
+       - `secrets=[SecretParam("K")]` is :EXPRESSION (a call).
+       - `K = SecretParam("K")` with `from firebase_functions.params import
+         SecretParam` gives :VALUE-CALL with specifier
+         "firebase_functions.params", path ("SecretParam") and
+         :FIRST-STRING "K".
+       - R2: `P = StringParam("K", "dflt")` and `Q = StringParam("K",
+         default="dflt")` both record "K". The test serializes the whole
+         child reply and both entities to strings and asserts "dflt"
+         appears in neither.
+       - `X = SecretParam(name="K")` has :VALUE-CALL and no :FIRST-STRING.
+       - routes.lisp: describe over REST on a decorated Python function
+         returns JSON that parses and holds "ZEFFY_API_KEY" and
+         "options.MemoryOption.MB_512" (risk 3).
+     Risk 2's two assertions change in this commit and nothing else in
+     those tests. CON-0003: revert extract.py alone and run the suite. The
+     new tests fail and the unedited assertions still pass. Then make
+     `firstString` take the second positional and see the "dflt" test
+     fail. Revert both. Green. No status count moves on Loom: its one
+     decorator, @staticmethod in tools/py/extract.py, has no arguments.
+
+  3. THE TWO frameworks.yaml KEYS (DES-0054 S3, R3).
+     src/analyzer/frameworks.lisp, src/analyzer/package.lisp,
+     src/analyzer/test/frameworks.lisp, src/workspace/workspace.lisp,
+     src/workspace/test/domains.lisp.
+
+     PARSE-FRAMEWORKS returns :ENTRY-POINTS and :SETTING-DECLARATIONS.
+     An entry-points entry is (:FRAMEWORK :TRIGGER :MODULE :NAMES
+     :SETTINGS :POSITIONAL). A setting-declarations entry is (:SOURCE
+     :MODULE :NAMES). `module` and `names` are required in both. `trigger`
+     is required in an entry-points entry and `source` in a
+     setting-declarations entry. An entry missing one is kept out of the
+     list and reported. `framework` defaults to the module. `trigger` and
+     `source` are interned as keywords here, once.
+
+     FRAMEWORKS-PROBLEMS reports a missing required field, naming the
+     entry by index and key. It reports a callee (module.name) named by
+     two entries, within one key or across the two, and says neither
+     applies it. The "declares nothing usable" test counts every key
+     PARSE-FRAMEWORKS returns: the three it counts today, plus :DOMAINS,
+     :DOCUMENT-STORE and the two new keys. A domains-only file would
+     otherwise be called useless too. The step's first test checks
+     whether it is today.
+
+     workspace.lisp gains REPOSITORY-ENTRY-POINTS and
+     REPOSITORY-SETTING-DECLARATIONS beside REPOSITORY-DOMAINS. Each reads
+     the repository's frameworks plist. RESOLVE-AND-CHECK does not use
+     them yet.
+
+     Verification. In frameworks.lisp tests:
+       - lfia's file, verbatim, parses into two entry-points and two
+         setting-declarations, with :SCHEDULE and :HTTPS triggers, and gives
+         no problems.
+       - An entry with no trigger is absent and named in the problems.
+       - on_schedule named in two entries gives one problem naming both.
+       - A file with only entry-points gives no "declares nothing usable".
+         A file with only domains gives none either.
+     Before the step, the first test finds no :ENTRY-POINTS key and the
+     fourth gets the "nothing usable" line. CON-0003: restore the
+     three-key test and see the fourth fail; revert. A domains.lisp test
+     reads both accessors from a fixture repository.
+
+     Green. Loom: no count moves (no frameworks.yaml). lfia: status loses
+     its "declares nothing usable" line. Run:
+       tools/loom.sh 'watch "~/github/lfia-accounting"' 'status @lfia-accounting'
+
+  4. THE FIREBASE ANALYZER AND THE .firebaserc ADMISSION (DES-0054 S4, R4).
+     src/analyzer/firebase-analyzer.lisp (new),
+     src/analyzer/frameworks.lisp, src/analyzer/loom-analyzer.asd,
+     src/analyzer/package.lisp, src/analyzer/test/firebase-analyzer.lisp
+     (new), src/workspace/workspace.lisp, src/workspace/test/workspace.lisp.
+
+     frameworks.lisp: READ-JSON-FILE's body splits. PARSE-JSON-TEXT takes
+     a string and returns a hash table or NIL, with the RULE-0004 handler
+     naming both ERROR and YAML.ERROR:YAML-ERROR. READ-JSON-FILE reads the
+     file and calls it.
+
+     firebase-analyzer.lisp goes after "frameworks" in the asd, since it
+     calls PARSE-JSON-TEXT. It specializes ANALYZER-HANDLES-P on
+     FILE-NAMESTRING: exactly "firebase.json" or ".firebaserc", in any
+     directory that VENDORED-PATH-P does not refuse. ANALYZE-FILE uses the
+     contents it is given and opens nothing. From firebase.json it writes
+     :CODEBASES on the :FILE: one plist per `functions` entry, array or
+     legacy single object, with :SOURCE, :CODEBASE, :RUNTIME, :IGNORE and
+     :DEFAULTED. An absent source is "functions" and an absent codebase is
+     "default", and both go into :DEFAULTED. An absent runtime stays
+     absent. From .firebaserc it writes :PROJECT-ALIASES as an alist. A
+     file that does not parse is a :FILE with :ANALYSIS-ERROR. hosting,
+     firestore, emulators and targets are not read.
+
+     workspace.lisp: *ADMITTED-DOT-FILES* is '(".firebaserc"). In
+     REPOSITORY-FILES, the dot-prefixed file test passes a name that is
+     EQUAL to a member. The dot-directory test is unchanged, so
+     .firebase/.firebaserc stays skipped.
+
+     Verification. In firebase-analyzer.lisp tests, on contents passed
+     with made-up paths:
+       - lfia's firebase.json gives one codebase: source functions,
+         codebase default, runtime python312, four ignores, :DEFAULTED NIL.
+       - `{"functions": {"source": "fn"}}` (legacy form) gives one
+         codebase, codebase "default", :DEFAULTED (:CODEBASE).
+       - `{"functions": [{}]}` gives source "functions", no :RUNTIME,
+         :DEFAULTED (:SOURCE :CODEBASE).
+       - A firebase.json with a `//` comment gives :ANALYSIS-ERROR.
+       - lfia's .firebaserc gives (("default" . "lfia-accounting")).
+       - node_modules/x/firebase.json is not claimed; package.json is not
+         claimed.
+       - A path that does not exist on disk is analyzed from its contents.
+     In workspace.lisp tests, on a scratch tree that is not a git
+     repository: .firebaserc, firebase.json, functions/.env and
+     functions/.secret.local. Assert .firebaserc and firebase.json are
+     indexed and neither dot-file of the two others is. Then risk 5's
+     assertions: freshness current, drift 0, UNINDEXED-FILES empty, and a
+     POLL-ONCE after editing .firebaserc changes :PROJECT-ALIASES.
+     Before the step, nothing claims either file and .firebaserc never
+     reaches an analyzer. CON-0003: empty *ADMITTED-DOT-FILES* and see the
+     .firebaserc assertions fail; revert.
+
+     Green. Loom: no count moves (no firebase.json, no .firebaserc).
+     lfia: files 63 to 65; unclaimed 17 to 15, with .json 4 to 3 and
+     (none) 2 to 1.
+
+  5. THE MATCHER, SETTINGS, RESOLVE-ONE AND THE SENTINEL (DES-0054 S5, R5,
+     R8's sentinel).
+     src/graph/resolve.lisp, src/graph/package.lisp,
+     src/graph/test/resolve.lisp, src/workspace/workspace.lisp,
+     src/workspace/test/workspace.lisp.
+
+     MATCH-REGISTRATION (new) takes a registration plist, the language of
+     the entity carrying it, and a list of declarations. It returns the
+     single matching declaration, or NIL and the list when two match.
+     Python: the specifier and path joined with "." equal module and name
+     joined with ".". JavaScript: the specifier equals the module, and the
+     path joined with "." equals the name. A relative specifier never
+     matches. A registration with no specifier never matches. Any other
+     language matches nothing. The same function matches a :VALUE-CALL
+     against setting-declarations.
+
+     RESOLVE-SETTINGS takes :SETTING-DECLARATIONS and :ENTRY-POINTS. It
+     keeps the :ENVIRONMENT-READS path. It adds:
+       - A declaration. A :VARIABLE whose :VALUE-CALL matches a
+         setting-declarations entry and carries :FIRST-STRING names that
+         setting. Its source (:SECRET or :PARAM) joins :SOURCES. The
+         variable gets a :READS edge to it.
+       - A registration argument. For each decorator on a :FUNCTION or
+         :METHOD that MATCH-REGISTRATION matches, and each :REGISTRATION
+         on a :VARIABLE, every name or dotted element in :ARGUMENTS and
+         :POSITIONAL is resolved by binding (risk 6). When it reaches a
+         declaring variable, the registered entity gets a :READS edge to
+         that setting, with the variable's file as origin (refinement 2).
+         A string literal in a list under a keyword the entry lists in
+         `settings:` names the setting directly, with the registered
+         entity's own file as origin.
+     Sources are collected per name first, and each setting is asserted
+     once (risk 4). The sweep is unchanged: a setting no input names is
+     retracted.
+
+     RESOLVE-ONE takes :VIEW (refinement 3). RESOLVE-DOCUMENT-LINKS and
+     DOCUMENT-REFERENCE-REPORT pass it.
+
+     RESOLVE-AND-CHECK passes REPOSITORY-SETTING-DECLARATIONS and
+     REPOSITORY-ENTRY-POINTS to RESOLVE-SETTINGS.
+
+     Verification. In resolve.lisp, on hand-built entities:
+       - MATCH-REGISTRATION: `from firebase_functions import scheduler_fn`
+         and `import firebase_functions.scheduler_fn as s` both match
+         firebase_functions.scheduler_fn.on_schedule. A :JAVASCRIPT
+         registration with specifier "firebase_functions" and path
+         ("scheduler_fn" "on_schedule") does not match that Python
+         declaration. A JavaScript `default.https.onRequest` from specifier
+         "firebase-functions" matches a declaration with that module and
+         name. A relative specifier and a bare local decorator named
+         on_schedule match nothing.
+       - main.py's ZEFFY_API_KEY = SecretParam("ZEFFY_API_KEY") and four
+         decorated functions with secrets=[ZEFFY_API_KEY] give one :SETTING
+         with :SOURCES (:SECRET) and five :READS edges.
+       - Adding config.py's os.environ.get("ZEFFY_API_KEY") gives one
+         setting with :SOURCES holding :ENVIRONMENT and :SECRET.
+       - Fan-out (risk 6): a.py and b.py each declare K = SecretParam(...)
+         with "A" and "B". A function in a.py with secrets=[K] reads A
+         only. A function in c.py with secrets=[K] and no K in c.py reads
+         nothing.
+       - secrets=["LITERAL"] under `settings: [secrets]` reads LITERAL;
+         region="LITERAL" does not.
+       - timeout_sec=T with T = IntParam("T") reads T, keyword-blind.
+       - A declaring variable with no :FIRST-STRING names nothing.
+       - Staleness (refinement 2): change b.py's declaration from "B" to
+         "B2" with a.py untouched. RETRACT-FILE b.py and re-resolve. The
+         importing function in a.py now reads B2 and not B, even though B
+         is also an environment read elsewhere. The answer equals a fresh
+         build's.
+       - RESOLVE-ONE (risk 8): {setting:ZEFFY_API_KEY, the declaring
+         variable, an environment-read variable of that name in config.py}
+         resolves to the setting with :VIEW. Adding a same-named variable
+         that reads nothing leaves it ambiguous. Every RESOLVE-ONE test
+         that passes today passes with and without :VIEW.
+       - A decision whose affects: names ZEFFY_API_KEY gets one :DECIDES
+         edge to the setting through RESOLVE-DOCUMENT-LINKS.
+     The sentinel test (R8), in workspace.lisp through the full pipeline,
+     on a scratch tree that is not a git repository:
+       functions/main.py      declares SecretParam("K") and
+                              StringParam("P", "SENTINEL-DEFAULT"), has a
+                              decorated function with secrets=[K], and a
+                              module docstring holding "CONTROL-7f3a"
+       functions/.env, functions/.env.local, functions/.env.default,
+       functions/.secret.local, functions/.runtimeconfig.json
+                              each hold K=SENTINEL-7f3a or the JSON
+                              equivalent
+       firebase.json, .firebaserc
+     It walks every property value of every entity, recursively through
+     lists, conses and strings. It asserts "CONTROL-7f3a" is found, so the
+     walk can see what it is looking at. It asserts "SENTINEL-7f3a" and
+     "SENTINEL-DEFAULT" are not found. It also asserts setting:K and
+     setting:P exist, so the test runs after settings are minted.
+     CON-0003 for the sentinel: add ".env" to *ADMITTED-DOT-FILES* and
+     register a throwaway analyzer claiming ".env" that writes its
+     contents as :DOCUMENTATION. See the test fail. Revert both.
+     Before the step, the setting tests fail: no setting comes from a
+     declaration. Green. Loom: `check` still 8 unresolved, 7 ambiguous.
+     lfia: `find @lfia-accounting ZEFFY_API_KEY` lists a :SETTING. Risk 4:
+     `log 20` on both shows no resolve-settings error.
+
+  6. RESOLVE-ENTRY-POINTS (DES-0054 S6, R6).
+     src/graph/resolve.lisp, src/graph/package.lisp,
+     src/graph/test/resolve.lisp, src/workspace/workspace.lisp,
+     src/workspace/test/workspace.lisp.
+
+     A new pass, RESOLVE-ENTRY-POINTS, takes :ENTRY-POINTS. It reads
+     :DECORATORS on :FUNCTION and :METHOD, :REGISTRATION on :VARIABLE,
+     and :CODEBASES on every :FILE. It returns operations. For every
+     entity carrying :DECORATORS or :REGISTRATION it writes :TRIGGER and
+     :ENTRY-POINT, as values or NIL, every pass:
+       - :TRIGGER is the trigger keyword when one registration matched,
+         :MULTIPLE when several did, NIL when none did.
+       - :ENTRY-POINT is one plist per matching registration: :FRAMEWORK,
+         :TRIGGER, :CALLEE (module.name), :OPTIONS ((label . value) ...,
+         with a positional argument labelled by `positional:` or by its
+         index), :LINE, and, when a codebase covers the file, :CODEBASE,
+         :RUNTIME and :DEPLOYED.
+     Coverage: firebase.json at directory P with source S covers paths
+     under P/S/. The longest prefix wins. Two at one length give no
+     codebase, and the tie goes into the plist as :CODEBASE-TIE with both
+     paths. An ignore glob is matched relative to S, with `*` and `?`
+     inside one segment and `**` across segments. A plain name such as
+     "tests" matches that segment at any depth below S, as Firebase reads
+     it. Any other glob syntax is listed on the codebase as uninterpreted
+     and excludes nothing.
+     :DEPLOYED for :LANGUAGE :PYTHON: :YES, :NO or :UNKNOWN by D6, with
+     refinement 4. Every other language gives :UNKNOWN.
+     A :DEPENDS-ON edge goes from each :YES entity to the firebase.json
+     :FILE, with <source>/main.py as origin (refinement 2).
+     RESOLVE-AND-CHECK submits it after resolve-settings and before
+     resolve-document-links. Its docstring's sequence gains the name.
+
+     Verification. In resolve.lisp, on hand-built entities:
+       - lfia's shape: eight decorated functions in functions/main.py give
+         :TRIGGER :SCHEDULE twice and :HTTPS six times, each :DEPLOYED
+         :YES under codebase default with runtime python312, and eight
+         :DEPENDS-ON edges.
+       - A function with two matching decorators gives :MULTIPLE and two
+         plists.
+       - A registered function in functions/handlers.py that main.py does
+         not bind gives :NO. Bound by `from handlers import f` gives :YES.
+         `from handlers import *` with handlers.py indexed gives :YES.
+         A star import of a module that does not resolve gives :UNKNOWN.
+         `import handlers` gives :NO. A re-export through
+         functions/pkg/__init__.py gives :YES. A main.py carrying a
+         "python syntax error" suppressed region gives :UNKNOWN.
+       - functions/tests/test_x.py is not covered (ignore "tests").
+       - Two firebase.json files covering one path at one length give no
+         codebase and a :CODEBASE-TIE.
+       - An ignore entry "{a,b}" is listed as uninterpreted and excludes
+         nothing.
+       - A registration matching no declaration: :TRIGGER NIL.
+       - A function with no firebase.json still gets :TRIGGER and
+         :ENTRY-POINT (the Flask case).
+       - Clearing: run the pass with the declarations, then with none.
+         Every :TRIGGER is NIL and no file was retracted.
+       - IMPACT-SET on the firebase.json :FILE reaches the eight
+         functions and not _sync, which they call.
+     Staleness (refinement 2), in workspace.lisp through POLL-ONCE: delete
+     main.py's `from handlers import f` and poll. f's :DEPENDS-ON edge is
+     gone and :DEPLOYED is :NO, and the index equals a full reindex.
+     Before the step, the property does not exist. CON-0003: make the
+     pass skip entities with no match instead of writing NIL, and see the
+     clearing test fail; drop refinement 4 and see the damaged-main.py
+     test fail. Revert both. Risk 9: confirm no mutator was added.
+     Green. Loom: no count moves (no :DECORATORS matches anything). lfia:
+     `impact @lfia-accounting firebase.json 3` reaches the eight
+     functions.
+
+  7. THE READER'S SURFACES (DES-0054 S7, R9).
+     src/knowledge/services.lisp, src/knowledge/structure.lisp,
+     src/knowledge/test/services.lisp, src/knowledge/test/structure.lisp,
+     src/process/console.lisp, src/process/test/console.lisp,
+     src/serve/operations.lisp, src/serve/test/operations.lisp,
+     src/mcp/test/tools.lisp, src/workspace/workspace.lisp.
+
+     As D8:
+       - DESCRIBE-ENTITY returns :ENTRY-POINT. The console prints one line
+         under the signature per plist: framework, trigger, options as
+         label=value, codebase and runtime, and the deployed state. A
+         dotted value prints as its text.
+       - IMPACT-REPORT rows carry :TRIGGER. The console suffixes `[entry:
+         schedule]`.
+       - ENTRY-POINT-REPORT leaves out every entity whose :TRIGGER is
+         non-NIL. STRUCTURE-REPORT gains an "entry points by trigger"
+         band, grouped by trigger, each row with :DEPLOYED.
+       - find: `find [<name>] --trigger <kind>` adds (:TRIGGER <keyword>)
+         to the property filters, beside the domain filter, on the named
+         and federated forms (refinement 6). The :find operation gains an
+         optional `trigger` and accepts term "" when it is given (risk
+         11).
+       - status: a `deploys` line naming each codebase with source,
+         runtime and entry-point count, the project aliases, and the count
+         of declaring variables with no first string (refinement 5). When a
+         firebase.json declares codebases and frameworks.yaml has no
+         entry-points, the line says so and names `init`. The serve
+         :status operation gains :DEPLOYS if it builds its plist key by
+         key, as PLAN-0056 found :check does.
+
+     Verification:
+       - structure.lisp: a graph with two uncalled functions, one carrying
+         :TRIGGER :HTTPS, lists one in the no-caller band and one in the
+         trigger band. Before the step both are in the no-caller band.
+       - services.lisp: describe returns :ENTRY-POINT; an impact row of a
+         triggered entity carries :TRIGGER.
+       - console.lisp: `find --trigger schedule` lists the two scheduled
+         functions and nothing else. `find --trigger nosuch` lists nothing
+         and interns no keyword (check with FIND-SYMBOL before and after).
+         status prints the deploys line, and the "no entry-points" variant
+         on a tree with firebase.json and no declaration.
+       - operations.lisp and tools.lisp: find with trigger over the serve
+         operation and over MCP returns the same rows. The MCP find tool's
+         `required` vector is unchanged.
+     CON-0003: remove the :TRIGGER exclusion from ENTRY-POINT-REPORT and
+     see the structure test fail; revert. Green. load-test prints T
+     (risk 10). Counts that move on purpose:
+       Loom     structure's no-caller count unchanged; no deploys line.
+       lfia     no-caller falls by exactly the number of entities carrying
+                :TRIGGER, 8 at 8044c09 (33 to 25). The trigger band lists 2
+                schedule and 6 https, all deployed.
+
+  8. INIT'S PROPOSAL AND THE PYTHON TEMPLATE (DES-0054 S8, R10, Python
+     half).
+     src/workspace/templates/firebase-functions-python.yaml (new),
+     src/analyzer/frameworks.lisp, src/workspace/init.lisp,
+     src/workspace/test/init.lisp, src/workspace/test/domains.lisp.
+
+     The template holds entry-points for every public `on_*` registration
+     in firebase_functions 0.6.0's *_fn modules (https_fn, scheduler_fn,
+     firestore_fn, pubsub_fn, storage_fn, identity_fn, tasks_fn and any
+     other *_fn the installed SDK has), read from lfia's functions/venv
+     (risk 12). It holds setting-declarations for SecretParam (secret) and
+     for every other *Param class the installed firebase_functions.params
+     defines (param): StringParam, IntParam, BoolParam and ListParam on
+     lfia's copy, plus any others found there. Each entry-points entry lists `settings:
+     [secrets]`. Its header comment says it is a proposal to copy and
+     names firebase_functions 0.6.0.
+
+     PROPOSE-DOMAINS gains a signal: a firebase.json at the root whose
+     codebase is Python proposes a domain at the codebase's source
+     directory, with :FROM "firebase.json". PLAN-PREPARATION proposes the
+     template for each codebase whose runtime begins "python", or, when
+     runtime is absent, whose source directory holds main.py. A codebase
+     whose runtime begins "nodejs", or whose source holds package.json, is
+     named with "no template until the JavaScript plan". PREPARE-REPOSITORY
+     returns the proposals for an already-prepared tree as well as the
+     manifest. Neither writes the template into the repository.
+
+     Verification. init.lisp tests, on scratch trees:
+       - firebase.json with runtime python312 proposes the Python template
+         and a domain at functions/.
+       - No runtime and functions/main.py: the same.
+       - runtime nodejs20: no template, and the note.
+       - An already-prepared tree (manifest present) gets the proposals.
+       - frameworks.yaml is not created or changed in any case (compare
+         bytes before and after).
+       - The template parses through PARSE-FRAMEWORKS with no problems.
+     Before the step, a prepared tree returns only its manifest.
+     CON-0003: return early on a prepared tree, as today, and see the
+     fourth test fail; revert.
+     lfia, read only: a scratch script loads loom-workspace and calls
+     PLAN-PREPARATION on ~/github/lfia-accounting. It shows the Python
+     template and a functions domain. `git -C ~/github/lfia-accounting
+     status --short` prints the same two lines before and after (risk 13).
+     Green. Loom: unclaimed rises by one, for the new .yaml under
+     src/workspace/templates/, if the existing workflow-concept.yaml is
+     counted there today. Record the figure.
+
+  9. R11 AND ACCEPTANCE ON lfia AND LOOM (DES-0054 S9, R11, R13 minus
+     front-end).
+     src/graph/test/resolve.lisp or src/workspace/test/workspace.lisp for
+     R11's tests. No other source change unless a defect is found. A defect
+     found here is fixed in its own commit, with a test that fails without
+     the fix, before this step is called done.
+
+     R11's three tests, through the pipeline on a scratch Python tree:
+       - a plan's `affects: [sync_zeffy]` becomes a :DOCUMENTS edge
+       - renaming sync_zeffy and polling makes the reference unresolved
+         in `check`
+       - `affects: [read_tab]`, with read_tab in main.py and sheets.py, is
+         ambiguous with both ids, and
+         `function:functions/main.py:read_tab` resolves to main.py's.
+     These describe behaviour that already holds (DES-0054 PROBLEM), so
+     they pass before this step. They are regression tests, not this
+     step's evidence. CON-0003 still applies: make RESOLVE-ONE return the
+     first candidate and see the third test fail; revert.
+
+     lfia. Take a fresh baseline first, then run one quoted argument:
+
+       tools/loom.sh 'watch "~/github/lfia-accounting" | find @lfia-accounting --trigger schedule | describe @lfia-accounting sync_zeffy | impact @lfia-accounting ZEFFY_API_KEY 3 | impact @lfia-accounting firebase.json 3 | impact @lfia-accounting Rules.find 5 | structure @lfia-accounting | status @lfia-accounting | check @lfia-accounting'
+
+     Expected, from R13:
+       - find --trigger schedule: sync_zeffy and sync_zeffy_ledger.
+       - describe sync_zeffy: entry point firebase-functions schedule,
+         schedule="every 1 hours", the timeout and memory as written,
+         codebase default (python312), deployed; `-> reads:
+         ZEFFY_API_KEY`.
+       - impact ZEFFY_API_KEY: the four functions whose decorators bind it
+         and the declaring variable.
+       - impact firebase.json: the eight deployed functions.
+       - impact Rules.find: PLAN-0056 step 11's chain, with `[entry: ...]`
+         on the last rows.
+       - structure: no-caller down by 8 from the fresh baseline; the
+         trigger band shows 2 schedule and 6 https.
+       - status: a deploys line with codebase default and project
+         lfia-accounting; firebase.json and .firebaserc absent from
+         unclaimed.
+       - check: no new violation; unresolved does not rise.
+     R13's `unrooted 0` needs a functions domain in lfia's frameworks.yaml.
+     The file has no domains: key. This plan does not edit it. Step 8 shows
+     the proposal. The caller asks the user whether to add
+     `domains: [{name: functions, root: functions/}]`. If the user adds it,
+     re-run status and expect unrooted 0. If not, record "unrooted 34,
+     domain not declared" in NOTES and in DES-0054's OUTSTANDING.
+
+     Loom's tree, the second tree:
+
+       tools/loom.sh 'status | check | structure | find --trigger schedule | describe ensure'
+
+     Expected: status, check and structure's no-caller count equal step
+     8's figures. No deploys line, since Loom has no firebase.json. find
+     --trigger answers nothing. tools/py/extract.py's @staticmethod and
+     the tools/ settings (LOOM_CONTEXT_LOG_DIR, the acceptance.py log
+     directory) are unchanged. tools/loom-test.sh, check and load-test are
+     green.
+
+     If ~/github/front-end is watched, one check of D4's second shape:
+     firebase.json gives one codebase with no runtime, and :DEFAULTED
+     lists whichever of source and codebase the file omits. Its api
+     variable has no trigger until the JavaScript plan.
+
+     Record every figure and any departure in a NOTES section of this
+     plan.
+
+  10. COMPLETE.
+      docs/plans/PLAN-0057.yaml, docs/design/DES-0054.yaml,
+      docs/requirements/REQ-0078.yaml.
+
+      Before running `complete`, edit two OUTSTANDING sections by hand:
+
+      DES-0054 gains OUTSTANDING:
+        R12, and R10's JavaScript half (the template and init's nodejs
+        proposal): the JavaScript plan.
+        R13's front-end clause: the JavaScript plan.
+        R13's `unrooted 0` on lfia, if the domain was not declared in
+        step 9.
+
+      REQ-0078's OUTSTANDING is rewritten for what remains. R7 to R9 and
+      R11 leave it for Python trees. It keeps:
+        R7 to R9 for a JavaScript functions tree: DES-0054 S10, in the
+                 JavaScript plan.
+        R10      dependency names. DES-0054 deferred it: the Python
+                 distribution-to-module map lives only in the untracked
+                 venv. DES-0054 DEFERRED names a :MODULE shape as the start.
+        R1, R2   module entities and the shape of each call site
+                 (REQ-0041), declined by DES-0053.
+        R4       Python tests in files whose names contain a hyphen are
+                 not recognised (tools/test/test-*.py).
+
+      Then the dry run, and `git status` to confirm it wrote nothing (risk
+      14):
+
+        tools/loom.sh 'complete PLAN-0057'
+
+      Expected verdict: DES-0054=partial. R1 to R11 are true after step 9,
+      but R12 and R13's front-end clause are not, because S10 is in
+      another plan. A partial stops the climb, so `complete` does not ask
+      for REQ-0078 or DES-0053. REQ-0078 is already partial, and its
+      OUTSTANDING edit above is the only change it needs.
+
+        tools/loom.sh 'complete PLAN-0057 DES-0054=partial'
+
+      If the JavaScript plan already exists as a draft refining DES-0054,
+      `complete` refuses DES-0054 and names that plan. Then run
+      `tools/loom.sh 'set-status PLAN-0057 final'` alone. DES-0054 stays
+      draft, with its OUTSTANDING section, until the JavaScript plan's own
+      `complete` marks it implemented.
+
+      Then `status`: the document count is unchanged and unresolved is
+      still 8. Do not commit. The branch is the caller's to commit, push
+      and merge.
+
+  THE SECOND PLAN (JavaScript, DES-0054 S10)
+
+  It refines DES-0054 and implements R12, the JavaScript half of R10, and
+  R13's front-end clause. From this plan it needs:
+    - Step 1: :REGISTRATION and :VALUE-CALL on :VARIABLE,
+      :UNNAMED-REGISTRATIONS on :FILE, :TRIGGER and :ENTRY-POINT on
+      :VARIABLE, :DEPENDS-ON from :VARIABLE.
+    - Step 2: DECODE-ARGUMENT-VALUE in analyzer.lisp, the JSON kinds
+      extract.js must emit (literal, none, true, false, name, dotted,
+      list, expression), and the :VALUE-CALL plist shape.
+    - Step 5: MATCH-REGISTRATION's JavaScript branch, already tested on
+      hand-built :JAVASCRIPT entities, and RESOLVE-SETTINGS reading
+      :REGISTRATION and :VALUE-CALL on any :VARIABLE.
+    - Step 6: RESOLVE-ENTRY-POINTS reading :REGISTRATION and giving
+      :DEPLOYED :UNKNOWN for JavaScript.
+    - Step 7: describe, impact and structure rendering a :VARIABLE entry
+      point.
+    - Step 8: init's language choice, whose nodejs branch that plan
+      replaces with the JavaScript template.
+  It owns: extract.js and js-analyzer.lisp writing :REGISTRATION,
+  :VALUE-CALL and :UNNAMED-REGISTRATIONS (D9);
+  src/workspace/templates/firebase-functions-js.yaml with both spellings
+  of each callee; the front-end acceptance; and the JavaScript test files
+  this plan does not touch. Nothing in this plan edits extract.js or
+  js-analyzer.lisp.
+
+  VERIFICATION
+
+  The whole change is checked by:
+    - tools/loom-test.sh green on twelve systems, with
+      src/analyzer/test/firebase-analyzer.lisp and the new tests in
+      ontology, analyzer, graph, workspace, knowledge, process, serve and
+      mcp, and zero Python skips
+    - `check` on Loom: 0 violations, 8 unresolved, 7 ambiguous
+    - `sbcl --script tools/test/load-test.lisp loom-serve` prints T
+    - step 9's lfia list, with no-caller down by the number of triggered
+      entities and two files leaving unclaimed
+    - the sentinel test in step 5 passing, with its positive control found
+    - Loom's status, check and structure unchanged by steps 1 to 7 except
+      where a step names the count
