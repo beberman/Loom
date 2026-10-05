@@ -1918,3 +1918,62 @@ which is not a failure and must not read as one")
     (is (search "note: here" (getf parsed :text))
         "the tail survives: ~s" (getf parsed :text)))
   (is (null (loom-workspace::parse-grep-line "not a grep line"))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 D4 and risk 5: .firebaserc is the one dot-file the walk admits
+;;; ------------------------------------------------------------------
+
+(defun file-paths-in-index (repository)
+  (sort (mapcar (lambda (e) (getp e :path))
+                (entities-of-type (repository-graph repository) :file))
+        #'string<))
+
+(test the-firebase-configs-are-indexed-and-the-files-holding-a-value-are-not
+  ;; Firebase keeps a secret's value in .env, .env.local, .env.<project>,
+  ;; .secret.local and .runtimeconfig.json. The walk skips every dot-prefixed
+  ;; file, and *ADMITTED-DOT-FILES* names .firebaserc and nothing else, so none of
+  ;; these reaches an analyzer (DES-0054 D7).
+  (with-workspace-fixture (repository)
+    (write-file "firebase.json" "{\"functions\": [{\"source\": \"functions\"}]}")
+    (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
+    (write-file "functions/.env" "K=1")
+    (write-file "functions/.secret.local" "K=1")
+    (write-file ".firebase/.firebaserc" "{\"projects\": {\"default\": \"cache\"}}")
+    (reindex-repository repository :quiet t)
+    (let ((paths (file-paths-in-index repository)))
+      (is (member "firebase.json" paths :test #'equal))
+      (is (member ".firebaserc" paths :test #'equal))
+      (is (not (member "functions/.env" paths :test #'equal)))
+      (is (not (member "functions/.secret.local" paths :test #'equal)))
+      (is (not (member ".firebase/.firebaserc" paths :test #'equal))
+          "the dot-directory test is unchanged"))))
+
+(test an-admitted-dot-file-is-not-reported-unindexed-or-drifted
+  ;; Risk 5. The stamps and UNINDEXED-FILES read the same walk as the index, so
+  ;; a name the walk admitted must read as current after a pass and not as a
+  ;; file the index never read.
+  (with-workspace-fixture (repository)
+    (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
+    (reindex-repository repository :quiet t)
+    (is (eql 0 (index-drift repository)))
+    (is (eql 0 (unindexed-files repository)))))
+
+(test editing-firebaserc-is-seen-by-the-monitor
+  (with-workspace-fixture (repository)
+    (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
+    (reindex-repository repository :quiet t)
+    (flet ((aliases ()
+             (getp (find ".firebaserc" (entities-of-type (repository-graph repository) :file)
+                         :key (lambda (e) (getp e :path)) :test #'equal)
+                   :project-aliases)))
+      (is (equal '(("default" . "demo")) (aliases)))
+      (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\", \"staging\": \"stg\"}}")
+      (is (= 1 (poll-once repository :quiet t)))
+      (is (equal '(("default" . "demo") ("staging" . "stg")) (aliases))))))
+
+(test a-firebase-json-with-a-comment-is-counted-unparsed
+  (with-workspace-fixture (repository)
+    (write-file "firebase.json" "{ // a comment
+  \"functions\": [{}] }")
+    (reindex-repository repository :quiet t)
+    (is (eql 1 (getf (repository-status repository) :unparsed)))))

@@ -457,21 +457,32 @@ file."
                         (error () nil))))
         (when contents (parse-frameworks contents))))))
 
-(defun read-json-file (path)
-  "PATH as a parsed JSON object, or NIL.
+(defun parse-json-text (text)
+  "TEXT as a parsed JSON object, or NIL.
 
-cl-yaml reads strict JSON, which is what jsconfig.json and package.json are
-when they parse at all. A file carrying comments -- JSONC, which some editors
-write -- does not parse here, and NIL is the honest answer: a partial read of a
-configuration file is worse than none, because the half that parsed looks like
-the whole."
+cl-yaml reads strict JSON, which is what jsconfig.json, package.json and
+firebase.json are when they parse at all. A file carrying comments -- JSONC,
+which some editors write -- does not parse here, and NIL is the honest answer: a
+partial read of a configuration file is worse than none, because the half that
+parsed looks like the whole. Takes contents rather than a path so the firebase
+analyzer, which is handed contents and opens nothing, can call it (DES-0054 D4).
+
+Names both ERROR and YAML.ERROR:YAML-ERROR: cl-yaml's conditions are direct
+subtypes of CONDITION, which is RULE-0004."
+  (handler-case
+      (let ((parsed (yaml:parse text)))
+        (and (hash-table-p parsed) parsed))
+    ((or error yaml.error:yaml-error) () nil)))
+
+(defun read-json-file (path)
+  "PATH as a parsed JSON object, or NIL. PARSE-JSON-TEXT's rules apply."
   (when (probe-file path)
-    (handler-case
-        (let ((parsed (yaml:parse (with-open-file (in path :external-format :utf-8)
-                                    (let ((text (make-string (file-length in))))
-                                      (subseq text 0 (read-sequence text in)))))))
-          (and (hash-table-p parsed) parsed))
-      ((or error yaml.error:yaml-error) () nil))))
+    (let ((text (handler-case
+                    (with-open-file (in path :external-format :utf-8)
+                      (let ((text (make-string (file-length in))))
+                        (subseq text 0 (read-sequence text in))))
+                  (error () nil))))
+      (and text (parse-json-text text)))))
 
 (defun preset-for-module-resolution (name)
   "The resolution preset a tsconfig `moduleResolution' names, or :BUNDLER."

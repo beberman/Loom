@@ -641,13 +641,23 @@ text. The documents' half of `unindexed', as COUNT-UNSTAMPED is the code's."
     (loop for address being the hash-keys of (repository-document-failures repository)
           count (not (gethash address documents)))))
 
+(defparameter *admitted-dot-files* '(".firebaserc")
+  "Dot-prefixed file names REPOSITORY-FILES walks anyway. DES-0054 D4.
+
+Admission is by exact name and never by pattern, so no rule such as `.firebase*'
+could also let in a file that holds a value: Firebase keeps a secret's or a
+param's value in .env, .env.<project>, .env.local, .secret.local and
+.runtimeconfig.json, and none of those is here (D7). The directory test is
+unchanged, so .firebase/.firebaserc stays skipped.")
+
 (defun repository-files (repository)
   "Every code file under the repository root that some analyzer claims.
 
 Skips .git and any dot-directory: nothing in them is source, and .git in
 particular churns constantly.
 
-Skips dot-prefixed files for the same reason and one more. A name beginning
+Skips dot-prefixed files, except those named in *ADMITTED-DOT-FILES*, for the
+same reason and one more. A name beginning
 with a dot is an editor's or a tool's bookkeeping rather than source, and some
 of it is not even a file: Emacs writes .#foo.yaml as a dangling symlink while a
 buffer is open, which keeps the extension of the thing it locks, so an analyzer
@@ -677,7 +687,9 @@ shares with the file store."
          (claimed (remove-if-not
                    (lambda (path)
                      (and (pathname-name path)
-                          (not (dot-prefixed-p (file-namestring path)))
+                          (let ((name (file-namestring path)))
+                            (or (not (dot-prefixed-p name))
+                                (member name *admitted-dot-files* :test #'equal)))
                           (notany #'dot-prefixed-p (rest (pathname-directory path)))
                           (analyzable-p path)
                           (not (store-document-p path))
