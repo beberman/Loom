@@ -425,6 +425,34 @@ exclusion and DETECT-DELETIONS' skip -- so the store and the walk can neither
 both take a document nor both leave it. DES-0051 D5."
   (typep (find-analyzer path) 'document-analyzer))
 
+(defun venv-prefixes (root)
+  "The directories under ROOT that hold a pyvenv.cfg, as relative prefixes
+ending in a slash. DES-0053 D11.
+
+`python -m venv' and virtualenv write that file into every environment they
+create, so a venv named env/ or .python/ is recognised by what it is and not by
+what it is called, and without asking git. lfia's venv is excluded today only
+because functions/.gitignore names it, and BUG-0024 measured what happens on a
+branch where that file is absent. Read from the shared listing, so a pass pays
+for no second walk.
+
+A pyvenv.cfg at the root itself is not a prefix. `python -m venv .' puts one
+there beside the project's own source, and excluding \"\" would exclude the
+whole repository."
+  (loop for path in (tree-listing root)
+        for name = (file-namestring path)
+        when (equal name "pyvenv.cfg")
+          append (let* ((relative (workspace-relative-path path root))
+                        (slash (position #\/ relative :from-end t)))
+                   (and slash (list (subseq relative 0 (1+ slash)))))))
+
+(defun under-venv-p (relative prefixes)
+  "True when the relative path RELATIVE lies under one of PREFIXES."
+  (some (lambda (prefix)
+          (and (<= (length prefix) (length relative))
+               (string= prefix relative :end2 (length prefix))))
+        prefixes))
+
 (defvar *tree-listing* nil
   "Inside WITH-TREE-LISTING, (root-namestring . listing), the listing :UNREAD
 until something walks. NIL outside one.")
@@ -505,6 +533,15 @@ recorded it in the manifest, and every store's addresses reflect it."
                     (multiple-value-bind (ignored reason) (ignored-paths root paths)
                       (when reason
                         (setf (repository-ignore-reason repository) reason))
+                      ;; A document under a virtual environment is excluded here
+                      ;; as REPOSITORY-FILES excludes code: the store enumerates
+                      ;; the same tree, so a README.md inside an un-ignored venv
+                      ;; would otherwise be indexed (DES-0053 D11).
+                      (let ((prefixes (venv-prefixes root)))
+                        (when prefixes
+                          (dolist (path paths)
+                            (when (under-venv-p path prefixes)
+                              (setf (gethash path ignored) t)))))
                       ignored))
           :listing (lambda () (tree-listing root))
           ;; Read on every call rather than captured, so a store built before
@@ -613,17 +650,24 @@ A tree git cannot answer for -- not a repository, no git, a timeout -- is
 indexed whole, and the reason is recorded on the repository for `status' to
 report. That is a gap a reader can see rather than a silent clean.
 
+Skips every path under a virtual environment, which VENV-PREFIXES recognises by
+its pyvenv.cfg and not by a name or by git (DES-0053 D11).
+
 A document is not here. The document store holds it, and INDEX-DOCUMENT indexes
 what the store hands over (DES-0051). The walk is TREE-LISTING's, which a pass
 shares with the file store."
   (let* ((root (repository-root repository))
+         (venvs (venv-prefixes root))
          (claimed (remove-if-not
                    (lambda (path)
                      (and (pathname-name path)
                           (not (dot-prefixed-p (file-namestring path)))
                           (notany #'dot-prefixed-p (rest (pathname-directory path)))
                           (analyzable-p path)
-                          (not (store-document-p path))))
+                          (not (store-document-p path))
+                          (not (and venvs
+                                    (under-venv-p (workspace-relative-path path root)
+                                                  venvs)))))
                    (tree-listing root))))
     (multiple-value-bind (ignored reason)
         (ignored-paths root (mapcar (lambda (p) (workspace-relative-path p root))

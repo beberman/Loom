@@ -1609,6 +1609,51 @@ comparing against nothing and its silence would mean nothing")
 
 
 ;;; ------------------------------------------------------------------
+;;; A virtual environment is excluded by what it is (DES-0053 D11)
+;;; ------------------------------------------------------------------
+
+(test a-virtual-environment-is-excluded-by-its-pyvenv-cfg-and-not-by-git-or-name
+  ;; The fixture is not a git repository, so no .gitignore applies, and the
+  ;; directory is named env/, which no list of names knows. Only the pyvenv.cfg
+  ;; says what it is. The README and the YAML under docs/ are there for the
+  ;; second walk: the document store enumerates the same tree, and a rule that
+  ;; only REPOSITORY-FILES applied would still index the YAML.
+  (with-workspace-fixture (repository)
+    (write-file "env/pyvenv.cfg" "home = /usr/bin
+")
+    (write-file "env/lib/x.lisp" "(defun venv-function () 1)
+")
+    (write-file "env/lib/README.md" "# vendored
+")
+    (write-file "env/lib/docs/notes.yaml" "id: DEC-9999
+type: decision
+title: Inside a venv
+status: accepted
+")
+    (reindex-repository repository :quiet t)
+    (let* ((g (repository-graph repository))
+           (files (mapcar #'name (entities-of-type g :file)))
+           (documents (mapcar #'name (entities-of-type g :document))))
+      (is (member "src/alpha.lisp" files :test #'string=)
+          "the tree's own source is indexed: ~a" files)
+      (is (notany (lambda (path) (eql 0 (search "env/" path))) files)
+          "nothing under the venv is a file: ~a" files)
+      (is (notany (lambda (path) (search "env/" path)) documents)
+          "and no document under it is either: ~a" documents)
+      (is (null (find "venv-function" (entities-of-type g :function)
+                      :key #'name :test #'string=))))))
+
+(test a-pyvenv-cfg-at-the-root-does-not-exclude-the-repository
+  ;; `python -m venv .' writes one beside the project's own source. Excluding
+  ;; the empty prefix would index nothing at all.
+  (with-workspace-fixture (repository)
+    (write-file "pyvenv.cfg" "home = /usr/bin
+")
+    (reindex-repository repository :quiet t)
+    (let ((files (mapcar #'name (entities-of-type (repository-graph repository) :file))))
+      (is (member "src/alpha.lisp" files :test #'string=)))))
+
+;;; ------------------------------------------------------------------
 ;;; What the tree holds that no analyzer claims (REQ-0059)
 ;;; ------------------------------------------------------------------
 ;;;
