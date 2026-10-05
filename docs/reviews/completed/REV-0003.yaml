@@ -1,6 +1,6 @@
 id: REV-0003
 title: Review of req-0078 (PLAN-0056, the Python analyzer) -- two fabricated-fact bugs, eight lesser findings, and the loom-serve flake reproduced on main
-status: open
+status: closed
 date: 2026-10-05
 refines: [PLAN-0056]
 affects: [call-targets, python-caller-candidates, walk-attribute-path, landing,
