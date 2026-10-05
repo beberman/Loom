@@ -91,7 +91,7 @@
     :created :skipped :candidates :deleted :kept
     ;; PLAN-0050 S14. Empty is the ordinary answer for a repository with no
     ;; JavaScript config, and it is an answer rather than an absence.
-    :domain-proposals :domain-notes
+    :domain-proposals :domain-notes :template-proposals
     ;; BUG-0030 F1's drops, which are empty on a healthy tree and are the one
     ;; list here whose ordinary value is the empty one. Follows :VIOLATIONS
     ;; exactly: `check' returns the list under this key and `status' returns

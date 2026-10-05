@@ -537,6 +537,8 @@ would be a fabricated fact in a file the author is about to confirm."
        paths))
     (cons (nreverse aliases) (nreverse problems))))
 
+(declaim (ftype function firebase-codebase-languages firebase-source-directory))
+
 (defun propose-domains (root)
   "Domains ROOT's own configuration suggests, and what could not be read.
 
@@ -549,13 +551,16 @@ stated in a runtime hook rather than in any config a parser can read. The
 author supplies it. This exists to make the other thirty-two entries something
 nobody types.
 
-Two signals.
+Three signals.
 
 A jsconfig.json or tsconfig.json proposes one domain per `include' root, with
 the preset its `moduleResolution' names and the aliases its `paths' translate
 to. A nested package.json declaring no `type' proposes commonjs at its own
 directory, which is Node's own default and the reason front-end's functions/
-resolves differently from the rest of the tree."
+resolves differently from the rest of the tree.
+
+A firebase.json at the root with a Python codebase proposes that codebase's source
+directory, from \"firebase.json\" (DES-0054 R10)."
   (let ((proposals '()) (problems '()))
     (dolist (config '("jsconfig.json" "tsconfig.json"))
       (let ((parsed (read-json-file (merge-pathnames config (pathname root)))))
@@ -591,6 +596,22 @@ resolves differently from the rest of the tree."
                         :resolution :commonjs
                         :aliases '()
                         :from "package.json")
+                  proposals)))))
+    ;; DES-0054 R10. A firebase.json whose codebase is Python deploys its source
+    ;; directory as the import root: main.py says `import config', not `import
+    ;; functions.config'. Proposed and not applied -- firebase.json lists tests/
+    ;; under `ignore', so the file argues against the root for the very files
+    ;; that need it, and pytest.ini is what makes it true there.
+    (dolist (codebase (firebase-codebase-languages root))
+      (when (eq :python (getf codebase :language))
+        (let ((directory (firebase-source-directory (getf codebase :source))))
+          (when (plusp (length directory))
+            (push (list :name (intern (string-upcase (string-right-trim "/" directory))
+                                      :keyword)
+                        :root directory
+                        :resolution :bundler
+                        :aliases '()
+                        :from "firebase.json")
                   proposals)))))
     (values (nreverse proposals) (nreverse problems))))
 

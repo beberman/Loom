@@ -1112,3 +1112,22 @@ body: |
   FILTER lives in loom-workspace beside DOMAIN-PROPERTY-FILTER, for its reason.
   load-test prints `LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T', where T
   is the value of its `clean' variable.
+
+  Step 8 (init). The template lists every public `on_*' registration in the
+  *_fn modules of firebase_functions 0.6.0, read from lfia's venv with
+  python3 -I -B and ast, plus identity_fn's before_user_created and
+  before_user_signed_in, since that module has no `on_*' function. The trigger
+  is one name per module (https, schedule, firestore, database, pubsub, storage,
+  identity, tasks, eventarc, remote-config, test-lab, dataconnect), and the five
+  alerts modules share `alerts'. The language of a codebase is decided by
+  FIREBASE-CODEBASE-LANGUAGE in firebase-analyzer.lisp, read from disk, which
+  PROPOSE-DOMAINS and TEMPLATE-PROPOSALS share; a codebase with no runtime and
+  neither main.py nor package.json is reported as `language not recognised'
+  rather than guessed. A Python domain proposal carries :RESOLUTION :BUNDLER, the
+  default, because the field is a JavaScript preset and the report requires one.
+  An already-prepared tree now reruns PROPOSE-DOMAINS and TEMPLATE-PROPOSALS and
+  returns them with its manifest. lfia, read only through PLAN-PREPARATION from a
+  scratch script: the Python template and a :FUNCTIONS domain at functions/;
+  `git status --short' on lfia was byte-identical before and after. The plan's
+  expected Loom figure, unclaimed +1 for the new .yaml, appears once the file is
+  tracked, since the count comes from `git ls-files'.

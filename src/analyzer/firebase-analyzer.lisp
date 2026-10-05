@@ -61,6 +61,47 @@ else, an entry that is not an object included, declares no codebase."
         when (hash-table-p entry)
           collect (firebase-codebase entry)))
 
+(defun firebase-source-directory (source)
+  "SOURCE, a codebase's `source', as a directory prefix with a trailing slash, or
+\"\" for the project root. A leading `./' and a trailing slash are dropped."
+  (format nil "~{~a/~}"
+          (remove-if (lambda (segment) (member segment '("" ".") :test #'string=))
+                     (loop for start = 0 then (1+ end)
+                           for end = (position #\/ source :start start)
+                           collect (subseq source start end)
+                           while end))))
+
+(defun firebase-codebase-language (codebase root)
+  "The language of CODEBASE, a codebase plist, as :PYTHON, :NODEJS or NIL.
+
+By `runtime' when it is written: python312 is Python and nodejs20 is Node. When
+it is absent, as front-end's is, by what the source directory under ROOT holds:
+main.py or package.json. Neither is NIL, which says nothing about a language Loom
+could not name rather than guessing one (CON-0001). DES-0054 R10."
+  (let ((runtime (getf codebase :runtime))
+        (source (firebase-source-directory (getf codebase :source))))
+    (flet ((holds (name)
+             (probe-file (merge-pathnames (concatenate 'string source name) (pathname root))))
+           (runtime-is (prefix)
+             (and runtime (>= (length runtime) (length prefix))
+                  (string-equal prefix runtime :end2 (length prefix)))))
+      (cond ((runtime-is "python") :python)
+            ((runtime-is "nodejs") :nodejs)
+            (runtime nil)
+            ((holds "main.py") :python)
+            ((holds "package.json") :nodejs)))))
+
+(defun firebase-codebase-languages (root)
+  "ROOT's own firebase.json codebases, each with its :LANGUAGE, as plists with
+:SOURCE, :CODEBASE, :RUNTIME and :LANGUAGE. NIL when there is no firebase.json or
+it does not parse. Read from disk, for `init', which is asked before anything is
+indexed. DES-0054 R10."
+  (let ((parsed (read-json-file (merge-pathnames "firebase.json" (pathname root)))))
+    (when parsed
+      (loop for codebase in (firebase-codebases parsed)
+            collect (list* :language (firebase-codebase-language codebase root)
+                           codebase)))))
+
 (defun firebase-project-aliases (parsed)
   "PARSED .firebaserc's `projects' as (alias . project-id) pairs, in file order.
 `targets' is not read."

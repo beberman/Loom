@@ -931,3 +931,93 @@ confirm -- CON-0001. It is reported instead.")
           (getf report :domain-notes))
       (is (null (target-text root ".loom/frameworks.yaml"))
           "no declaration is written -- the proposal is shown, not applied"))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 R10: a Firebase codebase's proposals
+;;; ------------------------------------------------------------------
+
+(defun firebase-json (&rest codebase-fields)
+  (format nil "{\"functions\": [{~{~a~^, ~}}]}" codebase-fields))
+
+(test a-python-codebase-proposes-the-python-template-and-a-domain
+  (with-target-tree (root)
+    (write-target-file root "firebase.json"
+                       (firebase-json "\"source\": \"functions\"" "\"runtime\": \"python312\""))
+    (let* ((report (prepare-repository root))
+           (template (first (getf report :template-proposals)))
+           (domain (first (getf report :domain-proposals))))
+      (is (null (getf report :problems)) "~a" (getf report :problems))
+      (is (equal "firebase-functions-python.yaml" (getf template :template)))
+      (is (probe-file (getf template :template-path)) "the path to copy from exists")
+      (is (equal "functions/" (getf domain :root)))
+      (is (equal "firebase.json" (getf domain :from)))
+      (is (eq :functions (getf domain :name))))))
+
+(test no-runtime-and-a-main-py-is-python-too
+  (with-target-tree (root)
+    (write-target-file root "firebase.json" (firebase-json "\"source\": \"functions\""))
+    (write-target-file root "functions/main.py" "x = 1
+")
+    (let ((report (prepare-repository root)))
+      (is (equal "firebase-functions-python.yaml"
+                 (getf (first (getf report :template-proposals)) :template)))
+      (is (equal "functions/" (getf (first (getf report :domain-proposals)) :root))))))
+
+(test a-nodejs-codebase-gets-no-template-and-says-why
+  (with-target-tree (root)
+    (write-target-file root "firebase.json"
+                       (firebase-json "\"source\": \"functions\"" "\"runtime\": \"nodejs20\""))
+    (let* ((report (prepare-repository root))
+           (proposal (first (getf report :template-proposals))))
+      (is (null (getf proposal :template)))
+      (is (search "no template until the JavaScript plan" (getf proposal :note)))
+      (is (null (getf report :domain-proposals))
+          "only a Python codebase proposes a domain"))))
+
+(test a-codebase-whose-language-cannot-be-told-says-so
+  (with-target-tree (root)
+    (write-target-file root "firebase.json" (firebase-json "\"source\": \"functions\""))
+    (let ((proposal (first (getf (prepare-repository root) :template-proposals))))
+      (is (null (getf proposal :template)))
+      (is (search "not recognised" (getf proposal :note))))))
+
+(test an-already-prepared-tree-gets-the-proposals-as-well-as-its-manifest
+  ;; It used to return the manifest and nothing else, and lfia is prepared.
+  (with-target-tree (root)
+    (prepare-repository root)
+    (write-target-file root "firebase.json"
+                       (firebase-json "\"source\": \"functions\"" "\"runtime\": \"python312\""))
+    (let ((report (prepare-repository root)))
+      (is-true (getf report :already-prepared))
+      (is-true (getf report :manifest))
+      (is (equal "firebase-functions-python.yaml"
+                 (getf (first (getf report :template-proposals)) :template)))
+      (is (equal "functions/" (getf (first (getf report :domain-proposals)) :root))))))
+
+(test the-proposal-never-writes-or-changes-frameworks-yaml
+  (with-target-tree (root)
+    (write-target-file root "firebase.json"
+                       (firebase-json "\"source\": \"functions\"" "\"runtime\": \"python312\""))
+    (prepare-repository root)
+    (is (null (target-text root ".loom/frameworks.yaml")) "none is created")
+    (write-target-file root ".loom/frameworks.yaml" "archived-paths: [old/]
+")
+    (let ((before (target-text root ".loom/frameworks.yaml")))
+      (prepare-repository root)
+      (is (equal before (target-text root ".loom/frameworks.yaml")) "and none is changed"))))
+
+(test the-python-template-parses-with-no-problems-and-declares-each-callee-once
+  (with-target-tree (root)
+    (write-target-file root ".loom/frameworks.yaml"
+                       (utils:read-file (loom-workspace::template-path
+                                         "firebase-functions-python.yaml")))
+    (is (null (loom-analyzer:frameworks-problems root))
+        "~a" (loom-analyzer:frameworks-problems root))
+    (let ((frameworks (loom-analyzer:read-frameworks root)))
+      (is (< 10 (length (getf frameworks :entry-points))))
+      (is (member "on_schedule"
+                  (loop for entry in (getf frameworks :entry-points) append (getf entry :names))
+                  :test #'string=))
+      (is (equal '(:secret :param)
+                 (mapcar (lambda (e) (getf e :source)) (getf frameworks :setting-declarations))))
+      (is (null (getf frameworks :declaration-problems))))))

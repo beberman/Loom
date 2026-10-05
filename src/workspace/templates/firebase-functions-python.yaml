@@ -1,0 +1,116 @@
+# A proposal for .loom/frameworks.yaml: copy what you want into your own file.
+# Loom shows this when it finds a firebase.json with a Python codebase and never
+# writes it for you. A declaration nobody wrote cannot be told from one somebody
+# did (DES-0054 D3).
+#
+# The callees are firebase_functions 0.6.0's public registrations, read from an
+# installed copy of the SDK. A trigger a later version adds is absent until you
+# add it; the function then stays in `structure's no-caller list, which is how
+# the miss shows.
+#
+# Add `domains: [{name: functions, root: functions/}]` as well when main.py says
+# `import config` and not `import functions.config`: firebase.json deploys the
+# source directory as the import root. `init` proposes the domain too.
+#
+# Names only. A secret's value is in Secret Manager or a dot-file Loom never
+# reads, and a param's default is not a first positional string, so neither can
+# reach the index (DES-0054 D7).
+entry-points:
+  - framework: firebase-functions
+    trigger: https
+    module: firebase_functions.https_fn
+    names: [on_request, on_call]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: schedule
+    module: firebase_functions.scheduler_fn
+    names: [on_schedule]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: firestore
+    module: firebase_functions.firestore_fn
+    names: [on_document_written, on_document_written_with_auth_context,
+            on_document_updated, on_document_updated_with_auth_context,
+            on_document_created, on_document_created_with_auth_context,
+            on_document_deleted, on_document_deleted_with_auth_context]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: database
+    module: firebase_functions.db_fn
+    names: [on_value_written, on_value_updated, on_value_created, on_value_deleted]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: pubsub
+    module: firebase_functions.pubsub_fn
+    names: [on_message_published]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: storage
+    module: firebase_functions.storage_fn
+    names: [on_object_archived, on_object_finalized, on_object_deleted,
+            on_object_metadata_updated]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: identity
+    module: firebase_functions.identity_fn
+    names: [before_user_created, before_user_signed_in]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: tasks
+    module: firebase_functions.tasks_fn
+    names: [on_task_dispatched]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: eventarc
+    module: firebase_functions.eventarc_fn
+    names: [on_custom_event_published]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: remote-config
+    module: firebase_functions.remote_config_fn
+    names: [on_config_updated]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: test-lab
+    module: firebase_functions.test_lab_fn
+    names: [on_test_matrix_completed]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: dataconnect
+    module: firebase_functions.dataconnect_fn
+    names: [on_mutation_executed]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase_functions.alerts_fn
+    names: [on_alert_published]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase_functions.alerts.app_distribution_fn
+    names: [on_new_tester_ios_device_published, on_in_app_feedback_published]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase_functions.alerts.billing_fn
+    names: [on_plan_update_published, on_plan_automated_update_published]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase_functions.alerts.crashlytics_fn
+    names: [on_new_fatal_issue_published, on_new_nonfatal_issue_published,
+            on_regression_alert_published, on_stability_digest_published,
+            on_velocity_alert_published, on_new_anr_issue_published]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase_functions.alerts.performance_fn
+    names: [on_threshold_alert_published]
+    settings: [secrets]
+setting-declarations:
+  - source: secret
+    module: firebase_functions.params
+    names: [SecretParam]
+  - source: param
+    module: firebase_functions.params
+    names: [StringParam, IntParam, BoolParam, ListParam]
