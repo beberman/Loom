@@ -429,3 +429,92 @@ def bad(:
          (is (null (pa-named g "f"))))
     (loom-analyzer::stop-extractor-child loom-analyzer::*py-extractor-child*)
     (setf (loom-analyzer::child-unavailable-reason loom-analyzer::*py-extractor-child*) nil)))
+
+;;; ------------------------------------------------------------------
+;;; D8: test cases
+;;; ------------------------------------------------------------------
+
+(defun pa-test-names (g)
+  (sort (mapcar #'name (pa-entities g :test)) #'string<))
+
+(test a-test-function-in-a-pytest-file-is-a-test-and-not-also-a-function
+  (call-with-python
+   (lambda ()
+     (let ((g (pa-graph "functions/tests/test_refs.py" "from ledger import refs
+def test_lease():
+    refs.lease()
+def helper(): pass
+")))
+       (is (equal '("test_lease") (pa-test-names g)))
+       (let ((case (pa-named g "test_lease")))
+         (is (eq :pytest (getp case :framework)))
+         (is (eq :python (getp case :language)))
+         (is (equal '((:specifier "ledger" :path ("refs" "lease") :line 3))
+                    (getp case :imported-calls))))
+       (is (equal '("helper") (mapcar #'name (pa-entities g :function)))
+           "the case is not also a :function")
+       (is-true (getp (pa-file g) :test-file-p))))))
+
+(test a-testcase-subclass-gives-unittest-cases-in-a-file-no-pattern-matches
+  ;; tests/checks.py matches neither pytest pattern, so only the base class says
+  ;; it is a test file. `as T' is undone by the child's binding.
+  (call-with-python
+   (lambda ()
+     (let ((g (pa-graph "tests/checks.py" "from unittest import TestCase as T
+class Ledger(T):
+    def setUp(self):
+        prepare()
+    def tearDown(self):
+        clean()
+    def test_post(self):
+        post()
+def test_loose(): pass
+")))
+       (is (equal '("Ledger::test_post") (pa-test-names g)))
+       (let ((case (pa-named g "Ledger::test_post")))
+         (is (eq :unittest (getp case :framework)))
+         (is (equal "Ledger" (getp case :suite)))
+         (is (equal '("prepare" "clean" "post")
+                    (getp case :call-names))
+             "setUp and tearDown are part of what the case runs"))
+       (is-true (pa-named g "Ledger.setUp" :method) "the hooks stay methods")
+       (is-true (pa-named g "test_loose" :function)
+                "pytest would not collect a function from checks.py")
+       (is-true (getp (pa-file g) :test-file-p))))))
+
+(test a-test-class-with-an-init-gives-no-cases-and-one-without-gives-pytest-cases
+  (call-with-python
+   (lambda ()
+     (let ((g (pa-graph "tests/test_x.py" "class TestA:
+    def __init__(self): pass
+    def test_one(self): pass
+class TestB:
+    def setup_method(self):
+        arrange()
+    def test_two(self):
+        act()
+")))
+       (is (equal '("TestB::test_two") (pa-test-names g)))
+       (is (equal '("arrange" "act") (getp (pa-named g "TestB::test_two") :call-names)))
+       (is (eq :pytest (getp (pa-named g "TestB::test_two") :framework)))
+       (is-true (pa-named g "TestA.test_one" :method)
+                "a class pytest would not collect keeps its methods")))))
+
+(test a-script-named-with-a-hyphen-is-no-test-file
+  ;; tools/test/test-acceptance.py. Run directly, collected by nothing.
+  (call-with-python
+   (lambda ()
+     (let ((g (pa-graph "tools/test/test-acceptance.py" "def test_it(): pass
+")))
+       (is (null (pa-entities g :test)))
+       (is-false (getp (pa-file g) :test-file-p))
+       (is-true (pa-named g "test_it" :function))))))
+
+(test a-pytest-file-with-no-case-is-still-a-test-file
+  ;; The report that a convention was missed: status' test-files-without-cases.
+  (call-with-python
+   (lambda ()
+     (let ((g (pa-graph "tests/test_none.py" "def helper(): pass
+")))
+       (is (null (pa-entities g :test)))
+       (is-true (getp (pa-file g) :test-file-p))))))

@@ -811,3 +811,11 @@ body: |
   index never read has no stamp, so drift is zero whether or not it is claimed.
   The unclaimed test does fail (4 assertions) when a throwaway analyzer claims
   .rb.
+
+  Step 9. Loom's tree gains no :TEST entity: tools/test/test-*.py has a hyphen.
+  `status' reads 452 units covered, as at step 8. D8 names TestCase subclasses by
+  their direct base only. A class deriving from a local subclass of TestCase is
+  not recognised; neither tree has one. The first draft of the :TESTS pipeline
+  test put the test file under functions/tests/ and got no edge: its
+  `import ledger' is :UNROOTED there, which is the lfia case the domain root is
+  for. The test now sits beside the module.

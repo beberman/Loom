@@ -1709,6 +1709,27 @@ def run():
                      (mapcar #'to-id (relationships-from g (id sheet) :rel-type :reads)))
               "and the variable that holds the read is its reader")))))
 
+(test a-python-case-draws-a-tests-edge-through-the-whole-pipeline
+  ;; D8 writes the case and its calls; RESOLVE-CALLS and RESOLVE-TESTS derive the
+  ;; edge, and nothing in loom-graph changed for it.
+  (if (not (python-available-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-file "functions/ledger.py" "def post(): pass
+")
+        (write-file "functions/test_ledger.py" "import ledger
+def test_post():
+    ledger.post()
+")
+        (reindex-repository repository :quiet t)
+        (let* ((g (repository-graph repository))
+               (case (find "test_post" (entities-of-type g :test) :key #'name :test #'string=))
+               (post (find "post" (entities-of-type g :function) :key #'name :test #'string=)))
+          (is-true case)
+          (is (equal (list (id post))
+                     (mapcar #'to-id (relationships-from g (id case) :rel-type :tests)))
+              "the case tests the function its body calls")))))
+
 (test a-pyvenv-cfg-at-the-root-does-not-exclude-the-repository
   ;; `python -m venv .' writes one beside the project's own source. Excluding
   ;; the empty prefix would index nothing at all.

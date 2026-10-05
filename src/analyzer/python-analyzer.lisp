@@ -244,6 +244,84 @@ method the same way."
     (mapcar (lambda (name) (gethash name by-name)) (nreverse order))))
 
 ;;;; ==================================================================
+;;;; Test cases (D8)
+;;;; ==================================================================
+;;;;
+;;;; Recognised by the runners' own defaults, which are facts about two runners
+;;;; and not about one repository (DES-0045's reasoning for vitest and jest).
+;;;; tools/test/test-*.py match neither pattern: they are scripts run directly,
+;;;; so no runner would collect them and no test entity is minted for them.
+
+(defun py-test-file-name-p (path)
+  "True when PATH is a file pytest collects by default: `test_*.py' or `*_test.py'."
+  (let ((name (pathname-name (pathname path))))
+    (and (stringp name)
+         (or (and (> (length name) 5) (string= "test_" name :end2 5))
+             (and (> (length name) 5) (string= "_test" name :start2 (- (length name) 5)))))))
+
+(defun py-unittest-class-p (item)
+  "True when ITEM is a class with a base that binds to unittest.TestCase. The
+binding is the child's (D2), so `from unittest import TestCase as T' counts."
+  (and (eq :class (getf item :kind))
+       (some (lambda (base)
+               (and (equal "unittest" (jget base :specifier))
+                    (equal '("TestCase") (jlist base :path))))
+             (getf item :bases))))
+
+(defun py-test-file-p (path items)
+  "True when the runner would run PATH: by its name, or because it defines a
+TestCase subclass wherever it sits."
+  (or (py-test-file-name-p path) (some #'py-unittest-class-p items)))
+
+(defun py-prefix-p (prefix string)
+  (and (>= (length string) (length prefix)) (string= prefix string :end2 (length prefix))))
+
+(defun py-hook-calls (items &rest names)
+  "The calls of the items called NAMES, which the runner runs around a case."
+  (loop for item in items
+        when (member (getf item :name) names :test #'string=)
+          append (getf item :calls)))
+
+(defun py-case (item path items unittest-classes)
+  "ITEM as a test case, or NIL when it is not one (D8).
+
+A module-level `test*' function counts only in a file pytest collects. A `test*'
+method counts in a TestCase subclass wherever it sits, and in a `Test*' class
+with no __init__ in a collected file. Its calls include the hooks the runner
+runs around it, as DES-0045 D4 does for beforeEach."
+  (let* ((name (getf item :name))
+         (dot (position #\. name))
+         (class (and dot (subseq name 0 dot)))
+         (method (if dot (subseq name (1+ dot)) name))
+         (collected (py-test-file-name-p path)))
+    (flet ((case-of (framework suite hooks)
+             (list* :kind :test
+                    :name (if suite (format nil "~a::~a" suite method) name)
+                    :suite suite :framework framework
+                    :calls (append (apply #'py-hook-calls items hooks) (getf item :calls))
+                    item)))
+      (cond ((not (py-prefix-p "test" method)) nil)
+            ((and (eq :function (getf item :kind)) collected)
+             (case-of :pytest nil '("setup_function" "teardown_function")))
+            ((not (eq :method (getf item :kind))) nil)
+            ((member class unittest-classes :test #'string=)
+             (case-of :unittest class
+                      (list (format nil "~a.setUp" class) (format nil "~a.tearDown" class))))
+            ((and collected (py-prefix-p "Test" class)
+                  (notany (lambda (i) (string= (getf i :name) (format nil "~a.__init__" class)))
+                          items))
+             (case-of :pytest class
+                      (list (format nil "~a.setup_method" class)
+                            (format nil "~a.teardown_method" class))))))))
+
+(defun py-mark-tests (items path)
+  "ITEMS with each test case turned into a :TEST, which is not also a :FUNCTION
+or a :METHOD. The hooks stay what they are."
+  (let ((unittest-classes (loop for item in items
+                                when (py-unittest-class-p item) collect (getf item :name))))
+    (mapcar (lambda (item) (or (py-case item path items unittest-classes) item)) items)))
+
+;;;; ==================================================================
 ;;;; Entities
 ;;;; ==================================================================
 
@@ -253,7 +331,7 @@ depends on another file's __init__.py, and an analyzer sees one file: deriving
 :SYSTEM from it would leave every sibling stale when one is added or deleted."
   (default-system-for-path path))
 
-(defun make-py-file-entity (path contents reply reason)
+(defun make-py-file-entity (path contents reply reason test-file-p)
   "The :FILE entity, asserted whether or not anything parsed (D7).
 
 Damage goes to :SUPPRESSED-REGIONS with its exact range, one region per damaged
@@ -291,6 +369,10 @@ set only when nothing parsed or python3 could not run."
                      (when (jget reply :docstring)
                        (list :documentation (jget reply :docstring)))
                      (when sources (list :import-sources sources))
+                     ;; DES-0045 D7: written on the file, so a file the runner
+                     ;; would run and no case was found in is a reportable
+                     ;; miss rather than just a source file.
+                     (when test-file-p (list :test-file-p t))
                      (when bindings (list :import-bindings bindings))
                      (when env (list :environment-reads env))
                      (when (plusp unnamed) (list :unnamed-environment-reads unnamed))
@@ -332,6 +414,18 @@ from, and the import-bound calls RESOLVE-CALLS walks (D2, R4)."
                    (when imported (list :imported-calls imported))
                    (when (getf item :env) (list :environment-reads (getf item :env)))))))
 
+(defun py-test-properties (item path system)
+  "Properties of a :TEST. A test is a legal :CALLS source and takes :CALL-NAMES
+and :IMPORTED-CALLS on the terms a function does, so RESOLVE-TESTS derives its
+:TESTS edges from the :CALLS edges those produce."
+  (let ((names (py-call-names (getf item :calls)))
+        (imported (py-imported-calls (getf item :calls))))
+    (apply #'py-entity-properties item path system
+           :suite (getf item :suite) :framework (getf item :framework)
+           (append (when names (list :call-names names))
+                   (when imported (list :imported-calls imported))
+                   (when (getf item :env) (list :environment-reads (getf item :env)))))))
+
 (defun make-py-entity (item path system)
   "The entity for one reconciled ITEM."
   (let ((name (getf item :name)))
@@ -348,6 +442,8 @@ from, and the import-bound calls RESOLVE-CALLS walks (D2, R4)."
                                                 collect (or (jget base :name) (jget base :text)))
                                           :slots (getf item :slots)
                                           :decorators (getf item :decorators))))
+      (:test (make-instance 'test-entity :name name :origin-file path
+                            :properties (py-test-properties item path system)))
       (:variable (make-instance 'variable-entity :name name :origin-file path
                                 :properties (py-entity-properties
                                              item path system
@@ -478,10 +574,12 @@ python3, and a file the child could not parse at all, are both indexed with the
 reason recorded on them (D1, D7)."
   (multiple-value-bind (reply reason) (parse-python path contents)
     (let* ((system (py-system-for-path path))
-           (items (py-reconcile (py-module-items reply)))
+           (reconciled (py-reconcile (py-module-items reply)))
+           (items (py-mark-tests reconciled path))
            (entities (mapcar (lambda (item) (make-py-entity item path system)) items))
            (owned (py-owned-sites items (jlist reply :statements) path system))
-           (file (make-py-file-entity path contents reply reason)))
+           (file (make-py-file-entity path contents reply reason
+                                      (py-test-file-p path reconciled))))
       (attach-comment-documentation analyzer entities (string-lines contents))
       (append
        (list (retract-file path workspace-id)
