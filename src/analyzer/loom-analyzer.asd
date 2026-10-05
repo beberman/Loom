@@ -61,6 +61,7 @@
    ;; its child (DES-0053 R14).
    (:file "extractor-child")
    (:file "js-analyzer")
+   (:file "python-analyzer")
    (:file "yaml-analyzer")
    ;; After yaml-analyzer, whose *MENTION-MINIMUM-LENGTH* it reuses rather than
    ;; restates. The two claim disjoint extensions, so registration order does
@@ -98,6 +99,7 @@
    (:file "lisp-analyzer")
    (:file "extractor-child")
    (:file "js-analyzer")
+   (:file "python-extract")
    (:file "yaml-analyzer")
    (:file "markdown-analyzer")
    (:file "frameworks")
