@@ -904,23 +904,27 @@ body: |~%  STEPS~%~%  1. do the thing.~%"))
         (is-true (getf report :dry-run))
         (is (null (getf report :changed)) "nothing written")
         (is (search "status: draft" (document-text root "docs/plans/PLAN-0001.yaml"))))))
-  ;; A blocked cascade is the third shape with no verdict to give, and it
-  ;; finishes the plan rather than previewing it. DES-0001 cannot be decided
-  ;; while PLAN-0002 still refines it, and a verdict naming it is refused --
-  ;; so the old behaviour left PLAN-0001, which really is finished, unable to
-  ;; say so through this command. The blocked document is reported and left
-  ;; alone, which is what `blocked' has always meant.
+  ;; A blocked cascade is not a shape with nothing to decide (BUG-0069).
+  ;; DES-0001 cannot be decided while PLAN-0002 still refines it, and the
+  ;; preview is how the caller learns that. Finishing PLAN-0001 here would
+  ;; leave a final plan over a draft design. `set-status' is the explicit way
+  ;; to finish the plan alone.
   (with-document-trees (root)
     (write-document root "docs/design/DES-0001.yaml" (design-document "DES-0001" '("REQ-0001")))
     (write-document root "docs/plans/PLAN-0001.yaml" (plan-document "PLAN-0001" '("DES-0001")))
     (write-document root "docs/plans/PLAN-0002.yaml" (plan-document "PLAN-0002" '("DES-0001")))
     (with-indexed-tree (repository root)
       (let* ((report (complete-plan repository "PLAN-0001"))
-             (row (find "DES-0001" (getf report :documents)
-                        :key (lambda (r) (getf r :doc-id)) :test #'string=)))
+             (rows (getf report :documents))
+             (row (find "DES-0001" rows
+                        :key (lambda (r) (getf r :doc-id)) :test #'string=))
+             (plan-row (find "PLAN-0001" rows
+                             :key (lambda (r) (getf r :doc-id)) :test #'string=)))
         (is (eq :blocked (getf row :action)) "DES-0001 is still refined by PLAN-0002")
-        (is (search "status: final"
-                    (document-text root "docs/plans/completed/PLAN-0001.yaml"))
-            "the plan is finished")
+        (is-true (getf report :dry-run) "a blocked cascade is previewed")
+        (is (null (getf report :changed)) "nothing is written")
+        (is (eq :would-set (getf plan-row :action)) "the plan's row says what would happen")
+        (is (search "status: draft" (document-text root "docs/plans/PLAN-0001.yaml"))
+            "the plan is still a draft")
         (is (search "status: draft" (document-text root "docs/design/DES-0001.yaml"))
-            "and the blocked design is untouched")))))
+            "and so is the blocked design")))))

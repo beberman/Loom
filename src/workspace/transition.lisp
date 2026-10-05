@@ -848,9 +848,17 @@ whose verdict is not terminal, and goes no further than what the plan refines --
                   ;; Re-entry rather than a second code path, so the decision of
                   ;; what a walk finds is made once. It cannot recur twice:
                   ;; FORCE-WRITE clears DRY-RUN, and this branch tests it.
+                  ;;
+                  ;; BUG-0069. A :BLOCKED row is not a verdict to give, but it is
+                  ;; not nothing to decide either: the preview is where the caller
+                  ;; learns which plan holds the document, and writing the plan
+                  ;; final in the same call leaves a final plan over documents
+                  ;; still in draft. With a blocked row this stays a dry run;
+                  ;; `set-status' finishes the plan alone.
                   (when (and dry-run (null problems)
                              (notany (lambda (row)
-                                       (eq :awaiting-verdict (getf row :action)))
+                                       (member (getf row :action)
+                                               '(:awaiting-verdict :blocked)))
                                      rows))
                     (return-from complete-plan
                       (complete-plan repository designator
