@@ -819,3 +819,8 @@ body: |
   test put the test file under functions/tests/ and got no edge: its
   `import ledger' is :UNROOTED there, which is the lfia case the domain root is
   for. The test now sits beside the module.
+
+  Step 10. The default is read from the tokens the child wrote, as the plan
+  implies. An annotation that holds the spelling " = " inside a string is
+  mistaken for a default; the check is on the first colon and then " = ". The
+  signature of a method renders with its "Class.name", as JavaScript's does.

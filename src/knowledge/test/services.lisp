@@ -468,6 +468,36 @@ The lock is the table's own.")))))
   (is (null (render-signature
              (sig-function "protected-table" '() :type 'class-entity)))))
 
+(defun py-sig (name arguments &key method decorators)
+  (make-instance (if method 'method-entity 'function-entity) :name name
+                 :origin-file "src/lib.py"
+                 :properties (properties-table
+                              (list :file "src/lib.py" :start-line 1 :end-line 9
+                                    :language :python :arguments arguments
+                                    :decorators decorators))))
+
+(test python-arity-counts-parameters-before-a-default-or-a-star
+  ;; DES-0053 R12. The existing loop stops only at an `&' marker, so every
+  ;; Python parameter counted: `def m(self, a, *, k)' read as 4.
+  (is (eql 1 (entity-arity (py-sig "f" '("a" "b=1")))))
+  (is (eql 1 (entity-arity (py-sig "Box.m" '("self" "a" "*" "k") :method t)))
+      "self is not passed, and a bare * ends the positional ones")
+  (is (eql 1 (entity-arity (py-sig "Box.n" '("self" "a" "*args" "**kw") :method t))))
+  (is (eql 2 (entity-arity
+              (py-sig "Box.s" '("a" "b")
+                      :method t :decorators '((:name "staticmethod" :arguments nil :line 1)))))
+      "a staticmethod has no self to skip")
+  (is (eql 2 (entity-arity (py-sig "g" '("a" "/" "b"))))
+      "the / is not a parameter")
+  (is (eql 1 (entity-arity (py-sig "h" '("a" "b: int = 1" "c: str")))))
+  (is (eql 2 (entity-arity (py-sig "k" '("a" "b: Literal['x']" "c=2"))))
+      "an annotation without a default does not end the required ones")
+  (is (eql 0 (entity-arity (py-sig "z" '()))))
+  (is (eql 0 (entity-arity (py-sig "Box.i" '("self") :method t)))))
+
+(test a-python-signature-is-a-call
+  (is (string= "f(a, b=1)" (render-signature (py-sig "f" '("a" "b=1"))))))
+
 (test describe-carries-the-signature-and-the-arity-without-widening-a-summary
   ;; Type-specific detail belongs in DESCRIBE-ENTITY. ENTITY-SUMMARY is read in
   ;; bulk by `find' and `impact' and carries what is true of every entity, so a
