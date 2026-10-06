@@ -95,38 +95,20 @@ the first (D2). A change to what RESOLVE-CALLS walks is a change to this shape."
 
 (defun py-decorator-value (value)
   "A decorator argument as DES-0054 D1 records it. DECODE-ARGUMENT-VALUE is the
-decoder, shared with the JavaScript analyzer."
+decoder, shared with the JavaScript analyzer. No longer called here since
+DECODE-REGISTRATION reads a decorator's arguments; kept because DES-0054 and
+PLAN-0057 name it in `affects:' and `check' reports a name that resolves to
+nothing."
   (decode-argument-value value))
 
 (defun py-value-call (variable)
-  "VARIABLE's :VALUE-CALL (DES-0054 D2) as a plist: the callee's :SPECIFIER and
-:PATH, or :NAME for a local, then :LINE and :FIRST-STRING when the child sent
-one. NIL when the variable's value is not a single call."
-  (let ((call (jget variable :value-call)))
-    (when call
-      (append (if (jget call :specifier)
-                  (list :specifier (jget call :specifier) :path (jlist call :path))
-                  (list :name (jget call :name)))
-              (list :line (jget call :line))
-              (when (jget call :first-string)
-                (list :first-string (jget call :first-string)))))))
+  "VARIABLE's :VALUE-CALL (DES-0054 D2) as a plist. DECODE-VALUE-CALL is the
+decoder, shared with the JavaScript analyzer."
+  (decode-value-call (jget variable :value-call)))
 
 (defun py-decorators (definition)
-  "One plist per decorator, in source order (D3). :POSITIONAL holds the arguments
-written without a keyword, in order, encoded as :ARGUMENTS' values are (DES-0054 D1)."
-  (loop for decorator in (jlist definition :decorators)
-        collect (append (list :name (jget decorator :name))
-                        (when (jget decorator :specifier)
-                          (list :specifier (jget decorator :specifier)
-                                :path (jlist decorator :path)))
-                        (list :arguments
-                              (loop for argument in (jlist decorator :arguments)
-                                    collect (cons (jget argument :name)
-                                                  (py-decorator-value
-                                                   (jget argument :value))))
-                              :positional (mapcar #'py-decorator-value
-                                                  (jlist decorator :positional))
-                              :line (jget decorator :line)))))
+  "One plist per decorator, in source order (D3), read by DECODE-REGISTRATION."
+  (mapcar #'decode-registration (jlist definition :decorators)))
 
 ;;;; ==================================================================
 ;;;; Reconciling same-key definitions (CON-0005, D9)

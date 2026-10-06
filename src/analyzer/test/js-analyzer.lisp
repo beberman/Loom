@@ -972,3 +972,73 @@ export default memo(() => null);
   (if (js-available-p)
       (is (null (assoc :unnamed-registrations (registration-reply *front-end-index-js*))))
       (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+;;; ------------------------------------------------------------------
+;;; The analyzer writes :REGISTRATION, :VALUE-CALL and :UNNAMED-REGISTRATIONS
+;;; (PLAN-0058 step 2)
+;;; ------------------------------------------------------------------
+;;;
+;;; Plain TEST forms again, for the DES-0014 ceiling: JS-NAMED and GETP are the
+;;; only calls in each body, and they are not resolving sites inside a macro.
+
+(test a-registration-lands-on-its-variable-in-the-decoders-shape
+  (if (js-available-p)
+      (let ((api (js-named "functions/index.js" *front-end-index-js* "api")))
+        (is (equal '(:name "functions.https.onRequest"
+                     :specifier "firebase-functions"
+                     :path ("default" "https" "onRequest")
+                     :arguments nil :positional nil :line 9)
+                   (getp api :registration)))
+        (is (null (getp api :value-call)))
+        (is (null (getp api :call-names))
+            "a module-level initialiser's calls are still not a :CALLS source"))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-value-call-lands-on-its-variable-with-its-first-string
+  (if (js-available-p)
+      (let ((k (js-named "functions/index.js"
+                         "import {defineSecret} from \"firebase-functions/params\";
+const k = defineSecret(\"K\");
+" "k")))
+        (is (equal '(:specifier "firebase-functions/params" :path ("defineSecret")
+                     :line 2 :first-string "K")
+                   (getp k :value-call)))
+        (is (null (getp k :registration))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-secrets-list-decodes-to-a-local-name-and-a-literal
+  (if (js-available-p)
+      (let ((f (js-named "functions/index.js"
+                         "import {onRequest} from \"firebase-functions/v2/https\";
+const k = defineSecret(\"K\");
+export const f = onRequest({timeoutSeconds: 60, secrets: [k, \"LIT\"]}, (q, s) => {});
+" "f")))
+        (is (equal '(("timeoutSeconds" . 60)
+                     ("secrets" :list (:name "k" :binding :local) "LIT"))
+                   (getf (getp f :registration) :arguments))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test an-anonymous-default-registration-counts-on-its-file-and-names-no-registration
+  (if (js-available-p)
+      (progn
+        (is (eql 1 (getp (js-file-entity "functions/hello.js" *front-end-hello-js*)
+                         :unnamed-registrations)))
+        (let ((hello (js-named "functions/hello.js" *front-end-hello-js* "hello")))
+          (is (not (null hello)) "the BUG-0056 variable still exists")
+          (is (null (getp hello :registration)))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-file-with-no-default-registration-has-no-unnamed-registrations-property
+  (if (js-available-p)
+      (is (null (getp (js-file-entity "functions/index.js" *front-end-index-js*)
+                      :unnamed-registrations)))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-variable-with-no-such-call-gets-neither-property
+  (if (js-available-p)
+      (let ((v (js-named "src/a.js" "const x = Object.keys(o);
+" "x")))
+        (is (not (null v)))
+        (is (null (getp v :registration)))
+        (is (null (getp v :value-call))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
