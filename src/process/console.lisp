@@ -333,6 +333,10 @@ and names `init', so the gap is recorded rather than an empty band."
       (format t "  deploys    : project ~{~a~^, ~}~%" (getf deploys :aliases)))
     (unless (getf deploys :declared)
       (format t "  deploys    : firebase.json declares codebases and .loom/frameworks.yaml has no entry-points. `init' proposes them.~%"))
+    (when (plusp (getf deploys :unnamed-registrations 0))
+      (format t "  deploys    : ~d registration~:p in a default export ~:[carry~;carries~] no name; a re-export decides it~%"
+              (getf deploys :unnamed-registrations)
+              (= 1 (getf deploys :unnamed-registrations))))
     (when (plusp (getf deploys :unnamed-declarations 0))
       (format t "  deploys    : ~d setting declaration~:p with no literal first argument name~:[s~;~] nothing~%"
               (getf deploys :unnamed-declarations)

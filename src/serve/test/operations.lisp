@@ -846,6 +846,22 @@ listed as answering about a whole repository. Decide which it is and say so in ~
   (signals malformed-request
     (call-operation :find '(:read) :term "" :trigger "schedule")))
 
+(test status-passes-the-unnamed-registration-count-through-as-an-integer
+  ;; PLAN-0058 step 5. An integer needs no *ARRAY-VALUED-KEYS* entry.
+  (with-operations-fixture (repository)
+    (dolist (spec '(("firebase.json" (:path "firebase.json"
+                                      :codebases ((:source "functions" :codebase "default"
+                                                   :runtime nil :ignore nil :defaulted nil))))
+                    ("functions/hello.js" (:path "functions/hello.js" :unnamed-registrations 2))))
+      (loom-graph:add-entity
+       (repository-graph repository)
+       (make-instance 'loom-ontology:file-entity :name (first spec)
+                      :origin-file (first spec)
+                      :properties (loom-ontology:properties-table (second spec)))))
+    (let ((status (call-operation :status '(:read) :repository (repository-name repository))))
+      (is (eql 2 (getf (getf status :deploys) :unnamed-registrations)))
+      (is (search "\"unnamed-registrations\":2" (loom-serve:encode-result status))))))
+
 (test status-carries-deploys-and-encodes-as-json
   ;; DES-0054 D8. :DEPLOYS is the one nested plist :STATUS returns, and this
   ;; plist is serialized for REST and MCP callers.

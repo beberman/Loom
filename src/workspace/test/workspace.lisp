@@ -2384,6 +2384,21 @@ affects: [API_KEY]
         (is (null (getp (js-fn-variable repository "hello") :registration))
             "the default export's entity exists and is not a registration"))))
 
+(test the-deploys-report-counts-unnamed-registrations-in-covered-files-only
+  ;; PLAN-0058 step 5. The memo() default export is outside the `functions'
+  ;; codebase, so the extractor's count on its file must not reach the report.
+  (if (not (node-available-p))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")
+      (with-workspace-fixture (repository)
+        (write-js-functions-tree)
+        (write-file "src/Card.js" "import {memo} from \"react\";
+export default memo(() => null);
+")
+        (reindex-repository repository :quiet t)
+        (is (eql 1 (getp (file-entity repository "src/Card.js") :unnamed-registrations))
+            "the extractor counts it")
+        (is (eql 1 (getf (loom-workspace::deploys-report repository) :unnamed-registrations))))))
+
 (test find-by-trigger-lists-the-javascript-registrations
   (if (not (node-available-p))
       (skip "node is not on PATH; the JavaScript analyzer cannot run here")
