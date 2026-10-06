@@ -966,3 +966,76 @@ body: |
   step; only the status line was read on the real tree. (4) One run of
   A-READ-OPERATION-WRITES-A-RECORD-NAMING-ITSELF in loom-serve failed once and
   passed on three reruns, with no change to that area.
+
+  Step 6. Run with /usr/bin/sbcl through tools/loom-test.sh, 12 of 12
+  systems, no skip (workspace 1124, process 215, serve 287, rest 110, mcp 55,
+  analyzer 1175). check on Loom: 0 violations, 8 unresolved, 7 ambiguous. No
+  source file and no test changed, so there is no CON-0003 step; only this
+  NOTES entry. The step is read-only on ~/github/front-end and
+  ~/github/lfia-accounting: `git status --short` of each was saved before the
+  dumps and compared after the dumps, after the service queries and after the
+  last run, and was byte-identical all three times. front-end's five lines are
+  .loom/frameworks.yaml (mtime 2026-10-05 21:49, the user's consented
+  addition, risk 12), layerIntents.js (2026-10-03 21:25), the new test beside
+  it, BUG-0048.yaml and DES-0022.yaml (all 2026-10-03). lfia's eleven lines are
+  its author's edits under functions/access, functions/ledger and
+  functions/sources, mtime 2026-10-06 09:48, and untracked files it already
+  had.
+  Census, the 87918aa worktree (removed afterwards) and the branch at 161a771
+  back to back over each real tree:
+
+                      front-end              lfia-accounting     Loom (one tree)
+    lines             106672 / 106672        8562 / 8562         30394 / 30394
+    lines differing   388                    16                  0
+    E :VALUE-CALL     377                    14                  0
+    E :REGISTRATION   7 (variables)          1                   0
+    E :REGISTRATION
+      + :TRIGGER
+      + :ENTRY-POINT  1 (api)                0                   0
+    E :UNNAMED-
+      REGISTRATIONS   2 (hello.js,           0                   0
+                      api/simple.js)
+    S :DEPLOYS        1 (ENTRY-POINTS 0 to 1; 1 (gains
+                      gains :UNNAMED-        :UNNAMED-
+                      REGISTRATIONS 2)       REGISTRATIONS 0)    0
+    R lines           0                      0                   0
+
+  Files 947, entities 11335, unclaimed 116, unresolved 120, ambiguous 5,
+  violations 0 are the same in both front-end dumps. Every changed E line pair
+  was checked by a script that splits properties and lists the keys that differ:
+  those keys and no others. The base dump of Loom was taken from the worktree's
+  code over /home/beberman/lisp/Loom, so both runs read one tree.
+  lfia's 15 :VARIABLE lines are all under web/ (contexts, mocks, test
+  fixtures); no Python or functions/ entity moved. Its figures are not
+  PLAN-0057's: 12 entry points and 5 schedule functions (sync_zeffy,
+  sync_zeffy_ledger, sync_banks, daily_check, disable_inactive_users) where
+  PLAN-0057 recorded 11 and 4, because HEAD is now 32d28dc, three commits past
+  8044c09, and web/ is tracked. Both versions of Loom agree on it, so
+  the JavaScript work did not move it.
+  R13's front-end clause, on the real tree (the service was not touched; the
+  queries ran through tools/loom.sh, which reindexes):
+    find --trigger https     one hit: variable api [functions/index.js:9-18]
+    describe api             entry point: firebase-functions https codebase
+                             default, deployment unknown
+    structure                entry points by trigger: https 1, variable api,
+                             deployed: unknown
+    status                   deploys : codebase default at functions, 1 entry
+                             point; project default=aigames-216202; 2
+                             registrations in a default export carry no name; a
+                             re-export decides it. 947 files, 11335 entities,
+                             95295 relationships (index-dump counts one fewer),
+                             unclaimed 116, rules 0 violations
+    check @front-end         No violations. 11 unresolved document references,
+                             the same 120/5 as the dump's references.
+  Loom: status, check and structure are identical to the 87918aa code's over
+  this tree; unclaimed reads 44 (.yaml 3) against BASELINE's 43 because the
+  template is tracked since step 4. find --trigger https answers "No entity
+  has the trigger https", and no deploys line prints.
+  Departures: (1) The plan expected front-end's frameworks.yaml to declare no
+  entry-points and describe to show none; the user's consented addition is
+  already there, so the plan's first query block and the R13 block are one
+  run. (2) The plan's S-line expectation ":DEPLOYS gains :UNNAMED-REGISTRATIONS
+  2" holds, and the same line also moves ENTRY-POINTS 0 to 1, as in step 2.
+  (3) MCP loom_* tools were not in this agent's tool list, so the queries ran
+  through tools/loom.sh. (4) game-server was not measured. The plan asks for
+  `status` only, and the caller's task named front-end, lfia and Loom.
