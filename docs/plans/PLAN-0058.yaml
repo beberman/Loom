@@ -845,3 +845,26 @@ body: |
 
   Departures from the plan, by step, with commit hashes and the census
   figures, are recorded here as the steps land.
+
+  Step 1. Run with /usr/bin/sbcl through tools/loom-test.sh, 12 of 12
+  systems, no skip. check: 0 violations, 8 unresolved, 7 ambiguous.
+  call-site-census: 508 total, 41 ambiguous, js-test 91, unchanged. The
+  front-end dump from the 87918aa worktree and from the branch, back to
+  back, are both 106672 lines and byte-identical, with front-end's `git
+  status --short` unchanged around the pair. Loom's own tree dumped from
+  both versions is byte-identical too (30140 lines); the plan expected
+  extract.js's own entities to move, but both runs read the same working
+  tree and no Lisp code reads the new keys, so nothing can.
+  CON-0003: without the extract.js change 17 assertions fail; with
+  encodeValue returning expression for an Identifier, with the `const' test
+  removed and with calleeBinding accepting any chain, the secrets-list,
+  let-binding and local-or-global tests fail.
+  Decisions the plan left open: an object-literal argument is read as
+  options only when at least one key was readable, so `{...spread}` stays a
+  positional expression; a unary minus or plus on a number is a literal, as
+  extract.py does; a regex or bigint literal is an expression. A bare
+  identifier callee with no import records :name alone, as extract.py does
+  for a local. The three keys are reported on the definition and the reply
+  as the plan says, with unnamedRegistrations absent when zero.
+  Registration and value-call `line' is the call expression's line. No
+  departure from the plan otherwise.
