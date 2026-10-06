@@ -1,6 +1,6 @@
 id: PLAN-0058
 title: DES-0054 S10 in seven steps -- extract.js records registrations and value calls, js-analyzer.lisp writes them, the passes on a JavaScript tree, the JavaScript template and init's nodejs proposal, the unnamed-registration count in status, acceptance on front-end with a before/after index census, complete
-status: draft
+status: final
 date: 2026-10-05
 refines: [DES-0054, REQ-0078]
 affects: [extract, calleeNames, make-js-definition-entity, make-js-file-entity,

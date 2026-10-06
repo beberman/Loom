@@ -1,6 +1,6 @@
 id: DES-0054
 title: Firebase Functions in Loom - a generic entry-points key and a setting-declarations key in .loom/frameworks.yaml, a narrow analyzer for firebase.json and .firebaserc, and two graph passes that derive triggers, codebases and secret reads
-status: partial
+status: implemented
 date: 2026-10-05
 refines: [REQ-0078, DES-0053]
 affects: [read-json-file, propose-domains, parse-frameworks, frameworks-problems,
@@ -538,6 +538,16 @@ body: |
   the :FILE and mints nothing. Naming it would mean following re-exports to
   the codebase's entry module.
 
+  Corrected 2026-10-06 (PLAN-0058). The two default exports already mint
+  variable:functions/hello.js:hello and variable:functions/api/simple.js:simple,
+  named by BUG-0056 from the file's basename. Neither carries :REGISTRATION or
+  :TRIGGER, so S10 leaves them as they are and counts each in
+  :UNNAMED-REGISTRATIONS. Measured on front-end the same day: api has trigger
+  https, codebase default, :DEPLOYED :UNKNOWN, and the deploys line reads 2
+  registrations in a default export carry no name. lfia's functions domain is
+  declared in its untracked .loom/frameworks.yaml, so a fresh clone of lfia
+  reports `unrooted` until that file is copied.
+
   :DEPLOYED is :UNKNOWN for every JavaScript entry point. The entry module is
   package.json's `main`, which no analyzer reads, and for TypeScript it is a
   compiled file the repository ignores. Defaulting to index.js would be a
@@ -763,6 +773,28 @@ body: |
     entry-points removes fixtures from the no-caller band. It does not
     connect them to tests.
 
+  - An imported name in a JavaScript registration argument. `import {apiKey}
+    from "./params.js"` then `secrets: [apiKey]` reads nothing. The walk that
+    follows an imported name is written for Python, and R12 rules out
+    language-specific pass code. front-end has no secrets.
+  - CommonJS and TypeScript functions trees. `const {onRequest} =
+    require("firebase-functions/v2/https")` binds through a call to a global,
+    so the callee has no import binding, and `exports.api = onRequest(...)` is
+    an assignment, which mints no entity. This is the shape `firebase init`
+    writes for JavaScript. A TypeScript codebase is not claimed at all
+    (REQ-0024). front-end is ESM.
+  - A handler passed by name. `export const api = onRequest(handler)` has no
+    function argument, so D9 makes it a :VALUE-CALL, which no entry-points
+    entry is matched against. front-end has none.
+  - The calls inside a registration's handler. Calls in a module-level
+    variable's initialiser are dropped because :CALLS may not start at a
+    :VARIABLE (REQ-0024 NOT IN, BUG-0017), so `impact` on a helper a handler
+    calls does not reach the entry point. A :CALL-SITE for that position is
+    the designed answer and is its own change.
+  - v1's chained builders. `functions.pubsub.schedule("...").onRun(fn)` has a
+    callee rooted in a call, which binds no import. Only v1's direct
+    `https.onRequest` and `https.onCall` are matched.
+
   OUT OF SCOPE
 
   REQ-0078's own exclusions hold. Loom reads source, not the cloud. It can
@@ -836,17 +868,3 @@ body: |
   The file name firebase.json is claimed wherever it appears. A vendored copy
   under a directory VENDORED-PATH-P does not already exclude would add a
   codebase that does not deploy. Neither lfia nor front-end has one.
-
-  OUTSTANDING
-
-  PLAN-0057 built S1 to S9 and met R1 to R11 for Python trees. What remains
-  is S10, which the JavaScript plan carries:
-
-  R12            The JavaScript half of R10 (the template and init's nodejs
-                 proposal), and extract.js and js-analyzer.lisp writing
-                 :REGISTRATION, :VALUE-CALL and :UNNAMED-REGISTRATIONS (D9).
-  R13            The front-end clause. front-end has a firebase.json and
-                 .firebaserc, a codebase at functions and no entry points,
-                 because its functions are JavaScript.
-  R13            `unrooted 0` on lfia holds because the functions domain is
-                 declared in lfia's untracked .loom/frameworks.yaml, by us.
