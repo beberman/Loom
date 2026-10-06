@@ -2425,3 +2425,28 @@ affects: [API_KEY]
                  "the control: the walk can see a string the index does hold")
         (is (not (index-contains-p repository "SENTINEL-7f3a")))
         (is (not (index-contains-p repository "SENTINEL-DEFAULT"))))))
+
+(defun js-fn-picture (repository)
+  "What step 3's assertions read off api and API_KEY: the trigger, the entry
+point and who reads the secret."
+  (let ((api (js-fn-variable repository "api")))
+    (list (getp api :trigger) (getp api :entry-point)
+          (js-fn-readers repository (js-fn-setting repository "API_KEY")))))
+
+(test the-javascript-template-gives-the-same-answers-as-the-hand-written-declarations
+  ;; PLAN-0058 step 4 and risk 6. The template is data with no compiler: a
+  ;; misspelled module or name leaves api in the no-caller band and nothing else
+  ;; says so, so the step 3 fixture is read once with its hand-written
+  ;; declarations and once with the template copied in their place.
+  (if (not (node-available-p))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")
+      (with-workspace-fixture (repository)
+        (write-js-functions-tree)
+        (reindex-repository repository :quiet t)
+        (let ((hand-written (js-fn-picture repository)))
+          (is (eq :https (first hand-written)) "the control: the fixture matches")
+          (write-file ".loom/frameworks.yaml"
+                      (utils:read-file (loom-workspace::template-path "firebase-functions-js.yaml")))
+          (reindex-repository repository :quiet t)
+          (is (equal hand-written (js-fn-picture repository)))
+          (is-true (js-fn-setting repository "P") "the param declaration matches too")))))

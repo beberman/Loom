@@ -1,0 +1,498 @@
+# A proposal for .loom/frameworks.yaml: copy what you want into your own file.
+# Loom shows this when it finds a firebase.json with a Node codebase and never
+# writes it for you. A declaration nobody wrote cannot be told from one somebody
+# did (DES-0054 D3).
+#
+# The callees are firebase-functions 6.6.0's public registrations, read from an
+# installed copy of the SDK: the functions each provider module exports whose
+# names begin `on' or `before'. The SDK's own helpers (onInit, onOperation,
+# onChangedOperation, beforeOperation) register nothing and are left out. A
+# trigger a later version adds is absent until you add it; the function then
+# stays in `structure's no-caller list, which is how the miss shows.
+#
+# ES modules only. `import {onRequest} from "firebase-functions/v2/https"`,
+# `import * as v2 from "firebase-functions/v2"` and `import functions from
+# "firebase-functions"` are matched, so both spellings of each callee are listed:
+# the namespace or named one (`https.onRequest`) and the default import's
+# (`default.https.onRequest`). `const {onRequest} = require(...)`,
+# `exports.api = onRequest(...)` and a TypeScript source are not read, and
+# `firebase init` writes the first two for JavaScript. A registration is a
+# module-level `const NAME = call(..., function)`; one that is only default
+# exported is counted, not named.
+#
+# The root module "firebase-functions" is the v2 API in 6.x, as its package.json
+# maps "." to lib/v2. v1 is listed for https only, and only its direct
+# `functions.https.onRequest` and `onCall`. v1's chained builders
+# (`functions.pubsub.schedule("...").onRun(fn)`, `.runWith({secrets}).https...`)
+# have a callee rooted in a call and are not matched.
+#
+# Add `domains: [{name: functions, root: functions/, resolution: node-esm}]` as
+# well when functions/package.json says `"type": "module"`: node does not guess
+# a file extension, so Loom must be told it does not either.
+#
+# Names only. A secret's value is in Secret Manager or a dot-file Loom never
+# reads, and a param's default is not a first string argument, so neither can
+# reach the index (DES-0054 D7).
+entry-points:
+  - framework: firebase-functions
+    trigger: https
+    module: firebase-functions/https
+    names: [onRequest, onCall, onCallGenkit]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: https
+    module: firebase-functions/v2/https
+    names: [onRequest, onCall, onCallGenkit]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: https
+    module: firebase-functions
+    names: [https.onRequest, default.https.onRequest, https.onCall, default.https.onCall,
+            https.onCallGenkit, default.https.onCallGenkit]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: https
+    module: firebase-functions/v2
+    names: [https.onRequest, default.https.onRequest, https.onCall, default.https.onCall,
+            https.onCallGenkit, default.https.onCallGenkit]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: schedule
+    module: firebase-functions/scheduler
+    names: [onSchedule]
+    settings: [secrets]
+    positional: [schedule]
+  - framework: firebase-functions
+    trigger: schedule
+    module: firebase-functions/v2/scheduler
+    names: [onSchedule]
+    settings: [secrets]
+    positional: [schedule]
+  - framework: firebase-functions
+    trigger: schedule
+    module: firebase-functions
+    names: [scheduler.onSchedule, default.scheduler.onSchedule]
+    settings: [secrets]
+    positional: [schedule]
+  - framework: firebase-functions
+    trigger: schedule
+    module: firebase-functions/v2
+    names: [scheduler.onSchedule, default.scheduler.onSchedule]
+    settings: [secrets]
+    positional: [schedule]
+  - framework: firebase-functions
+    trigger: firestore
+    module: firebase-functions/firestore
+    names: [onDocumentWritten, onDocumentWrittenWithAuthContext, onDocumentCreated,
+            onDocumentCreatedWithAuthContext, onDocumentUpdated,
+            onDocumentUpdatedWithAuthContext, onDocumentDeleted,
+            onDocumentDeletedWithAuthContext]
+    settings: [secrets]
+    positional: [document]
+  - framework: firebase-functions
+    trigger: firestore
+    module: firebase-functions/v2/firestore
+    names: [onDocumentWritten, onDocumentWrittenWithAuthContext, onDocumentCreated,
+            onDocumentCreatedWithAuthContext, onDocumentUpdated,
+            onDocumentUpdatedWithAuthContext, onDocumentDeleted,
+            onDocumentDeletedWithAuthContext]
+    settings: [secrets]
+    positional: [document]
+  - framework: firebase-functions
+    trigger: firestore
+    module: firebase-functions
+    names: [firestore.onDocumentWritten, default.firestore.onDocumentWritten,
+            firestore.onDocumentWrittenWithAuthContext,
+            default.firestore.onDocumentWrittenWithAuthContext, firestore.onDocumentCreated,
+            default.firestore.onDocumentCreated, firestore.onDocumentCreatedWithAuthContext,
+            default.firestore.onDocumentCreatedWithAuthContext, firestore.onDocumentUpdated,
+            default.firestore.onDocumentUpdated, firestore.onDocumentUpdatedWithAuthContext,
+            default.firestore.onDocumentUpdatedWithAuthContext, firestore.onDocumentDeleted,
+            default.firestore.onDocumentDeleted, firestore.onDocumentDeletedWithAuthContext,
+            default.firestore.onDocumentDeletedWithAuthContext]
+    settings: [secrets]
+    positional: [document]
+  - framework: firebase-functions
+    trigger: firestore
+    module: firebase-functions/v2
+    names: [firestore.onDocumentWritten, default.firestore.onDocumentWritten,
+            firestore.onDocumentWrittenWithAuthContext,
+            default.firestore.onDocumentWrittenWithAuthContext, firestore.onDocumentCreated,
+            default.firestore.onDocumentCreated, firestore.onDocumentCreatedWithAuthContext,
+            default.firestore.onDocumentCreatedWithAuthContext, firestore.onDocumentUpdated,
+            default.firestore.onDocumentUpdated, firestore.onDocumentUpdatedWithAuthContext,
+            default.firestore.onDocumentUpdatedWithAuthContext, firestore.onDocumentDeleted,
+            default.firestore.onDocumentDeleted, firestore.onDocumentDeletedWithAuthContext,
+            default.firestore.onDocumentDeletedWithAuthContext]
+    settings: [secrets]
+    positional: [document]
+  - framework: firebase-functions
+    trigger: database
+    module: firebase-functions/database
+    names: [onValueWritten, onValueCreated, onValueUpdated, onValueDeleted]
+    settings: [secrets]
+    positional: [ref]
+  - framework: firebase-functions
+    trigger: database
+    module: firebase-functions/v2/database
+    names: [onValueWritten, onValueCreated, onValueUpdated, onValueDeleted]
+    settings: [secrets]
+    positional: [ref]
+  - framework: firebase-functions
+    trigger: database
+    module: firebase-functions
+    names: [database.onValueWritten, default.database.onValueWritten, database.onValueCreated,
+            default.database.onValueCreated, database.onValueUpdated,
+            default.database.onValueUpdated, database.onValueDeleted,
+            default.database.onValueDeleted]
+    settings: [secrets]
+    positional: [ref]
+  - framework: firebase-functions
+    trigger: database
+    module: firebase-functions/v2
+    names: [database.onValueWritten, default.database.onValueWritten, database.onValueCreated,
+            default.database.onValueCreated, database.onValueUpdated,
+            default.database.onValueUpdated, database.onValueDeleted,
+            default.database.onValueDeleted]
+    settings: [secrets]
+    positional: [ref]
+  - framework: firebase-functions
+    trigger: pubsub
+    module: firebase-functions/pubsub
+    names: [onMessagePublished]
+    settings: [secrets]
+    positional: [topic]
+  - framework: firebase-functions
+    trigger: pubsub
+    module: firebase-functions/v2/pubsub
+    names: [onMessagePublished]
+    settings: [secrets]
+    positional: [topic]
+  - framework: firebase-functions
+    trigger: pubsub
+    module: firebase-functions
+    names: [pubsub.onMessagePublished, default.pubsub.onMessagePublished]
+    settings: [secrets]
+    positional: [topic]
+  - framework: firebase-functions
+    trigger: pubsub
+    module: firebase-functions/v2
+    names: [pubsub.onMessagePublished, default.pubsub.onMessagePublished]
+    settings: [secrets]
+    positional: [topic]
+  - framework: firebase-functions
+    trigger: storage
+    module: firebase-functions/storage
+    names: [onObjectArchived, onObjectFinalized, onObjectDeleted, onObjectMetadataUpdated]
+    settings: [secrets]
+    positional: [bucket]
+  - framework: firebase-functions
+    trigger: storage
+    module: firebase-functions/v2/storage
+    names: [onObjectArchived, onObjectFinalized, onObjectDeleted, onObjectMetadataUpdated]
+    settings: [secrets]
+    positional: [bucket]
+  - framework: firebase-functions
+    trigger: storage
+    module: firebase-functions
+    names: [storage.onObjectArchived, default.storage.onObjectArchived,
+            storage.onObjectFinalized, default.storage.onObjectFinalized,
+            storage.onObjectDeleted, default.storage.onObjectDeleted,
+            storage.onObjectMetadataUpdated, default.storage.onObjectMetadataUpdated]
+    settings: [secrets]
+    positional: [bucket]
+  - framework: firebase-functions
+    trigger: storage
+    module: firebase-functions/v2
+    names: [storage.onObjectArchived, default.storage.onObjectArchived,
+            storage.onObjectFinalized, default.storage.onObjectFinalized,
+            storage.onObjectDeleted, default.storage.onObjectDeleted,
+            storage.onObjectMetadataUpdated, default.storage.onObjectMetadataUpdated]
+    settings: [secrets]
+    positional: [bucket]
+  - framework: firebase-functions
+    trigger: identity
+    module: firebase-functions/identity
+    names: [beforeUserCreated, beforeUserSignedIn, beforeEmailSent, beforeSmsSent]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: identity
+    module: firebase-functions/v2/identity
+    names: [beforeUserCreated, beforeUserSignedIn, beforeEmailSent, beforeSmsSent]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: identity
+    module: firebase-functions
+    names: [identity.beforeUserCreated, default.identity.beforeUserCreated,
+            identity.beforeUserSignedIn, default.identity.beforeUserSignedIn,
+            identity.beforeEmailSent, default.identity.beforeEmailSent, identity.beforeSmsSent,
+            default.identity.beforeSmsSent]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: identity
+    module: firebase-functions/v2
+    names: [identity.beforeUserCreated, default.identity.beforeUserCreated,
+            identity.beforeUserSignedIn, default.identity.beforeUserSignedIn,
+            identity.beforeEmailSent, default.identity.beforeEmailSent, identity.beforeSmsSent,
+            default.identity.beforeSmsSent]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: tasks
+    module: firebase-functions/tasks
+    names: [onTaskDispatched]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: tasks
+    module: firebase-functions/v2/tasks
+    names: [onTaskDispatched]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: tasks
+    module: firebase-functions
+    names: [tasks.onTaskDispatched, default.tasks.onTaskDispatched]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: tasks
+    module: firebase-functions/v2
+    names: [tasks.onTaskDispatched, default.tasks.onTaskDispatched]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: eventarc
+    module: firebase-functions/eventarc
+    names: [onCustomEventPublished]
+    settings: [secrets]
+    positional: [eventType]
+  - framework: firebase-functions
+    trigger: eventarc
+    module: firebase-functions/v2/eventarc
+    names: [onCustomEventPublished]
+    settings: [secrets]
+    positional: [eventType]
+  - framework: firebase-functions
+    trigger: eventarc
+    module: firebase-functions
+    names: [eventarc.onCustomEventPublished, default.eventarc.onCustomEventPublished]
+    settings: [secrets]
+    positional: [eventType]
+  - framework: firebase-functions
+    trigger: eventarc
+    module: firebase-functions/v2
+    names: [eventarc.onCustomEventPublished, default.eventarc.onCustomEventPublished]
+    settings: [secrets]
+    positional: [eventType]
+  - framework: firebase-functions
+    trigger: remote-config
+    module: firebase-functions/remoteConfig
+    names: [onConfigUpdated]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: remote-config
+    module: firebase-functions/v2/remoteConfig
+    names: [onConfigUpdated]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: remote-config
+    module: firebase-functions
+    names: [remoteConfig.onConfigUpdated, default.remoteConfig.onConfigUpdated]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: remote-config
+    module: firebase-functions/v2
+    names: [remoteConfig.onConfigUpdated, default.remoteConfig.onConfigUpdated]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: test-lab
+    module: firebase-functions/testLab
+    names: [onTestMatrixCompleted]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: test-lab
+    module: firebase-functions/v2/testLab
+    names: [onTestMatrixCompleted]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: test-lab
+    module: firebase-functions
+    names: [testLab.onTestMatrixCompleted, default.testLab.onTestMatrixCompleted]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: test-lab
+    module: firebase-functions/v2
+    names: [testLab.onTestMatrixCompleted, default.testLab.onTestMatrixCompleted]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/alerts
+    names: [onAlertPublished]
+    settings: [secrets]
+    positional: [alertType]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/v2/alerts
+    names: [onAlertPublished]
+    settings: [secrets]
+    positional: [alertType]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions
+    names: [alerts.onAlertPublished, default.alerts.onAlertPublished]
+    settings: [secrets]
+    positional: [alertType]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/v2
+    names: [alerts.onAlertPublished, default.alerts.onAlertPublished]
+    settings: [secrets]
+    positional: [alertType]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/alerts/appDistribution
+    names: [onNewTesterIosDevicePublished, onInAppFeedbackPublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/v2/alerts/appDistribution
+    names: [onNewTesterIosDevicePublished, onInAppFeedbackPublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions
+    names: [alerts.appDistribution.onNewTesterIosDevicePublished,
+            default.alerts.appDistribution.onNewTesterIosDevicePublished,
+            alerts.appDistribution.onInAppFeedbackPublished,
+            default.alerts.appDistribution.onInAppFeedbackPublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/v2
+    names: [alerts.appDistribution.onNewTesterIosDevicePublished,
+            default.alerts.appDistribution.onNewTesterIosDevicePublished,
+            alerts.appDistribution.onInAppFeedbackPublished,
+            default.alerts.appDistribution.onInAppFeedbackPublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/alerts/billing
+    names: [onPlanUpdatePublished, onPlanAutomatedUpdatePublished]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/v2/alerts/billing
+    names: [onPlanUpdatePublished, onPlanAutomatedUpdatePublished]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions
+    names: [alerts.billing.onPlanUpdatePublished, default.alerts.billing.onPlanUpdatePublished,
+            alerts.billing.onPlanAutomatedUpdatePublished,
+            default.alerts.billing.onPlanAutomatedUpdatePublished]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/v2
+    names: [alerts.billing.onPlanUpdatePublished, default.alerts.billing.onPlanUpdatePublished,
+            alerts.billing.onPlanAutomatedUpdatePublished,
+            default.alerts.billing.onPlanAutomatedUpdatePublished]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/alerts/crashlytics
+    names: [onNewFatalIssuePublished, onNewNonfatalIssuePublished, onRegressionAlertPublished,
+            onStabilityDigestPublished, onVelocityAlertPublished, onNewAnrIssuePublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/v2/alerts/crashlytics
+    names: [onNewFatalIssuePublished, onNewNonfatalIssuePublished, onRegressionAlertPublished,
+            onStabilityDigestPublished, onVelocityAlertPublished, onNewAnrIssuePublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions
+    names: [alerts.crashlytics.onNewFatalIssuePublished,
+            default.alerts.crashlytics.onNewFatalIssuePublished,
+            alerts.crashlytics.onNewNonfatalIssuePublished,
+            default.alerts.crashlytics.onNewNonfatalIssuePublished,
+            alerts.crashlytics.onRegressionAlertPublished,
+            default.alerts.crashlytics.onRegressionAlertPublished,
+            alerts.crashlytics.onStabilityDigestPublished,
+            default.alerts.crashlytics.onStabilityDigestPublished,
+            alerts.crashlytics.onVelocityAlertPublished,
+            default.alerts.crashlytics.onVelocityAlertPublished,
+            alerts.crashlytics.onNewAnrIssuePublished,
+            default.alerts.crashlytics.onNewAnrIssuePublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/v2
+    names: [alerts.crashlytics.onNewFatalIssuePublished,
+            default.alerts.crashlytics.onNewFatalIssuePublished,
+            alerts.crashlytics.onNewNonfatalIssuePublished,
+            default.alerts.crashlytics.onNewNonfatalIssuePublished,
+            alerts.crashlytics.onRegressionAlertPublished,
+            default.alerts.crashlytics.onRegressionAlertPublished,
+            alerts.crashlytics.onStabilityDigestPublished,
+            default.alerts.crashlytics.onStabilityDigestPublished,
+            alerts.crashlytics.onVelocityAlertPublished,
+            default.alerts.crashlytics.onVelocityAlertPublished,
+            alerts.crashlytics.onNewAnrIssuePublished,
+            default.alerts.crashlytics.onNewAnrIssuePublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/alerts/performance
+    names: [onThresholdAlertPublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/v2/alerts/performance
+    names: [onThresholdAlertPublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions
+    names: [alerts.performance.onThresholdAlertPublished,
+            default.alerts.performance.onThresholdAlertPublished]
+    settings: [secrets]
+    positional: [appId]
+  - framework: firebase-functions
+    trigger: alerts
+    module: firebase-functions/v2
+    names: [alerts.performance.onThresholdAlertPublished,
+            default.alerts.performance.onThresholdAlertPublished]
+    settings: [secrets]
+    positional: [appId]
+  # v1: https only.
+  - framework: firebase-functions
+    trigger: https
+    module: firebase-functions/v1
+    names: [default.https.onRequest, https.onRequest, default.https.onCall, https.onCall]
+    settings: [secrets]
+setting-declarations:
+  - source: secret
+    module: firebase-functions/params
+    names: [defineSecret, defineJsonSecret]
+  - source: secret
+    module: firebase-functions
+    names: [params.defineSecret, default.params.defineSecret,
+            params.defineJsonSecret, default.params.defineJsonSecret]
+  - source: param
+    module: firebase-functions/params
+    names: [defineString, defineInt, defineFloat, defineBoolean, defineList]
+  - source: param
+    module: firebase-functions
+    names: [params.defineString, default.params.defineString,
+            params.defineInt, default.params.defineInt,
+            params.defineFloat, default.params.defineFloat,
+            params.defineBoolean, default.params.defineBoolean,
+            params.defineList, default.params.defineList]

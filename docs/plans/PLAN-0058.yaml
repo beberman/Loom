@@ -917,3 +917,32 @@ body: |
   params.js's apiKey reads it, and that `other' has no :READS edge, which pins
   FINDINGS 2. (5) Risk 7's same-name case (variable API_KEY and setting
   API_KEY) resolves to the setting without ambiguity, so no deviation there.
+
+  Step 4. Run with /usr/bin/sbcl through tools/loom-test.sh, 12 of 12
+  systems, no skip (workspace 1096 to 1122 checks). check: 0 violations, 8
+  unresolved, 7 ambiguous. call-site-census: 508 total, 41 ambiguous, js-test
+  91, unchanged; every new test is a plain `test'. load-test loom-serve prints
+  T. init now proposes firebase-functions-js.yaml for front-end's codebase
+  `default' (language :NODEJS, domains :SRC and :SERVER from jsconfig, none
+  for functions) and is unchanged for lfia (Python template, domain
+  :FUNCTIONS). front-end's `git status --short' is identical before and after
+  the PLAN-PREPARATION run.
+  CON-0003: with the :nodejs note restored and one callee misspelled in the
+  template (default.https.onRequests), A-NODEJS-CODEBASE-PROPOSES-THE-
+  JAVASCRIPT-TEMPLATE-AND-NO-DOMAIN (two assertions) and NO-RUNTIME-AND-A-
+  PACKAGE-JSON-IS-JAVASCRIPT-TOO fail; the template-parse test and the
+  workspace test that reads step 3's fixture under the template fail on the
+  typo. THE-PROPOSAL-NEVER-WRITES... gains the nodejs case and passes either
+  way, since it asserts an absence.
+  Departures: (1) The plan says names that begin `on' or `before'. The SDK's
+  helpers onInit, onOperation, onChangedOperation, beforeOperation and
+  beforeSnapshotConstructor also match and register nothing, so they are left
+  out and the header says so. onCallGenkit, beforeEmailSent and beforeSmsSent
+  are included. (2) The template is generated from the installed SDK by a
+  scratch script (not kept) and holds 65 entries, one per provider per module
+  path, so the root and v2 entries are separate. v1 lists https only, at
+  "firebase-functions/v1"; "firebase-functions/v1/https" is not listed.
+  (3) Positional labels: schedule, document, ref, topic, bucket, eventType,
+  alertType (alerts) and appId (appDistribution, crashlytics, performance).
+  (4) lfia's working tree changed during the run (its author's edits); Loom
+  writes nothing there.
