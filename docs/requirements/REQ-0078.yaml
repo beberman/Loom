@@ -160,17 +160,16 @@ body: |
   OUTSTANDING
 
   PLAN-0056 built the Python analyzer under DES-0053: R1 to R6 and R12.
-  What remains:
+  PLAN-0057 built Firebase Functions for Python trees under DES-0054: R7 to
+  R9 and R11. What remains:
 
-  R7 to R9, R11  Firebase Functions: decorator entry points, secrets and
-                 params, firebase.json and .firebaserc, and rot reports for
-                 named functions. DES-0053 records decorators and their
-                 literal arguments on each entity and leaves the rest to a
-                 second design.
+  R7 to R9       For a JavaScript functions tree: DES-0054 S10, in the
+                 JavaScript plan.
   R10            requirements.txt dependency names. Two of lfia-accounting's
                  six requirement names differ from their module names
                  (google-auth installs google.auth), and the mapping lives
-                 in the venv's metadata, which is not indexed.
+                 in the venv's metadata, which is not indexed. DES-0054
+                 deferred it and names a :MODULE shape as the start.
   R1, R2         Module entities, and storing the shape of each call site
                  (REQ-0041). DES-0053 declines both: a Python module is one
                  file, and REQ-0041 has no design for storage.

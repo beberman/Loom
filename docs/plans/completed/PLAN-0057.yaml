@@ -1,6 +1,6 @@
 id: PLAN-0057
 title: DES-0054 S1 to S9 in ten steps -- ontology first, the decorator encoding, the two frameworks.yaml keys, the firebase analyzer, settings, the entry-point pass, the surfaces, init's proposal, acceptance on lfia and Loom, complete; JavaScript (S10) split to its own plan
-status: draft
+status: final
 date: 2026-10-05
 refines: [DES-0054]
 affects: [py-decorators, py-decorator-value, literal_value, Extractor.visit_decorator,

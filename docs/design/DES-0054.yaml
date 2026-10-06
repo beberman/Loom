@@ -1,6 +1,6 @@
 id: DES-0054
 title: Firebase Functions in Loom - a generic entry-points key and a setting-declarations key in .loom/frameworks.yaml, a narrow analyzer for firebase.json and .firebaserc, and two graph passes that derive triggers, codebases and secret reads
-status: draft
+status: partial
 date: 2026-10-05
 refines: [REQ-0078, DES-0053]
 affects: [read-json-file, propose-domains, parse-frameworks, frameworks-problems,
@@ -836,3 +836,17 @@ body: |
   The file name firebase.json is claimed wherever it appears. A vendored copy
   under a directory VENDORED-PATH-P does not already exclude would add a
   codebase that does not deploy. Neither lfia nor front-end has one.
+
+  OUTSTANDING
+
+  PLAN-0057 built S1 to S9 and met R1 to R11 for Python trees. What remains
+  is S10, which the JavaScript plan carries:
+
+  R12            The JavaScript half of R10 (the template and init's nodejs
+                 proposal), and extract.js and js-analyzer.lisp writing
+                 :REGISTRATION, :VALUE-CALL and :UNNAMED-REGISTRATIONS (D9).
+  R13            The front-end clause. front-end has a firebase.json and
+                 .firebaserc, a codebase at functions and no entry points,
+                 because its functions are JavaScript.
+  R13            `unrooted 0` on lfia holds because the functions domain is
+                 declared in lfia's untracked .loom/frameworks.yaml, by us.
