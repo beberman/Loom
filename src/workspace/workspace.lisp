@@ -2132,7 +2132,8 @@ declares codebases and .loom/frameworks.yaml has no entry-points, which makes th
 missing declaration a recorded gap and not an empty band (CON-0001).
 :UNNAMED-DECLARATIONS, the variables calling a setting declaration with no literal
 first argument, which name nothing. Computed from the graph and never stored,
-since R7 declares no property for it."
+since R7 declares no property for it. :UNNAMED-REGISTRATIONS, an integer: the
+default-exported registrations in files a codebase covers."
   (let* ((graph (repository-graph repository))
          (roots (codebase-roots graph)))
     (when roots
@@ -2160,7 +2161,15 @@ since R7 declares no property for it."
                               (and call (null (getf call :first-string))
                                    (match-registration call (getp variable :language)
                                                        declarations))))
-                          (entities-of-type graph :variable))))))))
+                          (entities-of-type graph :variable)))
+              ;; PLAN-0058 step 5, one field beyond D8's list. Summed only over
+              ;; files a codebase covers: the extractor cannot tell Firebase from
+              ;; React (`export default memo(...)' counts), so an uncovered file's
+              ;; count is a fact about syntax and not about deployment.
+              :unnamed-registrations
+              (loop for file in (entities-of-type graph :file)
+                    when (covering-codebases (getp file :path) roots)
+                      sum (or (getp file :unnamed-registrations) 0)))))))
 
 (defun repository-status (repository)
   "SS3.2's status, as plain data: \"indexing progress, entity and relationship

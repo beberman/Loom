@@ -585,14 +585,17 @@ text, with anything you wrote below ~a, and refreshes will work from then on"
   "The entry-points and setting-declarations a Python Firebase codebase copies
 into .loom/frameworks.yaml. Proposed by TEMPLATE-PROPOSALS, never written.")
 
+(defparameter *firebase-js-template* "firebase-functions-js.yaml"
+  "The JavaScript counterpart of *FIREBASE-PYTHON-TEMPLATE*, for an ES-module
+functions tree (DES-0054 D3, R12).")
+
 (defun template-proposals (root)
   "One plist per Firebase codebase in ROOT's firebase.json: :CODEBASE, :SOURCE,
 :LANGUAGE, and either :TEMPLATE with the :TEMPLATE-PATH to copy from, or :NOTE
 saying why there is none. DES-0054 R10.
 
-A Python codebase gets the Python template. A Node one is named with `no
-template until the JavaScript plan', which is a recorded gap and not a silence.
-A codebase whose language cannot be told says so rather than being given a
+A Python codebase gets the Python template and a Node one the JavaScript
+template. A codebase whose language cannot be told says so rather than being given a
 guess. Nothing is written, so an author reads the template and decides."
   (loop for codebase in (loom-analyzer:firebase-codebase-languages root)
         collect (append
@@ -603,7 +606,9 @@ guess. Nothing is written, so an author reads the template and decides."
                    (:python (list :template *firebase-python-template*
                                   :template-path (namestring
                                                   (template-path *firebase-python-template*))))
-                   (:nodejs (list :note "no template until the JavaScript plan"))
+                   (:nodejs (list :template *firebase-js-template*
+                                  :template-path (namestring
+                                                  (template-path *firebase-js-template*))))
                    (t (list :note "language not recognised: no runtime, and no main.py or package.json in the source directory"))))))
 
 (defun domain-proposal-summaries (proposals)

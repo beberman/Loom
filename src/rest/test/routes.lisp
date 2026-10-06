@@ -81,6 +81,33 @@ def sync_zeffy(req): pass
             (is (search "ZEFFY_API_KEY" body))
             (is (search "options.MemoryOption.MB_512" body)))))))
 
+(defun rest-node-available-p ()
+  (handler-case (progn (uiop:run-program '("node" "--version")) t)
+    (error () nil)))
+
+(test describe-over-rest-carries-a-javascript-registration-as-json
+  ;; PLAN-0058 risk 3: a JavaScript :VARIABLE gains :REGISTRATION, a nested plist
+  ;; that must still encode and parse, and name the callee the entry-points
+  ;; declaration is matched against.
+  (if (not (rest-node-available-p))
+      (skip "node is not on PATH")
+      (with-operations-fixture (repository)
+        (loom-serve-test::write-operations-fixture-file "functions/index.js" "import functions from \"firebase-functions\";
+export const api = functions.https.onRequest((req, res) => {});
+")
+        (with-test-server ()
+          (http-call (route :reindex)
+                     :method :post :content-type "application/json"
+                     :content (format nil "{\"repository\":\"~a\"}"
+                                      (repository-name repository)))
+          (multiple-value-bind (body status)
+              (http-call (route :describe)
+                         :parameters (list (cons "repository" (repository-name repository))
+                                           (cons "term" "api")))
+            (is (= 200 status))
+            (finishes (decode body))
+            (is (search "functions.https.onRequest" body)))))))
+
 (test a-write-route-changes-what-status-reports
   ;; Two requests, because a write whose effect is only visible to the same
   ;; request has not been tested.

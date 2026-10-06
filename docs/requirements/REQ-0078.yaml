@@ -161,10 +161,12 @@ body: |
 
   PLAN-0056 built the Python analyzer under DES-0053: R1 to R6 and R12.
   PLAN-0057 built Firebase Functions for Python trees under DES-0054: R7 to
-  R9 and R11. What remains:
+  R9 and R11. PLAN-0058 built them for ES-module JavaScript trees. What
+  remains:
 
-  R7 to R9       For a JavaScript functions tree: DES-0054 S10, in the
-                 JavaScript plan.
+  R7 to R9       For CommonJS and TypeScript functions trees, and for a
+                 registration argument imported from another file. PLAN-0058
+                 built them for ES-module JavaScript trees.
   R10            requirements.txt dependency names. Two of lfia-accounting's
                  six requirement names differ from their module names
                  (google-auth installs google.auth), and the mapping lives

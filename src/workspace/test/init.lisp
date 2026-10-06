@@ -963,16 +963,27 @@ confirm -- CON-0001. It is reported instead.")
                  (getf (first (getf report :template-proposals)) :template)))
       (is (equal "functions/" (getf (first (getf report :domain-proposals)) :root))))))
 
-(test a-nodejs-codebase-gets-no-template-and-says-why
+(test a-nodejs-codebase-proposes-the-javascript-template-and-no-domain
   (with-target-tree (root)
     (write-target-file root "firebase.json"
                        (firebase-json "\"source\": \"functions\"" "\"runtime\": \"nodejs20\""))
     (let* ((report (prepare-repository root))
            (proposal (first (getf report :template-proposals))))
-      (is (null (getf proposal :template)))
-      (is (search "no template until the JavaScript plan" (getf proposal :note)))
+      (is (equal "firebase-functions-js.yaml" (getf proposal :template)))
+      (is (probe-file (getf proposal :template-path)) "the path to copy from exists")
+      (is (null (getf proposal :note)))
       (is (null (getf report :domain-proposals))
           "only a Python codebase proposes a domain"))))
+
+(test no-runtime-and-a-package-json-is-javascript-too
+  (with-target-tree (root)
+    (write-target-file root "firebase.json" (firebase-json "\"source\": \"functions\""))
+    (write-target-file root "functions/package.json" "{\"type\": \"module\"}
+")
+    (let ((report (prepare-repository root)))
+      (is (equal "firebase-functions-js.yaml"
+                 (getf (first (getf report :template-proposals)) :template)))
+      (is (null (getf report :domain-proposals))))))
 
 (test a-codebase-whose-language-cannot-be-told-says-so
   (with-target-tree (root)
@@ -995,16 +1006,19 @@ confirm -- CON-0001. It is reported instead.")
       (is (equal "functions/" (getf (first (getf report :domain-proposals)) :root))))))
 
 (test the-proposal-never-writes-or-changes-frameworks-yaml
-  (with-target-tree (root)
-    (write-target-file root "firebase.json"
-                       (firebase-json "\"source\": \"functions\"" "\"runtime\": \"python312\""))
-    (prepare-repository root)
-    (is (null (target-text root ".loom/frameworks.yaml")) "none is created")
-    (write-target-file root ".loom/frameworks.yaml" "archived-paths: [old/]
-")
-    (let ((before (target-text root ".loom/frameworks.yaml")))
+  (dolist (runtime '("python312" "nodejs20"))
+    (with-target-tree (root)
+      (write-target-file root "firebase.json"
+                         (firebase-json "\"source\": \"functions\""
+                                        (format nil "\"runtime\": \"~a\"" runtime)))
       (prepare-repository root)
-      (is (equal before (target-text root ".loom/frameworks.yaml")) "and none is changed"))))
+      (is (null (target-text root ".loom/frameworks.yaml")) "~a: none is created" runtime)
+      (write-target-file root ".loom/frameworks.yaml" "archived-paths: [old/]
+")
+      (let ((before (target-text root ".loom/frameworks.yaml")))
+        (prepare-repository root)
+        (is (equal before (target-text root ".loom/frameworks.yaml"))
+            "~a: and none is changed" runtime)))))
 
 (test the-python-template-parses-with-no-problems-and-declares-each-callee-once
   (with-target-tree (root)
@@ -1021,3 +1035,49 @@ confirm -- CON-0001. It is reported instead.")
       (is (equal '(:secret :param)
                  (mapcar (lambda (e) (getf e :source)) (getf frameworks :setting-declarations))))
       (is (null (getf frameworks :declaration-problems))))))
+
+(defun declared-callees (entries)
+  "Every module.name callee ENTRIES declare, as the strings the passes compare."
+  (loop for entry in entries
+        append (loop for name in (getf entry :names)
+                     collect (format nil "~a.~a" (getf entry :module) name))))
+
+(test the-javascript-template-parses-and-names-each-callee-once
+  ;; The template is data with no compiler, so a misspelled module or name is
+  ;; silent: the function stays in the no-caller band (PLAN-0058 risk 6). This
+  ;; needs no node.
+  (with-target-tree (root)
+    (write-target-file root ".loom/frameworks.yaml"
+                       (utils:read-file (loom-workspace::template-path
+                                         "firebase-functions-js.yaml")))
+    (is (null (loom-analyzer:frameworks-problems root))
+        "~a" (loom-analyzer:frameworks-problems root))
+    (let* ((frameworks (loom-analyzer:read-frameworks root))
+           (entry-callees (declared-callees (getf frameworks :entry-points)))
+           (setting-callees (declared-callees (getf frameworks :setting-declarations))))
+      (is (null (getf frameworks :declaration-problems))
+          "no callee is declared twice: ~a" (getf frameworks :declaration-problems))
+      (is (= (length entry-callees) (length (remove-duplicates entry-callees :test #'string=))))
+      (dolist (callee '("firebase-functions.default.https.onRequest"
+                        "firebase-functions.https.onRequest"
+                        "firebase-functions/v2.default.https.onCall"
+                        "firebase-functions/https.onRequest"
+                        "firebase-functions/v2/https.onRequest"
+                        "firebase-functions/scheduler.onSchedule"
+                        "firebase-functions/v2/scheduler.onSchedule"
+                        "firebase-functions/v2/firestore.onDocumentWritten"
+                        "firebase-functions.alerts.crashlytics.onNewFatalIssuePublished"
+                        "firebase-functions/v1.default.https.onRequest"))
+        (is (member callee entry-callees :test #'string=) "~a is declared" callee))
+      (dolist (callee '("firebase-functions/params.defineSecret"
+                        "firebase-functions.default.params.defineSecret"
+                        "firebase-functions/params.defineString"))
+        (is (member callee setting-callees :test #'string=) "~a is declared" callee))
+      (is (equal '(:secret :secret :param :param)
+                 (mapcar (lambda (e) (getf e :source))
+                         (getf frameworks :setting-declarations))))
+      (is (equal '("schedule")
+                 (getf (find "firebase-functions/v2/scheduler"
+                             (getf frameworks :entry-points)
+                             :key (lambda (e) (getf e :module)) :test #'string=)
+                       :positional))))))

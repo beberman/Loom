@@ -314,10 +314,165 @@ function testForm(statement) {
 }
 
 // ---------------------------------------------------------------------------
+// Registrations and value calls (DES-0054 D9, PLAN-0058 step 1)
+// ---------------------------------------------------------------------------
+//
+// A module-level `const NAME = callee(...)' is reported in the shapes
+// tools/py/extract.py uses for the same two facts, so js-analyzer.lisp can read
+// them with the decoders the Python analyzer already has. What the callee means
+// -- a Firebase trigger, a secret, a React wrapper -- is the Lisp side's to
+// decide from .loom/frameworks.yaml (DES-0045 D1); nothing here names a library.
+//
+// A value is {kind, ...}. JSON null and false both decode to NIL in Lisp, so
+// `null', `true' and `false' are kinds of their own, and an option's key travels
+// as the string under `name' rather than as an object key, which cl-json would
+// turn into a keyword.
+
+// Every ImportDeclaration's local names, before any definition is walked:
+// imports are hoisted, so a use above its import is still bound by it. The path
+// is what the specifier named inside the module -- `default' for a default
+// import, which D3's JavaScript rule keeps, the imported name for a named one,
+// and nothing for a namespace.
+function importBindings(body) {
+  const bindings = new Map();
+  for (const node of body) {
+    if (node.type !== 'ImportDeclaration') continue;
+    for (const specifier of node.specifiers) {
+      const path = specifier.type === 'ImportDefaultSpecifier' ? ['default']
+        : specifier.type === 'ImportNamespaceSpecifier' ? []
+          : [specifier.imported.name || specifier.imported.value];
+      bindings.set(specifier.local.name, { specifier: node.source.value, path });
+    }
+  }
+  return bindings;
+}
+
+// The identifiers of a non-computed member chain, root first, or null when any
+// part is something else (a call, a computed key, `this').
+function plainChain(node) {
+  const names = [];
+  let cursor = node;
+  while (cursor && cursor.type === 'MemberExpression') {
+    if (cursor.computed || cursor.property.type !== 'Identifier') return null;
+    names.unshift(cursor.property.name);
+    cursor = cursor.object;
+  }
+  if (!cursor || cursor.type !== 'Identifier') return null;
+  names.unshift(cursor.name);
+  return names;
+}
+
+function encodeValue(node, bindings) {
+  if (!node) return { kind: 'expression' };
+  if (node.type === 'Literal') {
+    if (node.value === null && !node.regex && !node.bigint) return { kind: 'none' };
+    if (typeof node.value === 'boolean') return { kind: String(node.value) };
+    if (typeof node.value === 'string' || typeof node.value === 'number') {
+      return { kind: 'literal', value: node.value };
+    }
+    return { kind: 'expression' };
+  }
+  if (node.type === 'UnaryExpression' && (node.operator === '-' || node.operator === '+')
+      && node.argument.type === 'Literal' && typeof node.argument.value === 'number') {
+    return { kind: 'literal', value: node.operator === '-' ? -node.argument.value : node.argument.value };
+  }
+  // A template with nothing interpolated is one string the source wrote.
+  if (node.type === 'TemplateLiteral' && node.expressions.length === 0) {
+    return { kind: 'literal', value: node.quasis[0].value.cooked };
+  }
+  const chain = plainChain(node);
+  if (chain) {
+    const bound = bindings.get(chain[0]);
+    if (chain.length === 1) {
+      return bound
+        ? { kind: 'name', value: chain[0], binding: 'import', specifier: bound.specifier, path: bound.path }
+        : { kind: 'name', value: chain[0], binding: 'local' };
+    }
+    return bound
+      ? { kind: 'dotted', value: chain.join('.'), specifier: bound.specifier, path: bound.path }
+      : { kind: 'dotted', value: chain.join('.') };
+  }
+  if (node.type === 'ArrayExpression') {
+    const elements = node.elements.map((element) => (
+      element && element.type !== 'SpreadElement'
+        ? encodeValue(element, bindings) : { kind: 'expression' }));
+    // A call anywhere inside leaves the whole list an expression, so the gap
+    // stays visible and the argument names no setting.
+    if (elements.every((element) => element.kind !== 'expression')) {
+      return { kind: 'list', value: elements };
+    }
+  }
+  return { kind: 'expression' };
+}
+
+// A callee that records anything: a bare identifier that is not a language
+// global, or a member chain of identifiers whose root an import binds. A chain
+// rooted in a local, a call or a global (`raw.items.filter', `[...].map',
+// `Object.keys') records nothing, because no import says what it is.
+function calleeBinding(node, bindings) {
+  const chain = plainChain(node);
+  if (!chain) return null;
+  const bound = bindings.get(chain[0]);
+  const name = chain.join('.');
+  if (bound) {
+    return { name, specifier: bound.specifier, path: bound.path.concat(chain.slice(1)) };
+  }
+  return chain.length === 1 && !GLOBAL_VALUES.has(chain[0]) ? { name } : null;
+}
+
+function isFunctionNode(node) {
+  return node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression';
+}
+
+// An object literal's keys that can be read: an identifier or a string, not
+// computed. A spread or a computed key is skipped.
+function optionKeys(object, bindings) {
+  const options = [];
+  for (const property of object.properties) {
+    if (property.type !== 'Property' || property.computed) continue;
+    const key = property.key.type === 'Identifier' ? property.key.name
+      : (property.key.type === 'Literal' && typeof property.key.value === 'string')
+        ? property.key.value : null;
+    if (key !== null) options.push({ name: key, value: encodeValue(property.value, bindings) });
+  }
+  return options;
+}
+
+// The registration (D9) or value call a call expression would be if it were the
+// initialiser of a module-level const, or null. A call with a function argument
+// is a registration: `onRequest(opts, handler)'. Its object-literal arguments
+// whose keys were read become :arguments and the registered code itself is left
+// out, so `onSchedule("every 5 minutes", fn)' leaves one positional value and
+// not a handler printed as `0=<expression>'.
+function callRecord(call, bindings) {
+  const callee = calleeBinding(call.callee, bindings);
+  if (!callee) return null;
+  const line = call.loc.start.line;
+  if (!call.arguments.some(isFunctionNode)) {
+    const first = call.arguments[0];
+    const valueCall = Object.assign({}, callee, { line });
+    if (first && first.type === 'Literal' && typeof first.value === 'string') {
+      valueCall.firstString = first.value;
+    }
+    return { valueCall };
+  }
+  const registration = Object.assign({}, callee, { line, positional: [], arguments: [] });
+  for (const argument of call.arguments) {
+    if (isFunctionNode(argument)) continue;
+    const options = argument.type === 'ObjectExpression' ? optionKeys(argument, bindings) : [];
+    if (options.length) registration.arguments.push(...options);
+    else registration.positional.push(encodeValue(argument, bindings));
+  }
+  return { registration };
+}
+
+// ---------------------------------------------------------------------------
 // Extraction
 // ---------------------------------------------------------------------------
 
 function extract(source, ast) {
+  const bindings = importBindings(ast.body);
+  let unnamedRegistrations = 0;
   const definitions = [];
   const imports = [];
   const exports = [];
@@ -414,6 +569,12 @@ function extract(source, ast) {
           kind_: node.kind,
         });
         if (init) walkBody(init, definition);
+        // Only a `const' with an identifier target and a call for a value
+        // qualifies (DES-0054 D9); `let', `var' and a destructuring record
+        // nothing.
+        if (node.kind === 'const' && init && init.type === 'CallExpression') {
+          Object.assign(definition, callRecord(init, bindings));
+        }
       }
     }
   }
@@ -511,6 +672,14 @@ function extract(source, ast) {
           if (last) last.default = true;
         } else if (declaration) {
           exports.push({ name: 'default', local: null, line: node.loc.start.line, anonymous: true });
+          // A registration with no name to carry it (DES-0054 D9). The entity
+          // minted below is unchanged; the count is a syntactic fact the
+          // analyzer puts on the file. The extractor cannot tell Firebase from
+          // React, so `export default memo(() => ...)' counts too.
+          if (declaration.type === 'CallExpression') {
+            const record = callRecord(declaration, bindings);
+            if (record && record.registration) unnamedRegistrations += 1;
+          }
           // `export default { simplifyArcs }' re-exports what the module has
           // already defined; it introduces nothing. Minting a definition for it
           // gave the module a second entity that the Lisp side names after the
@@ -622,8 +791,11 @@ function extract(source, ast) {
 
   walkTestBody(ast.body, '', { calls: [], jsx: [] }, true, true);
 
-  return { definitions, imports, exports, fileCalls, fileJsx, fileLiteralArgs,
-           unnamedTests };
+  const reply = { definitions, imports, exports, fileCalls, fileJsx, fileLiteralArgs,
+                  unnamedTests };
+  // Absent when zero, as the analyzer reads an absent key as no such file.
+  if (unnamedRegistrations > 0) reply.unnamedRegistrations = unnamedRegistrations;
+  return reply;
 }
 
 // ---------------------------------------------------------------------------

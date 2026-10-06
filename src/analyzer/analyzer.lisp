@@ -327,6 +327,45 @@ Anything else is :EXPRESSION, which keeps the gap visible in the record."
             (t :expression)))))
 
 ;;;; ------------------------------------------------------------------
+;;;; A registration and a value call as a child process reports them
+;;;;
+;;;; DES-0054 D9, R12. Here for the same reason as DECODE-ARGUMENT-VALUE: both
+;;;; extractors report them in one shape, so the two analyzers read them with
+;;;; one function. They read with (cdr (assoc ...)) because JGET is defined in
+;;;; js-analyzer.lisp, which loads after this file.
+;;;; ------------------------------------------------------------------
+
+(defun decode-registration (registration)
+  "One REGISTRATION (a decorator or a call with a function argument), a decoded
+JSON object, as the plist :NAME, then :SPECIFIER and :PATH when an import bound
+the callee, then :ARGUMENTS, :POSITIONAL and :LINE. :ARGUMENTS is an alist of
+option name to DECODE-ARGUMENT-VALUE's reading; :POSITIONAL is a list of them."
+  (flet ((slot-of (key) (cdr (assoc key registration))))
+    (append (list :name (slot-of :name))
+            (when (slot-of :specifier)
+              (list :specifier (slot-of :specifier) :path (slot-of :path)))
+            (list :arguments
+                  (loop for argument in (slot-of :arguments)
+                        collect (cons (cdr (assoc :name argument))
+                                      (decode-argument-value
+                                       (cdr (assoc :value argument)))))
+                  :positional (mapcar #'decode-argument-value (slot-of :positional))
+                  :line (slot-of :line)))))
+
+(defun decode-value-call (call)
+  "A variable's value CALL, a decoded JSON object or NIL, as a plist: the
+callee's :SPECIFIER and :PATH, or :NAME for a local, then :LINE and
+:FIRST-STRING when one was sent. NIL when CALL is NIL (DES-0054 D2)."
+  (flet ((slot-of (key) (cdr (assoc key call))))
+    (when call
+      (append (if (slot-of :specifier)
+                  (list :specifier (slot-of :specifier) :path (slot-of :path))
+                  (list :name (slot-of :name)))
+              (list :line (slot-of :line))
+              (when (slot-of :first-string)
+                (list :first-string (slot-of :first-string)))))))
+
+;;;; ------------------------------------------------------------------
 ;;;; The system a path belongs to, for an analyzer with nothing stronger
 ;;;;
 ;;;; DES-0009 R2: this is BUG-0006's fix, relocated from LOOM-GRAPH's

@@ -770,3 +770,275 @@ export default { extractSharedArcs };
         (when entities
           (is (equal (pathname-name (pathname path)) (name (first entities)))
               "and it is named after its module"))))))
+
+;;; ------------------------------------------------------------------
+;;; The extractor reports registrations and value calls (PLAN-0058 step 1)
+;;; ------------------------------------------------------------------
+;;;
+;;; These read extract.js's decoded reply and nothing downstream: no Lisp code
+;;; consumes the three keys until step 2. They are plain TEST forms with the
+;;; node guard written out, not JS-TEST, because a JS-TEST body is a
+;;; body-swallowing macro and every resolving call inside one becomes a
+;;; :CALL-SITE against DES-0014's ceiling of 512, which has 4 sites of headroom
+;;; (PLAN-0058 FINDINGS 3).
+
+(defun registration-reply (source)
+  (values (loom-analyzer::parse-javascript "functions/index.js" source)))
+
+(defun registration-definition (reply name)
+  (find name (cdr (assoc :definitions reply))
+        :key (lambda (d) (cdr (assoc :name d))) :test #'equal))
+
+(defun registration-of (reply name)
+  (cdr (assoc :registration (registration-definition reply name))))
+
+(defun value-call-of (reply name)
+  (cdr (assoc :value-call (registration-definition reply name))))
+
+(defun registration-argument (registration name)
+  (cdr (assoc :value (find name (cdr (assoc :arguments registration))
+                           :key (lambda (a) (cdr (assoc :name a))) :test #'equal))))
+
+(defparameter *front-end-index-js*
+  "import functions from \"firebase-functions\";
+import logger from \"firebase-functions/logger\";
+
+import helloWorld from \"./hello.js\";
+import handlers from \"./api/handlers.js\";
+
+export { helloWorld };
+
+export const api = functions.https.onRequest((req, res) => {
+    const route = req.path.replace(/^\\/api\\//, '');
+    logger.info(\"routing to api: \", route);
+    const handler = handlers[route];
+    if (handler) {
+        handler(req, res);
+    } else {
+        res.status(404).send(\"Not found\");
+    }
+});
+"
+  "functions/index.js of ~/github/front-end at ab34be6, verbatim.")
+
+(defparameter *front-end-hello-js*
+  "import functions from \"firebase-functions\";
+import logger from \"firebase-functions/logger\";
+
+export default functions.https.onRequest((request, response) => {
+    logger.info(\"Hello logs!\", { structuredData: true });
+    response.send(\"Hello from Firebase!\");
+});
+"
+  "functions/hello.js of ~/github/front-end at ab34be6, verbatim.")
+
+(test a-default-imported-namespace-chain-is-a-registration-with-its-path
+  (if (js-available-p)
+      (let ((registration (registration-of (registration-reply *front-end-index-js*) "api")))
+        (is (equal "functions.https.onRequest" (cdr (assoc :name registration))))
+        (is (equal "firebase-functions" (cdr (assoc :specifier registration))))
+        (is (equal '("default" "https" "onRequest") (cdr (assoc :path registration)))
+            "a default import keeps its `default' step (D3's JavaScript rule)")
+        (is (= 9 (cdr (assoc :line registration))))
+        (is (null (cdr (assoc :positional registration))))
+        (is (null (cdr (assoc :arguments registration)))
+            "a handler alone is neither a positional nor an option"))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test an-options-object-gives-arguments-and-a-secret-list-keeps-its-elements
+  (if (js-available-p)
+      (let* ((reply (registration-reply
+                     "import {onRequest} from \"firebase-functions/v2/https\";
+const k = defineSecret(\"K\");
+export const f = onRequest({timeoutSeconds: 60, secrets: [k, \"LIT\"]}, (q, s) => {});
+"))
+             (registration (registration-of reply "f"))
+             (secrets (registration-argument registration "secrets")))
+        (is (equal '("onRequest") (cdr (assoc :path registration))))
+        (is (equal '((:kind . "literal") (:value . 60))
+                   (registration-argument registration "timeoutSeconds")))
+        (is (equal "list" (cdr (assoc :kind secrets))))
+        (is (equal '(("name" "k" "local") ("literal" "LIT" nil))
+                   (mapcar (lambda (e) (list (cdr (assoc :kind e)) (cdr (assoc :value e))
+                                             (cdr (assoc :binding e))))
+                           (cdr (assoc :value secrets))))
+            "a local name keeps its binding and a literal is its value"))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-namespace-import-chain-and-a-positional-string-register-together
+  (if (js-available-p)
+      (let ((registration
+              (registration-of
+               (registration-reply
+                "import * as v2 from \"firebase-functions/v2\";
+export const s = v2.scheduler.onSchedule(\"every 5 minutes\", async () => {});
+")
+               "s")))
+        (is (equal '("scheduler" "onSchedule") (cdr (assoc :path registration)))
+            "a namespace import adds no step of its own")
+        (is (equal '(((:kind . "literal") (:value . "every 5 minutes")))
+                   (cdr (assoc :positional registration))))
+        (is (null (cdr (assoc :arguments registration)))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-value-call-keeps-its-first-string-and-never-a-default
+  (if (js-available-p)
+      (let* ((reply (registration-reply
+                     "import {defineString as ds} from \"firebase-functions/params\";
+const p = ds(\"P\", {default: \"SENTINEL-DEFAULT\"});
+"))
+             (value-call (value-call-of reply "p")))
+        (is (equal "firebase-functions/params" (cdr (assoc :specifier value-call))))
+        (is (equal '("defineString") (cdr (assoc :path value-call)))
+            "the path is the imported name, not the local alias")
+        (is (equal "P" (cdr (assoc :first-string value-call))))
+        (is (null (registration-of reply "p")))
+        (is (null (search "SENTINEL-DEFAULT" (prin1-to-string reply)))
+            "a default value is a value, and the index holds none (R8)"))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-value-call-whose-first-argument-is-not-a-string-has-no-first-string
+  (if (js-available-p)
+      (let ((value-call (value-call-of
+                         (registration-reply
+                          "import {defineInt} from \"firebase-functions/params\";
+const q = defineInt(name);
+")
+                         "q")))
+        (is (not (null value-call)))
+        (is (null (assoc :first-string value-call))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-call-rooted-in-a-local-or-a-global-records-nothing
+  (if (js-available-p)
+      (let ((reply (registration-reply
+                    "const raw = load();
+const r = raw.items.filter(x => x);
+const n = Object.keys(o);
+")))
+        (dolist (name '("r" "n"))
+          (is (not (null (registration-definition reply name))))
+          (is (null (registration-of reply name)) "~a" name)
+          (is (null (value-call-of reply name)) "~a" name)))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-let-binding-records-neither-key
+  (if (js-available-p)
+      (let ((reply (registration-reply
+                    "import {onRequest} from \"firebase-functions/v2/https\";
+let x = onRequest(() => {});
+")))
+        (is (not (null (registration-definition reply "x"))))
+        (is (null (registration-of reply "x")))
+        (is (null (value-call-of reply "x"))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-call-inside-a-secrets-list-encodes-the-list-as-an-expression
+  (if (js-available-p)
+      (let ((registration
+              (registration-of
+               (registration-reply
+                "import {onRequest} from \"firebase-functions/v2/https\";
+import {defineSecret} from \"firebase-functions/params\";
+export const f = onRequest({secrets: [defineSecret(\"K\")]}, () => {});
+")
+               "f")))
+        (is (equal '((:kind . "expression"))
+                   (registration-argument registration "secrets"))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test an-anonymous-default-registration-is-counted-and-still-an-entity
+  (if (js-available-p)
+      (let ((reply (registration-reply *front-end-hello-js*)))
+        (is (eql 1 (cdr (assoc :unnamed-registrations reply))))
+        (is (= 1 (length (cdr (assoc :definitions reply))))
+            "the anonymous definition BUG-0056 left is still in the reply")
+        (is (null (registration-of reply nil))
+            "and it carries no registration (PLAN-0058 FINDINGS 1)"))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-react-wrapper-in-a-default-export-counts-too
+  ;; PLAN-0058 refinement 6, pinned on purpose: the extractor cannot tell
+  ;; Firebase from React, and the count is a syntactic fact.
+  (if (js-available-p)
+      (let ((reply (registration-reply
+                    "import memo from \"react\";
+export default memo(() => null);
+")))
+        (is (eql 1 (cdr (assoc :unnamed-registrations reply)))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-file-with-no-default-registration-has-no-count-key
+  (if (js-available-p)
+      (is (null (assoc :unnamed-registrations (registration-reply *front-end-index-js*))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+;;; ------------------------------------------------------------------
+;;; The analyzer writes :REGISTRATION, :VALUE-CALL and :UNNAMED-REGISTRATIONS
+;;; (PLAN-0058 step 2)
+;;; ------------------------------------------------------------------
+;;;
+;;; Plain TEST forms again, for the DES-0014 ceiling: JS-NAMED and GETP are the
+;;; only calls in each body, and they are not resolving sites inside a macro.
+
+(test a-registration-lands-on-its-variable-in-the-decoders-shape
+  (if (js-available-p)
+      (let ((api (js-named "functions/index.js" *front-end-index-js* "api")))
+        (is (equal '(:name "functions.https.onRequest"
+                     :specifier "firebase-functions"
+                     :path ("default" "https" "onRequest")
+                     :arguments nil :positional nil :line 9)
+                   (getp api :registration)))
+        (is (null (getp api :value-call)))
+        (is (null (getp api :call-names))
+            "a module-level initialiser's calls are still not a :CALLS source"))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-value-call-lands-on-its-variable-with-its-first-string
+  (if (js-available-p)
+      (let ((k (js-named "functions/index.js"
+                         "import {defineSecret} from \"firebase-functions/params\";
+const k = defineSecret(\"K\");
+" "k")))
+        (is (equal '(:specifier "firebase-functions/params" :path ("defineSecret")
+                     :line 2 :first-string "K")
+                   (getp k :value-call)))
+        (is (null (getp k :registration))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-secrets-list-decodes-to-a-local-name-and-a-literal
+  (if (js-available-p)
+      (let ((f (js-named "functions/index.js"
+                         "import {onRequest} from \"firebase-functions/v2/https\";
+const k = defineSecret(\"K\");
+export const f = onRequest({timeoutSeconds: 60, secrets: [k, \"LIT\"]}, (q, s) => {});
+" "f")))
+        (is (equal '(("timeoutSeconds" . 60)
+                     ("secrets" :list (:name "k" :binding :local) "LIT"))
+                   (getf (getp f :registration) :arguments))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test an-anonymous-default-registration-counts-on-its-file-and-names-no-registration
+  (if (js-available-p)
+      (progn
+        (is (eql 1 (getp (js-file-entity "functions/hello.js" *front-end-hello-js*)
+                         :unnamed-registrations)))
+        (let ((hello (js-named "functions/hello.js" *front-end-hello-js* "hello")))
+          (is (not (null hello)) "the BUG-0056 variable still exists")
+          (is (null (getp hello :registration)))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-file-with-no-default-registration-has-no-unnamed-registrations-property
+  (if (js-available-p)
+      (is (null (getp (js-file-entity "functions/index.js" *front-end-index-js*)
+                      :unnamed-registrations)))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-variable-with-no-such-call-gets-neither-property
+  (if (js-available-p)
+      (let ((v (js-named "src/a.js" "const x = Object.keys(o);
+" "x")))
+        (is (not (null v)))
+        (is (null (getp v :registration)))
+        (is (null (getp v :value-call))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))

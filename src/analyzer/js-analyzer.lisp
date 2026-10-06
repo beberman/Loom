@@ -282,6 +282,10 @@ are not in the index -- and :ANALYSIS-ERROR is what tells them apart."
                               (let ((unnamed (jget reply :unnamed-tests)))
                                 (when (and (integerp unnamed) (plusp unnamed))
                                   (list :unnamed-tests unnamed)))))
+                     ;; DES-0054 D9: a registration with no name to carry it.
+                     (let ((unnamed (jget reply :unnamed-registrations)))
+                       (when (and (integerp unnamed) (plusp unnamed))
+                         (list :unnamed-registrations unnamed)))
                      (when (or reason damage)
                        (list :analysis-failed-p t
                              :analysis-error (or reason
@@ -416,6 +420,15 @@ file indexes exactly as it did before this existed."
   (multiple-value-bind (bound framework) (js-test-imports reply)
     (values (or bound (js-test-path-p path)) framework)))
 
+(defun js-registration (definition)
+  "DEFINITION's :REGISTRATION (DES-0054 D9) as DECODE-REGISTRATION reads it, or NIL."
+  (let ((registration (jget definition :registration)))
+    (when registration (decode-registration registration))))
+
+(defun js-value-call (definition)
+  "DEFINITION's :VALUE-CALL (DES-0054 D2) as DECODE-VALUE-CALL reads it, or NIL."
+  (decode-value-call (jget definition :value-call)))
+
 (defun make-js-definition-entity (definition path system &optional framework)
   "One entity for one definition, or NIL when it cannot be named.
 
@@ -500,8 +513,20 @@ says, not what the file as a whole is (DES-0045 D1)."
           ((string= kind "variable")
            (make-instance 'variable-entity
                           :name name :origin-file path
-                          :properties (properties
-                                       :exported-p (and (jget definition :exported) t))))
+                          :properties
+                          (apply #'properties
+                                 :exported-p (and (jget definition :exported) t)
+                                 ;; DES-0054 D9. Each key only when present:
+                                 ;; PROPERTIES-TABLE stores a NIL value as a
+                                 ;; property, which would put two empty
+                                 ;; properties on every variable in the tree.
+                                 (append
+                                  (let ((registration (js-registration definition)))
+                                    (when registration
+                                      (list :registration registration)))
+                                  (let ((value-call (js-value-call definition)))
+                                    (when value-call
+                                      (list :value-call value-call)))))))
           (t nil))))))
 
 ;;;; ==================================================================

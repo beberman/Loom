@@ -805,6 +805,32 @@ this repository, so an answer proves which graph was consulted."
           '(:entry-points ((:framework "f" :trigger :https :module "m" :names ("x")))))
     (is (not (search "proposes them" (run-to-string "status"))))))
 
+(test status-counts-default-exported-registrations-in-covered-files-only
+  ;; PLAN-0058 step 5. The count sits on the :FILE; a file outside every codebase
+  ;; (a React tree's memo() default export) is not a registration anyone deploys.
+  (with-console-fixture
+    (add-console-entity repository :file "firebase.json" "firebase.json"
+                        :codebases '((:source "functions" :codebase "default"
+                                      :runtime nil :ignore nil :defaulted nil)))
+    (add-console-entity repository :file "functions/hello.js" "functions/hello.js"
+                        :unnamed-registrations 1)
+    (add-console-entity repository :file "src/ui/Memo.js" "src/ui/Memo.js"
+                        :unnamed-registrations 5)
+    (let ((out (run-to-string "status")))
+      (is (search "deploys    : 1 registration in a default export carries no name; a re-export decides it" out)
+          "only the covered file counts: ~a" out))
+    (add-console-entity repository :file "functions/other.js" "functions/other.js"
+                        :unnamed-registrations 1)
+    (is (search "deploys    : 2 registrations in a default export carry no name"
+                (run-to-string "status")))))
+
+(test a-zero-unnamed-registration-count-prints-no-line
+  (with-console-fixture
+    (add-console-entity repository :file "firebase.json" "firebase.json"
+                        :codebases '((:source "functions" :codebase "default"
+                                      :runtime nil :ignore nil :defaulted nil)))
+    (is (not (search "default export" (run-to-string "status"))))))
+
 (test a-tree-with-no-firebase-json-prints-no-deploys-line
   (with-console-fixture
     (is (not (search "deploys" (run-to-string "status"))))))
