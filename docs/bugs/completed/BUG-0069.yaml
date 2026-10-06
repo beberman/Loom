@@ -1,0 +1,80 @@
+id: BUG-0069
+title: complete without verdicts writes the plan final when every document it refines is blocked
+status: closed
+severity: major
+date: 2026-09-28
+refines: [REQ-0022, BUG-0057]
+affects: [complete-plan]
+tags: [complete, documents, workflow, transition, dry-run, bug-0057, front-end]
+summary: |
+  `complete` with no verdicts is documented as a dry run: "With no VERDICTS
+  it writes nothing and reports what it would do". It wrote. In front-end on
+  2026-09-27, `complete plan=PLAN-0009` with no verdicts set PLAN-0009
+  `final` and moved it to `docs/plans/completed/`. It reported `"dry-run":
+  false`, with one row `set` and two `blocked`. The caller was on `main` and
+  had asked only for a preview.
+
+  The cause is BUG-0057's re-entry. When a dry run finds no row
+  `:awaiting-verdict`, COMPLETE-PLAN re-enters itself with FORCE-WRITE, on
+  the reasoning that such a plan "is deciding nothing". That holds for the
+  two shapes its comment names: a plan with no `refines:` edges, and one
+  whose refined documents are all already finished. It does not hold when
+  every refined document is BLOCKED. A blocked row is not `:awaiting-verdict`
+  either, so the re-entry fires, and the plan goes final while everything it
+  implements is still unfinished.
+body: |
+  REPRODUCED
+
+  front-end, 2026-09-27. PLAN-0009 refines DES-0012 and REQ-0014. Both were
+  drafts, and both were still refined by another unfinished plan, PLAN-0008.
+  The answer to `complete plan=PLAN-0009` (MCP `loom_complete`, no
+  `verdicts`):
+
+      "dry-run": false
+      PLAN-0009  draft  verdict final  action set
+      REQ-0014   draft  blocked-by [PLAN-0008, DES-0012]  action blocked
+      DES-0012   draft  blocked-by [PLAN-0008]            action blocked
+      changed: PLAN-0009 draft -> final, moved to docs/plans/completed/
+
+  The caller meant to preview, to learn what the cascade needed before
+  editing PLAN-0009's text. The plan it was about to amend was filed as
+  final underneath it.
+
+  WHERE
+
+  src/workspace/transition.lisp, the re-entry after the walk:
+
+      (when (and dry-run (null problems)
+                 (notany (lambda (row)
+                           (eq :awaiting-verdict (getf row :action)))
+                         rows))
+        (return-from complete-plan
+          (complete-plan repository designator ... :force-write t)))
+
+  The test asks whether any row wants a verdict. What BUG-0057 meant to ask
+  is whether the cascade has nothing left to decide or to wait for. Those
+  differ exactly when a row is `:blocked`.
+
+  WHY BLOCKED IS NOT "NOTHING TO DECIDE"
+
+  A blocked row is the one case where the preview is the point. The refusal
+  of a verdict for a blocked document exists "so the caller sees the
+  blocking plan before deciding to" (COMPLETE-PLAN's docstring). Writing
+  the plan final in the same breath skips that. It also produces the state
+  RULE-0005 was written to prevent: a final plan whose refined documents are
+  still drafts, with nothing in the tree saying the cascade stopped halfway.
+
+  FIX, SUGGESTED
+
+  Re-enter only when no row is `:awaiting-verdict` AND none is `:blocked`.
+  With a blocked row, stay a dry run: report the blockers, write nothing.
+  The caller can still finish the plan alone with `set-status PLAN final`,
+  which is the explicit act for a one-document transition.
+
+  TEST
+
+  A plan whose only refined document is refined by a second, unfinished
+  plan. `complete` with no verdicts must answer `dry-run: true`, the plan's
+  row `would-set`, the refined row `blocked`, and write nothing. The
+  BUG-0057 cases (no `refines:`, or every refined document already
+  finished) must still write at once.
