@@ -368,11 +368,13 @@ body: |
 
   12. Consent for front-end. R13's clause is "api carries the https trigger
       under codebase default". That needs entry-points in front-end's
-      tracked .loom/frameworks.yaml, which this plan may not write. Step 6
-      measures it on a copy of the four functions files, firebase.json,
-      .firebaserc and a frameworks.yaml holding the template. The caller
-      asks the user whether to append the template to front-end's own file.
-      Step 7's verdict depends on the answer.
+      tracked .loom/frameworks.yaml. The user consented on 2026-10-05, and
+      the declarations are already appended there, uncommitted on front-end's
+      branch: one https entry point naming default.https.onRequest and
+      https.onRequest, and setting-declarations for firebase-functions/params.
+      Step 6 runs on the real tree. Until step 2 lands, front-end's deploys
+      line reads 0 entry points, which is the baseline step 6 compares to.
+      lfia's own file is left alone, by the user's decision.
 
   DEFERRED, WITH REASONS
 
