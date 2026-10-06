@@ -2225,3 +2225,203 @@ affects: [\"function:functions/main.py:read_tab\"]
                (edges (relationships-from g (id plan) :rel-type :documents)))
           (is (null (getp plan :ambiguous-references)))
           (is (equal '("function:functions/main.py:read_tab") (mapcar #'to-id edges)))))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 R12: the passes on a JavaScript functions tree, unchanged
+;;; ------------------------------------------------------------------
+;;;
+;;; PLAN-0058 step 3. Nothing under src/ other than this file changed for these:
+;;; the extractor and analyzer write :REGISTRATION and :VALUE-CALL (steps 1 and 2)
+;;; and the passes PLAN-0057 built for Python match them on the rule D3 states
+;;; for both languages. Each is a plain `test' with the node guard inline, since a
+;;; DOMAIN-TEST or JS-TEST body is a body-swallowing macro and every resolving
+;;; call in one is a :CALL-SITE against the DES-0014 ceiling (PLAN-0058 FINDINGS 3).
+
+(defparameter *js-functions-frameworks* "entry-points:
+  - trigger: https
+    module: firebase-functions
+    names: [default.https.onRequest, https.onRequest]
+    settings: [secrets]
+setting-declarations:
+  - source: secret
+    module: firebase-functions/params
+    names: [defineSecret]
+  - source: param
+    module: firebase-functions/params
+    names: [defineString]
+")
+
+(defun write-js-functions-tree (&key (frameworks *js-functions-frameworks*))
+  "PLAN-0058 step 3's scratch tree. Not a git repository. SENTINEL-7f3a is in the
+files Firebase keeps a value in and SENTINEL-DEFAULT is a param's default; the
+JSDoc on `api' holds the positive control the walk must find."
+  (when frameworks (write-file ".loom/frameworks.yaml" frameworks))
+  (write-file "firebase.json"
+              "{\"functions\": [{\"source\": \"functions\", \"codebase\": \"default\"}]}")
+  (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
+  (write-file "functions/package.json" "{\"type\": \"module\", \"main\": \"index.js\"}")
+  (write-file "functions/index.js" "import functions from \"firebase-functions\";
+import {defineSecret, defineString} from \"firebase-functions/params\";
+import {apiKey as imported} from \"./params.js\";
+const API_KEY = defineSecret(\"API_KEY\");
+const P = defineString(\"P\", {default: \"SENTINEL-DEFAULT\"});
+/** CONTROL-7f3a */
+export const api = functions.https.onRequest(
+  {secrets: [API_KEY], timeoutSeconds: 60},
+  (q, s) => {});
+export const other = functions.https.onRequest(
+  {secrets: [imported]}, (q, s) => {});
+")
+  (write-file "functions/params.js" "import {defineSecret} from \"firebase-functions/params\";
+export const apiKey = defineSecret(\"OTHER\");
+")
+  (write-file "functions/hello.js" "import functions from \"firebase-functions\";
+import logger from \"firebase-functions/logger\";
+
+export default functions.https.onRequest((request, response) => {
+    logger.info(\"Hello logs!\", { structuredData: true });
+    response.send(\"Hello from Firebase!\");
+});
+")
+  (dolist (name '(".env" ".secret.local"))
+    (write-file (format nil "functions/~a" name) "API_KEY=SENTINEL-7f3a
+")))
+
+(defun js-fn-variable (repository name)
+  (find name (entities-of-type (repository-graph repository) :variable)
+        :key #'name :test #'string=))
+
+(defun js-fn-setting (repository name)
+  (find name (entities-of-type (repository-graph repository) :setting)
+        :key #'name :test #'string=))
+
+(defun js-fn-readers (repository setting)
+  "The names of what has a :READS edge to SETTING."
+  (let ((g (repository-graph repository)))
+    (sort (loop for r in (relationships-to g (id setting) :rel-type :reads)
+                collect (name (get-entity g (from-id r))))
+          #'string<)))
+
+(test a-javascript-registration-carries-the-trigger-and-entry-point-from-the-declaration
+  (if (not (node-available-p))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")
+      (with-workspace-fixture (repository)
+        (write-js-functions-tree)
+        (reindex-repository repository :quiet t)
+        (let* ((api (js-fn-variable repository "api"))
+               (entry (first (getp api :entry-point))))
+          (is (eq :https (getp api :trigger)))
+          (is (= 1 (length (getp api :entry-point))))
+          (is (equal "firebase-functions.default.https.onRequest" (getf entry :callee)))
+          (is (equal "default" (getf entry :codebase)))
+          (is (null (getf entry :runtime)))
+          (is (eq :unknown (getf entry :deployed)))
+          (is (eql 60 (cdr (assoc "timeoutSeconds" (getf entry :options) :test #'equal)))
+              "the option is read: ~s" (getf entry :options))
+          (is (null (depends-on-targets repository api))
+              "an unknown deployment draws no :DEPENDS-ON edge to firebase.json")))))
+
+(test a-secret-in-a-javascript-registration-is-read-by-it-and-by-its-declaration
+  (if (not (node-available-p))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")
+      (with-workspace-fixture (repository)
+        (write-js-functions-tree)
+        (reindex-repository repository :quiet t)
+        (let ((setting (js-fn-setting repository "API_KEY")))
+          (is-true setting)
+          (is (equal '(:secret) (getp setting :sources)))
+          (is-true (js-fn-setting repository "P") "the param is a setting too")
+          (is (equal '("API_KEY" "api") (js-fn-readers repository setting))
+              "const API_KEY = defineSecret(\"API_KEY\") is the same-name case (risk 7)")))))
+
+(test a-registration-argument-imported-from-another-file-reads-nothing
+  ;; PLAN-0058 FINDINGS 2, pinned. REFERENCE-VARIABLE walks an imported name for
+  ;; Python only, and R12 forbids language-specific pass code. When a JavaScript
+  ;; walk lands this test changes on purpose.
+  (if (not (node-available-p))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")
+      (with-workspace-fixture (repository)
+        (write-js-functions-tree)
+        (reindex-repository repository :quiet t)
+        (let ((other-setting (js-fn-setting repository "OTHER")))
+          (is-true other-setting)
+          (is (equal '("apiKey") (js-fn-readers repository other-setting)))
+          (is (equal '(:https) (list (getp (js-fn-variable repository "other") :trigger)))
+              "it is still an entry point")
+          (is (null (relationships-from (repository-graph repository)
+                                        (id (js-fn-variable repository "other"))
+                                        :rel-type :reads)))))))
+
+(test a-document-naming-a-javascript-setting-resolves-to-it
+  ;; Risk 7. The variable and the setting share a spelling, and the reference
+  ;; must not be ambiguous because of it.
+  (if (not (node-available-p))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")
+      (with-workspace-fixture (repository)
+        (write-js-functions-tree)
+        (write-file "docs/plans/PLAN-9101.yaml" "id: PLAN-9101
+title: Names a secret
+status: draft
+affects: [API_KEY]
+")
+        (reindex-repository repository :quiet t)
+        (let* ((g (repository-graph repository))
+               (plan (find "PLAN-9101" (entities-of-type g :document)
+                           :key (lambda (e) (getp e :doc-id)) :test #'equal)))
+          (is (null (getp plan :ambiguous-references)))
+          (is (null (getp plan :unresolved-references)))
+          (is (equal (list (id (js-fn-setting repository "API_KEY")))
+                     (mapcar #'to-id (relationships-from g (id plan) :rel-type :documents))))))))
+
+(test an-unnamed-javascript-registration-is-counted-on-its-file
+  (if (not (node-available-p))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")
+      (with-workspace-fixture (repository)
+        (write-js-functions-tree)
+        (reindex-repository repository :quiet t)
+        (is (eql 1 (getp (file-entity repository "functions/hello.js") :unnamed-registrations)))
+        (is (null (getp (file-entity repository "functions/index.js") :unnamed-registrations)))
+        (is (null (getp (js-fn-variable repository "hello") :registration))
+            "the default export's entity exists and is not a registration"))))
+
+(test find-by-trigger-lists-the-javascript-registrations
+  (if (not (node-available-p))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")
+      (with-workspace-fixture (repository)
+        (write-js-functions-tree)
+        (reindex-repository repository :quiet t)
+        (is (equal '("api" "other")
+                   (sort (mapcar #'name
+                                 (find-entities (repository-graph repository)
+                                                :property-filters
+                                                (trigger-property-filter "https")))
+                         #'string<))))))
+
+(test removing-the-entry-points-declaration-clears-a-javascript-registration
+  ;; D6's clearing, for a :VARIABLE.
+  (if (not (node-available-p))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")
+      (with-workspace-fixture (repository)
+        (write-js-functions-tree)
+        (reindex-repository repository :quiet t)
+        (is (eq :https (getp (js-fn-variable repository "api") :trigger)))
+        (write-file ".loom/frameworks.yaml" "domains: []
+")
+        (reindex-repository repository :quiet t)
+        (let ((api (js-fn-variable repository "api")))
+          (is-true api)
+          (is (null (getp api :trigger)))
+          (is (null (getp api :entry-point)))))))
+
+(test the-javascript-index-holds-no-value-from-the-files-firebase-keeps-one-in
+  ;; The walk is the Python test's INDEX-CONTAINS-P, not a copy. The control sits
+  ;; in a JSDoc comment on api, as the Python control sits in a docstring.
+  (if (not (node-available-p))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")
+      (with-workspace-fixture (repository)
+        (write-js-functions-tree)
+        (reindex-repository repository :quiet t)
+        (is-true (index-contains-p repository "CONTROL-7f3a")
+                 "the control: the walk can see a string the index does hold")
+        (is (not (index-contains-p repository "SENTINEL-7f3a")))
+        (is (not (index-contains-p repository "SENTINEL-DEFAULT"))))))

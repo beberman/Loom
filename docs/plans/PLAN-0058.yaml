@@ -896,3 +896,24 @@ body: |
   test; making DECODE-VALUE-CALL drop :FIRST-STRING fails the JavaScript
   value-call test and the Python A-VARIABLE-BOUND-TO-A-CALL-CARRIES-VALUE-CALL
   test.
+
+  Step 3. Run with /usr/bin/sbcl through tools/loom-test.sh, 12 of 12
+  systems, no skip (workspace 1096 checks, including eight new
+  tests; serve, rest and mcp ran, since the port was free). check: 0
+  violations, 8 unresolved, 7 ambiguous. call-site-census: 508 total, 41
+  ambiguous, unchanged. No source file changed; only
+  src/workspace/test/workspace.lisp.
+  CON-0003: with step 1's js-analyzer.lisp checked out, 7 of the 8 tests
+  fail (14 assertions) and the sentinel test passes. Its absence assertions
+  hold without the change, as the plan expects, so only the positive control
+  makes it evidence.
+  Departures: (1) The plan lists one assertion per behaviour; they are eight
+  plain tests sharing one fixture builder, WRITE-JS-FUNCTIONS-TREE. (2) The
+  param P is asserted a setting in the secret test and not in the sentinel
+  test, which the Python sentinel test does assert it in, because that
+  assertion fails without step 2 and the plan wants the sentinel test alone to
+  pass. (3) The :OPTIONS value for timeoutSeconds is the integer 60, not a
+  string. (4) The `other' assertion is that setting OTHER exists and only
+  params.js's apiKey reads it, and that `other' has no :READS edge, which pins
+  FINDINGS 2. (5) Risk 7's same-name case (variable API_KEY and setting
+  API_KEY) resolves to the setting without ambiguity, so no deviation there.
