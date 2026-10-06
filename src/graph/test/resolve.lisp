@@ -2162,6 +2162,509 @@ of :SPECIFIER, :PATH and :LINE."
         (is (null (getp plan :unresolved-references)))))))
 
 ;;; ------------------------------------------------------------------
+;;; DES-0054 D3 and D5: declarations, registrations and the sentinel's setting
+;;; ------------------------------------------------------------------
+
+(defparameter *r-entry-points*
+  '((:framework "firebase-functions" :trigger :https
+     :module "firebase_functions.https_fn" :names ("on_request") :settings ("secrets")
+     :positional nil)
+    (:framework "firebase-functions" :trigger :schedule
+     :module "firebase_functions.scheduler_fn" :names ("on_schedule") :settings ("secrets")
+     :positional nil)
+    (:framework "firebase-functions-js" :trigger :https
+     :module "firebase-functions" :names ("default.https.onRequest") :settings ("secrets")
+     :positional nil)))
+
+(defparameter *r-declarations*
+  '((:source :secret :module "firebase_functions.params" :names ("SecretParam"))
+    (:source :param :module "firebase_functions.params" :names ("StringParam" "IntParam"))))
+
+(defun r-settle-with (graph)
+  "RESOLVE-SETTINGS with both declaration lists, applied."
+  (apply-transaction graph (resolve-settings graph
+                                             :setting-declarations *r-declarations*
+                                             :entry-points *r-entry-points*)))
+
+(defun r-declares (graph name file call first &key (specifier "firebase_functions.params"))
+  "A Python :VARIABLE NAME in FILE bound to CALL(FIRST) -- a :VALUE-CALL as the
+analyzer writes it, with no other argument."
+  (let ((e (r-py-definition graph :variable name file)))
+    (setp e :value-call (append (list :specifier specifier :path (list call) :line 1)
+                                (when first (list :first-string first))))
+    e))
+
+(defun r-registered (graph name file arguments
+                     &key (specifier "firebase_functions") (path '("https_fn" "on_request"))
+                       positional)
+  "A Python :FUNCTION carrying one decorator, as DES-0054 D1 encodes it."
+  (let ((e (r-py-definition graph :function name file)))
+    (setp e :decorators (list (list :name "d" :specifier specifier :path path
+                                    :arguments arguments :positional positional :line 1)))
+    e))
+
+(defun r-local (name) (list :name name :binding :local))
+
+(defun r-imported (name specifier path)
+  (list :name name :binding :import :specifier specifier :path path))
+
+(defun reads-names (graph entity)
+  (sort (mapcar (lambda (id) (name (get-entity graph id))) (reads-ids graph entity))
+        #'string<))
+
+(test match-registration-follows-each-languages-own-rule
+  (flet ((hit (registration language)
+           (loom-graph:match-registration registration language *r-entry-points*)))
+    (is (eq :https (getf (hit '(:specifier "firebase_functions.https_fn" :path ("on_request"))
+                              :python)
+                         :trigger))
+        "`from firebase_functions import https_fn' joined gives the same callee")
+    (is (eq :schedule (getf (hit '(:specifier "firebase_functions" :path ("scheduler_fn" "on_schedule"))
+                                 :python)
+                            :trigger)))
+    (is (eq :schedule (getf (hit '(:specifier "firebase_functions.scheduler_fn" :path ("on_schedule"))
+                                 :python)
+                            :trigger))
+        "`import firebase_functions.scheduler_fn as s' then s.on_schedule")
+    (is (null (hit '(:specifier "firebase_functions" :path ("scheduler_fn" "on_schedule"))
+                   :javascript))
+        "a JavaScript registration is matched by the JavaScript rule only")
+    (is (eq :https (getf (hit '(:specifier "firebase-functions" :path ("default" "https" "onRequest"))
+                              :javascript)
+                         :trigger)))
+    (is (null (hit '(:specifier ".https_fn" :path ("on_request")) :python)) "relative")
+    (is (null (hit '(:specifier "./firebase-functions" :path ("default" "https" "onRequest"))
+                   :javascript)))
+    (is (null (hit '(:path ("on_schedule")) :python))
+        "a bare local decorator has no specifier and matches nothing")
+    (is (null (hit '(:specifier "firebase_functions.https_fn" :path ("on_request")) :lisp)))))
+
+(test match-registration-refuses-two-matches
+  (multiple-value-bind (one many)
+      (loom-graph:match-registration
+       '(:specifier "m" :path ("f")) :python
+       '((:module "m" :names ("f")) (:module "m" :names ("f" "g"))))
+    (is (null one))
+    (is (= 2 (length many)))))
+
+(test a-declaration-and-four-registrations-give-one-setting-and-five-reads
+  (let* ((g (make-graph))
+         (key (r-declares g "ZEFFY_API_KEY" "functions/main.py" "SecretParam" "ZEFFY_API_KEY"))
+         (bound (loop for n in '("a" "b" "c" "d")
+                      collect (r-registered
+                               g n "functions/main.py"
+                               `(("secrets" :list ,(r-local "ZEFFY_API_KEY"))
+                                 ("timeout_sec" . 540)))))
+         (plain (r-registered g "e" "functions/main.py" '(("timeout_sec" . 540)))))
+    (r-py-tree g "functions/main.py")
+    (r-settle-with g)
+    (let ((setting (first (entities-of-type g :setting))))
+      (is (= 1 (length (entities-of-type g :setting))))
+      (is (equal "ZEFFY_API_KEY" (name setting)))
+      (is (equal '(:secret) (getp setting :sources)))
+      (is (= 5 (length (relationships-to g (id setting) :rel-type :reads)))
+          "the variable and the four functions whose decorators bind it")
+      (is (member (id setting) (reads-ids g key) :test #'string=))
+      (dolist (f bound)
+        (is (member (id setting) (reads-ids g f) :test #'string=)))
+      (is (null (reads-ids g plain))))))
+
+(test a-secret-and-an-environment-read-of-one-name-are-one-setting
+  (let ((g (make-graph)))
+    (r-declares g "ZEFFY_API_KEY" "functions/main.py" "SecretParam" "ZEFFY_API_KEY")
+    (r-reader g :variable "KEY" "functions/config.py" "ZEFFY_API_KEY")
+    (r-settle-with g)
+    (let ((settings (entities-of-type g :setting)))
+      (is (= 1 (length settings)))
+      (is (equal '(:environment :secret) (getp (first settings) :sources))))))
+
+(test a-name-reaches-only-the-variable-its-own-binding-names
+  ;; REV-0003 finding 1, in a pass. K is declared in a.py and in b.py with
+  ;; different names. A bare-name lookup across the tree would give one of them
+  ;; to c.py's function, which has no K.
+  (let* ((g (make-graph))
+         (in-a (r-registered g "fa" "app/a.py" `(("secrets" :list ,(r-local "K")))))
+         (in-c (r-registered g "fc" "app/c.py" `(("secrets" :list ,(r-local "K"))))))
+    (r-declares g "K" "app/a.py" "SecretParam" "A")
+    (r-declares g "K" "app/b.py" "SecretParam" "B")
+    (r-py-tree g "app/a.py" "app/b.py" "app/c.py")
+    (r-settle-with g)
+    (is (equal '("A") (reads-names g in-a)))
+    (is (null (reads-ids g in-c)) "no K in c.py, and no lookup by spelling")))
+
+(test an-imported-name-is-walked-to-the-file-it-came-from
+  (let* ((g (make-graph))
+         (user (r-registered g "f" "app/main.py"
+                             `(("secrets" :list ,(r-imported "K" "config" '("K")))
+                               ("memory" :dotted "config.OTHER" :specifier "config"
+                                :path nil))))
+         (other (r-declares g "K" "app/other.py" "SecretParam" "WRONG")))
+    (declare (ignore other))
+    (r-declares g "K" "app/config.py" "SecretParam" "RIGHT")
+    (r-py-tree g "app/main.py" "app/config.py" "app/other.py")
+    (r-settle-with g)
+    (is (equal '("RIGHT") (reads-names g user)))))
+
+(test a-dotted-chain-is-followed-from-its-first-names-import
+  (let* ((g (make-graph))
+         (user (r-registered g "f" "app/main.py"
+                             '(("memory" :dotted "config.K" :specifier "config" :path nil)))))
+    (r-declares g "K" "app/config.py" "IntParam" "MEM")
+    (r-py-tree g "app/main.py" "app/config.py")
+    (r-settle-with g)
+    (is (equal '("MEM") (reads-names g user)))
+    (is (equal '(:param) (getp (find "MEM" (entities-of-type g :setting)
+                                     :key #'name :test #'string=)
+                               :sources)))))
+
+(test a-literal-names-a-setting-only-under-a-keyword-the-entry-lists
+  (let* ((g (make-graph))
+         (f (r-registered g "f" "app/a.py" '(("secrets" :list "LITERAL")
+                                             ("region" . "OTHER")
+                                             ("labels" :list "ALSO-NOT")))))
+    (r-py-tree g "app/a.py")
+    (r-settle-with g)
+    (is (equal '("LITERAL") (reads-names g f)))
+    (is (equal '("LITERAL") (mapcar #'name (entities-of-type g :setting))))))
+
+(test a-param-bound-to-a-timeout-is-read-keyword-blind
+  (let* ((g (make-graph))
+         (f (r-registered g "f" "app/a.py" `(("timeout_sec" ,@(r-local "T"))))))
+    (r-declares g "T" "app/a.py" "IntParam" "T")
+    (r-py-tree g "app/a.py")
+    (r-settle-with g)
+    (is (equal '("T") (reads-names g f)))))
+
+(test a-declaring-variable-with-no-first-string-names-nothing
+  (let* ((g (make-graph))
+         (v (r-declares g "X" "app/a.py" "SecretParam" nil)))
+    (r-py-tree g "app/a.py")
+    (r-settle-with g)
+    (is (null (entities-of-type g :setting)))
+    (is (null (reads-ids g v)))))
+
+(test a-registration-matching-no-entry-reads-nothing
+  (let* ((g (make-graph))
+         (f (r-registered g "f" "app/a.py" `(("secrets" :list ,(r-local "K")))
+                          :specifier "flask" :path '("route"))))
+    (r-declares g "K" "app/a.py" "SecretParam" "K")
+    (r-py-tree g "app/a.py")
+    (r-settle-with g)
+    (is (null (reads-ids g f)))))
+
+(test the-declaration-edge-follows-the-file-that-decided-it
+  ;; DES-0054 refinement 2. b.py's declaration changes from "B" to "B2" and a.py
+  ;; is untouched. The edge from a.py's function took b.py as its origin, so
+  ;; RETRACT-FILE on b.py removes it and the next pass draws the true one, even
+  ;; though some other reader still reads B from the environment. The answer
+  ;; equals a fresh build's.
+  (flet ((build (declared)
+           (let* ((g (make-graph))
+                  (user (r-registered g "f" "app/a.py"
+                                      `(("secrets" :list ,(r-imported "K" "b" '("K"))))))
+                  (env (r-reader g :function "g" "app/env.py" "B")))
+             (r-declares g "K" "app/b.py" "SecretParam" declared)
+             (r-py-tree g "app/a.py" "app/b.py" "app/env.py")
+             (r-settle-with g)
+             (values g user env))))
+    (multiple-value-bind (g user env) (build "B")
+      (declare (ignore env))
+      (is (equal '("B") (reads-names g user)))
+      (apply-transaction g (list (retract-file "app/b.py" nil)))
+      (is (null (reads-ids g user)) "the retract took the edge a.py never wrote")
+      (r-py-file g "app/b.py")
+      (r-declares g "K" "app/b.py" "SecretParam" "B2")
+      (r-settle-with g)
+      (is (equal '("B2") (reads-names g user)))
+      (let ((fresh (build "B2")))
+        (flet ((edges (graph)
+                 (sort (mapcar (lambda (r) (list (from-id r) (to-id r)))
+                               (loop for e in (all-entities graph)
+                                     append (relationships-from graph (id e) :rel-type :reads)))
+                       #'string< :key #'first)))
+          (is (equal (edges fresh) (edges g)) "equal to a fresh build"))))))
+
+(test a-document-naming-a-secret-resolves-to-the-setting-and-not-its-variable
+  ;; REV-0003 finding 3. ZEFFY_API_KEY is a :VARIABLE and, after this pass, a
+  ;; :SETTING; config.py's variable reads the name from the environment. The
+  ;; variable that declares the secret holds no environment read, so only the
+  ;; :READS edge ties it to the setting.
+  (let ((g (make-graph)))
+    (r-declares g "ZEFFY_API_KEY" "functions/main.py" "SecretParam" "ZEFFY_API_KEY")
+    (r-reader g :variable "ZEFFY_API_KEY" "functions/config.py" "ZEFFY_API_KEY")
+    (r-settle-with g)
+    (let ((index (loom-graph:linkable-index g))
+          (setting (first (entities-of-type g :setting))))
+      (is (eq setting (loom-graph:resolve-one index "ZEFFY_API_KEY" :view g)))
+      (is (null (loom-graph:resolve-one index "ZEFFY_API_KEY"))
+          "without the view the old rule applies, and the declaring variable has no
+environment read, so it stays ambiguous: nothing that resolved before moves")
+      (r-py-definition g :variable "ZEFFY_API_KEY" "functions/other.py")
+      (let ((index (loom-graph:linkable-index g)))
+        (multiple-value-bind (target candidates)
+            (loom-graph:resolve-one index "ZEFFY_API_KEY" :view g)
+          (is (null target) "a same-named variable that reads nothing keeps it ambiguous")
+          (is (= 4 (length candidates))))))
+))
+
+(test a-decision-naming-a-secret-gets-one-decides-edge
+  (let ((g (make-graph)))
+    (r-declares g "ZEFFY_API_KEY" "functions/main.py" "SecretParam" "ZEFFY_API_KEY")
+    (r-reader g :variable "ZEFFY_API_KEY" "functions/config.py" "ZEFFY_API_KEY")
+    (let ((decision (r-decision g "DEC-9001" :affects '("ZEFFY_API_KEY"))))
+      (r-settle-with g)
+      (apply-transaction g (resolve-document-links g :workspace-id "w"))
+      (is (equal (list (id (first (entities-of-type g :setting))))
+                 (mapcar #'to-id (relationships-from g (id decision) :rel-type :decides))))
+      (is (null (getp decision :unresolved-references)))
+      (is (null (getp decision :ambiguous-references))))))
+
+(test resolve-one-without-a-view-resolves-what-it-always-did
+  (let* ((g (make-graph))
+         (variable (r-reader g :variable "SPREADSHEET_ID" "app/config.py" "SPREADSHEET_ID")))
+    (declare (ignore variable))
+    (r-settle g)
+    (let ((index (loom-graph:linkable-index g)))
+      (is (eq (first (entities-of-type g :setting))
+              (loom-graph:resolve-one index "SPREADSHEET_ID")))
+      (is (eq (first (entities-of-type g :setting))
+              (loom-graph:resolve-one index "SPREADSHEET_ID" :view g))))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 D6: entry points, codebases and deployment
+;;; ------------------------------------------------------------------
+
+(defun r-firebase (graph path &rest codebases)
+  "A firebase.json :FILE at PATH holding CODEBASES, as the firebase analyzer writes it."
+  (let ((e (make-instance 'file-entity :name path :origin-file path
+                          :properties (properties-table
+                                       (list :path path :codebases codebases)))))
+    (add-entity graph e)
+    e))
+
+(defun r-codebase (&key (source "functions") (codebase "default") (runtime "python312")
+                     ignore)
+  (append (list :source source :codebase codebase)
+          (when runtime (list :runtime runtime))
+          (list :ignore ignore :defaulted nil)))
+
+(defun r-entry-settle (graph &optional (entry-points *r-entry-points*))
+  (apply-transaction graph (resolve-entry-points graph :entry-points entry-points)))
+
+(defun r-on-request (graph name file)
+  (r-registered graph name file '(("timeout_sec" . 540))))
+
+(defun r-on-schedule (graph name file)
+  (r-registered graph name file '(("schedule" . "every 1 hours"))
+                :path '("scheduler_fn" "on_schedule")))
+
+(defun entry-of (entity) (first (getp entity :entry-point)))
+
+(defun depends-on-ids (graph entity)
+  (mapcar #'to-id (relationships-from graph (id entity) :rel-type :depends-on)))
+
+(test lfias-shape-gives-eight-triggered-deployed-functions
+  (let* ((g (make-graph))
+         (fire (r-firebase g "firebase.json" (r-codebase :ignore '("venv" "tests"))))
+         (schedule (list (r-on-schedule g "sync_zeffy" "functions/main.py")
+                         (r-on-schedule g "sync_zeffy_ledger" "functions/main.py")))
+         (https (loop for n in '("a" "b" "c" "d" "e" "f")
+                      collect (r-on-request g n "functions/main.py")))
+         (sync (r-py-definition g :function "_sync" "functions/main.py")))
+    (r-py-tree g "functions/main.py")
+    (dolist (f (append schedule https))
+      (apply-transaction g (list (assert-edge :calls f sync))))
+    (r-entry-settle g)
+    (dolist (f schedule)
+      (is (eq :schedule (getp f :trigger))))
+    (dolist (f https)
+      (is (eq :https (getp f :trigger))))
+    (dolist (f (append schedule https))
+      (let ((entry (entry-of f)))
+        (is (eq :yes (getf entry :deployed)))
+        (is (equal "default" (getf entry :codebase)))
+        (is (equal "python312" (getf entry :runtime)))
+        (is (equal (list (id fire)) (depends-on-ids g f)))))
+    (is (equal "firebase_functions.scheduler_fn.on_schedule"
+               (getf (entry-of (first schedule)) :callee)))
+    (is (equal '(("schedule" . "every 1 hours")) (getf (entry-of (first schedule)) :options)))
+    (is (= 8 (length (relationships-to g (id fire) :rel-type :depends-on))))
+    (let ((names (mapcar (lambda (e) (name (impact-entry-entity e)))
+                         (impact-result-impacted (impact-set g (id fire))))))
+      (is (= 8 (count-if (lambda (n) (not (string= n "functions/main.py"))) names)))
+      (is (not (member "_sync" names :test #'string=))
+          "what the functions call does not depend on firebase.json"))))
+
+(test two-matching-decorators-give-multiple-and-two-plists
+  (let* ((g (make-graph))
+         (f (r-py-definition g :function "f" "app/a.py")))
+    (setp f :decorators
+          (list (list :name "x" :specifier "firebase_functions"
+                      :path '("https_fn" "on_request") :arguments nil :line 1)
+                (list :name "y" :specifier "firebase_functions"
+                      :path '("scheduler_fn" "on_schedule") :arguments nil :line 2)))
+    (r-entry-settle g)
+    (is (eq :multiple (getp f :trigger)))
+    (is (= 2 (length (getp f :entry-point))))))
+
+(defun r-deploy-case (&key bindings (handler-file "functions/handlers.py") main-regions
+                        (handler-name "f") (with-handlers-file t) extra)
+  "A firebase.json, a main.py binding BINDINGS, and a registered HANDLER-NAME in
+HANDLER-FILE. Returns the handler. EXTRA is called with the graph before the pass."
+  (let* ((g (make-graph))
+         (handler (r-on-request g handler-name handler-file)))
+    (r-firebase g "firebase.json" (r-codebase))
+    (let ((main (r-py-file g "functions/main.py" :bindings bindings)))
+      (when main-regions (setp main :suppressed-regions main-regions)))
+    (when with-handlers-file (r-py-tree g handler-file))
+    (when extra (funcall extra g))
+    (r-entry-settle g)
+    (values handler g)))
+
+(test a-registered-function-main-does-not-bind-is-not-deployed
+  (is (eq :no (getf (entry-of (r-deploy-case)) :deployed))))
+
+(test a-from-import-in-main-deploys-it
+  (is (eq :yes (getf (entry-of (r-deploy-case
+                                :bindings '((:local "f" :specifier "handlers" :name "f"))))
+                     :deployed))))
+
+(test import-of-the-module-does-not-deploy-its-functions
+  ;; Firebase's getmembers sees a module object, not a function.
+  (is (eq :no (getf (entry-of (r-deploy-case
+                               :bindings '((:local "handlers" :specifier "handlers"
+                                            :name nil))))
+                    :deployed))))
+
+(test a-star-import-that-resolves-deploys-what-the-module-defines
+  (is (eq :yes (getf (entry-of (r-deploy-case
+                                :bindings '((:local nil :specifier "handlers" :name "*"))))
+                     :deployed))))
+
+(test a-star-import-that-does-not-resolve-is-unknown-and-not-no
+  ;; REV-0003 finding 2: a miss the language might resolve is not reported.
+  (is (eq :unknown (getf (entry-of (r-deploy-case
+                                    :bindings '((:local nil :specifier "vendored_pkg"
+                                                 :name "*"))))
+                         :deployed))))
+
+(test a-reexport-through-a-packages-init-deploys-it
+  (let ((handler (r-deploy-case
+                  :handler-file "functions/pkg/handlers.py"
+                  :bindings '((:local "f" :specifier "pkg" :name "f"))
+                  :extra (lambda (g)
+                           (r-py-file g "functions/pkg/__init__.py"
+                                      :bindings '((:local "f" :specifier ".handlers"
+                                                   :name "f")))))))
+    (is (eq :yes (getf (entry-of handler) :deployed)))))
+
+(test a-main-with-a-damaged-region-is-unknown-and-not-no
+  (is (eq :unknown
+          (getf (entry-of (r-deploy-case
+                           :main-regions '((:reason "python syntax error"
+                                            :start-line 3 :end-line 4))))
+                :deployed))))
+
+(test a-function-defined-in-main-is-deployed
+  (is (eq :yes (getf (entry-of (r-deploy-case :handler-file "functions/main.py"))
+                     :deployed))))
+
+(test an-ignored-path-is-not-covered
+  (let* ((g (make-graph))
+         (f (r-on-request g "test_fixture" "functions/tests/test_x.py")))
+    (r-firebase g "firebase.json" (r-codebase :ignore '("tests")))
+    (r-entry-settle g)
+    (is (eq :https (getp f :trigger)) "it is still a registration")
+    (is (null (getf (entry-of f) :codebase)) "but no codebase covers it")
+    (is (null (getf (entry-of f) :deployed)))
+    (is (null (depends-on-ids g f)))))
+
+(test two-codebases-covering-one-path-at-one-length-give-no-codebase
+  (let* ((g (make-graph))
+         (f (r-on-request g "f" "a/b/main.py")))
+    (r-firebase g "firebase.json" (r-codebase :source "a/b" :codebase "one"))
+    (r-firebase g "a/firebase.json" (r-codebase :source "b" :codebase "two"))
+    (r-entry-settle g)
+    (is (null (getf (entry-of f) :codebase)))
+    (is (equal '("a/firebase.json" "firebase.json")
+               (sort (copy-list (getf (entry-of f) :codebase-tie)) #'string<)))))
+
+(test the-longest-prefix-wins
+  (let* ((g (make-graph))
+         (f (r-on-request g "f" "app/functions/main.py")))
+    (r-firebase g "firebase.json" (r-codebase :source "app" :codebase "outer"))
+    (r-firebase g "app/firebase.json" (r-codebase :source "functions" :codebase "inner"))
+    (r-entry-settle g)
+    (is (equal "inner" (getf (entry-of f) :codebase)))))
+
+(test an-ignore-in-syntax-loom-does-not-read-excludes-nothing-and-is-listed
+  (let* ((g (make-graph))
+         (f (r-on-request g "f" "functions/a/main.py")))
+    (r-firebase g "firebase.json" (r-codebase :ignore '("{a,b}")))
+    (r-entry-settle g)
+    (is (equal "default" (getf (entry-of f) :codebase)) "not excluded")
+    (is (equal '("{a,b}") (getf (entry-of f) :uninterpreted-ignores)))))
+
+(test ignore-globs-follow-the-segments-they-name
+  (flet ((hit (pattern path) (loom-graph::ignore-matches-p pattern path)))
+    (is (hit "tests" "tests/x.py"))
+    (is (hit "tests" "pkg/tests/x.py") "a plain name matches at any depth")
+    (is (hit "*.pyc" "pkg/m.pyc"))
+    (is (not (hit "tests" "attests/x.py")))
+    (is (hit "**/node_modules/**" "a/node_modules/b/c.js"))
+    (is (hit "pkg/gen" "pkg/gen/x.py") "excluding a directory excludes what is under it")
+    (is (not (hit "pkg/gen" "other/pkg/gen/x.py")) "a path pattern is anchored at the source")
+    (is (hit "m?.py" "ma.py"))
+    (is (not (hit "m?.py" "mab.py")))))
+
+(test a-registration-matching-no-declaration-marks-nothing
+  (let* ((g (make-graph))
+         (f (r-registered g "f" "app/a.py" nil :specifier "flask" :path '("route"))))
+    (r-entry-settle g)
+    (is (null (getp f :trigger)))
+    (is (null (getp f :entry-point)))))
+
+(test a-function-with-no-firebase-json-still-gets-its-trigger
+  (let* ((g (make-graph))
+         (f (r-on-request g "f" "app/a.py")))
+    (r-entry-settle g)
+    (is (eq :https (getp f :trigger)))
+    (is (null (getf (entry-of f) :codebase)))
+    (is (null (depends-on-ids g f)))))
+
+(test removing-the-declarations-clears-the-marks-and-retracts-no-file
+  (let* ((g (make-graph))
+         (f (r-on-request g "f" "functions/main.py")))
+    (r-firebase g "firebase.json" (r-codebase))
+    (r-py-tree g "functions/main.py")
+    (r-entry-settle g)
+    (is (eq :https (getp f :trigger)))
+    (let ((files (length (entities-of-type g :file))))
+      (r-entry-settle g nil)
+      (is (null (getp f :trigger)))
+      (is (null (getp f :entry-point)))
+      (is (= files (length (entities-of-type g :file)))
+          "nothing was reanalyzed to clear it"))))
+
+(test a-non-python-entry-point-is-unknown-and-never-no
+  (let* ((g (make-graph))
+         (v (make-instance 'variable-entity :name "api" :origin-file "functions/index.js"
+                           :properties (properties-table
+                                        (list :file "functions/index.js" :start-line 1
+                                              :language :javascript
+                                              :registration
+                                              (list :name "functions.https.onRequest"
+                                                    :specifier "firebase-functions"
+                                                    :path '("default" "https" "onRequest")
+                                                    :arguments nil :line 1))))))
+    (add-entity g v)
+    (r-firebase g "firebase.json" (r-codebase :runtime nil))
+    (r-entry-settle g)
+    (is (eq :https (getp v :trigger)))
+    (is (eq :unknown (getf (entry-of v) :deployed)))
+    (is (null (depends-on-ids g v)))))
+
+;;; ------------------------------------------------------------------
 ;;; The Python line, drawn both ways (BUG-0070)
 ;;; ------------------------------------------------------------------
 

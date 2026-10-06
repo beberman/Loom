@@ -119,6 +119,21 @@ transaction.")
     (is (null (get-entity g (id a)))
         "nothing applied, including the op that was sound")))
 
+(test a-setting-carrying-a-value-rejects-the-whole-transaction
+  ;; DES-0054 R8. :SETTING is closed, so a value stored on one fails its
+  ;; transaction and the graph holds no setting afterwards.
+  (let* ((g (make-graph))
+         (a (tx-node "a" "src/one.lisp"))
+         (s (make-instance 'setting-entity :name "K"
+                           :properties (properties-table
+                                        (list :name "K" :sources '(:secret)
+                                              :value "hunter2")))))
+    (signals transaction-error
+      (apply-transaction g (list (assert-entity a) (assert-entity s))))
+    (is (null (get-entity g (id s))))
+    (is (null (get-entity g (id a)))
+        "nothing applied, including the op that was sound")))
+
 (test a-retract-of-an-unknown-target-still-rejects
   (let* ((g (make-graph))
          (a (tx-node "a" "src/one.lisp")))

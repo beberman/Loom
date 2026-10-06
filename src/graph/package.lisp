@@ -87,6 +87,7 @@
    ;; test coverage, derived from what a test's body calls (DES-0002 R9)
    #:resolve-tests
    #:resolve-settings
+   #:resolve-entry-points
    #:*tested-types*
 
    ;; document link resolution (SS10.3)
@@ -103,6 +104,10 @@
    ;; function's own docstring for the generic-plus-methods case that a naive
    ;; "one candidate" test drops.
    #:resolve-one
+   #:match-registration
+   #:setting-with-readers
+   #:codebase-roots
+   #:covering-codebases
    #:*document-types*
    #:*mention-confidence*
 

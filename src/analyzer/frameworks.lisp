@@ -191,6 +191,108 @@ rendered by AS-STRING, which is what every other scalar in this file gets."
           append (list (intern (string-upcase (string key)) :keyword)
                        (as-string value)))))
 
+(defun callee-names (module names)
+  "MODULE joined to each of NAMES with a dot: the callees an entry declares."
+  (mapcar (lambda (name) (format nil "~a.~a" module name)) names))
+
+(defun missing-fields (table required)
+  "The keys of REQUIRED, in order, that TABLE leaves empty. `names:' is empty
+when it holds no string; every other field when it is not a non-blank scalar."
+  (loop for key in required
+        unless (if (eq key :names)
+                   (as-list-of-strings (yaml-value table key))
+                   (as-string (yaml-value table key)))
+          collect key))
+
+(defparameter *entry-point-required* '(:module :names :trigger)
+  "The fields an entry-points: entry cannot declare without (DES-0054 D3).")
+
+(defparameter *setting-declaration-required* '(:source :module :names)
+  "The fields a setting-declarations: entry cannot declare without (DES-0054 D3).")
+
+(defun parse-entry-point (table)
+  "One entry-points: entry as (:FRAMEWORK :TRIGGER :MODULE :NAMES :SETTINGS
+:POSITIONAL). The caller has checked *ENTRY-POINT-REQUIRED*.
+
+DES-0054 D3. TRIGGER is interned as a keyword here, once, which bounds the
+keyword package by the declarations as DOMAIN names are bounded (DES-0047 D1).
+FRAMEWORK is a label for the reader and defaults to the module. MODULE and the
+names stay as written, since they are compared against what a source file
+binds."
+  (let ((module (as-string (yaml-value table :module))))
+    (list :framework (or (as-string (yaml-value table :framework)) module)
+          :trigger (as-keyword (yaml-value table :trigger))
+          :module module
+          :names (as-list-of-strings (yaml-value table :names))
+          :settings (as-list-of-strings (yaml-value table :settings))
+          :positional (as-list-of-strings (yaml-value table :positional)))))
+
+(defun parse-setting-declaration (table)
+  "One setting-declarations: entry as (:SOURCE :MODULE :NAMES). The caller has
+checked *SETTING-DECLARATION-REQUIRED*. SOURCE is interned as a keyword here,
+once, for PARSE-ENTRY-POINT's reason (DES-0054 D3)."
+  (list :source (as-keyword (yaml-value table :source))
+        :module (as-string (yaml-value table :module))
+        :names (as-list-of-strings (yaml-value table :names))))
+
+(defun read-callee-entries (key parsed required parser)
+  "PARSED's KEY entries as (values ((INDEX . ENTRY) ...) PROBLEMS). An entry
+missing a field of REQUIRED is left out and a problem names its key and index."
+  (let ((entries '()) (problems '()))
+    (loop for table in (as-sequence (yaml-value parsed key))
+          for index from 0
+          for missing = (missing-fields table required)
+          do (if missing
+                 (push (format nil "~(~a~)[~d] declares nothing: it has no ~{~(~a~)~^, ~}"
+                               key index missing)
+                       problems)
+                 (push (cons index (funcall parser table)) entries)))
+    (values (nreverse entries) (nreverse problems))))
+
+(defun parse-callee-declarations (parsed)
+  "PARSED's entry-points and setting-declarations as (values ENTRY-POINTS
+SETTING-DECLARATIONS PROBLEMS).
+
+A callee, module.name, declared by two entries -- within one key or across the
+two -- is removed from both and PROBLEMS names both: picking one would be a guess
+between two declarations (CON-0001), and an entry left with no name declares
+nothing. Removing it here is what makes `neither applies it' true of every
+consumer, so the passes need not check."
+  (multiple-value-bind (entry-points entry-problems)
+      (read-callee-entries :|entry-points| parsed *entry-point-required*
+                           #'parse-entry-point)
+    (multiple-value-bind (declarations declaration-problems)
+        (read-callee-entries :|setting-declarations| parsed *setting-declaration-required*
+                             #'parse-setting-declaration)
+      (let ((where (make-hash-table :test #'equal)))
+        (loop for (key entries) in (list (list "entry-points" entry-points)
+                                         (list "setting-declarations" declarations))
+              do (loop for (index . entry) in entries
+                       do (dolist (callee (callee-names (getf entry :module)
+                                                        (getf entry :names)))
+                            (push (format nil "~a[~d]" key index) (gethash callee where)))))
+        (let ((twice (sort (loop for callee being the hash-keys of where
+                                   using (hash-value places)
+                                 when (rest places) collect callee)
+                           #'string<)))
+          (flet ((kept (entries)
+                   (loop for (nil . entry) in entries
+                         for names = (remove-if
+                                      (lambda (name)
+                                        (member (format nil "~a.~a" (getf entry :module) name)
+                                                twice :test #'string=))
+                                      (getf entry :names))
+                         when names
+                           collect (let ((copy (copy-list entry)))
+                                     (setf (getf copy :names) names)
+                                     copy))))
+            (values (kept entry-points)
+                    (kept declarations)
+                    (append entry-problems declaration-problems
+                            (loop for callee in twice
+                                  collect (format nil "~a is declared by ~{~a~^ and ~}; neither applies it"
+                                                  callee (reverse (gethash callee where))))))))))))
+
 (defun parse-frameworks (contents)
   "A .loom/frameworks.yaml as (:definer-macros ... :route-callers ...).
 
@@ -206,27 +308,34 @@ out which half."
   (let ((parsed (handler-case (yaml:parse contents)
                   ((or error yaml.error:yaml-error) () nil))))
     (when (hash-table-p parsed)
-      (list :definer-macros
-            (remove nil (mapcar #'parse-definer-macro
-                                (as-sequence (yaml-value parsed :|definer-macros|))))
-            :route-callers
-            (remove nil (mapcar #'parse-route-caller
-                                (as-sequence (yaml-value parsed :|route-callers|))))
-            ;; Path prefixes whose documents describe a state the tree has left
-            ;; behind. DES-0025 D6a.
-            :archived-paths
-            (mapcar #'string-downcase
-                    (as-list-of-strings (yaml-value parsed :|archived-paths|)))
-            ;; DES-0047. The fourth key, built the way :ROUTE-CALLERS is.
-            :domains
-            (remove nil (mapcar #'parse-domain
-                                (as-sequence (yaml-value parsed :|domains|))))
-            ;; DES-0052. The fifth, and the only one this system does not read
-            ;; itself: a block handed through to a document store's
-            ;; constructor, which is the one thing that knows what its keys
-            ;; mean. Parsed into a plist and not interpreted.
-            :document-store
-            (parse-declaration-block (yaml-value parsed :|document-store|))))))
+      (multiple-value-bind (entry-points setting-declarations declaration-problems)
+          (parse-callee-declarations parsed)
+        (list :definer-macros
+              (remove nil (mapcar #'parse-definer-macro
+                                  (as-sequence (yaml-value parsed :|definer-macros|))))
+              :route-callers
+              (remove nil (mapcar #'parse-route-caller
+                                  (as-sequence (yaml-value parsed :|route-callers|))))
+              ;; Path prefixes whose documents describe a state the tree has left
+              ;; behind. DES-0025 D6a.
+              :archived-paths
+              (mapcar #'string-downcase
+                      (as-list-of-strings (yaml-value parsed :|archived-paths|)))
+              ;; DES-0047. The fourth key, built the way :ROUTE-CALLERS is.
+              :domains
+              (remove nil (mapcar #'parse-domain
+                                  (as-sequence (yaml-value parsed :|domains|))))
+              ;; DES-0052. The fifth, and the only one this system does not read
+              ;; itself: a block handed through to a document store's
+              ;; constructor, which is the one thing that knows what its keys
+              ;; mean. Parsed into a plist and not interpreted.
+              :document-store
+              (parse-declaration-block (yaml-value parsed :|document-store|))
+              ;; DES-0054 D3. The sixth and seventh, and the problems found
+              ;; reading them: an entry left out is only visible through them.
+              :entry-points entry-points
+              :setting-declarations setting-declarations
+              :declaration-problems declaration-problems)))))
 
 (defun domain-table (domains)
   "DOMAINS as a keyword-to-plist table, with :DEFAULT always present.
@@ -348,21 +457,32 @@ file."
                         (error () nil))))
         (when contents (parse-frameworks contents))))))
 
-(defun read-json-file (path)
-  "PATH as a parsed JSON object, or NIL.
+(defun parse-json-text (text)
+  "TEXT as a parsed JSON object, or NIL.
 
-cl-yaml reads strict JSON, which is what jsconfig.json and package.json are
-when they parse at all. A file carrying comments -- JSONC, which some editors
-write -- does not parse here, and NIL is the honest answer: a partial read of a
-configuration file is worse than none, because the half that parsed looks like
-the whole."
+cl-yaml reads strict JSON, which is what jsconfig.json, package.json and
+firebase.json are when they parse at all. A file carrying comments -- JSONC,
+which some editors write -- does not parse here, and NIL is the honest answer: a
+partial read of a configuration file is worse than none, because the half that
+parsed looks like the whole. Takes contents rather than a path so the firebase
+analyzer, which is handed contents and opens nothing, can call it (DES-0054 D4).
+
+Names both ERROR and YAML.ERROR:YAML-ERROR: cl-yaml's conditions are direct
+subtypes of CONDITION, which is RULE-0004."
+  (handler-case
+      (let ((parsed (yaml:parse text)))
+        (and (hash-table-p parsed) parsed))
+    ((or error yaml.error:yaml-error) () nil)))
+
+(defun read-json-file (path)
+  "PATH as a parsed JSON object, or NIL. PARSE-JSON-TEXT's rules apply."
   (when (probe-file path)
-    (handler-case
-        (let ((parsed (yaml:parse (with-open-file (in path :external-format :utf-8)
-                                    (let ((text (make-string (file-length in))))
-                                      (subseq text 0 (read-sequence text in)))))))
-          (and (hash-table-p parsed) parsed))
-      ((or error yaml.error:yaml-error) () nil))))
+    (let ((text (handler-case
+                    (with-open-file (in path :external-format :utf-8)
+                      (let ((text (make-string (file-length in))))
+                        (subseq text 0 (read-sequence text in))))
+                  (error () nil))))
+      (and text (parse-json-text text)))))
 
 (defun preset-for-module-resolution (name)
   "The resolution preset a tsconfig `moduleResolution' names, or :BUNDLER."
@@ -417,6 +537,8 @@ would be a fabricated fact in a file the author is about to confirm."
        paths))
     (cons (nreverse aliases) (nreverse problems))))
 
+(declaim (ftype function firebase-codebase-languages firebase-source-directory))
+
 (defun propose-domains (root)
   "Domains ROOT's own configuration suggests, and what could not be read.
 
@@ -429,13 +551,16 @@ stated in a runtime hook rather than in any config a parser can read. The
 author supplies it. This exists to make the other thirty-two entries something
 nobody types.
 
-Two signals.
+Three signals.
 
 A jsconfig.json or tsconfig.json proposes one domain per `include' root, with
 the preset its `moduleResolution' names and the aliases its `paths' translate
 to. A nested package.json declaring no `type' proposes commonjs at its own
 directory, which is Node's own default and the reason front-end's functions/
-resolves differently from the rest of the tree."
+resolves differently from the rest of the tree.
+
+A firebase.json at the root with a Python codebase proposes that codebase's source
+directory, from \"firebase.json\" (DES-0054 R10)."
   (let ((proposals '()) (problems '()))
     (dolist (config '("jsconfig.json" "tsconfig.json"))
       (let ((parsed (read-json-file (merge-pathnames config (pathname root)))))
@@ -472,6 +597,22 @@ resolves differently from the rest of the tree."
                         :aliases '()
                         :from "package.json")
                   proposals)))))
+    ;; DES-0054 R10. A firebase.json whose codebase is Python deploys its source
+    ;; directory as the import root: main.py says `import config', not `import
+    ;; functions.config'. Proposed and not applied -- firebase.json lists tests/
+    ;; under `ignore', so the file argues against the root for the very files
+    ;; that need it, and pytest.ini is what makes it true there.
+    (dolist (codebase (firebase-codebase-languages root))
+      (when (eq :python (getf codebase :language))
+        (let ((directory (firebase-source-directory (getf codebase :source))))
+          (when (plusp (length directory))
+            (push (list :name (intern (string-upcase (string-right-trim "/" directory))
+                                      :keyword)
+                        :root directory
+                        :resolution :bundler
+                        :aliases '()
+                        :from "firebase.json")
+                  proposals)))))
     (values (nreverse proposals) (nreverse problems))))
 
 (defun frameworks-registry (frameworks &optional (base *macro-generators*))
@@ -503,13 +644,14 @@ nothing about that looks like an error. `status' reports these."
       (let ((frameworks (read-frameworks root)))
         (cond ((null frameworks)
                (list (format nil "~a does not parse as YAML" *frameworks-file*)))
-              ;; All three keys, not two. A repository with no unusual definers
-              ;; and no route conventions may still declare an archive, and
-              ;; calling that file useless would be a false report about a file
-              ;; doing its job.
-              ((and (null (getf frameworks :definer-macros))
-                    (null (getf frameworks :route-callers))
-                    (null (getf frameworks :archived-paths)))
-               (list (format nil "~a declares nothing usable: a definer-macros entry needs both macro: and defines:"
-                             *frameworks-file*)))
-              (t '()))))))
+              ;; Every key the parse returns, not the first three. A repository
+              ;; with no unusual definers and no route conventions may still
+              ;; declare an archive, domains or entry points, and calling that
+              ;; file useless would be a false report about a file doing its job.
+              ((notany (lambda (key) (getf frameworks key))
+                       '(:definer-macros :route-callers :archived-paths :domains
+                         :document-store :entry-points :setting-declarations))
+               (cons (format nil "~a declares nothing usable: a definer-macros entry needs both macro: and defines:"
+                             *frameworks-file*)
+                     (getf frameworks :declaration-problems)))
+              (t (getf frameworks :declaration-problems)))))))

@@ -94,6 +94,7 @@
    #:domain-table
    #:domain-problems
    #:propose-domains
+   #:firebase-codebase-languages
    #:*resolution-presets*
    #:*default-domain*
    #:parse-frameworks

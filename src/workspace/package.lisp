@@ -64,6 +64,7 @@
    #:find-repository
    #:split-designator
    #:domain-property-filter
+   #:trigger-property-filter
    #:unknown-domain
    #:all-repositories
 

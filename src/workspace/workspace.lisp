@@ -251,6 +251,22 @@ peers cannot reach each other and both depend on this system, which is the same
 reason SPLIT-DESIGNATOR lives here."
   (when domain (list :domain (getf domain :name))))
 
+(defun trigger-property-filter (name)
+  "The property filter selecting entities whose :TRIGGER is NAME, or NIL for no
+name. DES-0054 D8.
+
+The keyword is looked up and never interned. Console input must not widen the
+keyword package: the declarations bound it (DES-0047 D1), and a typed word is not
+a declaration. A name no keyword carries gets a filter that matches nothing, as a
+string, since a string is EQUAL to no keyword and to no absent trigger -- NIL would
+match every entity that has none.
+
+Here beside DOMAIN-PROPERTY-FILTER, for its reason: loom-process and loom-serve
+both need it and cannot reach each other."
+  (when (and name (plusp (length name)))
+    (let ((trigger (find-symbol (string-upcase name) :keyword)))
+      (list :trigger (or trigger "no such trigger")))))
+
 (defun all-repositories () (reverse *repositories*))
 
 ;;;; ==================================================================
@@ -641,13 +657,23 @@ text. The documents' half of `unindexed', as COUNT-UNSTAMPED is the code's."
     (loop for address being the hash-keys of (repository-document-failures repository)
           count (not (gethash address documents)))))
 
+(defparameter *admitted-dot-files* '(".firebaserc")
+  "Dot-prefixed file names REPOSITORY-FILES walks anyway. DES-0054 D4.
+
+Admission is by exact name and never by pattern, so no rule such as `.firebase*'
+could also let in a file that holds a value: Firebase keeps a secret's or a
+param's value in .env, .env.<project>, .env.local, .secret.local and
+.runtimeconfig.json, and none of those is here (D7). The directory test is
+unchanged, so .firebase/.firebaserc stays skipped.")
+
 (defun repository-files (repository)
   "Every code file under the repository root that some analyzer claims.
 
 Skips .git and any dot-directory: nothing in them is source, and .git in
 particular churns constantly.
 
-Skips dot-prefixed files for the same reason and one more. A name beginning
+Skips dot-prefixed files, except those named in *ADMITTED-DOT-FILES*, for the
+same reason and one more. A name beginning
 with a dot is an editor's or a tool's bookkeeping rather than source, and some
 of it is not even a file: Emacs writes .#foo.yaml as a dangling symlink while a
 buffer is open, which keeps the extension of the thing it locks, so an analyzer
@@ -677,7 +703,9 @@ shares with the file store."
          (claimed (remove-if-not
                    (lambda (path)
                      (and (pathname-name path)
-                          (not (dot-prefixed-p (file-namestring path)))
+                          (let ((name (file-namestring path)))
+                            (or (not (dot-prefixed-p name))
+                                (member name *admitted-dot-files* :test #'equal)))
                           (notany #'dot-prefixed-p (rest (pathname-directory path)))
                           (analyzable-p path)
                           (not (store-document-p path))
@@ -1066,7 +1094,8 @@ call site mints an entity, and that entity has to exist and carry its
 derived from those edges, so RESOLVE-TESTS has to follow RESOLVE-CALLS rather
 than merely accompany it. The full sequence is resolve-definitions,
 resolve-generated-definitions, resolve-imports, resolve-calls, resolve-tests,
-resolve-settings, resolve-document-links, check-document-links, check-rules.
+resolve-settings, resolve-entry-points, resolve-document-links,
+check-document-links, check-rules.
 
 Two of those arrows are not dependencies and the difference is worth keeping.
 RESOLVE-IMPORTS before CHECK-RULES is one: RUN-CHECK's :NO-EDGE kind takes
@@ -1144,7 +1173,19 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
       ;; Before RESOLVE-DOCUMENT-LINKS so a document's `affects: [SPREADSHEET_ID]'
       ;; finds the setting, and before the rules so CHECK-RULES sees the edges
       ;; (DES-0053 D10).
-      (submit "resolve-settings"       (resolve-settings graph :workspace-id workspace))
+      (submit "resolve-settings"       (resolve-settings
+                                        graph :workspace-id workspace
+                                        :domains domains
+                                        :setting-declarations
+                                        (repository-setting-declarations repository)
+                                        :entry-points (repository-entry-points repository)))
+      ;; Reads :DECORATORS, :REGISTRATION, :CODEBASES and the import bindings the
+      ;; analyzers wrote, so it needs no earlier pass; it sits after the settings
+      ;; and before the document links, where DES-0054 D6 puts it.
+      (submit "resolve-entry-points"   (resolve-entry-points
+                                        graph :workspace-id workspace
+                                        :domains domains
+                                        :entry-points (repository-entry-points repository)))
       (submit "resolve-document-links" (resolve-document-links graph :workspace-id workspace))
       ;; After RESOLVE-DOCUMENT-LINKS and before the rules, because it writes a
       ;; property that same pass's siblings read, and because a rule check is a
@@ -1167,6 +1208,19 @@ repository's own frameworks plist, so two watched trees cannot place each
 other's files."
   (let ((domains (getf (repository-frameworks repository) :domains)))
     (when domains (domain-table domains))))
+
+(defun repository-entry-points (repository)
+  "The entry-points this repository declared, or NIL. DES-0054 D3.
+
+Beside REPOSITORY-DOMAINS and for its reason: read from this repository's own
+frameworks plist, so one watched tree's declarations cannot mark another's
+functions. RESOLVE-AND-CHECK hands it to the passes as data -- loom-graph reads
+no configuration."
+  (getf (repository-frameworks repository) :entry-points))
+
+(defun repository-setting-declarations (repository)
+  "The setting-declarations this repository declared, or NIL. DES-0054 D3."
+  (getf (repository-frameworks repository) :setting-declarations))
 
 (defun repository-registry (repository)
   "The generator registry this repository's resolution passes should use.
@@ -2067,6 +2121,47 @@ and a row of zeroes there is a count of a question nobody asked."
   (some (lambda (file) (module-scoped-language-p (getp file :language)))
         (entities-of-type (repository-graph repository) :file)))
 
+(defun deploys-report (repository)
+  "What `status' says about deployment, or NIL when no firebase.json is indexed.
+DES-0054 D8.
+
+:CODEBASES, one plist each with :FILE, :SOURCE, :CODEBASE, :RUNTIME and
+:ENTRY-POINTS, the registrations a covering codebase holds. :ALIASES, the
+.firebaserc projects as \"alias=project\". :DECLARED, false when firebase.json
+declares codebases and .loom/frameworks.yaml has no entry-points, which makes the
+missing declaration a recorded gap and not an empty band (CON-0001).
+:UNNAMED-DECLARATIONS, the variables calling a setting declaration with no literal
+first argument, which name nothing. Computed from the graph and never stored,
+since R7 declares no property for it."
+  (let* ((graph (repository-graph repository))
+         (roots (codebase-roots graph)))
+    (when roots
+      (let ((counts (make-hash-table :test #'eq)))
+        (dolist (type '(:function :method :variable))
+          (dolist (entity (entities-of-type graph type))
+            (let ((registrations (length (getp entity :entry-point))))
+              (when (plusp registrations)
+                (let ((root (covering-codebases (getp entity :file) roots)))
+                  (when root (incf (gethash root counts 0) registrations)))))))
+        (list :codebases (loop for root in roots
+                               collect (list :file (getp (getf root :file) :path)
+                                             :source (getf root :source)
+                                             :codebase (getf root :codebase)
+                                             :runtime (getf root :runtime)
+                                             :entry-points (gethash root counts 0)))
+              :aliases (loop for file in (entities-of-type graph :file)
+                             append (loop for (alias . project) in (getp file :project-aliases)
+                                          collect (format nil "~a=~a" alias project)))
+              :declared (and (repository-entry-points repository) t)
+              :unnamed-declarations
+              (let ((declarations (repository-setting-declarations repository)))
+                (count-if (lambda (variable)
+                            (let ((call (getp variable :value-call)))
+                              (and call (null (getf call :first-string))
+                                   (match-registration call (getp variable :language)
+                                                       declarations))))
+                          (entities-of-type graph :variable))))))))
+
 (defun repository-status (repository)
   "SS3.2's status, as plain data: \"indexing progress, entity and relationship
 counts, watcher health, unresolved document references, unenforced rules, and
@@ -2264,6 +2359,9 @@ the last error per thread.\""
           ;; relationship the index knows it is missing. Zero on all three
           ;; watched trees, and unconditional so that zero can be read.
           :dropped-edges (dropped-edge-count graph)
+          ;; DES-0054 D8. NIL for a tree with no firebase.json, so `status' on
+          ;; every other tree reads as it did.
+          :deploys (deploys-report repository)
           :errors (length (repository-errors repository))
           :last-error (first (repository-errors repository)))))
 
@@ -2345,9 +2443,10 @@ carry and thrown away, so the graph after the call is the graph before it."
                      (loop for (field . nil) in *declared-link-fields*
                            append (loop for name in (getp document field)
                                         collect (document-reference-report
-                                                 index field name document)))))))))))
+                                                 index field name document
+                                                 :view graph)))))))))))
 
-(defun document-reference-report (index field name document)
+(defun document-reference-report (index field name document &key view)
   "One declared reference, as what the author needs to act on it.
 
 A reference resolving to the document itself is reported as resolved and
@@ -2356,7 +2455,7 @@ there and an author reading `resolved' about a self-reference would be told
 an edge exists that does not. Compared by id rather than by identity: the
 entity here came from the analyzer and is a different object from the one in
 the index even when the document is already indexed."
-  (multiple-value-bind (target candidates) (resolve-one index name)
+  (multiple-value-bind (target candidates) (resolve-one index name :view view)
     (cond
       ((and target (equal (id target) (id document)))
        (list :field field :name name :status :self))

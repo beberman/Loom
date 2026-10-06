@@ -236,16 +236,120 @@ def sync(): pass
                                                            :test #'equal)
                                       :value)
                               :value)))
-           (is (equal '("KEY")
-                      (py-get (py-get (find "secrets" args :key (lambda (a) (py-get a :name))
-                                                          :test #'equal)
-                                      :value)
-                              :value)))
+           (let ((elements (py-get (py-get (find "secrets" args
+                                                 :key (lambda (a) (py-get a :name))
+                                                 :test #'equal)
+                                           :value)
+                                   :value)))
+             (is (= 1 (length elements)) "DES-0054 D1: a list of one name")
+             (is (equal '("name" "KEY" "local")
+                        (list (py-get (first elements) :kind)
+                              (py-get (first elements) :value)
+                              (py-get (first elements) :binding)))))
            (is (equal "expression"
                       (py-get (py-get (find "region" args :key (lambda (a) (py-get a :name))
                                                           :test #'equal)
                                       :value)
                               :kind)))))))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 D1 and D2: the argument encoding and the value call
+;;; ------------------------------------------------------------------
+
+(defun py-decorator-args (reply function)
+  "The first decorator of FUNCTION as (name . value) pairs, values still in the
+child's own encoding."
+  (mapcar (lambda (a) (cons (py-get a :name) (py-get a :value)))
+          (py-get (first (py-get (py-def reply function) :decorators)) :arguments)))
+
+(test a-dotted-argument-keeps-its-text-and-its-first-names-import-binding
+  (call-with-python
+   (lambda ()
+     (let* ((reply (py-reply "from firebase_functions import https_fn, options
+@https_fn.on_request(secrets=[ZEFFY_API_KEY], timeout_sec=540, memory=options.MemoryOption.MB_512)
+def f(req): pass
+"))
+            (args (py-decorator-args reply "f"))
+            (memory (cdr (assoc "memory" args :test #'equal)))
+            (secrets (cdr (assoc "secrets" args :test #'equal))))
+       (is (equal "dotted" (py-get memory :kind)))
+       (is (equal "options.MemoryOption.MB_512" (py-get memory :value)))
+       (is (equal "firebase_functions" (py-get memory :specifier)))
+       (is (equal '("options") (py-get memory :path)))
+       (is (equal "list" (py-get secrets :kind)))
+       (is (notany (lambda (pair) (equal "expression" (py-get (cdr pair) :kind))) args)
+           "no argument of the decorator is the expression marker")))))
+
+(test a-name-argument-carries-an-import-binding-when-it-has-one
+  (call-with-python
+   (lambda ()
+     (let* ((reply (py-reply "from config import KEY
+@reg(secrets=[KEY, LOCAL])
+def f(): pass
+"))
+            (list (cdr (assoc "secrets" (py-decorator-args reply "f") :test #'equal)))
+            (elements (py-get list :value)))
+       (is (equal '("config" ("KEY")) (list (py-get (first elements) :specifier)
+                                            (py-get (first elements) :path))))
+       (is (equal "import" (py-get (first elements) :binding)))
+       (is (equal "local" (py-get (second elements) :binding)))))))
+
+(test a-list-of-literals-and-a-list-holding-a-call
+  (call-with-python
+   (lambda ()
+     (let* ((reply (py-reply "@reg(a=[\"K\"], b=[SecretParam(\"K\")])
+def f(): pass
+"))
+            (args (py-decorator-args reply "f")))
+       (is (equal '(((:kind . "literal") (:value . "K")))
+                  (py-get (cdr (assoc "a" args :test #'equal)) :value)))
+       (is (equal "expression" (py-get (cdr (assoc "b" args :test #'equal)) :kind))
+           "a call inside a list argument is the marker: the gap stays visible")))))
+
+(test positional-arguments-are-recorded-in-order
+  (call-with-python
+   (lambda ()
+     (let* ((reply (py-reply "@app.route(\"/x\", 3)
+def f(): pass
+"))
+            (positional (py-get (first (py-get (py-def reply "f") :decorators)) :positional)))
+       (is (equal '("/x" 3) (mapcar (lambda (p) (py-get p :value)) positional)))))))
+
+(test a-module-level-call-records-its-callee-and-first-string
+  (call-with-python
+   (lambda ()
+     (let* ((reply (py-reply "from firebase_functions.params import SecretParam
+K = SecretParam(\"K\")
+X = SecretParam(name=\"K\")
+"))
+            (k (find "K" (py-get reply :variables) :key (lambda (v) (py-get v :name)) :test #'equal))
+            (x (find "X" (py-get reply :variables) :key (lambda (v) (py-get v :name)) :test #'equal)))
+       (is (equal "firebase_functions.params" (py-get (py-get k :value-call) :specifier)))
+       (is (equal '("SecretParam") (py-get (py-get k :value-call) :path)))
+       (is (equal "K" (py-get (py-get k :value-call) :first-string)))
+       (is (not (null (py-get x :value-call))))
+       (is (null (py-get (py-get x :value-call) :first-string))
+           "a keyword is not a first positional argument")))))
+
+(test a-params-default-never-reaches-the-reply
+  ;; DES-0054 R2 and D2: the default is the second positional or a keyword, and
+  ;; the reply may hold neither. The reply is serialised whole so a new field
+  ;; carrying it would fail this too.
+  (call-with-python
+   (lambda ()
+     (let* ((reply (py-reply "from firebase_functions.params import StringParam
+P = StringParam(\"K\", \"dflt\")
+Q = StringParam(\"K\", default=\"dflt\")
+"))
+            (text (prin1-to-string reply)))
+       (dolist (name '("P" "Q"))
+         (is (equal "K" (py-get (py-get (find name (py-get reply :variables)
+                                              :key (lambda (v) (py-get v :name))
+                                              :test #'equal)
+                                        :value-call)
+                                :first-string))))
+       (is (search "StringParam" text) "the control: the serialised reply is readable")
+       (is (null (search "dflt" text)))))))
 
 (test arguments-are-recorded-as-written
   (call-with-python

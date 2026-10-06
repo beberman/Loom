@@ -51,6 +51,36 @@ that got it wrong would pass while testing nothing."
         (is (search "full-tokens" body)
             "the document summary lost its key names: ~a" body)))))
 
+(defun rest-python-available-p ()
+  (handler-case (progn (uiop:run-program '("python3" "-c" "pass")) t)
+    (error () nil)))
+
+(test describe-over-rest-carries-a-decorators-encoded-arguments-as-json
+  ;; DES-0054 risk 3: :DECORATORS' arguments changed from a list of names to a
+  ;; tagged plist, and nothing over REST asserted on decorators before. The body
+  ;; must still parse and still say which secret and which memory the decorator
+  ;; names.
+  (if (not (rest-python-available-p))
+      (skip "python3 is not on PATH")
+      (with-operations-fixture (repository)
+        (loom-serve-test::write-operations-fixture-file "functions/main.py" "from firebase_functions import https_fn, options
+@https_fn.on_request(secrets=[ZEFFY_API_KEY], memory=options.MemoryOption.MB_512)
+def sync_zeffy(req): pass
+")
+        (with-test-server ()
+          (http-call (route :reindex)
+                     :method :post :content-type "application/json"
+                     :content (format nil "{\"repository\":\"~a\"}"
+                                      (repository-name repository)))
+          (multiple-value-bind (body status)
+              (http-call (route :describe)
+                         :parameters (list (cons "repository" (repository-name repository))
+                                           (cons "term" "sync_zeffy")))
+            (is (= 200 status))
+            (finishes (decode body))
+            (is (search "ZEFFY_API_KEY" body))
+            (is (search "options.MemoryOption.MB_512" body)))))))
+
 (test a-write-route-changes-what-status-reports
   ;; Two requests, because a write whose effect is only visible to the same
   ;; request has not been tested.

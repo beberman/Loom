@@ -333,6 +333,48 @@ RESOLVE-CALLS reads, so a second copy here could drift from the key")
     (is (null (validate-relationship-endpoints (first pair) (second pair) :setting))
         "~s from ~s to a setting" (first pair) (second pair))))
 
+(test a-setting-is-closed-and-refuses-a-value
+  ;; DES-0054 D7. The index must be unable to hold a secret's value, so a
+  ;; :SETTING carrying any key it does not declare fails validation.
+  (let ((s (make-instance 'setting-entity :name "K"
+                          :properties (properties-table
+                                       (list :name "K" :sources '(:secret :param))))))
+    (is (null (validate-entity s)) ":SECRET and :PARAM are legal sources")
+    (setf (gethash :value (properties s)) "x")
+    (is (not (null (validate-entity s))))
+    (is (eq :value (getf (first (validate-entity s)) :key)))))
+
+(test an-entry-point-declares-its-derived-and-recorded-properties
+  ;; DES-0054 R7. Each property validates on its type, and a wrong shape is
+  ;; refused rather than stored.
+  (dolist (type '(:function :method :variable))
+    (let ((spec (find-entity-type type)))
+      (dolist (key '(:trigger :entry-point))
+        (is (find key (entity-type-properties spec) :key #'property-key)
+            "~s declares ~s" type key))))
+  (dolist (key '(:value-call :registration))
+    (is (find key (entity-type-properties (find-entity-type :variable))
+              :key #'property-key)))
+  (dolist (key '(:codebases :project-aliases :unnamed-registrations))
+    (is (find key (entity-type-properties (find-entity-type :file))
+              :key #'property-key)))
+  (let ((v (make-instance 'variable-entity :name "K"
+                          :properties (properties-table
+                                       (list :file "a.py" :start-line 1)))))
+    (setf (getp v :trigger) :schedule)
+    (setf (getp v :entry-point) '((:trigger :schedule)))
+    (setf (getp v :value-call) '(:specifier "m" :path ("P") :line 1))
+    (is (null (validate-entity v)))
+    (signals property-error (setf (getp v :trigger) "schedule"))))
+
+(test depends-on-runs-from-a-function-to-a-file
+  ;; DES-0054 D6. A deployed function depends on its firebase.json.
+  (dolist (from '(:function :method :variable))
+    (is (null (validate-relationship-endpoints :depends-on from :file))
+        "~s depends on a file" from))
+  (is (not (null (validate-relationship-endpoints :depends-on :class :file)))
+      "a class is not an entry point"))
+
 (test python-vocabulary-is-inside-the-declared-one-ofs
   ;; DES-0053 D4 and D8. Outside a :one-of, validation rejects the entity and
   ;; with it the whole analyzer transaction for the file.

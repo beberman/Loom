@@ -29,7 +29,8 @@ The reply, camelCase keys, one JSON object per frame:
     imports         one entry per bound name, every scope:
                     local, specifier, name, source, line, scope
     definitions     function, method and class, in source order
-    variables       a name assigned at module level
+    variables       a name assigned at module level; valueCall on one whose
+                    value is a single call (DES-0054 D2)
     statements      calls made by module-level statements that are neither a
                     definition nor an assignment
     envReads, unnamedEnvReads
@@ -185,9 +186,37 @@ def format_arguments(a, hide=None):
     return out
 
 
-def literal_value(node):
-    """A decorator argument as D3 records it: a literal's value, bare names, or
-    the marker 'expression'."""
+def plain_chain(node):
+    """The names of an attribute chain made only of plain names, `a.b.c` as
+    ['a', 'b', 'c'], or None for anything else: a call, a subscript, a literal."""
+    names = []
+    while isinstance(node, ast.Attribute):
+        names.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    names.append(node.id)
+    names.reverse()
+    return names
+
+
+def name_binding(name, extractor, scope):
+    """D2's binding of one name: an import, with the specifier and path it was
+    bound from, or local. A name no scope binds is local too, which is how a
+    call to it is already recorded (DES-0053 DEFERRED)."""
+    found = lookup(name, scope)
+    if found and found[1][0] == 'import':
+        entry = found[1][1]
+        return {'binding': 'import', 'specifier': entry['specifier'],
+                'path': [entry['name']] if entry['name'] else []}
+    return {'binding': 'local'}
+
+
+def literal_value(node, extractor, scope):
+    """A decorator argument as DES-0054 D1 records it: a literal's value, a
+    name or attribute chain with the binding of its first name, a list of those,
+    or the marker 'expression'. A call anywhere inside is 'expression', so the gap
+    stays visible and the argument names no setting."""
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)) \
             and isinstance(node.operand, ast.Constant) \
             and isinstance(node.operand.value, (int, float)) \
@@ -201,11 +230,20 @@ def literal_value(node):
         return {'kind': 'none' if node.value is None else str(node.value).lower()}
     if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, float)):
         return {'kind': 'literal', 'value': node.value}
-    if isinstance(node, ast.Name):
-        return {'kind': 'names', 'value': [node.id]}
-    if isinstance(node, (ast.List, ast.Tuple)) and node.elts \
-            and all(isinstance(e, ast.Name) for e in node.elts):
-        return {'kind': 'names', 'value': [e.id for e in node.elts]}
+    chain = plain_chain(node)
+    if chain:
+        record = dict(name_binding(chain[0], extractor, scope))
+        if len(chain) == 1:
+            record.update(kind='name', value=chain[0])
+        else:
+            record.update(kind='dotted', value='.'.join(chain))
+            if record.pop('binding') == 'local':
+                record = {'kind': 'dotted', 'value': record['value']}
+        return record
+    if isinstance(node, (ast.List, ast.Tuple)):
+        elements = [literal_value(e, extractor, scope) for e in node.elts]
+        if all(e['kind'] != 'expression' for e in elements):
+            return {'kind': 'list', 'value': elements}
     return {'kind': 'expression'}
 
 
@@ -482,18 +520,21 @@ class Extractor:
 
     def visit_decorator(self, decorator, scope, owner, cls):
         """A decorator is a call made by what it decorates. Returns its D3
-        record."""
+        record, with D1's encoding of every argument, positional ones included."""
         func = decorator.func if isinstance(decorator, ast.Call) else decorator
-        record = {'name': ast.unparse(func), 'line': decorator.lineno, 'arguments': []}
+        record = {'name': ast.unparse(func), 'line': decorator.lineno, 'arguments': [],
+                  'positional': []}
         path = self.import_path(func, scope)
         if path:
             record['specifier'], record['path'] = path
         self.record_call(func, decorator, scope, owner, cls)
         if isinstance(decorator, ast.Call):
+            record['positional'] = [literal_value(a, self, scope) for a in decorator.args]
             for keyword in decorator.keywords:
                 if keyword.arg:
                     record['arguments'].append(
-                        {'name': keyword.arg, 'value': literal_value(keyword.value)})
+                        {'name': keyword.arg,
+                         'value': literal_value(keyword.value, self, scope)})
             self.visit_call_parts(decorator, scope, owner, cls)
         elif isinstance(func, ast.Attribute):
             self.visit(func.value, scope, owner, cls)
@@ -605,15 +646,42 @@ class Extractor:
         env = EnvSink()
         owner = Owner(env)
         self.visit(node.value, scope, owner, None)
+        value_call = self.value_call(node, targets, scope)
         for index, name in enumerate(dict.fromkeys(names)):
             # One statement's calls belong to one entity: `A, B = f()` is one
             # call, and minting it twice would count it twice.
             first = index == 0
-            self.variables.append({
+            record = {
                 'name': name, 'startLine': node.lineno, 'endLine': node.end_lineno,
                 'calls': owner.calls if first else [],
                 'envReads': env.names if first else [],
-                'unnamedEnvReads': env.unnamed if first else 0})
+                'unnamedEnvReads': env.unnamed if first else 0}
+            if value_call:
+                record['valueCall'] = value_call
+            self.variables.append(record)
+
+    def value_call(self, node, targets, scope):
+        """DES-0054 D2: the callee's binding, its line, and the first positional
+        argument when it is a string literal. NAME = Call(...) binds one name; a
+        tuple target or a chain of targets names no single call's result. No other
+        argument is read, so a param's default, its second positional or a keyword,
+        cannot reach the reply (R2)."""
+        call = node.value
+        if not isinstance(call, ast.Call) or len(targets) != 1 \
+                or not isinstance(targets[0], ast.Name):
+            return None
+        callee = self.classify(call.func, scope, None)
+        if callee is None or callee['kind'] not in ('import', 'local'):
+            return None
+        record = {'line': call.lineno}
+        if callee['kind'] == 'import':
+            record['specifier'], record['path'] = callee['specifier'], callee['path']
+        else:
+            record['name'] = callee['name']
+        first = call.args[0] if call.args else None
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            record['firstString'] = first.value
+        return record
 
     def note_slots(self, node, class_record):
         if isinstance(node, ast.Assign):

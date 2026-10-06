@@ -282,3 +282,144 @@ and the tree writes sendGet")
             (let ((*domains* (domain-table (domains-of backward)))) (domain-for-path path)))
         "declaration order is not part of the answer")
     (is (eq :c (let ((*domains* (domain-table (domains-of forward)))) (domain-for-path path))))))
+
+;;; ------------------------------------------------------------------
+;;; entry-points and setting-declarations (DES-0054 D3, R3)
+;;; ------------------------------------------------------------------
+
+(defparameter *lfia-frameworks*
+  "# Declarations Loom reads for this tree (DES-0054 D3). Functions registered by
+# these decorators are called by Firebase, not by anything in the tree.
+domains:
+  - name: functions
+    root: functions/
+entry-points:
+  - framework: firebase-functions
+    trigger: schedule
+    module: firebase_functions.scheduler_fn
+    names: [on_schedule]
+    settings: [secrets]
+  - framework: firebase-functions
+    trigger: https
+    module: firebase_functions.https_fn
+    names: [on_request, on_call]
+    settings: [secrets]
+setting-declarations:
+  - source: secret
+    module: firebase_functions.params
+    names: [SecretParam]
+  - source: param
+    module: firebase_functions.params
+    names: [StringParam, IntParam, BoolParam, ListParam]
+"
+  "~/github/lfia-accounting/.loom/frameworks.yaml as written when this step
+landed, so these tests are evidence about the file that tree carries.")
+
+(defun problems-of (yaml)
+  "FRAMEWORKS-PROBLEMS for a scratch tree whose frameworks file is YAML."
+  (let ((root (merge-pathnames (format nil "loom-frameworks-~36r/" (random (expt 2 48)))
+                               (uiop:temporary-directory))))
+    (unwind-protect
+         (let ((path (frameworks-path root)))
+           (ensure-directories-exist path)
+           (with-open-file (out path :direction :output :if-exists :supersede)
+             (write-string yaml out))
+           (frameworks-problems root))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))
+
+(test lfias-file-parses-into-its-entry-points-and-setting-declarations
+  (let ((frameworks (parse-frameworks *lfia-frameworks*)))
+    (is (equal '(:schedule :https)
+               (mapcar (lambda (e) (getf e :trigger)) (getf frameworks :entry-points)))
+        "the trigger is interned as a keyword")
+    (let ((schedule (first (getf frameworks :entry-points))))
+      (is (equal "firebase-functions" (getf schedule :framework)))
+      (is (equal "firebase_functions.scheduler_fn" (getf schedule :module)))
+      (is (equal '("on_schedule") (getf schedule :names)))
+      (is (equal '("secrets") (getf schedule :settings))))
+    (is (equal '(:secret :param)
+               (mapcar (lambda (e) (getf e :source)) (getf frameworks :setting-declarations))))
+    (is (equal '("StringParam" "IntParam" "BoolParam" "ListParam")
+               (getf (second (getf frameworks :setting-declarations)) :names)))
+    (is (null (problems-of *lfia-frameworks*)))))
+
+(test an-entry-with-no-trigger-declares-nothing-and-is-named
+  (let* ((yaml "entry-points:
+  - module: m
+    names: [a]
+  - trigger: https
+    module: m
+    names: [b]
+")
+         (frameworks (parse-frameworks yaml)))
+    (is (equal '("b") (getf (first (getf frameworks :entry-points)) :names)))
+    (is (= 1 (length (getf frameworks :entry-points))))
+    (let ((problems (problems-of yaml)))
+      (is (= 1 (length problems)))
+      (is (search "entry-points[0]" (first problems)))
+      (is (search "trigger" (first problems))))))
+
+(test a-setting-declaration-needs-a-source-a-module-and-names
+  (let ((frameworks (parse-frameworks "setting-declarations:
+  - source: secret
+    module: m
+  - module: m
+    names: [A]
+")))
+    (is (null (getf frameworks :setting-declarations)))
+    (is (= 2 (length (getf frameworks :declaration-problems))))
+    (is (search "names" (first (getf frameworks :declaration-problems))))
+    (is (search "source" (second (getf frameworks :declaration-problems))))))
+
+(test a-callee-named-by-two-entries-is-applied-by-neither
+  (let* ((yaml "entry-points:
+  - trigger: schedule
+    module: m
+    names: [on_schedule, other]
+  - trigger: https
+    module: m
+    names: [on_schedule]
+")
+         (frameworks (parse-frameworks yaml)))
+    (is (equal '(("other")) (mapcar (lambda (e) (getf e :names))
+                                    (getf frameworks :entry-points)))
+        "the shared callee is removed from both; the entry left empty goes")
+    (let ((problems (problems-of yaml)))
+      (is (= 1 (length problems)))
+      (is (search "m.on_schedule" (first problems)))
+      (is (search "entry-points[0]" (first problems)))
+      (is (search "entry-points[1]" (first problems))))))
+
+(test a-callee-named-across-the-two-keys-is-applied-by-neither
+  (let ((frameworks (parse-frameworks "entry-points:
+  - trigger: https
+    module: m
+    names: [f]
+setting-declarations:
+  - source: secret
+    module: m
+    names: [f]
+")))
+    (is (null (getf frameworks :entry-points)))
+    (is (null (getf frameworks :setting-declarations)))
+    (is (search "setting-declarations[0]"
+                (first (getf frameworks :declaration-problems))))))
+
+(test a-file-holding-one-usable-key-is-not-called-useless
+  ;; DES-0054 R3. The check counted three keys, so a file with only
+  ;; entry-points -- or only domains, which DES-0047 added -- read as
+  ;; "declares nothing usable".
+  (dolist (yaml '("entry-points:
+  - trigger: https
+    module: m
+    names: [f]
+"
+                  "domains:
+  - name: app
+    root: app/
+"))
+    (is (null (problems-of yaml)) "~a" yaml))
+  (is (search "declares nothing usable" (first (problems-of "definer-macros:
+  - macro: x
+")))
+      "a file with no usable key is still called so"))

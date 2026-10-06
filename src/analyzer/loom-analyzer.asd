@@ -74,6 +74,9 @@
    ;; compiled before it. It registers no analyzer of its own -- .loom/ is
    ;; Loom's own configuration, not a repository's content (DES-0025 D4).
    (:file "frameworks")
+   ;; After frameworks, whose PARSE-JSON-TEXT it reads through, and after
+   ;; js-analyzer, whose VENDORED-PATH-P it asks (DES-0054 D4).
+   (:file "firebase-analyzer")
    )
   :in-order-to ((test-op (test-op :loom-analyzer/test)))
   )
@@ -104,6 +107,7 @@
    (:file "yaml-analyzer")
    (:file "markdown-analyzer")
    (:file "frameworks")
+   (:file "firebase-analyzer")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-analyzer-test :test-runner)

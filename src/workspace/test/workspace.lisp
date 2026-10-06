@@ -1918,3 +1918,310 @@ which is not a failure and must not read as one")
     (is (search "note: here" (getf parsed :text))
         "the tail survives: ~s" (getf parsed :text)))
   (is (null (loom-workspace::parse-grep-line "not a grep line"))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 D4 and risk 5: .firebaserc is the one dot-file the walk admits
+;;; ------------------------------------------------------------------
+
+(defun python-child-startable-p ()
+  "PYTHON-AVAILABLE-P, under a name nothing else defines. The analyzer suite has a
+function of the first name too, and Loom cannot place a package for a test file, so
+each call to it from here counts as an ambiguous :CALL-SITE against the DES-0014
+ceiling. One call here is one site where eleven tests calling it directly were
+eleven."
+  (python-available-p))
+
+(defun file-paths-in-index (repository)
+  (sort (mapcar (lambda (e) (getp e :path))
+                (entities-of-type (repository-graph repository) :file))
+        #'string<))
+
+(test the-firebase-configs-are-indexed-and-the-files-holding-a-value-are-not
+  ;; Firebase keeps a secret's value in .env, .env.local, .env.<project>,
+  ;; .secret.local and .runtimeconfig.json. The walk skips every dot-prefixed
+  ;; file, and *ADMITTED-DOT-FILES* names .firebaserc and nothing else, so none of
+  ;; these reaches an analyzer (DES-0054 D7).
+  (with-workspace-fixture (repository)
+    (write-file "firebase.json" "{\"functions\": [{\"source\": \"functions\"}]}")
+    (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
+    (write-file "functions/.env" "K=1")
+    (write-file "functions/.secret.local" "K=1")
+    (write-file ".firebase/.firebaserc" "{\"projects\": {\"default\": \"cache\"}}")
+    (reindex-repository repository :quiet t)
+    (let ((paths (file-paths-in-index repository)))
+      (is (member "firebase.json" paths :test #'equal))
+      (is (member ".firebaserc" paths :test #'equal))
+      (is (not (member "functions/.env" paths :test #'equal)))
+      (is (not (member "functions/.secret.local" paths :test #'equal)))
+      (is (not (member ".firebase/.firebaserc" paths :test #'equal))
+          "the dot-directory test is unchanged"))))
+
+(test an-admitted-dot-file-is-not-reported-unindexed-or-drifted
+  ;; Risk 5. The stamps and UNINDEXED-FILES read the same walk as the index, so
+  ;; a name the walk admitted must read as current after a pass and not as a
+  ;; file the index never read.
+  (with-workspace-fixture (repository)
+    (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
+    (reindex-repository repository :quiet t)
+    (is (eql 0 (index-drift repository)))
+    (is (eql 0 (unindexed-files repository)))))
+
+(test editing-firebaserc-is-seen-by-the-monitor
+  (with-workspace-fixture (repository)
+    (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
+    (reindex-repository repository :quiet t)
+    (flet ((aliases ()
+             (getp (find ".firebaserc" (entities-of-type (repository-graph repository) :file)
+                         :key (lambda (e) (getp e :path)) :test #'equal)
+                   :project-aliases)))
+      (is (equal '(("default" . "demo")) (aliases)))
+      (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\", \"staging\": \"stg\"}}")
+      (is (= 1 (poll-once repository :quiet t)))
+      (is (equal '(("default" . "demo") ("staging" . "stg")) (aliases))))))
+
+(test a-firebase-json-with-a-comment-is-counted-unparsed
+  (with-workspace-fixture (repository)
+    (write-file "firebase.json" "{ // a comment
+  \"functions\": [{}] }")
+    (reindex-repository repository :quiet t)
+    (is (eql 1 (getf (repository-status repository) :unparsed)))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 R8: the index cannot hold a secret's or a param's value
+;;; ------------------------------------------------------------------
+
+(defparameter *sentinel-frameworks* "entry-points:
+  - trigger: https
+    module: firebase_functions.https_fn
+    names: [on_request]
+    settings: [secrets]
+setting-declarations:
+  - source: secret
+    module: firebase_functions.params
+    names: [SecretParam]
+  - source: param
+    module: firebase_functions.params
+    names: [StringParam]
+")
+
+(defun write-sentinel-tree ()
+  "A Firebase Python tree whose every value-bearing file holds SENTINEL-7f3a, whose
+param default is SENTINEL-DEFAULT, and whose main.py docstring holds the control."
+  (write-file ".loom/frameworks.yaml" *sentinel-frameworks*)
+  (write-file "firebase.json"
+              "{\"functions\": [{\"source\": \"functions\", \"runtime\": \"python312\"}]}")
+  (write-file ".firebaserc" "{\"projects\": {\"default\": \"demo\"}}")
+  (write-file "functions/main.py" "\"\"\"CONTROL-7f3a\"\"\"
+from firebase_functions import https_fn
+from firebase_functions.params import SecretParam, StringParam
+K = SecretParam(\"K\")
+P = StringParam(\"P\", \"SENTINEL-DEFAULT\")
+@https_fn.on_request(secrets=[K])
+def f(req): pass
+")
+  (dolist (name '(".env" ".env.local" ".env.default" ".secret.local"))
+    (write-file (format nil "functions/~a" name) "K=SENTINEL-7f3a
+"))
+  (write-file "functions/.runtimeconfig.json" "{\"k\": \"SENTINEL-7f3a\"}"))
+
+(defun value-contains-p (value needle)
+  "True when NEEDLE occurs in VALUE: a string, or any string inside a list, cons
+or vector."
+  (typecase value
+    (string (search needle value))
+    (cons (or (value-contains-p (car value) needle)
+              (value-contains-p (cdr value) needle)))
+    (vector (some (lambda (v) (value-contains-p v needle)) value))
+    (t nil)))
+
+(defun index-contains-p (repository needle)
+  "True when NEEDLE is in the name or any property of any entity."
+  (some (lambda (entity)
+          (or (and (slot-boundp entity 'name) (value-contains-p (name entity) needle))
+              (loop for value being the hash-values of (properties entity)
+                      thereis (value-contains-p value needle))))
+        (all-entities (repository-graph repository))))
+
+(test the-index-holds-no-value-from-the-files-firebase-keeps-one-in
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-sentinel-tree)
+        (reindex-repository repository :quiet t)
+        (is-true (index-contains-p repository "CONTROL-7f3a")
+                 "the control: the walk can see a string the index does hold")
+        (is (not (index-contains-p repository "SENTINEL-7f3a")))
+        (is (not (index-contains-p repository "SENTINEL-DEFAULT")))
+        (let ((names (mapcar #'name (entities-of-type (repository-graph repository) :setting))))
+          (is (member "K" names :test #'string=) "settings are minted, so the walk ran after them")
+          (is (member "P" names :test #'string=))))))
+
+(defclass leaky-env-analyzer (loom-analyzer:analyzer) ()
+  (:default-initargs :language nil :file-types '()))
+
+(defmethod loom-analyzer:analyzer-handles-p ((analyzer leaky-env-analyzer) path)
+  (string= ".env" (file-namestring path)))
+
+(defmethod loom-analyzer:analyze-file ((analyzer leaky-env-analyzer) path contents workspace-id)
+  (list (retract-file path workspace-id)
+        (assert-entity (make-instance 'file-entity :name path :origin-file path
+                                      :properties (properties-table
+                                                   (list :path path :documentation contents)))
+                       workspace-id)))
+
+(test the-sentinel-walk-finds-a-leak-when-one-is-let-in
+  ;; CON-0003 for the test above, as a test. Admit .env and register an analyzer
+  ;; that writes its contents into :DOCUMENTATION: the same walk must now find
+  ;; SENTINEL-7f3a. Without this the absence above could mean the walk cannot see.
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (let ((saved loom-analyzer:*analyzers*)
+            (admitted loom-workspace::*admitted-dot-files*))
+        (unwind-protect
+             (with-workspace-fixture (repository)
+               (loom-analyzer:register-analyzer (make-instance 'leaky-env-analyzer))
+               (setf loom-workspace::*admitted-dot-files* '(".firebaserc" ".env"))
+               (write-sentinel-tree)
+               (reindex-repository repository :quiet t)
+               (is-true (index-contains-p repository "SENTINEL-7f3a")))
+          (setf loom-analyzer:*analyzers* saved
+                loom-workspace::*admitted-dot-files* admitted)))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 D6 and refinement 2: an edge follows the file that decided it
+;;; ------------------------------------------------------------------
+
+(defun function-named (repository name)
+  (find name (entities-of-type (repository-graph repository) :function)
+        :key #'name :test #'string=))
+
+(defun depends-on-targets (repository entity)
+  (mapcar (lambda (edge) (getp (get-entity (repository-graph repository) (to-id edge)) :path))
+          (relationships-from (repository-graph repository) (id entity)
+                              :rel-type :depends-on)))
+
+(defun write-deploy-tree ()
+  (write-file ".loom/frameworks.yaml" *sentinel-frameworks*)
+  (write-file "firebase.json"
+              "{\"functions\": [{\"source\": \"functions\", \"runtime\": \"python312\"}]}")
+  (write-file "functions/handlers.py" "from firebase_functions import https_fn
+@https_fn.on_request()
+def f(req): pass
+")
+  (write-file "functions/main.py" "from handlers import f
+"))
+
+(test deleting-mains-import-undeploys-the-function-and-equals-a-full-reindex
+  ;; The edge's origin is main.py, so editing main.py alone retracts it; no other
+  ;; file changed and no full reindex ran.
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-deploy-tree)
+        (reindex-repository repository :quiet t)
+        (let ((f (function-named repository "f")))
+          (is (eq :https (getp f :trigger)))
+          (is (eq :yes (getf (first (getp f :entry-point)) :deployed)))
+          (is (equal '("firebase.json") (depends-on-targets repository f))))
+        (write-file "functions/main.py" "x = 1
+")
+        (poll-once repository :quiet t)
+        (let ((f (function-named repository "f")))
+          (is (eq :no (getf (first (getp f :entry-point)) :deployed)))
+          (is (null (depends-on-targets repository f)))
+          (let ((polled (getp f :entry-point)))
+            (reindex-repository repository :quiet t)
+            (is (equal polled (getp (function-named repository "f") :entry-point))
+                "the polled index equals a full reindex")
+            (is (null (depends-on-targets repository (function-named repository "f")))))))))
+
+(test editing-firebase-json-alone-moves-what-it-deploys
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-deploy-tree)
+        (reindex-repository repository :quiet t)
+        (is (equal '("firebase.json") (depends-on-targets repository (function-named repository "f"))))
+        (write-file "firebase.json"
+                    "{\"functions\": [{\"source\": \"functions\", \"ignore\": [\"handlers.py\"]}]}")
+        (poll-once repository :quiet t)
+        (let ((f (function-named repository "f")))
+          (is (null (getf (first (getp f :entry-point)) :codebase)) "no longer covered")
+          (is (null (depends-on-targets repository f)))))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 R11: REQ-0078 R11's three clauses, through the pipeline
+;;; ------------------------------------------------------------------
+;;;
+;;; These describe behaviour that held before DES-0054 (its PROBLEM section), so
+;;; they pass without it. They are regression tests and not that step's evidence.
+
+(defun write-r11-tree (&key (function-name "sync_zeffy") (affects "[sync_zeffy]"))
+  (write-file "functions/main.py" (format nil "def ~a(): pass
+def read_tab(): pass
+" function-name))
+  (write-file "functions/sheets.py" "def read_tab(): pass
+")
+  (write-file "docs/plans/PLAN-9100.yaml"
+              (format nil "id: PLAN-9100
+title: Names a deployed function
+status: draft
+affects: ~a
+" affects)))
+
+(defun r11-plan (repository)
+  (find "PLAN-9100" (entities-of-type (repository-graph repository) :document)
+        :key (lambda (e) (getp e :doc-id)) :test #'equal))
+
+(test a-plans-affects-of-a-deployed-function-becomes-a-documents-edge
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-r11-tree)
+        (reindex-repository repository :quiet t)
+        (let* ((g (repository-graph repository))
+               (plan (r11-plan repository))
+               (edges (relationships-from g (id plan) :rel-type :documents)))
+          (is (= 1 (length edges)))
+          (is (equal "sync_zeffy" (name (get-entity g (to-id (first edges))))))
+          (is (null (getp plan :unresolved-references)))))))
+
+(test renaming-the-function-makes-the-reference-unresolved-in-check
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-r11-tree)
+        (reindex-repository repository :quiet t)
+        (write-file "functions/main.py" "def sync_ledger(): pass
+def read_tab(): pass
+")
+        (poll-once repository :quiet t)
+        (let ((plan (r11-plan repository)))
+          (is (equal '("sync_zeffy") (getp plan :unresolved-references)))
+          (is (null (relationships-from (repository-graph repository) (id plan)
+                                        :rel-type :documents)))))))
+
+(test a-name-two-files-define-is-ambiguous-with-both-ids-and-an-id-picks-one
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-r11-tree :affects "[read_tab]")
+        (reindex-repository repository :quiet t)
+        (let* ((plan (r11-plan repository))
+               (ambiguous (first (getp plan :ambiguous-references))))
+          (is (equal "read_tab" (getf ambiguous :name)))
+          (is (equal '("function:functions/main.py:read_tab"
+                       "function:functions/sheets.py:read_tab")
+                     (sort (copy-list (getf ambiguous :candidates)) #'string<))
+              "both ids, so an author can paste one back"))
+        (write-file "docs/plans/PLAN-9100.yaml" "id: PLAN-9100
+title: Names a deployed function
+status: draft
+affects: [\"function:functions/main.py:read_tab\"]
+")
+        (poll-once repository :quiet t)
+        (let* ((g (repository-graph repository))
+               (plan (r11-plan repository))
+               (edges (relationships-from g (id plan) :rel-type :documents)))
+          (is (null (getp plan :ambiguous-references)))
+          (is (equal '("function:functions/main.py:read_tab") (mapcar #'to-id edges)))))))

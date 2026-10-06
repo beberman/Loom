@@ -42,6 +42,11 @@ derivation of SS5.1."
   :natural-key (:file :name)
   :properties ((:file string :required t)))
 
+(defentity :test-closed
+  :documentation "Fixture entity type declared :CLOSED, for DES-0054 D7."
+  :closed t
+  :properties ((:file string :required t)))
+
 (defrelationship :test-links
   :from (:test-widget) :to (:test-bare)
   :transitive-impact t :impact-direction :reverse
@@ -320,6 +325,24 @@ class says rather than what this file remembers it saying."
 
 (test validate-entity-reports-an-unregistered-type
   (is (not (null (validate-entity (make-instance 'entity :entity-type :no-such-type))))))
+
+(test a-closed-type-reports-an-undeclared-property
+  ;; DES-0054 D7. Before :CLOSED, VALIDATE-ENTITY looked only at the keys a type
+  ;; declares, so a value stored under any other key passed.
+  (let ((e (make-instance 'test-closed-entity)))
+    (setf (gethash :file (properties e)) "src/foo.lisp")
+    (is (null (validate-entity e)))
+    (setf (gethash :value (properties e)) "secret")
+    (let ((problems (validate-entity e)))
+      (is (= 1 (length problems)))
+      (is (eq :value (getf (first problems) :key)))
+      (is (search "undeclared property" (getf (first problems) :problem))))))
+
+(test an-open-type-still-ignores-an-undeclared-property
+  (let ((e (make-instance 'test-widget-entity)))
+    (setf (gethash :file (properties e)) "src/foo.lisp")
+    (setf (gethash :anything (properties e)) "extra")
+    (is (null (validate-entity e)))))
 
 (test nil-satisfies-any-declared-type
   ;; absence is REQUIRED's business, not the type checker's, so an optional

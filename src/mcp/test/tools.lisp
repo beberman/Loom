@@ -251,3 +251,37 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
                                          :parameters (list (cons "repository"
                                                                  (repository-name repository)))))))
       (is (= 200 (nth-value 1 (rpc "tools/list")))))))
+
+(test find-by-trigger-answers-the-same-over-mcp-and-rest-and-keeps-its-schema
+  ;; DES-0054 R9. The optional `trigger' is added to the shape, and `required'
+  ;; stays what it was, since a client may cache the schema.
+  (with-operations-fixture (repository)
+    (loom-graph:add-entity
+     (repository-graph repository)
+     (make-instance 'loom-ontology:function-entity :name "sync_zeffy"
+                    :origin-file "functions/main.py"
+                    :properties (loom-ontology:properties-table
+                                 '(:file "functions/main.py" :start-line 1 :end-line 4
+                                   :language :python :trigger :schedule))))
+    (with-test-server ()
+      (let* ((name (repository-name repository))
+             (over-mcp (structured
+                        (rpc "tools/call"
+                             :params (list :name "loom_find"
+                                           :arguments (list :repository name :term ""
+                                                            :trigger "schedule")))))
+             (over-rest (json:decode-json-from-string
+                         (http-call (format nil "~afind" loom-rest:*route-prefix*)
+                                    :parameters (list (cons "repository" name)
+                                                      (cons "term" "")
+                                                      (cons "trigger" "schedule")))))
+             (tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
+             (find-tool (find "loom_find" tools :key (lambda (tool) (cdr (assoc :name tool)))
+                                                :test #'string=)))
+        (is (equal "sync_zeffy"
+                   (cdr (assoc :name (first (cdr (assoc :entities over-mcp)))))))
+        (is (equal (cdr (assoc :entities over-mcp)) (cdr (assoc :entities over-rest))))
+        (is (equal '("term") (cdr (assoc :required (cdr (assoc :input-schema find-tool)))))
+            "term stays required and repository stays optional")
+        (is (assoc :trigger (cdr (assoc :properties (cdr (assoc :input-schema find-tool)))))
+            "the new argument is advertised")))))

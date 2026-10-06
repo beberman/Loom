@@ -308,3 +308,34 @@ from one whose index is current")))
       (is (search "described by" text) "and attached to its system")
       (is (search "no index can supply" text)
           "and the section says why a reader should go and read it"))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0054 D8: entry points by trigger
+;;; ------------------------------------------------------------------
+
+(test a-triggered-function-leaves-the-no-caller-band-for-the-trigger-band
+  ;; Before this both uncalled functions were in the no-caller band, and a
+  ;; function Firebase calls read as an unexplained definition.
+  (let* ((f (make-s-fixture))
+         (g (s-graph f))
+         (marked (s-function "on-request-handler" :alpha "src/alpha/a.lisp" :start 120)))
+    (setp marked :trigger :https)
+    (setp marked :entry-point (list (list :framework "ff" :trigger :https :deployed :no)))
+    (add-entity g marked)
+    (let* ((report (structure-report g))
+           (uncalled (mapcar (lambda (row) (getf row :name)) (getf report :entry-points)))
+           (band (row-named (getf report :triggered) :https :trigger)))
+      (is (member "never-called" uncalled :test #'string=)
+          "the untriggered one stays: ~a" uncalled)
+      (is (not (member "on-request-handler" uncalled :test #'string=)))
+      (is (= 1 (getf band :count)))
+      (let ((row (first (getf band :entities))))
+        (is (equal "on-request-handler" (getf row :name)))
+        (is (eq :no (getf row :deployed)) ":NO is what the band exists to show"))
+      (is (search "## entry points by trigger" (render-structure report)))
+      (is (search "deployed: no" (render-structure report))))))
+
+(test a-tree-with-no-declarations-has-an-empty-trigger-band-and-an-unchanged-count
+  (let ((report (structure-report (s-graph (make-s-fixture)))))
+    (is (null (getf report :triggered)))
+    (is (search "(none declared)" (render-structure report)))))

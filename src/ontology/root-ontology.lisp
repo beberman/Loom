@@ -153,7 +153,10 @@ registry can be served as a schema; DEFAULT-THUNK is the compiled artifact."
   ;; function: file plus qualified name), so re-analyzing an unchanged file is
   ;; idempotent."  A list of property keys, plus the pseudo-key :NAME for the
   ;; entity's name slot.  NIL means the type has no identity beyond its id.
-  (natural-key '() :type list))
+  (natural-key '() :type list)
+  ;; DES-0054 D7: a closed type rejects any property it does not declare.
+  ;; Open is the default, so every type declared before this is unchanged.
+  (closed nil))
 
 (defstruct (relationship-type-spec (:conc-name relationship-type-))
   "Relationship metadata, including the two fields the impact engine needs
@@ -302,15 +305,28 @@ structured error naming every failing operation."
     (if (null spec)
         (list (list :key nil :problem
                     (format nil "unregistered entity type ~s" (entity-type e))))
-        (loop with table = (properties e)
-              for p in (entity-type-properties spec)
-              for key = (property-key p)
-              for value = (gethash key table)
-              for problem = (cond ((and (property-required p) (null value))
-                                   "required property is missing")
-                                  (t (property-value-problem p value)))
-              when problem
-                collect (list :key key :value value :problem problem)))))
+        (append
+         (loop with table = (properties e)
+               for p in (entity-type-properties spec)
+               for key = (property-key p)
+               for value = (gethash key table)
+               for problem = (cond ((and (property-required p) (null value))
+                                    "required property is missing")
+                                   (t (property-value-problem p value)))
+               when problem
+                 collect (list :key key :value value :problem problem))
+         (when (entity-type-closed spec)
+           (undeclared-property-problems spec (properties e)))))))
+
+(defun undeclared-property-problems (spec table)
+  "Problem plists for every key in TABLE that SPEC does not declare.
+Only a type declared :CLOSED T is asked. VALIDATE-ENTITY otherwise ignores an
+extra key on an assert and only UPDATE-PROPERTIES refuses one, which is why a
+value stored on a node that must never hold one would pass (DES-0054 D7)."
+  (loop for key being the hash-keys of table using (hash-value value)
+        unless (find key (entity-type-properties spec) :key #'property-key)
+          collect (list :key key :value value
+                        :problem "undeclared property on a closed type")))
 
 (defun validate-relationship-endpoints (rel-type from-type to-type)
   "Return a list of problem plists for an edge of REL-TYPE between entities of
@@ -509,7 +525,7 @@ one another at upsert, which is the worst way to find this out."
 its declared properties ~{~s~^, ~}."
                  type-key key (rest known)))))))
 
-(defmacro defentity (type-key &key documentation properties natural-key)
+(defmacro defentity (type-key &key documentation properties natural-key closed)
   "Declare entity type TYPE-KEY, generating its class, typed accessors, and
 its registry entry.  TYPE-KEY is the keyword that appears on the wire as
 entityType; the class it generates is <TYPE-KEY>-ENTITY.
@@ -547,7 +563,10 @@ expander (which validates on write), and registers the type so the Graph
 Manager, GET /ontology/schema, and the MCP tool descriptions all read one
 schema.  The class and its accessors are exported: they are the public API of
 the type, and listing them by hand in a package definition would be a second
-place to keep the taxonomy in sync."
+place to keep the taxonomy in sync.
+
+CLOSED true makes VALIDATE-ENTITY report every property the type does not
+declare.  Omit it and extra keys pass, as they always have."
   (check-natural-key type-key natural-key properties)
   (let* ((class-name (entity-class-name type-key))
          (accessors (loop for spec in properties
@@ -573,6 +592,7 @@ place to keep the taxonomy in sync."
          :class-name ',class-name
          :documentation ,documentation
          :natural-key ',natural-key
+         :closed ,closed
          :properties (list ,@(mapcar #'parse-property-spec properties))))
        ,type-key)))
 

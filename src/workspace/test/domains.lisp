@@ -312,3 +312,50 @@ to return from."
     (multiple-value-bind (found domain) (split-designator "no-such-repository")
       (is (null found))
       (is (null domain)))))
+
+;;; ------------------------------------------------------------------
+;;; The two DES-0054 declaration keys, as a repository hands them on
+;;; ------------------------------------------------------------------
+
+(test a-repository-hands-on-its-entry-points-and-setting-declarations
+  ;; REPOSITORY-DOMAINS' shape: read from this repository's own frameworks
+  ;; plist, so RESOLVE-AND-CHECK (steps 5 and 6) can pass them as data.
+  (setf *fixture-root*
+        (merge-pathnames (format nil "loom-entry-points-~36r/" (random (expt 2 48)))
+                         (uiop:temporary-directory)))
+  (ensure-directories-exist *fixture-root*)
+  (write-file ".loom/frameworks.yaml" "entry-points:
+  - trigger: https
+    module: firebase_functions.https_fn
+    names: [on_request]
+setting-declarations:
+  - source: secret
+    module: firebase_functions.params
+    names: [SecretParam]
+")
+  (write-file "main.py" "x = 1
+")
+  (let ((repository (watch-repository *fixture-root* :monitor nil :quiet t)))
+    (unwind-protect
+         (progn
+           (is (equal '(:https) (mapcar (lambda (e) (getf e :trigger))
+                                        (loom-workspace::repository-entry-points repository))))
+           (is (equal '(:secret) (mapcar (lambda (e) (getf e :source))
+                                         (loom-workspace::repository-setting-declarations
+                                          repository)))))
+      (unwatch-repository (repository-name repository))
+      (cleanup-fixture))))
+
+(test a-repository-with-no-frameworks-file-has-no-declarations
+  (setf *fixture-root*
+        (merge-pathnames (format nil "loom-entry-points-~36r/" (random (expt 2 48)))
+                         (uiop:temporary-directory)))
+  (ensure-directories-exist *fixture-root*)
+  (write-file "main.py" "x = 1
+")
+  (let ((repository (watch-repository *fixture-root* :monitor nil :quiet t)))
+    (unwind-protect
+         (progn (is (null (loom-workspace::repository-entry-points repository)))
+                (is (null (loom-workspace::repository-setting-declarations repository))))
+      (unwatch-repository (repository-name repository))
+      (cleanup-fixture))))

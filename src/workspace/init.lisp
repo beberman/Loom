@@ -352,6 +352,9 @@ not tell the first two apart, and getting that wrong deletes somebody's file."
   ;; in neither signal. The author confirms.
   (domain-proposals '())
   (domain-notes '())
+  ;; DES-0054 R10. Which frameworks.yaml template fits each Firebase codebase,
+  ;; shown for the same reason as the domains and never written.
+  (template-proposals '())
   (problems '()))
 
 (defun update-state (root relative rendered-now &key region)
@@ -578,6 +581,41 @@ text, with anything you wrote below ~a, and refreshes will work from then on"
             (prep-skipped prep) (nreverse (prep-skipped prep)))
       prep)))
 
+(defparameter *firebase-python-template* "firebase-functions-python.yaml"
+  "The entry-points and setting-declarations a Python Firebase codebase copies
+into .loom/frameworks.yaml. Proposed by TEMPLATE-PROPOSALS, never written.")
+
+(defun template-proposals (root)
+  "One plist per Firebase codebase in ROOT's firebase.json: :CODEBASE, :SOURCE,
+:LANGUAGE, and either :TEMPLATE with the :TEMPLATE-PATH to copy from, or :NOTE
+saying why there is none. DES-0054 R10.
+
+A Python codebase gets the Python template. A Node one is named with `no
+template until the JavaScript plan', which is a recorded gap and not a silence.
+A codebase whose language cannot be told says so rather than being given a
+guess. Nothing is written, so an author reads the template and decides."
+  (loop for codebase in (loom-analyzer:firebase-codebase-languages root)
+        collect (append
+                 (list :codebase (getf codebase :codebase)
+                       :source (getf codebase :source)
+                       :language (getf codebase :language))
+                 (case (getf codebase :language)
+                   (:python (list :template *firebase-python-template*
+                                  :template-path (namestring
+                                                  (template-path *firebase-python-template*))))
+                   (:nodejs (list :note "no template until the JavaScript plan"))
+                   (t (list :note "language not recognised: no runtime, and no main.py or package.json in the source directory"))))))
+
+(defun domain-proposal-summaries (proposals)
+  "PROPOSALS, as PROPOSE-DOMAINS returns them, as the plists a report carries."
+  (mapcar (lambda (proposal)
+            (list :name (getf proposal :name)
+                  :root (getf proposal :root)
+                  :resolution (getf proposal :resolution)
+                  :aliases (length (getf proposal :aliases))
+                  :from (getf proposal :from)))
+          proposals))
+
 (defun plan-preparation (root &key (document-directory "docs")
                                    (endpoint *default-endpoint*)
                                    (append-claude-md nil)
@@ -699,6 +737,7 @@ and leaves the tree exactly as it was."
       (multiple-value-bind (proposals notes) (propose-domains root)
         (setf (prep-domain-proposals prep) proposals
               (prep-domain-notes prep) notes))
+      (setf (prep-template-proposals prep) (template-proposals root))
       (setf (prep-files prep) (nreverse (prep-files prep))
             (prep-appends prep) (nreverse (prep-appends prep))
             (prep-skipped prep) (nreverse (prep-skipped prep))
@@ -884,10 +923,18 @@ compile-time failure ENTITY-TYPE carries the same note about one file over."
     (update (refresh-repository root :replace-unproven replace-unproven
                                      :apply-changes apply-changes :name name))
     ((prepared-p root)
-     (list :repository (or name (car (last (pathname-directory (pathname-as-directory root)))))
-           :root (namestring (pathname-as-directory root))
-           :already-prepared t :problems '() :created '()
-           :manifest (read-manifest root)))
+     (multiple-value-bind (proposals notes) (propose-domains root)
+       (list :repository (or name (car (last (pathname-directory (pathname-as-directory root)))))
+             :root (namestring (pathname-as-directory root))
+             :already-prepared t :problems '() :created '()
+             :manifest (read-manifest root)
+             ;; DES-0054 R10. A prepared tree is the common case for a repository
+             ;; that adopts Firebase later, and used to return only its manifest.
+             ;; The proposals are read from the tree as it is now, and nothing is
+             ;; written.
+             :domain-proposals (domain-proposal-summaries proposals)
+             :domain-notes notes
+             :template-proposals (template-proposals root))))
     (t
       (let ((prep (plan-preparation root
                                     :document-directory document-directory
@@ -914,15 +961,10 @@ compile-time failure ENTITY-TYPE carries the same note about one file over."
                   ;; another toolchain, and the fact that usually matters most
                   ;; -- which directories resolve under node rules -- is in
                   ;; neither signal. The author writes the declaration.
-                  :domain-proposals
-                  (mapcar (lambda (proposal)
-                            (list :name (getf proposal :name)
-                                  :root (getf proposal :root)
-                                  :resolution (getf proposal :resolution)
-                                  :aliases (length (getf proposal :aliases))
-                                  :from (getf proposal :from)))
-                          (prep-domain-proposals prep))
-                  :domain-notes (prep-domain-notes prep)))))))
+                  :domain-proposals (domain-proposal-summaries
+                                     (prep-domain-proposals prep))
+                  :domain-notes (prep-domain-notes prep)
+                  :template-proposals (prep-template-proposals prep)))))))
 
 ;;;; ==================================================================
 ;;;; Taking Loom back out (REQ-0021 R13, DES-0022 S4)

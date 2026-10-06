@@ -171,13 +171,74 @@ def sync(): pass
        (is (equal "firebase_functions" (getf decorator :specifier)))
        (is (equal '("scheduler_fn" "on_schedule") (getf decorator :path)))
        (is (equal '(("schedule" . "every 1 hours") ("timeout_sec" . 540)
-                    ("retry" . :false) ("memory" . :none) ("secrets" "KEY")
+                    ("retry" . :false) ("memory" . :none)
+                    ("secrets" :list (:name "KEY" :binding :local))
                     ("region" . :expression))
                   (getf decorator :arguments)))
        (is (equal '((:specifier "firebase_functions" :path ("scheduler_fn" "on_schedule")
                      :line 2))
                   (getp (pa-named g "sync") :imported-calls))
            "a decorator is a call made by what it decorates")))))
+
+;;; DES-0054 D1 and D2 as the analyzer stores them
+
+(test lfias-decorator-line-decodes-with-no-expression-marker
+  (call-with-python
+   (lambda ()
+     (let* ((g (pa-graph "functions/main.py" "from firebase_functions import https_fn, options
+@https_fn.on_request(secrets=[ZEFFY_API_KEY], timeout_sec=540, memory=options.MemoryOption.MB_512)
+def f(req): pass
+"))
+            (arguments (getf (first (getp (pa-named g "f") :decorators)) :arguments)))
+       (is (equal '(:list (:name "ZEFFY_API_KEY" :binding :local))
+                  (cdr (assoc "secrets" arguments :test #'equal))))
+       (is (equal '(:dotted "options.MemoryOption.MB_512"
+                    :specifier "firebase_functions" :path ("options"))
+                  (cdr (assoc "memory" arguments :test #'equal))))
+       (is (notany (lambda (pair) (eq :expression (cdr pair))) arguments))))))
+
+(test the-decoder-reads-every-kind-and-a-literal-list
+  ;; No Python: the decoder is shared with the JavaScript analyzer, so it is
+  ;; tested on the decoded JSON shape directly.
+  (is (equal '(:list "K")
+             (loom-analyzer::decode-argument-value
+              '((:kind . "list") (:value ((:kind . "literal") (:value . "K")))))))
+  (is (equal :expression
+             (loom-analyzer::decode-argument-value '((:kind . "expression")))))
+  (is (equal '(:name "k" :binding :import :specifier "m" :path ("a"))
+             (loom-analyzer::decode-argument-value
+              '((:kind . "name") (:value . "k") (:binding . "import")
+                (:specifier . "m") (:path "a"))))))
+
+(test positional-decorator-arguments-are-stored-beside-the-keywords
+  (call-with-python
+   (lambda ()
+     (let* ((g (pa-graph "app.py" "import flask
+app = flask.Flask('x')
+@app.route('/x')
+def f(): pass
+"))
+            (decorator (first (getp (pa-named g "f") :decorators))))
+       (is (equal '("/x") (getf decorator :positional)))))))
+
+(test a-variable-bound-to-a-call-carries-value-call-and-never-a-default
+  (call-with-python
+   (lambda ()
+     (let* ((g (pa-graph "functions/main.py" "from firebase_functions.params import SecretParam, StringParam
+ZEFFY_API_KEY = SecretParam(\"ZEFFY_API_KEY\")
+P = StringParam(\"P\", \"SENTINEL-DFLT\")
+Q = StringParam(\"Q\", default=\"SENTINEL-DFLT\")
+"))
+            (k (pa-named g "ZEFFY_API_KEY" :variable)))
+       (is (equal '(:specifier "firebase_functions.params" :path ("SecretParam")
+                    :line 2 :first-string "ZEFFY_API_KEY")
+                  (getp k :value-call)))
+       (is (equal "P" (getf (getp (pa-named g "P" :variable) :value-call) :first-string)))
+       (is (equal "Q" (getf (getp (pa-named g "Q" :variable) :value-call) :first-string)))
+       (dolist (e (pa-entities g))
+         (is (null (search "SENTINEL-DFLT" (pa-props-text e)))
+             "~a holds a default" (name e)))
+       (is (search "ZEFFY_API_KEY" (pa-props-text k)) "the control: the text is readable")))))
 
 ;;; ------------------------------------------------------------------
 ;;; D2 into properties: names and imported calls
