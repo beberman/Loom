@@ -1,0 +1,845 @@
+id: PLAN-0058
+title: DES-0054 S10 in seven steps -- extract.js records registrations and value calls, js-analyzer.lisp writes them, the passes on a JavaScript tree, the JavaScript template and init's nodejs proposal, the unnamed-registration count in status, acceptance on front-end with a before/after index census, complete
+status: draft
+date: 2026-10-05
+refines: [DES-0054, REQ-0078]
+affects: [extract, calleeNames, make-js-definition-entity, make-js-file-entity,
+          decode-argument-value, py-decorators, py-value-call, template-proposals,
+          deploys-report, print-deploys]
+tags: [analyzer, javascript, firebase, cloud-functions, entry-points, secrets,
+       settings, frameworks, des-0054, req-0078, req-0024, con-0001, con-0003,
+       des-0014]
+summary: |
+  PLAN-0057 built DES-0054 S1 to S9 for Python trees and left S10 to this
+  plan: REQ-0078 R12 (DES-0054's R12, the JavaScript half of its R10) and
+  the front-end clause of DES-0054 R13. On ~/github/front-end today,
+  functions/index.js's `export const api = functions.https.onRequest(...)`
+  is a :VARIABLE with no trigger, and `status` reports codebase default with
+  0 entry points.
+
+  Step 1 teaches tools/js/extract.js to report a registration, a value call
+  and an unnamed registration in its reply. Step 2 makes js-analyzer.lisp
+  write :REGISTRATION and :VALUE-CALL on the :VARIABLE and
+  :UNNAMED-REGISTRATIONS on the :FILE, through decoders shared with the
+  Python analyzer. Step 3 proves the PLAN-0057 passes work on a JavaScript
+  tree with no change, as DES-0054 R12 requires. Step 4 adds
+  firebase-functions-js.yaml and replaces init's "no template until the
+  JavaScript plan" note. Step 5 puts the unnamed-registration count on
+  status' deploys line. Step 6 is acceptance: a before/after index dump of
+  front-end, read-only, and the R13 queries. Step 7 runs `complete`.
+
+  Out of scope, each with its reason in DEFERRED below: hosting rewrites,
+  setGlobalOptions, naming default-exported registrations, `.value` reads,
+  an imported name in a registration argument, CommonJS and TypeScript
+  functions trees, a handler passed by name, the calls inside a
+  registration's handler, v1's chained builders, REQ-0078 R10 dependency
+  names, and REQ-0078 R1, R2 and R4.
+body: |
+  BASELINE
+
+  Loom at 87918aa on req-0078-js, no edits. The running service (same
+  commit) reports:
+
+      index        : 488 files, 5180 entities, 24766 relationships
+      unclaimed    : 43 tracked files, .yaml 2
+      check        : 0 violations, 8 unresolved, 7 ambiguous
+      call sites   : tools/test/call-site-census.lisp prints 508 against
+                     *CALL-SITE-CEILING* 512; js-test 91 resolving sites;
+                     41 ambiguous occurrences
+
+  ~/github/front-end at ab34be6 on branch
+  bug-0048-reshape-then-delete-leaves-stray-shape, with its author's edits
+  (one modified file, three untracked). `git status --short` there is four
+  lines and is saved before every run in this plan. `sbcl --script
+  tools/test/index-dump.lisp ~/github/front-end` at 87918aa takes 14s and
+  prints 106672 lines:
+
+      files 947, entities 11335, relationships 95294
+      unclaimed 116; unparsed 0; violations 0
+      unresolved references 120, ambiguous references 5
+      imports: resolved 3728, external 693, unclaimed-target 7, unresolved 4
+      deploys: codebase default at functions, runtime NIL, 0 entry points;
+               project default=aigames-216202; declared NIL
+      variable:functions/index.js:api       :ENTRY-POINT NIL, no :VALUE-CALL
+      variable:functions/hello.js:hello      exists (see FINDINGS)
+      variable:functions/api/simple.js:simple  exists
+      variable:functions/api/handlers.js:handlers  exists
+
+  front-end's functions/node_modules holds firebase-functions 6.6.0. Its
+  package.json maps "." to lib/v2/index.js, so `import functions from
+  "firebase-functions"` is the v2 API, and functions.https has onRequest,
+  onCall and onCallGenkit.
+
+  A syntax census, run with the vendored acorn over every tracked .js, .jsx,
+  .mjs and .cjs file outside vendored and dot directories, with
+  extract.js's own 80-name GLOBAL_VALUES, using the callee rule in
+  REFINEMENT 2:
+
+                                                front-end   Loom   game-server
+      files parsed                                  797        1        0
+      module-level const NAME = call(...) with a
+        function or arrow argument (:REGISTRATION)    8        0        0
+      the same with no such argument (:VALUE-CALL)  377        0        0
+        of which the callee is import-bound         366
+        of which the first argument is a string     227
+        files holding at least one                  308
+      export default call(...) with a function
+        argument (:UNNAMED-REGISTRATIONS)             2        0        0
+
+  The eight registrations are api (firebase-functions), four forwardRef
+  calls from react (DragMapContainer, MyMap, LayerEditor, MapEditor),
+  vi.hoisted and vi.fn from vitest in two test files, and project in a test
+  file, whose callee is a relative import. Only api matches the template.
+  The census counts tracked files, so an untracked front-end file adds to
+  the real number; step 6 compares dumps, not this table.
+
+  "Green" after a step means: tools/loom-test.sh passes on all twelve
+  systems with no skip (node and python3 are both present here); `check` on
+  Loom prints 0 violations, 8 unresolved, 7 ambiguous; call-site-census
+  prints 508 total and 41 ambiguous; and, for steps 5 and 7, `sbcl --script
+  tools/test/load-test.lisp loom-serve` prints T. Run with /usr/bin/sbcl
+  through tools/loom-test.sh and say so in each commit. Run
+  `tools/loom-serve.sh update` before using the service after any change to
+  Loom's source.
+
+  FINDINGS THAT CHANGE WHAT DES-0054 SAYS
+
+  1. The two default exports already mint entities. DES-0054's PROBLEM says
+     "The two default exports mint no entity." They mint
+     variable:functions/hello.js:hello and
+     variable:functions/api/simple.js:simple: extract.js records an
+     anonymous default export that is not a re-export object (BUG-0056), and
+     JS-DEFINITION-NAME names it after the module. D9's "mints nothing"
+     therefore means this plan mints nothing new. Both entities stay as they
+     are and carry no :REGISTRATION. :UNNAMED-REGISTRATIONS goes on their
+     :FILE. Step 7 adds a dated correction to D9.
+
+  2. The import walk for a registration argument is Python only.
+     REFERENCE-VARIABLE in resolve.lisp walks an imported name for
+     :PYTHON and returns NIL otherwise, and PLAN-0057's step 5 note says "a
+     JavaScript registration resolves local names only until the JavaScript
+     plan supplies a resolver." DES-0054 R12 says "the passes need no
+     language-specific code beyond D3's matching rule." A JavaScript binding
+     walk would be such code. This plan does not add one; DEFERRED records
+     it, and step 3 pins the gap with a test.
+
+  3. The DES-0014 ceiling has 4 sites of headroom. A js-test or domain-test
+     body is a body-swallowing macro, so every resolving call inside one is
+     a :CALL-SITE. Fifteen new js-tests with four calls each would raise the
+     total from 508 to about 568. So every test this plan adds is a plain
+     fiveam `test` with the node guard written inline, `(if (js-available-p)
+     (progn ...) (skip "..."))`, as workspace.lisp's Python tests do with
+     PYTHON-CHILD-STARTABLE-P. A `test` body's calls are attributed to its
+     :TEST entity, so `describe' on the new functions also lists the tests.
+     The ceiling is not raised.
+
+  REFINEMENTS DES-0054 LEAVES OPEN
+
+  1. The reply's shape. extract.js writes three new keys, in the shapes
+     tools/py/extract.py already uses, so the Lisp decoders are shared:
+       registration          on a variable definition:
+                             {name, specifier, path, line, positional: [v],
+                              arguments: [{name, value: v}]}
+       valueCall             on a variable definition:
+                             {specifier, path, line, firstString} or
+                             {name, line, firstString}
+       unnamedRegistrations  on the reply, an integer, absent when zero
+     Each v is {kind, value, ...} with the kinds DECODE-ARGUMENT-VALUE reads:
+     literal, none, true, false, name, dotted, list, expression. An option's
+     key travels as the string under `name`, never as a JSON object key:
+     cl-json would turn `timeoutSeconds` into :TIMEOUT-SECONDS.
+
+  2. Which callee records anything. As the Python child does: a callee that
+     is a bare identifier (not one of GLOBAL_VALUES), or a non-computed
+     member chain of identifiers whose first name is bound by an import
+     declaration. A chain rooted in a local (`raw.elements.filter`), in a
+     call (`[...].map`), or in a global (`Object.keys`) records nothing.
+     Only a `const` declarator with an identifier target qualifies, exported
+     or not, as D9 says. `let`, `var` and destructuring record nothing.
+
+  3. The binding of a callee. Built from every ImportDeclaration in the
+     module before definitions are walked, since imports are hoisted:
+       import functions from "m"      functions.a.b  -> m, (default a b)
+       import * as ns from "m"        ns.a.b         -> m, (a b)
+       import {a} from "m"            a.b            -> m, (a b)
+       import {a as x} from "m"       x.b            -> m, (a b)
+       a local identifier f           f              -> :NAME "f"
+     This is D3's JavaScript rule: the `default` step is kept, and the
+     template lists both spellings.
+
+  4. Which argument goes where. D9 reads :ARGUMENTS from an object-literal
+     argument's keys. A non-computed key that is an identifier or a string
+     is read; a spread or a computed key is skipped. :POSITIONAL holds the
+     other arguments in order, leaving out function and arrow arguments (the
+     registered code itself) and every object literal whose keys were read.
+     So `onSchedule("every 5 minutes", fn)` gives :POSITIONAL ("every 5
+     minutes"), which the template labels `schedule`, and
+     `onSchedule({schedule: "..."}, fn)` gives it under :ARGUMENTS. Both
+     print schedule="every 5 minutes". Without this, every https entry point
+     would print `0=<expression>` for its handler.
+
+  5. The value encoding in JavaScript. A string, number, or a template
+     literal with no expressions is a literal. `null` is none, `true` and
+     `false` are true and false, `undefined` is a name. An identifier is a
+     name with its binding: an import (specifier, and path (imported) or
+     (default) or ()), or local. A member chain of identifiers is dotted,
+     with the first name's binding when it is imported. An array whose every
+     element is one of those is a list. Anything else, including a call such
+     as `secrets: [defineSecret("K")]`, is expression.
+
+  6. What counts as an unnamed registration. An `export default` whose
+     declaration is a call that would have been a :REGISTRATION under
+     refinements 2 and 4 had it been bound to a const. The extractor cannot
+     tell Firebase from React: `export default memo(() => ...)` counts too.
+     The count is a syntactic fact on the :FILE. Step 5's status line sums it
+     only over files a firebase.json codebase covers, so a React tree's
+     memo calls never reach a reader as "registrations".
+
+  7. Shared decoders. Step 2 moves PY-VALUE-CALL's body into analyzer.lisp
+     as DECODE-VALUE-CALL, and the one-decorator body of PY-DECORATORS as
+     DECODE-REGISTRATION. PY-VALUE-CALL stays as a one-line caller, as
+     PY-DECORATOR-VALUE did in PLAN-0057. Both read the reply with
+     (cdr (assoc ...)), as DECODE-ARGUMENT-VALUE does, because JGET is
+     defined in js-analyzer.lisp, which loads after analyzer.lisp. find
+     reports no existing definition named decode-registration or
+     decode-value-call.
+
+  FILES
+
+  New:
+    src/workspace/templates/firebase-functions-js.yaml   step 4
+
+  Changed:
+    tools/js/extract.js                  step 1: the import binding table,
+                                         argument encoding, registration,
+                                         valueCall, unnamedRegistrations
+    src/analyzer/analyzer.lisp           step 2: DECODE-REGISTRATION,
+                                         DECODE-VALUE-CALL
+    src/analyzer/python-analyzer.lisp    step 2: PY-DECORATORS and
+                                         PY-VALUE-CALL call the shared
+                                         decoders
+    src/analyzer/js-analyzer.lisp        step 2: MAKE-JS-DEFINITION-ENTITY
+                                         and MAKE-JS-FILE-ENTITY
+    src/analyzer/test/js-analyzer.lisp   steps 1 and 2
+    src/rest/test/routes.lisp            step 2: a JavaScript describe
+                                         encodes
+    src/workspace/test/workspace.lisp    steps 3 and 5
+    src/workspace/init.lisp              step 4: TEMPLATE-PROPOSALS'
+                                         :nodejs branch
+    src/workspace/test/init.lisp         step 4
+    src/workspace/workspace.lisp         step 5: DEPLOYS-REPORT
+    src/process/console.lisp             step 5: PRINT-DEPLOYS
+    src/process/test/console.lisp        step 5
+    docs/design/DES-0054.yaml            step 7: OUTSTANDING, DEFERRED,
+                                         the D9 correction
+    docs/requirements/REQ-0078.yaml      step 7: OUTSTANDING
+
+  Not changed, and a change to any is a finding to report: the ontology
+  (PLAN-0057 step 1 declared every property this plan writes),
+  src/graph/resolve.lisp, src/knowledge/, src/serve/operations.lisp, every
+  .asd. Deleted: none.
+
+  BLAST RADIUS
+
+  What Loom reports, from `impact <name> 3` on the service at 87918aa:
+
+    make-js-definition-entity  159 (truncated): ANALYZE-FILE, then every
+                               caller of the generic ANALYZE-FILE through
+                               `calls?' edges -- ANALYZE-PATH, INDEX-CONTENTS,
+                               ANALYZE-TREE, CHECK-DOCUMENT-REFERENCES -- and
+                               124 tests, nearly all for other analyzers. The
+                               real reach is every JavaScript file in every
+                               watched tree, reanalyzed on the first pass
+                               after step 2.
+    make-js-file-entity        159 (truncated): the same chain.
+    decode-argument-value      6 (truncated): PY-DECORATOR-VALUE,
+                               PY-DECORATORS, PY-ITEM. One test,
+                               THE-DECODER-READS-EVERY-KIND-AND-A-LITERAL-LIST.
+    py-decorators,
+    py-value-call              5 each (truncated): PY-ITEM, PY-MODULE-ITEMS,
+                               MAKE-PY-FILE-ENTITY, the Python ANALYZE-FILE.
+    calleeNames                4: extract, superclassName, analyze, pump.
+    extract                    2: analyze, pump. The chain ends at pump.
+    template-proposals         54: PLAN-PREPARATION, PREPARE-REPOSITORY, the
+                               console and serve call sites of
+                               PREPARE-REPOSITORY, 47 tests.
+    deploys-report             41 (truncated): REPOSITORY-STATUS, its six
+                               console and four serve call sites, and
+                               tools/test/index-dump.lisp's STATUS-LINES,
+                               which makes step 5 visible in every dump's S
+                               lines.
+    print-deploys              7: PRINT-STATUS and its five call sites.
+
+  Decisions Loom attaches: DES-0054 (decode-argument-value,
+  template-proposals, py-decorators), DES-0029, DES-0045, DES-0047 and
+  DES-0051 (make-js-definition-entity), DES-0048 and DES-0044
+  (template-proposals), DES-0022, DES-0002, DES-0006, DES-0017, DES-0019,
+  DEC-0004 and DES-0047 (deploys-report). Nothing here contradicts one.
+  DES-0045 D1 binds step 1: the extractor reports syntax and the analyzer
+  decides, so extract.js knows no Firebase name. DES-0025 D4 binds step 4:
+  Firebase's names live in a template a repository copies, never in Lisp.
+
+  What Loom cannot see, and why:
+
+    - The child-process boundary. extract.js's impact ends at pump, and
+      nothing links pump's stdout to PARSE-JAVASCRIPT or to the JGET calls
+      that read each key. A key renamed on one side and not the other breaks
+      silently. Step 1's reply-level tests and step 2's entity-level tests
+      are the only link.
+    - Every js-test case in src/analyzer/test/js-analyzer.lisp. The macro
+      swallows its body, so those 45 tests reach the analyzer through
+      :CALL-SITE entities and are absent from the `tests' bands above.
+    - Readers of a :VARIABLE's properties outside Loom. A REST describe of
+      any of front-end's 385 affected variables returns two new keys (risk
+      3).
+    - The registry and console boundary. Step 5 edits console.lisp, which no
+      rule covers. load-test is the instrument.
+
+  RISKS
+
+  1. Every front-end answer depends on extract.js. A wrong encoding, a
+     thrown exception, or a reply key that collides with an existing one
+     changes every JavaScript file's index. extract.js already turns an
+     exception into a one-file error reply, so a crash costs that file its
+     definitions. Mitigation: step 1 changes the reply and nothing reads the
+     new keys, and its census must show an empty dump diff on front-end.
+     Step 2's census must show only the named properties moving. Each check
+     runs both versions of Loom over the same front-end state, back to back.
+
+  2. front-end moves under its author. It is on a feature branch with
+     uncommitted edits. A before/after dump taken at two different times
+     compares two trees. Steps 1, 2, 5 and 6 build the "before" dump from a
+     worktree of Loom at 87918aa and the "after" from the branch, one
+     immediately after the other, and compare `git -C ~/github/front-end
+     status --short` before and after both. A difference in the status means
+     the pair is discarded and taken again.
+
+  3. The :VARIABLE shape changes over REST. About 385 front-end variables
+     gain :VALUE-CALL or :REGISTRATION. A nested plist must encode as JSON.
+     PLAN-0057 step 2 tested this for Python's :DECORATORS and :VALUE-CALL;
+     step 2 adds the JavaScript case to routes.lisp.
+
+  4. The DES-0014 ceiling. FINDINGS 3. Every new test is a plain `test`.
+     call-site-census runs after steps 1 to 5 and must print 508 and 41. A
+     rise in the ambiguous count is a new helper whose name collides with
+     another package's, and is fixed by renaming the helper, as PLAN-0057
+     steps 6 and 9 did (GLOB-PATH-SEGMENTS, SLOT-OF). Each new Lisp function
+     name is checked with `find' before it is written.
+
+  5. The Python analyzer in step 2. Moving the decoders touches
+     python-analyzer.lisp. Every test in src/analyzer/test/python-extract.lisp
+     and python-analyzer.lisp must pass unedited; `git diff` on both test
+     files after step 2 is empty. lfia's dump before and after step 2 must be
+     identical apart from any JavaScript under its untracked web/.
+
+  6. A template entry that never matches. The template is data with no
+     compiler. A misspelled module or name is silent: the function stays in
+     the no-caller band. Step 4's test asserts named callees exist in the
+     parsed template, and step 3's fixture is re-run with the template in
+     place of hand-written declarations.
+
+  7. Case. JavaScript names are case-sensitive, and BUG-0029 found
+     resolution folding case. MATCH-REGISTRATION compares with STRING=, and
+     VARIABLE-TABLE keys on (file . name) with EQUAL, so neither folds. A
+     document naming a setting goes through LINKABLE-INDEX, which
+     downcases. Step 3 tests `const API_KEY = defineSecret("API_KEY")`,
+     the same-name case REV-0003 finding 3 named, and expects the setting.
+
+  8. Tests that change because the behaviour they pin changes:
+       src/workspace/test/init.lisp
+       A-NODEJS-CODEBASE-GETS-NO-TEMPLATE-AND-SAYS-WHY asserts the note "no
+       template until the JavaScript plan". Step 4 replaces it with a test
+       that the nodejs codebase proposes firebase-functions-js.yaml. Its
+       third assertion, no domain proposal for a nodejs codebase, is kept.
+     No other existing test is expected to change. If one does, the step
+     stops and the reason is recorded in NOTES before it is edited.
+
+  9. A node-less machine. Every new test needing node skips without it.
+     Step 4's template-parse test and step 5's console test need no node and
+     must not skip.
+
+  10. The peer property. Step 5 edits console.lisp and workspace.lisp.
+      load-test must print T.
+
+  11. lfia's provenance. DES-0054's OUTSTANDING says lfia's `unrooted 0`
+      holds because "the functions domain is declared in lfia's untracked
+      .loom/frameworks.yaml, by us." This plan cannot change that. Whether
+      it blocks DES-0054=implemented is the user's call (step 7).
+
+  12. Consent for front-end. R13's clause is "api carries the https trigger
+      under codebase default". That needs entry-points in front-end's
+      tracked .loom/frameworks.yaml, which this plan may not write. Step 6
+      measures it on a copy of the four functions files, firebase.json,
+      .firebaserc and a frameworks.yaml holding the template. The caller
+      asks the user whether to append the template to front-end's own file.
+      Step 7's verdict depends on the answer.
+
+  DEFERRED, WITH REASONS
+
+  Each of these is a decision. Step 7 writes the ones DES-0054 does not
+  already list into its DEFERRED section.
+
+  - Hosting rewrites. front-end's firebase.json routes /helloWorld to
+    helloWorld and /api/** to api. That is a route claim keyed on a function
+    name, and DES-0054 DEFERRED says it needs its own design. It is also the
+    only place front-end states hello.js's deployed name.
+  - setGlobalOptions, the JavaScript set_global_options. DES-0054 DEFERRED.
+    front-end calls it 0 times.
+  - Naming a default-exported registration. DES-0054 D9 and DEFERRED. Naming
+    it means following `import helloWorld from "./hello.js"` and `export {
+    helloWorld }` to package.json's `main`. It is counted instead.
+  - `.value` reads of a param handle. DES-0054 DEFERRED.
+  - An imported name in a registration argument. FINDINGS 2. `import
+    {apiKey} from "./params.js"` then `secrets: [apiKey]` reads nothing.
+    R12 rules out language-specific pass code, and a JavaScript binding walk
+    is that. front-end has no secrets.
+  - CommonJS and TypeScript functions trees. `const {onRequest} =
+    require("firebase-functions/v2/https")` binds through a call to a
+    global, so the callee has no import binding, and `exports.api =
+    onRequest(...)` is an assignment, which mints no entity today. This is
+    the shape `firebase init` writes for JavaScript, so the template's header
+    says it is not read. A TypeScript codebase (functions/src/index.ts) is
+    not claimed at all (REQ-0024 WHAT THIS IS NOT). front-end is ESM
+    ("type": "module").
+  - A handler passed by name. `export const api = onRequest(handler)` has no
+    function argument, so D9 makes it a :VALUE-CALL, which no entry-points
+    entry is matched against. front-end has 0. Changing D9's rule is a
+    design question.
+  - The calls inside a registration's handler. A module-level variable's
+    initialiser calls are dropped, because :CALLS may not start at a
+    :VARIABLE (REQ-0024 NOT IN, BUG-0017). So `impact` on a helper the
+    handler calls does not reach api. For front-end that loses
+    logger.info, which is external, and handlers[route], which is computed
+    and resolves to nothing anyway. A :CALL-SITE for that position is the
+    designed answer and is its own change.
+  - v1's chained builders. `functions.pubsub.schedule("...").onRun(fn)` and
+    `functions.firestore.document("x").onWrite(fn)` have a callee rooted in
+    a call, which binds no import. Only v1's direct
+    `functions.https.onRequest` and `onCall` are matched.
+  - Option rendering in Python spelling. OPTION-TEXT prints JavaScript true,
+    false and null as True, False and None. The stored value is right; the
+    printer is Python-flavoured. Not changed.
+  - REQ-0078 R10 dependency names, and R1, R2 and R4. REQ-0078's own
+    OUTSTANDING. DES-0054 DEFERRED names a :MODULE shape for R10.
+
+  STEPS
+
+  Each step is one commit on req-0078-js, made by the caller. Step 1 is the
+  first that can be run.
+
+  1. extract.js REPORTS REGISTRATIONS, VALUE CALLS AND UNNAMED
+     REGISTRATIONS (R12, extractor half).
+     tools/js/extract.js, src/analyzer/test/js-analyzer.lisp.
+
+     In extract(): a pre-pass over ast.body builds the local-to-binding map
+     from every ImportDeclaration (refinement 3). A function encodeValue(node)
+     returns refinement 5's encoding. A function calleeBinding(node) returns
+     refinement 2 and 3's callee binding or null. In walkDeclaration, a
+     `const` declarator with an identifier target whose init is a
+     CallExpression with a non-null calleeBinding gets `registration` when
+     some argument is a FunctionExpression or ArrowFunctionExpression, and
+     `valueCall` otherwise (refinement 4 splits the arguments; a valueCall
+     keeps only firstString, the first argument when it is a string
+     literal). The variable record and its walkBody are otherwise unchanged.
+     In the ExportDefaultDeclaration branch, a CallExpression declaration
+     that would have been a registration increments unnamedRegistrations;
+     the existing anonymous-variable record is untouched (FINDINGS 1). The
+     damage reply and the error reply carry unnamedRegistrations 0 or omit
+     it. extract.js names no Firebase identifier anywhere (DES-0045 D1).
+
+     Verification. New plain `test` forms with the inline node guard, each
+     calling LOOM-ANALYZER::PARSE-JAVASCRIPT and reading the decoded reply:
+       - front-end's index.js, verbatim: api's registration has name
+         "functions.https.onRequest", specifier "firebase-functions", path
+         ("default" "https" "onRequest"), line 9, no positional, no
+         arguments.
+       - `import {onRequest} from "firebase-functions/v2/https"` and
+         `export const f = onRequest({timeoutSeconds: 60, secrets: [k,
+         "LIT"]}, (q, s) => {})` with `const k = defineSecret("K")`: path
+         ("onRequest"); arguments timeoutSeconds 60 and secrets a list of a
+         local name k and a literal "LIT".
+       - `import * as v2 from "firebase-functions/v2"` then
+         `v2.scheduler.onSchedule("every 5 minutes", async () => {})`: path
+         ("scheduler" "onSchedule"), positional ("every 5 minutes").
+       - `import {defineString as ds} from "firebase-functions/params"` and
+         `const p = ds("P", {default: "SENTINEL-DEFAULT"})`: valueCall path
+         ("defineString"), firstString "P". The whole reply, printed to a
+         string, does not contain "SENTINEL-DEFAULT".
+       - `const q = defineInt(name)`: valueCall with no firstString.
+       - `const r = raw.items.filter(x => x)` and `const n =
+         Object.keys(o)`: neither key.
+       - hello.js verbatim: unnamedRegistrations 1, and the anonymous
+         definition is still in the reply.
+       - `export default memo(() => null)` with memo imported from react:
+         unnamedRegistrations 1 (refinement 6, pinned on purpose).
+       - `let x = onRequest(() => {})`: neither key.
+       - `secrets: [defineSecret("K")]` encodes as list of expression.
+     CON-0003: before the edit every new test fails, since no key exists.
+     Then make encodeValue return expression for an Identifier and see the
+     second test fail; revert.
+
+     Census. Back to back (risk 2), the "before" dump from a worktree of
+     Loom at 87918aa (`git worktree add <scratch>/loom-base 87918aa`) and
+     the "after" from the branch, both over ~/github/front-end. The diff is
+     empty: no Lisp code reads the new keys. On Loom's own tree the diff is
+     only tools/js/extract.js's own entities (line ranges and call names).
+     Green, with call-site-census at 508 and 41.
+
+  2. js-analyzer.lisp WRITES :REGISTRATION, :VALUE-CALL AND
+     :UNNAMED-REGISTRATIONS (R12, analyzer half).
+     src/analyzer/analyzer.lisp, src/analyzer/python-analyzer.lisp,
+     src/analyzer/js-analyzer.lisp, src/analyzer/test/js-analyzer.lisp,
+     src/rest/test/routes.lisp.
+
+     analyzer.lisp gains DECODE-REGISTRATION (one registration object to the
+     plist :NAME, :SPECIFIER, :PATH, :ARGUMENTS, :POSITIONAL, :LINE) and
+     DECODE-VALUE-CALL (refinement 7). PY-DECORATORS maps
+     DECODE-REGISTRATION over the decorators. PY-VALUE-CALL calls
+     DECODE-VALUE-CALL. MAKE-JS-DEFINITION-ENTITY's "variable" branch adds
+     :REGISTRATION and :VALUE-CALL when the definition carries them.
+     MAKE-JS-FILE-ENTITY adds :UNNAMED-REGISTRATIONS when the reply's count
+     is a positive integer, as it does for :UNNAMED-TESTS.
+
+     Verification:
+       - api from front-end's index.js has :REGISTRATION (:NAME
+         "functions.https.onRequest" :SPECIFIER "firebase-functions" :PATH
+         ("default" "https" "onRequest") :ARGUMENTS NIL :POSITIONAL NIL :LINE
+         9), and no :CALL-NAMES (unchanged).
+       - k from `const k = defineSecret("K")` has :VALUE-CALL (:SPECIFIER
+         "firebase-functions/params" :PATH ("defineSecret") :LINE n
+         :FIRST-STRING "K").
+       - The secrets list decodes to (:LIST (:NAME "k" :BINDING :LOCAL)
+         "LIT").
+       - functions/hello.js's :FILE has :UNNAMED-REGISTRATIONS 1, and
+         variable hello still exists with no :REGISTRATION.
+       - A file with no such call has no :UNNAMED-REGISTRATIONS key.
+       - routes.lisp: describe over REST on api returns JSON that parses and
+         holds "functions.https.onRequest" (risk 3).
+     Risk 5: python-extract.lisp and python-analyzer.lisp unedited and
+     green. CON-0003: revert js-analyzer.lisp alone and see the entity tests
+     fail and the Python tests still pass; then make DECODE-VALUE-CALL drop
+     :FIRST-STRING and see both the JavaScript and the Python value-call
+     tests fail. Revert both.
+
+     Census, back to back as in step 1. The diff holds only:
+       - E lines of :VARIABLE entities, whose only changed property is
+         :VALUE-CALL (about 377) or :REGISTRATION (8, the ones BASELINE
+         lists);
+       - the E lines of file:functions/hello.js and
+         file:functions/api/simple.js, whose only changed property is
+         :UNNAMED-REGISTRATIONS 1.
+     No R line changes. No S line changes. A filter over the diff checks
+     this mechanically: every changed E line pair differs in exactly the
+     named keys. Record the exact counts in NOTES. Loom: no :VARIABLE gains
+     either key (extract.js's module-level calls are require and acorn
+     chains, which bind no import). lfia: only variables under its untracked
+     web/, if any. Green.
+
+  3. THE PASSES ON A JAVASCRIPT TREE, UNCHANGED (R12's last sentence, R5 and
+     R6 for JavaScript, R8 for JavaScript).
+     src/workspace/test/workspace.lisp. No source file changes. If one must,
+     that is a finding against R12: it gets its own commit with a test that
+     fails without it, and NOTES says what and why.
+
+     A scratch tree that is not a git repository:
+       firebase.json            {"functions": [{"source": "functions",
+                                 "codebase": "default"}]}
+       .firebaserc              default -> demo
+       functions/package.json   {"type": "module", "main": "index.js"}
+       functions/index.js       import functions from "firebase-functions";
+                                import {defineSecret, defineString} from
+                                  "firebase-functions/params";
+                                import {apiKey as imported} from
+                                  "./params.js";
+                                const API_KEY = defineSecret("API_KEY");
+                                const P = defineString("P",
+                                  {default: "SENTINEL-DEFAULT"});
+                                export const api = functions.https.onRequest(
+                                  {secrets: [API_KEY], timeoutSeconds: 60},
+                                  (q, s) => {});
+                                export const other =
+                                  functions.https.onRequest(
+                                  {secrets: [imported]}, (q, s) => {});
+       functions/params.js      export const apiKey = defineSecret("OTHER")
+                                with its import
+       functions/hello.js       front-end's, verbatim
+       functions/.env,
+       functions/.secret.local  API_KEY=SENTINEL-7f3a
+       .loom/frameworks.yaml    entry-points: https on firebase-functions
+                                names [default.https.onRequest,
+                                https.onRequest], settings [secrets];
+                                setting-declarations: secret and param on
+                                firebase-functions/params
+     Each test is a plain `test` guarded by NODE-AVAILABLE-P from
+     domains.lisp, which this suite already loads. Assertions:
+       - api :TRIGGER :HTTPS; one :ENTRY-POINT plist with :CALLEE
+         "firebase-functions.default.https.onRequest", :OPTIONS holding
+         timeoutSeconds 60, :CODEBASE "default", :RUNTIME NIL, :DEPLOYED
+         :UNKNOWN.
+       - setting:API_KEY with :SOURCES (:SECRET); :READS edges from api and
+         from variable API_KEY.
+       - `other` reads nothing, and no setting OTHER is read by it (FINDINGS
+         2; this pins the deferred gap). setting:OTHER exists, read by
+         params.js's apiKey only.
+       - A document whose affects: names API_KEY resolves to the setting,
+         not ambiguous (risk 7).
+       - No :DEPENDS-ON edge from api to firebase.json (:DEPLOYED :UNKNOWN).
+       - hello.js's :FILE :UNNAMED-REGISTRATIONS 1.
+       - `find --trigger https` through FIND's property filter returns api
+         and other.
+       - Removing the entry-points key and reindexing: api's :TRIGGER and
+         :ENTRY-POINT are NIL (D6's clearing, for a :VARIABLE).
+       - Sentinel: the recursive walk over every property of every entity
+         used by THE-INDEX-HOLDS-NO-VALUE-FROM-THE-FILES-FIREBASE-KEEPS-ONE-IN
+         finds a positive control placed in a JSDoc comment on api, and finds
+         neither "SENTINEL-7f3a" nor "SENTINEL-DEFAULT". Reuse that test's
+         walk function; do not copy it.
+     CON-0003: check out step 1's js-analyzer.lisp (before step 2) and see
+     every assertion but the sentinel's fail. Revert. Green.
+
+  4. THE JAVASCRIPT TEMPLATE AND init's NODEJS PROPOSAL (R12's R10 half).
+     src/workspace/templates/firebase-functions-js.yaml (new),
+     src/workspace/init.lisp, src/workspace/test/init.lisp,
+     src/workspace/test/workspace.lisp.
+
+     The template is authored from front-end's installed firebase-functions
+     6.6.0, read-only: `node -e` over its package.json `exports` and
+     Object.keys of each provider module, the way PLAN-0057 step 8 read the
+     Python SDK. Entries, all with framework firebase-functions and
+     `settings: [secrets]`:
+       - one entry per v2 provider (https, scheduler, firestore, database,
+         pubsub, storage, identity, tasks, eventarc, remoteConfig, testLab,
+         and each alerts module), for each module path that exports it:
+         "firebase-functions/<p>" and "firebase-functions/v2/<p>", names the
+         exported functions whose names begin `on` or `before`, as written
+         (onRequest, onCall, onSchedule, onDocumentWritten, ...).
+       - the root module "firebase-functions" and "firebase-functions/v2",
+         one entry per provider, names `<p>.<fn>` and `default.<p>.<fn>`:
+         the namespace or named spelling and the default-import spelling.
+       - "firebase-functions/v1" for https only: `default.https.onRequest`,
+         `https.onRequest`, and the same for onCall. A comment says v1's
+         chained builders are not matched.
+       - trigger keywords as the Python template's: https, schedule,
+         firestore, database, pubsub, storage, identity, tasks, eventarc,
+         remote-config, test-lab, alerts.
+       - `positional:` labels from the first parameter's name in the SDK's
+         .d.ts where it is a string-or-options parameter: schedule,
+         document, ref, topic, bucket, eventType, alertType or appId. None
+         for https, tasks, identity, remoteConfig, testLab.
+       - setting-declarations: secret for defineSecret and defineJsonSecret;
+         param for defineString, defineInt, defineFloat, defineBoolean and
+         defineList; on "firebase-functions/params", and on
+         "firebase-functions" as `params.<fn>` and `default.params.<fn>`.
+     The header comment names firebase-functions 6.6.0, says it is a
+     proposal to copy, says ES modules only (no `require`, no `exports.x =`,
+     no TypeScript), and says a default-exported registration is counted,
+     not named.
+
+     init.lisp: *FIREBASE-JS-TEMPLATE* beside *FIREBASE-PYTHON-TEMPLATE*.
+     TEMPLATE-PROPOSALS' :nodejs branch returns :TEMPLATE and :TEMPLATE-PATH
+     for it. FIREBASE-CODEBASE-LANGUAGE is unchanged. A nodejs codebase still
+     proposes no domain (DES-0054 R10 is Python-only for domains).
+
+     Verification, in init.lisp:
+       - runtime nodejs20 proposes firebase-functions-js.yaml, the path
+         exists, and no domain is proposed (replaces
+         A-NODEJS-CODEBASE-GETS-NO-TEMPLATE-AND-SAYS-WHY, risk 8).
+       - No runtime and functions/package.json: the same.
+       - THE-PROPOSAL-NEVER-WRITES-OR-CHANGES-FRAMEWORKS-YAML gains the
+         nodejs case.
+       - The template parses through READ-FRAMEWORKS with no
+         FRAMEWORKS-PROBLEMS and no :DECLARATION-PROBLEMS, and its names
+         include default.https.onRequest under "firebase-functions",
+         onSchedule under "firebase-functions/scheduler" and
+         "firebase-functions/v2/scheduler", and defineSecret under
+         "firebase-functions/params" (risk 6). This test needs no node.
+     In workspace.lisp: step 3's fixture with the template file copied as
+     its .loom/frameworks.yaml gives api the same :TRIGGER, :ENTRY-POINT and
+     :READS as the hand-written declarations did.
+     CON-0003: restore the :nodejs note and see the first two tests fail;
+     revert.
+     front-end, read only: a scratch script calls PLAN-PREPARATION on
+     ~/github/front-end and shows the JavaScript template for codebase
+     default. `git status --short` there is byte-identical before and after.
+     Green. Loom: unclaimed rises by one (.yaml 2 to 3) once the template is
+     tracked, as PLAN-0057 step 8 recorded.
+
+  5. THE UNNAMED-REGISTRATION COUNT ON THE DEPLOYS LINE (R13's count,
+     surfaced).
+     src/workspace/workspace.lisp, src/process/console.lisp,
+     src/process/test/console.lisp, src/workspace/test/workspace.lisp.
+
+     DEPLOYS-REPORT gains :UNNAMED-REGISTRATIONS, an integer: the sum of
+     :UNNAMED-REGISTRATIONS over :FILE entities a codebase covers
+     (COVERING-CODEBASES, as the entry-point count uses). An integer, so the
+     serve :status operation passes it through with no *ARRAY-VALUED-KEYS*
+     change. PRINT-DEPLOYS prints, when it is positive:
+       deploys    : 2 registrations in a default export carry no name; a
+                    re-export decides it
+     This extends D8's status line by one field, recorded here as the plan's
+     choice.
+
+     Verification:
+       - workspace.lisp: step 3's fixture reports :UNNAMED-REGISTRATIONS 1.
+         A memo() default export in a file outside every codebase adds
+         nothing.
+       - console.lisp: print-status on a status plist with the count prints
+         the line, and with 0 prints no line. Needs no node.
+     CON-0003: drop the coverage test from the sum and see the memo
+     assertion fail; revert. Green. load-test prints T (risk 10).
+     Census, back to back: front-end's S :DEPLOYS line gains
+     :UNNAMED-REGISTRATIONS 2 and nothing else moves relative to step 2's
+     "after" dump. Loom and game-server: :DEPLOYS NIL, unchanged. lfia:
+     :UNNAMED-REGISTRATIONS 0.
+
+  6. ACCEPTANCE ON front-end, LOOM, lfia AND game-server (R13's front-end
+     clause, the census).
+     No source change unless a defect is found. A defect gets its own
+     commit with a test that fails without the fix, before this step is
+     called done.
+
+     The census. Save front-end's `git status --short`. Dump
+     ~/github/front-end from the 87918aa worktree and from the branch, back
+     to back. Save the status again and compare (risk 2). The diff is the
+     union of step 2's and step 5's, and nothing else:
+       E lines   :VARIABLE entities with :VALUE-CALL or :REGISTRATION added;
+                 two :FILE entities with :UNNAMED-REGISTRATIONS 1
+       R lines   none
+       S lines   :DEPLOYS gains :UNNAMED-REGISTRATIONS 2
+     Files 947, entities 11335, relationships 95294, unclaimed 116,
+     unresolved 120, ambiguous 5 and violations 0 are unchanged, or move by
+     exactly what the author's own edits moved in both dumps alike. Record
+     both dumps' line counts and the diff's per-kind counts in NOTES. Remove
+     the worktree.
+
+     front-end's real tree, read only:
+       tools/loom.sh 'watch "~/github/front-end" | status @front-end | describe @front-end api | find @front-end --trigger https | check @front-end'
+     Expected: describe api shows no entry point, because front-end's
+     frameworks.yaml has no entry-points; status keeps "has no entry-points
+     ... `init' proposes them" and gains the unnamed-registrations line;
+     find --trigger https finds nothing; check 0 violations. Compare
+     `git status --short` before and after.
+
+     R13's clause. If the user consents to appending the template to
+     front-end's .loom/frameworks.yaml (risk 12), run on the real tree;
+     otherwise on a scratch copy: firebase.json, .firebaserc, functions/
+     index.js, hello.js, api/handlers.js, api/simple.js and package.json, and
+     a .loom/frameworks.yaml holding front-end's functions domain plus the
+     template. Then:
+       tools/loom.sh 'watch "<tree>" | find @<name> --trigger https | describe @<name> api | structure @<name> | status @<name>'
+     Expected:
+       find --trigger https   api, and nothing else
+       describe api           entry point: firebase-functions https
+                              codebase default, deployment unknown
+       structure              the trigger band shows https 1, deployed
+                              unknown
+       status                 deploys: codebase default at functions, 1
+                              entry point; project default=aigames-216202;
+                              2 registrations in a default export carry no
+                              name
+     Record which tree was used.
+
+     Loom: `tools/loom.sh 'status | check | structure | find --trigger https'`.
+     Status, check and structure's no-caller count equal BASELINE, except
+     unclaimed +1 from step 4. No deploys line. find --trigger answers
+     nothing. lfia: `tools/loom.sh 'watch "~/github/lfia-accounting" |
+     status @lfia-accounting | check @lfia-accounting | find
+     @lfia-accounting --trigger schedule'` gives PLAN-0057's figures, with
+     its two schedule functions. game-server holds no JavaScript and is not
+     re-measured beyond `status`.
+     Record every figure and every departure in NOTES.
+
+  7. COMPLETE.
+     docs/design/DES-0054.yaml, docs/requirements/REQ-0078.yaml,
+     docs/plans/PLAN-0058.yaml.
+
+     Before `complete`, edit by hand:
+
+     DES-0054:
+       - D9 gains a dated sentence: the two default exports already mint
+         variable:functions/hello.js:hello and
+         variable:functions/api/simple.js:simple (BUG-0056's naming), and
+         S10 leaves them as they are.
+       - DEFERRED gains: an imported name in a JavaScript registration
+         argument; CommonJS and TypeScript functions trees; a handler passed
+         by name; the calls inside a registration's handler; v1's chained
+         builders. Each with the reason this plan's DEFERRED gives.
+       - OUTSTANDING is rewritten. The R12 line and the front-end R13 line
+         go. The lfia line stays or goes on the user's word (risk 11). If
+         R13's front-end clause was measured on a copy and the user does not
+         accept that, it stays, worded as "measured on a copy; front-end's
+         frameworks.yaml declares no entry-points".
+
+     REQ-0078 OUTSTANDING: "R7 to R9 for a JavaScript functions tree" is
+     replaced by "R7 to R9 for CommonJS and TypeScript functions trees, and
+     for a registration argument imported from another file". R10, R1, R2
+     and R4 stay as they are.
+
+     Dry run, which writes nothing (BUG-0069 is closed), then `git status`:
+       tools/loom.sh 'complete PLAN-0058'
+
+     Run on this draft at 87918aa, before any step, it printed:
+
+       PLAN-0058   plans          draft       -> final
+       REQ-0078    requirements   partial     -> ?   blocked by DES-0054
+       DES-0054    design         partial     -> ?   needs a verdict
+       DES-0053    design         implemented -> -   already finished
+       REQ-0018    requirements   partial     -> ?   blocked by DES-0011
+       REQ-0024    requirements   partial     -> ?   needs a verdict
+       CON-0004    concepts       accepted    -> ?
+       To apply: complete PLAN-0058 DES-0054=<status> REQ-0024=<status>
+
+     REQ-0078 is blocked only by DES-0054's own unfinished status, so an
+     implemented verdict for DES-0054 is expected to unblock it and the
+     command will then ask for REQ-0078 too. Re-run the dry run after the
+     OUTSTANDING edits and supply exactly the verdicts it asks for.
+
+     Expected verdicts:
+       DES-0054=implemented, if OUTSTANDING is empty after the edits above.
+         R1 to R11 were met by PLAN-0057. R12 is met by steps 1 to 4: the
+         extractor and analyzer write the three properties, and step 3
+         shows the passes needed no language-specific code. R13's lfia and
+         Loom halves were met by PLAN-0057, and its front-end half by step
+         6. A partial verdict is right if either the lfia line (risk 11) or
+         the copy-only front-end measurement (risk 12) stays OUTSTANDING.
+       REQ-0078=partial. R10's dependency names, R1 and R2's module entities
+         and call-site shapes, R4's hyphenated Python test files, and now
+         CommonJS and TypeScript functions trees, remain.
+       REQ-0024=partial, unchanged. Its NOT IN items -- :IMPORTS edges
+         (spun out to REQ-0063) and the calls in a module-level variable's
+         initialiser -- are untouched by this plan. The second is now also
+         listed in DES-0054's DEFERRED.
+
+       tools/loom.sh 'complete PLAN-0058 DES-0054=implemented REQ-0078=partial REQ-0024=partial'
+
+     or, if DES-0054 stays partial, which stops the climb at DES-0054:
+
+       tools/loom.sh 'complete PLAN-0058 DES-0054=partial REQ-0024=partial'
+
+     REQ-0018 stays blocked by DES-0011 and is not this plan's to judge. An
+     implemented DES-0054 moves to docs/design/completed/. Then `status`:
+     documents unchanged in number, unresolved still 8. Do not commit; the
+     branch is the caller's to commit, push and merge.
+
+  VERIFICATION
+
+  The whole change is checked by:
+    - tools/loom-test.sh green on all twelve systems under /usr/bin/sbcl,
+      with no skip, including the new tests in src/analyzer/test/
+      js-analyzer.lisp, src/workspace/test/workspace.lisp and init.lisp,
+      src/process/test/console.lisp and src/rest/test/routes.lisp
+    - python-extract.lisp and python-analyzer.lisp unedited and green
+    - `check` on Loom: 0 violations, 8 unresolved, 7 ambiguous
+    - call-site-census: 508 total, 41 ambiguous, js-test 91
+    - `sbcl --script tools/test/load-test.lisp loom-serve` prints T
+    - step 6's front-end dump diff limited to the named properties, with
+      front-end's `git status --short` byte-identical around every run
+    - R13's front-end queries: api under https, codebase default, deployment
+      unknown; two unnamed registrations
+    - Loom's and lfia's status, check and structure unchanged except
+      Loom's unclaimed +1
+
+  NOTES
+
+  Departures from the plan, by step, with commit hashes and the census
+  figures, are recorded here as the steps land.
