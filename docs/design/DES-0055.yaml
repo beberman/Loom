@@ -1,0 +1,839 @@
+id: DES-0055
+title: Declared dependencies become :MODULE nodes joined to external imports, a call site's shape is a property of its caller with :VIA on each :CALLS edge, and REQ-0078 R4 is closed as already met
+status: draft
+date: 2026-10-06
+refines: [REQ-0078, REQ-0041]
+affects: [resolve-imports, resolve-calls, resolve-and-check,
+          resolve-one, call-targets, parse-frameworks, frameworks-problems,
+          propose-domains, plan-preparation, prepare-repository, import-summary,
+          describe-entity, impact-report, search-entities, entity-at-path,
+          documentation-relative-p, py-call-site, make-call-site-entity, collect-call-names,
+          Extractor.record_call]
+importance: Major
+tags: [analyzer, python, javascript, dependencies, requirements-txt,
+       package-json, ontology, module, call-site, arity, frameworks,
+       req-0078, req-0041, des-0014, des-0047, des-0053, des-0054, con-0001,
+       con-0005, dec-0003]
+summary: |
+  REQ-0078 has four items outstanding after PLAN-0058: R1's module entities,
+  R2's call-site shapes (REQ-0041), R4's hyphenated test files, and R10's
+  dependency names. This design builds three of them and closes the fourth.
+  The user ruled on its six open decisions on 2026-10-06, and they are
+  recorded under DECISIONS TAKEN BY THE USER. It makes five choices.
+
+  1. A Python or JavaScript module inside the tree is its :FILE. No :MODULE
+     entity is minted for it. :MODULE is used for the thing that has no
+     :FILE: a dependency declared in requirements*.txt or package.json. One
+     :MODULE per (manifest, name), asserted by a new narrow manifest analyzer,
+     so RETRACT-FILE owns its lifecycle.
+
+  2. A graph pass joins external import specifiers to those nodes. For npm
+     the join is Node's own rule: the bare specifier's package name is the
+     dependency name. For Python the join needs a map from distribution to
+     import name, and Loom never guesses it. The map is declared in
+     .loom/frameworks.yaml, and nothing else joins a Python import to a
+     requirement: there are no spelling joins. `init` proposes the map from
+     the installed distributions' RECORD files when a venv is present. The
+     index never reads a venv.
+
+  3. A call site's shape is an analyzer-written property on the caller,
+     :CALL-SHAPES. Each :CALLS edge carries :VIA, the call keys that
+     produced it, so a callee's distribution is a join and not a second
+     resolution. No entity is added. The DES-0014 ceiling does not move.
+
+  4. A shape records kinds and names, never a literal value. That narrows
+     REQ-0041 R2 to keep DES-0054 D7's line.
+
+  5. R4 is closed as already met, and nothing is built for it. Its premise
+     was wrong: the hyphen is not why tools/test/test-*.py yields no :TEST.
+     The three files define no test function and no TestCase. They are
+     scripts. REQ-0078 R4's own text, pytest `test_*` functions and unittest
+     classes, is met by lfia's 515 tests.
+body: |
+  PROBLEM
+
+  Measured 2026-10-06. Loom at 66a642c on req-0078-python-rest.
+  ~/github/lfia-accounting at f4cd9c0 with one untracked file,
+  .loom/frameworks.yaml. ~/github/front-end at ab34be6 with uncommitted
+  edits. lfia is being edited by another agent, so its numbers are a
+  snapshot and the plan re-measures them.
+
+      tree        files  entities  relationships  imports: resolved  external
+      Loom          489      5241          25110                  4        57
+      lfia          242      2640           6381                792       419
+      front-end     947     11335          95295               3728       693
+
+  lfia has grown since DES-0053: 115 tracked .py files, 11291 lines.
+
+  R10, DEPENDENCY NAMES
+
+  lfia's functions/requirements.txt lists 7 names and requirements-dev.txt
+  lists 2 more, pytest and tzdata. Today both files are claimed by the
+  markdown analyzer as :DOCUMENT entities, because REQ-0028 claims every
+  .txt. lfia's web/package.json lists 8 dependencies and 7 devDependencies.
+  front-end's package.json lists 38 and 22, and functions/package.json 2
+  and 1. Every package.json is unclaimed .json.
+
+  The join from a requirement name to the module a file imports is not the
+  name. Of lfia's 9 requirement names, 6 equal their import name after
+  PEP 503 normalisation and `-` to `_`. 3 do not:
+
+      google-auth                    installs google.auth, google.oauth2
+      google-api-python-client       installs googleapiclient, apiclient
+      google-cloud-secret-manager    installs google.cloud.secretmanager
+
+  The installed metadata does not settle it cheaply either. In lfia's
+  untracked venv, 74 *.dist-info directories:
+
+      top_level.txt of google-auth                   google
+      top_level.txt of google-cloud-secret-manager   google
+      top_level.txt of pandas                        (absent)
+      distributions whose RECORD has files under google/   12
+
+  `google` is a PEP 420 namespace package shared by 12 distributions. Only
+  the RECORD file list, descended to the first directory holding an
+  __init__.py, names google.auth. importlib.metadata.packages_distributions()
+  maps top-level names only, so it gives `google` to all 12.
+
+  A spelling rule can fabricate an edge, not only miss one. PyPI has a
+  distribution named `google`. A tree that listed it would have every
+  `import google.auth` joined to it by spelling.
+
+  What lfia imports from outside the tree, by ast over its 115 files:
+
+      from google.cloud import firestore            52 imports
+      google.cloud.firestore_v1.base_query          15
+      pytest                                        27
+      requests                                       7 in 6 files
+      google.api_core(.exceptions)                   6
+      google.auth(.credentials), google.oauth2       5
+      pandas                                         3
+      firebase_functions(.params)                    2
+      firebase_admin, googleapiclient.discovery      1 each
+      from google.cloud import secretmanager         2
+
+  google.cloud.firestore and google.api_core belong to google-cloud-firestore
+  and google-api-core. No manifest lists either; firebase-admin pulls them
+  in. So 73 of lfia's external imports reach a distribution the tree does not
+  declare. That is a fact about lfia worth reporting, and only a join that
+  refuses to guess can report it.
+
+  front-end, by regex over its 799 JavaScript files' bare specifiers: 600
+  occurrences name a package its package.json declares (vitest 261, react
+  149, @testing-library/react 32). Node builtins are the rest of the
+  undeclared population that is not an alias: node:fs 19, node:path 19,
+  path 12, fs 11, node:url 11. The bare names the domains of DES-0047
+  resolve (geometry, utils, core) are not :EXTERNAL and never reach this
+  join.
+
+  R1, MODULE ENTITIES
+
+  DES-0053 D3 declined a :MODULE per Python file: it repeats the :FILE, and
+  its dotted name depends on the import root. The second reason is weaker
+  now that domain roots exist. The first still holds. The demand for naming
+  a module by its dotted name is also small: lfia's docs/ hold 4 dotted
+  tokens, ledger.post three times and access.first_admin once, and both
+  name functions. The :MODULE type is declared in code-ontology.lisp, keyed
+  on (:qualified-name), and minted by nothing.
+
+  R2, CALL-SITE SHAPES (REQ-0041)
+
+  Every analyzer de-duplicates call names per caller. PY-CALL-NAMES and the
+  Lisp analyzer's REMOVE-DUPLICATES keep one entry per distinct name, so the
+  index cannot count occurrences, let alone shapes. The occurrences, counted
+  outside the index:
+
+      tree         language    occurrences                       how counted
+      Loom         Lisp        12044 calls of in-tree names      regex, approx.
+      Loom         Python        691 (95 with keywords)          extract.py
+      lfia         Python       6040 (605 with keywords)         extract.py
+      front-end    JavaScript  40735 in 5463 definitions, and    extract.js
+                               30787 at file level
+
+  extract.py already reports each call's positional count and keyword
+  names. extract.js reports the callee name only. The Lisp reader has a
+  position for every cons (lisp-reader.lisp), so a line per call form is
+  available.
+
+  DES-0014's ceiling stands at 512 :CALL-SITE entities for Lisp and 128 for
+  Python. The Lisp population is 508, 41 of them ambiguous. DES-0014 priced a
+  node per occurrence at 4867 nodes against 1604 entities and refused it. A
+  node per occurrence here would add 12044 to Loom's 5241 entities and
+  71522 to front-end's 11335.
+
+  R4, HYPHENATED TEST FILES
+
+  REQ-0078's OUTSTANDING says tools/test/test-*.py yields no :TEST because
+  the name has a hyphen. The hyphen is not the cause. The three files hold:
+
+      test-acceptance.py   176 lines   0 test functions; ~49 module-level
+                                       check(...) calls on an `acceptance`
+                                       module loaded by importlib
+      test-allow-loom.py    90 lines   main(), run(); runs allow-loom.py as a
+                                       subprocess
+      test-next-doc-id.py  122 lines   module-level loops; runs next-doc-id.sh
+                                       as a subprocess
+
+  None defines a `test*` function or a TestCase subclass. They are scripts
+  that exit 0 when every check holds. pytest's default python_files is
+  `test_*.py *_test.py`, so pytest would not collect them, and would find no
+  case if it did. REQ-0078 R4's own text, pytest `test_*` functions and
+  unittest classes, is met: lfia reports 515 tests covering 215 units in 43
+  test files.
+
+  Even recognised, they would test nothing in the index. test-acceptance.py
+  reaches acceptance.py through spec_from_file_location, a dynamic import
+  REQ-0078 excludes. `describe classify_used` shows no caller from it today.
+  The other two run their subject as a subprocess.
+
+  DECISIONS
+
+  D1  AN IN-TREE MODULE IS ITS :FILE
+
+  No :MODULE is minted for a Python or JavaScript file in the tree. A Python
+  module is one file, and so is an ES module. The :FILE already carries the
+  module's docstring, its imports, its :IMPORTS edges and its definitions.
+  A second node would duplicate each and add a hop to every impact path
+  through it, the reason DES-0014 refused to interpose its :CALL-SITE.
+
+  A package, a directory holding __init__.py, is its __init__.py :FILE.
+
+  Addressing a module by its dotted name, `affects: [ledger.refs]`, is
+  deferred. 4 tokens in lfia's docs would use it, and all 4 name functions.
+
+  This answers REQ-0078 R1's module clause with an existing entity. The
+  user accepted that on 2026-10-06 (U3).
+
+  D2  :MODULE BECOMES A DECLARED DEPENDENCY, ONE PER MANIFEST AND NAME
+
+  A dependency has no :FILE in the tree. That is where a node earns its
+  place. :MODULE is re-keyed and re-documented rather than a type being
+  added:
+
+      natural key      (:file :qualified-name), was (:qualified-name)
+      :qualified-name  the name as the manifest declares it: google-auth,
+                       @testing-library/react
+      :file            the manifest's path
+      :ecosystem       :pypi or :npm
+      :specs           each version spec as written, `>=2.29`, `^18.3.1`. A
+                       name listed twice in one file keeps both specs.
+      :sections        npm only: :dependencies, :dev-dependencies,
+                       :peer-dependencies, :optional-dependencies
+      :start-line      the declaring line in the manifest
+      :provides        derived each pass (D6): the import prefixes the
+                       declaration maps the name to. Absent when unmapped.
+
+  Re-keying costs no ids, because nothing mints a :MODULE today. No
+  relationship type changes for the join: :IMPORTS already allows :FILE to
+  :MODULE, and :DEPENDS-ON already allows :FUNCTION, :METHOD and :VARIABLE
+  to :MODULE.
+
+  One node per (manifest, name), not one per name. front-end's root
+  package.json and functions/package.json are two declarations, each with
+  its own spec, and Node resolves a file against the nearer one. Keyed per
+  manifest, the manifest's analyzer asserts the node and RETRACT-FILE
+  removes it, so no pass needs a sweep. A document naming a dependency two
+  manifests declare is reported ambiguous by RESOLVE-ONE, which is
+  CON-0001's rule.
+
+  :PACKAGE was the other candidate. Its natural key is (:qualified-name)
+  and Lisp packages are minted under it, so a per-manifest key would change
+  the id of every Lisp package. See ALTERNATIVES.
+
+  D3  A NARROW MANIFEST ANALYZER CLAIMS requirements*.txt AND package.json
+
+  src/analyzer/manifest-analyzer.lisp claims, outside a vendored or
+  excluded path (VENDORED-PATH-P, PYTHON-EXCLUDED-PATH-P):
+
+      requirements*.txt   by file name: requirements.txt,
+                          requirements-dev.txt, requirements_test.txt
+      package.json        by file name
+
+  The markdown analyzer declines those names. Today it claims every .txt,
+  and FIND-ANALYZER returns the most recently registered claimant, so the
+  exclusion is written into DOCUMENTATION-RELATIVE-P's caller rather than
+  left to load order.
+
+  requirements*.txt. One :MODULE per requirement line, named by the
+  requirement's name. Extras and an environment marker stay in the spec as
+  written: `foo[bar]>=1; python_version<"3.9"`. A `-r other.txt` or
+  `-c other.txt` line is recorded on the :FILE as :INCLUDES, as written. A
+  URL or path requirement contributes its #egg= name when there is one.
+  Otherwise it is counted in :UNNAMED-REQUIREMENTS on the :FILE. Neither the
+  URL nor any option line (`--index-url`, `--extra-index-url`) is stored. A
+  pip URL can carry a credential, `https://user:token@host/...`, and
+  DES-0054 D7's line is that the index can hold a name and not a value.
+
+  package.json. One :MODULE per key of dependencies, devDependencies,
+  peerDependencies and optionalDependencies. A spec that is a semver range
+  or a tag is stored as written. A spec that is a URL, a git reference, a
+  file: path or an npm: alias is stored as its kind, :url, :git, :path or
+  :alias, never as text, for the same reason. package.json is parsed with
+  PARSE-JSON-TEXT, which DES-0054 split out of READ-JSON-FILE. A file that
+  does not parse is a :FILE carrying :ANALYSIS-ERROR.
+
+  A name declared twice in one file is one :MODULE (CON-0005). Its :SPECS
+  and :SECTIONS hold every declaration.
+
+  The analyzer asserts the :FILE, each :MODULE and a :CONTAINS edge from
+  one to the other. It writes nothing about imports. Which file imports
+  what is another file's fact.
+
+  D4  THE MANIFEST THAT GOVERNS AN IMPORT IS THE NEAREST ONE THAT DECLARES IT
+
+  The importer's language picks the ecosystem: :PYTHON is :PYPI and
+  :JAVASCRIPT is :NPM. From the importer's directory upward, the first
+  directory holding a manifest of that ecosystem that declares a matching
+  name governs. Every declaring manifest in that directory is joined.
+
+  For npm this is Node's search: node_modules is looked up from the
+  importer's directory toward the root, and the nearest declaration is the
+  one that installs it. For Python, requirements.txt and requirements-dev.txt
+  normally sit in one directory, and a test importing pytest is joined to
+  whichever of them lists it. Joining both when both list it is a union of
+  two real declarations, not a choice between them.
+
+  D5  npm: THE SPECIFIER'S PACKAGE NAME IS THE DEPENDENCY NAME
+
+  An :EXTERNAL specifier's package name is its first segment, or its first
+  two when it begins with `@`. That is Node's resolution rule, so equality
+  with a declared name is a fact and not a guess. `firebase-functions/v2/https`
+  joins firebase-functions.
+
+  A `node:` specifier is a Node builtin by its syntax and joins nothing. A
+  bare `fs` or `path` joins only if a manifest declares that name. Loom
+  ships no list of Node's builtins. Such a specifier stays undeclared and is
+  counted (D8).
+
+  Only specifiers RESOLVE-IMPORTS left :EXTERNAL are considered. An alias a
+  domain resolves (DES-0047) never reaches this join, and an
+  :OUT-OF-DOMAIN, :UNRESOLVED or :UNROOTED specifier keeps its cause.
+
+  D6  PYTHON: THE IMPORT NAME IS DECLARED, NEVER INFERRED
+
+  A new key in .loom/frameworks.yaml:
+
+      dependency-modules:
+        - distribution: google-auth
+          modules: [google.auth, google.oauth2]
+        - distribution: google-api-python-client
+          modules: [googleapiclient, apiclient]
+        - distribution: requests
+          modules: [requests]
+
+  A distribution name is compared with a requirement name under PEP 503
+  normalisation: lower case, runs of `-`, `_` and `.` made one `-`. That is
+  pip's own rule for when two names are one distribution, so it is exact.
+  It is never used to compare a distribution name with an import name.
+  There is no spelling join of any kind (U1).
+
+  An import names a dotted module: the specifier for `import a.b`, and both
+  S and S.a for `from S import a`, because `from google.cloud import
+  secretmanager` imports google.cloud.secretmanager. The module joins the
+  dependency whose declared prefix is the longest dotted prefix of it. Two
+  dependencies declaring the same longest prefix give no join, and the
+  import is counted as ambiguous.
+
+  A requirement with no declaration has no :PROVIDES and joins nothing. Its
+  :MODULE still exists, so "what does this tree declare" is answered, and
+  `status` counts it as unmapped (D8).
+
+  Problems follow DES-0054 D3. An entry without `distribution` or
+  `modules` declares nothing. A distribution named by two entries is
+  applied by neither. FRAMEWORKS-PROBLEMS reports both, and counts the key
+  before calling a file useless.
+
+  The child marks a Python import :STDLIB when its top-level name is in
+  sys.stdlib_module_names, the interpreter's own list since 3.10. A stdlib
+  import is neither declared nor undeclared. This is the same kind of fact
+  as D2 of DES-0053's builtin binding, and it depends on the interpreter in
+  the same way.
+
+  D7  init PROPOSES THE PYTHON MAP; IT NEVER WRITES IT
+
+  `init` on a tree with a requirements*.txt shows a dependency-modules:
+  block, as DES-0054 R10 shows the Firebase templates. Two sources, in
+  order:
+
+      1. An installed distribution of that normalised name in a venv under
+         the tree, found by DES-0053 D11's pyvenv.cfg rule. Its modules are
+         read from its RECORD by importlib.metadata, run by Loom's own
+         `python3 -I -B` with the venv's site-packages as the search path.
+         A file under a directory with no __init__.py is descended until a
+         directory with one, or a module file, is reached. google-auth gives
+         google.auth and google.oauth2, not google. The venv's own
+         interpreter is never run: site.py processes .pth files at startup,
+         and a .pth line can execute code.
+      2. Otherwise the normalised name with `-` made `_`, written commented
+         out and marked `# unverified: spelling only`. A commented line
+         declares nothing and joins nothing. Uncommenting it is the author's
+         act.
+
+  The user approved reading a venv's RECORD files this way on 2026-10-06
+  (U2).
+
+  A venv read at init is evidence for a proposal a person confirms. It is
+  not an index input, so two checkouts of one commit index alike whether or
+  not either has a venv. They differ only if their .loom/frameworks.yaml
+  differs, and D9 makes that visible.
+
+  D8  RESOLVE-DEPENDENCIES: A PASS THAT DRAWS THE JOINS
+
+  A new pass in loom-graph. RESOLVE-AND-CHECK runs it after
+  RESOLVE-ENTRY-POINTS and before RESOLVE-DOCUMENT-LINKS, and hands it the
+  dependency-modules declarations as data. It reads :UNRESOLVED-IMPORTS
+  from RESOLVE-IMPORTS and :UNRESOLVED-IMPORTED-CALLS from RESOLVE-CALLS.
+  It writes, every pass:
+
+      :IMPORTS      :FILE to :MODULE, one per (file, dependency) joined by D4
+                    to D6.
+      :DEPENDS-ON   from a :FUNCTION, :METHOD, :TEST, :VARIABLE or
+                    :CALL-SITE to a :MODULE, when one of its
+                    :UNRESOLVED-IMPORTED-CALLS entries is :EXTERNAL and its
+                    dotted name joins by D6. A decorator is a call (DES-0053
+                    D3), so sync_zeffy depends on firebase-functions. Python
+                    only: the JavaScript analyzer records no import-bound
+                    calls (DES-0053 CONSEQUENCES).
+      :PROVIDES     on each :PYPI :MODULE from its declaration; on each :NPM
+                    :MODULE, its own name.
+      :UNDECLARED-IMPORTS  on each module-scoped :FILE: the :EXTERNAL
+                    specifiers that are not stdlib, not `node:` and joined
+                    nothing, with :AMBIGUOUS on the ones D6 refused.
+
+  Nothing it reads is rewritten (DEC-0003). A changed declaration takes
+  effect on the next reindex, the cost DES-0047 already records for this
+  file.
+
+  Impact runs the way the edges already run. A change to a :MODULE reaches
+  its importing files through :IMPORTS, then their importers. On Python it
+  also reaches the depending definitions through :DEPENDS-ON, then their
+  callers, ending at the deployed function. `impact react` on front-end
+  will reach most of the tree. That is what a React upgrade reaches, and
+  `impact` already truncates and says so.
+
+  D9  WHAT THE READER SEES FOR DEPENDENCIES
+
+      status     a `dependencies` line per ecosystem: declared count,
+                 manifests, unmapped count, and the external imports that
+                 reach a declared dependency, are stdlib, or are undeclared.
+                 When .loom/frameworks.yaml exists and git does not track it,
+                 the line says so, because the declarations then differ
+                 between checkouts of one commit.
+      describe   on a :MODULE: manifest, specs, sections, provides or
+                 `unmapped -- declare it under dependency-modules:`, and the
+                 importer and dependent groups.
+      find       a :MODULE matches by name and belongs to the --code family.
+      check      unchanged. An undeclared import is a counted fact, not a
+                 violation.
+
+  D10 A CALL SHAPE IS A SIGNATURE OF KINDS AND NAMES
+
+  One signature per call occurrence, the same grammar in every language:
+
+      <arity>:<kind>,<kind>,...[|<keyword>=<kind>,...]
+
+  arity is the positional argument count. Lisp counts every argument form,
+  keywords included, because the reader cannot tell a keyword argument from
+  a keyword value without the callee's lambda list. Kinds:
+
+      s      string literal                  y   name or symbol
+      n      number literal                  q   data literal: quoted form,
+      b      boolean, nil, None, null,           list, tuple, dict, set,
+             undefined                           array, Lisp vector
+      k:X    Lisp keyword, with its name     o{a,b} JS object literal and its
+      f      function: #'x, lambda, arrow,          identifier keys
+             function expression             *   spread: *a, **k, ...xs
+      c      call                            x   any other expression
+
+  Python keyword arguments follow `|` in source order, `timeout_sec=n`.
+
+  No literal value is recorded: no string, number or boolean. REQ-0041 R2
+  asks for "for a literal, the literal". This design records the literal's
+  kind instead. Every question REQ-0041's evidence asks is answered by arity,
+  keyword names and argument kinds: 5 of 454 dict-value calls pass a third
+  argument, 9 pass a list as a path key, 105 config-get calls are all
+  arity 2, 19 of 27 read-config calls pass a second argument. Recording
+  values would put `StringParam("K", "dflt")`'s default into the index,
+  which DES-0054 D7 forbids. Names are recorded because they are code: a
+  Lisp keyword, a Python keyword argument's name, a JS object key written as
+  an identifier. A computed or quoted JS key is recorded as `?`. The user
+  accepted this narrowing of REQ-0041 R2 on 2026-10-06 (U4).
+
+  A call to a macro records the form as written. `describe` marks such a
+  distribution pre-expansion when the callee carries :MACRO-P, which is
+  REQ-0041's second open question answered as it suggests.
+
+  D11 SHAPES LIVE ON THE CALLER; :VIA ON THE EDGE NAMES WHICH ONES COUNT
+
+  Each analyzer writes :CALL-SHAPES on the entity whose calls it records:
+  :FUNCTION, :METHOD, :TEST and :CALL-SITE. The value is grouped to bound
+  its size:
+
+      ((<key> (<signature> <line> <line> ...) ...) ...)
+
+  <key> is exactly what resolution reads: the name in :CALL-NAMES, a
+  locally resolved Lisp callee's name, or for a Python import-bound call
+  its specifier and path joined with ".". Identical signatures from one
+  caller to one key share an entry and keep every line.
+
+  Every :CALLS edge gains :VIA, the list of keys that produced it. The Lisp
+  analyzer writes it on the local edges it asserts. RESOLVE-CALLS writes it
+  on the edges it derives, including a fan-out's, and unions the keys when
+  two of them reach one callee. :VIA is derived with the edge, so it is
+  rebuilt every pass with it.
+
+  A callee's distribution is then a join: for each incoming :CALLS edge,
+  the caller's :CALL-SHAPES entries whose key is in the edge's :VIA. No
+  name is resolved twice, so the knowledge layer cannot disagree with
+  RESOLVE-CALLS about which call reached which callee. A Python call to a
+  class reaches Class.__init__ (DES-0053 D6) under the key that names the
+  class, which a match on the callee's name would miss.
+
+  No entity is minted. A :CALL-SITE carries shapes like any other caller, so
+  the 41 ambiguous sites report theirs, and the 508 and the Python count
+  stay where they are.
+
+  D12 WHAT THE READER SEES FOR SHAPES
+
+      describe   one line under the callers: `call shapes: 454 sites --
+                 2:y,y 449, 3:y,y,y 5`, at most the five most common
+                 signatures and a remainder count. Fan-out edges are counted
+                 apart: `(12 more through ambiguous names)`.
+      sites      a new read-only command, `sites <name>`: the sites grouped
+                 by signature, rarest group first, file:line for each, 20
+                 lines per group with the rest counted. That is REQ-0041 R4's
+                 "which sites differ": the 5 arity-3 dict-value sites are the
+                 first group. A serve operation, so REST and MCP carry it
+                 through the registry.
+
+  D13 THE COST IS GATED BEFORE THE EXTRACTORS CHANGE
+
+  REQ-0041 R5 asks for a bounded, measured cost. front-end is the largest
+  population: 71522 occurrences, against 11335 entities. Before any
+  extractor emits shapes, the plan's first step records front-end's
+  whole-tree index time and the heap after a full GC with an index loaded.
+  The step that lands shapes repeats both. The budget is +10% index time
+  and +15% heap on front-end. Over budget, the step does not land, and the
+  user chooses between the two cheaper forms named under RISKS.
+
+  R4 IS CLOSED AS ALREADY MET
+
+  Nothing is built for REQ-0078 R4 (U5). Its OUTSTANDING line rests on a
+  wrong premise. It says tools/test/test-*.py yields no :TEST because the
+  name has a hyphen. The files yield no :TEST because they hold no test: no
+  `test*` function and no TestCase subclass, as PROBLEM measures. A hyphen
+  rule would be false as well. pytest does not collect test-*.py by
+  default, so marking the 3 files as test files would make `status` report 3
+  files a runner would run and found no case in.
+
+  REQ-0078 R4's own text asks for pytest `test_*` functions and unittest
+  classes. DES-0053 D8 built both. lfia reports 515 tests covering 215 units
+  in 43 test files.
+
+  When Plan A completes, REQ-0078's OUTSTANDING line for R4 is rewritten:
+  R4 is met, and the hyphen item is removed with the reason above. No
+  `test-scripts:` key is added to .loom/frameworks.yaml.
+
+  ALTERNATIVES CONSIDERED
+
+  R10. Reading a venv's metadata at index time when one is present and
+  recording a gap when not. Rejected. lfia's venv is untracked, so a fresh
+  clone and the working tree of one commit would index different edges.
+  D11 of DES-0053 excludes the venv from the index on purpose. And the
+  cheap reading is wrong: top_level.txt says `google` for both mismatched
+  google-* names and is absent for pandas. Only a RECORD descent is right,
+  and D7 does that once, at init, for a person to confirm.
+
+  R10. PEP 503 spelling as the distribution-to-module map. Rejected as an
+  edge source; kept as a marked proposal (D7). On lfia it joins 6 of 9 and
+  misjoins none. It misjoins by construction where a distribution's name is
+  a namespace's top level, and PyPI's `google` is such a name. A rule that
+  is right until a tree lists the wrong package is a guess (CON-0001).
+
+  R10. Spelling joins at confidence below 1.0, demoted rather than dropped
+  (CON-0006). Rejected. CON-0006 is about ranking recall for a reader. An
+  :IMPORTS edge feeds impact, and impact does not weigh confidence when it
+  decides what a change reaches.
+
+  R10. Recording a requirement with no node, as a property on the manifest
+  :FILE. Rejected. "Which code depends on firebase-functions" is `impact` on
+  a node, as DES-0053 argued for :SETTING.
+
+  R10. One :MODULE per name across the tree, minted by a pass. Rejected.
+  front-end declares two manifests that Node treats separately. The pass
+  would need its own sweep, and two specs would share one node.
+
+  R10. :PACKAGE for a dependency. Rejected. :PACKAGE is keyed on
+  (:qualified-name) and holds Lisp packages, whose ids are
+  package:<NAME>. A per-manifest key would change all of them, and a
+  per-name key would join a PyPI and an npm package of one name into one
+  node. :MODULE is minted by nothing, so its key can change for free. Its
+  old documentation, "a Lisp package's file, an ES module", described a
+  use nothing made of it.
+
+  R1. A :MODULE per in-tree Python file, named by its dotted name under its
+  domain root. Rejected for D1's reasons. It also changes every impact
+  depth through a file.
+
+  R2. A :CALL-SITE per occurrence. Rejected by DES-0014's own arithmetic,
+  repeated on today's trees: +12044 entities on Loom, +71522 on front-end.
+
+  R2. The distribution stored on each :CALLS edge as a histogram. Rejected.
+  RESOLVE-CALLS would have to copy shapes from the caller, so each would be
+  stored twice, and the Lisp analyzer's local edges would need the same
+  copy. :VIA is one short list per edge.
+
+  R2. Re-reading a caller's source at query time instead of storing shapes.
+  Rejected. loom-knowledge does not depend on loom-analyzer, and adding that
+  edge to answer `describe` would start a Python or node child from a read
+  service. A 454-site answer would re-analyse every caller's file.
+
+  R2. Matching shapes to a callee by the callee's name, with no :VIA.
+  Rejected. It re-derives resolution in loom-knowledge, and it misses a
+  class call that reaches __init__.
+
+  REQUIREMENTS
+
+  R1  Neither analyzer mints a :MODULE for a file in the tree (D1).
+      code-ontology.lisp's :MODULE is re-keyed on (:file :qualified-name)
+      and re-documented as a declared dependency, with the properties of D2.
+      ENTITY-AT-PATH stops looking up :MODULE by :FILE, because a manifest
+      path would now find a dependency.
+
+  R2  The manifest analyzer claims requirements*.txt and package.json as D3
+      states. The markdown analyzer declines both names explicitly. No URL,
+      option line or non-semver spec text is stored. A test feeds a
+      requirement and a package.json spec each carrying
+      `https://user:SENTINEL@host` and asserts no property holds SENTINEL.
+
+  R3  :ECOSYSTEM, :SPECS, :SECTIONS, :PROVIDES on :MODULE; :INCLUDES,
+      :UNNAMED-REQUIREMENTS and :UNDECLARED-IMPORTS on :FILE. :DEPENDS-ON's
+      :FROM gains :TEST and :CALL-SITE, an endpoint widening. No relationship
+      type is added.
+
+  R4  extract.py marks each import :STDLIB from sys.stdlib_module_names
+      (D6).
+
+  R5  parse-frameworks reads dependency-modules: (D6). FRAMEWORKS-PROBLEMS
+      reports a missing field and a distribution named twice, and counts the
+      key before calling a file useless. RESOLVE-AND-CHECK hands the
+      declarations to RESOLVE-DEPENDENCIES.
+
+  R6  RESOLVE-DEPENDENCIES writes :IMPORTS, :DEPENDS-ON, :PROVIDES and
+      :UNDECLARED-IMPORTS as D8 states, every pass, from properties it never
+      rewrites. Tests cover the npm package-name rule with a scoped name and
+      a subpath, `node:`, the nearest-manifest rule with two package.json
+      files, longest-prefix matching, `from S import a`, a tie, and an
+      unmapped requirement.
+
+  R7  init proposes dependency-modules: as D7 states, from a venv's RECORD
+      read by Loom's python3 when one exists, else commented out and marked
+      unverified. A
+      test builds a site-packages with a namespace package and a .pth file
+      that would write a marker if run, and asserts the proposal names the
+      submodule and the marker never appears.
+
+  R8  status, describe and find show what D9 lists, including the untracked
+      frameworks.yaml note.
+
+  R9  extract.py, extract.js and the Lisp analyzer emit one signature per
+      call occurrence by D10's grammar, with its line. No literal value
+      reaches the index. A test per language shows `f("a", 1, True)` or its
+      equivalent records kinds only.
+
+  R10 Each analyzer writes :CALL-SHAPES as D11 states on :FUNCTION,
+      :METHOD, :TEST and :CALL-SITE. Every :CALLS edge carries :VIA, from
+      the Lisp analyzer's local edges and from RESOLVE-CALLS. The :CALLS
+      edge count does not move, and the :CALL-SITE ceiling test passes
+      unchanged.
+
+  R11 describe prints the distribution line and `sites` lists sites as D12
+      states, on the console, REST and MCP.
+
+  R12 D13's gate is measured and recorded in the plan before R9 lands, and
+      again after.
+
+  ACCEPTANCE
+
+  Loom writes nothing to ~/github/lfia-accounting or its untracked
+  .loom/frameworks.yaml (U6). lfia's own acceptance for dependency-modules:
+  is not measured by this design. Its author may adopt the key later, and
+  lfia's numbers under EXPECTED DELTAS are a census, not an acceptance.
+
+  The dependency-modules: declarations are accepted on a fixture the tests
+  build themselves in a scratch directory. A small Python tree:
+
+      requirements.txt       google-auth>=2.29, requests>=2.31,
+                             firebase-functions>=0.4.0, tzdata
+      requirements-dev.txt   -r requirements.txt, pytest>=8.0
+      app/main.py            from google.auth.credentials import ...,
+                             from google.oauth2 import credentials,
+                             import requests, import os,
+                             from firebase_functions import https_fn, and a
+                             function decorated @https_fn.on_request
+      app/store.py           from google.cloud import firestore
+      tests/test_main.py     import pytest
+      .loom/frameworks.yaml  dependency-modules: for google-auth
+                             (google.auth, google.oauth2), requests and
+                             pytest; none for firebase-functions or tzdata
+
+  Expected on the fixture:
+
+      find google-auth          a :MODULE in requirements.txt, provides
+                                google.auth and google.oauth2
+      app/main.py               :IMPORTS google-auth once and requests once;
+                                os is stdlib and joins nothing
+      firebase-functions        unmapped; main.py's import and the decorated
+                                function join nothing
+      tests/test_main.py        :IMPORTS pytest in requirements-dev.txt
+      app/store.py              :UNDECLARED-IMPORTS holds google.cloud.firestore
+      describe tzdata           declared, unmapped, no importer
+      status                    pypi: 5 declared, 2 unmapped
+      check                     no new violation; unresolved does not rise
+
+  A second fixture copies the first without .loom/frameworks.yaml and
+  asserts no Python :IMPORTS or :DEPENDS-ON edge to any :MODULE. That is
+  the no-spelling rule (U1) as a test.
+
+  front-end: firebase-functions joins functions/index.js and the files that
+  import it; react joins 149 files; `node:fs` is undeclared.
+
+  REQ-0041's own acceptance against game-server at the commit PLAN-0002
+  started from, read in a separate worktree: `describe dict-value` reports
+  454 sites with 5 of arity 3, and `describe read-config` 27 with 19 of
+  arity 2 or more. `sites dict-value` lists the 5 first.
+
+  EXPECTED DELTAS
+
+  Measured or derived from the censuses above. The plan re-measures each.
+
+      Loom        :MODULE +0 (its only manifests are vendored, under
+                  tools/js/vendor). Entities 5241 unchanged. :CALLS +0.
+                  Every :CALLS edge gains :VIA.
+                  :CALL-SITE 508 Lisp and the Python count unchanged.
+      lfia        :MODULE +24: 9 PyPI and 15 npm. :DOCUMENT -2: both
+                  requirements files leave the markdown analyzer. As lfia
+                  stands, with no dependency-modules: key: Python :IMPORTS
+                  +0 and :DEPENDS-ON +0; 9 unmapped. If its author declares
+                  the 9 later, a census predicts :IMPORTS +44 over 8
+                  dependencies (pytest 27, requests 6, google-auth 4, pandas
+                  3, one each for the rest); :DEPENDS-ON +176 (pytest 132,
+                  firebase-functions 18, firebase-admin 9). tzdata joins
+                  nothing. web/'s npm joins are measured in the plan.
+      front-end   :MODULE +63: 60 in package.json, 3 in functions/.
+                  :IMPORTS about +592 file-to-dependency edges, from a regex
+                  census; the plan replaces it with the count over Loom's own
+                  693 :EXTERNAL entries. .json unclaimed 25 -> 23.
+      shapes      0 entities on every tree. :CALL-SHAPES holds about 12044
+                  occurrences on Loom, 6040 on lfia and 71522 on front-end,
+                  grouped by caller, key and signature. Gated by D13.
+
+  PLANS
+
+  Two plans. They share no code path, and they differ in risk.
+
+  Plan A, dependencies. This design's R1 to R8. It covers REQ-0078 R1 and
+  R10, and rewrites REQ-0078's OUTSTANDING line for R4 when it completes.
+  Steps: the ontology change (R1, R3); the manifest analyzer (R2);
+  extract.py's :STDLIB (R4); the dependency-modules: key (R5);
+  RESOLVE-DEPENDENCIES (R6); the reader's surfaces (R8); init's proposal
+  (R7); acceptance on the fixtures and on front-end.
+
+  Plan B, call-site shapes. This design's R9 to R12. It covers REQ-0078 R2
+  and REQ-0041 R1 to R5, with R2 narrowed by U4. Steps: the baseline for
+  D13; :VIA on :CALLS, which moves no count and can land alone; the Lisp
+  signature and :CALL-SHAPES; Python; JavaScript; the gate; describe and
+  `sites`; acceptance on game-server, lfia and front-end. It touches all
+  three extractors and the resolution hot path, which is why it is apart.
+
+  DEFERRED, ON THE RECORD
+
+  - REQ-0078 R7 to R9 for CommonJS and TypeScript functions trees, as
+    PLAN-0058 left them.
+  - Addressing an in-tree module by its dotted name (D1).
+  - pyproject.toml, setup.cfg, setup.py, Pipfile and poetry.lock. Loom has
+    no TOML reader. Neither lfia nor front-end uses one.
+  - Lock files: package-lock.json, yarn.lock. A lock file states what is
+    installed, which is the venv's question in another form.
+  - Transitive dependencies. google-cloud-firestore reaches lfia through
+    firebase-admin. Only a lock file or a venv says so. The 73 imports are
+    reported as undeclared, which is true of the manifests.
+  - Function-level :DEPENDS-ON for JavaScript. It needs import-bound calls
+    in extract.js, the follow-on DES-0053 named.
+  - A dependency-modules: entry for npm. The npm join needs none.
+  - pytest.ini's python_files. It would let a pytest tree name test files
+    with hyphens. Neither Loom nor lfia sets it, and it would not help Loom's
+    scripts, which hold no case.
+
+  CONSEQUENCES
+
+  Code that changes. code-ontology.lisp: :MODULE, :DEPENDS-ON, new
+  properties. A new manifest-analyzer.lisp, and markdown-analyzer.lisp's
+  claim. extract.py's import records and call records, extract.js's call
+  records, and lisp-analyzer.lisp's COLLECT-CALL-NAMES and its local-edge
+  assert. python-analyzer.lisp and js-analyzer.lisp carry :CALL-SHAPES
+  through. frameworks.lisp's PARSE-FRAMEWORKS and FRAMEWORKS-PROBLEMS.
+  resolve.lisp: RESOLVE-CALLS writes :VIA; RESOLVE-DEPENDENCIES is new.
+  ASSERT-EDGE takes edge properties, which it does not today.
+  RESOLVE-AND-CHECK gains one pass. federate.lisp's
+  ENTITY-AT-PATH. loom-knowledge's DESCRIBE-ENTITY and a sites service.
+  The console, and one serve operation. init.lisp's proposal.
+
+  No .asd gains a dependency. The manifest analyzer is in loom-analyzer,
+  which has cl-yaml. The new pass is in loom-graph and receives declarations
+  as data. loom-rest and loom-mcp change only through the registry, so the
+  peer property in CLAUDE.md's Layering holds.
+
+  Behaviour that changes on trees already watched:
+
+      1. requirements*.txt stop being :DOCUMENTs. A markdown mention that
+         resolved to one now resolves to the :FILE.
+      2. `status`' imports line splits :EXTERNAL into declared, stdlib and
+         undeclared.
+      3. `impact` on a helper in a Python tree can now end at a :MODULE
+         through :DEPENDS-ON. Its rows grow by the dependencies the helper's
+         callers use.
+      4. Every :CALLS edge carries :VIA. A REST caller reading edges sees
+         the new property.
+
+  The obligation every later change carries. A join from an import to a
+  dependency is made by the ecosystem's resolution rule or by a
+  declaration, never by spelling. A new manifest format is read by the
+  manifest analyzer and stores names and specs, never a URL. A new analyzer
+  writes :CALL-SHAPES by D10's grammar, and whatever writes a :CALLS edge
+  writes its :VIA.
+
+  DECISIONS TAKEN BY THE USER, 2026-10-06
+
+  U1  R10's Python map is declaration-only. There are no spelling joins at
+      all (D6).
+  U2  init may read a venv's RECORD files, through Loom's own `python3 -I`,
+      to build its proposal (D7).
+  U3  The :FILE meets REQ-0078 R1's module clause for modules in the tree
+      (D1). :MODULE is reserved for declared dependencies.
+  U4  REQ-0041 R2 is narrowed to argument kinds and keyword names, with no
+      literal values (D10).
+  U5  REQ-0078 R4 is closed as already met. No test-scripts: key is added.
+      REQ-0078's OUTSTANDING hyphen line is rewritten when Plan A completes.
+  U6  Nothing is written to lfia-accounting. Acceptance for
+      dependency-modules: uses fixtures the tests build. lfia's own
+      acceptance is not measured; its author may adopt the key later.
+
+  RISKS
+
+  Shape storage over budget on front-end (D13). Two cheaper forms, both
+  smaller than the full design:
+  (a) record lines only for signatures that are not their key's most common
+  signature in that caller, and a count for the common one; (b) record no
+  shapes on :TEST callers, which hold most of front-end's 30787 file-level
+  calls. Each loses part of REQ-0041 R4's answer, and the choice is the
+  user's.
+
+  sys.stdlib_module_names depends on the interpreter. A module added to or
+  removed from the standard library reads differently under two Pythons.
+  DES-0053 D1 already accepts this kind of difference for syntax.
+
+  The nearest-manifest rule (D4) can disagree with a monorepo tool's
+  hoisting. A workspace that hoists a dependency to the root while a nested
+  package.json omits it is joined to the root's declaration. That is the
+  declaration Node would find.
