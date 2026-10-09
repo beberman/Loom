@@ -1016,7 +1016,7 @@ body: |
   against the heap with the lazy property table and without :VIA or shapes,
   156749312 bytes, not against 170529728. The heap budget is +15 percent of
   that, 180261709 bytes. Against it :VIA is 2628296 bytes, 1.68 percent, and
-  20884100 bytes remain for shapes. The time baseline and budget are
+  20884101 bytes remain for shapes. The time baseline and budget are
   unchanged (8.0855 s, 8.894 s). The 196109187-byte figure above is
   superseded. Step 1's tool is unchanged; step 6 reads these numbers.
 

@@ -524,7 +524,7 @@ body: |
   neither :VIA nor shapes, 156749312 bytes (median of three runs), and the
   budget is +15 percent of it, 180261709 bytes. The index-time baseline is
   unchanged, 8.0855 s with a +10 percent budget of 8.894 s. :VIA costs
-  2628296 bytes, 1.68 percent of the new baseline, and leaves 20884100 bytes
+  2628296 bytes, 1.68 percent of the new baseline, and leaves 20884101 bytes
   for shapes.
 
   R4 IS CLOSED AS ALREADY MET
