@@ -912,3 +912,38 @@ this repository, so an answer proves which graph was consulted."
     (add-console-module repository "tzdata" :specs '(">=2024.1"))
     (is (search "unmapped -- declare it under dependency-modules:"
                 (run-to-string "describe tzdata")))))
+
+;;; PLAN-0059 step 7, DES-0055 D7. `init' shows the dependency-modules: block it
+;;; proposes and writes none. The scratch tree has no venv, so the entry is
+;;; commented and no python3 is needed.
+
+(defmacro with-init-tree ((root) &body body)
+  `(let ((,root (ensure-directories-exist
+                 (merge-pathnames (format nil "loom-console-init-~a/" (random 100000))
+                                  (uiop:temporary-directory)))))
+     (unwind-protect (progn ,@body)
+       (uiop:delete-directory-tree ,root :validate t :if-does-not-exist :ignore))))
+
+(defun write-init-file (root relative contents)
+  (let ((path (merge-pathnames relative root)))
+    (ensure-directories-exist path)
+    (with-open-file (out path :direction :output :if-exists :supersede)
+      (write-string contents out))))
+
+(test init-prints-the-dependency-proposal-and-says-it-is-not-written
+  (with-init-tree (root)
+    (write-init-file root "requirements.txt" "tzdata
+")
+    (let ((output (run-to-string (format nil "init ~s" (namestring root)))))
+      (is (search "dependency-modules: proposed, not written" output) "~a" output)
+      (is (search "  # - distribution: tzdata" output))
+      (is (not (probe-file (merge-pathnames ".loom/frameworks.yaml" root)))))
+    ;; The second run takes the already-prepared branch, which prints it too.
+    (let ((output (run-to-string (format nil "init ~s" (namestring root)))))
+      (is (search "is already prepared" output))
+      (is (search "dependency-modules: proposed, not written" output) "~a" output))))
+
+(test init-prints-no-dependency-heading-without-requirements
+  (with-init-tree (root)
+    (is (not (search "dependency-modules"
+                     (run-to-string (format nil "init ~s" (namestring root))))))))

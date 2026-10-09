@@ -1081,3 +1081,208 @@ confirm -- CON-0001. It is reported instead.")
                              (getf frameworks :entry-points)
                              :key (lambda (e) (getf e :module)) :test #'string=)
                        :positional))))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 D7, R7: init proposes dependency-modules:
+;;; ------------------------------------------------------------------
+;;;
+;;; The child that reads a venv's RECORD files runs under python3, so the tests
+;;; that reach it skip on a machine without one. Each fixture is built in a
+;;; scratch tree (U6). The cases that matter most are the ones where the right
+;;; answer is NO live entry: a proposal that invents a mapping is the CON-0001
+;;; fabricated fact, and a test of the matching case alone cannot see it.
+
+(defun init-python-p ()
+  (ignore-errors
+   (zerop (nth-value 2 (uiop:run-program '("python3" "-c" "pass")
+                                         :ignore-error-status t)))))
+
+(defparameter *site-packages* "venv/lib/python3.12/site-packages/")
+
+(defun write-venv (root &optional (record-files '()))
+  "A venv under ROOT with an empty site-packages. RECORD-FILES is a list of
+(relative-path . contents) under it."
+  (write-target-file root "venv/pyvenv.cfg" "home = /usr/bin
+")
+  (ensure-directories-exist (target-file root *site-packages*))
+  (loop for (relative . contents) in record-files
+        do (write-target-file root (concatenate 'string *site-packages* relative)
+                              contents)))
+
+(defun google-auth-venv (root)
+  "The namespace-package case DES-0055 D7 names: google/ has no __init__.py."
+  (write-venv root
+              '(("google/auth/__init__.py" . "")
+                ("google/auth/transport/requests.py" . "")
+                ("google/oauth2/__init__.py" . "")
+                ("google_auth-2.29.0.dist-info/RECORD" .
+                 "google/auth/__init__.py,sha256=x,10
+google/auth/transport/requests.py,,
+google/oauth2/__init__.py,,
+google/auth/__pycache__/__init__.cpython-312.pyc,,
+google_auth-2.29.0.dist-info/RECORD,,
+google_auth-2.29.0.dist-info/METADATA,,
+../../../bin/gauth,,
+"))))
+
+(defun proposal-of (root &rest requirement-lines)
+  (write-target-file root "requirements.txt"
+                     (format nil "~{~a~%~}" requirement-lines))
+  (dependency-module-proposal root))
+
+(test the-proposal-names-the-submodule-and-not-the-namespace
+  (if (not (init-python-p))
+      (skip "python3 is not on PATH")
+      (with-target-tree (root)
+        (google-auth-venv root)
+        (let ((proposal (proposal-of root "google-auth==2.29.0" "tzdata")))
+          (is (search "  - distribution: google-auth
+    modules: [google.auth, google.oauth2]" proposal) "~a" proposal)
+          (is (not (search "google.auth.transport" proposal)))
+          (is (not (search "[google]" proposal)))
+          (is (search "# unverified: spelling only
+  # - distribution: tzdata
+  #   modules: [tzdata]" proposal) "~a" proposal)
+          (write-target-file root ".loom/frameworks.yaml" proposal)
+          (is (null (loom-analyzer:frameworks-problems root)))
+          (is (equal '("google.auth" "google.oauth2")
+                     (getf (first (getf (loom-analyzer:read-frameworks root)
+                                        :dependency-modules))
+                           :modules))
+              "the live entry parses as a declaration and the commented one declares nothing")
+          (is (= 1 (length (getf (loom-analyzer:read-frameworks root)
+                                 :dependency-modules))))))))
+
+(test the-proposal-never-runs-a-pth-file-from-site-packages
+  ;; evil.pth would write MARKER if anything processed site-packages as a site
+  ;; directory, which is what running the venv's interpreter or adding it to
+  ;; sys.path does. The control proves the file does run when python is told to.
+  (if (not (init-python-p))
+      (skip "python3 is not on PATH")
+      (with-target-tree (root)
+        (google-auth-venv root)
+        (let* ((marker (namestring (target-file root "MARKER")))
+               (sp (namestring (target-file root *site-packages*))))
+          (write-target-file root (concatenate 'string *site-packages* "evil.pth")
+                             (format nil "import os; open(~s, 'w')~%" marker))
+          (is (search "google.auth" (proposal-of root "google-auth")))
+          (is (not (probe-file marker)) "the proposal did not run the .pth line")
+          (uiop:run-program (list "python3" "-c"
+                                  (format nil "import site; site.addsitedir(~s)" sp)))
+          (is (probe-file marker) "control: site processing does run it")))))
+
+(defun recording-python (root)
+  "A script standing in for python3 that records it was started, and the path of
+the MARKER it touches."
+  (let ((script (target-file root "fake-python.sh"))
+        (marker (target-file root "STARTED")))
+    (write-target-file root "fake-python.sh"
+                       (format nil "#!/bin/sh~%touch ~a~%echo '{}'~%" (namestring marker)))
+    (uiop:run-program (list "chmod" "+x" (namestring script)))
+    (values (namestring script) marker)))
+
+(test no-venv-means-every-entry-is-commented-and-no-child-starts
+  (with-target-tree (root)
+    (multiple-value-bind (script marker) (recording-python root)
+      ;; LET*: a parallel LET evaluates the proposal before the binding exists.
+      (let* ((loom-analyzer::*python-program* script)
+             (proposal (proposal-of root "google-auth" "Requests")))
+        (is (not (probe-file marker)) "no venv, so no process")
+        (is (search "  # - distribution: google-auth
+  #   modules: [google_auth]" proposal) "~a" proposal)
+        (is (search "  # - distribution: requests
+  #   modules: [requests]" proposal))
+        (is (not (search "
+  - distribution" proposal)) "no live entry")
+        ;; Control: with a venv the same stand-in is started, so the assertion
+        ;; above cannot pass because the stand-in never could be.
+        (write-venv root)
+        (proposal-of root "google-auth")
+        (is (probe-file marker) "control: a venv does start the child")))))
+
+(test a-python-that-cannot-start-leaves-every-entry-commented
+  (with-target-tree (root)
+    (google-auth-venv root)
+    (let* ((loom-analyzer::*python-program* "loom-no-such-python-xyz")
+           (proposal (proposal-of root "google-auth")))
+      (is (search "# unverified: spelling only" proposal) "~a" proposal)
+      (is (not (search "
+  - distribution" proposal))))))
+
+(defun live-entry-p (proposal)
+  (search "
+  - distribution" (concatenate 'string (string #\Newline) proposal)))
+
+(test an-empty-venv-and-an-unrelated-one-propose-nothing-live
+  (if (not (init-python-p))
+      (skip "python3 is not on PATH")
+      (progn
+        (with-target-tree (root)
+          (write-venv root)
+          (is (not (live-entry-p (proposal-of root "requests")))))
+        ;; A different distribution installed. A name it does not ask for, or
+        ;; asks for only as a prefix, must not be answered with it.
+        (with-target-tree (root)
+          (google-auth-venv root)
+          (let ((proposal (proposal-of root "google" "google-auth-extra")))
+            (is (not (live-entry-p proposal)) "~a" proposal)
+            (is (search "modules: [google]" proposal)))))))
+
+(test a-malformed-record-yields-no-live-entry-and-no-error
+  (if (not (init-python-p))
+      (skip "python3 is not on PATH")
+      (dolist (record (list ""
+                            (format nil "\"unterminated,,~%")
+                            (format nil ",,~%,,,~%")
+                            (format nil "~a" (make-string 3000 :initial-element #\x))
+                            ;; Paths that leave site-packages, and a data file.
+                            (format nil "../../outside.py,,~%/etc/abs.py,,~%pkg/data.json,,~%")
+                            (coerce (list (code-char 0) (code-char 255) #\Newline) 'string)))
+        (with-target-tree (root)
+          (write-venv root `(("requests-2.0.dist-info/RECORD" . ,record)))
+          (let ((proposal (proposal-of root "requests")))
+            (is (stringp proposal))
+            (is (not (live-entry-p proposal)) "~s gave ~a" record proposal))))))
+
+(test only-the-trees-own-requirements-files-name-requirements
+  ;; A requirements.txt shipped inside a venv is third-party data. It must not
+  ;; widen what is proposed; requirements-dev.txt elsewhere in the tree must.
+  (with-target-tree (root)
+    (write-venv root)
+    (write-target-file root "venv/lib/python3.12/site-packages/x/requirements.txt"
+                       "evilpkg
+")
+    (write-target-file root "tests/requirements-dev.txt" "pytest>=7
+")
+    (let ((proposal (dependency-module-proposal root)))
+      (is (search "pytest" proposal))
+      (is (not (search "evilpkg" proposal)) "~a" proposal))))
+
+(test no-requirement-names-means-no-proposal
+  (with-target-tree (root)
+    (google-auth-venv root)
+    (is (null (dependency-module-proposal root)))
+    (write-target-file root "requirements.txt" "# only a comment
+-r other.txt
+--extra-index-url https://example.invalid/simple
+")
+    (is (null (dependency-module-proposal root)))))
+
+(test the-report-carries-the-dependency-proposal-and-writes-nothing
+  (with-target-tree (root)
+    (write-target-file root "requirements.txt" "tzdata
+")
+    (let ((fresh (prepare-repository root)))
+      (is (search "tzdata" (getf fresh :dependency-proposal)))
+      (is (null (target-text root ".loom/frameworks.yaml"))))
+    (write-target-file root ".loom/frameworks.yaml" "archived-paths: [old/]
+")
+    (let ((before (target-text root ".loom/frameworks.yaml"))
+          (again (prepare-repository root)))
+      (is-true (getf again :already-prepared))
+      (is (search "tzdata" (getf again :dependency-proposal)))
+      (is (equal before (target-text root ".loom/frameworks.yaml"))))))
+
+(test a-tree-without-requirements-reports-no-dependency-proposal
+  (with-target-tree (root)
+    (is (null (getf (prepare-repository root) :dependency-proposal)))))

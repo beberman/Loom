@@ -1450,6 +1450,15 @@ of tokens." value))
                                internal-time-units-per-second))))
           (when id (format t "~&record ~a~%" id))))))))
 
+(defun print-dependency-proposal (report)
+  "REPORT's :DEPENDENCY-PROPOSAL, when it has one, under the heading that says
+it is a proposal. DES-0055 D7: init shows the block and writes nothing, so
+adopting it is a person's edit to .loom/frameworks.yaml."
+  (when (getf report :dependency-proposal)
+    (format t "~&dependency-modules: proposed, not written. Copy what you ~
+confirm into .loom/frameworks.yaml.~%~a"
+            (getf report :dependency-proposal))))
+
 (define-command init (path &rest arguments)
     "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>] [--update] \
 [--apply] [--replace-unproven]"
@@ -1525,7 +1534,8 @@ changed.~%"))))
                (getf (getf report :manifest) :workflow-concept))
        ;; DES-0044 D1's discoverability argument, and the reason a second verb
        ;; was not needed: the flag is named where the refusal is printed.
-       (format t "  Templates move; run with --update to refresh what Loom wrote.~%"))
+       (format t "  Templates move; run with --update to refresh what Loom wrote.~%")
+       (print-dependency-proposal report))
       (t
        (log-event "init" "~a" (getf report :root))
        (format t "~&Prepared ~a~%" (getf report :root))
@@ -1543,6 +1553,7 @@ changed.~%"))))
            (when skip
              (format t "~&Nothing points at the skill yet. Re-run with ~
 `claude-md' to append a pointer, or add one by hand.~%"))))
+       (print-dependency-proposal report)
        (format t "~&Nothing was committed. `git status' shows exactly what was added.~%")))))))
 
 (define-command drift (&optional designator)
