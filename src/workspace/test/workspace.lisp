@@ -2490,7 +2490,7 @@ point and who reads the secret."
   ;; FINDINGS 1. The join draws a :FILE-to-:MODULE :IMPORTS edge, and the import
   ;; stays :EXTERNAL on the file. IMPORT-SUMMARY counted every :IMPORTS edge
   ;; leaving a file, so one import was counted resolved and external.
-  (if (not (python-available-p))
+  (if (not (python-child-startable-p))
       (skip "python3 is not on PATH")
       (with-workspace-fixture (repository)
         (write-file "app/main.py" "import requests
@@ -2515,7 +2515,7 @@ point and who reads the secret."
   ;; FINDINGS 2. The importer is not reanalyzed when app/requirements.txt
   ;; appears, so the edge to the root's requests survives unless the pass
   ;; retracts it. The model is AN-INCREMENTAL-UPDATE-MATCHES-A-FULL-REBUILD.
-  (if (not (python-available-p))
+  (if (not (python-child-startable-p))
       (skip "python3 is not on PATH")
       (with-workspace-fixture (repository)
         (write-file ".loom/frameworks.yaml" *requests-declaration*)
@@ -2629,7 +2629,7 @@ which one is ambiguous. A fifth import is :UNRESOLVED and is no external."
 (test dependency-counts-from-a-real-index-sum-to-the-external-count
   ;; The hand-built entities above fix the arithmetic; this one fixes that the
   ;; properties RESOLVE-DEPENDENCIES writes are the ones DEPENDENCY-SUMMARY reads.
-  (if (not (python-available-p))
+  (if (not (python-child-startable-p))
       (skip "python3 is not on PATH")
       (with-workspace-fixture (repository)
         (write-file "requirements.txt" "requests>=2.31
