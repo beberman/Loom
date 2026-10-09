@@ -1145,7 +1145,10 @@ belongs."
                              ;; takes one line up, for the same reason: a
                              ;; macro-minted entity has no form of its own to
                              ;; read a package from, so it takes its file's.
-                             :system (getp file :system))))))))
+                             :system (getp file :system)
+                             ;; PLAN-0060 step 3. Copied from the site's plist
+                             ;; on every pass, so it is derived.
+                             :call-shapes (getf site :call-shapes))))))))
 
 (defun known-generator-names (view registry)
   "Downcased names this pass owns the lifecycle of: every shipped REGISTRY
@@ -1293,7 +1296,11 @@ deliberate: the analyzer holds no callable index and cannot ask this question."
                            ;; package from, the same shortcut GENERATED-ENTITY
                            ;; takes one function up (DES-0009 R6).
                            :language (getp file :language)
-                           :system (getp file :system)))
+                           :system (getp file :system)
+                           ;; The site's entry for this one name, copied from
+                           ;; the plist the analyzer wrote (PLAN-0060 step 3).
+                           :call-shapes (call-shapes-for-key
+                                         (getf site :call-shapes) name)))
                     pairs))))))
     (nreverse pairs)))
 
@@ -1594,7 +1601,12 @@ orphaned definer name is worth a call site at all."
                             :referrer-kind :ambiguous
                             :candidate-count (length functions)
                             :language (getp caller :language)
-                            :system (getp caller :system)))))
+                            :system (getp caller :system)
+                            ;; Only this name's entry from the caller, so the
+                            ;; site reports the form that was ambiguous and
+                            ;; nothing else the caller calls (PLAN-0060 step 3).
+                            :call-shapes (call-shapes-for-key
+                                          (getp caller :call-shapes) name)))))
                (loop for candidate in functions
                      collect (list :callee candidate
                                    :confidence confidence

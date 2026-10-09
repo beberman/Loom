@@ -1020,3 +1020,172 @@ body: |
   unchanged (8.0855 s, 8.894 s). The 196109187-byte figure above is
   superseded. Step 1's tool is unchanged; step 6 reads these numbers.
 
+  STEP 3, THE LISP SIGNATURE AND :CALL-SHAPES. 2026-10-09, Loom at 3d711ce plus
+  this step's commit. Lisp only: tools/py and tools/js are untouched, so no
+  Python or JavaScript entity gets a shape.
+
+  Changed. src/ontology/code-ontology.lisp declares :CALL-SHAPES (list) on
+  :FUNCTION, :METHOD, :TEST and :CALL-SITE, and MAKE-CALL-SITE-ENTITY takes
+  :CALL-SHAPES, in no natural key. GROUP-CALL-SHAPES is in analyzer.lisp.
+  lisp-analyzer.lisp has LISP-ARGUMENT-KIND, LISP-CALL-SIGNATURE and
+  SHAPES-OF-NAMES; COLLECT-CALL-NAMES takes :LINE and returns (name signature
+  line) occurrences as a third value (NIL without :READING, and none for a
+  #'f designator); pass 2 writes :CALL-SHAPES for the names it keeps, local
+  callees included, so the keys are the ones an edge's :VIA can name;
+  INITFORM-CALL-SITES returns the shapes as a second value;
+  DEFINER-CALL-SITE takes the reading (FINDINGS 3) and its plist gains
+  :CALL-SHAPES when non-empty. resolve.lisp: GENERATED-ENTITY copies the site's
+  shapes, DEFINER-CALL-SITE-ENTITIES gives each site its name's entry,
+  CALL-TARGETS' :AMBIGUOUS site takes its name's entry from the caller. No
+  .asd changed; `check` 0 violations, 8 unresolved, 7 ambiguous, 5 definer
+  macros as before; load-test loom-serve prints
+  (find-package "LOOM-PROCESS") => T.
+
+  Departures from the plan.
+    1. CALL-SHAPES-FOR-KEY is in loom-ontology (code-ontology.lisp, exported),
+       not resolve.lisp. The analyzer needs the same cut for an initform site,
+       and the analyzer cannot call loom-graph (RULE-0002). Two copies would be
+       two readings of one value.
+    2. A declared property is present on every entity of its type, as NIL
+       when nothing set it. So every :FUNCTION, :METHOD, :TEST and :CALL-SITE
+       in every language gains a :CALL-SHAPES key, and the plan's "Lisp
+       entities that have shapes" understates which E lines change. Python
+       and JavaScript entities hold :CALL-SHAPES=NIL until steps 4 and 5. The
+       cost of the key itself is nil on front-end: below. I therefore did not
+       add the conditional append I first wrote in MAKE-CALL-SITE-ENTITY and
+       GENERATED-ENTITY; with the key always present it had no effect, and
+       the tests I wrote for it failed. The definer plist is not an entity, so
+       :CALL-SHAPES is absent from it when empty.
+    3. RISKS 7: one existing test failed because the behaviour it pins changed.
+       A-DEFMETHOD-PRODUCES-THE-SAME-ENTITY-IT-ALWAYS-HAS compares a method's
+       whole property table. I edited the corpus in
+       src/analyzer/test/lisp-analyzer.lisp: each of its 8 rows gains
+       (:call-shapes nil), and the two rows with a helper call carry their
+       shape. No other existing test changed.
+    4. An initform site's shape line is the call form's own line, from
+       FORM-RANGE, not the DEFPARAMETER's line. The reading is passed, so the
+       line is known; the site entity's own :START-LINE is still the
+       definition's. A fallback LINE argument covers a cons with no range.
+    5. An occurrence with no range and no fallback line is left out, because
+       GROUP-CALL-SHAPES sorts lines and a line that is not known is a gap
+       (CON-0001). It cannot happen from ANALYZE-FILE, which always passes one.
+    6. FORM-BACKQUOTE-P is in lisp-reader.lisp, which the plan does not list.
+       It is the one file allowed to name Eclector (DES-0013 R1), and the
+       reader's backquote head is an Eclector symbol.
+    7. LISP-ARGUMENT-KIND tells nil and t from other symbols by name with the
+       same cl-prefix test the operators get, because the reader makes them
+       uninterned. () needs no clause of its own: it is the real NIL, a
+       symbol. A first version had a (null form) clause; deleting it changed
+       no result.
+
+  Tests, each seen failing for the reason it states before the change was
+  written (first run, nothing implemented):
+    ontology  THE-FOUR-CALLER-TYPES-DECLARE-CALL-SHAPES: ":FUNCTION does not
+              declare :CALL-SHAPES", and the same for :METHOD, :TEST,
+              :CALL-SITE. A-CALL-SITE-CARRIES-SHAPES-...: "Unknown &KEY
+              argument: :CALL-SHAPES".
+    analyzer  the three GROUP-CALL-SHAPES tests: "The function
+              LOOM-ANALYZER::GROUP-CALL-SHAPES is undefined". The Lisp ones
+              fail on a NIL where the plan's value belongs, e.g.
+              "(SHAPE-ENTRY SHAPES "f") evaluated to NIL which is not EQUAL
+              to ("f" ("3:s,n,b" 2) ("8:y,k:k,q,f,f,c,q,b" 3))".
+              COLLECT-CALL-NAMES-RETURNS-OCCURRENCES: "Unknown &KEY argument:
+              :LINE". 26 failures in all.
+    graph     A-GENERATED-TEST-CARRIES-THE-CALL-SHAPES-OF-ITS-SITE:
+              "DECLARED-PROPERTIES-ONLY drops this unless :TEST declares it";
+              the definer-site and ambiguous-site tests got NIL for the entry
+              they expect. 6 failures.
+  The negative cases that pass before the change and are therefore guarded
+  only by the mutations below: a call with no arguments is "0:" (it failed
+  before, as a missing entry), a designator adds no shape, a standard operator
+  and a direct recursion add none, a definer site with no calls has no
+  :CALL-SHAPES key, an ambiguous site whose caller has no entry for its name
+  holds NIL.
+  Tests that cover U4: NO-LITERAL-REACHES-THE-INDEX analyzes
+  (f "SENTINEL" 4242 'sekret-symbol :token "SECRET-VALUE" 98.6) inside a
+  function body, asserts the signature is 6:s,n,q,k:token,s,n, and searches
+  every entity id and property and every relationship property of the graph
+  for each of the five literals. Positive control: (defun sentinel ...) is
+  found by the same walk. The keyword's name is kept, as D10 says.
+
+  Mutations, one at a time in this tree, the file copied aside and restored
+  with a touch after each. Failing tests, by mutation:
+    :TEST declaration renamed         A-GENERATED-TEST-CARRIES-..., THE-FOUR-CALLER-TYPES-...
+    :CALL-SITE / :FUNCTION decl       THE-FOUR-CALLER-TYPES-... only (an
+                                      undeclared key is stored by SETP, so no
+                                      analyzer test sees it)
+    GENERATED-ENTITY copy removed     A-GENERATED-TEST-CARRIES-...
+    CALL-TARGETS copy removed         AN-AMBIGUOUS-SITE-TAKES-ONLY-..., RESOLVING-TWICE-...
+    ambiguous site takes whole caller AN-AMBIGUOUS-SITE-TAKES-ONLY-..., ...-RECORDED-NO-SHAPE-HOLDS-NONE
+    DEFINER-CALL-SITE-ENTITIES copy   A-DEFINER-CALL-SITE-ENTITY-TAKES-ONLY-ITS-OWN-NAMES-SHAPES
+    constructor ignores :CALL-SHAPES  7 tests across the three systems
+    no reading to DEFINER-CALL-SITE   A-DEFINER-CALL-SITE-CARRIES-THE-SHAPES-...
+    designator adds an occurrence     A-DESIGNATOR-ADDS-..., A-DESIGNATOR-BESIDE-..., A-CALL-FORM-RECORDS-...
+    signature walk uses `for ... in`  A-DOTTED-LIST-INSIDE-A-CALL-SITES-ARGUMENT-..., DOTTED-ARGUMENT-LISTS-...
+    string / number / quoted-symbol
+      value leaked into the kind      NO-LITERAL-REACHES-THE-INDEX each time
+    keyword name dropped              NO-LITERAL-REACHES-THE-INDEX and 4 more
+    pass 2 keeps every occurrence     the binding-form, designator and recursion tests
+    local callees not kept            A-LOCAL-CALLEE-HAS-A-SHAPE-UNDER-ITS-NAME
+    keywords not counted in arity     5 tests
+    no fallback line                  COLLECT-CALL-NAMES-RETURNS-OCCURRENCES-..., AN-INITFORM-CALL-WITH-NO-RECORDED-RANGE-...
+    backquote clause removed          EVERY-ARGUMENT-KIND-HAS-ITS-LETTER
+    lambda clause removed             EVERY-ARGUMENT-KIND-..., A-CALL-FORM-RECORDS-...
+    nil/t always `y'                  EVERY-ARGUMENT-KIND-..., A-T-OR-LAMBDA-...
+    cl-symbol-p ignores the prefix    A-T-OR-LAMBDA-FROM-ANOTHER-PACKAGE-...
+    definer shapes always present     A-DEFINER-CALL-SITE-WITH-NO-CALLS-HAS-NO-SHAPES-KEY
+    initform shapes always NIL        4 tests; whole caller shapes: 1
+    pass 2 writes no shapes           20 tests
+    GROUP-CALL-SHAPES no merge        3 tests; no sort: 1
+  One mutation changed nothing: deleting the (null form) clause. It is
+  deleted (departure 7).
+
+  The count did not move. tools/test/index-dump.lisp from a scratch copy of
+  3d711ce (git archive) and from this tree, both over this tree's files:
+    Loom        32165 lines each; no line only on one side; 4484 E lines
+                differ, and with :CALL-SHAPES cut out of every line of both
+                sides they are equal. By type: :FUNCTION 2053, :TEST 1582,
+                :CALL-SITE 626, :METHOD 138, :FILE 81 (the definer plists),
+                and 4 more whose ids contain spaces. R lines changed: 0.
+                S lines changed: 0.
+    game-server 24600 lines each; 3214 E lines differ the same way; R 0, S 0
+                (read only, 448dc8e, `git status --short` empty before and
+                after).
+  call-site-census: 510 minted, 41 ambiguous, before and after. Loom's own
+  `status` moved with the tree (5477 entities and 26492 relationships at
+  3d711ce, 5522 and 26696 here: this step's 31 tests, 8 source functions and 6
+  test helpers, and the calls they draw); the two dumps above are the comparison that holds the
+  tree fixed. index-cost reads 5522 entities, 26696 relationships, 11893
+  :CALLS edges under both the base code and this code.
+
+  Cost, index-cost, alternating a scratch copy of 3d711ce and this tree.
+    Loom         heap-bytes base 92819856 92843600 92824992, new 95145200
+                 95153280 95146480: +2.32 MB, +2.5 percent. Index time over 9
+                 runs each, medians 2.901 s base and 3.035 s new (+4.6
+                 percent, run-to-run scatter about 10 percent with the
+                 resident service running).
+    game-server  heap-bytes base 75919360 75776768 75871136, new 76992672
+                 76982480 77054992: +1.1 MB, +1.5 percent. Time medians 1.130
+                 s and 0.880 s, inside the scatter.
+    front-end    ab34be6, JavaScript so no shapes, three pairs: heap-bytes
+                 base 159377104 159388928 159280624, new 159351312 159437328
+                 159432480, medians 159377104 and 159432480 (+55 KB, from the
+                 NIL :CALL-SHAPES key); seconds medians 9.850 and 9.808.
+                 front-end's `git status --short` identical before and after
+                 (the same five entries as step 1). Against the re-baseline:
+                 180261709 less 159432480 leaves 20829229 bytes for steps 4
+                 and 5. Both trees run at about 9.8 s under today's load,
+                 above 8.894 s, which was measured on a quieter machine; the
+                 delta between them is what this step moves, and it is nil.
+  shape-occurrences on Loom is 20222 line entries on entities (:FUNCTION 5451,
+  :METHOD 541, :CALL-SITE 584, :TEST 13646) and 10856 on game-server. A :TEST's
+  entries are the same list as its file's definer plist entry, which holds
+  another 14445 lines on Loom that index-cost does not count, so the heap
+  holds each once. Unique occurrences are 20437, of which 14749 name something
+  defined in the tree. DES-0055's 12044 is a regex estimate of "calls of
+  in-tree names"; the reader's 14749 is 22 percent above it, and the other
+  5688 are fiveam's IS and every other name no definition in the tree answers.
+  The two do not measure the same set, and I did not reproduce the regex.
+
+  Verification. tools/loom-test.sh 12 of 12 under /usr/bin/sbcl. Serve, rest
+  and mcp passed first time.

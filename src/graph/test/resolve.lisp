@@ -334,10 +334,12 @@ matching nothing")))
     (add-entity graph e)
     e))
 
-(defun r-call-site (operator name &key (line 10) call-names)
-  (list :operator operator :start-line line :end-line (+ line 2)
-        :arguments (list name) :symbol-arguments '(1)
-        :call-names call-names))
+(defun r-call-site (operator name &key (line 10) call-names call-shapes)
+  (append (list :operator operator :start-line line :end-line (+ line 2)
+                :arguments (list name) :symbol-arguments '(1)
+                :call-names call-names)
+          ;; Absent rather than NIL, as the Lisp analyzer writes it.
+          (when call-shapes (list :call-shapes call-shapes))))
 
 (test a-definer-call-site-mints-the-definition-it-names
   ;; The name exists nowhere in the source as a defun, so nothing but this
@@ -3204,3 +3206,105 @@ resolution pass run."
     (setf (getp caller :call-names) '("Widget.render"))
     (apply-transaction g (resolve-calls g))
     (is (equal '("Widget.render") (via-of g caller callee)))))
+
+;;; ------------------------------------------------------------------
+;;; :CALL-SHAPES on the entities the graph mints (PLAN-0060 step 3)
+;;; ------------------------------------------------------------------
+;;;
+;;; The analyzer writes the shapes on the :FILE's definer plist and on the
+;;; caller. A :TEST, a :DEFINER-CALL site and an :AMBIGUOUS site are minted
+;;; here, so each copies what it needs on every pass (DEC-0003).
+
+(defun r-test-registry ()
+  (let ((registry (make-hash-table :test #'equal)))
+    (setf (gethash "test" registry)
+          (list (list :name "test" :package "fiveam" :entity-type :test
+                      :name-index 1 :body-index 2 :framework :fiveam)))
+    registry))
+
+(test a-generated-test-carries-the-call-shapes-of-its-site
+  (let ((g (make-graph))
+        (shapes '(("f" ("2:n,n" 12) ("1:y" 14)) ("g" ("0:" 13)))))
+    (r-file g "t.lisp" :call-sites (list (r-call-site "test" "alpha-works"
+                                                      :call-names '("f" "g")
+                                                      :call-shapes shapes)))
+    (apply-transaction g (resolve-generated-definitions
+                          g :registry (r-test-registry)))
+    (let ((minted (first (entities-of-type g :test))))
+      (is (not (null minted)))
+      (is (equal shapes (getp minted :call-shapes))
+          "DECLARED-PROPERTIES-ONLY drops this unless :TEST declares it"))))
+
+(test a-generated-entity-whose-site-has-no-shapes-holds-none
+  (let ((g (make-graph)))
+    (r-file g "t.lisp" :call-sites (list (r-call-site "test" "alpha-works"
+                                                      :call-names '("f"))))
+    (apply-transaction g (resolve-generated-definitions
+                          g :registry (r-test-registry)))
+    (let ((minted (first (entities-of-type g :test))))
+      (is (not (null minted)))
+      (is (null (getp minted :call-shapes))))))
+
+(test a-definer-call-site-entity-takes-only-its-own-names-shapes
+  (let* ((g (make-graph))
+         (shapes '(("violation-summary" ("1:y" 11))
+                   ("other-thing" ("2:y,y" 12))
+                   ("not-here" ("0:" 13)))))
+    (r-function g "violation-summary" "check.lisp")
+    (r-function g "other-thing" "check.lisp")
+    (r-file g "operations.lisp"
+            :call-sites (list (r-call-site "define-operation" "check"
+                                           :call-names '("violation-summary"
+                                                         "other-thing"
+                                                         "not-here")
+                                           :call-shapes shapes)))
+    (apply-transaction g (resolve-generated-definitions g :registry nil))
+    (flet ((site (name)
+             (find name (entities-of-type g :call-site)
+                   :key (lambda (s) (getp s :call-name)) :test #'equal)))
+      (is (equal '(("violation-summary" ("1:y" 11)))
+                 (getp (site "violation-summary") :call-shapes)))
+      (is (equal '(("other-thing" ("2:y,y" 12)))
+                 (getp (site "other-thing") :call-shapes)))
+      (is (null (site "not-here"))
+          "a name that resolved to nothing minted no site to carry shapes"))))
+
+(test an-ambiguous-site-takes-only-its-names-entry-from-the-caller
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("run" "other"))))
+    (setp caller :call-shapes '(("other" ("0:" 4)) ("run" ("1:y" 3) ("2:y,y" 6))))
+    (r-function g "run" "b.lisp")
+    (r-function g "run" "c.lisp")
+    (apply-transaction g (resolve-calls g))
+    (let ((site (first (entities-of-type g :call-site))))
+      (is (eq :ambiguous (getp site :referrer-kind)))
+      (is (equal '(("run" ("1:y" 3) ("2:y,y" 6))) (getp site :call-shapes))
+          "every signature of its own key, and nothing of `other'"))
+    (is (equal '(("other" ("0:" 4)) ("run" ("1:y" 3) ("2:y,y" 6)))
+               (getp caller :call-shapes))
+        "the caller's record is untouched: the copy is derived, never consumed")))
+
+(test an-ambiguous-site-whose-caller-recorded-no-shape-holds-none
+  ;; A designator-only caller: the name is in :CALL-NAMES and no call form
+  ;; exists to describe (FINDINGS 4). The site must not borrow another key's.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("run" "other"))))
+    (setp caller :call-shapes '(("other" ("0:" 4))))
+    (r-function g "run" "b.lisp")
+    (r-function g "run" "c.lisp")
+    (apply-transaction g (resolve-calls g))
+    (let ((site (first (entities-of-type g :call-site))))
+      (is (not (null site)) "control: the name was ambiguous")
+      (is (null (getp site :call-shapes))))))
+
+(test resolving-twice-leaves-the-minted-shapes-where-they-were
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("run"))))
+    (setp caller :call-shapes '(("run" ("1:y" 3))))
+    (r-function g "run" "b.lisp")
+    (r-function g "run" "c.lisp")
+    (apply-transaction g (resolve-calls g))
+    (apply-transaction g (resolve-calls g))
+    (is (= 1 (length (entities-of-type g :call-site))))
+    (is (equal '(("run" ("1:y" 3)))
+               (getp (first (entities-of-type g :call-site)) :call-shapes)))))

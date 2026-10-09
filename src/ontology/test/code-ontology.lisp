@@ -652,3 +652,28 @@ read since")))
   ;; test file and an ambiguous call site are both code that imports one.
   (is (null (validate-relationship-endpoints :depends-on :test :module)))
   (is (null (validate-relationship-endpoints :depends-on :call-site :module))))
+
+;;; ------------------------------------------------------------------
+;;; :CALL-SHAPES -- PLAN-0060 step 3, DES-0055 D11
+;;; ------------------------------------------------------------------
+
+(test the-four-caller-types-declare-call-shapes
+  ;; GENERATED-ENTITY filters through DECLARED-PROPERTIES-ONLY, so a :TEST that
+  ;; does not declare :CALL-SHAPES loses the copy without a word.
+  (dolist (type '(:function :method :test :call-site))
+    (let ((property (find-property type :call-shapes)))
+      (is (not (null property)) "~s does not declare :CALL-SHAPES" type)
+      (when property
+        (is (eq 'list (property-type property)))))))
+
+(test a-call-site-carries-shapes-and-they-are-not-part-of-its-key
+  (let ((with (make-call-site-entity :file "a.lisp" :start-line 12
+                                     :call-name "target"
+                                     :call-shapes '(("target" ("2:y,y" 12)))))
+        (without (make-call-site-entity :file "a.lisp" :start-line 12
+                                        :call-name "target")))
+    (is (equal '(("target" ("2:y,y" 12))) (getp with :call-shapes)))
+    (is (equal (id with) (id without))
+        "shapes are in no natural key, so two mintings of one site agree")
+    (is (null (getp without :call-shapes))
+        "and a site given none holds NIL, the declared default")))

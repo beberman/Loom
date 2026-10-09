@@ -81,3 +81,24 @@
                   "~a carries ~a rather than the declared domain"
                   (loom-ontology:entity-type entity)
                   (loom-ontology:getp entity :domain)))))))))
+
+;;; ------------------------------------------------------------------
+;;; GROUP-CALL-SHAPES -- PLAN-0060 step 3, DES-0055 D11
+;;; ------------------------------------------------------------------
+
+(test call-shapes-group-by-key-then-signature-keeping-every-line
+  (is (equal '(("f" ("2:y,y" 2 5) ("3:y,y,y" 4))
+               ("g" ("1:y" 3)))
+             (loom-analyzer::group-call-shapes
+              '(("f" "2:y,y" 2) ("g" "1:y" 3) ("f" "3:y,y,y" 4) ("f" "2:y,y" 5))))
+      "keys and signatures in first-seen order; one entry per signature"))
+
+(test call-shape-lines-are-in-source-order-and-a-repeat-on-one-line-stays
+  (is (equal '(("f" ("1:y" 2 2 7)))
+             (loom-analyzer::group-call-shapes
+              '(("f" "1:y" 7) ("f" "1:y" 2) ("f" "1:y" 2))))
+      "two calls on one line are two occurrences; step 7 counts a site once
+per distinct caller line, and needs the multiplicity to do it"))
+
+(test no-occurrences-group-to-nothing
+  (is (null (loom-analyzer::group-call-shapes '()))))

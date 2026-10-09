@@ -658,6 +658,23 @@ attribute.
 Analyzer-written and never rewritten, the same DEC-0003 discipline
 :CALL-NAMES keeps and for the same reason: a resolution pass that consumed its
 own input could not be re-run.")
+               (:call-shapes list
+                :documentation "One signature per call form this entity
+contains, grouped by the key resolution reads: ((<key> (<signature> <line> ...)
+...) ...).  <key> is a name in :CALL-NAMES or a local callee's name; <signature>
+is `<arity>:<kind>,...' by DES-0055 D10, so `2:y,y' is a call passing two names
+and `3:s,k:k,n' a string, a keyword and a number.  Identical signatures under
+one key share an entry and keep every line.  PLAN-0060, DES-0055 D11.
+
+Kinds and keyword names only: no string, number or boolean value is recorded
+(U4), so a default passed as a literal never reaches the index.  Absent when the
+entity makes no call the analyzer could describe, which is also what a name
+that arrived only as a #'f designator looks like -- it is in :CALL-NAMES and has
+no call form.
+
+Analyzer-written and never rewritten, the DEC-0003 discipline :CALL-NAMES keeps.
+Which entries count for a callee is decided by the :VIA of the edge that
+reaches it, so this record is never matched by name.")
                (:unresolved-calls list
                 :documentation "Callee names that did not resolve inside the
 workspace.  Recorded as a property, never as a dangling edge.  Derived from
@@ -833,6 +850,9 @@ No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
 indexed repository declared.")
                (:call-names       list)
                (:qualified-calls  list)
+               (:call-shapes list
+                :documentation "As on :FUNCTION: the signatures of the call
+forms this method contains, grouped by key.  PLAN-0060, DES-0055 D11.")
                (:unresolved-calls list)
                (:imported-calls list
                 :documentation "Calls this entity makes through an import
@@ -1043,6 +1063,13 @@ PLAN-0014 decision 4 puts it here; step 4 then has CALLER-CALL-NAMES derive the
 one-element list from :CALL-NAME instead of reading this, which is why nothing
 sets it. Storing the name twice is the drift MAKE-CALL-SITE-ENTITY exists to
 prevent, one property over.")
+               (:call-shapes list
+                :documentation "As on :FUNCTION: the signatures of the call
+forms this site stands for, grouped by key.  PLAN-0060, DES-0055 D11.
+
+A site is one call name, so it holds the entry for its :CALL-NAME.  The analyzer
+writes it on an initform site; the graph copies it from the caller or the
+definer plist on the sites it mints, every pass.")
                (:unresolved-calls list
                 :documentation "Written by RESOLVE-CALLS exactly as it writes
 it on a function: where an initform name that matched nothing is recorded
@@ -1137,7 +1164,7 @@ describe."
 (defun make-call-site-entity (&key file start-line end-line call-name
                                    referrer-kind candidate-count
                                    language system domain generated-by
-                                   imported-calls)
+                                   imported-calls call-shapes)
   "The one constructor for a :CALL-SITE, used by both systems that mint one.
 
 Natural-key properties are passed at construction and never SETP'd afterwards,
@@ -1169,7 +1196,21 @@ values it did not yet have."
                                     ;; Not a natural-key component, so it may
                                     ;; arrive with the others rather than being
                                     ;; SETP'd later. PLAN-0050 S1.
-                                    :domain domain))))
+                                    :domain domain
+                                    ;; Not a natural-key component either.
+                                    ;; PLAN-0060 step 3.
+                                    :call-shapes call-shapes))))
+
+(defun call-shapes-for-key (shapes key)
+  "The part of SHAPES, a :CALL-SHAPES value, that is KEY's: a list of the one
+entry, or NIL when KEY has none.
+
+Here beside MAKE-CALL-SITE-ENTITY for the same reason it is: the analyzer cuts a
+caller's shapes down to an initform site's one name, and the graph does the
+same for a definer site and an ambiguous site, so a second copy in either
+system would be a second reading of one value (PLAN-0060 step 3)."
+  (let ((entry (assoc key shapes :test #'string=)))
+    (and entry (list entry))))
 
 ;;;; ==================================================================
 ;;;; Knowledge -- the part that cannot be recovered by re-reading source
@@ -1276,6 +1317,12 @@ the runner executes for every case in it (DES-0045 D4).  A name appearing here
 is not yet a claim that the case reached that definition: RESOLVE-CALLS decides
 which definition the name means, and a name it cannot place stays in
 :UNRESOLVED-CALLS.")
+               (:call-shapes list
+                :documentation "As on :FUNCTION: the signatures of the call
+forms this test contains, grouped by key.  PLAN-0060, DES-0055 D11.
+
+In Lisp, carried over from the file's :DEFINER-CALL-SITES entry with
+:CALL-NAMES, on every pass.")
                (:unresolved-calls list
                 :documentation "Callee names that did not resolve inside the
 workspace.  Expected to be populous for a test: a framework's assertion

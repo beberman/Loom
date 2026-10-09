@@ -1041,7 +1041,7 @@ file, and every property with its value, in a stable order."
   '(;; a  plain specializer
     ("(defmethod render ((x hop)) x)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:call-shapes nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
        (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
@@ -1050,7 +1050,7 @@ file, and every property with its value, in a stable order."
     ;;    the :QUALIFIER property AND into the id's third segment
     ("(defmethod render :around ((x hop)) x)"
      (:method "render" "method:sample.lisp:render:around:hop" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:call-shapes nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
        (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier :around)
        (:shadowed-definitions nil) (:specializers ("hop"))
        (:start-line 1) (:system nil) (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
@@ -1058,7 +1058,7 @@ file, and every property with its value, in a stable order."
     ;; c  EQL specializer, rendered rather than resolved
     ("(defmethod render ((x (eql :oneof))) x)"
      (:method "render" "method:sample.lisp:render::(eql oneof)" "sample.lisp"
-      ((:arguments ("x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
+      ((:arguments ("x")) (:call-names nil) (:call-shapes nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
        (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil)
        (:specializers ("(eql oneof)")) (:start-line 1)
@@ -1068,7 +1068,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod (setf render) (v (x hop)) v)"
      (:method "(setf render)" "method:sample.lisp:(setf render)::t,hop"
       "sample.lisp"
-      ((:arguments ("v" "x")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
+      ((:arguments ("v" "x")) (:call-names nil) (:call-shapes nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
        (:entry-point nil) (:environment-reads nil)
        (:file "sample.lisp") (:generic-function "(setf render)")
        (:imported-calls nil)
@@ -1081,7 +1081,7 @@ file, and every property with its value, in a stable order."
     ;;    and mints an entity with the body where its arguments belong.
     ("(defmethod render () 1)"
      (:method "render" "method:sample.lisp:render::" "sample.lisp"
-      ((:arguments nil) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
+      ((:arguments nil) (:call-names nil) (:call-shapes nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1) (:entry-point nil) (:environment-reads nil) (:file "sample.lisp")
        (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp) (:qualified-calls nil) (:qualifier nil)
        (:shadowed-definitions nil) (:specializers nil)
        (:start-line 1) (:system nil) (:trigger nil) (:unresolved-calls nil) (:unresolved-imported-calls nil)))
@@ -1089,7 +1089,7 @@ file, and every property with its value, in a stable order."
     ;; f  an & marker stops the specializer walk but not the argument list
     ("(defmethod render ((x hop) &rest args) args)"
      (:method "render" "method:sample.lisp:render::hop" "sample.lisp"
-      ((:arguments ("x" "&rest" "args")) (:call-names nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
+      ((:arguments ("x" "&rest" "args")) (:call-names nil) (:call-shapes nil) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
        (:entry-point nil) (:environment-reads nil)
        (:file "sample.lisp") (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
@@ -1099,7 +1099,7 @@ file, and every property with its value, in a stable order."
     ;; g  wholly unspecialized, and the only entry with a call in its body
     ("(defmethod render (a b) (helper a b))"
      (:method "render" "method:sample.lisp:render::t,t" "sample.lisp"
-      ((:arguments ("a" "b")) (:call-names ("helper")) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
+      ((:arguments ("a" "b")) (:call-names ("helper")) (:call-shapes (("helper" ("2:y,y" 1)))) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
        (:entry-point nil) (:environment-reads nil)
        (:file "sample.lisp") (:generic-function "render") (:imported-calls nil) (:jsx-names nil) (:language :lisp)
        (:qualified-calls nil) (:qualifier nil) (:shadowed-definitions nil)
@@ -1115,7 +1115,7 @@ file, and every property with its value, in a stable order."
     ("(defmethod render ((x hop)) (helper x))"
      (:method "render" "method:src/graph/foo.lisp:render::hop"
       "src/graph/foo.lisp"
-      ((:arguments ("x")) (:call-names ("helper")) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
+      ((:arguments ("x")) (:call-names ("helper")) (:call-shapes (("helper" ("1:y" 1)))) (:decorators nil) (:documentation nil) (:domain nil) (:end-line 1)
        (:entry-point nil) (:environment-reads nil)
        (:file "src/graph/foo.lisp") (:generic-function "render")
        (:imported-calls nil)
@@ -1992,3 +1992,249 @@ because STANDARD-OPERATOR-P filters every name naming a CL symbol")))
   ;; `(let)' and `(let ())' are degenerate and must not error or swallow.
   (let ((names (call-names-of "(defun f () (let) (let () (still-called)))")))
     (is (member "still-called" names :test #'string=))))
+
+;;; ------------------------------------------------------------------
+;;; Call shapes -- PLAN-0060 step 3, DES-0055 D10 and D11
+;;; ------------------------------------------------------------------
+;;;
+;;; One signature per call form, `<arity>:<kind>,...`, recorded as :CALL-SHAPES
+;;; on the caller. No literal value reaches the index (U4): the kinds say a
+;;; string was passed, never which.
+
+(defun lines-of (&rest lines)
+  "LINES joined with newlines, so a fixture's line numbers are what it reads."
+  (format nil "~{~a~^~%~}" lines))
+
+(defun shapes-of (source &optional (name "f") (type :function))
+  (multiple-value-bind (g file) (analyze-source source)
+    (declare (ignore file))
+    (getp (find-by-name g type name) :call-shapes)))
+
+(defun shape-entry (shapes key)
+  (assoc key shapes :test #'string=))
+
+(defun value-mentions-p (value needle)
+  "True when NEEDLE occurs in a string anywhere in VALUE: through conses and
+hash tables."
+  (typecase value
+    (string (and (search needle value :test #'char-equal) t))
+    (cons (or (value-mentions-p (car value) needle)
+              (value-mentions-p (cdr value) needle)))
+    (hash-table (let ((hit nil))
+                  (maphash (lambda (k v)
+                             (when (or (value-mentions-p k needle)
+                                       (value-mentions-p v needle))
+                               (setf hit t)))
+                           value)
+                  hit))
+    (t nil)))
+
+(defun graph-mentions-p (graph needle)
+  "True when NEEDLE is in any entity's id or properties, or any relationship's
+properties, in GRAPH."
+  (or (some (lambda (e) (or (value-mentions-p (id e) needle)
+                            (value-mentions-p (properties e) needle)))
+            (all-entities graph))
+      (some (lambda (r) (value-mentions-p (properties r) needle))
+            (all-relationships graph))))
+
+(test a-call-form-records-its-signature-and-the-line-it-is-on
+  (let ((shapes (shapes-of (lines-of "(defun h ()"
+                                     "  (f \"a\" 1 t)"
+                                     "  (f x :k 'q #'g (lambda ()) (k) #(1) nil))")
+                           "h")))
+    (is (equal '("f" ("3:s,n,b" 2) ("8:y,k:k,q,f,f,c,q,b" 3))
+               (shape-entry shapes "f"))
+        "the real line of each form, which a multi-line fixture can tell from
+the definition's own line 1")
+    (is (equal '("k" ("0:" 3)) (shape-entry shapes "k"))
+        "a call with no arguments is arity 0 and no kinds")
+    (is (null (shape-entry shapes "g"))
+        "#'g is a designator, not a call form, and D10 has no grammar for it")
+    (is (equal '("f" "k") (mapcar #'first shapes))
+        "keys in first-seen order")))
+
+(test every-argument-kind-has-its-letter
+  (let ((entry (shape-entry
+                (shapes-of
+                 (lines-of "(defun h ()"
+                           "  (f \"s\" 1 1.5 #\\a nil t :kw sym pkg:other (setf x)"
+                           "     '(1) `(a ,b) #(1) #'g (lambda () 1) (g)))")
+                 "h")
+                "f")))
+    (is (equal '("16:s,n,n,x,b,b,k:kw,y,y,c,q,q,q,f,f,c" 2) (second entry))
+        "string, integer, float, character, nil, t, a keyword with its name,
+a symbol, a qualified symbol, a cons, quote, backquote, a vector, #', lambda,
+a call")))
+
+(test two-calls-of-one-shape-share-an-entry-and-keep-both-lines
+  (let ((shapes (shapes-of (lines-of "(defun h (x y)"
+                                     "  (f x y)"
+                                     "  (g)"
+                                     "  nil"
+                                     "  (f x y))")
+                           "h")))
+    (is (equal '("f" ("2:y,y" 2 5)) (shape-entry shapes "f")))
+    (is (equal '("g" ("0:" 3)) (shape-entry shapes "g")))
+    (is (= 2 (length shapes)))))
+
+(test a-binding-form-and-a-standard-operator-record-no-shape
+  ;; The same filters pass 2 applies to :CALL-NAMES: a shape for a key no edge
+  ;; can carry would be storage nothing reads.
+  (is (equal '(("g" ("1:y" 1)))
+             (shapes-of "(defun h () (let ((x 1)) (when x (g x))))" "h"))
+      "g only; neither let nor when, and x is bound, not called"))
+
+(test a-designator-adds-a-call-name-and-no-shape
+  ;; FINDINGS 4. #'g is why g is in :CALL-NAMES and why its edge will have no
+  ;; call form to describe.
+  (multiple-value-bind (g file) (analyze-source "(defun h (xs) (mapcar #'g xs))")
+    (declare (ignore file))
+    (let ((h (find-by-name g :function "h")))
+      (is (member "g" (getp h :call-names) :test #'string=))
+      (is (null (getp h :call-shapes))
+          "the call form mapcar is a standard operator, and #'g is not a form"))))
+
+(test a-designator-beside-a-call-leaves-only-the-call-in-the-shapes
+  (is (equal '(("g" ("1:n" 1)))
+             (shapes-of "(defun h (xs) (g 1) (mapcar #'g xs))" "h"))))
+
+(test a-recursive-call-and-an-unrelated-standard-call-record-no-shape
+  (is (equal '(("helper" ("1:n" 1)))
+             (shapes-of "(defun r () (r 0) (helper 1) (format nil \"x\"))" "r"))
+      "direct recursion is dropped from :CALL-NAMES, so it is dropped here"))
+
+(test a-local-callee-has-a-shape-under-its-name
+  ;; The local edge's :VIA is (callee-name), so the key has to be there for
+  ;; the join to find it.
+  (is (equal '(("g" ("2:n,n" 2)))
+             (shapes-of (lines-of "(defun g (a b) (list a b))"
+                                  "(defun h () (g 1 2))")
+                        "h"))))
+
+(test a-method-records-shapes-too
+  (is (equal '(("helper" ("2:y,n" 1)))
+             (shapes-of "(defmethod m ((x thing)) (helper x 1))" "m" :method))))
+
+(test dotted-argument-lists-cost-no-definition-and-no-shape
+  ;; BUG-0068's shape on the new walk: (f . x) and (f a . b) have a tail that is
+  ;; an atom, and a `for ... in' over it signals.
+  (dolist (case '(("(defun d () (f . x))"         "f" "0:")
+                  ("(defun d () (f a . b))"       "f" "1:y")
+                  ("(defun d () (f '(1 . 2) (g . h)))" "f" "2:q,c")))
+    (destructuring-bind (source key signature) case
+      (multiple-value-bind (g file) (analyze-source source)
+        (is (null (getp file :analysis-error)) "~a cost the file" source)
+        (let ((shapes (getp (find-by-name g :function "d") :call-shapes)))
+          (is (equal signature (first (second (shape-entry shapes key))))
+              "~a recorded ~s" source (shape-entry shapes key)))))))
+
+(test no-literal-reaches-the-index
+  ;; U4. A string, a number, a quoted symbol and a keyword argument whose value
+  ;; looks like a secret are all inside one function body, which no other
+  ;; property reads. The keyword's own name is code and is kept.
+  (multiple-value-bind (g file)
+      (analyze-source "(defun s () (f \"SENTINEL\" 4242 'sekret-symbol :token \"SECRET-VALUE\" 98.6))")
+    (declare (ignore file))
+    (let ((entry (shape-entry (getp (find-by-name g :function "s") :call-shapes) "f")))
+      (is (equal "6:s,n,q,k:token,s,n" (first (second entry)))
+          "the kinds and the keyword's name, and nothing of the values"))
+    (dolist (needle '("SENTINEL" "4242" "sekret-symbol" "SECRET-VALUE" "98.6"))
+      (is (not (graph-mentions-p g needle)) "~a reached the index" needle)))
+  ;; The control: the walk does find a SENTINEL that was stored, or the
+  ;; assertions above prove nothing (CON-0003).
+  (let ((control (analyze-source "(defun sentinel () (f 1))")))
+    (is (graph-mentions-p control "SENTINEL"))))
+
+(test an-initform-call-site-carries-the-shape-of-its-own-call
+  (multiple-value-bind (g file)
+      (analyze-source (lines-of "(defparameter *p*"
+                                "  (list (make-a 1 :k 'x) (make-b 2 3)))"))
+    (declare (ignore file))
+    (flet ((site-shapes (name)
+             (getp (find-if (lambda (s) (equal name (getp s :call-name)))
+                            (entities-of-type g :call-site))
+                   :call-shapes)))
+      (is (equal '(("make-a" ("3:n,k:k,q" 2))) (site-shapes "make-a"))
+          "the call form's own line 2, not the DEFPARAMETER's line 1 that the
+site itself carries: the reader recorded a range for the form")
+      (is (equal '(("make-b" ("2:n,n" 2))) (site-shapes "make-b"))
+          "and each site only its own name's entry"))))
+
+(test an-initform-call-with-no-recorded-range-takes-the-forms-start-line
+  ;; The fallback LINE argument. #'make-a is read by wrap-in-function, so the
+  ;; cons the reader hands back has no span of its own.
+  (is (equal '(("make-a" ("1:y" 7)))
+             (nth-value 1 (loom-analyzer::initform-call-sites
+                           (list (make-symbol "DEFVAR") (make-symbol "*V*")
+                                 (list (make-symbol "MAKE-A") (make-symbol "X")))
+                           "defvar" (loom-analyzer::read-source "") 7)))))
+
+(test a-class-slot-initform-site-carries-a-shape
+  (multiple-value-bind (g file)
+      (analyze-source "(defclass c () ((s :initform (make-s :n 1))))")
+    (declare (ignore file))
+    (let ((site (first (entities-of-type g :call-site))))
+      (is (equal "make-s" (getp site :call-name)))
+      (is (equal '(("make-s" ("2:k:n,n" 1))) (getp site :call-shapes))))))
+
+(test an-initform-site-with-no-arguments-carries-arity-zero
+  (multiple-value-bind (g file) (analyze-source "(defvar *v* (make-v))")
+    (declare (ignore file))
+    (is (equal '(("make-v" ("0:" 1)))
+               (getp (first (entities-of-type g :call-site)) :call-shapes)))))
+
+(test a-definer-call-site-carries-the-shapes-of-the-calls-in-its-body
+  ;; FINDINGS 3: DEFINER-CALL-SITE had no reading, so it had no line for a
+  ;; call. These are the calls' own lines, not the site's start line 1.
+  (multiple-value-bind (g file)
+      (analyze-source (lines-of "(test checks-it"
+                                "  (is (= 1 (f 2 \"SENTINEL\")))"
+                                "  (f 3 4))"))
+    (declare (ignore g))
+    (let ((shapes (getf (first (getp file :definer-call-sites)) :call-shapes)))
+      (is (equal '("f" ("2:n,s" 2) ("2:n,n" 3)) (shape-entry shapes "f")))
+      (is (equal '("is" ("1:c" 2)) (shape-entry shapes "is")))
+      (is (null (shape-entry shapes "="))
+          "a standard operator is filtered as :CALL-NAMES filters it")
+      (is (not (value-mentions-p shapes "SENTINEL"))
+          "the site's :STRING-ARGUMENTS keep literals it already kept (DES-0002);
+:CALL-SHAPES adds none"))))
+
+(test a-definer-call-site-with-no-calls-has-no-shapes-key
+  (multiple-value-bind (g file) (analyze-source "(def-suite thing :in all-tests)")
+    (declare (ignore g))
+    (let ((site (first (getp file :definer-call-sites))))
+      (is (not (null site)) "control: the site exists")
+      (is (not (member :call-shapes site))
+          "absent rather than NIL, so a file without shapes stays as it was"))))
+
+(test collect-call-names-returns-occurrences-as-a-third-value
+  (let ((reading (loom-analyzer::read-source "")))
+    (multiple-value-bind (names qualified occurrences)
+        (loom-analyzer::collect-call-names
+         (list (list (make-symbol "F") 1 (make-symbol "X")))
+         :reading reading :line 7)
+      (is (equal '("f") names) "the first two values are what they were")
+      (is (null qualified))
+      (is (equal '(("f" "2:n,y" 7)) occurrences)
+          "a cons the reader never recorded takes the caller's line")))
+  (multiple-value-bind (names qualified occurrences)
+      (loom-analyzer::collect-call-names (list (list (make-symbol "F") 1)))
+    (declare (ignore qualified))
+    (is (equal '("f") names))
+    (is (null occurrences) "with no reading there is nothing to take a line from")))
+
+(test an-empty-list-argument-is-nil
+  ;; () reads as the real NIL, where the nil written out reads as an uninterned
+  ;; symbol, so the two take different paths to the same kind.
+  (is (equal '("f" ("1:b" 1)) (shape-entry (shapes-of "(defun h () (f ()))" "h") "f"))))
+
+(test a-t-or-lambda-from-another-package-is-not-the-cl-one
+  ;; mypkg:t is somebody's variable and (mypkg:lambda ...) somebody's macro, as
+  ;; a `mypkg:let' is in COLLECT-CALL-NAMES: only the unqualified spelling, or
+  ;; one naming COMMON-LISP, gets the CL operator's kind.
+  (is (equal '("f" ("4:y,c,b,f" 1))
+             (shape-entry
+              (shapes-of "(defun h () (f mypkg:t (mypkg:lambda ()) cl:t (cl:lambda ())))" "h")
+              "f"))))
