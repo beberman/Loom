@@ -27,7 +27,10 @@ The reply, camelCase keys, one JSON object per frame:
     path, lineCount, pythonVersion
     docstring       the module docstring, or null
     imports         one entry per bound name, every scope:
-                    local, specifier, name, source, line, scope
+                    local, specifier, name, source, line, scope, and
+                    stdlib (true when the source's first dotted segment is a
+                    standard-library module) on an absolute source, only when
+                    this interpreter knows its stdlib (DES-0055 R4)
     definitions     function, method and class, in source order
     variables       a name assigned at module level; valueCall on one whose
                     value is a single call (DES-0054 D2)
@@ -47,6 +50,12 @@ import tokenize
 sys.setrecursionlimit(10000)
 
 BUILTINS = frozenset(dir(builtins))
+
+# DES-0055 R4. sys.stdlib_module_names exists from Python 3.10. Where it does not
+# exist an import carries no stdlib mark at all, so "not stdlib" is never
+# reported for a module this interpreter could not have known about.
+STDLIB = frozenset(getattr(sys, 'stdlib_module_names', ()))
+STDLIB_KNOWN = hasattr(sys, 'stdlib_module_names')
 
 FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
@@ -324,6 +333,8 @@ class Extractor:
         entry = {'local': local, 'specifier': specifier, 'name': name,
                  'source': source, 'line': node.lineno,
                  'scope': 'module' if scope.kind == 'module' else scope.kind}
+        if STDLIB_KNOWN and source and not source.startswith('.'):
+            entry['stdlib'] = source.split('.')[0] in STDLIB
         self.imports.append(entry)
         if local is not None:
             bind(scope, local, 'import', entry)

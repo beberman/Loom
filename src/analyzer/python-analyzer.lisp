@@ -322,6 +322,25 @@ depends on another file's __init__.py, and an analyzer sees one file: deriving
 :SYSTEM from it would leave every sibling stale when one is added or deleted."
   (default-system-for-path path))
 
+(defun py-import-modules (imports)
+  "One plist per distinct (source, module) over IMPORTS, every scope, absolute
+sources only: (:SOURCE s :MODULE m :STDLIB bool). `from S import a' is both S
+and S.a, because `a' may be a submodule or a name and the entry cannot tell
+which. :STDLIB is absent when the child sent no mark. A relative import is left
+out, since it is never external. PLAN-0059 FINDINGS 3, DES-0055 R4."
+  (let ((found '()))
+    (dolist (import imports (nreverse found))
+      (let ((source (jget import :source)))
+        (when (and source (plusp (length source)) (char/= #\. (char source 0)))
+          (let ((from-p (and (jget import :name) (not (equal "*" (jget import :name))))))
+            (dolist (module (if from-p
+                                (list source (format nil "~a.~a" source (jget import :name)))
+                                (list source)))
+              (pushnew (append (list :source source :module module)
+                               (when (assoc :stdlib import)
+                                 (list :stdlib (and (jget import :stdlib) t))))
+                       found :test #'equal))))))))
+
 (defun make-py-file-entity (path contents reply reason test-file-p)
   "The :FILE entity, asserted whether or not anything parsed (D7).
 
@@ -341,6 +360,7 @@ set only when nothing parsed or python3 could not run."
          (sources (remove-duplicates
                    (remove nil (mapcar (lambda (i) (jget i :source)) imports))
                    :test #'string= :from-end t))
+         (import-modules (py-import-modules imports))
          (bindings (loop for import in imports
                          ;; A star import binds no :LOCAL but is kept, with :NAME
                          ;; "*", because the walk needs to know a module may hold
@@ -364,6 +384,7 @@ set only when nothing parsed or python3 could not run."
                      (when (jget reply :docstring)
                        (list :documentation (jget reply :docstring)))
                      (when sources (list :import-sources sources))
+                     (when import-modules (list :import-modules import-modules))
                      ;; DES-0045 D7: written on the file, so a file the runner
                      ;; would run and no case was found in is a reportable
                      ;; miss rather than just a source file.
