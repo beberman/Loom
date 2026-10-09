@@ -736,3 +736,125 @@ body: |
 
   Departures from the plan, by step, with commit hashes and the measured
   figures, are recorded here as the steps land.
+
+  STEP 1, THE D13 BASELINE. 2026-10-09, Loom at 08374c6 (PLAN-0059 final) plus
+  this step's commit, which adds tools/test/index-cost.lisp and this section
+  and nothing else. The commit that holds this section is the gate's base:
+  step 6 builds its scratch worktree there.
+
+  Environment. python3 3.12.3, node v24.18.1, /usr/bin/sbcl, WSL2 with 8
+  cores and 15.8 GB, no swap in use. The resident loom-serve (pid 263230,
+  watching Loom, game-server, front-end, utils, cl-dbi, cl-mysql and
+  lfia-accounting) was running and was not stopped. It was competing for CPU:
+  `top` sampled it at 140, 220, 150, 190, 90, 200 percent of one core
+  immediately before the six front-end runs, with 6.3 GB free; load average
+  before each run was 2.2 to 2.8. The timings below carry that noise, and the
+  spread is the measure of how much. Step 6 faces the same competitor, which
+  is why it alternates base and new rather than running all of one first.
+
+  Instrument. `sbcl --script tools/test/index-cost.lisp <root> [--ballast MB]`
+  prints seconds, heap-before-bytes, heap-bytes, entities, relationships,
+  calls-edges and shape-occurrences, one per line. Heap is
+  SB-KERNEL:DYNAMIC-USAGE after two full GCs with the repository live.
+
+  Tests of the instrument.
+    - Positive control. Loom, no ballast: heap-bytes 95450896, 95455760,
+      95455760, 95450944, 95415664, 95443344 across six runs. With
+      `--ballast 100`: 200272752 and, after the restructuring below,
+      200311920. The rise is 104.8 MB and 104.9 MB against 100 MiB
+      (104.86 MB) allocated.
+    - Mutation. With the ballast allocated but not stored in *BALLAST*,
+      heap-bytes was 95472288, a rise of 0.02 MB. The control fails without
+      the retention, so the figure moves only when the heap does. Reverted.
+    - shape-line-count, the one function this tree cannot exercise because
+      nothing writes :CALL-SHAPES yet, was evaluated from the file's own text
+      on ((f (2:y,y 3 9 12) (3:y,y,y 20)) (g (1:s 4))), which holds 3 + 1 + 1
+      lines: it returned 5, and 0 for NIL. shape-occurrences reads 0 on every
+      tree below, as the plan expects before step 3. Step 3's own tests are
+      what first exercise the counting against a real property.
+
+  Measurements. Raw, in run order. heap-before-bytes is the image with the
+  systems loaded and nothing indexed.
+
+  front-end at ab34be6, six runs (the plan asks for three):
+    seconds   8.081  8.090  7.755  8.122  8.192  7.855
+    heap      170594848  170562288  170497168  170433296  170467552  170594832
+    heap-before  54919376  54918208  55544096  54919376  54924240  54966224
+    entities 11400, relationships 95972, calls-edges 54067, in every run.
+  Medians: seconds 8.0855, heap-bytes 170529728, heap-before-bytes 54921808.
+  Spread (range over median): seconds 5.40 percent (7.755 to 8.192);
+  heap-bytes 0.095 percent (161552 bytes).
+
+  The budget, in absolute terms, on these medians:
+    index time  +10 percent  =  8.894 s  (8.0855 s plus 0.809 s)
+    heap        +15 percent  =  196109187 bytes, 196.1 MB (plus 25.6 MB)
+  The index's own share of the heap is 170529728 less 54921808, 115.6 MB, so
+  the heap budget is a 22 percent growth of what the index stores.
+
+  Against the plan's thresholds. Heap spread is 0.095 percent, under the 2
+  percent line. Time spread is 5.40 percent over six runs, over the 5 percent
+  line the plan sets; the first three runs alone span 4.1 percent, runs 2 to 4
+  span 4.5 percent and runs 3 to 5 span 5.4 percent, so three runs do not
+  settle it either way. This is reported rather than resolved here. The
+  budget is +10 percent and the observed range is about half of it, so a
+  step 6 delta near the line cannot be called pass or fail from one set. Step
+  6 compares medians of six alternating runs on each side, which cancels
+  drift but not the scatter; if its time delta lands within 5 percent of the
+  +10 percent line, rerun it before choosing.
+
+  Loom (496 files), seven runs, the last three taken at this step's tree:
+    seconds   1.966  1.931  1.775  1.817  1.875  1.866  1.967
+    heap      95438080  95450896  95455760  95455760  95450944  95415664  95443344
+    entities 5447, relationships 26253, calls-edges 11620, in every run.
+  Time range 1.775 to 1.967 is 10 percent of the 1.875 median; heap range is
+  0.04 percent. Loom indexes in under two seconds, so its time figures are
+  too coarse to carry a budget and are recorded for information.
+
+  lfia-accounting at 56fc5c3, three runs:
+    seconds   4.310  4.569  4.715
+    heap      71182528  71180576  71155568
+    entities 2698, relationships 6651, calls-edges 3566, in every run.
+  Time range is 8.9 percent of the 4.569 median; heap range 0.04 percent.
+  A census (U6), not gated.
+
+  With this section written, Loom reads 5447 entities, 26254 relationships
+  (one more :MENTIONS edge, from the text above) and 11620 :CALLS edges, at
+  1.490 s and 95417680 bytes. Step 2's comparison uses the :CALLS count.
+
+  The :CALLS edge counts step 2's exit compares against: Loom 11620,
+  front-end 54067, lfia-accounting 3566.
+
+  Loom's own status at this step: 496 files, 5447 entities, 26253
+  relationships, 302 documents, 1528 tests covering 472 units, 0 violations, 8
+  unresolved document references, 7 ambiguous, 5 definer macros. The
+  call-site census prints 510 minted, 41 ambiguous, which is what PLAN-0059
+  accepted. Every "green" in this plan means those counts, and 508 in the
+  paragraph above and in VERIFICATION is the figure from before PLAN-0059.
+
+  Read-only trees. `git status --short` and `git status --short --ignored` of
+  each tree were saved before the first run and after the last, and are
+  byte-identical:
+    front-end ab34be6   5 entries, unchanged:  M .loom/frameworks.yaml,
+      M src/ui/edit/terrain/Editor/intents/layerIntents.js, and three ??
+      files (BUG-0048.yaml, DES-0022.yaml, layerIntents.stored.test.js)
+    lfia-accounting 56fc5c3   clean
+    game-server 448dc8e   clean
+  Indexing writes nothing into a tree, ignored files included.
+
+  Departures from the plan.
+    1. lfia-accounting is at 56fc5c3 and clean, not at d0cfdf0 with seven
+       uncommitted entries as BASELINE records. The other session committed.
+    2. Six front-end runs instead of three, to show the spread. The first run
+       was made with `time` around it and is the first value of every list.
+    3. A heap-before-bytes line the plan does not list. The D13 gate is on
+       heap-bytes; heap-before-bytes shows how much of it is the loaded image.
+    4. The script's command-line handling is a function, MAIN, called from the
+       last line. As a top-level LET* it minted one resolving :CALL-SITE, which
+       moved the call-site census from 510 to 511 against a ceiling of 512.
+       The census is the same 510 with MAIN. The measured functions did not
+       change between the first runs and the restructuring, and the
+       post-restructuring ballast run above is the check.
+    5. The time spread is over the plan's 5 percent line, as above.
+    6. The plan says the ballast should raise heap by "100 MB +/- 5 MB". The
+       ballast is 100 MiB, so the rise is 104.86 MB: inside the tolerance by
+       0.14 MB if MB is decimal, and exact if it is MiB.
