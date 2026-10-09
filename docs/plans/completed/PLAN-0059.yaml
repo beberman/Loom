@@ -1,6 +1,6 @@
 id: PLAN-0059
 title: DES-0055 Plan A in nine steps -- :MODULE re-keyed as a declared dependency, the manifest analyzer, extract.py's stdlib flag, the dependency-modules key, RESOLVE-DEPENDENCIES, status and describe, init's proposal, acceptance on fixtures and front-end, complete
-status: draft
+status: final
 date: 2026-10-08
 refines: [DES-0055, REQ-0078]
 affects: [entity-at-path, documentation-relative-p, parse-frameworks,
@@ -1019,3 +1019,10 @@ body: |
     The resident service also writes an event log; the cause was not
     established. loom-serve/test alone then passed 295 of 295. `check` and `sbcl --script tools/test/
     load-test.lisp loom-serve` (prints T, exit 0) are as above.
+
+  Step 9. The call-site census prints 510 sites and 41 ambiguous, not the 508
+  and 41 this plan expects. The 41 holds. The two extra sites are the
+  define-command pairs for `describe` (step 6) and `init` (step 7), which
+  fixing would mean changing source. Accepted by the user on 2026-10-09.
+  Loom's external imports are 60, not 57: step 7's tools/py/record_modules.py
+  adds 3.

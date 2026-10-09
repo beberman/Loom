@@ -1,6 +1,6 @@
 id: DES-0055
 title: Declared dependencies become :MODULE nodes joined to external imports, a call site's shape is a property of its caller with :VIA on each :CALLS edge, and REQ-0078 R4 is closed as already met
-status: draft
+status: partial
 date: 2026-10-06
 refines: [REQ-0078, REQ-0041]
 affects: [resolve-imports, resolve-calls, resolve-and-check,
@@ -660,6 +660,11 @@ body: |
   is not measured by this design. Its author may adopt the key later, and
   lfia's numbers under EXPECTED DELTAS are a census, not an acceptance.
 
+  Correction, 2026-10-09 (PLAN-0059 step 9). `node:fs` joins nothing and is
+  counted as npm stdlib, not as undeclared, which is D8's rule. A bare `fs`
+  with no declaration stays undeclared, because Loom ships no list of Node's
+  builtins.
+
   The dependency-modules: declarations are accepted on a fixture the tests
   build themselves in a scratch directory. A small Python tree:
 
@@ -765,6 +770,11 @@ body: |
     with hyphens. Neither Loom nor lfia sets it, and it would not help Loom's
     scripts, which hold no case.
 
+  - Reacting to a .loom/frameworks.yaml edit without a reindex. DES-0047
+    already accepts this cost for the file, and dependency-modules: inherits
+    it.
+  - Joining a `node:` specifier to anything. A bare `fs` stays undeclared.
+
   CONSEQUENCES
 
   Code that changes. code-ontology.lisp: :MODULE, :DEPENDS-ON, new
@@ -837,3 +847,8 @@ body: |
   hoisting. A workspace that hoists a dependency to the root while a nested
   package.json omits it is joined to the root's declaration. That is the
   declaration Node would find.
+
+  OUTSTANDING
+
+  R1 to R8 are built by PLAN-0059 (2026-10-09). R9 to R12, the call-site shapes
+  and :VIA on :CALLS, are Plan B's (PLAN-0060) and are not built.

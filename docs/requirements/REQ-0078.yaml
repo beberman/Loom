@@ -171,16 +171,21 @@ body: |
   R9 and R11. PLAN-0058 built them for ES-module JavaScript trees. What
   remains (R7 to R9 are narrowed to those two, see below):
 
-  R10            requirements.txt dependency names. Two of lfia-accounting's
-                 six requirement names differ from their module names
-                 (google-auth installs google.auth), and the mapping lives
-                 in the venv's metadata, which is not indexed. DES-0054
-                 deferred it and names a :MODULE shape as the start.
-  R1, R2         Module entities, and storing the shape of each call site
-                 (REQ-0041). DES-0053 declines both: a Python module is one
-                 file, and REQ-0041 has no design for storage.
-  R4             Python tests in files whose names contain a hyphen are not
-                 recognised, so tools/test/test-*.py yields no :test entity.
+  R2             Storing the shape of each call site (REQ-0041). DES-0055
+                 designs it as Plan B (PLAN-0060): a call site's shape is a
+                 property of its caller, with :VIA on each :CALLS edge.
+
+  Met since PLAN-0059 (DES-0055 Plan A, 2026-10-09):
+  R1             A :FILE is the module for code in the tree (U3), and a
+                 :MODULE is a declared dependency.
+  R10            requirements.txt and package.json names are recorded as
+                 :MODULEs and joined to imports. A Python import joins a
+                 dependency only through a dependency-modules: declaration in
+                 .loom/frameworks.yaml, never by spelling (U1).
+  R4             Met by DES-0053 D8 (lfia, 515 tests). tools/test/test-*.py
+                 yield no :TEST because they define no test function and no
+                 TestCase, not because of the hyphen. No test-scripts: key is
+                 added (U5).
 
   HOW TO KNOW IT IS DONE
 
