@@ -1094,8 +1094,8 @@ call site mints an entity, and that entity has to exist and carry its
 derived from those edges, so RESOLVE-TESTS has to follow RESOLVE-CALLS rather
 than merely accompany it. The full sequence is resolve-definitions,
 resolve-generated-definitions, resolve-imports, resolve-calls, resolve-tests,
-resolve-settings, resolve-entry-points, resolve-document-links,
-check-document-links, check-rules.
+resolve-settings, resolve-entry-points, resolve-dependencies,
+resolve-document-links, check-document-links, check-rules.
 
 Two of those arrows are not dependencies and the difference is worth keeping.
 RESOLVE-IMPORTS before CHECK-RULES is one: RUN-CHECK's :NO-EDGE kind takes
@@ -1186,6 +1186,15 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
                                         graph :workspace-id workspace
                                         :domains domains
                                         :entry-points (repository-entry-points repository)))
+      ;; Reads :UNRESOLVED-IMPORTS from RESOLVE-IMPORTS and
+      ;; :UNRESOLVED-IMPORTED-CALLS from RESOLVE-CALLS, so it follows both. Before
+      ;; the document links so an `affects:' naming a dependency finds the
+      ;; :MODULE, and before the rules so they see its edges (DES-0055 D8). The
+      ;; declarations are handed in as data, as the entry-points are.
+      (submit "resolve-dependencies"   (resolve-dependencies
+                                        graph :workspace-id workspace
+                                        :dependency-modules
+                                        (repository-dependency-modules repository)))
       (submit "resolve-document-links" (resolve-document-links graph :workspace-id workspace))
       ;; After RESOLVE-DOCUMENT-LINKS and before the rules, because it writes a
       ;; property that same pass's siblings read, and because a rule check is a
@@ -2100,6 +2109,10 @@ file lies under it"
 (defun import-summary (repository)
   "The import graph as six numbers: resolved, and one per cause.
 
+RESOLVED counts an :IMPORTS edge only when its target is a :FILE. RESOLVE-
+DEPENDENCIES draws :FILE-to-:MODULE edges for imports that stay :EXTERNAL, and
+counting those too would count one import twice (PLAN-0059 FINDINGS 1).
+
 Summed over the :FILE entities rather than recomputed, because RESOLVE-IMPORTS
 already wrote both halves -- the edges and the causes -- and a second
 resolution pass here could disagree with the graph a caller is about to query.
@@ -2115,7 +2128,9 @@ that vanishes when it is nought cannot be told from a count nobody computed."
                         :unrooted 0)))
     (dolist (file (entities-of-type graph :file))
       (dolist (r (relationships-from graph (id file)))
-        (when (eq :imports (rel-type r)) (incf resolved)))
+        (when (and (eq :imports (rel-type r))
+                   (eq :file (entity-type (get-entity graph (to-id r)))))
+          (incf resolved)))
       (dolist (entry (getp file :unresolved-imports))
         (incf (getf by-cause (getf entry :cause) 0))))
     (list* :resolved resolved by-cause)))

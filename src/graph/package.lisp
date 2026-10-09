@@ -51,6 +51,7 @@
    ;; cross-file resolution (SS8.3) -- reads a view, returns ops
    #:resolve-calls
    #:resolve-imports
+   #:resolve-dependencies
    #:build-module-scope
    #:resolve-python-specifier
    #:missing-imported-calls

@@ -2819,3 +2819,241 @@ resolution pass run."
       (apply-transaction g (resolve-document-links g :workspace-id "w"))
       (is (null (relationships-from g (id decision) :rel-type :decides)))
       (is (= 1 (length (getp decision :ambiguous-references)))))))
+
+;;;; ==================================================================
+;;;; RESOLVE-DEPENDENCIES (DES-0055 D4 to D8, PLAN-0059 step 5)
+;;;; ==================================================================
+;;;;
+;;;; Every fixture is hand-made entities, as the RESOLVE-IMPORTS tests above are.
+;;;; D-RESOLVE runs the passes in RESOLVE-AND-CHECK's order, because the pass
+;;;; reads :UNRESOLVED-IMPORTS from RESOLVE-IMPORTS and nothing else writes it.
+
+(defun d-module (graph manifest name ecosystem)
+  (let ((e (make-instance 'module-entity :name name :origin-file manifest
+                          :properties (properties-table
+                                       (list :qualified-name name :file manifest
+                                             :ecosystem ecosystem)))))
+    (add-entity graph e)
+    e))
+
+(defun d-file (graph path language imports &optional import-modules)
+  (let ((e (make-instance 'file-entity :name path :origin-file path
+                          :properties (properties-table
+                                       (list :path path :language language
+                                             :import-sources imports
+                                             :import-modules import-modules)))))
+    (add-entity graph e)
+    e))
+
+(defun d-py-file (graph path &rest specs)
+  "A Python :FILE importing each of SPECS, a list (source &key module stdlib)."
+  (d-file graph path :python (mapcar #'first specs)
+          (loop for (source . keys) in specs
+                collect (list* :source source
+                               :module (or (getf keys :module) source)
+                               (when (getf keys :stdlib) (list :stdlib t))))))
+
+(defun d-declaration (distribution &rest modules)
+  (list :distribution distribution
+        :key (loom-utils:distribution-name-key distribution)
+        :modules modules))
+
+(defun d-resolve (graph &rest declarations)
+  (apply-transaction graph (resolve-imports graph))
+  (apply-transaction graph (resolve-dependencies graph :workspace-id "w"
+                                                       :dependency-modules declarations)))
+
+(defun d-targets (graph file &optional (rel-type :imports))
+  "The :MODULEs FILE has a REL-TYPE edge to, as manifest:name strings, sorted."
+  (sort (loop for r in (relationships-from graph (id file) :rel-type rel-type)
+              for target = (get-entity graph (to-id r))
+              when (eq :module (entity-type target))
+                collect (format nil "~a:~a" (getp target :file) (name target)))
+        #'string<))
+
+(defun d-undeclared (file)
+  (getp file :undeclared-imports))
+
+(test an-npm-specifier-joins-by-its-package-name-scope-and-subpath-included
+  (let* ((g (make-graph))
+         (testing (d-module g "package.json" "@testing-library/react" :npm))
+         (fns (d-module g "package.json" "firebase-functions" :npm))
+         (a (d-file g "a.js" :javascript '("@testing-library/react/pure"
+                                           "firebase-functions/v2/https"
+                                           "node:fs" "fs"))))
+    (declare (ignore testing fns))
+    (d-resolve g)
+    (is (equal '("package.json:@testing-library/react" "package.json:firebase-functions")
+               (d-targets g a)))
+    (is (equal '("fs") (mapcar (lambda (e) (getf e :specifier)) (d-undeclared a)))
+        "a bare fs with no declaring manifest is undeclared, and node:fs is not
+(DES-0055 D8: a node: specifier is a builtin by its syntax)")))
+
+(test the-nearest-manifest-that-declares-a-package-governs-the-importer
+  (let* ((g (make-graph)))
+    (d-module g "package.json" "firebase-functions" :npm)
+    (d-module g "functions/package.json" "firebase-functions" :npm)
+    (let ((inner (d-file g "functions/index.js" :javascript '("firebase-functions")))
+          (outer (d-file g "src/a.js" :javascript '("firebase-functions"))))
+      (d-resolve g)
+      (is (equal '("functions/package.json:firebase-functions") (d-targets g inner)))
+      (is (equal '("package.json:firebase-functions") (d-targets g outer))))))
+
+(test a-nearer-manifest-that-does-not-declare-the-name-is-passed-over
+  (let ((g (make-graph)))
+    (d-module g "package.json" "react" :npm)
+    (d-module g "functions/package.json" "firebase-functions" :npm)
+    (let ((x (d-file g "functions/x.js" :javascript '("react"))))
+      (d-resolve g)
+      (is (equal '("package.json:react") (d-targets g x))))))
+
+(test two-pypi-manifests-in-one-directory-are-both-joined
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "pytest" :pypi)
+    (d-module g "requirements-dev.txt" "pytest" :pypi)
+    (let ((x (d-py-file g "tests/test_a.py" '("pytest"))))
+      (d-resolve g (d-declaration "pytest" "pytest"))
+      (is (equal '("requirements-dev.txt:pytest" "requirements.txt:pytest")
+                 (d-targets g x))))))
+
+(test the-longest-declared-prefix-wins-for-a-python-import
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "google-auth" :pypi)
+    (d-module g "requirements.txt" "google-cloud" :pypi)
+    (let ((x (d-py-file g "app/a.py" '("google.auth.credentials"))))
+      (d-resolve g (d-declaration "google-auth" "google.auth")
+                 (d-declaration "google-cloud" "google"))
+      (is (equal '("requirements.txt:google-auth") (d-targets g x))))))
+
+(test from-s-import-a-joins-through-the-module-s-dot-a
+  ;; `from google.cloud import secretmanager' imports google.cloud.secretmanager,
+  ;; so the entry for S.a is what reaches the declaration (D6).
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "google-cloud-secret-manager" :pypi)
+    (let ((x (d-file g "app/a.py" :python '("google.cloud")
+                     (list (list :source "google.cloud" :module "google.cloud")
+                           (list :source "google.cloud"
+                                 :module "google.cloud.secretmanager")))))
+      (d-resolve g (d-declaration "google-cloud-secret-manager"
+                                  "google.cloud.secretmanager"))
+      (is (equal '("requirements.txt:google-cloud-secret-manager") (d-targets g x))))))
+
+(test a-tie-on-the-longest-prefix-joins-nothing-and-is-recorded-ambiguous
+  (let ((g (make-graph)))
+    ;; Listed under the import's own spelling, so a join by spelling would
+    ;; draw an edge here and the tie is what stops it.
+    (d-module g "requirements.txt" "google-auth" :pypi)
+    (d-module g "requirements.txt" "other" :pypi)
+    (let ((x (d-py-file g "app/a.py" '("google.auth"))))
+      (d-resolve g (d-declaration "google-auth" "google.auth")
+                 (d-declaration "other" "google.auth"))
+      (is (null (d-targets g x)))
+      (is (equal '((:specifier "google.auth" :ambiguous t)) (d-undeclared x))))))
+
+(test a-requirement-with-no-declaration-provides-nothing-and-joins-nothing
+  ;; The no-spelling rule (U1): tzdata and requests match their import names
+  ;; exactly, and still join nothing without a declaration.
+  (let ((g (make-graph)))
+    (let ((tz (d-module g "requirements.txt" "tzdata" :pypi))
+          (req (d-module g "requirements.txt" "requests" :pypi))
+          (x (d-py-file g "app/a.py" '("tzdata") '("requests"))))
+      (d-resolve g)
+      (is (null (getp tz :provides)))
+      (is (null (getp req :provides)))
+      (is (null (d-targets g x)))
+      (is (equal '("tzdata" "requests")
+                 (mapcar (lambda (e) (getf e :specifier)) (d-undeclared x)))))))
+
+(test a-distribution-is-matched-under-pep-503-and-provides-what-it-declares
+  (let ((g (make-graph)))
+    (let ((auth (d-module g "requirements.txt" "google-auth" :pypi))
+          (react (d-module g "package.json" "react" :npm)))
+      (d-resolve g (d-declaration "Google_Auth" "google.auth" "google.oauth2"))
+      (is (equal '("google.auth" "google.oauth2") (getp auth :provides)))
+      (is (equal '("react") (getp react :provides))
+          "an npm package provides its own name"))))
+
+(test a-declared-distribution-no-manifest-lists-joins-nothing
+  ;; FINDINGS 6: lfia's google-cloud-firestore, installed by firebase-admin.
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "firebase-admin" :pypi)
+    (let ((x (d-py-file g "app/a.py" '("google.cloud.firestore"))))
+      (d-resolve g (d-declaration "firebase-admin" "firebase_admin")
+                 (d-declaration "google-cloud-firestore" "google.cloud.firestore"))
+      (is (null (d-targets g x)))
+      (is (equal '((:specifier "google.cloud.firestore"))
+                 (d-undeclared x))))))
+
+(test a-stdlib-import-is-neither-joined-nor-undeclared
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "os" :pypi)
+    (let ((x (d-py-file g "app/a.py" '("os" :stdlib t))))
+      (d-resolve g (d-declaration "os" "os"))
+      (is (null (d-targets g x)))
+      (is (null (d-undeclared x))))))
+
+(defun d-caller (graph name file calls)
+  (let ((e (make-instance 'function-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :python
+                                             :unresolved-imported-calls calls)))))
+    (add-entity graph e)
+    e))
+
+(defparameter *d-decorator-call*
+  '((:specifier "firebase_functions" :path ("https_fn" "on_request")
+     :line 3 :cause :external)))
+
+(test a-function-depends-on-the-dependency-its-external-call-names
+  (let ((g (make-graph)))
+    (let ((module (d-module g "requirements.txt" "firebase-functions" :pypi))
+          (caller (d-caller g "handler" "app/main.py" *d-decorator-call*)))
+      (d-py-file g "app/main.py")
+      (d-resolve g (d-declaration "firebase-functions" "firebase_functions"))
+      (is (equal (list (id module))
+                 (mapcar #'to-id (relationships-from g (id caller)
+                                                     :rel-type :depends-on)))))))
+
+(test a-function-without-a-declaration-depends-on-nothing
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "firebase-functions" :pypi)
+    (let ((caller (d-caller g "handler" "app/main.py" *d-decorator-call*)))
+      (d-py-file g "app/main.py")
+      (d-resolve g)
+      (is (null (relationships-from g (id caller) :rel-type :depends-on))))))
+
+(test the-dependency-pass-twice-over-an-unchanged-view-changes-nothing
+  (let ((g (make-graph)))
+    (d-module g "package.json" "react" :npm)
+    (let ((x (d-file g "a.js" :javascript '("react" "left-pad"))))
+      (d-resolve g)
+      (let ((edges (d-targets g x))
+            (undeclared (d-undeclared x))
+            (count (length (all-relationships g))))
+        (d-resolve g)
+        (is (equal edges (d-targets g x)))
+        (is (equal undeclared (d-undeclared x)))
+        (is (= count (length (all-relationships g))))))))
+
+(test an-import-edge-to-a-farther-manifest-is-swept-when-a-nearer-one-appears
+  ;; FINDINGS 2. The nearer package.json is added after the first pass. Nothing
+  ;; but the pass's own sweep removes the edge the first pass drew.
+  (let ((g (make-graph)))
+    (d-module g "package.json" "react" :npm)
+    (let ((x (d-file g "web/a.js" :javascript '("react"))))
+      (d-resolve g)
+      (is (equal '("package.json:react") (d-targets g x)))
+      (d-module g "web/package.json" "react" :npm)
+      (d-resolve g)
+      (is (equal '("web/package.json:react") (d-targets g x))))))
+
+(test a-depends-on-edge-is-swept-when-its-declaration-is-withdrawn
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "firebase-functions" :pypi)
+    (let ((caller (d-caller g "handler" "app/main.py" *d-decorator-call*)))
+      (d-py-file g "app/main.py")
+      (d-resolve g (d-declaration "firebase-functions" "firebase_functions"))
+      (is (= 1 (length (relationships-from g (id caller) :rel-type :depends-on))))
+      (d-resolve g)
+      (is (null (relationships-from g (id caller) :rel-type :depends-on))))))

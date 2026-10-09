@@ -2582,6 +2582,182 @@ repository; the pass returns operations and calls nothing that writes the graph.
       (nreverse ops))))
 
 ;;;; ==================================================================
+;;;; Declared dependencies (DES-0055 D4 to D8)
+;;;; ==================================================================
+;;;;
+;;;; A :MODULE is a dependency a manifest declares. This pass joins an external
+;;;; import to it by the ecosystem's own rule for npm and by a declaration for
+;;;; Python, and never by spelling (U1). loom-graph reads no configuration, so
+;;;; the declarations arrive as data from RESOLVE-AND-CHECK.
+
+(defun npm-package-name (specifier)
+  "The package SPECIFIER names under Node's rule: its first segment, or its first
+two when it begins with `@'. NIL for a `node:' specifier, a builtin by its syntax
+(DES-0055 D5), which RESOLVE-DEPENDENCIES counts as stdlib."
+  (unless (and (>= (length specifier) 5) (string= "node:" specifier :end2 5))
+    (let* ((slash (position #\/ specifier))
+           (second-slash (and slash (char= #\@ (char specifier 0))
+                              (position #\/ specifier :start (1+ slash)))))
+      (subseq specifier 0 (if (char= #\@ (char specifier 0)) second-slash slash)))))
+
+(defun dependency-ecosystem (language)
+  (if (eq language :python) :pypi :npm))
+
+(defun dependency-manifests (view)
+  "Ecosystem -> directory prefix -> the :MODULEs declared there."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (module (entities-of-type view :module) table)
+      (let ((file (getp module :file)))
+        (when file
+          (push module (gethash (list (getp module :ecosystem) (directory-prefix file))
+                                table)))))))
+
+(defun nearest-declaring-modules (manifests path ecosystem declares)
+  "Every :MODULE in the nearest directory above PATH, up to the root, whose
+manifests of ECOSYSTEM hold one that DECLARES accepts (D4). The first directory
+that declares the name governs; a nearer one that does not is passed over."
+  (let ((directory (directory-prefix path)))
+    (loop
+      (let ((found (remove-if-not declares (gethash (list ecosystem directory) manifests))))
+        (when found (return found))
+        (when (string= directory "") (return nil))
+        (setf directory (parent-directory-prefix directory))))))
+
+(defun dotted-prefix-length (prefix module)
+  "The length of PREFIX when it is MODULE or a dotted prefix of it, else NIL."
+  (and (>= (length module) (length prefix))
+       (string= prefix module :end2 (length prefix))
+       (or (= (length module) (length prefix))
+           (char= #\. (char module (length prefix))))
+       (length prefix)))
+
+(defun longest-prefix-declarations (declarations module)
+  "(values winner tied) for MODULE: the one declaration holding the longest dotted
+prefix of it, or T as the second value when two declarations share that length
+(DES-0055 D6)."
+  (let ((best 0) (winners '()))
+    (dolist (declaration declarations)
+      (let ((length (loop for prefix in (getf declaration :modules)
+                          for n = (dotted-prefix-length prefix module)
+                          when n maximize n)))
+        (when length
+          (cond ((> length best) (setf best length winners (list declaration)))
+                ((= length best) (push declaration winners))))))
+    (values (and winners (null (rest winners)) (first winners))
+            (and (rest winners) t))))
+
+(defun pypi-joins (manifests declarations path module)
+  "(values modules tied) for the dotted MODULE imported from PATH."
+  (multiple-value-bind (winner tied) (longest-prefix-declarations declarations module)
+    (values (and winner
+                 (nearest-declaring-modules
+                  manifests path :pypi
+                  (lambda (m) (string= (getf winner :key)
+                                       (distribution-name-key (name m))))))
+            tied)))
+
+(defun dependency-provides (module declarations)
+  "What MODULE provides: its own name for npm, its declaration's modules for PyPI."
+  (if (eq :npm (getp module :ecosystem))
+      (list (name module))
+      (let ((key (distribution-name-key (name module))))
+        (getf (find key declarations :key (lambda (d) (getf d :key)) :test #'string=)
+              :modules))))
+
+(defun file-dependency-joins (manifests declarations file)
+  "(values joined undeclared) for FILE's :EXTERNAL imports. JOINED is the :MODULEs
+to draw :IMPORTS to; UNDECLARED the (:specifier s [:ambiguous t]) plists for the
+specifiers that are neither stdlib nor joined (D8)."
+  (let* ((path (getp file :path))
+         (python-p (eq :python (getp file :language)))
+         (joined '()) (undeclared '()))
+    (dolist (miss (getp file :unresolved-imports))
+      (when (eq :external (getf miss :cause))
+        (let ((specifier (getf miss :specifier)) (modules '()) (tied nil) (stdlib nil))
+          (if python-p
+              (dolist (entry (remove-if-not (lambda (e) (string= specifier (getf e :source)))
+                                             (getp file :import-modules)))
+                (if (getf entry :stdlib)
+                    (setf stdlib t)
+                    (multiple-value-bind (found tie)
+                        (pypi-joins manifests declarations path (getf entry :module))
+                      (setf modules (append found modules) tied (or tied tie)))))
+              (let ((package (npm-package-name specifier)))
+                (if package
+                    (setf modules (nearest-declaring-modules
+                                   manifests path :npm
+                                   (lambda (m) (string= package (name m)))))
+                    (setf stdlib t))))
+          (cond (modules (dolist (m modules) (pushnew m joined)))
+                (stdlib nil)
+                (t (push (append (list :specifier specifier) (when tied (list :ambiguous t)))
+                         undeclared))))))
+    (values joined (nreverse undeclared))))
+
+(defun call-dependency-joins (manifests declarations caller)
+  "The :MODULEs CALLER's :EXTERNAL imported calls reach, by the dotted name of each."
+  (let ((found '()))
+    (dolist (miss (getp caller :unresolved-imported-calls))
+      (when (eq :external (getf miss :cause))
+        (let ((dotted (format nil "~a~{.~a~}" (getf miss :specifier) (getf miss :path))))
+          (dolist (m (pypi-joins manifests declarations (getp caller :file) dotted))
+            (pushnew m found)))))
+    found))
+
+(defun dependency-sweep (view produced workspace-id)
+  "Retract each :IMPORTS or :DEPENDS-ON edge into a :MODULE that PRODUCED, a table
+of (type from to) keys, does not hold. Nothing but this pass writes such an edge,
+so every one it finds and did not draw again is stale (FINDINGS 2). Read only to
+remove it, never to derive from it (DEC-0003)."
+  (let ((ops '()))
+    (dolist (module (entities-of-type view :module))
+      (dolist (type '(:imports :depends-on))
+        (dolist (r (relationships-to view (id module) :rel-type type))
+          (unless (gethash (relationship-natural-key r) produced)
+            (push (retract (id r) workspace-id) ops)))))
+    (nreverse ops)))
+
+(defun resolve-dependencies (view &key workspace-id dependency-modules)
+  "Operations joining external imports to the :MODULEs a manifest declares.
+DES-0055 D8. DEPENDENCY-MODULES is the repository's declarations, data from
+.loom/frameworks.yaml.
+
+Writes :IMPORTS from a module-scoped :FILE, :DEPENDS-ON from a caller whose
+:UNRESOLVED-IMPORTED-CALLS name a dependency, :PROVIDES on each :MODULE when it
+changed, and :UNDECLARED-IMPORTS on every module-scoped :FILE with imports. Reads
+:UNRESOLVED-IMPORTS, :IMPORT-MODULES and :UNRESOLVED-IMPORTED-CALLS and rewrites
+none of them. The edges are swept last: any such edge this pass did not draw again
+is retracted, so a nearer manifest or a withdrawn declaration leaves nothing behind."
+  (let ((manifests (dependency-manifests view))
+        (produced (make-hash-table :test #'equal))
+        (ops '()))
+    (flet ((draw (type from to)
+             (let ((edge (assert-edge type from to :workspace-id workspace-id)))
+               (unless (gethash (relationship-natural-key (op-rel edge)) produced)
+                 (setf (gethash (relationship-natural-key (op-rel edge)) produced) t)
+                 (push edge ops)))))
+      (dolist (module (entities-of-type view :module))
+        (let ((provides (dependency-provides module dependency-modules)))
+          (unless (equal provides (getp module :provides))
+            (push (update-properties (id module) (list :provides provides) workspace-id)
+                  ops))))
+      (dolist (file (entities-of-type view :file))
+        (when (and (getp file :path) (module-scoped-language-p (getp file :language))
+                   (getp file :import-sources))
+          (multiple-value-bind (joined undeclared)
+              (file-dependency-joins manifests dependency-modules file)
+            (dolist (module joined) (draw :imports file module))
+            (push (update-properties (id file) (list :undeclared-imports undeclared)
+                                     workspace-id)
+                  ops))))
+      (dolist (type '(:function :method :test :call-site))
+        (dolist (caller (entities-of-type view type))
+          (when (getp caller :unresolved-imported-calls)
+            (dolist (module (call-dependency-joins manifests dependency-modules caller))
+              (draw :depends-on caller module)))))
+      (append (nreverse ops) (dependency-sweep view produced workspace-id)))))
+
+;;;; ==================================================================
 ;;;; Document links (SS10.3)
 ;;;; ==================================================================
 ;;;;

@@ -2465,3 +2465,72 @@ point and who reads the secret."
           (reindex-repository repository :quiet t)
           (is (equal hand-written (js-fn-picture repository)))
           (is-true (js-fn-setting repository "P") "the param declaration matches too")))))
+
+;;; ------------------------------------------------------------------
+;;; RESOLVE-DEPENDENCIES through the pipeline (DES-0055 D8, PLAN-0059 step 5)
+;;; ------------------------------------------------------------------
+
+(defparameter *requests-declaration* "dependency-modules:
+  - distribution: requests
+    modules: [requests]
+")
+
+(defun module-import-targets (repository path)
+  "The manifest:name of each :MODULE the file at PATH has an :IMPORTS edge to."
+  (let* ((graph (repository-graph repository))
+         (file (find path (entities-of-type graph :file)
+                     :key (lambda (e) (getp e :path)) :test #'equal)))
+    (sort (loop for r in (relationships-from graph (id file) :rel-type :imports)
+                for target = (get-entity graph (to-id r))
+                when (eq :module (entity-type target))
+                  collect (format nil "~a:~a" (getp target :file) (name target)))
+          #'string<)))
+
+(test a-joined-dependency-is-not-counted-as-a-resolved-import
+  ;; FINDINGS 1. The join draws a :FILE-to-:MODULE :IMPORTS edge, and the import
+  ;; stays :EXTERNAL on the file. IMPORT-SUMMARY counted every :IMPORTS edge
+  ;; leaving a file, so one import was counted resolved and external.
+  (if (not (python-available-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-file "app/main.py" "import requests
+")
+        (reindex-repository repository :quiet t)
+        (let ((before (loom-workspace::import-summary repository)))
+          (is (= 1 (getf before :external)))
+          (write-file "requirements.txt" "requests>=2.31
+")
+          (write-file ".loom/frameworks.yaml" *requests-declaration*)
+          (reindex-repository repository :quiet t)
+          (is (equal '("requirements.txt:requests")
+                     (module-import-targets repository "app/main.py"))
+              "the fixture joins the import, so the count below is the one at risk")
+          (let ((after (loom-workspace::import-summary repository)))
+            (is (= (getf before :resolved) (getf after :resolved))
+                "resolved counts files an import reached, and a dependency is not one")
+            (is (= 1 (getf after :external))
+                "and the import is still external, counted once"))))))
+
+(test a-nearer-manifest-added-by-a-poll-leaves-the-edges-a-full-index-draws
+  ;; FINDINGS 2. The importer is not reanalyzed when app/requirements.txt
+  ;; appears, so the edge to the root's requests survives unless the pass
+  ;; retracts it. The model is AN-INCREMENTAL-UPDATE-MATCHES-A-FULL-REBUILD.
+  (if (not (python-available-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-file ".loom/frameworks.yaml" *requests-declaration*)
+        (write-file "requirements.txt" "requests>=2.31
+")
+        (write-file "app/main.py" "import requests
+")
+        (reindex-repository repository :quiet t)
+        (is (equal '("requirements.txt:requests")
+                   (module-import-targets repository "app/main.py")))
+        (write-file "app/requirements.txt" "requests>=2.0
+")
+        (poll-once repository :quiet t)
+        (let ((incremental (module-import-targets repository "app/main.py")))
+          (is (equal '("app/requirements.txt:requests") incremental)
+              "the nearer manifest governs, and the farther edge is gone")
+          (reindex-repository repository :quiet t)
+          (is (equal incremental (module-import-targets repository "app/main.py")))))))
