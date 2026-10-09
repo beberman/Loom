@@ -1,0 +1,118 @@
+id: REQ-0079
+title: Loom must be publishable as an open-source project that builds from a clean checkout, describes itself accurately, and takes fork pull requests without document-number collisions
+status: draft
+priority: p2
+date: 2026-10-08
+refines: [CON-0004]
+importance: major
+tags: [open-source, release, readme, install, documentation, pull-requests, doc-ids, utils]
+summary: |
+  The tree is MIT-licensed (LICENSE, Copyright 2026 Brian Eberman) and has an
+  origin at github.com/beberman/Loom, but it cannot be built by anyone else.
+  loom-analyzer, loom-graph, loom-docstore, loom-serve and loom-workspace each
+  list #:utils in :depends-on, and that is the standalone library at
+  ~/lisp/utils, outside this repository. 534 files are tracked and 37 of them
+  name /home/beberman, ~/github, game-server, front-end or lfia. No document
+  records a plan to publish.
+
+  This requirement lists what a first public release needs. R1 to R6 are
+  checkable against the tree. R7 and R8 are about the project after release.
+
+requirement: |
+  R1. No build or test step reads outside the repository except Quicklisp.
+      The six :depends-on entries for #:utils are removed. The functions the
+      tree imports from it -- read-file, string-lines, proper-list-p, alistp,
+      improper-list-p and plistp -- live in loom-utils or in the system whose
+      layer needs them (the layering rules decide which; CLAUDE.md's
+      loom-utils paragraph states the test). Test code that calls
+      utils:read-file is changed too. `tools/loom-test.sh` passes on a
+      machine where ~/lisp/utils does not exist, and `check` reports no new
+      violation.
+
+  R2. A clean checkout carries no author-machine facts. Each of these is
+      either removed, generalised or moved to a file git ignores:
+      absolute paths under /home/beberman, ~/github/* and ~/lisp/*
+      (tools/test/summary-band.lisp, tools/extra-repos, the tools/ scripts and
+      the comments in src/); credentials, tokens and hostnames; and anything
+      else a scan for those turns up. The scan is a script in tools/test/ so
+      it can be re-run before each release.
+
+  R3. Measurements taken on private trees are kept, and each says where it
+      came from. game-server, front-end and lfia-accounting appear in 37
+      files, mostly in docstrings and in docs/ as the evidence for a figure.
+      The README or a docs/ note names the private trees ("game-server,
+      front-end and lfia-accounting are private; figures taken on them cannot
+      be reproduced from this repository"), and a figure that cites one is
+      marked as taken there. No figure is changed or dropped to make it read
+      better. CLAUDE.md is the exception: it is read by every agent working
+      in a clone, so its references to private trees are removed or replaced
+      by Loom's own tree where an example is needed, and the shipped file
+      does not tell a reader to watch a tree they do not have.
+
+  R4. README.md reports what the system contains now, and each figure comes
+      from `status` and `structure` at the commit it is written for, with the
+      commit named. It states: the languages and formats analysed, the entity
+      and relationship types, the console commands, the REST and MCP surfaces,
+      the twelve systems and their layering, the test count, and what is known
+      not to work (CLAUDE.md's blind spots and DES-0001). A script in tools/
+      regenerates the figures so the README does not go stale; `check` flags a
+      README whose commit is behind main.
+
+  R5. INSTALL.md takes a reader with SBCL and nothing else to a working
+      `loom>` prompt and a passing suite. It names the required SBCL version,
+      the Quicklisp libraries, node for the JavaScript analyzer and python3
+      for the Python one (each with the behaviour when it is absent), how to
+      run the suite, how to install the systemd unit (tools/loom-install.sh)
+      and how to register .mcp.json with Claude Code. It was written by
+      following it on a fresh WSL Ubuntu or container, and the commands in it
+      are the ones that were run.
+
+  R6. The repository has CONTRIBUTING.md, which covers how to run `check` and
+      the suite, how to write a document in docs/ (pointing to CON-0004), the
+      commit-message rules in CLAUDE.md, and the pull-request flow in R7. It
+      also has a code of conduct and a statement on third-party licences:
+      every Quicklisp dependency's licence is listed, and DES-0033's note that
+      one library declares "Probably LLGPL" is resolved before release.
+      Whether to accept outside contributions at all is DEC-level and is
+      recorded as a decision, not assumed.
+
+  R7. A pull request from a fork can be merged without renumbering by hand.
+      tools/next-doc-id.sh allocates highest+1 from the local tree, so two
+      forks branched from one main commit both create REQ-0079, and so does
+      the maintainer. A collision shows as an add/add conflict on one path,
+      or as two files of different names claiming one `id:`, which CON-0004
+      records as having cost a document its place in the index. Required:
+      (a) a CI check on every pull request that fails on a duplicate id
+      between the branch and its merge base's target, and on a reference to
+      an id the branch did not create that no longer resolves; (b) a
+      documented way for a contributor to get a non-colliding id, which may
+      be a reserved range per fork, a contributor prefix, or renumbering by
+      the maintainer at merge; (c) if renumbering is chosen, a command that
+      renames the file, rewrites `id:`, `refines:`, `affects:` and prose
+      references inside the branch's own documents, and moves nothing else.
+      The choice among (b)'s three is a design decision (DES), and the
+      requirement is met by whichever is chosen if (a) and (c) hold.
+
+  R8. The same checks run for the maintainer's own branches, since the
+      "branch per document" practice produces the same collision locally.
+
+decided: |
+  The full git history is published (2026-10-08). Commit messages are
+  evidence no index holds (REQ-0058), so they stay, and they may name the
+  private trees. Because the history is public, R2 applies to every commit
+  and not only to the tip: R2's scan also covers history, and a credential
+  found in any past commit is rotated, since removing it from the tip does
+  not remove it from a clone.
+
+open-questions: |
+  Whether the history scan should rewrite history if it finds a path or
+  hostname that is not a credential. The default is to leave it, since
+  rewriting changes every commit hash that REQ and PLAN documents may cite.
+
+acceptance: |
+  A fresh clone in a container with SBCL, node, python3 and Quicklisp builds,
+  passes tools/loom-test.sh, reports `check` clean, and indexes itself. The R2
+  scan returns nothing for the tip and finds no credential in history. INSTALL.md was followed verbatim to get there. Two
+  branches created from one commit, each adding a requirement with the next
+  free id, fail the R7(a) check on the second merge and pass after the R7(c)
+  path.
