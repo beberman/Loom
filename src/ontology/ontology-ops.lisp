@@ -108,10 +108,12 @@ ORIGIN-FILE defaults to FROM's, which is right for a structural edge: the
 file that says A calls B is the file A is written in, and that is the file
 whose reanalysis should retract the claim.
 
-PROPERTIES is a plist stored with PROPERTIES-TABLE, which is how a :CALLS edge
-carries :VIA (PLAN-0060 step 2). NIL gives the empty table every edge had
-before this keyword. An existing edge absorbs these properties by replacing its
-own, so a caller asserting an edge a second time must pass the whole plist."
+PROPERTIES is a plist, which is how a :CALLS edge carries :VIA (PLAN-0060 step
+2). The edge holds the plist itself and builds its table when PROPERTIES is
+first called on it, so the plist must not be modified afterwards. NIL gives the
+empty table every edge had before this keyword. An existing edge absorbs these
+properties by replacing its own, so a caller asserting an edge a second time
+must pass the whole plist."
   (assert-relationship
    (make-instance 'relationship
                   :rel-type rel-type
@@ -119,7 +121,7 @@ own, so a caller asserting an edge a second time must pass the whole plist."
                   :origin-file (or origin-file (origin-file from))
                   :source source :confidence confidence
                   :derived-from derived-from
-                  :properties (properties-table properties))
+                  :property-plist properties)
    workspace-id))
 
 (defun retract-file (path &optional workspace-id)
@@ -146,15 +148,22 @@ The Graph Manager needs this when an assert upserts onto an entity carrying a
 different id from the one the edge named. A copy rather than a mutation
 because FROM-ID and TO-ID are readers -- an edge that has been applied does
 not move -- and the copy deliberately does not carry R's id: an edge's id is
-derived from its endpoints, so moving an endpoint moves the id with it."
-  (make-instance 'relationship
-                 :rel-type (rel-type r)
-                 :from-id from-id :to-id to-id
-                 :properties (properties r)
-                 :origin-file (origin-file r)
-                 :source (source r) :confidence (confidence r)
-                 :derived-from (derived-from r)
-                 :stale-p (stale-p r)))
+derived from its endpoints, so moving an endpoint moves the id with it.
+
+The properties are carried as R holds them, a table or a plist, because calling
+PROPERTIES would build the table on every edge an id remap touches. On
+front-end that was all 95972 of them (PLAN-0060 step 2 follow-up). R is an op's
+edge and is not read again once the copy replaces it."
+  (apply #'make-instance 'relationship
+         :rel-type (rel-type r)
+         :from-id from-id :to-id to-id
+         :origin-file (origin-file r)
+         :source (source r) :confidence (confidence r)
+         :derived-from (derived-from r)
+         :stale-p (stale-p r)
+         (if (slot-boundp r 'properties)
+             (list :properties (slot-value r 'properties))
+             (list :property-plist (slot-value r 'property-plist)))))
 
 ;;;; ==================================================================
 ;;;; Printing -- ops show up in transaction errors and the op log

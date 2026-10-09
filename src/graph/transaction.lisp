@@ -238,8 +238,7 @@ undeclared property all still reject their transaction."
          (from      (tx-resolve tx (from-id r)))
          (to        (tx-resolve tx (to-id r)))
          (from-type (tx-entity-type tx from))
-         (to-type   (tx-entity-type tx to))
-         (federated (federated-relationship-p r)))
+         (to-type   (tx-entity-type tx to)))
     (mapcar
      ;; Every problem carries the rel-type and both endpoint types before it
      ;; is marked droppable. VALIDATE-RELATIONSHIP-ENDPOINTS returns prose, and
@@ -252,7 +251,9 @@ undeclared property all still reject their transaction."
      (append
       (unless from-type
         (list (list :end :from :problem (format nil "unknown FROM entity ~s" from))))
-      (unless (or to-type federated)
+      ;; Asked only when the TO end is unknown, so an edge whose table nothing
+      ;; else reads does not have one built (PLAN-0060 step 2 follow-up).
+      (unless (or to-type (federated-relationship-p r))
         (list (list :end :to :problem (format nil "unknown TO entity ~s" to))))
       ;; Endpoint types are still checked whenever both are here. A federated
       ;; edge whose target happens to be local is not special and is validated

@@ -905,3 +905,109 @@ body: |
   the heap budget and leaves 8.2 MB (4.8 percent) for :CALL-SHAPES in steps 3
   to 5. Index time shows no rise beyond the run-to-run scatter. Step 6 compares
   against the 4398538 base, so :VIA's cost counts against the gate there.
+
+  STEP 2 FOLLOW-UP, THE HEAP COST OF :VIA. 2026-10-09, Loom at a4f4afa plus this
+  commit.
+
+  Where the 322 bytes went. Measured in SBCL 2.2.9 on 20000 retained objects: an
+  empty EQUAL hash table is 160 bytes and one with a single entry is 484, and
+  :SIZE 1 changes neither, so the first entry allocates 324 bytes of storage
+  that the minimum table size fixes. On front-end's 54067 :CALLS edges the :VIA
+  lists hold 55493 conses (888 KB), and 54109 of the 55493 key strings are EQ to
+  a string already in the caller's :CALL-NAMES; the other 1384 are import keys,
+  about 66 KB. So the table storage is 16.4 MB of the 17.4 MB and the lists and
+  strings under 1 MB. Interning the lists (3320 distinct) or the strings could
+  save at most 0.7 MB, 0.4 percent of the baseline, and was not done. A property
+  table shared between edges was rejected: ABSORB-PROPERTIES calls CLRHASH on
+  its target, so a shared table is corrupted by the first re-assert.
+
+  The change. A relationship's PROPERTIES slot is unbound until something reads
+  it, and ASSERT-EDGE stores the plist in a new PROPERTY-PLIST slot. The first
+  read reaches a SLOT-UNBOUND method (root-ontology.lisp) that builds the table
+  under *FRESH-ID-LOCK*, stores it and clears the plist. A relationship given a
+  :PROPERTIES table keeps it as before. The method is on SLOT-UNBOUND and the
+  slot keeps its reader, because a method on PROPERTIES gave it a :METHOD
+  entity and moved two calls from "one interface" to "dispatched across
+  methods" in the call-site census. A lock of its own was a DEFVAR whose
+  initform called MAKE-LOCK, which moved the census from 510 to 511; the first
+  design had both defects and this one has neither.
+
+  Making the plist stay unbound took three more edits, found by counting bound
+  tables after indexing. ADD-RELATIONSHIP and PLAN-OP asked every edge whether it
+  was federated, which reads the table. They now ask only when the TO end is
+  missing. REBIND-RELATIONSHIP copied through PROPERTIES; on front-end an id
+  remap touches all 95972 edges. It now carries the slot as it finds it. With the
+  slot alone the heap did not move (187.86 MB over six runs); after the three
+  edits no relationship holds a table on Loom or front-end after indexing, and
+  an edge becomes a table only when something reads it (ABSORB on a re-assert,
+  `describe`). FEDERATED-EDGE-P and FEDERATED-RELATIONSHIPS read :FEDERATED
+  only on :SERVES edges and on one entity's edges, so no pass reads them all.
+
+  Files outside step 2's list: src/ontology/root-ontology.lisp (the slot, the
+  SLOT-UNBOUND method, *FRESH-ID-LOCK*'s docstring), src/graph/graph-manager.lisp
+  (ADD-RELATIONSHIP), src/graph/transaction.lisp (PLAN-OP). No step 2 test was
+  edited. ASSERT-EDGE's description "stored with PROPERTIES-TABLE" in step 2
+  above is now "held as a plist until read".
+
+  Tests, each seen failing for the reason it states. In root-ontology.lisp: an
+  edge given a plist, and an edge given none, hold no table until read (both failed
+  before the slot change); a table is one object and keeps a write; an edge
+  given a table keeps it; eight threads reading 30 fresh edges get one table per
+  edge; REBIND-RELATIONSHIP builds no table. In graph/test/transaction.lisp:
+  storing an edge builds no table (failed before the ADD-RELATIONSHIP and
+  PLAN-OP edits); a federated edge to an absent entity still lands through the
+  transaction and through ADD-RELATIONSHIP; an unfederated one is still refused.
+  Mutations, one at a time, source copied aside and restored with a touch (ASDF
+  compares source and fasl times in whole seconds, and a restore inside the
+  second of the mutated compile ran a stale fasl once before the touch was added):
+    no lock               7 failures, all the thread test
+    table not stored      11, the thread test, the one-object test and both
+                          no-table-until-read tests
+    ASSERT-EDGE builds    3, both no-table-until-read tests and the rebind test
+    REBIND reads PROPERTIES   1, the rebind test
+    federated check removed from ADD-RELATIONSHIP, then from PLAN-OP
+                          1 each, the federated-lands test
+    federated check first again in ADD-RELATIONSHIP, then in PLAN-OP
+                          1 each, the storing-builds-no-table test
+
+  Heap on front-end at ab34be6, index-cost, six runs back to back, alternating
+  a4f4afa (before) and this tree (after), the resident service running:
+    heap-bytes before  187793008 187876624 187892512 187896352 187833840 187732896
+               after   159381344 159373872 159315104 159399168 159351472 159441104
+    seconds    before  10.387 12.200 12.108 10.017 10.285 10.458
+               after   10.312 12.095 11.287  9.777 10.261 10.248
+    medians    before 187855232, after 159377608; step 1 baseline 170529728
+    calls-edges 54067 in every run.
+  Against the baseline, :VIA as step 2 left it is +17325504 bytes, +10.16
+  percent. The tree now is 11152120 bytes under the baseline, -6.54 percent.
+  Index time: medians 10.37 s before and 10.28 s after, inside the scatter.
+
+  What :VIA costs now, measured. With ASSERT-EDGE ignoring its :PROPERTIES and
+  the rest of this change in place, three runs gave heap-bytes 156749312,
+  156688400, 156786720 (median 156749312). :VIA is 159377608 less that,
+  2628296 bytes, 1.54 percent of the baseline, 48.6 bytes an edge: the plist
+  and the key list. It was 10.16 percent.
+  The remaining 13.8 MB below the baseline is not :VIA's. It is the 160-byte
+  empty table every other relationship used to hold, less 16 bytes for the new
+  slot, over 95972 relationships. D13's heap limit is 196109187 bytes, so the
+  room left under it is 36731579 bytes, 21.5 percent of the baseline, against
+  8.2 MB before. Whether step 6 may count a saving that is not :VIA's toward the
+  gate is the user's call: step 6 compares against the 4398538 base, so it
+  will see all of it.
+
+  Nothing moved. index-dump from 4398538's code and from this code over the same
+  trees: Loom R 26485 and 26485, E 5477 and 5477, S 44 and 44, :CALLS 11763 and
+  11763. front-end R 95972 and 95972, E 11400 and 11400, S 44 and 44, :CALLS
+  54067 and 54067. Every differing line is a :CALLS R line, 11763 on Loom and
+  54067 on front-end, each gaining :VIA, and with :VIA removed the new lines
+  equal the base's; no E or S line differs. Census 510 minted and 41 ambiguous.
+  tools/loom-test.sh 12 of 12 under /usr/bin/sbcl; `check` 0 violations, 8
+  unresolved, 7 ambiguous, 5 definer macros; load-test loom-serve prints T.
+  Serve, rest and mcp passed first time; the resident service caused no
+  interference.
+
+  Read-only trees. front-end ab34be6 `git status --short` identical before and
+  after (the same five entries as step 1). game-server 448dc8e clean before and
+  after. lfia-accounting was not indexed by anything here; its status changed
+  between the two readings (14 entries to 4, HEAD now f961ba8) because another
+  session is working in it.
