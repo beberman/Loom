@@ -1222,6 +1222,13 @@ no configuration."
   "The setting-declarations this repository declared, or NIL. DES-0054 D3."
   (getf (repository-frameworks repository) :setting-declarations))
 
+(defun repository-dependency-modules (repository)
+  "The dependency-modules this repository declared, or NIL. DES-0055 D6.
+
+Beside REPOSITORY-ENTRY-POINTS and for its reason: read from this repository's
+own frameworks plist, so one watched tree's map cannot join another's imports."
+  (getf (repository-frameworks repository) :dependency-modules))
+
 (defun repository-registry (repository)
   "The generator registry this repository's resolution passes should use.
 

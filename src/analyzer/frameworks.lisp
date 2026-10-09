@@ -293,6 +293,44 @@ consumer, so the passes need not check."
                                   collect (format nil "~a is declared by ~{~a~^ and ~}; neither applies it"
                                                   callee (reverse (gethash callee where))))))))))))
 
+(defparameter *dependency-module-required* '(:distribution :modules)
+  "The fields a dependency-modules: entry cannot declare without (DES-0055 D6).")
+
+(defun parse-dependency-module (table)
+  "One dependency-modules: entry as (:DISTRIBUTION name :KEY normalised :MODULES
+(m ...)). The caller has checked *DEPENDENCY-MODULE-REQUIRED*.
+
+KEY is DISTRIBUTION-NAME-KEY of the name, kept beside it so the join in
+loom-graph compares keys and the report here can still print what was written."
+  (let ((name (as-string (yaml-value table :distribution))))
+    (list :distribution name
+          :key (distribution-name-key name)
+          :modules (as-list-of-strings (yaml-value table :modules)))))
+
+(defun parse-dependency-modules (parsed)
+  "PARSED's dependency-modules as (values ENTRIES PROBLEMS).
+
+Two entries whose names share a key are both removed and one problem names both
+indexes: picking one would be a guess between two declarations (CON-0001), the
+rule PARSE-CALLEE-DECLARATIONS applies to a callee declared twice."
+  (multiple-value-bind (entries problems)
+      (read-callee-entries :|dependency-modules| parsed *dependency-module-required*
+                           #'parse-dependency-module)
+    (let ((where (make-hash-table :test #'equal)))
+      (loop for (index . entry) in entries
+            do (push index (gethash (getf entry :key) where)))
+      (let ((twice (sort (loop for key being the hash-keys of where
+                                 using (hash-value indexes)
+                               when (rest indexes) collect (reverse indexes))
+                         #'< :key #'first)))
+        (values (remove-if (lambda (pair)
+                             (rest (gethash (getf (cdr pair) :key) where)))
+                           entries)
+                (append problems
+                        (loop for indexes in twice
+                              collect (format nil "~{dependency-modules[~d]~^ and ~} name one distribution; neither applies it"
+                                              indexes))))))))
+
 (defun parse-frameworks (contents)
   "A .loom/frameworks.yaml as (:definer-macros ... :route-callers ...).
 
@@ -310,32 +348,37 @@ out which half."
     (when (hash-table-p parsed)
       (multiple-value-bind (entry-points setting-declarations declaration-problems)
           (parse-callee-declarations parsed)
-        (list :definer-macros
-              (remove nil (mapcar #'parse-definer-macro
-                                  (as-sequence (yaml-value parsed :|definer-macros|))))
-              :route-callers
-              (remove nil (mapcar #'parse-route-caller
-                                  (as-sequence (yaml-value parsed :|route-callers|))))
-              ;; Path prefixes whose documents describe a state the tree has left
-              ;; behind. DES-0025 D6a.
-              :archived-paths
-              (mapcar #'string-downcase
-                      (as-list-of-strings (yaml-value parsed :|archived-paths|)))
-              ;; DES-0047. The fourth key, built the way :ROUTE-CALLERS is.
-              :domains
-              (remove nil (mapcar #'parse-domain
-                                  (as-sequence (yaml-value parsed :|domains|))))
-              ;; DES-0052. The fifth, and the only one this system does not read
-              ;; itself: a block handed through to a document store's
-              ;; constructor, which is the one thing that knows what its keys
-              ;; mean. Parsed into a plist and not interpreted.
-              :document-store
-              (parse-declaration-block (yaml-value parsed :|document-store|))
-              ;; DES-0054 D3. The sixth and seventh, and the problems found
-              ;; reading them: an entry left out is only visible through them.
-              :entry-points entry-points
-              :setting-declarations setting-declarations
-              :declaration-problems declaration-problems)))))
+        (multiple-value-bind (dependency-modules dependency-problems)
+            (parse-dependency-modules parsed)
+          (list :definer-macros
+                (remove nil (mapcar #'parse-definer-macro
+                                    (as-sequence (yaml-value parsed :|definer-macros|))))
+                :route-callers
+                (remove nil (mapcar #'parse-route-caller
+                                    (as-sequence (yaml-value parsed :|route-callers|))))
+                ;; Path prefixes whose documents describe a state the tree has left
+                ;; behind. DES-0025 D6a.
+                :archived-paths
+                (mapcar #'string-downcase
+                        (as-list-of-strings (yaml-value parsed :|archived-paths|)))
+                ;; DES-0047. The fourth key, built the way :ROUTE-CALLERS is.
+                :domains
+                (remove nil (mapcar #'parse-domain
+                                    (as-sequence (yaml-value parsed :|domains|))))
+                ;; DES-0052. The fifth, and the only one this system does not read
+                ;; itself: a block handed through to a document store's
+                ;; constructor, which is the one thing that knows what its keys
+                ;; mean. Parsed into a plist and not interpreted.
+                :document-store
+                (parse-declaration-block (yaml-value parsed :|document-store|))
+                ;; DES-0054 D3. The sixth and seventh, and the problems found
+                ;; reading them: an entry left out is only visible through them.
+                :entry-points entry-points
+                :setting-declarations setting-declarations
+                :declaration-problems (append declaration-problems dependency-problems)
+                ;; DES-0055 D6. The eighth: which import names a distribution
+                ;; provides is declared, never inferred.
+                :dependency-modules (mapcar #'cdr dependency-modules)))))))
 
 (defun domain-table (domains)
   "DOMAINS as a keyword-to-plist table, with :DEFAULT always present.
@@ -650,7 +693,8 @@ nothing about that looks like an error. `status' reports these."
               ;; file useless would be a false report about a file doing its job.
               ((notany (lambda (key) (getf frameworks key))
                        '(:definer-macros :route-callers :archived-paths :domains
-                         :document-store :entry-points :setting-declarations))
+                         :document-store :entry-points :setting-declarations
+                         :dependency-modules))
                (cons (format nil "~a declares nothing usable: a definer-macros entry needs both macro: and defines:"
                              *frameworks-file*)
                      (getf frameworks :declaration-problems)))
