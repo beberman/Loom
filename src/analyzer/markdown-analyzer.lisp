@@ -419,8 +419,15 @@ two exclusions.
 A CHANGELOG.md is claimed now where it once was not, and that is the intended
 consequence rather than an accepted cost: what it is worth is measured by how
 much of its vocabulary resolves, and a changelog resolves badly and ranks last.
-Judging it by its directory was the thing REQ-0028 removed."
-  (and (call-next-method) (documentation-relative-p path)))
+Judging it by its directory was the thing REQ-0028 removed.
+
+Declines REQUIREMENTS-FILE-P. Every .txt is prose to this analyzer, and
+FIND-ANALYZER returns the most recently registered claimant, so a requirements
+file would go to whichever loaded last. The manifest analyzer reads it for its
+dependencies (DES-0055 D3), and the exclusion is stated here so load order does
+not decide it."
+  (and (call-next-method) (documentation-relative-p path)
+       (not (requirements-file-p path))))
 
 (defun plain-text-p (path)
   "True when PATH is prose with no markup to mark a name with."

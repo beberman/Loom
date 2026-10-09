@@ -184,6 +184,16 @@ is recompiled and its registration form runs again."
         (cons analyzer (remove (class-of analyzer) *analyzers* :key #'class-of)))
   analyzer)
 
+(defun requirements-file-p (path)
+  "True when PATH names a pip requirements file: a name beginning \"requirements\"
+with type txt, so requirements.txt, requirements-dev.txt and requirements_test.txt.
+Compared case-sensitively, as pip's own convention is written. DES-0055 D3."
+  (let ((name (pathname-name (pathname path))))
+    (and (stringp name)
+         (equal "txt" (pathname-type (pathname path)))
+         (>= (length name) 12)
+         (string= "requirements" name :end2 12))))
+
 (defun find-analyzer (path)
   "The registered analyzer claiming PATH, or NIL when no language handles it."
   (find-if (lambda (a) (analyzer-handles-p a path)) *analyzers*))

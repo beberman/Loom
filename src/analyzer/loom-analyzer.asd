@@ -77,6 +77,9 @@
    ;; After frameworks, whose PARSE-JSON-TEXT it reads through, and after
    ;; js-analyzer, whose VENDORED-PATH-P it asks (DES-0054 D4).
    (:file "firebase-analyzer")
+   ;; After firebase-analyzer, whose shape it follows, and after python-analyzer
+   ;; and js-analyzer, whose exclusion predicates it asks (DES-0055 D3).
+   (:file "manifest-analyzer")
    )
   :in-order-to ((test-op (test-op :loom-analyzer/test)))
   )
@@ -108,6 +111,7 @@
    (:file "markdown-analyzer")
    (:file "frameworks")
    (:file "firebase-analyzer")
+   (:file "manifest-analyzer")
    )
   :perform (test-op (op c)
                     (unless (symbol-call :loom-analyzer-test :test-runner)
