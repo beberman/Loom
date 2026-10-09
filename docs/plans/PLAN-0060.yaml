@@ -858,3 +858,50 @@ body: |
     6. The plan says the ballast should raise heap by "100 MB +/- 5 MB". The
        ballast is 100 MiB, so the rise is 104.86 MB: inside the tolerance by
        0.14 MB if MB is decimal, and exact if it is MiB.
+
+  STEP 2, :VIA ON EVERY :CALLS EDGE. 2026-10-09, Loom at 4398538 plus this
+  step's commit.
+
+  Changed, as the plan lists: ASSERT-EDGE takes :PROPERTIES; :CALLS' documentation
+  names :VIA; the Lisp analyzer's local edges carry (:via (callee-name));
+  RESOLVE-CALLS emits one op per edge with the union of its keys (NOTE-CALL-KEY,
+  CALL-EDGE-OP, IMPORTED-CALL-KEY); ENRICHED-EDGE copies the existing edge's
+  :VIA. ABSORB-RELATIONSHIP, ABSORB-PROPERTIES, RELATIONSHIP-NATURAL-KEY and
+  every .asd are untouched.
+
+  The count did not move. tools/test/index-dump.lisp was run twice over each
+  tree, once from a scratch worktree of 4398538 and once from this tree's code,
+  both reading the same files:
+    Loom       R lines 26410 and 26410, E lines 5466 and 5466, :CALLS lines
+               11724 and 11724.
+    front-end  R lines 95972 and 95972, E lines 11400 and 11400, :CALLS lines
+               54067 and 54067.
+  On both trees the only lines that differ are :CALLS R lines. Every one gains
+  :VIA (11724 of 11724 on Loom, 54067 of 54067 on front-end), and with :VIA cut
+  off the new lines equal the base's, so @source, @confidence and @derived-from
+  are unchanged on every edge. The S lines are equal. Edges listing two or more
+  keys: 3 on Loom, 1363 on front-end. Loom reads 11724 here and 11620 in step 1
+  because this step's 19 new definitions, 14 of them tests, add 104 :CALLS
+  edges; base code over the 4398538 tree itself gives 11620.
+  The call-site census prints 510 minted and 41 ambiguous, as before.
+
+  Departure. The plan says the local-calls list becomes (caller callee . keys)
+  so a callee reached under two keys yields one op. LOCAL-FUNCTIONS maps one
+  name to one entity and callee names are deduplicated before the loop, so a
+  local callee has exactly one key. The list is (caller callee key) and the
+  Lisp analyzer unions nothing. RESOLVE-CALLS does, where several names can
+  reach one callee.
+
+  D13, :VIA's share. index-cost on front-end, three runs of the 4398538 code
+  and three of this step's, alternated:
+    heap-bytes  base 170521840  170458592  170517904   median 170517904
+                new  187916208  187852576  187909392   median 187909392
+    seconds     base 10.057  10.500  9.644   median 10.057
+                new  10.404   9.532  9.462   median  9.532
+    calls-edges 54067 in every run.
+  The heap grows 17391488 bytes, 10.2 percent, which is 322 bytes on each of
+  54067 edges: an edge's empty property table now holds an entry. D13 allows
+  +15 percent, 25.6 MB over step 1's median, so :VIA alone takes 68 percent of
+  the heap budget and leaves 8.2 MB (4.8 percent) for :CALL-SHAPES in steps 3
+  to 5. Index time shows no rise beyond the run-to-run scatter. Step 6 compares
+  against the 4398538 base, so :VIA's cost counts against the gate there.

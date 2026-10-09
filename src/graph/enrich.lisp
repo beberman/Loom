@@ -235,12 +235,12 @@ the slot says who asserted last, the property says who has ever agreed."
     (sort (copy-list union) #'<
           :key (lambda (s) (or (position s *source-order*) (length *source-order*))))))
 
-(defun enriched-edge (from to sources &key workspace-id)
+(defun enriched-edge (from to sources &key workspace-id via)
   "A :CALLS edge the image reported, as an operation.
 
-ASSERT-EDGE would be the obvious constructor and cannot be used: it takes no
-properties, and :SOURCES is a property (DES-0011 R6). Widening a constructor
-every analyzer calls, for one caller's benefit, would be the larger change.
+ASSERT-EDGE was not usable when this was written: it took no properties, and
+:SOURCES is a property (DES-0011 R6). It takes :PROPERTIES since PLAN-0060 step
+2; this still builds the relationship itself, as it always has.
 
 ORIGIN-FILE is (ORIGIN-FILE FROM), computed identically to ASSERT-EDGE and
 deliberately not taken from the child's :CALLER-FILE string. An absorb
@@ -248,7 +248,13 @@ overwrites ORIGIN-FILE without touching the origin index -- INDEX-ORIGIN is
 called from ADD-ENTITY and ADD-RELATIONSHIP and nowhere else -- so a confirmed
 edge given a different origin file would say one thing while the index
 RETRACT-FILE consults said another, and the edge would stop ageing out when its
-caller was edited. Equal by construction is the only cheap defence."
+caller was edited. Equal by construction is the only cheap defence.
+
+VIA is the existing edge's :VIA, or NIL. The op is absorbed onto that edge, and
+ABSORB-PROPERTIES clears the table before it copies, so an op carrying only
+:SOURCES would erase the call keys RESOLVE-CALLS wrote on it (PLAN-0060
+FINDINGS 1b). NIL writes no :VIA, which is right for an edge only the image saw:
+no call form produced it."
   (assert-relationship
    (make-instance 'relationship
                   :rel-type :calls
@@ -257,7 +263,9 @@ caller was edited. Equal by construction is the only cheap defence."
                   :source :introspected
                   :confidence 1.0
                   :derived-from (list (id to))
-                  :properties (properties-table (list :sources sources)))
+                  :properties (properties-table
+                               (list* :sources sources
+                                      (and via (list :via via)))))
    workspace-id))
 
 (defun implemented-interface-p (graph entity)
@@ -376,6 +384,7 @@ refusals are counted (REQ-0018 R4)."
                               graph (list :calls (id from) (id to)))))
                (tally (if existing :edges-confirmed :edges-added))
                (push (enriched-edge from to (union-sources existing)
-                                    :workspace-id workspace-id)
+                                    :workspace-id workspace-id
+                                    :via (and existing (getp existing :via)))
                      edges)))))))
     (values (append (nreverse asserts) (nreverse edges)) report)))

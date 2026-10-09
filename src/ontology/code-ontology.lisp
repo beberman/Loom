@@ -1820,7 +1820,14 @@ than two. Interposing the node between an existing caller and its callee was
 considered and rejected: every path would have grown a hop, so every depth
 `impact' reports would have changed. A name resolving to exactly one callee
 from a :FUNCTION, :METHOD or :TEST still produces the edge it produces today
-and mints nothing.")
+and mints nothing.
+
+:VIA is the list of call keys that produced the edge (DES-0055 D11): a name in
+the caller's :CALL-NAMES, a local callee's name, or for a Python import-bound
+call the specifier and path joined with dots. Two keys reaching one callee are
+one edge listing both. Every writer of a :CALLS edge writes it, and it is
+derived with the edge, so a pass that re-asserts the edge writes it again. An
+edge only the image reported (`enrich') has no key and no :VIA.")
 
 (defrelationship :reads
   :from (:function :method :test :variable :file) :to (:setting)

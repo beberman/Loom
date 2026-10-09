@@ -3068,3 +3068,139 @@ resolution pass run."
       (is (= 1 (length (relationships-from g (id caller) :rel-type :depends-on))))
       (d-resolve g)
       (is (null (relationships-from g (id caller) :rel-type :depends-on))))))
+
+;;; ------------------------------------------------------------------
+;;; :VIA on every :CALLS edge (PLAN-0060 step 2, DES-0055 D11)
+;;; ------------------------------------------------------------------
+;;;
+;;; :VIA lists the call keys that produced an edge. ABSORB-PROPERTIES clears an
+;;; edge's table before it copies, so two ops for one edge leave the later op's
+;;; :VIA. These tests are about the keys RESOLVE-CALLS emits and the number of
+;;; edges, which merging the ops must not move.
+
+(defun calls-ops (ops)
+  "The :CALLS relationship operations among OPS."
+  (remove-if-not (lambda (op)
+                   (and (typep op 'loom-ontology:assert-relationship-op)
+                        (eq :calls (rel-type (loom-ontology:op-rel op)))))
+                 ops))
+
+(defun via-of (graph from to)
+  (getp (find-relationship-by-key graph (list :calls (id from) (id to))) :via))
+
+(test two-call-keys-reaching-one-callee-are-one-edge-carrying-both
+  ;; `Widget.render' names the class, and `w.render' names only the property,
+  ;; which fans out over every method called render. Both reach the one method.
+  ;; Two ops would let the second absorb leave :VIA ("w.render").
+  (let* ((g (make-graph))
+         (caller (r-js-function g "draw" "ui/Home.jsx"
+                                :unresolved '("Widget.render" "w.render")))
+         (callee (r-js-method g "Widget.render" "ui/Widget.js")))
+    (r-js-file g "ui/Home.jsx" :imports '("./Widget"))
+    (r-js-file g "ui/Widget.js")
+    (let ((ops (resolve-calls g)))
+      (is (= 1 (length (calls-ops ops)))
+          "one op for the one edge; the edge count is what must not move")
+      (apply-transaction g ops))
+    (is (equal (list (id callee)) (called-ids g caller)))
+    (is (equal '("Widget.render" "w.render") (via-of g caller callee))
+        "both keys, in the order the caller recorded them")))
+
+(test a-single-name-edge-names-its-one-key
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("callee")))
+         (callee (r-function g "callee" "b.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (is (equal '("callee") (via-of g caller callee)))))
+
+(test a-fan-out-edge-names-the-name-its-site-stands-for
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("run")))
+         (one (r-function g "run" "b.lisp"))
+         (two (r-function g "run" "c.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (let ((site (first (entities-of-type g :call-site))))
+      (is (not (null site)) "control: the name was ambiguous")
+      (is (= 2 (length (relationships-from g (id site) :rel-type :calls))))
+      (is (equal '("run") (via-of g site one)))
+      (is (equal '("run") (via-of g site two))))
+    (is (null (called-ids g caller)) "and the caller still has no direct edge")))
+
+(test an-imported-call-edge-names-the-dotted-key
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "seed" "functions/main.py"
+                              :imported-calls '((:specifier "sheets"
+                                                 :path ("read_tab") :line 56))))
+         (wanted (r-py-definition g :function "read_tab" "functions/sheets.py")))
+    (r-py-tree g "functions/main.py" "functions/sheets.py")
+    (r-resolve g)
+    (is (equal '("sheets.read_tab") (via-of g caller wanted)))))
+
+(test a-relative-import-key-takes-no-second-dot
+  ;; PY-DOTTED's rule, restated in the graph because loom-graph cannot call the
+  ;; analyzer: `..' and (util go) read `..util.go', not `...util.go'.
+  (is (equal "..util.go" (loom-graph::imported-call-key ".." '("util" "go"))))
+  (is (equal ".posting.post" (loom-graph::imported-call-key ".posting" '("post"))))
+  (is (equal "service.ensure" (loom-graph::imported-call-key "service" '("ensure")))))
+
+(test one-imported-key-written-twice-is-listed-once
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "seed" "functions/main.py"
+                              :imported-calls '((:specifier "sheets"
+                                                 :path ("read_tab") :line 56)
+                                                (:specifier "sheets"
+                                                 :path ("read_tab") :line 60))))
+         (wanted (r-py-definition g :function "read_tab" "functions/sheets.py")))
+    (r-py-tree g "functions/main.py" "functions/sheets.py")
+    (let ((ops (resolve-calls g)))
+      (is (= 1 (length (calls-ops ops)))))
+    (r-resolve g)
+    (is (equal '("sheets.read_tab") (via-of g caller wanted)))))
+
+(test a-name-and-an-imported-call-reaching-one-callee-are-one-edge-with-both-keys
+  ;; A function of sheets.py that calls read_tab by name and through its own
+  ;; module's import. The two branches of RESOLVE-CALLS share one table.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "seed" "functions/sheets.py"
+                              :call-names '("read_tab")
+                              :imported-calls '((:specifier "sheets"
+                                                 :path ("read_tab") :line 56))))
+         (wanted (r-py-definition g :function "read_tab" "functions/sheets.py")))
+    (r-py-tree g "functions/sheets.py")
+    (let ((ops (resolve-calls g)))
+      (is (= 1 (length (calls-ops ops))) "one edge whichever branch reached it")
+      (apply-transaction g ops))
+    (is (equal (list (id wanted)) (called-ids g caller)))
+    (is (equal '("read_tab" "sheets.read_tab") (via-of g caller wanted)))))
+
+(test a-merged-edge-keeps-the-confidence-the-last-key-gave-it
+  ;; Before keys were merged the last op won the absorb, so the edge carried the
+  ;; last key's confidence. `w.render' fans out over two methods at 1/2 and
+  ;; `Widget.render' names one at 1.0; the later key sets the figure.
+  (flet ((confidence-for (names)
+           (let* ((g (make-graph))
+                  (caller (r-js-function g "draw" "ui/Home.jsx" :unresolved names))
+                  (callee (r-js-method g "Widget.render" "ui/Widget.js")))
+             (r-js-method g "Gadget.render" "ui/Gadget.js")
+             (dolist (file '("ui/Home.jsx" "ui/Widget.js" "ui/Gadget.js"))
+               (r-js-file g file))
+             (apply-transaction g (resolve-calls g))
+             (confidence (find-relationship-by-key
+                         g (list :calls (id caller) (id callee)))))))
+    (is (= 0.5 (confidence-for '("Widget.render" "w.render"))))
+    (is (= 1.0 (confidence-for '("w.render" "Widget.render"))))))
+
+(test via-is-rederived-from-the-caller-each-pass
+  ;; DEC-0003. A caller that stops writing one of two keys must stop listing it,
+  ;; so the second pass replaces :VIA rather than adding to what the first left.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "draw" "ui/Home.jsx"
+                                :unresolved '("Widget.render" "w.render")))
+         (callee (r-js-method g "Widget.render" "ui/Widget.js")))
+    (r-js-file g "ui/Home.jsx" :imports '("./Widget"))
+    (r-js-file g "ui/Widget.js")
+    (apply-transaction g (resolve-calls g))
+    (is (equal '("Widget.render" "w.render") (via-of g caller callee)))
+    (setf (getp caller :call-names) '("Widget.render"))
+    (apply-transaction g (resolve-calls g))
+    (is (equal '("Widget.render") (via-of g caller callee)))))

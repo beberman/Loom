@@ -1895,6 +1895,52 @@ asks for."
                   found)))))
     (nreverse found)))
 
+(defun imported-call-key (specifier path)
+  "SPECIFIER and PATH as the one key :VIA names an imported call by: `sheets.read_tab',
+`..util.go'. A specifier ending in a dot takes no second one.
+
+The same rendering as PY-DOTTED in loom-analyzer, written again here because
+loom-graph may not call the analyzer. It is a label for the key, and resolution
+reads the two parts (DES-0055 D11)."
+  (format nil "~a~@[~a~]~{~a~^.~}" specifier
+          (and path (not (char= #\. (char specifier (1- (length specifier))))) ".")
+          path))
+
+(defun note-call-key (edges source callee target key)
+  "EDGES, an alist of (ids source callee target keys) in reverse first-seen
+order, with KEY recorded against the edge from SOURCE to CALLEE.
+
+A caller's keys reaching one callee must become one op carrying all of them:
+two ops for one edge are absorbed in turn, ABSORB-PROPERTIES clears the table
+before it copies, and the last op would leave only its own key (PLAN-0060
+FINDINGS 1a). TARGET is the plist of the latest key, so the op carries the
+provenance the last op carried before keys were merged. KEYS are in first-seen
+order and each appears once."
+  (let* ((ids (cons (id source) (id callee)))
+         (slot (assoc ids edges :test #'equal)))
+    (cond ((null slot)
+           (acons ids (list source callee target (list key)) edges))
+          (t (let ((entry (cdr slot)))
+               (setf (third entry) target)
+               (unless (member key (fourth entry) :test #'string=)
+                 (setf (fourth entry) (append (fourth entry) (list key)))))
+             edges))))
+
+(defun call-edge-op (entry workspace-id)
+  "The :CALLS operation for one ENTRY of NOTE-CALL-KEY's alist, with its :VIA."
+  (destructuring-bind (source callee target keys) entry
+    (destructuring-bind (&key confidence derived-from &allow-other-keys) target
+      (if confidence
+          (assert-edge :calls source callee
+                       :workspace-id workspace-id
+                       :source :inferred
+                       :confidence confidence
+                       :derived-from derived-from
+                       :properties (list :via keys))
+          (assert-edge :calls source callee
+                       :workspace-id workspace-id
+                       :properties (list :via keys))))))
+
 (defun resolve-calls (view &key workspace-id external-packages module-scope domains)
   "Operations linking each recorded call name to the definition it names.
 
@@ -1920,6 +1966,10 @@ record that they call anything is whatever is already on their entities -- and
 while this function consumed that record, resolution could not rebuild what the
 retract had just destroyed. Deriving instead of consuming means every pass sees
 the same question and can answer it again.
+
+Each edge carries :VIA, the keys that produced it: the name, or for an imported
+call its specifier and path joined with dots. One op is emitted per edge with all
+its keys (DES-0055 D11).
 
 Idempotent: an edge that already exists upserts onto itself by natural key, and
 a name that resolved last pass resolves to the same edge this pass. Safe to run
@@ -1947,12 +1997,13 @@ after every analysis pass."
     (dolist (type '(:function :method :test :call-site))
       (dolist (caller (entities-of-type view type))
         (let ((names (caller-call-names caller))
-              (linked '())          ; edge plists, reversed
+              (linked '())          ; (name . edge plist), reversed
+              (edges '())           ; NOTE-CALL-KEY's alist
               (left '()))
           (dolist (name names)
             (let ((targets (call-targets index name caller)))
               (if targets
-                  (dolist (target targets) (push target linked))
+                  (dolist (target targets) (push (cons name target) linked))
                   (push name left))))
           ;; A target may name the :CALL-SITE its edge runs from rather than the
           ;; caller, which is REQ-0015's fan-out. The site is asserted once and
@@ -1962,24 +2013,22 @@ after every analysis pass."
           ;; transaction. Keyed on id rather than on identity: CALL-TARGETS
           ;; builds a fresh entity per name, and two names from one caller are
           ;; two sites while one name asked twice is one.
-          (dolist (target (nreverse linked))
-            (destructuring-bind (&key callee confidence derived-from call-site) target
-              (when (and call-site (null (gethash (id call-site) asserted)))
-                (setf (gethash (id call-site) asserted) t)
-                (push (assert-entity call-site workspace-id) ops)
-                (push (assert-edge :contains caller call-site
-                                   :workspace-id workspace-id)
-                      ops))
-              (let ((source (or call-site caller)))
-                (push (if confidence
-                          (assert-edge :calls source callee
-                                       :workspace-id workspace-id
-                                       :source :inferred
-                                       :confidence confidence
-                                       :derived-from derived-from)
-                          (assert-edge :calls source callee
-                                       :workspace-id workspace-id))
-                      ops))))
+          ;;
+          ;; The :CALLS ops themselves wait until the imported-calls branch has
+          ;; run, so a callee reached by a name and by an import is one op
+          ;; (NOTE-CALL-KEY). The site asserts do not wait: they still precede
+          ;; every op that names them.
+          (dolist (link (nreverse linked))
+            (destructuring-bind (name . target) link
+              (destructuring-bind (&key callee call-site &allow-other-keys) target
+                (when (and call-site (null (gethash (id call-site) asserted)))
+                  (setf (gethash (id call-site) asserted) t)
+                  (push (assert-entity call-site workspace-id) ops)
+                  (push (assert-edge :contains caller call-site
+                                     :workspace-id workspace-id)
+                        ops))
+                (setf edges (note-call-key edges (or call-site caller) callee
+                                           target name)))))
           ;; Unconditional where it used to be (WHEN LINKED ...): a caller
           ;; whose every name went external still has to have that written
           ;; down, and a caller whose callee has since been deleted has to
@@ -1996,8 +2045,7 @@ after every analysis pass."
           (let ((entries (getp caller :imported-calls)))
             (when entries
               (unless walk (setf walk (build-walk-context view domains)))
-              (let ((hit (make-hash-table :test #'equal))
-                    (misses '()))
+              (let ((misses '()))
                 (dolist (entry entries)
                   (multiple-value-bind (callee cause)
                       (imported-call-target walk (getp caller :file) entry)
@@ -2007,16 +2055,18 @@ after every analysis pass."
                                        :line (getf entry :line)
                                        :cause cause)
                                  misses))
-                          ((null (gethash (id callee) hit))
-                           (setf (gethash (id callee) hit) t)
-                           (push (assert-edge :calls caller callee
-                                              :workspace-id workspace-id)
-                                 ops)))))
+                          (t
+                           (setf edges (note-call-key
+                                        edges caller callee '()
+                                        (imported-call-key (getf entry :specifier)
+                                                           (getf entry :path))))))))
                 (push (update-properties (id caller)
                                          (list :unresolved-imported-calls
                                                (nreverse misses))
                                          workspace-id)
-                      ops)))))))
+                      ops))))
+          (dolist (entry (reverse edges))
+            (push (call-edge-op (cdr entry) workspace-id) ops)))))
     ;; The sweep last, so it names only sites no assert above touched. An
     ;; :UPDATE-PROPERTIES for a site being retracted is emitted above and is
     ;; harmless: it lands on an entity that is still there when it is applied.

@@ -1849,7 +1849,7 @@ transaction."
     ;; a caller whose callee had resolved no longer recorded calling it, and
     ;; an edge destroyed by retracting the callee's file could never be
     ;; rebuilt.
-    (let ((local-calls '()))      ; list of (caller-entity . callee-entity)
+    (let ((local-calls '()))      ; list of (caller-entity callee-entity key)
       (dolist (entry callables)
         (destructuring-bind (caller . body) entry
           (multiple-value-bind (call-names qualified)
@@ -1858,7 +1858,7 @@ transaction."
               (dolist (callee-name (remove-duplicates call-names :test #'string=))
                 (let ((callee (cdr (assoc callee-name local-functions :test #'string=))))
                   (cond ((and callee (not (eq callee caller)))
-                         (push (cons caller callee) local-calls))
+                         (push (list caller callee callee-name) local-calls))
                         ((standard-operator-p callee-name))
                         ((reader-artifact-p callee-name))
                         ((string= callee-name (name caller)))   ; direct recursion
@@ -1912,9 +1912,14 @@ transaction."
         (destructuring-bind (owner . site) entry
           (push (assert-entity site workspace-id) ops)
           (push (assert-edge :contains owner site :workspace-id workspace-id) ops)))
+      ;; One op per (caller, callee, name), and a callee has one name, so the
+      ;; single key is the whole :VIA (DES-0055 D11). RESOLVE-CALLS has to union
+      ;; keys because several names there can reach one callee; here they cannot.
       (dolist (call (reverse local-calls))
-        (push (assert-edge :calls (car call) (cdr call) :workspace-id workspace-id)
-              ops)))
+        (destructuring-bind (caller callee key) call
+          (push (assert-edge :calls caller callee :workspace-id workspace-id
+                                                  :properties (list :via (list key)))
+                ops))))
     (nreverse ops)))
 
 ;;;; ------------------------------------------------------------------

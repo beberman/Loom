@@ -264,6 +264,19 @@ the first miscounted span")
                  (mapcar #'to-id (relationships-from g (id summarize) :rel-type :calls))))
       (is (null (relationships-from g (id add-on) :rel-type :calls))))))
 
+(test a-local-calls-edge-names-the-call-key-that-produced-it
+  ;; PLAN-0060 step 2. The key is the callee's name as the body wrote it, and
+  ;; three calls to add-on are one key, as they are one edge.
+  (multiple-value-bind (g file) (analyze-fixture)
+    (declare (ignore file))
+    (flet ((via (from-name)
+             (let ((edges (relationships-from
+                           g (id (find-by-name g :function from-name))
+                           :rel-type :calls)))
+               (and (= 1 (length edges)) (getp (first edges) :via)))))
+      (is (equal '("add-on") (via "triple-add-on")))
+      (is (equal '("triple-add-on") (via "summarize"))))))
+
 (test analyze-file-does-not-record-calls-to-the-standard-library
   (multiple-value-bind (g file) (analyze-fixture)
     (declare (ignore file))

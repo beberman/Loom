@@ -416,3 +416,22 @@ class says rather than what this file remembers it saying."
          (links (find :test-links rels :key (lambda (r) (getf r :key)))))
     (is-true (getf links :transitive-impact))
     (is (eq :reverse (getf links :impact-direction)))))
+
+;;; ASSERT-EDGE's :PROPERTIES (PLAN-0060 step 2). A :CALLS edge carries :VIA, and
+;;; until this keyword the only constructor with properties was ENRICHED-EDGE.
+
+(test assert-edge-stores-the-properties-it-is-given
+  (let* ((from (make-instance 'test-bare-entity :name "a" :origin-file "a.lisp"))
+         (to (make-instance 'test-bare-entity :name "b" :origin-file "b.lisp"))
+         (rel (op-rel (assert-edge :test-links from to
+                                   :properties '(:via ("x" "y"))))))
+    (is (equal '("x" "y") (getp rel :via)))))
+
+(test assert-edge-without-properties-has-an-empty-table
+  ;; Every edge asserted before this keyword had no properties. An edge that
+  ;; names no key, such as one only the image reported, must stay that way.
+  (let* ((from (make-instance 'test-bare-entity :name "a" :origin-file "a.lisp"))
+         (to (make-instance 'test-bare-entity :name "b" :origin-file "b.lisp"))
+         (rel (op-rel (assert-edge :test-links from to))))
+    (is (zerop (hash-table-count (properties rel))))
+    (is (null (getp rel :via)))))
