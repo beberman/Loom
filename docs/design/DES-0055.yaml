@@ -516,6 +516,17 @@ body: |
   and +15% heap on front-end. Over budget, the step does not land, and the
   user chooses between the two cheaper forms named under RISKS.
 
+  D13 amendment, 2026-10-09 (PLAN-0060 step 2 follow-up, fef2619). A
+  relationship now builds its property table on first read, so a relationship
+  nobody reads holds no 160-byte empty table. On front-end that removed 13.8
+  MB of heap unrelated to call-site shapes. The user re-baselined the heap
+  gate on the new code: the baseline is front-end with that change and with
+  neither :VIA nor shapes, 156749312 bytes (median of three runs), and the
+  budget is +15 percent of it, 180261709 bytes. The index-time baseline is
+  unchanged, 8.0855 s with a +10 percent budget of 8.894 s. :VIA costs
+  2628296 bytes, 1.68 percent of the new baseline, and leaves 20884100 bytes
+  for shapes.
+
   R4 IS CLOSED AS ALREADY MET
 
   Nothing is built for REQ-0078 R4 (U5). Its OUTSTANDING line rests on a
