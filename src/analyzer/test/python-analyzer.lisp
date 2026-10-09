@@ -617,3 +617,23 @@ class TestB:
 ")))
        (is (null (pa-entities g :test)))
        (is-true (getp (pa-file g) :test-file-p))))))
+
+(test import-modules-holds-every-absolute-import-in-any-scope
+  ;; PLAN-0059 FINDINGS 3. :IMPORT-BINDINGS holds module-level imports only, so
+  ;; an import inside a function joins nothing without this property.
+  (call-with-python
+   (lambda ()
+     (let* ((g (pa-graph "functions/m.py" "import os
+from .x import y
+def f():
+    from google.cloud import secretmanager
+    return secretmanager
+"))
+            (modules (getp (pa-file g) :import-modules)))
+       (flet ((mark (module) (find module modules :key (lambda (m) (getf m :module))
+                                                  :test #'equal)))
+         (is (mark "google.cloud"))
+         (is (mark "google.cloud.secretmanager"))
+         (is (eq nil (getf (mark "google.cloud.secretmanager") :stdlib)))
+         (is (eq t (getf (mark "os") :stdlib)))
+         (is (= 3 (length modules)) "`from .x import y' adds nothing: ~s" modules))))))

@@ -540,3 +540,27 @@ def f(): pass
        (is (equal "src/second.py" (py-get reply :path)))
        (is (py-def reply "ok"))
        (is (null (py-get reply :damage)))))))
+
+(test an-absolute-import-is-marked-stdlib-and-a-relative-one-is-not
+  ;; DES-0055 R4. Fails without the `stdlib' key, and absent on `from . import x'
+  ;; because a relative import is never external.
+  (call-with-python
+   (lambda ()
+     (let* ((reply (py-reply "import os
+import os.path
+from collections import abc
+import requests
+from . import x
+"))
+            (imports (py-get reply :imports)))
+       (flet ((entry (source) (find source imports :key (lambda (i) (py-get i :source))
+                                                   :test #'equal)))
+         (when (assoc :stdlib (entry "os"))
+           (is (eq t (py-get (entry "os") :stdlib)))
+           (is (eq t (py-get (entry "os.path") :stdlib)))
+           (is (eq t (py-get (entry "collections") :stdlib)))
+           (is (null (py-get (entry "requests") :stdlib)))
+           (is-true (assoc :stdlib (entry "requests")) "false is a mark, not an absence"))
+         (is-false (assoc :stdlib (entry ".")))
+         (is-true (assoc :stdlib (entry "os"))
+                  "python 3.10 and later know their stdlib"))))))
