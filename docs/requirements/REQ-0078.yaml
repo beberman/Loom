@@ -130,6 +130,13 @@ body: |
   in JavaScript is REQ-0024's analyzer plus the same entry-point facts, and
   should reuse R7 to R9 rather than be specified again.
 
+  R7 to R9 cover Python trees and ES-module JavaScript trees, and stop there
+  (narrowed 2026-10-08). CommonJS and TypeScript functions trees, and a
+  registration argument imported from another file, are not asked for. No
+  tree Loom watches has one, and lfia-accounting, the tree this requirement
+  was written for, is Python. A request for either starts as its own
+  requirement with a measurement on a tree that has it.
+
   It does not know what is deployed. Loom reads source, not the cloud: it can
   say a function is declared with a schedule, not that Cloud Scheduler has the
   job. Nor does it read firestore.rules or run the emulators; both are
@@ -162,11 +169,8 @@ body: |
   PLAN-0056 built the Python analyzer under DES-0053: R1 to R6 and R12.
   PLAN-0057 built Firebase Functions for Python trees under DES-0054: R7 to
   R9 and R11. PLAN-0058 built them for ES-module JavaScript trees. What
-  remains:
+  remains (R7 to R9 are narrowed to those two, see below):
 
-  R7 to R9       For CommonJS and TypeScript functions trees, and for a
-                 registration argument imported from another file. PLAN-0058
-                 built them for ES-module JavaScript trees.
   R10            requirements.txt dependency names. Two of lfia-accounting's
                  six requirement names differ from their module names
                  (google-auth installs google.auth), and the mapping lives
