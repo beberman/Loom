@@ -441,8 +441,13 @@ body: |
       deleting it costs a rescan and never costs an id.
 
   R5  The ledger is monotonic. It is never lowered, and a rebuild takes the
-      maximum of the ledger and the scan. No operation reclaims, compacts or
-      renumbers, and `check` never reports a gap in the sequence as a problem.
+      maximum of the ledger and the scan. No operation reclaims or compacts,
+      and no operation renumbers a document whose id exists at the merge base
+      of its branch, or assigns an id any merged document has carried. One
+      operation may renumber an id the branch itself created and no one has
+      merged: DES-0056's `renumber`, which resolves a fork collision before
+      merge (REQ-0079 R7). `check` never reports a gap in the sequence as a
+      problem.
 
   R6  A caller that cannot reach the allocator falls back to the highest id in
       its own checkout plus one, and the document it writes records that its id
