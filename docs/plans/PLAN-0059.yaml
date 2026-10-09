@@ -901,3 +901,121 @@ body: |
 
   Departures from the plan, by step, with commit hashes and the census
   figures, are recorded here as the steps land.
+
+  Step 8. Measured on 2026-10-09 with python3 3.12.3 and /usr/bin/sbcl. The
+  "before" is a worktree at 9de9a3e, the last commit before step 1. It differs
+  from 09c5185 (the commit this plan names) only in docs/, which `git diff
+  09c5185 9de9a3e --stat -- src tools` shows by printing nothing.
+
+  The fixtures. Three tests in src/workspace/test/workspace.lisp:
+  the-declared-fixture-joins-what-a-declaration-maps-and-nothing-else (17
+  checks), the-fixture-without-a-declaration-joins-no-python-import (7) and
+  find-reaches-a-declared-dependency-as-code-and-not-as-documentation (2). They
+  passed at their first run, because steps 1 to 7 had built what they assert.
+  Each was then run against a mutation of the source, copied aside and restored:
+    - RESOLVE-DEPENDENCIES returns NIL before drawing: 7 of 17 fail in the first
+      test, 1 of 7 in the second, none in the third.
+    - the (plusp length) guard in LONGEST-PREFIX-DECLARATIONS removed, which is
+      step 5's zero-length bug: 2 of 17 fail, the two that read
+      :UNDECLARED-IMPORTS. With every declaration tied at length 0, the entries
+      for google.cloud and firebase_functions no longer equal the bare
+      (:specifier ...) plists; the cause is inferred from the assertions and
+      the entries were not printed.
+    - a spelling join in PYPI-JOINS (an import with no declaration joined to the
+      requirement whose normalised name equals it): 3 of 17 fail and 4 of 7 fail.
+      firebase_functions joins firebase-functions, requests and pytest join.
+    - :MODULE added to *DOCUMENT-TYPES*: both checks of the third test fail.
+    - the markdown analyzer's requirements-file-p exclusion replaced by T: no
+      failure. The manifest analyzer is registered later and FIND-ANALYZER
+      returns the latest claimant, so the exclusion is redundant at the current
+      load order, and these tests cannot see it. src/analyzer/test/
+      manifest-analyzer.lisp's the-markdown-analyzer-declines-requirements-and-
+      keeps-other-text covers the exclusion itself.
+  The second fixture passes with or without the pass, as the plan says; one of
+  its seven checks (requests is counted undeclared) fails when the pass draws
+  nothing, which gives it a positive control.
+  Which form the reader sees for app/store.py: the :SOURCE, google.cloud, as
+  step 8 text said. The test asserts (:specifier "google.cloud"). DES-0055's
+  google.cloud.firestore is the dotted module `from google.cloud import
+  firestore` also imports, and it is not an :UNRESOLVED-IMPORTS specifier.
+
+  A departure, found by tools/test/call-site-census.lisp. The plan expects 508
+  sites and 41 ambiguous. HEAD at 50c9f95 printed 513 and 44. The census was
+  bisected with each commit's own tools/test/ against its own tree (a bare run
+  censuses the live tree with whatever code the script loaded): 508 and 41 at
+  dc2922e, 8975f1d, 5928e4d and b5d8d8f, then 510 at 7005912 (step 5), 512 at
+  81558db (step 6) and 513 at 50c9f95 (step 7). Two causes:
+    - Three tests from steps 5 and 6 call PYTHON-AVAILABLE-P from a test body.
+      Loom cannot place that name, so each call is an ambiguous :CALL-SITE.
+      PYTHON-CHILD-STARTABLE-P exists for exactly this, and its docstring says
+      so. Commit a6e699c changes those three calls. The five new tests of this
+      step use it from the start. The census is 510 and 41 with this step.
+    - Two orphaned define-command pairs: print-dependency in describe (step 6)
+      and print-dependency-proposal in init (step 7). Each is a call in a
+      define-command body, which DES-0014 mints a site for. They remain: 510 is
+      508 plus these two, and the ceiling of 512 holds. Removing them is a source
+      change to steps 6 and 7 that this step does not make.
+  With the five new tests calling PYTHON-AVAILABLE-P directly, the ceiling test
+  a-call-site-exists-only-where-a-calls-edge-from-a-definition-is-impossible
+  failed at 514 against 512, which is how the cause was found.
+
+  front-end (read only), ab34be6, on branch bug-0048-reshape-then-delete-leaves-
+  stray-shape. `git status --short` is the same five lines before and after, and
+  `git diff HEAD`, `git diff --cached` and `git status --short --ignored` hash
+  and list the same. Dumps by tools/test/index-dump.lisp, run back to back from
+  the 9de9a3e worktree and from the branch:
+    entities 11335 -> 11400 (+63 :MODULE, +2 :FILE for package.json and
+      functions/package.json); relationships 95294 -> 95972.
+    +63 :MODULE: 60 module:package.json:*, 3 module:functions/package.json:*.
+    +63 :CONTAINS, +593 :IMPORTS to a :MODULE over 31 distinct modules (DES-0055
+      estimated about 592), +0 :DEPENDS-ON. No relationship was removed.
+    imports 3728 resolved, 693 external, 7 target unclaimed, 4 unresolved:
+      unchanged. unclaimed 116 -> 114, .json 25 -> 23. ambiguous references 5,
+      unresolved references 120: unchanged.
+    new status line: npm 63 declared in 2 manifests, 0 unmapped; imports 599
+      joined, 59 stdlib, 35 undeclared. 599 + 59 + 35 = 693.
+    The 35 undeclared are bare Node builtins (path 11, fs 10, url 6, events 2,
+      crypto 1, os 1) and @turf/helpers 2, @turf/tesselate 1 and @turf/point-to-
+      line-distance 1, in 14 files. No `node:` specifier is among them; the 59
+      stdlib are the `node:` specifiers.
+    vitest 262 files, react 149, @testing-library/react 32. firebase-functions
+      is declared in functions/package.json ^6.2.0 and imported by
+      functions/index.js, functions/hello.js and functions/api/simple.js.
+    800 :FILE lines change. 14 gain a non-empty :UNDECLARED-IMPORTS. The other
+      786 gain only properties that read NIL (:IMPORT-MODULES, :INCLUDES,
+      :UNDECLARED-IMPORTS, :UNNAMED-REQUIREMENTS).
+    A departure: 22 new :MENTIONS edges, inferred at 0.5, from 20 documents to
+      a :MODULE (polygon-clipping 15, google 2, express 2, react 1, leaflet 1,
+      react-bootstrap 1). The plan lists no :MENTIONS. A document
+      that names a dependency in backticks now resolves to the declaration.
+      ARCH-0003 and DES-0011 name `google`, which may be ordinary prose and not
+      the npm package of that name.
+    check @front-end: No violations. A console `status` of the same tree
+      printed 95973 relationships against the dump's 95972.
+  lfia-accounting (read only), d0cfdf0. Its `git status --short` is the same
+  seven lines before and after, and the diff, cached diff and ignored listing
+  are unchanged. Dumps from the same two trees:
+    :MODULE +24 (9 pypi, 15 npm). :DOCUMENT -2, documents 21 -> 19. Entities
+      2673 -> 2698, relationships 6457 -> 6651.
+    +24 :CONTAINS and +170 :IMPORTS, all to web/package.json modules; 0 from a
+      Python file. :DEPENDS-ON +0.
+    imports 802 resolved, 428 external, 1 unresolved: unchanged.
+    pypi 9 declared in 2 manifests, 9 unmapped; imports 0 joined, 134 stdlib,
+      120 undeclared. npm 15 declared in 1 manifest; imports 174 joined.
+    `find google-auth`: module google-auth [functions/requirements.txt:5].
+    status: rules 0 violations, 0 unresolved document references, 0 ambiguous.
+      Unparsed files 1, as before.
+  Loom: 0 :MODULE, documents 302 before and after, unclaimed 44, `check` 0
+    violations, 8 unresolved, 7 ambiguous. A departure: imports external 57 ->
+    60, and the pypi dependencies line sums to 60 and not 57. The 3 are the
+    imports json, os and sys in tools/py/record_modules.py, which step 7 added.
+    The hub band is not unchanged. Inbound counts rise with the new code and
+    tests (getp 606 -> 650, make-graph 504 -> 544), repository-graph (207 -> 224)
+    passes relationships-from (208 -> 217), and properties-table (181) enters
+    the twelve where repository-name (168) was.
+  Suite: tools/loom-test.sh printed 11 of 12 with loom-serve failing four checks
+    in two operations tests that read the event log (an-empty-answer-is-
+    recorded-as-an-answer, a-read-operation-writes-a-record-naming-itself).
+    The resident service also writes an event log; the cause was not
+    established. loom-serve/test alone then passed 295 of 295. `check` and `sbcl --script tools/test/
+    load-test.lisp loom-serve` (prints T, exit 0) are as above.

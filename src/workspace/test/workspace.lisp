@@ -2650,3 +2650,164 @@ import mystery
           (is (= 1 (getf pypi :undeclared)))
           (is (= (getf (loom-workspace::import-summary repository) :external)
                  (+ (getf pypi :joined) (or (getf pypi :stdlib) 0) (getf pypi :undeclared))))))))
+
+;;; ------------------------------------------------------------------
+;;; Acceptance: DES-0055's two fixtures (PLAN-0059 step 8, U6)
+;;; ------------------------------------------------------------------
+;;;
+;;; Nothing is written to lfia-accounting: dependency-modules: is accepted on
+;;; trees these tests build. Each fixture assertion has a negative beside it
+;;; (os joins nothing, firebase-functions joins nothing, google.cloud joins
+;;; nothing), because step 5's zero-length prefix match passed every test that
+;;; only asked for the joins a declaration should draw.
+
+(defparameter *acceptance-declarations* "dependency-modules:
+  - distribution: google-auth
+    modules: [google.auth, google.oauth2]
+  - distribution: requests
+    modules: [requests]
+  - distribution: pytest
+    modules: [pytest]
+"
+  "No entry for firebase-functions or tzdata, which stay unmapped.")
+
+(defun write-acceptance-tree (&key (declarations *acceptance-declarations*))
+  "DES-0055 ACCEPTANCE's Python tree. app/store.py imports from google.cloud, a
+prefix no declaration holds, and app/main.py imports firebase_functions, which
+spells like the firebase-functions requirement."
+  (when declarations (write-file ".loom/frameworks.yaml" declarations))
+  (write-file "requirements.txt" "google-auth>=2.29
+requests>=2.31
+firebase-functions>=0.4.0
+tzdata
+")
+  (write-file "requirements-dev.txt" "-r requirements.txt
+pytest>=8.0
+")
+  (write-file "app/main.py" "from google.auth.credentials import Credentials
+from google.oauth2 import credentials
+import requests
+import os
+from firebase_functions import https_fn
+
+@https_fn.on_request()
+def handler(req):
+    return requests.get(os.environ.get('U', ''))
+")
+  (write-file "app/store.py" "from google.cloud import firestore
+")
+  (write-file "tests/test_main.py" "import pytest
+
+def test_handler():
+    pass
+")
+  (write-file "docs/notes.md" "# Notes
+
+The `google-auth` requirement lives in `requirements.txt`.
+"))
+
+(defun acceptance-file (repository path)
+  (find path (entities-of-type (repository-graph repository) :file)
+        :key (lambda (e) (getp e :path)) :test #'equal))
+
+(defun acceptance-module (repository name manifest)
+  (find-if (lambda (m) (and (string= name (name m)) (equal manifest (getp m :file))))
+           (entities-of-type (repository-graph repository) :module)))
+
+(defun edges-into-module (repository module)
+  "The :IMPORTS and :DEPENDS-ON relationships that end at MODULE."
+  (append (relationships-to (repository-graph repository) (id module) :rel-type :imports)
+          (relationships-to (repository-graph repository) (id module) :rel-type :depends-on)))
+
+(defun module-depends-on-targets (repository path function-name)
+  "manifest:name of each :MODULE the function FUNCTION-NAME in PATH depends on."
+  (let ((function (find-if (lambda (f) (and (string= function-name (name f))
+                                            (equal path (getp f :file))))
+                           (entities-of-type (repository-graph repository) :function))))
+    (sort (loop for r in (relationships-from (repository-graph repository) (id function)
+                                             :rel-type :depends-on)
+                for target = (get-entity (repository-graph repository) (to-id r))
+                when (eq :module (entity-type target))
+                  collect (format nil "~a:~a" (getp target :file) (name target)))
+          #'string<)))
+
+(test the-declared-fixture-joins-what-a-declaration-maps-and-nothing-else
+  ;; DES-0055 ACCEPTANCE, first fixture. CON-0003: with RESOLVE-DEPENDENCIES
+  ;; drawing nothing, every :IMPORTS assertion below fails; with the zero-length
+  ;; prefix match back, the store.py and tests assertions fail.
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (let ((unresolved-before (length (unresolved-references (repository-graph repository)))))
+          (write-acceptance-tree)
+          (reindex-repository repository :quiet t)
+          (let ((google-auth (acceptance-module repository "google-auth" "requirements.txt"))
+                (firebase (acceptance-module repository "firebase-functions" "requirements.txt"))
+                (tzdata (acceptance-module repository "tzdata" "requirements.txt")))
+            (is-true google-auth "google-auth is a :MODULE in requirements.txt")
+            (is (equal '("google.auth" "google.oauth2") (getp google-auth :provides)))
+            (is (equal '("requirements.txt:google-auth" "requirements.txt:requests")
+                       (module-import-targets repository "app/main.py"))
+                "main.py reaches google-auth and requests once each, and os and firebase_functions reach nothing")
+            (is (equal '("requirements-dev.txt:pytest")
+                       (module-import-targets repository "tests/test_main.py")))
+            (is (null (getp firebase :provides)) "firebase-functions has no declaration")
+            (is (null (edges-into-module repository firebase))
+                "main.py spells firebase_functions and decorates with it; neither reaches the requirement")
+            (is (null (edges-into-module repository tzdata)))
+            (is (null (getp tzdata :provides)))
+            (is (equal '("requirements.txt:requests")
+                       (module-depends-on-targets repository "app/main.py" "handler"))
+                "handler's requests.get reaches requests, and its decorator and os.environ reach nothing")
+            (is (null (module-import-targets repository "app/store.py"))
+                "google.cloud is not a prefix of any declared module")
+            (is (equal '((:specifier "google.cloud"))
+                       (getp (acceptance-file repository "app/store.py") :undeclared-imports))
+                "the entry is the :SOURCE of `from google.cloud import firestore'")
+            (is (equal '((:specifier "firebase_functions"))
+                       (getp (acceptance-file repository "app/main.py") :undeclared-imports))
+                "os is stdlib, and the rest joined")
+            (let ((pypi (find :pypi (getf (repository-status repository) :dependencies)
+                              :key (lambda (p) (getf p :ecosystem)))))
+              (is (= 5 (getf pypi :declared)))
+              (is (= 2 (getf pypi :unmapped))))
+            (is (null (find "requirements.txt" (entities-of-type (repository-graph repository) :document)
+                            :key #'name :test #'string=))
+                "the manifest is a :FILE and the markdown analyzer declines it")
+            (is (null (entities-of-type (repository-graph repository) :rule-violation)))
+            (is (= unresolved-before
+                   (length (unresolved-references (repository-graph repository))))))))))
+
+(test the-fixture-without-a-declaration-joins-no-python-import
+  ;; U1, the no-spelling rule. requests, pytest and google-auth's modules all
+  ;; spell like a requirement, and none of them may join. An absence passes
+  ;; whatever the pass does, so the control is the imports being counted
+  ;; :EXTERNAL and the manifests being indexed: the test is evidence only because
+  ;; the declared fixture above fails when the pass draws nothing.
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-acceptance-tree :declarations nil)
+        (reindex-repository repository :quiet t)
+        (let ((graph (repository-graph repository)))
+          (is (= 5 (length (entities-of-type graph :module))) "the control: the manifests are read")
+          (is (plusp (length (getp (acceptance-file repository "app/main.py") :unresolved-imports)))
+              "the control: the imports were seen")
+          (is (null (module-import-targets repository "app/main.py")))
+          (is (null (module-import-targets repository "tests/test_main.py")))
+          (is (null (module-depends-on-targets repository "app/main.py" "handler")))
+          (is (null (loop for module in (entities-of-type graph :module)
+                          append (edges-into-module repository module))))
+          (is (member "requests" (getp (acceptance-file repository "app/main.py") :undeclared-imports)
+                      :key (lambda (u) (getf u :specifier)) :test #'string=)
+              "and requests is counted undeclared, not dropped")))))
+
+(test find-reaches-a-declared-dependency-as-code-and-not-as-documentation
+  ;; DES-0055 ACCEPTANCE `find google-auth'.
+  (with-workspace-fixture (repository)
+    (write-file "requirements.txt" "google-auth>=2.29
+")
+    (reindex-repository repository :quiet t)
+    (let ((graph (repository-graph repository)))
+      (is (= 1 (length (search-entities graph :name "google-auth" :kind :code))))
+      (is (null (search-entities graph :name "google-auth" :kind :documentation))))))
