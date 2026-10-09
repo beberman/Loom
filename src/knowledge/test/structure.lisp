@@ -339,3 +339,23 @@ from one whose index is current")))
   (let ((report (structure-report (s-graph (make-s-fixture)))))
     (is (null (getf report :triggered)))
     (is (search "(none declared)" (render-structure report)))))
+
+(test a-declared-dependency-is-not-ranked-as-a-hub
+  ;; PLAN-0059 FINDINGS 5.  A :MODULE is a dependency a manifest declares, not
+  ;; a definition in source, and react's inbound :IMPORTS would head the band.
+  (let* ((g (make-graph))
+         (dep (make-instance 'module-entity :name "react"
+                             :properties (properties-table
+                                          '(:qualified-name "react" :file "package.json"))))
+         (callee (s-function "callee" :alpha "src/alpha/a.lisp"))
+         (caller (s-function "caller" :alpha "src/alpha/a.lisp" :start 20)))
+    (dolist (e (list dep callee caller)) (add-entity g e))
+    (dolist (n '("a.js" "b.js" "c.js"))
+      (let ((f (make-instance 'file-entity :name n :properties (properties-table
+                                                                (list :path n)))))
+        (add-entity g f)
+        (s-edge g :imports f dep)))
+    (s-edge g :calls caller callee)
+    (let ((names (mapcar (lambda (row) (getf row :name)) (loom-knowledge::hub-report g))))
+      (is (member "callee" names :test #'equal))
+      (is (not (member "react" names :test #'equal))))))

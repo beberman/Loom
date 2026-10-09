@@ -628,3 +628,27 @@ addressed by domain" type)
         "twelve types declared :SYSTEM when DES-0047 R4 was written; a ~
 different count means a type was added or removed and this test has not been ~
 read since")))
+
+;;; ------------------------------------------------------------------
+;;; :MODULE as a declared dependency -- PLAN-0059 step 1, DES-0055 D2
+;;; ------------------------------------------------------------------
+
+(test one-dependency-declared-in-two-manifests-is-two-modules
+  ;; front-end's root package.json and functions/package.json each declare
+  ;; react with their own spec.  Keyed on :QUALIFIED-NAME alone both derive
+  ;; module:react and the second declaration overwrites the first.
+  (flet ((react (file)
+           (make-instance 'module-entity :name "react"
+                          :properties (properties-table
+                                       (list :qualified-name "react" :file file)))))
+    (is (string/= (id (react "package.json"))
+                  (id (react "functions/package.json")))
+        "the manifest is part of the key")
+    (is (string= (id (react "package.json")) (id (react "package.json")))
+        "and the same manifest and name still collide, which is the point of a key")))
+
+(test a-test-and-a-call-site-can-depend-on-a-module
+  ;; DES-0055 D2 names :DEPENDS-ON as the edge from code to a dependency; a
+  ;; test file and an ambiguous call site are both code that imports one.
+  (is (null (validate-relationship-endpoints :depends-on :test :module)))
+  (is (null (validate-relationship-endpoints :depends-on :call-site :module))))

@@ -253,6 +253,24 @@ specifier that resolves to nothing is a fact about this file and the reason it
 resolved to nothing is the fact a reader acts on -- an alias nobody declared
 reads differently from a path that is simply wrong.  Measured on front-end,
 1320 of 1885 in-tree imports.")
+               (:includes list
+                :documentation "Other requirements files this one pulls in,
+each as written: \"-r base.txt\".  Written by the manifest analyzer
+(DES-0055 R3).")
+               (:unnamed-requirements integer
+                :documentation "Requirement lines naming no package, such as a
+bare path or URL with no #egg= name.  Written by the manifest analyzer
+(DES-0055 R3).")
+               (:undeclared-imports list
+                :documentation "Imports in this file that no manifest declares
+and that are neither standard library nor a `node:' builtin.  Written by the
+dependency resolution pass (DES-0055 D8).")
+               (:import-modules list
+                :documentation "One plist per absolute import in any scope:
+(:SOURCE s :MODULE m :STDLIB bool).  A relative import is left out, because it
+is never external.  Written by the Python analyzer (PLAN-0059 FINDINGS 3), and
+read by the resolution pass because :IMPORT-BINDINGS holds module-level imports
+only.")
                (:test-file-p boolean :default nil
                 :documentation "Set when this is a file the test runner would
 run -- REQ-0053 R2.  Two signals, either sufficient: the path matches the
@@ -397,13 +415,34 @@ indexed repository declared.")
                (:language       keyword :one-of *source-languages*)))
 
 (defentity :module
-  :documentation "The logical unit definitions are grouped under -- a Lisp
-package's file, an ES module.  Distinct from :file, which is the artifact on
-disk: a module may span files, and a file need not declare one."
-  :natural-key (:qualified-name)
-  :properties ((:qualified-name string :required t)
-               (:file           string)
-               (:language       keyword :one-of *source-languages*)
+  :documentation "A dependency a manifest declares, never a file in the tree --
+DES-0055 D2.  One per manifest and name: front-end's package.json and
+functions/package.json each declare react, and each gets its own module with its
+own spec.  The manifest analyzer asserts it and RETRACT-FILE on the manifest
+removes it.  A source file is a :file, and Loom mints no :module for one."
+  :natural-key (:file :qualified-name)
+  :properties ((:qualified-name string :required t
+                :documentation "The name as the manifest declares it:
+google-auth, @testing-library/react.")
+               (:file           string :required t
+                :documentation "The manifest's workspace-relative path.")
+               (:ecosystem      keyword :one-of (:pypi :npm))
+               (:specs          list
+                :documentation "Each version spec as written, `>=2.29' or
+`^18.3.1'.  A name listed twice in one manifest keeps both.")
+               (:sections       list
+                :documentation "npm only: :DEPENDENCIES, :DEV-DEPENDENCIES,
+:PEER-DEPENDENCIES, :OPTIONAL-DEPENDENCIES.")
+               (:start-line     integer
+                :documentation "The line in the manifest that declares it.")
+               (:provides       list
+                :documentation "The import prefixes the declaration maps this
+name to, derived on every resolution pass (DES-0055 D6).  Absent when
+unmapped.")
+               (:language       keyword :one-of *source-languages*
+                :documentation "Declared because
+EVERY-LANGUAGE-PROPERTY-SHARES-ONE-VOCABULARY requires every type to agree on
+it.  Nothing writes it on a dependency.")
                (:documentation  string
                 :documentation "Prose this module declares about itself.
 REQ-0035, DES-0028.")))
@@ -1824,7 +1863,7 @@ manufacture a join neither side wrote, so it stays unmatched and is counted
 (CON-0001, REQ-0027 R3).")
 
 (defrelationship :depends-on
-  :from (:module :package :file :function :method :variable)
+  :from (:module :package :file :function :method :variable :test :call-site)
   :to (:module :package :file)
   :transitive-impact t :impact-direction :reverse
   :documentation "Module-level propagation, and the edge from a deployed
