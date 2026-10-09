@@ -882,3 +882,52 @@ listed as answering about a whole repository. Decide which it is and say so in ~
       (let ((json (loom-serve:encode-result status)))
         (is (search "\"deploys\"" json))
         (is (search "python312" json))))))
+
+(defun add-dependency-entities (repository)
+  "An unmapped pypi :MODULE with no specs, and a python :FILE with one undeclared import."
+  (let ((graph (repository-graph repository)))
+    (loom-graph:add-entity
+     graph
+     (make-instance 'loom-ontology:module-entity :name "tzdata"
+                    :origin-file "requirements.txt"
+                    :properties (loom-ontology:properties-table
+                                 '(:qualified-name "tzdata" :file "requirements.txt"
+                                   :ecosystem :pypi))))
+    (loom-graph:add-entity
+     graph
+     (make-instance 'loom-ontology:file-entity :name "app/main.py"
+                    :origin-file "app/main.py"
+                    :properties (loom-ontology:properties-table
+                                 '(:path "app/main.py" :language :python
+                                   :import-sources ("foo")
+                                   :unresolved-imports ((:specifier "foo" :cause :external))
+                                   :import-modules ((:source "foo" :module "foo" :stdlib nil))
+                                   :undeclared-imports ((:specifier "foo"))))))))
+
+(test status-carries-dependencies-and-encodes-them-as-json
+  ;; DES-0055 R8. :DEPENDENCIES is a list of plists, which is a shape the encoder
+  ;; walks by whether its first element is a keyword.
+  (with-operations-fixture (repository)
+    (add-dependency-entities repository)
+    (let* ((status (call-operation :status '(:read) :repository (repository-name repository)))
+           (pypi (first (getf status :dependencies))))
+      (is (eq :pypi (getf pypi :ecosystem)))
+      (is (= 1 (getf pypi :undeclared)))
+      (let* ((json (loom-serve:encode-result status))
+             (parsed (json:decode-json-from-string json))
+             (dependencies (cdr (assoc :dependencies parsed))))
+        (is (listp dependencies))
+        (is (equal "pypi" (cdr (assoc :ecosystem (first dependencies)))) "~a" json)
+        (is (eql 1 (cdr (assoc :undeclared (first dependencies)))))))))
+
+(test describe-of-a-module-encodes-its-empty-specs-as-an-array
+  (with-operations-fixture (repository)
+    (add-dependency-entities repository)
+    (let* ((detail (call-operation :describe '(:read)
+                                   :repository (repository-name repository)
+                                   :term "tzdata"))
+           (json (loom-serve:encode-result detail))
+           (dependency (cdr (assoc :dependency (json:decode-json-from-string json)))))
+      (is (equal "requirements.txt" (cdr (assoc :manifest dependency))))
+      (is (search "\"specs\":[]" json) "an empty list must not arrive as null: ~a" json)
+      (is (search "\"provides\":[]" json)))))

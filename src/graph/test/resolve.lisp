@@ -2950,6 +2950,17 @@ resolution pass run."
       (is (null (d-targets g x)))
       (is (equal '((:specifier "google.auth" :ambiguous t)) (d-undeclared x))))))
 
+(test an-import-matching-no-declared-prefix-joins-nothing-and-is-undeclared
+  ;; LOOP's MAXIMIZE over no iterations answers 0 in SBCL, which the winner search
+  ;; read as a prefix of length 0 and joined every import to the first
+  ;; declaration. Found by PLAN-0059 step 6's status counts.
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "requests" :pypi)
+    (let ((x (d-py-file g "app/a.py" '("mystery"))))
+      (d-resolve g (d-declaration "requests" "requests"))
+      (is (null (d-targets g x)))
+      (is (equal '((:specifier "mystery")) (d-undeclared x))))))
+
 (test a-requirement-with-no-declaration-provides-nothing-and-joins-nothing
   ;; The no-spelling rule (U1): tzdata and requests match their import names
   ;; exactly, and still join nothing without a declaration.

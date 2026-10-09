@@ -111,7 +111,10 @@
     ;; empty is the ordinary answer -- a caller branching on "is this name in
     ;; another tree" reads it directly, and null would make "no" and "the key is
     ;; missing" the same JSON value.
-    :searched :elsewhere)
+    :searched :elsewhere
+    ;; DES-0055 R8, `describe' on a :MODULE. A requirements line with no version
+    ;; spec has no :SPECS, and an unmapped one no :PROVIDES; both are the answer.
+    :specs :sections :provides)
   "Keys whose value is a sequence even when it is empty.
 
 Two jobs. NIL under one of these encodes as [] rather than null, so an empty

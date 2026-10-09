@@ -212,3 +212,23 @@ export const api = functions.https.onRequest((req, res) => {});
                                        :method :post
                                        :content-type "application/json"
                                        :content "{}"))))))
+
+(test status-and-describe-over-rest-carry-the-dependency-fields-as-json
+  ;; DES-0055 R8 through the HTTP boundary.
+  (with-operations-fixture (repository)
+    (loom-serve-test::add-dependency-entities repository)
+    (with-test-server ()
+      (multiple-value-bind (body status)
+          (http-call (route :status)
+                     :parameters (list (cons "repository" (repository-name repository))))
+        (is (= 200 status))
+        (let ((dependencies (cdr (assoc :dependencies (decode body)))))
+          (is (equal "pypi" (cdr (assoc :ecosystem (first dependencies)))) "~a" body)))
+      (multiple-value-bind (body status)
+          (http-call (route :describe)
+                     :parameters (list (cons "repository" (repository-name repository))
+                                       (cons "term" "tzdata")))
+        (is (= 200 status))
+        (is (equal "requirements.txt"
+                   (cdr (assoc :manifest (cdr (assoc :dependency (decode body))))))
+            "~a" body)))))

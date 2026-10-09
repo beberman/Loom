@@ -52,6 +52,7 @@
    #:resolve-calls
    #:resolve-imports
    #:resolve-dependencies
+   #:dependency-ecosystem
    #:build-module-scope
    #:resolve-python-specifier
    #:missing-imported-calls

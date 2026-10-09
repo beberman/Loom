@@ -899,3 +899,56 @@ with them."
       (is (eq :schedule (getf row :trigger)))
       (is (null (getf (first (remove row (getf report :impacted))) :trigger))
           "an ordinary row carries no trigger"))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 R8: describe and find on a :MODULE
+;;; ------------------------------------------------------------------
+
+(defun module-graph ()
+  (let ((g (make-graph)))
+    (add-entity g (make-instance 'module-entity :name "google-auth"
+                                 :origin-file "requirements.txt"
+                                 :properties (properties-table
+                                              '(:qualified-name "google-auth"
+                                                :file "requirements.txt"
+                                                :ecosystem :pypi :specs (">=2.29")
+                                                :provides ("google.auth")))))
+    (add-entity g (make-instance 'module-entity :name "tzdata"
+                                 :origin-file "requirements.txt"
+                                 :properties (properties-table
+                                              '(:qualified-name "tzdata"
+                                                :file "requirements.txt"
+                                                :ecosystem :pypi))))
+    g))
+
+(defun module-id-named (g name)
+  (getf (first (search-entities g :name name :type :module)) :id))
+
+(test describe-of-a-module-carries-its-dependency
+  (let* ((g (module-graph))
+         (dependency (getf (describe-entity g (module-id-named g "google-auth"))
+                           :dependency)))
+    (is (equal "requirements.txt" (getf dependency :manifest)))
+    (is (eq :pypi (getf dependency :ecosystem)))
+    (is (equal '(">=2.29") (getf dependency :specs)))
+    (is (equal '("google.auth") (getf dependency :provides)))
+    (is (not (getf dependency :unmapped)))))
+
+(test describe-of-a-module-with-no-mapping-says-unmapped
+  (let* ((g (module-graph))
+         (dependency (getf (describe-entity g (module-id-named g "tzdata"))
+                           :dependency)))
+    (is (getf dependency :unmapped))
+    (is (null (getf dependency :provides)))))
+
+(test describe-of-a-function-carries-no-dependency
+  (let ((f (make-k-fixture)))
+    (is (null (getf (describe-entity (k-graph f) (id (k-resolve f))) :dependency)))))
+
+(test find-puts-a-module-in-the-code-family-and-not-the-documentation-family
+  ;; Pins behaviour: KIND-TYPES takes the complement of the document types, so a
+  ;; :MODULE is code once the ontology declares it (PLAN-0059 step 2). This fails
+  ;; only without that step, and tests no change made in step 6.
+  (let ((g (module-graph)))
+    (is (= 1 (length (search-entities g :name "google-auth" :kind :code))))
+    (is (null (search-entities g :name "google-auth" :kind :documentation)))))

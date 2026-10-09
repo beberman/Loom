@@ -651,6 +651,20 @@ read as a claim about a deployed system."
                       :via        (getp r :route)
                       :confidence (confidence r))))
 
+(defun module-dependency (entity)
+  "What a :MODULE declares, for `describe', or NIL for anything else. DES-0055 D9.
+
+:UNMAPPED is true for a PyPI module with no :PROVIDES. npm maps every name to
+itself, so an npm module is never unmapped."
+  (when (eq :module (entity-type entity))
+    (list :manifest (getp entity :file)
+          :ecosystem (getp entity :ecosystem)
+          :specs (getp entity :specs)
+          :sections (getp entity :sections)
+          :provides (getp entity :provides)
+          :unmapped (and (eq :pypi (getp entity :ecosystem))
+                         (null (getp entity :provides))))))
+
 (defun describe-entity (view id &key provenance)
   "Full detail for one entity: its own properties plus its neighbours grouped
 by edge type -- the \"tell me about this function\" call. NIL when ID is
@@ -685,6 +699,8 @@ them is noise on the answers where nothing is wrong."
             ;; RESOLVE-ENTRY-POINTS. The same list is in :PROPERTIES; it is
             ;; lifted so the console and a REST caller need not search a table.
             :entry-point (getp entity :entry-point)
+            ;; DES-0055 D9. NIL for anything but a :MODULE.
+            :dependency (module-dependency entity)
             :properties (loop for key being the hash-keys of (properties entity)
                                 using (hash-value value)
                               unless (null value) append (list key value))

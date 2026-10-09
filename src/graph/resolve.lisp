@@ -2640,7 +2640,9 @@ prefix of it, or T as the second value when two declarations share that length
       (let ((length (loop for prefix in (getf declaration :modules)
                           for n = (dotted-prefix-length prefix module)
                           when n maximize n)))
-        (when length
+        ;; PLUSP and not a bare test: LOOP's MAXIMIZE answers 0 when nothing
+        ;; matched, and a length-0 "match" joined every import to a declaration.
+        (when (and length (plusp length))
           (cond ((> length best) (setf best length winners (list declaration)))
                 ((= length best) (push declaration winners))))))
     (values (and winners (null (rest winners)) (first winners))

@@ -342,6 +342,32 @@ and names `init', so the gap is recorded rather than an empty band."
               (getf deploys :unnamed-declarations)
               (= 1 (getf deploys :unnamed-declarations))))))
 
+(defun print-dependencies (status)
+  "The `dependencies' lines of `status'. DES-0055 D9. Nothing without :DEPENDENCIES.
+
+A NIL :STDLIB prints `stdlib unknown' and not `0 stdlib': the Python child marks
+nothing on an interpreter without sys.stdlib_module_names, and a zero there would
+read as measured (PLAN-0059 risk 7)."
+  (dolist (d (getf status :dependencies))
+    (format t "  dependencies: ~(~a~) ~d declared in ~d manifest~:p, ~d unmapped; ~
+imports ~d joined, ~a, ~d undeclared~@[ (~d ambiguous)~]~%"
+            (getf d :ecosystem) (getf d :declared) (getf d :manifests)
+            (getf d :unmapped) (getf d :joined)
+            (if (getf d :stdlib) (format nil "~d stdlib" (getf d :stdlib)) "stdlib unknown")
+            (getf d :undeclared)
+            (let ((n (getf d :ambiguous))) (and n (plusp n) n))))
+  (when (getf status :frameworks-untracked)
+    (format t "  dependencies: .loom/frameworks.yaml is not tracked by git, so another ~
+checkout of this commit may join differently~%")))
+
+(defun print-dependency (dependency)
+  "The `describe' line for a :MODULE: where it is declared and what it provides."
+  (when dependency
+    (format t "~&  dependency : ~(~a~), declared in ~a~@[ ~{~a~^, ~}~]~@[ (~{~(~a~)~^, ~})~]; ~:[provides ~{~a~^, ~}~;unmapped -- declare it under dependency-modules:~]~%"
+            (getf dependency :ecosystem) (getf dependency :manifest)
+            (getf dependency :specs) (getf dependency :sections)
+            (getf dependency :unmapped) (getf dependency :provides))))
+
 (defun print-status (status)
   (format t "~&~a  ~a~%" (getf status :name) (getf status :root))
   (format t "  index      : ~d files, ~d entities, ~d relationships~%"
@@ -425,6 +451,7 @@ and names `init', so the gap is recorded rather than an empty band."
               (getf imports :unresolved 0)
               (getf imports :unclaimed-target 0)
               (getf imports :unrooted 0))))
+  (print-dependencies status)
   ;; Beside the imports line because they are read together: a count that looks
   ;; wrong is usually a declaration that is wrong, and this is where it says so.
   (dolist (problem (getf status :domain-problems))
@@ -1019,6 +1046,8 @@ then the name may be left out."
     ;; what it touches.
     (when (getf detail :summary)
       (format t "~&  ~a~%" (getf detail :summary)))
+    ;; DES-0055 D9. A :MODULE's declaration; absent for everything else.
+    (print-dependency (getf detail :dependency))
     ;; DES-0054 D8. What a framework registered this for, one line per
     ;; registration. A dotted value prints as its text; a name by its spelling.
     (dolist (entry (getf detail :entry-point))

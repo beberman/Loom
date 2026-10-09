@@ -849,3 +849,66 @@ this repository, so an answer proves which graph was consulted."
     (add-console-entity repository :variable "ZEFFY_API_KEY" "functions/other.py"
                         :environment-reads '("SOMETHING_ELSE"))
     (is (search "things are named" (run-to-string "describe ZEFFY_API_KEY")))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 R8: dependencies in status and describe
+;;; ------------------------------------------------------------------
+
+(defun status-text (&rest plist)
+  (with-output-to-string (*standard-output*)
+    (loom-process::print-status (append plist (list :name "t" :root "/t/" :uncategorized-documents 0
+                                                       :enrichment-runs 0 :errors 0)))))
+
+(defparameter *pypi-dependencies*
+  '((:ecosystem :pypi :declared 5 :manifests 2 :unmapped 2
+     :joined 4 :stdlib 1 :undeclared 1 :ambiguous 0)))
+
+(test status-prints-a-dependencies-line-per-ecosystem
+  (let ((out (status-text :dependencies *pypi-dependencies*)))
+    (is (search "dependencies: pypi 5 declared in 2 manifests, 2 unmapped; imports 4 joined, 1 stdlib, 1 undeclared"
+                out)
+        "~a" out)))
+
+(test status-prints-no-dependencies-line-without-the-key
+  (is (not (search "dependencies" (status-text)))))
+
+(test status-says-stdlib-unknown-when-no-import-carried-a-mark
+  ;; PLAN-0059 risk 7. A zero here would read as measured.
+  (let ((out (status-text :dependencies
+                          (list (list :ecosystem :pypi :declared 0 :manifests 0
+                                      :unmapped 0 :joined 0 :stdlib nil
+                                      :undeclared 3 :ambiguous 0)))))
+    (is (search "stdlib unknown" out) "~a" out)
+    (is (not (search "0 stdlib" out)))))
+
+(test status-says-when-frameworks-yaml-is-not-tracked
+  (is (search ".loom/frameworks.yaml is not tracked by git"
+              (status-text :dependencies *pypi-dependencies* :frameworks-untracked t)))
+  (is (not (search "not tracked by git"
+                   (status-text :dependencies *pypi-dependencies*)))))
+
+(defun add-console-module (repository name &rest properties)
+  (let ((module (make-instance 'loom-ontology:module-entity
+                               :name name :origin-file "requirements.txt"
+                               :properties (loom-ontology:properties-table
+                                            (append (list :qualified-name name
+                                                          :file "requirements.txt"
+                                                          :ecosystem :pypi)
+                                                    properties)))))
+    (loom-graph:add-entity (loom-workspace:repository-graph repository) module)
+    module))
+
+(test describe-prints-a-modules-manifest-specs-and-provides
+  (with-console-fixture
+    (add-console-module repository "google-auth" :specs '(">=2.29")
+                        :provides '("google.auth" "google.oauth2"))
+    (let ((out (run-to-string "describe google-auth")))
+      (is (search "dependency : pypi, declared in requirements.txt >=2.29; provides google.auth, google.oauth2"
+                  out)
+          "~a" out))))
+
+(test describe-says-how-to-map-an-unmapped-module
+  (with-console-fixture
+    (add-console-module repository "tzdata" :specs '(">=2024.1"))
+    (is (search "unmapped -- declare it under dependency-modules:"
+                (run-to-string "describe tzdata")))))

@@ -2534,3 +2534,119 @@ point and who reads the secret."
               "the nearer manifest governs, and the farther edge is gone")
           (reindex-repository repository :quiet t)
           (is (equal incremental (module-import-targets repository "app/main.py")))))))
+
+;;; ------------------------------------------------------------------
+;;; DEPENDENCY-SUMMARY and status' :DEPENDENCIES (DES-0055 R8, PLAN-0059 step 6)
+;;; ------------------------------------------------------------------
+
+(defun add-dependency-fixture-entities (repository)
+  "Two manifests holding three :MODULEs, one of them unmapped, and one Python file
+whose four external imports are one joined, one stdlib, and two undeclared of
+which one is ambiguous. A fifth import is :UNRESOLVED and is no external."
+  (let ((graph (repository-graph repository)))
+    (flet ((module (manifest name &rest properties)
+             (add-entity graph (make-instance
+                                'module-entity :name name :origin-file manifest
+                                :properties (properties-table
+                                             (append (list :qualified-name name
+                                                           :file manifest :ecosystem :pypi)
+                                                     properties))))))
+      (module "requirements.txt" "requests" :provides '("requests"))
+      (module "requirements.txt" "tzdata")
+      (module "app/requirements.txt" "pytest" :provides '("pytest")))
+    (add-entity graph (make-instance
+                       'file-entity :name "app/main.py" :origin-file "app/main.py"
+                       :properties
+                       (properties-table
+                        '(:path "app/main.py" :language :python
+                          :import-sources ("requests" "os" "foo" "google.auth" "bar")
+                          :unresolved-imports ((:specifier "requests" :cause :external)
+                                               (:specifier "os" :cause :external)
+                                               (:specifier "foo" :cause :external)
+                                               (:specifier "google.auth" :cause :external)
+                                               (:specifier "bar" :cause :unresolved))
+                          :import-modules ((:source "requests" :module "requests" :stdlib nil)
+                                           (:source "os" :module "os" :stdlib t)
+                                           (:source "foo" :module "foo" :stdlib nil)
+                                           (:source "google.auth" :module "google.auth"
+                                            :stdlib nil))
+                          :undeclared-imports ((:specifier "foo")
+                                               (:specifier "google.auth" :ambiguous t))))))))
+
+(test dependency-summary-counts-declared-unmapped-joined-stdlib-and-undeclared
+  (with-workspace-fixture (repository)
+    (add-dependency-fixture-entities repository)
+    (let* ((summary (loom-workspace::dependency-summary repository))
+           (pypi (find :pypi summary :key (lambda (p) (getf p :ecosystem)))))
+      (is (= 3 (getf pypi :declared)))
+      (is (= 2 (getf pypi :manifests)))
+      (is (= 1 (getf pypi :unmapped)) "tzdata lists no :PROVIDES")
+      (is (= 1 (getf pypi :joined)))
+      (is (= 1 (getf pypi :stdlib)))
+      (is (= 2 (getf pypi :undeclared)))
+      (is (= 1 (getf pypi :ambiguous)))
+      (is (= (getf (loom-workspace::import-summary repository) :external)
+             (+ (getf pypi :joined) (getf pypi :stdlib) (getf pypi :undeclared)))
+          "the three causes partition the :EXTERNAL count"))))
+
+(test dependency-summary-leaves-stdlib-nil-when-no-import-carries-a-mark
+  (with-workspace-fixture (repository)
+    (add-dependency-fixture-entities repository)
+    (let ((file (find "app/main.py" (entities-of-type (repository-graph repository) :file)
+                      :key (lambda (e) (getp e :path)) :test #'equal)))
+      (setp file :import-modules '((:source "requests" :module "requests")
+                                   (:source "os" :module "os"))))
+    (is (null (getf (find :pypi (loom-workspace::dependency-summary repository)
+                          :key (lambda (p) (getf p :ecosystem)))
+                    :stdlib :absent))
+        "unknown is NIL, and zero would read as measured")))
+
+(test status-has-no-dependencies-on-a-tree-with-neither-manifest-nor-importer
+  (with-workspace-fixture (repository)
+    (is (null (getf (repository-status repository) :dependencies :absent)))))
+
+(test status-carries-the-dependencies
+  (with-workspace-fixture (repository)
+    (add-dependency-fixture-entities repository)
+    (let ((pypi (find :pypi (getf (repository-status repository) :dependencies)
+                      :key (lambda (p) (getf p :ecosystem)))))
+      (is (= 3 (getf pypi :declared))))))
+
+(test frameworks-untracked-is-true-only-while-git-does-not-list-the-file
+  (with-workspace-fixture (repository)
+    (add-dependency-fixture-entities repository)
+    (write-file ".loom/frameworks.yaml" *requests-declaration*)
+    (git-init-fixture)
+    (uiop:run-program (list "git" "-C" (namestring *fixture-root*)
+                            "rm" "-q" "--cached" "--" ".loom/frameworks.yaml")
+                      :output nil :error-output nil)
+    (is (eq t (getf (repository-status repository) :frameworks-untracked)))
+    (uiop:run-program (list "git" "-C" (namestring *fixture-root*)
+                            "add" "-A")
+                      :output nil :error-output nil)
+    (is (null (getf (repository-status repository) :frameworks-untracked)))))
+
+(test dependency-counts-from-a-real-index-sum-to-the-external-count
+  ;; The hand-built entities above fix the arithmetic; this one fixes that the
+  ;; properties RESOLVE-DEPENDENCIES writes are the ones DEPENDENCY-SUMMARY reads.
+  (if (not (python-available-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-file "requirements.txt" "requests>=2.31
+tzdata>=2024.1
+")
+        (write-file ".loom/frameworks.yaml" *requests-declaration*)
+        (write-file "app/main.py" "import os
+import requests
+import mystery
+")
+        (reindex-repository repository :quiet t)
+        (let ((pypi (find :pypi (getf (repository-status repository) :dependencies)
+                          :key (lambda (p) (getf p :ecosystem)))))
+          (is (= 2 (getf pypi :declared)))
+          (is (= 1 (getf pypi :manifests)))
+          (is (= 1 (getf pypi :unmapped)) "tzdata has no declaration")
+          (is (= 1 (getf pypi :joined)))
+          (is (= 1 (getf pypi :undeclared)))
+          (is (= (getf (loom-workspace::import-summary repository) :external)
+                 (+ (getf pypi :joined) (or (getf pypi :stdlib) 0) (getf pypi :undeclared))))))))
