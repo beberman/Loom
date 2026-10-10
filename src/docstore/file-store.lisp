@@ -5,7 +5,8 @@
 ;;;; returned (CON-0002). A token is a table from address to stamp.
 ;;;;
 ;;;; The store cannot compute two facts itself, because it cannot reach the
-;;;; analyzer or run git on its own authority (RULE-0010). The CLAIM function
+;;;; analyzer or run git on its own authority (RULE-0010, RULE-0013 to
+;;;; RULE-0021; loom-utils is the one Loom system it may reach). The CLAIM function
 ;;;; says which paths are documents. The IGNORE function says which of a list
 ;;;; of relative paths git ignores. loom-workspace passes both in.
 
@@ -71,13 +72,6 @@ than inventing a prefix from the directory name."))
       (funcall (file-docstore-listing store))
       (directory (merge-pathnames "**/*.*" (file-docstore-root store)))))
 
-(defun dotted-p (name)
-  "True when NAME is a string beginning with a dot.
-
-LOOM-UTILS:DOT-PREFIXED-P, restated because this system reaches no other Loom
-system (RULE-0010)."
-  (and (stringp name) (plusp (length name)) (char= #\. (char name 0))))
-
 (defun relative-address (store path)
   "PATH relative to STORE's root, forward-slashed.
 
@@ -93,8 +87,8 @@ A dot-prefixed name or directory is an editor's or a tool's bookkeeping, and
 Emacs's lock file .#foo.yaml is a dangling symlink that keeps its target's
 extension. The walk in REPOSITORY-FILES skips both, for the same reasons."
   (and (pathname-name path)
-       (not (dotted-p (file-namestring path)))
-       (notany #'dotted-p (rest (pathname-directory path)))
+       (not (dot-prefixed-p (file-namestring path)))
+       (notany #'dot-prefixed-p (rest (pathname-directory path)))
        (funcall (file-docstore-claim store) path)))
 
 (defun document-paths (store)

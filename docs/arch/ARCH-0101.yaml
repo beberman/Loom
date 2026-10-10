@@ -84,6 +84,12 @@ body: |
   RULE-0010 to RULE-0012 keep it a leaf that loom-analyzer and loom-knowledge
   cannot reach (DES-0051).
 
+  2026-10-10 (PLAN-0061 D1): loom-docstore depends on loom-utils, for
+  READ-FILE and DOT-PREFIXED-P, as every system but loom-ontology does. The
+  table above omits loom-utils for all of them. It is a leaf above loom-utils
+  and below everything else, and RULE-0010 with RULE-0013 to RULE-0021 permit
+  that edge and no other Loom system.
+
   Tier 2 is loom-graph and loom-analyzer, siblings that cannot see each other.
   loom-graph owns storage, transactions, queries and the resolution passes.
   loom-analyzer turns text into operations. The absence of an edge between them

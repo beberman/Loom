@@ -32,6 +32,9 @@
    #:*true-tokens*
    #:*false-tokens*
 
+   ;; files.lisp -- whole-file reads
+   #:read-file
+
    ;; paths.lisp
    #:path-segments
    #:dot-prefixed-p

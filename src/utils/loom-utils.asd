@@ -25,11 +25,10 @@
   ;; is argued here rather than read off a green `check', whose :no-edge kind
   ;; cannot see an external library at all.
   ;;
-  ;; Not named `utils'. That name is taken: loom-analyzer depends on the
-  ;; standalone library at ~/lisp/utils, whose system and package are both
-  ;; spelled UTILS. DES-0009 makes the package name the :SYSTEM property every
-  ;; rule keys on, so the package is LOOM-UTILS in order for RULE-0009 to be
-  ;; able to name it.
+  ;; Not named `utils'. That was the name of a standalone library Loom used to
+  ;; depend on, whose system and package were both spelled UTILS. DES-0009 makes
+  ;; the package name the :SYSTEM property every rule keys on, so the package is
+  ;; LOOM-UTILS in order for RULE-0009 to be able to name it.
   :depends-on (#:bordeaux-threads)
   :serial t
   :components
@@ -38,6 +37,7 @@
    (:file "errors")
    (:file "logging")
    (:file "parsing")
+   (:file "files")
    (:file "paths")
    (:file "plists")
    (:file "threads")
@@ -50,7 +50,8 @@
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  :depends-on (#:loom-utils #:bordeaux-threads #:fiveam)
+  ;; UIOP for WITH-TEMPORARY-FILE in the READ-FILE tests.
+  :depends-on (#:loom-utils #:bordeaux-threads #:uiop #:fiveam)
   :serial t
   :pathname "test/"
   :components

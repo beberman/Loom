@@ -5,17 +5,23 @@
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  ;; DES-0051 D5. A leaf: it deals in refs, addresses, versions and bytes and
-  ;; never sees an ontology operation, so no Loom system appears below.
-  ;; RULE-0010 checks that. loom-workspace is its only client, and RULE-0011
-  ;; and RULE-0012 keep loom-analyzer and loom-knowledge from reaching it.
+  ;; DES-0051 D5. It deals in refs, addresses, versions and bytes and never
+  ;; sees an ontology operation, so no Loom system but loom-utils appears
+  ;; below. RULE-0010 and RULE-0013 to RULE-0021 check that, one rule per
+  ;; system (a rule carries one check). loom-workspace is its only client, and
+  ;; RULE-0011 and RULE-0012 keep loom-analyzer and loom-knowledge from
+  ;; reaching it.
   ;;
   ;; Not loom-store: "store" already means the vector store in
   ;; src/embed/store.lisp.
   ;;
-  ;; UTILS is the standalone library, for READ-FILE. A stamp hashes the text
-  ;; READ-FILE returns, so the stamp and the analyzer see the same string.
-  :depends-on (#:utils)
+  ;; LOOM-UTILS for READ-FILE and DOT-PREFIXED-P (PLAN-0061 D1). A stamp
+  ;; hashes the text READ-FILE returns, so the stamp and the analyzer see the
+  ;; same string. UIOP is named because this system calls it (git queries in
+  ;; file-store.lisp), and it arrived before only through the library this
+  ;; replaces. The rules cannot see an external library, so UIOP is governed by
+  ;; RULE-0010's prose.
+  :depends-on (#:loom-utils #:uiop)
   :serial t
   :components
   (
@@ -49,8 +55,9 @@
   :version "0.1.0"
   :author "Brian Eberman"
   :license "MIT"
-  ;; UIOP for WITH-TEMPORARY-FILE in the stamp tests.
-  :depends-on (#:loom-docstore #:uiop #:fiveam)
+  ;; UIOP for WITH-TEMPORARY-FILE in the stamp tests. LOOM-UTILS because the
+  ;; tests call LOOM-UTILS:READ-FILE to pin the stamp against it.
+  :depends-on (#:loom-docstore #:loom-utils #:uiop #:fiveam)
   :serial t
   :pathname "test/"
   :components

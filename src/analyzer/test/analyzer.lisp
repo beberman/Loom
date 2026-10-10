@@ -49,11 +49,28 @@
       "a file directly under src/, with no subdirectory, names no system")
   (is (null (default-system-for-path nil))))
 
-;;; SPLIT-LINES is gone: it is UTILS:STRING-LINES now, and the library carries
-;;; the test for it -- the last line of a file with no trailing newline, no
-;;; empty line gained when there is one, and the stripped carriage return. The
-;;; four checks that were here are four checks there, so this system's count
-;;; drops by four and nothing is less tested.
+;;; ------------------------------------------------------------------
+;;; string-lines (PLAN-0061 D1)
+;;;
+;;; SPLIT-LINES became UTILS:STRING-LINES when the standalone library carried
+;;; it, and the library held its tests. The library is gone, STRING-LINES is
+;;; defined in analyzer.lisp, and these are the tests that came with it.
+;;; ------------------------------------------------------------------
+
+(test string-lines-keeps-the-last-line-when-the-string-does-not-end-in-a-newline
+  (let ((lines (string-lines (format nil "a~%b"))))
+    (is (equalp #("a" "b") lines))))
+
+(test string-lines-adds-no-empty-line-after-a-trailing-newline
+  ;; An off-by-one here shifts every line number computed from the result.
+  (is (equalp #("a") (string-lines (format nil "a~%"))))
+  (is (= 2 (length (string-lines (format nil "a~%b~%"))))))
+
+(test string-lines-drops-a-carriage-return-so-a-crlf-checkout-matches
+  (is (equalp #("a" "b") (string-lines (format nil "a~c~%b" #\Return)))))
+
+(test string-lines-of-the-empty-string-is-an-empty-vector
+  (is (equalp #() (string-lines ""))))
 
 (test analyze-path-stamps-a-domain-onto-every-entity-it-returns
   ;; PLAN-0050 S3. The stamp is in ANALYZE-PATH rather than in each analyzer,

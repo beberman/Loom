@@ -29,7 +29,7 @@ forward-slashed, as :FILE's :PATH property is specified to be.")
 that is what makes the idempotence test below meaningful."
   (analyze-file (make-instance 'lisp-analyzer)
                 *fixture-relative*
-                (utils:read-file *fixture-path*)
+                (loom-utils:read-file *fixture-path*)
                 "ws-test"))
 
 (defun find-by-name (graph type name)

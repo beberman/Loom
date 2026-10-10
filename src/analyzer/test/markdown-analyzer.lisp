@@ -256,7 +256,7 @@ word and is dropped in silence, an unresolved link is a path that is not there."
 
 (test loom-indexes-its-own-todo-file
   (let* ((path (merge-pathnames "docs/TODO.md" *repo-root*))
-         (e (and (probe-file path) (md-entity "docs/TODO.md" (utils:read-file path)))))
+         (e (and (probe-file path) (md-entity "docs/TODO.md" (loom-utils:read-file path)))))
     (when e
       (is (string= "docs/TODO.md" (name e)))
       (is (eq :markdown (getp e :format)))

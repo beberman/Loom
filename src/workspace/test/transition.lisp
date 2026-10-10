@@ -109,7 +109,7 @@ file-store test (DES-0051 D9 part C)."
   (let ((ref (and *transition-docstore* (document-ref relative))))
     (if ref
         (loom-docstore:docstore-read *transition-docstore* ref)
-        (utils:read-file (merge-pathnames relative root)))))
+        (loom-utils:read-file (merge-pathnames relative root)))))
 
 (defun document-at-p (root relative)
   "True when the store the fixture holds has a document at RELATIVE.

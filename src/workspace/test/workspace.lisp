@@ -2484,7 +2484,7 @@ point and who reads the secret."
         (let ((hand-written (js-fn-picture repository)))
           (is (eq :https (first hand-written)) "the control: the fixture matches")
           (write-file ".loom/frameworks.yaml"
-                      (utils:read-file (loom-workspace::template-path "firebase-functions-js.yaml")))
+                      (loom-utils:read-file (loom-workspace::template-path "firebase-functions-js.yaml")))
           (reindex-repository repository :quiet t)
           (is (equal hand-written (js-fn-picture repository)))
           (is-true (js-fn-setting repository "P") "the param declaration matches too")))))

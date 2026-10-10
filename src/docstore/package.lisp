@@ -7,7 +7,11 @@
 
 (defpackage #:loom-docstore
   (:use #:cl)
-  (:import-from #:utils #:read-file)
+  ;; PLAN-0061 D1. Imported rather than defined here: a function of the same
+  ;; name in this package would make every qualified call to loom-utils' an
+  ;; ambiguous site (DES-0015), and would give a stamp and the analyzer two
+  ;; readers of one file. The test file pins that these are the same symbols.
+  (:import-from #:loom-utils #:read-file #:dot-prefixed-p)
   (:export
    ;; protocol.lisp -- what a store returns
    #:docstore-record

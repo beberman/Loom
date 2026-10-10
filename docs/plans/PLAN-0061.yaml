@@ -1780,3 +1780,121 @@ body: |
   0 violations, 2 unenforced, 8 unresolved, 7 ambiguous. load-test loom-serve
   prints T. `git grep -n '#:utils' -- src/serve` and
   `git grep -n 'utils:' -- src/workspace/context-log.lisp` print nothing.
+
+  Step 2, 2026-10-10, under /usr/bin/sbcl 2.2.9.debian.
+
+  Built. src/utils/files.lisp holds READ-FILE, copied from
+  ~/lisp/utils/src/files.lisp with its docstring and :IF-DOES-NOT-EXIST, and
+  loom-utils exports it. STRING-LINES is defined in src/analyzer/analyzer.lisp
+  after LINE-COUNT and exported from loom-analyzer. loom-docstore imports
+  READ-FILE and DOT-PREFIXED-P from loom-utils and DOTTED-P is deleted. The
+  asd files declare: loom-docstore (#:loom-utils #:uiop), its test system gains
+  #:loom-utils, loom-analyzer and loom-workspace drop #:utils, and the three
+  test systems that named #:utils name #:loom-utils. `git grep -n -E
+  '#:utils\b' -- 'src/*.asd' 'src/**/*.asd'` prints nothing. The 12
+  utils:read-file calls in 7 test files are loom-utils:read-file.
+  `git grep -n 'utils:' -- src ':!src/utils'` prints only lines that are
+  inside string fixtures or comments (lisp-analyzer tests and reader tests,
+  frameworks.lisp:198, lisp-analyzer.lisp:268 and :438, lisp-reader.lisp:76,
+  code-ontology.lisp:648, similar.lisp:212), and
+  `(:import-from #:utils #:proper-listp)` at src/analyzer/test/lisp-analyzer.lisp:312
+  is a string fixture. Nothing under src/ loads a system named utils.
+  Rules: RULE-0010 names loom-ontology; RULE-0013 to RULE-0021 name
+  loom-graph, loom-analyzer, loom-embed, loom-knowledge, loom-workspace,
+  loom-process, loom-serve, loom-rest and loom-mcp, in that order. The ids came
+  from tools/next-doc-id.sh RULE one file at a time (it printed RULE-0022
+  afterwards). No ref in the repository carries a RULE id above RULE-0012:
+  `git ls-tree -r` over every refs/heads, refs/remotes and refs/tags entry.
+  Documents: RULE-0009's statement, DES-0051 D5 (a dated "Amended" paragraph),
+  ARCH-0101 (a dated paragraph after the RULE-0010 sentence) and CLAUDE.md's
+  loom-utils and loom-docstore rows.
+
+  Departures. (1) loom-utils/test gains #:uiop, which the plan does not list:
+  the READ-FILE tests use UIOP:WITH-TEMPORARY-FILE. (2) The plan's CRLF
+  fixture does not make the file shorter in characters than in bytes on SBCL
+  under Linux, because SBCL does not translate line endings. The multibyte
+  characters do, so the loom-utils and docstore fixtures hold e-acute and the
+  euro sign beside the CR LF, and each asserts that the file is longer in
+  bytes than in characters before it reads. (3) The first version of the
+  docstore stamp test passed under the whole-buffer mutation (below), because
+  both sides of its comparison called LOOM-UTILS:READ-FILE. It now also
+  compares the stamp with (sxhash <the text written>). (4) The comment at
+  src/analyzer/test/analyzer.lisp:52 said the library carries the STRING-LINES
+  tests. That was false once the library went, so four tests replace it. (5)
+  src/analyzer/package.lisp exports STRING-LINES and carries a comment saying
+  READ-FILE is loom-utils' and not re-exported. (6) Left alone: comments that
+  name UTILS:STRING-LINES as history (markdown-analyzer.lisp:125) and
+  tools/test/summary-band.lisp:30, which step 3 owns.
+
+  New tests, 12, none calls ~/lisp/utils.
+    src/utils/test/suite.lisp (4):
+      read-file-returns-exactly-the-characters-written-with-no-nul-tail
+      read-file-of-an-empty-file-is-the-empty-string
+      read-file-signals-on-a-missing-file-by-default
+      read-file-of-a-missing-file-is-nil-when-the-caller-says-so
+    src/analyzer/test/analyzer.lisp (4): string-lines on "a\nb", on "a\n" and
+      "a\nb\n", on "a\r\nb", and on "".
+    src/docstore/test/file-store.lisp (2):
+      the-store-reads-and-filters-through-loom-utils-and-keeps-no-copy
+        (find-symbol READ-FILE and DOT-PREFIXED-P are the loom-utils symbols;
+        DOTTED-P is absent)
+      a-stamp-of-a-multibyte-crlf-file-is-the-stamp-of-what-loom-utils-reads
+
+  Mutations, each alone in the real tree, the files restored from a copy and
+  touched:
+    1. loom-docstore :SHADOW READ-FILE plus a local DEFUN that calls
+       LOOM-UTILS:READ-FILE. loom-docstore 239 pass, 1 fail: the symbol test.
+       Every behavioural test passed, which is why the symbol test exists.
+    2. READ-FILE returning its whole buffer. loom-utils 48 pass, 2 fail: the
+       NUL-tail test's two assertions. loom-docstore 240 pass, 1 fail: the
+       stamp test, on the sxhash of the text written. Before departure (3)
+       loom-docstore passed this mutation.
+    3. Old RULE-0010 (git show HEAD) and RULE-0013 to RULE-0021 removed:
+       `check` reports 7 violations, all RULE-0010: calls edges from HELD-P to
+       DOT-PREFIXED-P, and from WALK-CHANGES, KNOWN-CHANGES,
+       PLAN-FILE-OPERATION, PERFORM-FILE-WRITE, STAMP-CHANGED-P and
+       DOCSTORE-READ to READ-FILE. With the new rules: 0.
+    4. (when nil (loom-graph:get-entity nil nil)) in STAMP-FILE: `check`
+       reports `error RULE-0013: calls edge from stamp-file to get-entity`.
+    5. (when nil (loom-embed:make-fixed-embedder)) in STAMP-FILE: `error
+       RULE-0015: calls edge from stamp-file to make-fixed-embedder`. Both
+       plants sit under WHEN NIL because loom.sh loads the tree's own docstore
+       code and indexes with it: the first attempt, without WHEN NIL, ran
+       GET-ENTITY on NIL during indexing and failed the pass, and that run's
+       `0 violations, 0 unenforced` was the failed pass, not an answer.
+    6. All ten rule files parse as checks: `rules` lists RULE-0010 and
+       RULE-0013 to RULE-0021 without [prose only], and `check` names exactly
+       RULE-0004 and RULE-0008 as not enforceable. Mutations 3 to 5 fired
+       three of the ten (RULE-0010 by the old text, RULE-0013, RULE-0015); the
+       other seven are shown to parse by the list and the count of 2, and
+       none was planted.
+  Not mutated: the DOTTED-P to DOT-PREFIXED-P switch in HELD-P. The existing
+  dot-prefixed-files-and-directories-are-not-documents test covers HELD-P and
+  was not run against a mutant.
+
+  Nothing loads utils. The full suite ran under a driver that put a function
+  first in ASDF:*SYSTEM-DEFINITION-SEARCH-FUNCTIONS* which records and signals
+  on any lookup of a system named utils. Control: without the hook,
+  (asdf:find-system "utils" nil) finds the library on this machine, and with
+  it the request is recorded. Result of the run: 12 of 12, 0 requests for utils,
+  no package UTILS in the image, utils absent from ASDF:ALREADY-LOADED-SYSTEMS
+  (189 systems loaded). ~/lisp/utils and ~/quicklisp were not touched. What
+  still reaches ~/lisp/utils: the symlink ~/quicklisp/local-projects/utils
+  exists and nothing under src/ asks for it; tools/test/summary-band.lisp:30
+  names the path as a string row (step 3); this file and other documents name
+  it in prose (step 11).
+
+  Census. 512 minted, 41 ambiguous, unchanged. DOTTED-P and READ-FILE are
+  imported in loom-docstore and defined once, so no qualified call became
+  ambiguous.
+
+  Exits. tools/loom-test.sh: 12 of 12. Pass counts: utils 50 (was 43),
+  embed 46, docstore 241 (was 234), ontology 496, analyzer 1357 (was 1352),
+  graph 857, workspace 1237, knowledge 645, process 261, serve 335, rest 123,
+  mcp 58. `check`: 0 violations, 2 unenforced (RULE-0004, RULE-0008),
+  8 unresolved, 7 ambiguous. load-test loom-serve prints T.
+  One earlier full run printed serve 333 pass, 1 fail:
+  AN-EMPTY-ANSWER-IS-RECORDED-AS-AN-ANSWER, "the empty answer was recorded at
+  all". The serve suite alone passed 3 of 3 afterwards and so did the next two
+  full runs. It is the second serve failure that did not recur (step 1 saw the
+  first), and no BUG document records it.

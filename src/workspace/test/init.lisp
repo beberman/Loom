@@ -33,7 +33,7 @@
 
 (defun target-text (root relative)
   (let ((path (target-file root relative)))
-    (and (probe-file path) (utils:read-file path))))
+    (and (probe-file path) (loom-utils:read-file path))))
 
 (defun write-target-file (root relative contents)
   (let ((path (target-file root relative)))
@@ -428,7 +428,7 @@ refresh correctly reports the file current -- a test that appended would prove
 nothing while looking like it had."
   (let ((path (gensym)) (original (gensym)) (text (gensym)) (at (gensym)))
     `(let* ((,path (loom-workspace::template-path ,name))
-            (,original (utils:read-file ,path)))
+            (,original (loom-utils:read-file ,path)))
        (unwind-protect
             (let* ((,at (search loom-workspace::*marker-yours* ,original))
                    (,text (format nil "~%## A section the template grew~%~%Something useful.~%")))
@@ -681,7 +681,7 @@ edited: by the team
               "no document was rewritten: ~a" (getf report :replaced))
           (is (string= "id: CON-0001
 edited: by the team
-" (utils:read-file concept))
+" (loom-utils:read-file concept))
               "the team's edit to Loom's own concept document stands")
           (is-true (probe-file (target-file root "docs/requirements/REQ-0001.yaml"))
                    "and their requirement is still there"))))))
@@ -1023,7 +1023,7 @@ confirm -- CON-0001. It is reported instead.")
 (test the-python-template-parses-with-no-problems-and-declares-each-callee-once
   (with-target-tree (root)
     (write-target-file root ".loom/frameworks.yaml"
-                       (utils:read-file (loom-workspace::template-path
+                       (loom-utils:read-file (loom-workspace::template-path
                                          "firebase-functions-python.yaml")))
     (is (null (loom-analyzer:frameworks-problems root))
         "~a" (loom-analyzer:frameworks-problems root))
@@ -1048,7 +1048,7 @@ confirm -- CON-0001. It is reported instead.")
   ;; needs no node.
   (with-target-tree (root)
     (write-target-file root ".loom/frameworks.yaml"
-                       (utils:read-file (loom-workspace::template-path
+                       (loom-utils:read-file (loom-workspace::template-path
                                          "firebase-functions-js.yaml")))
     (is (null (loom-analyzer:frameworks-problems root))
         "~a" (loom-analyzer:frameworks-problems root))

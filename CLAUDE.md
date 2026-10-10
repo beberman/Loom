@@ -182,19 +182,19 @@ SBCL behind SLIME. Where the two could disagree, say which one you ran.
 
     loom-utils      leaf utilities two systems that may not depend on each
                     other both need: the refusal condition, the event log and
-                    its debugger hook, the scalar readers, path segments, plist
-                    filtering, the two waits. Depends on nothing, and RULE-0009
-                    checks it. loom-ontology does not use it -- RULE-0001 would
-                    report the edge -- so what the ontology shares lives in the
-                    ontology. REV-0002.
+                    its debugger hook, the scalar readers, whole-file reads,
+                    path segments, plist filtering, the two waits. Depends on
+                    nothing, and RULE-0009 checks it. loom-ontology does not
+                    use it -- RULE-0001 would report the edge -- so what the
+                    ontology shares lives in the ontology. REV-0002.
     loom-ontology   entity and relationship declarations. Depends on nothing.
     loom-graph      the only writer. Transactions, queries, resolution, rules.
     loom-analyzer   path + contents -> operations. Never touches the graph.
     loom-docstore   documents behind a protocol: refs, addresses, versions,
-                    text. Depends on no other Loom system (RULE-0010).
-                    loom-workspace is its only client; loom-analyzer and
-                    loom-knowledge may not reach it (RULE-0011, RULE-0012).
-                    Holds the file stamps. DES-0051.
+                    text. Depends only on loom-utils (RULE-0010, RULE-0013 to
+                    RULE-0021). loom-workspace is its only client;
+                    loom-analyzer and loom-knowledge may not reach it
+                    (RULE-0011, RULE-0012). Holds the file stamps. DES-0051.
     loom-knowledge  read-only services: find, describe, impact, context,
                     structure.
     loom-workspace  indexing pipeline, file monitor, and the write path:
