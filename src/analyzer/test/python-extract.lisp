@@ -564,3 +564,63 @@ from . import x
          (is-false (assoc :stdlib (entry ".")))
          (is-true (assoc :stdlib (entry "os"))
                   "python 3.10 and later know their stdlib"))))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 D10: a call's signature, kinds and keyword names only
+;;; ------------------------------------------------------------------
+
+(defun py-signature-of (reply definition name)
+  "The signature the child reported for the call named NAME in DEFINITION."
+  (py-get (find name (py-get (py-def reply definition) :calls)
+                :key (lambda (call) (py-get call :name)) :test #'equal)
+          :signature))
+
+(test a-call-reports-its-signature-of-kinds-and-keyword-names
+  ;; PLAN-0060 step 4. Ten positional arguments, one of each kind, then a named
+  ;; keyword and a `**kw' written `*'. Without the `signature' key every
+  ;; assertion here gets NIL.
+  (call-with-python
+   (lambda ()
+     (let ((reply (py-reply "def run(a, kw):
+    f(\"a\", 1, True, None, x, [1], {\"k\": 1}, lambda: 0, g(), *a, timeout=3, **kw)
+")))
+       (is (equal "10:s,n,b,b,y,q,q,f,c,*|timeout=n,*" (py-signature-of reply "run" "f")))
+       (is (equal "0:" (py-signature-of reply "run" "g")))))))
+
+(test a-spread-is-written-star-in-both-places-it-can-stand
+  ;; FINDINGS 6: `**k' is `*' in the keyword part, with no name, and `*a' is a
+  ;; positional `*' that still counts toward the arity.
+  (call-with-python
+   (lambda ()
+     (let ((reply (py-reply "def run(a, k):
+    f(a, timeout=3, **k)
+    g(*a)
+    h(**k)
+")))
+       (is (equal "1:y|timeout=n,*" (py-signature-of reply "run" "f")))
+       (is (equal "1:*" (py-signature-of reply "run" "g")))
+       (is (equal "0:|*" (py-signature-of reply "run" "h")))))))
+
+(test a-decorator-is-a-call-of-the-decorator-with-the-function
+  ;; FINDINGS 6. `@d' is not a Call node, so it reports `1:f'. `@app.route(...)'
+  ;; is one, and reports its own arguments.
+  (call-with-python
+   (lambda ()
+     (let ((reply (py-reply "@d
+def g(): pass
+@app.route(\"/x\")
+def h(): pass
+")))
+       (is (equal "1:f" (py-signature-of reply "g" "d")))
+       (is (equal "1:s" (py-signature-of reply "h" "app.route")))))))
+
+(test every-argument-kind-has-its-letter
+  ;; bytes and a complex number are literals of the kinds a string and a number
+  ;; are; `...', a negation, a subscript and an f-string have no letter and are
+  ;; `x', as does anything the grammar does not name.
+  (call-with-python
+   (lambda ()
+     (let ((reply (py-reply "def run(a, y):
+    f(b\"x\", 2j, 1.5, False, ..., -1, a[0], f\"{y}\", a.b, (1, 2), {1}, [])
+")))
+       (is (equal "12:s,n,n,b,x,x,x,x,y,q,q,q" (py-signature-of reply "run" "f")))))))

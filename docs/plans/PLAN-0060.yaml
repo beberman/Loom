@@ -1189,3 +1189,162 @@ body: |
 
   Verification. tools/loom-test.sh 12 of 12 under /usr/bin/sbcl. Serve, rest
   and mcp passed first time.
+
+  STEP 4, PYTHON. 2026-10-09, Loom at 5139ee2 plus this step's commit. Python
+  only: tools/js and the Lisp analyzer are untouched.
+
+  Changed. tools/py/extract.py has ARGUMENT_KIND and CALL_SIGNATURE, and
+  RECORD_CALL writes 'signature' on every call record: the call's own, or 1:f
+  for a decorator that is not a Call. 'positional' and 'keywords' are as they
+  were; the module docstring's reply table names the key. python-analyzer.lisp
+  has PY-CALL-SHAPES, which maps each record to (key signature line) and hands
+  the list to GROUP-CALL-SHAPES; PY-CALLABLE-PROPERTIES and
+  PY-TEST-PROPERTIES write :CALL-SHAPES when it is non-empty; PY-CALL-SITE
+  writes its one call's shapes; PY-CALL-SITES and PY-OWNED-SITES merge a dropped
+  site's lines onto the kept one. No .asd, no rule, no ceiling and no
+  RESOLVE-DEPENDENCIES changed. `find` showed PY-CALL-SHAPES, PY-CALL-KEY,
+  PY-SHAPE-OCCURRENCES and PY-MERGE-SITE-SHAPES undefined before they were
+  written.
+
+  Departures from the plan.
+    1. Three helpers the plan does not list. PY-CALL-KEY is the key rule (the
+       bare name, or PY-DOTTED of :SPECIFIER and :PATH for an import-bound
+       call). PY-CALL-SITE already spelled that rule inline for :CALL-NAME, so
+       it now calls PY-CALL-KEY, and the site's name and its shape key cannot
+       drift apart. PY-SHAPE-OCCURRENCES turns a :CALL-SHAPES value back into
+       (key signature line) occurrences, and PY-MERGE-SITE-SHAPES regroups two
+       sites' occurrences onto the kept site with SETP. The merge is a SETP on
+       the kept site after construction, not an argument at construction, which
+       is allowed because :CALL-SHAPES is in no natural key.
+    2. Kinds the plan leaves to "anything else x": a negated number (-1), a
+       subscript and an f-string are x. literal_value in the same file reads -1
+       as a number, and an f-string is a string expression; neither was
+       changed here, because D10 names the kinds and the plan does not widen
+       them. A later step may.
+    3. PY-CALL-SHAPES leaves out a record with no :SIGNATURE and does not guess
+       one (CON-0001). The child writes one on every call.
+    4. The sentinel test calls GRAPH-MENTIONS-P, defined in
+       src/analyzer/test/lisp-analyzer.lisp, which loom-analyzer/test loads
+       before python-analyzer.lisp. It is one function in one package, so the
+       test did not get a second copy of the walk.
+    5. No existing test was edited. RISKS 7's condition did not arise.
+
+  Tests, 4 in python-extract.lisp and 6 in python-analyzer.lisp. Before the
+  change none could pass, since the key and the property did not exist.
+    extract   A-CALL-REPORTS-ITS-SIGNATURE-OF-KINDS-AND-KEYWORD-NAMES:
+              f("a", 1, True, None, x, [1], {"k": 1}, lambda: 0, g(), *a,
+              timeout=3, **kw) is 10:s,n,b,b,y,q,q,f,c,*|timeout=n,*, and g() is 0:.
+              A-SPREAD-IS-WRITTEN-STAR-IN-BOTH-PLACES-IT-CAN-STAND: 1:y|timeout=n,*
+              for f(a, timeout=3, **k), 1:* for g(*a), 0:|* for h(**k).
+              A-DECORATOR-IS-A-CALL-OF-THE-DECORATOR-WITH-THE-FUNCTION: @d is
+              1:f and @app.route("/x") is 1:s.
+              EVERY-ARGUMENT-KIND-HAS-ITS-LETTER: bytes s, 2j and 1.5 n, False
+              b, Ellipsis, -1, a[0] and an f-string x, a.b y, tuple, set and
+              list q.
+    analyzer  A-FUNCTION-RECORDS-THE-SHAPE-OF-EACH-CALL-UNDER-ITS-KEY: a local
+              name, ".posting.post" for a relative import and "requests.get"
+              through `import requests`, each with the call's own line.
+              A-DECORATOR-AND-A-TEST-CASE-RECORD-SHAPES-TOO.
+              A-CALL-SITE-CARRIES-THE-SHAPE-OF-ITS-OWN-CALL.
+              TWO-CALLS-OF-ONE-NAME-IN-ONE-GUARD-KEEP-BOTH-LINES-ON-THE-ONE-SITE:
+              main(), main(1), main() give one site holding ("0:" 3 5) and
+              ("1:n" 4).
+              CALLS-ON-ONE-LINE-IN-TWO-STATEMENTS-KEEP-BOTH-ON-THE-ONE-SITE:
+              the three statement shapes of PY-OWNED-SITES' REV-0003 fixture.
+              NO-LITERAL-REACHES-THE-INDEX-FROM-A-PYTHON-CALL: f("SENTINEL",
+              4242, token="SECRET-VALUE") in a body is 2:s,n|token=s, the walk
+              of every entity and relationship finds none of the three values
+              and finds the keyword name `token`; the control, a function named
+              `sentinel`, is found by the same walk.
+
+  Mutations, one at a time in this tree. The file was copied aside and written
+  back after each, with a touch (ASDF compares whole-second times). The
+  analyzer system's python-extract and python-analyzer suites were run with each
+  mutation in place. Tests that failed, by mutation:
+    drop 'signature' in RECORD_CALL
+        7 extract checks and 9 analyzer checks: A-CALL-REPORTS-..., A-SPREAD-...,
+        A-DECORATOR-IS-A-CALL-..., EVERY-ARGUMENT-KIND-..., and in the
+        analyzer A-FUNCTION-RECORDS-..., A-DECORATOR-AND-A-TEST-CASE-...,
+        A-CALL-SITE-CARRIES-..., both merge tests, the sentinel test
+    drop the merge in PY-CALL-SITES
+        TWO-CALLS-OF-ONE-NAME-IN-ONE-GUARD-KEEP-BOTH-LINES-... only
+    drop the merge in PY-OWNED-SITES
+        CALLS-ON-ONE-LINE-IN-TWO-STATEMENTS-KEEP-BOTH-... (3 checks), not the
+        guard test
+    **k written with a name instead of *
+        A-CALL-REPORTS-..., A-SPREAD-...
+    decorator that is not a call gives 0: instead of 1:f
+        A-DECORATOR-IS-A-CALL-..., A-DECORATOR-AND-A-TEST-CASE-...
+    import key is the bare name
+        10 tests, among them A-FUNCTION-RECORDS-...; the site's :CALL-NAME
+        moves with it, so the existing site tests fail too
+    no :CALL-SHAPES in PY-TEST-PROPERTIES
+        A-DECORATOR-AND-A-TEST-CASE-RECORD-SHAPES-TOO
+    no :CALL-SHAPES in PY-CALLABLE-PROPERTIES
+        A-FUNCTION-RECORDS-..., A-DECORATOR-AND-A-TEST-CASE-...,
+        NO-LITERAL-REACHES-THE-INDEX-FROM-A-PYTHON-CALL
+    PY-CALL-SITE writes no shapes
+        A-CALL-SITE-CARRIES-..., both merge tests
+    int tested before bool in ARGUMENT_KIND
+        A-CALL-REPORTS-..., EVERY-ARGUMENT-KIND-...
+    a string's value appended to its kind
+        the sentinel test, A-CALL-REPORTS-..., EVERY-ARGUMENT-KIND-..., and
+        three existing tests that look for a default in the reply
+        (A-PARAMS-DEFAULT-NEVER-REACHES-THE-REPLY among them)
+    a keyword's source text instead of its kind
+        A-CALL-REPORTS-..., A-SPREAD-..., A-FUNCTION-RECORDS-..., the
+        sentinel test, and two existing default-leak tests
+    keyword names dropped
+        A-CALL-REPORTS-..., A-SPREAD-..., A-FUNCTION-RECORDS-..., the sentinel
+        test
+    *a not counted in the arity
+        A-CALL-REPORTS-..., A-SPREAD-...
+    lambda without its own kind
+        A-CALL-REPORTS-...
+    every shape line written as 0
+        9 checks across the call, decorator, merge and sentinel tests
+  Every mutation was caught. None passed.
+
+  The count did not move. tools/test/index-dump.lisp from a scratch copy of
+  5139ee2 (git archive) and from this tree, both over the same files:
+    lfia-accounting 70649ff, clean before and after   10517 lines each; 1190 E
+                lines differ, and with :CALL-SHAPES cut out of every line of
+                both sides they are equal. By type: :FUNCTION 711, :TEST 384,
+                :CALL-SITE 70, :METHOD 25. R lines changed: 0. S lines
+                changed: 0. No line is added or removed.
+    Loom        32368 lines each; 228 E lines differ the same way: :CALL-SITE
+                117, :FUNCTION 78, :METHOD 33. R 0, S 0. These are the Python
+                files under tools/.
+  `git -C ~/github/lfia-accounting status --short` was empty before the dumps
+  and after the cost runs; front-end's five entries (step 1) were identical
+  before and after. Nothing was written to either tree.
+  call-site-census: 510 minted, 41 ambiguous, as before.
+
+  Cost, index-cost, alternating a scratch copy of 5139ee2 and this tree, three
+  pairs each, with the resident service running and a load average of 3.3.
+    lfia-accounting (3024 entities, 7448 relationships, 3909 :CALLS edges in
+                every run; the tree has grown since step 1's 2698 entities)
+                shape-occurrences 6561, against DES-0055's estimate of 6040
+                (+8.6 percent). heap-bytes base 71824816 71889904 71786432,
+                new 72581488 72581488 72645328; medians 71824816 and 72581488,
+                +756672 bytes, +1.05 percent: 115 bytes for each of the 6561
+                lines. seconds base 8.501 9.547 8.868, new 9.104 8.543 8.701;
+                medians 8.868 and 8.701. The base alone spans 12 percent, so
+                the time delta is inside the scatter. lfia is a census (U6),
+                not gated.
+    front-end   ab34be6, JavaScript, so no shapes (shape-occurrences 0). Three
+                pairs: heap-bytes base 159257264 159385376 159389072, new
+                159484816 159359136 159435616; medians 159385376 and 159435616,
+                +50240 bytes, inside the 128 KB range of the base runs. Step 3
+                recorded +55 KB for the NIL key over step 2 and this step adds
+                nothing to it. Against the re-baseline (156749312, budget
+                180261709) the tree now is 159435616, 2.69 MB over, leaving
+                20826093 bytes for step 5. seconds base 16.053 15.597 17.346,
+                new 15.687 16.079 15.475. The machine ran front-end at 16 s
+                here against 9.8 s at step 3; the pair is what compares, and
+                its medians are 16.05 s and 15.69 s.
+
+  Verification. tools/loom-test.sh 12 of 12 under /usr/bin/sbcl (analyzer
+  1321 checks, python-extract 104 and python-analyzer 154 of them in the
+  suites run alone); `check` 0 violations, 8 unresolved, 7 ambiguous, 5 definer
+  macros; load-test loom-serve prints (find-package "LOOM-PROCESS") => T.

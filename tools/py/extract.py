@@ -31,7 +31,10 @@ The reply, camelCase keys, one JSON object per frame:
                     stdlib (true when the source's first dotted segment is a
                     standard-library module) on an absolute source, only when
                     this interpreter knows its stdlib (DES-0055 R4)
-    definitions     function, method and class, in source order
+    definitions     function, method and class, in source order. Each call
+                    in one carries kind, line, positional, keywords and
+                    signature: DES-0055 D10's `<arity>:<kinds>|name=kind,...`,
+                    kinds and keyword names and no value
     variables       a name assigned at module level; valueCall on one whose
                     value is a single call (DES-0054 D2)
     statements      calls made by module-level statements that are neither a
@@ -207,6 +210,45 @@ def plain_chain(node):
     names.append(node.id)
     names.reverse()
     return names
+
+
+def argument_kind(node):
+    """DES-0055 D10's kind of one argument: the kind of value it is, never the
+    value. A bool is tested before an int because it is one. Anything the grammar
+    has no letter for, a subscript or an f-string among them, is `x`."""
+    if isinstance(node, ast.Constant):
+        value = node.value
+        if isinstance(value, (str, bytes)):
+            return 's'
+        if value is None or isinstance(value, bool):
+            return 'b'
+        if isinstance(value, (int, float, complex)):
+            return 'n'
+        return 'x'
+    if isinstance(node, (ast.Name, ast.Attribute)):
+        return 'y'
+    if isinstance(node, (ast.List, ast.Tuple, ast.Dict, ast.Set)):
+        return 'q'
+    if isinstance(node, ast.Lambda):
+        return 'f'
+    if isinstance(node, ast.Call):
+        return 'c'
+    if isinstance(node, ast.Starred):
+        return '*'
+    return 'x'
+
+
+def call_signature(node):
+    """`<arity>:<kinds>` for a Call, then `|` and its keywords in source order
+    as `name=kind`, with `*` for `**k` (PLAN-0060 FINDINGS 6): a keyword has a
+    name or it is a spread, and the spread's name is a variable and not code the
+    callee reads. The arity counts every positional argument, `*a` included."""
+    text = '%d:%s' % (len(node.args), ','.join(argument_kind(a) for a in node.args))
+    if node.keywords:
+        text += '|' + ','.join(
+            '*' if k.arg is None else '%s=%s' % (k.arg, argument_kind(k.value))
+            for k in node.keywords)
+    return text
 
 
 def name_binding(name, extractor, scope):
@@ -425,9 +467,12 @@ class Extractor:
             if isinstance(node, ast.Call):
                 record['positional'] = len(node.args)
                 record['keywords'] = [k.arg for k in node.keywords if k.arg]
+                record['signature'] = call_signature(node)
             else:
                 record['positional'] = 0
                 record['keywords'] = []
+                # `@d` calls d with the function it decorates (FINDINGS 6).
+                record['signature'] = '1:f'
             owner.calls.append(record)
         return record
 

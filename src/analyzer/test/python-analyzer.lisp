@@ -637,3 +637,107 @@ def f():
          (is (eq nil (getf (mark "google.cloud.secretmanager") :stdlib)))
          (is (eq t (getf (mark "os") :stdlib)))
          (is (= 3 (length modules)) "`from .x import y' adds nothing: ~s" modules))))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 D10 and D11: :CALL-SHAPES (PLAN-0060 step 4)
+;;; ------------------------------------------------------------------
+
+(test a-function-records-the-shape-of-each-call-under-its-key
+  ;; An import-bound call is keyed as the edge's :VIA will key it: specifier and
+  ;; path joined by PY-DOTTED. A bare local call is keyed by its name, and the
+  ;; line is the call's own.
+  (call-with-python
+   (lambda ()
+     (let ((g (pa-graph "app/m.py" "import requests
+from .posting import post
+def helper(a, b): pass
+def fetch(u):
+    helper(1, 2)
+    post(u)
+    helper(u, b=u)
+    return requests.get(u, timeout=5)
+")))
+       (is (equal '(("helper" ("2:n,n" 5) ("1:y|b=y" 7))
+                    (".posting.post" ("1:y" 6))
+                    ("requests.get" ("1:y|timeout=n" 8)))
+                  (getp (pa-named g "fetch") :call-shapes)))
+       (is (null (getp (pa-named g "helper") :call-shapes))
+           "a definition that calls nothing has no shapes")))))
+
+(test a-decorator-and-a-test-case-record-shapes-too
+  ;; The :TEST builder and the decorator path are separate code from the
+  ;; function builder, and a case inherits its hooks' calls.
+  (call-with-python
+   (lambda ()
+     (let ((g (pa-graph "tests/test_a.py" "import pytest
+def helper(a): pass
+@pytest.fixture
+def fx(): pass
+def test_a():
+    helper(1)
+")))
+       (is (equal '(("pytest.fixture" ("1:f" 3)))
+                  (getp (pa-named g "fx") :call-shapes)))
+       (is (equal '(("helper" ("1:n" 6)))
+                  (getp (pa-named g "test_a" :test) :call-shapes)))))))
+
+(test a-call-site-carries-the-shape-of-its-own-call
+  (call-with-python
+   (lambda ()
+     (let* ((g (pa-graph "src/m.py" "import logging
+log = logging.getLogger('x')
+"))
+            (site (first (pa-sites g :variable))))
+       (is (equal '(("logging.getLogger" ("1:s" 2))) (getp site :call-shapes)))))))
+
+(test two-calls-of-one-name-in-one-guard-keep-both-lines-on-the-one-site
+  ;; The fixture of TWO-CALLS-OF-ONE-NAME-IN-ONE-GUARD-YIELD-ONE-SITE. The site
+  ;; stays one, and the call whose site was dropped is not forgotten: the lines
+  ;; are what a reader counting sites needs.
+  (call-with-python
+   (lambda ()
+     (let* ((g (pa-graph "tools/t.py" "def main(): pass
+if __name__ == '__main__':
+    main()
+    main(1)
+    main()
+"))
+            (sites (pa-sites g :module)))
+       (is (= 1 (length sites)))
+       (is (equal '(("main" ("0:" 3 5) ("1:n" 4)))
+                  (getp (first sites) :call-shapes)))))))
+
+(test calls-on-one-line-in-two-statements-keep-both-on-the-one-site
+  ;; PY-OWNED-SITES' drop, across statements and across owners (REV-0003 item 6).
+  (call-with-python
+   (lambda ()
+     (dolist (case '(("x = f(); y = f(1)
+" ("f" ("0:" 1) ("1:n" 1)))
+                     ("f(); f(1)
+" ("f" ("0:" 1) ("1:n" 1)))
+                     ("x = f(); f(1)
+" ("f" ("0:" 1) ("1:n" 1)))))
+       (destructuring-bind (source expected) case
+         (let ((sites (pa-sites (pa-graph "app/m.py" source))))
+           (is (= 1 (length sites)) "~s" source)
+           (is (equal (list expected) (getp (first sites) :call-shapes))
+               "~s gave ~s" source (getp (first sites) :call-shapes))))))))
+
+(test no-literal-reaches-the-index-from-a-python-call
+  ;; U4. The string and the number are inside a function body, which no other
+  ;; property reads. The keyword's name is code and is kept; its value is not.
+  (call-with-python
+   (lambda ()
+     (let ((g (pa-graph "app/m.py" "def s():
+    f(\"SENTINEL\", 4242, token=\"SECRET-VALUE\")
+")))
+       (is (equal '(("f" ("2:s,n|token=s" 2))) (getp (pa-named g "s") :call-shapes)))
+       (dolist (needle '("SENTINEL" "4242" "SECRET-VALUE"))
+         (is (not (graph-mentions-p g needle)) "~a reached the index" needle))
+       (is (graph-mentions-p g "token") "the keyword's name is kept"))
+     ;; The control: the walk does find a SENTINEL that was stored, or the
+     ;; assertions above prove nothing (CON-0003).
+     (is (graph-mentions-p (pa-graph "app/m.py" "def sentinel():
+    f(1)
+")
+                           "SENTINEL")))))

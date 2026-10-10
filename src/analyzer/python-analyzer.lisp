@@ -93,6 +93,42 @@ the first (D2). A change to what RESOLVE-CALLS walks is a change to this shape."
                         :line (jget call :line))
                   out)))))))
 
+(defun py-call-key (call)
+  "The key resolution reads CALL by: its bare name, or an import-bound call's
+specifier and path as PY-DOTTED renders them. IMPORTED-CALL-KEY in loom-graph
+writes the same spelling into an edge's :VIA, and a shape is joined to its edge
+through that spelling (DES-0055 D11)."
+  (if (equal "import" (jget call :kind))
+      (py-dotted (jget call :specifier) (jlist call :path))
+      (jget call :name)))
+
+(defun py-call-shapes (calls)
+  "D11's :CALL-SHAPES value for CALLS, the child's call records: one occurrence
+per call, keyed as PY-CALL-KEY keys it, with the signature the child computed
+and the call's own line. NIL for none.
+
+A record with no signature is left out and not given a guessed one: the child
+writes one on every call, so a missing one is a reply from something else
+(CON-0001)."
+  (group-call-shapes
+   (loop for call in calls
+         when (jget call :signature)
+           collect (list (py-call-key call) (jget call :signature) (jget call :line)))))
+
+(defun py-shape-occurrences (shapes)
+  "SHAPES, a :CALL-SHAPES value, as the (KEY SIGNATURE LINE) list that
+GROUP-CALL-SHAPES reads, a repeated line repeated."
+  (loop for (key . entries) in shapes
+        append (loop for (signature . lines) in entries
+                     append (loop for line in lines collect (list key signature line)))))
+
+(defun py-merge-site-shapes (kept dropped)
+  "Move DROPPED's :CALL-SHAPES onto KEPT. Two sites of one natural key are one
+site (CON-0005), and the call whose site is dropped was still made."
+  (setp kept :call-shapes
+        (group-call-shapes (append (py-shape-occurrences (getp kept :call-shapes))
+                                   (py-shape-occurrences (getp dropped :call-shapes))))))
+
 (defun py-decorator-value (value)
   "A decorator argument as DES-0054 D1 records it. DECODE-ARGUMENT-VALUE is the
 decoder, shared with the JavaScript analyzer. No longer called here since
@@ -420,7 +456,8 @@ surviving key with the next key along."
   "Properties of a :FUNCTION or :METHOD: the call names a :CALLS edge may start
 from, and the import-bound calls RESOLVE-CALLS walks (D2, R4)."
   (let ((names (py-call-names (getf item :calls)))
-        (imported (py-imported-calls (getf item :calls))))
+        (imported (py-imported-calls (getf item :calls)))
+        (shapes (py-call-shapes (getf item :calls))))
     ;; Each only when non-empty: most definitions have no decorator and read no
     ;; environment, and an empty list on every one of them is noise.
     (apply #'py-entity-properties item path system
@@ -428,6 +465,7 @@ from, and the import-bound calls RESOLVE-CALLS walks (D2, R4)."
            (append (when (getf item :decorators) (list :decorators (getf item :decorators)))
                    (when names (list :call-names names))
                    (when imported (list :imported-calls imported))
+                   (when shapes (list :call-shapes shapes))
                    (when (getf item :env) (list :environment-reads (getf item :env)))))))
 
 (defun py-test-properties (item path system)
@@ -435,11 +473,13 @@ from, and the import-bound calls RESOLVE-CALLS walks (D2, R4)."
 and :IMPORTED-CALLS on the terms a function does, so RESOLVE-TESTS derives its
 :TESTS edges from the :CALLS edges those produce."
   (let ((names (py-call-names (getf item :calls)))
-        (imported (py-imported-calls (getf item :calls))))
+        (imported (py-imported-calls (getf item :calls)))
+        (shapes (py-call-shapes (getf item :calls))))
     (apply #'py-entity-properties item path system
            :suite (getf item :suite) :framework (getf item :framework)
            (append (when names (list :call-names names))
                    (when imported (list :imported-calls imported))
+                   (when shapes (list :call-shapes shapes))
                    (when (getf item :env) (list :environment-reads (getf item :env)))))))
 
 (defun make-py-entity (item path system)
@@ -477,22 +517,24 @@ and :IMPORTED-CALLS on the terms a function does, so RESOLVE-TESTS derives its
   (let ((imported (equal "import" (jget call :kind))))
     (make-call-site-entity
      :file path :start-line start :end-line end
-     :call-name (if imported
-                    (py-dotted (jget call :specifier) (jlist call :path))
-                    (jget call :name))
+     :call-name (py-call-key call)
      :referrer-kind kind :language :python :system system
-     :imported-calls (when imported (py-imported-calls (list call))))))
+     :imported-calls (when imported (py-imported-calls (list call)))
+     :call-shapes (py-call-shapes (list call)))))
 
 (defun py-call-sites (calls path start end kind system)
   "A site per distinct call, deduped on the site's natural key (:file
 :start-line :call-name). Two `main()' calls in one guard share a line, and the
-writer cannot reconcile two entities of one key (CON-0005)."
-  (let ((seen '()) (sites '()))
+writer cannot reconcile two entities of one key (CON-0005). The dropped site's
+line is kept: it moves onto the site that stays."
+  (let ((kept (make-hash-table :test #'equal)) (sites '()))
     (dolist (call calls (nreverse sites))
-      (let ((site (py-call-site call path start end kind system)))
-        (unless (member (id site) seen :test #'string=)
-          (push (id site) seen)
-          (push site sites))))))
+      (let* ((site (py-call-site call path start end kind system))
+             (first-site (gethash (id site) kept)))
+        (if first-site
+            (py-merge-site-shapes first-site site)
+            (progn (setf (gethash (id site) kept) site)
+                   (push site sites)))))))
 
 (defun py-owned-sites (items statements path system)
   "(owner . site) pairs. A variable's and a class's calls belong to that entity,
@@ -501,12 +543,15 @@ which no :CALLS edge may start from; a statement's belong to the file (D4).
 One pair per site id across all of them. PY-CALL-SITES dedupes inside one item or
 statement, but `x = f(); y = f()' is two statements on one line and so two
 sites of one natural key (:file :start-line :call-name), which the writer cannot
-reconcile (CON-0005). The first owner is kept."
+reconcile (CON-0005). The first owner is kept, and the dropped site's lines move
+onto its site."
   (let ((seen (make-hash-table :test #'equal)))
     (remove-if
      (lambda (pair)
-       (prog1 (gethash (id (cdr pair)) seen)
-         (setf (gethash (id (cdr pair)) seen) t)))
+       (let ((first-site (gethash (id (cdr pair)) seen)))
+         (if first-site
+             (progn (py-merge-site-shapes first-site (cdr pair)) t)
+             (progn (setf (gethash (id (cdr pair)) seen) (cdr pair)) nil))))
      (append
       (loop for item in items
             for kind = (case (getf item :kind) (:variable :variable) (:class :class))
