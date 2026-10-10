@@ -1770,3 +1770,241 @@ body: |
   calls from the index. src/workspace/test/workspace.lisp carries the new
   RE-MEASURED entry with the census composition. 512 replaces 510 as the figure
   steps 8 and 9 compare against. The suite passed 12 of 12 after the change.
+
+  STEP 8, ACCEPTANCE. 2026-10-10, Loom at d8c18d2, no source change. This commit
+  adds this section and nothing else. Scratch files are in the session
+  scratchpad, s8/: parse.py, count.py, diff.py, topcalled.lisp, degree.lisp,
+  payload.py, calls.py, calls2.py, calls3.py.
+
+  Result against the plan.
+    dict-value, 454 sites with 5 of arity 3, the 3-argument group first:
+      NOT MET as stated. 452 sites, 5 of arity 3 (met), 3-argument group not
+      first. All three differences are explained below. Nothing is unexplained.
+    read-config, 27 sites with 19 of arity 2 or more: MET. 27 sites, 19 of
+      arity 2, 8 of arity 1, row for row the same 27 lines as the script.
+    front-end and lfia: check 0 violations on both; payloads and distributions
+      below.
+    Loom: check 0 violations, 8 unresolved, 7 ambiguous as step 1; census 512
+      minted, 41 ambiguous; :CALLS 12181 = step 1's 11620 plus 561, all of it
+      in files this plan changed.
+
+  GAME-SERVER at 9169e64, read only.
+  Commands:
+    git clone --no-checkout ~/lisp/game-server <scratch>/gs
+    git -C <scratch>/gs checkout 9169e64
+    tools/loom.sh 'watch "<scratch>/gs" | describe @gs dict-value | describe @gs read-config | check @gs'
+    tools/loom.sh 'watch "<scratch>/gs" | describe @gs interface:utils/dict.lisp:dict-value | describe @gs method:utils/dict.lisp:dict-value::t,list | describe @gs method:utils/dict.lisp:dict-value::t,jso'
+    tools/loom.sh 'watch "<scratch>/gs" | sites @gs method:utils/dict.lisp:dict-value::t,list 10000 | sites @gs method:utils/dict.lisp:dict-value::t,jso 10000 | sites @gs interface:utils/dict.lisp:dict-value 10000 | sites @gs read-config 10000'
+  The repository name is gs. It indexed 155 files, 3873 entities, 20803
+  relationships, 0 ambiguous references, 18 definer macros, 0 violations
+  under `check @gs`, 2 unresolved qualified references and 39 prose file
+  references, as `check @gs` printed them. The resident service also holds
+  game-server at 448dc8e, so for the REST reading below the clone was added
+  with POST /v1/watch and removed with POST /v1/unwatch afterwards. The
+  resident service holds the same seven repositories it held before.
+
+  Departure 1. `describe @gs dict-value` does not answer. dict-value names
+  three entities: the interface and two methods (utils/dict.lisp:169-183 for a
+  list, 185-194 for st-json:jso). The console prints "3 things are named
+  dict-value. Name one", and so does `sites @gs dict-value`. The calls are
+  attributed to the methods: the interface has no callers and no distribution.
+  Both methods report the same 452 sites, because a call to the generic
+  reaches both. The two figures are one set of calls, not 904.
+
+  dict-value, from either method:
+    call shapes: 452 sites -- 2:k:id,y 29, 2:k:type,y 20, 2:k:name,y 17,
+    2:k:definition,y 14, 2:y,y 13, 143 more
+  148 signatures; arity 2 on 447 sites, arity 3 on 5, no other arity. REST
+  describe: sites 452, signatures 148, fan-out 0, without-form 0,
+  pre-expansion null. The five arity-3 sites, with their groups:
+    3:k:x,y,b    utils/test/dict.lisp:109  dict-value-simple
+    3:n,y,b      utils/test/dict.lisp:191  remove-from-dict-simple
+    3:q,y,b      utils/test/dict.lisp:204  remove-from-dict-path
+    3:k:a,y,b    utils/test/dict.lisp:185  remove-from-dict-simple
+    3:k:a,y,b    utils/test/dict.lisp:200  remove-from-dict-path
+  read-config:
+    call shapes: 27 sites -- 2:y,q 17, 1:c 6, 1:y 2, 2:c,q 1, 2:y,k:keyword 1
+  5 signatures; 2:y,q 17 + 2:c,q 1 + 2:y,k:keyword 1 = 19 of arity 2; 1:c 6 +
+  1:y 2 = 8 of arity 1. REST: fan-out 0, without-form 0.
+
+  The independent count. count.py reads every .lisp file under the clone as
+  s-expressions (strings, `;` and `#| |#` comments skipped, `#'f` noted
+  separately, `#+`/`#-` guarded forms flagged) and lists each list whose head
+  is the name, with its line and argument count.
+    dict-value   453 forms, arity 2 on 448 and arity 3 on 5. Under #+/#-: 0.
+                 #'dict-value references: 0.
+    read-config  27 forms, arity 1 on 8, arity 2 on 19. Under #+/#-: 0.
+  A plain regex over the same files, `\((utils:)?dict-value[ \t)]` or end of
+  line, matches 454 lines. diff.py compares the script's (file, line) pairs
+  with the rows `sites` printed. read-config: 27 and 27, no difference.
+  dict-value: 452 rows against 453 forms, one difference.
+
+  Cause of each difference.
+    454 (REQ-0041, the regex) against 453 forms: mpackage/mpackage.lisp:482 is
+      `;                  (encoded-data (dict-value :data data))`, a line
+      comment. The regex counts it; the reader does not. The figure 454 is the
+      text match count, and no call form exists on that line.
+    453 forms against 452 sites: data-api/operator-handler.lisp:48,
+      `(utils:dict-value :id obj)`, is inside the first of two
+      `(defmethod initialize-instance :after ((handler operator-handler) ...))`
+      forms, at lines 45 and 64 of the same file. CL redefines a method with
+      the same qualifier and specializers, so the second replaces the first and
+      the first never runs. The analyzer asserts one method key once per file
+      and the later definition replaces the earlier (CON-0005). Loom
+      therefore holds one method there, lines 64-69, and the call on line 48
+      has no caller. The line-48 site is dead code in the running image and
+      Loom is right to omit it. The same file's duplicate is a finding about
+      game-server, not about Loom.
+    The 5 arity-3 sites are the same five lines in the script and in `sites`.
+  The unplaceable-package fallback (CLAUDE.md, 54 of 95 same-named callables on
+  game-server) did not touch these two callees: :FAN-OUT 0 and :WITHOUT-FORM 0
+  on both, so every site arrived through a resolved call name. Sites inside
+  definer macros (define-test and similar, 18 definer macros on the tree) are
+  counted as ordinary callers and appear in `sites` named
+  `dict-value@mpackage/test/struct-types.lisp:1144`.
+
+  Departure 2. The 3-argument group is not first in `sites`, and `describe`
+  does not show it among its five signatures. DES-0055 D12 says "the 5 arity-3
+  dict-value sites are the first group" and gives the example `2:y,y 449,
+  3:y,y,y 5`. That example predates D10's keyword names. A signature carries a
+  Lisp keyword's name (`k:id`), so 447 arity-2 sites split into 144 groups and
+  the 5 arity-3 sites into four: 3:k:x,y,b 1, 3:n,y,b 1, 3:q,y,b 1, 3:k:a,y,b
+  2. `sites` orders groups by size, smallest first, ties by signature text.
+  There are 71 groups of one site in front of the first arity-3 group: the
+  arity-3 groups are the 72nd, 73rd and 74th of 148, and `3:k:a,y,b` the 99th.
+  The step 7 implementation follows the plan's own ordering rule. The
+  expectation "the 3-argument group first" cannot hold under D10 and that
+  ordering together. Both rows are present and complete; what is missing is a
+  view that answers "which sites pass a third argument" without reading 148
+  groups. This is not changed here. The choice is the caller's: order groups
+  by arity first, add an arity line to `describe`, or amend D12's sentence.
+  This does not block REQ-0041 R4 (the five sites are found) but REQ-0041's
+  ACCEPTANCE sentence "5 of arity 3" is only visible through `sites`, and the
+  PLAN's "listed first" is false.
+
+  FRONT-END at ab34be6, read only. `git status --short` before and after every
+  read, identical each time and identical to step 1's five entries
+  (M .loom/frameworks.yaml, M .../layerIntents.js, three ??).
+  The three most-called functions. topcalled.lisp indexes the tree directly
+  and counts, for each :FUNCTION and :METHOD, the distinct entities with a
+  :CALLS edge to it. Same-named methods are one function: every Class.equals
+  has 276 callers because a call to .equals reaches all of them (inferred
+  edges), so they are collapsed. The ranking:
+    1293 distinct callers  makeGame (src/_test/fixtures.js), 0 non-test
+     342                   wrappedLogger.debug (src/utils/loggerBase.js), 277 non-test
+     297                   toObj (src/core/mapper.js), 12 non-test
+  then 276 for the .equals family. `structure` hubs rank by every inbound edge
+  and give makeGame 2529, toObj 582, ArcUse.equals 539; the order differs only
+  in that wrappedLogger.debug is not a hub on that count.
+  tools/loom.sh 'watch "/home/beberman/github/front-end" | describe @front-end <id> ...':
+    makeGame     call shapes: 173 sites -- 0: 173 (9 more through ambiguous names)
+      1293 caller entities but 173 sites: test cases inherit a hook's calls
+      (FINDINGS 5), and the site count counts a hook's line once.
+    wrappedLogger.debug  call shapes: 667 sites -- 1:s 472, 1:x 85, 2:s,y 38,
+      1:y 9, 2:s,c 9, 35 more (40 signatures; fan-out 0, without-form 0)
+    toObj        call shapes: 395 sites -- 2:y,y 339, 2:y,c 56
+  `check @front-end`: No violations; 3 unenforced, 120 unresolved document
+  references (11 plain, 108 qualified, 1 elsewhere), 5 ambiguous, 0 definer
+  macros. Index: 949 files, 11400 entities, 95973 relationships.
+  Largest REST describe payload. degree.lisp ranks entities by total edges;
+  payload.py fetched GET /v1/describe for the 40 with the most edges (the 40th
+  has 539) from the resident service, which already watched front-end:
+    1190120 bytes  makeGame, 2530 edges
+     288906        toObj, 614 edges
+     254200        PartitionArc.equals, 583 edges (the other .equals 240-254 KB)
+  The payload tracks the neighbour list. For makeGame the `neighbors` field is
+  1.22 MB re-serialised, `call-shapes` 99 bytes and `properties` 221 bytes. The
+  `call-shapes` distribution is at most 365 bytes across the 40. The largest
+  stored :CALL-SHAPES value (step 3's census, useLayerEditorDrawing, 1663
+  characters) sits in a describe of 42135 bytes whose `properties` field is
+  4023 bytes. So shapes add under 5 KB to any payload sampled, against a 1.19
+  MB maximum.
+
+  LFIA-ACCOUNTING at 70649ff (step 1 recorded 56fc5c3; another session has
+  committed since), read only, status clean before and after every read.
+  Index: 291 files, 3024 entities, 7449 relationships, against 2698 entities
+  at step 1: the tree changed, so these are not step 1's trees. A census, not
+  gated (U6).
+  The most-called, by the same count (tests included): dispatch 68 callers
+  (functions/access/handlers.py, 1 non-test); `deps` 56 (two methods,
+  Recorder.deps in tests/test_access.py and StubPlaid.deps in
+  tests/test_banks.py, one name); Card and useBooks 50 each (web/src,
+  50 non-test). Four are described because Card and useBooks tie.
+    dispatch    call shapes: 127 sites -- 5:y,c,s,s,q 70, 5:y,y,s,s,q 26,
+                5:y,c,y,s,y 6, 5:y,c,y,y,y 6, 5:y,c,s,s,y 4, 10 more
+    Recorder.deps, StubPlaid.deps   call shapes: 99 sites -- 1:y 99 (each)
+    useBooks    call shapes: 50 sites -- 0: 50
+    Card        call shapes: 0 sites, 50 without a call form
+  Card is a JSX component: its 50 callers write `<Card ...>`, which DES-0055
+  defers (no grammar for JSX usages), so the 50 edges have :VIA and no entry
+  to join. That is the :WITHOUT-FORM line doing its job.
+  `check @lfia-accounting`: No violations. `status` says 1 file the analyzer
+  could not read: docs/requirements/REQ-0009.yaml, "could not find expected
+  ':' at line 11, column 1". It is tracked and committed in lfia, not caused
+  by this plan, and not touched here.
+  Largest describe payload among the 40 highest-degree entities:
+    51319 bytes  dispatch, `call-shapes` 388 bytes
+    39166        file functions/access/handlers.py
+    26338        post (functions/ledger/posting.py)
+
+  LOOM at d8c18d2.
+  tools/loom.sh 'status | check': 496 files, 5609 entities, 27197
+  relationships, 302 documents, 1638 tests covering 481 units, 0 violations, 2
+  unenforced, 8 unresolved document references, 7 ambiguous, 5 definer macros,
+  4 suppressed regions, 0 recovered. Step 1: 0 violations, 8, 7, 5.
+  Equal.
+  sbcl --script tools/test/call-site-census.lisp: 512 minted, 41 ambiguous.
+  The plan's 508 and 510 are superseded by the user's decision of 2026-10-10
+  (ceiling 520, 512 is the figure). Not a difference.
+  tools/loom.sh 'describe getp | sites getp 3': works. `describe getp` prints
+    call shapes: 866 sites -- 2:y,k:file 47, 2:y,k:call-names 45,
+    2:y,k:language 40, 2:y,k:path 40, 2:y,k:doc-id 30, 148 more
+  `sites getp 3` printed the groups rarest first, three rows at most to a
+  group. 866 sites, the same figure step 7 recorded.
+  The :CALLS count. tools/test/index-dump.lisp over a git archive of 4398538
+  (step 1) and a git archive of d8c18d2, both run with the code at HEAD
+  against their own archived tree:
+    4398538  11620 :CALLS R lines (step 1's figure, equal)
+    d8c18d2  12181 :CALLS R lines, +561
+  Per origin file of the calling entity, 27 files change (calls2.py in the
+  scratchpad): 481 of the +561 are in 15 src/*/test/ files (graph/test/resolve
+  +116, knowledge/test/services +92, analyzer/test/lisp-analyzer +65,
+  process/test/console +36, analyzer/test/js-analyzer +31,
+  analyzer/test/python-analyzer +25, ontology/test/root-ontology +24,
+  serve/test/operations +22, graph/test/transaction +22, and six more) and 80
+  are in source and tools files (analyzer/lisp-analyzer.lisp +15, knowledge/
+  services.lisp +14, python-analyzer.lisp +14, serve/operations.lisp +10,
+  process/console.lisp +9, graph/resolve.lisp +7, js-analyzer.lisp +4,
+  tools/js/extract.js +3, tools/py/extract.py +2, ontology/root-ontology.lisp
+  +2, graph/enrich.lisp +1, ontology/ontology-ops.lisp -1). Every one of the
+  27 files is in `git diff --stat 4398538 HEAD`. No file the plan did not
+  touch gained or lost an edge.
+  By edge, keyed on (source id, target id): 11620 distinct pairs at step 1,
+  12181 at HEAD. 804 pairs are new and 243 are gone. Of the new, 780 start
+  at an entity that did not exist at step 1 (the plan's new functions, tests
+  and call sites) and 24 start at an old function: 21 of them call a function
+  the plan added (call-shapes-for-key, js-call-shapes, lisp-call-signature,
+  call-edge-op, callSignature and the like), 2 call getp, 1 calls form-range.
+  Of the gone, 237 start at an entity that no longer has that id (a
+  :CALL-SITE whose id carries a line number that moved, or a removed test)
+  and 6 start at a function that was edited and stopped making the call:
+  definer-call-site -> collect-call-names, reader-artifact-p and
+  standard-operator-p (the body moved into the new definer-body-calls),
+  py-call-site -> jlist and py-dotted (replaced by py-call-key, step 4) and
+  rebind-relationship -> properties (step 2 follow-up). No edge was lost
+  from a function the plan did not edit.
+
+  Read-only trees. game-server: the clone only; ~/lisp/game-server was read
+  by `git clone` and is unchanged. front-end and lfia: `git status --short`
+  saved before and after each read (topcalled, degree, payload, console) and
+  identical each time. The resident service is as it was: Loom, game-server,
+  front-end, utils, cl-dbi, cl-mysql, lfia-accounting. loom-serve.sh update ran
+  first and printed "supervised by systemd; delegating".
+  The FiveAM suite was not run: no source file changed.
+
+  Defects. None in Loom. Two findings the caller must rule on before step 9:
+  Departure 1 (a generic function's calls live on its methods, so
+  `describe dict-value` asks to disambiguate) and Departure 2 (D12's "first
+  group" and REQ-0041's "5 of arity 3" are not readable from the first lines
+  of `describe` or `sites`). Step 9 must not write "met" for the dict-value
+  sentence without one of them settled.
