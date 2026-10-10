@@ -92,6 +92,17 @@ It exists so COLLECT-CALL-NAMES can stop guessing from a name: a one-argument
 and (some-pkg:quote x) is taken for quoted data so its contents go unwalked."
   (and (consp form) (gethash form (reading-reader-macros reading))))
 
+(defun form-backquote-p (form)
+  "True when FORM is what the reader built from a backquote: a one-element
+template headed by Eclector's own QUASIQUOTE.
+
+Asked of the symbol rather than of its name because the walk uninterns every
+other symbol it reads, so a program that wrote (quasiquote x) out itself has a
+head that is not this one. A backquoted form is data (DES-0055 D10), and
+without this its expansion would read as a call. It lives here because this is
+the one file that names the library (DES-0013 R1)."
+  (and (consp form) (eq (car form) 'eclector.reader:quasiquote)))
+
 (defun skip-reason-name (reason)
   "REASON as a stable lowercase string, or NIL for a reason with no name.
 

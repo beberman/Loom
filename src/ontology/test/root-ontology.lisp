@@ -416,3 +416,96 @@ class says rather than what this file remembers it saying."
          (links (find :test-links rels :key (lambda (r) (getf r :key)))))
     (is-true (getf links :transitive-impact))
     (is (eq :reverse (getf links :impact-direction)))))
+
+;;; ASSERT-EDGE's :PROPERTIES (PLAN-0060 step 2). A :CALLS edge carries :VIA, and
+;;; until this keyword the only constructor with properties was ENRICHED-EDGE.
+
+(test assert-edge-stores-the-properties-it-is-given
+  (let* ((from (make-instance 'test-bare-entity :name "a" :origin-file "a.lisp"))
+         (to (make-instance 'test-bare-entity :name "b" :origin-file "b.lisp"))
+         (rel (op-rel (assert-edge :test-links from to
+                                   :properties '(:via ("x" "y"))))))
+    (is (equal '("x" "y") (getp rel :via)))))
+
+(test assert-edge-without-properties-has-an-empty-table
+  ;; Every edge asserted before this keyword had no properties. An edge that
+  ;; names no key, such as one only the image reported, must stay that way.
+  (let* ((from (make-instance 'test-bare-entity :name "a" :origin-file "a.lisp"))
+         (to (make-instance 'test-bare-entity :name "b" :origin-file "b.lisp"))
+         (rel (op-rel (assert-edge :test-links from to))))
+    (is (zerop (hash-table-count (properties rel))))
+    (is (null (getp rel :via)))))
+
+;;; A relationship's property table is built on first read (PLAN-0060 step 2
+;;; follow-up). A table with one entry costs 484 bytes in SBCL 2.2.9 and an empty
+;;; one 160, and a :CALLS edge's :VIA put a table with one entry on each of
+;;; front-end's 54067 edges. Holding the plist until something reads the table
+;;; costs 32 bytes an edge. These tests look at whether the slot is bound, which
+;;; is the representation, and at what a reader sees, which must not have
+;;; changed.
+
+(defun test-edge (&optional (properties nil propertiesp))
+  (let ((from (make-instance 'test-bare-entity :name "a" :origin-file "a.lisp"))
+        (to (make-instance 'test-bare-entity :name "b" :origin-file "b.lisp")))
+    (op-rel (if propertiesp
+                (assert-edge :test-links from to :properties properties)
+                (assert-edge :test-links from to)))))
+
+(test an-edge-given-properties-holds-no-table-until-one-is-read
+  (let ((rel (test-edge '(:via ("x")))))
+    (is (not (slot-boundp rel 'properties))
+        "no table yet; the edge holds the plist")
+    (is (equal '("x") (getp rel :via)))
+    (is (slot-boundp rel 'properties)
+        "the first read built the table and kept it")))
+
+(test an-edge-given-no-properties-holds-no-table-until-one-is-read
+  (let ((rel (test-edge)))
+    (is (not (slot-boundp rel 'properties)))
+    (is (zerop (hash-table-count (properties rel))))
+    (is (slot-boundp rel 'properties))))
+
+(test an-edges-table-is-one-object-and-keeps-what-is-written-to-it
+  ;; A reader that built a new table on every call would pass the first
+  ;; assertion in the tests above and lose this write.
+  (let ((rel (test-edge '(:via ("x")))))
+    (is (eq (properties rel) (properties rel)))
+    (setf (gethash :note (properties rel)) 7)
+    (is (eql 7 (getp rel :note)))
+    (is (equal '("x") (getp rel :via)))))
+
+(test an-edge-given-a-table-keeps-that-table
+  ;; ENRICHED-EDGE and the federation code pass a table, not a plist.
+  (let* ((table (properties-table '(:sources (:structural))))
+         (rel (make-instance 'relationship :rel-type :test-links
+                                           :from-id "a" :to-id "b"
+                                           :origin-file "a.lisp"
+                                           :properties table)))
+    (is (eq table (properties rel)))))
+
+(test threads-reading-an-edges-properties-for-the-first-time-get-one-table
+  ;; Two tables for one edge would lose a write made to the one that was
+  ;; discarded. The plist is long so that building the table takes long
+  ;; enough for the threads to overlap when nothing serialises them.
+  (let* ((plist (loop for i below 4000 append (list i i)))
+         (edges (loop repeat 30 collect (test-edge plist)))
+         (go nil)
+         (threads (loop repeat 8
+                        collect (bt:make-thread
+                                 (lambda ()
+                                   (loop until go do (sb-thread:thread-yield))
+                                   (mapcar #'properties edges))))))
+    (setf go t)
+    (let ((results (mapcar #'bt:join-thread threads)))
+      (loop for rest on (rest results)
+            do (is (every #'eq (first results) (first rest))
+                   "every thread saw the same table for each edge")))))
+
+(test rebinding-an-edge-does-not-build-its-property-table
+  ;; An id remap copies every edge it touches. Copying through PROPERTIES built
+  ;; a table on each, and on front-end the remap touches every edge.
+  (let* ((rel (test-edge '(:via ("x"))))
+         (copy (rebind-relationship rel :to-id "elsewhere")))
+    (is (not (slot-boundp copy 'properties)))
+    (is (equal "elsewhere" (to-id copy)))
+    (is (equal '("x") (getp copy :via)))))

@@ -271,6 +271,38 @@ origin file."
                        :sources)))
       (is (equal first-run (graph-snapshot graph))))))
 
+(test a-confirmed-edge-keeps-the-call-keys-resolution-wrote-on-it
+  ;; PLAN-0060 step 2. ENRICHED-EDGE's op is absorbed onto the existing edge,
+  ;; and ABSORB-PROPERTIES clears the table before it copies, so :VIA would be
+  ;; erased by every confirmation unless the op carries it. RESOLVE-CALLS
+  ;; writes :VIA on this edge; the enrich fixture is built by running it.
+  (let ((graph (enrich-fixture))
+        (from '(:function "a.lisp" "analyze-tree"))
+        (to '(:function "b.lisp" "analyze-path")))
+    (is (equal '("analyze-path") (getp (calls-edge graph from to) :via))
+        "control: the fixture's edge starts with the key that produced it")
+    (apply-transaction graph (enrich-ops graph (agreeing-inspection-with-calls
+                                                (fixture-call "analyze-tree"
+                                                              "analyze-path"))))
+    (let ((after (calls-edge graph from to)))
+      (is (equal '(:structural :introspected) (getp after :sources))
+          "control: the edge was confirmed, not left alone")
+      (is (equal '("analyze-path") (getp after :via))))))
+
+(test an-edge-only-the-image-reported-has-no-call-key
+  ;; No call form produced it, so there is no key to name. An empty :VIA would
+  ;; claim the text pass looked and found none.
+  (let ((graph (enrich-fixture)))
+    (apply-transaction graph (enrich-ops graph (agreeing-inspection-with-calls
+                                                (fixture-call "analyze-path"
+                                                              "analyze-tree"
+                                                              :caller-file "b.lisp"))))
+    (let ((edge (calls-edge graph '(:function "b.lisp" "analyze-path")
+                                  '(:function "a.lisp" "analyze-tree"))))
+      (is (not (null edge)))
+      (is (null (nth-value 1 (gethash :via (properties edge))))
+          "the property is absent, not present and empty"))))
+
 (test a-call-with-an-endpoint-outside-the-index-is-dropped-and-counted
   (let ((graph (enrich-fixture)))
     (multiple-value-bind (ops report)

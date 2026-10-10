@@ -423,3 +423,69 @@ setting-declarations:
   - macro: x
 ")))
       "a file with no usable key is still called so"))
+
+;;; DES-0055 D6, PLAN-0059 step 4: the dependency-modules: key.
+
+(defparameter *dependency-modules-yaml*
+  "dependency-modules:
+  - distribution: google-auth
+    modules: [google.auth, google.oauth2]
+  - distribution: google-api-python-client
+    modules: [googleapiclient, apiclient]
+  - distribution: requests
+    modules: [requests]
+"
+  "DES-0055 D6's three-entry example, verbatim.")
+
+(test dependency-modules-parse-to-distribution-key-and-modules
+  (let ((entries (getf (parse-frameworks *dependency-modules-yaml*) :dependency-modules)))
+    (is (= 3 (length entries)))
+    (is (equal '("google-auth" "google-api-python-client" "requests")
+               (mapcar (lambda (e) (getf e :distribution)) entries)))
+    (is (equal '("google-auth" "google-api-python-client" "requests")
+               (mapcar (lambda (e) (getf e :key)) entries)))
+    (is (equal '("google.auth" "google.oauth2") (getf (first entries) :modules)))
+    (is (null (problems-of *dependency-modules-yaml*)))))
+
+(test a-dependency-modules-entry-without-modules-declares-nothing
+  (let* ((yaml "dependency-modules:
+  - distribution: requests
+  - distribution: six
+    modules: [six]
+")
+         (entries (getf (parse-frameworks yaml) :dependency-modules)))
+    (is (equal '("six") (mapcar (lambda (e) (getf e :distribution)) entries)))
+    (is (equal '("dependency-modules[0] declares nothing: it has no modules")
+               (problems-of yaml)))))
+
+(test a-dependency-modules-entry-without-distribution-declares-nothing
+  (let ((yaml "dependency-modules:
+  - modules: [six]
+"))
+    (is (null (getf (parse-frameworks yaml) :dependency-modules)))
+    ;; The file declares nothing else, so the general report comes first.
+    (is (member "dependency-modules[0] declares nothing: it has no distribution"
+                (problems-of yaml) :test #'string=))))
+
+(test two-spellings-of-one-distribution-are-applied-by-neither
+  (let* ((yaml "dependency-modules:
+  - distribution: google-auth
+    modules: [google.auth]
+  - distribution: Google_Auth
+    modules: [google.oauth2]
+  - distribution: requests
+    modules: [requests]
+")
+         (frameworks (parse-frameworks yaml))
+         (problems (problems-of yaml)))
+    (is (equal '("requests")
+               (mapcar (lambda (e) (getf e :distribution))
+                       (getf frameworks :dependency-modules))))
+    (is (= 1 (length problems)))
+    (is (and (search "dependency-modules[0]" (first problems))
+             (search "dependency-modules[1]" (first problems)))
+        "one problem names both indexes: ~s" problems)))
+
+(test a-file-holding-only-dependency-modules-is-not-called-useless
+  (is (null (problems-of *dependency-modules-yaml*))
+      "the key was not counted before the declares-nothing-usable report"))

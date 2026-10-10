@@ -40,11 +40,15 @@ list is mostly DES-0001's blind spots rather than real entry points -- see
 ENTRY-POINT-QUALIFIER -- so a long one is a signal about the index rather than
 about the code, and the count travels with it either way.")
 
-(defparameter *definition-types* '(:function :method :interface :class :variable :module)
+(defparameter *definition-types* '(:function :method :interface :class :variable)
   "Entity types that are definitions in source, for per-system counts.
 :FILE and :PACKAGE are containers rather than definitions and :TEST is counted
 separately, because \"how much of this system is tested\" is the question the
-per-system numbers exist to answer.")
+per-system numbers exist to answer.
+
+:MODULE is not here since PLAN-0059 FINDINGS 5: it is a dependency a manifest
+declares (DES-0055 D2), not a definition in source, and HUB-REPORT would rank
+react's inbound :IMPORTS above every function.")
 
 ;;;; ==================================================================
 ;;;; Systems, and the edges that actually run between them

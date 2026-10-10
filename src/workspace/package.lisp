@@ -190,6 +190,7 @@
    ;; Writes into somebody else's tree, so it plans every write before making
    ;; one and records what it did before doing it.
    #:prepare-repository
+   #:dependency-module-proposal
    #:read-manifest
    #:prepared-p
    #:*default-endpoint*

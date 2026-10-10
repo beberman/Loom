@@ -73,7 +73,7 @@ testing nothing."
   (with-test-server ()
     (let* ((tools (cdr (assoc :tools (result-of (rpc "tools/list")))))
            (names (mapcar (lambda (tool) (cdr (assoc :name tool))) tools)))
-      (is (= 15 (length tools)) "the tool set is ~a" names)
+      (is (= 16 (length tools)) "the tool set is ~a" names)
       (dolist (repl '("loom_repl_open" "loom_repl_eval" "loom_repl_close"))
         (is-false (member repl names :test #'string=)
                   "~a is advertised to a caller that cannot call it" repl))
@@ -86,7 +86,10 @@ testing nothing."
                          ;; reason loom_structure and loom_drift are: an agent
                          ;; in a prepared worktree has no console, and
                          ;; `similar' is the one question `find' cannot answer.
-                         "loom_similar" "loom_survey"))
+                         "loom_similar" "loom_survey"
+                         ;; PLAN-0060 step 7. REST finds an operation by name;
+                         ;; MCP lists its tools by hand.
+                         "loom_sites"))
         (is-true (member present names :test #'string=)
                  "~a is missing; REQ-0022 R6 puts the transition on MCP as well
 as REST, and an agent in a prepared worktree has no other way to reach it"
@@ -119,7 +122,7 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
       (with-grants ('(:read :write :repl))
         (let* ((with (cdr (assoc :tools (result-of (rpc "tools/list")))))
                (names (mapcar (lambda (tool) (cdr (assoc :name tool))) with)))
-          (is (= 18 (length with)))
+          (is (= 19 (length with)))
           (is (= 3 (- (length with) (length without))))
           (dolist (repl '("loom_repl_open" "loom_repl_eval" "loom_repl_close"))
             (is-true (member repl names :test #'string=)
@@ -193,6 +196,26 @@ ALTERNATIVES CONSIDERED, and reversing that is a decision rather than a tidy-up"
                                     :parameters (list (cons "repository" name)
                                                       (cons "term" "alpha-twice"))))))
         (is (not (null over-mcp)) "the MCP call returned no structured content")
+        (is (equal over-mcp over-rest)
+            "the two skins disagree:~%  mcp:  ~a~%  rest: ~a" over-mcp over-rest)))))
+
+(test loom-sites-over-mcp-answers-what-the-rest-route-does
+  ;; PLAN-0060 step 7. The tool list is written by hand, so the registry entry
+  ;; alone does not reach MCP: this fails without the MAKE-TOOL line, with an
+  ;; unknown tool.
+  (with-operations-fixture (repository)
+    (with-test-server ()
+      (let* ((name (repository-name repository))
+             (over-mcp (structured
+                        (rpc "tools/call"
+                             :params (list :name "loom_sites"
+                                           :arguments (list :repository name
+                                                            :term "alpha")))))
+             (over-rest (json:decode-json-from-string
+                         (http-call (format nil "~asites" loom-rest:*route-prefix*)
+                                    :parameters (list (cons "repository" name)
+                                                      (cons "term" "alpha"))))))
+        (is (= 2 (length (cdr (assoc :groups over-mcp)))) "~s" over-mcp)
         (is (equal over-mcp over-rest)
             "the two skins disagree:~%  mcp:  ~a~%  rest: ~a" over-mcp over-rest)))))
 

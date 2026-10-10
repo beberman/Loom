@@ -104,3 +104,21 @@ arithmetic afterwards costs six lines and reaches no reader."
          (/ (float (parse-integer (remove #\. value)) 1.0)
             (expt 10 (if dot (- (length value) dot 1) 0))))))
     (t nil)))
+
+(defun distribution-name-key (name)
+  "NAME under PEP 503 normalisation: lower case, each run of `-', `_' and `.'
+made one `-'. DES-0055 D6.
+
+This is pip's own rule for when two names are one distribution, so comparing
+keys is exact. It is for comparing a distribution name with a distribution
+name only; an import name is never compared with one, because googleapiclient
+and google-api-python-client differ by more than separators (U1)."
+  (with-output-to-string (out)
+    (let ((in-run nil))
+      (loop for c across name
+            do (if (find c "-_.")
+                   (unless in-run
+                     (setf in-run t)
+                     (write-char #\- out))
+                   (progn (setf in-run nil)
+                          (write-char (char-downcase c) out)))))))

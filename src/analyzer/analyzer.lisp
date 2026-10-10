@@ -184,6 +184,16 @@ is recompiled and its registration form runs again."
         (cons analyzer (remove (class-of analyzer) *analyzers* :key #'class-of)))
   analyzer)
 
+(defun requirements-file-p (path)
+  "True when PATH names a pip requirements file: a name beginning \"requirements\"
+with type txt, so requirements.txt, requirements-dev.txt and requirements_test.txt.
+Compared case-sensitively, as pip's own convention is written. DES-0055 D3."
+  (let ((name (pathname-name (pathname path))))
+    (and (stringp name)
+         (equal "txt" (pathname-type (pathname path)))
+         (>= (length name) 12)
+         (string= "requirements" name :end2 12))))
+
 (defun find-analyzer (path)
   "The registered analyzer claiming PATH, or NIL when no language handles it."
   (find-if (lambda (a) (analyzer-handles-p a path)) *analyzers*))
@@ -283,6 +293,43 @@ OFFSET-LINE hands out."
     (cond ((zerop length) 0)
           ((char= #\Newline (char string (1- length))) (count #\Newline string))
           (t (1+ (count #\Newline string))))))
+
+;;;; ------------------------------------------------------------------
+;;;; Call shapes (PLAN-0060, DES-0055 D10 and D11)
+;;;;
+;;;; Here for the reason the decoder below is: each language analyzer builds
+;;;; its own occurrences, because only it knows what an argument looks like,
+;;;; and all of them hand over one grouped value of one shape.
+;;;; ------------------------------------------------------------------
+
+(defun group-call-shapes (occurrences)
+  "D11's :CALL-SHAPES value from OCCURRENCES, a list of (KEY SIGNATURE LINE):
+((<key> (<signature> <line> ...) ...) ...), or NIL for none.
+
+Keys and, under each, signatures keep the order they were first seen in. A
+signature seen twice under one key is one entry holding both lines, ascending
+and with a repeat kept: two calls on one line are two occurrences, and a reader
+that counts sites needs the multiplicity to count them once each.
+
+Grouped rather than a flat list of occurrences because the same few signatures
+repeat: 454 dict-value calls on game-server are one entry per distinct
+signature, not 454 strings."
+  (let ((keys '())
+        (entries (make-hash-table :test #'equal)))
+    (dolist (occurrence occurrences)
+      (destructuring-bind (key signature line) occurrence
+        (multiple-value-bind (signatures present) (gethash key entries)
+          (unless present (push key keys))
+          (let ((entry (assoc signature signatures :test #'string=)))
+            (if entry
+                (push line (cdr entry))
+                (setf (gethash key entries)
+                      (append signatures (list (list signature line)))))))))
+    (loop for key in (nreverse keys)
+          collect (cons key (mapcar (lambda (entry)
+                                      (cons (car entry)
+                                            (sort (copy-list (cdr entry)) #'<)))
+                                    (gethash key entries))))))
 
 ;;;; ------------------------------------------------------------------
 ;;;; An argument as a child process encodes it

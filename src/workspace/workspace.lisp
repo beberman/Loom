@@ -1094,8 +1094,8 @@ call site mints an entity, and that entity has to exist and carry its
 derived from those edges, so RESOLVE-TESTS has to follow RESOLVE-CALLS rather
 than merely accompany it. The full sequence is resolve-definitions,
 resolve-generated-definitions, resolve-imports, resolve-calls, resolve-tests,
-resolve-settings, resolve-entry-points, resolve-document-links,
-check-document-links, check-rules.
+resolve-settings, resolve-entry-points, resolve-dependencies,
+resolve-document-links, check-document-links, check-rules.
 
 Two of those arrows are not dependencies and the difference is worth keeping.
 RESOLVE-IMPORTS before CHECK-RULES is one: RUN-CHECK's :NO-EDGE kind takes
@@ -1186,6 +1186,15 @@ twice is the whole reason RESOLVE-CALLS takes a :MODULE-SCOPE argument."
                                         graph :workspace-id workspace
                                         :domains domains
                                         :entry-points (repository-entry-points repository)))
+      ;; Reads :UNRESOLVED-IMPORTS from RESOLVE-IMPORTS and
+      ;; :UNRESOLVED-IMPORTED-CALLS from RESOLVE-CALLS, so it follows both. Before
+      ;; the document links so an `affects:' naming a dependency finds the
+      ;; :MODULE, and before the rules so they see its edges (DES-0055 D8). The
+      ;; declarations are handed in as data, as the entry-points are.
+      (submit "resolve-dependencies"   (resolve-dependencies
+                                        graph :workspace-id workspace
+                                        :dependency-modules
+                                        (repository-dependency-modules repository)))
       (submit "resolve-document-links" (resolve-document-links graph :workspace-id workspace))
       ;; After RESOLVE-DOCUMENT-LINKS and before the rules, because it writes a
       ;; property that same pass's siblings read, and because a rule check is a
@@ -1221,6 +1230,13 @@ no configuration."
 (defun repository-setting-declarations (repository)
   "The setting-declarations this repository declared, or NIL. DES-0054 D3."
   (getf (repository-frameworks repository) :setting-declarations))
+
+(defun repository-dependency-modules (repository)
+  "The dependency-modules this repository declared, or NIL. DES-0055 D6.
+
+Beside REPOSITORY-ENTRY-POINTS and for its reason: read from this repository's
+own frameworks plist, so one watched tree's map cannot join another's imports."
+  (getf (repository-frameworks repository) :dependency-modules))
 
 (defun repository-registry (repository)
   "The generator registry this repository's resolution passes should use.
@@ -2093,6 +2109,10 @@ file lies under it"
 (defun import-summary (repository)
   "The import graph as six numbers: resolved, and one per cause.
 
+RESOLVED counts an :IMPORTS edge only when its target is a :FILE. RESOLVE-
+DEPENDENCIES draws :FILE-to-:MODULE edges for imports that stay :EXTERNAL, and
+counting those too would count one import twice (PLAN-0059 FINDINGS 1).
+
 Summed over the :FILE entities rather than recomputed, because RESOLVE-IMPORTS
 already wrote both halves -- the edges and the causes -- and a second
 resolution pass here could disagree with the graph a caller is about to query.
@@ -2108,10 +2128,86 @@ that vanishes when it is nought cannot be told from a count nobody computed."
                         :unrooted 0)))
     (dolist (file (entities-of-type graph :file))
       (dolist (r (relationships-from graph (id file)))
-        (when (eq :imports (rel-type r)) (incf resolved)))
+        (when (and (eq :imports (rel-type r))
+                   (eq :file (entity-type (get-entity graph (to-id r)))))
+          (incf resolved)))
       (dolist (entry (getp file :unresolved-imports))
         (incf (getf by-cause (getf entry :cause) 0))))
     (list* :resolved resolved by-cause)))
+
+(defun external-import-class (file entry)
+  "How one :EXTERNAL ENTRY of FILE's :UNRESOLVED-IMPORTS resolved: :JOINED,
+:STDLIB, :UNDECLARED, or :AMBIGUOUS for an undeclared one RESOLVE-DEPENDENCIES
+refused to place because two declarations tied.
+
+Read off what that pass wrote -- :UNDECLARED-IMPORTS on the file -- and not
+recomputed, so a count here cannot disagree with the edges (DES-0055 D9)."
+  (let* ((specifier (getf entry :specifier))
+         (undeclared (find specifier (getp file :undeclared-imports)
+                           :key (lambda (u) (getf u :specifier)) :test #'equal)))
+    (cond (undeclared (if (getf undeclared :ambiguous) :ambiguous :undeclared))
+          ((if (eq :python (getp file :language))
+               (some (lambda (m) (and (equal specifier (getf m :source)) (getf m :stdlib)))
+                     (getp file :import-modules))
+               (and (>= (length specifier) 5) (string= "node:" specifier :end2 5)))
+           :stdlib)
+          (t :joined))))
+
+(defun stdlib-marked-p (files)
+  "True when any import of FILES carries a :STDLIB mark, true or false. A Python
+child without sys.stdlib_module_names marks nothing, and zero stdlib imports
+reported for it would read as measured (PLAN-0059 risk 7)."
+  (some (lambda (file)
+          (some (lambda (m) (member :stdlib m)) (getp file :import-modules)))
+        files))
+
+(defun ecosystem-dependencies (ecosystem modules files)
+  "One ecosystem's plist for `status'. MODULES and FILES are already restricted
+to ECOSYSTEM. The unit of JOINED, STDLIB and UNDECLARED is one :EXTERNAL entry of
+:UNRESOLVED-IMPORTS, so the three sum to the :EXTERNAL count; :AMBIGUOUS is the
+part of UNDECLARED that a tie refused. :STDLIB is NIL when it is unknown."
+  (let ((classes (loop for file in files
+                       append (loop for entry in (getp file :unresolved-imports)
+                                    when (eq :external (getf entry :cause))
+                                      collect (external-import-class file entry)))))
+    (flet ((tally (&rest kinds) (count-if (lambda (c) (member c kinds)) classes)))
+      (list :ecosystem ecosystem
+            :declared (length modules)
+            :manifests (length (remove-duplicates (mapcar (lambda (m) (getp m :file)) modules)
+                                                  :test #'equal))
+            ;; npm maps a name to itself, so only PyPI can leave one unmapped.
+            :unmapped (count-if-not (lambda (m) (or (eq :npm ecosystem) (getp m :provides)))
+                                    modules)
+            :joined (tally :joined)
+            :stdlib (if (or (eq :npm ecosystem) (stdlib-marked-p files)) (tally :stdlib) nil)
+            :undeclared (tally :undeclared :ambiguous)
+            :ambiguous (tally :ambiguous)))))
+
+(defun dependency-summary (repository)
+  "`status\'' :DEPENDENCIES: one plist per ecosystem that has a :MODULE or an
+importing file of its language, PyPI first, or NIL for a tree with neither.
+DES-0055 D9. Reads the graph after RESOLVE-DEPENDENCIES and resolves nothing."
+  (let* ((graph (repository-graph repository))
+         (modules (entities-of-type graph :module))
+         (files (remove-if-not (lambda (file) (module-scoped-language-p (getp file :language)))
+                               (entities-of-type graph :file))))
+    (loop for ecosystem in '(:pypi :npm)
+          for mine = (remove-if-not (lambda (m) (eq ecosystem (getp m :ecosystem))) modules)
+          for importers = (remove-if-not (lambda (f)
+                                           (eq ecosystem (dependency-ecosystem (getp f :language))))
+                                         files)
+          when (or mine importers)
+            collect (ecosystem-dependencies ecosystem mine importers))))
+
+(defun frameworks-untracked-p (repository)
+  "True when .loom/frameworks.yaml exists and git does not list it, so another
+checkout of the same commit may join imports differently (DES-0055 D9). NIL when
+git cannot answer: whether a file is tracked is then not a fact about the tree."
+  (let ((root (repository-root repository))
+        (path ".loom/frameworks.yaml"))
+    (and (probe-file (merge-pathnames path root))
+         (multiple-value-bind (tracked reason) (tracked-paths root)
+           (and (null reason) (not (member path tracked :test #'string=)))))))
 
 (defun module-scoped-repository-p (repository)
   "True when any indexed file is in a language with its own module namespace.
@@ -2175,7 +2271,8 @@ default-exported registrations in files a codebase covers."
   "SS3.2's status, as plain data: \"indexing progress, entity and relationship
 counts, watcher health, unresolved document references, unenforced rules, and
 the last error per thread.\""
-  (let ((graph (repository-graph repository))
+  (let* ((graph (repository-graph repository))
+        (dependencies (dependency-summary repository))
         ;; Once. DRIFT is one stat per claimed file, and reading it out of the
         ;; plist six times would pay for the whole tree six times.
         (provenance (index-provenance repository)))
@@ -2342,6 +2439,12 @@ the last error per thread.\""
           ;; absent when it has none: a Common Lisp tree has no import graph.
           :unresolved-imports (when (module-scoped-repository-p repository)
                                 (import-summary repository))
+          ;; DES-0055 D9, beside the imports it breaks down. Nested plists
+          ;; travel to REST callers as an array of objects; NIL when the tree
+          ;; has no manifest and no importing file. The untracked flag is
+          ;; asked only then: it costs a `git ls-files'.
+          :dependencies dependencies
+          :frameworks-untracked (and dependencies (frameworks-untracked-p repository))
           ;; DES-0013, PLAN-0013 step 5. Two scalars, for the reason the
           ;; enrichment block above gives: this plist is serialized to JSON for
           ;; REST and MCP callers, so a count travels where a nested region

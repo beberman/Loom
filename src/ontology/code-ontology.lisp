@@ -253,6 +253,24 @@ specifier that resolves to nothing is a fact about this file and the reason it
 resolved to nothing is the fact a reader acts on -- an alias nobody declared
 reads differently from a path that is simply wrong.  Measured on front-end,
 1320 of 1885 in-tree imports.")
+               (:includes list
+                :documentation "Other requirements files this one pulls in,
+each as written: \"-r base.txt\".  Written by the manifest analyzer
+(DES-0055 R3).")
+               (:unnamed-requirements integer
+                :documentation "Requirement lines naming no package, such as a
+bare path or URL with no #egg= name.  Written by the manifest analyzer
+(DES-0055 R3).")
+               (:undeclared-imports list
+                :documentation "Imports in this file that no manifest declares
+and that are neither standard library nor a `node:' builtin.  Written by the
+dependency resolution pass (DES-0055 D8).")
+               (:import-modules list
+                :documentation "One plist per absolute import in any scope:
+(:SOURCE s :MODULE m :STDLIB bool).  A relative import is left out, because it
+is never external.  Written by the Python analyzer (PLAN-0059 FINDINGS 3), and
+read by the resolution pass because :IMPORT-BINDINGS holds module-level imports
+only.")
                (:test-file-p boolean :default nil
                 :documentation "Set when this is a file the test runner would
 run -- REQ-0053 R2.  Two signals, either sufficient: the path matches the
@@ -397,13 +415,34 @@ indexed repository declared.")
                (:language       keyword :one-of *source-languages*)))
 
 (defentity :module
-  :documentation "The logical unit definitions are grouped under -- a Lisp
-package's file, an ES module.  Distinct from :file, which is the artifact on
-disk: a module may span files, and a file need not declare one."
-  :natural-key (:qualified-name)
-  :properties ((:qualified-name string :required t)
-               (:file           string)
-               (:language       keyword :one-of *source-languages*)
+  :documentation "A dependency a manifest declares, never a file in the tree --
+DES-0055 D2.  One per manifest and name: front-end's package.json and
+functions/package.json each declare react, and each gets its own module with its
+own spec.  The manifest analyzer asserts it and RETRACT-FILE on the manifest
+removes it.  A source file is a :file, and Loom mints no :module for one."
+  :natural-key (:file :qualified-name)
+  :properties ((:qualified-name string :required t
+                :documentation "The name as the manifest declares it:
+google-auth, @testing-library/react.")
+               (:file           string :required t
+                :documentation "The manifest's workspace-relative path.")
+               (:ecosystem      keyword :one-of (:pypi :npm))
+               (:specs          list
+                :documentation "Each version spec as written, `>=2.29' or
+`^18.3.1'.  A name listed twice in one manifest keeps both.")
+               (:sections       list
+                :documentation "npm only: :DEPENDENCIES, :DEV-DEPENDENCIES,
+:PEER-DEPENDENCIES, :OPTIONAL-DEPENDENCIES.")
+               (:start-line     integer
+                :documentation "The line in the manifest that declares it.")
+               (:provides       list
+                :documentation "The import prefixes the declaration maps this
+name to, derived on every resolution pass (DES-0055 D6).  Absent when
+unmapped.")
+               (:language       keyword :one-of *source-languages*
+                :documentation "Declared because
+EVERY-LANGUAGE-PROPERTY-SHARES-ONE-VOCABULARY requires every type to agree on
+it.  Nothing writes it on a dependency.")
                (:documentation  string
                 :documentation "Prose this module declares about itself.
 REQ-0035, DES-0028.")))
@@ -619,6 +658,23 @@ attribute.
 Analyzer-written and never rewritten, the same DEC-0003 discipline
 :CALL-NAMES keeps and for the same reason: a resolution pass that consumed its
 own input could not be re-run.")
+               (:call-shapes list
+                :documentation "One signature per call form this entity
+contains, grouped by the key resolution reads: ((<key> (<signature> <line> ...)
+...) ...).  <key> is a name in :CALL-NAMES or a local callee's name; <signature>
+is `<arity>:<kind>,...' by DES-0055 D10, so `2:y,y' is a call passing two names
+and `3:s,k:k,n' a string, a keyword and a number.  Identical signatures under
+one key share an entry and keep every line.  PLAN-0060, DES-0055 D11.
+
+Kinds and keyword names only: no string, number or boolean value is recorded
+(U4), so a default passed as a literal never reaches the index.  Absent when the
+entity makes no call the analyzer could describe, which is also what a name
+that arrived only as a #'f designator looks like -- it is in :CALL-NAMES and has
+no call form.
+
+Analyzer-written and never rewritten, the DEC-0003 discipline :CALL-NAMES keeps.
+Which entries count for a callee is decided by the :VIA of the edge that
+reaches it, so this record is never matched by name.")
                (:unresolved-calls list
                 :documentation "Callee names that did not resolve inside the
 workspace.  Recorded as a property, never as a dangling edge.  Derived from
@@ -794,6 +850,9 @@ No :one-of, for the reason :SYSTEM gives -- the vocabulary is whatever the
 indexed repository declared.")
                (:call-names       list)
                (:qualified-calls  list)
+               (:call-shapes list
+                :documentation "As on :FUNCTION: the signatures of the call
+forms this method contains, grouped by key.  PLAN-0060, DES-0055 D11.")
                (:unresolved-calls list)
                (:imported-calls list
                 :documentation "Calls this entity makes through an import
@@ -1004,6 +1063,13 @@ PLAN-0014 decision 4 puts it here; step 4 then has CALLER-CALL-NAMES derive the
 one-element list from :CALL-NAME instead of reading this, which is why nothing
 sets it. Storing the name twice is the drift MAKE-CALL-SITE-ENTITY exists to
 prevent, one property over.")
+               (:call-shapes list
+                :documentation "As on :FUNCTION: the signatures of the call
+forms this site stands for, grouped by key.  PLAN-0060, DES-0055 D11.
+
+A site is one call name, so it holds the entry for its :CALL-NAME.  The analyzer
+writes it on an initform site; the graph copies it from the caller or the
+definer plist on the sites it mints, every pass.")
                (:unresolved-calls list
                 :documentation "Written by RESOLVE-CALLS exactly as it writes
 it on a function: where an initform name that matched nothing is recorded
@@ -1098,7 +1164,7 @@ describe."
 (defun make-call-site-entity (&key file start-line end-line call-name
                                    referrer-kind candidate-count
                                    language system domain generated-by
-                                   imported-calls)
+                                   imported-calls call-shapes)
   "The one constructor for a :CALL-SITE, used by both systems that mint one.
 
 Natural-key properties are passed at construction and never SETP'd afterwards,
@@ -1130,7 +1196,21 @@ values it did not yet have."
                                     ;; Not a natural-key component, so it may
                                     ;; arrive with the others rather than being
                                     ;; SETP'd later. PLAN-0050 S1.
-                                    :domain domain))))
+                                    :domain domain
+                                    ;; Not a natural-key component either.
+                                    ;; PLAN-0060 step 3.
+                                    :call-shapes call-shapes))))
+
+(defun call-shapes-for-key (shapes key)
+  "The part of SHAPES, a :CALL-SHAPES value, that is KEY's: a list of the one
+entry, or NIL when KEY has none.
+
+Here beside MAKE-CALL-SITE-ENTITY for the same reason it is: the analyzer cuts a
+caller's shapes down to an initform site's one name, and the graph does the
+same for a definer site and an ambiguous site, so a second copy in either
+system would be a second reading of one value (PLAN-0060 step 3)."
+  (let ((entry (assoc key shapes :test #'string=)))
+    (and entry (list entry))))
 
 ;;;; ==================================================================
 ;;;; Knowledge -- the part that cannot be recovered by re-reading source
@@ -1237,6 +1317,12 @@ the runner executes for every case in it (DES-0045 D4).  A name appearing here
 is not yet a claim that the case reached that definition: RESOLVE-CALLS decides
 which definition the name means, and a name it cannot place stays in
 :UNRESOLVED-CALLS.")
+               (:call-shapes list
+                :documentation "As on :FUNCTION: the signatures of the call
+forms this test contains, grouped by key.  PLAN-0060, DES-0055 D11.
+
+In Lisp, carried over from the file's :DEFINER-CALL-SITES entry with
+:CALL-NAMES, on every pass.")
                (:unresolved-calls list
                 :documentation "Callee names that did not resolve inside the
 workspace.  Expected to be populous for a test: a framework's assertion
@@ -1781,7 +1867,14 @@ than two. Interposing the node between an existing caller and its callee was
 considered and rejected: every path would have grown a hop, so every depth
 `impact' reports would have changed. A name resolving to exactly one callee
 from a :FUNCTION, :METHOD or :TEST still produces the edge it produces today
-and mints nothing.")
+and mints nothing.
+
+:VIA is the list of call keys that produced the edge (DES-0055 D11): a name in
+the caller's :CALL-NAMES, a local callee's name, or for a Python import-bound
+call the specifier and path joined with dots. Two keys reaching one callee are
+one edge listing both. Every writer of a :CALLS edge writes it, and it is
+derived with the edge, so a pass that re-asserts the edge writes it again. An
+edge only the image reported (`enrich') has no key and no :VIA.")
 
 (defrelationship :reads
   :from (:function :method :test :variable :file) :to (:setting)
@@ -1824,7 +1917,7 @@ manufacture a join neither side wrote, so it stays unmatched and is counted
 (CON-0001, REQ-0027 R3).")
 
 (defrelationship :depends-on
-  :from (:module :package :file :function :method :variable)
+  :from (:module :package :file :function :method :variable :test :call-site)
   :to (:module :package :file)
   :transitive-impact t :impact-direction :reverse
   :documentation "Module-level propagation, and the edge from a deployed

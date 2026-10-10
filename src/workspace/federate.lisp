@@ -246,10 +246,7 @@ here contains such a pair, and a reader should know it is possible."
                                         (and (> (length p) (length path))
                                              (string-equal path p :start2 (- (length p)
                                                                             (length path))))))))
-               (entities-of-type graph :document))
-      (find-if (lambda (e) (let ((p (getp e :file)))
-                             (and p (string-equal p path))))
-               (entities-of-type graph :module))))
+               (entities-of-type graph :document))))
 
 (defun local-mention-targets (graph document)
   "The mention tokens DOCUMENT already resolved inside its own repository."

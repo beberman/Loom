@@ -355,6 +355,9 @@ not tell the first two apart, and getting that wrong deletes somebody's file."
   ;; DES-0054 R10. Which frameworks.yaml template fits each Firebase codebase,
   ;; shown for the same reason as the domains and never written.
   (template-proposals '())
+  ;; DES-0055 D7. A dependency-modules: block as a string, or NIL. Shown, never
+  ;; written, as the two proposals above are.
+  (dependency-proposal nil)
   (problems '()))
 
 (defun update-state (root relative rendered-now &key region)
@@ -611,6 +614,131 @@ guess. Nothing is written, so an author reads the template and decides."
                                                   (template-path *firebase-js-template*))))
                    (t (list :note "language not recognised: no runtime, and no main.py or package.json in the source directory"))))))
 
+;;;; ------------------------------------------------------------------
+;;;; dependency-modules: (DES-0055 D7, R7)
+;;;; ------------------------------------------------------------------
+;;;;
+;;;; The proposal is shown and never written, as the Firebase templates are. A
+;;;; name the venv answers becomes a live entry; any other becomes a commented
+;;;; one marked as a spelling guess, which declares nothing and joins nothing
+;;;; until its author uncomments it.
+
+(defun record-modules-script ()
+  "The child that reads RECORD files, resolved against Loom's own source as
+*PY-EXTRACTOR* is. A function and not a variable: a top-level initform calling
+ASDF mints a :CALL-SITE, and a whole-tree test holds those to a ceiling."
+  (asdf:system-relative-pathname :loom-workspace "../../tools/py/record_modules.py"))
+
+(defparameter *record-modules-timeout-seconds* 30
+  "How long the child may run. `timeout' kills it, so a RECORD that is a FIFO or
+a venv on a stalled mount cannot hold init.")
+
+(defun requirement-distribution-names (root)
+  "The distribution names ROOT's requirements*.txt files declare, as
+DISTRIBUTION-NAME-KEY spells them, each once in first-met order.
+
+A file inside a venv is third-party data and names nothing. A line pulling in
+another file (`-r') is not followed: the target is read if its own name begins
+with `requirements', and not otherwise."
+  (let ((venvs (venv-prefixes root)) (keys '()))
+    (dolist (path (sort (mapcar #'namestring (tree-listing root)) #'string<))
+      (let ((relative (workspace-relative-path path root)))
+        (when (and (loom-analyzer::requirements-file-p path)
+                   (notany (lambda (prefix)
+                             (and (<= (length prefix) (length relative))
+                                  (string= prefix relative :end2 (length prefix))))
+                           venvs))
+          (loop for line across (string-lines (read-file path))
+                for entry = (loom-analyzer::requirement-line-entry line)
+                when (eq :module (first entry))
+                  do (pushnew (distribution-name-key (second entry)) keys
+                              :test #'string=)))))
+    (nreverse keys)))
+
+(defun venv-site-packages (root)
+  "Every site-packages directory under a venv in ROOT, as namestrings: POSIX
+lib/python*/site-packages and Windows Lib/site-packages (DES-0053 D11)."
+  (loop for prefix in (venv-prefixes root)
+        append (loop for pattern in '("lib/python*/site-packages/" "Lib/site-packages/")
+                     append (mapcar #'namestring
+                                    (directory (merge-pathnames
+                                                (concatenate 'string prefix pattern)
+                                                (pathname-as-directory root)))))))
+
+(defun safe-module-name-p (name)
+  "True for a dotted name of letters, digits and underscores. The child checks
+this too; what it prints is still untrusted text on its way into a YAML file."
+  (and (stringp name) (plusp (length name))
+       (every (lambda (c) (or (alphanumericp c) (find c "_."))) name)))
+
+(defun record-modules (site-packages keys)
+  "What the child says SITE-PACKAGES installs for KEYS: an alist (key . modules).
+NIL when python3 cannot start, times out, or prints anything but a JSON object.
+
+Run as `python3 -I -B' and never the venv's own interpreter: site.py processes
+.pth files at startup, and a .pth line can execute code."
+  (handler-case
+      (multiple-value-bind (out err status)
+          (uiop:run-program (append (list "timeout"
+                                          (princ-to-string *record-modules-timeout-seconds*)
+                                          loom-analyzer::*python-program* "-I" "-B"
+                                          (namestring (record-modules-script))
+                                          site-packages)
+                                    keys)
+                            :output :string :error-output :string
+                            :ignore-error-status t)
+        (declare (ignore err))
+        (let ((parsed (and (eql status 0) (st-json:read-json-from-string out))))
+          (when (typep parsed 'st-json:jso)
+            (let ((found '()))
+              (st-json:mapjso
+               (lambda (key modules)
+                 (when (and (listp modules) (every #'safe-module-name-p modules))
+                   (push (cons key modules) found)))
+               parsed)
+              found))))
+    (error () nil)))
+
+(defun venv-modules (root keys)
+  "The modules every venv under ROOT installs for KEYS: an alist (key . modules),
+a key present only when some venv answered it with at least one module."
+  (let ((found '()))
+    (dolist (site-packages (venv-site-packages root) found)
+      (loop for (key . modules) in (record-modules site-packages keys)
+            when (and modules (member key keys :test #'string=))
+              do (let ((entry (assoc key found :test #'string=)))
+                   (if entry
+                       (setf (cdr entry) (union modules (cdr entry) :test #'string=))
+                       (push (cons key modules) found)))))))
+
+(defun render-dependency-proposal (keys found)
+  "The dependency-modules: block for KEYS, given FOUND from VENV-MODULES.
+
+An answered key is a live entry. An unanswered one is commented out, marked, and
+spelled as the key with `-' made `_'. That is a guess about an import name, and
+DES-0055 D6 keeps guesses out of the join (U1): a commented line declares
+nothing."
+  (with-output-to-string (out)
+    (format out "dependency-modules:~%")
+    (dolist (key keys)
+      (let ((modules (cdr (assoc key found :test #'string=))))
+        (if modules
+            (format out "  - distribution: ~a~%    modules: [~{~a~^, ~}]~%"
+                    key (sort (copy-list modules) #'string<))
+            (format out "  # unverified: spelling only~%  # - distribution: ~a~%  #   modules: [~a]~%"
+                    key (substitute #\_ #\- key)))))))
+
+(defun dependency-module-proposal (root)
+  "A dependency-modules: block for ROOT's declared Python requirements, as a
+string, or NIL when it declares none. DES-0055 D7.
+
+Reads a venv only through RECORD-MODULES, and starts no process when ROOT has
+no venv. The result is shown by `init' and written nowhere."
+  (let ((keys (requirement-distribution-names root)))
+    (when keys
+      (render-dependency-proposal
+       keys (and (venv-site-packages root) (venv-modules root keys))))))
+
 (defun domain-proposal-summaries (proposals)
   "PROPOSALS, as PROPOSE-DOMAINS returns them, as the plists a report carries."
   (mapcar (lambda (proposal)
@@ -743,6 +871,7 @@ and leaves the tree exactly as it was."
         (setf (prep-domain-proposals prep) proposals
               (prep-domain-notes prep) notes))
       (setf (prep-template-proposals prep) (template-proposals root))
+      (setf (prep-dependency-proposal prep) (dependency-module-proposal root))
       (setf (prep-files prep) (nreverse (prep-files prep))
             (prep-appends prep) (nreverse (prep-appends prep))
             (prep-skipped prep) (nreverse (prep-skipped prep))
@@ -939,7 +1068,8 @@ compile-time failure ENTITY-TYPE carries the same note about one file over."
              ;; written.
              :domain-proposals (domain-proposal-summaries proposals)
              :domain-notes notes
-             :template-proposals (template-proposals root))))
+             :template-proposals (template-proposals root)
+             :dependency-proposal (dependency-module-proposal root))))
     (t
       (let ((prep (plan-preparation root
                                     :document-directory document-directory
@@ -969,7 +1099,8 @@ compile-time failure ENTITY-TYPE carries the same note about one file over."
                   :domain-proposals (domain-proposal-summaries
                                      (prep-domain-proposals prep))
                   :domain-notes (prep-domain-notes prep)
-                  :template-proposals (prep-template-proposals prep)))))))
+                  :template-proposals (prep-template-proposals prep)
+                  :dependency-proposal (prep-dependency-proposal prep)))))))
 
 ;;;; ==================================================================
 ;;;; Taking Loom back out (REQ-0021 R13, DES-0022 S4)

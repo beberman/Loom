@@ -172,6 +172,25 @@ noise in every caller's call list."
    (append (jlist definition :calls) (jlist definition :jsx))
    :test #'string=))
 
+(defun js-call-shapes (definition)
+  "D11's :CALL-SHAPES value for DEFINITION (DES-0055, PLAN-0060 step 5): one
+occurrence per call the child recorded, keyed by the name :CALL-NAMES carries
+for it, with the signature the child computed and the call's own line. NIL for
+none.
+
+JSX usages are not calls and the child records no shape for them, so
+`<Thing />' puts THING in :CALL-NAMES and nothing here: its edge carries a :VIA
+key with no entry, which `describe' counts as an edge without a call form
+rather than inventing a signature for it (PLAN-0060 FINDINGS 4).
+
+A record with no signature is left out and not given a guessed one: the child
+writes one on every call, so a missing one is a reply from something else
+(CON-0001)."
+  (group-call-shapes
+   (loop for shape in (jlist definition :shapes)
+         when (jget shape :signature)
+           collect (list (jget shape :name) (jget shape :signature) (jget shape :line)))))
+
 ;;;; ==================================================================
 ;;;; Reconciling same-key definitions (CON-0005, REQ-0024 R6)
 ;;;; ==================================================================
@@ -439,6 +458,7 @@ says, not what the file as a whole is (DES-0045 D1)."
   (let* ((kind (jget definition :kind))
          (name (js-definition-name definition path))
          (calls (js-call-names definition))
+         (shapes (js-call-shapes definition))
          (jsx (jlist definition :jsx))
          (routes (js-definition-routes definition))
          (shadowed (jget definition :shadowed))
@@ -478,6 +498,9 @@ says, not what the file as a whole is (DES-0045 D1)."
                  (properties-table
                   (append common
                           (when (and callable calls) (list :call-names calls))
+                          ;; Under the same condition as the names: a shape is
+                          ;; only joined to an edge whose caller is callable.
+                          (when (and callable shapes) (list :call-shapes shapes))
                           (when (and source-kind jsx)
                             (list :jsx-names (remove-duplicates jsx :test #'string=)))
                           (when (and source-kind routes)

@@ -299,3 +299,15 @@ consumer, which is REQ-0027 R6's traversal")
       (is (null (find "function:utils/dict.lisp:make-dict" (getf classified :rot)
                       :key (lambda (e) (getf e :reference)) :test #'equal))
           "it is not rot: nothing is missing, the reference is written wrong"))))
+
+(test a-module-is-not-found-by-the-manifest-path-it-was-declared-in
+  ;; DES-0055 D1: a :MODULE is a dependency a manifest declares, so its :FILE
+  ;; names a file that already has its own :FILE entity.  Answering for
+  ;; "requirements.txt" with a dependency would hand a document reference the
+  ;; wrong kind of entity when the :FILE is missing.
+  (let ((graph (make-graph)))
+    (add-entity graph (make-instance 'module-entity :name "requests"
+                                     :properties (properties-table
+                                                  '(:qualified-name "requests"
+                                                    :file "requirements.txt"))))
+    (is (null (loom-workspace::entity-at-path graph "requirements.txt")))))

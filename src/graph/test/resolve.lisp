@@ -334,10 +334,12 @@ matching nothing")))
     (add-entity graph e)
     e))
 
-(defun r-call-site (operator name &key (line 10) call-names)
-  (list :operator operator :start-line line :end-line (+ line 2)
-        :arguments (list name) :symbol-arguments '(1)
-        :call-names call-names))
+(defun r-call-site (operator name &key (line 10) call-names call-shapes)
+  (append (list :operator operator :start-line line :end-line (+ line 2)
+                :arguments (list name) :symbol-arguments '(1)
+                :call-names call-names)
+          ;; Absent rather than NIL, as the Lisp analyzer writes it.
+          (when call-shapes (list :call-shapes call-shapes))))
 
 (test a-definer-call-site-mints-the-definition-it-names
   ;; The name exists nowhere in the source as a defun, so nothing but this
@@ -2819,3 +2821,490 @@ resolution pass run."
       (apply-transaction g (resolve-document-links g :workspace-id "w"))
       (is (null (relationships-from g (id decision) :rel-type :decides)))
       (is (= 1 (length (getp decision :ambiguous-references)))))))
+
+;;;; ==================================================================
+;;;; RESOLVE-DEPENDENCIES (DES-0055 D4 to D8, PLAN-0059 step 5)
+;;;; ==================================================================
+;;;;
+;;;; Every fixture is hand-made entities, as the RESOLVE-IMPORTS tests above are.
+;;;; D-RESOLVE runs the passes in RESOLVE-AND-CHECK's order, because the pass
+;;;; reads :UNRESOLVED-IMPORTS from RESOLVE-IMPORTS and nothing else writes it.
+
+(defun d-module (graph manifest name ecosystem)
+  (let ((e (make-instance 'module-entity :name name :origin-file manifest
+                          :properties (properties-table
+                                       (list :qualified-name name :file manifest
+                                             :ecosystem ecosystem)))))
+    (add-entity graph e)
+    e))
+
+(defun d-file (graph path language imports &optional import-modules)
+  (let ((e (make-instance 'file-entity :name path :origin-file path
+                          :properties (properties-table
+                                       (list :path path :language language
+                                             :import-sources imports
+                                             :import-modules import-modules)))))
+    (add-entity graph e)
+    e))
+
+(defun d-py-file (graph path &rest specs)
+  "A Python :FILE importing each of SPECS, a list (source &key module stdlib)."
+  (d-file graph path :python (mapcar #'first specs)
+          (loop for (source . keys) in specs
+                collect (list* :source source
+                               :module (or (getf keys :module) source)
+                               (when (getf keys :stdlib) (list :stdlib t))))))
+
+(defun d-declaration (distribution &rest modules)
+  (list :distribution distribution
+        :key (loom-utils:distribution-name-key distribution)
+        :modules modules))
+
+(defun d-resolve (graph &rest declarations)
+  (apply-transaction graph (resolve-imports graph))
+  (apply-transaction graph (resolve-dependencies graph :workspace-id "w"
+                                                       :dependency-modules declarations)))
+
+(defun d-targets (graph file &optional (rel-type :imports))
+  "The :MODULEs FILE has a REL-TYPE edge to, as manifest:name strings, sorted."
+  (sort (loop for r in (relationships-from graph (id file) :rel-type rel-type)
+              for target = (get-entity graph (to-id r))
+              when (eq :module (entity-type target))
+                collect (format nil "~a:~a" (getp target :file) (name target)))
+        #'string<))
+
+(defun d-undeclared (file)
+  (getp file :undeclared-imports))
+
+(test an-npm-specifier-joins-by-its-package-name-scope-and-subpath-included
+  (let* ((g (make-graph))
+         (testing (d-module g "package.json" "@testing-library/react" :npm))
+         (fns (d-module g "package.json" "firebase-functions" :npm))
+         (a (d-file g "a.js" :javascript '("@testing-library/react/pure"
+                                           "firebase-functions/v2/https"
+                                           "node:fs" "fs"))))
+    (declare (ignore testing fns))
+    (d-resolve g)
+    (is (equal '("package.json:@testing-library/react" "package.json:firebase-functions")
+               (d-targets g a)))
+    (is (equal '("fs") (mapcar (lambda (e) (getf e :specifier)) (d-undeclared a)))
+        "a bare fs with no declaring manifest is undeclared, and node:fs is not
+(DES-0055 D8: a node: specifier is a builtin by its syntax)")))
+
+(test the-nearest-manifest-that-declares-a-package-governs-the-importer
+  (let* ((g (make-graph)))
+    (d-module g "package.json" "firebase-functions" :npm)
+    (d-module g "functions/package.json" "firebase-functions" :npm)
+    (let ((inner (d-file g "functions/index.js" :javascript '("firebase-functions")))
+          (outer (d-file g "src/a.js" :javascript '("firebase-functions"))))
+      (d-resolve g)
+      (is (equal '("functions/package.json:firebase-functions") (d-targets g inner)))
+      (is (equal '("package.json:firebase-functions") (d-targets g outer))))))
+
+(test a-nearer-manifest-that-does-not-declare-the-name-is-passed-over
+  (let ((g (make-graph)))
+    (d-module g "package.json" "react" :npm)
+    (d-module g "functions/package.json" "firebase-functions" :npm)
+    (let ((x (d-file g "functions/x.js" :javascript '("react"))))
+      (d-resolve g)
+      (is (equal '("package.json:react") (d-targets g x))))))
+
+(test two-pypi-manifests-in-one-directory-are-both-joined
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "pytest" :pypi)
+    (d-module g "requirements-dev.txt" "pytest" :pypi)
+    (let ((x (d-py-file g "tests/test_a.py" '("pytest"))))
+      (d-resolve g (d-declaration "pytest" "pytest"))
+      (is (equal '("requirements-dev.txt:pytest" "requirements.txt:pytest")
+                 (d-targets g x))))))
+
+(test the-longest-declared-prefix-wins-for-a-python-import
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "google-auth" :pypi)
+    (d-module g "requirements.txt" "google-cloud" :pypi)
+    (let ((x (d-py-file g "app/a.py" '("google.auth.credentials"))))
+      (d-resolve g (d-declaration "google-auth" "google.auth")
+                 (d-declaration "google-cloud" "google"))
+      (is (equal '("requirements.txt:google-auth") (d-targets g x))))))
+
+(test from-s-import-a-joins-through-the-module-s-dot-a
+  ;; `from google.cloud import secretmanager' imports google.cloud.secretmanager,
+  ;; so the entry for S.a is what reaches the declaration (D6).
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "google-cloud-secret-manager" :pypi)
+    (let ((x (d-file g "app/a.py" :python '("google.cloud")
+                     (list (list :source "google.cloud" :module "google.cloud")
+                           (list :source "google.cloud"
+                                 :module "google.cloud.secretmanager")))))
+      (d-resolve g (d-declaration "google-cloud-secret-manager"
+                                  "google.cloud.secretmanager"))
+      (is (equal '("requirements.txt:google-cloud-secret-manager") (d-targets g x))))))
+
+(test a-tie-on-the-longest-prefix-joins-nothing-and-is-recorded-ambiguous
+  (let ((g (make-graph)))
+    ;; Listed under the import's own spelling, so a join by spelling would
+    ;; draw an edge here and the tie is what stops it.
+    (d-module g "requirements.txt" "google-auth" :pypi)
+    (d-module g "requirements.txt" "other" :pypi)
+    (let ((x (d-py-file g "app/a.py" '("google.auth"))))
+      (d-resolve g (d-declaration "google-auth" "google.auth")
+                 (d-declaration "other" "google.auth"))
+      (is (null (d-targets g x)))
+      (is (equal '((:specifier "google.auth" :ambiguous t)) (d-undeclared x))))))
+
+(test an-import-matching-no-declared-prefix-joins-nothing-and-is-undeclared
+  ;; LOOP's MAXIMIZE over no iterations answers 0 in SBCL, which the winner search
+  ;; read as a prefix of length 0 and joined every import to the first
+  ;; declaration. Found by PLAN-0059 step 6's status counts.
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "requests" :pypi)
+    (let ((x (d-py-file g "app/a.py" '("mystery"))))
+      (d-resolve g (d-declaration "requests" "requests"))
+      (is (null (d-targets g x)))
+      (is (equal '((:specifier "mystery")) (d-undeclared x))))))
+
+(test a-requirement-with-no-declaration-provides-nothing-and-joins-nothing
+  ;; The no-spelling rule (U1): tzdata and requests match their import names
+  ;; exactly, and still join nothing without a declaration.
+  (let ((g (make-graph)))
+    (let ((tz (d-module g "requirements.txt" "tzdata" :pypi))
+          (req (d-module g "requirements.txt" "requests" :pypi))
+          (x (d-py-file g "app/a.py" '("tzdata") '("requests"))))
+      (d-resolve g)
+      (is (null (getp tz :provides)))
+      (is (null (getp req :provides)))
+      (is (null (d-targets g x)))
+      (is (equal '("tzdata" "requests")
+                 (mapcar (lambda (e) (getf e :specifier)) (d-undeclared x)))))))
+
+(test a-distribution-is-matched-under-pep-503-and-provides-what-it-declares
+  (let ((g (make-graph)))
+    (let ((auth (d-module g "requirements.txt" "google-auth" :pypi))
+          (react (d-module g "package.json" "react" :npm)))
+      (d-resolve g (d-declaration "Google_Auth" "google.auth" "google.oauth2"))
+      (is (equal '("google.auth" "google.oauth2") (getp auth :provides)))
+      (is (equal '("react") (getp react :provides))
+          "an npm package provides its own name"))))
+
+(test a-declared-distribution-no-manifest-lists-joins-nothing
+  ;; FINDINGS 6: lfia's google-cloud-firestore, installed by firebase-admin.
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "firebase-admin" :pypi)
+    (let ((x (d-py-file g "app/a.py" '("google.cloud.firestore"))))
+      (d-resolve g (d-declaration "firebase-admin" "firebase_admin")
+                 (d-declaration "google-cloud-firestore" "google.cloud.firestore"))
+      (is (null (d-targets g x)))
+      (is (equal '((:specifier "google.cloud.firestore"))
+                 (d-undeclared x))))))
+
+(test a-stdlib-import-is-neither-joined-nor-undeclared
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "os" :pypi)
+    (let ((x (d-py-file g "app/a.py" '("os" :stdlib t))))
+      (d-resolve g (d-declaration "os" "os"))
+      (is (null (d-targets g x)))
+      (is (null (d-undeclared x))))))
+
+(defun d-caller (graph name file calls)
+  (let ((e (make-instance 'function-entity :name name :origin-file file
+                          :properties (properties-table
+                                       (list :file file :start-line 1 :end-line 5
+                                             :language :python
+                                             :unresolved-imported-calls calls)))))
+    (add-entity graph e)
+    e))
+
+(defparameter *d-decorator-call*
+  '((:specifier "firebase_functions" :path ("https_fn" "on_request")
+     :line 3 :cause :external)))
+
+(test a-function-depends-on-the-dependency-its-external-call-names
+  (let ((g (make-graph)))
+    (let ((module (d-module g "requirements.txt" "firebase-functions" :pypi))
+          (caller (d-caller g "handler" "app/main.py" *d-decorator-call*)))
+      (d-py-file g "app/main.py")
+      (d-resolve g (d-declaration "firebase-functions" "firebase_functions"))
+      (is (equal (list (id module))
+                 (mapcar #'to-id (relationships-from g (id caller)
+                                                     :rel-type :depends-on)))))))
+
+(test a-function-without-a-declaration-depends-on-nothing
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "firebase-functions" :pypi)
+    (let ((caller (d-caller g "handler" "app/main.py" *d-decorator-call*)))
+      (d-py-file g "app/main.py")
+      (d-resolve g)
+      (is (null (relationships-from g (id caller) :rel-type :depends-on))))))
+
+(test the-dependency-pass-twice-over-an-unchanged-view-changes-nothing
+  (let ((g (make-graph)))
+    (d-module g "package.json" "react" :npm)
+    (let ((x (d-file g "a.js" :javascript '("react" "left-pad"))))
+      (d-resolve g)
+      (let ((edges (d-targets g x))
+            (undeclared (d-undeclared x))
+            (count (length (all-relationships g))))
+        (d-resolve g)
+        (is (equal edges (d-targets g x)))
+        (is (equal undeclared (d-undeclared x)))
+        (is (= count (length (all-relationships g))))))))
+
+(test an-import-edge-to-a-farther-manifest-is-swept-when-a-nearer-one-appears
+  ;; FINDINGS 2. The nearer package.json is added after the first pass. Nothing
+  ;; but the pass's own sweep removes the edge the first pass drew.
+  (let ((g (make-graph)))
+    (d-module g "package.json" "react" :npm)
+    (let ((x (d-file g "web/a.js" :javascript '("react"))))
+      (d-resolve g)
+      (is (equal '("package.json:react") (d-targets g x)))
+      (d-module g "web/package.json" "react" :npm)
+      (d-resolve g)
+      (is (equal '("web/package.json:react") (d-targets g x))))))
+
+(test a-depends-on-edge-is-swept-when-its-declaration-is-withdrawn
+  (let ((g (make-graph)))
+    (d-module g "requirements.txt" "firebase-functions" :pypi)
+    (let ((caller (d-caller g "handler" "app/main.py" *d-decorator-call*)))
+      (d-py-file g "app/main.py")
+      (d-resolve g (d-declaration "firebase-functions" "firebase_functions"))
+      (is (= 1 (length (relationships-from g (id caller) :rel-type :depends-on))))
+      (d-resolve g)
+      (is (null (relationships-from g (id caller) :rel-type :depends-on))))))
+
+;;; ------------------------------------------------------------------
+;;; :VIA on every :CALLS edge (PLAN-0060 step 2, DES-0055 D11)
+;;; ------------------------------------------------------------------
+;;;
+;;; :VIA lists the call keys that produced an edge. ABSORB-PROPERTIES clears an
+;;; edge's table before it copies, so two ops for one edge leave the later op's
+;;; :VIA. These tests are about the keys RESOLVE-CALLS emits and the number of
+;;; edges, which merging the ops must not move.
+
+(defun calls-ops (ops)
+  "The :CALLS relationship operations among OPS."
+  (remove-if-not (lambda (op)
+                   (and (typep op 'loom-ontology:assert-relationship-op)
+                        (eq :calls (rel-type (loom-ontology:op-rel op)))))
+                 ops))
+
+(defun via-of (graph from to)
+  (getp (find-relationship-by-key graph (list :calls (id from) (id to))) :via))
+
+(test two-call-keys-reaching-one-callee-are-one-edge-carrying-both
+  ;; `Widget.render' names the class, and `w.render' names only the property,
+  ;; which fans out over every method called render. Both reach the one method.
+  ;; Two ops would let the second absorb leave :VIA ("w.render").
+  (let* ((g (make-graph))
+         (caller (r-js-function g "draw" "ui/Home.jsx"
+                                :unresolved '("Widget.render" "w.render")))
+         (callee (r-js-method g "Widget.render" "ui/Widget.js")))
+    (r-js-file g "ui/Home.jsx" :imports '("./Widget"))
+    (r-js-file g "ui/Widget.js")
+    (let ((ops (resolve-calls g)))
+      (is (= 1 (length (calls-ops ops)))
+          "one op for the one edge; the edge count is what must not move")
+      (apply-transaction g ops))
+    (is (equal (list (id callee)) (called-ids g caller)))
+    (is (equal '("Widget.render" "w.render") (via-of g caller callee))
+        "both keys, in the order the caller recorded them")))
+
+(test a-single-name-edge-names-its-one-key
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("callee")))
+         (callee (r-function g "callee" "b.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (is (equal '("callee") (via-of g caller callee)))))
+
+(test a-fan-out-edge-names-the-name-its-site-stands-for
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("run")))
+         (one (r-function g "run" "b.lisp"))
+         (two (r-function g "run" "c.lisp")))
+    (apply-transaction g (resolve-calls g))
+    (let ((site (first (entities-of-type g :call-site))))
+      (is (not (null site)) "control: the name was ambiguous")
+      (is (= 2 (length (relationships-from g (id site) :rel-type :calls))))
+      (is (equal '("run") (via-of g site one)))
+      (is (equal '("run") (via-of g site two))))
+    (is (null (called-ids g caller)) "and the caller still has no direct edge")))
+
+(test an-imported-call-edge-names-the-dotted-key
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "seed" "functions/main.py"
+                              :imported-calls '((:specifier "sheets"
+                                                 :path ("read_tab") :line 56))))
+         (wanted (r-py-definition g :function "read_tab" "functions/sheets.py")))
+    (r-py-tree g "functions/main.py" "functions/sheets.py")
+    (r-resolve g)
+    (is (equal '("sheets.read_tab") (via-of g caller wanted)))))
+
+(test a-relative-import-key-takes-no-second-dot
+  ;; PY-DOTTED's rule, restated in the graph because loom-graph cannot call the
+  ;; analyzer: `..' and (util go) read `..util.go', not `...util.go'.
+  (is (equal "..util.go" (loom-graph::imported-call-key ".." '("util" "go"))))
+  (is (equal ".posting.post" (loom-graph::imported-call-key ".posting" '("post"))))
+  (is (equal "service.ensure" (loom-graph::imported-call-key "service" '("ensure")))))
+
+(test one-imported-key-written-twice-is-listed-once
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "seed" "functions/main.py"
+                              :imported-calls '((:specifier "sheets"
+                                                 :path ("read_tab") :line 56)
+                                                (:specifier "sheets"
+                                                 :path ("read_tab") :line 60))))
+         (wanted (r-py-definition g :function "read_tab" "functions/sheets.py")))
+    (r-py-tree g "functions/main.py" "functions/sheets.py")
+    (let ((ops (resolve-calls g)))
+      (is (= 1 (length (calls-ops ops)))))
+    (r-resolve g)
+    (is (equal '("sheets.read_tab") (via-of g caller wanted)))))
+
+(test a-name-and-an-imported-call-reaching-one-callee-are-one-edge-with-both-keys
+  ;; A function of sheets.py that calls read_tab by name and through its own
+  ;; module's import. The two branches of RESOLVE-CALLS share one table.
+  (let* ((g (make-graph))
+         (caller (r-py-caller g "seed" "functions/sheets.py"
+                              :call-names '("read_tab")
+                              :imported-calls '((:specifier "sheets"
+                                                 :path ("read_tab") :line 56))))
+         (wanted (r-py-definition g :function "read_tab" "functions/sheets.py")))
+    (r-py-tree g "functions/sheets.py")
+    (let ((ops (resolve-calls g)))
+      (is (= 1 (length (calls-ops ops))) "one edge whichever branch reached it")
+      (apply-transaction g ops))
+    (is (equal (list (id wanted)) (called-ids g caller)))
+    (is (equal '("read_tab" "sheets.read_tab") (via-of g caller wanted)))))
+
+(test a-merged-edge-keeps-the-confidence-the-last-key-gave-it
+  ;; Before keys were merged the last op won the absorb, so the edge carried the
+  ;; last key's confidence. `w.render' fans out over two methods at 1/2 and
+  ;; `Widget.render' names one at 1.0; the later key sets the figure.
+  (flet ((confidence-for (names)
+           (let* ((g (make-graph))
+                  (caller (r-js-function g "draw" "ui/Home.jsx" :unresolved names))
+                  (callee (r-js-method g "Widget.render" "ui/Widget.js")))
+             (r-js-method g "Gadget.render" "ui/Gadget.js")
+             (dolist (file '("ui/Home.jsx" "ui/Widget.js" "ui/Gadget.js"))
+               (r-js-file g file))
+             (apply-transaction g (resolve-calls g))
+             (confidence (find-relationship-by-key
+                         g (list :calls (id caller) (id callee)))))))
+    (is (= 0.5 (confidence-for '("Widget.render" "w.render"))))
+    (is (= 1.0 (confidence-for '("w.render" "Widget.render"))))))
+
+(test via-is-rederived-from-the-caller-each-pass
+  ;; DEC-0003. A caller that stops writing one of two keys must stop listing it,
+  ;; so the second pass replaces :VIA rather than adding to what the first left.
+  (let* ((g (make-graph))
+         (caller (r-js-function g "draw" "ui/Home.jsx"
+                                :unresolved '("Widget.render" "w.render")))
+         (callee (r-js-method g "Widget.render" "ui/Widget.js")))
+    (r-js-file g "ui/Home.jsx" :imports '("./Widget"))
+    (r-js-file g "ui/Widget.js")
+    (apply-transaction g (resolve-calls g))
+    (is (equal '("Widget.render" "w.render") (via-of g caller callee)))
+    (setf (getp caller :call-names) '("Widget.render"))
+    (apply-transaction g (resolve-calls g))
+    (is (equal '("Widget.render") (via-of g caller callee)))))
+
+;;; ------------------------------------------------------------------
+;;; :CALL-SHAPES on the entities the graph mints (PLAN-0060 step 3)
+;;; ------------------------------------------------------------------
+;;;
+;;; The analyzer writes the shapes on the :FILE's definer plist and on the
+;;; caller. A :TEST, a :DEFINER-CALL site and an :AMBIGUOUS site are minted
+;;; here, so each copies what it needs on every pass (DEC-0003).
+
+(defun r-test-registry ()
+  (let ((registry (make-hash-table :test #'equal)))
+    (setf (gethash "test" registry)
+          (list (list :name "test" :package "fiveam" :entity-type :test
+                      :name-index 1 :body-index 2 :framework :fiveam)))
+    registry))
+
+(test a-generated-test-carries-the-call-shapes-of-its-site
+  (let ((g (make-graph))
+        (shapes '(("f" ("2:n,n" 12) ("1:y" 14)) ("g" ("0:" 13)))))
+    (r-file g "t.lisp" :call-sites (list (r-call-site "test" "alpha-works"
+                                                      :call-names '("f" "g")
+                                                      :call-shapes shapes)))
+    (apply-transaction g (resolve-generated-definitions
+                          g :registry (r-test-registry)))
+    (let ((minted (first (entities-of-type g :test))))
+      (is (not (null minted)))
+      (is (equal shapes (getp minted :call-shapes))
+          "DECLARED-PROPERTIES-ONLY drops this unless :TEST declares it"))))
+
+(test a-generated-entity-whose-site-has-no-shapes-holds-none
+  (let ((g (make-graph)))
+    (r-file g "t.lisp" :call-sites (list (r-call-site "test" "alpha-works"
+                                                      :call-names '("f"))))
+    (apply-transaction g (resolve-generated-definitions
+                          g :registry (r-test-registry)))
+    (let ((minted (first (entities-of-type g :test))))
+      (is (not (null minted)))
+      (is (null (getp minted :call-shapes))))))
+
+(test a-definer-call-site-entity-takes-only-its-own-names-shapes
+  (let* ((g (make-graph))
+         (shapes '(("violation-summary" ("1:y" 11))
+                   ("other-thing" ("2:y,y" 12))
+                   ("not-here" ("0:" 13)))))
+    (r-function g "violation-summary" "check.lisp")
+    (r-function g "other-thing" "check.lisp")
+    (r-file g "operations.lisp"
+            :call-sites (list (r-call-site "define-operation" "check"
+                                           :call-names '("violation-summary"
+                                                         "other-thing"
+                                                         "not-here")
+                                           :call-shapes shapes)))
+    (apply-transaction g (resolve-generated-definitions g :registry nil))
+    (flet ((site (name)
+             (find name (entities-of-type g :call-site)
+                   :key (lambda (s) (getp s :call-name)) :test #'equal)))
+      (is (equal '(("violation-summary" ("1:y" 11)))
+                 (getp (site "violation-summary") :call-shapes)))
+      (is (equal '(("other-thing" ("2:y,y" 12)))
+                 (getp (site "other-thing") :call-shapes)))
+      (is (null (site "not-here"))
+          "a name that resolved to nothing minted no site to carry shapes"))))
+
+(test an-ambiguous-site-takes-only-its-names-entry-from-the-caller
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("run" "other"))))
+    (setp caller :call-shapes '(("other" ("0:" 4)) ("run" ("1:y" 3) ("2:y,y" 6))))
+    (r-function g "run" "b.lisp")
+    (r-function g "run" "c.lisp")
+    (apply-transaction g (resolve-calls g))
+    (let ((site (first (entities-of-type g :call-site))))
+      (is (eq :ambiguous (getp site :referrer-kind)))
+      (is (equal '(("run" ("1:y" 3) ("2:y,y" 6))) (getp site :call-shapes))
+          "every signature of its own key, and nothing of `other'"))
+    (is (equal '(("other" ("0:" 4)) ("run" ("1:y" 3) ("2:y,y" 6)))
+               (getp caller :call-shapes))
+        "the caller's record is untouched: the copy is derived, never consumed")))
+
+(test an-ambiguous-site-whose-caller-recorded-no-shape-holds-none
+  ;; A designator-only caller: the name is in :CALL-NAMES and no call form
+  ;; exists to describe (FINDINGS 4). The site must not borrow another key's.
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("run" "other"))))
+    (setp caller :call-shapes '(("other" ("0:" 4))))
+    (r-function g "run" "b.lisp")
+    (r-function g "run" "c.lisp")
+    (apply-transaction g (resolve-calls g))
+    (let ((site (first (entities-of-type g :call-site))))
+      (is (not (null site)) "control: the name was ambiguous")
+      (is (null (getp site :call-shapes))))))
+
+(test resolving-twice-leaves-the-minted-shapes-where-they-were
+  (let* ((g (make-graph))
+         (caller (r-function g "caller" "a.lisp" :unresolved '("run"))))
+    (setp caller :call-shapes '(("run" ("1:y" 3))))
+    (r-function g "run" "b.lisp")
+    (r-function g "run" "c.lisp")
+    (apply-transaction g (resolve-calls g))
+    (apply-transaction g (resolve-calls g))
+    (is (= 1 (length (entities-of-type g :call-site))))
+    (is (equal '(("run" ("1:y" 3)))
+               (getp (first (entities-of-type g :call-site)) :call-shapes)))))

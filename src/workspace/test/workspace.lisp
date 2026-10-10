@@ -714,7 +714,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 512
+(defparameter *call-site-ceiling* 520
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -947,7 +947,30 @@ The composition at 466, against the 2026-09-10 measurement:
 domain-test is new and is PLAN-0050 S8's fixture macro. It swallows its body
 like js-test does, so every call inside one is a site by construction.
 
-418 is 380 plus 10% headroom, the rule the first measurement used.")
+418 is 380 plus 10% headroom, the rule the first measurement used.
+
+RE-MEASURED 2026-10-10 AT 512, CEILING RAISED TO 520. PLAN-0060 step 7 adds the
+`sites' command and the :SITES operation. The census read 510 before the step
+and 512 after it, and the whole difference is one call name in each of the two
+new macro bodies: `sites' calls PRINT-SITES and :SITES calls SITES-ANSWER. Each
+body was cut to that one call after a first version, with the logic written
+inside the bodies, read 526 and failed this test. DESCRIBE's body gained
+CALL-SHAPES-LINE and lost the neighbour loop to PRINT-NEIGHBORS, a net of 0.
+
+Composition from tools/test/call-site-census.lisp at 512:
+
+    define-command    170
+    define-operation  137
+    js-test            91
+    domain-test        33
+    ambiguous occurrences  41
+
+Hiding the two calls from the index, for example with (funcall 'print-sites),
+would have held the count at 510 by recording less than the code does, which
+CON-0001 rules out. 520 is the user's figure and is not 512 plus 10%: the rule
+the earlier entries used would give 563. It leaves 8 sites, enough for the
+next command and its operation, and the census names the cause of any later
+rise.")
 
 (defparameter *python-call-site-ceiling* 128
   "The most :CALL-SITE entities Python files in this tree may hold.
@@ -2465,3 +2488,349 @@ point and who reads the secret."
           (reindex-repository repository :quiet t)
           (is (equal hand-written (js-fn-picture repository)))
           (is-true (js-fn-setting repository "P") "the param declaration matches too")))))
+
+;;; ------------------------------------------------------------------
+;;; RESOLVE-DEPENDENCIES through the pipeline (DES-0055 D8, PLAN-0059 step 5)
+;;; ------------------------------------------------------------------
+
+(defparameter *requests-declaration* "dependency-modules:
+  - distribution: requests
+    modules: [requests]
+")
+
+(defun module-import-targets (repository path)
+  "The manifest:name of each :MODULE the file at PATH has an :IMPORTS edge to."
+  (let* ((graph (repository-graph repository))
+         (file (find path (entities-of-type graph :file)
+                     :key (lambda (e) (getp e :path)) :test #'equal)))
+    (sort (loop for r in (relationships-from graph (id file) :rel-type :imports)
+                for target = (get-entity graph (to-id r))
+                when (eq :module (entity-type target))
+                  collect (format nil "~a:~a" (getp target :file) (name target)))
+          #'string<)))
+
+(test a-joined-dependency-is-not-counted-as-a-resolved-import
+  ;; FINDINGS 1. The join draws a :FILE-to-:MODULE :IMPORTS edge, and the import
+  ;; stays :EXTERNAL on the file. IMPORT-SUMMARY counted every :IMPORTS edge
+  ;; leaving a file, so one import was counted resolved and external.
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-file "app/main.py" "import requests
+")
+        (reindex-repository repository :quiet t)
+        (let ((before (loom-workspace::import-summary repository)))
+          (is (= 1 (getf before :external)))
+          (write-file "requirements.txt" "requests>=2.31
+")
+          (write-file ".loom/frameworks.yaml" *requests-declaration*)
+          (reindex-repository repository :quiet t)
+          (is (equal '("requirements.txt:requests")
+                     (module-import-targets repository "app/main.py"))
+              "the fixture joins the import, so the count below is the one at risk")
+          (let ((after (loom-workspace::import-summary repository)))
+            (is (= (getf before :resolved) (getf after :resolved))
+                "resolved counts files an import reached, and a dependency is not one")
+            (is (= 1 (getf after :external))
+                "and the import is still external, counted once"))))))
+
+(test a-nearer-manifest-added-by-a-poll-leaves-the-edges-a-full-index-draws
+  ;; FINDINGS 2. The importer is not reanalyzed when app/requirements.txt
+  ;; appears, so the edge to the root's requests survives unless the pass
+  ;; retracts it. The model is AN-INCREMENTAL-UPDATE-MATCHES-A-FULL-REBUILD.
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-file ".loom/frameworks.yaml" *requests-declaration*)
+        (write-file "requirements.txt" "requests>=2.31
+")
+        (write-file "app/main.py" "import requests
+")
+        (reindex-repository repository :quiet t)
+        (is (equal '("requirements.txt:requests")
+                   (module-import-targets repository "app/main.py")))
+        (write-file "app/requirements.txt" "requests>=2.0
+")
+        (poll-once repository :quiet t)
+        (let ((incremental (module-import-targets repository "app/main.py")))
+          (is (equal '("app/requirements.txt:requests") incremental)
+              "the nearer manifest governs, and the farther edge is gone")
+          (reindex-repository repository :quiet t)
+          (is (equal incremental (module-import-targets repository "app/main.py")))))))
+
+;;; ------------------------------------------------------------------
+;;; DEPENDENCY-SUMMARY and status' :DEPENDENCIES (DES-0055 R8, PLAN-0059 step 6)
+;;; ------------------------------------------------------------------
+
+(defun add-dependency-fixture-entities (repository)
+  "Two manifests holding three :MODULEs, one of them unmapped, and one Python file
+whose four external imports are one joined, one stdlib, and two undeclared of
+which one is ambiguous. A fifth import is :UNRESOLVED and is no external."
+  (let ((graph (repository-graph repository)))
+    (flet ((module (manifest name &rest properties)
+             (add-entity graph (make-instance
+                                'module-entity :name name :origin-file manifest
+                                :properties (properties-table
+                                             (append (list :qualified-name name
+                                                           :file manifest :ecosystem :pypi)
+                                                     properties))))))
+      (module "requirements.txt" "requests" :provides '("requests"))
+      (module "requirements.txt" "tzdata")
+      (module "app/requirements.txt" "pytest" :provides '("pytest")))
+    (add-entity graph (make-instance
+                       'file-entity :name "app/main.py" :origin-file "app/main.py"
+                       :properties
+                       (properties-table
+                        '(:path "app/main.py" :language :python
+                          :import-sources ("requests" "os" "foo" "google.auth" "bar")
+                          :unresolved-imports ((:specifier "requests" :cause :external)
+                                               (:specifier "os" :cause :external)
+                                               (:specifier "foo" :cause :external)
+                                               (:specifier "google.auth" :cause :external)
+                                               (:specifier "bar" :cause :unresolved))
+                          :import-modules ((:source "requests" :module "requests" :stdlib nil)
+                                           (:source "os" :module "os" :stdlib t)
+                                           (:source "foo" :module "foo" :stdlib nil)
+                                           (:source "google.auth" :module "google.auth"
+                                            :stdlib nil))
+                          :undeclared-imports ((:specifier "foo")
+                                               (:specifier "google.auth" :ambiguous t))))))))
+
+(test dependency-summary-counts-declared-unmapped-joined-stdlib-and-undeclared
+  (with-workspace-fixture (repository)
+    (add-dependency-fixture-entities repository)
+    (let* ((summary (loom-workspace::dependency-summary repository))
+           (pypi (find :pypi summary :key (lambda (p) (getf p :ecosystem)))))
+      (is (= 3 (getf pypi :declared)))
+      (is (= 2 (getf pypi :manifests)))
+      (is (= 1 (getf pypi :unmapped)) "tzdata lists no :PROVIDES")
+      (is (= 1 (getf pypi :joined)))
+      (is (= 1 (getf pypi :stdlib)))
+      (is (= 2 (getf pypi :undeclared)))
+      (is (= 1 (getf pypi :ambiguous)))
+      (is (= (getf (loom-workspace::import-summary repository) :external)
+             (+ (getf pypi :joined) (getf pypi :stdlib) (getf pypi :undeclared)))
+          "the three causes partition the :EXTERNAL count"))))
+
+(test dependency-summary-leaves-stdlib-nil-when-no-import-carries-a-mark
+  (with-workspace-fixture (repository)
+    (add-dependency-fixture-entities repository)
+    (let ((file (find "app/main.py" (entities-of-type (repository-graph repository) :file)
+                      :key (lambda (e) (getp e :path)) :test #'equal)))
+      (setp file :import-modules '((:source "requests" :module "requests")
+                                   (:source "os" :module "os"))))
+    (is (null (getf (find :pypi (loom-workspace::dependency-summary repository)
+                          :key (lambda (p) (getf p :ecosystem)))
+                    :stdlib :absent))
+        "unknown is NIL, and zero would read as measured")))
+
+(test status-has-no-dependencies-on-a-tree-with-neither-manifest-nor-importer
+  (with-workspace-fixture (repository)
+    (is (null (getf (repository-status repository) :dependencies :absent)))))
+
+(test status-carries-the-dependencies
+  (with-workspace-fixture (repository)
+    (add-dependency-fixture-entities repository)
+    (let ((pypi (find :pypi (getf (repository-status repository) :dependencies)
+                      :key (lambda (p) (getf p :ecosystem)))))
+      (is (= 3 (getf pypi :declared))))))
+
+(test frameworks-untracked-is-true-only-while-git-does-not-list-the-file
+  (with-workspace-fixture (repository)
+    (add-dependency-fixture-entities repository)
+    (write-file ".loom/frameworks.yaml" *requests-declaration*)
+    (git-init-fixture)
+    (uiop:run-program (list "git" "-C" (namestring *fixture-root*)
+                            "rm" "-q" "--cached" "--" ".loom/frameworks.yaml")
+                      :output nil :error-output nil)
+    (is (eq t (getf (repository-status repository) :frameworks-untracked)))
+    (uiop:run-program (list "git" "-C" (namestring *fixture-root*)
+                            "add" "-A")
+                      :output nil :error-output nil)
+    (is (null (getf (repository-status repository) :frameworks-untracked)))))
+
+(test dependency-counts-from-a-real-index-sum-to-the-external-count
+  ;; The hand-built entities above fix the arithmetic; this one fixes that the
+  ;; properties RESOLVE-DEPENDENCIES writes are the ones DEPENDENCY-SUMMARY reads.
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-file "requirements.txt" "requests>=2.31
+tzdata>=2024.1
+")
+        (write-file ".loom/frameworks.yaml" *requests-declaration*)
+        (write-file "app/main.py" "import os
+import requests
+import mystery
+")
+        (reindex-repository repository :quiet t)
+        (let ((pypi (find :pypi (getf (repository-status repository) :dependencies)
+                          :key (lambda (p) (getf p :ecosystem)))))
+          (is (= 2 (getf pypi :declared)))
+          (is (= 1 (getf pypi :manifests)))
+          (is (= 1 (getf pypi :unmapped)) "tzdata has no declaration")
+          (is (= 1 (getf pypi :joined)))
+          (is (= 1 (getf pypi :undeclared)))
+          (is (= (getf (loom-workspace::import-summary repository) :external)
+                 (+ (getf pypi :joined) (or (getf pypi :stdlib) 0) (getf pypi :undeclared))))))))
+
+;;; ------------------------------------------------------------------
+;;; Acceptance: DES-0055's two fixtures (PLAN-0059 step 8, U6)
+;;; ------------------------------------------------------------------
+;;;
+;;; Nothing is written to lfia-accounting: dependency-modules: is accepted on
+;;; trees these tests build. Each fixture assertion has a negative beside it
+;;; (os joins nothing, firebase-functions joins nothing, google.cloud joins
+;;; nothing), because step 5's zero-length prefix match passed every test that
+;;; only asked for the joins a declaration should draw.
+
+(defparameter *acceptance-declarations* "dependency-modules:
+  - distribution: google-auth
+    modules: [google.auth, google.oauth2]
+  - distribution: requests
+    modules: [requests]
+  - distribution: pytest
+    modules: [pytest]
+"
+  "No entry for firebase-functions or tzdata, which stay unmapped.")
+
+(defun write-acceptance-tree (&key (declarations *acceptance-declarations*))
+  "DES-0055 ACCEPTANCE's Python tree. app/store.py imports from google.cloud, a
+prefix no declaration holds, and app/main.py imports firebase_functions, which
+spells like the firebase-functions requirement."
+  (when declarations (write-file ".loom/frameworks.yaml" declarations))
+  (write-file "requirements.txt" "google-auth>=2.29
+requests>=2.31
+firebase-functions>=0.4.0
+tzdata
+")
+  (write-file "requirements-dev.txt" "-r requirements.txt
+pytest>=8.0
+")
+  (write-file "app/main.py" "from google.auth.credentials import Credentials
+from google.oauth2 import credentials
+import requests
+import os
+from firebase_functions import https_fn
+
+@https_fn.on_request()
+def handler(req):
+    return requests.get(os.environ.get('U', ''))
+")
+  (write-file "app/store.py" "from google.cloud import firestore
+")
+  (write-file "tests/test_main.py" "import pytest
+
+def test_handler():
+    pass
+")
+  (write-file "docs/notes.md" "# Notes
+
+The `google-auth` requirement lives in `requirements.txt`.
+"))
+
+(defun acceptance-file (repository path)
+  (find path (entities-of-type (repository-graph repository) :file)
+        :key (lambda (e) (getp e :path)) :test #'equal))
+
+(defun acceptance-module (repository name manifest)
+  (find-if (lambda (m) (and (string= name (name m)) (equal manifest (getp m :file))))
+           (entities-of-type (repository-graph repository) :module)))
+
+(defun edges-into-module (repository module)
+  "The :IMPORTS and :DEPENDS-ON relationships that end at MODULE."
+  (append (relationships-to (repository-graph repository) (id module) :rel-type :imports)
+          (relationships-to (repository-graph repository) (id module) :rel-type :depends-on)))
+
+(defun module-depends-on-targets (repository path function-name)
+  "manifest:name of each :MODULE the function FUNCTION-NAME in PATH depends on."
+  (let ((function (find-if (lambda (f) (and (string= function-name (name f))
+                                            (equal path (getp f :file))))
+                           (entities-of-type (repository-graph repository) :function))))
+    (sort (loop for r in (relationships-from (repository-graph repository) (id function)
+                                             :rel-type :depends-on)
+                for target = (get-entity (repository-graph repository) (to-id r))
+                when (eq :module (entity-type target))
+                  collect (format nil "~a:~a" (getp target :file) (name target)))
+          #'string<)))
+
+(test the-declared-fixture-joins-what-a-declaration-maps-and-nothing-else
+  ;; DES-0055 ACCEPTANCE, first fixture. CON-0003: with RESOLVE-DEPENDENCIES
+  ;; drawing nothing, every :IMPORTS assertion below fails; with the zero-length
+  ;; prefix match back, the store.py and tests assertions fail.
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (let ((unresolved-before (length (unresolved-references (repository-graph repository)))))
+          (write-acceptance-tree)
+          (reindex-repository repository :quiet t)
+          (let ((google-auth (acceptance-module repository "google-auth" "requirements.txt"))
+                (firebase (acceptance-module repository "firebase-functions" "requirements.txt"))
+                (tzdata (acceptance-module repository "tzdata" "requirements.txt")))
+            (is-true google-auth "google-auth is a :MODULE in requirements.txt")
+            (is (equal '("google.auth" "google.oauth2") (getp google-auth :provides)))
+            (is (equal '("requirements.txt:google-auth" "requirements.txt:requests")
+                       (module-import-targets repository "app/main.py"))
+                "main.py reaches google-auth and requests once each, and os and firebase_functions reach nothing")
+            (is (equal '("requirements-dev.txt:pytest")
+                       (module-import-targets repository "tests/test_main.py")))
+            (is (null (getp firebase :provides)) "firebase-functions has no declaration")
+            (is (null (edges-into-module repository firebase))
+                "main.py spells firebase_functions and decorates with it; neither reaches the requirement")
+            (is (null (edges-into-module repository tzdata)))
+            (is (null (getp tzdata :provides)))
+            (is (equal '("requirements.txt:requests")
+                       (module-depends-on-targets repository "app/main.py" "handler"))
+                "handler's requests.get reaches requests, and its decorator and os.environ reach nothing")
+            (is (null (module-import-targets repository "app/store.py"))
+                "google.cloud is not a prefix of any declared module")
+            (is (equal '((:specifier "google.cloud"))
+                       (getp (acceptance-file repository "app/store.py") :undeclared-imports))
+                "the entry is the :SOURCE of `from google.cloud import firestore'")
+            (is (equal '((:specifier "firebase_functions"))
+                       (getp (acceptance-file repository "app/main.py") :undeclared-imports))
+                "os is stdlib, and the rest joined")
+            (let ((pypi (find :pypi (getf (repository-status repository) :dependencies)
+                              :key (lambda (p) (getf p :ecosystem)))))
+              (is (= 5 (getf pypi :declared)))
+              (is (= 2 (getf pypi :unmapped))))
+            (is (null (find "requirements.txt" (entities-of-type (repository-graph repository) :document)
+                            :key #'name :test #'string=))
+                "the manifest is a :FILE and the markdown analyzer declines it")
+            (is (null (entities-of-type (repository-graph repository) :rule-violation)))
+            (is (= unresolved-before
+                   (length (unresolved-references (repository-graph repository))))))))))
+
+(test the-fixture-without-a-declaration-joins-no-python-import
+  ;; U1, the no-spelling rule. requests, pytest and google-auth's modules all
+  ;; spell like a requirement, and none of them may join. An absence passes
+  ;; whatever the pass does, so the control is the imports being counted
+  ;; :EXTERNAL and the manifests being indexed: the test is evidence only because
+  ;; the declared fixture above fails when the pass draws nothing.
+  (if (not (python-child-startable-p))
+      (skip "python3 is not on PATH")
+      (with-workspace-fixture (repository)
+        (write-acceptance-tree :declarations nil)
+        (reindex-repository repository :quiet t)
+        (let ((graph (repository-graph repository)))
+          (is (= 5 (length (entities-of-type graph :module))) "the control: the manifests are read")
+          (is (plusp (length (getp (acceptance-file repository "app/main.py") :unresolved-imports)))
+              "the control: the imports were seen")
+          (is (null (module-import-targets repository "app/main.py")))
+          (is (null (module-import-targets repository "tests/test_main.py")))
+          (is (null (module-depends-on-targets repository "app/main.py" "handler")))
+          (is (null (loop for module in (entities-of-type graph :module)
+                          append (edges-into-module repository module))))
+          (is (member "requests" (getp (acceptance-file repository "app/main.py") :undeclared-imports)
+                      :key (lambda (u) (getf u :specifier)) :test #'string=)
+              "and requests is counted undeclared, not dropped")))))
+
+(test find-reaches-a-declared-dependency-as-code-and-not-as-documentation
+  ;; DES-0055 ACCEPTANCE `find google-auth'.
+  (with-workspace-fixture (repository)
+    (write-file "requirements.txt" "google-auth>=2.29
+")
+    (reindex-repository repository :quiet t)
+    (let ((graph (repository-graph repository)))
+      (is (= 1 (length (search-entities graph :name "google-auth" :kind :code))))
+      (is (null (search-entities graph :name "google-auth" :kind :documentation))))))

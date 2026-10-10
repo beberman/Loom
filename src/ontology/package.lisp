@@ -85,6 +85,7 @@
    #:entity-package
    #:call-site-label
    #:make-call-site-entity
+   #:call-shapes-for-key
 
    ;; type registry -- the single source of the schema
    #:*entity-type-registry*

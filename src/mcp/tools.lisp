@@ -41,6 +41,10 @@
   (list (make-tool :name "loom_find" :operation :find)
         (make-tool :name "loom_describe" :operation :describe)
         (make-tool :name "loom_impact" :operation :impact)
+        ;; DES-0055 D12, PLAN-0060 step 7. REST finds :SITES by name; this list is
+        ;; written out, so the operation reaches MCP only with this line
+        ;; (BUG-0052 was the same omission for `similar').
+        (make-tool :name "loom_sites" :operation :sites)
         (make-tool :name "loom_context" :operation :context)
         (make-tool :name "loom_status" :operation :status)
         (make-tool :name "loom_check" :operation :check)

@@ -849,3 +849,223 @@ this repository, so an answer proves which graph was consulted."
     (add-console-entity repository :variable "ZEFFY_API_KEY" "functions/other.py"
                         :environment-reads '("SOMETHING_ELSE"))
     (is (search "things are named" (run-to-string "describe ZEFFY_API_KEY")))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 R8: dependencies in status and describe
+;;; ------------------------------------------------------------------
+
+(defun status-text (&rest plist)
+  (with-output-to-string (*standard-output*)
+    (loom-process::print-status (append plist (list :name "t" :root "/t/" :uncategorized-documents 0
+                                                       :enrichment-runs 0 :errors 0)))))
+
+(defparameter *pypi-dependencies*
+  '((:ecosystem :pypi :declared 5 :manifests 2 :unmapped 2
+     :joined 4 :stdlib 1 :undeclared 1 :ambiguous 0)))
+
+(test status-prints-a-dependencies-line-per-ecosystem
+  (let ((out (status-text :dependencies *pypi-dependencies*)))
+    (is (search "dependencies: pypi 5 declared in 2 manifests, 2 unmapped; imports 4 joined, 1 stdlib, 1 undeclared"
+                out)
+        "~a" out)))
+
+(test status-prints-no-dependencies-line-without-the-key
+  (is (not (search "dependencies" (status-text)))))
+
+(test status-says-stdlib-unknown-when-no-import-carried-a-mark
+  ;; PLAN-0059 risk 7. A zero here would read as measured.
+  (let ((out (status-text :dependencies
+                          (list (list :ecosystem :pypi :declared 0 :manifests 0
+                                      :unmapped 0 :joined 0 :stdlib nil
+                                      :undeclared 3 :ambiguous 0)))))
+    (is (search "stdlib unknown" out) "~a" out)
+    (is (not (search "0 stdlib" out)))))
+
+(test status-says-when-frameworks-yaml-is-not-tracked
+  (is (search ".loom/frameworks.yaml is not tracked by git"
+              (status-text :dependencies *pypi-dependencies* :frameworks-untracked t)))
+  (is (not (search "not tracked by git"
+                   (status-text :dependencies *pypi-dependencies*)))))
+
+(defun add-console-module (repository name &rest properties)
+  (let ((module (make-instance 'loom-ontology:module-entity
+                               :name name :origin-file "requirements.txt"
+                               :properties (loom-ontology:properties-table
+                                            (append (list :qualified-name name
+                                                          :file "requirements.txt"
+                                                          :ecosystem :pypi)
+                                                    properties)))))
+    (loom-graph:add-entity (loom-workspace:repository-graph repository) module)
+    module))
+
+(test describe-prints-a-modules-manifest-specs-and-provides
+  (with-console-fixture
+    (add-console-module repository "google-auth" :specs '(">=2.29")
+                        :provides '("google.auth" "google.oauth2"))
+    (let ((out (run-to-string "describe google-auth")))
+      (is (search "dependency : pypi, declared in requirements.txt >=2.29; provides google.auth, google.oauth2"
+                  out)
+          "~a" out))))
+
+(test describe-says-how-to-map-an-unmapped-module
+  (with-console-fixture
+    (add-console-module repository "tzdata" :specs '(">=2024.1"))
+    (is (search "unmapped -- declare it under dependency-modules:"
+                (run-to-string "describe tzdata")))))
+
+;;; PLAN-0059 step 7, DES-0055 D7. `init' shows the dependency-modules: block it
+;;; proposes and writes none. The scratch tree has no venv, so the entry is
+;;; commented and no python3 is needed.
+
+(defmacro with-init-tree ((root) &body body)
+  `(let ((,root (ensure-directories-exist
+                 (merge-pathnames (format nil "loom-console-init-~a/" (random 100000))
+                                  (uiop:temporary-directory)))))
+     (unwind-protect (progn ,@body)
+       (uiop:delete-directory-tree ,root :validate t :if-does-not-exist :ignore))))
+
+(defun write-init-file (root relative contents)
+  (let ((path (merge-pathnames relative root)))
+    (ensure-directories-exist path)
+    (with-open-file (out path :direction :output :if-exists :supersede)
+      (write-string contents out))))
+
+(test init-prints-the-dependency-proposal-and-says-it-is-not-written
+  (with-init-tree (root)
+    (write-init-file root "requirements.txt" "tzdata
+")
+    (let ((output (run-to-string (format nil "init ~s" (namestring root)))))
+      (is (search "dependency-modules: proposed, not written" output) "~a" output)
+      (is (search "  # - distribution: tzdata" output))
+      (is (not (probe-file (merge-pathnames ".loom/frameworks.yaml" root)))))
+    ;; The second run takes the already-prepared branch, which prints it too.
+    (let ((output (run-to-string (format nil "init ~s" (namestring root)))))
+      (is (search "is already prepared" output))
+      (is (search "dependency-modules: proposed, not written" output) "~a" output))))
+
+(test init-prints-no-dependency-heading-without-requirements
+  (with-init-tree (root)
+    (is (not (search "dependency-modules"
+                     (run-to-string (format nil "init ~s" (namestring root))))))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 D12: the call-shapes line under `describe', and `sites'
+;;; ------------------------------------------------------------------
+
+(defun shape-distribution (&rest overrides)
+  (append overrides '(:sites 454 :signatures (("2:y,y" 449) ("3:y,y,y" 5))
+                      :fan-out 0 :without-form 0 :pre-expansion nil)))
+
+(test the-call-shapes-line-is-the-one-design-states
+  (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5"
+             (loom-process::call-shapes-line (shape-distribution)))))
+
+(test the-call-shapes-line-prints-nothing-when-nothing-calls-the-entity
+  (is (null (loom-process::call-shapes-line nil))))
+
+(test the-call-shapes-line-names-five-signatures-and-counts-the-rest
+  (let ((line (loom-process::call-shapes-line
+               (list :sites 28
+                     :signatures '(("1:y" 10) ("2:y,y" 9) ("3:y,y,y" 4) ("1:n" 2)
+                                   ("1:s" 1) ("1:c" 1) ("0:" 1))
+                     :fan-out 0 :without-form 0 :pre-expansion nil))))
+    (is (equal "call shapes: 28 sites -- 1:y 10, 2:y,y 9, 3:y,y,y 4, 1:n 2, 1:s 1, 2 more"
+               line))
+    (is (not (search "1:c" line)) "the sixth signature is not named")
+    (is (not (search "0:" line)) "nor the seventh")))
+
+(test the-call-shapes-line-says-what-is-set-apart-or-missing
+  (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5 (12 more through ambiguous names)"
+             (loom-process::call-shapes-line (shape-distribution :fan-out 12))))
+  (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5, 3 without a call form"
+             (loom-process::call-shapes-line (shape-distribution :without-form 3))))
+  (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5, pre-expansion"
+             (loom-process::call-shapes-line (shape-distribution :pre-expansion t))))
+  (is (equal "call shapes: 0 sites, 2 without a call form"
+             (loom-process::call-shapes-line
+              (list :sites 0 :signatures nil :fan-out 0 :without-form 2
+                    :pre-expansion nil)))
+      "with no signatures there is no dash and no empty list"))
+
+(defun add-shape-caller (repository name file shapes callee)
+  "A function NAME in FILE holding SHAPES, with a :CALLS edge to CALLEE under the
+key SHAPES names first."
+  (let ((caller (add-console-entity repository :function name file
+                                    :call-shapes shapes)))
+    (loom-graph:add-relationship
+     (loom-workspace:repository-graph repository)
+     (make-instance 'loom-ontology:relationship :rel-type :calls
+                    :from-id (loom-ontology:id caller) :to-id (loom-ontology:id callee)
+                    :origin-file file
+                    :properties (loom-ontology:properties-table
+                                 (list :via (list (first (first shapes)))))))
+    caller))
+
+(test describe-prints-the-call-shapes-under-the-callers
+  (with-console-fixture
+    (let ((callee (add-console-entity repository :function "dict_value" "app/lib.py")))
+      (add-shape-caller repository "a" "app/a.py" '(("dict_value" ("2:y,y" 4))) callee)
+      (add-shape-caller repository "b" "app/b.py" '(("dict_value" ("2:y,y" 9))) callee)
+      (add-shape-caller repository "c" "app/c.py" '(("dict_value" ("3:y,y,y" 2))) callee)
+      (let* ((output (run-to-string "describe dict_value"))
+             (callers (search "<- calls" output))
+             (line (search "call shapes: 3 sites -- 2:y,y 2, 3:y,y,y 1" output)))
+        (is (not (null callers)) "~a" output)
+        (is (not (null line)) "~a" output)
+        (when (and callers line)
+          (is (< callers line) "the line is under the callers"))))))
+
+(test describe-of-an-entity-nothing-calls-prints-no-call-shapes-line
+  (with-console-fixture
+    (is (not (search "call shapes" (run-to-string "describe alpha"))))))
+
+(test sites-prints-each-group-and-its-rows-rarest-group-first
+  (with-console-fixture
+    (let ((callee (add-console-entity repository :function "dict_value" "app/lib.py")))
+      (add-shape-caller repository "a" "app/a.py" '(("dict_value" ("2:y,y" 4))) callee)
+      (add-shape-caller repository "b" "app/b.py" '(("dict_value" ("2:y,y" 9))) callee)
+      (add-shape-caller repository "c" "app/c.py" '(("dict_value" ("3:y,y,y" 2))) callee)
+      (let* ((output (run-to-string "sites dict_value"))
+             (rare (search "3:y,y,y  1 site" output))
+             (common (search "2:y,y  2 sites" output)))
+        (is (not (null rare)) "~a" output)
+        (is (not (null common)) "~a" output)
+        (when (and rare common) (is (< rare common) "the rarest group first"))
+        (is (search "  app/c.py:2  c" output))
+        (is (search "  app/a.py:4  a" output))
+        (is (search "  app/b.py:9  b" output))
+        (is (not (search "more" output)) "nothing was cut")))))
+
+(test sites-cuts-a-group-at-the-limit-and-says-how-many-it-left-out
+  (with-console-fixture
+    (let ((callee (add-console-entity repository :function "dict_value" "app/lib.py")))
+      (dotimes (i 5)
+        (add-shape-caller repository (format nil "caller~d" i) (format nil "app/c~d.py" i)
+                          (list (list "dict_value" (list "2:y,y" (1+ i)))) callee))
+      (let ((output (run-to-string "sites dict_value 2")))
+        (is (search "2:y,y  5 sites" output) "~a" output)
+        (is (search "app/c0.py:1" output))
+        (is (search "app/c1.py:2" output))
+        (is (not (search "app/c2.py" output)) "the third row is not printed")
+        (is (search "  3 more" output)))
+      (is (search "app/c4.py:5" (run-to-string "sites dict_value"))
+          "the default shows all five"))))
+
+(test sites-of-an-entity-nothing-calls-says-so
+  (with-console-fixture
+    (is (search "no call form is recorded" (run-to-string "sites alpha")))))
+
+(test sites-takes-a-repository-token-and-is-in-the-command-table
+  (with-console-fixture
+    (let ((callee (add-console-entity repository :function "dict_value" "app/lib.py")))
+      (add-shape-caller repository "a" "app/a.py" '(("dict_value" ("2:y,y" 4))) callee)
+      (is (search "app/a.py:4"
+                  (run-to-string (format nil "sites @~a dict_value"
+                                         (loom-workspace:repository-name repository))))))
+    ;; Not through `help': defining-a-command-twice-replaces-it leaves HELP
+    ;; replaced for the rest of the run. The table is what HELP prints.
+    (is (search "sites <name>" (command-usage (loom-process::find-command "sites"))))))
+
+(test sites-refuses-a-limit-that-is-not-a-number
+  (with-console-fixture
+    (is (search "limit" (run-to-string "sites alpha many")))))

@@ -651,6 +651,171 @@ read as a claim about a deployed system."
                       :via        (getp r :route)
                       :confidence (confidence r))))
 
+(defun module-dependency (entity)
+  "What a :MODULE declares, for `describe', or NIL for anything else. DES-0055 D9.
+
+:UNMAPPED is true for a PyPI module with no :PROVIDES. npm maps every name to
+itself, so an npm module is never unmapped."
+  (when (eq :module (entity-type entity))
+    (list :manifest (getp entity :file)
+          :ecosystem (getp entity :ecosystem)
+          :specs (getp entity :specs)
+          :sections (getp entity :sections)
+          :provides (getp entity :provides)
+          :unmapped (and (eq :pypi (getp entity :ecosystem))
+                         (null (getp entity :provides))))))
+
+;;;; ------------------------------------------------------------------
+;;;; The call shapes at one callee (DES-0055 D11, D12; PLAN-0060 step 7)
+;;;;
+;;;; The caller holds the signatures and the edge's :VIA names which of its
+;;;; keys reached this callee, so a callee's distribution is a join over its
+;;;; incoming :CALLS edges. Nothing is resolved here: matching on the callee's
+;;;; name would re-derive RESOLVE-CALLS and miss a Python class call that
+;;;; reaches Class.__init__ under the key "Class".
+;;;;
+;;;; A call-site source is a caller like any other. An :AMBIGUOUS one is a
+;;;; guess among several candidates, so its sites are counted apart as fan-out
+;;;; and left out of the site total. A :DEFINER-CALL, :VARIABLE, :CLASS or
+;;;; :MODULE site counts as an ordinary caller, with the file and the lines its
+;;;; own :CALL-SHAPES carry. Its row in `sites' is named by the site's label,
+;;;; "<call-name>@<file>:<line>", because that is what the entity is called.
+;;;; ------------------------------------------------------------------
+
+(defun caller-occurrences (shapes via)
+  "The call forms SHAPES holds under the keys in VIA, as ((line key signature) . n)
+cells, where N is how many times this one caller records that line.
+
+SHAPES is a :CALL-SHAPES value, ((key (signature line ...) ...) ...). The join
+is VIA, never the callee's name (D11). N is above 1 when a caller makes two
+calls with one signature on one line, which the grouped value keeps as a
+repeated line."
+  (let ((tally '()))
+    (loop for (key . entries) in shapes
+          when (member key via :test #'equal)
+            do (loop for (signature . lines) in entries
+                     do (dolist (line lines)
+                          (let* ((form (list line key signature))
+                                 (cell (assoc form tally :test #'equal)))
+                            (if cell
+                                (incf (cdr cell))
+                                (push (cons form 1) tally))))))
+    tally))
+
+(defun note-call-site (sites key n name)
+  "Record N occurrences of KEY in the SITES table, keeping the larger N.
+
+A site is counted at the largest multiplicity any one caller records for it
+(PLAN-0060 FINDINGS 5): a beforeEach line that N test cases inherit is one
+source occurrence, and summing the callers would count it N times. A tie keeps
+the caller whose name sorts first, so the row `sites' prints does not depend on
+the order the graph hands the edges back."
+  (let ((old (gethash key sites)))
+    (when (or (null old)
+              (> n (car old))
+              (and (= n (car old)) (string< name (cdr old))))
+      (setf (gethash key sites) (cons n name)))))
+
+(defun call-site-tally (view id)
+  "(values sites edges without-form) for the incoming :CALLS edges of ID.
+
+SITES maps (fan-out-p file line key signature) to (n . caller-name). EDGES is
+how many incoming edges there are, and WITHOUT-FORM how many of them name no
+key their source holds a shape for -- a Lisp #'f designator, a JSX usage, an
+edge `enrich' added from the image (DES-0055 D10, PLAN-0060 FINDINGS 4)."
+  (let ((sites (make-hash-table :test #'equal))
+        (edges 0)
+        (without-form 0))
+    (dolist (r (relationships-to view id :rel-type :calls))
+      (let ((source (get-entity view (from-id r))))
+        (when source
+          (incf edges)
+          (let ((found (caller-occurrences (getp source :call-shapes) (getp r :via)))
+                (fan-out (eq :ambiguous (getp source :referrer-kind)))
+                (file (or (getp source :file) (getp source :path)))
+                (name (if (slot-boundp source 'name) (name source) "")))
+            (if (null found)
+                (incf without-form)
+                (loop for ((line key signature) . n) in found
+                      do (note-call-site sites (list fan-out file line key signature)
+                                         n name)))))))
+    (values sites edges without-form)))
+
+(defun call-shape-distribution (view id)
+  "How the calls that reach ID are written, or NIL when nothing calls it.
+
+(:SITES n :SIGNATURES ((signature count) ...) :FAN-OUT n :WITHOUT-FORM n
+:PRE-EXPANSION boolean). :SIGNATURES is most common first, ties by signature.
+:FAN-OUT counts the sites reached through an :AMBIGUOUS call site and is not in
+:SITES. :WITHOUT-FORM counts edges that name no key their source holds a shape
+for. :PRE-EXPANSION is true when ID is a macro, whose call forms are as written
+and not as expanded (DES-0055 D10)."
+  (multiple-value-bind (sites edges without-form) (call-site-tally view id)
+    (when (plusp edges)
+      (let ((counts (make-hash-table :test #'equal))
+            (total 0)
+            (fan-out 0))
+        (maphash (lambda (key cell)
+                   (if (first key)
+                       (incf fan-out (car cell))
+                       (progn (incf total (car cell))
+                              (incf (gethash (fifth key) counts 0) (car cell)))))
+                 sites)
+        (list :sites total
+              :signatures (sort (loop for signature being the hash-keys of counts
+                                        using (hash-value count)
+                                      collect (list signature count))
+                                (lambda (a b)
+                                  (or (> (second a) (second b))
+                                      (and (= (second a) (second b))
+                                           (string< (first a) (first b))))))
+              :fan-out fan-out
+              :without-form without-form
+              :pre-expansion (and (getp (get-entity view id) :macro-p) t))))))
+
+(defun site-row< (a b)
+  "Rows of (file line caller-name) in file, line, name order."
+  (destructuring-bind (file-a line-a name-a) a
+    (destructuring-bind (file-b line-b name-b) b
+      (cond ((not (equal file-a file-b)) (string< (or file-a "") (or file-b "")))
+            ((/= line-a line-b) (< line-a line-b))
+            (t (string< name-a name-b))))))
+
+(defun shape-sites (view id &key (per-group 20))
+  "The sites that call ID, grouped by signature with the rarest group first.
+
+Each group is (:SIGNATURE s :COUNT n :SITES ((file line caller-name) ...) :MORE m):
+at most PER-GROUP rows, in file and line order, and M the rows not shown. A site
+counted twice, two calls with one signature on one line, is two rows, so :COUNT
+is the number of rows there would be. The groups hold the sites
+CALL-SHAPE-DISTRIBUTION counts in :SITES; fan-out sites are not listed. Ties
+between groups are by signature. NIL when no site is counted.
+
+The rarest group is first because the question `sites' answers is which calls
+differ from the rest (REQ-0041 R4), and the 5 three-argument calls of 454 are
+the answer to it."
+  (let ((groups (make-hash-table :test #'equal)))
+    (maphash (lambda (key cell)
+               (destructuring-bind (fan-out file line k signature) key
+                 (declare (ignore k))
+                 (unless fan-out
+                   (dotimes (i (car cell))
+                     (push (list file line (cdr cell)) (gethash signature groups))))))
+             (call-site-tally view id))
+    (let ((rows (loop for signature being the hash-keys of groups
+                        using (hash-value sites)
+                      collect (cons signature (sort sites #'site-row<)))))
+      (loop for (signature . sites)
+              in (sort rows (lambda (a b)
+                              (let ((na (length (cdr a))) (nb (length (cdr b))))
+                                (or (< na nb)
+                                    (and (= na nb) (string< (car a) (car b)))))))
+            for shown = (min per-group (length sites))
+            collect (list :signature signature
+                          :count (length sites)
+                          :sites (subseq sites 0 shown)
+                          :more (- (length sites) shown))))))
+
 (defun describe-entity (view id &key provenance)
   "Full detail for one entity: its own properties plus its neighbours grouped
 by edge type -- the \"tell me about this function\" call. NIL when ID is
@@ -685,6 +850,11 @@ them is noise on the answers where nothing is wrong."
             ;; RESOLVE-ENTRY-POINTS. The same list is in :PROPERTIES; it is
             ;; lifted so the console and a REST caller need not search a table.
             :entry-point (getp entity :entry-point)
+            ;; DES-0055 D9. NIL for anything but a :MODULE.
+            :dependency (module-dependency entity)
+            ;; DES-0055 D12. How the calls that reach this entity are written,
+            ;; joined through the edges' :VIA; NIL when nothing calls it.
+            :call-shapes (call-shape-distribution view id)
             :properties (loop for key being the hash-keys of (properties entity)
                                 using (hash-value value)
                               unless (null value) append (list key value))

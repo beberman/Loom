@@ -1145,7 +1145,10 @@ belongs."
                              ;; takes one line up, for the same reason: a
                              ;; macro-minted entity has no form of its own to
                              ;; read a package from, so it takes its file's.
-                             :system (getp file :system))))))))
+                             :system (getp file :system)
+                             ;; PLAN-0060 step 3. Copied from the site's plist
+                             ;; on every pass, so it is derived.
+                             :call-shapes (getf site :call-shapes))))))))
 
 (defun known-generator-names (view registry)
   "Downcased names this pass owns the lifecycle of: every shipped REGISTRY
@@ -1293,7 +1296,11 @@ deliberate: the analyzer holds no callable index and cannot ask this question."
                            ;; package from, the same shortcut GENERATED-ENTITY
                            ;; takes one function up (DES-0009 R6).
                            :language (getp file :language)
-                           :system (getp file :system)))
+                           :system (getp file :system)
+                           ;; The site's entry for this one name, copied from
+                           ;; the plist the analyzer wrote (PLAN-0060 step 3).
+                           :call-shapes (call-shapes-for-key
+                                         (getf site :call-shapes) name)))
                     pairs))))))
     (nreverse pairs)))
 
@@ -1594,7 +1601,12 @@ orphaned definer name is worth a call site at all."
                             :referrer-kind :ambiguous
                             :candidate-count (length functions)
                             :language (getp caller :language)
-                            :system (getp caller :system)))))
+                            :system (getp caller :system)
+                            ;; Only this name's entry from the caller, so the
+                            ;; site reports the form that was ambiguous and
+                            ;; nothing else the caller calls (PLAN-0060 step 3).
+                            :call-shapes (call-shapes-for-key
+                                          (getp caller :call-shapes) name)))))
                (loop for candidate in functions
                      collect (list :callee candidate
                                    :confidence confidence
@@ -1895,6 +1907,52 @@ asks for."
                   found)))))
     (nreverse found)))
 
+(defun imported-call-key (specifier path)
+  "SPECIFIER and PATH as the one key :VIA names an imported call by: `sheets.read_tab',
+`..util.go'. A specifier ending in a dot takes no second one.
+
+The same rendering as PY-DOTTED in loom-analyzer, written again here because
+loom-graph may not call the analyzer. It is a label for the key, and resolution
+reads the two parts (DES-0055 D11)."
+  (format nil "~a~@[~a~]~{~a~^.~}" specifier
+          (and path (not (char= #\. (char specifier (1- (length specifier))))) ".")
+          path))
+
+(defun note-call-key (edges source callee target key)
+  "EDGES, an alist of (ids source callee target keys) in reverse first-seen
+order, with KEY recorded against the edge from SOURCE to CALLEE.
+
+A caller's keys reaching one callee must become one op carrying all of them:
+two ops for one edge are absorbed in turn, ABSORB-PROPERTIES clears the table
+before it copies, and the last op would leave only its own key (PLAN-0060
+FINDINGS 1a). TARGET is the plist of the latest key, so the op carries the
+provenance the last op carried before keys were merged. KEYS are in first-seen
+order and each appears once."
+  (let* ((ids (cons (id source) (id callee)))
+         (slot (assoc ids edges :test #'equal)))
+    (cond ((null slot)
+           (acons ids (list source callee target (list key)) edges))
+          (t (let ((entry (cdr slot)))
+               (setf (third entry) target)
+               (unless (member key (fourth entry) :test #'string=)
+                 (setf (fourth entry) (append (fourth entry) (list key)))))
+             edges))))
+
+(defun call-edge-op (entry workspace-id)
+  "The :CALLS operation for one ENTRY of NOTE-CALL-KEY's alist, with its :VIA."
+  (destructuring-bind (source callee target keys) entry
+    (destructuring-bind (&key confidence derived-from &allow-other-keys) target
+      (if confidence
+          (assert-edge :calls source callee
+                       :workspace-id workspace-id
+                       :source :inferred
+                       :confidence confidence
+                       :derived-from derived-from
+                       :properties (list :via keys))
+          (assert-edge :calls source callee
+                       :workspace-id workspace-id
+                       :properties (list :via keys))))))
+
 (defun resolve-calls (view &key workspace-id external-packages module-scope domains)
   "Operations linking each recorded call name to the definition it names.
 
@@ -1920,6 +1978,10 @@ record that they call anything is whatever is already on their entities -- and
 while this function consumed that record, resolution could not rebuild what the
 retract had just destroyed. Deriving instead of consuming means every pass sees
 the same question and can answer it again.
+
+Each edge carries :VIA, the keys that produced it: the name, or for an imported
+call its specifier and path joined with dots. One op is emitted per edge with all
+its keys (DES-0055 D11).
 
 Idempotent: an edge that already exists upserts onto itself by natural key, and
 a name that resolved last pass resolves to the same edge this pass. Safe to run
@@ -1947,12 +2009,13 @@ after every analysis pass."
     (dolist (type '(:function :method :test :call-site))
       (dolist (caller (entities-of-type view type))
         (let ((names (caller-call-names caller))
-              (linked '())          ; edge plists, reversed
+              (linked '())          ; (name . edge plist), reversed
+              (edges '())           ; NOTE-CALL-KEY's alist
               (left '()))
           (dolist (name names)
             (let ((targets (call-targets index name caller)))
               (if targets
-                  (dolist (target targets) (push target linked))
+                  (dolist (target targets) (push (cons name target) linked))
                   (push name left))))
           ;; A target may name the :CALL-SITE its edge runs from rather than the
           ;; caller, which is REQ-0015's fan-out. The site is asserted once and
@@ -1962,24 +2025,22 @@ after every analysis pass."
           ;; transaction. Keyed on id rather than on identity: CALL-TARGETS
           ;; builds a fresh entity per name, and two names from one caller are
           ;; two sites while one name asked twice is one.
-          (dolist (target (nreverse linked))
-            (destructuring-bind (&key callee confidence derived-from call-site) target
-              (when (and call-site (null (gethash (id call-site) asserted)))
-                (setf (gethash (id call-site) asserted) t)
-                (push (assert-entity call-site workspace-id) ops)
-                (push (assert-edge :contains caller call-site
-                                   :workspace-id workspace-id)
-                      ops))
-              (let ((source (or call-site caller)))
-                (push (if confidence
-                          (assert-edge :calls source callee
-                                       :workspace-id workspace-id
-                                       :source :inferred
-                                       :confidence confidence
-                                       :derived-from derived-from)
-                          (assert-edge :calls source callee
-                                       :workspace-id workspace-id))
-                      ops))))
+          ;;
+          ;; The :CALLS ops themselves wait until the imported-calls branch has
+          ;; run, so a callee reached by a name and by an import is one op
+          ;; (NOTE-CALL-KEY). The site asserts do not wait: they still precede
+          ;; every op that names them.
+          (dolist (link (nreverse linked))
+            (destructuring-bind (name . target) link
+              (destructuring-bind (&key callee call-site &allow-other-keys) target
+                (when (and call-site (null (gethash (id call-site) asserted)))
+                  (setf (gethash (id call-site) asserted) t)
+                  (push (assert-entity call-site workspace-id) ops)
+                  (push (assert-edge :contains caller call-site
+                                     :workspace-id workspace-id)
+                        ops))
+                (setf edges (note-call-key edges (or call-site caller) callee
+                                           target name)))))
           ;; Unconditional where it used to be (WHEN LINKED ...): a caller
           ;; whose every name went external still has to have that written
           ;; down, and a caller whose callee has since been deleted has to
@@ -1996,8 +2057,7 @@ after every analysis pass."
           (let ((entries (getp caller :imported-calls)))
             (when entries
               (unless walk (setf walk (build-walk-context view domains)))
-              (let ((hit (make-hash-table :test #'equal))
-                    (misses '()))
+              (let ((misses '()))
                 (dolist (entry entries)
                   (multiple-value-bind (callee cause)
                       (imported-call-target walk (getp caller :file) entry)
@@ -2007,16 +2067,18 @@ after every analysis pass."
                                        :line (getf entry :line)
                                        :cause cause)
                                  misses))
-                          ((null (gethash (id callee) hit))
-                           (setf (gethash (id callee) hit) t)
-                           (push (assert-edge :calls caller callee
-                                              :workspace-id workspace-id)
-                                 ops)))))
+                          (t
+                           (setf edges (note-call-key
+                                        edges caller callee '()
+                                        (imported-call-key (getf entry :specifier)
+                                                           (getf entry :path))))))))
                 (push (update-properties (id caller)
                                          (list :unresolved-imported-calls
                                                (nreverse misses))
                                          workspace-id)
-                      ops)))))))
+                      ops))))
+          (dolist (entry (reverse edges))
+            (push (call-edge-op (cdr entry) workspace-id) ops)))))
     ;; The sweep last, so it names only sites no assert above touched. An
     ;; :UPDATE-PROPERTIES for a site being retracted is emitted above and is
     ;; harmless: it lands on an entity that is still there when it is applied.
@@ -2580,6 +2642,184 @@ repository; the pass returns operations and calls nothing that writes the graph.
                                                                  "main.py"))
                           ops))))))))
       (nreverse ops))))
+
+;;;; ==================================================================
+;;;; Declared dependencies (DES-0055 D4 to D8)
+;;;; ==================================================================
+;;;;
+;;;; A :MODULE is a dependency a manifest declares. This pass joins an external
+;;;; import to it by the ecosystem's own rule for npm and by a declaration for
+;;;; Python, and never by spelling (U1). loom-graph reads no configuration, so
+;;;; the declarations arrive as data from RESOLVE-AND-CHECK.
+
+(defun npm-package-name (specifier)
+  "The package SPECIFIER names under Node's rule: its first segment, or its first
+two when it begins with `@'. NIL for a `node:' specifier, a builtin by its syntax
+(DES-0055 D5), which RESOLVE-DEPENDENCIES counts as stdlib."
+  (unless (and (>= (length specifier) 5) (string= "node:" specifier :end2 5))
+    (let* ((slash (position #\/ specifier))
+           (second-slash (and slash (char= #\@ (char specifier 0))
+                              (position #\/ specifier :start (1+ slash)))))
+      (subseq specifier 0 (if (char= #\@ (char specifier 0)) second-slash slash)))))
+
+(defun dependency-ecosystem (language)
+  (if (eq language :python) :pypi :npm))
+
+(defun dependency-manifests (view)
+  "Ecosystem -> directory prefix -> the :MODULEs declared there."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (module (entities-of-type view :module) table)
+      (let ((file (getp module :file)))
+        (when file
+          (push module (gethash (list (getp module :ecosystem) (directory-prefix file))
+                                table)))))))
+
+(defun nearest-declaring-modules (manifests path ecosystem declares)
+  "Every :MODULE in the nearest directory above PATH, up to the root, whose
+manifests of ECOSYSTEM hold one that DECLARES accepts (D4). The first directory
+that declares the name governs; a nearer one that does not is passed over."
+  (let ((directory (directory-prefix path)))
+    (loop
+      (let ((found (remove-if-not declares (gethash (list ecosystem directory) manifests))))
+        (when found (return found))
+        (when (string= directory "") (return nil))
+        (setf directory (parent-directory-prefix directory))))))
+
+(defun dotted-prefix-length (prefix module)
+  "The length of PREFIX when it is MODULE or a dotted prefix of it, else NIL."
+  (and (>= (length module) (length prefix))
+       (string= prefix module :end2 (length prefix))
+       (or (= (length module) (length prefix))
+           (char= #\. (char module (length prefix))))
+       (length prefix)))
+
+(defun longest-prefix-declarations (declarations module)
+  "(values winner tied) for MODULE: the one declaration holding the longest dotted
+prefix of it, or T as the second value when two declarations share that length
+(DES-0055 D6)."
+  (let ((best 0) (winners '()))
+    (dolist (declaration declarations)
+      (let ((length (loop for prefix in (getf declaration :modules)
+                          for n = (dotted-prefix-length prefix module)
+                          when n maximize n)))
+        ;; PLUSP and not a bare test: LOOP's MAXIMIZE answers 0 when nothing
+        ;; matched, and a length-0 "match" joined every import to a declaration.
+        (when (and length (plusp length))
+          (cond ((> length best) (setf best length winners (list declaration)))
+                ((= length best) (push declaration winners))))))
+    (values (and winners (null (rest winners)) (first winners))
+            (and (rest winners) t))))
+
+(defun pypi-joins (manifests declarations path module)
+  "(values modules tied) for the dotted MODULE imported from PATH."
+  (multiple-value-bind (winner tied) (longest-prefix-declarations declarations module)
+    (values (and winner
+                 (nearest-declaring-modules
+                  manifests path :pypi
+                  (lambda (m) (string= (getf winner :key)
+                                       (distribution-name-key (name m))))))
+            tied)))
+
+(defun dependency-provides (module declarations)
+  "What MODULE provides: its own name for npm, its declaration's modules for PyPI."
+  (if (eq :npm (getp module :ecosystem))
+      (list (name module))
+      (let ((key (distribution-name-key (name module))))
+        (getf (find key declarations :key (lambda (d) (getf d :key)) :test #'string=)
+              :modules))))
+
+(defun file-dependency-joins (manifests declarations file)
+  "(values joined undeclared) for FILE's :EXTERNAL imports. JOINED is the :MODULEs
+to draw :IMPORTS to; UNDECLARED the (:specifier s [:ambiguous t]) plists for the
+specifiers that are neither stdlib nor joined (D8)."
+  (let* ((path (getp file :path))
+         (python-p (eq :python (getp file :language)))
+         (joined '()) (undeclared '()))
+    (dolist (miss (getp file :unresolved-imports))
+      (when (eq :external (getf miss :cause))
+        (let ((specifier (getf miss :specifier)) (modules '()) (tied nil) (stdlib nil))
+          (if python-p
+              (dolist (entry (remove-if-not (lambda (e) (string= specifier (getf e :source)))
+                                             (getp file :import-modules)))
+                (if (getf entry :stdlib)
+                    (setf stdlib t)
+                    (multiple-value-bind (found tie)
+                        (pypi-joins manifests declarations path (getf entry :module))
+                      (setf modules (append found modules) tied (or tied tie)))))
+              (let ((package (npm-package-name specifier)))
+                (if package
+                    (setf modules (nearest-declaring-modules
+                                   manifests path :npm
+                                   (lambda (m) (string= package (name m)))))
+                    (setf stdlib t))))
+          (cond (modules (dolist (m modules) (pushnew m joined)))
+                (stdlib nil)
+                (t (push (append (list :specifier specifier) (when tied (list :ambiguous t)))
+                         undeclared))))))
+    (values joined (nreverse undeclared))))
+
+(defun call-dependency-joins (manifests declarations caller)
+  "The :MODULEs CALLER's :EXTERNAL imported calls reach, by the dotted name of each."
+  (let ((found '()))
+    (dolist (miss (getp caller :unresolved-imported-calls))
+      (when (eq :external (getf miss :cause))
+        (let ((dotted (format nil "~a~{.~a~}" (getf miss :specifier) (getf miss :path))))
+          (dolist (m (pypi-joins manifests declarations (getp caller :file) dotted))
+            (pushnew m found)))))
+    found))
+
+(defun dependency-sweep (view produced workspace-id)
+  "Retract each :IMPORTS or :DEPENDS-ON edge into a :MODULE that PRODUCED, a table
+of (type from to) keys, does not hold. Nothing but this pass writes such an edge,
+so every one it finds and did not draw again is stale (FINDINGS 2). Read only to
+remove it, never to derive from it (DEC-0003)."
+  (let ((ops '()))
+    (dolist (module (entities-of-type view :module))
+      (dolist (type '(:imports :depends-on))
+        (dolist (r (relationships-to view (id module) :rel-type type))
+          (unless (gethash (relationship-natural-key r) produced)
+            (push (retract (id r) workspace-id) ops)))))
+    (nreverse ops)))
+
+(defun resolve-dependencies (view &key workspace-id dependency-modules)
+  "Operations joining external imports to the :MODULEs a manifest declares.
+DES-0055 D8. DEPENDENCY-MODULES is the repository's declarations, data from
+.loom/frameworks.yaml.
+
+Writes :IMPORTS from a module-scoped :FILE, :DEPENDS-ON from a caller whose
+:UNRESOLVED-IMPORTED-CALLS name a dependency, :PROVIDES on each :MODULE when it
+changed, and :UNDECLARED-IMPORTS on every module-scoped :FILE with imports. Reads
+:UNRESOLVED-IMPORTS, :IMPORT-MODULES and :UNRESOLVED-IMPORTED-CALLS and rewrites
+none of them. The edges are swept last: any such edge this pass did not draw again
+is retracted, so a nearer manifest or a withdrawn declaration leaves nothing behind."
+  (let ((manifests (dependency-manifests view))
+        (produced (make-hash-table :test #'equal))
+        (ops '()))
+    (flet ((draw (type from to)
+             (let ((edge (assert-edge type from to :workspace-id workspace-id)))
+               (unless (gethash (relationship-natural-key (op-rel edge)) produced)
+                 (setf (gethash (relationship-natural-key (op-rel edge)) produced) t)
+                 (push edge ops)))))
+      (dolist (module (entities-of-type view :module))
+        (let ((provides (dependency-provides module dependency-modules)))
+          (unless (equal provides (getp module :provides))
+            (push (update-properties (id module) (list :provides provides) workspace-id)
+                  ops))))
+      (dolist (file (entities-of-type view :file))
+        (when (and (getp file :path) (module-scoped-language-p (getp file :language))
+                   (getp file :import-sources))
+          (multiple-value-bind (joined undeclared)
+              (file-dependency-joins manifests dependency-modules file)
+            (dolist (module joined) (draw :imports file module))
+            (push (update-properties (id file) (list :undeclared-imports undeclared)
+                                     workspace-id)
+                  ops))))
+      (dolist (type '(:function :method :test :call-site))
+        (dolist (caller (entities-of-type view type))
+          (when (getp caller :unresolved-imported-calls)
+            (dolist (module (call-dependency-joins manifests dependency-modules caller))
+              (draw :depends-on caller module)))))
+      (append (nreverse ops) (dependency-sweep view produced workspace-id)))))
 
 ;;;; ==================================================================
 ;;;; Document links (SS10.3)

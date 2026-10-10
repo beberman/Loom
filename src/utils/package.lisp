@@ -28,6 +28,7 @@
    #:is-boolean-p
    #:to-boolean
    #:to-cosine
+   #:distribution-name-key
    #:*true-tokens*
    #:*false-tokens*
 

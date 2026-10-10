@@ -1042,3 +1042,150 @@ export const f = onRequest({timeoutSeconds: 60, secrets: [k, \"LIT\"]}, (q, s) =
         (is (null (getp v :registration)))
         (is (null (getp v :value-call))))
       (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+;;; ------------------------------------------------------------------
+;;; Call shapes (PLAN-0060 step 5, DES-0055 D10 and D11)
+;;; ------------------------------------------------------------------
+;;;
+;;; Plain TESTs with the node guard written inline, not JS-TEST: a body-swallowing
+;;; macro mints a :CALL-SITE for each call it holds, and the census ceiling of 512
+;;; has 4 sites of headroom.
+
+(defun js-shape-entry (entity key)
+  "ENTITY's :CALL-SHAPES entry for KEY: (KEY (SIGNATURE LINE ...) ...), or NIL."
+  (assoc key (getp entity :call-shapes) :test #'string=))
+
+(test a-call-records-the-signature-of-its-arguments-and-its-line
+  (if (js-available-p)
+      (let ((h (js-named "src/m.js"
+                         "function h(){ f(\"a\", 1, true, x, [1], {a: 1, [k]: 2, ...r}, () => 0, g(), ...xs) }
+"
+                         "h")))
+        (is (equal '("f" ("9:s,n,b,y,q,o{a,?,*},f,c,*" 1)) (js-shape-entry h "f"))
+            "a spread counts as one argument, an identifier key is named, a
+computed key is ? and a spread in an object is *")
+        (is (equal '("g" ("0:" 1)) (js-shape-entry h "g"))
+            "a call that is itself an argument is a call with its own entry")
+        (is (equal '("f" "g") (sort (mapcar #'first (getp h :call-shapes)) #'string<))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test every-javascript-argument-kind-has-its-letter
+  (if (js-available-p)
+      (let ((m (js-named "src/m.js"
+                         (format nil "~{~a~^~%~}"
+                                 '("async function m(){"
+                                   "  a(undefined, null, false);"
+                                   "  b(`t`, `t${x}`, 10n, 1.5);"
+                                   "  c(/re/, -1, a ? b : c, await d);"
+                                   "  d(this, a.b, a[0], new Y(), function(){}, async () => 1);"
+                                   "  e({}, {'k': 1}, {m(){}, n}, [], [...z]);"
+                                   "}"))
+                         "m")))
+        (flet ((sig (key line)
+                 (first (find line (rest (js-shape-entry m key)) :key #'second))))
+          (is (equal "3:b,b,b" (sig "a" 2)) "undefined is b beside null and the booleans")
+          (is (equal "4:s,s,n,n" (sig "b" 3)) "a template is s with or without a hole; a bigint is n")
+          (is (equal "4:x,x,x,x" (sig "c" 4))
+              "a regex, a unary, a conditional and an await are none of the named kinds")
+          (is (equal "6:y,y,y,c,f,f" (sig "d" 5)) "this and member reads are y")
+          (is (equal "5:o{},o{?},o{m,n},q,q" (sig "e" 6))
+              "a string key is ? and its text is not kept")))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-jsx-usage-is-a-call-name-and-has-no-shape
+  ;; PLAN-0060 FINDINGS 4: D10 has no grammar for an element's props.
+  (if (js-available-p)
+      (let ((bare (js-named "src/App.jsx" "function App() { return <Thing a=\"x\" />; }" "App"))
+            (mixed (js-named "src/App.jsx"
+                             "function App() { go(1); return <Thing a=\"x\" />; }" "App")))
+        (is (member "Thing" (getp bare :call-names) :test #'string=))
+        (is (null (getp bare :call-shapes)) "nothing is invented for the element")
+        (is (member "Thing" (getp mixed :call-names) :test #'string=))
+        (is (equal '(("go" ("1:n" 1))) (getp mixed :call-shapes))
+            "the call beside it still has its shape and the element adds none"))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test only-a-callable-takes-call-shapes
+  ;; :CALL-NAMES' own condition (see MAKE-JS-DEFINITION-ENTITY): a :VARIABLE is not
+  ;; a legal :CALLS source, so a shape on it would be joined to no edge.
+  (if (js-available-p)
+      (let ((v (js-named "src/v.js" "const v = make(1, 2);
+" "v")))
+        (is (eq :variable (entity-type v)))
+        (is (null (getp v :call-names)))
+        (is (null (getp v :call-shapes))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-hook-call-is-inherited-by-each-case-with-the-hooks-own-line
+  ;; PLAN-0060 FINDINGS 5. The same occurrence is recorded once per case the
+  ;; hook runs for, which is what STEP 7 counts back to one site.
+  (if (js-available-p)
+      (let* ((source (format nil "~{~a~^~%~}"
+                             '("import { describe, it } from 'vitest';"
+                               "describe('s', () => {"
+                               "  beforeEach(() => { setup(1); });"
+                               "  it('one', () => { a(); });"
+                               "  it('two', () => { b(2, x); });"
+                               "});"
+                               "describe('t', () => {"
+                               "  it('three', () => { c(); });"
+                               "});")))
+             (tests (js-entities "src/x.test.js" source :test))
+             (one (find "s > one" tests :key #'name :test #'equal))
+             (two (find "s > two" tests :key #'name :test #'equal))
+             (three (find "t > three" tests :key #'name :test #'equal)))
+        (is (equal '("setup" ("1:n" 3)) (js-shape-entry one "setup")))
+        (is (equal '("setup" ("1:n" 3)) (js-shape-entry two "setup")))
+        (is (equal '("a" ("0:" 4)) (js-shape-entry one "a")) "and its own call")
+        (is (equal '("b" ("2:n,y" 5)) (js-shape-entry two "b")))
+        (is (null (js-shape-entry three "setup")) "a sibling suite's hook is not inherited"))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-nested-suite-case-inherits-the-outer-hooks-shapes-too
+  (if (js-available-p)
+      (let* ((source (format nil "~{~a~^~%~}"
+                             '("import { describe, it } from 'vitest';"
+                               "describe('outer', () => {"
+                               "  beforeEach(() => { up(); });"
+                               "  describe('inner', () => {"
+                               "    beforeEach(() => { down(true); });"
+                               "    it('c', () => { x(); });"
+                               "  });"
+                               "});")))
+             (inner (first (js-entities "src/x.test.js" source :test))))
+        (is (equal '("up" ("0:" 3)) (js-shape-entry inner "up")))
+        (is (equal '("down" ("1:b" 5)) (js-shape-entry inner "down"))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test a-later-call-of-a-chain-reports-the-line-it-is-on
+  (if (js-available-p)
+      (let ((c (js-named "src/c.js" (format nil "~{~a~^~%~}"
+                                            '("function c(){"
+                                              "  one(1)"
+                                              "    .two(2)"
+                                              "    .three(3);"
+                                              "}"))
+                         "c")))
+        (is (equal '("one" ("1:n" 2)) (js-shape-entry c "one")))
+        (is (equal '("two" ("1:n" 3)) (js-shape-entry c "two")))
+        (is (equal '("three" ("1:n" 4)) (js-shape-entry c "three"))))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))
+
+(test no-literal-reaches-the-index-from-a-javascript-call
+  ;; U4. The literals sit inside a function body, which no other property reads.
+  ;; An object key spelled as a string, and a computed key, are the two places a
+  ;; literal could ride in on a key.
+  (if (js-available-p)
+      (let ((g (js-graph "src/m.js" "function s(){ f(\"SENTINEL\", 4242, {'SENTINEL': 1, [\"SECRET-KEY\"]: 2, ok: 3}) }
+")))
+        (is (equal '(("f" ("3:s,n,o{?,?,ok}" 1)))
+                   (getp (find "s" (all-entities g) :key #'name :test #'equal) :call-shapes)))
+        (dolist (needle '("SENTINEL" "4242" "SECRET-KEY"))
+          (is (not (graph-mentions-p g needle)) "~a reached the index" needle))
+        (is (graph-mentions-p g "ok") "an identifier key is code and is kept")
+        ;; The control: the walk does find a SENTINEL that was stored, or the
+        ;; assertions above prove nothing (CON-0003).
+        (is (graph-mentions-p (js-graph "src/m.js" "function sentinel(){ f(1) }
+")
+                              "SENTINEL")))
+      (skip "node is not on PATH; the JavaScript analyzer cannot run here")))

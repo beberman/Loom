@@ -183,11 +183,86 @@ forms."
   (and (symbolp head) (not (keywordp head)) unqualified-p
        (cdr (assoc (token-name head) *binding-forms* :test #'string=))))
 
-(defun collect-call-names (body &key reading)
-  "Two values: every operator-position symbol name appearing anywhere in BODY,
-a sequence of forms, skipping quoted data so a literal list is never mistaken
-for a call site; and the package prefixes those sites wrote, as a list of
-\(NAME . PACKAGE) conses in the same order.
+(defun cl-symbol-p (reading symbol)
+  "True when SYMBOL could be the COMMON-LISP symbol its name suggests: the site
+wrote no prefix, or wrote one naming COMMON-LISP. COLLECT-CALL-NAMES' local
+UNQUALIFIED-CL-P asks the same of an operator; this is the top-level form of it
+for the argument kinds, which are not inside that walk."
+  (let ((package (form-package reading symbol)))
+    (or (null package)
+        (member package '("cl" "common-lisp") :test #'string=))))
+
+(defun lisp-argument-kind (form reading)
+  "D10's kind of the argument FORM, as a string: `s' a string, `n' a number, `b'
+NIL or T, `k:<name>' a keyword, `f' a #'x or a lambda, `q' a quotation, a
+backquoted form or a vector, `y' any other symbol, `c' any other cons, `x' the
+rest (a character, an array that is not a vector).
+
+Only the kind is returned. A string's text, a number's value and a quoted
+symbol's name are never read into the result, which is DES-0055 U4. A keyword's
+name is, because it is code. A form is `f' or `q' only on the reader's say-so
+(FORM-READER-MACRO, FORM-BACKQUOTE-P) or when it is headed by an unqualified
+LAMBDA; a list a program wrote out as (function x) is an ordinary cons, `c'.
+
+The reader reads NIL and T as uninterned symbols like any other, so they are
+told by name, with the same prefix test the operators get. () is the real NIL,
+a symbol too, and takes the same path."
+  (cond ((stringp form) "s")
+        ((numberp form) "n")
+        ((keywordp form) (concatenate 'string "k:" (token-name form)))
+        ((symbolp form)
+         (if (and (member (token-name form) '("nil" "t") :test #'string=)
+                  (cl-symbol-p reading form))
+             "b"
+             "y"))
+        ((consp form)
+         (let ((marked (form-reader-macro reading form)))
+           (cond ((eq marked :function) "f")
+                 ((eq marked :quote) "q")
+                 ((form-backquote-p form) "q")
+                 ((and (symbolp (car form))
+                       (string= (token-name (car form)) "lambda")
+                       (cl-symbol-p reading (car form)))
+                  "f")
+                 (t "c"))))
+        ((vectorp form) "q")
+        (t "x")))
+
+(defun lisp-call-signature (form reading)
+  "D10's signature of the call FORM: `<arity>:<kind>,<kind>,...', arity counting
+every argument form, keywords included, because the reader cannot tell a keyword
+argument from a keyword value without the callee's lambda list.
+
+Walked as conses, not with `for ... in': an argument list may be dotted, as
+(f . x) and (f a . b) are, and `in' signals on the tail, which cost a whole file
+once (BUG-0068). A dotted tail is not an argument and is not counted."
+  (let ((kinds '())
+        (count 0))
+    (loop for tail = (cdr form) then (cdr tail)
+          while (consp tail)
+          do (incf count)
+             (push (lisp-argument-kind (car tail) reading) kinds))
+    (with-output-to-string (out)
+      (princ count out)
+      (write-char #\: out)
+      (loop for (kind . more) on (nreverse kinds)
+            do (write-string kind out)
+               (when more (write-char #\, out))))))
+
+(defun collect-call-names (body &key reading line)
+  "Three values: every operator-position symbol name appearing anywhere in
+BODY, a sequence of forms, skipping quoted data so a literal list is never
+mistaken for a call site; the package prefixes those sites wrote, as a list of
+\(NAME . PACKAGE) conses in the same order; and one (NAME SIGNATURE LINE) for
+each head-position name, in walk order, which is source order.
+
+The third value is DES-0055 D10 arriving where it can be used. SIGNATURE is
+LISP-CALL-SIGNATURE's and LINE is the call form's own, from FORM-RANGE, or LINE
+when the reader recorded none for that cons. An occurrence with neither is left
+out: a line that is not known is a gap, not a zero (CON-0001). A #'f designator
+adds a name and no occurrence, because D10 has no grammar for it (PLAN-0060
+FINDINGS 4). With no READING the third value is NIL, because there is no range
+to take a line from and no reader to say which forms are quotations.
 
 The second value is REQ-0019 R2 arriving where it can be used, and it is
 evidence rather than an answer. `utils:parse-config' and a local PARSE-CONFIG
@@ -249,8 +324,15 @@ DEFVAR, DEFPARAMETER, DEFCLASS or DEFINE-CONDITION, and a DEFUN's body is
 or in a lambda-list default is invisible to every clause below, and no wording
 of this one can change that. BUG-0017."
   (let ((names '())
-        (qualified '()))
-    (labels ((note (symbol name)
+        (qualified '())
+        (occurrences '()))
+    (labels ((note-occurrence (form name)
+               (when reading
+                 (let ((at (or (form-range reading form) line)))
+                   (when at
+                     (push (list name (lisp-call-signature form reading) at)
+                           occurrences)))))
+             (note (symbol name)
                ;; The prefix goes on the list only when the site wrote one.
                ;; FORM-PACKAGE is already NIL for a bare name and for a symbol
                ;; from some other read, so this needs no guard of its own.
@@ -329,7 +411,8 @@ of this one can change that. BUG-0017."
                      (when (and (symbolp head) (not (keywordp head)))
                        (let ((name (token-name head)))
                          (push name names)
-                         (note head name)))
+                         (note head name)
+                         (note-occurrence form name)))
                      ;; The one exception to head-only, and only for FUNCTION.
                      ;; (consp (cdr form)) with (null (cddr form)) is an arity
                      ;; test and nothing else: one argument and no more, which
@@ -411,7 +494,7 @@ of this one can change that. BUG-0017."
                              while (consp tail)
                              do (walk (car tail)))))))))
       (dolist (form body) (walk form)))
-    (values names (nreverse qualified))))
+    (values names (nreverse qualified) (nreverse occurrences))))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Entity construction
@@ -470,6 +553,19 @@ same idea does not need a different rule.")
 (defun reader-artifact-p (name)
   (member name *reader-artifacts* :test #'string=))
 
+(defun shapes-of-names (occurrences names)
+  "OCCURRENCES, from COLLECT-CALL-NAMES, reduced to those of NAMES and grouped as
+D11's :CALL-SHAPES value.
+
+NAMES is what the caller kept in :CALL-NAMES or resolved locally, so the shapes
+cover exactly the keys an edge's :VIA can name. A standard operator, a reader
+artifact and a direct recursion have no entry: a shape for a key no edge can
+carry is storage nothing reads."
+  (group-call-shapes
+   (remove-if-not (lambda (occurrence)
+                    (member (first occurrence) names :test #'string=))
+                  occurrences)))
+
 ;;;; ------------------------------------------------------------------
 ;;;; Initform call sites (BUG-0017, DES-0014 R3)
 ;;;;
@@ -503,8 +599,11 @@ all, so it contributes nothing rather than being taken apart."
           when (and key (symbolp key) (string= (token-name key) "initform"))
             collect value)))
 
-(defun initform-call-sites (form head reading)
+(defun initform-call-sites (form head reading &optional line)
   "Every call name the initforms of FORM, whose head name is HEAD, contribute.
+A second value is their D11 :CALL-SHAPES, with LINE for a call the reader
+recorded no range for. LINE is optional because the census calls this for the
+names alone.
 
 Names rather than entities, because this knows nothing of the file, the line or
 the system in effect -- INITFORM-CALL-SITE-ENTITIES below is what turns one
@@ -522,10 +621,14 @@ model DES-0014 priced at 4867 entities and refused, arriving by accident."
                 ((member head '("defclass" "define-condition") :test #'string=)
                  (loop for slot in (fourth form) append (slot-initforms slot))))))
     (when initforms
-      (remove-if (lambda (name)
-                   (or (standard-operator-p name) (reader-artifact-p name)))
-                 (remove-duplicates (collect-call-names initforms :reading reading)
-                                    :test #'string=)))))
+      (multiple-value-bind (all-names qualified occurrences)
+          (collect-call-names initforms :reading reading :line line)
+        (declare (ignore qualified))
+        (let ((names (remove-if (lambda (name)
+                                  (or (standard-operator-p name)
+                                      (reader-artifact-p name)))
+                                (remove-duplicates all-names :test #'string=))))
+          (values names (shapes-of-names occurrences names)))))))
 
 (defun initform-call-site-entities (form start end path system reading kind)
   "The :CALL-SITE entities FORM's initforms contribute, owned by the definition
@@ -540,10 +643,14 @@ MAKE-CALL-SITE-ENTITY rather than MAKE-INSTANCE, and this is the seam DES-0014
 names as a risk: the graph mints the other two kinds of call site, so the
 natural key has to agree across a system boundary, and two spellings of it
 would grow a duplicate per pass that nothing retracts."
-  (loop for name in (initform-call-sites form (token-name (car form)) reading)
-        collect (make-call-site-entity :file path :start-line start :end-line end
-                                       :call-name name :referrer-kind kind
-                                       :language :lisp :system system)))
+  (multiple-value-bind (names shapes)
+      (initform-call-sites form (token-name (car form)) reading start)
+    (loop for name in names
+          collect (make-call-site-entity :file path :start-line start :end-line end
+                                         :call-name name :referrer-kind kind
+                                         :language :lisp :system system
+                                         :call-shapes (call-shapes-for-key
+                                                       shapes name)))))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Definer call sites (DES-0002 R2)
@@ -661,8 +768,26 @@ rather than examined."
                for found = (first-string-literal (car tail) (1+ depth))
                when found return found))))
 
-(defun definer-call-site (form start end &optional system)
+(defun definer-body-calls (arguments reading line)
+  "The call names in a definer call site's ARGUMENTS, and their D11 shapes, as
+two values. Filtered as pass 2 filters a function's names, so the shapes cover
+exactly the keys that end up in :CALL-NAMES. LINE stands in for a cons the
+reader recorded no range for."
+  (multiple-value-bind (all-names qualified occurrences)
+      (collect-call-names arguments :reading reading :line line)
+    (declare (ignore qualified))
+    (let ((names (remove-if (lambda (name)
+                              (or (standard-operator-p name)
+                                  (reader-artifact-p name)))
+                            (remove-duplicates all-names :test #'string=))))
+      (values names (shapes-of-names occurrences names)))))
+
+(defun definer-call-site (form start end &optional system reading)
   "One :DEFINER-CALL-SITES entry for the top-level call FORM.
+
+READING is what gives the calls in its body a line of their own; without it
+there are no :CALL-SHAPES (PLAN-0060 FINDINGS 3). START stands in for a cons the
+reader recorded no range for.
 
 :SYSTEM is the package in effect at this site, and it is here rather than
 inferred from the file because a file may change package part-way. No file in
@@ -684,42 +809,43 @@ so which positions held a bare symbol is recorded as its own fact.
 Indices count the operator as 0, so they line up with a registry entry's
 :NAME-INDEX without either side having to remember an offset."
   (let ((arguments (rest form)))
-    (list :operator (token-name (car form))
-          :start-line start
-          :end-line end
-          :system system
-          :arguments (mapcar #'argument-token arguments)
-          ;; NIL and a keyword are symbols and neither one ever names a
-          ;; definition -- (def-suite code-ontology :in all-tests) has a
-          ;; keyword in position 2 -- so neither counts as a name the site
-          ;; supplied.
-          :symbol-arguments (loop for argument in arguments
-                                  for index from 1
-                                  when (and argument (symbolp argument)
-                                            (not (keywordp argument)))
-                                    collect index)
-          ;; :STRING-ARGUMENTS is :SYMBOL-ARGUMENTS' mirror and exists for the
-          ;; same reason stated above it: a rendered argument cannot be told
-          ;; from a name, so which positions held a real string literal is its
-          ;; own fact. The value rather than the index, because unlike a name
-          ;; -- which resolution looks up in :ARGUMENTS -- the string itself is
-          ;; the thing wanted, and it may be nested: easy-routes writes the
-          ;; route inside a spec form, (defroute name ("/public/games" :method
-          ;; :get) ...), so position 2 holds a list whose first string is the
-          ;; claim. FIRST-STRING-LITERAL is what reaches it.
-          :string-arguments (loop for argument in arguments
-                                  for index from 1
-                                  for literal = (first-string-literal argument)
-                                  when literal collect (cons index literal))
-          ;; The whole argument list, not a guessed body: DES-0002 has the
-          ;; walk happen here precisely so resolution never has to know which
-          ;; argument the body starts at. A non-body argument -- a bare name, a
-          ;; docstring -- contains no calls to lose.
-          :call-names (remove-if (lambda (name)
-                                   (or (standard-operator-p name)
-                                       (reader-artifact-p name)))
-                                 (remove-duplicates (collect-call-names arguments)
-                                                    :test #'string=)))))
+    (multiple-value-bind (names shapes) (definer-body-calls arguments reading start)
+      (nconc
+        (list :operator (token-name (car form))
+              :start-line start
+              :end-line end
+              :system system
+              :arguments (mapcar #'argument-token arguments)
+              ;; NIL and a keyword are symbols and neither one ever names a
+              ;; definition -- (def-suite code-ontology :in all-tests) has a
+              ;; keyword in position 2 -- so neither counts as a name the site
+              ;; supplied.
+              :symbol-arguments (loop for argument in arguments
+                                      for index from 1
+                                      when (and argument (symbolp argument)
+                                                (not (keywordp argument)))
+                                        collect index)
+              ;; :STRING-ARGUMENTS is :SYMBOL-ARGUMENTS' mirror and exists for the
+              ;; same reason stated above it: a rendered argument cannot be told
+              ;; from a name, so which positions held a real string literal is its
+              ;; own fact. The value rather than the index, because unlike a name
+              ;; -- which resolution looks up in :ARGUMENTS -- the string itself is
+              ;; the thing wanted, and it may be nested: easy-routes writes the
+              ;; route inside a spec form, (defroute name ("/public/games" :method
+              ;; :get) ...), so position 2 holds a list whose first string is the
+              ;; claim. FIRST-STRING-LITERAL is what reaches it.
+              :string-arguments (loop for argument in arguments
+                                      for index from 1
+                                      for literal = (first-string-literal argument)
+                                      when literal collect (cons index literal))
+              ;; The whole argument list, not a guessed body: DES-0002 has the
+              ;; walk happen here precisely so resolution never has to know which
+              ;; argument the body starts at. A non-body argument -- a bare name, a
+              ;; docstring -- contains no calls to lose.
+              :call-names names)
+        ;; Absent when there is none, like the file's other optional records, so
+        ;; a file with no shapes keeps the plist it always had.
+        (when shapes (list :call-shapes shapes))))))
 
 
 ;;; Natural-key properties are passed at construction, not set afterwards with
@@ -1741,7 +1867,7 @@ transaction."
               ;; workspace (DES-0002). HEAD being non-NIL is the same test the
               ;; catch-all always made -- a cons whose car is a non-NIL symbol.
               ((and head (not (call-site-head-p head)))
-               (push (definer-call-site form start end current-system)
+               (push (definer-call-site form start end current-system reading)
                      call-sites)))))))
     (setf definitions (nreverse definitions)
           owned-call-sites (nreverse owned-call-sites))
@@ -1849,21 +1975,30 @@ transaction."
     ;; a caller whose callee had resolved no longer recorded calling it, and
     ;; an edge destroyed by retracting the callee's file could never be
     ;; rebuilt.
-    (let ((local-calls '()))      ; list of (caller-entity . callee-entity)
+    (let ((local-calls '()))      ; list of (caller-entity callee-entity key)
       (dolist (entry callables)
         (destructuring-bind (caller . body) entry
-          (multiple-value-bind (call-names qualified)
-              (collect-call-names body :reading reading)
-            (let ((foreign '()))
+          (multiple-value-bind (call-names qualified occurrences)
+              (collect-call-names body :reading reading
+                                       :line (getp caller :start-line))
+            (let ((foreign '())
+                  (local '()))
               (dolist (callee-name (remove-duplicates call-names :test #'string=))
                 (let ((callee (cdr (assoc callee-name local-functions :test #'string=))))
                   (cond ((and callee (not (eq callee caller)))
-                         (push (cons caller callee) local-calls))
+                         (push callee-name local)
+                         (push (list caller callee callee-name) local-calls))
                         ((standard-operator-p callee-name))
                         ((reader-artifact-p callee-name))
                         ((string= callee-name (name caller)))   ; direct recursion
                         (t (push callee-name foreign)))))
-              (setp caller :call-names (nreverse foreign))
+              (setf foreign (nreverse foreign))
+              (setp caller :call-names foreign)
+              ;; PLAN-0060 step 3. The shapes of the names that became an edge
+              ;; or a :CALL-NAMES entry, which are the keys an edge's :VIA can
+              ;; carry. Absent rather than empty when there are none.
+              (let ((shapes (shapes-of-names occurrences (append local foreign))))
+                (when shapes (setp caller :call-shapes shapes)))
               ;; DES-0013, PLAN-0013 step 6. Recorded beside :CALL-NAMES and
               ;; read by nothing: this step records the fact and changes no
               ;; resolution behaviour, so the :CALLS edge count must not move.
@@ -1912,9 +2047,14 @@ transaction."
         (destructuring-bind (owner . site) entry
           (push (assert-entity site workspace-id) ops)
           (push (assert-edge :contains owner site :workspace-id workspace-id) ops)))
+      ;; One op per (caller, callee, name), and a callee has one name, so the
+      ;; single key is the whole :VIA (DES-0055 D11). RESOLVE-CALLS has to union
+      ;; keys because several names there can reach one callee; here they cannot.
       (dolist (call (reverse local-calls))
-        (push (assert-edge :calls (car call) (cdr call) :workspace-id workspace-id)
-              ops)))
+        (destructuring-bind (caller callee key) call
+          (push (assert-edge :calls caller callee :workspace-id workspace-id
+                                                  :properties (list :via (list key)))
+                ops))))
     (nreverse ops)))
 
 ;;;; ------------------------------------------------------------------

@@ -256,13 +256,15 @@ resolution pass can reach without going through a transaction at all, and the
 no-dangling-edge guarantee is this function's to keep."
   (with-graph-lock (graph)
     (let* ((from-entity (get-entity graph (from-id relationship)))
-           (to-entity   (get-entity graph (to-id relationship)))
-           (federated   (federated-relationship-p relationship)))
+           (to-entity   (get-entity graph (to-id relationship))))
       (unless from-entity
         (error 'graph-error
                :problems (list (list :end :from :problem
                                      (format nil "unknown FROM entity ~s" (from-id relationship))))))
-      (unless (or to-entity federated)
+      ;; Asked only when the TO end is missing: the question reads the edge's
+      ;; property table, and asking it of every edge built a table on all of
+      ;; them (PLAN-0060 step 2 follow-up).
+      (unless (or to-entity (federated-relationship-p relationship))
         (error 'graph-error
                :problems (list (list :end :to :problem
                                      (format nil "unknown TO entity ~s" (to-id relationship))))))

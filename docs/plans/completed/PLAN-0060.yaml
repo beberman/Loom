@@ -1,0 +1,2010 @@
+id: PLAN-0060
+title: DES-0055 Plan B in nine steps -- the D13 baseline, :VIA on :CALLS, Lisp, Python and JavaScript call shapes, the front-end gate, describe and sites, acceptance on game-server, lfia and front-end, complete
+status: final
+date: 2026-10-08
+refines: [DES-0055, REQ-0078, REQ-0041]
+affects: [assert-edge, enriched-edge, resolve-calls, call-targets,
+          caller-call-names, generated-entity, definer-call-site-entities,
+          make-call-site-entity, collect-call-names, definer-call-site,
+          initform-call-site-entities, py-callable-properties,
+          py-test-properties, py-call-site, py-call-sites,
+          Extractor.record_call, js-call-names, describe-entity]
+tags: [analyzer, graph, knowledge, call-site, arity, shapes, python,
+       javascript, lisp, des-0055, req-0041, req-0078, des-0014, con-0001,
+       con-0003, con-0005, dec-0003]
+summary: |
+  DES-0055 R9 to R12, which cover REQ-0078 R2 and REQ-0041 R1 to R5, with
+  REQ-0041 R2 narrowed by U4 to argument kinds and keyword names. Each analyzer
+  records one signature per call occurrence, `<arity>:<kind>,...|kw=kind`, as
+  :CALL-SHAPES on the caller. Every :CALLS edge carries :VIA, the call keys
+  that produced it, so a callee's distribution is a join and not a second
+  resolution. `describe` prints the distribution in one line and a new `sites`
+  command lists the sites grouped by signature, rarest first. The cost is
+  measured on front-end before any extractor changes and again after the last
+  one, against D13's budget of +10% index time and +15% heap.
+
+  Out of scope: DES-0055 R1 to R8, which are PLAN-0059's. Also out of scope,
+  each with its reason under DEFERRED: shapes for JSX usages and for Lisp #'f
+  designators, a :CALL-SITE per occurrence, literal values (U4), and any write
+  to ~/github/lfia-accounting, ~/github/front-end or ~/lisp/game-server.
+body: |
+  ORDER AGAINST PLAN-0059
+
+  PLAN-0059 lands first, through its step 9. This plan's step 1 starts on the
+  commit that holds all of it. Three reasons.
+
+  1. D13 is a delta. Plan A adds +63 :MODULE and about 592 :IMPORTS edges on
+     front-end (PLAN-0059 step 8). A baseline taken before Plan A and an
+     "after" taken once it has landed would charge Plan A's cost to this plan.
+  2. The two plans edit the same files in different functions:
+       src/graph/resolve.lisp          A: RESOLVE-DEPENDENCIES (new).
+                                       B: RESOLVE-CALLS, CALL-TARGETS,
+                                       GENERATED-ENTITY,
+                                       DEFINER-CALL-SITE-ENTITIES.
+       src/ontology/code-ontology.lisp A: :MODULE, four :FILE properties,
+                                       :DEPENDS-ON's :FROM.
+                                       B: :CALL-SHAPES on :FUNCTION, :METHOD,
+                                       :TEST and :CALL-SITE;
+                                       MAKE-CALL-SITE-ENTITY; :CALLS' docs.
+       tools/py/extract.py             A: Extractor.add_import.
+                                       B: Extractor.record_call.
+       src/analyzer/python-analyzer.lisp  A: MAKE-PY-FILE-ENTITY.
+                                       B: PY-CALLABLE-PROPERTIES,
+                                       PY-TEST-PROPERTIES, PY-CALL-SITE(S).
+       src/knowledge/services.lisp     both edit DESCRIBE-ENTITY.
+       src/process/console.lisp        both edit `describe`'s printer.
+     Sequential landing removes every textual conflict in the last two.
+  3. PLAN-0059 step 9 runs `complete` while this plan is a draft and expects
+     the refusal it names in its FINDINGS 7. It sets DES-0055 to partial with
+     an OUTSTANDING section naming R9 to R12. This plan's step 9 then takes
+     DES-0055 from partial to implemented. The reverse order would need the
+     same workaround with the roles swapped and gain nothing.
+
+  ASSERT-EDGE is the one function Plan A calls and this plan changes. Step 2
+  adds a keyword argument with a NIL default, so Plan A's calls are unchanged.
+
+  BASELINE
+
+  Loom at 291f090 on req-0078-python-completion, before PLAN-0059 has landed,
+  with this file not yet written: `tools/loom.sh 'status | check'` printed
+  491 files, 5243 entities, 25263 relationships, 301 documents, 1452 tests
+  covering 465 units, 0 violations, 8 unresolved, 7 ambiguous, 5 definer
+  macros. PLAN-0059 moves the document and test counts. Step 1 re-records all
+  of them at the commit where Plan A is complete. Those figures are the
+  baseline every later step compares against.
+
+  ~/github/front-end at ab34be6 with five uncommitted entries in
+  `git status --short`. ~/github/lfia-accounting at d0cfdf0 with seven
+  uncommitted entries, being edited by another agent. ~/lisp/game-server at
+  448dc8e. REQ-0041's acceptance names "the commit PLAN-0002 started from".
+  game-server's first PLAN-0002 commit is b1b1651 ("PLAN-0002 stage 0"), and
+  its parent is 9169e64. Step 8 reads 9169e64 in a scratch clone. Nothing in
+  this plan writes to any of the three trees.
+
+  "Green" after a step means: tools/loom-test.sh passes all twelve systems
+  under /usr/bin/sbcl with no skip; `check` on Loom prints 0 violations and
+  the unresolved and ambiguous counts step 1 recorded; `sbcl --script
+  tools/test/call-site-census.lisp` prints 508 minted and 41 ambiguous; and,
+  for steps 7 and 8, `sbcl --script tools/test/load-test.lisp loom-serve`
+  prints T. New tests add :TEST entities to Loom's own index, so entity and
+  relationship totals are not exit conditions. The :CALLS edge count is.
+
+  Every new Lisp function name is checked with `find` before it is written.
+  On 2026-10-08 nothing in the tree defines GROUP-CALL-SHAPES,
+  LISP-CALL-SIGNATURE, LISP-ARGUMENT-KIND, PY-CALL-SHAPES, JS-CALL-SHAPES,
+  CALL-SHAPES-FOR-KEY, CALL-SHAPE-DISTRIBUTION or SHAPE-SITES. Every new test
+  is a plain fiveam `test`, with any python3 or node guard written inline, as
+  PLAN-0058 FINDINGS 3 did. A js-test or domain-test body mints :CALL-SITE
+  entities, and the ceiling of 512 has 4 sites of headroom.
+
+  FINDINGS THAT CHANGE OR SHARPEN WHAT DES-0055 SAYS
+
+  1. An edge's properties are replaced on every re-assert, so :VIA can be
+     erased silently. APPLY-OP for an ASSERT-RELATIONSHIP-OP that finds an
+     edge of the same natural key calls ABSORB-RELATIONSHIP, and
+     ABSORB-PROPERTIES clears the table before copying. Two consequences:
+       a. RESOLVE-CALLS today emits one op per (source, callee, key). When two
+          keys from one caller reach one callee, the second op wins. A
+          per-key :VIA would keep only the last key. Step 2 accumulates the
+          keys per (source, callee) and emits one op per edge with their
+          union. The provenance of that op is what the last op carried today,
+          so no confidence or source slot changes.
+       b. ENRICHED-EDGE asserts a confirmed edge with only :SOURCES, and
+          ENRICH-REPOSITORY re-runs that merge after RESOLVE-AND-CHECK
+          (workspace.lisp, the BUG-0015 comment). Every edge `enrich` confirms
+          would lose :VIA. Step 2 makes ENRICHED-EDGE copy the existing
+          edge's :VIA. An edge only the image reported has no key and
+          carries no :VIA.
+     DES-0055 D11 says "whatever writes a :CALLS edge writes its :VIA". The
+     writers are four: LISP-ANALYZER's local edges (lisp-analyzer.lisp, pass
+     3), RESOLVE-CALLS' name branch and its imported-calls branch, and
+     ENRICHED-EDGE. Step 2 covers all four.
+
+  2. Shapes reach three kinds of entity the graph mints, not only the
+     analyzer's callers. A Lisp :TEST is minted by GENERATED-ENTITY from a
+     :DEFINER-CALL-SITES plist on the :FILE. A :DEFINER-CALL site and an
+     :AMBIGUOUS site are minted by DEFINER-CALL-SITE-ENTITIES and CALL-TARGETS.
+     Each copies the shapes it needs from data the analyzer wrote: the
+     definer plist gains :CALL-SHAPES, and an ambiguous site takes its
+     caller's entries for its one name. Copying from an analyzer property on
+     every pass is a derivation (DEC-0003). GENERATED-ENTITY filters through
+     DECLARED-PROPERTIES-ONLY, so :TEST must declare :CALL-SHAPES or the copy
+     is dropped without a word. Step 3 declares it on all four caller types.
+
+  3. DEFINER-CALL-SITE calls COLLECT-CALL-NAMES without :READING, so it has no
+     cons positions. Step 3 passes the reading, so a definer site's shapes
+     carry the line of each call form, not the site's start line.
+
+  4. Two kinds of name produce a :CALLS edge and are not a call form. A Lisp
+     #'f designator adds a name to :CALL-NAMES (BUG-0011), and a JSX usage
+     adds one to the JavaScript caller's (REQ-0024 R4). D10's grammar has no
+     form for either. This plan records no shape for them. Such an edge
+     carries :VIA, the caller's :CALL-SHAPES holds no entry for the key, and
+     `describe` counts the edge as "N without a call form" rather than
+     inventing a signature. DEFERRED records it.
+
+  5. A JavaScript test case inherits its hooks' calls. walkTestBody in
+     extract.js concatenates the setup calls of every enclosing describe into
+     each case, so a beforeEach call is recorded once per case. Its shape will
+     be too, with the hook's line. Counting entries across callers would count
+     one source occurrence N times. Step 7 counts a site as one (file, line,
+     key, signature), and takes the largest multiplicity any one caller
+     records for it. Two calls on one line in one caller stay two. Step 5
+     measures how many front-end shape entries are inherited copies, because
+     they are storage the D13 gate pays for.
+
+  6. Three grammar points D10 leaves open, settled here so three extractors
+     agree:
+       - Python `**k` is written in the keyword part as `*`, with no name:
+         `f(a, timeout=3, **k)` is `1:y|timeout=n,*`. `f(*a)` is `1:*`.
+       - A Python decorator that is not a call, `@d`, is a call of d with the
+         decorated function: `1:f`. `@app.route("/x")` records the Call node,
+         `1:s`.
+       - A Lisp backquoted form is data, `q`, whatever the reader's
+         expansion of it is. A character literal is `x`.
+
+  7. D10's no-literal rule covers :CALL-SHAPES. :STRING-ARGUMENTS and
+     :ARGUMENTS on a definer call site already store literal text (DES-0002,
+     DES-0025: a route string). This plan does not change them. The sentinel
+     tests in steps 3 to 5 therefore place their literal inside a function
+     body, which no other property reads.
+
+  8. MCP is not reached through the registry alone. src/mcp/tools.lisp holds
+     *TOOLS* as a written list, so `sites` needs one MAKE-TOOL line there, as
+     BUG-0052 did for `similar`. REST needs nothing: /v1/<operation> finds the
+     operation by name. No .asd changes, so the peer property holds, and
+     load-test is the check.
+
+  FILES
+
+  New:
+    tools/test/index-cost.lisp            step 1. The D13 instrument.
+
+  Changed:
+    src/ontology/ontology-ops.lisp        step 2: ASSERT-EDGE takes
+                                          &key properties (a plist)
+    src/ontology/test/root-ontology.lisp  step 2: ASSERT-EDGE's new test. No
+                                          ontology test calls it today.
+    src/graph/resolve.lisp                step 2: RESOLVE-CALLS writes :VIA and
+                                          unions keys per edge. Step 3:
+                                          GENERATED-ENTITY,
+                                          DEFINER-CALL-SITE-ENTITIES and
+                                          CALL-TARGETS carry :CALL-SHAPES
+    src/graph/enrich.lisp                 step 2: ENRICHED-EDGE keeps :VIA
+    src/graph/test/resolve.lisp           steps 2 and 3
+    src/graph/test/enrich.lisp            step 2
+    src/analyzer/lisp-analyzer.lisp       step 2: the local :CALLS edge carries
+                                          :VIA. Step 3: COLLECT-CALL-NAMES'
+                                          third value, LISP-CALL-SIGNATURE,
+                                          LISP-ARGUMENT-KIND, :CALL-SHAPES on
+                                          callers, initform sites and definer
+                                          plists
+    src/analyzer/test/lisp-analyzer.lisp  steps 2 and 3
+    src/ontology/code-ontology.lisp       step 2: :CALLS' documentation names
+                                          :VIA. Step 3: :CALL-SHAPES on
+                                          :FUNCTION, :METHOD, :TEST and
+                                          :CALL-SITE; MAKE-CALL-SITE-ENTITY
+                                          takes :CALL-SHAPES
+    src/ontology/test/code-ontology.lisp  step 3
+    src/analyzer/analyzer.lisp            step 3: GROUP-CALL-SHAPES, shared by
+                                          the three language analyzers
+    tools/py/extract.py                   step 4: argument_kind,
+                                          call_signature, and 'signature' on
+                                          each call record
+    src/analyzer/python-analyzer.lisp     step 4: PY-CALL-SHAPES; the two
+                                          property builders and the site
+                                          builders write :CALL-SHAPES
+    src/analyzer/test/python-extract.lisp,
+    src/analyzer/test/python-analyzer.lisp     step 4
+    tools/js/extract.js                   step 5: argumentKind, callSignature,
+                                          and a `shapes` list beside `calls`
+                                          in walkBody, reaches, setupCalls and
+                                          walkTestBody
+    src/analyzer/js-analyzer.lisp         step 5: JS-CALL-SHAPES; :CALL-SHAPES
+                                          beside :CALL-NAMES
+    src/analyzer/test/js-analyzer.lisp    step 5
+    src/knowledge/services.lisp           step 7: CALL-SHAPE-DISTRIBUTION,
+                                          SHAPE-SITES; DESCRIBE-ENTITY gains
+                                          :CALL-SHAPES
+    src/knowledge/package.lisp            step 7: export SHAPE-SITES
+    src/knowledge/test/services.lisp      step 7
+    src/process/console.lisp              step 7: `describe` prints the
+                                          distribution line; `sites` command
+    src/process/test/console.lisp         step 7
+    src/serve/operations.lisp             step 7: the :SITES operation, :read
+    src/serve/test/operations.lisp        step 7
+    src/rest/test/routes.lisp             step 7: /v1/sites answers
+    src/mcp/tools.lisp                    step 7: loom_sites (FINDINGS 8)
+    src/mcp/test/tools.lisp               step 7: the tool count 15 -> 16 and
+                                          loom_sites present
+    docs/requirements/REQ-0041.yaml       step 9: U4's narrowing of R2
+    docs/requirements/REQ-0078.yaml       step 9: OUTSTANDING
+    docs/design/DES-0055.yaml             step 9: OUTSTANDING; FINDINGS 4 and
+                                          6 recorded in D10
+
+  Not changed, and a change to any one is a finding to report: every .asd's
+  :depends-on, src/rest/ source, ABSORB-RELATIONSHIP and ABSORB-PROPERTIES,
+  RELATIONSHIP-NATURAL-KEY, *CALL-SITE-CEILING* and
+  *PYTHON-CALL-SITE-CEILING*, RESOLVE-DEPENDENCIES, and every docs/rules/
+  file. Deleted: none.
+
+  BLAST RADIUS
+
+  What Loom reports, from `impact <name> 2` at 291f090:
+
+    resolve-calls        91 (truncated). Every indexing path, through
+                         RESOLVE-AND-CHECK. 83 tests, among them
+                         RESOLVE-IS-IDEMPOTENT, AN-INCREMENTAL-UPDATE-MATCHES-
+                         A-FULL-REBUILD and
+                         A-CONFIRMED-EDGE-KEEPS-ITS-AGREEMENT-RECORD-THROUGH-
+                         THE-WHOLE-PASS. 16 decisions, DES-0014, DES-0015,
+                         DES-0053 and DES-0055 among them.
+    assert-edge          155 (truncated). Every analyzer and every resolution
+                         pass. 14 decisions.
+    collect-call-names   37 (truncated): INITFORM-CALL-SITES, DEFINER-CALL-SITE
+                         and the Lisp ANALYZE-FILE, then every test that
+                         analyzes a file. 5 decisions: DES-0013, DES-0014,
+                         DES-0015, DES-0047, DES-0055.
+    py-callable-properties  3: MAKE-PY-ENTITY, then the Python ANALYZE-FILE.
+    Extractor.record_call   called by visit_call and visit_decorator.
+    describe-entity      15: the console's and serve's describe call sites and
+                         10 tests. 9 decisions.
+
+  None of the attached decisions is contradicted. DES-0014's ceiling is not
+  moved: no step mints a :CALL-SITE, and the census is an exit condition of
+  every step. DES-0015's symbol identity is untouched: :VIA records the key
+  resolution read, and resolution is unchanged. DEC-0003 holds: :CALL-SHAPES
+  is analyzer-written and never rewritten, and :VIA and every graph-minted
+  copy are re-derived each pass. DES-0054 D7's name-not-value line is what
+  U4 applies, and steps 3 to 5 test it with a sentinel.
+
+  What Loom cannot see, and why:
+
+    - The child-process boundary, twice. extract.py's and extract.js's
+      `signature` fields reach the analyzer through JGET on a JSON reply. No
+      index edge links the producer to the reader. Steps 4 and 5 test both
+      sides: the reply, and the entity built from it.
+    - The edge-property seam. No index edge says ENRICHED-EDGE's absorb erases
+      what RESOLVE-CALLS wrote. FINDINGS 1 found it by reading
+      ABSORB-PROPERTIES and the BUG-0015 comment in ENRICH-REPOSITORY.
+    - Macro bodies. Every fiveam `test` body is unattributed (DES-0001), so
+      the `tests` bands above under-report. The FiveAM suite, not `impact`,
+      is the measure of what breaks.
+    - The serve, REST, MCP and console boundary. No rule covers it. load-test
+      is the instrument in steps 7 and 8.
+    - Readers of a relationship's or a caller's properties outside Loom. A
+      REST describe returns the whole :PROPERTIES table, which after step 3
+      holds :CALL-SHAPES. Step 8 records the largest describe payload on
+      front-end.
+
+  RISKS
+
+  1. Shape storage over D13's budget on front-end. front-end holds about
+     40735 calls in definitions, and test cases add inherited hook copies
+     (FINDINGS 5). Step 1 measures before any change. Step 6 measures after
+     step 5. Over budget, step 5 is not committed and the user chooses
+     between DES-0055's two cheaper forms: (a) lines only for a key's
+     non-dominant signatures in a caller, with a count for the dominant one;
+     (b) no shapes on :TEST callers. The plan stops there; it does not pick.
+
+  2. :VIA erased by an absorb (FINDINGS 1). Step 2's tests: two keys reaching
+     one callee keep both; an `enrich` that confirms an edge keeps its :VIA.
+     The existing BUG-0015 test must pass unedited, because RESOLVE-CALLS'
+     ops still carry no :SOURCES.
+
+  3. The :CALLS edge count moves. Merging per-key ops into one op per edge
+     must not change which edges exist. Step 2's exit is an index-dump diff
+     on Loom and on front-end: every changed R line is a :calls line gaining
+     :VIA, and no R line is added or removed.
+
+  4. An argument walk that signals costs the whole file. BUG-0068 was a
+     dotted tail reaching a `for ... in` loop in a walk over call arguments.
+     LISP-CALL-SIGNATURE walks an argument list with the cons-walking loop
+     COLLECT-CALL-NAMES uses, and step 3's tests include a dotted argument
+     list and the fixture of
+     A-DOTTED-LIST-INSIDE-A-CALL-SITES-ARGUMENT-DOES-NOT-COST-THE-FILE.
+
+  5. A literal reaches the index (U4). Steps 3, 4 and 5 each feed a call
+     carrying the string SENTINEL and the number 4242 inside a function body,
+     walk every property of every op returned, and find neither. Positive
+     control: the walk finds SENTINEL when it is the function's name.
+
+  6. game-server's counts differ from the scripts'. REQ-0041 states 454
+     dict-value sites with 5 of arity 3, and 27 read-config sites with 19 of
+     arity 2 or more. Loom reads every call form whose head is the name;
+     a script may have counted #'dict-value, a form inside #+ that the
+     feature policy skips, or a call under a different package. Step 8
+     lists the differing sites with `sites` and records each cause. An
+     unexplained difference is a defect and blocks step 9.
+
+  7. Tests that change because the behaviour they pin changes:
+       src/mcp/test/tools.lisp   the tool count, 15 -> 16 (step 7)
+       Any test asserting EQUALP on a whole caller's property list or on a
+       whole edge, in src/analyzer/test/ or src/graph/test/. None is known.
+       If one fails, the step stops and NOTES records the test and the
+       reason before the test is edited.
+     No other existing test is expected to change.
+
+  8. The JavaScript extractor's cost is node time, inside index time. A
+     signature walk over every argument of every call runs in the child.
+     Step 5 records extract.js' wall time on front-end alone, so a gate
+     failure in step 6 can be attributed.
+
+  DEFERRED, WITH REASONS
+
+  - Shapes for JSX usages and Lisp #'f designators (FINDINGS 4). D10 has no
+    grammar for either. A JSX element's props would be `1:o{...}`; a ruling
+    on that belongs in a design, not a plan.
+  - A :CALL-SITE per occurrence. DES-0014's arithmetic, restated by DES-0055:
+    +12044 entities on Loom and +71522 on front-end.
+  - Literal values (U4).
+  - Shapes for JavaScript file-level calls. extract.js reports fileCalls, and
+    js-analyzer.lisp reads none of them, so no :CALLS edge starts there and
+    no shape would be joined.
+  - Recording shapes in `enrich`. The image reports caller and callee, not
+    the form.
+
+  STEPS
+
+  Each step is one commit on req-0078-python-completion, made by the caller.
+  Step 1 is the first that can be run, and it runs only after PLAN-0059 is
+  complete. Every step ends green.
+
+  1. THE D13 BASELINE (R12, first half).
+     tools/test/index-cost.lisp (new).
+
+     `sbcl --script tools/test/index-cost.lisp <root> [--ballast <MB>]` loads
+     the systems through tools/test/harness.lisp as index-dump.lisp does. It
+     calls WATCH-REPOSITORY with :monitor nil :quiet t and times that call
+     with GET-INTERNAL-REAL-TIME. It keeps the repository live, runs
+     (sb-ext:gc :full t), and reads (sb-kernel:dynamic-usage). It prints one
+     line per figure: seconds, heap-bytes, entities, relationships,
+     calls-edges, and shape-occurrences (the number of line entries in every
+     :CALL-SHAPES; 0 before step 3). --ballast allocates and retains a vector
+     of that many megabytes before the GC. It exists only for the positive
+     control. No vector store is built.
+
+     Verification:
+       - Positive control: on Loom, --ballast 100 raises heap-bytes by
+         100 MB +/- 5 MB against a run without it. A figure that does not
+         move is not measuring the heap.
+       - Repeatability: three runs on one commit. Record the spread of each
+         figure. A heap spread above 2% or a time spread above 5% makes the
+         budget unreadable, and the step stops to say so.
+     Measurement, recorded in NOTES with the commit hashes and `python3
+     --version` and `node --version`:
+       - front-end: three runs, median of each figure, with
+         `git -C ~/github/front-end status --short` saved before the first
+         run and after the last. A difference discards the set (PLAN-0058
+         risk 2).
+       - Loom and lfia: the same, for information. lfia is a census (U6).
+       - The :CALLS edge count on each tree. Step 2's exit compares it.
+     The commit this step measures is the gate's base. Step 6 builds a
+     scratch worktree of Loom at that commit.
+     CON-0003: the ballast control is this instrument's failing case.
+     Exit: green; the figures are in NOTES.
+
+  2. :VIA ON EVERY :CALLS EDGE (R10, second half). Moves no count.
+     src/ontology/ontology-ops.lisp, src/ontology/code-ontology.lisp,
+     src/analyzer/lisp-analyzer.lisp, src/graph/resolve.lisp,
+     src/graph/enrich.lisp, and their tests.
+
+     ASSERT-EDGE gains &key properties, a plist, stored with
+     PROPERTIES-TABLE. NIL gives the empty table every edge has today.
+     :CALLS' documentation names :VIA: the list of call keys that produced
+     the edge, written by every :CALLS writer, re-derived every pass.
+     Lisp analyzer, pass 3: each local edge carries (:via (callee-name)).
+     The local-calls list becomes (caller callee . keys) so a callee reached
+     under two keys, which cannot happen for one local name today, still
+     yields one op.
+     RESOLVE-CALLS: the dolist over targets and the imported-calls branch
+     both write into one table per caller, keyed by (source id . callee id),
+     holding the keys in first-seen order and the target plist of the last
+     key. After the caller's names and entries are walked, one ASSERT-EDGE
+     per table entry, with the provenance of that last target and
+     (:via keys). A name branch's key is the name. An imported branch's key
+     is the specifier and path joined with "." as PY-DOTTED renders them,
+     which is the key step 4 writes on the caller. A fan-out edge from an
+     :AMBIGUOUS site carries (:via (name)). The call-site asserts and their
+     :CONTAINS edges still precede every :CALLS op that names them.
+     ENRICHED-EDGE: the properties are :SOURCES plus EXISTING's :VIA when
+     EXISTING has one. Its caller already holds EXISTING.
+
+     Verification, new tests:
+       - root-ontology.lisp: (assert-edge :calls a b :properties '(:via ("x"))) yields a
+         relationship whose :VIA is ("x"). Without :PROPERTIES its table is
+         empty. Fails without the keyword (an unknown-key error).
+       - resolve.lisp: a JavaScript caller with :CALL-NAMES ("render"
+         "Widget.render") and one method Widget.render in the view. The pass
+         emits one :CALLS op to it, and its :VIA is ("render" "Widget.render").
+         Fails with per-key ops: the second absorb leaves ("Widget.render").
+       - resolve.lisp: an :AMBIGUOUS fan-out's edges each carry (:via
+         (name)). A Python caller's imported-call edge carries the dotted key.
+       - lisp-analyzer.lisp: a file where f calls local g yields one :CALLS
+         op with :VIA ("g").
+       - enrich.lisp: an edge carrying :VIA ("g"), confirmed by a stub
+         inspection, still carries :VIA ("g") after ENRICHED-EDGE's op is
+         applied. Fails without the copy, because ABSORB-PROPERTIES clears it.
+       - RESOLVE-IS-IDEMPOTENT, AN-INCREMENTAL-UPDATE-MATCHES-A-FULL-REBUILD
+         and A-CONFIRMED-EDGE-KEEPS-ITS-AGREEMENT-RECORD-THROUGH-THE-WHOLE-PASS
+         pass unedited.
+     CON-0003: revert the union, the ENRICHED-EDGE copy and the keyword one
+     at a time, and see the matching test fail.
+     Exit: green. `sbcl --script tools/test/index-dump.lisp` on Loom and on
+     front-end, from step 1's commit and from this one, back to back: the
+     diff holds only R lines of type :calls, each gaining :VIA, and the R
+     line count is equal. The :CALLS count equals step 1's. index-cost on
+     front-end, recorded: :VIA's share of the D13 budget.
+
+  3. THE LISP SIGNATURE AND :CALL-SHAPES (R9, R10 for Lisp).
+     src/ontology/code-ontology.lisp, src/analyzer/analyzer.lisp,
+     src/analyzer/lisp-analyzer.lisp, src/graph/resolve.lisp, and tests.
+
+     Ontology: :CALL-SHAPES, type list, on :FUNCTION, :METHOD, :TEST and
+     :CALL-SITE, documented as D11's grouped value
+     ((<key> (<signature> <line> ...) ...) ...), analyzer-written, never
+     rewritten. MAKE-CALL-SITE-ENTITY takes :CALL-SHAPES; it is in no natural
+     key.
+     analyzer.lisp: GROUP-CALL-SHAPES (occurrences), from a list of
+     (key signature line) to D11's value. Keys in first-seen order,
+     signatures in first-seen order under each key, lines in source order.
+     Identical signatures under one key share an entry.
+     lisp-analyzer.lisp: LISP-ARGUMENT-KIND (form reading) gives D10's kind:
+     a string `s`; a number `n`; NIL or T `b`; a keyword `k:<name>`; a form
+     the reader marked :FUNCTION, or a list headed by LAMBDA, `f`; a form
+     marked :QUOTE, a vector, or a backquoted form `q`; any other symbol
+     `y`; any other cons `c`; anything else `x`. LISP-CALL-SIGNATURE (form
+     reading) is `<n>:<kinds>` over (cdr form), walked as conses (risk 4).
+     COLLECT-CALL-NAMES returns a third value: (name signature line) for
+     each head-position name it records, with the line from FORM-RANGE and
+     the caller's start line when FORM-RANGE finds none. A #'f designator
+     adds no occurrence (FINDINGS 4). With no :READING the third value is
+     NIL. The first two values are unchanged.
+     Pass 2 keeps the occurrences whose name is a local callee or is in
+     :CALL-NAMES, drops the rest (standard operators, reader artifacts,
+     direct recursion), and writes GROUP-CALL-SHAPES' value as
+     :CALL-SHAPES when it is non-empty. INITFORM-CALL-SITE-ENTITIES passes
+     each site the entries for its name. DEFINER-CALL-SITE takes the
+     reading (FINDINGS 3) and its plist gains :CALL-SHAPES, filtered as its
+     :CALL-NAMES are.
+     resolve.lisp: GENERATED-ENTITY copies the site's :CALL-SHAPES.
+     DEFINER-CALL-SITE-ENTITIES gives each site CALL-SHAPES-FOR-KEY of the
+     plist for its name. CALL-TARGETS' :AMBIGUOUS site takes
+     CALL-SHAPES-FOR-KEY of the caller for its name (FINDINGS 2).
+     CALL-SHAPES-FOR-KEY (shapes key) returns the one-key sublist.
+
+     Verification, new tests:
+       - (defun h () (f "a" 1 t) (f x :k 'q #'g (lambda ()) (k) #(1) nil))
+         gives :CALL-SHAPES (("f" ("3:s,n,b" 1) ("8:y,k:k,q,f,f,c,q,b" 1))),
+         with the real line numbers of a multi-line fixture.
+       - Two (f x y) calls on lines 2 and 5 share one entry with lines 2 and
+         5.
+       - (let ((x 1)) (when x (g x))) records g and neither let nor when.
+       - #'g in a body adds "g" to :CALL-NAMES and nothing to :CALL-SHAPES.
+       - Sentinel (risk 5): (defun s () (f "SENTINEL" 4242)). No property of
+         any op holds SENTINEL or 4242. Positive control: (defun sentinel ()
+         ...) is found by the same walk.
+       - A dotted argument list, (f . x) and (f a . b), costs no definition.
+       - A fiveam-style `test` form whose body calls (f 1 2) mints a :TEST
+         through RESOLVE-GENERATED-DEFINITIONS carrying f's entry. Fails
+         without the :CALL-SHAPES declaration on :TEST, because
+         DECLARED-PROPERTIES-ONLY drops it.
+       - An :AMBIGUOUS site for "f" carries only f's entry from its caller.
+     CON-0003: remove the :TEST declaration, the GENERATED-ENTITY copy and the
+     CALL-TARGETS copy one at a time, and see the matching test fail.
+     Exit: green. call-site-census prints 508 and 41. index-dump diff on Loom
+     against step 2: only E lines of Lisp :function, :method, :test and
+     :call-site entities change, each gaining :CALL-SHAPES, and the :FILE
+     lines holding :DEFINER-CALL-SITES. No R line changes. Record Loom's
+     shape-occurrences from index-cost against DES-0055's regex estimate of
+     12044, and Loom's index-cost figures.
+
+  4. PYTHON (R9, R10 for Python).
+     tools/py/extract.py, src/analyzer/python-analyzer.lisp, and tests.
+
+     extract.py: argument_kind(node) gives D10's kind for an ast node: a str
+     or bytes Constant `s`; an int, float or complex Constant `n`; True,
+     False or None `b`; Name or Attribute `y`; List, Tuple, Dict or Set `q`;
+     Lambda `f`; Call `c`; Starred `*`; anything else `x`.
+     call_signature(node) is `<len(node.args)>:<kinds>`, then `|` and the
+     keywords in source order, `name=kind` or `*` for `**k` (FINDINGS 6),
+     when there are any. record_call adds 'signature': the call's, or `1:f`
+     for a decorator that is not a Call. 'positional' and 'keywords' are
+     unchanged. The module docstring's reply table names the key.
+     python-analyzer.lisp: PY-CALL-SHAPES (calls) maps each record to (key
+     signature line), where the key is :NAME, or PY-DOTTED of :SPECIFIER and
+     :PATH for an import-bound call, and hands them to GROUP-CALL-SHAPES.
+     PY-CALLABLE-PROPERTIES and PY-TEST-PROPERTIES write :CALL-SHAPES when
+     non-empty. PY-CALL-SITE writes the shapes of its one call.
+     PY-CALL-SITES and PY-OWNED-SITES, which drop a second site of one id,
+     merge the dropped site's lines into the kept one.
+
+     Verification:
+       - python-extract.lisp: `f("a", 1, True, None, x, [1], {"k": 1},
+         lambda: 0, g(), *a, timeout=3, **kw)` has signature
+         `10:s,n,b,b,y,q,q,f,c,*|timeout=n,*`. `@d` on a def gives `1:f`.
+         Every existing test passes unedited.
+       - python-analyzer.lisp: a function calling `requests.get(u,
+         timeout=5)` through `import requests` has the entry keyed
+         "requests.get". Two `main()` calls in one guard give one site with
+         both lines, the fixture of
+         TWO-CALLS-OF-ONE-NAME-IN-ONE-GUARD-YIELD-ONE-SITE.
+       - Sentinel (risk 5) on `def s(): f("SENTINEL", 4242)`, with the
+         positive control.
+     CON-0003: drop 'signature' in extract.py and see the extract test fail;
+     drop the merge in PY-CALL-SITES and see the two-line assertion fail.
+     Exit: green. *PYTHON-CALL-SITE-CEILING*'s test passes unedited. lfia,
+     read only, `git status --short` saved around the run: index-cost's
+     shape-occurrences against DES-0055's 6040.
+
+  5. JAVASCRIPT (R9, R10 for JavaScript).
+     tools/js/extract.js, src/analyzer/js-analyzer.lisp, and tests.
+
+     extract.js: argumentKind(node): a string Literal or TemplateLiteral `s`;
+     a number or bigint Literal `n`; true, false, null, or the identifier
+     undefined `b`; any other Identifier, MemberExpression or ThisExpression
+     `y`; ArrayExpression `q`; ObjectExpression `o{a,b}` with each
+     non-computed identifier key named, any other key `?` and a spread `*`;
+     ArrowFunctionExpression or FunctionExpression `f`; CallExpression or
+     NewExpression `c`; SpreadElement `*`; anything else `x`.
+     callSignature(call) is `<arguments.length>:<kinds>`. walkBody pushes
+     {name, signature, line} onto the owner's `shapes` beside each
+     `calls.push`. JSX usages push no shape (FINDINGS 4). reaches,
+     setupCalls and walkTestBody carry `shapes` exactly as they carry
+     `calls`, inherited copies included (FINDINGS 5). Each definition record
+     gains `shapes`. fileCalls gains none (DEFERRED).
+     js-analyzer.lisp: JS-CALL-SHAPES (definition) reads `shapes` and hands
+     (name signature line) to GROUP-CALL-SHAPES. :CALL-SHAPES is written
+     beside :CALL-NAMES, under the same condition.
+
+     Verification, plain fiveam tests with a node guard inline:
+       - `function h(){ f("a", 1, true, x, [1], {a: 1, [k]: 2, ...r},
+         () => 0, g(), ...xs) }` gives `9:s,n,b,y,q,o{a,?,*},f,c,*`.
+       - `<Thing a="x" />` adds "Thing" to :CALL-NAMES and nothing to
+         :CALL-SHAPES.
+       - A beforeEach calling `setup(1)` above two cases: each case's
+         :CALL-SHAPES holds setup's entry with the hook's line.
+       - Sentinel (risk 5) on `function s(){ f("SENTINEL", 4242) }`, with the
+         positive control.
+     CON-0003: drop `shapes` from reaches and see the beforeEach test fail;
+     drop the object-key walk and see the first test fail.
+     Exit: the suite is green. Not committed until step 6 passes. Census on
+     front-end, read only, recorded in NOTES: shape entries by caller type,
+     the share that are inherited hook copies, and extract.js' wall time
+     (risk 8).
+
+  6. THE GATE (R12, second half).
+     No source change.
+
+     Build a scratch worktree of Loom at step 1's commit. Run index-cost on
+     front-end six times, alternating base and step 5's tree, with front-end's
+     `git status --short` saved before and after. Compare medians.
+       pass  index time at most +10% and heap at most +15% over the base.
+             Commit step 5. Record both deltas, and the share each of steps
+             2 to 5 took, in NOTES.
+       fail  Do not commit step 5. Record the figures and stop. The user
+             chooses DES-0055 RISKS (a) or (b), or another reading of the
+             budget. The chosen form is a new step 5 with this step rerun.
+     Also run the pair on Loom and on lfia and record them. They are not
+     gated.
+     Exit: the pass branch is taken and step 5 is committed, green.
+
+  7. describe AND `sites` (R11).
+     src/knowledge/services.lisp, src/knowledge/package.lisp,
+     src/process/console.lisp, src/serve/operations.lisp, src/mcp/tools.lisp,
+     and their tests.
+
+     CALL-SHAPE-DISTRIBUTION (view id) reads the callee's incoming :CALLS
+     edges. For each, it takes the source's :CALL-SHAPES entries whose key
+     is in the edge's :VIA. A site is (file, line, key, signature) counted at
+     the largest multiplicity any one caller records (FINDINGS 5). It
+     returns (:SITES n :SIGNATURES ((sig count) ...) :FAN-OUT n
+     :WITHOUT-FORM n :PRE-EXPANSION bool). :SIGNATURES is sorted by count,
+     most common first. :FAN-OUT counts the sites reached through an
+     :AMBIGUOUS call site and is excluded from :SITES. :WITHOUT-FORM counts
+     edges whose keys have no entry. :PRE-EXPANSION is T when the callee
+     carries :MACRO-P. DESCRIBE-ENTITY adds :CALL-SHAPES, NIL when nothing
+     calls the entity.
+     SHAPE-SITES (view id &key (per-group 20)) returns the groups, rarest
+     first and ties by signature, each (:SIGNATURE s :COUNT n :SITES
+     ((file line caller-name) ...) :MORE m).
+     Console: `describe` prints under the callers
+       call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5
+     with at most five signatures, then `, N more`, then
+     `(N more through ambiguous names)`, `N without a call form` and
+     `pre-expansion` when they apply. `sites <name>` prints each group's
+     header and its file:line rows. Serve: (define-operation :sites :read
+     (repository term (limit)) ...), resolving TERM as :describe does. MCP:
+     (make-tool :name "loom_sites" :operation :sites).
+
+     Verification:
+       - services.lisp, on a hand-built graph: a callee with 4 callers whose
+         shapes give 2:y,y three times and 3:y,y,y once reports 4 sites in
+         that order. An :AMBIGUOUS site's sites go to :FAN-OUT. A #'f edge
+         goes to :WITHOUT-FORM. Two test callers holding one hook line count
+         one site. A caller whose edge :VIA does not name a key it holds
+         contributes nothing, which pins the join to :VIA rather than to the
+         callee's name. A Python class call reaching Class.__init__ under the
+         key "Class" is counted.
+       - SHAPE-SITES lists the 3:y,y,y group first.
+       - console.lisp: the printer prints the line, caps at five signatures,
+         and prints nothing for NIL.
+       - serve/rest/mcp: :sites answers JSON that parses; /v1/sites routes;
+         the tool list has 16 entries including loom_sites.
+     CON-0003: match by callee name instead of :VIA and see the __init__ and
+     wrong-key tests fail; count entries instead of sites and see the hook
+     test fail.
+     Exit: green, load-test prints T, `tools/loom-serve.sh update` run.
+     `tools/loom.sh 'describe getp | sites getp'` prints a distribution and
+     its groups. Record both in NOTES.
+
+  8. ACCEPTANCE: game-server, lfia, front-end, Loom.
+     No source change unless a defect is found. A defect gets its own commit
+     with a test that fails without the fix.
+
+     game-server, read only: `git clone --no-checkout ~/lisp/game-server
+     <scratch>/gs` and `git -C <scratch>/gs checkout 9169e64`. Then
+     `tools/loom.sh 'watch "<scratch>/gs" | describe @gs dict-value | sites
+     @gs dict-value | describe @gs read-config | check @gs'`.
+     Expected, REQ-0041 ACCEPTANCE: dict-value 454 sites with 5 of arity 3,
+     and the 3-argument group listed first by `sites`. read-config 27 sites
+     with 19 of arity 2 or more. A difference is investigated per risk 6.
+     front-end, read only, `git status --short` saved around the run: describe
+     on its three most-called functions, recorded; `check @front-end` shows 0
+     violations; the largest REST describe payload in bytes, recorded.
+     lfia, read only, the same, as a census (U6).
+     Loom: `tools/loom.sh 'status | check'` matches step 1's check counts;
+     call-site-census 508 and 41; the :CALLS count equals step 1's plus the
+     edges this plan's own new tests draw, which index-dump separates by
+     origin file.
+     Record every figure and departure in NOTES.
+
+  9. COMPLETE.
+     docs/requirements/REQ-0041.yaml, docs/requirements/REQ-0078.yaml,
+     docs/design/DES-0055.yaml (or docs/design/completed/DES-0055.yaml, where
+     PLAN-0059's set-status may have filed it), docs/plans/PLAN-0060.yaml.
+
+     Before `complete`, edit by hand:
+       - REQ-0041: a dated note under R2. U4 narrowed it on 2026-10-06 to
+         argument kinds and keyword names, with no literal value, and
+         DES-0055 D10 is the grammar. Without it `implemented` would claim
+         "for a literal, the literal", which is false.
+       - REQ-0078 OUTSTANDING: the R2 line goes. Nothing remains.
+       - DES-0055: the OUTSTANDING section PLAN-0059 added goes. D10 gains
+         FINDINGS 6's three grammar points, and DEFERRED gains FINDINGS 4.
+     Dry run: tools/loom.sh 'complete PLAN-0060'
+     Expected verdicts, if step 6 passed with the full design:
+       DES-0055=implemented. R1 to R8 by PLAN-0059, R9 to R12 by steps 2 to
+         7, shown in step 8.
+       REQ-0078=implemented. R2 was its last OUTSTANDING item.
+       REQ-0041=implemented. R1 and R2 (as U4 narrows it) by steps 3 to 5,
+         R3 and R4 by step 7, R5 by steps 1 and 6.
+     If the user chose a cheaper form in step 6, DES-0055 and REQ-0041 are
+     partial, with OUTSTANDING naming the lines not stored, unless the user
+     amends D11 first.
+     The walk continues upward from each implemented document: REQ-0041
+     refines REQ-0013 (draft), and REQ-0078 refines REQ-0024 and REQ-0018.
+     Give each the verdict its own OUTSTANDING supports. This plan
+     implements none of them. If the command will not accept a non-terminal
+     verdict to stop the climb, stop and report rather than editing statuses
+     by hand.
+       tools/loom.sh 'complete PLAN-0060 DES-0055=implemented REQ-0078=implemented REQ-0041=implemented ...'
+     Then `status`: documents unchanged in number, unresolved unchanged. Do
+     not commit; the branch is the caller's to commit, push and merge.
+
+  VERIFICATION
+
+  The whole change is checked by:
+    - tools/loom-test.sh green on all twelve systems under /usr/bin/sbcl, with
+      no skip, including the new tests in the ontology, resolve, enrich,
+      lisp-analyzer, python-extract, python-analyzer, js-analyzer, services,
+      console, serve, rest and mcp test files
+    - `check` on Loom: 0 violations, unresolved and ambiguous as step 1
+      recorded
+    - call-site-census: 508 and 41 after every step
+    - `sbcl --script tools/test/load-test.lisp loom-serve` prints T
+    - the :CALLS edge count on Loom and front-end unchanged by step 2, shown
+      by index-dump
+    - D13 on front-end: index time at most +10% and heap at most +15% over
+      step 1's base, by index-cost in step 6
+    - game-server at 9169e64: dict-value 454 sites, 5 of arity 3;
+      read-config 27 sites, 19 of arity 2 or more
+    - nothing written to front-end, lfia or game-server: `git status
+      --short` identical around every run
+
+  NOTES
+
+  Departures from the plan, by step, with commit hashes and the measured
+  figures, are recorded here as the steps land.
+
+  STEP 1, THE D13 BASELINE. 2026-10-09, Loom at 08374c6 (PLAN-0059 final) plus
+  this step's commit, which adds tools/test/index-cost.lisp and this section
+  and nothing else. The commit that holds this section is the gate's base:
+  step 6 builds its scratch worktree there.
+
+  Environment. python3 3.12.3, node v24.18.1, /usr/bin/sbcl, WSL2 with 8
+  cores and 15.8 GB, no swap in use. The resident loom-serve (pid 263230,
+  watching Loom, game-server, front-end, utils, cl-dbi, cl-mysql and
+  lfia-accounting) was running and was not stopped. It was competing for CPU:
+  `top` sampled it at 140, 220, 150, 190, 90, 200 percent of one core
+  immediately before the six front-end runs, with 6.3 GB free; load average
+  before each run was 2.2 to 2.8. The timings below carry that noise, and the
+  spread is the measure of how much. Step 6 faces the same competitor, which
+  is why it alternates base and new rather than running all of one first.
+
+  Instrument. `sbcl --script tools/test/index-cost.lisp <root> [--ballast MB]`
+  prints seconds, heap-before-bytes, heap-bytes, entities, relationships,
+  calls-edges and shape-occurrences, one per line. Heap is
+  SB-KERNEL:DYNAMIC-USAGE after two full GCs with the repository live.
+
+  Tests of the instrument.
+    - Positive control. Loom, no ballast: heap-bytes 95450896, 95455760,
+      95455760, 95450944, 95415664, 95443344 across six runs. With
+      `--ballast 100`: 200272752 and, after the restructuring below,
+      200311920. The rise is 104.8 MB and 104.9 MB against 100 MiB
+      (104.86 MB) allocated.
+    - Mutation. With the ballast allocated but not stored in *BALLAST*,
+      heap-bytes was 95472288, a rise of 0.02 MB. The control fails without
+      the retention, so the figure moves only when the heap does. Reverted.
+    - shape-line-count, the one function this tree cannot exercise because
+      nothing writes :CALL-SHAPES yet, was evaluated from the file's own text
+      on ((f (2:y,y 3 9 12) (3:y,y,y 20)) (g (1:s 4))), which holds 3 + 1 + 1
+      lines: it returned 5, and 0 for NIL. shape-occurrences reads 0 on every
+      tree below, as the plan expects before step 3. Step 3's own tests are
+      what first exercise the counting against a real property.
+
+  Measurements. Raw, in run order. heap-before-bytes is the image with the
+  systems loaded and nothing indexed.
+
+  front-end at ab34be6, six runs (the plan asks for three):
+    seconds   8.081  8.090  7.755  8.122  8.192  7.855
+    heap      170594848  170562288  170497168  170433296  170467552  170594832
+    heap-before  54919376  54918208  55544096  54919376  54924240  54966224
+    entities 11400, relationships 95972, calls-edges 54067, in every run.
+  Medians: seconds 8.0855, heap-bytes 170529728, heap-before-bytes 54921808.
+  Spread (range over median): seconds 5.40 percent (7.755 to 8.192);
+  heap-bytes 0.095 percent (161552 bytes).
+
+  The budget, in absolute terms, on these medians:
+    index time  +10 percent  =  8.894 s  (8.0855 s plus 0.809 s)
+    heap        +15 percent  =  196109187 bytes, 196.1 MB (plus 25.6 MB)
+  The index's own share of the heap is 170529728 less 54921808, 115.6 MB, so
+  the heap budget is a 22 percent growth of what the index stores.
+
+  Against the plan's thresholds. Heap spread is 0.095 percent, under the 2
+  percent line. Time spread is 5.40 percent over six runs, over the 5 percent
+  line the plan sets; the first three runs alone span 4.1 percent, runs 2 to 4
+  span 4.5 percent and runs 3 to 5 span 5.4 percent, so three runs do not
+  settle it either way. This is reported rather than resolved here. The
+  budget is +10 percent and the observed range is about half of it, so a
+  step 6 delta near the line cannot be called pass or fail from one set. Step
+  6 compares medians of six alternating runs on each side, which cancels
+  drift but not the scatter; if its time delta lands within 5 percent of the
+  +10 percent line, rerun it before choosing.
+
+  Loom (496 files), seven runs, the last three taken at this step's tree:
+    seconds   1.966  1.931  1.775  1.817  1.875  1.866  1.967
+    heap      95438080  95450896  95455760  95455760  95450944  95415664  95443344
+    entities 5447, relationships 26253, calls-edges 11620, in every run.
+  Time range 1.775 to 1.967 is 10 percent of the 1.875 median; heap range is
+  0.04 percent. Loom indexes in under two seconds, so its time figures are
+  too coarse to carry a budget and are recorded for information.
+
+  lfia-accounting at 56fc5c3, three runs:
+    seconds   4.310  4.569  4.715
+    heap      71182528  71180576  71155568
+    entities 2698, relationships 6651, calls-edges 3566, in every run.
+  Time range is 8.9 percent of the 4.569 median; heap range 0.04 percent.
+  A census (U6), not gated.
+
+  With this section written, Loom reads 5447 entities, 26254 relationships
+  (one more :MENTIONS edge, from the text above) and 11620 :CALLS edges, at
+  1.490 s and 95417680 bytes. Step 2's comparison uses the :CALLS count.
+
+  The :CALLS edge counts step 2's exit compares against: Loom 11620,
+  front-end 54067, lfia-accounting 3566.
+
+  Loom's own status at this step: 496 files, 5447 entities, 26253
+  relationships, 302 documents, 1528 tests covering 472 units, 0 violations, 8
+  unresolved document references, 7 ambiguous, 5 definer macros. The
+  call-site census prints 510 minted, 41 ambiguous, which is what PLAN-0059
+  accepted. Every "green" in this plan means those counts, and 508 in the
+  paragraph above and in VERIFICATION is the figure from before PLAN-0059.
+
+  Read-only trees. `git status --short` and `git status --short --ignored` of
+  each tree were saved before the first run and after the last, and are
+  byte-identical:
+    front-end ab34be6   5 entries, unchanged:  M .loom/frameworks.yaml,
+      M src/ui/edit/terrain/Editor/intents/layerIntents.js, and three ??
+      files (BUG-0048.yaml, DES-0022.yaml, layerIntents.stored.test.js)
+    lfia-accounting 56fc5c3   clean
+    game-server 448dc8e   clean
+  Indexing writes nothing into a tree, ignored files included.
+
+  Departures from the plan.
+    1. lfia-accounting is at 56fc5c3 and clean, not at d0cfdf0 with seven
+       uncommitted entries as BASELINE records. The other session committed.
+    2. Six front-end runs instead of three, to show the spread. The first run
+       was made with `time` around it and is the first value of every list.
+    3. A heap-before-bytes line the plan does not list. The D13 gate is on
+       heap-bytes; heap-before-bytes shows how much of it is the loaded image.
+    4. The script's command-line handling is a function, MAIN, called from the
+       last line. As a top-level LET* it minted one resolving :CALL-SITE, which
+       moved the call-site census from 510 to 511 against a ceiling of 512.
+       The census is the same 510 with MAIN. The measured functions did not
+       change between the first runs and the restructuring, and the
+       post-restructuring ballast run above is the check.
+    5. The time spread is over the plan's 5 percent line, as above.
+    6. The plan says the ballast should raise heap by "100 MB +/- 5 MB". The
+       ballast is 100 MiB, so the rise is 104.86 MB: inside the tolerance by
+       0.14 MB if MB is decimal, and exact if it is MiB.
+
+  STEP 2, :VIA ON EVERY :CALLS EDGE. 2026-10-09, Loom at 4398538 plus this
+  step's commit.
+
+  Changed, as the plan lists: ASSERT-EDGE takes :PROPERTIES; :CALLS' documentation
+  names :VIA; the Lisp analyzer's local edges carry (:via (callee-name));
+  RESOLVE-CALLS emits one op per edge with the union of its keys (NOTE-CALL-KEY,
+  CALL-EDGE-OP, IMPORTED-CALL-KEY); ENRICHED-EDGE copies the existing edge's
+  :VIA. ABSORB-RELATIONSHIP, ABSORB-PROPERTIES, RELATIONSHIP-NATURAL-KEY and
+  every .asd are untouched.
+
+  The count did not move. tools/test/index-dump.lisp was run twice over each
+  tree, once from a scratch worktree of 4398538 and once from this tree's code,
+  both reading the same files:
+    Loom       R lines 26410 and 26410, E lines 5466 and 5466, :CALLS lines
+               11724 and 11724.
+    front-end  R lines 95972 and 95972, E lines 11400 and 11400, :CALLS lines
+               54067 and 54067.
+  On both trees the only lines that differ are :CALLS R lines. Every one gains
+  :VIA (11724 of 11724 on Loom, 54067 of 54067 on front-end), and with :VIA cut
+  off the new lines equal the base's, so @source, @confidence and @derived-from
+  are unchanged on every edge. The S lines are equal. Edges listing two or more
+  keys: 3 on Loom, 1363 on front-end. Loom reads 11724 here and 11620 in step 1
+  because this step's 19 new definitions, 14 of them tests, add 104 :CALLS
+  edges; base code over the 4398538 tree itself gives 11620.
+  The call-site census prints 510 minted and 41 ambiguous, as before.
+
+  Departure. The plan says the local-calls list becomes (caller callee . keys)
+  so a callee reached under two keys yields one op. LOCAL-FUNCTIONS maps one
+  name to one entity and callee names are deduplicated before the loop, so a
+  local callee has exactly one key. The list is (caller callee key) and the
+  Lisp analyzer unions nothing. RESOLVE-CALLS does, where several names can
+  reach one callee.
+
+  D13, :VIA's share. index-cost on front-end, three runs of the 4398538 code
+  and three of this step's, alternated:
+    heap-bytes  base 170521840  170458592  170517904   median 170517904
+                new  187916208  187852576  187909392   median 187909392
+    seconds     base 10.057  10.500  9.644   median 10.057
+                new  10.404   9.532  9.462   median  9.532
+    calls-edges 54067 in every run.
+  The heap grows 17391488 bytes, 10.2 percent, which is 322 bytes on each of
+  54067 edges: an edge's empty property table now holds an entry. D13 allows
+  +15 percent, 25.6 MB over step 1's median, so :VIA alone takes 68 percent of
+  the heap budget and leaves 8.2 MB (4.8 percent) for :CALL-SHAPES in steps 3
+  to 5. Index time shows no rise beyond the run-to-run scatter. Step 6 compares
+  against the 4398538 base, so :VIA's cost counts against the gate there.
+
+  STEP 2 FOLLOW-UP, THE HEAP COST OF :VIA. 2026-10-09, Loom at a4f4afa plus this
+  commit.
+
+  Where the 322 bytes went. Measured in SBCL 2.2.9 on 20000 retained objects: an
+  empty EQUAL hash table is 160 bytes and one with a single entry is 484, and
+  :SIZE 1 changes neither, so the first entry allocates 324 bytes of storage
+  that the minimum table size fixes. On front-end's 54067 :CALLS edges the :VIA
+  lists hold 55493 conses (888 KB), and 54109 of the 55493 key strings are EQ to
+  a string already in the caller's :CALL-NAMES; the other 1384 are import keys,
+  about 66 KB. So the table storage is 16.4 MB of the 17.4 MB and the lists and
+  strings under 1 MB. Interning the lists (3320 distinct) or the strings could
+  save at most 0.7 MB, 0.4 percent of the baseline, and was not done. A property
+  table shared between edges was rejected: ABSORB-PROPERTIES calls CLRHASH on
+  its target, so a shared table is corrupted by the first re-assert.
+
+  The change. A relationship's PROPERTIES slot is unbound until something reads
+  it, and ASSERT-EDGE stores the plist in a new PROPERTY-PLIST slot. The first
+  read reaches a SLOT-UNBOUND method (root-ontology.lisp) that builds the table
+  under *FRESH-ID-LOCK*, stores it and clears the plist. A relationship given a
+  :PROPERTIES table keeps it as before. The method is on SLOT-UNBOUND and the
+  slot keeps its reader, because a method on PROPERTIES gave it a :METHOD
+  entity and moved two calls from "one interface" to "dispatched across
+  methods" in the call-site census. A lock of its own was a DEFVAR whose
+  initform called MAKE-LOCK, which moved the census from 510 to 511; the first
+  design had both defects and this one has neither.
+
+  Making the plist stay unbound took three more edits, found by counting bound
+  tables after indexing. ADD-RELATIONSHIP and PLAN-OP asked every edge whether it
+  was federated, which reads the table. They now ask only when the TO end is
+  missing. REBIND-RELATIONSHIP copied through PROPERTIES; on front-end an id
+  remap touches all 95972 edges. It now carries the slot as it finds it. With the
+  slot alone the heap did not move (187.86 MB over six runs); after the three
+  edits no relationship holds a table on Loom or front-end after indexing, and
+  an edge becomes a table only when something reads it (ABSORB on a re-assert,
+  `describe`). FEDERATED-EDGE-P and FEDERATED-RELATIONSHIPS read :FEDERATED
+  only on :SERVES edges and on one entity's edges, so no pass reads them all.
+
+  Files outside step 2's list: src/ontology/root-ontology.lisp (the slot, the
+  SLOT-UNBOUND method, *FRESH-ID-LOCK*'s docstring), src/graph/graph-manager.lisp
+  (ADD-RELATIONSHIP), src/graph/transaction.lisp (PLAN-OP). No step 2 test was
+  edited. ASSERT-EDGE's description "stored with PROPERTIES-TABLE" in step 2
+  above is now "held as a plist until read".
+
+  Tests, each seen failing for the reason it states. In root-ontology.lisp: an
+  edge given a plist, and an edge given none, hold no table until read (both failed
+  before the slot change); a table is one object and keeps a write; an edge
+  given a table keeps it; eight threads reading 30 fresh edges get one table per
+  edge; REBIND-RELATIONSHIP builds no table. In graph/test/transaction.lisp:
+  storing an edge builds no table (failed before the ADD-RELATIONSHIP and
+  PLAN-OP edits); a federated edge to an absent entity still lands through the
+  transaction and through ADD-RELATIONSHIP; an unfederated one is still refused.
+  Mutations, one at a time, source copied aside and restored with a touch (ASDF
+  compares source and fasl times in whole seconds, and a restore inside the
+  second of the mutated compile ran a stale fasl once before the touch was added):
+    no lock               7 failures, all the thread test
+    table not stored      11, the thread test, the one-object test and both
+                          no-table-until-read tests
+    ASSERT-EDGE builds    3, both no-table-until-read tests and the rebind test
+    REBIND reads PROPERTIES   1, the rebind test
+    federated check removed from ADD-RELATIONSHIP, then from PLAN-OP
+                          1 each, the federated-lands test
+    federated check first again in ADD-RELATIONSHIP, then in PLAN-OP
+                          1 each, the storing-builds-no-table test
+
+  Heap on front-end at ab34be6, index-cost, six runs back to back, alternating
+  a4f4afa (before) and this tree (after), the resident service running:
+    heap-bytes before  187793008 187876624 187892512 187896352 187833840 187732896
+               after   159381344 159373872 159315104 159399168 159351472 159441104
+    seconds    before  10.387 12.200 12.108 10.017 10.285 10.458
+               after   10.312 12.095 11.287  9.777 10.261 10.248
+    medians    before 187855232, after 159377608; step 1 baseline 170529728
+    calls-edges 54067 in every run.
+  Against the baseline, :VIA as step 2 left it is +17325504 bytes, +10.16
+  percent. The tree now is 11152120 bytes under the baseline, -6.54 percent.
+  Index time: medians 10.37 s before and 10.28 s after, inside the scatter.
+
+  What :VIA costs now, measured. With ASSERT-EDGE ignoring its :PROPERTIES and
+  the rest of this change in place, three runs gave heap-bytes 156749312,
+  156688400, 156786720 (median 156749312). :VIA is 159377608 less that,
+  2628296 bytes, 1.54 percent of the baseline, 48.6 bytes an edge: the plist
+  and the key list. It was 10.16 percent.
+  The remaining 13.8 MB below the baseline is not :VIA's. It is the 160-byte
+  empty table every other relationship used to hold, less 16 bytes for the new
+  slot, over 95972 relationships. D13's heap limit is 196109187 bytes, so the
+  room left under it is 36731579 bytes, 21.5 percent of the baseline, against
+  8.2 MB before. Whether step 6 may count a saving that is not :VIA's toward the
+  gate is the user's call: step 6 compares against the 4398538 base, so it
+  will see all of it.
+
+  Nothing moved. index-dump from 4398538's code and from this code over the same
+  trees: Loom R 26485 and 26485, E 5477 and 5477, S 44 and 44, :CALLS 11763 and
+  11763. front-end R 95972 and 95972, E 11400 and 11400, S 44 and 44, :CALLS
+  54067 and 54067. Every differing line is a :CALLS R line, 11763 on Loom and
+  54067 on front-end, each gaining :VIA, and with :VIA removed the new lines
+  equal the base's; no E or S line differs. Census 510 minted and 41 ambiguous.
+  tools/loom-test.sh 12 of 12 under /usr/bin/sbcl; `check` 0 violations, 8
+  unresolved, 7 ambiguous, 5 definer macros; load-test loom-serve prints T.
+  Serve, rest and mcp passed first time; the resident service caused no
+  interference.
+
+  Read-only trees. front-end ab34be6 `git status --short` identical before and
+  after (the same five entries as step 1). game-server 448dc8e clean before and
+  after. lfia-accounting was not indexed by anything here; its status changed
+  between the two readings (14 entries to 4, HEAD now f961ba8) because another
+  session is working in it.
+
+  Re-baseline, decided by the user on 2026-10-09. Step 6 compares front-end
+  against the heap with the lazy property table and without :VIA or shapes,
+  156749312 bytes, not against 170529728. The heap budget is +15 percent of
+  that, 180261709 bytes. Against it :VIA is 2628296 bytes, 1.68 percent, and
+  20884101 bytes remain for shapes. The time baseline and budget are
+  unchanged (8.0855 s, 8.894 s). The 196109187-byte figure above is
+  superseded. Step 1's tool is unchanged; step 6 reads these numbers.
+
+  STEP 3, THE LISP SIGNATURE AND :CALL-SHAPES. 2026-10-09, Loom at 3d711ce plus
+  this step's commit. Lisp only: tools/py and tools/js are untouched, so no
+  Python or JavaScript entity gets a shape.
+
+  Changed. src/ontology/code-ontology.lisp declares :CALL-SHAPES (list) on
+  :FUNCTION, :METHOD, :TEST and :CALL-SITE, and MAKE-CALL-SITE-ENTITY takes
+  :CALL-SHAPES, in no natural key. GROUP-CALL-SHAPES is in analyzer.lisp.
+  lisp-analyzer.lisp has LISP-ARGUMENT-KIND, LISP-CALL-SIGNATURE and
+  SHAPES-OF-NAMES; COLLECT-CALL-NAMES takes :LINE and returns (name signature
+  line) occurrences as a third value (NIL without :READING, and none for a
+  #'f designator); pass 2 writes :CALL-SHAPES for the names it keeps, local
+  callees included, so the keys are the ones an edge's :VIA can name;
+  INITFORM-CALL-SITES returns the shapes as a second value;
+  DEFINER-CALL-SITE takes the reading (FINDINGS 3) and its plist gains
+  :CALL-SHAPES when non-empty. resolve.lisp: GENERATED-ENTITY copies the site's
+  shapes, DEFINER-CALL-SITE-ENTITIES gives each site its name's entry,
+  CALL-TARGETS' :AMBIGUOUS site takes its name's entry from the caller. No
+  .asd changed; `check` 0 violations, 8 unresolved, 7 ambiguous, 5 definer
+  macros as before; load-test loom-serve prints
+  (find-package "LOOM-PROCESS") => T.
+
+  Departures from the plan.
+    1. CALL-SHAPES-FOR-KEY is in loom-ontology (code-ontology.lisp, exported),
+       not resolve.lisp. The analyzer needs the same cut for an initform site,
+       and the analyzer cannot call loom-graph (RULE-0002). Two copies would be
+       two readings of one value.
+    2. A declared property is present on every entity of its type, as NIL
+       when nothing set it. So every :FUNCTION, :METHOD, :TEST and :CALL-SITE
+       in every language gains a :CALL-SHAPES key, and the plan's "Lisp
+       entities that have shapes" understates which E lines change. Python
+       and JavaScript entities hold :CALL-SHAPES=NIL until steps 4 and 5. The
+       cost of the key itself is nil on front-end: below. I therefore did not
+       add the conditional append I first wrote in MAKE-CALL-SITE-ENTITY and
+       GENERATED-ENTITY; with the key always present it had no effect, and
+       the tests I wrote for it failed. The definer plist is not an entity, so
+       :CALL-SHAPES is absent from it when empty.
+    3. RISKS 7: one existing test failed because the behaviour it pins changed.
+       A-DEFMETHOD-PRODUCES-THE-SAME-ENTITY-IT-ALWAYS-HAS compares a method's
+       whole property table. I edited the corpus in
+       src/analyzer/test/lisp-analyzer.lisp: each of its 8 rows gains
+       (:call-shapes nil), and the two rows with a helper call carry their
+       shape. No other existing test changed.
+    4. An initform site's shape line is the call form's own line, from
+       FORM-RANGE, not the DEFPARAMETER's line. The reading is passed, so the
+       line is known; the site entity's own :START-LINE is still the
+       definition's. A fallback LINE argument covers a cons with no range.
+    5. An occurrence with no range and no fallback line is left out, because
+       GROUP-CALL-SHAPES sorts lines and a line that is not known is a gap
+       (CON-0001). It cannot happen from ANALYZE-FILE, which always passes one.
+    6. FORM-BACKQUOTE-P is in lisp-reader.lisp, which the plan does not list.
+       It is the one file allowed to name Eclector (DES-0013 R1), and the
+       reader's backquote head is an Eclector symbol.
+    7. LISP-ARGUMENT-KIND tells nil and t from other symbols by name with the
+       same cl-prefix test the operators get, because the reader makes them
+       uninterned. () needs no clause of its own: it is the real NIL, a
+       symbol. A first version had a (null form) clause; deleting it changed
+       no result.
+
+  Tests, each seen failing for the reason it states before the change was
+  written (first run, nothing implemented):
+    ontology  THE-FOUR-CALLER-TYPES-DECLARE-CALL-SHAPES: ":FUNCTION does not
+              declare :CALL-SHAPES", and the same for :METHOD, :TEST,
+              :CALL-SITE. A-CALL-SITE-CARRIES-SHAPES-...: "Unknown &KEY
+              argument: :CALL-SHAPES".
+    analyzer  the three GROUP-CALL-SHAPES tests: "The function
+              LOOM-ANALYZER::GROUP-CALL-SHAPES is undefined". The Lisp ones
+              fail on a NIL where the plan's value belongs, e.g.
+              "(SHAPE-ENTRY SHAPES "f") evaluated to NIL which is not EQUAL
+              to ("f" ("3:s,n,b" 2) ("8:y,k:k,q,f,f,c,q,b" 3))".
+              COLLECT-CALL-NAMES-RETURNS-OCCURRENCES: "Unknown &KEY argument:
+              :LINE". 26 failures in all.
+    graph     A-GENERATED-TEST-CARRIES-THE-CALL-SHAPES-OF-ITS-SITE:
+              "DECLARED-PROPERTIES-ONLY drops this unless :TEST declares it";
+              the definer-site and ambiguous-site tests got NIL for the entry
+              they expect. 6 failures.
+  The negative cases that pass before the change and are therefore guarded
+  only by the mutations below: a call with no arguments is "0:" (it failed
+  before, as a missing entry), a designator adds no shape, a standard operator
+  and a direct recursion add none, a definer site with no calls has no
+  :CALL-SHAPES key, an ambiguous site whose caller has no entry for its name
+  holds NIL.
+  Tests that cover U4: NO-LITERAL-REACHES-THE-INDEX analyzes
+  (f "SENTINEL" 4242 'sekret-symbol :token "SECRET-VALUE" 98.6) inside a
+  function body, asserts the signature is 6:s,n,q,k:token,s,n, and searches
+  every entity id and property and every relationship property of the graph
+  for each of the five literals. Positive control: (defun sentinel ...) is
+  found by the same walk. The keyword's name is kept, as D10 says.
+
+  Mutations, one at a time in this tree, the file copied aside and restored
+  with a touch after each. Failing tests, by mutation:
+    :TEST declaration renamed         A-GENERATED-TEST-CARRIES-..., THE-FOUR-CALLER-TYPES-...
+    :CALL-SITE / :FUNCTION decl       THE-FOUR-CALLER-TYPES-... only (an
+                                      undeclared key is stored by SETP, so no
+                                      analyzer test sees it)
+    GENERATED-ENTITY copy removed     A-GENERATED-TEST-CARRIES-...
+    CALL-TARGETS copy removed         AN-AMBIGUOUS-SITE-TAKES-ONLY-..., RESOLVING-TWICE-...
+    ambiguous site takes whole caller AN-AMBIGUOUS-SITE-TAKES-ONLY-..., ...-RECORDED-NO-SHAPE-HOLDS-NONE
+    DEFINER-CALL-SITE-ENTITIES copy   A-DEFINER-CALL-SITE-ENTITY-TAKES-ONLY-ITS-OWN-NAMES-SHAPES
+    constructor ignores :CALL-SHAPES  7 tests across the three systems
+    no reading to DEFINER-CALL-SITE   A-DEFINER-CALL-SITE-CARRIES-THE-SHAPES-...
+    designator adds an occurrence     A-DESIGNATOR-ADDS-..., A-DESIGNATOR-BESIDE-..., A-CALL-FORM-RECORDS-...
+    signature walk uses `for ... in`  A-DOTTED-LIST-INSIDE-A-CALL-SITES-ARGUMENT-..., DOTTED-ARGUMENT-LISTS-...
+    string / number / quoted-symbol
+      value leaked into the kind      NO-LITERAL-REACHES-THE-INDEX each time
+    keyword name dropped              NO-LITERAL-REACHES-THE-INDEX and 4 more
+    pass 2 keeps every occurrence     the binding-form, designator and recursion tests
+    local callees not kept            A-LOCAL-CALLEE-HAS-A-SHAPE-UNDER-ITS-NAME
+    keywords not counted in arity     5 tests
+    no fallback line                  COLLECT-CALL-NAMES-RETURNS-OCCURRENCES-..., AN-INITFORM-CALL-WITH-NO-RECORDED-RANGE-...
+    backquote clause removed          EVERY-ARGUMENT-KIND-HAS-ITS-LETTER
+    lambda clause removed             EVERY-ARGUMENT-KIND-..., A-CALL-FORM-RECORDS-...
+    nil/t always `y'                  EVERY-ARGUMENT-KIND-..., A-T-OR-LAMBDA-...
+    cl-symbol-p ignores the prefix    A-T-OR-LAMBDA-FROM-ANOTHER-PACKAGE-...
+    definer shapes always present     A-DEFINER-CALL-SITE-WITH-NO-CALLS-HAS-NO-SHAPES-KEY
+    initform shapes always NIL        4 tests; whole caller shapes: 1
+    pass 2 writes no shapes           20 tests
+    GROUP-CALL-SHAPES no merge        3 tests; no sort: 1
+  One mutation changed nothing: deleting the (null form) clause. It is
+  deleted (departure 7).
+
+  The count did not move. tools/test/index-dump.lisp from a scratch copy of
+  3d711ce (git archive) and from this tree, both over this tree's files:
+    Loom        32165 lines each; no line only on one side; 4484 E lines
+                differ, and with :CALL-SHAPES cut out of every line of both
+                sides they are equal. By type: :FUNCTION 2053, :TEST 1582,
+                :CALL-SITE 626, :METHOD 138, :FILE 81 (the definer plists),
+                and 4 more whose ids contain spaces. R lines changed: 0.
+                S lines changed: 0.
+    game-server 24600 lines each; 3214 E lines differ the same way; R 0, S 0
+                (read only, 448dc8e, `git status --short` empty before and
+                after).
+  call-site-census: 510 minted, 41 ambiguous, before and after. Loom's own
+  `status` moved with the tree (5477 entities and 26492 relationships at
+  3d711ce, 5522 and 26696 here: this step's 31 tests, 8 source functions and 6
+  test helpers, and the calls they draw); the two dumps above are the comparison that holds the
+  tree fixed. index-cost reads 5522 entities, 26696 relationships, 11893
+  :CALLS edges under both the base code and this code.
+
+  Cost, index-cost, alternating a scratch copy of 3d711ce and this tree.
+    Loom         heap-bytes base 92819856 92843600 92824992, new 95145200
+                 95153280 95146480: +2.32 MB, +2.5 percent. Index time over 9
+                 runs each, medians 2.901 s base and 3.035 s new (+4.6
+                 percent, run-to-run scatter about 10 percent with the
+                 resident service running).
+    game-server  heap-bytes base 75919360 75776768 75871136, new 76992672
+                 76982480 77054992: +1.1 MB, +1.5 percent. Time medians 1.130
+                 s and 0.880 s, inside the scatter.
+    front-end    ab34be6, JavaScript so no shapes, three pairs: heap-bytes
+                 base 159377104 159388928 159280624, new 159351312 159437328
+                 159432480, medians 159377104 and 159432480 (+55 KB, from the
+                 NIL :CALL-SHAPES key); seconds medians 9.850 and 9.808.
+                 front-end's `git status --short` identical before and after
+                 (the same five entries as step 1). Against the re-baseline:
+                 180261709 less 159432480 leaves 20829229 bytes for steps 4
+                 and 5. Both trees run at about 9.8 s under today's load,
+                 above 8.894 s, which was measured on a quieter machine; the
+                 delta between them is what this step moves, and it is nil.
+  shape-occurrences on Loom is 20222 line entries on entities (:FUNCTION 5451,
+  :METHOD 541, :CALL-SITE 584, :TEST 13646) and 10856 on game-server. A :TEST's
+  entries are the same list as its file's definer plist entry, which holds
+  another 14445 lines on Loom that index-cost does not count, so the heap
+  holds each once. Unique occurrences are 20437, of which 14749 name something
+  defined in the tree. DES-0055's 12044 is a regex estimate of "calls of
+  in-tree names"; the reader's 14749 is 22 percent above it, and the other
+  5688 are fiveam's IS and every other name no definition in the tree answers.
+  The two do not measure the same set, and I did not reproduce the regex.
+
+  Verification. tools/loom-test.sh 12 of 12 under /usr/bin/sbcl. Serve, rest
+  and mcp passed first time.
+
+  STEP 4, PYTHON. 2026-10-09, Loom at 5139ee2 plus this step's commit. Python
+  only: tools/js and the Lisp analyzer are untouched.
+
+  Changed. tools/py/extract.py has ARGUMENT_KIND and CALL_SIGNATURE, and
+  RECORD_CALL writes 'signature' on every call record: the call's own, or 1:f
+  for a decorator that is not a Call. 'positional' and 'keywords' are as they
+  were; the module docstring's reply table names the key. python-analyzer.lisp
+  has PY-CALL-SHAPES, which maps each record to (key signature line) and hands
+  the list to GROUP-CALL-SHAPES; PY-CALLABLE-PROPERTIES and
+  PY-TEST-PROPERTIES write :CALL-SHAPES when it is non-empty; PY-CALL-SITE
+  writes its one call's shapes; PY-CALL-SITES and PY-OWNED-SITES merge a dropped
+  site's lines onto the kept one. No .asd, no rule, no ceiling and no
+  RESOLVE-DEPENDENCIES changed. `find` showed PY-CALL-SHAPES, PY-CALL-KEY,
+  PY-SHAPE-OCCURRENCES and PY-MERGE-SITE-SHAPES undefined before they were
+  written.
+
+  Departures from the plan.
+    1. Three helpers the plan does not list. PY-CALL-KEY is the key rule (the
+       bare name, or PY-DOTTED of :SPECIFIER and :PATH for an import-bound
+       call). PY-CALL-SITE already spelled that rule inline for :CALL-NAME, so
+       it now calls PY-CALL-KEY, and the site's name and its shape key cannot
+       drift apart. PY-SHAPE-OCCURRENCES turns a :CALL-SHAPES value back into
+       (key signature line) occurrences, and PY-MERGE-SITE-SHAPES regroups two
+       sites' occurrences onto the kept site with SETP. The merge is a SETP on
+       the kept site after construction, not an argument at construction, which
+       is allowed because :CALL-SHAPES is in no natural key.
+    2. Kinds the plan leaves to "anything else x": a negated number (-1), a
+       subscript and an f-string are x. literal_value in the same file reads -1
+       as a number, and an f-string is a string expression; neither was
+       changed here, because D10 names the kinds and the plan does not widen
+       them. A later step may.
+    3. PY-CALL-SHAPES leaves out a record with no :SIGNATURE and does not guess
+       one (CON-0001). The child writes one on every call.
+    4. The sentinel test calls GRAPH-MENTIONS-P, defined in
+       src/analyzer/test/lisp-analyzer.lisp, which loom-analyzer/test loads
+       before python-analyzer.lisp. It is one function in one package, so the
+       test did not get a second copy of the walk.
+    5. No existing test was edited. RISKS 7's condition did not arise.
+
+  Tests, 4 in python-extract.lisp and 6 in python-analyzer.lisp. Before the
+  change none could pass, since the key and the property did not exist.
+    extract   A-CALL-REPORTS-ITS-SIGNATURE-OF-KINDS-AND-KEYWORD-NAMES:
+              f("a", 1, True, None, x, [1], {"k": 1}, lambda: 0, g(), *a,
+              timeout=3, **kw) is 10:s,n,b,b,y,q,q,f,c,*|timeout=n,*, and g() is 0:.
+              A-SPREAD-IS-WRITTEN-STAR-IN-BOTH-PLACES-IT-CAN-STAND: 1:y|timeout=n,*
+              for f(a, timeout=3, **k), 1:* for g(*a), 0:|* for h(**k).
+              A-DECORATOR-IS-A-CALL-OF-THE-DECORATOR-WITH-THE-FUNCTION: @d is
+              1:f and @app.route("/x") is 1:s.
+              EVERY-ARGUMENT-KIND-HAS-ITS-LETTER: bytes s, 2j and 1.5 n, False
+              b, Ellipsis, -1, a[0] and an f-string x, a.b y, tuple, set and
+              list q.
+    analyzer  A-FUNCTION-RECORDS-THE-SHAPE-OF-EACH-CALL-UNDER-ITS-KEY: a local
+              name, ".posting.post" for a relative import and "requests.get"
+              through `import requests`, each with the call's own line.
+              A-DECORATOR-AND-A-TEST-CASE-RECORD-SHAPES-TOO.
+              A-CALL-SITE-CARRIES-THE-SHAPE-OF-ITS-OWN-CALL.
+              TWO-CALLS-OF-ONE-NAME-IN-ONE-GUARD-KEEP-BOTH-LINES-ON-THE-ONE-SITE:
+              main(), main(1), main() give one site holding ("0:" 3 5) and
+              ("1:n" 4).
+              CALLS-ON-ONE-LINE-IN-TWO-STATEMENTS-KEEP-BOTH-ON-THE-ONE-SITE:
+              the three statement shapes of PY-OWNED-SITES' REV-0003 fixture.
+              NO-LITERAL-REACHES-THE-INDEX-FROM-A-PYTHON-CALL: f("SENTINEL",
+              4242, token="SECRET-VALUE") in a body is 2:s,n|token=s, the walk
+              of every entity and relationship finds none of the three values
+              and finds the keyword name `token`; the control, a function named
+              `sentinel`, is found by the same walk.
+
+  Mutations, one at a time in this tree. The file was copied aside and written
+  back after each, with a touch (ASDF compares whole-second times). The
+  analyzer system's python-extract and python-analyzer suites were run with each
+  mutation in place. Tests that failed, by mutation:
+    drop 'signature' in RECORD_CALL
+        7 extract checks and 9 analyzer checks: A-CALL-REPORTS-..., A-SPREAD-...,
+        A-DECORATOR-IS-A-CALL-..., EVERY-ARGUMENT-KIND-..., and in the
+        analyzer A-FUNCTION-RECORDS-..., A-DECORATOR-AND-A-TEST-CASE-...,
+        A-CALL-SITE-CARRIES-..., both merge tests, the sentinel test
+    drop the merge in PY-CALL-SITES
+        TWO-CALLS-OF-ONE-NAME-IN-ONE-GUARD-KEEP-BOTH-LINES-... only
+    drop the merge in PY-OWNED-SITES
+        CALLS-ON-ONE-LINE-IN-TWO-STATEMENTS-KEEP-BOTH-... (3 checks), not the
+        guard test
+    **k written with a name instead of *
+        A-CALL-REPORTS-..., A-SPREAD-...
+    decorator that is not a call gives 0: instead of 1:f
+        A-DECORATOR-IS-A-CALL-..., A-DECORATOR-AND-A-TEST-CASE-...
+    import key is the bare name
+        10 tests, among them A-FUNCTION-RECORDS-...; the site's :CALL-NAME
+        moves with it, so the existing site tests fail too
+    no :CALL-SHAPES in PY-TEST-PROPERTIES
+        A-DECORATOR-AND-A-TEST-CASE-RECORD-SHAPES-TOO
+    no :CALL-SHAPES in PY-CALLABLE-PROPERTIES
+        A-FUNCTION-RECORDS-..., A-DECORATOR-AND-A-TEST-CASE-...,
+        NO-LITERAL-REACHES-THE-INDEX-FROM-A-PYTHON-CALL
+    PY-CALL-SITE writes no shapes
+        A-CALL-SITE-CARRIES-..., both merge tests
+    int tested before bool in ARGUMENT_KIND
+        A-CALL-REPORTS-..., EVERY-ARGUMENT-KIND-...
+    a string's value appended to its kind
+        the sentinel test, A-CALL-REPORTS-..., EVERY-ARGUMENT-KIND-..., and
+        three existing tests that look for a default in the reply
+        (A-PARAMS-DEFAULT-NEVER-REACHES-THE-REPLY among them)
+    a keyword's source text instead of its kind
+        A-CALL-REPORTS-..., A-SPREAD-..., A-FUNCTION-RECORDS-..., the
+        sentinel test, and two existing default-leak tests
+    keyword names dropped
+        A-CALL-REPORTS-..., A-SPREAD-..., A-FUNCTION-RECORDS-..., the sentinel
+        test
+    *a not counted in the arity
+        A-CALL-REPORTS-..., A-SPREAD-...
+    lambda without its own kind
+        A-CALL-REPORTS-...
+    every shape line written as 0
+        9 checks across the call, decorator, merge and sentinel tests
+  Every mutation was caught. None passed.
+
+  The count did not move. tools/test/index-dump.lisp from a scratch copy of
+  5139ee2 (git archive) and from this tree, both over the same files:
+    lfia-accounting 70649ff, clean before and after   10517 lines each; 1190 E
+                lines differ, and with :CALL-SHAPES cut out of every line of
+                both sides they are equal. By type: :FUNCTION 711, :TEST 384,
+                :CALL-SITE 70, :METHOD 25. R lines changed: 0. S lines
+                changed: 0. No line is added or removed.
+    Loom        32368 lines each; 228 E lines differ the same way: :CALL-SITE
+                117, :FUNCTION 78, :METHOD 33. R 0, S 0. These are the Python
+                files under tools/.
+  `git -C ~/github/lfia-accounting status --short` was empty before the dumps
+  and after the cost runs; front-end's five entries (step 1) were identical
+  before and after. Nothing was written to either tree.
+  call-site-census: 510 minted, 41 ambiguous, as before.
+
+  Cost, index-cost, alternating a scratch copy of 5139ee2 and this tree, three
+  pairs each, with the resident service running and a load average of 3.3.
+    lfia-accounting (3024 entities, 7448 relationships, 3909 :CALLS edges in
+                every run; the tree has grown since step 1's 2698 entities)
+                shape-occurrences 6561, against DES-0055's estimate of 6040
+                (+8.6 percent). heap-bytes base 71824816 71889904 71786432,
+                new 72581488 72581488 72645328; medians 71824816 and 72581488,
+                +756672 bytes, +1.05 percent: 115 bytes for each of the 6561
+                lines. seconds base 8.501 9.547 8.868, new 9.104 8.543 8.701;
+                medians 8.868 and 8.701. The base alone spans 12 percent, so
+                the time delta is inside the scatter. lfia is a census (U6),
+                not gated.
+    front-end   ab34be6, JavaScript, so no shapes (shape-occurrences 0). Three
+                pairs: heap-bytes base 159257264 159385376 159389072, new
+                159484816 159359136 159435616; medians 159385376 and 159435616,
+                +50240 bytes, inside the 128 KB range of the base runs. Step 3
+                recorded +55 KB for the NIL key over step 2 and this step adds
+                nothing to it. Against the re-baseline (156749312, budget
+                180261709) the tree now is 159435616, 2.69 MB over, leaving
+                20826093 bytes for step 5. seconds base 16.053 15.597 17.346,
+                new 15.687 16.079 15.475. The machine ran front-end at 16 s
+                here against 9.8 s at step 3; the pair is what compares, and
+                its medians are 16.05 s and 15.69 s.
+
+  Verification. tools/loom-test.sh 12 of 12 under /usr/bin/sbcl (analyzer
+  1321 checks, python-extract 104 and python-analyzer 154 of them in the
+  suites run alone); `check` 0 violations, 8 unresolved, 7 ambiguous, 5 definer
+  macros; load-test loom-serve prints (find-package "LOOM-PROCESS") => T.
+
+  STEP 5, JAVASCRIPT. 2026-10-09, Loom at c296598 plus this step's working-tree
+  change, not committed (the plan holds it until step 6). JavaScript only:
+  tools/py and the Lisp analyzer are untouched. `find` showed JS-CALL-SHAPES,
+  argumentKind, objectKind, callSignature and callLine undefined before they
+  were written.
+
+  Changed. tools/js/extract.js has objectKind, argumentKind, callSignature and
+  callLine. walkBody pushes {name, signature, line} onto the owner's `shapes`
+  beside each `calls.push`, and only when it has an owner: file-level calls
+  keep no shape (DEFERRED). JSX usages push none. record() gives each
+  definition `shapes: []`. reaches, setupCalls, walkTestBody and the case
+  record carry `shapes` as they carry `calls`, inherited copies included.
+  js-analyzer.lisp has JS-CALL-SHAPES, which hands (name signature line) to
+  GROUP-CALL-SHAPES, and MAKE-JS-DEFINITION-ENTITY writes :CALL-SHAPES on a
+  function, method or test when non-empty. No .asd, rule, ceiling or other
+  analyzer changed.
+
+  Departures and assumptions.
+    1. The line is the callee property's line for a non-computed member call,
+       and the call's own start line for anything else (callLine). The plan
+       says only "line". The call's start line would give every later call of
+       `one(1)\n.two(2)\n.three(3)` the chain's first line. A test pins both.
+    2. Kinds the plan leaves to "anything else x": a negated number (-1), a
+       conditional, an await, a regex literal, a computed read `a[0]`, an
+       optional chain `a?.b`, a class expression and a JSX element are x.
+       A regex is checked before the string and number tests, since acorn
+       gives it a Literal node.
+    3. An object with no keys is `o{}`. A method or shorthand key is named,
+       since both are Property nodes with an identifier key.
+    4. The tests use the plain TEST with an inline node guard, not JS-TEST, and
+       the census stays at 510. One test the plan does not list pins that a
+       variable takes no :CALL-SHAPES (ONLY-A-CALLABLE-TAKES-CALL-SHAPES).
+    5. Occurrences come out in the order walkBody pops them, which is the order
+       :CALL-NAMES has: a later sibling before an earlier one. GROUP-CALL-SHAPES
+       keeps first-seen order of that walk and sorts only the lines. D11's
+       "source order" holds for lines, not for keys.
+    6. No existing test was edited. RISKS 7's condition did not arise.
+
+  Tests, 7 in src/analyzer/test/js-analyzer.lisp; the suite went from 175 checks
+  to 206. All seven were written to pass on first run after the code, and each
+  is shown failing by a mutation below.
+    A-CALL-RECORDS-THE-SIGNATURE-OF-ITS-ARGUMENTS-AND-ITS-LINE: the plan's
+      fixture gives 9:s,n,b,y,q,o{a,?,*},f,c,* and g() its own entry "0:".
+    EVERY-JAVASCRIPT-ARGUMENT-KIND-HAS-ITS-LETTER: undefined, null and false
+      are b; a template with and without a hole is s; 10n and 1.5 are n; a
+      regex, -1, a conditional and an await are x; this, a.b and a[0] are y; new
+      is c; both function forms are f; {}, {'k': 1} and {m(){}, n} are o{},
+      o{?}, o{m,n}; [] and [...z] are q.
+    A-JSX-USAGE-IS-A-CALL-NAME-AND-HAS-NO-SHAPE: <Thing a="x" /> adds "Thing"
+      to :CALL-NAMES and nothing to :CALL-SHAPES; beside go(1) only go has an
+      entry.
+    ONLY-A-CALLABLE-TAKES-CALL-SHAPES.
+    A-HOOK-CALL-IS-INHERITED-BY-EACH-CASE-WITH-THE-HOOKS-OWN-LINE: beforeEach
+      calling setup(1) on line 3 gives both cases ("setup" ("1:n" 3)), each its
+      own call at its own line, and a case in a sibling suite none.
+    A-NESTED-SUITE-CASE-INHERITS-THE-OUTER-HOOKS-SHAPES-TOO.
+    A-LATER-CALL-OF-A-CHAIN-REPORTS-THE-LINE-IT-IS-ON.
+    NO-LITERAL-REACHES-THE-INDEX-FROM-A-JAVASCRIPT-CALL: f("SENTINEL", 4242,
+      {'SENTINEL': 1, ["SECRET-KEY"]: 2, ok: 3}) in a body is 3:s,n,o{?,?,ok};
+      GRAPH-MENTIONS-P (the helper step 4 used, from lisp-analyzer.lisp) finds
+      none of SENTINEL, 4242, SECRET-KEY, finds `ok`, and finds SENTINEL when
+      it is the function's name.
+
+  Mutations, one at a time in the real tree, each file restored and touched
+  afterwards. Failing tests, by mutation:
+    object-key walk dropped          the first test, the kinds test, the sentinel test
+    reaches drops its shapes         both hook tests (hook and nested)
+    setupCalls drops hook shapes     both hook tests
+    walkTestBody drops inherited     the nested-suite test only
+    case drops the context's shapes  both hook tests
+    spread in an object written ?    the first test
+    undefined written y              the kinds test
+    string key leaks its text        the first test, the kinds test, the sentinel test
+    computed identifier key named    the first test
+    template literal written x       the kinds test
+    string value appended to `s`     the first test, the sentinel test
+    number value appended to `n`     six tests
+    bigint written b                 the kinds test
+    regex check dropped              the kinds test
+    this written x                   the kinds test
+    new written x                    the kinds test
+    function expression written x    the kinds test
+    array written x                  the first test, the kinds test
+    spread argument written x        the first test
+    arity excludes a spread          the first test
+    line is the call's start         the chain test
+    JSX usage pushes a shape         the JSX test
+    record() gives no `shapes`       five tests, 14 checks
+    analyzer writes no :CALL-SHAPES  seven tests, 20 checks
+    analyzer writes it on any kind   ONLY-A-CALLABLE-TAKES-CALL-SHAPES only
+    analyzer keys by the signature   seven tests, 19 checks
+  Every mutation was caught. None passed.
+
+  The count did not move. tools/test/index-dump.lisp from a scratch copy of
+  c296598 (git archive) and from this tree, both over the same files:
+    Loom        32449 lines each. 20 E lines differ, all :FUNCTION (the
+                functions of tools/js/extract.js), and with :CALL-SHAPES cut
+                out of every line of both sides they are equal. R lines
+                changed: 0. S lines changed: 0.
+    front-end   ab34be6, read only. 107418 lines each. 8083 E lines differ,
+                :TEST 4656, :FUNCTION 1886, :METHOD 1086, :CALL-SITE 455; the
+                base holds no JavaScript :CALL-SHAPES, the new tree 8083. With
+                :CALL-SHAPES cut out of both sides they are equal. R 0, S 0.
+  front-end's `git status --short` and `--ignored` were identical before the
+  dumps, after them and after the cost runs (the five entries of step 1).
+  call-site-census: 510 minted, 41 ambiguous. `check` 0 violations, 8
+  unresolved, 7 ambiguous, 5 definer macros. load-test loom-serve prints T.
+  tools/loom-test.sh 12 of 12 under /usr/bin/sbcl.
+
+  Census on front-end (the new dump). Counted from the :CALL-SHAPES of each E
+  line. A line entry is one source line in a signature's list; shape-occurrences
+  in index-cost counts them.
+    caller type   entities   line entries   (key, signature) entries
+    :FUNCTION         1886           9282             7362
+    :METHOD           1086           3455             3080
+    :TEST             4656          58582            41017
+    :CALL-SITE         455            863              516
+    total             8083          72182            51975
+  72182 line entries against DES-0055's estimate of 71522 (+0.9 percent).
+  Inherited hook copies (FINDINGS 5). A :TEST line entry is an inherited copy
+  when its line lies outside the case's own start and end lines, since the
+  extractor walks only the case's callback for its own calls and everything else
+  comes from a hook or a bare setup statement of an enclosing suite. 15438 of
+  the 58582 :TEST line entries are inherited, 26.4 percent, which is 21.4
+  percent of all 72182. 11084 of the 41017 :TEST (key, signature) entries hold
+  inherited lines only, 27.0 percent. Distinct (file, line, key, signature)
+  sites are 55660 across the four types, so 16522 line entries, 22.9 percent,
+  are the same site repeated; the inherited copies are 15438 of them.
+  Largest single :CALL-SHAPES value: 1663 characters printed, on
+  function:src/ui/edit/terrain/Editor/hooks/useLayerEditorDrawing.js:
+  useLayerEditorDrawing (61 line entries); by line entries the largest is
+  useMapEditorState with 115 (1628 characters). The largest on a :TEST is 1122
+  characters. The longest signature is 143 characters, an object argument
+  naming twelve keys: `1:o{position,drawMarker,...,rotateMode}`. Nothing caps
+  an object's key list.
+  The value strings total 1509256 characters, 1178208 of them on :TEST.
+
+  Wire size and extract.js (risk 8). Over the 800 JavaScript files front-end
+  has (git ls-files -co --exclude-standard, 5097422 bytes), fed to extract.js
+  alone in one process, six alternating runs:
+    base c296598   0.89 1.03 1.00 1.03 1.03 1.07 s, median 1.03 s
+    new            1.02 1.09 1.05 0.94 1.11 1.07 s, median 1.06 s
+  The child's cost is +0.03 s, inside the scatter. Its reply is the larger
+  change: 4018468 bytes become 7891432, +3.87 MB, of which the `shapes` records
+  are 4.20 MB of JSON (73149 records, 967 of them on definitions that keep no
+  :CALL-SHAPES). The Lisp side reads that with cl-json inside index time.
+  A record is {name, signature, line}, about 57 bytes of which the three key
+  names and their punctuation are 32; an array [name, signature, line] would
+  leave them out. Not done, because the plan names the object form; it is
+  available if step 6 reads the time as over.
+
+  Cost, index-cost, front-end ab34be6, base (a scratch copy of c296598) against
+  this tree, six alternating runs each, the resident loom-serve running (pid
+  2910721 sampled at 91 percent of one core before the first run) and a load
+  average of 2.3 to 3.3. python3 3.12.3, node v24.18.1.
+    heap-bytes  base 159412592 159268576 159448864 159394752 159383872 159396944
+                new  168890288 168787360 168747792 168851504 168851504 168851504
+                medians 159395848 and 168851504, +9455656 bytes, +5.93 percent
+    seconds     base 8.296 8.102 8.182 8.140 8.802 8.031
+                new   8.595 8.561 8.883 8.581 8.594 8.706
+                medians 8.161 and 8.5945, +0.4335 s, +5.3 percent
+    entities 11400, relationships 95972, calls-edges 54067 in every run;
+    shape-occurrences 0 on base, 72182 on new.
+  That is 131 bytes for each of the 72182 line entries. Against the step 2
+  re-baseline (heap 156749312, budget 180261709; time 8.0855 s, budget 8.894
+  s) the new tree's medians are 168851504 bytes (+7.72 percent, 11410205 bytes
+  under the budget) and 8.5945 s (+6.3 percent, 0.30 s under the budget). The
+  largest single new time was 8.883 s, 0.011 s under 8.894, and the base's own
+  range is 8.031 to 8.802 s (9.4 percent), so the time margin is thinner than
+  the heap margin. I do not decide the gate; step 6 does.
+  Loom itself, three alternating pairs: heap-bytes medians 95378992 (base) and
+  95400032 (new), +21 KB; seconds medians 2.018 and 1.983; shape-occurrences
+  21143 and 21272 (the functions of extract.js).
+
+  STEP 6, THE GATE. 2026-10-10, no source change. Step 5 was committed as
+  426bbee after this reading.
+
+  Reading. The gate compares front-end's heap and index time with the
+  re-baseline the user chose on 2026-10-09 (heap 156749312 bytes, budget
+  180261709; time 8.0855 s, budget 8.894 s), not with a scratch worktree of
+  step 1's commit as the plan's step 6 first says. The six alternating pairs
+  step 5 recorded, base c296598 against the step 5 tree, supply the
+  attribution. They ran with the resident loom-serve at 91 percent of one core
+  and a load average of 2.3 to 3.3, the same load on both sides of each pair.
+  Nothing was re-measured for this step.
+
+  Result: pass on both figures.
+    heap   168851504 bytes, median of six. +7.72 percent over 156749312, limit
+           +15 percent. 11410205 bytes under the budget. Against the pair's
+           own base (c296598) +9455656 bytes, +5.93 percent.
+    time   8.5945 s, median of six. +6.3 percent over 8.0855 s, limit +10
+           percent, 0.30 s under 8.894 s. Against the pair's own base +0.4335
+           s, +5.3 percent.
+
+  Margin. The heap runs span 168747792 to 168890288, 0.08 percent, so the heap
+  figure is stable. The time runs span 8.561 to 8.883 s. The slowest new run is
+  0.011 s under the 8.894 s budget. The base runs alone span 8.031 to 8.802 s,
+  9.4 percent. A single run can land over the budget; the median is 0.30 s
+  under it. The cheaper wire form step 5 noted ([name, signature, line] in
+  place of an object, about 32 of 57 bytes a record) was not needed and was not
+  built.
+
+  Share of the heap growth over the re-baseline, front-end, from each step's
+  own pairs:
+    step 2  :VIA                          2628296 bytes  (1.68 percent of 156749312)
+    step 3  NIL :CALL-SHAPES key             55376 bytes  (0.04 percent)
+    step 4  Python, front-end has none       50240 bytes  (0.03 percent)
+    step 5  JavaScript shapes              9455656 bytes  (6.03 percent)
+  These sum to 12189568 bytes. The measured total is 12102192 (168851504 less
+  156749312). The 87376-byte difference is run-to-run movement between the
+  separate pairs, 0.06 percent of the baseline. Steps 3 and 4 add shapes only
+  to Lisp and Python entities, so on front-end their cost is the empty key.
+  Step 3 costs +2.32 MB on Loom and step 4 +757 KB on lfia, where they apply.
+
+  Share of the time. No step's time delta rose above the scatter on its own
+  pairs: step 2 10.37 s before and 10.28 s after, step 3 9.850 s and 9.808 s,
+  step 4 16.05 s and 15.69 s, step 5 8.161 s and 8.5945 s (+5.3 percent against
+  a base spread of 9.4). Only step 5 moved time by more than the pair noise,
+  and its median delta is inside the base's own range. The +6.3 percent over
+  the baseline is therefore step 5's, with :VIA and the empty key contributing
+  nothing separable.
+
+  Not gated, recorded. Loom, step 5 pairs: heap +21 KB, seconds 2.018 and
+  1.983. Loom, step 3: +2.32 MB, +2.5 percent heap, +4.6 percent time within a
+  scatter of about 10 percent. lfia, step 4: +756672 bytes, +1.05 percent, time
+  inside the scatter. game-server, step 3: +1.1 MB, +1.5 percent.
+
+  Departure. The plan builds a worktree at step 1's commit and alternates six
+  runs against step 5. The re-baseline replaced step 1's commit as the base,
+  because step 1's commit predates the lazy property table that removed 13.8
+  MB from every tree. The gate figures above are the medians against the
+  re-baseline; the alternating pairs against c296598 are the attribution. The
+  time baseline of 8.0855 s was measured on a quieter machine than the one the
+  pairs ran on, and the base side of the step 5 pairs ran 0.9 percent above it
+  (8.161 s).
+
+  Exit. The pass branch is taken and step 5 is committed (426bbee). The suite
+  passed 12 of 12, `check` printed 0 violations with 8 unresolved and 7
+  ambiguous, the census printed 510 minted and 41 ambiguous, and load-test
+  loom-serve printed T, on the step 5 tree before the commit.
+
+  STEP 7, describe AND `sites`. 2026-10-10, Loom at 37ba252 plus this step's
+  commit.
+
+  Existing tests that change because the behaviour they pin changes (RISKS 7),
+  recorded before they were edited. Both are in src/mcp/test/tools.lisp and both
+  count the tools tools/list returns, which grows by one with loom_sites:
+    tools-list-returns-what-the-caller-may-call-and-no-lifecycle-write-tool
+        asserts 15 tools, now 16
+    granting-repl-adds-the-three-tools-and-nothing-else
+        asserts 18 tools with :repl granted, now 19. The plan names only the
+        first. The second's difference assertion (3) is unchanged.
+  A third, found when the serve suite ran. src/serve/test/operations.lisp
+  EVERY-READ-OPERATION-EITHER-SCOPES-TO-A-DOMAIN-OR-SAYS-WHY-NOT failed for the
+  new :SITES operation ("SITES is a read operation that neither scopes to a
+  domain nor is listed as answering about a whole repository"). That test exists
+  to force the decision. :SITES resolves its term with the domain's property
+  filter, as :DESCRIBE does, so it is added to *DOMAIN-SCOPED-READS* in the test
+  file. The test's assertions are unchanged.
+
+  Changed. src/knowledge/services.lisp has CALL-SHAPE-DISTRIBUTION and
+  SHAPE-SITES, over three helpers: CALLER-OCCURRENCES (the join through an
+  edge's :VIA), NOTE-CALL-SITE (a site at the largest multiplicity one caller
+  records) and CALL-SITE-TALLY (both answers read one tally). DESCRIBE-ENTITY
+  gains :CALL-SHAPES, NIL when nothing calls the entity. package.lisp exports
+  the two public functions. console.lisp has CALL-SHAPES-LINE, PRINT-NEIGHBORS
+  (the `describe' neighbour loop, moved out of the command body, and the line
+  printed under the `<- calls' band), the `sites' command and PRINT-SITES.
+  operations.lisp has the :SITES operation and SITES-ANSWER. tools.lisp has one
+  MAKE-TOOL line, "loom_sites". No .asd, no src/rest/ source, no loom-graph
+  function and no analyzer changed. `find' showed CALL-SHAPE-DISTRIBUTION and
+  SHAPE-SITES undefined before they were written.
+
+  How a :CALL-SITE source is treated, which DES-0055 D11 and R11 leave open. D11
+  says "a :CALL-SITE carries shapes like any other caller" and says nothing of
+  the three referrer kinds. An :AMBIGUOUS site is a guess among candidates (its
+  edges carry 1/N confidence), so its sites are :FAN-OUT and are in neither
+  :SITES nor `sites'. A :DEFINER-CALL, :VARIABLE, :CLASS or :MODULE site is an
+  ordinary caller: its sites count, with the file and the lines its own
+  :CALL-SHAPES carry. Its row in `sites' names it by the site's label,
+  "<call-name>@<file>:<line>", which is the entity's name. An :AMBIGUOUS site's
+  shapes lines are its caller's real call lines, not the site's start line, so
+  the fan-out count is of call forms.
+
+  Departures from the plan.
+    1. The call-site ceiling. The plan expects 510 minted and the exit condition
+       says 510. The step mints 512, which is the ceiling and passes the test
+       (<=). DES-0014 mints one :CALL-SITE for each distinct resolving name a
+       DEFINE-COMMAND or DEFINE-OPERATION body calls. The first version put the
+       logic in the two bodies and minted 526 (the workspace ceiling test failed).
+       The `sites' body now makes one call, PRINT-SITES, and the :SITES body one,
+       SITES-ANSWER: +2. `describe' needed one more name (CALL-SHAPES-LINE), so
+       its neighbour loop moved into PRINT-NEIGHBORS, which takes NEIGHBOR-LINE
+       out of the body as it puts PRINT-NEIGHBORS in: +0. Net 510 to 512, 41
+       ambiguous unchanged. Headroom under the ceiling is now 0. Getting to 510
+       would take a call the index cannot see, such as (funcall 'print-sites ...),
+       which hides a real edge; I did not do that. The choice between raising
+       *CALL-SITE-CEILING* with a reason and hiding two edges is the caller's.
+    2. PRINT-NEIGHBORS is not in the plan. It is a verbatim move of the loop
+       plus the new line.
+    3. src/serve/json.lisp is not in the plan's file list. *ARRAY-VALUED-KEYS*
+       gains :GROUPS, :SIGNATURES and :SITES, so an answer with no groups, or a
+       group shown no rows, encodes as [] and not null. :SITES is a number in
+       `describe''s distribution and the encoder checks numbers first, so no
+       existing answer changes. No other answer uses these three keys.
+    4. The serve answer holds :ENTITY, :GROUPS and :PROVENANCE. The plan names
+       only the operation's arguments. :PROVENANCE is what :IMPACT carries.
+    5. `, N more' counts signatures not named, which is DES-0055 D12's
+       "remainder count" read as the plan words it. "call shapes: 866 sites --
+       ..., 148 more" means 148 further signatures. It does not say so on the
+       line.
+    6. `sites' with no recorded form prints the entity line and "no call form is
+       recorded for any call to it". The plan does not say what NIL prints.
+    7. :PRE-EXPANSION encodes as null when false (NIL), as every NIL does, not as
+       false.
+    8. Three existing tests changed, listed above, before the first edit of the
+       first two. The third (the domain-scoped-reads list) was found by running
+       the serve suite and edited after the failure was seen.
+
+  Tests: 19 new in src/knowledge/test/services.lisp, 11 in
+  src/process/test/console.lisp, 6 in src/serve/test/operations.lisp, 1 in
+  src/rest/test/routes.lisp and 1 in src/mcp/test/tools.lisp. The graph does not
+  say in which order a node's edges come back. The first version of the sort
+  tests passed with the sort deleted (M4), because the order the edges came back
+  in happened to be the sorted one. The tests
+  now build counts 1, 3, 2 and files b, c, a in creation order, so neither that
+  order nor its reverse is the asserted one. CS-CALLEE-WITH-CALLERS says so.
+
+  Mutations, one at a time in the real tree, each file copied aside, restored
+  and touched. Failing tests, by mutation:
+    M1  join by callee name, not :VIA     A-CALLER-WHOSE-EDGE-NAMES-NO-KEY-IT-HOLDS-CONTRIBUTES-NOTHING,
+                                          A-PYTHON-CLASS-CALL-REACHING-INIT-IS-COUNTED-UNDER-THE-CLASS-KEY,
+                                          THE-JOIN-IS-THE-EDGES-VIA-AND-NOT-THE-CALLEES-NAME
+    M2  sum over callers (entries, not sites)  TWO-TEST-CASES-INHERITING-ONE-HOOK-LINE-COUNT-ONE-SITE,
+                                          A-SITE-IS-COUNTED-AT-THE-LARGEST-MULTIPLICITY-ONE-CALLER-RECORDS
+    M3  fan-out not excluded from :SITES  AN-AMBIGUOUS-SITES-CALLS-ARE-FAN-OUT-AND-NOT-SITES,
+                                          SHAPE-SITES-LEAVES-OUT-FAN-OUT
+    M4  signature sort dropped            SIGNATURES-ARE-MOST-COMMON-FIRST-WHICHEVER-ORDER-THEY-WERE-MET-IN,
+                                          EQUAL-COUNTS-ARE-ORDERED-BY-SIGNATURE. NOT CAUGHT on the first
+                                          run: fail 0 of 634. See Tests above.
+    M5  five-signature cap dropped        THE-CALL-SHAPES-LINE-NAMES-FIVE-SIGNATURES-AND-COUNTS-THE-REST
+    M6  :MACRO-P flag dropped             A-MACRO-CALLEE-IS-MARKED-PRE-EXPANSION
+    M7  MCP line dropped                  TOOLS-LIST-RETURNS-WHAT-THE-CALLER-MAY-CALL-...,
+                                          GRANTING-REPL-ADDS-THE-THREE-TOOLS-AND-NOTHING-ELSE,
+                                          LOOM-SITES-OVER-MCP-ANSWERS-WHAT-THE-REST-ROUTE-DOES
+    M8  :SITES operation renamed away     8 serve, 6 rest and 5 mcp checks: SITES-IS-A-REGISTERED-READ-OPERATION,
+                                          SITES-ANSWERS-THE-GROUPS-..., SITES-OVER-REST-ANSWERS-THE-GROUPS-AS-JSON,
+                                          LOOM-SITES-OVER-MCP-..., the tool-count tests
+    M9  :AMBIGUOUS kind not recognised    AN-AMBIGUOUS-SITES-CALLS-ARE-FAN-OUT-..., SHAPE-SITES-LEAVES-OUT-FAN-OUT
+    M11 file left out of the site         THE-SAME-LINE-IN-TWO-FILES-IS-TWO-SITES, SHAPE-SITES-LISTS-THE-RAREST-GROUP-FIRST,
+                                          A-DEFINER-CALL-SITE-IS-AN-ORDINARY-CALLER
+    M12 multiplicity within a caller ignored  A-SITE-IS-COUNTED-AT-THE-LARGEST-MULTIPLICITY-ONE-CALLER-RECORDS
+    M15 groups commonest first            SHAPE-SITES-LISTS-THE-RAREST-GROUP-FIRST,
+                                          SITES-PRINTS-EACH-GROUP-AND-ITS-ROWS-RAREST-GROUP-FIRST
+    M16 :WITHOUT-FORM never counted       AN-EDGE-WITH-NO-KEY-THE-CALLER-HOLDS-IS-WITHOUT-A-CALL-FORM,
+                                          A-CALLER-WHOSE-EDGE-NAMES-NO-KEY-IT-HOLDS-CONTRIBUTES-NOTHING
+    M17 :PER-GROUP ignored                SHAPE-SITES-RESPECTS-PER-GROUP-..., SITES-CUTS-A-GROUP-AT-THE-LIMIT-...,
+                                          SITES-LIMIT-BOUNDS-THE-ROWS-A-GROUP-SHOWS
+    M18 serve ignores :LIMIT              SITES-LIMIT-BOUNDS-THE-ROWS-A-GROUP-SHOWS
+    M19 no group sort in SHAPE-SITES      SHAPE-SITES-LISTS-THE-RAREST-GROUP-FIRST, EQUAL-SIZED-GROUPS-ARE-ORDERED-BY-SIGNATURE
+    M20 no row sort in SHAPE-SITES        SHAPE-SITES-LISTS-THE-RAREST-GROUP-FIRST
+    M21 no signature tie-break (distribution)  EQUAL-COUNTS-ARE-ORDERED-BY-SIGNATURE
+    M22 no signature tie-break (SHAPE-SITES)   EQUAL-SIZED-GROUPS-ARE-ORDERED-BY-SIGNATURE
+    M23 a tie keeps the later-named caller     TWO-TEST-CASES-INHERITING-ONE-HOOK-LINE-COUNT-ONE-SITE
+    M24 DESCRIBE-ENTITY drops :CALL-SHAPES     DESCRIBE-CARRIES-THE-DISTRIBUTION,
+                                          DESCRIBE-OVER-THE-OPERATION-CARRIES-THE-DISTRIBUTION-AS-JSON
+    M25 `describe' prints no line         DESCRIBE-PRINTS-THE-CALL-SHAPES-UNDER-THE-CALLERS
+  The REST route has no code of its own to mutate: /v1/sites exists because the
+  registry entry does, and M8 is the mutation that removes it. Every mutation
+  was caught once the sort tests were rewritten; M4 was the one that was not.
+  M1, M5, M7, M8, M17, M18 and M25 were rerun after the PRINT-SITES,
+  SITES-ANSWER and PRINT-NEIGHBORS refactor and were caught again.
+
+  Exit conditions, on the tree before the commit.
+    tools/loom-test.sh: 12 of 12 systems passed under /usr/bin/sbcl. Knowledge 645
+      checks, process 261, serve 315, rest 123, mcp 58. A first full run, before
+      the refactor, failed the workspace ceiling test (above) and also failed
+      A-READ-OPERATION-WRITES-A-RECORD-NAMING-ITSELF in serve (3 checks), which
+      passed in two single-system runs before and in the full run after; I did
+      not find its cause and it did not recur.
+    check: 0 violations, 8 unresolved document references, 7 ambiguous, 5 definer
+      macros.
+    call-site-census: 512 minted, 41 ambiguous (departure 1).
+    load-test loom-serve: (find-package "LOOM-PROCESS") => T.
+    tools/loom-serve.sh update run; the service restarted. Over REST,
+      /v1/sites?repository=Loom&term=getp&limit=1 answered JSON that parses with
+      keys entity, groups and provenance and 153 groups; /v1/describe carried
+      call-shapes with sites 866 and 153 signatures. Over MCP by curl to /mcp,
+      tools/list returned 16 tools including loom_sites, and tools/call
+      loom_sites returned isError false and 153 groups. My session had no
+      loom_* tools of its own, so these two were exercised with curl.
+    Cost: index-cost on Loom, one run each, this tree against HEAD with the
+      changes stashed: heap-bytes 95820368 and 95396800 (+423568), entities 5609
+      and 5553, seconds 2.290 and 2.847. The step stores nothing; the heap
+      moves with the 56 entities of its own tests and functions. front-end was
+      not measured.
+
+  `describe getp` on Loom (the line under the callers) and the head of
+  `sites getp`, both as printed:
+    function getp  [src/ontology/root-ontology.lisp:279-284]
+      <- calls: getp@src/workspace/test/domains.lisp:156 (definer-call), ...
+      call shapes: 866 sites -- 2:y,k:file 47, 2:y,k:call-names 45, 2:y,k:language 40, 2:y,k:path 40, 2:y,k:doc-id 30, 148 more
+    getp  [src/ontology/root-ontology.lisp:279-284]
+    2:c,k:analysis-error  1 site
+      src/analyzer/test/yaml-analyzer.lisp:399  an-unquoted-colon-in-a-title-reports-the-line-it-is-on
+    2:c,k:codebases  1 site
+      src/analyzer/test/firebase-analyzer.lisp:48  fb-codebases
+    ...
+    2:y,k:detail  2 sites
+      src/process/console.lisp:1774  getp@src/process/console.lisp:1746
+      src/serve/operations.lisp:663  violation-summary
+  153 groups. The rarest come first, so the 47-site `2:y,k:file` group is last.
+  A definer-call site (`getp@src/process/console.lisp:1746`) is named by its
+  label, as the treatment above says.
+
+  STEP 7 CEILING, decided by the user on 2026-10-10. Step 7 reads 512 minted
+  against a ceiling of 512, 0 sites of headroom. The user chose to raise
+  *call-site-ceiling* to 520 rather than hide the PRINT-SITES and SITES-ANSWER
+  calls from the index. src/workspace/test/workspace.lisp carries the new
+  RE-MEASURED entry with the census composition. 512 replaces 510 as the figure
+  steps 8 and 9 compare against. The suite passed 12 of 12 after the change.
+
+  STEP 8, ACCEPTANCE. 2026-10-10, Loom at d8c18d2, no source change. This commit
+  adds this section and nothing else. Scratch files are in the session
+  scratchpad, s8/: parse.py, count.py, diff.py, topcalled.lisp, degree.lisp,
+  payload.py, calls.py, calls2.py, calls3.py.
+
+  Result against the plan.
+    dict-value, 454 sites with 5 of arity 3, the 3-argument group first:
+      NOT MET as stated. 452 sites, 5 of arity 3 (met), 3-argument group not
+      first. All three differences are explained below. Nothing is unexplained.
+    read-config, 27 sites with 19 of arity 2 or more: MET. 27 sites, 19 of
+      arity 2, 8 of arity 1, row for row the same 27 lines as the script.
+    front-end and lfia: check 0 violations on both; payloads and distributions
+      below.
+    Loom: check 0 violations, 8 unresolved, 7 ambiguous as step 1; census 512
+      minted, 41 ambiguous; :CALLS 12181 = step 1's 11620 plus 561, all of it
+      in files this plan changed.
+
+  GAME-SERVER at 9169e64, read only.
+  Commands:
+    git clone --no-checkout ~/lisp/game-server <scratch>/gs
+    git -C <scratch>/gs checkout 9169e64
+    tools/loom.sh 'watch "<scratch>/gs" | describe @gs dict-value | describe @gs read-config | check @gs'
+    tools/loom.sh 'watch "<scratch>/gs" | describe @gs interface:utils/dict.lisp:dict-value | describe @gs method:utils/dict.lisp:dict-value::t,list | describe @gs method:utils/dict.lisp:dict-value::t,jso'
+    tools/loom.sh 'watch "<scratch>/gs" | sites @gs method:utils/dict.lisp:dict-value::t,list 10000 | sites @gs method:utils/dict.lisp:dict-value::t,jso 10000 | sites @gs interface:utils/dict.lisp:dict-value 10000 | sites @gs read-config 10000'
+  The repository name is gs. It indexed 155 files, 3873 entities, 20803
+  relationships, 0 ambiguous references, 18 definer macros, 0 violations
+  under `check @gs`, 2 unresolved qualified references and 39 prose file
+  references, as `check @gs` printed them. The resident service also holds
+  game-server at 448dc8e, so for the REST reading below the clone was added
+  with POST /v1/watch and removed with POST /v1/unwatch afterwards. The
+  resident service holds the same seven repositories it held before.
+
+  Departure 1. `describe @gs dict-value` does not answer. dict-value names
+  three entities: the interface and two methods (utils/dict.lisp:169-183 for a
+  list, 185-194 for st-json:jso). The console prints "3 things are named
+  dict-value. Name one", and so does `sites @gs dict-value`. The calls are
+  attributed to the methods: the interface has no callers and no distribution.
+  Both methods report the same 452 sites, because a call to the generic
+  reaches both. The two figures are one set of calls, not 904.
+
+  dict-value, from either method:
+    call shapes: 452 sites -- 2:k:id,y 29, 2:k:type,y 20, 2:k:name,y 17,
+    2:k:definition,y 14, 2:y,y 13, 143 more
+  148 signatures; arity 2 on 447 sites, arity 3 on 5, no other arity. REST
+  describe: sites 452, signatures 148, fan-out 0, without-form 0,
+  pre-expansion null. The five arity-3 sites, with their groups:
+    3:k:x,y,b    utils/test/dict.lisp:109  dict-value-simple
+    3:n,y,b      utils/test/dict.lisp:191  remove-from-dict-simple
+    3:q,y,b      utils/test/dict.lisp:204  remove-from-dict-path
+    3:k:a,y,b    utils/test/dict.lisp:185  remove-from-dict-simple
+    3:k:a,y,b    utils/test/dict.lisp:200  remove-from-dict-path
+  read-config:
+    call shapes: 27 sites -- 2:y,q 17, 1:c 6, 1:y 2, 2:c,q 1, 2:y,k:keyword 1
+  5 signatures; 2:y,q 17 + 2:c,q 1 + 2:y,k:keyword 1 = 19 of arity 2; 1:c 6 +
+  1:y 2 = 8 of arity 1. REST: fan-out 0, without-form 0.
+
+  The independent count. count.py reads every .lisp file under the clone as
+  s-expressions (strings, `;` and `#| |#` comments skipped, `#'f` noted
+  separately, `#+`/`#-` guarded forms flagged) and lists each list whose head
+  is the name, with its line and argument count.
+    dict-value   453 forms, arity 2 on 448 and arity 3 on 5. Under #+/#-: 0.
+                 #'dict-value references: 0.
+    read-config  27 forms, arity 1 on 8, arity 2 on 19. Under #+/#-: 0.
+  A plain regex over the same files, `\((utils:)?dict-value[ \t)]` or end of
+  line, matches 454 lines. diff.py compares the script's (file, line) pairs
+  with the rows `sites` printed. read-config: 27 and 27, no difference.
+  dict-value: 452 rows against 453 forms, one difference.
+
+  Cause of each difference.
+    454 (REQ-0041, the regex) against 453 forms: mpackage/mpackage.lisp:482 is
+      `;                  (encoded-data (dict-value :data data))`, a line
+      comment. The regex counts it; the reader does not. The figure 454 is the
+      text match count, and no call form exists on that line.
+    453 forms against 452 sites: data-api/operator-handler.lisp:48,
+      `(utils:dict-value :id obj)`, is inside the first of two
+      `(defmethod initialize-instance :after ((handler operator-handler) ...))`
+      forms, at lines 45 and 64 of the same file. CL redefines a method with
+      the same qualifier and specializers, so the second replaces the first and
+      the first never runs. The analyzer asserts one method key once per file
+      and the later definition replaces the earlier (CON-0005). Loom
+      therefore holds one method there, lines 64-69, and the call on line 48
+      has no caller. The line-48 site is dead code in the running image and
+      Loom is right to omit it. The same file's duplicate is a finding about
+      game-server, not about Loom.
+    The 5 arity-3 sites are the same five lines in the script and in `sites`.
+  The unplaceable-package fallback (CLAUDE.md, 54 of 95 same-named callables on
+  game-server) did not touch these two callees: :FAN-OUT 0 and :WITHOUT-FORM 0
+  on both, so every site arrived through a resolved call name. Sites inside
+  definer macros (define-test and similar, 18 definer macros on the tree) are
+  counted as ordinary callers and appear in `sites` named
+  `dict-value@mpackage/test/struct-types.lisp:1144`.
+
+  Departure 2. The 3-argument group is not first in `sites`, and `describe`
+  does not show it among its five signatures. DES-0055 D12 says "the 5 arity-3
+  dict-value sites are the first group" and gives the example `2:y,y 449,
+  3:y,y,y 5`. That example predates D10's keyword names. A signature carries a
+  Lisp keyword's name (`k:id`), so 447 arity-2 sites split into 144 groups and
+  the 5 arity-3 sites into four: 3:k:x,y,b 1, 3:n,y,b 1, 3:q,y,b 1, 3:k:a,y,b
+  2. `sites` orders groups by size, smallest first, ties by signature text.
+  There are 71 groups of one site in front of the first arity-3 group: the
+  arity-3 groups are the 72nd, 73rd and 74th of 148, and `3:k:a,y,b` the 99th.
+  The step 7 implementation follows the plan's own ordering rule. The
+  expectation "the 3-argument group first" cannot hold under D10 and that
+  ordering together. Both rows are present and complete; what is missing is a
+  view that answers "which sites pass a third argument" without reading 148
+  groups. This is not changed here. The choice is the caller's: order groups
+  by arity first, add an arity line to `describe`, or amend D12's sentence.
+  This does not block REQ-0041 R4 (the five sites are found) but REQ-0041's
+  ACCEPTANCE sentence "5 of arity 3" is only visible through `sites`, and the
+  PLAN's "listed first" is false.
+
+  FRONT-END at ab34be6, read only. `git status --short` before and after every
+  read, identical each time and identical to step 1's five entries
+  (M .loom/frameworks.yaml, M .../layerIntents.js, three ??).
+  The three most-called functions. topcalled.lisp indexes the tree directly
+  and counts, for each :FUNCTION and :METHOD, the distinct entities with a
+  :CALLS edge to it. Same-named methods are one function: every Class.equals
+  has 276 callers because a call to .equals reaches all of them (inferred
+  edges), so they are collapsed. The ranking:
+    1293 distinct callers  makeGame (src/_test/fixtures.js), 0 non-test
+     342                   wrappedLogger.debug (src/utils/loggerBase.js), 277 non-test
+     297                   toObj (src/core/mapper.js), 12 non-test
+  then 276 for the .equals family. `structure` hubs rank by every inbound edge
+  and give makeGame 2529, toObj 582, ArcUse.equals 539; the order differs only
+  in that wrappedLogger.debug is not a hub on that count.
+  tools/loom.sh 'watch "/home/beberman/github/front-end" | describe @front-end <id> ...':
+    makeGame     call shapes: 173 sites -- 0: 173 (9 more through ambiguous names)
+      1293 caller entities but 173 sites: test cases inherit a hook's calls
+      (FINDINGS 5), and the site count counts a hook's line once.
+    wrappedLogger.debug  call shapes: 667 sites -- 1:s 472, 1:x 85, 2:s,y 38,
+      1:y 9, 2:s,c 9, 35 more (40 signatures; fan-out 0, without-form 0)
+    toObj        call shapes: 395 sites -- 2:y,y 339, 2:y,c 56
+  `check @front-end`: No violations; 3 unenforced, 120 unresolved document
+  references (11 plain, 108 qualified, 1 elsewhere), 5 ambiguous, 0 definer
+  macros. Index: 949 files, 11400 entities, 95973 relationships.
+  Largest REST describe payload. degree.lisp ranks entities by total edges;
+  payload.py fetched GET /v1/describe for the 40 with the most edges (the 40th
+  has 539) from the resident service, which already watched front-end:
+    1190120 bytes  makeGame, 2530 edges
+     288906        toObj, 614 edges
+     254200        PartitionArc.equals, 583 edges (the other .equals 240-254 KB)
+  The payload tracks the neighbour list. For makeGame the `neighbors` field is
+  1.22 MB re-serialised, `call-shapes` 99 bytes and `properties` 221 bytes. The
+  `call-shapes` distribution is at most 365 bytes across the 40. The largest
+  stored :CALL-SHAPES value (step 3's census, useLayerEditorDrawing, 1663
+  characters) sits in a describe of 42135 bytes whose `properties` field is
+  4023 bytes. So shapes add under 5 KB to any payload sampled, against a 1.19
+  MB maximum.
+
+  LFIA-ACCOUNTING at 70649ff (step 1 recorded 56fc5c3; another session has
+  committed since), read only, status clean before and after every read.
+  Index: 291 files, 3024 entities, 7449 relationships, against 2698 entities
+  at step 1: the tree changed, so these are not step 1's trees. A census, not
+  gated (U6).
+  The most-called, by the same count (tests included): dispatch 68 callers
+  (functions/access/handlers.py, 1 non-test); `deps` 56 (two methods,
+  Recorder.deps in tests/test_access.py and StubPlaid.deps in
+  tests/test_banks.py, one name); Card and useBooks 50 each (web/src,
+  50 non-test). Four are described because Card and useBooks tie.
+    dispatch    call shapes: 127 sites -- 5:y,c,s,s,q 70, 5:y,y,s,s,q 26,
+                5:y,c,y,s,y 6, 5:y,c,y,y,y 6, 5:y,c,s,s,y 4, 10 more
+    Recorder.deps, StubPlaid.deps   call shapes: 99 sites -- 1:y 99 (each)
+    useBooks    call shapes: 50 sites -- 0: 50
+    Card        call shapes: 0 sites, 50 without a call form
+  Card is a JSX component: its 50 callers write `<Card ...>`, which DES-0055
+  defers (no grammar for JSX usages), so the 50 edges have :VIA and no entry
+  to join. That is the :WITHOUT-FORM line doing its job.
+  `check @lfia-accounting`: No violations. `status` says 1 file the analyzer
+  could not read: docs/requirements/REQ-0009.yaml, "could not find expected
+  ':' at line 11, column 1". It is tracked and committed in lfia, not caused
+  by this plan, and not touched here.
+  Largest describe payload among the 40 highest-degree entities:
+    51319 bytes  dispatch, `call-shapes` 388 bytes
+    39166        file functions/access/handlers.py
+    26338        post (functions/ledger/posting.py)
+
+  LOOM at d8c18d2.
+  tools/loom.sh 'status | check': 496 files, 5609 entities, 27197
+  relationships, 302 documents, 1638 tests covering 481 units, 0 violations, 2
+  unenforced, 8 unresolved document references, 7 ambiguous, 5 definer macros,
+  4 suppressed regions, 0 recovered. Step 1: 0 violations, 8, 7, 5.
+  Equal.
+  sbcl --script tools/test/call-site-census.lisp: 512 minted, 41 ambiguous.
+  The plan's 508 and 510 are superseded by the user's decision of 2026-10-10
+  (ceiling 520, 512 is the figure). Not a difference.
+  tools/loom.sh 'describe getp | sites getp 3': works. `describe getp` prints
+    call shapes: 866 sites -- 2:y,k:file 47, 2:y,k:call-names 45,
+    2:y,k:language 40, 2:y,k:path 40, 2:y,k:doc-id 30, 148 more
+  `sites getp 3` printed the groups rarest first, three rows at most to a
+  group. 866 sites, the same figure step 7 recorded.
+  The :CALLS count. tools/test/index-dump.lisp over a git archive of 4398538
+  (step 1) and a git archive of d8c18d2, both run with the code at HEAD
+  against their own archived tree:
+    4398538  11620 :CALLS R lines (step 1's figure, equal)
+    d8c18d2  12181 :CALLS R lines, +561
+  Per origin file of the calling entity, 27 files change (calls2.py in the
+  scratchpad): 481 of the +561 are in 15 src/*/test/ files (graph/test/resolve
+  +116, knowledge/test/services +92, analyzer/test/lisp-analyzer +65,
+  process/test/console +36, analyzer/test/js-analyzer +31,
+  analyzer/test/python-analyzer +25, ontology/test/root-ontology +24,
+  serve/test/operations +22, graph/test/transaction +22, and six more) and 80
+  are in source and tools files (analyzer/lisp-analyzer.lisp +15, knowledge/
+  services.lisp +14, python-analyzer.lisp +14, serve/operations.lisp +10,
+  process/console.lisp +9, graph/resolve.lisp +7, js-analyzer.lisp +4,
+  tools/js/extract.js +3, tools/py/extract.py +2, ontology/root-ontology.lisp
+  +2, graph/enrich.lisp +1, ontology/ontology-ops.lisp -1). Every one of the
+  27 files is in `git diff --stat 4398538 HEAD`. No file the plan did not
+  touch gained or lost an edge.
+  By edge, keyed on (source id, target id): 11620 distinct pairs at step 1,
+  12181 at HEAD. 804 pairs are new and 243 are gone. Of the new, 780 start
+  at an entity that did not exist at step 1 (the plan's new functions, tests
+  and call sites) and 24 start at an old function: 21 of them call a function
+  the plan added (call-shapes-for-key, js-call-shapes, lisp-call-signature,
+  call-edge-op, callSignature and the like), 2 call getp, 1 calls form-range.
+  Of the gone, 237 start at an entity that no longer has that id (a
+  :CALL-SITE whose id carries a line number that moved, or a removed test)
+  and 6 start at a function that was edited and stopped making the call:
+  definer-call-site -> collect-call-names, reader-artifact-p and
+  standard-operator-p (the body moved into the new definer-body-calls),
+  py-call-site -> jlist and py-dotted (replaced by py-call-key, step 4) and
+  rebind-relationship -> properties (step 2 follow-up). No edge was lost
+  from a function the plan did not edit.
+
+  Read-only trees. game-server: the clone only; ~/lisp/game-server was read
+  by `git clone` and is unchanged. front-end and lfia: `git status --short`
+  saved before and after each read (topcalled, degree, payload, console) and
+  identical each time. The resident service is as it was: Loom, game-server,
+  front-end, utils, cl-dbi, cl-mysql, lfia-accounting. loom-serve.sh update ran
+  first and printed "supervised by systemd; delegating".
+  The FiveAM suite was not run: no source file changed.
+
+  Defects. None in Loom. Two findings the caller must rule on before step 9:
+  Departure 1 (a generic function's calls live on its methods, so
+  `describe dict-value` asks to disambiguate) and Departure 2 (D12's "first
+  group" and REQ-0041's "5 of arity 3" are not readable from the first lines
+  of `describe` or `sites`). Step 9 must not write "met" for the dict-value
+  sentence without one of them settled.

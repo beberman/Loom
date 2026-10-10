@@ -342,6 +342,32 @@ and names `init', so the gap is recorded rather than an empty band."
               (getf deploys :unnamed-declarations)
               (= 1 (getf deploys :unnamed-declarations))))))
 
+(defun print-dependencies (status)
+  "The `dependencies' lines of `status'. DES-0055 D9. Nothing without :DEPENDENCIES.
+
+A NIL :STDLIB prints `stdlib unknown' and not `0 stdlib': the Python child marks
+nothing on an interpreter without sys.stdlib_module_names, and a zero there would
+read as measured (PLAN-0059 risk 7)."
+  (dolist (d (getf status :dependencies))
+    (format t "  dependencies: ~(~a~) ~d declared in ~d manifest~:p, ~d unmapped; ~
+imports ~d joined, ~a, ~d undeclared~@[ (~d ambiguous)~]~%"
+            (getf d :ecosystem) (getf d :declared) (getf d :manifests)
+            (getf d :unmapped) (getf d :joined)
+            (if (getf d :stdlib) (format nil "~d stdlib" (getf d :stdlib)) "stdlib unknown")
+            (getf d :undeclared)
+            (let ((n (getf d :ambiguous))) (and n (plusp n) n))))
+  (when (getf status :frameworks-untracked)
+    (format t "  dependencies: .loom/frameworks.yaml is not tracked by git, so another ~
+checkout of this commit may join differently~%")))
+
+(defun print-dependency (dependency)
+  "The `describe' line for a :MODULE: where it is declared and what it provides."
+  (when dependency
+    (format t "~&  dependency : ~(~a~), declared in ~a~@[ ~{~a~^, ~}~]~@[ (~{~(~a~)~^, ~})~]; ~:[provides ~{~a~^, ~}~;unmapped -- declare it under dependency-modules:~]~%"
+            (getf dependency :ecosystem) (getf dependency :manifest)
+            (getf dependency :specs) (getf dependency :sections)
+            (getf dependency :unmapped) (getf dependency :provides))))
+
 (defun print-status (status)
   (format t "~&~a  ~a~%" (getf status :name) (getf status :root))
   (format t "  index      : ~d files, ~d entities, ~d relationships~%"
@@ -425,6 +451,7 @@ and names `init', so the gap is recorded rather than an empty band."
               (getf imports :unresolved 0)
               (getf imports :unclaimed-target 0)
               (getf imports :unrooted 0))))
+  (print-dependencies status)
   ;; Beside the imports line because they are read together: a count that looks
   ;; wrong is usually a declaration that is wrong, and this is where it says so.
   (dolist (problem (getf status :domain-problems))
@@ -972,6 +999,60 @@ then the name may be left out."
                          (length hits) total))))
           (print-find-cost report)))))))
 
+(defparameter *call-shape-signatures-shown* 5
+  "How many signatures `describe' names in its call-shapes line. DES-0055 D12.")
+
+(defun call-shapes-line (distribution)
+  "The `describe' line for CALL-SHAPE-DISTRIBUTION's answer, or NIL for NIL.
+
+The five most common signatures, then how many signatures that left out, then
+the sites reached through an ambiguous name (counted apart and not in the site
+total), the edges that name no call form, and `pre-expansion' for a macro,
+whose forms are as written and not as expanded. DES-0055 D12, PLAN-0060 step 7."
+  (when distribution
+    (let* ((signatures (getf distribution :signatures))
+           (shown (subseq signatures 0 (min *call-shape-signatures-shown*
+                                            (length signatures))))
+           (hidden (- (length signatures) (length shown)))
+           (fan-out (getf distribution :fan-out))
+           (without-form (getf distribution :without-form)))
+      (format nil "call shapes: ~d site~:p~@[ -- ~{~a~^, ~}~]~@[, ~d more~]~
+~@[ (~d more through ambiguous names)~]~@[, ~d without a call form~]~
+~:[~;, pre-expansion~]"
+              (getf distribution :sites)
+              (mapcar (lambda (entry) (format nil "~a ~d" (first entry) (second entry)))
+                      shown)
+              (and (plusp hidden) hidden)
+              (and (plusp fan-out) fan-out)
+              (and (plusp without-form) without-form)
+              (getf distribution :pre-expansion)))))
+
+(defun print-neighbors (detail)
+  "The neighbour bands of `describe', and under the callers the call-shapes line.
+
+A function of its own because each distinct name a DEFINE-COMMAND body calls
+is a :CALL-SITE (DES-0014) and the ceiling on them has 2 of headroom. The body
+called NEIGHBOR-LINE from this loop and now calls this function, so `describe'
+mints the same number of sites as before the call-shapes line was added
+(PLAN-0060 step 7)."
+  (dolist (group (getf detail :neighbors))
+    (format t "~&  ~a ~(~a~): ~{~a~^, ~}~%"
+            (if (eq :out (getf group :direction)) "->" "<-")
+            (getf group :rel-type)
+            ;; A call site's name already carries its file and line, so the
+            ;; kind is the only part of DES-0014 R7's "line and kind rather
+            ;; than a bare id" still missing here. NIL for every other type,
+            ;; so the ~@[ is what keeps this from adding an empty pair of
+            ;; parens to every ordinary neighbour -- and its clause contains
+            ;; a directive, so it consumes the argument it tested rather than
+            ;; leaking it into the next one, which is the trap the document
+            ;; summary above this records.
+            (mapcar #'neighbor-line (getf group :entities)))
+    ;; DES-0055 D12. Under the callers, since the line is about them.
+    (when (and (eq :in (getf group :direction)) (eq :calls (getf group :rel-type)))
+      (let ((line (call-shapes-line (getf detail :call-shapes))))
+        (when line (format t "~&  ~a~%" line))))))
+
 (define-command describe (term &optional flag)
     "describe <name> [--source]"
     "Full detail for one entity, with its neighbours grouped by edge type. \
@@ -1019,6 +1100,8 @@ then the name may be left out."
     ;; what it touches.
     (when (getf detail :summary)
       (format t "~&  ~a~%" (getf detail :summary)))
+    ;; DES-0055 D9. A :MODULE's declaration; absent for everything else.
+    (print-dependency (getf detail :dependency))
     ;; DES-0054 D8. What a framework registered this for, one line per
     ;; registration. A dotted value prints as its text; a name by its spelling.
     (dolist (entry (getf detail :entry-point))
@@ -1069,19 +1152,7 @@ then the name may be left out."
               (getf far :type) (getf far :name)
               (getf far :file) (getf far :line)
               (getf far :via) (getf far :commit)))
-    (dolist (group (getf detail :neighbors))
-      (format t "~&  ~a ~(~a~): ~{~a~^, ~}~%"
-              (if (eq :out (getf group :direction)) "->" "<-")
-              (getf group :rel-type)
-              ;; A call site's name already carries its file and line, so the
-              ;; kind is the only part of DES-0014 R7's "line and kind rather
-              ;; than a bare id" still missing here. NIL for every other type,
-              ;; so the ~@[ is what keeps this from adding an empty pair of
-              ;; parens to every ordinary neighbour -- and its clause contains
-              ;; a directive, so it consumes the argument it tested rather than
-              ;; leaking it into the next one, which is the trap the document
-              ;; summary above this records.
-              (mapcar #'neighbor-line (getf group :entities))))
+    (print-neighbors detail)
     ;; REQ-0055, and the opposite of what that requirement asked for. The
     ;; :UNRESOLVED-CALLS property is written by one line of RESOLVE-CALLS, read
     ;; by no pass, and printed by nothing -- which is why it read as leftover
@@ -1122,6 +1193,35 @@ the second stops reading the row."
                          (list (format nil "inferred ~,2f"
                                        (getf entry :edge-confidence)))))))
     (format nil "~a~@[ (~{~a~^, ~})~]" (getf entry :name) parts)))
+
+(defun print-sites (term limit)
+  "The body of `sites'. A function of its own because the DEFINE-COMMAND body
+mints one :CALL-SITE per distinct name it calls (DES-0014), and the ceiling that
+guards that count has 2 of headroom (PLAN-0060 step 7). The body makes one call,
+and the calls this function makes are ordinary :CALLS edges."
+  (let* ((graph (current-graph))
+         (entity (resolve-entity graph term))
+         (groups (shape-sites graph (id entity)
+                              :per-group (if limit (resolve-count limit "limit") 20))))
+    (format t "~&~a~@[  [~a]~]~%" (getf (entity-summary entity) :name)
+            (getf (entity-summary entity) :location))
+    (if (null groups)
+        (format t "~&  no call form is recorded for any call to it~%")
+        (dolist (group groups)
+          (format t "~&~a  ~d site~:p~%" (getf group :signature) (getf group :count))
+          (dolist (row (getf group :sites))
+            (format t "  ~a:~a  ~a~%" (first row) (second row) (third row)))
+          (when (plusp (getf group :more))
+            (format t "  ~d more~%" (getf group :more)))))))
+
+(define-command sites (term &optional limit)
+    "sites <name> [<limit>]"
+    "The calls to one definition grouped by how they are written, the rarest \
+group first, with file:line for each. <limit> is the rows shown per group, 20 \
+by default."
+  ;; DES-0055 D12, REQ-0041 R4: which sites differ. The 5 three-argument
+  ;; dict-value calls among 454 are the first group.
+  (print-sites term limit))
 
 (defun print-source (result)
   "REQ-0031's source block, or why there is none.
@@ -1421,6 +1521,15 @@ of tokens." value))
                                internal-time-units-per-second))))
           (when id (format t "~&record ~a~%" id))))))))
 
+(defun print-dependency-proposal (report)
+  "REPORT's :DEPENDENCY-PROPOSAL, when it has one, under the heading that says
+it is a proposal. DES-0055 D7: init shows the block and writes nothing, so
+adopting it is a person's edit to .loom/frameworks.yaml."
+  (when (getf report :dependency-proposal)
+    (format t "~&dependency-modules: proposed, not written. Copy what you ~
+confirm into .loom/frameworks.yaml.~%~a"
+            (getf report :dependency-proposal))))
+
 (define-command init (path &rest arguments)
     "init \"<directory>\" [<docs-dir>] [claude-md] [<host:port>] [--update] \
 [--apply] [--replace-unproven]"
@@ -1496,7 +1605,8 @@ changed.~%"))))
                (getf (getf report :manifest) :workflow-concept))
        ;; DES-0044 D1's discoverability argument, and the reason a second verb
        ;; was not needed: the flag is named where the refusal is printed.
-       (format t "  Templates move; run with --update to refresh what Loom wrote.~%"))
+       (format t "  Templates move; run with --update to refresh what Loom wrote.~%")
+       (print-dependency-proposal report))
       (t
        (log-event "init" "~a" (getf report :root))
        (format t "~&Prepared ~a~%" (getf report :root))
@@ -1514,6 +1624,7 @@ changed.~%"))))
            (when skip
              (format t "~&Nothing points at the skill yet. Re-run with ~
 `claude-md' to append a pointer, or add one by hand.~%"))))
+       (print-dependency-proposal report)
        (format t "~&Nothing was committed. `git status' shows exactly what was added.~%")))))))
 
 (define-command drift (&optional designator)

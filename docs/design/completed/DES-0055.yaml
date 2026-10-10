@@ -1,6 +1,6 @@
 id: DES-0055
 title: Declared dependencies become :MODULE nodes joined to external imports, a call site's shape is a property of its caller with :VIA on each :CALLS edge, and REQ-0078 R4 is closed as already met
-status: draft
+status: implemented
 date: 2026-10-06
 refines: [REQ-0078, REQ-0041]
 affects: [resolve-imports, resolve-calls, resolve-and-check,
@@ -463,6 +463,19 @@ body: |
   distribution pre-expansion when the callee carries :MACRO-P, which is
   REQ-0041's second open question answered as it suggests.
 
+  D10 amendment, 2026-10-10 (PLAN-0060). Four points the grammar left open:
+    - Python `**k` is written `*` in the keyword part, with no name:
+      `f(a, timeout=3, **k)` is `1:y|timeout=n,*`. `f(*a)` is `1:*`.
+    - A Python decorator that is not a call, `@d`, is a call of d with the
+      decorated function, `1:f`. `@app.route("/x")` records the Call node,
+      `1:s`.
+    - A Lisp backquoted form is data, `q`, whatever the reader expands it to.
+      A character literal is `x`.
+    - Whatever the grammar does not list is `x`: in Python a negated number,
+      a subscript and an f-string; in JavaScript a regular expression, a
+      conditional, an await, a subscript, an optional chain and a JSX element.
+      An empty JavaScript object is `o{}`.
+
   D11 SHAPES LIVE ON THE CALLER; :VIA ON THE EDGE NAMES WHICH ONES COUNT
 
   Each analyzer writes :CALL-SHAPES on the entity whose calls it records:
@@ -502,9 +515,16 @@ body: |
       sites      a new read-only command, `sites <name>`: the sites grouped
                  by signature, rarest group first, file:line for each, 20
                  lines per group with the rest counted. That is REQ-0041 R4's
-                 "which sites differ": the 5 arity-3 dict-value sites are the
-                 first group. A serve operation, so REST and MCP carry it
-                 through the registry.
+                 "which sites differ". A serve operation, so REST and MCP
+                 carry it through the registry.
+
+      Amended 2026-10-10 (PLAN-0060 step 8). A signature includes keyword
+      names, so the 5 arity-3 dict-value sites on game-server at 9169e64 are
+      four groups (1, 1, 1 and 2 sites) among 148, the first of them 72nd.
+      The sites are all listed and `describe`'s five signatures show none of
+      them. The user ruled that high-arity Lisp is the least likely code Loom
+      is used on, because Lisp is a rare language overall, so `sites` has no
+      arity filter and no arity-first order.
 
   D13 THE COST IS GATED BEFORE THE EXTRACTORS CHANGE
 
@@ -515,6 +535,17 @@ body: |
   The step that lands shapes repeats both. The budget is +10% index time
   and +15% heap on front-end. Over budget, the step does not land, and the
   user chooses between the two cheaper forms named under RISKS.
+
+  D13 amendment, 2026-10-09 (PLAN-0060 step 2 follow-up, fef2619). A
+  relationship now builds its property table on first read, so a relationship
+  nobody reads holds no 160-byte empty table. On front-end that removed 13.8
+  MB of heap unrelated to call-site shapes. The user re-baselined the heap
+  gate on the new code: the baseline is front-end with that change and with
+  neither :VIA nor shapes, 156749312 bytes (median of three runs), and the
+  budget is +15 percent of it, 180261709 bytes. The index-time baseline is
+  unchanged, 8.0855 s with a +10 percent budget of 8.894 s. :VIA costs
+  2628296 bytes, 1.68 percent of the new baseline, and leaves 20884101 bytes
+  for shapes.
 
   R4 IS CLOSED AS ALREADY MET
 
@@ -660,6 +691,11 @@ body: |
   is not measured by this design. Its author may adopt the key later, and
   lfia's numbers under EXPECTED DELTAS are a census, not an acceptance.
 
+  Correction, 2026-10-09 (PLAN-0059 step 9). `node:fs` joins nothing and is
+  counted as npm stdlib, not as undeclared, which is D8's rule. A bare `fs`
+  with no declaration stays undeclared, because Loom ships no list of Node's
+  builtins.
+
   The dependency-modules: declarations are accepted on a fixture the tests
   build themselves in a scratch directory. A small Python tree:
 
@@ -765,6 +801,22 @@ body: |
     with hyphens. Neither Loom nor lfia sets it, and it would not help Loom's
     scripts, which hold no case.
 
+  - Shapes for JSX usages and Lisp #'f designators. D10 has no grammar for
+    either. Their :CALLS edges carry :VIA, the caller holds no entry for the
+    key, and `describe` counts them as "N without a call form".
+  - A :CALL-SITE per call occurrence. +12044 entities on Loom and +71522 on
+    front-end, which DES-0014 refused.
+  - Shapes for JavaScript file-level calls. extract.js reports fileCalls and
+    no :CALLS edge starts there.
+  - Recording shapes in `enrich`. The image reports caller and callee, not the
+    form.
+  - An arity filter or arity-first order for `sites` (D12 amendment).
+
+  - Reacting to a .loom/frameworks.yaml edit without a reindex. DES-0047
+    already accepts this cost for the file, and dependency-modules: inherits
+    it.
+  - Joining a `node:` specifier to anything. A bare `fs` stays undeclared.
+
   CONSEQUENCES
 
   Code that changes. code-ontology.lisp: :MODULE, :DEPENDS-ON, new
@@ -837,3 +889,10 @@ body: |
   hoisting. A workspace that hoists a dependency to the root while a nested
   package.json omits it is joined to the root's declaration. That is the
   declaration Node would find.
+
+  BUILT
+
+  R1 to R8 by PLAN-0059 (2026-10-09). R9 to R12, the call-site shapes and :VIA
+  on :CALLS, by PLAN-0060 (2026-10-10). The gate is recorded in PLAN-0060's
+  NOTES: front-end heap +7.72 percent and index time +6.3 percent over the
+  re-baseline.

@@ -783,7 +783,7 @@ down. It does not make the wrong answer impossible, and the list can be
 extended by anyone -- which is the honest residual and is worth stating.")
 
 (defparameter *domain-scoped-reads*
-  '(:find :describe :impact :context :similar)
+  '(:find :describe :impact :context :similar :sites)
   "Read operations that narrow their selection to a named domain.")
 
 (test every-read-operation-either-scopes-to-a-domain-or-says-why-not
@@ -882,3 +882,126 @@ listed as answering about a whole repository. Decide which it is and say so in ~
       (let ((json (loom-serve:encode-result status)))
         (is (search "\"deploys\"" json))
         (is (search "python312" json))))))
+
+(defun add-dependency-entities (repository)
+  "An unmapped pypi :MODULE with no specs, and a python :FILE with one undeclared import."
+  (let ((graph (repository-graph repository)))
+    (loom-graph:add-entity
+     graph
+     (make-instance 'loom-ontology:module-entity :name "tzdata"
+                    :origin-file "requirements.txt"
+                    :properties (loom-ontology:properties-table
+                                 '(:qualified-name "tzdata" :file "requirements.txt"
+                                   :ecosystem :pypi))))
+    (loom-graph:add-entity
+     graph
+     (make-instance 'loom-ontology:file-entity :name "app/main.py"
+                    :origin-file "app/main.py"
+                    :properties (loom-ontology:properties-table
+                                 '(:path "app/main.py" :language :python
+                                   :import-sources ("foo")
+                                   :unresolved-imports ((:specifier "foo" :cause :external))
+                                   :import-modules ((:source "foo" :module "foo" :stdlib nil))
+                                   :undeclared-imports ((:specifier "foo"))))))))
+
+(test status-carries-dependencies-and-encodes-them-as-json
+  ;; DES-0055 R8. :DEPENDENCIES is a list of plists, which is a shape the encoder
+  ;; walks by whether its first element is a keyword.
+  (with-operations-fixture (repository)
+    (add-dependency-entities repository)
+    (let* ((status (call-operation :status '(:read) :repository (repository-name repository)))
+           (pypi (first (getf status :dependencies))))
+      (is (eq :pypi (getf pypi :ecosystem)))
+      (is (= 1 (getf pypi :undeclared)))
+      (let* ((json (loom-serve:encode-result status))
+             (parsed (json:decode-json-from-string json))
+             (dependencies (cdr (assoc :dependencies parsed))))
+        (is (listp dependencies))
+        (is (equal "pypi" (cdr (assoc :ecosystem (first dependencies)))) "~a" json)
+        (is (eql 1 (cdr (assoc :undeclared (first dependencies)))))))))
+
+(test describe-of-a-module-encodes-its-empty-specs-as-an-array
+  (with-operations-fixture (repository)
+    (add-dependency-entities repository)
+    (let* ((detail (call-operation :describe '(:read)
+                                   :repository (repository-name repository)
+                                   :term "tzdata"))
+           (json (loom-serve:encode-result detail))
+           (dependency (cdr (assoc :dependency (json:decode-json-from-string json)))))
+      (is (equal "requirements.txt" (cdr (assoc :manifest dependency))))
+      (is (search "\"specs\":[]" json) "an empty list must not arrive as null: ~a" json)
+      (is (search "\"provides\":[]" json)))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 D12: `sites'
+;;; ------------------------------------------------------------------
+;;;
+;;; The fixture's ALPHA-TWICE calls (alpha (alpha x)) on line 2, and the Lisp
+;;; analyzer records the two forms' signatures: the outer takes a call, `1:c',
+;;; and the inner a variable, `1:y'. So `alpha' has two sites of one each.
+
+(test sites-is-a-registered-read-operation
+  (let ((operation (find-operation :sites)))
+    (is-true operation)
+    (when operation (is (eq :read (operation-tier operation)))))
+  (is (equal '((:repository t) (:term t) (:limit nil))
+             (operation-arg-shape (find-operation :sites)))))
+
+(test sites-answers-the-groups-and-the-entity-it-resolved-as-json-that-parses
+  (with-operations-fixture (repository)
+    (let* ((answer (call-operation :sites '(:read)
+                                   :repository (repository-name repository)
+                                   :term "alpha"))
+           (groups (getf answer :groups))
+           (json (loom-serve:encode-result answer))
+           (parsed (json:decode-json-from-string json)))
+      (is (equal "alpha" (getf (getf answer :entity) :name)))
+      (is (equal '("1:c" "1:y") (mapcar (lambda (g) (getf g :signature)) groups))
+          "~s" groups)
+      (is (equal '("src/code.lisp" 2 "alpha-twice")
+                 (first (getf (first groups) :sites))))
+      (is (= 2 (length (cdr (assoc :groups parsed)))) "~a" json)
+      (is (equal "1:c" (cdr (assoc :signature (first (cdr (assoc :groups parsed))))))))))
+
+(test sites-of-an-entity-nothing-calls-encodes-an-empty-array-and-not-null
+  (with-operations-fixture (repository)
+    (let ((json (loom-serve:encode-result
+                 (call-operation :sites '(:read)
+                                 :repository (repository-name repository)
+                                 :term "alpha-twice"))))
+      (is (search "\"groups\":[]" json) "~a" json)
+      (finishes (json:decode-json-from-string json)))))
+
+(test sites-limit-bounds-the-rows-a-group-shows
+  (with-operations-fixture (repository)
+    (let* ((answer (call-operation :sites '(:read)
+                                   :repository (repository-name repository)
+                                   :term "alpha" :limit "0"))
+           (group (first (getf answer :groups))))
+      (is (null (getf group :sites)))
+      (is (= 1 (getf group :more)))
+      (is (search "\"sites\":[]" (loom-serve:encode-result answer))))
+    (signals malformed-request
+      (call-operation :sites '(:read)
+                      :repository (repository-name repository)
+                      :term "alpha" :limit "many"))))
+
+(test sites-names-its-repository-and-refuses-an-unknown-entity
+  (with-operations-fixture (repository)
+    (signals malformed-request (call-operation :sites '(:read) :term "alpha"))
+    (signals unknown-entity
+      (call-operation :sites '(:read)
+                      :repository (repository-name repository)
+                      :term "zarquon"))))
+
+(test describe-over-the-operation-carries-the-distribution-as-json
+  (with-operations-fixture (repository)
+    (let* ((detail (call-operation :describe '(:read)
+                                   :repository (repository-name repository)
+                                   :term "alpha"))
+           (json (loom-serve:encode-result detail))
+           (shapes (cdr (assoc :call-shapes (json:decode-json-from-string json)))))
+      (is (eql 2 (cdr (assoc :sites shapes))) "~a" json)
+      (is (equal '(("1:c" 1) ("1:y" 1))
+                 (cdr (assoc :signatures shapes)))
+          "~a" json))))

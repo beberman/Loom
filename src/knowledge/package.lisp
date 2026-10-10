@@ -45,6 +45,10 @@
    ;; BUG-0032: picking one entity for a name, which `find' does not do.
    #:best-name-match
    #:describe-entity
+   ;; DES-0055 D12, PLAN-0060 step 7: how the calls reaching an entity are
+   ;; written, and the sites behind each signature.
+   #:call-shape-distribution
+   #:shape-sites
    #:federated-summaries
    #:impact-report
 

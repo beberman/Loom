@@ -213,3 +213,60 @@ transaction.")
     (signals transaction-error
       (apply-transaction g (list (assert-entity a) (retract "no-such-id"))))
     (is (null (get-entity g (id a))) "nothing applied")))
+
+;;; ------------------------------------------------------------------
+;;; An edge's property table is built by a reader, not by being stored
+;;; (PLAN-0060 step 2 follow-up)
+;;; ------------------------------------------------------------------
+;;;
+;;; ADD-RELATIONSHIP and PLAN-OP asked every edge whether it was federated, and
+;;; that reads the edge's table, so every edge had one built: 95972 tables on
+;;; front-end, 17.4 MB of them for :VIA alone. They ask only when the TO end is
+;;; missing now.
+
+(test storing-an-edge-does-not-build-its-property-table
+  (let* ((g (make-graph))
+         (a (tx-node "a" "src/one.lisp"))
+         (b (tx-node "b" "src/one.lisp"))
+         (edge (make-instance 'relationship :rel-type :graph-test-edge
+                                            :from-id (id a) :to-id (id b)
+                                            :origin-file "src/one.lisp"
+                                            :property-plist '(:via ("b")))))
+    (apply-transaction g (list (assert-entity a) (assert-entity b)
+                               (assert-relationship edge)))
+    (is (not (null (get-relationship g (id edge)))) "control: the edge landed")
+    (is (not (slot-boundp (get-relationship g (id edge)) 'loom-ontology::properties))
+        "the stored edge still holds its plist")
+    (is (equal '("b") (getp (get-relationship g (id edge)) :via)))))
+
+(test a-federated-edge-to-an-entity-this-graph-lacks-still-lands
+  ;; The check moved from before the TO test to inside it. This is the case
+  ;; it exists for (DES-0025), through the transaction and through
+  ;; ADD-RELATIONSHIP, which repeats it.
+  (let* ((g (make-graph))
+         (a (tx-node "a" "src/one.lisp"))
+         (far (make-instance 'relationship
+                             :rel-type :graph-test-edge
+                             :from-id (id a) :to-id "node:elsewhere:far"
+                             :origin-file "src/one.lisp"
+                             :property-plist '(:federated t :foreign-repository "other")))
+         (near (make-instance 'relationship
+                              :rel-type :graph-test-edge
+                              :from-id (id a) :to-id "node:elsewhere:near"
+                              :origin-file "src/one.lisp"
+                              :property-plist '(:federated t :foreign-repository "other"))))
+    (apply-transaction g (list (assert-entity a) (assert-relationship far)))
+    (is (not (null (get-relationship g (id far)))) "through the transaction")
+    (add-relationship g near)
+    (is (not (null (get-relationship g (id near)))) "through ADD-RELATIONSHIP")))
+
+(test an-unfederated-edge-to-an-entity-this-graph-lacks-is-still-refused
+  (let* ((g (make-graph))
+         (a (tx-node "a" "src/one.lisp"))
+         (ghost (make-instance 'relationship
+                               :rel-type :graph-test-edge
+                               :from-id (id a) :to-id "node:elsewhere:ghost"
+                               :origin-file "src/one.lisp"
+                               :property-plist '(:via ("ghost")))))
+    (apply-transaction g (list (assert-entity a)))
+    (signals graph-error (add-relationship g ghost))))

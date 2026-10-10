@@ -198,3 +198,22 @@
     (is (= 2 (length (recent-log 2))))
     (is (= 3 (length (recent-log 99)))
         "recent-log ran off the end rather than stopping at what it has")))
+
+
+;;;; ==================================================================
+;;;; distribution-name-key (DES-0055 D6, PLAN-0059 step 4)
+;;;; ==================================================================
+
+(test distribution-names-that-pip-treats-as-one-share-a-key
+  ;; PEP 503: lower case, each run of `-', `_' and `.' one `-'. The three
+  ;; spellings below are one distribution to pip.
+  (is (string= "google-auth" (distribution-name-key "Google_Auth")))
+  (is (string= "google-auth" (distribution-name-key "google.auth")))
+  (is (string= "google-auth" (distribution-name-key "google--auth")))
+  (is (string= "google-auth" (distribution-name-key "google-_.auth"))))
+
+(test an-import-name-and-a-distribution-name-do-not-share-a-key
+  ;; DES-0055 D6: no spelling join. These two differ by more than separators
+  ;; and case, so the key must keep them apart.
+  (is (string/= (distribution-name-key "googleapiclient")
+                (distribution-name-key "google-api-python-client"))))

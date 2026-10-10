@@ -78,9 +78,14 @@ the repository -- which under SS2.1 means it is not knowledge, it is cache.")
   ((rel-type :initarg :rel-type :reader rel-type)            ; keyword, e.g. :calls
    (from-id  :initarg :from-id :reader from-id)
    (to-id    :initarg :to-id  :reader to-id)
-   (properties :initarg :properties
-               :initform (make-hash-table :test #'equal)
-               :reader properties)))
+   ;; Unbound until something reads it, unless the caller passed a table. The
+   ;; first read reaches SLOT-UNBOUND below, which builds the table from
+   ;; PROPERTY-PLIST. A reader, not a method on PROPERTIES: the method would
+   ;; give PROPERTIES a :METHOD entity, and calls to it would resolve as
+   ;; inferred dispatch edges where they now reach one interface (CALL-TARGETS;
+   ;; the census moved from 40 such names to 38 and 2 dispatched).
+   (properties :initarg :properties :reader properties)
+   (property-plist :initarg :property-plist :initform nil)))
 
 ;;; Everything concrete -- workspace, snapshot, file, function, and the rest of
 ;;; the taxonomy -- is declared with DEFENTITY in code-ontology.lisp.  This
@@ -414,9 +419,10 @@ calls back into Loom -- which is what makes it safe to take while the graph
 lock is held, as MAKE-INSTANCE of a key-less entity inside WITH-GRAPH-LOCK
 does.
 
-Not exported, and not wrapped in a WITH- macro: it has one user six lines
-below, and a caller outside loom-ontology holding it across work of its own
-would be a deadlock no rule check could catch.")
+Not exported, and not wrapped in a WITH- macro: it has two users, FRESH-ID six
+lines below and the SLOT-UNBOUND method on a relationship's PROPERTIES, and a
+caller outside loom-ontology holding it across work of its own would be a
+deadlock no rule check could catch.")
 
 (defun fresh-id ()
   "A random id, for facts that have no natural key to derive one from."
@@ -435,6 +441,29 @@ a bug waiting to happen for anything inside it."
     (loop for (key value) on plist by #'cddr
           do (setf (gethash key table) value))
     table))
+
+(defmethod slot-unbound (class (r relationship) (name (eql 'properties)))
+  "R's property table, built from its PROPERTY-PLIST on the first read.
+
+Two threads reading an edge for the first time would each build a table and the
+second SETF would discard the first's, losing any write made to the first with
+no error, so the build is under *FRESH-ID-LOCK*. A lock of its own would have
+been a DEFVAR whose initform calls MAKE-LOCK, and DES-0014's census mints a
+:CALL-SITE for each such initform against a ceiling of 512. The lock is a leaf
+and PROPERTIES-TABLE takes none, so sharing it cannot deadlock.
+
+A table with one entry costs 484 bytes in SBCL 2.2.9 and an empty one 160, so
+the 54067 :CALLS edges of front-end carrying :VIA cost 17.4 MB as tables
+(PLAN-0060 step 2 follow-up). Holding the plist until something reads the table
+costs 32 bytes an edge, and most edges are never read. The value is stored, so
+the table is the same on every later read and a write through it persists."
+  (declare (ignore class))
+  (bt:with-lock-held (*fresh-id-lock*)
+    (if (slot-boundp r 'properties)
+        (slot-value r 'properties)
+        (prog1 (setf (slot-value r 'properties)
+                     (properties-table (slot-value r 'property-plist)))
+          (setf (slot-value r 'property-plist) nil)))))
 
 ;;;; ==================================================================
 ;;;; Instantiation -- defaults and ids come from the registry
