@@ -1522,3 +1522,70 @@ body: |
   Loom itself, three alternating pairs: heap-bytes medians 95378992 (base) and
   95400032 (new), +21 KB; seconds medians 2.018 and 1.983; shape-occurrences
   21143 and 21272 (the functions of extract.js).
+
+  STEP 6, THE GATE. 2026-10-10, no source change. Step 5 was committed as
+  426bbee after this reading.
+
+  Reading. The gate compares front-end's heap and index time with the
+  re-baseline the user chose on 2026-10-09 (heap 156749312 bytes, budget
+  180261709; time 8.0855 s, budget 8.894 s), not with a scratch worktree of
+  step 1's commit as the plan's step 6 first says. The six alternating pairs
+  step 5 recorded, base c296598 against the step 5 tree, supply the
+  attribution. They ran with the resident loom-serve at 91 percent of one core
+  and a load average of 2.3 to 3.3, the same load on both sides of each pair.
+  Nothing was re-measured for this step.
+
+  Result: pass on both figures.
+    heap   168851504 bytes, median of six. +7.72 percent over 156749312, limit
+           +15 percent. 11410205 bytes under the budget. Against the pair's
+           own base (c296598) +9455656 bytes, +5.93 percent.
+    time   8.5945 s, median of six. +6.3 percent over 8.0855 s, limit +10
+           percent, 0.30 s under 8.894 s. Against the pair's own base +0.4335
+           s, +5.3 percent.
+
+  Margin. The heap runs span 168747792 to 168890288, 0.08 percent, so the heap
+  figure is stable. The time runs span 8.561 to 8.883 s. The slowest new run is
+  0.011 s under the 8.894 s budget. The base runs alone span 8.031 to 8.802 s,
+  9.4 percent. A single run can land over the budget; the median is 0.30 s
+  under it. The cheaper wire form step 5 noted ([name, signature, line] in
+  place of an object, about 32 of 57 bytes a record) was not needed and was not
+  built.
+
+  Share of the heap growth over the re-baseline, front-end, from each step's
+  own pairs:
+    step 2  :VIA                          2628296 bytes  (1.68 percent of 156749312)
+    step 3  NIL :CALL-SHAPES key             55376 bytes  (0.04 percent)
+    step 4  Python, front-end has none       50240 bytes  (0.03 percent)
+    step 5  JavaScript shapes              9455656 bytes  (6.03 percent)
+  These sum to 12189568 bytes. The measured total is 12102192 (168851504 less
+  156749312). The 87376-byte difference is run-to-run movement between the
+  separate pairs, 0.06 percent of the baseline. Steps 3 and 4 add shapes only
+  to Lisp and Python entities, so on front-end their cost is the empty key.
+  Step 3 costs +2.32 MB on Loom and step 4 +757 KB on lfia, where they apply.
+
+  Share of the time. No step's time delta rose above the scatter on its own
+  pairs: step 2 10.37 s before and 10.28 s after, step 3 9.850 s and 9.808 s,
+  step 4 16.05 s and 15.69 s, step 5 8.161 s and 8.5945 s (+5.3 percent against
+  a base spread of 9.4). Only step 5 moved time by more than the pair noise,
+  and its median delta is inside the base's own range. The +6.3 percent over
+  the baseline is therefore step 5's, with :VIA and the empty key contributing
+  nothing separable.
+
+  Not gated, recorded. Loom, step 5 pairs: heap +21 KB, seconds 2.018 and
+  1.983. Loom, step 3: +2.32 MB, +2.5 percent heap, +4.6 percent time within a
+  scatter of about 10 percent. lfia, step 4: +756672 bytes, +1.05 percent, time
+  inside the scatter. game-server, step 3: +1.1 MB, +1.5 percent.
+
+  Departure. The plan builds a worktree at step 1's commit and alternates six
+  runs against step 5. The re-baseline replaced step 1's commit as the base,
+  because step 1's commit predates the lazy property table that removed 13.8
+  MB from every tree. The gate figures above are the medians against the
+  re-baseline; the alternating pairs against c296598 are the attribution. The
+  time baseline of 8.0855 s was measured on a quieter machine than the one the
+  pairs ran on, and the base side of the step 5 pairs ran 0.9 percent above it
+  (8.161 s).
+
+  Exit. The pass branch is taken and step 5 is committed (426bbee). The suite
+  passed 12 of 12, `check` printed 0 violations with 8 unresolved and 7
+  ambiguous, the census printed 510 minted and 41 ambiguous, and load-test
+  loom-serve printed T, on the step 5 tree before the commit.
