@@ -12,11 +12,10 @@
 (defpackage #:loom-workspace
   (:use #:cl #:loom-utils #:loom-ontology #:loom-graph #:loom-analyzer #:loom-knowledge)
 
-  ;; From the standalone library. PROPER-LIST-P and ALISTP replace two
-  ;; predicates context-log.lisp defined for itself -- ALISTP with
-  ;; :KEY-TEST #'KEYWORDP is ALIST-OBJECT-P clause for clause -- and READ-FILE
-  ;; and STRING-LINES replace loom-analyzer's SLURP-FILE and SPLIT-LINES.
-  (:import-from #:utils #:read-file #:string-lines #:proper-list-p #:alistp)
+  ;; From the standalone library. READ-FILE and STRING-LINES replace
+  ;; loom-analyzer's SLURP-FILE and SPLIT-LINES. PROPER-LIST-P and ALISTP are
+  ;; defined in context-log.lisp since REQ-0079 R1 and are not imported.
+  (:import-from #:utils #:read-file #:string-lines)
 
   ;; DES-0051 D5. The stamps moved down to loom-docstore, where the file
   ;; store's versions are stamps too. The code tier uses them from there.

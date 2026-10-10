@@ -65,16 +65,58 @@ consumer that never calls it gets the default of writing nothing."
 (defun context-record-path (id &optional (directory *context-log-directory*))
   (merge-pathnames (format nil "~a.json" id) directory))
 
-;;; PROPER-LIST-P and ALIST-OBJECT-P are the library's now: UTILS:PROPER-LIST-P
-;;; and (UTILS:ALISTP value :KEY-TEST #'KEYWORDP). The alist rule they encoded
-;;; is unchanged and is the reason the encoder below needs no guess -- one shape
-;;; for an object, one for an array, an entry being a cons whose cdr is the
-;;; value. That rule came from game-server's serialize.lisp, which had an ALISTP
-;;; branch and no plist branch at all, and the library is where it lives now.
+;;; PROPER-LIST-P and ALISTP. They were the standalone utils library's until
+;;; REQ-0079 R1 removed that dependency, and are defined here with the library's
+;;; bodies and docstrings. Their only caller in Loom is the encoder below, so
+;;; they stay in this file; loom-serve keeps a private PROPER-LIST-P of its own
+;;; rather than reach up or down for this one (CLAUDE.md, Layering).
 ;;;
-;;; The library's PROPER-LIST-P is also the stronger of the two: it records the
-;;; tails it has visited, so a circular list returns NIL where the LAST-based
-;;; version here would not have returned at all.
+;;; ALISTP with :KEY-TEST #'KEYWORDP is the alist rule this encoder needs and is
+;;; the reason it needs no guess -- one shape for an object, one for an array,
+;;; an entry being a cons whose cdr is the value. That rule came from
+;;; game-server's serialize.lisp, which had an ALISTP branch and no plist branch
+;;; at all.
+;;;
+;;; PROPER-LIST-P records the tails it has visited, so a circular list returns
+;;; NIL where a LAST-based version would not have returned at all.
+
+(defun proper-list-p (object)
+  "True when OBJECT is a list ending in NIL. False for an atom, for a dotted
+pair, and for a circular list -- the traversal records where it has been, so a
+circular list returns NIL instead of not returning."
+  ;; Quadratic in the length of the list, which is the price of answering at
+  ;; all on a circular one. Every caller here is asking about a record or a
+  ;; hand-written alist, where the lists are short.
+  (do ((tail object (cdr tail))
+       (seen '() (cons tail seen)))
+      ((or (not (consp tail)) (member tail seen :test #'eq))
+       (null tail))))
+
+(defun alistp (object &key (key-test #'symbolp))
+  "True when OBJECT is an association list: a non-empty proper list, every
+element a cons, every car satisfying KEY-TEST.
+
+Four edge cases, because the encoder below decides on this predicate what is
+an object:
+
+  the empty list      NIL. An empty alist and an empty sequence are the same
+                      object, and ENCODE-RECORD-VALUE writes null for it.
+  a string car        NIL by default, since KEY-TEST is SYMBOLP. Pass #'STRINGP
+                      to accept one.
+  a plain symbol car  T. Keywords are symbols; requiring a keyword would reject
+                      every alist built with a quoted symbol key.
+  an improper list    NIL, via PROPER-LIST-P, and never an error. The version
+                      that reaches for EVERY without the guard signals on the
+                      one input a predicate most needs to answer about."
+  ;; The clause order is the contract: CONSP rejects NIL, PROPER-LIST-P rejects
+  ;; the improper list, and only then does EVERY walk it. Reordering these
+  ;; turns the fourth case above from an answer into a TYPE-ERROR.
+  (and (consp object)
+       (proper-list-p object)
+       (every (lambda (entry)
+                (and (consp entry) (funcall key-test (car entry))))
+              object)
+       t))
 
 (defun encode-record-value (value stream)
   "Write VALUE to STREAM as JSON, recursively.
@@ -138,15 +180,15 @@ has to interpret. Decoding it to NIL destroyed exactly the distinction it was
 introduced to preserve, silently, on 47 of 88 files.
 
 Keys come back as strings from ST-JSON and are interned through
-UTILS:*JSON-KEY-TO-LISP*, the decoding counterpart of the *JSON-KEY-NAME* the
-writer binds -- so `tokensUsed' reads back as :TOKENS-USED and re-encodes as
-`tokensUsed'. Set as a pair or neither direction round-trips."
+JSON:CAMEL-CASE-TO-LISP, the counterpart of the JSON:LISP-TO-CAMEL-CASE that
+ENCODE-RECORD-VALUE writes with -- so `tokensUsed' reads back as :TOKENS-USED
+and re-encodes as `tokensUsed'. Change one direction and the other with it, or
+neither round-trips."
   (typecase value
     (st-json:jso
      (let ((pairs '()))
        (st-json:mapjso (lambda (key sub)
-                         (push (cons (intern (funcall utils:*json-key-to-lisp* key)
-                                             :keyword)
+                         (push (cons (intern (json:camel-case-to-lisp key) :keyword)
                                      (strict-value-to-record sub))
                                pairs))
                        value)
@@ -167,20 +209,26 @@ answers NIL to both `false' and `null' and so cannot round-trip a record
 is what every caller here already reads."
   (when (probe-file path)
     (with-open-file (in path :direction :input :external-format :utf-8)
-      ;; The binding wraps the *conversion*, not the decode. A strict decode
-      ;; keeps keys as strings and never consults the policy; it is
-      ;; STRICT-VALUE-TO-RECORD that interns them, so a LET around
-      ;; UTILS:JSON-DECODE alone has no effect and the default policy applies.
-      ;; Scoped that way first, and the symptom was `latencySeconds' reading
-      ;; back and re-encoding as `latencyseconds' -- a key-spelling regression
-      ;; that no Lisp test sees, which is what PLAN-0036 S5 warned this file
-      ;; was exposed to.
+      ;; The key policy is a direct call in STRICT-VALUE-TO-RECORD, which is
+      ;; where a strict decode's string keys are interned: ST-JSON keeps keys
+      ;; as strings and never consults a policy, so a binding around the decode
+      ;; alone would have no effect. It was a special variable of the utils
+      ;; library until REQ-0079 R1, and scoping it around the decode instead of
+      ;; the conversion was the bug that read `latencySeconds' back and
+      ;; re-encoded it as `latencyseconds' -- a key-spelling regression that no
+      ;; Lisp test saw, which PLAN-0036 S5 warned this file was exposed to.
       ;;
       ;; CAMEL-CASE-TO-LISP because the writer uses LISP-TO-CAMEL-CASE:
       ;; :LATENCY-SECONDS writes `latencySeconds' and must read back as
-      ;; :LATENCY-SECONDS. The two are policy and belong set as a pair.
-      (let ((utils:*json-key-to-lisp* #'json:camel-case-to-lisp))
-        (strict-value-to-record (utils:json-decode in :strict t))))))
+      ;; :LATENCY-SECONDS.
+      ;;
+      ;; DOUBLE-FLOAT is bound because ST-JSON builds a float through the Lisp
+      ;; reader and so inherits *READ-DEFAULT-FLOAT-FORMAT*, which is
+      ;; SINGLE-FLOAT unless the caller says otherwise: 0.123456789012 reads
+      ;; back as 0.12345679 and nothing signals. The utils decode bound this
+      ;; for every caller (its BUG-0001); a direct ST-JSON:READ-JSON does not.
+      (let ((*read-default-float-format* 'double-float))
+        (strict-value-to-record (st-json:read-json in))))))
 
 (defun git-fingerprint (root)
   "ROOT's branch, commit and diff hash, as a plist, with the reason any of them

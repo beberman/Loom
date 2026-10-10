@@ -202,6 +202,48 @@ the parent's name down would make a NIL element of :impacted encode as []."
    (loop for (key value) on plist by #'cddr
          collect (cons (json-key-name key) (json-value value key)))))
 
+;;; The three list-shape predicates JSON-VALUE asks. They were the standalone
+;;; utils library's until REQ-0079 R1 removed that dependency; JSON-VALUE is
+;;; the only caller in this system and the question each asks has nothing to do
+;;; with the rest of the service, so they stay private to this file. Bodies and
+;;; docstrings are the library's, unchanged. The workspace holds its own copy of
+;;; PROPER-LIST-P (context-log.lisp): loom-workspace is below this system, and
+;;; exporting one name from it for two callers would make it a shared utility,
+;;; which loom-utils is for and this is not (CLAUDE.md, Layering).
+
+(defun proper-list-p (object)
+  "True when OBJECT is a list ending in NIL. False for an atom, for a dotted
+pair, and for a circular list -- the traversal records where it has been, so a
+circular list returns NIL instead of not returning."
+  ;; Quadratic in the length of the list, which is the price of answering at
+  ;; all on a circular one. The lists asked about here are decoded answers and
+  ;; short.
+  (do ((tail object (cdr tail))
+       (seen '() (cons tail seen)))
+      ((or (not (consp tail)) (member tail seen :test #'eq))
+       (null tail))))
+
+(defun improper-list-p (object)
+  "True when OBJECT is a cons whose final cdr is not NIL: a dotted pair, or a
+list ending in one.
+
+The CONSP guard is the whole predicate for every value that is not a list.
+Without it every non-NIL atom -- a number, a string, a vector -- reports as
+improper, and the JSON encoder would refuse to encode all of them."
+  (and (consp object)
+       (loop for tail = object then (cdr tail)
+             while (consp tail)
+             finally (return (not (null tail))))))
+
+(defun plistp (object &key (key-test #'symbolp))
+  "True when OBJECT is a property list: a proper list of even length whose
+even-indexed elements all satisfy KEY-TEST. The empty list is a plist."
+  (and (proper-list-p object)
+       (evenp (length object))
+       (loop for rest on object by #'cddr
+             always (funcall key-test (car rest)))
+       t))
+
 (defun json-value (x &optional key)
   "X as something ENCODE-RESULT can write. KEY is the plist key X arrived under."
   (cond ((keywordp x) (string-downcase (symbol-name x)))

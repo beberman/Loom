@@ -16,10 +16,6 @@
 (defpackage #:loom-serve
   (:use #:cl #:loom-utils #:loom-ontology #:loom-graph #:loom-analyzer #:loom-workspace
         #:loom-knowledge)
-    ;; IMPROPER-LIST-P from the library rather than defined here; JSON-VALUE is
-  ;; its only caller and the question it asks -- is this a dotted pair -- has
-  ;; nothing to do with this service.
-  (:import-from #:utils #:improper-list-p #:plistp)
 
 (:export
    ;; the operation registry

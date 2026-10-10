@@ -1683,3 +1683,102 @@ body: |
 
   Departures from the plan, by step, with commit hashes and the measured
   figures, are recorded here as the steps land.
+
+  Step 1, 2026-10-10, under /usr/bin/sbcl 2.2.9.debian.
+
+  Built. src/serve/json.lisp holds IMPROPER-LIST-P, PLISTP and a private
+  PROPER-LIST-P, copied from ~/lisp/utils/src/lists.lisp, above JSON-VALUE.
+  PLISTP's docstring is cut to its first paragraph. Nothing is exported.
+  src/serve/package.lisp lost its `(:import-from #:utils ...)` and
+  loom-serve.asd lost #:utils and its comment. src/workspace/context-log.lisp
+  holds PROPER-LIST-P and ALISTP with the library's bodies, in place of the
+  comment that said they were the library's. READ-JSON-RECORD calls
+  (st-json:read-json in) under a LET of *READ-DEFAULT-FLOAT-FORMAT* to
+  DOUBLE-FLOAT. STRICT-VALUE-TO-RECORD calls (json:camel-case-to-lisp key).
+  The LET of utils:*json-key-to-lisp* is gone and the comment says why.
+  src/workspace/package.lisp imports #:read-file and #:string-lines only.
+  loom-workspace.asd is unchanged, as the plan says.
+
+  Departures. (1) The plan said to copy PLISTP "with their docstrings". Its
+  second and third paragraphs describe the library's other callers
+  and are not true of this tree, so only the first paragraph is copied.
+  (2) The census moved by one, below.
+
+  Before the change, run under ~/lisp/utils with the old UTILS:JSON-DECODE
+  :STRICT T, then the same text through st-json with and without the
+  binding:
+
+      text                      old decode             st-json, bound   st-json, unbound
+      0.1                       0.1d0                  0.1d0            0.1 (single)
+      1e10                      1.0d10                 1.0d10           1.0e10 (single)
+      12345678901234567890      same integer           same integer     same integer
+      0.123456789012            0.123456789012d0       0.123456789012d0 0.12345679 (single)
+      1.5e300                   1.5d300                -                - (parse error
+                                                                          unbound, in the test)
+      0.1e-5                    1.0d-6                 -                -
+      -2.5                      -2.5d0                 -                -
+      [0.1,1e10,3]              (0.1d0 1.0d10 3)       -                -
+
+  A whole record, {"latencySeconds":0.123456789012,"flag":false,"gone":null,
+  "yes":true,"big":12345678901234567890,"ten":1e10,"tenth":0.1,"items":
+  [0.1,{"tokensUsed":3}]}, through READ-JSON-RECORD and ENCODE-RECORD-VALUE,
+  printed identically before and after the change:
+  ((:LATENCY-SECONDS . 0.123456789012d0) (:FLAG . :FALSE) (:GONE) (:YES . T)
+  (:BIG . 12345678901234567890) (:TEN . 1.0d10) (:TENTH . 0.1d0) (:ITEMS 0.1d0
+  ((:TOKENS-USED . 3)))), re-encoded as the same text with "ten":10000000000.0.
+
+  New tests, seven. None calls ~/lisp/utils. All twelve test systems still need
+  it to load, because loom-analyzer, loom-docstore and loom-workspace still
+  declare #:utils until step 2; loom-serve alone no longer does.
+  src/serve/test/json.lisp:
+    improper-list-p-is-false-for-every-atom-and-proper-list-and-true-for-a-dotted-tail
+    plistp-answers-for-the-empty-list-and-refuses-an-odd-length-or-a-dotted-tail
+    json-value-renders-a-dotted-pair-as-its-printed-form-before-any-list-clause
+  src/workspace/test/context-log.lisp:
+    proper-list-p-answers-nil-for-a-circular-list-rather-than-not-returning
+    alistp-answers-its-four-documented-edge-cases
+    a-record-survives-write-and-read-with-its-floats-its-markers-and-its-keys
+    a-number-written-with-an-exponent-reads-back-as-a-double-float
+
+  Mutations, each alone in the real tree, the file restored from a copy and
+  touched, one system's suite run per mutation:
+    1. IMPROPER-LIST-P with (consp object) replaced by T. loom-serve 330 pass,
+       5 fail: the improper-list-p atom test four times (5, "s", #(1), :K) and
+       the existing the-improper-list-guard-does-not-catch-an-atom-or-a-vector.
+    2. JSON-VALUE with the improper-list clause moved below the
+       *ARRAY-VALUED-KEYS* clause (RISKS 1). 331 pass, 1 fail: only
+       json-value-renders-a-dotted-pair-...-before-any-list-clause, with a
+       TYPE-ERROR on 2. No existing test caught it.
+    3. READ-JSON-RECORD without the DOUBLE-FLOAT binding (RISKS 2).
+       loom-workspace 1232 pass, 2 fail: the round-trip test (0.12345679
+       against 0.123456789012d0) and the exponent test (ST-JSON signals
+       JSON-PARSE-ERROR on 1.5e300 as a single-float).
+    4. (json:camel-case-to-lisp key) replaced by (string-upcase key).
+       1236 pass, 1 fail: the round-trip test (:LATENCYSECONDS against
+       :LATENCY-SECONDS). The existing a-record-holds-what-a-judgement-needs
+       passed under this mutation.
+    5. ALISTP without its PROPER-LIST-P clause (not on the plan's list).
+       1234 pass, 1 fail: alistp-answers-its-four-documented-edge-cases, with a
+       TYPE-ERROR on 2.
+    6. serve PLISTP with (proper-list-p object) replaced by (listp object) (not
+       on the plan's list). 332 pass, 1 fail: the plistp test, TYPE-ERROR on 2.
+  Not mutated: the circular-list case of PROPER-LIST-P, because the mutant
+  does not return.
+
+  Census. tools/test/call-site-census.lisp prints 513 minted and 42 ambiguous
+  against the plan's 512 and 41, under the ceiling of 520. The cause is the
+  new workspace test calling loom-workspace::proper-list-p: the name is now
+  defined in loom-serve and in loom-workspace, the qualified call is not
+  placed by package, and the analyzer falls back to the spelling and records
+  an ambiguous site on each definition. `describe` on either lists
+  proper-list-p@src/workspace/test/context-log.lisp:185 as an ambiguous caller.
+  No call was hidden. If step 2's count is expected to return to 512, this
+  one is the test's, not a source call's.
+
+  Exits. tools/loom-test.sh: 12 of 12, serve 335 (was 315), workspace 1237
+  (was 1219), the others at baseline. One earlier full run printed serve 332
+  pass and 2 fail with the detail lines filtered out; the serve suite alone
+  and two further full runs passed, and the failure did not recur. `check`:
+  0 violations, 2 unenforced, 8 unresolved, 7 ambiguous. load-test loom-serve
+  prints T. `git grep -n '#:utils' -- src/serve` and
+  `git grep -n 'utils:' -- src/workspace/context-log.lisp` print nothing.

@@ -21,12 +21,6 @@
 	       #:loom-analyzer
 	       #:loom-workspace
 	       #:loom-knowledge
-	       ;; The standalone library, for IMPROPER-LIST-P. The encoder in
-	       ;; json.lisp stays: its plist walk, its key vocabulary and
-	       ;; *ARRAY-VALUED-KEYS* are policy this service owns, and the library
-	       ;; encodes alists. The predicate was general, and was three lines
-	       ;; here only because nothing supplied one.
-	       #:utils
 	       #:hunchentoot
 	       #:cl-json
 	       #:bordeaux-threads
