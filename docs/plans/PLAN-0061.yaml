@@ -1765,15 +1765,13 @@ body: |
   Not mutated: the circular-list case of PROPER-LIST-P, because the mutant
   does not return.
 
-  Census. tools/test/call-site-census.lisp prints 513 minted and 42 ambiguous
-  against the plan's 512 and 41, under the ceiling of 520. The cause is the
-  new workspace test calling loom-workspace::proper-list-p: the name is now
-  defined in loom-serve and in loom-workspace, the qualified call is not
-  placed by package, and the analyzer falls back to the spelling and records
-  an ambiguous site on each definition. `describe` on either lists
-  proper-list-p@src/workspace/test/context-log.lisp:185 as an ambiguous caller.
-  No call was hidden. If step 2's count is expected to return to 512, this
-  one is the test's, not a source call's.
+  Census. The coder's tree printed 513 minted and 42 ambiguous against the
+  plan's 512 and 41. The cause was a name collision: PROPER-LIST-P was
+  defined in loom-serve and in loom-workspace, so the workspace test's
+  qualified call was not placed by package and became an ambiguous site on each
+  definition (DES-0015). Corrected after the report, 2026-10-10: loom-serve's
+  copy is now JSON-PROPER-LIST-P (json.lisp, one caller, PLISTP). The census
+  prints 512 minted and 41 ambiguous again.
 
   Exits. tools/loom-test.sh: 12 of 12, serve 335 (was 315), workspace 1237
   (was 1219), the others at baseline. One earlier full run printed serve 332

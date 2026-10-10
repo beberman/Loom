@@ -207,11 +207,14 @@ the parent's name down would make a NIL element of :impacted encode as []."
 ;;; the only caller in this system and the question each asks has nothing to do
 ;;; with the rest of the service, so they stay private to this file. Bodies and
 ;;; docstrings are the library's, unchanged. The workspace holds its own copy of
-;;; PROPER-LIST-P (context-log.lisp): loom-workspace is below this system, and
-;;; exporting one name from it for two callers would make it a shared utility,
-;;; which loom-utils is for and this is not (CLAUDE.md, Layering).
+;;; the proper-list test (context-log.lisp): loom-workspace is below this system,
+;;; and exporting one name from it for two callers would make it a shared
+;;; utility, which loom-utils is for and this is not (CLAUDE.md, Layering). This
+;;; copy is JSON-PROPER-LIST-P because two functions of one spelling in two
+;;; packages make every qualified call to either an ambiguous call site
+;;; (DES-0015): the census read 513 and 42 with both named PROPER-LIST-P.
 
-(defun proper-list-p (object)
+(defun json-proper-list-p (object)
   "True when OBJECT is a list ending in NIL. False for an atom, for a dotted
 pair, and for a circular list -- the traversal records where it has been, so a
 circular list returns NIL instead of not returning."
@@ -238,7 +241,7 @@ improper, and the JSON encoder would refuse to encode all of them."
 (defun plistp (object &key (key-test #'symbolp))
   "True when OBJECT is a property list: a proper list of even length whose
 even-indexed elements all satisfy KEY-TEST. The empty list is a plist."
-  (and (proper-list-p object)
+  (and (json-proper-list-p object)
        (evenp (length object))
        (loop for rest on object by #'cddr
              always (funcall key-test (car rest)))
