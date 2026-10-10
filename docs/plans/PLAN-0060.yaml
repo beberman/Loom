@@ -1763,3 +1763,10 @@ body: |
   153 groups. The rarest come first, so the 47-site `2:y,k:file` group is last.
   A definer-call site (`getp@src/process/console.lisp:1746`) is named by its
   label, as the treatment above says.
+
+  STEP 7 CEILING, decided by the user on 2026-10-10. Step 7 reads 512 minted
+  against a ceiling of 512, 0 sites of headroom. The user chose to raise
+  *call-site-ceiling* to 520 rather than hide the PRINT-SITES and SITES-ANSWER
+  calls from the index. src/workspace/test/workspace.lisp carries the new
+  RE-MEASURED entry with the census composition. 512 replaces 510 as the figure
+  steps 8 and 9 compare against. The suite passed 12 of 12 after the change.

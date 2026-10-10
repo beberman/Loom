@@ -714,7 +714,7 @@ the files whichever way it got there"))))
 ;;; The :CALL-SITE ceiling (DES-0014 R2)
 ;;; ------------------------------------------------------------------
 
-(defparameter *call-site-ceiling* 512
+(defparameter *call-site-ceiling* 520
   "The most :CALL-SITE entities this tree may hold before something is wrong.
 
 DES-0014 refused a node per call-name occurrence -- 4867 nodes against 1604
@@ -947,7 +947,30 @@ The composition at 466, against the 2026-09-10 measurement:
 domain-test is new and is PLAN-0050 S8's fixture macro. It swallows its body
 like js-test does, so every call inside one is a site by construction.
 
-418 is 380 plus 10% headroom, the rule the first measurement used.")
+418 is 380 plus 10% headroom, the rule the first measurement used.
+
+RE-MEASURED 2026-10-10 AT 512, CEILING RAISED TO 520. PLAN-0060 step 7 adds the
+`sites' command and the :SITES operation. The census read 510 before the step
+and 512 after it, and the whole difference is one call name in each of the two
+new macro bodies: `sites' calls PRINT-SITES and :SITES calls SITES-ANSWER. Each
+body was cut to that one call after a first version, with the logic written
+inside the bodies, read 526 and failed this test. DESCRIBE's body gained
+CALL-SHAPES-LINE and lost the neighbour loop to PRINT-NEIGHBORS, a net of 0.
+
+Composition from tools/test/call-site-census.lisp at 512:
+
+    define-command    170
+    define-operation  137
+    js-test            91
+    domain-test        33
+    ambiguous occurrences  41
+
+Hiding the two calls from the index, for example with (funcall 'print-sites),
+would have held the count at 510 by recording less than the code does, which
+CON-0001 rules out. 520 is the user's figure and is not 512 plus 10%: the rule
+the earlier entries used would give 563. It leaves 8 sites, enough for the
+next command and its operation, and the census names the cause of any later
+rise.")
 
 (defparameter *python-call-site-ceiling* 128
   "The most :CALL-SITE entities Python files in this tree may hold.
