@@ -211,6 +211,67 @@ function calleeNames(node, className) {
   return null;
 }
 
+// What one argument of a call is, as a letter (DES-0055 D10, PLAN-0060 step 5).
+// Python's ARGUMENT_KIND in tools/py/extract.py and the Lisp analyzer's
+// LISP-ARGUMENT-KIND write the same grammar, so a distribution can compare calls
+// across languages.
+//
+// A kind is never the value. A string, a number and a string key's text are all
+// dropped, because DES-0054 D7 allows the index a name and not a value
+// (DES-0055 U4): `f("SECRET", 4242)' is `2:s,n'. An object literal's keys are
+// the one place source text is kept, and only where the source wrote it as code,
+// an identifier. A key spelled as a string or computed is `?', since its text
+// may be the value being passed around, and a spread is `*'.
+//
+// `undefined' is an Identifier to the parser and a value to the reader, so it is
+// `b' beside null and the booleans. A regex literal is `x': it is neither a
+// string nor a number, and D10 has no letter for it.
+function objectKind(node) {
+  const keys = node.properties.map((property) => {
+    if (property.type !== 'Property') return '*';
+    return !property.computed && property.key.type === 'Identifier' ? property.key.name : '?';
+  });
+  return 'o{' + keys.join(',') + '}';
+}
+
+function argumentKind(node) {
+  switch (node.type) {
+    case 'Literal':
+      if (node.regex) return 'x';
+      if (typeof node.value === 'string') return 's';
+      if (typeof node.value === 'number' || node.bigint) return 'n';
+      return 'b';
+    case 'TemplateLiteral': return 's';
+    case 'Identifier': return node.name === 'undefined' ? 'b' : 'y';
+    case 'MemberExpression':
+    case 'ThisExpression': return 'y';
+    case 'ArrayExpression': return 'q';
+    case 'ObjectExpression': return objectKind(node);
+    case 'ArrowFunctionExpression':
+    case 'FunctionExpression': return 'f';
+    case 'CallExpression':
+    case 'NewExpression': return 'c';
+    case 'SpreadElement': return '*';
+    default: return 'x';
+  }
+}
+
+// `<arguments.length>:<kinds>'. A spread counts as one argument, as a Lisp
+// keyword does: the parser cannot say how many values `...xs' holds either.
+function callSignature(call) {
+  return call.arguments.length + ':' + call.arguments.map(argumentKind).join(',');
+}
+
+// The line a call is on: its callee's property for a member call, so the later
+// calls of a chain written across lines each report the line they are on, and
+// the call's own start for anything else.
+function callLine(call) {
+  const callee = call.callee;
+  return callee.type === 'MemberExpression' && !callee.computed && callee.property
+    ? callee.property.loc.start.line
+    : call.loc.start.line;
+}
+
 // The name of a JSX element: <Thing />, <Thing.Sub />, <div />.
 // Lowercase single-word names are host elements (div, span) and never resolve
 // to a definition, so they are dropped here rather than travelling as call
@@ -491,6 +552,7 @@ function extract(source, ast) {
       startLine: node.loc.start.line,
       endLine: node.loc.end.line,
       calls: [],
+      shapes: [],
       jsx: [],
       literalArgs: [],
     }, extra || {});
@@ -505,6 +567,9 @@ function extract(source, ast) {
   // component that uses it.
   function walkBody(node, owner, className) {
     const calls = owner ? owner.calls : fileCalls;
+    // File-level calls have no :CALLS edge to join a shape to (PLAN-0060
+    // DEFERRED), so none is recorded for them.
+    const shapes = owner ? owner.shapes : null;
     const usages = owner ? owner.jsx : fileJsx;
     const literals = owner ? owner.literalArgs : fileLiteralArgs;
     const stack = [node];
@@ -514,6 +579,9 @@ function extract(source, ast) {
         const callee = calleeNames(current.callee, className);
         if (callee) {
           calls.push(callee.name);
+          if (shapes) {
+            shapes.push({ name: callee.name, signature: callSignature(current), line: callLine(current) });
+          }
           collectPathLiterals(current, callee.property, literals);
         }
       } else if (current.type === 'JSXOpeningElement') {
@@ -730,7 +798,7 @@ function extract(source, ast) {
   // What a call reaches, into a bucket of the shape WALK-BODY writes to, so
   // the two walks cannot drift apart on what counts as a call.
   function reaches(node) {
-    const bucket = { calls: [], jsx: [], literalArgs: [] };
+    const bucket = { calls: [], shapes: [], jsx: [], literalArgs: [] };
     walkBody(node, bucket);
     return bucket;
   }
@@ -742,6 +810,7 @@ function extract(source, ast) {
   // not any case's.
   function setupCalls(body, hooksOnly) {
     const calls = [];
+    const shapes = [];
     const jsx = [];
     for (const statement of body) {
       const form = testForm(statement);
@@ -750,9 +819,10 @@ function extract(source, ast) {
       if (!source) continue;
       const bucket = reaches(source);
       calls.push(...bucket.calls);
+      shapes.push(...bucket.shapes);
       jsx.push(...bucket.jsx);
     }
-    return { calls, jsx };
+    return { calls, shapes, jsx };
   }
 
   // Two passes over BODY, because a `beforeEach' may be written after the
@@ -762,9 +832,12 @@ function extract(source, ast) {
   // cases are then countable and not nameable: a qualified name missing a
   // segment would collide with a sibling suite's.
   function walkTestBody(body, prefix, inherited, hooksOnly, named) {
-    const setup = named ? setupCalls(body, hooksOnly) : { calls: [], jsx: [] };
+    const setup = named ? setupCalls(body, hooksOnly) : { calls: [], shapes: [], jsx: [] };
+    // Shapes are inherited exactly as calls are, so a hook's call is recorded
+    // once per case it runs for, with the hook's own line (PLAN-0060 FINDINGS 5).
     const context = {
       calls: inherited.calls.concat(setup.calls),
+      shapes: inherited.shapes.concat(setup.shapes),
       jsx: inherited.jsx.concat(setup.jsx),
     };
     for (const statement of body) {
@@ -779,17 +852,18 @@ function extract(source, ast) {
                      context, false, titled);
       } else if (form.role === 'case') {
         if (!named || form.title === null) { unnamedTests += 1; continue; }
-        const bucket = form.callback ? reaches(form.callback) : { calls: [], jsx: [] };
+        const bucket = form.callback ? reaches(form.callback) : { calls: [], shapes: [], jsx: [] };
         record('test', prefix ? prefix + ' > ' + form.title : form.title, form.node, {
           suite: prefix || null,
           calls: context.calls.concat(bucket.calls),
+          shapes: context.shapes.concat(bucket.shapes),
           jsx: context.jsx.concat(bucket.jsx),
         });
       }
     }
   }
 
-  walkTestBody(ast.body, '', { calls: [], jsx: [] }, true, true);
+  walkTestBody(ast.body, '', { calls: [], shapes: [], jsx: [] }, true, true);
 
   const reply = { definitions, imports, exports, fileCalls, fileJsx, fileLiteralArgs,
                   unnamedTests };

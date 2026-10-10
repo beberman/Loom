@@ -1348,3 +1348,177 @@ body: |
   1321 checks, python-extract 104 and python-analyzer 154 of them in the
   suites run alone); `check` 0 violations, 8 unresolved, 7 ambiguous, 5 definer
   macros; load-test loom-serve prints (find-package "LOOM-PROCESS") => T.
+
+  STEP 5, JAVASCRIPT. 2026-10-09, Loom at c296598 plus this step's working-tree
+  change, not committed (the plan holds it until step 6). JavaScript only:
+  tools/py and the Lisp analyzer are untouched. `find` showed JS-CALL-SHAPES,
+  argumentKind, objectKind, callSignature and callLine undefined before they
+  were written.
+
+  Changed. tools/js/extract.js has objectKind, argumentKind, callSignature and
+  callLine. walkBody pushes {name, signature, line} onto the owner's `shapes`
+  beside each `calls.push`, and only when it has an owner: file-level calls
+  keep no shape (DEFERRED). JSX usages push none. record() gives each
+  definition `shapes: []`. reaches, setupCalls, walkTestBody and the case
+  record carry `shapes` as they carry `calls`, inherited copies included.
+  js-analyzer.lisp has JS-CALL-SHAPES, which hands (name signature line) to
+  GROUP-CALL-SHAPES, and MAKE-JS-DEFINITION-ENTITY writes :CALL-SHAPES on a
+  function, method or test when non-empty. No .asd, rule, ceiling or other
+  analyzer changed.
+
+  Departures and assumptions.
+    1. The line is the callee property's line for a non-computed member call,
+       and the call's own start line for anything else (callLine). The plan
+       says only "line". The call's start line would give every later call of
+       `one(1)\n.two(2)\n.three(3)` the chain's first line. A test pins both.
+    2. Kinds the plan leaves to "anything else x": a negated number (-1), a
+       conditional, an await, a regex literal, a computed read `a[0]`, an
+       optional chain `a?.b`, a class expression and a JSX element are x.
+       A regex is checked before the string and number tests, since acorn
+       gives it a Literal node.
+    3. An object with no keys is `o{}`. A method or shorthand key is named,
+       since both are Property nodes with an identifier key.
+    4. The tests use the plain TEST with an inline node guard, not JS-TEST, and
+       the census stays at 510. One test the plan does not list pins that a
+       variable takes no :CALL-SHAPES (ONLY-A-CALLABLE-TAKES-CALL-SHAPES).
+    5. Occurrences come out in the order walkBody pops them, which is the order
+       :CALL-NAMES has: a later sibling before an earlier one. GROUP-CALL-SHAPES
+       keeps first-seen order of that walk and sorts only the lines. D11's
+       "source order" holds for lines, not for keys.
+    6. No existing test was edited. RISKS 7's condition did not arise.
+
+  Tests, 7 in src/analyzer/test/js-analyzer.lisp; the suite went from 175 checks
+  to 206. All seven were written to pass on first run after the code, and each
+  is shown failing by a mutation below.
+    A-CALL-RECORDS-THE-SIGNATURE-OF-ITS-ARGUMENTS-AND-ITS-LINE: the plan's
+      fixture gives 9:s,n,b,y,q,o{a,?,*},f,c,* and g() its own entry "0:".
+    EVERY-JAVASCRIPT-ARGUMENT-KIND-HAS-ITS-LETTER: undefined, null and false
+      are b; a template with and without a hole is s; 10n and 1.5 are n; a
+      regex, -1, a conditional and an await are x; this, a.b and a[0] are y; new
+      is c; both function forms are f; {}, {'k': 1} and {m(){}, n} are o{},
+      o{?}, o{m,n}; [] and [...z] are q.
+    A-JSX-USAGE-IS-A-CALL-NAME-AND-HAS-NO-SHAPE: <Thing a="x" /> adds "Thing"
+      to :CALL-NAMES and nothing to :CALL-SHAPES; beside go(1) only go has an
+      entry.
+    ONLY-A-CALLABLE-TAKES-CALL-SHAPES.
+    A-HOOK-CALL-IS-INHERITED-BY-EACH-CASE-WITH-THE-HOOKS-OWN-LINE: beforeEach
+      calling setup(1) on line 3 gives both cases ("setup" ("1:n" 3)), each its
+      own call at its own line, and a case in a sibling suite none.
+    A-NESTED-SUITE-CASE-INHERITS-THE-OUTER-HOOKS-SHAPES-TOO.
+    A-LATER-CALL-OF-A-CHAIN-REPORTS-THE-LINE-IT-IS-ON.
+    NO-LITERAL-REACHES-THE-INDEX-FROM-A-JAVASCRIPT-CALL: f("SENTINEL", 4242,
+      {'SENTINEL': 1, ["SECRET-KEY"]: 2, ok: 3}) in a body is 3:s,n,o{?,?,ok};
+      GRAPH-MENTIONS-P (the helper step 4 used, from lisp-analyzer.lisp) finds
+      none of SENTINEL, 4242, SECRET-KEY, finds `ok`, and finds SENTINEL when
+      it is the function's name.
+
+  Mutations, one at a time in the real tree, each file restored and touched
+  afterwards. Failing tests, by mutation:
+    object-key walk dropped          the first test, the kinds test, the sentinel test
+    reaches drops its shapes         both hook tests (hook and nested)
+    setupCalls drops hook shapes     both hook tests
+    walkTestBody drops inherited     the nested-suite test only
+    case drops the context's shapes  both hook tests
+    spread in an object written ?    the first test
+    undefined written y              the kinds test
+    string key leaks its text        the first test, the kinds test, the sentinel test
+    computed identifier key named    the first test
+    template literal written x       the kinds test
+    string value appended to `s`     the first test, the sentinel test
+    number value appended to `n`     six tests
+    bigint written b                 the kinds test
+    regex check dropped              the kinds test
+    this written x                   the kinds test
+    new written x                    the kinds test
+    function expression written x    the kinds test
+    array written x                  the first test, the kinds test
+    spread argument written x        the first test
+    arity excludes a spread          the first test
+    line is the call's start         the chain test
+    JSX usage pushes a shape         the JSX test
+    record() gives no `shapes`       five tests, 14 checks
+    analyzer writes no :CALL-SHAPES  seven tests, 20 checks
+    analyzer writes it on any kind   ONLY-A-CALLABLE-TAKES-CALL-SHAPES only
+    analyzer keys by the signature   seven tests, 19 checks
+  Every mutation was caught. None passed.
+
+  The count did not move. tools/test/index-dump.lisp from a scratch copy of
+  c296598 (git archive) and from this tree, both over the same files:
+    Loom        32449 lines each. 20 E lines differ, all :FUNCTION (the
+                functions of tools/js/extract.js), and with :CALL-SHAPES cut
+                out of every line of both sides they are equal. R lines
+                changed: 0. S lines changed: 0.
+    front-end   ab34be6, read only. 107418 lines each. 8083 E lines differ,
+                :TEST 4656, :FUNCTION 1886, :METHOD 1086, :CALL-SITE 455; the
+                base holds no JavaScript :CALL-SHAPES, the new tree 8083. With
+                :CALL-SHAPES cut out of both sides they are equal. R 0, S 0.
+  front-end's `git status --short` and `--ignored` were identical before the
+  dumps, after them and after the cost runs (the five entries of step 1).
+  call-site-census: 510 minted, 41 ambiguous. `check` 0 violations, 8
+  unresolved, 7 ambiguous, 5 definer macros. load-test loom-serve prints T.
+  tools/loom-test.sh 12 of 12 under /usr/bin/sbcl.
+
+  Census on front-end (the new dump). Counted from the :CALL-SHAPES of each E
+  line. A line entry is one source line in a signature's list; shape-occurrences
+  in index-cost counts them.
+    caller type   entities   line entries   (key, signature) entries
+    :FUNCTION         1886           9282             7362
+    :METHOD           1086           3455             3080
+    :TEST             4656          58582            41017
+    :CALL-SITE         455            863              516
+    total             8083          72182            51975
+  72182 line entries against DES-0055's estimate of 71522 (+0.9 percent).
+  Inherited hook copies (FINDINGS 5). A :TEST line entry is an inherited copy
+  when its line lies outside the case's own start and end lines, since the
+  extractor walks only the case's callback for its own calls and everything else
+  comes from a hook or a bare setup statement of an enclosing suite. 15438 of
+  the 58582 :TEST line entries are inherited, 26.4 percent, which is 21.4
+  percent of all 72182. 11084 of the 41017 :TEST (key, signature) entries hold
+  inherited lines only, 27.0 percent. Distinct (file, line, key, signature)
+  sites are 55660 across the four types, so 16522 line entries, 22.9 percent,
+  are the same site repeated; the inherited copies are 15438 of them.
+  Largest single :CALL-SHAPES value: 1663 characters printed, on
+  function:src/ui/edit/terrain/Editor/hooks/useLayerEditorDrawing.js:
+  useLayerEditorDrawing (61 line entries); by line entries the largest is
+  useMapEditorState with 115 (1628 characters). The largest on a :TEST is 1122
+  characters. The longest signature is 143 characters, an object argument
+  naming twelve keys: `1:o{position,drawMarker,...,rotateMode}`. Nothing caps
+  an object's key list.
+  The value strings total 1509256 characters, 1178208 of them on :TEST.
+
+  Wire size and extract.js (risk 8). Over the 800 JavaScript files front-end
+  has (git ls-files -co --exclude-standard, 5097422 bytes), fed to extract.js
+  alone in one process, six alternating runs:
+    base c296598   0.89 1.03 1.00 1.03 1.03 1.07 s, median 1.03 s
+    new            1.02 1.09 1.05 0.94 1.11 1.07 s, median 1.06 s
+  The child's cost is +0.03 s, inside the scatter. Its reply is the larger
+  change: 4018468 bytes become 7891432, +3.87 MB, of which the `shapes` records
+  are 4.20 MB of JSON (73149 records, 967 of them on definitions that keep no
+  :CALL-SHAPES). The Lisp side reads that with cl-json inside index time.
+  A record is {name, signature, line}, about 57 bytes of which the three key
+  names and their punctuation are 32; an array [name, signature, line] would
+  leave them out. Not done, because the plan names the object form; it is
+  available if step 6 reads the time as over.
+
+  Cost, index-cost, front-end ab34be6, base (a scratch copy of c296598) against
+  this tree, six alternating runs each, the resident loom-serve running (pid
+  2910721 sampled at 91 percent of one core before the first run) and a load
+  average of 2.3 to 3.3. python3 3.12.3, node v24.18.1.
+    heap-bytes  base 159412592 159268576 159448864 159394752 159383872 159396944
+                new  168890288 168787360 168747792 168851504 168851504 168851504
+                medians 159395848 and 168851504, +9455656 bytes, +5.93 percent
+    seconds     base 8.296 8.102 8.182 8.140 8.802 8.031
+                new   8.595 8.561 8.883 8.581 8.594 8.706
+                medians 8.161 and 8.5945, +0.4335 s, +5.3 percent
+    entities 11400, relationships 95972, calls-edges 54067 in every run;
+    shape-occurrences 0 on base, 72182 on new.
+  That is 131 bytes for each of the 72182 line entries. Against the step 2
+  re-baseline (heap 156749312, budget 180261709; time 8.0855 s, budget 8.894
+  s) the new tree's medians are 168851504 bytes (+7.72 percent, 11410205 bytes
+  under the budget) and 8.5945 s (+6.3 percent, 0.30 s under the budget). The
+  largest single new time was 8.883 s, 0.011 s under 8.894, and the base's own
+  range is 8.031 to 8.802 s (9.4 percent), so the time margin is thinner than
+  the heap margin. I do not decide the gate; step 6 does.
+  Loom itself, three alternating pairs: heap-bytes medians 95378992 (base) and
+  95400032 (new), +21 KB; seconds medians 2.018 and 1.983; shape-occurrences
+  21143 and 21272 (the functions of extract.js).
