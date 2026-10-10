@@ -1,0 +1,1166 @@
+id: PLAN-0061
+title: REQ-0079 and DES-0056 in seventeen steps -- utils removed, tools/ paths derived, the clean-room instrument, the id floor over every ref, doc-ids.py check and renumber, the workflow, the release scan, the history decision, the scrub, the private-trees note, README, INSTALL, CONTRIBUTING, document edits, acceptance in a sandbox, complete
+status: draft
+date: 2026-10-10
+refines: [DES-0056, REQ-0079]
+affects: [next-document-id, docstore-allocate-id, "*document-id-prefixes*",
+          plan-preparation, read-json-record, strict-value-to-record,
+          encode-record-value, json-value, analyze-path, file-form-spans,
+          stamp-changed-p]
+tags: [open-source, release, utils, layering, doc-ids, renumber, ci, scan,
+       readme, install, contributing, licence, req-0079, des-0056, req-0025,
+       con-0001, con-0003, con-0004, rule-0009, rule-0010, rule-0011]
+summary: |
+  REQ-0079 R1 to R8 and its acceptance, with DES-0056 as the design for R7
+  and R8. The order is: R1 first, because nothing else can be tested on a
+  machine without ~/lisp/utils until it lands. Then DES-0056's tooling, which
+  touches no file the scrub touches. Then the R2 scan and the R2/R3 scrub.
+  Then README, INSTALL and CONTRIBUTING. Then acceptance in a sandbox, then
+  `complete`.
+
+  The plan stops for the owner at eight named decisions, D1 to D8. Four of
+  them are not the plan's to make: the licence position on third-party
+  libraries, whether to accept outside contributions, history rewriting, and
+  GitHub settings only the owner can set.
+
+  Out of scope: making the GitHub repository public, publishing the utils
+  repository, a graph-side duplicate-id report (REQ-0025 R7's other half),
+  installing doc-ids.py into trees `init` prepares (DES-0056 R7), and any
+  write to game-server, front-end, lfia-accounting or ~/lisp/utils.
+body: |
+  BASELINE
+
+  Loom at d3f2824 on req-0079-open-source, clean tree, merged with main at
+  df91a7f. Measured 2026-10-10 under /usr/bin/sbcl 2.2.9.debian.
+
+    tools/loom.sh 'status | check'
+      498 files, 5611 entities, 27216 relationships, 304 documents, 1638
+      tests covering 481 units, 0 violations, 2 unenforced (RULE-0004,
+      RULE-0008), 8 unresolved document references, 7 ambiguous, 5 definer
+      macros, 16 prose file references no watched repository holds.
+    tools/loom-test.sh
+      12 of 12 systems ok in 2m23s. Pass counts: utils 43, embed 46,
+      docstore 234, ontology 496, analyzer 1352, graph 857, workspace 1219,
+      knowledge 645, process 261, serve 315, rest 123, mcp 58. Total 5649.
+      This run had nvm's node v24.18.1 first on PATH.
+    sbcl --script tools/test/load-test.lisp loom-serve
+      prints `LOOM-SERVE loaded; (find-package "LOOM-PROCESS") => T`. T
+      means clean: the value printed is (null (find-package ...)).
+    tools/next-doc-id.sh PLAN -> PLAN-0061. No ref carries PLAN-0061.
+
+  "Green" after a step means: tools/loom-test.sh prints ok for all twelve
+  systems with no Fail line, and each system's Pass count is at least the
+  baseline's; `check` prints 0 violations and 8 unresolved, 7 ambiguous;
+  load-test prints T. Document and test counts move with new files and are
+  not exit conditions unless a step names them.
+
+  FINDINGS THAT CHANGE OR SHARPEN REQ-0079 AND DES-0056
+
+  1. #:utils appears in seven :depends-on lists in five .asd files, not six:
+       src/analyzer/loom-analyzer.asd   loom-analyzer and loom-analyzer/test
+       src/docstore/loom-docstore.asd   loom-docstore
+       src/graph/loom-graph.asd         loom-graph/test only
+       src/serve/loom-serve.asd         loom-serve
+       src/workspace/loom-workspace.asd loom-workspace and loom-workspace/test
+
+  2. Eight names come from the library, not six. Four packages import six
+     names with :import-from: loom-analyzer (read-file, string-lines),
+     loom-docstore (read-file), loom-serve (improper-list-p, plistp),
+     loom-workspace (read-file, string-lines, proper-list-p, alistp).
+     context-log.lisp also calls utils:json-decode and binds
+     utils:*json-key-to-lisp*, package-qualified, in READ-JSON-RECORD and
+     STRICT-VALUE-TO-RECORD. Test code calls utils:read-file 12 times in 7
+     files: analyzer/test lisp-analyzer (1), markdown-analyzer (1),
+     yaml-analyzer (2); graph/test enrich (1); workspace/test init (5),
+     transition (1), workspace (1). Every other `utils:` token in src/ is
+     inside a string fixture (lisp-analyzer tests, lisp-reader tests,
+     `(:import-from #:utils #:proper-listp)` at lisp-analyzer.lisp:312) or a
+     comment. Those stay.
+
+  3. Where each name belongs, by CLAUDE.md's loom-utils test and the rules.
+       proper-list-p, alistp   called only in loom-workspace (context-log)
+                               -> loom-workspace
+       improper-list-p, plistp called only in loom-serve (json.lisp)
+                               -> loom-serve
+       json-decode, *json-key-to-lisp*
+                               called only in loom-workspace -> replaced
+                               there by st-json and cl-json directly, which
+                               loom-workspace already declares
+       string-lines            loom-analyzer and loom-workspace. Workspace
+                               depends on analyzer -> loom-analyzer
+       read-file               loom-analyzer, loom-workspace, loom-docstore.
+     read-file is the one with no clean home. loom-analyzer and loom-docstore
+     cannot depend on each other (RULE-0011, RULE-0010), which is loom-utils'
+     entry condition. But RULE-0010 is :no-edge to-system outside, so
+     loom-docstore may not depend on loom-utils either, and the rule engine's
+     :no-edge method (src/graph/rules.lisp) has no exception list. So without
+     a rule-engine change, loom-docstore needs its own copy. That is the
+     precedent file-store.lisp:77 already set for DOT-PREFIXED-P. The copy
+     has a cost the tree states: stamps.lisp's .asd comment says "A stamp
+     hashes the text READ-FILE returns, so the stamp and the analyzer see the
+     same string." Two copies keep that true only if a test says so. D1.
+
+  4. loom-docstore calls uiop 3 times and declares only #:utils. uiop
+     arrives today through utils. Removing #:utils must add #:uiop.
+
+  5. How the library is found today: ~/quicklisp/local-projects/utils is a
+     symlink to ~/lisp/utils. ~/.sbclrc also registers ~/lisp/utils/ and
+     ~/lisp/game-server/ as source-registry trees, but `sbcl --script`
+     skips ~/.sbclrc, so the symlink is what every tools/ script uses.
+     local-projects also links Loom, game-server, cl-dbi and cl-mysql.
+     Proving R1 means a run where none of them exist.
+
+  6. No container runtime is installed: `which docker podman` prints
+     nothing. bubblewrap 0.9.0 is at /usr/bin/bwrap and runs unprivileged
+     here: `bwrap --ro-bind / / --tmpfs /home ... ls /home` lists an empty
+     directory. wsl.exe is reachable (WSL 2.7.11.0), so a fresh distro is
+     possible, but installing one changes the machine. D8.
+     What bwrap proves: nothing under /home is read, including ~/lisp/utils,
+     ~/quicklisp, ~/.sbclrc and nvm's node. What it does not prove: the OS
+     package set. / is the host's, so libyaml-0-2, libssl3, git, python3
+     3.12.3 and /usr/bin/node v18.19.1 are present whether or not INSTALL
+     names them.
+
+  7. Two node binaries exist. nvm's v24.18.1 is first on this shell's PATH.
+     /usr/bin/node is v18.19.1 (Ubuntu's nodejs). The sandbox sees only the
+     second. The systemd unit's PATH decides which one the service uses.
+     INSTALL can name both versions as tested.
+
+  8. Hardcoded paths that a clone elsewhere would break on:
+       tools/loom-test.sh:29,38   #p"/home/beberman/lisp/Loom/" in the
+                                  driver heredoc
+       tools/loom.sh:50           watch "~/lisp/Loom" -- every console
+                                  session indexes this path, not the clone
+       tools/loom-init.sh:32      LOOM_ROOT=/home/beberman/lisp/Loom
+       tools/allow-loom.py:61     the absolute driver prefix in DRIVER
+       tools/test/test-allow-loom.py:28,32
+       tools/test/call-site-census.lisp:262, package-census.lisp:244
+                                  default root
+       tools/test/summary-band.lisp:28-32
+                                  five rows naming Loom, utils, game-server
+       .claude/settings.json      11: 9 allow rules, 2 hook commands
+       .claude/settings.local.json  3, and the file is tracked
+       .claude/skills/loom/SKILL.md  the driver copy at :302 and :310
+     tools/extra-repos, which REQ-0079 R2 names, is gitignored and
+     `git log --all -- tools/extra-repos` prints nothing: it was never
+     committed. It needs no change.
+     The suite reads $HOME in two tests (workspace.lisp:188, federate.lisp:39
+     and :221) to build a repository rooted at the home directory. That is
+     a read of whatever $HOME is, not of a named foreign tree, and it holds
+     in the sandbox.
+
+  9. The R2 scan at the tip, over 542 tracked files (counts only):
+       /home/beberman         79 in 37 files
+       ~/lisp/               121 in 65 files
+       ~/github/             111 in 46 files
+       Windows home path       2 in 1 file (init.el:
+                               c:/Users/<user>/quicklisp/slime-helper.el)
+       hostname (`hostname`)   0
+       IPv4 other than 127.0.0.1 and 0.0.0.0   0
+       e-mail addresses        6 in 5 files: three example.com/.invalid
+                               test values, three vendored acorn and
+                               acorn-jsx package.json authors. None is the
+                               author's.
+       credential shapes       22 raw matches, 0 real. 10 are test names in
+                               src/knowledge/test/context.lisp where "task-"
+                               matched an `sk-` pattern written without a
+                               word boundary. 12 are `user:SENTINEL@` and
+                               `user:token@` placeholder URLs in 4 files
+                               (manifest-analyzer.lisp and its test,
+                               DES-0055, PLAN-0059). The scan script needs
+                               both exclusions.
+     Patterns used for credentials: AKIA[0-9A-Z]{16}; gh[pousr]_ and
+     github_pat_ tokens; \bsk-(ant-)?[A-Za-z0-9_-]{20,}; xox[abprs]- Slack
+     tokens; -----BEGIN ... PRIVATE KEY-----; AIza[0-9A-Za-z_-]{35};
+     password/passwd/secret/api_key/access_token/auth_token assigned a quoted
+     value of 8+ characters; Bearer plus 20+ characters; scheme://u:p@ with
+     placeholder passwords excluded; eyJ...eyJ... JWTs; aws_secret_access_key.
+
+  10. Files the REQ did not anticipate:
+       init.el                      a personal Emacs init with the Windows
+                                    home path above
+       docs/DESIGN-ASSUMPTION-CHANGES.md:Zone.Identifier
+       docs/Loom - A Code Knowledge Engine.docx:Zone.Identifier
+                                    Windows download markers. Each holds
+                                    only a ZoneId line, no URL.
+       src/ontology/test/suite.lisp~  a tracked Emacs backup
+       docs/Phase1 Software Architecture.docx
+                                    docProps/core.xml carries creator and
+                                    lastModifiedBy values
+       docs/Loom - A Code Knowledge Engine.docx
+                                    empty creator fields; the author's name
+                                    in the body; a comments part with 0
+                                    comments
+       .claude/settings.local.json  a per-user file, tracked
+
+  11. The history scan, over every object reachable from the 107 refs: 496
+     commits, 2493 blobs and every commit message. Credential patterns as in
+     9: 0 matches in blobs, 0 in messages. No path ever added matches .env,
+     id_rsa, id_ed25519, .pem, .p12, .key, .netrc, .npmrc, .pypirc,
+     "credential", "secret" or "token" (707 paths checked). Non-credential:
+     /home/beberman on 102 added lines in 28 commits; the Windows home path
+     in 1 commit. Commit metadata: author bseberman@gmail.com on 491
+     commits, brian@tenfactorgrowth.com on 1, Claude Code noreply on 4;
+     committer GitHub noreply on 11. No credential is found, so REQ-0079's
+     rotation clause does not fire. D3 covers the rest.
+
+  12. R3's scope is 282 files, not 37. 37 is the count for /home/beberman
+     alone. Files naming /home/beberman, ~/github, game-server, front-end or
+     lfia: docs 192, src 67, tools 18, .claude 3, CLAUDE.md, README.md.
+     game-server appears 1168 times in 211 files, lfia 292 times in 23.
+     front-end's 1283 matches include the ordinary English word.
+     Beyond CLAUDE.md, three more files are read by every agent or shipped
+     into other trees:
+       .claude/skills/loom/SKILL.md   @game-server and @front-end examples,
+                                      ~/lisp/Loom, ~/github/front-end
+       .claude/agents/*.md            none
+       src/workspace/templates/loom-skill.md:79
+                                      game-server's PLAN-0002 anecdote. init
+                                      writes this file into every prepared
+                                      repository.
+     So R3's CLAUDE.md exception should cover SKILL.md and loom-skill.md.
+     Private material copied into the tree, not only cited:
+       src/analyzer/test/js-analyzer.lisp:802-833  two front-end files
+                                      "verbatim" (functions/index.js,
+                                      functions/hello.js)
+       src/analyzer/test/firebase-analyzer.lisp     lfia's firebase.json "as
+                                      it stood" and a .firebaserc naming the
+                                      Firebase project id
+       src/analyzer/test/frameworks.lisp:27,315     game-server's and lfia's
+                                      declarations
+       tools/test/cases/known-item.json  450 cases naming game-server and
+                                      front-end identifiers; mismatch.json
+                                      and mismatch.md likewise. These are
+                                      the recall harness's corpus.
+     D4.
+
+  13. README.md exists (154 lines, 2026-09-07). It documents service
+     operation and tools/extra-repos. It is stale in four checkable ways: it
+     names "ten libraries" and omits st-json, babel and usocket; it tells
+     the reader to clone the utils library; it prints six /home/beberman
+     paths; its seeding figures are game-server and front-end figures with
+     no note. It states no system count, no layering, no test count and no
+     blind spots.
+
+  14. R4's last sentence cannot be met as written. A README cannot name the
+     commit that contains it, so the commit it names is always older than
+     the one it ships in. "Behind main" is then true after every merge, and
+     a `check` keyed on it would always report. Two readings are
+     checkable: figures equal to what `status` and `structure` print at
+     HEAD, or a named commit with figures allowed to lag. `check` lives in
+     loom-graph and knows nothing about this tree's README; adding that
+     would be a design, not a plan step. D5.
+
+  15. R5 facts from the code. python3 3.9 or later: tools/py/extract.py
+     calls ast.unparse (lines 170, 174, 581, 779), which 3.9 added. Tested
+     here: 3.12.3. node: tested v24.18.1 and, in the sandbox, v18.19.1. No
+     floor is claimed for either SBCL (2.2.9 only) or node. Two C libraries
+     load through CFFI: libyaml-0.so.2 (cl-yaml -> cl-libyaml) and libssl.so.3
+     (cl+ssl, pulled by hunchentoot and drakma). The .asd files name 13
+     external libraries after R1: babel, bordeaux-threads, cl-json, cl-yaml,
+     drakma, eclector, fiveam, hunchentoot, random-uuid, st-json, stem, uiop,
+     usocket.
+
+  16. Third-party licences, read from each loaded system's .asd (all twelve
+     systems and their test systems loaded):
+       stem             "Probably LLGPL". No LICENSE file, no copyright line
+                        in stem.lisp, stem.asd or ReadMe.txt.
+       trivia (6 systems), type-i, lisp-namespace, trivial-cltl2
+                        LLGPL. Pulled by random-uuid -> mfiano-utils ->
+                        serapeum.
+       puri             "GNU Lesser General Public License". Pulled by
+                        drakma, a test-only dependency.
+       ironclad         no :license in the .asd; its LICENSE file is a
+                        Nathan Froyd copyright, BSD-style. Pulled by
+                        random-uuid -> seedable-rng.
+       introspect-environment  WTFPL
+       the rest         MIT, BSD variants, public domain, Unlicense.
+     Vendored and redistributed in the tree: acorn 8.18.0 and acorn-jsx
+     5.3.2, both MIT, each with its LICENSE file under tools/js/vendor/.
+     LICENSE is MIT, Copyright 2026 Brian Eberman, and every Loom .asd says
+     :license "MIT". D6.
+
+  17. GitHub, read with `gh` on 2026-10-10. beberman/Loom is private and
+     user-owned; beberman/utils is private. main is not protected and the
+     repository has no rulesets. Merge, squash and rebase merges are all
+     allowed. Actions is enabled for all actions, so doc-ids.yml can run on
+     a push to the private repository today. Per GitHub's documentation, not
+     tested here: branch protection on a private repository needs a paid
+     plan and is free on a public one; a merge queue is available only to
+     organization-owned repositories. So DES-0056 R5's "or a merge queue" is
+     not available to beberman/Loom, and "require branches to be up to date"
+     is the only one of its two options. D7.
+
+  18. DES-0056's floor, measured: 107 refs read with `git ls-tree` in 0.22s.
+     For all nine categories the highest id over every ref equals the
+     working tree's, so no category's next id changes today. Stale refs
+     carry ARCH-0001 to 0004 and DEC-0001 to 0004, the DEC files under
+     docs/design/ from before BUG-0039. A scan that globs each category's
+     own directory on a ref misses those DEC files. A scan that matches
+     PREFIX-nnnn.yaml anywhere under docs/ counts them. The second is what
+     test-next-doc-id.py's highest_on_disk already does on the working tree,
+     so the plan uses it for both the working tree and every ref, in both
+     allocators.
+
+  19. Under R8 the REQ-0079 acceptance scenario cannot be run inside one
+     clone. The allocator now reads every local branch, so a second branch
+     in the same clone is handed the next id and does not collide. The
+     collision R7 is about needs two clones that cannot see each other: a
+     fork. Step 6's fixture uses two clones of one bare repository, and adds
+     a one-clone case asserting the second branch gets a different id.
+
+  20. tools/test/test-next-doc-id.py asserts answer == working-tree highest
+     + 1. After the floor change that is true on this tree today only
+     because finding 18's floors coincide. It must compute the floor over
+     refs too, or it starts failing the first time a branch is ahead.
+
+  21. doc-ids.py cannot run Loom's own tools/next-doc-id.sh against a fixture
+     repository: next-doc-id.sh finds its root from its own location, not
+     from the current directory. The fixture therefore copies tools/doc-ids.py
+     and tools/next-doc-id.sh into its own tools/, as a fork carries them.
+
+  22. `check` cannot see an .asd :depends-on on an external library
+     (RULE-0009 and RULE-0010 both say so in prose). "check reports no new
+     violation" is necessary for R1 and not sufficient. The instruments are
+     a grep for #:utils and the sandbox run.
+
+  23. loom-indexes-its-own-todo-file (markdown-analyzer tests) asserts
+     inside `(when e ...)`. If docs/TODO.md is deleted it passes with zero
+     checks. CON-0003 applies to any scrub that removes docs/TODO.md.
+
+  DECISIONS THE PLAN STOPS FOR
+
+  Each is asked at the step named. Where a default is given, the step runs on
+  it unless the owner says otherwise before that step starts.
+
+    D1  read-file's home. Before step 2. Default (a).
+        (a) loom-analyzer defines and exports read-file and string-lines;
+            loom-workspace gets both through its existing :use of
+            loom-analyzer; loom-docstore keeps a private read-file in
+            stamps.lisp; one test asserts the two return identical strings.
+            No rule changes. Against it: loom-analyzer/package.lisp says the
+            analyzer "never had any business being the place a file is
+            read".
+        (b) loom-utils owns both, and RULE-0010 gains a way to permit
+            loom-utils. That needs an exception field in the :no-edge check
+            kind, which is a design change (a DES) and is not in this plan.
+    D2  What .claude/ ships. Before step 10. No default.
+        .claude/settings.json runs `tools/loom-serve.sh update` on
+        SessionStart. In a clone opened in Claude Code that starts a service
+        on 127.0.0.1:4780 with no authentication and eleven write-tier
+        operations. It also sets defaultMode dontAsk and allows Bash(cat:*),
+        Bash(python3 -) and Edit of the whole tree. Options: ship it with
+        paths rewritten to $CLAUDE_PROJECT_DIR; ship it without the
+        SessionStart hook; ship .claude/settings.example.json and gitignore
+        settings.json. settings.local.json is untracked and gitignored in
+        every option.
+    D3  History. After step 9. Default: leave history as it is.
+        Step 9 reports 0 credentials, so nothing must be rotated. Left in
+        history if not rewritten: /home/beberman in 28 commits, a Windows
+        home path in 1, and author e-mail bseberman@gmail.com on 491 commits.
+        Rewriting changes every hash that 1750 commit-message tokens and the
+        documents' own commit citations (de355d0, 9169e64 and others) point
+        at. A .mailmap changes how `git log` displays an author and rewrites
+        nothing. The owner chooses: leave, .mailmap, or rewrite.
+    D4  Private-tree material. Before step 11. Defaults from REQ-0079 R3
+        where it speaks; none where it does not.
+        (a) measurements in docs/ and src/ comments: kept, with one note
+            naming the trees (REQ-0079 R3's default).
+        (b) the verbatim front-end and lfia fixtures of finding 12: keep
+            with a provenance line, or replace each with a synthetic file
+            that exercises the same assertions. No default.
+        (c) tools/test/cases/ (450 private identifiers): keep, or move out
+            of the tree and have recall.py and acceptance.py read the path
+            from an environment variable. No default.
+        (d) the two .docx files and docs/TODO.md, VALUE.md and
+            DESIGN-ASSUMPTION-CHANGES.md: keep or remove. No default. TODO.md
+            has finding 23 attached.
+        (e) init.el: remove (default). It is not Loom's.
+    D5  README figures policy, and R4's last sentence. Before step 12.
+        (a) tools/test/readme-figures.py --check fails when any figure
+            differs from HEAD's, and CONTRIBUTING makes regenerating part of
+            a release, not of every pull request. Default.
+        (b) the same script reports drift and never fails.
+        (c) R4 as written: `check` flags it. Needs a DES first (finding 14).
+        Whichever is chosen, step 15 amends R4's last sentence with a dated
+        note before `complete`, as PLAN-0060 did for REQ-0041 U4.
+    D6  Licences and contributions. Before step 14. No default. The plan
+        does not choose.
+        (a) The project licence. LICENSE says MIT. Confirm it.
+        (b) stem: keep it and say "declared Probably LLGPL, no licence file"
+            in the third-party list; or ask its author; or replace it with
+            an implementation of Porter's algorithm written in this tree. The
+            third is a code change with its own plan, because DES-0033 D4
+            measured 40 of 45 with stem and a replacement must reproduce it.
+        (c) The LLGPL and LGPL libraries of finding 16 are fetched by
+            Quicklisp and not redistributed. Whether the third-party list
+            only lists them, or also says that, is the owner's wording.
+        (d) Whether to accept outside contributions. REQ-0079 R6 says this
+            is DEC-level. Step 14 writes DEC-0008 with the owner's answer.
+        (e) Which code of conduct, by name and version.
+    D7  GitHub settings. Owner only, after step 8 and again at step 16.
+        Make the repository public (when); protect main: require pull
+        requests, require the doc-ids status check, require branches to be
+        up to date (finding 17: no merge queue for a user-owned
+        repository); allow squash for forks; Actions approval for
+        first-time contributors; secret scanning and push protection.
+    D8  The clean environment for acceptance. Before step 16. Default (a).
+        (a) tools/test/clean-room.sh under bwrap. Proves nothing under /home
+            is read. Does not prove the OS package list (finding 6).
+        (b) a fresh WSL distro (`wsl.exe --install Ubuntu-24.04` under a
+            new name). Proves the package list. Changes the machine.
+        (c) a GitHub Actions job on ubuntu-latest that follows INSTALL.md.
+            Proves the package list. Runs on GitHub only.
+
+  FILES
+
+  New:
+    tools/test/clean-room.sh            step 3. The sandbox instrument.
+    tools/doc-ids.py                    steps 5 and 6. DES-0056's script.
+    tools/test/test-doc-ids.py          steps 5 and 6. DES-0056 R6.
+    tools/test/next-id.lisp             step 4. Prints NEXT-DOCUMENT-ID for a
+                                        directory and prefix, so the python
+                                        test can compare the two allocators.
+    .github/workflows/doc-ids.yml       step 7. DES-0056 R5.
+    tools/test/release-scan.py          step 8. REQ-0079 R2's script.
+    tools/test/test-release-scan.py     step 8.
+    docs/PRIVATE-TREES.md               step 11. REQ-0079 R3's note. Indexed
+                                        as a :document by the markdown
+                                        analyzer.
+    tools/test/readme-figures.py        step 12. REQ-0079 R4's script.
+    tools/test/surface.lisp             step 12. Prints the registries
+                                        `status` does not: analyzers and
+                                        their file types, entity and
+                                        relationship types, serve
+                                        operations, MCP tools.
+    INSTALL.md                          step 13.
+    CONTRIBUTING.md, CODE_OF_CONDUCT.md step 14.
+    THIRD-PARTY-LICENSES.md             step 14.
+    docs/decisions/DEC-0008.yaml        step 14, with the owner's answer to
+                                        D6 (d). The id is re-read with
+                                        tools/next-doc-id.sh DEC at the time.
+
+  Changed:
+    src/serve/json.lisp, src/serve/package.lisp, src/serve/loom-serve.asd
+                                        step 1
+    src/serve/test/json.lisp            step 1
+    src/workspace/context-log.lisp, src/workspace/package.lisp
+                                        steps 1 and 2
+    src/workspace/test/context-log.lisp step 1
+    src/analyzer/analyzer.lisp, src/analyzer/package.lisp,
+    src/analyzer/loom-analyzer.asd      step 2
+    src/docstore/stamps.lisp, src/docstore/package.lisp,
+    src/docstore/loom-docstore.asd      step 2
+    src/graph/loom-graph.asd, src/workspace/loom-workspace.asd
+                                        step 2
+    src/analyzer/test/lisp-analyzer.lisp, markdown-analyzer.lisp,
+    yaml-analyzer.lisp; src/graph/test/enrich.lisp;
+    src/workspace/test/init.lisp, transition.lisp, workspace.lisp
+                                        step 2: utils:read-file
+    src/utils/loom-utils.asd, src/utils/parsing.lisp
+                                        step 2: comments naming ~/lisp/utils
+    tools/loom-test.sh, tools/loom.sh, tools/loom-init.sh,
+    tools/allow-loom.py, tools/test/test-allow-loom.py,
+    tools/test/call-site-census.lisp, tools/test/package-census.lisp,
+    tools/test/summary-band.lisp        step 3
+    .claude/skills/loom/SKILL.md        step 3 (the driver block), step 11
+    tools/next-doc-id.sh, tools/test/test-next-doc-id.py,
+    src/docstore/file-store.lisp (NEXT-DOCUMENT-ID),
+    src/docstore/test/file-store.lisp   step 4
+    .gitignore                          step 10: .claude/settings.local.json
+    .claude/settings.json               step 10, per D2
+    src/ comments and docstrings, src/*/test path strings, docs/**/*.yaml,
+    docs/*.md, README.md                step 10: paths generalised
+    CLAUDE.md, src/workspace/templates/loom-skill.md, the D4 files
+                                        step 11
+    README.md                           step 12
+    docs/requirements/REQ-0079.yaml, docs/requirements/REQ-0025.yaml,
+    docs/design/DES-0056.yaml           step 15, before `complete`
+
+  Deleted (step 10, subject to D4): init.el, the two :Zone.Identifier files,
+  src/ontology/test/suite.lisp~. Untracked: .claude/settings.local.json.
+
+  Not changed, and a change to any one is a finding to report: every
+  docs/rules/ file, src/graph/rules.lisp, every .asd's :depends-on on a Loom
+  system, src/rest/ and src/mcp/ source, the memory store's
+  DOCSTORE-ALLOCATE-ID, and anything outside this repository.
+
+  BLAST RADIUS
+
+  What Loom reports, `impact <name> 2` or 3 at d3f2824:
+
+    next-document-id      74 (truncated) at depth 3. Callers:
+                          DOCSTORE-ALLOCATE-ID (file store) and
+                          PLAN-PREPARATION in init.lisp, then
+                          PREPARE-REPOSITORY, GENERATE-ARCHITECTURE and their
+                          console and serve call sites. 62 tests, 4 of them
+                          docstore allocation tests and the rest init and
+                          architecture tests. Decisions DES-0044, DES-0048,
+                          DES-0054, DES-0055, DES-0056.
+    json-value            41 (truncated). Every REST and MCP response. 7+
+                          serve json tests. DES-0007.
+    read-json-record      9: the context-log feedback path. 5 tests.
+                          DES-0030.
+    encode-record-value   4. DES-0030, DES-0031.
+    stamp-changed-p       14: the monitor's change detection. DEC-0003,
+                          DES-0003, DES-0004, DES-0007, DES-0027, DES-0051.
+    analyze-path          18: every analysis through the workspace. DES-0004,
+                          DES-0029, DES-0047, DES-0051.
+    file-form-spans       the Lisp inspector (enrich).
+
+  None of the attached decisions is contradicted. DES-0051 D5 (docstore
+  reaches no Loom system) is kept by D1 (a). DEC-0003 holds: no resolution
+  pass changes. DES-0048's lease is untouched; DES-0056 records that it still
+  stands for a team on one remote.
+
+  What Loom cannot see, and why:
+
+    - The external library. ~/lisp/utils is not watched by `tools/loom.sh`,
+      so `describe read-file` prints "Nothing in the index matches". Every
+      caller in FINDINGS 2 was found with `git grep`.
+    - .asd dependencies on external libraries (finding 22).
+    - Shell and Python. tools/*.sh are unclaimed by any analyzer (status:
+      6 .sh unclaimed). doc-ids.py, release-scan.py and the tests are
+      indexed as Python, but the link from next-doc-id.sh to doc-ids.py
+      and to test-next-doc-id.py is a subprocess call no edge records.
+    - The `types=` line in next-doc-id.sh and *DOCUMENT-ID-PREFIXES* in
+      transition.lisp. Two tables with no edge between them. DES-0056 R3's
+      test is the link.
+    - Macro bodies. Every fiveam `test` body is unattributed (DES-0001).
+      The `tests` bands above under-report. The suite is the measure.
+    - The serve, REST, MCP and console boundary. load-test is the
+      instrument in steps 1 and 2.
+    - GitHub. Nothing in the index knows a workflow runs.
+
+  RISKS
+
+  1. A moved predicate changes behaviour. JSON-VALUE's clause order depends
+     on IMPROPER-LIST-P answering NIL for every atom (its own docstring says
+     the CONSP guard is the whole predicate for atoms). The copies are
+     verbatim, and step 1 adds Loom-side tests for the edge cases the
+     library's docstrings state.
+
+  2. The JSON decode loses its float format. utils' JSON-DECODE binds
+     *READ-DEFAULT-FLOAT-FORMAT* to DOUBLE-FLOAT (utils BUG-0001). A direct
+     st-json:read-json without the binding reads 0.123456789012 as a
+     single-float. Step 1's round-trip test fails without the binding.
+
+  3. Two read-file copies drift and a stamp stops matching the analyzer's
+     text. Step 2's equality test, on a CRLF and multibyte fixture, is the
+     guard. Its CON-0003 check reintroduces the NUL-tail bug in the docstore
+     copy and sees it fail.
+
+  4. A symbol conflict. loom-workspace :use's loom-utils, loom-ontology,
+     loom-graph, loom-analyzer and loom-knowledge. If loom-analyzer exports
+     READ-FILE and any of the others exports one, loading signals a
+     package conflict. `find read-file` shows no definition in Loom today.
+     Step 2's load is the check.
+
+  5. The sandbox does not hide what it claims to hide. Step 3's control
+     runs the sandbox on d3f2824, before R1, and must fail to load
+     loom-analyzer with a missing-system error naming utils. If d3f2824
+     loads, the sandbox is reading ~/lisp/utils and every later sandbox
+     result is void.
+
+  6. Git identity in the sandbox. HOME is fresh, so `git commit` without
+     -c user.name and -c user.email fails. Existing commit-making tests set
+     both (docstore file-store.lisp:194, workspace gitignore.lisp:39). New
+     tests in steps 4 to 6 must too, and test-doc-ids.py sets them with
+     GIT_AUTHOR_* and GIT_COMMITTER_* environment variables.
+
+  7. The floor slows a hot path. NEXT-DOCUMENT-ID runs `git ls-tree` once
+     per ref: 107 refs measured at 0.22s from Python. It is called by init
+     and `architecture`, not by indexing or queries. Step 4 records the
+     Lisp time on this tree.
+
+  8. The scrub changes text a test reads. Tests that index this tree's own
+     docs (loom-indexes-its-own-todo-file) or quote a path
+     (domains.lisp:270, workspace.lisp:180) must still pass, and the TODO
+     test must still run its checks (finding 23). Step 10's exit counts its
+     checks.
+
+  9. The scrub changes a completed document's meaning. Replacing
+     `~/lisp/game-server` with `game-server` keeps the tree's name and drops
+     its location. Commands quoted in completed plans (`watch
+     "~/lisp/Loom"`) become `watch "/path/to/Loom"`. Step 10 is a
+     mechanical rewrite with an explicit table, and its diff is read before
+     the commit. A figure is never edited (REQ-0079 R3).
+
+  10. The workflow passes on a branch and the merge collides anyway
+     (DES-0056's second GitHub fact). Only D7's "require branches to be up
+     to date" closes it, and only once the repository is public or on a
+     paid plan.
+
+  11. A test that passes for the wrong reason. Every new test below names
+     the revert that makes it fail.
+
+  DEFERRED, WITH REASONS
+
+  - Making beberman/Loom public. An owner action after `complete`. REQ-0079
+    asks for a publishable tree, not a published one.
+  - Publishing beberman/utils. After R1, Loom no longer needs it.
+  - A graph-side duplicate-id report, REQ-0025 R7's path-keyed half.
+    DES-0056 explains why the file-level check comes first.
+  - doc-ids.py in trees `init` prepares (DES-0056 R7).
+  - A console `renumber` command (DES-0056, alternatives).
+  - A GitHub Actions job running the FiveAM suite. DES-0056 names it as a
+    separate job once R1 lands. It is D8 (c) if the owner wants it for
+    acceptance; otherwise it is a later change.
+  - A Porter stemmer written in this tree, if D6 (b) chooses it. It needs
+    its own plan: DES-0033 D4's 40 of 45 is the bar.
+  - Rewriting history (D3), unless the owner chooses it.
+
+  STEPS
+
+  Each step is one commit on req-0079-open-source, made by the owner. Step 1
+  is the first that can be run. Every step ends green unless it says
+  otherwise. Steps 1 to 3 are R1, steps 4 to 7 are DES-0056, steps 8 to 11
+  are R2 and R3, steps 12 to 14 are R4 to R6, step 16 is the acceptance.
+
+  1. THE LIST PREDICATES AND THE JSON DECODE (R1, first half).
+     src/serve/json.lisp, src/serve/package.lisp, src/serve/loom-serve.asd,
+     src/workspace/context-log.lisp, src/workspace/package.lisp, and tests.
+
+     loom-serve: IMPROPER-LIST-P and PLISTP are defined in json.lisp above
+     JSON-VALUE, copied from ~/lisp/utils/src/lists.lisp with their
+     docstrings. PLISTP uses its own proper-list check (copy PROPER-LIST-P
+     as a private helper, or inline the same DO loop). package.lisp drops
+     `(:import-from #:utils ...)`. loom-serve.asd drops #:utils and its
+     comment. Nothing is exported.
+     loom-workspace: PROPER-LIST-P and ALISTP are defined in context-log.lisp
+     above ENCODE-RECORD-VALUE, from the same source. READ-JSON-RECORD binds
+     *READ-DEFAULT-FLOAT-FORMAT* to DOUBLE-FLOAT around
+     (st-json:read-json in). STRICT-VALUE-TO-RECORD calls
+     (json:camel-case-to-lisp key) where it funcalled
+     utils:*json-key-to-lisp*; the LET in READ-JSON-RECORD goes, and its
+     comment is rewritten to say the key policy is now a direct call.
+     package.lisp's import-from shrinks to #:read-file #:string-lines.
+     loom-workspace.asd keeps #:utils until step 2.
+
+     Verification, new tests:
+       - serve: improper-list-p is NIL for 5, "s", #(1), NIL and (1 2), and T
+         for (1 . 2) and (1 2 . 3). plistp is T for NIL and (:a 1), NIL for
+         (:a), ("a" 1) and (:a 1 . 2). JSON-VALUE of (1 . 2) is its printed
+         form, the BUG-0030 D2 case.
+       - workspace: proper-list-p on a circular list returns NIL. alistp's
+         four cases from its docstring: NIL -> NIL, (("a" . 1)) -> NIL,
+         ((a . 1)) -> T, ((:a . 1) . 2) -> NIL.
+       - workspace: a record holding 0.123456789012d0, :FALSE, NIL and a key
+         :LATENCY-SECONDS written by WRITE-JSON-RECORD and read back by
+         READ-JSON-RECORD is EQUAL to what was written, and the file text
+         holds `latencySeconds'.
+     CON-0003: drop the DOUBLE-FLOAT binding and see the round-trip test
+     fail on the number; replace camel-case-to-lisp with string-upcase and
+     see it fail on the key; drop the CONSP guard in IMPROPER-LIST-P and see
+     the atom cases fail.
+     Exit: green. load-test T. `git grep -n '#:utils' -- src/serve` and
+     `git grep -n 'utils:' -- src/workspace/context-log.lisp` print only
+     comment lines.
+
+  2. READ-FILE AND STRING-LINES (R1, second half). Runs on D1's answer;
+     written here for (a).
+     src/analyzer/analyzer.lisp, src/analyzer/package.lisp,
+     src/analyzer/loom-analyzer.asd, src/docstore/stamps.lisp,
+     src/docstore/package.lisp, src/docstore/loom-docstore.asd,
+     src/graph/loom-graph.asd, src/workspace/package.lisp,
+     src/workspace/loom-workspace.asd, src/utils/loom-utils.asd,
+     src/utils/parsing.lisp, and the seven test files of finding 2.
+
+     loom-analyzer: READ-FILE and STRING-LINES defined in analyzer.lisp,
+     copied with docstrings, exported. package.lisp drops the import-from and
+     its comment, and the comment says why the analyzer owns them now (D1).
+     loom-analyzer.asd drops #:utils from both systems and the ~/lisp/utils
+     comment.
+     loom-docstore: a private READ-FILE in stamps.lisp, the same body,
+     docstring naming loom-analyzer's as the copy it must equal and the
+     test that says so. package.lisp drops the import-from.
+     loom-docstore.asd: :depends-on (#:uiop) (finding 4), comment rewritten.
+     loom-workspace: package.lisp drops the import-from; READ-FILE and
+     STRING-LINES arrive through :use #:loom-analyzer. loom-workspace.asd
+     drops #:utils from both systems.
+     loom-graph.asd: loom-graph/test drops #:utils.
+     Tests: in analyzer tests, utils:read-file -> read-file. In graph and
+     workspace tests, utils:read-file -> loom-analyzer:read-file.
+     loom-utils.asd:28-30 and parsing.lisp:21: the comments that name
+     ~/lisp/utils say "the standalone utils library" instead.
+
+     Verification, new tests:
+       - analyzer: a fixture file holding "a\r\nb" plus one multibyte UTF-8
+         character, written in the test. READ-FILE returns exactly the
+         characters written, with no trailing NUL. STRING-LINES returns
+         #("a" "b...") with the return stripped, and "a\n" gives one line.
+       - workspace: on the same fixture, (string= (loom-analyzer:read-file
+         p) (loom-docstore::read-file p)).
+     CON-0003: change the docstore copy to return the whole buffer (the
+     NUL-tail bug utils REQ-0001 R3 fixed) and see the equality test fail;
+     restore.
+     Exit: green, load-test T, check 0 violations.
+     `git grep -n -E '#:utils\b' -- '*.asd'` prints nothing.
+     `git grep -n -E 'import-from #:utils' -- src` prints only
+     lisp-analyzer.lisp:312, the string fixture. The sandbox proof is step
+     3's exit, because the instrument does not exist yet.
+
+  3. PATHS IN tools/ AND THE CLEAN-ROOM INSTRUMENT (R1, the proof).
+     tools/loom-test.sh, tools/loom.sh, tools/loom-init.sh,
+     tools/allow-loom.py, tools/test/test-allow-loom.py,
+     tools/test/call-site-census.lisp, tools/test/package-census.lisp,
+     tools/test/summary-band.lisp, .claude/skills/loom/SKILL.md (the driver
+     block only), tools/test/clean-room.sh (new).
+
+     loom-test.sh: run the driver as `LOOM_ROOT="$root" sbcl --script
+     "$driver"`. The heredoc reads (sb-ext:posix-getenv "LOOM_ROOT") for both
+     the registry and the full-test.lisp load. The header's "nine systems"
+     becomes "twelve".
+     loom.sh: `watch "$root"` replaces `watch "~/lisp/Loom"`.
+     loom-init.sh: LOOM_ROOT derived as loom.sh derives root.
+     allow-loom.py: DRIVER's optional prefix is `./` or the escaped absolute
+     root computed from the hook's own path (two directories up from
+     tools/allow-loom.py, resolved).
+     test-allow-loom.py: the two absolute cases are built from the same
+     derived root. One new DENY case: `/elsewhere/Loom/tools/loom.sh
+     'status'`.
+     call-site-census.lisp, package-census.lisp: the default root is the
+     tree the script was loaded from.
+     summary-band.lisp: Loom's two rows use that tree. The utils and
+     game-server rows go; other trees are given on the command line as
+     `<root> <task>` pairs.
+     SKILL.md: the driver block matches loom-test.sh's new heredoc.
+
+     tools/test/clean-room.sh [--ref REF] [--quicklisp copy|fresh] [--
+     command ...]:
+       - Builds a snapshot in a fresh directory under ${TMPDIR:-/tmp}. With
+         no --ref, the snapshot is `git ls-files -z --cached --others
+         --exclude-standard` copied from the working tree, so uncommitted
+         and new files are tested. With --ref, `git archive REF`. Inside the
+         snapshot: git init, add, commit with -c user.name and
+         -c user.email, so the self-index sees a repository.
+       - --quicklisp copy (default): cp -a ~/quicklisp, then empty
+         local-projects/. --quicklisp fresh: install from
+         https://beta.quicklisp.org/quicklisp.lisp inside the sandbox, the
+         way INSTALL.md will say.
+       - Runs `bwrap --ro-bind / / --tmpfs /home --bind <scratch>/home
+         /home/tester --tmpfs /tmp --dev /dev --proc /proc --unshare-pid
+         --die-with-parent --setenv HOME /home/tester --setenv PATH
+         /usr/local/bin:/usr/bin:/bin --unsetenv LOOM_EXTRA_REPOS --chdir
+         /home/tester/src/Loom`. If the scratch directory's host path is
+         hidden by --tmpfs /tmp, the script places it elsewhere and says
+         where. It prints the scratch path and leaves it for inspection.
+       - Before the command, inside the sandbox, it asserts and prints:
+         the invoking user's real home does not exist; ~/.sbclrc does not
+         exist; ~/quicklisp/local-projects is empty; `command -v node` and
+         `node --version`; `python3 --version`; `sbcl --version`.
+       - The default command: tools/loom-test.sh, then
+         `sbcl --script tools/test/load-test.lisp loom-serve`, then
+         tools/loom.sh 'status | check'.
+
+     Verification:
+       - Control (risk 5): `tools/test/clean-room.sh --ref d3f2824` fails,
+         and its output names the missing system utils. Record the line.
+       - test-allow-loom.py passes, including the new deny case. CON-0003:
+         restore the hardcoded prefix and see the derived-root ALLOW cases
+         fail when the test is run from a copy of the tree at another path
+         (cp -a to the scratchpad).
+       - tools/loom.sh 'status' prints this tree's root and the same counts
+         as BASELINE.
+     Exit: green in the normal environment. `tools/test/clean-room.sh` on
+     the working tree: 12 of 12 ok, load-test T, `status` shows
+     /home/tester/src/Loom/, check 0 violations, 8 unresolved, 7 ambiguous.
+     Record node's version as the sandbox saw it. R1 is met at this commit.
+
+  4. THE ID FLOOR OVER EVERY REF (DES-0056 R4, REQ-0079 R8).
+     tools/next-doc-id.sh, src/docstore/file-store.lisp (NEXT-DOCUMENT-ID),
+     src/docstore/test/file-store.lisp, tools/test/test-next-doc-id.py,
+     tools/test/next-id.lisp (new).
+
+     The rule, for both allocators: highest over every path matching
+     `<docs>/(**/)<PREFIX>-nnnn.yaml` in the working tree, and over
+     `git ls-tree -r --name-only <ref> -- <docs>` for every ref in
+     `git for-each-ref refs/heads refs/remotes`, plus one (finding 18).
+     A tree that is not a git repository, or where git fails, uses the
+     working tree alone. An editor backup (`~` suffix) or lock (`.#`
+     prefix) never matches.
+     next-doc-id.sh: next_for implements the rule with `find` and `git`.
+     The types= line is unchanged (DES-0056 R3 reads it).
+     NEXT-DOCUMENT-ID (directory prefix): the working-tree half walks the
+     document directory, which is DIRECTORY's parent, recursively. The ref
+     half runs `git -C <docs> rev-parse --show-prefix`, then
+     for-each-ref and ls-tree per ref, with uiop:run-program and
+     :ignore-error-status. The signature does not change, so
+     DOCSTORE-ALLOCATE-ID and PLAN-PREPARATION are untouched. The docstring
+     cites DES-0056 R4.
+     next-id.lisp: loads loom-docstore through tools/test/harness.lisp and
+     prints (next-document-id <dir> <prefix>).
+     test-next-doc-id.py: highest_on_disk becomes the floor over the
+     working tree and every ref. New fixture cases in a temp git repository
+     (identity from GIT_* variables, risk 6): main holds REQ-0001; branch b
+     adds REQ-0005; with main checked out, next-doc-id.sh answers REQ-0006
+     and next-id.lisp answers REQ-0006. In a plain directory both answer
+     REQ-0002. A DEC-0009 under docs/design/ on a branch makes both answer
+     DEC-0010. The python test also asserts that the types= line parses
+     and equals *DOCUMENT-ID-PREFIXES* read from transition.lisp's text
+     (DES-0056 R3).
+     docstore test: the main/b fixture through DOCSTORE-ALLOCATE-ID answers
+     REQ-0006. The existing four allocation tests pass unedited.
+
+     CON-0003: drop the ref half from next_for and see the REQ-0006 case
+     fail for the script; drop it from NEXT-DOCUMENT-ID and see the
+     docstore test and the next-id.lisp case fail; restrict the match to
+     the category directory and see the DEC-0010 case fail.
+     Exit: green. Both python tests pass. On this tree every category's
+     answer equals today's (finding 18): REQ-0080, DES-0057, PLAN-0062 once
+     this plan exists, and so on. Record NEXT-DOCUMENT-ID's wall time on
+     this tree from next-id.lisp (risk 7).
+
+  5. tools/doc-ids.py check (DES-0056 R1, C1 to C5).
+     tools/doc-ids.py (new), tools/test/test-doc-ids.py (new).
+
+     As DES-0056 specifies: python3 standard library and git only; a line
+     scan for top-level id:, refines: and supersedes:, including multi-line
+     flow lists and block lists; BASE defaults to origin/main; MB is
+     `git merge-base HEAD BASE`. Exit 0 when clean, 1 on any failure, one
+     line per failure, and for each C1 failure the exact renumber command.
+     Categories come from next-doc-id.sh's types= line. The check reads
+     tracked files only, through `git ls-tree` and `git show`, so an
+     untracked file never fails it.
+     test-doc-ids.py: builds a bare repository and clones it in a temp
+     directory; copies tools/doc-ids.py and tools/next-doc-id.sh into the
+     fixture's tools/ (finding 21). One case per check, each asserting exit
+     1 and the line naming the check, and one clean case asserting exit 0:
+       C1  a branch adds REQ-0002; main gains REQ-0002 after the branch
+           point.
+       C2  a branch copies DES-0001.yaml into completed/ without removing
+           it.
+       C3  a file REQ-0003.yaml whose id: is REQ-0002 (the kept-both
+           add/add resolution).
+       C4  a branch adds a document whose refines: names REQ-0099, which no
+           tree holds; and one whose refines: is a two-line flow list.
+       C5  main adds REQ-0004 after the branch point; the branch adds a line
+           naming REQ-0004 in a file it modifies.
+     CON-0003: disable each check in turn in the copied script and see only
+     its case fail. Run the clean case first so a fixture that is wrong
+     everywhere shows as five failures and one.
+     Exit: test-doc-ids.py passes. On this tree, `python3 tools/doc-ids.py
+     check --base origin/main` exits 0 and the FiveAM suite is not run
+     (no Lisp file changed).
+
+  6. tools/doc-ids.py renumber AND THE ACCEPTANCE SCENARIO (DES-0056 R2,
+     REQ-0079 R7(c) and its acceptance).
+     tools/doc-ids.py, tools/test/test-doc-ids.py.
+
+     As DES-0056 specifies: W1 to W4, every refusal, dry run unless --apply,
+     never a pre-MB line, never a commit message, never a completed/ move.
+     NEW defaults to the output of the fixture's own tools/next-doc-id.sh
+     for OLD's type; --to NEW is refused when any ref or the working tree
+     carries NEW. It prints the occurrences it left in pre-existing lines
+     and the commits in MB..HEAD whose message names OLD.
+     New cases in test-doc-ids.py:
+       - ACCEPTANCE (REQ-0079). Two clones of one bare upstream (finding
+         19). Each allocates with its own next-doc-id.sh and gets REQ-0002.
+         Each commits docs/requirements/REQ-0002.yaml with a refines: and a
+         prose line naming REQ-0002, plus a code file naming it. Clone A
+         pushes to main. Clone B fetches: `doc-ids.py check` exits 1 with a
+         C1 line naming the renumber command. B runs it without --apply:
+         exit 0, nothing written (`git status --porcelain` empty). B runs it
+         with --apply: REQ-0003.yaml exists, its id: and every token in B's
+         added lines read REQ-0003, a pre-existing line in a modified file
+         still reads REQ-0002, and check exits 0.
+       - ONE CLONE (R8). Two branches from one commit in one clone: the
+         second allocation answers REQ-0003, not REQ-0002.
+       - Each refusal: OLD present at MB; OLD not added by HEAD; two added
+         paths carry OLD; --to NEW carried by a ref; a file to edit is
+         dirty. Each writes nothing.
+       - A document in completed/ stays in completed/ after W1.
+     CON-0003: make W4 rewrite every line and see the pre-existing-line
+     assertion fail; drop the dirty-file refusal and see its case fail.
+     Exit: test-doc-ids.py passes, all cases. Suite not run.
+
+  7. THE WORKFLOW (DES-0056 R5, first half).
+     .github/workflows/doc-ids.yml (new).
+
+     Triggers: pull_request, push (all branches), merge_group. One job on
+     ubuntu-latest: actions/checkout with fetch-depth: 0; then
+     `python3 tools/doc-ids.py check --base origin/${{ github.base_ref }}`
+     on pull_request and merge_group, `--base origin/main` on push; then
+     `python3 tools/test/test-doc-ids.py` and
+     `python3 tools/test/test-next-doc-id.py`. No SBCL step. The last test
+     runs next-id.lisp only when sbcl is on PATH and says it skipped
+     otherwise.
+     Verified locally: the YAML parses (python3 -c with PyYAML 6.0.1, which
+     is installed here); each run: line, executed from a fresh
+     `git clone --no-local` of this repository with all branches, exits 0.
+     Verified only by GitHub, after the owner pushes: the job runs on push
+     to this branch (the repository is private and Actions is enabled);
+     its result appears on a pull request. What GitHub does with a
+     conflicting pull request (no run), and whether "up to date" is
+     enforced, are observable only after D7.
+     Exit: the local checks pass. The owner pushes and records the run URL
+     in NOTES. STOP for D7 here only if the owner wants protection on before
+     the scrub; otherwise D7 waits for step 16.
+
+  8. THE RELEASE SCAN (REQ-0079 R2's script).
+     tools/test/release-scan.py (new), tools/test/test-release-scan.py
+     (new).
+
+     `release-scan.py [--history] [--also REGEX ...]`. Tip mode reads every
+     tracked file. History mode reads every blob reachable from every ref
+     (`git rev-list --all --objects`, `git cat-file --batch`) and every
+     commit message. Classes:
+       paths        /home/<user>/ and /Users/<user>/ for $USER and the
+                    owner of $HOME; c:/Users/<name>/; ~/lisp/ and ~/github/
+       host         socket.gethostname()
+       e-mail       any address outside example.com, example.org,
+                    *.invalid, noreply addresses and
+                    tools/js/vendor/**/package.json
+       credential   finding 9's patterns, with `\bsk-` and the placeholder
+                    passwords (SENTINEL, token) excluded
+       private      the names game-server, front-end (as a path or @name),
+                    lfia: counted and printed, never a failure (R3 keeps
+                    them)
+     Tip mode exits 1 on any paths, host, e-mail or credential hit. History
+     mode exits 1 on a credential hit only and prints the other counts by
+     commit. Output is file or commit id, class and count. It never prints
+     a matched value.
+     test-release-scan.py: a temp repository with one planted value per
+     class, each built by string concatenation at run time so that this
+     test file itself never matches. Asserts each class is reported, that
+     no matched value appears in the output, and that a removed value in a
+     past commit is found by --history and not by tip mode.
+     CON-0003: drop each class in turn and see its case fail; remove the
+     `\b` and see a `task-...` line reported.
+     Exit: the test passes. `release-scan.py` on this tree reports the
+     finding 9 counts in the paths class and exits 1, which is expected
+     before step 10. `release-scan.py --history` exits 0 and prints the
+     finding 11 counts. Record both.
+     STOP for D3.
+
+  9. (Reserved for D3.) If the owner chooses .mailmap, add it here and
+     verify `git log --format=%aN` shows the chosen name. If the owner
+     chooses a rewrite, the plan stops: a rewrite is its own operation and
+     every later step would run on new hashes. Otherwise this step is
+     empty and is recorded as such in NOTES.
+
+  10. THE R2 SCRUB.
+     STOP for D2 before .claude/settings.json is edited.
+     Every file release-scan.py names in tip mode, the deletions under
+     FILES, .gitignore, .claude/settings.json per D2.
+
+     A rewrite table, applied by a throwaway script in the scratchpad (not
+     committed) and printed into NOTES with the per-file counts:
+       ~/lisp/game-server          -> game-server
+       ~/github/front-end          -> front-end
+       ~/github/lfia-accounting    -> lfia-accounting
+       ~/lisp/utils                -> the utils library
+       ~/lisp/Loom, /home/beberman/lisp/Loom
+                                   -> /path/to/Loom in commands and
+                                      examples; "this tree" in prose
+       /home/beberman/<other>      -> /path/to/<other>
+       ~/lisp/<other>, ~/github/<other>
+                                   -> <other>
+     Applied to docs/, src/ comments and docstrings, src/*/test path
+     strings used as data (domains.lisp:270-271, workspace.lisp:157-194 and
+     test 180-181), README.md, CLAUDE.md:166, .claude/skills/loom/SKILL.md,
+     and the doc text of REQ-0079 itself. No figure changes. Each hunk is
+     read before staging; a hunk that is not a path is reverted.
+     Deleted: init.el (D4 e), the two :Zone.Identifier files,
+     src/ontology/test/suite.lisp~. `git rm --cached
+     .claude/settings.local.json`; .gitignore gains that path.
+     Verification:
+       - release-scan.py (tip) exits 0.
+       - grep the suite output for loom-indexes-its-own-todo-file's 3
+         checks (risk 8, finding 23), or note that D4 (d) removed TODO.md
+         and the test was changed to fail when the file is absent.
+     Exit: green. `status`: documents 304 plus the new markdown files this
+     plan added so far, unresolved 8, ambiguous 7. Clean-room run green.
+
+  11. R3: THE PRIVATE-TREES NOTE AND THE AGENT FILES.
+     STOP for D4 (a) to (d).
+     docs/PRIVATE-TREES.md, CLAUDE.md, .claude/skills/loom/SKILL.md,
+     src/workspace/templates/loom-skill.md, and the D4 files.
+
+     PRIVATE-TREES.md: names game-server, front-end and lfia-accounting
+     with REQ-0079 R3's sentence; says that any figure in docs/, in a
+     docstring or in a comment that names one of them was measured there;
+     lists the instruments that read them (recall.py, acceptance.py,
+     seed-sheet.py, summary-band.lisp, the cases/ files) and that they
+     cannot run from this repository; names the D4 (b) fixtures with their
+     provenance.
+     CLAUDE.md: line 26's `0 here; 1 in utils` example, line 51's
+     `@game-server`, lines 70-76 (the PLAN-0002 anecdote, de355d0), line
+     143's game-server figure, line 250's game/* example. Each becomes an
+     example on Loom's own tree, or goes. The Environment section states
+     Linux and /usr/bin/sbcl without a user path. Nothing tells a reader to
+     watch a tree they do not have. The "Seven things run Loom" list gains
+     tools/doc-ids.py.
+     SKILL.md: lines 91-92 and 358 the same way. loom-skill.md:79: the
+     anecdote goes or is restated without the tree (init writes this file
+     into other repositories).
+     D4 (b) and (c) as the owner chose. A replaced fixture keeps every
+     assertion of the test that used it.
+     Verification: `git grep -n -E 'game-server|front-end|lfia' --
+     CLAUDE.md .claude src/workspace/templates` prints nothing.
+     release-scan.py's private class still counts the docs/ mentions and
+     PRIVATE-TREES.md names every tree it counts.
+     CON-0003 for replaced fixtures: each rewritten test, run against the
+     analyzer with the behaviour it tests disabled, still fails.
+     Exit: green; the init tests that read loom-skill.md pass
+     (the-templates-are-substituted-rather-than-copied and
+     the-prepared-guidance-says-which-questions-are-gits-and-not-loom-s
+     among them).
+
+  12. README.md AND ITS FIGURES (R4).
+     STOP for D5.
+     README.md, tools/test/readme-figures.py (new), tools/test/surface.lisp
+     (new).
+
+     surface.lisp loads the systems through harness.lisp and prints, one
+     table each: registered analyzers with language and file types; entity
+     types and relationship types from the ontology; loom-serve's
+     operations with tier; loom-mcp's *TOOLS* names.
+     readme-figures.py runs `tools/loom.sh 'status | structure | help'` and
+     surface.lisp, and writes the block between `<!-- figures:begin -->`
+     and `<!-- figures:end -->` in README.md, headed with the commit
+     (`git rev-parse --short HEAD`) and date. With --check it regenerates in
+     memory and compares, per D5.
+     README.md, by hand around the block: what Loom is; the twelve systems
+     and the layering table from CLAUDE.md; console, REST and MCP; what is
+     known not to work, from CLAUDE.md's blind spots and DES-0001; the
+     seeding figures marked as taken on game-server and front-end; a link
+     to INSTALL.md, CONTRIBUTING.md and docs/PRIVATE-TREES.md. The utils
+     section goes. tools/extra-repos stays documented without a user path.
+     Verification: readme-figures.py run twice in a row writes the same
+     file. --check exits 0 after a write. CON-0003: hand-edit one figure in
+     the block and see --check fail (under D5 a).
+     Exit: green (no Lisp source changed). The figures match BASELINE's
+     `status` line apart from what steps 1 to 11 added, and NOTES records
+     the commit they were taken at.
+
+  13. INSTALL.md (R5).
+     INSTALL.md (new).
+
+     Written by running it. Contents: Ubuntu packages (sbcl, git, python3,
+     nodejs, libyaml-0-2, libssl3, curl, bubblewrap only for clean-room);
+     SBCL version tested (2.2.9) with no floor claimed; Quicklisp install
+     commands; the 13 libraries pulled by the first load; python3 3.9 or
+     later (ast.unparse); node with the two versions tested; what happens
+     without node and without python3, taken from the existing tests that
+     bind *NODE-PROGRAM* and the Python program to a missing name; cloning;
+     tools/loom-test.sh; `sbcl --script loom.lisp`; tools/loom-install.sh
+     and `tools/loom-serve.sh install` with the systemctl lines; registering
+     .mcp.json with Claude Code; optional Ollama seeding.
+     Verification: `tools/test/clean-room.sh --quicklisp fresh -- <INSTALL's
+     commands, pasted>` from the first command after cloning to a passing
+     suite and a `loom>` prompt fed `status`. Every command in INSTALL.md
+     appears in that run's transcript, which NOTES keeps. The package step
+     cannot be shown under bwrap (finding 6); NOTES says so.
+     Exit: the run passes. Green.
+
+  14. LICENCES, CONTRIBUTING AND THE CONTRIBUTIONS DECISION (R6, R7(b)).
+     STOP for D6. Nothing in this step is written before the owner answers.
+     CONTRIBUTING.md, CODE_OF_CONDUCT.md, THIRD-PARTY-LICENSES.md,
+     docs/decisions/DEC-0008.yaml.
+
+     THIRD-PARTY-LICENSES.md: every library of finding 16 with its declared
+     licence and source, generated by the scratchpad deps script and pasted;
+     stem as D6 (b) decided; the two vendored JavaScript libraries.
+     DEC-0008: the D6 (d) decision, its date and rationale, refines
+     REQ-0079.
+     CONTRIBUTING.md: running tools/loom-test.sh and `check`; load-test for
+     the peer property; writing a document (CON-0004, tools/next-doc-id.sh,
+     `complete`); the commit-message rules from CLAUDE.md's writing section;
+     DES-0056's contributor path in its words (allocate, CI C1 prints the
+     renumber line, run it with --apply, squash merge); that fork PRs are
+     squash-merged; release-scan.py and readme-figures.py before a release;
+     DEC-0008's answer.
+     Verification: `status` shows DEC-0008 indexed with no new unresolved
+     reference; CONTRIBUTING's renumber example is the command test-doc-ids
+     .py's acceptance case runs.
+     Exit: green.
+
+  15. EDITS BEFORE complete.
+     docs/requirements/REQ-0079.yaml, docs/design/DES-0056.yaml,
+     docs/requirements/REQ-0025.yaml.
+
+     REQ-0079: a dated NOTES section recording findings 1, 2, 12, 14 and 19
+     as corrections to its own text; R4's last sentence amended per D5; R3's
+     exception extended to SKILL.md and loom-skill.md; the open question
+     answered with D3's outcome.
+     DES-0056: a dated note that "or a merge queue" is unavailable to a
+     user-owned repository (finding 17), and that the floor matches by
+     prefix anywhere under the document directory (finding 18).
+     REQ-0025: a dated note under R7 saying what DES-0056 delivered (the
+     file-level check, C2 for the completed/ copy) and that R7's `check`
+     report is still unbuilt. Its status is not changed. This plan does not
+     refine REQ-0025, so `complete` does not ask about it: none of its R1
+     to R10 became true, and R5's narrowing was written before this plan.
+     Exit: `status` shows unresolved 8 and no new ambiguous reference.
+
+  16. ACCEPTANCE (REQ-0079 ACCEPTANCE).
+     STOP for D8. No source change unless a defect is found; a defect gets
+     its own commit with a test that fails without the fix.
+
+     In the D8 environment, from a fresh clone of the branch:
+       - INSTALL.md followed verbatim (step 13's transcript, re-run on this
+         commit).
+       - tools/loom-test.sh: 12 of 12 ok.
+       - tools/loom.sh 'status | check': the clone indexed itself; 0
+         violations.
+       - release-scan.py exits 0; release-scan.py --history exits 0.
+       - test-doc-ids.py, test-next-doc-id.py, test-release-scan.py,
+         test-allow-loom.py pass.
+       - `python3 tools/doc-ids.py check --base origin/main` exits 0.
+     On GitHub, owner only (D7): the doc-ids job green on the branch's
+     pull request. If the owner makes the repository public and protects
+     main before `complete`, open two pull requests from scratch branches
+     that each add REQ-0080 and record: the second shows a merge conflict
+     and no run (DES-0056's first GitHub fact), and after resolving by
+     keeping both files the job fails C3. Close both without merging.
+     Exit: every line above recorded in NOTES with the commit and the
+     environment. A line that could not be run is named with its reason.
+
+  17. COMPLETE.
+     Dry run: tools/loom.sh 'complete PLAN-0061'
+     Expected chain: PLAN-0061 draft -> final; DES-0056 draft -> ?;
+     REQ-0079 draft -> ?; REQ-0079 refines CON-0004, which has no status, so
+     the walk stops there. No other open plan refines DES-0056 or REQ-0079
+     today (only PLAN-0012 is open, and it refines DES-0012), so no refusal
+     is expected. If `complete` refuses anyway, do not edit statuses by
+     hand: record the refusal text in NOTES, run
+     `tools/loom.sh 'set-status PLAN-0061 final'` and `set-status` on each
+     document with the verdict below, as PLAN-0059 step 9 did.
+     Expected verdicts:
+       DES-0056=implemented, if R1 to R6 hold and the workflow has run green
+         on GitHub at least once (step 7 or 16). R7 is deferred by DES-0056
+         itself. If the workflow has never run, partial, with OUTSTANDING
+         naming R5's GitHub half.
+       REQ-0079=implemented, if R1 to R8 hold as amended in step 15 and step
+         16's lines all ran. partial, with OUTSTANDING, if D6 (b) left stem
+         unresolved (R6 says "resolved before release"), or if a step 16
+         line could not run.
+       tools/loom.sh 'complete PLAN-0061 DES-0056=<verdict> REQ-0079=<verdict>'
+     Then `status`: documents unchanged by `complete`, unresolved 8. Do not
+     commit; the branch is the owner's to commit, push and merge.
+
+  VERIFICATION
+
+  The whole change is checked by:
+    - tools/loom-test.sh green on all twelve systems under /usr/bin/sbcl,
+      in the normal environment and in clean-room.sh, with each system's
+      Pass count at or above BASELINE's
+    - `check`: 0 violations, 8 unresolved, 7 ambiguous
+    - `sbcl --script tools/test/load-test.lisp loom-serve` prints T
+    - `git grep -n -E '#:utils\b' -- '*.asd'` prints nothing
+    - clean-room.sh at d3f2824 fails naming utils; at HEAD passes
+    - python tests: test-next-doc-id.py, test-doc-ids.py (with the
+      REQ-0079 acceptance case), test-release-scan.py, test-allow-loom.py
+    - release-scan.py: tip 0 failures; --history 0 credentials
+    - readme-figures.py --check per D5
+    - INSTALL.md's transcript from a fresh Quicklisp
+    - the doc-ids job's run on GitHub, recorded by the owner
+    - nothing written to game-server, front-end, lfia-accounting or
+      ~/lisp/utils: `git -C <tree> status --short` identical before and
+      after any step that reads them (none is planned to)
+
+  NOTES
+
+  Departures from the plan, by step, with commit hashes and the measured
+  figures, are recorded here as the steps land.
