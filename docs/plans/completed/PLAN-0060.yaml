@@ -1,6 +1,6 @@
 id: PLAN-0060
 title: DES-0055 Plan B in nine steps -- the D13 baseline, :VIA on :CALLS, Lisp, Python and JavaScript call shapes, the front-end gate, describe and sites, acceptance on game-server, lfia and front-end, complete
-status: draft
+status: final
 date: 2026-10-08
 refines: [DES-0055, REQ-0078, REQ-0041]
 affects: [assert-edge, enriched-edge, resolve-calls, call-targets,

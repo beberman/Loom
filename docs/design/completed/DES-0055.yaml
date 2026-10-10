@@ -1,6 +1,6 @@
 id: DES-0055
 title: Declared dependencies become :MODULE nodes joined to external imports, a call site's shape is a property of its caller with :VIA on each :CALLS edge, and REQ-0078 R4 is closed as already met
-status: partial
+status: implemented
 date: 2026-10-06
 refines: [REQ-0078, REQ-0041]
 affects: [resolve-imports, resolve-calls, resolve-and-check,

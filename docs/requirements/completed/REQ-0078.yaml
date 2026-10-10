@@ -1,6 +1,6 @@
 id: REQ-0078
 title: A Python analyzer, and an understanding of Firebase Functions, are needed before a Python or Firebase repository is more than a directory of prose to Loom
-status: partial
+status: implemented
 priority: p3
 date: 2026-10-04
 refines: [REQ-0024, REQ-0018]

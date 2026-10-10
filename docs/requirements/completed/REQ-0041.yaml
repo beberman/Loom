@@ -1,6 +1,6 @@
 id: REQ-0041
 title: The shape of a call site must be recorded, because a signature change is the unit of migration work and every count of one so far came from a hand-written script
-status: draft
+status: implemented
 date: 2026-08-21
 refines: [REQ-0013]
 affects: [call-site-label, resolve-calls, analyze-file, describe-entity, impact-set]
