@@ -947,3 +947,125 @@ this repository, so an answer proves which graph was consulted."
   (with-init-tree (root)
     (is (not (search "dependency-modules"
                      (run-to-string (format nil "init ~s" (namestring root))))))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 D12: the call-shapes line under `describe', and `sites'
+;;; ------------------------------------------------------------------
+
+(defun shape-distribution (&rest overrides)
+  (append overrides '(:sites 454 :signatures (("2:y,y" 449) ("3:y,y,y" 5))
+                      :fan-out 0 :without-form 0 :pre-expansion nil)))
+
+(test the-call-shapes-line-is-the-one-design-states
+  (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5"
+             (loom-process::call-shapes-line (shape-distribution)))))
+
+(test the-call-shapes-line-prints-nothing-when-nothing-calls-the-entity
+  (is (null (loom-process::call-shapes-line nil))))
+
+(test the-call-shapes-line-names-five-signatures-and-counts-the-rest
+  (let ((line (loom-process::call-shapes-line
+               (list :sites 28
+                     :signatures '(("1:y" 10) ("2:y,y" 9) ("3:y,y,y" 4) ("1:n" 2)
+                                   ("1:s" 1) ("1:c" 1) ("0:" 1))
+                     :fan-out 0 :without-form 0 :pre-expansion nil))))
+    (is (equal "call shapes: 28 sites -- 1:y 10, 2:y,y 9, 3:y,y,y 4, 1:n 2, 1:s 1, 2 more"
+               line))
+    (is (not (search "1:c" line)) "the sixth signature is not named")
+    (is (not (search "0:" line)) "nor the seventh")))
+
+(test the-call-shapes-line-says-what-is-set-apart-or-missing
+  (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5 (12 more through ambiguous names)"
+             (loom-process::call-shapes-line (shape-distribution :fan-out 12))))
+  (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5, 3 without a call form"
+             (loom-process::call-shapes-line (shape-distribution :without-form 3))))
+  (is (equal "call shapes: 454 sites -- 2:y,y 449, 3:y,y,y 5, pre-expansion"
+             (loom-process::call-shapes-line (shape-distribution :pre-expansion t))))
+  (is (equal "call shapes: 0 sites, 2 without a call form"
+             (loom-process::call-shapes-line
+              (list :sites 0 :signatures nil :fan-out 0 :without-form 2
+                    :pre-expansion nil)))
+      "with no signatures there is no dash and no empty list"))
+
+(defun add-shape-caller (repository name file shapes callee)
+  "A function NAME in FILE holding SHAPES, with a :CALLS edge to CALLEE under the
+key SHAPES names first."
+  (let ((caller (add-console-entity repository :function name file
+                                    :call-shapes shapes)))
+    (loom-graph:add-relationship
+     (loom-workspace:repository-graph repository)
+     (make-instance 'loom-ontology:relationship :rel-type :calls
+                    :from-id (loom-ontology:id caller) :to-id (loom-ontology:id callee)
+                    :origin-file file
+                    :properties (loom-ontology:properties-table
+                                 (list :via (list (first (first shapes)))))))
+    caller))
+
+(test describe-prints-the-call-shapes-under-the-callers
+  (with-console-fixture
+    (let ((callee (add-console-entity repository :function "dict_value" "app/lib.py")))
+      (add-shape-caller repository "a" "app/a.py" '(("dict_value" ("2:y,y" 4))) callee)
+      (add-shape-caller repository "b" "app/b.py" '(("dict_value" ("2:y,y" 9))) callee)
+      (add-shape-caller repository "c" "app/c.py" '(("dict_value" ("3:y,y,y" 2))) callee)
+      (let* ((output (run-to-string "describe dict_value"))
+             (callers (search "<- calls" output))
+             (line (search "call shapes: 3 sites -- 2:y,y 2, 3:y,y,y 1" output)))
+        (is (not (null callers)) "~a" output)
+        (is (not (null line)) "~a" output)
+        (when (and callers line)
+          (is (< callers line) "the line is under the callers"))))))
+
+(test describe-of-an-entity-nothing-calls-prints-no-call-shapes-line
+  (with-console-fixture
+    (is (not (search "call shapes" (run-to-string "describe alpha"))))))
+
+(test sites-prints-each-group-and-its-rows-rarest-group-first
+  (with-console-fixture
+    (let ((callee (add-console-entity repository :function "dict_value" "app/lib.py")))
+      (add-shape-caller repository "a" "app/a.py" '(("dict_value" ("2:y,y" 4))) callee)
+      (add-shape-caller repository "b" "app/b.py" '(("dict_value" ("2:y,y" 9))) callee)
+      (add-shape-caller repository "c" "app/c.py" '(("dict_value" ("3:y,y,y" 2))) callee)
+      (let* ((output (run-to-string "sites dict_value"))
+             (rare (search "3:y,y,y  1 site" output))
+             (common (search "2:y,y  2 sites" output)))
+        (is (not (null rare)) "~a" output)
+        (is (not (null common)) "~a" output)
+        (when (and rare common) (is (< rare common) "the rarest group first"))
+        (is (search "  app/c.py:2  c" output))
+        (is (search "  app/a.py:4  a" output))
+        (is (search "  app/b.py:9  b" output))
+        (is (not (search "more" output)) "nothing was cut")))))
+
+(test sites-cuts-a-group-at-the-limit-and-says-how-many-it-left-out
+  (with-console-fixture
+    (let ((callee (add-console-entity repository :function "dict_value" "app/lib.py")))
+      (dotimes (i 5)
+        (add-shape-caller repository (format nil "caller~d" i) (format nil "app/c~d.py" i)
+                          (list (list "dict_value" (list "2:y,y" (1+ i)))) callee))
+      (let ((output (run-to-string "sites dict_value 2")))
+        (is (search "2:y,y  5 sites" output) "~a" output)
+        (is (search "app/c0.py:1" output))
+        (is (search "app/c1.py:2" output))
+        (is (not (search "app/c2.py" output)) "the third row is not printed")
+        (is (search "  3 more" output)))
+      (is (search "app/c4.py:5" (run-to-string "sites dict_value"))
+          "the default shows all five"))))
+
+(test sites-of-an-entity-nothing-calls-says-so
+  (with-console-fixture
+    (is (search "no call form is recorded" (run-to-string "sites alpha")))))
+
+(test sites-takes-a-repository-token-and-is-in-the-command-table
+  (with-console-fixture
+    (let ((callee (add-console-entity repository :function "dict_value" "app/lib.py")))
+      (add-shape-caller repository "a" "app/a.py" '(("dict_value" ("2:y,y" 4))) callee)
+      (is (search "app/a.py:4"
+                  (run-to-string (format nil "sites @~a dict_value"
+                                         (loom-workspace:repository-name repository))))))
+    ;; Not through `help': defining-a-command-twice-replaces-it leaves HELP
+    ;; replaced for the rest of the run. The table is what HELP prints.
+    (is (search "sites <name>" (command-usage (loom-process::find-command "sites"))))))
+
+(test sites-refuses-a-limit-that-is-not-a-number
+  (with-console-fixture
+    (is (search "limit" (run-to-string "sites alpha many")))))

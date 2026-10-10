@@ -1589,3 +1589,177 @@ body: |
   passed 12 of 12, `check` printed 0 violations with 8 unresolved and 7
   ambiguous, the census printed 510 minted and 41 ambiguous, and load-test
   loom-serve printed T, on the step 5 tree before the commit.
+
+  STEP 7, describe AND `sites`. 2026-10-10, Loom at 37ba252 plus this step's
+  commit.
+
+  Existing tests that change because the behaviour they pin changes (RISKS 7),
+  recorded before they were edited. Both are in src/mcp/test/tools.lisp and both
+  count the tools tools/list returns, which grows by one with loom_sites:
+    tools-list-returns-what-the-caller-may-call-and-no-lifecycle-write-tool
+        asserts 15 tools, now 16
+    granting-repl-adds-the-three-tools-and-nothing-else
+        asserts 18 tools with :repl granted, now 19. The plan names only the
+        first. The second's difference assertion (3) is unchanged.
+  A third, found when the serve suite ran. src/serve/test/operations.lisp
+  EVERY-READ-OPERATION-EITHER-SCOPES-TO-A-DOMAIN-OR-SAYS-WHY-NOT failed for the
+  new :SITES operation ("SITES is a read operation that neither scopes to a
+  domain nor is listed as answering about a whole repository"). That test exists
+  to force the decision. :SITES resolves its term with the domain's property
+  filter, as :DESCRIBE does, so it is added to *DOMAIN-SCOPED-READS* in the test
+  file. The test's assertions are unchanged.
+
+  Changed. src/knowledge/services.lisp has CALL-SHAPE-DISTRIBUTION and
+  SHAPE-SITES, over three helpers: CALLER-OCCURRENCES (the join through an
+  edge's :VIA), NOTE-CALL-SITE (a site at the largest multiplicity one caller
+  records) and CALL-SITE-TALLY (both answers read one tally). DESCRIBE-ENTITY
+  gains :CALL-SHAPES, NIL when nothing calls the entity. package.lisp exports
+  the two public functions. console.lisp has CALL-SHAPES-LINE, PRINT-NEIGHBORS
+  (the `describe' neighbour loop, moved out of the command body, and the line
+  printed under the `<- calls' band), the `sites' command and PRINT-SITES.
+  operations.lisp has the :SITES operation and SITES-ANSWER. tools.lisp has one
+  MAKE-TOOL line, "loom_sites". No .asd, no src/rest/ source, no loom-graph
+  function and no analyzer changed. `find' showed CALL-SHAPE-DISTRIBUTION and
+  SHAPE-SITES undefined before they were written.
+
+  How a :CALL-SITE source is treated, which DES-0055 D11 and R11 leave open. D11
+  says "a :CALL-SITE carries shapes like any other caller" and says nothing of
+  the three referrer kinds. An :AMBIGUOUS site is a guess among candidates (its
+  edges carry 1/N confidence), so its sites are :FAN-OUT and are in neither
+  :SITES nor `sites'. A :DEFINER-CALL, :VARIABLE, :CLASS or :MODULE site is an
+  ordinary caller: its sites count, with the file and the lines its own
+  :CALL-SHAPES carry. Its row in `sites' names it by the site's label,
+  "<call-name>@<file>:<line>", which is the entity's name. An :AMBIGUOUS site's
+  shapes lines are its caller's real call lines, not the site's start line, so
+  the fan-out count is of call forms.
+
+  Departures from the plan.
+    1. The call-site ceiling. The plan expects 510 minted and the exit condition
+       says 510. The step mints 512, which is the ceiling and passes the test
+       (<=). DES-0014 mints one :CALL-SITE for each distinct resolving name a
+       DEFINE-COMMAND or DEFINE-OPERATION body calls. The first version put the
+       logic in the two bodies and minted 526 (the workspace ceiling test failed).
+       The `sites' body now makes one call, PRINT-SITES, and the :SITES body one,
+       SITES-ANSWER: +2. `describe' needed one more name (CALL-SHAPES-LINE), so
+       its neighbour loop moved into PRINT-NEIGHBORS, which takes NEIGHBOR-LINE
+       out of the body as it puts PRINT-NEIGHBORS in: +0. Net 510 to 512, 41
+       ambiguous unchanged. Headroom under the ceiling is now 0. Getting to 510
+       would take a call the index cannot see, such as (funcall 'print-sites ...),
+       which hides a real edge; I did not do that. The choice between raising
+       *CALL-SITE-CEILING* with a reason and hiding two edges is the caller's.
+    2. PRINT-NEIGHBORS is not in the plan. It is a verbatim move of the loop
+       plus the new line.
+    3. src/serve/json.lisp is not in the plan's file list. *ARRAY-VALUED-KEYS*
+       gains :GROUPS, :SIGNATURES and :SITES, so an answer with no groups, or a
+       group shown no rows, encodes as [] and not null. :SITES is a number in
+       `describe''s distribution and the encoder checks numbers first, so no
+       existing answer changes. No other answer uses these three keys.
+    4. The serve answer holds :ENTITY, :GROUPS and :PROVENANCE. The plan names
+       only the operation's arguments. :PROVENANCE is what :IMPACT carries.
+    5. `, N more' counts signatures not named, which is DES-0055 D12's
+       "remainder count" read as the plan words it. "call shapes: 866 sites --
+       ..., 148 more" means 148 further signatures. It does not say so on the
+       line.
+    6. `sites' with no recorded form prints the entity line and "no call form is
+       recorded for any call to it". The plan does not say what NIL prints.
+    7. :PRE-EXPANSION encodes as null when false (NIL), as every NIL does, not as
+       false.
+    8. Three existing tests changed, listed above, before the first edit of the
+       first two. The third (the domain-scoped-reads list) was found by running
+       the serve suite and edited after the failure was seen.
+
+  Tests: 19 new in src/knowledge/test/services.lisp, 11 in
+  src/process/test/console.lisp, 6 in src/serve/test/operations.lisp, 1 in
+  src/rest/test/routes.lisp and 1 in src/mcp/test/tools.lisp. The graph does not
+  say in which order a node's edges come back. The first version of the sort
+  tests passed with the sort deleted (M4), because the order the edges came back
+  in happened to be the sorted one. The tests
+  now build counts 1, 3, 2 and files b, c, a in creation order, so neither that
+  order nor its reverse is the asserted one. CS-CALLEE-WITH-CALLERS says so.
+
+  Mutations, one at a time in the real tree, each file copied aside, restored
+  and touched. Failing tests, by mutation:
+    M1  join by callee name, not :VIA     A-CALLER-WHOSE-EDGE-NAMES-NO-KEY-IT-HOLDS-CONTRIBUTES-NOTHING,
+                                          A-PYTHON-CLASS-CALL-REACHING-INIT-IS-COUNTED-UNDER-THE-CLASS-KEY,
+                                          THE-JOIN-IS-THE-EDGES-VIA-AND-NOT-THE-CALLEES-NAME
+    M2  sum over callers (entries, not sites)  TWO-TEST-CASES-INHERITING-ONE-HOOK-LINE-COUNT-ONE-SITE,
+                                          A-SITE-IS-COUNTED-AT-THE-LARGEST-MULTIPLICITY-ONE-CALLER-RECORDS
+    M3  fan-out not excluded from :SITES  AN-AMBIGUOUS-SITES-CALLS-ARE-FAN-OUT-AND-NOT-SITES,
+                                          SHAPE-SITES-LEAVES-OUT-FAN-OUT
+    M4  signature sort dropped            SIGNATURES-ARE-MOST-COMMON-FIRST-WHICHEVER-ORDER-THEY-WERE-MET-IN,
+                                          EQUAL-COUNTS-ARE-ORDERED-BY-SIGNATURE. NOT CAUGHT on the first
+                                          run: fail 0 of 634. See Tests above.
+    M5  five-signature cap dropped        THE-CALL-SHAPES-LINE-NAMES-FIVE-SIGNATURES-AND-COUNTS-THE-REST
+    M6  :MACRO-P flag dropped             A-MACRO-CALLEE-IS-MARKED-PRE-EXPANSION
+    M7  MCP line dropped                  TOOLS-LIST-RETURNS-WHAT-THE-CALLER-MAY-CALL-...,
+                                          GRANTING-REPL-ADDS-THE-THREE-TOOLS-AND-NOTHING-ELSE,
+                                          LOOM-SITES-OVER-MCP-ANSWERS-WHAT-THE-REST-ROUTE-DOES
+    M8  :SITES operation renamed away     8 serve, 6 rest and 5 mcp checks: SITES-IS-A-REGISTERED-READ-OPERATION,
+                                          SITES-ANSWERS-THE-GROUPS-..., SITES-OVER-REST-ANSWERS-THE-GROUPS-AS-JSON,
+                                          LOOM-SITES-OVER-MCP-..., the tool-count tests
+    M9  :AMBIGUOUS kind not recognised    AN-AMBIGUOUS-SITES-CALLS-ARE-FAN-OUT-..., SHAPE-SITES-LEAVES-OUT-FAN-OUT
+    M11 file left out of the site         THE-SAME-LINE-IN-TWO-FILES-IS-TWO-SITES, SHAPE-SITES-LISTS-THE-RAREST-GROUP-FIRST,
+                                          A-DEFINER-CALL-SITE-IS-AN-ORDINARY-CALLER
+    M12 multiplicity within a caller ignored  A-SITE-IS-COUNTED-AT-THE-LARGEST-MULTIPLICITY-ONE-CALLER-RECORDS
+    M15 groups commonest first            SHAPE-SITES-LISTS-THE-RAREST-GROUP-FIRST,
+                                          SITES-PRINTS-EACH-GROUP-AND-ITS-ROWS-RAREST-GROUP-FIRST
+    M16 :WITHOUT-FORM never counted       AN-EDGE-WITH-NO-KEY-THE-CALLER-HOLDS-IS-WITHOUT-A-CALL-FORM,
+                                          A-CALLER-WHOSE-EDGE-NAMES-NO-KEY-IT-HOLDS-CONTRIBUTES-NOTHING
+    M17 :PER-GROUP ignored                SHAPE-SITES-RESPECTS-PER-GROUP-..., SITES-CUTS-A-GROUP-AT-THE-LIMIT-...,
+                                          SITES-LIMIT-BOUNDS-THE-ROWS-A-GROUP-SHOWS
+    M18 serve ignores :LIMIT              SITES-LIMIT-BOUNDS-THE-ROWS-A-GROUP-SHOWS
+    M19 no group sort in SHAPE-SITES      SHAPE-SITES-LISTS-THE-RAREST-GROUP-FIRST, EQUAL-SIZED-GROUPS-ARE-ORDERED-BY-SIGNATURE
+    M20 no row sort in SHAPE-SITES        SHAPE-SITES-LISTS-THE-RAREST-GROUP-FIRST
+    M21 no signature tie-break (distribution)  EQUAL-COUNTS-ARE-ORDERED-BY-SIGNATURE
+    M22 no signature tie-break (SHAPE-SITES)   EQUAL-SIZED-GROUPS-ARE-ORDERED-BY-SIGNATURE
+    M23 a tie keeps the later-named caller     TWO-TEST-CASES-INHERITING-ONE-HOOK-LINE-COUNT-ONE-SITE
+    M24 DESCRIBE-ENTITY drops :CALL-SHAPES     DESCRIBE-CARRIES-THE-DISTRIBUTION,
+                                          DESCRIBE-OVER-THE-OPERATION-CARRIES-THE-DISTRIBUTION-AS-JSON
+    M25 `describe' prints no line         DESCRIBE-PRINTS-THE-CALL-SHAPES-UNDER-THE-CALLERS
+  The REST route has no code of its own to mutate: /v1/sites exists because the
+  registry entry does, and M8 is the mutation that removes it. Every mutation
+  was caught once the sort tests were rewritten; M4 was the one that was not.
+  M1, M5, M7, M8, M17, M18 and M25 were rerun after the PRINT-SITES,
+  SITES-ANSWER and PRINT-NEIGHBORS refactor and were caught again.
+
+  Exit conditions, on the tree before the commit.
+    tools/loom-test.sh: 12 of 12 systems passed under /usr/bin/sbcl. Knowledge 645
+      checks, process 261, serve 315, rest 123, mcp 58. A first full run, before
+      the refactor, failed the workspace ceiling test (above) and also failed
+      A-READ-OPERATION-WRITES-A-RECORD-NAMING-ITSELF in serve (3 checks), which
+      passed in two single-system runs before and in the full run after; I did
+      not find its cause and it did not recur.
+    check: 0 violations, 8 unresolved document references, 7 ambiguous, 5 definer
+      macros.
+    call-site-census: 512 minted, 41 ambiguous (departure 1).
+    load-test loom-serve: (find-package "LOOM-PROCESS") => T.
+    tools/loom-serve.sh update run; the service restarted. Over REST,
+      /v1/sites?repository=Loom&term=getp&limit=1 answered JSON that parses with
+      keys entity, groups and provenance and 153 groups; /v1/describe carried
+      call-shapes with sites 866 and 153 signatures. Over MCP by curl to /mcp,
+      tools/list returned 16 tools including loom_sites, and tools/call
+      loom_sites returned isError false and 153 groups. My session had no
+      loom_* tools of its own, so these two were exercised with curl.
+    Cost: index-cost on Loom, one run each, this tree against HEAD with the
+      changes stashed: heap-bytes 95820368 and 95396800 (+423568), entities 5609
+      and 5553, seconds 2.290 and 2.847. The step stores nothing; the heap
+      moves with the 56 entities of its own tests and functions. front-end was
+      not measured.
+
+  `describe getp` on Loom (the line under the callers) and the head of
+  `sites getp`, both as printed:
+    function getp  [src/ontology/root-ontology.lisp:279-284]
+      <- calls: getp@src/workspace/test/domains.lisp:156 (definer-call), ...
+      call shapes: 866 sites -- 2:y,k:file 47, 2:y,k:call-names 45, 2:y,k:language 40, 2:y,k:path 40, 2:y,k:doc-id 30, 148 more
+    getp  [src/ontology/root-ontology.lisp:279-284]
+    2:c,k:analysis-error  1 site
+      src/analyzer/test/yaml-analyzer.lisp:399  an-unquoted-colon-in-a-title-reports-the-line-it-is-on
+    2:c,k:codebases  1 site
+      src/analyzer/test/firebase-analyzer.lisp:48  fb-codebases
+    ...
+    2:y,k:detail  2 sites
+      src/process/console.lisp:1774  getp@src/process/console.lisp:1746
+      src/serve/operations.lisp:663  violation-summary
+  153 groups. The rarest come first, so the 47-site `2:y,k:file` group is last.
+  A definer-call site (`getp@src/process/console.lisp:1746`) is named by its
+  label, as the treatment above says.

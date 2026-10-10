@@ -952,3 +952,271 @@ with them."
   (let ((g (module-graph)))
     (is (= 1 (length (search-entities g :name "google-auth" :kind :code))))
     (is (null (search-entities g :name "google-auth" :kind :documentation)))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 D11, D12: the call shapes at a callee (PLAN-0060 step 7)
+;;; ------------------------------------------------------------------
+;;;
+;;; Hand-built graphs, because the join under test is between two properties the
+;;; analyzers write -- a caller's :CALL-SHAPES and an edge's :VIA -- and a fixture
+;;; that ran the analyzers would test them as well.
+
+(defun cs-entity (graph name &key (type 'function-entity) (file "src/use.lisp")
+                               shapes macro-p)
+  "An entity named NAME in FILE holding SHAPES, added to GRAPH."
+  (let ((entity (make-instance type :name name :origin-file file
+                               :properties (properties-table
+                                            (list :file file :start-line 1 :end-line 9
+                                                  :call-shapes shapes
+                                                  :macro-p macro-p)))))
+    (add-entity graph entity)
+    entity))
+
+(defun cs-call (graph from to via)
+  "A :CALLS edge from FROM to TO naming the keys VIA, as RESOLVE-CALLS writes one."
+  (add-relationship graph (make-instance 'relationship
+                                         :rel-type :calls
+                                         :from-id (id from) :to-id (id to)
+                                         :origin-file (origin-file from)
+                                         :properties (properties-table
+                                                      (list :via via)))))
+
+(defun cs-callee-with-callers (shapes-per-caller &key (key "f") macro-p file files)
+  "(values graph callee) with one caller per element of SHAPES-PER-CALLER, each
+holding that :CALL-SHAPES value and reaching the callee under KEY. The callers
+sit in one file each, or all in FILE, or in the elements of FILES in turn.
+
+The graph hands a node's edges back in an order these tests do not control, and
+it may be creation order or its reverse. A test of an ordering therefore uses a
+creation order that is neither the sorted order nor its reverse."
+  (let* ((g (make-graph))
+         (callee (cs-entity g key :file "src/lib.lisp" :macro-p macro-p)))
+    (loop for shapes in shapes-per-caller
+          for i from 1
+          do (cs-call g (cs-entity g (format nil "caller-~d" i)
+                                   :file (or file (nth (1- i) files)
+                                             (format nil "src/use-~d.lisp" i))
+                                   :shapes shapes)
+                      callee (list key)))
+    (values g callee)))
+
+(test four-callers-report-four-sites-in-order-of-how-common-each-signature-is
+  (multiple-value-bind (g callee)
+      ;; The rarer signature is met first, so an unsorted answer reads it first.
+      (cs-callee-with-callers '((("f" ("3:y,y,y" 30)))
+                                (("f" ("2:y,y" 10)))
+                                (("f" ("2:y,y" 20)))
+                                (("f" ("2:y,y" 40)))))
+    (let ((d (call-shape-distribution g (id callee))))
+      (is (= 4 (getf d :sites)))
+      (is (equal '(("2:y,y" 3) ("3:y,y,y" 1)) (getf d :signatures)))
+      (is (= 0 (getf d :fan-out)))
+      (is (= 0 (getf d :without-form)))
+      (is (null (getf d :pre-expansion))))))
+
+(test signatures-are-most-common-first-whichever-order-they-were-met-in
+  ;; Counts 1, 3, 2 in creation order: neither that order nor its reverse is
+  ;; the sorted one, which is the only way a test can see the sort at all.
+  (multiple-value-bind (g callee)
+      (cs-callee-with-callers '((("f" ("1:y" 1)))
+                                (("f" ("2:y,y" 2))) (("f" ("2:y,y" 3))) (("f" ("2:y,y" 4)))
+                                (("f" ("3:y,y,y" 5))) (("f" ("3:y,y,y" 6)))))
+    (is (equal '(("2:y,y" 3) ("3:y,y,y" 2) ("1:y" 1))
+               (getf (call-shape-distribution g (id callee)) :signatures)))))
+
+(test equal-counts-are-ordered-by-signature
+  (multiple-value-bind (g callee)
+      (cs-callee-with-callers '((("f" ("2:y,y" 1))) (("f" ("1:y" 1))) (("f" ("3:y,y,y" 1)))))
+    (is (equal '(("1:y" 1) ("2:y,y" 1) ("3:y,y,y" 1))
+               (getf (call-shape-distribution g (id callee)) :signatures)))))
+
+(test an-ambiguous-sites-calls-are-fan-out-and-not-sites
+  ;; The control is the ordinary caller beside it: :SITES is 1, so a distribution
+  ;; that dropped the ambiguous site would also read 1 on :SITES but 0 on :FAN-OUT.
+  (multiple-value-bind (g callee) (cs-callee-with-callers '((("f" ("2:y,y" 10)))))
+    (let ((site (make-call-site-entity :file "src/use.lisp" :start-line 1
+                                       :call-name "f" :referrer-kind :ambiguous
+                                       :candidate-count 2 :language :lisp
+                                       :call-shapes '(("f" ("1:y" 5) ("1:n" 6 7))))))
+      (add-entity g site)
+      (cs-call g site callee '("f")))
+    (let ((d (call-shape-distribution g (id callee))))
+      (is (= 1 (getf d :sites)) "the ordinary caller only")
+      (is (= 3 (getf d :fan-out)) "three call lines, behind one ambiguous name")
+      (is (equal '(("2:y,y" 1)) (getf d :signatures))
+          "and no fan-out signature is in the list"))))
+
+(test a-definer-call-site-is-an-ordinary-caller
+  ;; PLAN-0060 step 7's reading of DES-0055, which says only that a :CALL-SITE
+  ;; carries shapes like any other caller: only :AMBIGUOUS is a guess.
+  (multiple-value-bind (g callee) (cs-callee-with-callers '())
+    (let ((site (make-call-site-entity :file "src/ops.lisp" :start-line 4
+                                       :call-name "f" :referrer-kind :definer-call
+                                       :generated-by "define-operation" :language :lisp
+                                       :call-shapes '(("f" ("1:y" 6))))))
+      (add-entity g site)
+      (cs-call g site callee '("f")))
+    (let ((d (call-shape-distribution g (id callee)))
+          (rows (getf (first (shape-sites g (id callee))) :sites)))
+      (is (= 1 (getf d :sites)))
+      (is (= 0 (getf d :fan-out)))
+      (is (equal '("src/ops.lisp" 6 "f@src/ops.lisp:4") (first rows))
+          "the file and line its shape carries, named by its label"))))
+
+(test an-edge-with-no-key-the-caller-holds-is-without-a-call-form
+  ;; A Lisp #'f designator is in :CALL-NAMES and so reaches the edge's :VIA, and
+  ;; records no shape (PLAN-0060 FINDINGS 4).
+  (let* ((g (make-graph))
+         (callee (cs-entity g "f" :file "src/lib.lisp"))
+         (caller (cs-entity g "mapper" :shapes nil)))
+    (cs-call g caller callee '("f"))
+    (let ((d (call-shape-distribution g (id callee))))
+      (is (= 0 (getf d :sites)))
+      (is (= 1 (getf d :without-form)))
+      (is (null (getf d :signatures))))))
+
+(test two-test-cases-inheriting-one-hook-line-count-one-site
+  ;; PLAN-0060 FINDINGS 5. walkTestBody gives each case the setup calls of its
+  ;; describe, so the hook's shape is on every case with the hook's line.
+  (multiple-value-bind (g callee)
+      (cs-callee-with-callers '((("f" ("1:n" 3))) (("f" ("1:n" 3))) (("f" ("1:n" 3))))
+                              :file "src/use.test.js")
+    (let ((d (call-shape-distribution g (id callee))))
+      (is (= 1 (getf d :sites)) "three cases, one source line")
+      (is (equal '(("1:n" 1)) (getf d :signatures)))
+      (is (equal '(("src/use.test.js" 3 "caller-1"))
+                 (getf (first (shape-sites g (id callee))) :sites))
+          "and the row names the caller whose name sorts first, whatever order the
+graph hands the edges back in"))))
+
+(test the-same-line-in-two-files-is-two-sites
+  ;; The control for the test above: the file is part of the site, so merging by
+  ;; line alone would read 1 here.
+  (multiple-value-bind (g callee)
+      (cs-callee-with-callers '((("f" ("1:n" 3))) (("f" ("1:n" 3)))))
+    (is (= 2 (getf (call-shape-distribution g (id callee)) :sites)))))
+
+(test a-site-is-counted-at-the-largest-multiplicity-one-caller-records
+  ;; Two calls on one line in one caller stay two, and a second caller recording
+  ;; the line once does not add to it. Summing would read 3, the maximum of the
+  ;; callers 2, and counting distinct lines 1.
+  (let ((g (make-graph)))
+    (let ((callee (cs-entity g "f" :file "src/lib.lisp"))
+          (a (cs-entity g "a" :file "src/one.lisp" :shapes '(("f" ("1:y" 3 3)))))
+          (b (cs-entity g "b" :file "src/one.lisp" :shapes '(("f" ("1:y" 3))))))
+      (cs-call g a callee '("f"))
+      (cs-call g b callee '("f"))
+      (is (= 2 (getf (call-shape-distribution g (id callee)) :sites))))))
+
+(test the-join-is-the-edges-via-and-not-the-callees-name
+  ;; The caller holds an entry under the callee's own name and another under the
+  ;; key that reached it. Only the second counts. A match on the callee's name
+  ;; would read "9:y" here, and the entry for "g" is what RESOLVE-CALLS followed.
+  (let* ((g (make-graph))
+         (callee (cs-entity g "f" :file "src/lib.lisp"))
+         (caller (cs-entity g "caller"
+                            :shapes '(("f" ("9:y" 2)) ("g" ("1:n" 5))))))
+    (cs-call g caller callee '("g"))
+    (let ((d (call-shape-distribution g (id callee))))
+      (is (equal '(("1:n" 1)) (getf d :signatures)))
+      (is (= 1 (getf d :sites))))))
+
+(test a-caller-whose-edge-names-no-key-it-holds-contributes-nothing
+  ;; The name-matching implementation counts this caller's "f" entry; the join
+  ;; through :VIA does not, and reports the edge as without a call form.
+  (let* ((g (make-graph))
+         (callee (cs-entity g "f" :file "src/lib.lisp"))
+         (caller (cs-entity g "caller" :shapes '(("f" ("2:y,y" 2))))))
+    (cs-call g caller callee '("h"))
+    (let ((d (call-shape-distribution g (id callee))))
+      (is (= 0 (getf d :sites)))
+      (is (= 1 (getf d :without-form))))))
+
+(test a-python-class-call-reaching-init-is-counted-under-the-class-key
+  ;; DES-0055 D11: the call is `Widget(1)' and the callee is Widget.__init__, so a
+  ;; match on the callee's name finds nothing. The key that reached it is "Widget".
+  (let* ((g (make-graph))
+         (init (cs-entity g "__init__" :type 'method-entity :file "app/widget.py"))
+         (caller (cs-entity g "build" :file "app/main.py"
+                                      :shapes '(("Widget" ("1:n" 12))))))
+    (cs-call g caller init '("Widget"))
+    (let ((d (call-shape-distribution g (id init))))
+      (is (= 1 (getf d :sites)))
+      (is (equal '(("1:n" 1)) (getf d :signatures))))))
+
+(test a-macro-callee-is-marked-pre-expansion
+  (multiple-value-bind (g callee)
+      (cs-callee-with-callers '((("f" ("1:y" 3)))) :macro-p t)
+    (is-true (getf (call-shape-distribution g (id callee)) :pre-expansion)))
+  (multiple-value-bind (g callee) (cs-callee-with-callers '((("f" ("1:y" 3)))))
+    (is-false (getf (call-shape-distribution g (id callee)) :pre-expansion))))
+
+(test nothing-calling-an-entity-is-no-distribution
+  (let* ((g (make-graph))
+         (lonely (cs-entity g "lonely")))
+    (is (null (call-shape-distribution g (id lonely))))
+    (is (null (shape-sites g (id lonely))))
+    (is (null (getf (describe-entity g (id lonely)) :call-shapes :absent))
+        "the key is present and NIL")))
+
+(test describe-carries-the-distribution
+  (multiple-value-bind (g callee) (cs-callee-with-callers '((("f" ("2:y,y" 10)))))
+    (is (equal (call-shape-distribution g (id callee))
+               (getf (describe-entity g (id callee)) :call-shapes)))
+    (is (= 1 (getf (getf (describe-entity g (id callee)) :call-shapes) :sites)))))
+
+(test shape-sites-lists-the-rarest-group-first
+  ;; Counts 1, 3, 2 in creation order, and files b, c, a, d: neither the order
+  ;; the callers were made in nor its reverse is the order asserted, for groups
+  ;; or for rows.
+  (multiple-value-bind (g callee)
+      (cs-callee-with-callers '((("f" ("1:y" 7)))
+                                (("f" ("2:y,y" 20)))
+                                (("f" ("2:y,y" 10)))
+                                (("f" ("2:y,y" 40)))
+                                (("f" ("3:y,y,y" 31)))
+                                (("f" ("3:y,y,y" 30))))
+                              :files '("src/b.lisp" "src/c.lisp" "src/a.lisp" "src/d.lisp"
+                                       "src/e.lisp" "src/e.lisp"))
+    (let ((groups (shape-sites g (id callee))))
+      (is (equal '("1:y" "3:y,y,y" "2:y,y")
+                 (mapcar (lambda (group) (getf group :signature)) groups)))
+      (is (equal '(1 2 3) (mapcar (lambda (group) (getf group :count)) groups)))
+      (is (equal '(("src/b.lisp" 7 "caller-1")) (getf (first groups) :sites)))
+      (is (equal '(("src/e.lisp" 30 "caller-6") ("src/e.lisp" 31 "caller-5"))
+                 (getf (second groups) :sites))
+          "rows in one file run in line order")
+      (is (equal '(("src/a.lisp" 10 "caller-3") ("src/c.lisp" 20 "caller-2")
+                   ("src/d.lisp" 40 "caller-4"))
+                 (getf (third groups) :sites))
+          "rows run in file order")
+      (is (equal '(0 0 0) (mapcar (lambda (group) (getf group :more)) groups))))))
+
+(test equal-sized-groups-are-ordered-by-signature
+  (multiple-value-bind (g callee)
+      (cs-callee-with-callers '((("f" ("2:y,y" 1))) (("f" ("1:y" 1))) (("f" ("3:y,y,y" 1)))))
+    (is (equal '("1:y" "2:y,y" "3:y,y,y")
+               (mapcar (lambda (group) (getf group :signature))
+                       (shape-sites g (id callee)))))))
+
+(test shape-sites-respects-per-group-and-says-how-many-it-left-out
+  (multiple-value-bind (g callee)
+      (cs-callee-with-callers '((("f" ("2:y,y" 1))) (("f" ("2:y,y" 2)))
+                                (("f" ("2:y,y" 3))) (("f" ("2:y,y" 4)))))
+    (let ((group (first (shape-sites g (id callee) :per-group 3))))
+      (is (= 4 (getf group :count)))
+      (is (= 3 (length (getf group :sites))))
+      (is (= 1 (getf group :more))))
+    (is (= 4 (length (getf (first (shape-sites g (id callee))) :sites)))
+        "the default is 20 rows a group, and 4 are fewer than that")))
+
+(test shape-sites-leaves-out-fan-out
+  (multiple-value-bind (g callee) (cs-callee-with-callers '())
+    (let ((site (make-call-site-entity :file "src/use.lisp" :start-line 1
+                                       :call-name "f" :referrer-kind :ambiguous
+                                       :candidate-count 2 :language :lisp
+                                       :call-shapes '(("f" ("1:y" 5))))))
+      (add-entity g site)
+      (cs-call g site callee '("f")))
+    (is (null (shape-sites g (id callee))))
+    (is (= 1 (getf (call-shape-distribution g (id callee)) :fan-out)))))

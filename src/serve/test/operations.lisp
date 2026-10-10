@@ -783,7 +783,7 @@ down. It does not make the wrong answer impossible, and the list can be
 extended by anyone -- which is the honest residual and is worth stating.")
 
 (defparameter *domain-scoped-reads*
-  '(:find :describe :impact :context :similar)
+  '(:find :describe :impact :context :similar :sites)
   "Read operations that narrow their selection to a named domain.")
 
 (test every-read-operation-either-scopes-to-a-domain-or-says-why-not
@@ -931,3 +931,77 @@ listed as answering about a whole repository. Decide which it is and say so in ~
       (is (equal "requirements.txt" (cdr (assoc :manifest dependency))))
       (is (search "\"specs\":[]" json) "an empty list must not arrive as null: ~a" json)
       (is (search "\"provides\":[]" json)))))
+
+;;; ------------------------------------------------------------------
+;;; DES-0055 D12: `sites'
+;;; ------------------------------------------------------------------
+;;;
+;;; The fixture's ALPHA-TWICE calls (alpha (alpha x)) on line 2, and the Lisp
+;;; analyzer records the two forms' signatures: the outer takes a call, `1:c',
+;;; and the inner a variable, `1:y'. So `alpha' has two sites of one each.
+
+(test sites-is-a-registered-read-operation
+  (let ((operation (find-operation :sites)))
+    (is-true operation)
+    (when operation (is (eq :read (operation-tier operation)))))
+  (is (equal '((:repository t) (:term t) (:limit nil))
+             (operation-arg-shape (find-operation :sites)))))
+
+(test sites-answers-the-groups-and-the-entity-it-resolved-as-json-that-parses
+  (with-operations-fixture (repository)
+    (let* ((answer (call-operation :sites '(:read)
+                                   :repository (repository-name repository)
+                                   :term "alpha"))
+           (groups (getf answer :groups))
+           (json (loom-serve:encode-result answer))
+           (parsed (json:decode-json-from-string json)))
+      (is (equal "alpha" (getf (getf answer :entity) :name)))
+      (is (equal '("1:c" "1:y") (mapcar (lambda (g) (getf g :signature)) groups))
+          "~s" groups)
+      (is (equal '("src/code.lisp" 2 "alpha-twice")
+                 (first (getf (first groups) :sites))))
+      (is (= 2 (length (cdr (assoc :groups parsed)))) "~a" json)
+      (is (equal "1:c" (cdr (assoc :signature (first (cdr (assoc :groups parsed))))))))))
+
+(test sites-of-an-entity-nothing-calls-encodes-an-empty-array-and-not-null
+  (with-operations-fixture (repository)
+    (let ((json (loom-serve:encode-result
+                 (call-operation :sites '(:read)
+                                 :repository (repository-name repository)
+                                 :term "alpha-twice"))))
+      (is (search "\"groups\":[]" json) "~a" json)
+      (finishes (json:decode-json-from-string json)))))
+
+(test sites-limit-bounds-the-rows-a-group-shows
+  (with-operations-fixture (repository)
+    (let* ((answer (call-operation :sites '(:read)
+                                   :repository (repository-name repository)
+                                   :term "alpha" :limit "0"))
+           (group (first (getf answer :groups))))
+      (is (null (getf group :sites)))
+      (is (= 1 (getf group :more)))
+      (is (search "\"sites\":[]" (loom-serve:encode-result answer))))
+    (signals malformed-request
+      (call-operation :sites '(:read)
+                      :repository (repository-name repository)
+                      :term "alpha" :limit "many"))))
+
+(test sites-names-its-repository-and-refuses-an-unknown-entity
+  (with-operations-fixture (repository)
+    (signals malformed-request (call-operation :sites '(:read) :term "alpha"))
+    (signals unknown-entity
+      (call-operation :sites '(:read)
+                      :repository (repository-name repository)
+                      :term "zarquon"))))
+
+(test describe-over-the-operation-carries-the-distribution-as-json
+  (with-operations-fixture (repository)
+    (let* ((detail (call-operation :describe '(:read)
+                                   :repository (repository-name repository)
+                                   :term "alpha"))
+           (json (loom-serve:encode-result detail))
+           (shapes (cdr (assoc :call-shapes (json:decode-json-from-string json)))))
+      (is (eql 2 (cdr (assoc :sites shapes))) "~a" json)
+      (is (equal '(("1:c" 1) ("1:y" 1))
+                 (cdr (assoc :signatures shapes)))
+          "~a" json))))

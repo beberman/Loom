@@ -358,6 +358,29 @@ Pass source=true for the definition's text."
         (append detail (list :source (definition-source repository-struct (id entity))))
         detail))))
 
+(defun sites-answer (repository term limit)
+  "The answer to :SITES. A function of its own for the reason PRINT-SITES is: the
+DEFINE-OPERATION body mints one :CALL-SITE per distinct name it calls."
+  (multiple-value-bind (watched domain) (require-repository repository)
+   (let* ((graph (repository-graph watched))
+          (entity (resolve-entity graph term
+                                  :property-filters (domain-property-filter domain))))
+     (list :entity (entity-summary entity)
+           ;; NIL is the answer when no call form is recorded, and *ARRAY-
+           ;; VALUED-KEYS* carries :GROUPS so it encodes as [] and not null.
+           :groups (shape-sites graph (id entity)
+                                :per-group (or (request-integer limit "limit") 20))
+           :provenance (answer-provenance watched)))))
+
+(define-operation :sites :read (repository term (limit))
+    "The calls to one definition grouped by how they are written, the rarest \
+group first, with file, line and caller for each. Pass limit for the rows \
+shown per group; the default is 20."
+  ;; DES-0055 D12, REQ-0041 R4. TERM resolves exactly as :DESCRIBE's does,
+  ;; domain filter included, so `describe' and `sites' on one name are about one
+  ;; entity.
+  (sites-answer repository term limit))
+
 (define-operation :impact :read (repository term (depth))
     "What may need attention if this changes, with paths and depths."
   (multiple-value-bind (watched domain) (require-repository repository)

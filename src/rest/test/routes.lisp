@@ -232,3 +232,31 @@ export const api = functions.https.onRequest((req, res) => {});
         (is (equal "requirements.txt"
                    (cdr (assoc :manifest (cdr (assoc :dependency (decode body))))))
             "~a" body)))))
+
+(test sites-over-rest-answers-the-groups-as-json
+  ;; PLAN-0060 step 7. REST finds an operation by name, so the route exists with
+  ;; the registry entry and nothing in src/rest/ mentions it. The fixture's
+  ;; ALPHA-TWICE calls (alpha (alpha x)): two sites of one signature each.
+  (with-operations-fixture (repository)
+    (with-test-server ()
+      (multiple-value-bind (body status)
+          (http-call (route :sites)
+                     :parameters (list (cons "repository" (repository-name repository))
+                                       (cons "term" "alpha")))
+        (is (= 200 status) "~a" body)
+        (let ((groups (cdr (assoc :groups (decode body)))))
+          (is (= 2 (length groups)) "~a" body)
+          (is (equal '("1:c" "1:y")
+                     (mapcar (lambda (group) (cdr (assoc :signature group))) groups))
+              "~a" body)
+          (is (search "alpha-twice" body))))
+      (multiple-value-bind (body status)
+          (http-call (route :sites)
+                     :parameters (list (cons "repository" (repository-name repository))
+                                       (cons "term" "alpha-twice")))
+        (is (= 200 status))
+        (is (search "\"groups\":[]" body) "nothing calls it: ~a" body))
+      (is (= 404 (nth-value 1 (http-call (route :sites)
+                                         :parameters (list (cons "repository"
+                                                                 (repository-name repository))
+                                                           (cons "term" "zarquon")))))))))

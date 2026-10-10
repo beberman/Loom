@@ -114,7 +114,12 @@
     :searched :elsewhere
     ;; DES-0055 R8, `describe' on a :MODULE. A requirements line with no version
     ;; spec has no :SPECS, and an unmapped one no :PROVIDES; both are the answer.
-    :specs :sections :provides)
+    :specs :sections :provides
+    ;; DES-0055 D12, `sites'. A callee nothing calls with a recorded form has no
+    ;; groups, and a group asked for no rows has none to show; both are answers.
+    ;; :SIGNATURES is `describe''s list of (signature count) pairs. A number
+    ;; under :SITES, as `describe' has it, is a number to the walker either way.
+    :groups :signatures :sites)
   "Keys whose value is a sequence even when it is empty.
 
 Two jobs. NIL under one of these encodes as [] rather than null, so an empty
