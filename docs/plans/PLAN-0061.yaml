@@ -1,5 +1,5 @@
 id: PLAN-0061
-title: REQ-0079 and DES-0056 in eighteen steps -- utils removed, read-file in loom-utils with RULE-0010 split, tools/ paths derived, the clean-room instrument, a loopback Host check, the id floor over every ref, doc-ids.py check and renumber, the workflow, the release scan, the scrub, the private-trees note, README, INSTALL, licences, CONTRIBUTING, document edits, acceptance in a sandbox, complete
+title: REQ-0079 and DES-0056 in nineteen steps -- utils removed, read-file in loom-utils with RULE-0010 split into ten rules, tools/ paths derived, the clean-room instrument, a loopback Host check, the id floor over every ref, doc-ids.py check and renumber, the workflow, the release scan, the two .docx files exported to markdown, the scrub, the private-trees note, README, INSTALL, licences, CONTRIBUTING, document edits, acceptance in a sandbox, complete
 status: draft
 date: 2026-10-10
 refines: [DES-0056, REQ-0079]
@@ -17,8 +17,8 @@ summary: |
   without ~/lisp/utils until it lands. A loopback Host check on the listener
   follows, because the owner decided on 2026-10-10 that .claude/ ships with a
   SessionStart hook that starts the service. Then DES-0056's tooling, which
-  touches no file the scrub touches. Then the R2 scan and the R2/R3 scrub.
-  Then README, INSTALL, the licence list and CONTRIBUTING. Then acceptance in
+  touches no file the scrub touches. Then the R2 scan, the export of the two
+  .docx files to markdown, and the R2/R3 scrub. Then README, INSTALL, the licence list and CONTRIBUTING. Then acceptance in
   a sandbox, then `complete`.
 
   The owner ruled on D1, D2, D3, D4 and most of D6 on 2026-10-10. Four stops
@@ -71,6 +71,9 @@ body: |
         loom-analyzer and loom-workspace call it, and loom-workspace depends
         on loom-analyzer, so CLAUDE.md's loom-utils test sends it to the
         lower of the two (finding 3). Step 2.
+    D1a DECIDED. RULE-0010 becomes ten one-check rule files: RULE-0010
+        (loom-ontology) and RULE-0013 to RULE-0021 (the other nine Loom
+        systems). The rule language is not changed (finding 27). Step 2.
     D2  DECIDED. .claude/ and its SessionStart hook ship. An unauthenticated
         service on 127.0.0.1 is accepted. Step 4 adds a Host-header check to
         the listener against DNS rebinding, a DEC recording the decision, and
@@ -78,7 +81,9 @@ body: |
     D3  DECIDED. History is left as it is: no rewrite and no .mailmap. The
         history scan stays as a gate: step 9 stops only if it finds a
         credential.
-    D4  DECIDED. Removed: both .docx files, init.el, the two
+    D4  DECIDED. Both .docx files are exported to markdown under docs/ and
+        then removed, in one commit (step 10, finding 26). Removed in step
+        11: init.el, the two
         :Zone.Identifier files and src/ontology/test/suite.lisp~.
         .claude/settings.local.json is removed from the index and added to
         .gitignore; the shipped hook does not read it (finding 24). The
@@ -97,29 +102,29 @@ body: |
 
   STOPS THAT REMAIN
 
-    D5  README figures policy, and R4's last sentence. Before step 12.
+    D5  README figures policy, and R4's last sentence. Before step 13.
         (a) tools/test/readme-figures.py --check fails when any figure
             differs from HEAD's, and CONTRIBUTING makes regenerating part of
             a release, not of every pull request. Proposed default.
         (b) the same script reports drift and never fails.
         (c) R4 as written: `check` flags it. Needs a DES first (finding 14).
-        Whichever is chosen, step 16 amends R4's last sentence with a dated
+        Whichever is chosen, step 17 amends R4's last sentence with a dated
         note before `complete`, as PLAN-0060 did for REQ-0041 U4.
     D6' Outside contributions and the code of conduct. One stop, before
-        step 15. Proposed defaults:
+        step 16. Proposed defaults:
         - Contributions are accepted as pull requests from forks, under the
           project's MIT licence, inbound equals outbound, with no CLA and no
           sign-off line. Fork pull requests are squash-merged (DES-0056).
         - The code of conduct is the Contributor Covenant, version 2.1, with
           the owner's contact address as the enforcement contact.
-        Step 15 writes the DEC with the owner's answer.
-    D7  GitHub settings. Owner only, after step 8 and again at step 17.
+        Step 16 writes the DEC with the owner's answer.
+    D7  GitHub settings. Owner only, after step 8 and again at step 18.
         Make the repository public (when); protect main: require pull
         requests, require the doc-ids status check, require branches to be
         up to date (finding 17: no merge queue for a user-owned
         repository); allow squash for forks; Actions approval for
         first-time contributors; secret scanning and push protection.
-    D8  The clean environment for acceptance. Before step 17. Proposed
+    D8  The clean environment for acceptance. Before step 18. Proposed
         default (a).
         (a) tools/test/clean-room.sh under bwrap. Proves nothing under /home
             is read. Does not prove the OS package list (finding 6).
@@ -251,8 +256,9 @@ body: |
      value of 8+ characters; Bearer plus 20+ characters; scheme://u:p@ with
      placeholder passwords excluded; eyJ...eyJ... JWTs; aws_secret_access_key.
 
-  10. Files the REQ did not anticipate. All are removed or untracked in
-     step 10 (D4):
+  10. Files the REQ did not anticipate. The two .docx files are exported
+     and removed in step 10; the rest are removed or untracked in step 11
+     (D4):
        init.el                      a personal Emacs init with the Windows
                                     home path above
        docs/DESIGN-ASSUMPTION-CHANGES.md:Zone.Identifier
@@ -400,7 +406,7 @@ body: |
 
   23. loom-indexes-its-own-todo-file (markdown-analyzer tests) asserts
      inside `(when e ...)`. If docs/TODO.md is deleted it passes with zero
-     checks. D4 keeps docs/TODO.md; step 10 still counts the test's checks.
+     checks. D4 keeps docs/TODO.md; step 11 still counts the test's checks.
 
   24. .claude/settings.local.json is not read by the shipped hook. It holds
      six permission rules (Skill(update-config), Edit and Write under
@@ -418,7 +424,7 @@ body: |
          and the printed `project default=lfia-accounting')
        docs/design/completed/DES-0054.yaml:343
        docs/plans/completed/PLAN-0057.yaml:582
-     Step 10 replaces it with "example-project" on those lines only. Every
+     Step 11 replaces it with "example-project" on those lines only. Every
      other "lfia-accounting" in the tree names the tree and stays.
      No other account or project identifier was found: no projectId,
      appId value, storageBucket, authDomain, firebaseapp.com, web.app,
@@ -426,16 +432,58 @@ body: |
      DES-0054 name a secret parameter, ZEFFY_API_KEY. That is the name of a
      Firebase secret, not its value and not an account id, so it stays.
 
-  26. The SS-numbered citations name a removed document. Source and docs
-     cite sections as SS8.1, SS14.3 and so on: 281 times in 43 files under
-     src/, and 61 times in 35 files under docs/. They quote "Phase1 Software
-     Architecture.docx": its text holds "stateless and know nothing about
-     storage" (SS8.1, quoted in src/analyzer/package.lisp) and "Phase 1 may
-     ship without it" (SS3.4, quoted in loom.lisp). D4 removes that file, so
-     after step 10 every SS citation names a section of a document the tree
-     no longer holds. Step 11's note says so. A markdown export of its text,
-     without the docx metadata, would keep them resolvable; this plan does
-     not make one, because D4 removes the document.
+  26. The SS-numbered citations, and the two .docx files.
+     The regex `\bSS([0-9]+(\.[0-9]+)*)` over `git grep` of src/, docs/,
+     tools/, loom.lisp, loom-serve.lisp, CLAUDE.md and .claude/ (this plan
+     excluded) finds 371 occurrences on 343 lines in 79 files, naming 41
+     distinct section ids. They are sections of the architecture document:
+     "Phase1 Software Architecture.docx" holds the text they quote,
+     "stateless and know nothing about storage" (SS8.1,
+     src/analyzer/package.lisp) and "Phase 1 may ship without it" (SS3.4,
+     loom.lisp).
+     How a section number is written in the docx, read from
+     word/document.xml with zipfile and ElementTree: the number is literal
+     text at the start of a paragraph whose style is "heading 1"
+     (`N. Title`) or "heading 2" (`N.M Title`). No heading carries a numPr,
+     so Word's auto-numbering plays no part. Two "heading 3" paragraphs are
+     unnumbered. The "toc 1" and "toc 2" paragraphs repeat the headings with
+     page numbers appended. The tip's file has 47 numbered headings.
+     The document was renumbered while the code cited it. Its history holds
+     three versions of the file: c5d3649 (revision 1, 33 numbered
+     headings), d69542a (revision 2, 45) and a675771 (revision 3, 47; byte
+     identical to the tip). Revision 2 and revision 3 give every cited id
+     the same title. Revision 1 differs. Of the 41 cited ids:
+       19 have one title in every version that has them and exist in
+          revision 3: SS2, 2.1, 3.1, 3.2, 3.3, 3.4, 5.4, 6.3, 9.1, 9.2, 9.3,
+          10.1, 10.2, 10.3, 10.4, 14.1, 14.2, 14.3, 14.4.
+        8 exist only in revision 1: SS4.1, 4.2, 4.3, 4.4 (the ontology
+          layer, now 5.1 to 5.4), 7.1 (Overlay model, now 8.1), 12.2, 12.3,
+          12.4 (testing, now 14.2 to 14.4). 35 occurrences.
+       14 name different sections in revision 1 and revision 3: SS3, 4,
+          5.1, 5.2, 5.3, 7, 8.1, 8.2, 8.3, 9, 10, 11, 12, 13. 154
+          occurrences. SS8.1 is "Analyzer protocol" in revision 1 and
+          "Overlay model" in revision 3; the analyzer's citation of it means
+          the first. SS12.3 (revision 1) and SS14.3 (revision 3) are both
+          cited and are one section.
+     So the docx in the tree today silently resolves 154 citations to the
+     revision 3 section of that number, which for revision 1 citations is
+     the wrong section. Step 10's export resolves every id to a heading or
+     a concordance row and names the 14 that resolve two ways. Choosing,
+     for each of the 154 occurrences, which revision it meant is deferred.
+     The other file, "Loom - A Code Knowledge Engine.docx", has no numbered
+     headings (13 "heading 1" and 15 "heading 2" paragraphs, all titles),
+     so no SS citation names it. It is cited once:
+     docs/DESIGN-ASSUMPTION-CHANGES.md:16 names it and quotes a passage of
+     it, though the quote is not in either committed version of the file
+     (step 10). It is the newest document (modified in 715eedf, 2026-09-22), and
+     its Appendix A covers installation. Under the ruling ("if it is cited,
+     handle it the same way") step 10 exports it too.
+     What the files carry beyond their text: docProps/core.xml and app.xml
+     in both, docProps/custom.xml and an empty comments part in the second,
+     and one image (word/media/image1.png, 186120 bytes) in the first,
+     whose PNG holds a tEXt chunk with the keyword "Software". The body of
+     the second names the author and holds 6 /home/ and 6 ~/ paths, 4
+     game-server and 5 front-end mentions. The first holds none of these.
 
   27. RULE-0010 cannot be amended in place to "every Loom system but
      loom-utils". A rule document carries exactly one check: PARSE-CHECK
@@ -457,7 +505,7 @@ body: |
      statement says. The alternative that keeps one document is a
      list-valued `to-system:` or an `except:` key in PARSE-CHECK and
      SYSTEM-SATISFIES-P. That is a change to the rule language and needs a
-     DES. It is not in this plan.
+     DES. The owner chose the ten files on 2026-10-10 (D1a).
 
   28. The listener has one entry point. Every request reaches
      HUNCHENTOOT:ACCEPTOR-DISPATCH-REQUEST on LOOM-ACCEPTOR
@@ -615,7 +663,7 @@ body: |
   10. The scrub changes a completed document's meaning. Replacing
      `~/lisp/game-server` with `game-server` keeps the tree's name and drops
      its location. Commands quoted in completed plans (`watch
-     "~/lisp/Loom"`) become `watch "/path/to/Loom"`. Step 10 is a
+     "~/lisp/Loom"`) become `watch "/path/to/Loom"`. Step 11 is a
      mechanical rewrite with an explicit table, and its diff is read before
      the commit. A figure is never edited (REQ-0079 R3).
 
@@ -634,8 +682,10 @@ body: |
   - Publishing beberman/utils. After R1, Loom no longer needs it.
   - A rule-language change that would let RULE-0010 be one document
     (finding 27). It needs a DES.
-  - A markdown export of "Phase1 Software Architecture.docx" (finding 26).
-    D4 removes the document.
+  - Deciding, for each of the 154 occurrences of the 14 SS ids that name
+    different sections in revision 1 and revision 3 (finding 26), which
+    revision the citing line meant, and rewriting it. The export makes the
+    ambiguity visible; resolving it means reading each citing line.
   - Service authentication and tokens: REQ-0071 R4 (where the service
     authenticates) and REQ-0076 (the forge token its R1 needs). D2 accepts
     an unauthenticated loopback service.
@@ -671,19 +721,26 @@ body: |
     .github/workflows/doc-ids.yml       step 8. DES-0056 R5.
     tools/test/release-scan.py          step 9. REQ-0079 R2's script.
     tools/test/test-release-scan.py     step 9.
-    docs/PRIVATE-TREES.md               step 11. REQ-0079 R3's note. Indexed
+    docs/PHASE1-ARCHITECTURE.md         step 10. The architecture document's
+                                        revision 3 text, with a revision 1
+                                        concordance.
+    docs/KNOWLEDGE-ENGINE.md            step 10. The white paper's text.
+    docs/phase1-architecture-figure-1.png
+                                        step 10. The one image, without its
+                                        tEXt chunk.
+    docs/PRIVATE-TREES.md               step 12. REQ-0079 R3's note. Indexed
                                         as a :document by the markdown
                                         analyzer.
-    tools/test/readme-figures.py        step 12. REQ-0079 R4's script.
-    tools/test/surface.lisp             step 12. Prints the registries
+    tools/test/readme-figures.py        step 13. REQ-0079 R4's script.
+    tools/test/surface.lisp             step 13. Prints the registries
                                         `status` does not: analyzers and
                                         their file types, entity and
                                         relationship types, serve
                                         operations, MCP tools.
-    INSTALL.md                          step 13.
-    THIRD-PARTY-LICENSES.md             step 14.
-    CONTRIBUTING.md, CODE_OF_CONDUCT.md step 15.
-    docs/decisions/DEC-0009.yaml        step 15, with the owner's answer to
+    INSTALL.md                          step 14.
+    THIRD-PARTY-LICENSES.md             step 15.
+    CONTRIBUTING.md, CODE_OF_CONDUCT.md step 16.
+    docs/decisions/DEC-0009.yaml        step 16, with the owner's answer to
                                         D6'. Id re-read at the time.
 
   Changed:
@@ -714,33 +771,35 @@ body: |
                                         step 2: dated notes
     CLAUDE.md                           step 2 (the loom-docstore row and the
                                         loom-utils row of the layering
-                                        table), step 11 (private trees)
+                                        table), step 12 (private trees)
     tools/loom-test.sh, tools/loom.sh, tools/loom-init.sh,
     tools/allow-loom.py, tools/test/test-allow-loom.py,
     tools/test/call-site-census.lisp, tools/test/package-census.lisp,
     tools/test/summary-band.lisp        step 3
-    .claude/skills/loom/SKILL.md        step 3 (the driver block), steps 10
-                                        and 11
+    .claude/skills/loom/SKILL.md        step 3 (the driver block), steps 11
+                                        and 12
     src/serve/server.lisp, src/serve/loom-serve.asd (test system: usocket),
     src/serve/test/server.lisp          step 4
     tools/next-doc-id.sh, tools/test/test-next-doc-id.py,
     src/docstore/file-store.lisp (NEXT-DOCUMENT-ID),
     src/docstore/test/file-store.lisp   step 5
-    .gitignore                          step 10: .claude/settings.local.json
-    .claude/settings.json               step 10: paths only (D2)
+    docs/DESIGN-ASSUMPTION-CHANGES.md   step 10: line 16 names the export
+    .gitignore                          step 11: .claude/settings.local.json
+    .claude/settings.json               step 11: paths only (D2)
     src/analyzer/test/firebase-analyzer.lisp, src/process/test/console.lisp,
     docs/design/completed/DES-0054.yaml, docs/plans/completed/PLAN-0057.yaml
-                                        step 10: the project id (finding 25)
+                                        step 11: the project id (finding 25)
     src/ comments and docstrings, src/*/test path strings, docs/**/*.yaml,
-    docs/*.md, README.md                step 10: paths generalised
-    src/workspace/templates/loom-skill.md  step 11
-    README.md                           step 12
+    docs/*.md, README.md                step 11: paths generalised
+    src/workspace/templates/loom-skill.md  step 12
+    README.md                           step 13
     docs/requirements/REQ-0079.yaml, docs/requirements/REQ-0025.yaml,
-    docs/design/DES-0056.yaml           step 16, before `complete`
+    docs/design/DES-0056.yaml           step 17, before `complete`
 
-  Deleted (step 10, D4): init.el; docs/Loom - A Code Knowledge Engine.docx;
-  docs/Phase1 Software Architecture.docx; the two :Zone.Identifier files;
-  src/ontology/test/suite.lisp~. Untracked: .claude/settings.local.json.
+  Deleted (step 10): docs/Loom - A Code Knowledge Engine.docx and
+  docs/Phase1 Software Architecture.docx. Deleted (step 11, D4): init.el;
+  the two :Zone.Identifier files; src/ontology/test/suite.lisp~. Untracked:
+  .claude/settings.local.json.
 
   Not changed, and a change to any one is a finding to report:
   docs/rules/RULE-0001 to RULE-0008, RULE-0011 and RULE-0012;
@@ -754,8 +813,8 @@ body: |
   Each step is one commit on req-0079-open-source, made by the owner. Step 1
   is the first that can be run. Every step ends green unless it says
   otherwise. Steps 1 to 3 are R1, step 4 is D2's listener change, steps 5 to
-  8 are DES-0056, steps 9 to 11 are R2 and R3, steps 12 to 15 are R4 to R6,
-  step 17 is the acceptance.
+  8 are DES-0056, steps 9 to 12 are R2 and R3 (step 10 is the .docx
+  export), steps 13 to 16 are R4 to R6, step 18 is the acceptance.
 
   1. THE LIST PREDICATES AND THE JSON DECODE (R1, first part).
      src/serve/json.lisp, src/serve/package.lisp, src/serve/loom-serve.asd,
@@ -1072,8 +1131,8 @@ body: |
      Host check and what it stops; what it does not stop (any local
      process can call the service; a non-loopback bind is unsupported);
      tokens and authentication deferred to REQ-0071 R4 and REQ-0076; how to
-     report a vulnerability (the owner's chosen address, asked at step 15's
-     stop if not given before). README links it in step 12.
+     report a vulnerability (the owner's chosen address, asked at step 16's
+     stop if not given before). README links it in step 13.
      Exit: green. load-test prints T. `tools/loom-serve.sh update`, then
      `curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example:4780'
      http://127.0.0.1:4780/v1/status` prints 403 and the same without -H
@@ -1207,7 +1266,7 @@ body: |
      conflicting pull request (no run), and whether "up to date" is
      enforced, are observable only after D7.
      Exit: the local checks pass. The owner pushes and records the run URL
-     in NOTES. D7 waits for step 17 unless the owner wants protection on
+     in NOTES. D7 waits for step 18 unless the owner wants protection on
      earlier.
 
   9. THE RELEASE SCAN (REQ-0079 R2's script), AND THE HISTORY GATE (D3).
@@ -1245,12 +1304,105 @@ body: |
      `\b` and see a `task-...` line reported.
      Exit: the test passes. `release-scan.py` on this tree reports the
      finding 9 counts in the paths class and exits 1, which is expected
-     before step 10. `release-scan.py --history` exits 0 and prints the
+     before step 11. `release-scan.py --history` exits 0 and prints the
      finding 11 counts. Record both. If --history exits 1, STOP: a
      credential is in history, and REQ-0079 requires it rotated before the
      plan continues.
 
-  10. THE R2 SCRUB AND THE D4 REMOVALS.
+  10. THE TWO .docx FILES EXPORTED TO MARKDOWN, THEN REMOVED (D4).
+     docs/PHASE1-ARCHITECTURE.md (new), docs/KNOWLEDGE-ENGINE.md (new),
+     docs/phase1-architecture-figure-1.png (new),
+     docs/DESIGN-ASSUMPTION-CHANGES.md, and the deletion of both .docx files,
+     in one commit.
+
+     The converter is a python3 script in the scratchpad, using only
+     zipfile and xml.etree.ElementTree, and is not committed. It reads
+     word/document.xml and word/styles.xml only. It never reads
+     docProps/core.xml, app.xml or custom.xml, word/comments.xml or
+     word/footnotes.xml, so no creator, lastModifiedBy, company or comment
+     author can reach the output. Mapping:
+       style "Title"                       -> `# ` (the file's first H1, which
+                                              the markdown analyzer takes as
+                                              its title)
+       "heading 1" with `N. Title`         -> `## N. Title`, text verbatim
+       "heading 2" with `N.M Title`        -> `### N.M Title`, verbatim
+       "heading 1" or "2" without a number -> `##` or `###`, verbatim
+       "heading 3"                         -> `####`
+       "toc 1", "toc 2"                    -> dropped
+       a paragraph with numPr or a "List"
+       style                               -> `- ` item
+       "Source Code" style, or a run in a
+       monospace font                      -> a fenced block, or a `code`
+                                              span for a run
+       a table                             -> a pipe table, one row per w:tr
+       any other paragraph                 -> its text, then a blank line
+     The architecture document has no "Title" paragraph; its H1 is
+     `# Phase 1 Software Architecture (revision 3)`. Its one image is written
+     to docs/phase1-architecture-figure-1.png with every chunk copied except
+     tEXt, and the markdown names that file in backticks rather than as a
+     link, so `check`'s list of prose file references does not grow.
+     Each export opens with one paragraph: exported on 2026-10-10 from
+     <file> at <commit> (a675771 for the architecture document, 715eedf for
+     the white paper), text unedited, the .docx removed in the same commit.
+     PHASE1-ARCHITECTURE.md ends with `## Revision 1 section numbers`: a
+     pipe table, one row per numbered heading of the revision 1 file at
+     c5d3649, read the same way, with columns revision 1 number, revision 1
+     title, revision 3 number. A row is matched on its title. A row whose
+     title has no exact match in revision 3 is matched by hand and marked
+     `(title changed)`. Two rows need it, and only two:
+     "Workspace and Snapshot Management (loom-workspace)" (7) and
+     "Incremental equivalence" (12.4). Below the table, a list of
+     the 14 ids that name different sections in the two revisions (finding
+     26), each with both titles, so a reader of SS8.1 sees both. Revision 2
+     needs no column: it numbers every cited section as revision 3 does.
+     docs/DESIGN-ASSUMPTION-CHANGES.md:16 names docs/KNOWLEDGE-ENGINE.md in
+     place of the .docx, and says the block quote below it is not the
+     document's wording. Measured: the quote's sentences "derived from a
+     store of documents and is never a second copy" and "it is not
+     knowledge" are in neither committed version of the .docx (2190684 and
+     715eedf). The tip's .docx says "The knowledge graph is derived and is
+     never a second copy of the truth. It is an index over a store of
+     documents ...".
+
+     How the markdown analyzer treats the exports: a `.md` under docs/ is
+     claimed (REQ-0028), becomes a :document titled by its first H1, and
+     its backticked identifiers become :mentions edges; fenced blocks are
+     skipped. A backticked name that resolves to nothing is dropped, so
+     `unresolved` does not move. Loom draws no edge for an SS citation at
+     all: the citations are plain text, and the check below is a script.
+
+     Verification:
+       - Every cited id resolves. The cited set is the 41 ids from finding
+         26's regex. The export's set is every id matched by
+         `^#{2,3} ([0-9]+(\.[0-9]+)*)\.? ` (revision 3 headings) plus every
+         id in the first column of the concordance table (revision 1). The
+         script prints the cited ids absent from both. Expected: none. It
+         prints, separately, the cited ids present in both with different
+         titles. Expected: the 14 of finding 26, by name.
+       - Every revision 3 heading of the .docx is in the export: 47
+         numbered headings, compared as strings to the paragraphs the
+         converter read.
+       - The text is complete: the word count of the export, less its
+         opening paragraph, its concordance and markdown syntax, is within
+         1% of the word count of the .docx's w:t text less the toc
+         paragraphs (8215 words for the architecture document and 10971 for
+         the white paper, toc included, measured on 2026-10-10). Record both
+         counts.
+       - docs/KNOWLEDGE-ENGINE.md holds the sentence "The knowledge graph
+         is derived and is never a second copy of the truth", which
+         DESIGN-ASSUMPTION-CHANGES.md:16 now points at.
+       - No metadata: `grep -c -i -E 'creator|lastModifiedBy|<cp:|<dc:'`
+         on both exports prints 0, and the PNG's chunk list has no tEXt,
+         iTXt or zTXt.
+       - CON-0003: run the resolution check against an export with the
+         `### 8.1 Overlay model` heading deleted and see SS8.1 leave the
+         two-way list, resolved by the concordance alone; delete its
+         concordance row too and see SS8.1 printed as absent.
+     Exit: both .docx files removed. `status`: two more documents,
+     unresolved 8, ambiguous 7. The suite is not run: no Lisp file changed.
+     release-scan.py (tip) still exits 1 here on the paths step 11 removes.
+
+  11. THE R2 SCRUB AND THE D4 REMOVALS.
      Every file release-scan.py names in tip mode, the deletions under
      FILES, .gitignore, .claude/settings.json, and the project-id lines of
      finding 25.
@@ -1281,12 +1433,11 @@ body: |
      The project id (finding 25): "lfia-accounting" becomes
      "example-project" on the 6 lines named there, fixture and assertion
      together.
-     Deleted (D4): init.el; docs/Loom - A Code Knowledge Engine.docx and
-     docs/Phase1 Software Architecture.docx; the two :Zone.Identifier files;
+     Deleted (D4): init.el; the two :Zone.Identifier files;
      src/ontology/test/suite.lisp~. `git rm --cached
      .claude/settings.local.json`; .gitignore gains that path (finding 24).
-     DESIGN-ASSUMPTION-CHANGES.md:16 quotes the removed docx; its sentence
-     gains "(removed from the tree on 2026-10-10)".
+     The rewrite table applies to step 10's two exports as well:
+     docs/KNOWLEDGE-ENGINE.md holds 6 /home/ and 6 ~/ paths (finding 26).
      Verification:
        - release-scan.py (tip, with `--also lfia-accounting\\b` limited to
          the project-id class's files of finding 25) exits 0.
@@ -1300,7 +1451,7 @@ body: |
          still allows `tools/loom.sh 'status'`. The owner opens the session.
      Exit: green. `status`: unresolved 8, ambiguous 7. Clean-room run green.
 
-  11. R3: THE PRIVATE-TREES NOTE AND THE AGENT FILES (D4).
+  12. R3: THE PRIVATE-TREES NOTE AND THE AGENT FILES (D4).
      docs/PRIVATE-TREES.md, CLAUDE.md, .claude/skills/loom/SKILL.md,
      src/workspace/templates/loom-skill.md.
 
@@ -1322,8 +1473,10 @@ body: |
        - Commit messages also name the trees, and history is kept as it is
          (D3).
        - The SS-numbered citations in src/ and docs/ (finding 26) name
-         sections of "Phase1 Software Architecture.docx", which was removed
-         on 2026-10-10.
+         sections of the architecture document, now
+         docs/PHASE1-ARCHITECTURE.md. Its headings carry revision 3's
+         numbers and its concordance carries revision 1's. The 14 ids that
+         name different sections in the two revisions are listed there.
      CLAUDE.md: line 26's `0 here; 1 in utils` example, line 51's
      `@game-server`, lines 70-76 (the PLAN-0002 anecdote, de355d0), line
      143's game-server figure, line 250's game/* example. Each becomes an
@@ -1343,7 +1496,7 @@ body: |
      the-prepared-guidance-says-which-questions-are-gits-and-not-loom-s
      among them).
 
-  12. README.md AND ITS FIGURES (R4).
+  13. README.md AND ITS FIGURES (R4).
      README.md, tools/test/readme-figures.py (new), tools/test/surface.lisp
      (new).
 
@@ -1371,7 +1524,7 @@ body: |
      Exit: green (no Lisp source changed). NOTES records the commit the
      figures were taken at.
 
-  13. INSTALL.md (R5).
+  14. INSTALL.md (R5).
      INSTALL.md (new).
 
      Written by running it. Contents: Ubuntu packages (sbcl, git, python3,
@@ -1392,7 +1545,7 @@ body: |
      cannot be shown under bwrap (finding 6); NOTES says so.
      Exit: the run passes. Green.
 
-  14. THIRD-PARTY-LICENSES.md (R6, the licence half; D6 decided).
+  15. THIRD-PARTY-LICENSES.md (R6, the licence half; D6 decided).
      THIRD-PARTY-LICENSES.md (new).
 
      States that Loom is MIT (LICENSE, Copyright (c) 2026 Brian Eberman) and
@@ -1412,7 +1565,7 @@ body: |
      contribs, has a line. The scratchpad script checks it.
      Exit: no Lisp source changed; the check above prints no missing system.
 
-  15. CONTRIBUTING, THE CODE OF CONDUCT, AND THE CONTRIBUTIONS DECISION (R6,
+  16. CONTRIBUTING, THE CODE OF CONDUCT, AND THE CONTRIBUTIONS DECISION (R6,
      R7(b)).
      STOP for D6' (outside contributions and the code of conduct, with the
      proposed defaults above). Nothing in this step is written before the
@@ -1435,7 +1588,7 @@ body: |
      test-doc-ids.py's acceptance case runs.
      Exit: green.
 
-  16. EDITS BEFORE complete.
+  17. EDITS BEFORE complete.
      docs/requirements/REQ-0079.yaml, docs/design/DES-0056.yaml,
      docs/requirements/REQ-0025.yaml.
 
@@ -1454,12 +1607,12 @@ body: |
      to R10 became true, and R5's narrowing was written before this plan.
      Exit: `status` shows unresolved 8 and no new ambiguous reference.
 
-  17. ACCEPTANCE (REQ-0079 ACCEPTANCE).
+  18. ACCEPTANCE (REQ-0079 ACCEPTANCE).
      STOP for D8. No source change unless a defect is found; a defect gets
      its own commit with a test that fails without the fix.
 
      In the D8 environment, from a fresh clone of the branch:
-       - INSTALL.md followed verbatim (step 13's transcript, re-run on this
+       - INSTALL.md followed verbatim (step 14's transcript, re-run on this
          commit).
        - tools/loom-test.sh: 12 of 12 ok.
        - tools/loom.sh 'status | check': the clone indexed itself; 0
@@ -1479,7 +1632,7 @@ body: |
      Exit: every line above recorded in NOTES with the commit and the
      environment. A line that could not be run is named with its reason.
 
-  18. COMPLETE.
+  19. COMPLETE.
      Dry run: tools/loom.sh 'complete PLAN-0061'
      Expected chain: PLAN-0061 draft -> final; DES-0056 draft -> ?;
      REQ-0079 draft -> ?; REQ-0079 refines CON-0004, which has no status, so
@@ -1492,11 +1645,11 @@ body: |
      document with the verdict below, as PLAN-0059 step 9 did.
      Expected verdicts:
        DES-0056=implemented, if R1 to R6 hold and the workflow has run green
-         on GitHub at least once (step 8 or 17). R7 is deferred by DES-0056
+         on GitHub at least once (step 8 or 18). R7 is deferred by DES-0056
          itself. If the workflow has never run, partial, with OUTSTANDING
          naming R5's GitHub half.
-       REQ-0079=implemented, if R1 to R8 hold as amended in step 16 and step
-         17's lines all ran. partial, with OUTSTANDING, if a step 17 line
+       REQ-0079=implemented, if R1 to R8 hold as amended in step 17 and step
+         18's lines all ran. partial, with OUTSTANDING, if a step 18 line
          could not run.
        tools/loom.sh 'complete PLAN-0061 DES-0056=<verdict> REQ-0079=<verdict>'
      Then `status`: documents unchanged by `complete`, unresolved 8. Do not
